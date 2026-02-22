@@ -68,41 +68,67 @@ func isExecutable(path string) bool {
 	return info.Mode()&0o111 != 0
 }
 
-func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
+// FetchAllProviders returns all provider frames from CodexBar.
+func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	bin, err := FindBinary()
 	if err != nil {
-		return protocol.Frame{}, err
+		return nil, err
 	}
 
 	timeout := commandTimeout()
 
 	out, err := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
-	parsed, parseErr := parseUsageJSON(out)
+	allParsed, parseErr := parseAllProviders(out)
 	if err != nil {
-		// CodexBar sometimes exits non-zero while still emitting valid JSON.
 		if len(bytes.TrimSpace(out)) == 0 {
-			return protocol.Frame{}, fmt.Errorf("run codexbar usage --json: %w", err)
+			return nil, fmt.Errorf("run codexbar usage --json: %w", err)
 		}
 		if parseErr != nil {
-			return protocol.Frame{}, fmt.Errorf("run codexbar usage --json: %w (stdout parse error: %v)", err, parseErr)
+			return nil, fmt.Errorf("run codexbar usage --json: %w (stdout parse error: %v)", err, parseErr)
 		}
 	} else if parseErr != nil {
-		return protocol.Frame{}, parseErr
+		return nil, parseErr
 	}
 
-	// CodexBar auto source can intermittently switch Codex to openai-web with 0/0 and no reset.
-	// In that case, query Codex CLI explicitly and prefer it when it carries better data.
-	if shouldTryCodexCLIFallback(parsed) {
-		cliOut, cliErr := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
-		cliParsed, cliParseErr := parseUsageJSON(cliOut)
-		if cliParseErr == nil && (cliErr == nil || len(bytes.TrimSpace(cliOut)) > 0) {
-			if isBetterFrame(cliParsed.Frame, parsed.Frame) {
-				return cliParsed.Frame.Normalize(), nil
+	// Codex CLI fallback: if Codex is openai-web with 0/0, retry with --source cli.
+	for i, p := range allParsed {
+		pf := ParsedFrame{Frame: p.Frame, Provider: p.Provider, Source: p.Source}
+		if shouldTryCodexCLIFallback(pf) {
+			cliOut, cliErr := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
+			cliAll, cliParseErr := parseAllProviders(cliOut)
+			if cliParseErr == nil && (cliErr == nil || len(bytes.TrimSpace(cliOut)) > 0) && len(cliAll) > 0 {
+				if isBetterFrame(cliAll[0].Frame, p.Frame) {
+					allParsed[i] = cliAll[0]
+				}
 			}
 		}
 	}
 
-	return parsed.Frame.Normalize(), nil
+	for i := range allParsed {
+		allParsed[i].Frame = allParsed[i].Frame.Normalize()
+	}
+
+	return allParsed, nil
+}
+
+// FetchFirstFrame returns the single best provider frame (legacy convenience wrapper).
+func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
+	all, err := FetchAllProviders(ctx)
+	if err != nil {
+		return protocol.Frame{}, err
+	}
+	if len(all) == 0 {
+		return protocol.Frame{}, errors.New("codexbar returned no providers")
+	}
+
+	// Pick the provider with the most recent lastActiveAt, falling back to updatedAt.
+	best := all[0]
+	for _, p := range all[1:] {
+		if isBetterProviderSelection(p, best) {
+			best = p
+		}
+	}
+	return best.Frame, nil
 }
 
 func commandTimeout() time.Duration {
@@ -128,46 +154,56 @@ func runUsageCommand(parent context.Context, timeout time.Duration, bin string, 
 }
 
 type ParsedFrame struct {
-	Frame        protocol.Frame
-	Provider     string
-	Source       string
-	UpdatedAt    time.Time
-	HasUpdatedAt bool
+	Frame           protocol.Frame
+	Provider        string
+	Source          string
+	UpdatedAt       time.Time
+	HasUpdatedAt    bool
+	LastActiveAt    time.Time
+	HasLastActiveAt bool
 }
 
-func parseUsageJSON(raw []byte) (ParsedFrame, error) {
+func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
 	providers, err := extractProvidersFromRawJSON(raw)
 	if err != nil {
-		return ParsedFrame{}, err
+		return nil, err
 	}
 	if len(providers) == 0 {
-		return ParsedFrame{}, errors.New("codexbar returned no providers")
+		return nil, errors.New("codexbar returned no providers")
 	}
 
-	var selected ParsedFrame
-	selectedSet := false
-
+	var result []ParsedFrame
 	for _, providerAny := range providers {
 		payload, ok := providerAny.(map[string]any)
 		if !ok {
 			continue
 		}
-
 		parsed, err := parseProviderPayload(payload)
 		if err != nil {
 			continue
 		}
+		result = append(result, parsed)
+	}
 
-		if !selectedSet || isBetterProviderSelection(parsed, selected) {
-			selected = parsed
-			selectedSet = true
+	if len(result) == 0 {
+		return nil, errors.New("unexpected provider payload")
+	}
+	return result, nil
+}
+
+func parseUsageJSON(raw []byte) (ParsedFrame, error) {
+	all, err := parseAllProviders(raw)
+	if err != nil {
+		return ParsedFrame{}, err
+	}
+
+	best := all[0]
+	for _, p := range all[1:] {
+		if isBetterProviderSelection(p, best) {
+			best = p
 		}
 	}
-
-	if !selectedSet {
-		return ParsedFrame{}, errors.New("unexpected provider payload")
-	}
-	return selected, nil
+	return best, nil
 }
 
 func extractProvidersFromRawJSON(raw []byte) ([]any, error) {
@@ -240,6 +276,24 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		"providerCost.updatedAt",
 	)
 
+	// Compute lastActiveAt = resetsAt - windowMinutes for the primary usage window.
+	// This approximates when the user actually triggered activity on this provider,
+	// unlike updatedAt which is just the CodexBar scrape timestamp.
+	var lastActiveAt time.Time
+	hasLastActiveAt := false
+	if resetAt != "" {
+		if rt, err := time.Parse(time.RFC3339, resetAt); err == nil {
+			windowMins, hasWindow := firstIntAtPaths(payload,
+				"usage.primary.windowMinutes",
+				"primary.windowMinutes",
+			)
+			if hasWindow && windowMins > 0 {
+				lastActiveAt = rt.Add(-time.Duration(windowMins) * time.Minute)
+				hasLastActiveAt = true
+			}
+		}
+	}
+
 	if provider == "" && label == "" {
 		return ParsedFrame{}, errors.New("provider identity missing in codexbar output")
 	}
@@ -257,14 +311,31 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 			Weekly:   weekly,
 			ResetSec: resetSecs,
 		},
-		Provider:     provider,
-		Source:       source,
-		UpdatedAt:    updatedAt,
-		HasUpdatedAt: hasUpdatedAt,
+		Provider:        provider,
+		Source:          source,
+		UpdatedAt:       updatedAt,
+		HasUpdatedAt:    hasUpdatedAt,
+		LastActiveAt:    lastActiveAt,
+		HasLastActiveAt: hasLastActiveAt,
 	}, nil
 }
 
 func isBetterProviderSelection(candidate ParsedFrame, current ParsedFrame) bool {
+	// Prefer lastActiveAt (resetsAt - windowMinutes) which approximates when
+	// the user actually used a provider. This is more meaningful than updatedAt
+	// which is just the CodexBar scrape timestamp and always favours whichever
+	// provider was queried last.
+	if candidate.HasLastActiveAt || current.HasLastActiveAt {
+		if candidate.HasLastActiveAt && !current.HasLastActiveAt {
+			return true
+		}
+		if !candidate.HasLastActiveAt && current.HasLastActiveAt {
+			return false
+		}
+		return candidate.LastActiveAt.After(current.LastActiveAt)
+	}
+
+	// Fall back to updatedAt when no reset window information is available.
 	if candidate.HasUpdatedAt && !current.HasUpdatedAt {
 		return true
 	}
@@ -363,6 +434,17 @@ func firstTimeAtPaths(m map[string]any, paths ...string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+func firstIntAtPaths(m map[string]any, paths ...string) (int, bool) {
+	for _, p := range paths {
+		if v, ok := getPath(m, p); ok {
+			if n, ok := anyToInt(v); ok {
+				return n, true
+			}
+		}
+	}
+	return 0, false
 }
 
 func percentAtPaths(m map[string]any, paths ...string) int {

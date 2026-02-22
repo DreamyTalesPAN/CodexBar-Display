@@ -51,8 +51,10 @@ func runCycle(ctx context.Context, requestedPort string, lastGood *protocol.Fram
 		return fmt.Errorf("detect serial device: %w", err)
 	}
 
-	frame, fetchErr := codexbar.FetchFirstFrame(ctx)
+	allProviders, fetchErr := codexbar.FetchAllProviders(ctx)
+	var frame protocol.Frame
 	usedLastGood := false
+
 	if fetchErr != nil {
 		if hasLastGood != nil && *hasLastGood && lastGood != nil && lastGoodAt != nil && isLastGoodFresh(*lastGoodAt) {
 			frame = *lastGood
@@ -60,10 +62,14 @@ func runCycle(ctx context.Context, requestedPort string, lastGood *protocol.Fram
 		} else {
 			frame = protocol.ErrorFrame(fetchErr.Error())
 		}
-	} else if hasLastGood != nil && lastGood != nil && lastGoodAt != nil {
-		*lastGood = frame
-		*lastGoodAt = time.Now()
-		*hasLastGood = true
+	} else {
+		frame = selectProvider(allProviders)
+
+		if hasLastGood != nil && lastGood != nil && lastGoodAt != nil {
+			*lastGood = frame
+			*lastGoodAt = time.Now()
+			*hasLastGood = true
+		}
 	}
 
 	line, err := frame.MarshalLine()
@@ -87,6 +93,46 @@ func runCycle(ctx context.Context, requestedPort string, lastGood *protocol.Fram
 	}
 
 	return nil
+}
+
+// selectProvider picks the most recently used provider based on codexbar timestamps.
+// Preference order: lastActiveAt (derived from reset window), then updatedAt, then first entry.
+func selectProvider(all []codexbar.ParsedFrame) protocol.Frame {
+	if len(all) == 0 {
+		return protocol.ErrorFrame("no providers")
+	}
+
+	best := all[0]
+	for _, p := range all[1:] {
+		if isMoreRecent(p, best) {
+			best = p
+		}
+	}
+
+	return best.Frame
+}
+
+func isMoreRecent(candidate, current codexbar.ParsedFrame) bool {
+	// Prefer lastActiveAt when available (derived from reset window).
+	if candidate.HasLastActiveAt || current.HasLastActiveAt {
+		if candidate.HasLastActiveAt && !current.HasLastActiveAt {
+			return true
+		}
+		if !candidate.HasLastActiveAt && current.HasLastActiveAt {
+			return false
+		}
+		return candidate.LastActiveAt.After(current.LastActiveAt)
+	}
+
+	// Fallback to updatedAt when lastActiveAt is missing.
+	if candidate.HasUpdatedAt && !current.HasUpdatedAt {
+		return true
+	}
+	if candidate.HasUpdatedAt && current.HasUpdatedAt {
+		return candidate.UpdatedAt.After(current.UpdatedAt)
+	}
+
+	return false
 }
 
 func isLastGoodFresh(lastGoodAt time.Time) bool {

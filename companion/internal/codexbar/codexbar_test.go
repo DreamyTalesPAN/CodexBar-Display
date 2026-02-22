@@ -40,7 +40,50 @@ func TestParseUsageJSONCodexCLI(t *testing.T) {
 	}
 }
 
-func TestParseUsageJSONSelectsMostRecentlyUpdatedProvider(t *testing.T) {
+func TestParseUsageJSONSelectsMostRecentlyActiveProvider(t *testing.T) {
+	// Codex: resetsAt 20:02:05 - 300min = lastActiveAt 15:02:05
+	// Claude: resetsAt 16:00:01 - 300min = lastActiveAt 11:00:01
+	// Codex was used more recently, so it should be selected — even though
+	// Claude has a later updatedAt (scrape timestamp).
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"codex-cli",
+			"usage":{
+				"updatedAt":"2026-02-22T15:00:00Z",
+				"primary":{"usedPercent":1,"resetsAt":"2026-02-22T20:02:05Z","windowMinutes":300},
+				"secondary":{"usedPercent":2}
+			}
+		},
+		{
+			"provider":"claude",
+			"source":"web",
+			"usage":{
+				"updatedAt":"2026-02-22T15:10:00Z",
+				"primary":{"usedPercent":25,"resetsAt":"2026-02-22T16:00:01Z","windowMinutes":300},
+				"secondary":{"usedPercent":16}
+			}
+		}
+	]`)
+
+	parsed, err := parseUsageJSON(raw)
+	if err != nil {
+		t.Fatalf("parseUsageJSON failed: %v", err)
+	}
+
+	if parsed.Provider != "codex" {
+		t.Fatalf("expected codex (most recently active) to be selected, got %q", parsed.Provider)
+	}
+	if parsed.Frame.Session != 1 {
+		t.Fatalf("session mismatch: got %d", parsed.Frame.Session)
+	}
+	if parsed.Frame.Weekly != 2 {
+		t.Fatalf("weekly mismatch: got %d", parsed.Frame.Weekly)
+	}
+}
+
+func TestParseUsageJSONFallsBackToUpdatedAtWithoutWindowMinutes(t *testing.T) {
+	// Without windowMinutes, lastActiveAt cannot be computed — falls back to updatedAt.
 	raw := []byte(`[
 		{
 			"provider":"codex",
@@ -68,13 +111,7 @@ func TestParseUsageJSONSelectsMostRecentlyUpdatedProvider(t *testing.T) {
 	}
 
 	if parsed.Provider != "claude" {
-		t.Fatalf("expected claude to be selected, got %q", parsed.Provider)
-	}
-	if parsed.Frame.Session != 25 {
-		t.Fatalf("session mismatch: got %d", parsed.Frame.Session)
-	}
-	if parsed.Frame.Weekly != 16 {
-		t.Fatalf("weekly mismatch: got %d", parsed.Frame.Weekly)
+		t.Fatalf("expected claude (later updatedAt fallback) to be selected, got %q", parsed.Provider)
 	}
 }
 
@@ -109,13 +146,15 @@ func TestParseUsageJSONFallsBackToFirstWhenNoUpdatedAt(t *testing.T) {
 }
 
 func TestParseUsageJSONHandlesConcatenatedTopLevelArrays(t *testing.T) {
+	// Codex lastActiveAt: 20:00:00 - 300min = 15:00:00
+	// Claude lastActiveAt: 21:10:00 - 300min = 16:10:00 — more recent, should win
 	raw := []byte(`[
 		{
 			"provider":"codex",
 			"source":"codex-cli",
 			"usage":{
 				"updatedAt":"2026-02-22T15:00:00Z",
-				"primary":{"usedPercent":1},
+				"primary":{"usedPercent":1,"resetsAt":"2026-02-22T20:00:00Z","windowMinutes":300},
 				"secondary":{"usedPercent":2}
 			}
 		}
@@ -125,7 +164,7 @@ func TestParseUsageJSONHandlesConcatenatedTopLevelArrays(t *testing.T) {
 			"source":"web",
 			"usage":{
 				"updatedAt":"2026-02-22T15:10:00Z",
-				"primary":{"usedPercent":25},
+				"primary":{"usedPercent":25,"resetsAt":"2026-02-22T21:10:00Z","windowMinutes":300},
 				"secondary":{"usedPercent":16}
 			}
 		}
