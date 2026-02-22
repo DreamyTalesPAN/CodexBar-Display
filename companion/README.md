@@ -2,7 +2,7 @@
 
 Go daemon that:
 - fetches real provider usage from CodexBar (`usage --json`)
-- selects provider index `0`
+- selects the provider with the most recent `updatedAt` timestamp
 - sends protocol JSON lines to the USB display
 
 ## Commands

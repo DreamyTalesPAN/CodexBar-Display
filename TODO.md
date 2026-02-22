@@ -30,7 +30,7 @@
 
 ## 5. Companion (macOS Daemon)
 - [x] Implement `codexbar usage --json` reader
-- [x] Select provider at index `0` from CodexBar output
+- [x] Select most recently updated provider from CodexBar output
 - [x] Serialize payload and send over serial
 - [x] Poll every 60s
 - [x] Reconnect automatically when device disconnects/reconnects

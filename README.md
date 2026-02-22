@@ -11,7 +11,7 @@ This project reads local usage data from `codexbar usage --json` and renders one
 ## MVP Scope
 - macOS only
 - One connected display
-- Provider at index `0` from CodexBar output
+- Provider with most recent `updatedAt` in CodexBar output
 - USB serial transport (no WiFi/BLE in V1)
 
 ## Start Here

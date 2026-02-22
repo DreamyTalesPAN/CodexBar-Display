@@ -127,9 +127,11 @@ func runUsageCommand(parent context.Context, timeout time.Duration, bin string, 
 }
 
 type ParsedFrame struct {
-	Frame    protocol.Frame
-	Provider string
-	Source   string
+	Frame        protocol.Frame
+	Provider     string
+	Source       string
+	UpdatedAt    time.Time
+	HasUpdatedAt bool
 }
 
 func parseUsageJSON(raw []byte) (ParsedFrame, error) {
@@ -143,32 +145,54 @@ func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 		return ParsedFrame{}, errors.New("codexbar returned no providers")
 	}
 
-	first, ok := providers[0].(map[string]any)
-	if !ok {
-		return ParsedFrame{}, errors.New("unexpected provider payload")
+	var selected ParsedFrame
+	selectedSet := false
+
+	for _, providerAny := range providers {
+		payload, ok := providerAny.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		parsed, err := parseProviderPayload(payload)
+		if err != nil {
+			continue
+		}
+
+		if !selectedSet || isBetterProviderSelection(parsed, selected) {
+			selected = parsed
+			selectedSet = true
+		}
 	}
 
-	provider := firstString(first, "provider", "id", "slug", "name")
-	source := firstString(first, "source")
+	if !selectedSet {
+		return ParsedFrame{}, errors.New("unexpected provider payload")
+	}
+	return selected, nil
+}
+
+func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
+	provider := firstString(payload, "provider", "id", "slug", "name")
+	source := firstString(payload, "source")
 	label := humanLabel(provider)
-	if l := firstString(first, "label", "displayName", "name"); l != "" {
+	if l := firstString(payload, "label", "displayName", "name"); l != "" {
 		label = l
 	}
 
-	session := percentAtPaths(first,
+	session := percentAtPaths(payload,
 		"usage.primary.usedPercent",
 		"primary.usedPercent",
 		"session",
 		"openaiDashboard.primaryLimit.usedPercent",
 	)
-	weekly := percentAtPaths(first,
+	weekly := percentAtPaths(payload,
 		"usage.secondary.usedPercent",
 		"secondary.usedPercent",
 		"weekly",
 		"openaiDashboard.secondaryLimit.usedPercent",
 	)
 
-	resetAt := firstStringAtPaths(first,
+	resetAt := firstStringAtPaths(payload,
 		"usage.primary.resetsAt",
 		"primary.resetsAt",
 		"usage.secondary.resetsAt",
@@ -181,6 +205,15 @@ func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 			}
 		}
 	}
+
+	updatedAt, hasUpdatedAt := firstTimeAtPaths(payload,
+		"usage.updatedAt",
+		"updatedAt",
+		"openaiDashboard.updatedAt",
+		"credits.updatedAt",
+		"usage.providerCost.updatedAt",
+		"providerCost.updatedAt",
+	)
 
 	if provider == "" && label == "" {
 		return ParsedFrame{}, errors.New("provider identity missing in codexbar output")
@@ -199,9 +232,21 @@ func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 			Weekly:   weekly,
 			ResetSec: resetSecs,
 		},
-		Provider: provider,
-		Source:   source,
+		Provider:     provider,
+		Source:       source,
+		UpdatedAt:    updatedAt,
+		HasUpdatedAt: hasUpdatedAt,
 	}, nil
+}
+
+func isBetterProviderSelection(candidate ParsedFrame, current ParsedFrame) bool {
+	if candidate.HasUpdatedAt && !current.HasUpdatedAt {
+		return true
+	}
+	if candidate.HasUpdatedAt && current.HasUpdatedAt {
+		return candidate.UpdatedAt.After(current.UpdatedAt)
+	}
+	return false
 }
 
 func shouldTryCodexCLIFallback(parsed ParsedFrame) bool {
@@ -279,6 +324,20 @@ func firstStringAtPaths(m map[string]any, paths ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstTimeAtPaths(m map[string]any, paths ...string) (time.Time, bool) {
+	for _, p := range paths {
+		if v, ok := getPath(m, p); ok {
+			if s, ok := anyToString(v); ok && s != "" {
+				t, err := time.Parse(time.RFC3339, s)
+				if err == nil {
+					return t, true
+				}
+			}
+		}
+	}
+	return time.Time{}, false
 }
 
 func percentAtPaths(m map[string]any, paths ...string) int {
