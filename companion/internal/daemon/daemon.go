@@ -21,8 +21,11 @@ func Run(ctx context.Context, opts Options) error {
 		opts.Interval = 60 * time.Second
 	}
 
+	var lastGood protocol.Frame
+	hasLastGood := false
+
 	for {
-		if err := runCycle(ctx, opts.Port); err != nil {
+		if err := runCycle(ctx, opts.Port, &lastGood, &hasLastGood); err != nil {
 			fmt.Printf("cycle error: %v\n", err)
 		}
 		if opts.Once {
@@ -37,7 +40,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 }
 
-func runCycle(ctx context.Context, requestedPort string) error {
+func runCycle(ctx context.Context, requestedPort string, lastGood *protocol.Frame, hasLastGood *bool) error {
 	port, err := usb.ResolvePort(requestedPort)
 	if err != nil {
 		return fmt.Errorf("detect serial device: %w", err)
@@ -45,7 +48,14 @@ func runCycle(ctx context.Context, requestedPort string) error {
 
 	frame, err := codexbar.FetchFirstFrame(ctx)
 	if err != nil {
-		frame = protocol.ErrorFrame(err.Error())
+		if hasLastGood != nil && *hasLastGood && lastGood != nil {
+			frame = *lastGood
+		} else {
+			frame = protocol.ErrorFrame(err.Error())
+		}
+	} else if hasLastGood != nil && lastGood != nil {
+		*lastGood = frame
+		*hasLastGood = true
 	}
 
 	line, err := frame.MarshalLine()

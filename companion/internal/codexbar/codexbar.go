@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 )
 
 var knownBinaryPaths = []string{
+	"/opt/homebrew/bin/codexbar",
+	"/usr/local/bin/codexbar",
 	"/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI",
 	"/Applications/CodexBar.app/Contents/MacOS/CodexBar",
 }
@@ -69,7 +72,7 @@ func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
 		return protocol.Frame{}, err
 	}
 
-	cmdCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	cmdCtx, cancel := context.WithTimeout(ctx, commandTimeout())
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, bin, "usage", "--json", "--web-timeout", "8")
@@ -83,6 +86,20 @@ func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
 		return protocol.Frame{}, err
 	}
 	return frame.Normalize(), nil
+}
+
+func commandTimeout() time.Duration {
+	// Default timeout is intentionally generous because provider aggregation can be slow.
+	d := 90 * time.Second
+	raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_CODEXBAR_TIMEOUT_SECS"))
+	if raw == "" {
+		return d
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return d
+	}
+	return time.Duration(n) * time.Second
 }
 
 func parseUsageJSON(raw []byte) (protocol.Frame, error) {
