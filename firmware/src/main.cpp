@@ -193,6 +193,9 @@ void setup() {
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
 #endif
+  // LilyGO T-Display-S3 requires GPIO15 high to power the LCD panel.
+  pinMode(15, OUTPUT);
+  digitalWrite(15, HIGH);
 
   tft.init();
   tft.setRotation(1);
