@@ -1,6 +1,7 @@
 package codexbar
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -75,24 +76,27 @@ func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
 	timeout := commandTimeout()
 
 	out, err := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
+	parsed, parseErr := parseUsageJSON(out)
 	if err != nil {
-		return protocol.Frame{}, fmt.Errorf("run codexbar usage --json: %w", err)
-	}
-
-	parsed, err := parseUsageJSON(out)
-	if err != nil {
-		return protocol.Frame{}, err
+		// CodexBar sometimes exits non-zero while still emitting valid JSON.
+		if len(bytes.TrimSpace(out)) == 0 {
+			return protocol.Frame{}, fmt.Errorf("run codexbar usage --json: %w", err)
+		}
+		if parseErr != nil {
+			return protocol.Frame{}, fmt.Errorf("run codexbar usage --json: %w (stdout parse error: %v)", err, parseErr)
+		}
+	} else if parseErr != nil {
+		return protocol.Frame{}, parseErr
 	}
 
 	// CodexBar auto source can intermittently switch Codex to openai-web with 0/0 and no reset.
 	// In that case, query Codex CLI explicitly and prefer it when it carries better data.
 	if shouldTryCodexCLIFallback(parsed) {
 		cliOut, cliErr := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
-		if cliErr == nil {
-			if cliParsed, parseErr := parseUsageJSON(cliOut); parseErr == nil {
-				if isBetterFrame(cliParsed.Frame, parsed.Frame) {
-					return cliParsed.Frame.Normalize(), nil
-				}
+		cliParsed, cliParseErr := parseUsageJSON(cliOut)
+		if cliParseErr == nil && (cliErr == nil || len(bytes.TrimSpace(cliOut)) > 0) {
+			if isBetterFrame(cliParsed.Frame, parsed.Frame) {
+				return cliParsed.Frame.Normalize(), nil
 			}
 		}
 	}
