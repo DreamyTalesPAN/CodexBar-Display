@@ -30,3 +30,4 @@ Fields:
 - Missing numeric fields default to `0` on firmware side.
 - Host should send at least every 60 seconds.
 - Firmware ticks down `resetSecs` locally between host updates.
+- Companion may resend the last known good frame during short CodexBar outages (current default max age: 10 minutes).

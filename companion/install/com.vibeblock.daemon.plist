@@ -7,10 +7,9 @@
 
     <key>ProgramArguments</key>
     <array>
-      <string>/usr/local/bin/vibeblock</string>
-      <string>daemon</string>
-      <string>--interval</string>
-      <string>60s</string>
+      <string>/bin/zsh</string>
+      <string>-lc</string>
+      <string>$HOME/Library/Application\ Support/vibeblock/bin/vibeblock daemon --interval 60s</string>
     </array>
 
     <key>RunAtLoad</key>

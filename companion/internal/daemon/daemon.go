@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
@@ -22,11 +23,15 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	var lastGood protocol.Frame
+	var lastGoodAt time.Time
 	hasLastGood := false
 
 	for {
-		if err := runCycle(ctx, opts.Port, &lastGood, &hasLastGood); err != nil {
+		if err := runCycle(ctx, opts.Port, &lastGood, &lastGoodAt, &hasLastGood); err != nil {
 			fmt.Printf("cycle error: %v\n", err)
+			if opts.Once {
+				return err
+			}
 		}
 		if opts.Once {
 			return nil
@@ -40,21 +45,24 @@ func Run(ctx context.Context, opts Options) error {
 	}
 }
 
-func runCycle(ctx context.Context, requestedPort string, lastGood *protocol.Frame, hasLastGood *bool) error {
+func runCycle(ctx context.Context, requestedPort string, lastGood *protocol.Frame, lastGoodAt *time.Time, hasLastGood *bool) error {
 	port, err := usb.ResolvePort(requestedPort)
 	if err != nil {
 		return fmt.Errorf("detect serial device: %w", err)
 	}
 
-	frame, err := codexbar.FetchFirstFrame(ctx)
-	if err != nil {
-		if hasLastGood != nil && *hasLastGood && lastGood != nil {
+	frame, fetchErr := codexbar.FetchFirstFrame(ctx)
+	usedLastGood := false
+	if fetchErr != nil {
+		if hasLastGood != nil && *hasLastGood && lastGood != nil && lastGoodAt != nil && isLastGoodFresh(*lastGoodAt) {
 			frame = *lastGood
+			usedLastGood = true
 		} else {
-			frame = protocol.ErrorFrame(err.Error())
+			frame = protocol.ErrorFrame(fetchErr.Error())
 		}
-	} else if hasLastGood != nil && lastGood != nil {
+	} else if hasLastGood != nil && lastGood != nil && lastGoodAt != nil {
 		*lastGood = frame
+		*lastGoodAt = time.Now()
 		*hasLastGood = true
 	}
 
@@ -69,5 +77,35 @@ func runCycle(ctx context.Context, requestedPort string, lastGood *protocol.Fram
 
 	fmt.Printf("sent frame -> %s provider=%s label=%s session=%d weekly=%d reset=%ds error=%q\n",
 		port, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Error)
+
+	if fetchErr != nil {
+		if usedLastGood {
+			fmt.Printf("warning: codexbar fetch failed, sent stale frame: %v\n", fetchErr)
+			return nil
+		}
+		return fmt.Errorf("fetch codexbar usage: %w", fetchErr)
+	}
+
 	return nil
+}
+
+func isLastGoodFresh(lastGoodAt time.Time) bool {
+	if lastGoodAt.IsZero() {
+		return false
+	}
+	return time.Since(lastGoodAt) <= lastGoodMaxAge()
+}
+
+func lastGoodMaxAge() time.Duration {
+	// If CodexBar requests fail for a short period, keep rendering the most recent good frame.
+	d := 10 * time.Minute
+	raw := os.Getenv("VIBEBLOCK_LAST_GOOD_MAX_AGE")
+	if raw == "" {
+		return d
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed <= 0 {
+		return d
+	}
+	return parsed
 }

@@ -29,3 +29,34 @@ go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101 --once
 ```
 
 That prints the exact error frame source in terminal.
+
+## Display jumps between real values and `0/0`
+
+This can happen when CodexBar auto-source flips Codex between `codex-cli` and `openai-web`.
+
+Current companion behavior:
+- If Codex arrives as `openai-web` with `0/0` and no reset timer, vibeblock performs a second Codex query with `--source cli`.
+- The CLI frame is used when it contains better data.
+
+If values still jump, run a direct one-shot check:
+
+```bash
+cd companion
+./vibeblock daemon --port /dev/cu.usbmodem101 --once
+```
+
+## Upload fails with `Failed to connect to ESP32-S3`
+
+Usually another process (e.g. running daemon or serial monitor) still holds the serial device.
+
+```bash
+launchctl bootout gui/$(id -u)/com.vibeblock.daemon 2>/dev/null || true
+lsof /dev/cu.usbmodem101
+```
+
+After flashing, restart the daemon:
+
+```bash
+launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/com.vibeblock.daemon.plist" 2>/dev/null || true
+launchctl kickstart -k gui/$(id -u)/com.vibeblock.daemon
+```

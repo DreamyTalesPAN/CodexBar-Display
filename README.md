@@ -20,6 +20,11 @@ This project reads local usage data from `codexbar usage --json` and renders one
 3. Build firmware bring-up target
 4. Build companion daemon
 
+## Current Status
+
+- Firmware + daemon path is working on macOS with LILYGO T-Display-S3.
+- `vibeblock setup` is currently a doctor-style helper (not full one-command setup yet).
+
 ## Quickstart (Current)
 
 ```bash
@@ -27,12 +32,35 @@ This project reads local usage data from `codexbar usage --json` and renders one
 cd firmware
 pio run -e lilygo_t_display_s3 -t upload --upload-port /dev/cu.usbmodem101
 
-# run daemon with real CodexBar data
+# build companion
 cd ../companion
 go run ./cmd/vibeblock doctor
-go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101 --interval 60s
+go build -o vibeblock ./cmd/vibeblock
+
+# one-shot validation (sends one frame)
+./vibeblock daemon --port /dev/cu.usbmodem101 --once
 ```
 
 Companion supports both:
 - `codexbar` CLI in `PATH`
 - Desktop app helper (`CodexBarCLI`) inside `CodexBar.app`
+
+## Run As LaunchAgent
+
+```bash
+cd companion
+go build -o vibeblock ./cmd/vibeblock
+mkdir -p "$HOME/Library/Application Support/vibeblock/bin"
+cp "$PWD/vibeblock" "$HOME/Library/Application Support/vibeblock/bin/vibeblock"
+mkdir -p "$HOME/Library/LaunchAgents"
+cp "$PWD/install/com.vibeblock.daemon.plist" "$HOME/Library/LaunchAgents/com.vibeblock.daemon.plist"
+launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/com.vibeblock.daemon.plist"
+launchctl kickstart -k gui/$(id -u)/com.vibeblock.daemon
+```
+
+Logs:
+
+```bash
+tail -f /tmp/vibeblock-daemon.out.log
+tail -f /tmp/vibeblock-daemon.err.log
+```

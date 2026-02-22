@@ -18,6 +18,7 @@ TFT_eSPI tft = TFT_eSPI();
 
 char lineBuffer[512];
 size_t lineLen = 0;
+bool lineOverflowed = false;
 
 Frame current;
 bool hasFrame = false;
@@ -166,7 +167,7 @@ void consumeSerial() {
 
     if (c == '\n') {
       lineBuffer[lineLen] = '\0';
-      if (lineLen > 0) {
+      if (!lineOverflowed && lineLen > 0) {
         Frame next;
         if (parseFrameLine(lineBuffer, next)) {
           current = next;
@@ -178,13 +179,14 @@ void consumeSerial() {
         }
       }
       lineLen = 0;
+      lineOverflowed = false;
       continue;
     }
 
-    if (lineLen + 1 < sizeof(lineBuffer)) {
+    if (!lineOverflowed && lineLen + 1 < sizeof(lineBuffer)) {
       lineBuffer[lineLen++] = c;
     } else {
-      lineLen = 0;
+      lineOverflowed = true;
     }
   }
 }

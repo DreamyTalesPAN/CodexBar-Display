@@ -72,10 +72,9 @@ func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
 		return protocol.Frame{}, err
 	}
 
-	cmdCtx, cancel := context.WithTimeout(ctx, commandTimeout())
-	defer cancel()
+	timeout := commandTimeout()
 
-	out, err := runUsageCommand(cmdCtx, bin, "usage", "--json", "--web-timeout", "8")
+	out, err := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
 	if err != nil {
 		return protocol.Frame{}, fmt.Errorf("run codexbar usage --json: %w", err)
 	}
@@ -88,7 +87,7 @@ func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
 	// CodexBar auto source can intermittently switch Codex to openai-web with 0/0 and no reset.
 	// In that case, query Codex CLI explicitly and prefer it when it carries better data.
 	if shouldTryCodexCLIFallback(parsed) {
-		cliOut, cliErr := runUsageCommand(cmdCtx, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
+		cliOut, cliErr := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
 		if cliErr == nil {
 			if cliParsed, parseErr := parseUsageJSON(cliOut); parseErr == nil {
 				if isBetterFrame(cliParsed.Frame, parsed.Frame) {
@@ -115,8 +114,11 @@ func commandTimeout() time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-func runUsageCommand(ctx context.Context, bin string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, bin, args...)
+func runUsageCommand(parent context.Context, timeout time.Duration, bin string, args ...string) ([]byte, error) {
+	cmdCtx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, bin, args...)
 	return cmd.Output()
 }
 
