@@ -1,62 +1,80 @@
-# vibeblock MVP TODO (Do It Today)
+# vibeblock Roadmap to Production
 
-## 1. Repo + Tooling
-- [x] Initialize git repo in this folder
-- [x] Create GitHub repo and push `main`
-- [ ] Add base structure:
-  - [x] `companion/`
-  - [x] `firmware/`
-  - [x] `protocol/`
-  - [x] `docs/`
+## Ist-Stand (kompakt)
+- Firmware + Companion-Daemon laufen auf macOS mit LILYGO T-Display-S3.
+- Protokoll V1 (`protocol/PROTOCOL.md`) ist definiert und im Einsatz.
+- LaunchAgent-Betrieb funktioniert grundsätzlich.
+- Provider-Auswahl ist auf lokale Aktivitätslogs (Codex/Claude) umgestellt, Codex-`0/0`-Repair bleibt aktiv.
 
-## 2. Hardware Bring-Up (First Milestone)
-- [x] Confirm board is detected on macOS as `/dev/cu.usbmodem*`
-- [x] Flash minimal firmware to draw text: `vibeblock 1`
-- [x] Verify USB CDC serial receives one test line from Mac
-- [ ] Keep this as "known-good" fallback firmware
+## Milestone 1: Provider-Erkennung robust machen (P0)
+Ziel: Das Display zeigt zuverlässig den zuletzt aktiv genutzten Provider.
 
-## 3. Protocol Contract
-- [x] Create `protocol/PROTOCOL.md`
-- [ ] Lock V1 payload:
-  - [x] `{"v":1,"provider":"claude","label":"Claude","session":73,"weekly":45,"resetSecs":8040}`
-- [x] Define error payload for no-provider / codexbar-unavailable
+- [ ] Provider-Adapter-Architektur einführen (`provider -> activity detector`).
+- [ ] Für alle aktiv unterstützten Provider Activity-Quellen dokumentieren (Pfad/Signalqualität/Fallback).
+- [ ] Fallback-Regeln standardisieren (lokale Activity -> usage delta -> sticky current).
+- [ ] Konfliktregeln definieren, wenn mehrere Provider fast gleichzeitig aktiv sind.
+- [ ] Testmatrix mit reproduzierbaren Switching-Szenarien erstellen (Codex <-> Claude, Idle, Fehlerfälle).
 
-## 4. Firmware (Display App)
-- [x] Parse one JSON line from serial
-- [x] Render usage screen (label, session bar, weekly bar, reset countdown)
-- [x] Render error screen
-- [x] Local countdown ticks every second without host updates
-- [x] Auto-recover after USB reconnect
+Acceptance:
+- [ ] In 30 manuellen Switch-Tests liegt die Fehlanzeigequote unter 1/30.
+- [ ] Kein dauerhaftes "Hängen" auf falschem Provider ohne neuen lokalen Activity-Event.
 
-## 5. Companion (macOS Daemon)
-- [x] Implement `codexbar usage --json` reader
-- [x] Select provider by CodexBar output order (default) with optional timestamp mode
-- [x] Serialize payload and send over serial
-- [x] Poll every 60s
-- [x] Reconnect automatically when device disconnects/reconnects
+## Milestone 2: Runtime-Resilienz (P0)
+Ziel: Stabiler Dauerbetrieb auf dem Schreibtisch.
 
-## 6. Setup + Autostart
-- [ ] Build `vibeblock setup` command:
-  - [x] Validate CodexBar installed
-  - [ ] Flash firmware to connected board
-  - [ ] Install/start `launchd` service
-- [ ] Validate daemon starts after reboot/login
+- [ ] USB-Reconnect-Verhalten bei kabelziehen/stecken hart testen und dokumentieren.
+- [ ] macOS Sleep/Wake-Verhalten stabilisieren (automatisches Recover ohne manuellen Restart).
+- [ ] Fehlerzustände vereinheitlichen (CodexBar-Fehler, Parse-Fehler, Serial-Fehler).
+- [ ] Log-Ausgaben strukturieren (klare Gründe für Providerwahl, Fallback, Repair).
+- [ ] Minimales Health-Command ergänzen (`vibeblock doctor` um Runtime-Checks erweitern).
 
-## 7. Packaging + Docs
-- [x] Add `README.md` quickstart
-- [x] Add `docs/setup-guide.md`
-- [x] Add `docs/troubleshooting.md`
-- [ ] Prepare Homebrew tap formula draft
+Acceptance:
+- [ ] 24h Soak-Test ohne Absturz des Daemons.
+- [ ] 10x Unplug/Replug + 10x Sleep/Wake ohne manuelle Eingriffe.
 
-## 8. End-to-End Acceptance
-- [x] Plug in device
-- [ ] Run setup once
-- [x] See live CodexBar data on display within 60s
-- [ ] Unplug/replug test passes
-- [ ] Sleep/wake test passes
+## Milestone 3: Setup auf "einmal ausführen" bringen (P0)
+Ziel: Neue User können ohne Handarbeit starten.
 
-## Immediate Next Action (Now)
-1. Start the live daemon loop:
-   - `cd companion && ./vibeblock daemon --port /dev/cu.usbmodem101 --interval 60s`
-2. Confirm the screen updates every minute with live CodexBar values.
-3. Then unplug/replug once to validate reconnect behavior.
+- [ ] `vibeblock setup` vervollständigen (Firmware-Flash, Binary-Install, LaunchAgent-Install/Start).
+- [ ] Port-Autodetection stabilisieren und interaktive Auswahl bei mehreren Geräten anbieten.
+- [ ] Setup-Fehler mit konkreten Recovery-Hinweisen versehen.
+- [ ] Setup idempotent machen (mehrfach ausführbar ohne Seiteneffekte).
+
+Acceptance:
+- [ ] Frisches macOS-System: Setup durchlaufbar ohne manuelle Dateikopie.
+- [ ] Nach Reboot startet der Dienst automatisch und sendet Frames.
+
+## Milestone 4: Distribution & Upgrade-Story (P1)
+Ziel: Wartbare Auslieferung und Updates.
+
+- [ ] Versionierung/Release-Flow definieren (`companion` + `firmware`).
+- [ ] Homebrew-Formel oder alternatives Install-Paket fertigstellen.
+- [ ] Upgrade-Pfad dokumentieren (inkl. Firmware-Migration und Rollback).
+- [ ] Known-good Fallback-Firmware als offiziellen Recovery-Weg bereitstellen.
+
+Acceptance:
+- [ ] Upgrade von Version N auf N+1 ohne Datenverlust/Neu-Setup.
+- [ ] Rollback auf letzte stabile Version dokumentiert und getestet.
+
+## Milestone 5: Observability & Supportability (P1)
+Ziel: Probleme im Feld schnell diagnostizieren.
+
+- [ ] Logs in klaren Kategorien ausgeben (activity detection, provider selection, transport, codexbar repair).
+- [ ] Optionalen Debug-Modus mit erweiterten Details einführen.
+- [ ] Troubleshooting-Guide auf reale Fehlerbilder erweitern.
+- [ ] Support-Bundle-Command ergänzen (relevante Logs + Env-Checks gesammelt ausgeben).
+
+Acceptance:
+- [ ] Häufige Supportfälle lassen sich mit `doctor` + Logs ohne Codeänderung auflösen.
+
+## Milestone 6: Production Gate (Go/No-Go)
+Ziel: Verbindliche Abnahmekriterien vor "prod".
+
+- [ ] Checkliste finalisieren (Funktion, Stabilität, Setup, Upgrade, Doku).
+- [ ] E2E-Abnahme auf mindestens 2 macOS-Geräten durchführen.
+- [ ] Release-Kandidaten-Prozess einführen (RC testen, dann final taggen).
+
+Go-Live-Kriterien:
+- [ ] Milestones 1 bis 3 vollständig abgeschlossen.
+- [ ] Keine P0/P1-Bugs offen.
+- [ ] Setup-, Upgrade- und Troubleshooting-Doku aktuell.
