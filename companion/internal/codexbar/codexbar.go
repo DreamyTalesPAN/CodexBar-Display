@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -135,12 +136,10 @@ type ParsedFrame struct {
 }
 
 func parseUsageJSON(raw []byte) (ParsedFrame, error) {
-	var root any
-	if err := json.Unmarshal(raw, &root); err != nil {
-		return ParsedFrame{}, fmt.Errorf("parse codexbar json: %w", err)
+	providers, err := extractProvidersFromRawJSON(raw)
+	if err != nil {
+		return ParsedFrame{}, err
 	}
-
-	providers := extractProviderList(root)
 	if len(providers) == 0 {
 		return ParsedFrame{}, errors.New("codexbar returned no providers")
 	}
@@ -169,6 +168,32 @@ func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 		return ParsedFrame{}, errors.New("unexpected provider payload")
 	}
 	return selected, nil
+}
+
+func extractProvidersFromRawJSON(raw []byte) ([]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	var providers []any
+
+	for {
+		var value any
+		err := dec.Decode(&value)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			// Keep already decoded provider payloads if trailing data is malformed.
+			if len(providers) > 0 {
+				break
+			}
+			return nil, fmt.Errorf("parse codexbar json: %w", err)
+		}
+
+		if parsed := extractProviderList(value); len(parsed) > 0 {
+			providers = append(providers, parsed...)
+		}
+	}
+
+	return providers, nil
 }
 
 func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {

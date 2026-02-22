@@ -108,6 +108,60 @@ func TestParseUsageJSONFallsBackToFirstWhenNoUpdatedAt(t *testing.T) {
 	}
 }
 
+func TestParseUsageJSONHandlesConcatenatedTopLevelArrays(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"codex-cli",
+			"usage":{
+				"updatedAt":"2026-02-22T15:00:00Z",
+				"primary":{"usedPercent":1},
+				"secondary":{"usedPercent":2}
+			}
+		}
+	][
+		{
+			"provider":"claude",
+			"source":"web",
+			"usage":{
+				"updatedAt":"2026-02-22T15:10:00Z",
+				"primary":{"usedPercent":25},
+				"secondary":{"usedPercent":16}
+			}
+		}
+	]`)
+
+	parsed, err := parseUsageJSON(raw)
+	if err != nil {
+		t.Fatalf("parseUsageJSON failed: %v", err)
+	}
+
+	if parsed.Provider != "claude" {
+		t.Fatalf("expected claude from concatenated arrays, got %q", parsed.Provider)
+	}
+}
+
+func TestParseUsageJSONKeepsFirstDecodedValueOnTrailingGarbage(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"codex-cli",
+			"usage":{
+				"primary":{"usedPercent":1},
+				"secondary":{"usedPercent":2}
+			}
+		}
+	]THIS_IS_GARBAGE`)
+
+	parsed, err := parseUsageJSON(raw)
+	if err != nil {
+		t.Fatalf("parseUsageJSON failed: %v", err)
+	}
+	if parsed.Provider != "codex" {
+		t.Fatalf("expected codex from first decoded value, got %q", parsed.Provider)
+	}
+}
+
 func TestShouldTryCodexCLIFallback(t *testing.T) {
 	parsed := ParsedFrame{
 		Frame:    protocolFrameForTest(0, 0, 0),
