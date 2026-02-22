@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Env/config
+.env
+.env.*
+
+# Node
+node_modules/
+dist/
+coverage/
+
+# Go
+bin/
+*.test
+*.out
+
+# Firmware / PlatformIO / Arduino
+.pio/
+.vscode/
+build/
+
+# Temporary
+tmp/
+temp/
