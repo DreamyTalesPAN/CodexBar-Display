@@ -17,6 +17,7 @@ go run ./cmd/vibeblock setup
 ```
 
 `setup` currently validates prerequisites and prints guided next steps.
+`doctor` validates CodexBar binary, lists serial ports, and shows a live provider preview.
 
 ## Runtime behavior
 

@@ -88,6 +88,18 @@ func runDoctor() error {
 	if bin == "" {
 		return errors.New("CodexBar CLI not found")
 	}
+
+	checkCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	frame, fetchErr := codexbar.FetchFirstFrame(checkCtx)
+	if fetchErr != nil {
+		fmt.Printf("Provider preview: failed (%v)\n", fetchErr)
+	} else {
+		fmt.Printf("Provider preview: %s session=%d%% weekly=%d%% reset=%ds\n",
+			frame.Label, frame.Session, frame.Weekly, frame.ResetSec)
+	}
+
 	return nil
 }
 

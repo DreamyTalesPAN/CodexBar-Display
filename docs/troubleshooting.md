@@ -30,6 +30,20 @@ go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101 --once
 
 That prints the exact error frame source in terminal.
 
+## `exit status 1 (stdout parse error: invalid character [ after top-level value)`
+
+This means CodexBar emitted more than one top-level JSON payload in one run (for example `[...] [...]`).
+Current vibeblock companion tolerates this, but you need the latest binary.
+
+Update + restart:
+
+```bash
+cd companion
+go build -o vibeblock ./cmd/vibeblock
+cp ./vibeblock "$HOME/Library/Application Support/vibeblock/bin/vibeblock"
+launchctl kickstart -k gui/$(id -u)/com.vibeblock.daemon
+```
+
 ## Display jumps between real values and `0/0`
 
 This can happen when CodexBar auto-source flips Codex between `codex-cli` and `openai-web`.

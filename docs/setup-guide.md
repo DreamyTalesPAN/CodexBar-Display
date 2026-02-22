@@ -48,4 +48,6 @@ Verify:
 ```bash
 launchctl print gui/$(id -u)/com.vibeblock.daemon | rg "state =|pid ="
 tail -f /tmp/vibeblock-daemon.out.log
+# if your local plist uses Library logs:
+tail -f "$HOME/Library/Logs/vibeblock-daemon.out.log"
 ```

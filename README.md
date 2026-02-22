@@ -63,4 +63,7 @@ Logs:
 ```bash
 tail -f /tmp/vibeblock-daemon.out.log
 tail -f /tmp/vibeblock-daemon.err.log
+# if you run a custom plist with Library logs:
+tail -f "$HOME/Library/Logs/vibeblock-daemon.out.log"
+tail -f "$HOME/Library/Logs/vibeblock-daemon.err.log"
 ```
