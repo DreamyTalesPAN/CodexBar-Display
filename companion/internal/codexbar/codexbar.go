@@ -68,7 +68,10 @@ func isExecutable(path string) bool {
 	return info.Mode()&0o111 != 0
 }
 
-// FetchAllProviders returns all provider frames from CodexBar.
+// FetchAllProviders reads provider usage from CodexBar and normalizes it.
+//
+// To handle the known Codex web bug (0/0 usage), we patch the Codex provider
+// from `--provider codex --source cli` when needed.
 func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	bin, err := FindBinary()
 	if err != nil {
@@ -76,7 +79,6 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	}
 
 	timeout := commandTimeout()
-
 	out, err := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
 	allParsed, parseErr := parseAllProviders(out)
 	if err != nil {
@@ -90,19 +92,7 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 		return nil, parseErr
 	}
 
-	// Codex CLI fallback: if Codex is openai-web with 0/0, retry with --source cli.
-	for i, p := range allParsed {
-		pf := ParsedFrame{Frame: p.Frame, Provider: p.Provider, Source: p.Source}
-		if shouldTryCodexCLIFallback(pf) {
-			cliOut, cliErr := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
-			cliAll, cliParseErr := parseAllProviders(cliOut)
-			if cliParseErr == nil && (cliErr == nil || len(bytes.TrimSpace(cliOut)) > 0) && len(cliAll) > 0 {
-				if isBetterFrame(cliAll[0].Frame, p.Frame) {
-					allParsed[i] = cliAll[0]
-				}
-			}
-		}
-	}
+	allParsed = repairCodexFromCLI(ctx, timeout, bin, allParsed)
 
 	for i := range allParsed {
 		allParsed[i].Frame = allParsed[i].Frame.Normalize()
@@ -111,24 +101,18 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	return allParsed, nil
 }
 
-// FetchFirstFrame returns the single best provider frame (legacy convenience wrapper).
+// FetchFirstFrame returns one selected frame for one-shot calls (doctor/setup).
 func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
 	all, err := FetchAllProviders(ctx)
 	if err != nil {
 		return protocol.Frame{}, err
 	}
-	if len(all) == 0 {
+	selector := NewProviderSelector()
+	selected, ok := selector.Select(all)
+	if !ok {
 		return protocol.Frame{}, errors.New("codexbar returned no providers")
 	}
-
-	// Pick the provider with the most recent lastActiveAt, falling back to updatedAt.
-	best := all[0]
-	for _, p := range all[1:] {
-		if isBetterProviderSelection(p, best) {
-			best = p
-		}
-	}
-	return best.Frame, nil
+	return selected.Frame, nil
 }
 
 func commandTimeout() time.Duration {
@@ -154,13 +138,10 @@ func runUsageCommand(parent context.Context, timeout time.Duration, bin string, 
 }
 
 type ParsedFrame struct {
-	Frame           protocol.Frame
-	Provider        string
-	Source          string
-	UpdatedAt       time.Time
-	HasUpdatedAt    bool
-	LastActiveAt    time.Time
-	HasLastActiveAt bool
+	Frame        protocol.Frame
+	Provider     string
+	Source       string
+	AccountEmail string
 }
 
 func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
@@ -196,40 +177,10 @@ func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 	if err != nil {
 		return ParsedFrame{}, err
 	}
-
-	best := all[0]
-	for _, p := range all[1:] {
-		if isBetterProviderSelection(p, best) {
-			best = p
-		}
+	if len(all) == 0 {
+		return ParsedFrame{}, errors.New("codexbar returned no providers")
 	}
-	return best, nil
-}
-
-func extractProvidersFromRawJSON(raw []byte) ([]any, error) {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	var providers []any
-
-	for {
-		var value any
-		err := dec.Decode(&value)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			// Keep already decoded provider payloads if trailing data is malformed.
-			if len(providers) > 0 {
-				break
-			}
-			return nil, fmt.Errorf("parse codexbar json: %w", err)
-		}
-
-		if parsed := extractProviderList(value); len(parsed) > 0 {
-			providers = append(providers, parsed...)
-		}
-	}
-
-	return providers, nil
+	return all[0], nil
 }
 
 func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
@@ -267,37 +218,15 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		}
 	}
 
-	updatedAt, hasUpdatedAt := firstTimeAtPaths(payload,
-		"usage.updatedAt",
-		"updatedAt",
-		"openaiDashboard.updatedAt",
-		"credits.updatedAt",
-		"usage.providerCost.updatedAt",
-		"providerCost.updatedAt",
+	accountEmail := firstStringAtPaths(payload,
+		"usage.accountEmail",
+		"usage.identity.accountEmail",
+		"accountEmail",
 	)
-
-	// Compute lastActiveAt = resetsAt - windowMinutes for the primary usage window.
-	// This approximates when the user actually triggered activity on this provider,
-	// unlike updatedAt which is just the CodexBar scrape timestamp.
-	var lastActiveAt time.Time
-	hasLastActiveAt := false
-	if resetAt != "" {
-		if rt, err := time.Parse(time.RFC3339, resetAt); err == nil {
-			windowMins, hasWindow := firstIntAtPaths(payload,
-				"usage.primary.windowMinutes",
-				"primary.windowMinutes",
-			)
-			if hasWindow && windowMins > 0 {
-				lastActiveAt = rt.Add(-time.Duration(windowMins) * time.Minute)
-				hasLastActiveAt = true
-			}
-		}
-	}
 
 	if provider == "" && label == "" {
 		return ParsedFrame{}, errors.New("provider identity missing in codexbar output")
 	}
-
 	if label == "" {
 		label = "Provider"
 	}
@@ -311,41 +240,343 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 			Weekly:   weekly,
 			ResetSec: resetSecs,
 		},
-		Provider:        provider,
-		Source:          source,
-		UpdatedAt:       updatedAt,
-		HasUpdatedAt:    hasUpdatedAt,
-		LastActiveAt:    lastActiveAt,
-		HasLastActiveAt: hasLastActiveAt,
+		Provider:     provider,
+		Source:       source,
+		AccountEmail: accountEmail,
 	}, nil
 }
 
-func isBetterProviderSelection(candidate ParsedFrame, current ParsedFrame) bool {
-	// Prefer lastActiveAt (resetsAt - windowMinutes) which approximates when
-	// the user actually used a provider. This is more meaningful than updatedAt
-	// which is just the CodexBar scrape timestamp and always favours whichever
-	// provider was queried last.
-	if candidate.HasLastActiveAt || current.HasLastActiveAt {
-		if candidate.HasLastActiveAt && !current.HasLastActiveAt {
-			return true
-		}
-		if !candidate.HasLastActiveAt && current.HasLastActiveAt {
-			return false
-		}
-		return candidate.LastActiveAt.After(current.LastActiveAt)
+// ProviderSelector tracks previous snapshots and switches only on real activity deltas.
+type ProviderSelector struct {
+	currentKey     string
+	snapshots      map[string]providerSnapshot
+	activityReader providerActivityReader
+}
+
+type providerActivityReader func() (map[string]time.Time, error)
+
+type providerSnapshot struct {
+	session int
+	weekly  int
+	reset   int64
+}
+
+type activityScore struct {
+	sessionDelta int
+	weeklyDelta  int
+	resetGain    int64
+}
+
+func NewProviderSelector() *ProviderSelector {
+	return NewProviderSelectorWithActivityReader(readLocalProviderActivity)
+}
+
+func NewProviderSelectorWithActivityReader(reader providerActivityReader) *ProviderSelector {
+	return &ProviderSelector{
+		snapshots:      make(map[string]providerSnapshot),
+		activityReader: reader,
+	}
+}
+
+func (s *ProviderSelector) Select(all []ParsedFrame) (ParsedFrame, bool) {
+	if len(all) == 0 {
+		return ParsedFrame{}, false
+	}
+	if s.snapshots == nil {
+		s.snapshots = make(map[string]providerSnapshot)
 	}
 
-	// Fall back to updatedAt when no reset window information is available.
-	if candidate.HasUpdatedAt && !current.HasUpdatedAt {
-		return true
+	selected := all[0]
+	if byActivity, ok := s.selectByRecentLocalActivity(all); ok {
+		selected = byActivity
+	} else if byDelta, ok := s.selectByUsageDelta(all); ok {
+		selected = byDelta
+	} else if s.currentKey != "" {
+		if idx := indexOfProviderKey(all, s.currentKey); idx >= 0 {
+			selected = all[idx]
+		}
 	}
-	if candidate.HasUpdatedAt && current.HasUpdatedAt {
-		return candidate.UpdatedAt.After(current.UpdatedAt)
+
+	s.currentKey = providerKey(selected)
+	next := make(map[string]providerSnapshot, len(all))
+	for _, p := range all {
+		next[providerKey(p)] = providerSnapshot{
+			session: p.Frame.Session,
+			weekly:  p.Frame.Weekly,
+			reset:   p.Frame.ResetSec,
+		}
+	}
+	s.snapshots = next
+
+	return selected, true
+}
+
+func (s *ProviderSelector) selectByRecentLocalActivity(all []ParsedFrame) (ParsedFrame, bool) {
+	if s.activityReader == nil {
+		return ParsedFrame{}, false
+	}
+
+	activityByProvider, err := s.activityReader()
+	if err != nil || len(activityByProvider) == 0 {
+		return ParsedFrame{}, false
+	}
+
+	bestIdx := -1
+	var bestAt time.Time
+	for i, p := range all {
+		at, ok := activityByProvider[providerKey(p)]
+		if !ok {
+			continue
+		}
+		if bestIdx == -1 || at.After(bestAt) {
+			bestIdx = i
+			bestAt = at
+		}
+	}
+
+	if bestIdx == -1 {
+		return ParsedFrame{}, false
+	}
+	return all[bestIdx], true
+}
+
+func (s *ProviderSelector) selectByUsageDelta(all []ParsedFrame) (ParsedFrame, bool) {
+	bestIdx := -1
+	bestScore := activityScore{}
+
+	for i, p := range all {
+		key := providerKey(p)
+		prev, ok := s.snapshots[key]
+		if !ok {
+			continue
+		}
+
+		score := computeActivityScore(prev, p.Frame)
+		if !score.hasSignal() {
+			continue
+		}
+		if bestIdx == -1 || score.betterThan(bestScore) {
+			bestIdx = i
+			bestScore = score
+		}
+	}
+
+	if bestIdx == -1 {
+		return ParsedFrame{}, false
+	}
+	return all[bestIdx], true
+}
+
+func readLocalProviderActivity() (map[string]time.Time, error) {
+	result := make(map[string]time.Time)
+
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return result, nil
+	}
+
+	if t, ok := latestCodexActivityAt(home); ok {
+		result["codex"] = t
+	}
+	if t, ok := latestClaudeActivityAt(home); ok {
+		result["claude"] = t
+	}
+
+	return result, nil
+}
+
+func latestCodexActivityAt(home string) (time.Time, bool) {
+	var latest time.Time
+
+	sessionsDir := withHome(home, envOrDefault("VIBEBLOCK_CODEX_ACTIVITY_DIR", filepath.Join("~", ".codex", "sessions")))
+	if t, err := latestJSONLModTime(sessionsDir); err == nil {
+		latest = newerTime(latest, t)
+	}
+
+	historyFile := withHome(home, envOrDefault("VIBEBLOCK_CODEX_ACTIVITY_FILE", filepath.Join("~", ".codex", "history.jsonl")))
+	if t, err := fileModTime(historyFile); err == nil {
+		latest = newerTime(latest, t)
+	}
+
+	return latest, !latest.IsZero()
+}
+
+func latestClaudeActivityAt(home string) (time.Time, bool) {
+	var latest time.Time
+
+	historyFile := withHome(home, envOrDefault("VIBEBLOCK_CLAUDE_ACTIVITY_FILE", filepath.Join("~", ".claude", "history.jsonl")))
+	if t, err := fileModTime(historyFile); err == nil {
+		latest = newerTime(latest, t)
+	}
+
+	projectsDir := withHome(home, envOrDefault("VIBEBLOCK_CLAUDE_ACTIVITY_DIR", filepath.Join("~", ".claude", "projects")))
+	if t, err := latestJSONLModTime(projectsDir); err == nil {
+		latest = newerTime(latest, t)
+	}
+
+	return latest, !latest.IsZero()
+}
+
+func envOrDefault(key, def string) string {
+	if raw := strings.TrimSpace(os.Getenv(key)); raw != "" {
+		return raw
+	}
+	return def
+}
+
+func withHome(home, value string) string {
+	v := strings.TrimSpace(value)
+	switch {
+	case v == "~":
+		return home
+	case strings.HasPrefix(v, "~/"):
+		return filepath.Join(home, strings.TrimPrefix(v, "~/"))
+	default:
+		return v
+	}
+}
+
+func latestJSONLModTime(root string) (time.Time, error) {
+	info, err := os.Stat(root)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if !info.IsDir() {
+		return time.Time{}, fmt.Errorf("not a directory: %s", root)
+	}
+
+	var latest time.Time
+	err = filepath.Walk(root, func(path string, fi os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			// Ignore inaccessible entries and continue scanning.
+			return nil
+		}
+		if fi == nil || fi.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(strings.ToLower(fi.Name()), ".jsonl") {
+			return nil
+		}
+		latest = newerTime(latest, fi.ModTime())
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+	if latest.IsZero() {
+		return time.Time{}, os.ErrNotExist
+	}
+	return latest, nil
+}
+
+func fileModTime(path string) (time.Time, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if info.IsDir() {
+		return time.Time{}, fmt.Errorf("path is a directory: %s", path)
+	}
+	return info.ModTime(), nil
+}
+
+func newerTime(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
+}
+
+func computeActivityScore(prev providerSnapshot, cur protocol.Frame) activityScore {
+	score := activityScore{}
+	if d := cur.Session - prev.session; d > 0 {
+		score.sessionDelta = d
+	}
+	if d := cur.Weekly - prev.weekly; d > 0 {
+		score.weeklyDelta = d
+	}
+
+	// resetSecs normally counts down. A jump upwards suggests a fresh activity
+	// window or state repair from a previously missing reset.
+	if prev.reset == 0 && cur.ResetSec > 0 {
+		score.resetGain = cur.ResetSec
+	} else if jump := cur.ResetSec - prev.reset; jump > 120 {
+		score.resetGain = jump
+	}
+
+	return score
+}
+
+func (s activityScore) hasSignal() bool {
+	return s.sessionDelta > 0 || s.weeklyDelta > 0 || s.resetGain > 0
+}
+
+func (s activityScore) betterThan(other activityScore) bool {
+	if s.sessionDelta != other.sessionDelta {
+		return s.sessionDelta > other.sessionDelta
+	}
+	if s.weeklyDelta != other.weeklyDelta {
+		return s.weeklyDelta > other.weeklyDelta
+	}
+	if s.resetGain != other.resetGain {
+		return s.resetGain > other.resetGain
 	}
 	return false
 }
 
-func shouldTryCodexCLIFallback(parsed ParsedFrame) bool {
+func providerKey(p ParsedFrame) string {
+	provider := strings.TrimSpace(strings.ToLower(p.Provider))
+	if provider == "" {
+		provider = strings.TrimSpace(strings.ToLower(p.Frame.Provider))
+	}
+	if provider == "" {
+		provider = strings.TrimSpace(strings.ToLower(p.Frame.Label))
+	}
+	if provider == "" {
+		provider = "provider"
+	}
+	return provider
+}
+
+func indexOfProviderKey(all []ParsedFrame, key string) int {
+	for i, p := range all {
+		if providerKey(p) == key {
+			return i
+		}
+	}
+	return -1
+}
+
+func repairCodexFromCLI(ctx context.Context, timeout time.Duration, bin string, all []ParsedFrame) []ParsedFrame {
+	idx := -1
+	for i := range all {
+		if shouldTryCodexCLIRepair(all[i]) {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return all
+	}
+
+	cliOut, cliErr := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
+	cliAll, cliParseErr := parseAllProviders(cliOut)
+	if cliErr != nil || cliParseErr != nil || len(cliAll) == 0 {
+		return all
+	}
+
+	for _, candidate := range cliAll {
+		if strings.EqualFold(strings.TrimSpace(candidate.Provider), "codex") {
+			all[idx] = candidate
+			return all
+		}
+	}
+
+	all[idx] = cliAll[0]
+	return all
+}
+
+func shouldTryCodexCLIRepair(parsed ParsedFrame) bool {
 	if !strings.EqualFold(strings.TrimSpace(parsed.Provider), "codex") {
 		return false
 	}
@@ -353,19 +584,6 @@ func shouldTryCodexCLIFallback(parsed ParsedFrame) bool {
 		return false
 	}
 	return parsed.Frame.Session == 0 && parsed.Frame.Weekly == 0 && parsed.Frame.ResetSec == 0
-}
-
-func isBetterFrame(candidate protocol.Frame, current protocol.Frame) bool {
-	if candidate.Session > current.Session {
-		return true
-	}
-	if candidate.Weekly > current.Weekly {
-		return true
-	}
-	if candidate.ResetSec > current.ResetSec {
-		return true
-	}
-	return false
 }
 
 func extractProviderList(root any) []any {
@@ -380,6 +598,32 @@ func extractProviderList(root any) []any {
 		}
 	}
 	return nil
+}
+
+func extractProvidersFromRawJSON(raw []byte) ([]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	var providers []any
+
+	for {
+		var value any
+		err := dec.Decode(&value)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			// Keep already decoded provider payloads if trailing data is malformed.
+			if len(providers) > 0 {
+				break
+			}
+			return nil, fmt.Errorf("parse codexbar json: %w", err)
+		}
+
+		if parsed := extractProviderList(value); len(parsed) > 0 {
+			providers = append(providers, parsed...)
+		}
+	}
+
+	return providers, nil
 }
 
 func humanLabel(provider string) string {
@@ -420,31 +664,6 @@ func firstStringAtPaths(m map[string]any, paths ...string) string {
 		}
 	}
 	return ""
-}
-
-func firstTimeAtPaths(m map[string]any, paths ...string) (time.Time, bool) {
-	for _, p := range paths {
-		if v, ok := getPath(m, p); ok {
-			if s, ok := anyToString(v); ok && s != "" {
-				t, err := time.Parse(time.RFC3339, s)
-				if err == nil {
-					return t, true
-				}
-			}
-		}
-	}
-	return time.Time{}, false
-}
-
-func firstIntAtPaths(m map[string]any, paths ...string) (int, bool) {
-	for _, p := range paths {
-		if v, ok := getPath(m, p); ok {
-			if n, ok := anyToInt(v); ok {
-				return n, true
-			}
-		}
-	}
-	return 0, false
 }
 
 func percentAtPaths(m map[string]any, paths ...string) int {

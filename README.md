@@ -11,7 +11,7 @@ This project reads local usage data from `codexbar usage --json` and renders one
 ## MVP Scope
 - macOS only
 - One connected display
-- Provider with most recent `updatedAt` in CodexBar output
+- Provider follows the most recently active local assistant (Codex/Claude logs), with usage-delta fallback
 - USB serial transport (no WiFi/BLE in V1)
 
 ## Start Here

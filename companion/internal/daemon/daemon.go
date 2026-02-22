@@ -22,12 +22,14 @@ func Run(ctx context.Context, opts Options) error {
 		opts.Interval = 60 * time.Second
 	}
 
+	selector := codexbar.NewProviderSelector()
+
 	var lastGood protocol.Frame
 	var lastGoodAt time.Time
 	hasLastGood := false
 
 	for {
-		if err := runCycle(ctx, opts.Port, &lastGood, &lastGoodAt, &hasLastGood); err != nil {
+		if err := runCycle(ctx, opts.Port, selector, &lastGood, &lastGoodAt, &hasLastGood); err != nil {
 			fmt.Printf("cycle error: %v\n", err)
 			if opts.Once {
 				return err
@@ -45,7 +47,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 }
 
-func runCycle(ctx context.Context, requestedPort string, lastGood *protocol.Frame, lastGoodAt *time.Time, hasLastGood *bool) error {
+func runCycle(ctx context.Context, requestedPort string, selector *codexbar.ProviderSelector, lastGood *protocol.Frame, lastGoodAt *time.Time, hasLastGood *bool) error {
 	port, err := usb.ResolvePort(requestedPort)
 	if err != nil {
 		return fmt.Errorf("detect serial device: %w", err)
@@ -63,7 +65,12 @@ func runCycle(ctx context.Context, requestedPort string, lastGood *protocol.Fram
 			frame = protocol.ErrorFrame(fetchErr.Error())
 		}
 	} else {
-		frame = selectProvider(allProviders)
+		selected, ok := selector.Select(allProviders)
+		if !ok {
+			frame = protocol.ErrorFrame("no providers")
+		} else {
+			frame = selected.Frame
+		}
 
 		if hasLastGood != nil && lastGood != nil && lastGoodAt != nil {
 			*lastGood = frame
@@ -93,46 +100,6 @@ func runCycle(ctx context.Context, requestedPort string, lastGood *protocol.Fram
 	}
 
 	return nil
-}
-
-// selectProvider picks the most recently used provider based on codexbar timestamps.
-// Preference order: lastActiveAt (derived from reset window), then updatedAt, then first entry.
-func selectProvider(all []codexbar.ParsedFrame) protocol.Frame {
-	if len(all) == 0 {
-		return protocol.ErrorFrame("no providers")
-	}
-
-	best := all[0]
-	for _, p := range all[1:] {
-		if isMoreRecent(p, best) {
-			best = p
-		}
-	}
-
-	return best.Frame
-}
-
-func isMoreRecent(candidate, current codexbar.ParsedFrame) bool {
-	// Prefer lastActiveAt when available (derived from reset window).
-	if candidate.HasLastActiveAt || current.HasLastActiveAt {
-		if candidate.HasLastActiveAt && !current.HasLastActiveAt {
-			return true
-		}
-		if !candidate.HasLastActiveAt && current.HasLastActiveAt {
-			return false
-		}
-		return candidate.LastActiveAt.After(current.LastActiveAt)
-	}
-
-	// Fallback to updatedAt when lastActiveAt is missing.
-	if candidate.HasUpdatedAt && !current.HasUpdatedAt {
-		return true
-	}
-	if candidate.HasUpdatedAt && current.HasUpdatedAt {
-		return candidate.UpdatedAt.After(current.UpdatedAt)
-	}
-
-	return false
 }
 
 func isLastGoodFresh(lastGoodAt time.Time) bool {
