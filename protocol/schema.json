@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vibeblock.dev/schema/frame-v1.json",
+  "title": "vibeblock frame v1",
+  "type": "object",
+  "required": ["v"],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "session": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "weekly": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "resetSecs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "error": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": true
+}

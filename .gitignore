@@ -18,6 +18,7 @@ coverage/
 bin/
 *.test
 *.out
+companion/vibeblock
 
 # Firmware / PlatformIO / Arduino
 .pio/

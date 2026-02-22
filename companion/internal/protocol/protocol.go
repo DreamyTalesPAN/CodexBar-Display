@@ -1,0 +1,48 @@
+package protocol
+
+import (
+	"encoding/json"
+)
+
+type Frame struct {
+	V        int    `json:"v"`
+	Provider string `json:"provider,omitempty"`
+	Label    string `json:"label,omitempty"`
+	Session  int    `json:"session,omitempty"`
+	Weekly   int    `json:"weekly,omitempty"`
+	ResetSec int64  `json:"resetSecs,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+func (f Frame) Normalize() Frame {
+	f.V = 1
+	if f.Session < 0 {
+		f.Session = 0
+	}
+	if f.Session > 100 {
+		f.Session = 100
+	}
+	if f.Weekly < 0 {
+		f.Weekly = 0
+	}
+	if f.Weekly > 100 {
+		f.Weekly = 100
+	}
+	if f.ResetSec < 0 {
+		f.ResetSec = 0
+	}
+	return f
+}
+
+func (f Frame) MarshalLine() ([]byte, error) {
+	n := f.Normalize()
+	b, err := json.Marshal(n)
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}
+
+func ErrorFrame(msg string) Frame {
+	return Frame{V: 1, Error: msg}
+}
