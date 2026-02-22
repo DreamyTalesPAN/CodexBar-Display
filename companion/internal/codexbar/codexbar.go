@@ -75,17 +75,30 @@ func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx, commandTimeout())
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, bin, "usage", "--json", "--web-timeout", "8")
-	out, err := cmd.Output()
+	out, err := runUsageCommand(cmdCtx, bin, "usage", "--json", "--web-timeout", "8")
 	if err != nil {
 		return protocol.Frame{}, fmt.Errorf("run codexbar usage --json: %w", err)
 	}
 
-	frame, err := parseUsageJSON(out)
+	parsed, err := parseUsageJSON(out)
 	if err != nil {
 		return protocol.Frame{}, err
 	}
-	return frame.Normalize(), nil
+
+	// CodexBar auto source can intermittently switch Codex to openai-web with 0/0 and no reset.
+	// In that case, query Codex CLI explicitly and prefer it when it carries better data.
+	if shouldTryCodexCLIFallback(parsed) {
+		cliOut, cliErr := runUsageCommand(cmdCtx, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
+		if cliErr == nil {
+			if cliParsed, parseErr := parseUsageJSON(cliOut); parseErr == nil {
+				if isBetterFrame(cliParsed.Frame, parsed.Frame) {
+					return cliParsed.Frame.Normalize(), nil
+				}
+			}
+		}
+	}
+
+	return parsed.Frame.Normalize(), nil
 }
 
 func commandTimeout() time.Duration {
@@ -102,23 +115,35 @@ func commandTimeout() time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-func parseUsageJSON(raw []byte) (protocol.Frame, error) {
+func runUsageCommand(ctx context.Context, bin string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, bin, args...)
+	return cmd.Output()
+}
+
+type ParsedFrame struct {
+	Frame    protocol.Frame
+	Provider string
+	Source   string
+}
+
+func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 	var root any
 	if err := json.Unmarshal(raw, &root); err != nil {
-		return protocol.Frame{}, fmt.Errorf("parse codexbar json: %w", err)
+		return ParsedFrame{}, fmt.Errorf("parse codexbar json: %w", err)
 	}
 
 	providers := extractProviderList(root)
 	if len(providers) == 0 {
-		return protocol.Frame{}, errors.New("codexbar returned no providers")
+		return ParsedFrame{}, errors.New("codexbar returned no providers")
 	}
 
 	first, ok := providers[0].(map[string]any)
 	if !ok {
-		return protocol.Frame{}, errors.New("unexpected provider payload")
+		return ParsedFrame{}, errors.New("unexpected provider payload")
 	}
 
 	provider := firstString(first, "provider", "id", "slug", "name")
+	source := firstString(first, "source")
 	label := humanLabel(provider)
 	if l := firstString(first, "label", "displayName", "name"); l != "" {
 		label = l
@@ -152,21 +177,48 @@ func parseUsageJSON(raw []byte) (protocol.Frame, error) {
 	}
 
 	if provider == "" && label == "" {
-		return protocol.Frame{}, errors.New("provider identity missing in codexbar output")
+		return ParsedFrame{}, errors.New("provider identity missing in codexbar output")
 	}
 
 	if label == "" {
 		label = "Provider"
 	}
 
-	return protocol.Frame{
-		V:        1,
+	return ParsedFrame{
+		Frame: protocol.Frame{
+			V:        1,
+			Provider: provider,
+			Label:    label,
+			Session:  session,
+			Weekly:   weekly,
+			ResetSec: resetSecs,
+		},
 		Provider: provider,
-		Label:    label,
-		Session:  session,
-		Weekly:   weekly,
-		ResetSec: resetSecs,
+		Source:   source,
 	}, nil
+}
+
+func shouldTryCodexCLIFallback(parsed ParsedFrame) bool {
+	if !strings.EqualFold(strings.TrimSpace(parsed.Provider), "codex") {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(parsed.Source), "openai-web") {
+		return false
+	}
+	return parsed.Frame.Session == 0 && parsed.Frame.Weekly == 0 && parsed.Frame.ResetSec == 0
+}
+
+func isBetterFrame(candidate protocol.Frame, current protocol.Frame) bool {
+	if candidate.Session > current.Session {
+		return true
+	}
+	if candidate.Weekly > current.Weekly {
+		return true
+	}
+	if candidate.ResetSec > current.ResetSec {
+		return true
+	}
+	return false
 }
 
 func extractProviderList(root any) []any {

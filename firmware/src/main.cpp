@@ -59,6 +59,14 @@ String formatDuration(int64_t secs) {
   return String(minutes) + "m";
 }
 
+void drawResetLine(int64_t remainSecs) {
+  tft.fillRect(10, 152, 300, 20, TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextFont(2);
+  tft.setCursor(10, 152);
+  tft.printf("Reset in %s", formatDuration(remainSecs).c_str());
+}
+
 void drawBar(int x, int y, int w, int h, int pct, uint16_t fillColor) {
   int p = clampPct(pct);
   int filled = (w * p) / 100;
@@ -115,9 +123,7 @@ void drawUsage() {
   tft.printf("Weekly  %d%%", current.weekly);
   drawBar(10, 122, 300, 16, current.weekly, TFT_GREEN);
 
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(10, 152);
-  tft.printf("Reset in %s", formatDuration(remain).c_str());
+  drawResetLine(remain);
 
   lastRenderedSecs = remain;
 }
@@ -207,10 +213,11 @@ void setup() {
 void loop() {
   consumeSerial();
 
-  if (hasFrame && !current.hasError) {
+  if (hasFrame && !current.hasError && !screenDirty) {
     int64_t remain = currentRemainingSecs();
     if (remain != lastRenderedSecs) {
-      screenDirty = true;
+      drawResetLine(remain);
+      lastRenderedSecs = remain;
     }
   }
 
