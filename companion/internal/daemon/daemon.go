@@ -56,20 +56,30 @@ func runCycle(ctx context.Context, requestedPort string, selector *codexbar.Prov
 	allProviders, fetchErr := codexbar.FetchAllProviders(ctx)
 	var frame protocol.Frame
 	usedLastGood := false
+	selectionReason := "fetch-error"
+	selectionDetail := ""
 
 	if fetchErr != nil {
 		if hasLastGood != nil && *hasLastGood && lastGood != nil && lastGoodAt != nil && isLastGoodFresh(*lastGoodAt) {
 			frame = *lastGood
 			usedLastGood = true
+			selectionReason = "stale-last-good"
+			selectionDetail = "codexbar-fetch-failed"
 		} else {
 			frame = protocol.ErrorFrame(fetchErr.Error())
+			selectionReason = "error-frame"
+			selectionDetail = "codexbar-fetch-failed-without-last-good"
 		}
 	} else {
-		selected, ok := selector.Select(allProviders)
+		decision, ok := selector.SelectWithDecision(allProviders)
 		if !ok {
 			frame = protocol.ErrorFrame("no providers")
+			selectionReason = "error-frame"
+			selectionDetail = "no-providers-after-selection"
 		} else {
-			frame = selected.Frame
+			frame = decision.Selected.Frame
+			selectionReason = string(decision.Reason)
+			selectionDetail = decision.Detail
 		}
 
 		if hasLastGood != nil && lastGood != nil && lastGoodAt != nil {
@@ -88,8 +98,8 @@ func runCycle(ctx context.Context, requestedPort string, selector *codexbar.Prov
 		return err
 	}
 
-	fmt.Printf("sent frame -> %s provider=%s label=%s session=%d weekly=%d reset=%ds error=%q\n",
-		port, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Error)
+	fmt.Printf("sent frame -> %s provider=%s label=%s session=%d weekly=%d reset=%ds error=%q reason=%s detail=%q\n",
+		port, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Error, selectionReason, selectionDetail)
 
 	if fetchErr != nil {
 		if usedLastGood {

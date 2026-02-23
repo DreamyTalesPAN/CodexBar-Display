@@ -7,11 +7,14 @@ This project reads local usage data from `codexbar usage --json` and renders one
 ## Project Docs
 - Product requirements: `vibeblock-prd.md`
 - Execution checklist: `TODO.md`
+- Provider selection rules: `docs/provider-selection.md`
+- Provider activity detectors: `docs/provider-activity-sources.md`
+- Milestone 1 test matrix: `docs/m1-test-matrix.md`
 
 ## MVP Scope
 - macOS only
 - One connected display
-- Provider follows the most recently active local assistant (Codex/Claude logs), with usage-delta fallback
+- Provider selection stays in companion (local activity -> usage delta -> sticky current -> CodexBar order)
 - USB serial transport (no WiFi/BLE in V1)
 
 ## Start Here

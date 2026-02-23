@@ -59,6 +59,35 @@ cd companion
 ./vibeblock daemon --port /dev/cu.usbmodem101 --once
 ```
 
+## Provider selection seems wrong
+
+Check the daemon log and inspect `reason=` and `detail=`:
+
+```bash
+tail -n 50 /tmp/vibeblock-daemon.out.log
+```
+
+Selection reasons are deterministic (`local-activity`, `usage-delta`, `sticky-current`, `codexbar-order`).
+If local activity is too noisy or too old, tune:
+
+```bash
+export VIBEBLOCK_ACTIVITY_CONFLICT_WINDOW=15s
+export VIBEBLOCK_ACTIVITY_MAX_AGE=6h
+```
+
+For providers without built-in local artifacts (for example `openrouter`, `warp`, `zai`), you can add custom detector paths:
+
+```bash
+export VIBEBLOCK_ACTIVITY_FILE_KIMI=~/path/to/kimi-activity.log
+export VIBEBLOCK_ACTIVITY_DIR_OLLAMA=~/path/to/ollama-activity-dir
+```
+
+`kimi` and `ollama` also have built-in Chromium cookie detectors. If those do not trigger on your machine, set explicit DB paths:
+
+```bash
+export VIBEBLOCK_CHROMIUM_COOKIE_DB_PATHS="$HOME/Library/Application Support/Google/Chrome/Default/Cookies"
+```
+
 ## Upload fails with `Failed to connect to ESP32-S3`
 
 Usually another process (e.g. running daemon or serial monitor) still holds the serial device.
