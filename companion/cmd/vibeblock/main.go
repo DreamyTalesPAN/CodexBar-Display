@@ -11,6 +11,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -27,7 +28,7 @@ func main() {
 	case "doctor":
 		err = runDoctor()
 	case "setup":
-		err = runSetup()
+		err = runSetup(os.Args[2:])
 	default:
 		printUsage()
 		os.Exit(2)
@@ -43,7 +44,7 @@ func printUsage() {
 	fmt.Println("vibeblock commands:")
 	fmt.Println("  vibeblock daemon [--port /dev/cu.usbmodem101] [--interval 60s] [--once]")
 	fmt.Println("  vibeblock doctor")
-	fmt.Println("  vibeblock setup")
+	fmt.Println("  vibeblock setup [--port /dev/cu.usbmodem101] [--yes] [--skip-flash]")
 }
 
 func runDaemon(args []string) error {
@@ -134,14 +135,18 @@ func runDoctorRuntimeChecks() error {
 	return nil
 }
 
-func runSetup() error {
-	fmt.Println("vibeblock setup")
-	if err := runDoctor(); err != nil {
+func runSetup(args []string) error {
+	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
+	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	yes := fs.Bool("yes", false, "auto-select defaults without prompts")
+	skipFlash := fs.Bool("skip-flash", false, "skip firmware flashing")
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	fmt.Println("\nNext:")
-	fmt.Println("1) Flash firmware:  cd firmware && pio run -t upload --upload-port /dev/cu.usbmodem101")
-	fmt.Println("2) Start daemon:    cd companion && go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101")
-	fmt.Println("3) Install launchd: companion/install/com.vibeblock.daemon.plist")
-	return nil
+
+	return setup.Run(context.Background(), setup.Options{
+		Port:      strings.TrimSpace(*port),
+		AssumeYes: *yes,
+		SkipFlash: *skipFlash,
+	})
 }

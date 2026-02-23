@@ -14,9 +14,23 @@ go run ./cmd/vibeblock doctor
 go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101 --once
 go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101 --interval 60s
 go run ./cmd/vibeblock setup
+go run ./cmd/vibeblock setup --yes
+go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101 --skip-flash
 ```
 
-`setup` currently validates prerequisites and prints guided next steps.
+`setup` is a one-command installer and is safe to run repeatedly:
+- verifies CodexBar CLI, auto-installs CodexBar via Homebrew (`brew install --cask steipete/tap/codexbar`) when missing
+- resolves serial port (interactive selection when multiple devices are found)
+- flashes firmware (`pio run -e lilygo_t_display_s3 -t upload --upload-port <port>`)
+- installs current `vibeblock` binary into `~/Library/Application Support/vibeblock/bin/vibeblock`
+- writes/updates `~/Library/LaunchAgents/com.vibeblock.daemon.plist`
+- restarts launch agent (`bootout -> bootstrap -> kickstart`) and verifies running/waiting state
+
+Setup flags:
+- `--port`: force serial port
+- `--yes`: auto-select defaults without prompt
+- `--skip-flash`: skip firmware flashing
+
 `doctor` validates CodexBar binary, lists serial ports, runs runtime serial checks, and shows a live provider preview.
 
 ## Runtime behavior

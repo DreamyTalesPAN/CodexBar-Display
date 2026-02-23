@@ -1,8 +1,19 @@
 # Troubleshooting
 
-## `command not found: codexbar`
+## Setup fails at `codexbar-install`
 
-The companion supports desktop-only installs by auto-discovering:
+`vibeblock setup` auto-installs CodexBar with:
+
+```bash
+brew install --cask steipete/tap/codexbar
+```
+
+If that fails:
+- verify Homebrew installation
+- run the command manually to see full output
+- install from https://codexbar.app/ and retry setup
+
+Companion auto-discovery paths:
 - `/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI`
 - `~/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI`
 - `~/Downloads/CodexBar.app/Contents/Helpers/CodexBarCLI`
@@ -11,6 +22,31 @@ You can also force a path:
 
 ```bash
 export CODEXBAR_BIN="$HOME/Downloads/CodexBar.app/Contents/Helpers/CodexBarCLI"
+```
+
+## Setup fails at `flash-firmware`
+
+Most common cause: serial device is busy (daemon/monitor still open).
+
+```bash
+launchctl bootout gui/$(id -u)/com.vibeblock.daemon 2>/dev/null || true
+lsof /dev/cu.usbmodem101
+```
+
+Then rerun setup with explicit port:
+
+```bash
+cd companion
+go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101
+```
+
+## Setup fails at `launchagent-*`
+
+Inspect launchd state + logs:
+
+```bash
+launchctl print gui/$(id -u)/com.vibeblock.daemon
+tail -n 100 /tmp/vibeblock-daemon.err.log
 ```
 
 ## No serial device found

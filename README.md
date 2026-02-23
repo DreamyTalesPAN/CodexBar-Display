@@ -27,29 +27,27 @@ This project reads local usage data from `codexbar usage --json` and renders one
 ## Current Status
 
 - Firmware + daemon path is working on macOS with LILYGO T-Display-S3.
-- `vibeblock setup` is currently a doctor-style helper (not full one-command setup yet).
+- `vibeblock setup` is a full one-command installer (CodexBar check/install, firmware flash, LaunchAgent install/start).
 
 ## Quickstart (Current)
 
 ```bash
-# flash firmware
-cd firmware
-pio run -e lilygo_t_display_s3 -t upload --upload-port /dev/cu.usbmodem101
+# one-command setup
+cd companion
+go run ./cmd/vibeblock setup
 
-# build companion
-cd ../companion
+# optional non-interactive mode
+go run ./cmd/vibeblock setup --yes
+
+# runtime health checks
 go run ./cmd/vibeblock doctor
-go build -o vibeblock ./cmd/vibeblock
-
-# one-shot validation (sends one frame)
-./vibeblock daemon --port /dev/cu.usbmodem101 --once
 ```
 
 Companion supports both:
 - `codexbar` CLI in `PATH`
 - Desktop app helper (`CodexBarCLI`) inside `CodexBar.app`
 
-## Run As LaunchAgent
+## Manual LaunchAgent Flow (Optional)
 
 ```bash
 cd companion

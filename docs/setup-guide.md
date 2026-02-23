@@ -1,53 +1,52 @@
-# Setup Guide (MVP)
+# Setup Guide
 
-Note: `vibeblock setup` is not yet a full one-command installer. Use the manual flow below.
+`vibeblock setup` is now the primary install path for a fresh macOS machine.
 
-## 1. Hardware
+It performs all required steps in one command:
+1. Ensure CodexBar CLI is available (auto-install via Homebrew when missing)
+2. Detect/select serial port
+3. Flash firmware
+4. Install companion binary into `~/Library/Application Support/vibeblock/bin/vibeblock`
+5. Install and start LaunchAgent (`com.vibeblock.daemon`)
 
-1. Connect LILYGO T-Display-S3 via USB-C data cable.
-2. Confirm serial path appears:
+## One-command setup
 
 ```bash
-ls /dev/cu.usb*
+cd companion
+go run ./cmd/vibeblock setup
 ```
 
-## 2. Flash firmware
+If multiple serial devices are connected, setup asks which port to use.
+
+## Useful flags
 
 ```bash
-cd firmware
-pio run -e lilygo_t_display_s3 -t upload --upload-port /dev/cu.usbmodem101
+# Non-interactive mode (auto-select recommended serial port)
+go run ./cmd/vibeblock setup --yes
+
+# Force a specific serial path
+go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101
+
+# Skip firmware flash (service/binary install only)
+go run ./cmd/vibeblock setup --skip-flash
 ```
 
-## 3. Run companion daemon
+## What gets installed
+
+- Binary: `~/Library/Application Support/vibeblock/bin/vibeblock`
+- LaunchAgent: `~/Library/LaunchAgents/com.vibeblock.daemon.plist`
+- Logs:
+  - `/tmp/vibeblock-daemon.out.log`
+  - `/tmp/vibeblock-daemon.err.log`
+
+Setup is idempotent: re-running updates binary/plist and restarts the agent safely.
+
+## Verify runtime
 
 ```bash
-cd ../companion
+cd companion
 go run ./cmd/vibeblock doctor
-go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101 --interval 60s
-```
-
-The daemon reads live data from CodexBar and sends one JSON line every poll cycle.
-
-## 4. Install as launchd service
-
-```bash
-cd ../companion
-go build -o vibeblock ./cmd/vibeblock
-mkdir -p "$HOME/Library/Application Support/vibeblock/bin"
-cp ./vibeblock "$HOME/Library/Application Support/vibeblock/bin/vibeblock"
-
-mkdir -p "$HOME/Library/LaunchAgents"
-cp ./install/com.vibeblock.daemon.plist "$HOME/Library/LaunchAgents/com.vibeblock.daemon.plist"
-
-launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/com.vibeblock.daemon.plist"
-launchctl kickstart -k gui/$(id -u)/com.vibeblock.daemon
-```
-
-Verify:
-
-```bash
 launchctl print gui/$(id -u)/com.vibeblock.daemon | rg "state =|pid ="
 tail -f /tmp/vibeblock-daemon.out.log
-# if your local plist uses Library logs:
-tail -f "$HOME/Library/Logs/vibeblock-daemon.out.log"
 ```
+

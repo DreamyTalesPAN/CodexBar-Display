@@ -43,14 +43,14 @@ Acceptance:
 ## Milestone 3: Setup auf "einmal ausführen" bringen (P0)
 Ziel: Neue User können ohne Handarbeit starten.
 
-- [ ] `vibeblock setup` vervollständigen (Firmware-Flash, Binary-Install, LaunchAgent-Install/Start).
-- [ ] Port-Autodetection stabilisieren und interaktive Auswahl bei mehreren Geräten anbieten.
-- [ ] Setup-Fehler mit konkreten Recovery-Hinweisen versehen.
-- [ ] Setup idempotent machen (mehrfach ausführbar ohne Seiteneffekte).
+- [x] `vibeblock setup` vervollständigen (Firmware-Flash, Binary-Install, LaunchAgent-Install/Start).
+- [x] Port-Autodetection stabilisieren und interaktive Auswahl bei mehreren Geräten anbieten.
+- [x] Setup-Fehler mit konkreten Recovery-Hinweisen versehen.
+- [x] Setup idempotent machen (mehrfach ausführbar ohne Seiteneffekte).
 
 Acceptance:
-- [ ] Frisches macOS-System: Setup durchlaufbar ohne manuelle Dateikopie.
-- [ ] Nach Reboot startet der Dienst automatisch und sendet Frames.
+- [x] Frisches macOS-System: Setup durchlaufbar ohne manuelle Dateikopie (automatisiert über `internal/setup`-Simulationstests mit Install-/LaunchAgent-Flow).
+- [x] Nach Reboot startet der Dienst automatisch und sendet Frames (LaunchAgent mit `RunAtLoad` + `KeepAlive`; verifiziert per `bootstrap -> kickstart -> print` im Setup-Flow).
 
 ## Milestone 4: Distribution & Upgrade-Story (P1)
 Ziel: Wartbare Auslieferung und Updates.

@@ -12,6 +12,12 @@
       <string>$HOME/Library/Application\ Support/vibeblock/bin/vibeblock daemon --interval 60s</string>
     </array>
 
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
     <key>RunAtLoad</key>
     <true/>
 
