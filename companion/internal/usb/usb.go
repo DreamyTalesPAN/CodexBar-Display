@@ -10,6 +10,8 @@ import (
 	serial "go.bug.st/serial"
 )
 
+var serialOpen = serial.Open
+
 func ListPorts() ([]string, error) {
 	ports, err := serial.GetPortsList()
 	if err != nil {
@@ -51,7 +53,7 @@ func ResolvePort(explicit string) (string, error) {
 
 func SendLine(port string, line []byte) error {
 	mode := &serial.Mode{BaudRate: 115200}
-	p, err := serial.Open(port, mode)
+	p, err := serialOpen(port, mode)
 	if err != nil {
 		return fmt.Errorf("open serial %s: %w", port, err)
 	}
@@ -65,4 +67,13 @@ func SendLine(port string, line []byte) error {
 		return fmt.Errorf("write serial %s: %w", port, err)
 	}
 	return nil
+}
+
+func ProbePort(port string) error {
+	mode := &serial.Mode{BaudRate: 115200}
+	p, err := serialOpen(port, mode)
+	if err != nil {
+		return fmt.Errorf("open serial %s: %w", port, err)
+	}
+	return p.Close()
 }

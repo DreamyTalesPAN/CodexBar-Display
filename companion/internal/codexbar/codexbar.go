@@ -25,6 +25,68 @@ var knownBinaryPaths = []string{
 	"/Applications/CodexBar.app/Contents/MacOS/CodexBar",
 }
 
+var (
+	ErrNoProviders             = errors.New("codexbar returned no providers")
+	ErrUnexpectedProviderShape = errors.New("unexpected provider payload")
+)
+
+type FetchErrorKind string
+
+const (
+	FetchErrorUnknown     FetchErrorKind = "unknown"
+	FetchErrorBinary      FetchErrorKind = "binary"
+	FetchErrorCommand     FetchErrorKind = "command"
+	FetchErrorParse       FetchErrorKind = "parse"
+	FetchErrorNoProviders FetchErrorKind = "no-providers"
+)
+
+type FetchError struct {
+	Kind FetchErrorKind
+	Err  error
+}
+
+func (e *FetchError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Err == nil {
+		return fmt.Sprintf("fetch error (%s)", e.Kind)
+	}
+	return e.Err.Error()
+}
+
+func (e *FetchError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func FetchErrorKindOf(err error) FetchErrorKind {
+	var fetchErr *FetchError
+	if errors.As(err, &fetchErr) && fetchErr != nil {
+		return fetchErr.Kind
+	}
+	return FetchErrorUnknown
+}
+
+func wrapFetchError(kind FetchErrorKind, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &FetchError{
+		Kind: kind,
+		Err:  err,
+	}
+}
+
+func classifyParseError(err error) FetchErrorKind {
+	if errors.Is(err, ErrNoProviders) {
+		return FetchErrorNoProviders
+	}
+	return FetchErrorParse
+}
+
 func FindBinary() (string, error) {
 	if env := strings.TrimSpace(os.Getenv("CODEXBAR_BIN")); env != "" {
 		if isExecutable(env) {
@@ -76,7 +138,7 @@ func isExecutable(path string) bool {
 func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	bin, err := FindBinary()
 	if err != nil {
-		return nil, err
+		return nil, wrapFetchError(FetchErrorBinary, err)
 	}
 
 	timeout := commandTimeout()
@@ -84,13 +146,13 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	allParsed, parseErr := parseAllProviders(out)
 	if err != nil {
 		if len(bytes.TrimSpace(out)) == 0 {
-			return nil, fmt.Errorf("run codexbar usage --json: %w", err)
+			return nil, wrapFetchError(FetchErrorCommand, fmt.Errorf("run codexbar usage --json: %w", err))
 		}
 		if parseErr != nil {
-			return nil, fmt.Errorf("run codexbar usage --json: %w (stdout parse error: %v)", err, parseErr)
+			return nil, wrapFetchError(classifyParseError(parseErr), fmt.Errorf("run codexbar usage --json: %w (stdout parse error: %v)", err, parseErr))
 		}
 	} else if parseErr != nil {
-		return nil, parseErr
+		return nil, wrapFetchError(classifyParseError(parseErr), parseErr)
 	}
 
 	allParsed = repairCodexFromCLI(ctx, timeout, bin, allParsed)
@@ -111,9 +173,13 @@ func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
 	selector := NewProviderSelector()
 	selected, ok := selector.Select(all)
 	if !ok {
-		return protocol.Frame{}, errors.New("codexbar returned no providers")
+		return protocol.Frame{}, ErrNoProviders
 	}
 	return selected.Frame, nil
+}
+
+func CommandTimeout() time.Duration {
+	return commandTimeout()
 }
 
 func commandTimeout() time.Duration {
@@ -151,7 +217,7 @@ func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
 		return nil, err
 	}
 	if len(providers) == 0 {
-		return nil, errors.New("codexbar returned no providers")
+		return nil, ErrNoProviders
 	}
 
 	var result []ParsedFrame
@@ -168,7 +234,7 @@ func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
 	}
 
 	if len(result) == 0 {
-		return nil, errors.New("unexpected provider payload")
+		return nil, ErrUnexpectedProviderShape
 	}
 	return result, nil
 }
@@ -179,7 +245,7 @@ func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 		return ParsedFrame{}, err
 	}
 	if len(all) == 0 {
-		return ParsedFrame{}, errors.New("codexbar returned no providers")
+		return ParsedFrame{}, ErrNoProviders
 	}
 	return all[0], nil
 }

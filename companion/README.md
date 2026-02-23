@@ -17,12 +17,15 @@ go run ./cmd/vibeblock setup
 ```
 
 `setup` currently validates prerequisites and prints guided next steps.
-`doctor` validates CodexBar binary, lists serial ports, and shows a live provider preview.
+`doctor` validates CodexBar binary, lists serial ports, runs runtime serial checks, and shows a live provider preview.
 
 ## Runtime behavior
 
 - Poll interval defaults to `60s`.
+- Runtime retry backoff on errors is `1s -> 2s -> 4s -> ... -> 30s` (capped by poll interval).
 - When CodexBar fails temporarily, the daemon reuses the last good frame for up to `10m` (configurable).
+- Sleep/Wake gaps are auto-detected; retry state is reset for faster recovery after wake.
+- If a configured serial port disappears (for example `/dev/cu.usbmodem101` -> `/dev/cu.usbmodem1101` after reconnect), the daemon auto-falls back to port autodetection and continues.
 - Local activity uses provider detectors:
   - `codex` detector: latest `~/.codex/sessions/**/*.jsonl` plus `~/.codex/history.jsonl`
   - `claude` detector: latest `~/.claude/history.jsonl` plus `~/.claude/projects/**/*.jsonl` and `~/.config/claude/projects/**/*.jsonl`
@@ -51,6 +54,7 @@ go run ./cmd/vibeblock setup
 - Local activity older than `6h` is ignored by default.
 - Low-confidence local activity (for example browser-cookie signals) is capped at `20m` max age.
 - For Codex specifically, if `source=openai-web` reports `0/0` with no reset, the daemon repairs Codex data via `--provider codex --source cli`.
+- Unified runtime error frames use stable codes like `runtime/codexbar-parse` and `runtime/serial-write`.
 - Daemon logs include `reason=<selection strategy>` and `detail=<tie-break context>` for each sent frame.
 
 Environment variables:

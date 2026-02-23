@@ -19,9 +19,30 @@ export CODEXBAR_BIN="$HOME/Downloads/CodexBar.app/Contents/Helpers/CodexBarCLI"
 - Try a known data cable
 - Run `ls /dev/cu.usb*`
 
+If you see repeated
+`serial port not found: /dev/cu.usbmodem...`
+after reconnect, macOS may have renumbered the device (for example `...101` to `...1101`).
+Current daemon behavior auto-falls back to port autodetection and logs:
+`runtime event=port-fallback ...`
+
 ## Display shows error
 
-Run:
+Current runtime errors are standardized as `runtime/<kind>`:
+- `runtime/serial-resolve`
+- `runtime/serial-write`
+- `runtime/codexbar-binary`
+- `runtime/codexbar-command`
+- `runtime/codexbar-parse`
+- `runtime/no-providers`
+
+Run `doctor` first to verify runtime checks:
+
+```bash
+cd companion
+go run ./cmd/vibeblock doctor
+```
+
+Then run a one-shot daemon cycle for detailed context:
 
 ```bash
 cd companion

@@ -1,6 +1,7 @@
 package codexbar
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -398,6 +399,26 @@ func TestShouldNotTryCodexCLIRepairForNonCodex(t *testing.T) {
 
 	if shouldTryCodexCLIRepair(parsed) {
 		t.Fatalf("expected repair=false for non-codex")
+	}
+}
+
+func TestFetchErrorKindOf(t *testing.T) {
+	parseErr := wrapFetchError(FetchErrorParse, errors.New("parse failure"))
+	if got := FetchErrorKindOf(parseErr); got != FetchErrorParse {
+		t.Fatalf("expected parse kind, got %s", got)
+	}
+
+	if got := FetchErrorKindOf(errors.New("plain error")); got != FetchErrorUnknown {
+		t.Fatalf("expected unknown kind for non-fetch error, got %s", got)
+	}
+}
+
+func TestClassifyParseError(t *testing.T) {
+	if got := classifyParseError(ErrNoProviders); got != FetchErrorNoProviders {
+		t.Fatalf("expected no-providers kind, got %s", got)
+	}
+	if got := classifyParseError(errors.New("bad payload")); got != FetchErrorParse {
+		t.Fatalf("expected parse kind, got %s", got)
 	}
 }
 

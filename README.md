@@ -10,6 +10,7 @@ This project reads local usage data from `codexbar usage --json` and renders one
 - Provider selection rules: `docs/provider-selection.md`
 - Provider activity detectors: `docs/provider-activity-sources.md`
 - Milestone 1 test matrix: `docs/m1-test-matrix.md`
+- Milestone 2 runtime resilience: `docs/m2-runtime-resilience.md`
 
 ## MVP Scope
 - macOS only

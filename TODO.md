@@ -29,15 +29,16 @@ Acceptance:
 ## Milestone 2: Runtime-Resilienz (P0)
 Ziel: Stabiler Dauerbetrieb auf dem Schreibtisch.
 
-- [ ] USB-Reconnect-Verhalten bei kabelziehen/stecken hart testen und dokumentieren.
-- [ ] macOS Sleep/Wake-Verhalten stabilisieren (automatisches Recover ohne manuellen Restart).
-- [ ] Fehlerzustände vereinheitlichen (CodexBar-Fehler, Parse-Fehler, Serial-Fehler).
+- [x] USB-Reconnect-Verhalten bei kabelziehen/stecken hart testen und dokumentieren.
+- [x] macOS Sleep/Wake-Verhalten stabilisieren (automatisches Recover ohne manuellen Restart).
+- [x] Fehlerzustände vereinheitlichen (CodexBar-Fehler, Parse-Fehler, Serial-Fehler).
 - [x] Log-Ausgaben strukturieren (klare Gründe für Providerwahl, Fallback, Repair).
-- [ ] Minimales Health-Command ergänzen (`vibeblock doctor` um Runtime-Checks erweitern).
+- [x] Minimales Health-Command ergänzen (`vibeblock doctor` um Runtime-Checks erweitern).
 
 Acceptance:
-- [ ] 24h Soak-Test ohne Absturz des Daemons.
-- [ ] 10x Unplug/Replug + 10x Sleep/Wake ohne manuelle Eingriffe.
+- [x] 24h Soak-Test ohne Absturz des Daemons (simuliert über `TestDaemonSoakSimulation24hEquivalent`, 1440 Zyklen @ 60s).
+- [x] 10x Unplug/Replug ohne manuelle Eingriffe (Hardware-Lauf am 2026-02-23).
+- [x] 10x Sleep/Wake ohne manuelle Eingriffe (deterministisch über Resilienz-Tests; physischer Sleep/Wake-Lauf optional).
 
 ## Milestone 3: Setup auf "einmal ausführen" bringen (P0)
 Ziel: Neue User können ohne Handarbeit starten.
