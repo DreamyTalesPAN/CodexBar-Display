@@ -1,6 +1,7 @@
 package codexbar
 
 import (
+	"bytes"
 	"errors"
 	"strconv"
 	"strings"
@@ -52,6 +53,45 @@ func TestParseUsageJSONKeepsFirstDecodedValueOnTrailingGarbage(t *testing.T) {
 	}
 	if parsed.Provider != "codex" {
 		t.Fatalf("expected codex from first decoded value, got %q", parsed.Provider)
+	}
+}
+
+func TestParseUsageJSONHandlesLeadingGarbageBeforeJSON(t *testing.T) {
+	raw := []byte(`Error: OpenAI dashboard data not found
+[{"source":"web","usage":{"primary":{"usedPercent":2}},"provider":"claude"}]`)
+
+	parsed, err := parseUsageJSON(raw)
+	if err != nil {
+		t.Fatalf("parseUsageJSON failed: %v", err)
+	}
+	if parsed.Provider != "claude" {
+		t.Fatalf("expected claude from JSON payload after error prefix, got %q", parsed.Provider)
+	}
+}
+
+func TestShouldRetryAfterStartingCodexBarAppWhenDashboardMissing(t *testing.T) {
+	raw := []byte("Error: OpenAI dashboard data not found. Body sample: Download app")
+	should := shouldRetryAfterStartingCodexBarApp(errors.New("exit status 1"), ErrNoProviders, nil, raw)
+	if !should {
+		t.Fatalf("expected retry when codexbar output indicates dashboard app requirement")
+	}
+}
+
+func TestShouldRetryAfterStartingCodexBarAppSkipsWhenParsedDataExists(t *testing.T) {
+	raw := []byte("Error but with usable payload")
+	parsed := []ParsedFrame{
+		{Frame: protocol.Frame{Provider: "claude"}, Provider: "claude"},
+	}
+	should := shouldRetryAfterStartingCodexBarApp(errors.New("exit status 1"), nil, parsed, raw)
+	if should {
+		t.Fatalf("expected no retry when parsed providers already exist")
+	}
+}
+
+func TestShouldRetryAfterStartingCodexBarAppOnEmptyOutput(t *testing.T) {
+	should := shouldRetryAfterStartingCodexBarApp(errors.New("exit status 1"), ErrNoProviders, nil, bytes.TrimSpace([]byte{}))
+	if !should {
+		t.Fatalf("expected retry on empty output + command error")
 	}
 }
 

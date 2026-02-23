@@ -144,6 +144,16 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	timeout := commandTimeout()
 	out, err := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
 	allParsed, parseErr := parseAllProviders(out)
+	if shouldRetryAfterStartingCodexBarApp(err, parseErr, allParsed, out) {
+		startCodexBarApp(ctx)
+		retryOut, retryErr := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
+		retryParsed, retryParseErr := parseAllProviders(retryOut)
+		out = retryOut
+		err = retryErr
+		allParsed = retryParsed
+		parseErr = retryParseErr
+	}
+
 	if err != nil {
 		if len(bytes.TrimSpace(out)) == 0 {
 			return nil, wrapFetchError(FetchErrorCommand, fmt.Errorf("run codexbar usage --json: %w", err))
@@ -162,6 +172,42 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	}
 
 	return allParsed, nil
+}
+
+func shouldRetryAfterStartingCodexBarApp(cmdErr error, parseErr error, parsed []ParsedFrame, raw []byte) bool {
+	if cmdErr == nil {
+		return false
+	}
+	if len(parsed) > 0 {
+		return false
+	}
+
+	lower := strings.ToLower(string(raw))
+	if strings.Contains(lower, "dashboard data not found") ||
+		strings.Contains(lower, "download app") ||
+		strings.Contains(lower, "openai dashboard data not found") {
+		return true
+	}
+
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return true
+	}
+
+	return errors.Is(parseErr, ErrNoProviders)
+}
+
+func startCodexBarApp(parent context.Context) {
+	cmdCtx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+
+	_ = exec.CommandContext(cmdCtx, "open", "-a", "CodexBar").Run()
+
+	// Give launch services a short moment to bring up app internals before retry.
+	select {
+	case <-parent.Done():
+		return
+	case <-time.After(1500 * time.Millisecond):
+	}
 }
 
 // FetchFirstFrame returns one selected frame for one-shot calls (doctor/setup).
@@ -1575,6 +1621,34 @@ func extractProviderList(root any) []any {
 }
 
 func extractProvidersFromRawJSON(raw []byte) ([]any, error) {
+	providers, err := decodeProvidersFromRaw(raw)
+	if err == nil || len(providers) > 0 {
+		return providers, err
+	}
+
+	// CodexBar can occasionally prefix stderr-like text before JSON while still
+	// emitting a valid provider payload later in stdout. In that case, retry
+	// decode from the first JSON token start.
+	remainder := raw
+	for len(remainder) > 0 {
+		idx := bytes.IndexAny(remainder, "[{")
+		if idx == -1 {
+			break
+		}
+
+		candidate := remainder[idx:]
+		parsed, parseErr := decodeProvidersFromRaw(candidate)
+		if parseErr == nil || len(parsed) > 0 {
+			return parsed, parseErr
+		}
+
+		remainder = candidate[1:]
+	}
+
+	return nil, err
+}
+
+func decodeProvidersFromRaw(raw []byte) ([]any, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	var providers []any
 
