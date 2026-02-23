@@ -27,6 +27,16 @@ int64_t lastRenderedSecs = -1;
 unsigned long resetBaseMillis = 0;
 int64_t resetBaseSecs = 0;
 
+constexpr int kContentX = 10;
+constexpr int kContentW = 300;
+constexpr int kSessionLabelY = 48;
+constexpr int kSessionBarY = 72;
+constexpr int kWeeklyLabelY = 92;
+constexpr int kWeeklyBarY = 116;
+constexpr int kBarHeight = 12;
+constexpr int kResetY = 140;
+constexpr uint16_t kAnthropicOrange = 0xDBAA;
+
 int clampPct(int v) {
   if (v < 0) {
     return 0;
@@ -61,11 +71,28 @@ String formatDuration(int64_t secs) {
 }
 
 void drawResetLine(int64_t remainSecs) {
-  tft.fillRect(10, 152, 300, 20, TFT_BLACK);
+  tft.fillRect(kContentX, kResetY, kContentW, 28, TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextFont(2);
-  tft.setCursor(10, 152);
+  tft.setTextFont(4);
+  tft.setCursor(kContentX, kResetY);
   tft.printf("Reset in %s", formatDuration(remainSecs).c_str());
+}
+
+void barColorsForProvider(const String& provider, uint16_t& sessionColor, uint16_t& weeklyColor) {
+  sessionColor = TFT_CYAN;
+  weeklyColor = TFT_GREEN;
+
+  String p = provider;
+  p.toLowerCase();
+  if (p == "codex") {
+    sessionColor = TFT_WHITE;
+    weeklyColor = TFT_WHITE;
+    return;
+  }
+  if (p == "claude") {
+    sessionColor = kAnthropicOrange;
+    weeklyColor = kAnthropicOrange;
+  }
 }
 
 void drawBar(int x, int y, int w, int h, int pct, uint16_t fillColor) {
@@ -107,22 +134,25 @@ void drawError(const String& message) {
 
 void drawUsage() {
   int64_t remain = currentRemainingSecs();
+  uint16_t sessionColor = TFT_CYAN;
+  uint16_t weeklyColor = TFT_GREEN;
+  barColorsForProvider(current.provider, sessionColor, weeklyColor);
 
   tft.fillScreen(TFT_BLACK);
   tft.setTextFont(4);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(10, 12);
+  tft.setCursor(kContentX, 10);
   tft.println(current.label.length() ? current.label : "Provider");
 
-  tft.setTextFont(2);
+  tft.setTextFont(4);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setCursor(10, 60);
-  tft.printf("Session %d%%", current.session);
-  drawBar(10, 76, 300, 16, current.session, TFT_CYAN);
+  tft.setCursor(kContentX, kSessionLabelY);
+  tft.printf("Session %d%% used", current.session);
+  drawBar(kContentX, kSessionBarY, kContentW, kBarHeight, current.session, sessionColor);
 
-  tft.setCursor(10, 106);
-  tft.printf("Weekly  %d%%", current.weekly);
-  drawBar(10, 122, 300, 16, current.weekly, TFT_GREEN);
+  tft.setCursor(kContentX, kWeeklyLabelY);
+  tft.printf("Weekly %d%% used", current.weekly);
+  drawBar(kContentX, kWeeklyBarY, kContentW, kBarHeight, current.weekly, weeklyColor);
 
   drawResetLine(remain);
 
