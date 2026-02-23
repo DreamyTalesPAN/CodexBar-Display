@@ -11,6 +11,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -27,7 +28,7 @@ func main() {
 	case "doctor":
 		err = runDoctor()
 	case "setup":
-		err = runSetup()
+		err = runSetup(os.Args[2:])
 	default:
 		printUsage()
 		os.Exit(2)
@@ -43,7 +44,7 @@ func printUsage() {
 	fmt.Println("vibeblock commands:")
 	fmt.Println("  vibeblock daemon [--port /dev/cu.usbmodem101] [--interval 60s] [--once]")
 	fmt.Println("  vibeblock doctor")
-	fmt.Println("  vibeblock setup")
+	fmt.Println("  vibeblock setup [--port /dev/cu.usbmodem101] [--yes] [--skip-flash]")
 }
 
 func runDaemon(args []string) error {
@@ -64,9 +65,12 @@ func runDaemon(args []string) error {
 }
 
 func runDoctor() error {
+	var doctorErrs []error
+
 	bin, err := codexbar.FindBinary()
 	if err != nil {
 		fmt.Printf("CodexBar CLI: not found (%v)\n", err)
+		doctorErrs = append(doctorErrs, errors.New("CodexBar CLI not found"))
 	} else {
 		fmt.Printf("CodexBar CLI: %s\n", bin)
 	}
@@ -85,32 +89,64 @@ func runDoctor() error {
 		}
 	}
 
-	if bin == "" {
-		return errors.New("CodexBar CLI not found")
+	if runtimeErr := runDoctorRuntimeChecks(); runtimeErr != nil {
+		doctorErrs = append(doctorErrs, runtimeErr)
 	}
 
-	checkCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
+	if bin != "" {
+		checkCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
 
-	frame, fetchErr := codexbar.FetchFirstFrame(checkCtx)
-	if fetchErr != nil {
-		fmt.Printf("Provider preview: failed (%v)\n", fetchErr)
-	} else {
-		fmt.Printf("Provider preview: %s session=%d%% weekly=%d%% reset=%ds\n",
-			frame.Label, frame.Session, frame.Weekly, frame.ResetSec)
+		frame, fetchErr := codexbar.FetchFirstFrame(checkCtx)
+		if fetchErr != nil {
+			fmt.Printf("Provider preview: failed (%v)\n", fetchErr)
+			doctorErrs = append(doctorErrs, fmt.Errorf("provider preview failed: %w", fetchErr))
+		} else {
+			fmt.Printf("Provider preview: %s session=%d%% weekly=%d%% reset=%ds\n",
+				frame.Label, frame.Session, frame.Weekly, frame.ResetSec)
+		}
 	}
+
+	if len(doctorErrs) > 0 {
+		return errors.Join(doctorErrs...)
+	}
+	return nil
+}
+
+func runDoctorRuntimeChecks() error {
+	fmt.Println("Runtime checks:")
+	fmt.Printf("  codexbar timeout: %s\n", codexbar.CommandTimeout())
+	fmt.Printf("  last-good max age: %s\n", daemon.LastGoodMaxAge())
+	fmt.Printf("  sleep/wake threshold (@60s interval): %s\n", daemon.SleepWakeGapThreshold(60*time.Second))
+
+	port, err := usb.ResolvePort("")
+	if err != nil {
+		fmt.Printf("  serial resolve: failed (%v)\n", err)
+		return fmt.Errorf("runtime serial resolve failed: %w", err)
+	}
+	fmt.Printf("  serial resolve: ok (%s)\n", port)
+
+	if err := usb.ProbePort(port); err != nil {
+		fmt.Printf("  serial probe: failed (%v)\n", err)
+		return fmt.Errorf("runtime serial probe failed: %w", err)
+	}
+	fmt.Printf("  serial probe: ok (%s)\n", port)
 
 	return nil
 }
 
-func runSetup() error {
-	fmt.Println("vibeblock setup")
-	if err := runDoctor(); err != nil {
+func runSetup(args []string) error {
+	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
+	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	yes := fs.Bool("yes", false, "auto-select defaults without prompts")
+	skipFlash := fs.Bool("skip-flash", false, "skip firmware flashing")
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	fmt.Println("\nNext:")
-	fmt.Println("1) Flash firmware:  cd firmware && pio run -t upload --upload-port /dev/cu.usbmodem101")
-	fmt.Println("2) Start daemon:    cd companion && go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101")
-	fmt.Println("3) Install launchd: companion/install/com.vibeblock.daemon.plist")
-	return nil
+
+	return setup.Run(context.Background(), setup.Options{
+		Port:      strings.TrimSpace(*port),
+		AssumeYes: *yes,
+		SkipFlash: *skipFlash,
+	})
 }

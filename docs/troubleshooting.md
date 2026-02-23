@@ -1,8 +1,19 @@
 # Troubleshooting
 
-## `command not found: codexbar`
+## Setup fails at `codexbar-install`
 
-The companion supports desktop-only installs by auto-discovering:
+`vibeblock setup` auto-installs CodexBar with:
+
+```bash
+brew install --cask steipete/tap/codexbar
+```
+
+If that fails:
+- verify Homebrew installation
+- run the command manually to see full output
+- install from https://codexbar.app/ and retry setup
+
+Companion auto-discovery paths:
 - `/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI`
 - `~/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI`
 - `~/Downloads/CodexBar.app/Contents/Helpers/CodexBarCLI`
@@ -13,15 +24,61 @@ You can also force a path:
 export CODEXBAR_BIN="$HOME/Downloads/CodexBar.app/Contents/Helpers/CodexBarCLI"
 ```
 
+## Setup fails at `flash-firmware`
+
+Most common cause: serial device is busy (daemon/monitor still open).
+
+```bash
+launchctl bootout gui/$(id -u)/com.vibeblock.daemon 2>/dev/null || true
+lsof /dev/cu.usbmodem101
+```
+
+Then rerun setup with explicit port:
+
+```bash
+cd companion
+go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101
+```
+
+## Setup fails at `launchagent-*`
+
+Inspect launchd state + logs:
+
+```bash
+launchctl print gui/$(id -u)/com.vibeblock.daemon
+tail -n 100 /tmp/vibeblock-daemon.err.log
+```
+
 ## No serial device found
 
 - Reconnect cable
 - Try a known data cable
 - Run `ls /dev/cu.usb*`
 
+If you see repeated
+`serial port not found: /dev/cu.usbmodem...`
+after reconnect, macOS may have renumbered the device (for example `...101` to `...1101`).
+Current daemon behavior auto-falls back to port autodetection and logs:
+`runtime event=port-fallback ...`
+
 ## Display shows error
 
-Run:
+Current runtime errors are standardized as `runtime/<kind>`:
+- `runtime/serial-resolve`
+- `runtime/serial-write`
+- `runtime/codexbar-binary`
+- `runtime/codexbar-command`
+- `runtime/codexbar-parse`
+- `runtime/no-providers`
+
+Run `doctor` first to verify runtime checks:
+
+```bash
+cd companion
+go run ./cmd/vibeblock doctor
+```
+
+Then run a one-shot daemon cycle for detailed context:
 
 ```bash
 cd companion
@@ -57,6 +114,35 @@ If values still jump, run a direct one-shot check:
 ```bash
 cd companion
 ./vibeblock daemon --port /dev/cu.usbmodem101 --once
+```
+
+## Provider selection seems wrong
+
+Check the daemon log and inspect `reason=` and `detail=`:
+
+```bash
+tail -n 50 /tmp/vibeblock-daemon.out.log
+```
+
+Selection reasons are deterministic (`local-activity`, `usage-delta`, `sticky-current`, `codexbar-order`).
+If local activity is too noisy or too old, tune:
+
+```bash
+export VIBEBLOCK_ACTIVITY_CONFLICT_WINDOW=15s
+export VIBEBLOCK_ACTIVITY_MAX_AGE=6h
+```
+
+For providers without built-in local artifacts (for example `openrouter`, `warp`, `zai`), you can add custom detector paths:
+
+```bash
+export VIBEBLOCK_ACTIVITY_FILE_KIMI=~/path/to/kimi-activity.log
+export VIBEBLOCK_ACTIVITY_DIR_OLLAMA=~/path/to/ollama-activity-dir
+```
+
+`kimi` and `ollama` also have built-in Chromium cookie detectors. If those do not trigger on your machine, set explicit DB paths:
+
+```bash
+export VIBEBLOCK_CHROMIUM_COOKIE_DB_PATHS="$HOME/Library/Application Support/Google/Chrome/Default/Cookies"
 ```
 
 ## Upload fails with `Failed to connect to ESP32-S3`

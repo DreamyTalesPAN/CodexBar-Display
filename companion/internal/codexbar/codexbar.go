@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,68 @@ var knownBinaryPaths = []string{
 	"/usr/local/bin/codexbar",
 	"/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI",
 	"/Applications/CodexBar.app/Contents/MacOS/CodexBar",
+}
+
+var (
+	ErrNoProviders             = errors.New("codexbar returned no providers")
+	ErrUnexpectedProviderShape = errors.New("unexpected provider payload")
+)
+
+type FetchErrorKind string
+
+const (
+	FetchErrorUnknown     FetchErrorKind = "unknown"
+	FetchErrorBinary      FetchErrorKind = "binary"
+	FetchErrorCommand     FetchErrorKind = "command"
+	FetchErrorParse       FetchErrorKind = "parse"
+	FetchErrorNoProviders FetchErrorKind = "no-providers"
+)
+
+type FetchError struct {
+	Kind FetchErrorKind
+	Err  error
+}
+
+func (e *FetchError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Err == nil {
+		return fmt.Sprintf("fetch error (%s)", e.Kind)
+	}
+	return e.Err.Error()
+}
+
+func (e *FetchError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func FetchErrorKindOf(err error) FetchErrorKind {
+	var fetchErr *FetchError
+	if errors.As(err, &fetchErr) && fetchErr != nil {
+		return fetchErr.Kind
+	}
+	return FetchErrorUnknown
+}
+
+func wrapFetchError(kind FetchErrorKind, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &FetchError{
+		Kind: kind,
+		Err:  err,
+	}
+}
+
+func classifyParseError(err error) FetchErrorKind {
+	if errors.Is(err, ErrNoProviders) {
+		return FetchErrorNoProviders
+	}
+	return FetchErrorParse
 }
 
 func FindBinary() (string, error) {
@@ -75,21 +138,31 @@ func isExecutable(path string) bool {
 func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	bin, err := FindBinary()
 	if err != nil {
-		return nil, err
+		return nil, wrapFetchError(FetchErrorBinary, err)
 	}
 
 	timeout := commandTimeout()
 	out, err := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
 	allParsed, parseErr := parseAllProviders(out)
+	if shouldRetryAfterStartingCodexBarApp(err, parseErr, allParsed, out) {
+		startCodexBarApp(ctx)
+		retryOut, retryErr := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
+		retryParsed, retryParseErr := parseAllProviders(retryOut)
+		out = retryOut
+		err = retryErr
+		allParsed = retryParsed
+		parseErr = retryParseErr
+	}
+
 	if err != nil {
 		if len(bytes.TrimSpace(out)) == 0 {
-			return nil, fmt.Errorf("run codexbar usage --json: %w", err)
+			return nil, wrapFetchError(FetchErrorCommand, fmt.Errorf("run codexbar usage --json: %w", err))
 		}
 		if parseErr != nil {
-			return nil, fmt.Errorf("run codexbar usage --json: %w (stdout parse error: %v)", err, parseErr)
+			return nil, wrapFetchError(classifyParseError(parseErr), fmt.Errorf("run codexbar usage --json: %w (stdout parse error: %v)", err, parseErr))
 		}
 	} else if parseErr != nil {
-		return nil, parseErr
+		return nil, wrapFetchError(classifyParseError(parseErr), parseErr)
 	}
 
 	allParsed = repairCodexFromCLI(ctx, timeout, bin, allParsed)
@@ -101,6 +174,42 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	return allParsed, nil
 }
 
+func shouldRetryAfterStartingCodexBarApp(cmdErr error, parseErr error, parsed []ParsedFrame, raw []byte) bool {
+	if cmdErr == nil {
+		return false
+	}
+	if len(parsed) > 0 {
+		return false
+	}
+
+	lower := strings.ToLower(string(raw))
+	if strings.Contains(lower, "dashboard data not found") ||
+		strings.Contains(lower, "download app") ||
+		strings.Contains(lower, "openai dashboard data not found") {
+		return true
+	}
+
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return true
+	}
+
+	return errors.Is(parseErr, ErrNoProviders)
+}
+
+func startCodexBarApp(parent context.Context) {
+	cmdCtx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+
+	_ = exec.CommandContext(cmdCtx, "open", "-a", "CodexBar").Run()
+
+	// Give launch services a short moment to bring up app internals before retry.
+	select {
+	case <-parent.Done():
+		return
+	case <-time.After(1500 * time.Millisecond):
+	}
+}
+
 // FetchFirstFrame returns one selected frame for one-shot calls (doctor/setup).
 func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
 	all, err := FetchAllProviders(ctx)
@@ -110,9 +219,13 @@ func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
 	selector := NewProviderSelector()
 	selected, ok := selector.Select(all)
 	if !ok {
-		return protocol.Frame{}, errors.New("codexbar returned no providers")
+		return protocol.Frame{}, ErrNoProviders
 	}
 	return selected.Frame, nil
+}
+
+func CommandTimeout() time.Duration {
+	return commandTimeout()
 }
 
 func commandTimeout() time.Duration {
@@ -150,7 +263,7 @@ func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
 		return nil, err
 	}
 	if len(providers) == 0 {
-		return nil, errors.New("codexbar returned no providers")
+		return nil, ErrNoProviders
 	}
 
 	var result []ParsedFrame
@@ -167,7 +280,7 @@ func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
 	}
 
 	if len(result) == 0 {
-		return nil, errors.New("unexpected provider payload")
+		return nil, ErrUnexpectedProviderShape
 	}
 	return result, nil
 }
@@ -178,7 +291,7 @@ func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 		return ParsedFrame{}, err
 	}
 	if len(all) == 0 {
-		return ParsedFrame{}, errors.New("codexbar returned no providers")
+		return ParsedFrame{}, ErrNoProviders
 	}
 	return all[0], nil
 }
@@ -246,14 +359,71 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 	}, nil
 }
 
-// ProviderSelector tracks previous snapshots and switches only on real activity deltas.
+const (
+	defaultActivityConflictWindow = 15 * time.Second
+	defaultActivityMaxAge         = 6 * time.Hour
+	defaultLowConfidenceMaxAge    = 20 * time.Minute
+)
+
+type activitySignalConfidence int
+
+const (
+	activityConfidenceUnknown activitySignalConfidence = iota
+	activityConfidenceLow
+	activityConfidenceMedium
+	activityConfidenceHigh
+)
+
+func (c activitySignalConfidence) String() string {
+	switch c {
+	case activityConfidenceHigh:
+		return "high"
+	case activityConfidenceMedium:
+		return "medium"
+	case activityConfidenceLow:
+		return "low"
+	default:
+		return "unknown"
+	}
+}
+
+type SelectionReason string
+
+const (
+	SelectionReasonLocalActivity SelectionReason = "local-activity"
+	SelectionReasonUsageDelta    SelectionReason = "usage-delta"
+	SelectionReasonStickyCurrent SelectionReason = "sticky-current"
+	SelectionReasonCodexbarOrder SelectionReason = "codexbar-order"
+)
+
+type SelectionDecision struct {
+	Selected ParsedFrame
+	Reason   SelectionReason
+	Detail   string
+}
+
+type providerActivitySignal struct {
+	At         time.Time
+	Confidence activitySignalConfidence
+	Evidence   string
+}
+
+type ProviderActivityDetector interface {
+	ProviderKey() string
+	Confidence() activitySignalConfidence
+	LatestActivityAt(home string) (time.Time, bool)
+}
+
+type providerActivityReader func() (map[string]providerActivitySignal, error)
+
+// ProviderSelector applies deterministic provider selection rules:
+// local activity -> usage delta -> sticky current -> CodexBar provider order.
 type ProviderSelector struct {
 	currentKey     string
 	snapshots      map[string]providerSnapshot
 	activityReader providerActivityReader
+	conflictWindow time.Duration
 }
-
-type providerActivityReader func() (map[string]time.Time, error)
 
 type providerSnapshot struct {
 	session int
@@ -267,33 +437,259 @@ type activityScore struct {
 	resetGain    int64
 }
 
+type localActivityCandidate struct {
+	idx    int
+	key    string
+	signal providerActivitySignal
+}
+
+type codexActivityDetector struct{}
+
+func (codexActivityDetector) ProviderKey() string {
+	return "codex"
+}
+
+func (codexActivityDetector) Confidence() activitySignalConfidence {
+	return activityConfidenceHigh
+}
+
+func (codexActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
+	return latestCodexActivityAt(home)
+}
+
+type claudeActivityDetector struct{}
+
+func (claudeActivityDetector) ProviderKey() string {
+	return "claude"
+}
+
+func (claudeActivityDetector) Confidence() activitySignalConfidence {
+	return activityConfidenceHigh
+}
+
+func (claudeActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
+	return latestClaudeActivityAt(home)
+}
+
+type vertexAIActivityDetector struct{}
+
+func (vertexAIActivityDetector) ProviderKey() string {
+	return "vertexai"
+}
+
+func (vertexAIActivityDetector) Confidence() activitySignalConfidence {
+	return activityConfidenceHigh
+}
+
+func (vertexAIActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
+	return latestVertexAIActivityAt(home)
+}
+
+type jetbrainsActivityDetector struct{}
+
+func (jetbrainsActivityDetector) ProviderKey() string {
+	return "jetbrains"
+}
+
+func (jetbrainsActivityDetector) Confidence() activitySignalConfidence {
+	return activityConfidenceHigh
+}
+
+func (jetbrainsActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
+	return latestJetBrainsActivityAt(home)
+}
+
+type cursorSessionActivityDetector struct{}
+
+func (cursorSessionActivityDetector) ProviderKey() string {
+	return "cursor"
+}
+
+func (cursorSessionActivityDetector) Confidence() activitySignalConfidence {
+	return activityConfidenceMedium
+}
+
+func (cursorSessionActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
+	return latestCursorSessionActivityAt(home)
+}
+
+type factorySessionActivityDetector struct{}
+
+func (factorySessionActivityDetector) ProviderKey() string {
+	return "factory"
+}
+
+func (factorySessionActivityDetector) Confidence() activitySignalConfidence {
+	return activityConfidenceMedium
+}
+
+func (factorySessionActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
+	return latestFactorySessionActivityAt(home)
+}
+
+type augmentSessionActivityDetector struct{}
+
+func (augmentSessionActivityDetector) ProviderKey() string {
+	return "augment"
+}
+
+func (augmentSessionActivityDetector) Confidence() activitySignalConfidence {
+	return activityConfidenceMedium
+}
+
+func (augmentSessionActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
+	return latestAugmentSessionActivityAt(home)
+}
+
+type geminiCredentialsActivityDetector struct{}
+
+func (geminiCredentialsActivityDetector) ProviderKey() string {
+	return "gemini"
+}
+
+func (geminiCredentialsActivityDetector) Confidence() activitySignalConfidence {
+	return activityConfidenceMedium
+}
+
+func (geminiCredentialsActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
+	return latestGeminiActivityAt(home)
+}
+
+type kimiBrowserCookieActivityDetector struct{}
+
+func (kimiBrowserCookieActivityDetector) ProviderKey() string {
+	return "kimi"
+}
+
+func (kimiBrowserCookieActivityDetector) Confidence() activitySignalConfidence {
+	return activityConfidenceLow
+}
+
+func (kimiBrowserCookieActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
+	return latestKimiCookieActivityAt(home)
+}
+
+type ollamaBrowserCookieActivityDetector struct{}
+
+func (ollamaBrowserCookieActivityDetector) ProviderKey() string {
+	return "ollama"
+}
+
+func (ollamaBrowserCookieActivityDetector) Confidence() activitySignalConfidence {
+	return activityConfidenceLow
+}
+
+func (ollamaBrowserCookieActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
+	return latestOllamaCookieActivityAt(home)
+}
+
+type genericPathActivityDetector struct {
+	providerKey string
+	filePaths   []string
+	dirPaths    []string
+}
+
+func (d genericPathActivityDetector) ProviderKey() string {
+	return d.providerKey
+}
+
+func (d genericPathActivityDetector) Confidence() activitySignalConfidence {
+	return activityConfidenceMedium
+}
+
+func (d genericPathActivityDetector) LatestActivityAt(home string) (time.Time, bool) {
+	var latest time.Time
+
+	for _, path := range d.filePaths {
+		if t, err := fileModTime(withHome(home, path)); err == nil {
+			latest = newerTime(latest, t)
+		}
+	}
+	for _, root := range d.dirPaths {
+		if t, err := latestFileModTime(withHome(home, root), nil); err == nil {
+			latest = newerTime(latest, t)
+		}
+	}
+
+	return latest, !latest.IsZero()
+}
+
+func defaultActivityDetectors() []ProviderActivityDetector {
+	detectors := []ProviderActivityDetector{
+		codexActivityDetector{},
+		claudeActivityDetector{},
+		vertexAIActivityDetector{},
+		jetbrainsActivityDetector{},
+		cursorSessionActivityDetector{},
+		factorySessionActivityDetector{},
+		augmentSessionActivityDetector{},
+		geminiCredentialsActivityDetector{},
+		kimiBrowserCookieActivityDetector{},
+		ollamaBrowserCookieActivityDetector{},
+	}
+	return append(detectors, customActivityDetectors()...)
+}
+
 func NewProviderSelector() *ProviderSelector {
-	return NewProviderSelectorWithActivityReader(readLocalProviderActivity)
+	return NewProviderSelectorWithConfig(readLocalProviderActivity, activityConflictWindow())
 }
 
 func NewProviderSelectorWithActivityReader(reader providerActivityReader) *ProviderSelector {
+	return NewProviderSelectorWithConfig(reader, defaultActivityConflictWindow)
+}
+
+func NewProviderSelectorWithConfig(reader providerActivityReader, conflictWindow time.Duration) *ProviderSelector {
+	if reader == nil {
+		reader = readLocalProviderActivity
+	}
+	if conflictWindow <= 0 {
+		conflictWindow = defaultActivityConflictWindow
+	}
 	return &ProviderSelector{
 		snapshots:      make(map[string]providerSnapshot),
 		activityReader: reader,
+		conflictWindow: conflictWindow,
 	}
 }
 
 func (s *ProviderSelector) Select(all []ParsedFrame) (ParsedFrame, bool) {
-	if len(all) == 0 {
+	decision, ok := s.SelectWithDecision(all)
+	if !ok {
 		return ParsedFrame{}, false
+	}
+	return decision.Selected, true
+}
+
+func (s *ProviderSelector) SelectWithDecision(all []ParsedFrame) (SelectionDecision, bool) {
+	if len(all) == 0 {
+		return SelectionDecision{}, false
 	}
 	if s.snapshots == nil {
 		s.snapshots = make(map[string]providerSnapshot)
 	}
+	if s.conflictWindow <= 0 {
+		s.conflictWindow = defaultActivityConflictWindow
+	}
 
 	selected := all[0]
-	if byActivity, ok := s.selectByRecentLocalActivity(all); ok {
+	reason := SelectionReasonCodexbarOrder
+	detail := "initial-provider-order"
+
+	if byActivity, activityDetail, ok := s.selectByRecentLocalActivity(all); ok {
 		selected = byActivity
-	} else if byDelta, ok := s.selectByUsageDelta(all); ok {
+		reason = SelectionReasonLocalActivity
+		detail = activityDetail
+	} else if byDelta, score, ok := s.selectByUsageDelta(all); ok {
 		selected = byDelta
+		reason = SelectionReasonUsageDelta
+		detail = fmt.Sprintf("provider=%s score=%s", providerKey(byDelta), formatActivityScore(score))
 	} else if s.currentKey != "" {
 		if idx := indexOfProviderKey(all, s.currentKey); idx >= 0 {
 			selected = all[idx]
+			reason = SelectionReasonStickyCurrent
+			detail = fmt.Sprintf("provider=%s", s.currentKey)
+		} else {
+			detail = "current-provider-missing"
 		}
 	}
 
@@ -308,39 +704,112 @@ func (s *ProviderSelector) Select(all []ParsedFrame) (ParsedFrame, bool) {
 	}
 	s.snapshots = next
 
-	return selected, true
+	return SelectionDecision{
+		Selected: selected,
+		Reason:   reason,
+		Detail:   detail,
+	}, true
 }
 
-func (s *ProviderSelector) selectByRecentLocalActivity(all []ParsedFrame) (ParsedFrame, bool) {
+func (s *ProviderSelector) selectByRecentLocalActivity(all []ParsedFrame) (ParsedFrame, string, bool) {
 	if s.activityReader == nil {
-		return ParsedFrame{}, false
+		return ParsedFrame{}, "", false
 	}
 
 	activityByProvider, err := s.activityReader()
 	if err != nil || len(activityByProvider) == 0 {
-		return ParsedFrame{}, false
+		return ParsedFrame{}, "", false
 	}
 
-	bestIdx := -1
-	var bestAt time.Time
+	var candidates []localActivityCandidate
+	bestConfidence := activityConfidenceUnknown
+	latestAt := time.Time{}
 	for i, p := range all {
-		at, ok := activityByProvider[providerKey(p)]
+		key := providerKey(p)
+		signal, ok := activityByProvider[key]
+		if !ok || signal.At.IsZero() {
+			continue
+		}
+		candidates = append(candidates, localActivityCandidate{idx: i, key: key, signal: signal})
+		if signal.Confidence > bestConfidence {
+			bestConfidence = signal.Confidence
+		}
+	}
+
+	if len(candidates) == 0 {
+		return ParsedFrame{}, "", false
+	}
+
+	var strongest []localActivityCandidate
+	for _, candidate := range candidates {
+		if candidate.signal.Confidence != bestConfidence {
+			continue
+		}
+		strongest = append(strongest, candidate)
+		if latestAt.IsZero() || candidate.signal.At.After(latestAt) {
+			latestAt = candidate.signal.At
+		}
+	}
+
+	if len(strongest) == 0 {
+		return ParsedFrame{}, "", false
+	}
+
+	var conflictSet []localActivityCandidate
+	for _, c := range strongest {
+		if !latestAt.IsZero() && latestAt.Sub(c.signal.At) <= s.conflictWindow {
+			conflictSet = append(conflictSet, c)
+		}
+	}
+	if len(conflictSet) == 0 {
+		return ParsedFrame{}, "", false
+	}
+	if len(conflictSet) == 1 {
+		chosen := conflictSet[0]
+		return all[chosen.idx], fmt.Sprintf("provider=%s confidence=%s at=%s evidence=%s", chosen.key, chosen.signal.Confidence, chosen.signal.At.Format(time.RFC3339), chosen.signal.Evidence), true
+	}
+
+	if idx := indexInConflictSetByProvider(conflictSet, s.currentKey); idx >= 0 {
+		chosen := conflictSet[idx]
+		return all[chosen.idx], fmt.Sprintf("conflict keep-current provider=%s candidates=%s", chosen.key, formatActivityCandidates(conflictSet)), true
+	}
+
+	if idx, score, ok := s.selectBestDeltaFromCandidates(all, conflictSet); ok {
+		key := providerKey(all[idx])
+		return all[idx], fmt.Sprintf("conflict resolved-by=usage-delta provider=%s score=%s candidates=%s", key, formatActivityScore(score), formatActivityCandidates(conflictSet)), true
+	}
+
+	// Preserve CodexBar provider order for deterministic behavior when no other tie-break applies.
+	chosen := conflictSet[0]
+	return all[chosen.idx], fmt.Sprintf("conflict resolved-by=codexbar-order provider=%s candidates=%s", chosen.key, formatActivityCandidates(conflictSet)), true
+}
+
+func (s *ProviderSelector) selectBestDeltaFromCandidates(all []ParsedFrame, conflictSet []localActivityCandidate) (int, activityScore, bool) {
+	bestIdx := -1
+	bestScore := activityScore{}
+
+	for _, candidate := range conflictSet {
+		prev, ok := s.snapshots[candidate.key]
 		if !ok {
 			continue
 		}
-		if bestIdx == -1 || at.After(bestAt) {
-			bestIdx = i
-			bestAt = at
+		score := computeActivityScore(prev, all[candidate.idx].Frame)
+		if !score.hasSignal() {
+			continue
+		}
+		if bestIdx == -1 || score.betterThan(bestScore) {
+			bestIdx = candidate.idx
+			bestScore = score
 		}
 	}
 
 	if bestIdx == -1 {
-		return ParsedFrame{}, false
+		return -1, activityScore{}, false
 	}
-	return all[bestIdx], true
+	return bestIdx, bestScore, true
 }
 
-func (s *ProviderSelector) selectByUsageDelta(all []ParsedFrame) (ParsedFrame, bool) {
+func (s *ProviderSelector) selectByUsageDelta(all []ParsedFrame) (ParsedFrame, activityScore, bool) {
 	bestIdx := -1
 	bestScore := activityScore{}
 
@@ -362,27 +831,123 @@ func (s *ProviderSelector) selectByUsageDelta(all []ParsedFrame) (ParsedFrame, b
 	}
 
 	if bestIdx == -1 {
-		return ParsedFrame{}, false
+		return ParsedFrame{}, activityScore{}, false
 	}
-	return all[bestIdx], true
+	return all[bestIdx], bestScore, true
 }
 
-func readLocalProviderActivity() (map[string]time.Time, error) {
-	result := make(map[string]time.Time)
+func readLocalProviderActivity() (map[string]providerActivitySignal, error) {
+	return readLocalProviderActivityWithDetectors(defaultActivityDetectors(), time.Now, activityMaxAge())
+}
+
+func readLocalProviderActivityWithDetectors(detectors []ProviderActivityDetector, nowFn func() time.Time, maxAge time.Duration) (map[string]providerActivitySignal, error) {
+	result := make(map[string]providerActivitySignal)
 
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return result, nil
 	}
 
-	if t, ok := latestCodexActivityAt(home); ok {
-		result["codex"] = t
+	if nowFn == nil {
+		nowFn = time.Now
 	}
-	if t, ok := latestClaudeActivityAt(home); ok {
-		result["claude"] = t
+	now := nowFn()
+
+	for _, detector := range detectors {
+		if detector == nil {
+			continue
+		}
+		key := strings.TrimSpace(strings.ToLower(detector.ProviderKey()))
+		if key == "" {
+			continue
+		}
+
+		at, ok := detector.LatestActivityAt(home)
+		if !ok || at.IsZero() {
+			continue
+		}
+		confidence := detector.Confidence()
+		if isStaleActivity(now, at, activityMaxAgeForConfidence(maxAge, confidence)) {
+			continue
+		}
+
+		signal := providerActivitySignal{
+			At:         at,
+			Confidence: confidence,
+			Evidence:   detector.ProviderKey(),
+		}
+		existing, exists := result[key]
+		if !exists || signal.Confidence > existing.Confidence || (signal.Confidence == existing.Confidence && signal.At.After(existing.At)) {
+			result[key] = signal
+		}
 	}
 
 	return result, nil
+}
+
+func indexInConflictSetByProvider(conflictSet []localActivityCandidate, key string) int {
+	key = strings.TrimSpace(strings.ToLower(key))
+	if key == "" {
+		return -1
+	}
+	for i, candidate := range conflictSet {
+		if candidate.key == key {
+			return i
+		}
+	}
+	return -1
+}
+
+func formatActivityCandidates(conflictSet []localActivityCandidate) string {
+	parts := make([]string, 0, len(conflictSet))
+	for _, candidate := range conflictSet {
+		parts = append(parts, fmt.Sprintf("%s@%s[%s]", candidate.key, candidate.signal.At.Format(time.RFC3339), candidate.signal.Confidence))
+	}
+	return strings.Join(parts, ",")
+}
+
+func formatActivityScore(score activityScore) string {
+	return fmt.Sprintf("session+%d weekly+%d reset+%d", score.sessionDelta, score.weeklyDelta, score.resetGain)
+}
+
+func activityConflictWindow() time.Duration {
+	return parsePositiveDurationEnv("VIBEBLOCK_ACTIVITY_CONFLICT_WINDOW", defaultActivityConflictWindow)
+}
+
+func activityMaxAge() time.Duration {
+	return parsePositiveDurationEnv("VIBEBLOCK_ACTIVITY_MAX_AGE", defaultActivityMaxAge)
+}
+
+func parsePositiveDurationEnv(key string, def time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed <= 0 {
+		return def
+	}
+	return parsed
+}
+
+func activityMaxAgeForConfidence(maxAge time.Duration, confidence activitySignalConfidence) time.Duration {
+	if confidence != activityConfidenceLow {
+		return maxAge
+	}
+	if maxAge <= 0 || maxAge > defaultLowConfidenceMaxAge {
+		return defaultLowConfidenceMaxAge
+	}
+	return maxAge
+}
+
+func isStaleActivity(now, at time.Time, maxAge time.Duration) bool {
+	if maxAge <= 0 {
+		return false
+	}
+	if at.After(now) {
+		return false
+	}
+	return now.Sub(at) > maxAge
 }
 
 func latestCodexActivityAt(home string) (time.Time, bool) {
@@ -409,12 +974,431 @@ func latestClaudeActivityAt(home string) (time.Time, bool) {
 		latest = newerTime(latest, t)
 	}
 
-	projectsDir := withHome(home, envOrDefault("VIBEBLOCK_CLAUDE_ACTIVITY_DIR", filepath.Join("~", ".claude", "projects")))
-	if t, err := latestJSONLModTime(projectsDir); err == nil {
+	for _, projectsDir := range claudeProjectsActivityDirs(home) {
+		if t, err := latestJSONLModTime(projectsDir); err == nil {
+			latest = newerTime(latest, t)
+		}
+	}
+
+	return latest, !latest.IsZero()
+}
+
+func latestVertexAIActivityAt(home string) (time.Time, bool) {
+	var latest time.Time
+
+	for _, root := range vertexActivityDirs(home) {
+		if t, err := latestJSONLModTimeMatching(root, func(path string, _ os.FileInfo) bool {
+			return jsonlFileLooksVertexAI(path)
+		}); err == nil {
+			latest = newerTime(latest, t)
+		}
+	}
+
+	return latest, !latest.IsZero()
+}
+
+func latestJetBrainsActivityAt(home string) (time.Time, bool) {
+	var latest time.Time
+
+	for _, root := range jetbrainsActivityDirs(home) {
+		if t, err := latestFileModTime(root, func(_ string, fi os.FileInfo) bool {
+			return strings.EqualFold(fi.Name(), "AIAssistantQuotaManager2.xml")
+		}); err == nil {
+			latest = newerTime(latest, t)
+		}
+	}
+
+	return latest, !latest.IsZero()
+}
+
+func latestCursorSessionActivityAt(home string) (time.Time, bool) {
+	path := withHome(home, envOrDefault("VIBEBLOCK_CURSOR_ACTIVITY_FILE", filepath.Join("~", "Library", "Application Support", "CodexBar", "cursor-session.json")))
+	if t, err := fileModTime(path); err == nil {
+		return t, true
+	}
+	return time.Time{}, false
+}
+
+func latestFactorySessionActivityAt(home string) (time.Time, bool) {
+	path := withHome(home, envOrDefault("VIBEBLOCK_FACTORY_ACTIVITY_FILE", filepath.Join("~", "Library", "Application Support", "CodexBar", "factory-session.json")))
+	if t, err := fileModTime(path); err == nil {
+		return t, true
+	}
+	return time.Time{}, false
+}
+
+func latestAugmentSessionActivityAt(home string) (time.Time, bool) {
+	path := withHome(home, envOrDefault("VIBEBLOCK_AUGMENT_ACTIVITY_FILE", filepath.Join("~", "Library", "Application Support", "CodexBar", "augment-session.json")))
+	if t, err := fileModTime(path); err == nil {
+		return t, true
+	}
+	return time.Time{}, false
+}
+
+func latestGeminiActivityAt(home string) (time.Time, bool) {
+	var latest time.Time
+
+	creds := withHome(home, envOrDefault("VIBEBLOCK_GEMINI_OAUTH_FILE", filepath.Join("~", ".gemini", "oauth_creds.json")))
+	if t, err := fileModTime(creds); err == nil {
+		latest = newerTime(latest, t)
+	}
+
+	settings := withHome(home, envOrDefault("VIBEBLOCK_GEMINI_SETTINGS_FILE", filepath.Join("~", ".gemini", "settings.json")))
+	if t, err := fileModTime(settings); err == nil {
 		latest = newerTime(latest, t)
 	}
 
 	return latest, !latest.IsZero()
+}
+
+func latestKimiCookieActivityAt(home string) (time.Time, bool) {
+	return latestChromiumCookieActivityAt(home, chromiumCookieActivityQuerySpec{
+		Domains:    []string{"kimi.com", "www.kimi.com"},
+		ExactNames: []string{"kimi-auth"},
+	})
+}
+
+func latestOllamaCookieActivityAt(home string) (time.Time, bool) {
+	return latestChromiumCookieActivityAt(home, chromiumCookieActivityQuerySpec{
+		Domains: []string{"ollama.com", "www.ollama.com"},
+		ExactNames: []string{
+			"session",
+			"ollama_session",
+			"__Host-ollama_session",
+			"__Secure-next-auth.session-token",
+			"next-auth.session-token",
+		},
+		PrefixNames: []string{
+			"__Secure-next-auth.session-token.",
+			"next-auth.session-token.",
+		},
+	})
+}
+
+type chromiumCookieActivityQuerySpec struct {
+	Domains     []string
+	ExactNames  []string
+	PrefixNames []string
+}
+
+const chromeEpochMicros int64 = 11644473600000000
+
+func latestChromiumCookieActivityAt(home string, spec chromiumCookieActivityQuerySpec) (time.Time, bool) {
+	if len(spec.Domains) == 0 {
+		return time.Time{}, false
+	}
+	if len(spec.ExactNames) == 0 && len(spec.PrefixNames) == 0 {
+		return time.Time{}, false
+	}
+
+	sqliteBin, err := resolveSQLite3Binary()
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	query := chromiumCookieActivityQuery(spec)
+
+	var latest time.Time
+	for _, dbPath := range chromiumCookieDBPaths(home) {
+		t, ok := chromiumCookieDBActivityAt(dbPath, query, sqliteBin)
+		if !ok {
+			continue
+		}
+		latest = newerTime(latest, t)
+	}
+	return latest, !latest.IsZero()
+}
+
+func resolveSQLite3Binary() (string, error) {
+	bin := envOrDefault("VIBEBLOCK_SQLITE3_BIN", "sqlite3")
+	return exec.LookPath(bin)
+}
+
+func chromiumCookieDBPaths(home string) []string {
+	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_CHROMIUM_COOKIE_DB_PATHS")); raw != "" {
+		return splitAndResolvePaths(home, raw)
+	}
+
+	patterns := []string{
+		"~/Library/Application Support/Google/Chrome/*/Cookies",
+		"~/Library/Application Support/Google/Chrome/*/Network/Cookies",
+		"~/Library/Application Support/Google/Chrome Beta/*/Cookies",
+		"~/Library/Application Support/Google/Chrome Beta/*/Network/Cookies",
+		"~/Library/Application Support/Google/Chrome Canary/*/Cookies",
+		"~/Library/Application Support/Google/Chrome Canary/*/Network/Cookies",
+		"~/Library/Application Support/Chromium/*/Cookies",
+		"~/Library/Application Support/Chromium/*/Network/Cookies",
+		"~/Library/Application Support/BraveSoftware/Brave-Browser/*/Cookies",
+		"~/Library/Application Support/BraveSoftware/Brave-Browser/*/Network/Cookies",
+		"~/Library/Application Support/Microsoft Edge/*/Cookies",
+		"~/Library/Application Support/Microsoft Edge/*/Network/Cookies",
+		"~/Library/Application Support/Arc/*/*/Cookies",
+		"~/Library/Application Support/Arc/*/*/Network/Cookies",
+		"~/.config/google-chrome/*/Cookies",
+		"~/.config/google-chrome/*/Network/Cookies",
+		"~/.config/chromium/*/Cookies",
+		"~/.config/chromium/*/Network/Cookies",
+		"~/.config/BraveSoftware/Brave-Browser/*/Cookies",
+		"~/.config/BraveSoftware/Brave-Browser/*/Network/Cookies",
+		"~/.config/microsoft-edge/*/Cookies",
+		"~/.config/microsoft-edge/*/Network/Cookies",
+	}
+
+	var paths []string
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(withHome(home, pattern))
+		if err != nil || len(matches) == 0 {
+			continue
+		}
+		paths = append(paths, matches...)
+	}
+	return dedupeStrings(paths)
+}
+
+func chromiumCookieActivityQuery(spec chromiumCookieActivityQuerySpec) string {
+	domainClauses := make([]string, 0, len(spec.Domains))
+	for _, domain := range spec.Domains {
+		domain = strings.TrimSpace(domain)
+		if domain == "" {
+			continue
+		}
+		domainClauses = append(domainClauses, fmt.Sprintf("host_key LIKE '%%%s%%'", escapeSQLiteString(domain)))
+	}
+
+	nameClauses := make([]string, 0, len(spec.ExactNames)+len(spec.PrefixNames))
+	for _, name := range spec.ExactNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		nameClauses = append(nameClauses, fmt.Sprintf("name = '%s'", escapeSQLiteString(name)))
+	}
+	for _, prefix := range spec.PrefixNames {
+		prefix = strings.TrimSpace(prefix)
+		if prefix == "" {
+			continue
+		}
+		nameClauses = append(nameClauses, fmt.Sprintf("name LIKE '%s%%'", escapeSQLiteString(prefix)))
+	}
+
+	domainExpr := strings.Join(domainClauses, " OR ")
+	nameExpr := strings.Join(nameClauses, " OR ")
+	return fmt.Sprintf(
+		"SELECT MAX(CASE WHEN COALESCE(last_access_utc,0) > COALESCE(creation_utc,0) THEN COALESCE(last_access_utc,0) ELSE COALESCE(creation_utc,0) END) FROM cookies WHERE (%s) AND (%s)",
+		domainExpr,
+		nameExpr,
+	)
+}
+
+func chromiumCookieDBActivityAt(path, query, sqliteBin string) (time.Time, bool) {
+	cmd := exec.Command(sqliteBin, "-readonly", path, query)
+	out, err := cmd.Output()
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	raw := strings.TrimSpace(string(out))
+	if raw == "" || raw == "0" {
+		return time.Time{}, false
+	}
+
+	micros, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || micros <= 0 {
+		return time.Time{}, false
+	}
+	if micros > chromeEpochMicros {
+		micros -= chromeEpochMicros
+	}
+	if micros <= 0 {
+		return time.Time{}, false
+	}
+	return time.UnixMicro(micros), true
+}
+
+func escapeSQLiteString(value string) string {
+	return strings.ReplaceAll(value, "'", "''")
+}
+
+func claudeProjectsActivityDirs(home string) []string {
+	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_CLAUDE_ACTIVITY_DIRS")); raw != "" {
+		return splitAndResolvePaths(home, raw)
+	}
+	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_CLAUDE_ACTIVITY_DIR")); raw != "" {
+		return []string{withHome(home, raw)}
+	}
+	return []string{
+		withHome(home, filepath.Join("~", ".claude", "projects")),
+		withHome(home, filepath.Join("~", ".config", "claude", "projects")),
+	}
+}
+
+func vertexActivityDirs(home string) []string {
+	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_VERTEX_ACTIVITY_DIRS")); raw != "" {
+		return splitAndResolvePaths(home, raw)
+	}
+	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_VERTEX_ACTIVITY_DIR")); raw != "" {
+		return []string{withHome(home, raw)}
+	}
+	return claudeProjectsActivityDirs(home)
+}
+
+func jetbrainsActivityDirs(home string) []string {
+	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_JETBRAINS_ACTIVITY_DIRS")); raw != "" {
+		return splitAndResolvePaths(home, raw)
+	}
+	return []string{
+		withHome(home, filepath.Join("~", "Library", "Application Support", "JetBrains")),
+		withHome(home, filepath.Join("~", "Library", "Application Support", "Google")),
+		withHome(home, filepath.Join("~", ".config", "JetBrains")),
+		withHome(home, filepath.Join("~", ".config", "Google")),
+		withHome(home, filepath.Join("~", ".local", "share", "JetBrains")),
+	}
+}
+
+func splitAndResolvePaths(home, csv string) []string {
+	var paths []string
+	for _, part := range strings.Split(csv, ",") {
+		path := strings.TrimSpace(part)
+		if path == "" {
+			continue
+		}
+		paths = append(paths, withHome(home, path))
+	}
+	return dedupeStrings(paths)
+}
+
+func customActivityDetectors() []ProviderActivityDetector {
+	const (
+		filePrefix = "VIBEBLOCK_ACTIVITY_FILE_"
+		dirPrefix  = "VIBEBLOCK_ACTIVITY_DIR_"
+	)
+
+	fileByProvider := make(map[string][]string)
+	dirByProvider := make(map[string][]string)
+
+	for _, env := range os.Environ() {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		if value == "" {
+			continue
+		}
+
+		switch {
+		case strings.HasPrefix(key, filePrefix):
+			provider := normalizeCustomActivityProvider(strings.TrimPrefix(key, filePrefix))
+			if provider == "" {
+				continue
+			}
+			fileByProvider[provider] = append(fileByProvider[provider], value)
+		case strings.HasPrefix(key, dirPrefix):
+			provider := normalizeCustomActivityProvider(strings.TrimPrefix(key, dirPrefix))
+			if provider == "" {
+				continue
+			}
+			dirByProvider[provider] = append(dirByProvider[provider], value)
+		}
+	}
+
+	seen := make(map[string]struct{})
+	for provider := range fileByProvider {
+		seen[provider] = struct{}{}
+	}
+	for provider := range dirByProvider {
+		seen[provider] = struct{}{}
+	}
+
+	if len(seen) == 0 {
+		return nil
+	}
+
+	providers := make([]string, 0, len(seen))
+	for provider := range seen {
+		providers = append(providers, provider)
+	}
+	sort.Strings(providers)
+
+	detectors := make([]ProviderActivityDetector, 0, len(providers))
+	for _, provider := range providers {
+		detectors = append(detectors, genericPathActivityDetector{
+			providerKey: provider,
+			filePaths:   dedupeStrings(fileByProvider[provider]),
+			dirPaths:    dedupeStrings(dirByProvider[provider]),
+		})
+	}
+	return detectors
+}
+
+func normalizeCustomActivityProvider(raw string) string {
+	s := strings.TrimSpace(strings.ToLower(raw))
+	if s == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, ch := range s {
+		if ch >= 'a' && ch <= 'z' {
+			b.WriteRune(ch)
+			continue
+		}
+		if ch >= '0' && ch <= '9' {
+			b.WriteRune(ch)
+		}
+	}
+
+	normalized := b.String()
+	switch normalized {
+	case "vertex":
+		return "vertexai"
+	case "kimik2", "k2":
+		return "kimik2"
+	default:
+		return normalized
+	}
+}
+
+func jsonlFileLooksVertexAI(path string) bool {
+	tail, err := readFileTail(path, 128*1024)
+	if err != nil || len(tail) == 0 {
+		return false
+	}
+
+	text := strings.ToLower(string(tail))
+	if strings.Contains(text, "_vrtx_") {
+		return true
+	}
+	if strings.Contains(text, "\"vertexai\"") || strings.Contains(text, "\"vertex_ai\"") {
+		return true
+	}
+
+	// Vertex AI Claude model names typically contain @-based version suffixes.
+	return strings.Contains(text, "\"model\"") && strings.Contains(text, "claude-") && strings.Contains(text, "@20")
+}
+
+func readFileTail(path string, maxBytes int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	size := info.Size()
+	start := int64(0)
+	if maxBytes > 0 && size > maxBytes {
+		start = size - maxBytes
+	}
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return io.ReadAll(f)
 }
 
 func envOrDefault(key, def string) string {
@@ -437,6 +1421,22 @@ func withHome(home, value string) string {
 }
 
 func latestJSONLModTime(root string) (time.Time, error) {
+	return latestJSONLModTimeMatching(root, nil)
+}
+
+func latestJSONLModTimeMatching(root string, match func(path string, fi os.FileInfo) bool) (time.Time, error) {
+	return latestFileModTime(root, func(path string, fi os.FileInfo) bool {
+		if !strings.HasSuffix(strings.ToLower(fi.Name()), ".jsonl") {
+			return false
+		}
+		if match == nil {
+			return true
+		}
+		return match(path, fi)
+	})
+}
+
+func latestFileModTime(root string, match func(path string, fi os.FileInfo) bool) (time.Time, error) {
 	info, err := os.Stat(root)
 	if err != nil {
 		return time.Time{}, err
@@ -454,7 +1454,7 @@ func latestJSONLModTime(root string) (time.Time, error) {
 		if fi == nil || fi.IsDir() {
 			return nil
 		}
-		if !strings.HasSuffix(strings.ToLower(fi.Name()), ".jsonl") {
+		if match != nil && !match(path, fi) {
 			return nil
 		}
 		latest = newerTime(latest, fi.ModTime())
@@ -467,6 +1467,26 @@ func latestJSONLModTime(root string) (time.Time, error) {
 		return time.Time{}, os.ErrNotExist
 	}
 	return latest, nil
+}
+
+func dedupeStrings(items []string) []string {
+	if len(items) <= 1 {
+		return items
+	}
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }
 
 func fileModTime(path string) (time.Time, error) {
@@ -601,6 +1621,34 @@ func extractProviderList(root any) []any {
 }
 
 func extractProvidersFromRawJSON(raw []byte) ([]any, error) {
+	providers, err := decodeProvidersFromRaw(raw)
+	if err == nil || len(providers) > 0 {
+		return providers, err
+	}
+
+	// CodexBar can occasionally prefix stderr-like text before JSON while still
+	// emitting a valid provider payload later in stdout. In that case, retry
+	// decode from the first JSON token start.
+	remainder := raw
+	for len(remainder) > 0 {
+		idx := bytes.IndexAny(remainder, "[{")
+		if idx == -1 {
+			break
+		}
+
+		candidate := remainder[idx:]
+		parsed, parseErr := decodeProvidersFromRaw(candidate)
+		if parseErr == nil || len(parsed) > 0 {
+			return parsed, parseErr
+		}
+
+		remainder = candidate[1:]
+	}
+
+	return nil, err
+}
+
+func decodeProvidersFromRaw(raw []byte) ([]any, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	var providers []any
 

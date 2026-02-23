@@ -7,11 +7,15 @@ This project reads local usage data from `codexbar usage --json` and renders one
 ## Project Docs
 - Product requirements: `vibeblock-prd.md`
 - Execution checklist: `TODO.md`
+- Provider selection rules: `docs/provider-selection.md`
+- Provider activity detectors: `docs/provider-activity-sources.md`
+- Milestone 1 test matrix: `docs/m1-test-matrix.md`
+- Milestone 2 runtime resilience: `docs/m2-runtime-resilience.md`
 
 ## MVP Scope
 - macOS only
 - One connected display
-- Provider follows the most recently active local assistant (Codex/Claude logs), with usage-delta fallback
+- Provider selection stays in companion (local activity -> usage delta -> sticky current -> CodexBar order)
 - USB serial transport (no WiFi/BLE in V1)
 
 ## Start Here
@@ -23,29 +27,27 @@ This project reads local usage data from `codexbar usage --json` and renders one
 ## Current Status
 
 - Firmware + daemon path is working on macOS with LILYGO T-Display-S3.
-- `vibeblock setup` is currently a doctor-style helper (not full one-command setup yet).
+- `vibeblock setup` is a full one-command installer (CodexBar check/install, firmware flash, LaunchAgent install/start).
 
 ## Quickstart (Current)
 
 ```bash
-# flash firmware
-cd firmware
-pio run -e lilygo_t_display_s3 -t upload --upload-port /dev/cu.usbmodem101
+# one-command setup
+cd companion
+go run ./cmd/vibeblock setup
 
-# build companion
-cd ../companion
+# optional non-interactive mode
+go run ./cmd/vibeblock setup --yes
+
+# runtime health checks
 go run ./cmd/vibeblock doctor
-go build -o vibeblock ./cmd/vibeblock
-
-# one-shot validation (sends one frame)
-./vibeblock daemon --port /dev/cu.usbmodem101 --once
 ```
 
 Companion supports both:
 - `codexbar` CLI in `PATH`
 - Desktop app helper (`CodexBarCLI`) inside `CodexBar.app`
 
-## Run As LaunchAgent
+## Manual LaunchAgent Flow (Optional)
 
 ```bash
 cd companion
