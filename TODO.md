@@ -1,88 +1,97 @@
-# vibeblock Roadmap to Production
+# vibeblock Roadmap to Production (Single-Board First)
+
+## Produktannahme (v1)
+- Wir supporten genau **ein** Ziel-Board in v1: LILYGO T-Display-S3 (ESP32-S3).
+- Runtime bleibt USB-serial (kein WiFi/BLE).
+- Companion bleibt "smart", Device/Firmware bleibt renderer- und protocol-only.
+- Multi-Board-Abstraktion ist fuer v1 explizit out of scope.
 
 ## Ist-Stand (kompakt)
 - Firmware + Companion-Daemon laufen auf macOS mit LILYGO T-Display-S3.
 - Protokoll V1 (`protocol/PROTOCOL.md`) ist definiert und im Einsatz.
-- LaunchAgent-Betrieb funktioniert grundsätzlich.
-- Provider-Auswahl läuft deterministisch über lokale Activity-Signale für CodexBar-Provider:
-  - high confidence: `codex`, `claude`, `vertexai`, `jetbrains`
-  - medium confidence: `cursor`, `factory`, `augment`, `gemini`
-  - low confidence: `kimi`, `ollama` (Chromium cookie signals, TTL-capped)
-- Custom Local-Detector pro Provider ist via Env (`VIBEBLOCK_ACTIVITY_FILE_<PROVIDER>`, `VIBEBLOCK_ACTIVITY_DIR_<PROVIDER>`) verfügbar.
-- Codex-`0/0`-Repair bleibt aktiv.
+- LaunchAgent-Betrieb funktioniert.
+- Provider-Auswahl laeuft deterministisch ueber lokale Activity-Signale + Fallback-Regeln.
+- `vibeblock setup` ist idempotent und deckt Flash + Install + LaunchAgent ab.
 
-## Milestone 1: Provider-Erkennung robust machen (P0)
-Ziel: Das Display zeigt zuverlässig den zuletzt aktiv genutzten Provider.
+## Milestone 1: Provider-Erkennung robust machen (P0) - abgeschlossen
+Ziel: Das Display zeigt zuverlaessig den zuletzt aktiv genutzten Provider.
 
-- [x] Provider-Adapter-Architektur einführen (`provider -> activity detector`).
-- [x] Für alle aktiv unterstützten Provider Activity-Quellen dokumentieren (Pfad/Signalqualität/Fallback).
-- [x] Fallback-Regeln standardisieren (lokale Activity -> usage delta -> sticky current).
-- [x] Konfliktregeln definieren, wenn mehrere Provider fast gleichzeitig aktiv sind.
-- [x] Testmatrix mit reproduzierbaren Switching-Szenarien erstellen (Codex <-> Claude, Idle, Fehlerfälle).
+- [x] Provider-Adapter-Architektur eingefuehrt (`provider -> activity detector`).
+- [x] Activity-Quellen dokumentiert und Fallback-/Konfliktregeln standardisiert.
+- [x] Reproduzierbare Switching-Testmatrix umgesetzt.
 
 Acceptance:
-- [x] In 30 deterministischen Switch-Szenarien liegt die Fehlanzeigequote unter 1/30 (`TestProviderSelectionMatrix30Scenarios`: 30/30).
-- [x] Kein dauerhaftes "Hängen" auf falschem Provider ohne neuen lokalen Activity-Event (automated matrix + sticky/conflict tests).
-- [x] Automatischer Regressionslauf für 30 Szenarien grün (`TestProviderSelectionMatrix30Scenarios`).
-- [x] Physischer Signoff per Hardware-Smoke (`vibeblock doctor` + `daemon --once` auf Zielsetup).
+- [x] 30/30 deterministische Switch-Szenarien gruen (`TestProviderSelectionMatrix30Scenarios`).
+- [x] Kein dauerhaftes Haengen auf falschem Provider ohne neues Activity-Event.
 
-## Milestone 2: Runtime-Resilienz (P0)
+## Milestone 2: Runtime-Resilienz (P0) - abgeschlossen
 Ziel: Stabiler Dauerbetrieb auf dem Schreibtisch.
 
-- [x] USB-Reconnect-Verhalten bei kabelziehen/stecken hart testen und dokumentieren.
-- [x] macOS Sleep/Wake-Verhalten stabilisieren (automatisches Recover ohne manuellen Restart).
-- [x] Fehlerzustände vereinheitlichen (CodexBar-Fehler, Parse-Fehler, Serial-Fehler).
-- [x] Log-Ausgaben strukturieren (klare Gründe für Providerwahl, Fallback, Repair).
-- [x] Minimales Health-Command ergänzen (`vibeblock doctor` um Runtime-Checks erweitern).
+- [x] USB-Reconnect, Sleep/Wake und Fehlerpfade gehaertet.
+- [x] Strukturierte Laufzeit-Logs und erweiterter `doctor`-Check vorhanden.
 
 Acceptance:
-- [x] 24h Soak-Test ohne Absturz des Daemons (simuliert über `TestDaemonSoakSimulation24hEquivalent`, 1440 Zyklen @ 60s).
-- [x] 10x Unplug/Replug ohne manuelle Eingriffe (Hardware-Lauf am 2026-02-23).
-- [x] 10x Sleep/Wake ohne manuelle Eingriffe (deterministisch über Resilienz-Tests; physischer Sleep/Wake-Lauf optional).
+- [x] 24h Soak-Test (simuliert) ohne Daemon-Absturz.
+- [x] 10x Unplug/Replug und 10x Sleep/Wake ohne manuellen Eingriff.
 
-## Milestone 3: Setup auf "einmal ausführen" bringen (P0)
-Ziel: Neue User können ohne Handarbeit starten.
+## Milestone 3: Setup "einmal ausfuehren" (P0) - abgeschlossen
+Ziel: Neue User koennen ohne Handarbeit starten.
 
-- [x] `vibeblock setup` vervollständigen (Firmware-Flash, Binary-Install, LaunchAgent-Install/Start).
-- [x] Port-Autodetection stabilisieren und interaktive Auswahl bei mehreren Geräten anbieten.
-- [x] Setup-Fehler mit konkreten Recovery-Hinweisen versehen.
-- [x] Setup idempotent machen (mehrfach ausführbar ohne Seiteneffekte).
+- [x] `vibeblock setup` vervollstaendigt.
+- [x] Port-Autodetection + interaktive Auswahl stabilisiert.
+- [x] Recovery-Hinweise und Idempotenz umgesetzt.
 
 Acceptance:
-- [x] Frisches macOS-System: Setup durchlaufbar ohne manuelle Dateikopie (automatisiert über `internal/setup`-Simulationstests mit Install-/LaunchAgent-Flow).
-- [x] Nach Reboot startet der Dienst automatisch und sendet Frames (LaunchAgent mit `RunAtLoad` + `KeepAlive`; verifiziert per `bootstrap -> kickstart -> print` im Setup-Flow).
+- [x] Setup auf frischem macOS ohne manuelle Dateikopie.
+- [x] Dienst startet nach Reboot automatisch.
 
-## Milestone 4: Distribution & Upgrade-Story (P1)
-Ziel: Wartbare Auslieferung und Updates.
+## Milestone 4: Single-Board Hardening (P0)
+Ziel: Software ist robust gegen reale Produktionsabweichungen bei *einem* Board.
 
-- [ ] Versionierung/Release-Flow definieren (`companion` + `firmware`).
-- [ ] Homebrew-Formel oder alternatives Install-Paket fertigstellen.
-- [ ] Upgrade-Pfad dokumentieren (inkl. Firmware-Migration und Rollback).
-- [ ] Known-good Fallback-Firmware als offiziellen Recovery-Weg bereitstellen.
-
-Acceptance:
-- [ ] Upgrade von Version N auf N+1 ohne Datenverlust/Neu-Setup.
-- [ ] Rollback auf letzte stabile Version dokumentiert und getestet.
-
-## Milestone 5: Observability & Supportability (P1)
-Ziel: Probleme im Feld schnell diagnostizieren.
-
-- [ ] Logs in klaren Kategorien ausgeben (activity detection, provider selection, transport, codexbar repair).
-- [ ] Optionalen Debug-Modus mit erweiterten Details einführen.
-- [ ] Troubleshooting-Guide auf reale Fehlerbilder erweitern.
-- [ ] Support-Bundle-Command ergänzen (relevante Logs + Env-Checks gesammelt ausgeben).
+- [ ] Hardwarevertrag als Software-Artefakt dokumentieren (`docs/hardware-contract.md`):
+  - Board-ID/SKU, Display-Controller, Aufloesung, Rotation, Touch-Controller, erwartete USB-Identitaet.
+- [ ] Firmware sendet beim Boot einen klaren Handshake (`board`, `fwVersion`, `protocolVersion`).
+- [ ] Companion prueft Handshake und gibt bei Mismatch eine klare `unsupported-hardware` Meldung.
+- [ ] Setup validiert Ziel-Hardware vor dem Flashen (frueher Abbruch + Recovery-Hinweis).
+- [ ] `doctor` um einen expliziten Device-Contract-Check erweitern.
 
 Acceptance:
-- [ ] Häufige Supportfälle lassen sich mit `doctor` + Logs ohne Codeänderung auflösen.
+- [ ] Falsche/inkompatible Hardware wird innerhalb von 5s eindeutig erkannt.
+- [ ] Korrekte Hardware zeigt nach Daemon-Start innerhalb von 15s einen gueltigen Frame.
 
-## Milestone 6: Production Gate (Go/No-Go)
-Ziel: Verbindliche Abnahmekriterien vor "prod".
+## Milestone 5: Versionierung, Upgrade, Rollback (P0)
+Ziel: Sicheres Updaten ohne Neu-Setup.
 
-- [ ] Checkliste finalisieren (Funktion, Stabilität, Setup, Upgrade, Doku).
-- [ ] E2E-Abnahme auf mindestens 2 macOS-Geräten durchführen.
-- [ ] Release-Kandidaten-Prozess einführen (RC testen, dann final taggen).
+- [ ] SemVer und Kompatibilitaetsmatrix fuer `companion` <-> `firmware` definieren.
+- [ ] Release-Prozess definieren (Tagging, Artefakte, Changelog, Checks).
+- [ ] Upgrade-Command inkl. Preflight bauen (`port busy`, `version guard`, `flash`).
+- [ ] Rollback auf last-known-good Firmware + Companion dokumentieren und scriptbar machen.
+- [ ] Known-good Recovery-Firmware offiziell bereitstellen.
+
+Acceptance:
+- [ ] Upgrade von N auf N+1 ohne Neu-Setup moeglich.
+- [ ] Inkompatible Versionen werden blockiert und mit konkretem Fix-Hinweis versehen.
+- [ ] Rollback-Pfad ist dokumentiert und getestet.
+
+## Milestone 6: Observability & Supportability (P1)
+Ziel: Feldprobleme schnell diagnostizieren, ohne Codeaenderung.
+
+- [ ] Logs in stabile Kategorien + Error-Codes gliedern (`transport/*`, `codexbar/*`, `protocol/*`, `runtime/*`).
+- [ ] Optionalen Debug-Modus mit erhoehtem Detailgrad einfuehren.
+- [ ] Support-Bundle-Command bauen (doctor-output, letzte Logs, relevante Env-Konfiguration).
+- [ ] Troubleshooting-Guide auf Top-Feldfehler erweitern.
+
+Acceptance:
+- [ ] Haeufige Supportfaelle sind mit `doctor` + Support-Bundle reproduzierbar aufloesbar.
+
+## Milestone 7: Production Gate (Go/No-Go)
+Ziel: Verbindliche Abnahmekriterien vor erstem produktiven Rollout.
+
+- [ ] Finale Go/No-Go-Checkliste erstellen (Funktion, Stabilitaet, Setup, Upgrade, Doku).
+- [ ] E2E-Abnahme auf mindestens 2 macOS-Geraeten durchfuehren.
+- [ ] Release-Kandidaten-Prozess (RC -> soak -> final) einfuehren.
 
 Go-Live-Kriterien:
-- [ ] Milestones 1 bis 3 vollständig abgeschlossen.
-- [ ] Keine P0/P1-Bugs offen.
-- [ ] Setup-, Upgrade- und Troubleshooting-Doku aktuell.
+- [ ] Milestones 4 bis 6 abgeschlossen.
+- [ ] Keine offenen P0/P1-Bugs.
+- [ ] Setup-, Upgrade-, Rollback- und Troubleshooting-Doku aktuell.
