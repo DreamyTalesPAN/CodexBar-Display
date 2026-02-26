@@ -19,6 +19,7 @@ Core dependency:
 - Shared firmware core for frame parsing and runtime state across boards
 - Device handshake and capability detection (`hello`, board ID, features)
 - Companion-side feature gating (for example optional `theme` field)
+- Theme system on ESP8266 SmallTV (`classic`, `crt`)
 - One-command setup for flash + install + launch agent management
 - Runtime hardening for reconnect and sleep/wake workflows
 
@@ -41,6 +42,59 @@ Protocol references:
 - `esp8266_smalltv_st7789_alt_crt`
 - `esp8266_probe` (no-display probe profile)
 - `lilygo_t_display_s3`
+
+## Theme Support
+
+Two themes currently exist:
+- `classic`
+- `crt`
+
+Theme support is currently implemented on ESP8266 SmallTV display firmware:
+- `esp8266_smalltv_st7789`
+- `esp8266_smalltv_st7789_crt`
+- `esp8266_smalltv_st7789_alt`
+- `esp8266_smalltv_st7789_alt_crt`
+
+Not theme-capable today:
+- `esp8266_probe`
+- `lilygo_t_display_s3`
+
+### Choosing a Theme
+
+Compile-time default theme comes from firmware environment:
+- `*_crt` envs boot with `crt` as default.
+- non-`*_crt` envs boot with `classic` as default.
+
+Runtime theme override is controlled by companion env var `VIBEBLOCK_THEME`:
+
+```bash
+cd companion
+VIBEBLOCK_THEME=crt go run ./cmd/vibeblock daemon --interval 60s
+```
+
+Accepted values are `classic` and `crt`. Invalid values are ignored.
+
+If you run via LaunchAgent, add `VIBEBLOCK_THEME` to
+`~/Library/LaunchAgents/com.vibeblock.daemon.plist` under `EnvironmentVariables`
+and reload the agent.
+
+### Developing a New Theme
+
+To add a new theme (for example `amber`), update these parts:
+
+1. `firmware_esp8266/src/main.cpp`
+   - extend `enum class Theme`
+   - map name in `themeFromName(...)`
+   - add theme-specific render functions (splash/usage/error/reset)
+   - wire dispatch in `drawSplash`, `tickSplashWaitingDots`, `drawError`, `drawResetCountdownLine`, `drawUsage`
+2. `firmware_shared/vibeblock_core.h`
+   - allow the new theme name in `ParseFrameLine(...)`
+3. `companion/internal/daemon/daemon.go`
+   - allow the new value in `configuredTheme()`
+4. Optional: `firmware_esp8266/platformio.ini`
+   - add a `*_theme` environment with a compile-time default macro (same pattern as `VIBEBLOCK_THEME_CRT`)
+5. Docs + protocol
+   - document the new theme in this README and `protocol/PROTOCOL.md`
 
 ## Quick Start (macOS)
 
