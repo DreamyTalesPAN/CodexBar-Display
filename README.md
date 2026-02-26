@@ -11,6 +11,8 @@ This project reads local usage data from `codexbar usage --json` and renders one
 - Provider activity detectors: `docs/provider-activity-sources.md`
 - Milestone 1 test matrix: `docs/m1-test-matrix.md`
 - Milestone 2 runtime resilience: `docs/m2-runtime-resilience.md`
+- ESP8266 weather display spike: `docs/esp8266-spike.md`
+- Supplier hardware checklist: `docs/supplier-hardware-checklist.md`
 
 ## MVP Scope
 - macOS only
