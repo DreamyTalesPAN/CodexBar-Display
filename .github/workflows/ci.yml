@@ -30,6 +30,12 @@ jobs:
             env_name: esp8266_probe
           - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789
+          - firmware_dir: firmware_esp8266
+            env_name: esp8266_smalltv_st7789_crt
+          - firmware_dir: firmware_esp8266
+            env_name: esp8266_smalltv_st7789_alt
+          - firmware_dir: firmware_esp8266
+            env_name: esp8266_smalltv_st7789_alt_crt
           - firmware_dir: firmware
             env_name: lilygo_t_display_s3
     steps:

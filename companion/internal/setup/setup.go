@@ -18,6 +18,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -34,6 +35,7 @@ type Options struct {
 	SkipFlash     bool
 	PinDaemonPort bool
 	FirmwareEnv   string
+	Theme         string
 }
 
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
@@ -263,6 +265,14 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		fmt.Fprintln(d.stdout, "Recovery restore script: not installed (repository scripts unavailable)")
 	}
 	fmt.Fprintf(d.stdout, "Recovery backup dir: %s\n", backupDir)
+
+	if err := applyRuntimeConfig(home, opts.Theme, d.stdout); err != nil {
+		return &StepError{
+			Step: "write-runtime-config",
+			Err:  err,
+			Hint: "use --theme classic|crt or --theme none to clear",
+		}
+	}
 
 	daemonPort := ""
 	if opts.PinDaemonPort {
@@ -858,6 +868,43 @@ func installRecoveryAssets(repoRoot, home string) (string, string, error) {
 	}
 
 	return restoreTarget, backupDir, nil
+}
+
+func applyRuntimeConfig(home, rawTheme string, stdout io.Writer) error {
+	themeInput := strings.TrimSpace(rawTheme)
+	if themeInput == "" {
+		return nil
+	}
+
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case runtimeconfig.ClearThemeValue(themeInput):
+		cfg.Theme = ""
+		if err := runtimeconfig.Save(home, cfg); err != nil {
+			return err
+		}
+		if stdout != nil {
+			fmt.Fprintln(stdout, "Runtime config: cleared theme override")
+		}
+		return nil
+	default:
+		normalized := runtimeconfig.NormalizeTheme(themeInput)
+		if normalized == "" {
+			return fmt.Errorf("unsupported theme %q", themeInput)
+		}
+		cfg.Theme = normalized
+		if err := runtimeconfig.Save(home, cfg); err != nil {
+			return err
+		}
+		if stdout != nil {
+			fmt.Fprintf(stdout, "Runtime config: theme=%s\n", normalized)
+		}
+		return nil
+	}
 }
 
 func stdinIsInteractive() bool {

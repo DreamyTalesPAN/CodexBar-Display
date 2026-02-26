@@ -1,6 +1,7 @@
 package usb
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +16,7 @@ import (
 )
 
 var serialOpen = serial.Open
-var defaultSender serialSender
+var defaultSender = NewSender()
 
 const (
 	serialBaudRate       = 115200
@@ -79,7 +80,7 @@ func ProbePort(port string) error {
 	return nil
 }
 
-type serialSender struct {
+type Sender struct {
 	mu            sync.Mutex
 	port          serial.Port
 	path          string
@@ -89,7 +90,11 @@ type serialSender struct {
 	capsCollected bool
 }
 
-func (s *serialSender) Send(path string, line []byte) error {
+func NewSender() *Sender {
+	return &Sender{}
+}
+
+func (s *Sender) Send(path string, line []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -113,7 +118,7 @@ func (s *serialSender) Send(path string, line []byte) error {
 	return nil
 }
 
-func (s *serialSender) ensurePort(path string) (bool, error) {
+func (s *Sender) ensurePort(path string) (bool, error) {
 	if s.port != nil && s.path == path {
 		return false, nil
 	}
@@ -136,7 +141,7 @@ func (s *serialSender) ensurePort(path string) (bool, error) {
 	return true, nil
 }
 
-func (s *serialSender) DeviceHello(path string) (protocol.DeviceHello, error) {
+func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -159,7 +164,7 @@ func (s *serialSender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	return s.hello, nil
 }
 
-func (s *serialSender) DeviceCapabilities(path string) (protocol.DeviceCapabilities, error) {
+func (s *Sender) DeviceCapabilities(path string) (protocol.DeviceCapabilities, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -179,7 +184,7 @@ func (s *serialSender) DeviceCapabilities(path string) (protocol.DeviceCapabilit
 	return s.capabilities, nil
 }
 
-func (s *serialSender) closeCurrentLocked() {
+func (s *Sender) closeCurrentLocked() {
 	if s.port == nil {
 		return
 	}
@@ -190,6 +195,15 @@ func (s *serialSender) closeCurrentLocked() {
 	s.helloSeen = false
 	s.capabilities = protocol.UnknownDeviceCapabilities()
 	s.capsCollected = false
+}
+
+func (s *Sender) Close() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closeCurrentLocked()
 }
 
 func openMode() *serial.Mode {
@@ -267,7 +281,7 @@ func chooseAutoPort(ports []string) (string, error) {
 	return "", errors.New("no usb serial ports found")
 }
 
-func (s *serialSender) captureHelloLocked() {
+func (s *Sender) captureHelloLocked() {
 	if s.port == nil {
 		return
 	}
@@ -314,20 +328,20 @@ func readHelloFromPort(port serial.Port, window time.Duration) (protocol.DeviceH
 		}
 
 		for {
-			idx := strings.IndexByte(string(buffer), '\n')
+			idx := bytes.IndexByte(buffer, '\n')
 			if idx < 0 {
 				break
 			}
-			line := strings.TrimSpace(string(buffer[:idx]))
+			line := bytes.TrimSpace(buffer[:idx])
 			buffer = buffer[idx+1:]
 
-			if hello, ok := parseDeviceHelloLine(line); ok {
+			if hello, ok := parseDeviceHelloLine(string(line)); ok {
 				return hello, true
 			}
 		}
 	}
 
-	line := strings.TrimSpace(string(buffer))
+	line := strings.TrimSpace(string(bytes.TrimSpace(buffer)))
 	if hello, ok := parseDeviceHelloLine(line); ok {
 		return hello, true
 	}

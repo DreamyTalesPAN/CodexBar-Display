@@ -10,6 +10,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -33,6 +34,7 @@ const (
 	runtimeErrorSerialResolve  runtimeErrorKind = "serial-resolve"
 	runtimeErrorSerialWrite    runtimeErrorKind = "serial-write"
 	runtimeErrorFrameEncode    runtimeErrorKind = "frame-encode"
+	runtimeErrorFrameTooLarge  runtimeErrorKind = "frame-too-large"
 	runtimeErrorCodexbarBinary runtimeErrorKind = "codexbar-binary"
 	runtimeErrorCodexbarCmd    runtimeErrorKind = "codexbar-command"
 	runtimeErrorCodexbarParse  runtimeErrorKind = "codexbar-parse"
@@ -163,7 +165,13 @@ func (b *retryBackoff) Reset() {
 }
 
 func Run(ctx context.Context, opts Options) error {
-	return runWithDeps(ctx, opts, runtimeDeps{})
+	sender := usb.NewSender()
+	defer sender.Close()
+
+	return runWithDeps(ctx, opts, runtimeDeps{
+		deviceCaps: sender.DeviceCapabilities,
+		sendLine:   sender.Send,
+	})
 }
 
 func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
@@ -231,13 +239,19 @@ func startupInterval(normal, uptime time.Duration) time.Duration {
 }
 
 func configuredTheme() string {
-	raw := strings.TrimSpace(strings.ToLower(os.Getenv(themeEnvVar)))
-	switch raw {
-	case "classic", "crt":
-		return raw
-	default:
+	if theme := runtimeconfig.NormalizeTheme(os.Getenv(themeEnvVar)); theme != "" {
+		return theme
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
 		return ""
 	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return ""
+	}
+	return runtimeconfig.NormalizeTheme(cfg.Theme)
 }
 
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
@@ -256,6 +270,16 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 			Op:   "resolve-port",
 			Err:  fmt.Errorf("detect serial device: %w", err),
 		}
+	}
+
+	caps, capsErr := deps.deviceCaps(port)
+	if capsErr != nil {
+		deps.logf("runtime event=device-caps-read-failed port=%s err=%v\n", port, capsErr)
+		caps = protocol.UnknownDeviceCapabilities()
+	}
+	maxFrameBytes := protocol.DefaultMaxFrameBytes
+	if caps.MaxFrameBytes > 0 {
+		maxFrameBytes = caps.MaxFrameBytes
 	}
 
 	allProviders, fetchErr := deps.fetchProviders(ctx)
@@ -295,10 +319,6 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 	}
 
 	if selectedTheme := configuredTheme(); selectedTheme != "" {
-		caps, capsErr := deps.deviceCaps(port)
-		if capsErr != nil {
-			deps.logf("runtime event=device-caps-read-failed port=%s err=%v\n", port, capsErr)
-		}
 		if !caps.Known || caps.SupportsTheme {
 			frame.Theme = selectedTheme
 		} else {
@@ -306,14 +326,15 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 		}
 	}
 
-	line, err := frame.MarshalLine()
+	line, marshaledFrame, err := marshalFrameWithinLimit(frame, maxFrameBytes)
 	if err != nil {
 		return &RuntimeError{
-			Kind: runtimeErrorFrameEncode,
-			Op:   "marshal-frame",
+			Kind: runtimeErrorFrameTooLarge,
+			Op:   "marshal-frame-with-limit",
 			Err:  fmt.Errorf("encode frame: %w", err),
 		}
 	}
+	frame = marshaledFrame
 
 	if err := deps.sendLine(port, line); err != nil {
 		return &RuntimeError{
@@ -457,4 +478,41 @@ func lastGoodMaxAge() time.Duration {
 
 func LastGoodMaxAge() time.Duration {
 	return lastGoodMaxAge()
+}
+
+func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protocol.Frame, error) {
+	if maxBytes <= 0 {
+		maxBytes = protocol.DefaultMaxFrameBytes
+	}
+
+	line, err := frame.MarshalLine()
+	if err != nil {
+		return nil, protocol.Frame{}, err
+	}
+	if len(line) <= maxBytes {
+		return line, frame, nil
+	}
+
+	if frame.Theme != "" {
+		noTheme := frame
+		noTheme.Theme = ""
+		line, err = noTheme.MarshalLine()
+		if err != nil {
+			return nil, protocol.Frame{}, err
+		}
+		if len(line) <= maxBytes {
+			return line, noTheme, nil
+		}
+	}
+
+	fallback := protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge))
+	line, err = fallback.MarshalLine()
+	if err != nil {
+		return nil, protocol.Frame{}, err
+	}
+	if len(line) <= maxBytes {
+		return line, fallback, nil
+	}
+
+	return nil, protocol.Frame{}, fmt.Errorf("frame exceeds maxFrameBytes=%d and fallback frame does not fit", maxBytes)
 }

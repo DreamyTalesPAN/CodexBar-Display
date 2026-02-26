@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "theme_defs.h"
 #include "../../firmware_shared/vibeblock_core.h"
 
 #ifndef VIBEBLOCK_BOARD_ID
@@ -127,18 +128,7 @@ int centeredTextX(const char* text, int textSize) {
   return x;
 }
 
-enum class Theme : uint8_t {
-  Classic = 0,
-  CRT = 1,
-};
-
-#if defined(VIBEBLOCK_THEME_CRT)
-constexpr Theme kDefaultTheme = Theme::CRT;
-#else
-constexpr Theme kDefaultTheme = Theme::Classic;
-#endif
-
-Theme activeTheme = kDefaultTheme;
+Theme activeTheme = defaultTheme();
 
 constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
   return static_cast<uint16_t>(((r & 0xF8U) << 8) | ((g & 0xFCU) << 3) | (b >> 3));
@@ -274,21 +264,6 @@ const char* providerLabelText() {
     return current.label.c_str();
   }
   return "Provider";
-}
-
-bool themeFromName(const String& themeName, Theme& out) {
-  String normalized = themeName;
-  normalized.trim();
-  normalized.toLowerCase();
-  if (normalized == "classic") {
-    out = Theme::Classic;
-    return true;
-  }
-  if (normalized == "crt") {
-    out = Theme::CRT;
-    return true;
-  }
-  return false;
 }
 
 int usageCoreHeightFor(const UsageLayout& layout) {

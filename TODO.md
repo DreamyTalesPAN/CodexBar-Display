@@ -1,6 +1,6 @@
-# vibeblock Roadmap to Production (Single-Board First)
+# vibeblock Roadmap to Production (Dual-Target)
 
-## Prioritaet Jetzt: Dual-Target Merge Baseline (First)
+## Prioritaet Jetzt: Dual-Target Merge Baseline
 Ziel: Branch auf `main` integrieren, so dass ESP8266 und ESP32 sauber unter einer Architektur laufen.
 
 - [x] Board-Registry einfuehren (`firmware-env -> project dir -> expected board ids -> capabilities`), keine Prefix-Heuristik mehr.
@@ -18,13 +18,15 @@ Acceptance:
 - [ ] Board-Mismatch wird klar gemeldet, legacy/no-hello Devices bleiben mit fallback nutzbar.
 
 ## Produktannahme (v1)
-- Wir supporten genau **ein** Ziel-Board in v1: LILYGO T-Display-S3 (ESP32-S3).
+- Wir supporten in v1 zwei Ziel-Boards:
+  - ESP8266 SmallTV ST7789 (inkl. Alt-Mapping als eigener Firmware-Env)
+  - LILYGO T-Display-S3 (ESP32-S3)
 - Runtime bleibt USB-serial (kein WiFi/BLE).
 - Companion bleibt "smart", Device/Firmware bleibt renderer- und protocol-only.
-- Multi-Board-Abstraktion ist fuer v1 explizit out of scope.
+- Multi-Board-Abstraktion ist fuer v1 auf diese beiden Boards begrenzt und explizit im Scope.
 
 ## Ist-Stand (kompakt)
-- Firmware + Companion-Daemon laufen auf macOS mit LILYGO T-Display-S3.
+- Firmware + Companion-Daemon laufen auf macOS mit ESP8266 SmallTV und LILYGO T-Display-S3.
 - Protokoll V1 (`protocol/PROTOCOL.md`) ist definiert und im Einsatz.
 - LaunchAgent-Betrieb funktioniert.
 - Provider-Auswahl laeuft deterministisch ueber lokale Activity-Signale + Fallback-Regeln.
@@ -62,19 +64,19 @@ Acceptance:
 - [x] Setup auf frischem macOS ohne manuelle Dateikopie.
 - [x] Dienst startet nach Reboot automatisch.
 
-## Milestone 4: Single-Board Hardening (P0)
-Ziel: Software ist robust gegen reale Produktionsabweichungen bei *einem* Board.
+## Milestone 4: Dual-Target Hardening (P0)
+Ziel: Software ist robust gegen reale Produktionsabweichungen auf beiden Board-Familien.
 
-- [ ] Hardwarevertrag als Software-Artefakt dokumentieren (`docs/hardware-contract.md`):
-  - Board-ID/SKU, Display-Controller, Aufloesung, Rotation, Touch-Controller, erwartete USB-Identitaet.
+- [ ] Hardwarevertrag als Software-Artefakt dokumentieren (`docs/hardware-contract.md`) fuer beide Targets:
+  - Board-ID/SKU, Display-Controller, Aufloesung, Rotation, Touch-Controller (falls vorhanden), erwartete USB-Identitaet.
 - [ ] Firmware sendet beim Boot einen klaren Handshake (`board`, `fwVersion`, `protocolVersion`).
 - [ ] Companion prueft Handshake und gibt bei Mismatch eine klare `unsupported-hardware` Meldung.
 - [ ] Setup validiert Ziel-Hardware vor dem Flashen (frueher Abbruch + Recovery-Hinweis).
 - [ ] `doctor` um einen expliziten Device-Contract-Check erweitern.
 
 Acceptance:
-- [ ] Falsche/inkompatible Hardware wird innerhalb von 5s eindeutig erkannt.
-- [ ] Korrekte Hardware zeigt nach Daemon-Start innerhalb von 15s einen gueltigen Frame.
+- [ ] Falsche/inkompatible Hardware wird innerhalb von 5s eindeutig erkannt (ESP8266 und ESP32).
+- [ ] Korrekte ESP8266- und ESP32-Hardware zeigt nach Daemon-Start innerhalb von 15s einen gueltigen Frame.
 
 ## Milestone 5: Versionierung, Upgrade, Rollback (P0)
 Ziel: Sicheres Updaten ohne Neu-Setup.

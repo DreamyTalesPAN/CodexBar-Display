@@ -55,7 +55,7 @@ func printUsage() {
 	fmt.Println("  vibeblock doctor")
 	fmt.Println("  vibeblock health")
 	fmt.Println("  vibeblock restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
-	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env]")
+	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|none]")
 }
 
 func runDaemon(args []string) error {
@@ -153,6 +153,7 @@ func runSetup(args []string) error {
 	skipFlash := fs.Bool("skip-flash", false, "skip firmware flashing")
 	pinPort := fs.Bool("pin-port", false, "pin daemon to selected --port in LaunchAgent (default: auto-detect)")
 	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "PlatformIO environment to flash (examples: esp8266_smalltv_st7789, lilygo_t_display_s3)")
+	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|none (empty keeps existing setting)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -163,6 +164,7 @@ func runSetup(args []string) error {
 		SkipFlash:     *skipFlash,
 		PinDaemonPort: *pinPort,
 		FirmwareEnv:   strings.TrimSpace(*firmwareEnv),
+		Theme:         strings.TrimSpace(*theme),
 	})
 }
 

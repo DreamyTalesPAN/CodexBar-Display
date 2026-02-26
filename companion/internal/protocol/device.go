@@ -3,7 +3,8 @@ package protocol
 import "strings"
 
 const (
-	FeatureTheme = "theme"
+	FeatureTheme         = "theme"
+	DefaultMaxFrameBytes = 512
 )
 
 type DeviceHello struct {

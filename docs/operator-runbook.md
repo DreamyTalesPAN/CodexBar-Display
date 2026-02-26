@@ -42,12 +42,39 @@ Useful flags:
 - `--skip-flash`: install/update runtime only
 - `--pin-port`: pin LaunchAgent to one explicit serial path
 - `--firmware-env <env>`: select PlatformIO environment
+- `--theme <classic|crt|none>`: persist runtime theme override in companion config
 
 During setup, runtime assets are installed to:
 - Binary: `~/Library/Application Support/vibeblock/bin/vibeblock`
 - Recovery scripts: `~/Library/Application Support/vibeblock/scripts/`
 - Backups: `~/Library/Application Support/vibeblock/backups/`
 - LaunchAgent: `~/Library/LaunchAgents/com.vibeblock.daemon.plist`
+
+## Theme Override (ESP8266 Display Targets)
+
+Theme override is optional and currently applies to ESP8266 display firmware
+that advertises `features:["theme"]`.
+
+For an ad-hoc run:
+
+```bash
+cd companion
+VIBEBLOCK_THEME=crt go run ./cmd/vibeblock daemon --interval 60s
+```
+
+Preferred persistent config:
+
+```bash
+cd companion
+go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
+```
+
+For LaunchAgent runtime:
+- add `VIBEBLOCK_THEME` under `EnvironmentVariables` in `~/Library/LaunchAgents/com.vibeblock.daemon.plist`
+- reload agent with `launchctl bootout/bootstrap/kickstart`
+- verify with `go run ./cmd/vibeblock health` and daemon logs
+
+Note: rerunning `vibeblock setup` rewrites the LaunchAgent plist; re-apply custom env vars afterward.
 
 ## Runtime Health
 

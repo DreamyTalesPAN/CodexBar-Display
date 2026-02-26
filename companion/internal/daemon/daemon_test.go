@@ -10,6 +10,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 func TestRunCycleWithDepsUsesUnifiedErrorFrameWhenNoLastGood(t *testing.T) {
@@ -123,6 +124,128 @@ func TestRunCycleWithDepsKeepsThemeForUnknownDeviceCapabilities(t *testing.T) {
 	frame := decodeFrameLine(t, sentLine)
 	if frame.Theme != "crt" {
 		t.Fatalf("expected theme to remain for unknown device capabilities, got %q", frame.Theme)
+	}
+}
+
+func TestMarshalFrameWithinLimitDropsThemeBeforeFallback(t *testing.T) {
+	base := protocol.Frame{
+		Provider: "codex",
+		Label:    "Codex",
+		Session:  12,
+		Weekly:   30,
+		ResetSec: 3600,
+	}
+	withTheme := base
+	withTheme.Theme = "crt"
+
+	withoutThemeLine, err := base.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal base frame: %v", err)
+	}
+
+	line, marshaled, err := marshalFrameWithinLimit(withTheme, len(withoutThemeLine))
+	if err != nil {
+		t.Fatalf("marshal within limit: %v", err)
+	}
+	if marshaled.Theme != "" {
+		t.Fatalf("expected theme to be dropped to fit frame, got %q", marshaled.Theme)
+	}
+	if len(line) > len(withoutThemeLine) {
+		t.Fatalf("expected line to fit limit %d, got %d", len(withoutThemeLine), len(line))
+	}
+}
+
+func TestMarshalFrameWithinLimitFallsBackToErrorFrame(t *testing.T) {
+	frame := protocol.Frame{
+		Provider: "codex",
+		Label:    strings.Repeat("very-long-label-", 20),
+		Session:  12,
+		Weekly:   30,
+		ResetSec: 3600,
+		Theme:    "crt",
+	}
+
+	line, marshaled, err := marshalFrameWithinLimit(frame, 80)
+	if err != nil {
+		t.Fatalf("marshal within limit: %v", err)
+	}
+	if marshaled.Error != "runtime/frame-too-large" {
+		t.Fatalf("expected frame-too-large fallback, got %q", marshaled.Error)
+	}
+	if len(line) > 80 {
+		t.Fatalf("expected fallback line to fit limit, got %d", len(line))
+	}
+}
+
+func TestRunCycleWithDepsUsesMaxFrameBytesFromDeviceHello(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	var sentLine []byte
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:         true,
+				Board:         "esp8266-smalltv-st7789",
+				SupportsTheme: true,
+				MaxFrameBytes: 80,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("codex", 12, 30, 3600)
+			frame.Frame.Label = strings.Repeat("codex-", 30)
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(port string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+	if len(sentLine) > 80 {
+		t.Fatalf("expected sent line <= maxFrameBytes, got %d", len(sentLine))
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Error != "runtime/frame-too-large" {
+		t.Fatalf("expected frame-too-large fallback, got %q", frame.Error)
+	}
+}
+
+func TestConfiguredThemeFallsBackToRuntimeConfig(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv(themeEnvVar, "")
+
+	if err := runtimeconfig.Save(tmpHome, runtimeconfig.Config{Theme: "crt"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	if got := configuredTheme(); got != "crt" {
+		t.Fatalf("expected theme from runtime config, got %q", got)
+	}
+}
+
+func TestConfiguredThemeEnvOverridesRuntimeConfig(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv(themeEnvVar, "classic")
+
+	if err := runtimeconfig.Save(tmpHome, runtimeconfig.Config{Theme: "crt"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	if got := configuredTheme(); got != "classic" {
+		t.Fatalf("expected env theme override, got %q", got)
 	}
 }
 

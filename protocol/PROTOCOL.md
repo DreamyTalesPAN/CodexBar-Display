@@ -17,6 +17,7 @@ Fields:
 - `session` (number, optional): session usage percent `0..100`.
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
+- `theme` (string, optional): requested UI theme (`classic` or `crt`).
 - `error` (string, optional): if present, firmware should render error screen.
 
 ## Error Frame
@@ -47,6 +48,8 @@ Companion treats missing/legacy hello as unknown capabilities and falls back saf
 ## Rules
 - Unknown fields are ignored.
 - Missing numeric fields default to `0` on firmware side.
+- `theme` is optional and should only be sent when device `hello.features` includes `theme`.
+- Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.
 - Firmware ticks down `resetSecs` locally between host updates.
 - Companion may resend the last known good frame during short CodexBar outages (current default max age: 10 minutes).

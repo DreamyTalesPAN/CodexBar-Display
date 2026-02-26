@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 type commandCall struct {
@@ -181,6 +182,58 @@ func TestRunWithDepsPinsDaemonPortWhenRequested(t *testing.T) {
 	}
 	if !strings.Contains(plist, "<string>/dev/cu.usbserial10</string>") {
 		t.Fatalf("expected pinned serial path in plist, got:\n%s", plist)
+	}
+}
+
+func TestRunWithDepsWritesRuntimeThemeConfig(t *testing.T) {
+	home := t.TempDir()
+	execPath := mustCreateExecutable(t)
+
+	err := runWithDeps(context.Background(), Options{
+		Port:      "/dev/cu.usbserial10",
+		AssumeYes: true,
+		SkipFlash: true,
+		Theme:     "crt",
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		resolvePort: func(p string) (string, error) {
+			return p, nil
+		},
+		probePort: func(string) error { return nil },
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success, got %v", err)
+	}
+
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if cfg.Theme != "crt" {
+		t.Fatalf("expected persisted theme override crt, got %q", cfg.Theme)
 	}
 }
 

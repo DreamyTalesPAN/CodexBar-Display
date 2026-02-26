@@ -20,6 +20,7 @@ go run ./cmd/vibeblock setup
 go run ./cmd/vibeblock setup --yes
 go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --skip-flash
 go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
+go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
 go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101 --firmware-env lilygo_t_display_s3
 go run ./cmd/vibeblock restore-known-good
 go run ./cmd/vibeblock restore-known-good --image tmp/backup_chunks_20260226_090152/weather_backup_full.bin --port /dev/cu.usbserial-10
@@ -41,6 +42,7 @@ Setup flags:
 - `--skip-flash`: skip firmware flashing
 - `--pin-port`: pin daemon to selected `--port` in LaunchAgent (default is unpinned auto-detect)
 - `--firmware-env`: PlatformIO firmware environment (default `esp8266_smalltv_st7789`, example `lilygo_t_display_s3`)
+- `--theme`: persist runtime theme override (`classic`, `crt`, `none`)
 
 `restore-known-good` restores a supplier backup image to ESP8266 hardware:
 - auto-detects serial port unless `--port` is provided
@@ -90,10 +92,13 @@ Setup flags:
 - For Codex specifically, if `source=openai-web` reports `0/0` with no reset, the daemon repairs Codex data via `--provider codex --source cli`.
 - Unified runtime error frames use stable codes like `runtime/codexbar-parse` and `runtime/serial-write`.
 - Daemon logs include `reason=<selection strategy>` and `detail=<tie-break context>` for each sent frame.
+- Optional theme override: set `VIBEBLOCK_THEME=classic` or `VIBEBLOCK_THEME=crt` to request a display theme.
+- Theme is only sent to devices that advertise `features:["theme"]` in device hello.
 
 Environment variables:
 
 - `CODEXBAR_BIN`: force CodexBar executable path
+- `VIBEBLOCK_THEME`: optional theme override (`classic` or `crt`)
 - `VIBEBLOCK_CODEXBAR_TIMEOUT_SECS`: timeout per CodexBar command (default `90`)
 - `VIBEBLOCK_LAST_GOOD_MAX_AGE`: max age for stale fallback frame (Go duration format, default `10m`)
 - `VIBEBLOCK_ACTIVITY_MAX_AGE`: max age for local activity signals before they are ignored (default `6h`)

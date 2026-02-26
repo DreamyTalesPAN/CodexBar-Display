@@ -74,9 +74,17 @@ VIBEBLOCK_THEME=crt go run ./cmd/vibeblock daemon --interval 60s
 
 Accepted values are `classic` and `crt`. Invalid values are ignored.
 
-If you run via LaunchAgent, add `VIBEBLOCK_THEME` to
+Persistent runtime config via setup:
+
+```bash
+cd companion
+go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
+```
+
+If you run via LaunchAgent with manual env vars, add `VIBEBLOCK_THEME` to
 `~/Library/LaunchAgents/com.vibeblock.daemon.plist` under `EnvironmentVariables`
 and reload the agent.
+Note: `vibeblock setup` rewrites this plist; re-apply custom env vars after rerunning setup.
 
 ### Developing a New Theme
 
