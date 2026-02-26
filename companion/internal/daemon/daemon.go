@@ -19,6 +19,13 @@ type Options struct {
 	Once     bool
 }
 
+const (
+	defaultInterval         = 60 * time.Second
+	startupFastPollWindow   = 2 * time.Minute
+	startupFastPollInterval = 30 * time.Second
+	themeEnvVar             = "VIBEBLOCK_THEME"
+)
+
 type runtimeErrorKind string
 
 const (
@@ -59,6 +66,7 @@ type runtimeDeps struct {
 	now            func() time.Time
 	after          func(time.Duration) <-chan time.Time
 	resolvePort    func(string) (string, error)
+	deviceCaps     func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders func(context.Context) ([]codexbar.ParsedFrame, error)
 	sendLine       func(string, []byte) error
 	newSelector    func() *codexbar.ProviderSelector
@@ -75,6 +83,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	if d.resolvePort == nil {
 		d.resolvePort = usb.ResolvePort
 	}
+	if d.deviceCaps == nil {
+		d.deviceCaps = usb.GetDeviceCapabilities
+	}
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
 	}
@@ -85,11 +96,16 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 		d.newSelector = codexbar.NewProviderSelector
 	}
 	if d.logf == nil {
-		d.logf = func(format string, args ...any) {
-			_, _ = fmt.Printf(format, args...)
-		}
+		d.logf = defaultRuntimeLogf
 	}
 	return d
+}
+
+func defaultRuntimeLogf(format string, args ...any) {
+	message := fmt.Sprintf(format, args...)
+	message = strings.TrimRight(message, "\n")
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	_, _ = fmt.Printf("%s %s\n", timestamp, message)
 }
 
 type runtimeState struct {
@@ -152,7 +168,7 @@ func Run(ctx context.Context, opts Options) error {
 
 func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
-		opts.Interval = 60 * time.Second
+		opts.Interval = defaultInterval
 	}
 	deps = deps.withDefaults()
 
@@ -161,9 +177,13 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	}
 	backoff := newRetryBackoff(opts.Interval)
 	var lastCycleStart time.Time
+	var startedAt time.Time
 
 	for {
 		cycleStart := deps.now()
+		if startedAt.IsZero() {
+			startedAt = cycleStart
+		}
 		if detectSleepWakeGap(lastCycleStart, cycleStart, opts.Interval) {
 			deps.logf("runtime event=sleep-wake gap=%s threshold=%s action=reset-retry\n",
 				cycleStart.Sub(lastCycleStart),
@@ -185,6 +205,8 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 			deps.logf("cycle error: kind=%s op=%s retry=%s err=%v\n", runtimeErr.Kind, runtimeErr.Op, waitFor, err)
 		} else {
 			backoff.Reset()
+			uptime := cycleStart.Sub(startedAt)
+			waitFor = startupInterval(waitFor, uptime)
 		}
 
 		select {
@@ -192,6 +214,29 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 			return ctx.Err()
 		case <-deps.after(waitFor):
 		}
+	}
+}
+
+func startupInterval(normal, uptime time.Duration) time.Duration {
+	if normal <= 0 {
+		normal = defaultInterval
+	}
+	if uptime < 0 || uptime >= startupFastPollWindow {
+		return normal
+	}
+	if startupFastPollInterval < normal {
+		return startupFastPollInterval
+	}
+	return normal
+}
+
+func configuredTheme() string {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(themeEnvVar)))
+	switch raw {
+	case "classic", "crt":
+		return raw
+	default:
+		return ""
 	}
 }
 
@@ -247,6 +292,18 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 		state.lastGood = frame
 		state.lastGoodAt = deps.now()
 		state.hasLastGood = true
+	}
+
+	if selectedTheme := configuredTheme(); selectedTheme != "" {
+		caps, capsErr := deps.deviceCaps(port)
+		if capsErr != nil {
+			deps.logf("runtime event=device-caps-read-failed port=%s err=%v\n", port, capsErr)
+		}
+		if !caps.Known || caps.SupportsTheme {
+			frame.Theme = selectedTheme
+		} else {
+			deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", port, caps.Board, selectedTheme)
+		}
 	}
 
 	line, err := frame.MarshalLine()
@@ -360,7 +417,7 @@ func detectSleepWakeGap(previous, current time.Time, interval time.Duration) boo
 
 func sleepWakeGapThreshold(interval time.Duration) time.Duration {
 	if interval <= 0 {
-		interval = 60 * time.Second
+		interval = defaultInterval
 	}
 	threshold := interval + 30*time.Second
 	if threshold < 45*time.Second {

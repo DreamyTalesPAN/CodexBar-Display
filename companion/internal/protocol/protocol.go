@@ -11,6 +11,7 @@ type Frame struct {
 	Session  int    `json:"session,omitempty"`
 	Weekly   int    `json:"weekly,omitempty"`
 	ResetSec int64  `json:"resetSecs,omitempty"`
+	Theme    string `json:"theme,omitempty"`
 	Error    string `json:"error,omitempty"`
 }
 

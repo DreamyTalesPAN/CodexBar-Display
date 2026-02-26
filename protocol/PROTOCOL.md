@@ -25,9 +25,31 @@ Fields:
 {"v":1,"error":"codexbar unavailable"}
 ```
 
+## Device Hello (Firmware -> Host)
+
+On boot (or after serial reconnect), firmware may emit a capability line:
+
+```json
+{"kind":"hello","protocolVersion":1,"board":"esp8266-smalltv-st7789","firmware":"2026.02","features":["theme"],"maxFrameBytes":512}
+```
+
+Fields:
+- `kind` (string): must be `hello`
+- `protocolVersion` (number): protocol compatibility signal from firmware
+- `board` (string): board identity for setup/runtime compatibility checks
+- `firmware` (string): firmware version/build string
+- `features` (array[string]): optional capabilities (for example `theme`)
+- `maxFrameBytes` (number): maximum safe frame payload size for this firmware
+
+Legacy firmware may emit plain readiness lines (`vibeblock_ready*`) instead of JSON hello.
+Companion treats missing/legacy hello as unknown capabilities and falls back safely.
+
 ## Rules
 - Unknown fields are ignored.
 - Missing numeric fields default to `0` on firmware side.
 - Host should send at least every 60 seconds.
 - Firmware ticks down `resetSecs` locally between host updates.
 - Companion may resend the last known good frame during short CodexBar outages (current default max age: 10 minutes).
+
+## Next
+- Protocol v2 draft for rich rendering/media: `protocol/PROTOCOL_V2_DRAFT.md`

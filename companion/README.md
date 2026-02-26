@@ -1,5 +1,7 @@
 # vibeblock Companion
 
+Operator procedures are centralized in `../docs/operator-runbook.md`.
+
 Go daemon that:
 - fetches real provider usage from CodexBar (`usage --json`)
 - applies deterministic provider selection (`local activity -> usage delta -> sticky current -> CodexBar order`)
@@ -11,27 +13,44 @@ Go daemon that:
 cd companion
 
 go run ./cmd/vibeblock doctor
-go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101 --once
-go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101 --interval 60s
+go run ./cmd/vibeblock health
+go run ./cmd/vibeblock daemon --port /dev/cu.usbserial-10 --once
+go run ./cmd/vibeblock daemon --port /dev/cu.usbserial-10 --interval 60s
 go run ./cmd/vibeblock setup
 go run ./cmd/vibeblock setup --yes
-go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101 --skip-flash
+go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --skip-flash
+go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
+go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101 --firmware-env lilygo_t_display_s3
+go run ./cmd/vibeblock restore-known-good
+go run ./cmd/vibeblock restore-known-good --image tmp/backup_chunks_20260226_090152/weather_backup_full.bin --port /dev/cu.usbserial-10
 ```
 
 `setup` is a one-command installer and is safe to run repeatedly:
 - verifies CodexBar CLI, auto-installs CodexBar via Homebrew (`brew install --cask steipete/tap/codexbar`) when missing
 - resolves serial port (interactive selection when multiple devices are found)
-- flashes firmware (`pio run -e lilygo_t_display_s3 -t upload --upload-port <port>`)
+- flashes firmware (`pio run -e <firmware-env> -t upload --upload-port <port>`)
 - installs current `vibeblock` binary into `~/Library/Application Support/vibeblock/bin/vibeblock`
-- writes/updates `~/Library/LaunchAgents/com.vibeblock.daemon.plist`
+- installs recovery scripts into `~/Library/Application Support/vibeblock/scripts/`
+- creates backup target dir `~/Library/Application Support/vibeblock/backups/`
+- writes/updates `~/Library/LaunchAgents/com.vibeblock.daemon.plist` (default: daemon auto-detects serial port at runtime)
 - restarts launch agent (`bootout -> bootstrap -> kickstart`) and verifies running/waiting state
 
 Setup flags:
 - `--port`: force serial port
 - `--yes`: auto-select defaults without prompt
 - `--skip-flash`: skip firmware flashing
+- `--pin-port`: pin daemon to selected `--port` in LaunchAgent (default is unpinned auto-detect)
+- `--firmware-env`: PlatformIO firmware environment (default `esp8266_smalltv_st7789`, example `lilygo_t_display_s3`)
+
+`restore-known-good` restores a supplier backup image to ESP8266 hardware:
+- auto-detects serial port unless `--port` is provided
+- auto-selects newest backup from configured search dirs unless `--image` is provided
+- uses installed script path by default (`~/Library/Application Support/vibeblock/scripts/esp8266-restore.sh`)
+- verifies backup manifest + SHA256 + device MAC by default
+- supports `--backup-dir`, `--script-path`, `--manifest`, `--skip-verify`
 
 `doctor` validates CodexBar binary, lists serial ports, runs runtime serial checks, and shows a live provider preview.
+`health` prints launch agent status, detected port, last successful frame timestamp, and last error in one view.
 
 ## Runtime behavior
 
@@ -39,7 +58,8 @@ Setup flags:
 - Runtime retry backoff on errors is `1s -> 2s -> 4s -> ... -> 30s` (capped by poll interval).
 - When CodexBar fails temporarily, the daemon reuses the last good frame for up to `10m` (configurable).
 - Sleep/Wake gaps are auto-detected; retry state is reset for faster recovery after wake.
-- If a configured serial port disappears (for example `/dev/cu.usbmodem101` -> `/dev/cu.usbmodem1101` after reconnect), the daemon auto-falls back to port autodetection and continues.
+- By default, daemon resolves serial port via auto-detection each cycle, so USB renumbering is handled automatically.
+- If daemon is explicitly pinned to a port, it auto-falls back to autodetection when the pinned path disappears.
 - Local activity uses provider detectors:
   - `codex` detector: latest `~/.codex/sessions/**/*.jsonl` plus `~/.codex/history.jsonl`
   - `claude` detector: latest `~/.claude/history.jsonl` plus `~/.claude/projects/**/*.jsonl` and `~/.config/claude/projects/**/*.jsonl`

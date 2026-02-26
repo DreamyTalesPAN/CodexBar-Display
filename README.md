@@ -2,70 +2,39 @@
 
 Physical CodexBar status display for desk use.
 
-This project reads local usage data from `codexbar usage --json` and renders one provider on a USB-connected LILYGO T-Display-S3.
+This project reads local usage data from `codexbar usage --json` and renders one provider on a USB-connected display.
 
 ## Project Docs
+- Operator runbook (single source of truth): `docs/operator-runbook.md`
 - Product requirements: `vibeblock-prd.md`
 - Execution checklist: `TODO.md`
 - Provider selection rules: `docs/provider-selection.md`
 - Provider activity detectors: `docs/provider-activity-sources.md`
 - Milestone 1 test matrix: `docs/m1-test-matrix.md`
-- Milestone 2 runtime resilience: `docs/m2-runtime-resilience.md`
+- Supplier hardware checklist: `docs/supplier-hardware-checklist.md`
+- ESP8266 hardware spike notes: `docs/esp8266-spike.md`
 
-## MVP Scope
-- macOS only
-- One connected display
-- Provider selection stays in companion (local activity -> usage delta -> sticky current -> CodexBar order)
-- USB serial transport (no WiFi/BLE in V1)
+## External References (Smart Weather Clock)
+- Original supplier firmware (ESP8266 SmallTV): https://github.com/GeekMagicClock/smalltv
+- Supplier PRO firmware repo (ESP32): https://github.com/GeekMagicClock/smalltv-pro
+- Hardware pinout discussion used for this spike: https://github.com/GeekMagicClock/smalltv/issues/4
+- Community ESPHome adaptation: https://github.com/ViToni/esphome-geekmagic-smalltv
 
-## Start Here
-1. Read `TODO.md`
-2. Connect board and verify serial device path (`/dev/cu.usbmodem*`)
-3. Build firmware bring-up target
-4. Build companion daemon
-
-## Current Status
-
-- Firmware + daemon path is working on macOS with LILYGO T-Display-S3.
-- `vibeblock setup` is a full one-command installer (CodexBar check/install, firmware flash, LaunchAgent install/start).
-
-## Quickstart (Current)
+## Quickstart
 
 ```bash
-# one-command setup
 cd companion
-go run ./cmd/vibeblock setup
 
-# optional non-interactive mode
+# full setup (flash + install + launch agent)
 go run ./cmd/vibeblock setup --yes
 
-# runtime health checks
-go run ./cmd/vibeblock doctor
+# runtime-only update on already flashed devices
+go run ./cmd/vibeblock setup --yes --skip-flash --port /dev/cu.usbserial-10
+
+# one-shot health snapshot
+go run ./cmd/vibeblock health
 ```
 
-Companion supports both:
-- `codexbar` CLI in `PATH`
-- Desktop app helper (`CodexBarCLI`) inside `CodexBar.app`
+Operator procedures (setup, recovery, smoke test, troubleshooting) are maintained in:
 
-## Manual LaunchAgent Flow (Optional)
-
-```bash
-cd companion
-go build -o vibeblock ./cmd/vibeblock
-mkdir -p "$HOME/Library/Application Support/vibeblock/bin"
-cp "$PWD/vibeblock" "$HOME/Library/Application Support/vibeblock/bin/vibeblock"
-mkdir -p "$HOME/Library/LaunchAgents"
-cp "$PWD/install/com.vibeblock.daemon.plist" "$HOME/Library/LaunchAgents/com.vibeblock.daemon.plist"
-launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/com.vibeblock.daemon.plist"
-launchctl kickstart -k gui/$(id -u)/com.vibeblock.daemon
-```
-
-Logs:
-
-```bash
-tail -f /tmp/vibeblock-daemon.out.log
-tail -f /tmp/vibeblock-daemon.err.log
-# if you run a custom plist with Library logs:
-tail -f "$HOME/Library/Logs/vibeblock-daemon.out.log"
-tail -f "$HOME/Library/Logs/vibeblock-daemon.err.log"
-```
+`docs/operator-runbook.md`

@@ -48,6 +48,84 @@ func TestRunCycleWithDepsUsesUnifiedErrorFrameWhenNoLastGood(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithDepsSkipsThemeWhenDeviceDoesNotSupportIt(t *testing.T) {
+	prepareFastTestEnv(t)
+	t.Setenv(themeEnvVar, "crt")
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	var sentLine []byte
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:         true,
+				Board:         "esp32-lilygo-t-display-s3",
+				SupportsTheme: false,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 12, 30, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(port string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Theme != "" {
+		t.Fatalf("expected theme to be skipped for unsupported device, got %q", frame.Theme)
+	}
+}
+
+func TestRunCycleWithDepsKeepsThemeForUnknownDeviceCapabilities(t *testing.T) {
+	prepareFastTestEnv(t)
+	t.Setenv(themeEnvVar, "crt")
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	var sentLine []byte
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.UnknownDeviceCapabilities(), nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 12, 30, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(port string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Theme != "crt" {
+		t.Fatalf("expected theme to remain for unknown device capabilities, got %q", frame.Theme)
+	}
+}
+
 func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -216,13 +294,27 @@ func TestRunWithDepsRetriesAndRecoversAfterReconnect(t *testing.T) {
 
 	foundIntervalDelay := false
 	for _, d := range delays {
-		if d == 60*time.Second {
+		if d == startupFastPollInterval {
 			foundIntervalDelay = true
 			break
 		}
 	}
 	if !foundIntervalDelay {
-		t.Fatalf("expected loop to return to normal interval after recovery, got %v", delays)
+		t.Fatalf("expected loop to return to startup interval after recovery, got %v", delays)
+	}
+}
+
+func TestStartupIntervalSwitchesAfterWarmupWindow(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	if got := startupInterval(60*time.Second, 10*time.Second); got != startupFastPollInterval {
+		t.Fatalf("expected startup interval during warmup, got %s", got)
+	}
+	if got := startupInterval(60*time.Second, startupFastPollWindow); got != 60*time.Second {
+		t.Fatalf("expected normal interval after warmup window, got %s", got)
+	}
+	if got := startupInterval(20*time.Second, 10*time.Second); got != 20*time.Second {
+		t.Fatalf("expected normal interval when already shorter than startup interval, got %s", got)
 	}
 }
 
