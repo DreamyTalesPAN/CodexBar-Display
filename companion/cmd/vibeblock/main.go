@@ -152,7 +152,7 @@ func runSetup(args []string) error {
 	yes := fs.Bool("yes", false, "auto-select defaults without prompts")
 	skipFlash := fs.Bool("skip-flash", false, "skip firmware flashing")
 	pinPort := fs.Bool("pin-port", false, "pin daemon to selected --port in LaunchAgent (default: auto-detect)")
-	firmwareEnv := fs.String("firmware-env", "lilygo_t_display_s3", "PlatformIO environment to flash (examples: lilygo_t_display_s3, esp8266_smalltv_st7789)")
+	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "PlatformIO environment to flash (examples: esp8266_smalltv_st7789, lilygo_t_display_s3)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

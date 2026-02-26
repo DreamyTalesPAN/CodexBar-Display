@@ -1,6 +1,7 @@
 package usb
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	serial "go.bug.st/serial"
 )
 
@@ -19,7 +21,12 @@ const (
 	serialBaudRate       = 115200
 	closeTimeout         = 200 * time.Millisecond
 	reopenSettleDuration = 1200 * time.Millisecond
+	helloReadWindow      = 300 * time.Millisecond
+	helloReadStepTimeout = 80 * time.Millisecond
+	helloReadBufferBytes = 1024
 )
+
+var ErrDeviceHelloUnavailable = errors.New("device hello unavailable")
 
 func ListPorts() ([]string, error) {
 	ports, err := serial.GetPortsList()
@@ -54,6 +61,14 @@ func SendLine(port string, line []byte) error {
 	return defaultSender.Send(port, line)
 }
 
+func ReadDeviceHello(port string) (protocol.DeviceHello, error) {
+	return defaultSender.DeviceHello(port)
+}
+
+func GetDeviceCapabilities(port string) (protocol.DeviceCapabilities, error) {
+	return defaultSender.DeviceCapabilities(port)
+}
+
 func ProbePort(port string) error {
 	p, err := serialOpen(port, openMode())
 	if err != nil {
@@ -65,9 +80,13 @@ func ProbePort(port string) error {
 }
 
 type serialSender struct {
-	mu   sync.Mutex
-	port serial.Port
-	path string
+	mu            sync.Mutex
+	port          serial.Port
+	path          string
+	hello         protocol.DeviceHello
+	helloSeen     bool
+	capabilities  protocol.DeviceCapabilities
+	capsCollected bool
 }
 
 func (s *serialSender) Send(path string, line []byte) error {
@@ -80,9 +99,10 @@ func (s *serialSender) Send(path string, line []byte) error {
 	}
 	if opened {
 		// Some ESP8266 USB bridges pulse reset/boot lines when a serial port is opened.
-		// Give the MCU a short settle window and clear any boot noise before first write.
+		// Give the MCU a short settle window and capture boot hello before first write.
 		_ = s.port.ResetInputBuffer()
 		time.Sleep(reopenSettleDuration)
+		s.captureHelloLocked()
 		_ = s.port.ResetInputBuffer()
 	}
 
@@ -109,7 +129,54 @@ func (s *serialSender) ensurePort(path string) (bool, error) {
 
 	s.port = p
 	s.path = path
+	s.hello = protocol.DeviceHello{}
+	s.helloSeen = false
+	s.capabilities = protocol.UnknownDeviceCapabilities()
+	s.capsCollected = false
 	return true, nil
+}
+
+func (s *serialSender) DeviceHello(path string) (protocol.DeviceHello, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	opened, err := s.ensurePort(path)
+	if err != nil {
+		return protocol.DeviceHello{}, err
+	}
+	if opened {
+		_ = s.port.ResetInputBuffer()
+		time.Sleep(reopenSettleDuration)
+		s.captureHelloLocked()
+		_ = s.port.ResetInputBuffer()
+	} else if !s.capsCollected {
+		s.captureHelloLocked()
+	}
+
+	if !s.helloSeen {
+		return protocol.DeviceHello{}, ErrDeviceHelloUnavailable
+	}
+	return s.hello, nil
+}
+
+func (s *serialSender) DeviceCapabilities(path string) (protocol.DeviceCapabilities, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	opened, err := s.ensurePort(path)
+	if err != nil {
+		return protocol.UnknownDeviceCapabilities(), err
+	}
+	if opened {
+		_ = s.port.ResetInputBuffer()
+		time.Sleep(reopenSettleDuration)
+		s.captureHelloLocked()
+		_ = s.port.ResetInputBuffer()
+	} else if !s.capsCollected {
+		s.captureHelloLocked()
+	}
+
+	return s.capabilities, nil
 }
 
 func (s *serialSender) closeCurrentLocked() {
@@ -119,6 +186,10 @@ func (s *serialSender) closeCurrentLocked() {
 	_ = closePortBestEffort(s.port, closeTimeout)
 	s.port = nil
 	s.path = ""
+	s.hello = protocol.DeviceHello{}
+	s.helloSeen = false
+	s.capabilities = protocol.UnknownDeviceCapabilities()
+	s.capsCollected = false
 }
 
 func openMode() *serial.Mode {
@@ -194,4 +265,109 @@ func chooseAutoPort(ports []string) (string, error) {
 	}
 
 	return "", errors.New("no usb serial ports found")
+}
+
+func (s *serialSender) captureHelloLocked() {
+	if s.port == nil {
+		return
+	}
+	hello, seen := readHelloFromPort(s.port, helloReadWindow)
+	if !seen {
+		s.hello = protocol.DeviceHello{}
+		s.helloSeen = false
+		s.capabilities = protocol.UnknownDeviceCapabilities()
+		s.capsCollected = true
+		return
+	}
+	hello = hello.Normalize()
+	s.hello = hello
+	s.helloSeen = true
+	s.capabilities = protocol.CapabilitiesFromHello(hello)
+	s.capsCollected = true
+}
+
+func readHelloFromPort(port serial.Port, window time.Duration) (protocol.DeviceHello, bool) {
+	if port == nil {
+		return protocol.DeviceHello{}, false
+	}
+	if window <= 0 {
+		return protocol.DeviceHello{}, false
+	}
+
+	_ = port.SetReadTimeout(helloReadStepTimeout)
+
+	deadline := time.Now().Add(window)
+	chunk := make([]byte, 128)
+	buffer := make([]byte, 0, helloReadBufferBytes)
+
+	for time.Now().Before(deadline) {
+		n, err := port.Read(chunk)
+		if err != nil {
+			continue
+		}
+		if n <= 0 {
+			continue
+		}
+		buffer = append(buffer, chunk[:n]...)
+		if len(buffer) > helloReadBufferBytes {
+			buffer = buffer[len(buffer)-helloReadBufferBytes:]
+		}
+
+		for {
+			idx := strings.IndexByte(string(buffer), '\n')
+			if idx < 0 {
+				break
+			}
+			line := strings.TrimSpace(string(buffer[:idx]))
+			buffer = buffer[idx+1:]
+
+			if hello, ok := parseDeviceHelloLine(line); ok {
+				return hello, true
+			}
+		}
+	}
+
+	line := strings.TrimSpace(string(buffer))
+	if hello, ok := parseDeviceHelloLine(line); ok {
+		return hello, true
+	}
+
+	return protocol.DeviceHello{}, false
+}
+
+func parseDeviceHelloLine(line string) (protocol.DeviceHello, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return protocol.DeviceHello{}, false
+	}
+
+	if hello, ok := parseLegacyReadyLine(line); ok {
+		return hello, true
+	}
+
+	if !strings.HasPrefix(line, "{") || !strings.HasSuffix(line, "}") {
+		return protocol.DeviceHello{}, false
+	}
+
+	var hello protocol.DeviceHello
+	if err := json.Unmarshal([]byte(line), &hello); err != nil {
+		return protocol.DeviceHello{}, false
+	}
+	hello = hello.Normalize()
+	if hello.Kind != "hello" {
+		return protocol.DeviceHello{}, false
+	}
+	return hello, true
+}
+
+func parseLegacyReadyLine(line string) (protocol.DeviceHello, bool) {
+	switch strings.TrimSpace(line) {
+	case "vibeblock_ready_display", "vibeblock_ready_probe", "vibeblock_ready":
+		return protocol.DeviceHello{
+			Kind:            "hello",
+			ProtocolVersion: 1,
+		}, true
+	default:
+		return protocol.DeviceHello{}, false
+	}
 }

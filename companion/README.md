@@ -20,6 +20,7 @@ go run ./cmd/vibeblock setup
 go run ./cmd/vibeblock setup --yes
 go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --skip-flash
 go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
+go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101 --firmware-env lilygo_t_display_s3
 go run ./cmd/vibeblock restore-known-good
 go run ./cmd/vibeblock restore-known-good --image tmp/backup_chunks_20260226_090152/weather_backup_full.bin --port /dev/cu.usbserial-10
 ```
@@ -39,7 +40,7 @@ Setup flags:
 - `--yes`: auto-select defaults without prompt
 - `--skip-flash`: skip firmware flashing
 - `--pin-port`: pin daemon to selected `--port` in LaunchAgent (default is unpinned auto-detect)
-- `--firmware-env`: PlatformIO firmware environment (default `lilygo_t_display_s3`, example `esp8266_smalltv_st7789`)
+- `--firmware-env`: PlatformIO firmware environment (default `esp8266_smalltv_st7789`, example `lilygo_t_display_s3`)
 
 `restore-known-good` restores a supplier backup image to ESP8266 hardware:
 - auto-detects serial port unless `--port` is provided

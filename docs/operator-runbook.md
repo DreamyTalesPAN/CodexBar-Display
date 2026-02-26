@@ -22,20 +22,20 @@ go run ./cmd/vibeblock doctor
 `setup` is idempotent and now handles the common "port busy" case automatically by attempting
 `launchctl bootout gui/$(id -u)/com.vibeblock.daemon` before serial probe and flash.
 
-### Default firmware target (ESP32-S3)
+### Default firmware target (ESP8266 SmallTV)
 
 ```bash
 cd companion
 go run ./cmd/vibeblock setup --yes
 ```
 
-### ESP8266 target
+### ESP32-S3 target (override)
 
 ```bash
 cd companion
 go run ./cmd/vibeblock setup --yes \
-  --port /dev/cu.usbserial-10 \
-  --firmware-env esp8266_smalltv_st7789
+  --port /dev/cu.usbmodem101 \
+  --firmware-env lilygo_t_display_s3
 ```
 
 Useful flags:

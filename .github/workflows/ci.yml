@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  companion-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+
+      - name: Run Go tests
+        working-directory: companion
+        run: go test ./...
+
+  firmware-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - firmware_dir: firmware_esp8266
+            env_name: esp8266_probe
+          - firmware_dir: firmware_esp8266
+            env_name: esp8266_smalltv_st7789
+          - firmware_dir: firmware
+            env_name: lilygo_t_display_s3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build firmware
+        working-directory: ${{ matrix.firmware_dir }}
+        run: pio run -e ${{ matrix.env_name }}

@@ -1,7 +1,16 @@
 #include <Arduino.h>
-#include <ArduinoJson.h>
 #include <cstdio>
 #include <cstring>
+
+#include "../../firmware_shared/vibeblock_core.h"
+
+#ifndef VIBEBLOCK_BOARD_ID
+#define VIBEBLOCK_BOARD_ID "esp8266-unknown"
+#endif
+
+#ifndef VIBEBLOCK_FW_VERSION
+#define VIBEBLOCK_FW_VERSION "dev"
+#endif
 
 #ifndef VIBEBLOCK_PROBE_ONLY
 #include <TFT_eSPI.h>
@@ -9,29 +18,14 @@
 
 namespace {
 
-struct Frame {
-  String provider;
-  String label;
-  int session = 0;
-  int weekly = 0;
-  int64_t resetSecs = 0;
-  bool hasTheme = false;
-  String theme;
-  bool hasError = false;
-  String error;
-};
-
-char lineBuffer[512];
-size_t lineLen = 0;
-bool lineOverflowed = false;
+vibeblock::core::RuntimeState runtimeState;
+vibeblock::core::LineReaderState lineReaderState;
 bool screenDirty = true;
 
-Frame current;
-bool hasFrame = false;
+vibeblock::core::Frame& current = runtimeState.current;
+bool& hasFrame = runtimeState.hasFrame;
 int64_t lastRenderedSecs = -1;
 int64_t lastRenderedMinuteBucket = -1;
-unsigned long resetBaseMillis = 0;
-int64_t resetBaseSecs = 0;
 
 #ifndef VIBEBLOCK_PROBE_ONLY
 uint8_t splashWaitingDots = 0;
@@ -55,41 +49,17 @@ int64_t probeLastRemainSecs = -1;
 TFT_eSPI tft = TFT_eSPI();
 #endif
 
-int clampPct(int v) {
-  if (v < 0) {
-    return 0;
-  }
-  if (v > 100) {
-    return 100;
-  }
-  return v;
-}
-
 int64_t currentRemainingSecs() {
-  if (!hasFrame) {
-    return 0;
-  }
-  const unsigned long elapsedMillis = millis() - resetBaseMillis;
-  const int64_t elapsedSecs = static_cast<int64_t>(elapsedMillis / 1000UL);
-  const int64_t remain = resetBaseSecs - elapsedSecs;
-  if (remain < 0) {
-    return 0;
-  }
-  return remain;
+  return vibeblock::core::CurrentRemainingSecs(runtimeState, millis());
 }
 
 String formatDuration(int64_t secs) {
-  const int64_t hours = secs / 3600;
-  const int64_t minutes = (secs % 3600) / 60;
-  if (hours > 0) {
-    return String(hours) + "h " + String(minutes) + "m";
-  }
-  return String(minutes) + "m";
+  return vibeblock::core::FormatDuration(secs);
 }
 
 #ifndef VIBEBLOCK_PROBE_ONLY
 void drawBar(int x, int y, int w, int h, int pct, uint16_t fillColor) {
-  const int p = clampPct(pct);
+  const int p = vibeblock::core::ClampPct(pct);
   int filled = (w * p) / 100;
   if (filled > (w - 2)) {
     filled = w - 2;
@@ -746,8 +716,8 @@ void drawResetCountdownLineCRT(int64_t remain) {
 
 void drawUsageCRT() {
   const int64_t remain = currentRemainingSecs();
-  const int session = clampPct(current.session);
-  const int weekly = clampPct(current.weekly);
+  const int session = vibeblock::core::ClampPct(current.session);
+  const int weekly = vibeblock::core::ClampPct(current.weekly);
   const int innerBarWidth = kCrtBodyW - 2;
   const int innerBarHeight = kCrtBarH - 2;
 
@@ -915,109 +885,46 @@ void renderProbe() {
 }
 #endif
 
-bool parseFrameLine(const char* line, Frame& out) {
-  JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, line);
-  if (err) {
-    out = {};
-    out.hasError = true;
-    out.error = String("bad json: ") + err.c_str();
-    return true;
-  }
-
-  bool hasTheme = false;
-  String themeName;
-  if (doc["theme"].is<const char*>()) {
-    themeName = String(doc["theme"].as<const char*>());
-    themeName.trim();
-    themeName.toLowerCase();
-    if (themeName == "classic" || themeName == "crt") {
-      hasTheme = true;
-    } else {
-      themeName = "";
-    }
-  }
-
-  if (doc["error"].is<const char*>()) {
-    out = {};
-    out.hasTheme = hasTheme;
-    out.theme = themeName;
-    out.hasError = true;
-    out.error = String(doc["error"].as<const char*>());
-    return true;
-  }
-
-  out = {};
-  out.provider = String(doc["provider"] | "");
-  out.label = String(doc["label"] | "Provider");
-  out.session = clampPct(doc["session"] | 0);
-  out.weekly = clampPct(doc["weekly"] | 0);
-  out.resetSecs = static_cast<int64_t>(doc["resetSecs"] | 0);
-  out.hasTheme = hasTheme;
-  out.theme = themeName;
-  out.hasError = false;
-  out.error = "";
-  return true;
-}
-
-bool frameVisualChanged(const Frame& previous, const Frame& next) {
-  if (previous.hasError != next.hasError) {
-    return true;
-  }
-  if (next.hasError) {
-    return previous.error != next.error;
-  }
-  return previous.provider != next.provider ||
-         previous.label != next.label ||
-         previous.session != next.session ||
-         previous.weekly != next.weekly;
-}
-
 void consumeSerial() {
   while (Serial.available() > 0) {
     const char c = static_cast<char>(Serial.read());
-
-    if (c == '\r') {
-      continue;
-    }
-
-    if (c == '\n') {
-      lineBuffer[lineLen] = '\0';
-      if (!lineOverflowed && lineLen > 0) {
-        Frame next;
-        if (parseFrameLine(lineBuffer, next)) {
-          const bool hadFrame = hasFrame;
-          const bool visualChanged = !hadFrame || frameVisualChanged(current, next);
+    vibeblock::core::SerialConsumeEvent event;
+    if (vibeblock::core::ConsumeSerialByte(
+            lineReaderState,
+            runtimeState,
+            c,
+            millis(),
+            true,
+            event)) {
 #ifndef VIBEBLOCK_PROBE_ONLY
-          if (next.hasTheme) {
-            Theme frameTheme;
-            if (themeFromName(next.theme, frameTheme) && frameTheme != activeTheme) {
-              activeTheme = frameTheme;
-              screenDirty = true;
-            }
-          }
-#endif
-          current = next;
-          hasFrame = true;
-          if (visualChanged) {
-            screenDirty = true;
-          }
-          resetBaseSecs = current.resetSecs;
-          resetBaseMillis = millis();
-          Serial.println("frame_received");
+      if (current.hasTheme) {
+        Theme frameTheme;
+        if (themeFromName(current.theme, frameTheme) && frameTheme != activeTheme) {
+          activeTheme = frameTheme;
+          screenDirty = true;
         }
       }
-      lineLen = 0;
-      lineOverflowed = false;
-      continue;
-    }
-
-    if (!lineOverflowed && lineLen + 1 < sizeof(lineBuffer)) {
-      lineBuffer[lineLen++] = c;
-    } else {
-      lineOverflowed = true;
+#endif
+      if (event.visualChanged) {
+        screenDirty = true;
+      }
+      Serial.println("frame_received");
     }
   }
+}
+
+void emitDeviceHello() {
+#ifdef VIBEBLOCK_PROBE_ONLY
+  const char* features = "[]";
+#else
+  const char* features = "[\"theme\"]";
+#endif
+  Serial.printf(
+      "{\"kind\":\"hello\",\"protocolVersion\":1,\"board\":\"%s\",\"firmware\":\"%s\","
+      "\"features\":%s,\"maxFrameBytes\":512}\n",
+      VIBEBLOCK_BOARD_ID,
+      VIBEBLOCK_FW_VERSION,
+      features);
 }
 
 }  // namespace
@@ -1035,6 +942,8 @@ void setup() {
   tft.setRotation(0);
   drawSplash();
 #endif
+
+  emitDeviceHello();
 
 #ifdef VIBEBLOCK_PROBE_ONLY
   Serial.println("vibeblock_ready_probe");

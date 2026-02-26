@@ -17,13 +17,13 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
 const (
 	launchAgentLabel      = "com.vibeblock.daemon"
 	defaultDaemonInterval = "60s"
-	firmwareEnvironment   = "lilygo_t_display_s3"
 	codexbarInstallURL    = "https://codexbar.app/"
 	codexbarBrewCask      = "steipete/tap/codexbar"
 )
@@ -39,19 +39,20 @@ type Options struct {
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
 
 type deps struct {
-	stdin          io.Reader
-	stdout         io.Writer
-	cwd            func() (string, error)
-	executablePath func() (string, error)
-	homeDir        func() (string, error)
-	uid            func() int
-	listPorts      func() ([]string, error)
-	resolvePort    func(string) (string, error)
-	probePort      func(string) error
-	findCodexbar   func() (string, error)
-	lookPath       func(string) (string, error)
-	runCommand     commandRunner
-	isInteractive  func() bool
+	stdin           io.Reader
+	stdout          io.Writer
+	cwd             func() (string, error)
+	executablePath  func() (string, error)
+	homeDir         func() (string, error)
+	uid             func() int
+	listPorts       func() ([]string, error)
+	resolvePort     func(string) (string, error)
+	probePort       func(string) error
+	readDeviceHello func(string) (protocol.DeviceHello, error)
+	findCodexbar    func() (string, error)
+	lookPath        func(string) (string, error)
+	runCommand      commandRunner
+	isInteractive   func() bool
 }
 
 func (d deps) withDefaults() deps {
@@ -81,6 +82,9 @@ func (d deps) withDefaults() deps {
 	}
 	if d.probePort == nil {
 		d.probePort = usb.ProbePort
+	}
+	if d.readDeviceHello == nil {
+		d.readDeviceHello = usb.ReadDeviceHello
 	}
 	if d.findCodexbar == nil {
 		d.findCodexbar = codexbar.FindBinary
@@ -186,7 +190,29 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 	firmwareEnv := strings.TrimSpace(opts.FirmwareEnv)
 	if firmwareEnv == "" {
-		firmwareEnv = firmwareEnvironment
+		firmwareEnv = DefaultFirmwareEnvironment()
+	}
+
+	targetBoardIDs := firmwareTargetExpectedIDs(firmwareEnv)
+	if len(targetBoardIDs) > 0 {
+		hello, helloErr := d.readDeviceHello(port)
+		if helloErr == nil {
+			detectedBoard := strings.TrimSpace(strings.ToLower(hello.Board))
+			if detectedBoard != "" && !containsString(targetBoardIDs, detectedBoard) {
+				return &StepError{
+					Step: "unsupported-hardware",
+					Err: fmt.Errorf(
+						"device board %q is incompatible with firmware env %q",
+						detectedBoard,
+						firmwareEnv,
+					),
+					Hint: "select a matching --firmware-env for the connected board or connect the expected hardware",
+				}
+			}
+			if detectedBoard != "" {
+				fmt.Fprintf(d.stdout, "Detected device board: %s (protocol=%d)\n", detectedBoard, hello.ProtocolVersion)
+			}
+		}
 	}
 
 	var repoRoot string
@@ -504,11 +530,24 @@ func flashFirmware(ctx context.Context, d deps, repoRoot, port, firmwareEnv stri
 }
 
 func firmwareProjectDirForEnvironment(repoRoot, firmwareEnv string) string {
+	if target, ok := lookupFirmwareTarget(firmwareEnv); ok {
+		targetDir := filepath.Join(repoRoot, target.ProjectDir)
+		if fileExists(filepath.Join(targetDir, "platformio.ini")) {
+			return targetDir
+		}
+	}
+
 	env := strings.TrimSpace(strings.ToLower(firmwareEnv))
-	if strings.HasPrefix(env, "esp8266_") {
+	switch {
+	case strings.HasPrefix(env, "esp8266_"):
 		esp8266Dir := filepath.Join(repoRoot, "firmware_esp8266")
 		if fileExists(filepath.Join(esp8266Dir, "platformio.ini")) {
 			return esp8266Dir
+		}
+	case strings.HasPrefix(env, "lilygo_"), strings.HasPrefix(env, "esp32_"):
+		esp32Dir := filepath.Join(repoRoot, "firmware")
+		if fileExists(filepath.Join(esp32Dir, "platformio.ini")) {
+			return esp32Dir
 		}
 	}
 	return filepath.Join(repoRoot, "firmware")
@@ -520,6 +559,19 @@ func flashRecoveryHint(output, port string, uid int) string {
 		return fmt.Sprintf("ensure no process holds %s, run `launchctl bootout %s 2>/dev/null || true`, then rerun setup", port, launchServiceTarget(uid))
 	}
 	return "check USB cable/device, then retry setup or pass an explicit --port"
+}
+
+func containsString(all []string, target string) bool {
+	target = strings.TrimSpace(strings.ToLower(target))
+	if target == "" {
+		return false
+	}
+	for _, item := range all {
+		if strings.TrimSpace(strings.ToLower(item)) == target {
+			return true
+		}
+	}
+	return false
 }
 
 func installBinary(sourcePath, home string) (string, error) {

@@ -66,6 +66,7 @@ type runtimeDeps struct {
 	now            func() time.Time
 	after          func(time.Duration) <-chan time.Time
 	resolvePort    func(string) (string, error)
+	deviceCaps     func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders func(context.Context) ([]codexbar.ParsedFrame, error)
 	sendLine       func(string, []byte) error
 	newSelector    func() *codexbar.ProviderSelector
@@ -81,6 +82,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.resolvePort == nil {
 		d.resolvePort = usb.ResolvePort
+	}
+	if d.deviceCaps == nil {
+		d.deviceCaps = usb.GetDeviceCapabilities
 	}
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
@@ -291,7 +295,15 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 	}
 
 	if selectedTheme := configuredTheme(); selectedTheme != "" {
-		frame.Theme = selectedTheme
+		caps, capsErr := deps.deviceCaps(port)
+		if capsErr != nil {
+			deps.logf("runtime event=device-caps-read-failed port=%s err=%v\n", port, capsErr)
+		}
+		if !caps.Known || caps.SupportsTheme {
+			frame.Theme = selectedTheme
+		} else {
+			deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", port, caps.Board, selectedTheme)
+		}
 	}
 
 	line, err := frame.MarshalLine()

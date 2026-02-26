@@ -1,31 +1,28 @@
 #include <Arduino.h>
-#include <ArduinoJson.h>
 #include <TFT_eSPI.h>
+
+#include "../../firmware_shared/vibeblock_core.h"
+
+#ifndef VIBEBLOCK_BOARD_ID
+#define VIBEBLOCK_BOARD_ID "esp32-unknown"
+#endif
+
+#ifndef VIBEBLOCK_FW_VERSION
+#define VIBEBLOCK_FW_VERSION "dev"
+#endif
 
 namespace {
 
-struct Frame {
-  String provider;
-  String label;
-  int session = 0;
-  int weekly = 0;
-  int64_t resetSecs = 0;
-  bool hasError = false;
-  String error;
-};
-
 TFT_eSPI tft = TFT_eSPI();
 
-char lineBuffer[512];
-size_t lineLen = 0;
-bool lineOverflowed = false;
+vibeblock::core::RuntimeState runtimeState;
+vibeblock::core::LineReaderState lineReaderState;
 
-Frame current;
-bool hasFrame = false;
 bool screenDirty = true;
 int64_t lastRenderedSecs = -1;
-unsigned long resetBaseMillis = 0;
-int64_t resetBaseSecs = 0;
+
+vibeblock::core::Frame& current = runtimeState.current;
+bool& hasFrame = runtimeState.hasFrame;
 
 constexpr int kContentX = 10;
 constexpr int kContentW = 300;
@@ -38,36 +35,15 @@ constexpr int kResetY = 140;
 constexpr uint16_t kAnthropicOrange = 0xDBAA;
 
 int clampPct(int v) {
-  if (v < 0) {
-    return 0;
-  }
-  if (v > 100) {
-    return 100;
-  }
-  return v;
+  return vibeblock::core::ClampPct(v);
 }
 
 int64_t currentRemainingSecs() {
-  if (!hasFrame) {
-    return 0;
-  }
-  unsigned long elapsedMillis = millis() - resetBaseMillis;
-  int64_t elapsedSecs = static_cast<int64_t>(elapsedMillis / 1000UL);
-  int64_t remain = resetBaseSecs - elapsedSecs;
-  if (remain < 0) {
-    return 0;
-  }
-  return remain;
+  return vibeblock::core::CurrentRemainingSecs(runtimeState, millis());
 }
 
 String formatDuration(int64_t secs) {
-  int64_t hours = secs / 3600;
-  int64_t minutes = (secs % 3600) / 60;
-
-  if (hours > 0) {
-    return String(hours) + "h " + String(minutes) + "m";
-  }
-  return String(minutes) + "m";
+  return vibeblock::core::FormatDuration(secs);
 }
 
 void drawResetLine(int64_t remainSecs) {
@@ -159,66 +135,31 @@ void drawUsage() {
   lastRenderedSecs = remain;
 }
 
-bool parseFrameLine(const char* line, Frame& out) {
-  JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, line);
-  if (err) {
-    out = {};
-    out.hasError = true;
-    out.error = String("bad json: ") + err.c_str();
-    return true;
-  }
-
-  if (doc["error"].is<const char*>()) {
-    out = {};
-    out.hasError = true;
-    out.error = String(doc["error"].as<const char*>());
-    return true;
-  }
-
-  out = {};
-  out.provider = String(doc["provider"] | "");
-  out.label = String(doc["label"] | "Provider");
-  out.session = clampPct(doc["session"] | 0);
-  out.weekly = clampPct(doc["weekly"] | 0);
-  out.resetSecs = static_cast<int64_t>(doc["resetSecs"] | 0);
-  out.hasError = false;
-  out.error = "";
-  return true;
-}
-
 void consumeSerial() {
   while (Serial.available() > 0) {
-    char c = static_cast<char>(Serial.read());
-
-    if (c == '\r') {
-      continue;
-    }
-
-    if (c == '\n') {
-      lineBuffer[lineLen] = '\0';
-      if (!lineOverflowed && lineLen > 0) {
-        Frame next;
-        if (parseFrameLine(lineBuffer, next)) {
-          current = next;
-          hasFrame = true;
-          screenDirty = true;
-          resetBaseSecs = current.resetSecs;
-          resetBaseMillis = millis();
-          Serial.println("frame_received");
-        }
+    const char c = static_cast<char>(Serial.read());
+    vibeblock::core::SerialConsumeEvent event;
+    if (vibeblock::core::ConsumeSerialByte(
+            lineReaderState,
+            runtimeState,
+            c,
+            millis(),
+            false,
+            event)) {
+      if (event.visualChanged) {
+        screenDirty = true;
       }
-      lineLen = 0;
-      lineOverflowed = false;
-      continue;
-    }
-
-    if (!lineOverflowed && lineLen + 1 < sizeof(lineBuffer)) {
-      lineBuffer[lineLen++] = c;
-    } else {
-      lineOverflowed = true;
+      Serial.println("frame_received");
     }
   }
+}
+
+void emitDeviceHello() {
+  Serial.printf(
+      "{\"kind\":\"hello\",\"protocolVersion\":1,\"board\":\"%s\",\"firmware\":\"%s\","
+      "\"features\":[],\"maxFrameBytes\":512}\n",
+      VIBEBLOCK_BOARD_ID,
+      VIBEBLOCK_FW_VERSION);
 }
 
 }  // namespace
@@ -239,6 +180,7 @@ void setup() {
   tft.setRotation(1);
   drawSplash();
 
+  emitDeviceHello();
   Serial.println("vibeblock_ready");
 }
 
