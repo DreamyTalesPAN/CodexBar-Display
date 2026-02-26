@@ -23,6 +23,7 @@ const (
 	defaultInterval         = 60 * time.Second
 	startupFastPollWindow   = 2 * time.Minute
 	startupFastPollInterval = 30 * time.Second
+	themeEnvVar             = "VIBEBLOCK_THEME"
 )
 
 type runtimeErrorKind string
@@ -225,6 +226,16 @@ func startupInterval(normal, uptime time.Duration) time.Duration {
 	return normal
 }
 
+func configuredTheme() string {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(themeEnvVar)))
+	switch raw {
+	case "classic", "crt":
+		return raw
+	default:
+		return ""
+	}
+}
+
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	if state == nil {
@@ -277,6 +288,10 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 		state.lastGood = frame
 		state.lastGoodAt = deps.now()
 		state.hasLastGood = true
+	}
+
+	if selectedTheme := configuredTheme(); selectedTheme != "" {
+		frame.Theme = selectedTheme
 	}
 
 	line, err := frame.MarshalLine()

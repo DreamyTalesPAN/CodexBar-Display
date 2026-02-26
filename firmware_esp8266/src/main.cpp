@@ -15,6 +15,8 @@ struct Frame {
   int session = 0;
   int weekly = 0;
   int64_t resetSecs = 0;
+  bool hasTheme = false;
+  String theme;
   bool hasError = false;
   String error;
 };
@@ -155,6 +157,53 @@ int centeredTextX(const char* text, int textSize) {
   return x;
 }
 
+enum class Theme : uint8_t {
+  Classic = 0,
+  CRT = 1,
+};
+
+#if defined(VIBEBLOCK_THEME_CRT)
+constexpr Theme kDefaultTheme = Theme::CRT;
+#else
+constexpr Theme kDefaultTheme = Theme::Classic;
+#endif
+
+Theme activeTheme = kDefaultTheme;
+
+constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
+  return static_cast<uint16_t>(((r & 0xF8U) << 8) | ((g & 0xFCU) << 3) | (b >> 3));
+}
+
+constexpr uint16_t kCrtBg = rgb565(2, 11, 2);
+constexpr uint16_t kCrtGreen = rgb565(0, 255, 65);
+constexpr uint16_t kCrtDim = rgb565(0, 143, 36);
+constexpr uint16_t kCrtBorder = rgb565(0, 61, 16);
+constexpr uint16_t kCrtTrack = rgb565(1, 15, 1);
+
+constexpr int kCrtDividerY = 40;
+constexpr int kCrtHeaderTextY = 4;
+constexpr int kCrtStatusDotX = 224;
+constexpr int kCrtStatusDotY = 14;
+constexpr int kCrtStatusDotSize = 10;
+constexpr int kCrtBodyX = 8;
+constexpr int kCrtBodyW = 224;
+constexpr int kCrtBarH = 20;
+constexpr int kCrtSessionLabelY = 50;
+constexpr int kCrtSessionBarY = 88;
+constexpr int kCrtWeeklyLabelY = 118;
+constexpr int kCrtWeeklyBarY = 156;
+constexpr int kCrtMidDividerY = 190;
+constexpr int kCrtResetLabelY = 198;
+constexpr int kCrtResetClearY = 196;
+constexpr int kCrtResetClearH = 36;
+constexpr int kCrtSplashLine1Y = 74;
+constexpr int kCrtSplashLine2Y = 110;
+constexpr int kCrtSplashLine2ClearY = 110;
+constexpr int kCrtSplashLine2ClearH = 36;
+constexpr int kCrtSplashHintY = 196;
+constexpr int kCrtSplashHintClearY = 196;
+constexpr int kCrtSplashHintClearH = 36;
+
 struct SplashLayout {
   int titleSize = 2;
   int subtitleSize = 1;
@@ -192,6 +241,86 @@ struct UsageLayout {
   int resetClearH = 0;
 };
 
+void setClassicTextSize(int size) {
+  tft.setTextFont(1);
+  tft.setTextSize(size);
+}
+
+void setCrtTextStyle(uint8_t textSize = 1) {
+  tft.setTextFont(2);
+  tft.setTextSize(textSize);
+}
+
+int centeredTextXCrt(const char* text) {
+  int x = (tft.width() - tft.textWidth(text)) / 2;
+  if (x < 0) {
+    return 0;
+  }
+  return x;
+}
+
+int rightAlignedTextXCrt(const char* text, int rightPadding) {
+  int x = tft.width() - rightPadding - tft.textWidth(text);
+  if (x < 0) {
+    return 0;
+  }
+  return x;
+}
+
+void drawCrtHeader(const char* title, bool showStatusDot) {
+  uint8_t titleSize = 2;
+  const int reservedForStatus = showStatusDot ? (kCrtStatusDotSize + 8) : 0;
+  setCrtTextStyle(titleSize);
+  if (tft.textWidth(title) > (kCrtBodyW - reservedForStatus)) {
+    titleSize = 1;
+    setCrtTextStyle(titleSize);
+  }
+
+  tft.drawFastHLine(0, kCrtDividerY, tft.width(), kCrtGreen);
+  tft.drawFastHLine(0, kCrtDividerY + 1, tft.width(), kCrtGreen);
+  tft.setTextWrap(false);
+  tft.setTextColor(kCrtGreen, kCrtBg);
+  const int titleY = titleSize > 1 ? kCrtHeaderTextY : (kCrtHeaderTextY + 8);
+  tft.setCursor(kCrtBodyX, titleY);
+  tft.print(title);
+  if (showStatusDot) {
+    tft.fillRect(kCrtStatusDotX, kCrtStatusDotY, kCrtStatusDotSize, kCrtStatusDotSize, kCrtGreen);
+  }
+}
+
+const char* splashDotsSuffix() {
+  switch (splashWaitingDots) {
+    case 0:
+      return ".";
+    case 1:
+      return "..";
+    default:
+      return "...";
+  }
+}
+
+const char* providerLabelText() {
+  if (current.label.length()) {
+    return current.label.c_str();
+  }
+  return "Provider";
+}
+
+bool themeFromName(const String& themeName, Theme& out) {
+  String normalized = themeName;
+  normalized.trim();
+  normalized.toLowerCase();
+  if (normalized == "classic") {
+    out = Theme::Classic;
+    return true;
+  }
+  if (normalized == "crt") {
+    out = Theme::CRT;
+    return true;
+  }
+  return false;
+}
+
 int usageCoreHeightFor(const UsageLayout& layout) {
   return textPixelHeight(layout.providerSize) +
          textPixelHeight(layout.labelSize) +
@@ -210,11 +339,11 @@ UsageLayout usageLayoutForProvider(const char* providerText) {
   layout.labelSize = chooseTextSizeToFit("Session 100% used", 3, 2, layout.w);
   layout.resetSize = chooseTextSizeToFit("Reset in 999h 59m", 3, 2, tft.width() - 4);
 
-  constexpr int spacingSlots = 5;  // top + 3 internal gaps + bottom
-  int minGap = 5;                  // reduced spacing while keeping even distribution
+  constexpr int spacingSlots = 5;
+  int minGap = 5;
 
   for (;;) {
-    if (usageCoreHeightFor(layout)+(spacingSlots*minGap) <= tft.height()) {
+    if (usageCoreHeightFor(layout) + (spacingSlots * minGap) <= tft.height()) {
       break;
     }
 
@@ -256,7 +385,7 @@ UsageLayout usageLayoutForProvider(const char* providerText) {
   int slotGaps[spacingSlots] = {0, 0, 0, 0, 0};
   const int available = tft.height() - usageCoreHeightFor(layout);
   if (available > 0) {
-    if (available >= spacingSlots*minGap) {
+    if (available >= spacingSlots * minGap) {
       const int extra = available - (spacingSlots * minGap);
       const int extraEach = extra / spacingSlots;
       const int extraRemainder = extra % spacingSlots;
@@ -272,7 +401,6 @@ UsageLayout usageLayoutForProvider(const char* providerText) {
     }
   }
 
-  // Keep internal rhythm compact; push surplus mainly into top/bottom padding.
   constexpr int maxInternalGap = 8;
   int reclaimed = 0;
   for (int i = 1; i <= 3; ++i) {
@@ -303,7 +431,7 @@ UsageLayout usageLayoutForProvider(const char* providerText) {
   return layout;
 }
 
-SplashLayout splashLayout() {
+SplashLayout splashLayoutClassic() {
   constexpr char kTitle[] = "VIBEBLOCK";
   constexpr char kLine1[] = "Waiting for";
   constexpr char kHintSample[] = "Frames in ~30s";
@@ -338,29 +466,7 @@ SplashLayout splashLayout() {
   return layout;
 }
 
-const char* splashDotsSuffix() {
-  switch (splashWaitingDots) {
-    case 0:
-      return ".";
-    case 1:
-      return "..";
-    default:
-      return "...";
-  }
-}
-
-void drawSplashWaitingLine(const SplashLayout& layout) {
-  char line2[16] = "frames";
-  std::strcat(line2, splashDotsSuffix());
-
-  tft.fillRect(0, layout.line2ClearY, tft.width(), layout.line2ClearH, TFT_BLACK);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setTextSize(layout.subtitleSize);
-  tft.setCursor(centeredTextX(line2, layout.subtitleSize), layout.line2Y);
-  tft.print(line2);
-}
-
-void drawSplashHintLine(const SplashLayout& layout) {
+void drawSplashHintLineClassic(const SplashLayout& layout) {
   constexpr unsigned long estimateSecs = 30;
   const unsigned long now = millis();
   unsigned long elapsedSecs = 0;
@@ -381,25 +487,36 @@ void drawSplashHintLine(const SplashLayout& layout) {
 
   tft.fillRect(0, layout.hintClearY, tft.width(), layout.hintClearH, TFT_BLACK);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setTextSize(layout.hintSize);
+  setClassicTextSize(layout.hintSize);
   tft.setCursor(centeredTextX(hint, layout.hintSize), layout.hintY);
   tft.print(hint);
 }
 
-void drawSplash() {
+void drawSplashWaitingLineClassic(const SplashLayout& layout) {
+  char line2[16] = "frames";
+  std::strcat(line2, splashDotsSuffix());
+
+  tft.fillRect(0, layout.line2ClearY, tft.width(), layout.line2ClearH, TFT_BLACK);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  setClassicTextSize(layout.subtitleSize);
+  tft.setCursor(centeredTextX(line2, layout.subtitleSize), layout.line2Y);
+  tft.print(line2);
+}
+
+void drawSplashClassic() {
   constexpr char kTitle[] = "VIBEBLOCK";
   constexpr char kLine1[] = "Waiting for";
 
-  const SplashLayout layout = splashLayout();
+  const SplashLayout layout = splashLayoutClassic();
   tft.fillScreen(TFT_BLACK);
 
   tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.setTextSize(layout.titleSize);
+  setClassicTextSize(layout.titleSize);
   tft.setCursor(centeredTextX(kTitle, layout.titleSize), layout.titleY);
   tft.print(kTitle);
 
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(layout.subtitleSize);
+  setClassicTextSize(layout.subtitleSize);
   tft.setCursor(centeredTextX(kLine1, layout.subtitleSize), layout.line1Y);
   tft.print(kLine1);
 
@@ -407,14 +524,14 @@ void drawSplash() {
   splashDotsLastTick = millis();
   splashStartedAt = millis();
   splashHintLastTick = splashStartedAt;
-  drawSplashWaitingLine(layout);
-  drawSplashHintLine(layout);
+  drawSplashWaitingLineClassic(layout);
+  drawSplashHintLineClassic(layout);
 
   lastRenderedSecs = -1;
   lastRenderedMinuteBucket = -1;
 }
 
-void tickSplashWaitingDots() {
+void tickSplashWaitingDotsClassic() {
   if (hasFrame) {
     return;
   }
@@ -425,22 +542,22 @@ void tickSplashWaitingDots() {
 
   splashDotsLastTick = now;
   splashWaitingDots = static_cast<uint8_t>((splashWaitingDots + 1) % 3);
-  const SplashLayout layout = splashLayout();
-  drawSplashWaitingLine(layout);
+  const SplashLayout layout = splashLayoutClassic();
+  drawSplashWaitingLineClassic(layout);
 
   if (splashHintLastTick == 0 || (now - splashHintLastTick) >= 1000UL) {
     splashHintLastTick = now;
-    drawSplashHintLine(layout);
+    drawSplashHintLineClassic(layout);
   }
 }
 
-void drawError(const String& message) {
+void drawErrorClassic(const String& message) {
   tft.fillScreen(TFT_BLACK);
-  tft.setTextSize(2);
+  setClassicTextSize(2);
   tft.setTextColor(TFT_ORANGE, TFT_BLACK);
   tft.setCursor(8, 16);
   tft.println("error");
-  tft.setTextSize(1);
+  setClassicTextSize(1);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(8, 50);
   tft.println(message);
@@ -448,13 +565,12 @@ void drawError(const String& message) {
   lastRenderedMinuteBucket = -1;
 }
 
-void drawResetCountdownLine(int64_t remain) {
-  const char* providerText = current.label.length() ? current.label.c_str() : "Provider";
-  const UsageLayout layout = usageLayoutForProvider(providerText);
+void drawResetCountdownLineClassic(int64_t remain) {
+  const UsageLayout layout = usageLayoutForProvider(providerLabelText());
   const String resetLabel = String("Reset in ") + formatDuration(remain);
 
   tft.fillRect(0, layout.resetClearY, tft.width(), layout.resetClearH, TFT_BLACK);
-  tft.setTextSize(layout.resetSize);
+  setClassicTextSize(layout.resetSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(centeredTextX(resetLabel.c_str(), layout.resetSize), layout.resetY);
   tft.print(resetLabel);
@@ -463,21 +579,21 @@ void drawResetCountdownLine(int64_t remain) {
   lastRenderedMinuteBucket = remain / 60;
 }
 
-void drawUsage() {
+void drawUsageClassic() {
   const int64_t remain = currentRemainingSecs();
-  const char* providerText = current.label.length() ? current.label.c_str() : "Provider";
+  const char* providerText = providerLabelText();
   const UsageLayout layout = usageLayoutForProvider(providerText);
 
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.setTextSize(layout.providerSize);
+  setClassicTextSize(layout.providerSize);
   tft.setCursor(centeredTextX(providerText, layout.providerSize), layout.providerY);
   tft.print(providerText);
 
   const String sessionLabel = String("Session ") + String(current.session) + "% used";
   const String weeklyLabel = String("Weekly ") + String(current.weekly) + "% used";
 
-  tft.setTextSize(layout.labelSize);
+  setClassicTextSize(layout.labelSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(centeredTextX(sessionLabel.c_str(), layout.labelSize), layout.label1Y);
   tft.print(sessionLabel);
@@ -487,7 +603,251 @@ void drawUsage() {
   tft.print(weeklyLabel);
   drawBar(layout.x, layout.bar2Y, layout.w, layout.barH, current.weekly, TFT_GREEN);
 
-  drawResetCountdownLine(remain);
+  drawResetCountdownLineClassic(remain);
+}
+
+void drawSplashHintLineCRT() {
+  constexpr unsigned long estimateSecs = 30;
+  const unsigned long now = millis();
+  unsigned long elapsedSecs = 0;
+  if (splashStartedAt > 0 && now >= splashStartedAt) {
+    elapsedSecs = (now - splashStartedAt) / 1000UL;
+  }
+  unsigned long remainingSecs = 0;
+  if (elapsedSecs < estimateSecs) {
+    remainingSecs = estimateSecs - elapsedSecs;
+  }
+
+  char hint[32];
+  if (remainingSecs > 0) {
+    std::snprintf(hint, sizeof(hint), "Frames in ~%lus", remainingSecs);
+  } else {
+    std::snprintf(hint, sizeof(hint), "Waiting for frames");
+  }
+
+  uint8_t hintSize = 2;
+  setCrtTextStyle(hintSize);
+  if (tft.textWidth(hint) > kCrtBodyW) {
+    hintSize = 1;
+    setCrtTextStyle(hintSize);
+  }
+  tft.fillRect(0, kCrtSplashHintClearY, tft.width(), kCrtSplashHintClearH, kCrtBg);
+  tft.setTextColor(kCrtDim, kCrtBg);
+  const int hintY = hintSize > 1 ? kCrtSplashHintY : (kCrtSplashHintY + 8);
+  tft.setCursor(centeredTextXCrt(hint), hintY);
+  tft.print(hint);
+}
+
+void drawSplashWaitingLineCRT() {
+  char line2[24] = "FRAMES";
+  std::strcat(line2, splashDotsSuffix());
+
+  uint8_t lineSize = 2;
+  setCrtTextStyle(lineSize);
+  if (tft.textWidth(line2) > kCrtBodyW) {
+    lineSize = 1;
+    setCrtTextStyle(lineSize);
+  }
+  tft.fillRect(0, kCrtSplashLine2ClearY, tft.width(), kCrtSplashLine2ClearH, kCrtBg);
+  tft.setTextColor(kCrtGreen, kCrtBg);
+  const int lineY = lineSize > 1 ? kCrtSplashLine2Y : (kCrtSplashLine2Y + 8);
+  tft.setCursor(centeredTextXCrt(line2), lineY);
+  tft.print(line2);
+}
+
+void drawSplashCRT() {
+  tft.fillScreen(kCrtBg);
+  drawCrtHeader("VIBEBLOCK", false);
+
+  setCrtTextStyle(2);
+  tft.setTextColor(kCrtDim, kCrtBg);
+  tft.setCursor(centeredTextXCrt("WAITING FOR"), kCrtSplashLine1Y);
+  tft.print("WAITING FOR");
+
+  splashWaitingDots = 0;
+  splashDotsLastTick = millis();
+  splashStartedAt = millis();
+  splashHintLastTick = splashStartedAt;
+  drawSplashWaitingLineCRT();
+  drawSplashHintLineCRT();
+
+  lastRenderedSecs = -1;
+  lastRenderedMinuteBucket = -1;
+}
+
+void tickSplashWaitingDotsCRT() {
+  if (hasFrame) {
+    return;
+  }
+  const unsigned long now = millis();
+  if (splashDotsLastTick == 0 || (now - splashDotsLastTick) < 450UL) {
+    return;
+  }
+
+  splashDotsLastTick = now;
+  splashWaitingDots = static_cast<uint8_t>((splashWaitingDots + 1) % 3);
+  drawSplashWaitingLineCRT();
+
+  if (splashHintLastTick == 0 || (now - splashHintLastTick) >= 1000UL) {
+    splashHintLastTick = now;
+    drawSplashHintLineCRT();
+  }
+}
+
+void drawErrorCRT(const String& message) {
+  tft.fillScreen(kCrtBg);
+  drawCrtHeader("VIBEBLOCK", false);
+
+  setCrtTextStyle(2);
+  tft.setTextColor(kCrtDim, kCrtBg);
+  tft.setCursor(kCrtBodyX, 68);
+  tft.print("ERROR");
+
+  uint8_t messageSize = 2;
+  setCrtTextStyle(messageSize);
+  if (tft.textWidth(message.c_str()) > kCrtBodyW) {
+    messageSize = 1;
+    setCrtTextStyle(messageSize);
+  }
+  tft.setTextColor(kCrtGreen, kCrtBg);
+  tft.setTextWrap(true);
+  const int messageY = messageSize > 1 ? 104 : 112;
+  tft.setCursor(kCrtBodyX, messageY);
+  tft.print(message);
+  tft.setTextWrap(false);
+
+  lastRenderedSecs = -1;
+  lastRenderedMinuteBucket = -1;
+}
+
+void drawResetCountdownLineCRT(int64_t remain) {
+  const String countdown = formatDuration(remain);
+  constexpr int minGap = 12;
+  uint8_t resetSize = 2;
+
+  setCrtTextStyle(resetSize);
+  if ((tft.textWidth("RST IN") + minGap + tft.textWidth(countdown.c_str())) > kCrtBodyW) {
+    resetSize = 1;
+    setCrtTextStyle(resetSize);
+  }
+  tft.fillRect(0, kCrtResetClearY, tft.width(), kCrtResetClearH, kCrtBg);
+  tft.setTextColor(kCrtDim, kCrtBg);
+  const int resetY = resetSize > 1 ? kCrtResetLabelY : (kCrtResetLabelY + 8);
+  tft.setCursor(kCrtBodyX, resetY);
+  tft.print("RST IN");
+
+  tft.setTextColor(kCrtGreen, kCrtBg);
+  tft.setCursor(rightAlignedTextXCrt(countdown.c_str(), 8), resetY);
+  tft.print(countdown);
+
+  lastRenderedSecs = remain;
+  lastRenderedMinuteBucket = remain / 60;
+}
+
+void drawUsageCRT() {
+  const int64_t remain = currentRemainingSecs();
+  const int session = clampPct(current.session);
+  const int weekly = clampPct(current.weekly);
+  const int innerBarWidth = kCrtBodyW - 2;
+  const int innerBarHeight = kCrtBarH - 2;
+
+  tft.fillScreen(kCrtBg);
+  drawCrtHeader(providerLabelText(), true);
+
+  setCrtTextStyle(2);
+  char pctBuf[8];
+
+  tft.setTextColor(kCrtDim, kCrtBg);
+  tft.setCursor(kCrtBodyX, kCrtSessionLabelY);
+  tft.print("SESSION");
+  std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", session);
+  tft.setTextColor(kCrtGreen, kCrtBg);
+  tft.setCursor(rightAlignedTextXCrt(pctBuf, 8), kCrtSessionLabelY);
+  tft.print(pctBuf);
+  tft.fillRect(kCrtBodyX, kCrtSessionBarY, kCrtBodyW, kCrtBarH, kCrtTrack);
+  tft.drawRect(kCrtBodyX, kCrtSessionBarY, kCrtBodyW, kCrtBarH, kCrtBorder);
+  const int sessionFill = (innerBarWidth * session) / 100;
+  if (sessionFill > 0) {
+    tft.fillRect(kCrtBodyX + 1, kCrtSessionBarY + 1, sessionFill, innerBarHeight, kCrtGreen);
+  }
+
+  tft.setTextColor(kCrtDim, kCrtBg);
+  tft.setCursor(kCrtBodyX, kCrtWeeklyLabelY);
+  tft.print("WEEKLY");
+  std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", weekly);
+  tft.setTextColor(kCrtGreen, kCrtBg);
+  tft.setCursor(rightAlignedTextXCrt(pctBuf, 8), kCrtWeeklyLabelY);
+  tft.print(pctBuf);
+  tft.fillRect(kCrtBodyX, kCrtWeeklyBarY, kCrtBodyW, kCrtBarH, kCrtTrack);
+  tft.drawRect(kCrtBodyX, kCrtWeeklyBarY, kCrtBodyW, kCrtBarH, kCrtBorder);
+  const int weeklyFill = (innerBarWidth * weekly) / 100;
+  if (weeklyFill > 0) {
+    tft.fillRect(kCrtBodyX + 1, kCrtWeeklyBarY + 1, weeklyFill, innerBarHeight, kCrtGreen);
+  }
+
+  tft.drawFastHLine(kCrtBodyX, kCrtMidDividerY, kCrtBodyW, kCrtBorder);
+  tft.drawFastHLine(kCrtBodyX, kCrtMidDividerY + 1, kCrtBodyW, kCrtBorder);
+  drawResetCountdownLineCRT(remain);
+}
+
+void drawSplash() {
+  switch (activeTheme) {
+    case Theme::CRT:
+      drawSplashCRT();
+      return;
+    case Theme::Classic:
+    default:
+      drawSplashClassic();
+      return;
+  }
+}
+
+void tickSplashWaitingDots() {
+  switch (activeTheme) {
+    case Theme::CRT:
+      tickSplashWaitingDotsCRT();
+      return;
+    case Theme::Classic:
+    default:
+      tickSplashWaitingDotsClassic();
+      return;
+  }
+}
+
+void drawError(const String& message) {
+  switch (activeTheme) {
+    case Theme::CRT:
+      drawErrorCRT(message);
+      return;
+    case Theme::Classic:
+    default:
+      drawErrorClassic(message);
+      return;
+  }
+}
+
+void drawResetCountdownLine(int64_t remain) {
+  switch (activeTheme) {
+    case Theme::CRT:
+      drawResetCountdownLineCRT(remain);
+      return;
+    case Theme::Classic:
+    default:
+      drawResetCountdownLineClassic(remain);
+      return;
+  }
+}
+
+void drawUsage() {
+  switch (activeTheme) {
+    case Theme::CRT:
+      drawUsageCRT();
+      return;
+    case Theme::Classic:
+    default:
+      drawUsageClassic();
+      return;
+  }
 }
 #else
 void renderProbe() {
@@ -565,8 +925,23 @@ bool parseFrameLine(const char* line, Frame& out) {
     return true;
   }
 
+  bool hasTheme = false;
+  String themeName;
+  if (doc["theme"].is<const char*>()) {
+    themeName = String(doc["theme"].as<const char*>());
+    themeName.trim();
+    themeName.toLowerCase();
+    if (themeName == "classic" || themeName == "crt") {
+      hasTheme = true;
+    } else {
+      themeName = "";
+    }
+  }
+
   if (doc["error"].is<const char*>()) {
     out = {};
+    out.hasTheme = hasTheme;
+    out.theme = themeName;
     out.hasError = true;
     out.error = String(doc["error"].as<const char*>());
     return true;
@@ -578,6 +953,8 @@ bool parseFrameLine(const char* line, Frame& out) {
   out.session = clampPct(doc["session"] | 0);
   out.weekly = clampPct(doc["weekly"] | 0);
   out.resetSecs = static_cast<int64_t>(doc["resetSecs"] | 0);
+  out.hasTheme = hasTheme;
+  out.theme = themeName;
   out.hasError = false;
   out.error = "";
   return true;
@@ -611,6 +988,15 @@ void consumeSerial() {
         if (parseFrameLine(lineBuffer, next)) {
           const bool hadFrame = hasFrame;
           const bool visualChanged = !hadFrame || frameVisualChanged(current, next);
+#ifndef VIBEBLOCK_PROBE_ONLY
+          if (next.hasTheme) {
+            Theme frameTheme;
+            if (themeFromName(next.theme, frameTheme) && frameTheme != activeTheme) {
+              activeTheme = frameTheme;
+              screenDirty = true;
+            }
+          }
+#endif
           current = next;
           hasFrame = true;
           if (visualChanged) {
