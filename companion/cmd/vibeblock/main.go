@@ -15,6 +15,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/health"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
@@ -31,6 +32,8 @@ func main() {
 		err = runDaemon(os.Args[2:])
 	case "doctor":
 		err = runDoctor()
+	case "health":
+		err = health.Run(context.Background())
 	case "restore-known-good":
 		err = runRestoreKnownGood(os.Args[2:])
 	case "setup":
@@ -50,8 +53,9 @@ func printUsage() {
 	fmt.Println("vibeblock commands:")
 	fmt.Println("  vibeblock daemon [--port /dev/cu.usbserial-10] [--interval 60s] [--once]")
 	fmt.Println("  vibeblock doctor")
-	fmt.Println("  vibeblock restore-known-good [--port /dev/cu.usbserial-10] [--image tmp/.../weather_backup_full.bin]")
-	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port]")
+	fmt.Println("  vibeblock health")
+	fmt.Println("  vibeblock restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
+	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env]")
 }
 
 func runDaemon(args []string) error {
@@ -148,6 +152,7 @@ func runSetup(args []string) error {
 	yes := fs.Bool("yes", false, "auto-select defaults without prompts")
 	skipFlash := fs.Bool("skip-flash", false, "skip firmware flashing")
 	pinPort := fs.Bool("pin-port", false, "pin daemon to selected --port in LaunchAgent (default: auto-detect)")
+	firmwareEnv := fs.String("firmware-env", "lilygo_t_display_s3", "PlatformIO environment to flash (examples: lilygo_t_display_s3, esp8266_smalltv_st7789)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -157,6 +162,7 @@ func runSetup(args []string) error {
 		AssumeYes:     *yes,
 		SkipFlash:     *skipFlash,
 		PinDaemonPort: *pinPort,
+		FirmwareEnv:   strings.TrimSpace(*firmwareEnv),
 	})
 }
 
@@ -165,6 +171,11 @@ func runRestoreKnownGood(args []string) error {
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
 	image := fs.String("image", "", "backup image path (auto-select newest known-good backup when empty)")
 	baud := fs.Int("baud", 460800, "esptool serial baud rate")
+	scriptPath := fs.String("script-path", "", "path to esp8266-restore.sh (auto-detect when empty)")
+	manifest := fs.String("manifest", "", "manifest path (default: <image>.manifest)")
+	skipVerify := fs.Bool("skip-verify", false, "skip manifest/device verification (unsafe, legacy fallback)")
+	var backupDirs stringListFlag
+	fs.Var(&backupDirs, "backup-dir", "backup directory to search when --image is empty (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -177,37 +188,57 @@ func runRestoreKnownGood(args []string) error {
 		return fmt.Errorf("resolve serial port: %w", err)
 	}
 
-	repoRoot, err := findRepositoryRootFromCwd()
-	if err != nil {
-		return fmt.Errorf("locate repository root: %w", err)
-	}
-
-	restoreImage, err := resolveRestoreImage(repoRoot, strings.TrimSpace(*image))
+	resolvedScriptPath, err := resolveRestoreScriptPath(strings.TrimSpace(*scriptPath))
 	if err != nil {
 		return err
 	}
 
-	scriptPath := filepath.Join(repoRoot, "scripts", "esp8266-restore.sh")
-	if _, err := os.Stat(scriptPath); err != nil {
-		return fmt.Errorf("restore script not found: %s", scriptPath)
+	searchDirs, err := resolveBackupSearchDirs(backupDirs)
+	if err != nil {
+		return err
 	}
+
+	restoreImage, err := resolveRestoreImage(strings.TrimSpace(*image), searchDirs)
+	if err != nil {
+		return err
+	}
+
+	manifestPath, err := resolveRestoreManifestPath(restoreImage, strings.TrimSpace(*manifest), *skipVerify)
+	if err != nil {
+		return err
+	}
+
 	if _, err := exec.LookPath("pio"); err != nil {
 		return fmt.Errorf("platformio CLI not found in PATH (needed by restore script): %w", err)
 	}
 
+	fmt.Printf("restore script: %s\n", resolvedScriptPath)
 	fmt.Printf("restore image: %s\n", restoreImage)
+	if *skipVerify {
+		fmt.Println("manifest verification: skipped (--skip-verify)")
+	} else {
+		fmt.Printf("manifest: %s\n", manifestPath)
+	}
 	fmt.Printf("serial port: %s\n", resolvedPort)
 	fmt.Printf("baud: %d\n", *baud)
 
 	cmd := exec.Command(
-		scriptPath,
+		resolvedScriptPath,
 		resolvedPort,
 		restoreImage,
 	)
-	cmd.Env = append(os.Environ(), "BAUD="+strconv.Itoa(*baud))
+	env := append(
+		os.Environ(),
+		"BAUD="+strconv.Itoa(*baud),
+		"SKIP_VERIFY="+boolAsShellValue(*skipVerify),
+	)
+	if manifestPath != "" {
+		env = append(env, "MANIFEST="+manifestPath)
+	}
+	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Dir = repoRoot
+	cmd.Dir = filepath.Dir(resolvedScriptPath)
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("restore-known-good failed: %w", err)
@@ -215,31 +246,11 @@ func runRestoreKnownGood(args []string) error {
 	return nil
 }
 
-func findRepositoryRootFromCwd() (string, error) {
-	start, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	dir := filepath.Clean(start)
-	for {
-		if fileExists(filepath.Join(dir, "companion", "go.mod")) && fileExists(filepath.Join(dir, "scripts", "esp8266-restore.sh")) {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	return "", errors.New("repository root not found; run from repository or pass --image with an absolute path")
-}
-
-func resolveRestoreImage(repoRoot, requested string) (string, error) {
+func resolveRestoreImage(requested string, searchDirs []string) (string, error) {
 	if requested != "" {
-		path := requested
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(repoRoot, path)
+		path, err := resolvePathFromCwd(requested)
+		if err != nil {
+			return "", err
 		}
 		if !fileExists(path) {
 			return "", fmt.Errorf("restore image not found: %s", path)
@@ -248,20 +259,23 @@ func resolveRestoreImage(repoRoot, requested string) (string, error) {
 	}
 
 	candidates := make([]string, 0, 8)
-	patterns := []string{
-		filepath.Join(repoRoot, "tmp", "backup_chunks_*", "weather_backup_full.bin"),
-		filepath.Join(repoRoot, "tmp", "weather_backup_*.bin"),
-	}
-	for _, pattern := range patterns {
-		matches, _ := filepath.Glob(pattern)
-		for _, match := range matches {
-			if fileExists(match) {
-				candidates = append(candidates, match)
+	for _, dir := range searchDirs {
+		patterns := []string{
+			filepath.Join(dir, "backup_chunks_*", "weather_backup_full.bin"),
+			filepath.Join(dir, "weather_backup_*.bin"),
+			filepath.Join(dir, "*.bin"),
+		}
+		for _, pattern := range patterns {
+			matches, _ := filepath.Glob(pattern)
+			for _, match := range matches {
+				if fileExists(match) {
+					candidates = append(candidates, match)
+				}
 			}
 		}
 	}
 	if len(candidates) == 0 {
-		return "", errors.New("no known-good backup image found in tmp/; pass --image <path/to/backup.bin>")
+		return "", errors.New("no known-good backup image found; pass --image <path/to/backup.bin> or add --backup-dir <dir>")
 	}
 
 	sort.Slice(candidates, func(i, j int) bool {
@@ -278,6 +292,178 @@ func resolveRestoreImage(repoRoot, requested string) (string, error) {
 	})
 
 	return candidates[0], nil
+}
+
+func resolveRestoreScriptPath(requested string) (string, error) {
+	if strings.TrimSpace(requested) != "" {
+		path, err := resolvePathFromCwd(requested)
+		if err != nil {
+			return "", err
+		}
+		if !fileExists(path) {
+			return "", fmt.Errorf("restore script not found: %s", path)
+		}
+		return path, nil
+	}
+
+	candidates := make([]string, 0, 4)
+	if appSupport, err := runtimeSupportDir(); err == nil {
+		candidates = append(candidates, filepath.Join(appSupport, "scripts", "esp8266-restore.sh"))
+	}
+
+	if execPath, err := os.Executable(); err == nil {
+		binDir := filepath.Dir(execPath)
+		candidates = append(candidates, filepath.Join(filepath.Dir(binDir), "scripts", "esp8266-restore.sh"))
+	}
+
+	if repoRoot, ok := findRepositoryRootFromWorkingDir(); ok {
+		candidates = append(candidates, filepath.Join(repoRoot, "scripts", "esp8266-restore.sh"))
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		candidate = filepath.Clean(candidate)
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		if fileExists(candidate) {
+			return candidate, nil
+		}
+	}
+
+	return "", errors.New("restore script not found; run `vibeblock setup` first or pass --script-path /path/to/esp8266-restore.sh")
+}
+
+func resolveBackupSearchDirs(extraDirs []string) ([]string, error) {
+	candidateDirs := make([]string, 0, len(extraDirs)+4)
+	candidateDirs = append(candidateDirs, extraDirs...)
+
+	if appSupport, err := runtimeSupportDir(); err == nil {
+		candidateDirs = append(candidateDirs, filepath.Join(appSupport, "backups"))
+	}
+
+	if repoRoot, ok := findRepositoryRootFromWorkingDir(); ok {
+		candidateDirs = append(candidateDirs, filepath.Join(repoRoot, "tmp"))
+	}
+
+	if cwd, err := os.Getwd(); err == nil {
+		candidateDirs = append(candidateDirs, filepath.Join(cwd, "tmp"))
+	}
+
+	seen := make(map[string]struct{}, len(candidateDirs))
+	resolved := make([]string, 0, len(candidateDirs))
+	for _, dir := range candidateDirs {
+		if strings.TrimSpace(dir) == "" {
+			continue
+		}
+		abs, err := resolvePathFromCwd(dir)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[abs]; ok {
+			continue
+		}
+		seen[abs] = struct{}{}
+		resolved = append(resolved, abs)
+	}
+	return resolved, nil
+}
+
+func resolveRestoreManifestPath(imagePath, requested string, skipVerify bool) (string, error) {
+	if skipVerify {
+		return "", nil
+	}
+
+	if strings.TrimSpace(requested) != "" {
+		path, err := resolvePathFromCwd(requested)
+		if err != nil {
+			return "", err
+		}
+		if !fileExists(path) {
+			return "", fmt.Errorf("manifest not found: %s", path)
+		}
+		return path, nil
+	}
+
+	candidates := []string{
+		imagePath + ".manifest",
+		imagePath + ".manifest.json",
+	}
+	for _, candidate := range candidates {
+		if fileExists(candidate) {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("manifest not found for %s; run backup again or pass --manifest <path> (or use --skip-verify)", imagePath)
+}
+
+func findRepositoryRootFromWorkingDir() (string, bool) {
+	start, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+	dir := filepath.Clean(start)
+	for {
+		if fileExists(filepath.Join(dir, "companion", "go.mod")) && fileExists(filepath.Join(dir, "scripts", "esp8266-restore.sh")) {
+			return dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", false
+}
+
+func runtimeSupportDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "Library", "Application Support", "vibeblock"), nil
+}
+
+func resolvePathFromCwd(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", errors.New("empty path")
+	}
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(filepath.Join(cwd, path)), nil
+}
+
+func boolAsShellValue(v bool) string {
+	if v {
+		return "1"
+	}
+	return "0"
+}
+
+type stringListFlag []string
+
+func (f *stringListFlag) String() string {
+	if f == nil {
+		return ""
+	}
+	return strings.Join(*f, ",")
+}
+
+func (f *stringListFlag) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return errors.New("backup dir cannot be empty")
+	}
+	*f = append(*f, value)
+	return nil
 }
 
 func fileExists(path string) bool {

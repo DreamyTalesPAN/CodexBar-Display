@@ -396,6 +396,131 @@ func TestRunWithDepsWaitsForLaunchAgentToBecomeRunning(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsStopsLaunchAgentBeforeSerialProbe(t *testing.T) {
+	bootoutCalled := false
+
+	err := runWithDeps(context.Background(), Options{
+		Port:      "/dev/cu.usbserial10",
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		executablePath: func() (string, error) {
+			return mustCreateExecutable(t), nil
+		},
+		homeDir: func() (string, error) {
+			return t.TempDir(), nil
+		},
+		uid: func() int { return 501 },
+		resolvePort: func(p string) (string, error) {
+			return p, nil
+		},
+		probePort: func(string) error {
+			if !bootoutCalled {
+				return errors.New("probe called before launchctl bootout")
+			}
+			return nil
+		},
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "bootout" {
+				bootoutCalled = true
+			}
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success, got %v", err)
+	}
+	if !bootoutCalled {
+		t.Fatalf("expected setup to attempt launchctl bootout before probe")
+	}
+}
+
+func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	repo := filepath.Join(tmp, "repo")
+	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+
+	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
+	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
+
+	var pioCall *commandCall
+	err := runWithDeps(context.Background(), Options{
+		AssumeYes:   true,
+		FirmwareEnv: "esp8266_smalltv_st7789",
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		cwd: func() (string, error) {
+			return filepath.Join(repo, "companion"), nil
+		},
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			return []string{"/dev/cu.usbserial42"}, nil
+		},
+		resolvePort: func(p string) (string, error) {
+			return p, nil
+		},
+		probePort: func(string) error { return nil },
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			switch file {
+			case "pio", "launchctl":
+				return "/usr/bin/" + file, nil
+			default:
+				return "", errors.New("not found")
+			}
+		},
+		runCommand: func(_ context.Context, dir string, name string, args ...string) (string, error) {
+			if name == "pio" {
+				c := commandCall{dir: dir, name: name, args: append([]string(nil), args...)}
+				pioCall = &c
+			}
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success, got %v", err)
+	}
+	if pioCall == nil {
+		t.Fatalf("expected firmware flash call")
+	}
+	expectedDir := filepath.Join(repo, "firmware_esp8266")
+	if pioCall.dir != expectedDir {
+		t.Fatalf("expected esp8266 firmware dir %q, got %q", expectedDir, pioCall.dir)
+	}
+	if !commandSeen([]commandCall{*pioCall}, "pio", []string{"run", "-e", "esp8266_smalltv_st7789", "-t", "upload", "--upload-port", "/dev/cu.usbserial42"}) {
+		t.Fatalf("unexpected pio args: %#v", pioCall.args)
+	}
+}
+
 func commandSeen(calls []commandCall, name string, args []string) bool {
 	for _, call := range calls {
 		if call.name != name {

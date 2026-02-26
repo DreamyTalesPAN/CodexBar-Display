@@ -2,7 +2,8 @@
 set -euo pipefail
 
 PORT="${1:-/dev/cu.usbserial-10}"
-OUT="${2:-tmp/weather_backup_$(date +%Y%m%d_%H%M%S).bin}"
+DEFAULT_BACKUP_DIR="${VIBEBLOCK_BACKUP_DIR:-$HOME/Library/Application Support/vibeblock/backups}"
+OUT="${2:-$DEFAULT_BACKUP_DIR/weather_backup_$(date +%Y%m%d_%H%M%S).bin}"
 FLASH_SIZE_INPUT="${3:-0x400000}"
 
 CHUNK_SIZE_INPUT="0x4000"
@@ -44,6 +45,25 @@ OUT_DIR="$(dirname "$OUT")"
 CHUNK_DIR="${OUT}.chunks"
 
 mkdir -p "$OUT_DIR" "$CHUNK_DIR"
+
+compute_sha256() {
+  shasum -a 256 "$1" | awk '{print $1}'
+}
+
+read_device_mac() {
+  local mac_output mac
+  mac_output="$(
+    pio pkg exec --package "platformio/tool-esptoolpy" -- \
+      esptool.py --chip esp8266 --port "$PORT" --baud "$SLOW_BAUD" read_mac \
+      2>&1 || true
+  )"
+  printf '%s\n' "$mac_output" >>"$LOG_FILE"
+  mac="$(printf '%s\n' "$mac_output" | awk '/MAC:/{print $2; exit}')"
+  if [[ -z "$mac" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$mac"
+}
 
 run_chunk_read() {
   local baud="$1"
@@ -124,4 +144,26 @@ fi
 
 echo "done: $OUT"
 wc -c "$OUT"
-shasum -a 256 "$OUT"
+
+sha256="$(compute_sha256 "$OUT")"
+device_mac="$(read_device_mac || true)"
+if [[ -z "$device_mac" ]]; then
+  device_mac="unknown"
+fi
+created_at_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+manifest_path="${OUT}.manifest"
+
+{
+  printf 'schema=v1\n'
+  printf 'image_file=%s\n' "$(basename "$OUT")"
+  printf 'image_path=%s\n' "$OUT"
+  printf 'size_bytes=%s\n' "$bytes"
+  printf 'sha256=%s\n' "$sha256"
+  printf 'chip=esp8266\n'
+  printf 'device_mac=%s\n' "$device_mac"
+  printf 'created_at_utc=%s\n' "$created_at_utc"
+} >"$manifest_path"
+
+echo "sha256: $sha256"
+echo "device_mac: $device_mac"
+echo "manifest: $manifest_path"

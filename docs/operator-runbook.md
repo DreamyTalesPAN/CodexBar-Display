@@ -1,0 +1,140 @@
+# Operator Runbook
+
+Single source of truth for install, runtime checks, recovery, and smoke testing.
+
+## Scope
+- macOS runtime (`launchctl` + LaunchAgent)
+- USB serial devices (`/dev/cu.usb*`)
+- Companion binary (`vibeblock`)
+- ESP32-S3 and ESP8266 firmware targets
+
+## Core Commands
+
+```bash
+cd companion
+go run ./cmd/vibeblock setup --yes
+go run ./cmd/vibeblock health
+go run ./cmd/vibeblock doctor
+```
+
+## Setup
+
+`setup` is idempotent and now handles the common "port busy" case automatically by attempting
+`launchctl bootout gui/$(id -u)/com.vibeblock.daemon` before serial probe and flash.
+
+### Default firmware target (ESP32-S3)
+
+```bash
+cd companion
+go run ./cmd/vibeblock setup --yes
+```
+
+### ESP8266 target
+
+```bash
+cd companion
+go run ./cmd/vibeblock setup --yes \
+  --port /dev/cu.usbserial-10 \
+  --firmware-env esp8266_smalltv_st7789
+```
+
+Useful flags:
+- `--skip-flash`: install/update runtime only
+- `--pin-port`: pin LaunchAgent to one explicit serial path
+- `--firmware-env <env>`: select PlatformIO environment
+
+During setup, runtime assets are installed to:
+- Binary: `~/Library/Application Support/vibeblock/bin/vibeblock`
+- Recovery scripts: `~/Library/Application Support/vibeblock/scripts/`
+- Backups: `~/Library/Application Support/vibeblock/backups/`
+- LaunchAgent: `~/Library/LaunchAgents/com.vibeblock.daemon.plist`
+
+## Runtime Health
+
+```bash
+cd companion
+go run ./cmd/vibeblock health
+```
+
+`health` reports in one output:
+- LaunchAgent state + PID
+- auto-detected serial port
+- last successful `sent frame` timestamp + port
+- last runtime error (if any)
+
+Daemon logs:
+- `/tmp/vibeblock-daemon.out.log`
+- `/tmp/vibeblock-daemon.err.log`
+
+## Backup and Restore (ESP8266)
+
+### Create backup + manifest
+
+```bash
+./scripts/esp8266-backup.sh /dev/cu.usbserial-10
+```
+
+Backup now writes:
+- image file (`.bin`)
+- manifest (`.manifest`) with file name, `sha256`, size, device MAC, UTC timestamp
+
+Default backup location:
+- `~/Library/Application Support/vibeblock/backups/`
+
+### Restore known-good image (verified by default)
+
+```bash
+cd companion
+go run ./cmd/vibeblock restore-known-good --port /dev/cu.usbserial-10
+```
+
+By default restore verifies:
+- manifest exists
+- image SHA256 matches manifest
+- device MAC matches manifest (prevents wrong-backup/wrong-device restore)
+
+### Restore flags
+- `--image <path>`: explicit image
+- `--manifest <path>`: explicit manifest
+- `--backup-dir <dir>`: add search directory (repeatable)
+- `--script-path <path>`: explicit `esp8266-restore.sh`
+- `--skip-verify`: bypass manifest/device verification (legacy backups only)
+
+## Smoke Test (E2E)
+
+Minimal runtime smoke:
+- restart LaunchAgent
+- wait up to 90s
+- require a new `sent frame ->` log line
+
+```bash
+./scripts/smoke-daemon-sent-frame.sh
+```
+
+Optional args:
+1. plist path (default: `~/Library/LaunchAgents/com.vibeblock.daemon.plist`)
+2. out log path (default: `/tmp/vibeblock-daemon.out.log`)
+3. timeout seconds (default: `90`)
+
+## Quick Troubleshooting
+
+### Serial busy
+
+```bash
+launchctl bootout gui/$(id -u)/com.vibeblock.daemon 2>/dev/null || true
+lsof /dev/cu.usbserial-10
+```
+
+### LaunchAgent not running
+
+```bash
+launchctl print gui/$(id -u)/com.vibeblock.daemon
+tail -n 100 /tmp/vibeblock-daemon.err.log
+```
+
+### No new frames
+
+```bash
+go run ./cmd/vibeblock health
+./scripts/smoke-daemon-sent-frame.sh
+```

@@ -85,11 +85,16 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 		d.newSelector = codexbar.NewProviderSelector
 	}
 	if d.logf == nil {
-		d.logf = func(format string, args ...any) {
-			_, _ = fmt.Printf(format, args...)
-		}
+		d.logf = defaultRuntimeLogf
 	}
 	return d
+}
+
+func defaultRuntimeLogf(format string, args ...any) {
+	message := fmt.Sprintf(format, args...)
+	message = strings.TrimRight(message, "\n")
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	_, _ = fmt.Printf("%s %s\n", timestamp, message)
 }
 
 type runtimeState struct {

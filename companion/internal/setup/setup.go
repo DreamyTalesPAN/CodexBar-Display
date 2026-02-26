@@ -33,6 +33,7 @@ type Options struct {
 	AssumeYes     bool
 	SkipFlash     bool
 	PinDaemonPort bool
+	FirmwareEnv   string
 }
 
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
@@ -157,6 +158,8 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 	fmt.Fprintf(d.stdout, "Serial port: %s\n", port)
 
+	stopLaunchAgentBestEffort(ctx, d)
+
 	if err := d.probePort(port); err != nil {
 		return &StepError{
 			Step: "serial-probe",
@@ -181,8 +184,14 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		}
 	}
 
+	firmwareEnv := strings.TrimSpace(opts.FirmwareEnv)
+	if firmwareEnv == "" {
+		firmwareEnv = firmwareEnvironment
+	}
+
+	var repoRoot string
 	if !opts.SkipFlash {
-		repoRoot, err := locateRepository(d)
+		repoRoot, err = locateRepository(d)
 		if err != nil {
 			return &StepError{
 				Step: "locate-repository",
@@ -192,13 +201,15 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		}
 
 		fmt.Fprintf(d.stdout, "Repository: %s\n", repoRoot)
+		fmt.Fprintf(d.stdout, "Firmware environment: %s\n", firmwareEnv)
 		fmt.Fprintln(d.stdout, "Flashing firmware ...")
-		if err := flashFirmware(ctx, d, repoRoot, port); err != nil {
+		if err := flashFirmware(ctx, d, repoRoot, port, firmwareEnv); err != nil {
 			return err
 		}
 		fmt.Fprintln(d.stdout, "Firmware flash: ok")
 	} else {
 		fmt.Fprintln(d.stdout, "Firmware flash: skipped (--skip-flash)")
+		repoRoot, _ = locateRepository(d)
 	}
 
 	fmt.Fprintln(d.stdout, "Installing companion binary ...")
@@ -211,6 +222,21 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		}
 	}
 	fmt.Fprintf(d.stdout, "Companion binary: %s\n", installPath)
+
+	restoreScriptPath, backupDir, err := installRecoveryAssets(repoRoot, home)
+	if err != nil {
+		return &StepError{
+			Step: "install-recovery-assets",
+			Err:  err,
+			Hint: "verify write permission for $HOME/Library/Application Support/vibeblock",
+		}
+	}
+	if strings.TrimSpace(restoreScriptPath) != "" {
+		fmt.Fprintf(d.stdout, "Recovery restore script: %s\n", restoreScriptPath)
+	} else {
+		fmt.Fprintln(d.stdout, "Recovery restore script: not installed (repository scripts unavailable)")
+	}
+	fmt.Fprintf(d.stdout, "Recovery backup dir: %s\n", backupDir)
 
 	daemonPort := ""
 	if opts.PinDaemonPort {
@@ -452,7 +478,7 @@ func fileExists(path string) bool {
 	return !info.IsDir()
 }
 
-func flashFirmware(ctx context.Context, d deps, repoRoot, port string) error {
+func flashFirmware(ctx context.Context, d deps, repoRoot, port, firmwareEnv string) error {
 	if _, err := d.lookPath("pio"); err != nil {
 		return &StepError{
 			Step: "flash-firmware",
@@ -464,8 +490,8 @@ func flashFirmware(ctx context.Context, d deps, repoRoot, port string) error {
 	service := launchServiceTarget(d.uid())
 	_, _ = d.runCommand(ctx, "", "launchctl", "bootout", service)
 
-	firmwareDir := filepath.Join(repoRoot, "firmware")
-	output, err := d.runCommand(ctx, firmwareDir, "pio", "run", "-e", firmwareEnvironment, "-t", "upload", "--upload-port", port)
+	firmwareDir := firmwareProjectDirForEnvironment(repoRoot, firmwareEnv)
+	output, err := d.runCommand(ctx, firmwareDir, "pio", "run", "-e", firmwareEnv, "-t", "upload", "--upload-port", port)
 	if err != nil {
 		return &StepError{
 			Step:   "flash-firmware",
@@ -475,6 +501,17 @@ func flashFirmware(ctx context.Context, d deps, repoRoot, port string) error {
 		}
 	}
 	return nil
+}
+
+func firmwareProjectDirForEnvironment(repoRoot, firmwareEnv string) string {
+	env := strings.TrimSpace(strings.ToLower(firmwareEnv))
+	if strings.HasPrefix(env, "esp8266_") {
+		esp8266Dir := filepath.Join(repoRoot, "firmware_esp8266")
+		if fileExists(filepath.Join(esp8266Dir, "platformio.ini")) {
+			return esp8266Dir
+		}
+	}
+	return filepath.Join(repoRoot, "firmware")
 }
 
 func flashRecoveryHint(output, port string, uid int) string {
@@ -729,6 +766,46 @@ func runSystemCommand(ctx context.Context, dir string, name string, args ...stri
 
 	err := cmd.Run()
 	return strings.TrimSpace(out.String()), err
+}
+
+func stopLaunchAgentBestEffort(ctx context.Context, d deps) {
+	service := launchServiceTarget(d.uid())
+	_, _ = d.runCommand(ctx, "", "launchctl", "bootout", service)
+}
+
+func installRecoveryAssets(repoRoot, home string) (string, string, error) {
+	appSupportDir := filepath.Join(home, "Library", "Application Support", "vibeblock")
+	backupDir := filepath.Join(appSupportDir, "backups")
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		return "", "", err
+	}
+
+	repoRoot = strings.TrimSpace(repoRoot)
+	if repoRoot == "" {
+		return "", backupDir, nil
+	}
+
+	restoreSource := filepath.Join(repoRoot, "scripts", "esp8266-restore.sh")
+	backupSource := filepath.Join(repoRoot, "scripts", "esp8266-backup.sh")
+	if !fileExists(restoreSource) || !fileExists(backupSource) {
+		return "", backupDir, nil
+	}
+
+	scriptsDir := filepath.Join(appSupportDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		return "", "", err
+	}
+
+	restoreTarget := filepath.Join(scriptsDir, "esp8266-restore.sh")
+	backupTarget := filepath.Join(scriptsDir, "esp8266-backup.sh")
+	if err := copyFileAtomic(restoreSource, restoreTarget, 0o755); err != nil {
+		return "", "", err
+	}
+	if err := copyFileAtomic(backupSource, backupTarget, 0o755); err != nil {
+		return "", "", err
+	}
+
+	return restoreTarget, backupDir, nil
 }
 
 func stdinIsInteractive() bool {
