@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <cstdio>
 #include <cstring>
 
 #ifndef VIBEBLOCK_PROBE_ONLY
@@ -33,6 +34,8 @@ int64_t resetBaseSecs = 0;
 #ifndef VIBEBLOCK_PROBE_ONLY
 uint8_t splashWaitingDots = 0;
 unsigned long splashDotsLastTick = 0;
+unsigned long splashStartedAt = 0;
+unsigned long splashHintLastTick = 0;
 #endif
 
 #ifdef VIBEBLOCK_PROBE_ONLY
@@ -162,6 +165,8 @@ struct SplashLayout {
   int line2ClearY = 0;
   int line2ClearH = 0;
   int hintY = 0;
+  int hintClearY = 0;
+  int hintClearH = 0;
 };
 
 struct UsageLayout {
@@ -301,20 +306,20 @@ UsageLayout usageLayoutForProvider(const char* providerText) {
 SplashLayout splashLayout() {
   constexpr char kTitle[] = "VIBEBLOCK";
   constexpr char kLine1[] = "Waiting for";
-  constexpr char kHint[] = "(kann bis zu 30s dauern)";
+  constexpr char kHintSample[] = "Frames in ~30s";
 
   SplashLayout layout;
   const int maxWidth = tft.width() - 8;
   layout.titleSize = chooseTextSizeToFit(kTitle, 4, 2, maxWidth);
   layout.subtitleSize = chooseTextSizeToFit(kLine1, 3, 1, maxWidth);
-  layout.hintSize = chooseTextSizeToFit(kHint, 1, 1, maxWidth);
+  layout.hintSize = chooseTextSizeToFit(kHintSample, 3, 2, maxWidth);
 
   const int titleH = textPixelHeight(layout.titleSize);
   const int subtitleH = textPixelHeight(layout.subtitleSize);
   const int hintH = textPixelHeight(layout.hintSize);
   constexpr int gap1 = 12;
   constexpr int gap2 = 4;
-  constexpr int gap3 = 8;
+  constexpr int gap3 = 10;
 
   const int totalH = titleH + gap1 + subtitleH + gap2 + subtitleH + gap3 + hintH;
   int top = (tft.height() - totalH) / 2;
@@ -328,6 +333,8 @@ SplashLayout splashLayout() {
   layout.line2ClearY = layout.line2Y;
   layout.line2ClearH = subtitleH + 2;
   layout.hintY = layout.line2Y + subtitleH + gap3;
+  layout.hintClearY = layout.hintY;
+  layout.hintClearH = hintH + 2;
   return layout;
 }
 
@@ -353,10 +360,35 @@ void drawSplashWaitingLine(const SplashLayout& layout) {
   tft.print(line2);
 }
 
+void drawSplashHintLine(const SplashLayout& layout) {
+  constexpr unsigned long estimateSecs = 30;
+  const unsigned long now = millis();
+  unsigned long elapsedSecs = 0;
+  if (splashStartedAt > 0 && now >= splashStartedAt) {
+    elapsedSecs = (now - splashStartedAt) / 1000UL;
+  }
+  unsigned long remainingSecs = 0;
+  if (elapsedSecs < estimateSecs) {
+    remainingSecs = estimateSecs - elapsedSecs;
+  }
+
+  char hint[48];
+  if (remainingSecs > 0) {
+    std::snprintf(hint, sizeof(hint), "Frames in ~%lus", remainingSecs);
+  } else {
+    std::snprintf(hint, sizeof(hint), "Warte auf Frames");
+  }
+
+  tft.fillRect(0, layout.hintClearY, tft.width(), layout.hintClearH, TFT_BLACK);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setTextSize(layout.hintSize);
+  tft.setCursor(centeredTextX(hint, layout.hintSize), layout.hintY);
+  tft.print(hint);
+}
+
 void drawSplash() {
   constexpr char kTitle[] = "VIBEBLOCK";
   constexpr char kLine1[] = "Waiting for";
-  constexpr char kHint[] = "(kann bis zu 30s dauern)";
 
   const SplashLayout layout = splashLayout();
   tft.fillScreen(TFT_BLACK);
@@ -373,12 +405,10 @@ void drawSplash() {
 
   splashWaitingDots = 0;
   splashDotsLastTick = millis();
+  splashStartedAt = millis();
+  splashHintLastTick = splashStartedAt;
   drawSplashWaitingLine(layout);
-
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.setTextSize(layout.hintSize);
-  tft.setCursor(centeredTextX(kHint, layout.hintSize), layout.hintY);
-  tft.print(kHint);
+  drawSplashHintLine(layout);
 
   lastRenderedSecs = -1;
   lastRenderedMinuteBucket = -1;
@@ -395,7 +425,13 @@ void tickSplashWaitingDots() {
 
   splashDotsLastTick = now;
   splashWaitingDots = static_cast<uint8_t>((splashWaitingDots + 1) % 3);
-  drawSplashWaitingLine(splashLayout());
+  const SplashLayout layout = splashLayout();
+  drawSplashWaitingLine(layout);
+
+  if (splashHintLastTick == 0 || (now - splashHintLastTick) >= 1000UL) {
+    splashHintLastTick = now;
+    drawSplashHintLine(layout);
+  }
 }
 
 void drawError(const String& message) {

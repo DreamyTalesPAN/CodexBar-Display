@@ -19,6 +19,12 @@ type Options struct {
 	Once     bool
 }
 
+const (
+	defaultInterval         = 60 * time.Second
+	startupFastPollWindow   = 2 * time.Minute
+	startupFastPollInterval = 30 * time.Second
+)
+
 type runtimeErrorKind string
 
 const (
@@ -157,7 +163,7 @@ func Run(ctx context.Context, opts Options) error {
 
 func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
-		opts.Interval = 60 * time.Second
+		opts.Interval = defaultInterval
 	}
 	deps = deps.withDefaults()
 
@@ -166,9 +172,13 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	}
 	backoff := newRetryBackoff(opts.Interval)
 	var lastCycleStart time.Time
+	var startedAt time.Time
 
 	for {
 		cycleStart := deps.now()
+		if startedAt.IsZero() {
+			startedAt = cycleStart
+		}
 		if detectSleepWakeGap(lastCycleStart, cycleStart, opts.Interval) {
 			deps.logf("runtime event=sleep-wake gap=%s threshold=%s action=reset-retry\n",
 				cycleStart.Sub(lastCycleStart),
@@ -190,6 +200,8 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 			deps.logf("cycle error: kind=%s op=%s retry=%s err=%v\n", runtimeErr.Kind, runtimeErr.Op, waitFor, err)
 		} else {
 			backoff.Reset()
+			uptime := cycleStart.Sub(startedAt)
+			waitFor = startupInterval(waitFor, uptime)
 		}
 
 		select {
@@ -198,6 +210,19 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 		case <-deps.after(waitFor):
 		}
 	}
+}
+
+func startupInterval(normal, uptime time.Duration) time.Duration {
+	if normal <= 0 {
+		normal = defaultInterval
+	}
+	if uptime < 0 || uptime >= startupFastPollWindow {
+		return normal
+	}
+	if startupFastPollInterval < normal {
+		return startupFastPollInterval
+	}
+	return normal
 }
 
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
@@ -365,7 +390,7 @@ func detectSleepWakeGap(previous, current time.Time, interval time.Duration) boo
 
 func sleepWakeGapThreshold(interval time.Duration) time.Duration {
 	if interval <= 0 {
-		interval = 60 * time.Second
+		interval = defaultInterval
 	}
 	threshold := interval + 30*time.Second
 	if threshold < 45*time.Second {

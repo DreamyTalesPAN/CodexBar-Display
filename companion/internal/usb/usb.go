@@ -15,6 +15,12 @@ import (
 var serialOpen = serial.Open
 var defaultSender serialSender
 
+const (
+	serialBaudRate       = 115200
+	closeTimeout         = 200 * time.Millisecond
+	reopenSettleDuration = 1200 * time.Millisecond
+)
+
 func ListPorts() ([]string, error) {
 	ports, err := serial.GetPortsList()
 	if err != nil {
@@ -49,12 +55,12 @@ func SendLine(port string, line []byte) error {
 }
 
 func ProbePort(port string) error {
-	mode := &serial.Mode{BaudRate: 115200}
-	p, err := serialOpen(port, mode)
+	p, err := serialOpen(port, openMode())
 	if err != nil {
 		return fmt.Errorf("open serial %s: %w", port, err)
 	}
-	_ = closePortBestEffort(p, 200*time.Millisecond)
+	setControlLinesLow(p)
+	_ = closePortBestEffort(p, closeTimeout)
 	return nil
 }
 
@@ -68,8 +74,16 @@ func (s *serialSender) Send(path string, line []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.ensurePort(path); err != nil {
+	opened, err := s.ensurePort(path)
+	if err != nil {
 		return err
+	}
+	if opened {
+		// Some ESP8266 USB bridges pulse reset/boot lines when a serial port is opened.
+		// Give the MCU a short settle window and clear any boot noise before first write.
+		_ = s.port.ResetInputBuffer()
+		time.Sleep(reopenSettleDuration)
+		_ = s.port.ResetInputBuffer()
 	}
 
 	if _, err := s.port.Write(line); err != nil {
@@ -79,32 +93,50 @@ func (s *serialSender) Send(path string, line []byte) error {
 	return nil
 }
 
-func (s *serialSender) ensurePort(path string) error {
+func (s *serialSender) ensurePort(path string) (bool, error) {
 	if s.port != nil && s.path == path {
-		return nil
+		return false, nil
 	}
 
 	// Port changed (for example after reconnect): drop stale handle and reopen.
 	s.closeCurrentLocked()
 
-	mode := &serial.Mode{BaudRate: 115200}
-	p, err := serialOpen(path, mode)
+	p, err := serialOpen(path, openMode())
 	if err != nil {
-		return fmt.Errorf("open serial %s: %w", path, err)
+		return false, fmt.Errorf("open serial %s: %w", path, err)
 	}
+	setControlLinesLow(p)
 
 	s.port = p
 	s.path = path
-	return nil
+	return true, nil
 }
 
 func (s *serialSender) closeCurrentLocked() {
 	if s.port == nil {
 		return
 	}
-	_ = closePortBestEffort(s.port, 200*time.Millisecond)
+	_ = closePortBestEffort(s.port, closeTimeout)
 	s.port = nil
 	s.path = ""
+}
+
+func openMode() *serial.Mode {
+	return &serial.Mode{
+		BaudRate: serialBaudRate,
+		InitialStatusBits: &serial.ModemOutputBits{
+			RTS: false,
+			DTR: false,
+		},
+	}
+}
+
+func setControlLinesLow(port serial.Port) {
+	if port == nil {
+		return
+	}
+	_ = port.SetDTR(false)
+	_ = port.SetRTS(false)
 }
 
 func closePortBestEffort(port serial.Port, timeout time.Duration) error {

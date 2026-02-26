@@ -216,13 +216,27 @@ func TestRunWithDepsRetriesAndRecoversAfterReconnect(t *testing.T) {
 
 	foundIntervalDelay := false
 	for _, d := range delays {
-		if d == 60*time.Second {
+		if d == startupFastPollInterval {
 			foundIntervalDelay = true
 			break
 		}
 	}
 	if !foundIntervalDelay {
-		t.Fatalf("expected loop to return to normal interval after recovery, got %v", delays)
+		t.Fatalf("expected loop to return to startup interval after recovery, got %v", delays)
+	}
+}
+
+func TestStartupIntervalSwitchesAfterWarmupWindow(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	if got := startupInterval(60*time.Second, 10*time.Second); got != startupFastPollInterval {
+		t.Fatalf("expected startup interval during warmup, got %s", got)
+	}
+	if got := startupInterval(60*time.Second, startupFastPollWindow); got != 60*time.Second {
+		t.Fatalf("expected normal interval after warmup window, got %s", got)
+	}
+	if got := startupInterval(20*time.Second, 10*time.Second); got != 20*time.Second {
+		t.Fatalf("expected normal interval when already shorter than startup interval, got %s", got)
 	}
 }
 
