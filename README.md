@@ -14,6 +14,12 @@ This project reads local usage data from `codexbar usage --json` and renders one
 - ESP8266 weather display spike: `docs/esp8266-spike.md`
 - Supplier hardware checklist: `docs/supplier-hardware-checklist.md`
 
+## External References (Smart Weather Clock)
+- Original supplier firmware (ESP8266 SmallTV): https://github.com/GeekMagicClock/smalltv
+- Supplier PRO firmware repo (ESP32): https://github.com/GeekMagicClock/smalltv-pro
+- Hardware pinout discussion used for this spike: https://github.com/GeekMagicClock/smalltv/issues/4
+- Community ESPHome adaptation: https://github.com/ViToni/esphome-geekmagic-smalltv
+
 ## MVP Scope
 - macOS only
 - One connected display
@@ -22,7 +28,7 @@ This project reads local usage data from `codexbar usage --json` and renders one
 
 ## Start Here
 1. Read `TODO.md`
-2. Connect board and verify serial device path (`/dev/cu.usbmodem*`)
+2. Connect board and verify serial device path (`/dev/cu.usb*`)
 3. Build firmware bring-up target
 4. Build companion daemon
 
@@ -44,6 +50,33 @@ go run ./cmd/vibeblock setup --yes
 # runtime health checks
 go run ./cmd/vibeblock doctor
 ```
+
+## ESP8266 Operator Runbook (Current Branch Hardware)
+
+Install/update runtime without reflashing:
+
+```bash
+cd companion
+go run ./cmd/vibeblock setup --yes --skip-flash --port /dev/cu.usbserial-10
+```
+
+Runtime verification:
+
+```bash
+launchctl print gui/$(id -u)/com.vibeblock.daemon | rg "state =|pid ="
+tail -n 20 /tmp/vibeblock-daemon.out.log
+```
+
+Recovery (restore known-good supplier image):
+
+```bash
+cd companion
+go run ./cmd/vibeblock restore-known-good --port /dev/cu.usbserial-10
+```
+
+Known limitations for this branch:
+- ESP8266 support currently targets the tested Smart Weather Clock hardware profile only.
+- Display bring-up still depends on panel/controller compatibility; use backup/restore for safe rollback.
 
 Companion supports both:
 - `codexbar` CLI in `PATH`

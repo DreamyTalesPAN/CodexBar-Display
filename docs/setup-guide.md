@@ -25,10 +25,13 @@ If multiple serial devices are connected, setup asks which port to use.
 go run ./cmd/vibeblock setup --yes
 
 # Force a specific serial path
-go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101
+go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10
 
 # Skip firmware flash (service/binary install only)
 go run ./cmd/vibeblock setup --skip-flash
+
+# Pin daemon to a fixed serial path (default is runtime auto-detect)
+go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --pin-port
 ```
 
 ## What gets installed
@@ -41,6 +44,23 @@ go run ./cmd/vibeblock setup --skip-flash
 
 Setup is idempotent: re-running updates binary/plist and restarts the agent safely.
 
+Default runtime mode is unpinned serial auto-detection in LaunchAgent, so reconnect/renumber events are handled without manual edits.
+
+## Recovery
+
+Restore known-good ESP8266 backup:
+
+```bash
+cd companion
+go run ./cmd/vibeblock restore-known-good --port /dev/cu.usbserial-10
+```
+
+Optional explicit image path:
+
+```bash
+go run ./cmd/vibeblock restore-known-good --image tmp/backup_chunks_20260226_090152/weather_backup_full.bin --port /dev/cu.usbserial-10
+```
+
 ## Verify runtime
 
 ```bash
@@ -49,4 +69,3 @@ go run ./cmd/vibeblock doctor
 launchctl print gui/$(id -u)/com.vibeblock.daemon | rg "state =|pid ="
 tail -f /tmp/vibeblock-daemon.out.log
 ```
-

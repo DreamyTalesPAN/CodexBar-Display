@@ -29,9 +29,10 @@ const (
 )
 
 type Options struct {
-	Port      string
-	AssumeYes bool
-	SkipFlash bool
+	Port          string
+	AssumeYes     bool
+	SkipFlash     bool
+	PinDaemonPort bool
 }
 
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
@@ -211,7 +212,15 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 	fmt.Fprintf(d.stdout, "Companion binary: %s\n", installPath)
 
-	plistPath, err := writeLaunchAgentPlist(home, installPath, port)
+	daemonPort := ""
+	if opts.PinDaemonPort {
+		daemonPort = port
+		fmt.Fprintf(d.stdout, "Launch agent serial mode: pinned (%s)\n", daemonPort)
+	} else {
+		fmt.Fprintln(d.stdout, "Launch agent serial mode: auto-detect")
+	}
+
+	plistPath, err := writeLaunchAgentPlist(home, installPath, daemonPort)
 	if err != nil {
 		return &StepError{
 			Step: "write-launchagent",

@@ -11,11 +11,13 @@ Go daemon that:
 cd companion
 
 go run ./cmd/vibeblock doctor
-go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101 --once
-go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101 --interval 60s
+go run ./cmd/vibeblock daemon --port /dev/cu.usbserial-10 --once
+go run ./cmd/vibeblock daemon --port /dev/cu.usbserial-10 --interval 60s
 go run ./cmd/vibeblock setup
 go run ./cmd/vibeblock setup --yes
-go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101 --skip-flash
+go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --skip-flash
+go run ./cmd/vibeblock restore-known-good
+go run ./cmd/vibeblock restore-known-good --image tmp/backup_chunks_20260226_090152/weather_backup_full.bin --port /dev/cu.usbserial-10
 ```
 
 `setup` is a one-command installer and is safe to run repeatedly:
@@ -23,13 +25,19 @@ go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101 --skip-flash
 - resolves serial port (interactive selection when multiple devices are found)
 - flashes firmware (`pio run -e lilygo_t_display_s3 -t upload --upload-port <port>`)
 - installs current `vibeblock` binary into `~/Library/Application Support/vibeblock/bin/vibeblock`
-- writes/updates `~/Library/LaunchAgents/com.vibeblock.daemon.plist`
+- writes/updates `~/Library/LaunchAgents/com.vibeblock.daemon.plist` (default: daemon auto-detects serial port at runtime)
 - restarts launch agent (`bootout -> bootstrap -> kickstart`) and verifies running/waiting state
 
 Setup flags:
 - `--port`: force serial port
 - `--yes`: auto-select defaults without prompt
 - `--skip-flash`: skip firmware flashing
+- `--pin-port`: pin daemon to selected `--port` in LaunchAgent (default is unpinned auto-detect)
+
+`restore-known-good` restores a supplier backup image to ESP8266 hardware:
+- auto-detects serial port unless `--port` is provided
+- auto-selects newest backup in `tmp/` unless `--image` is provided
+- runs `scripts/esp8266-restore.sh` via PlatformIO/esptool
 
 `doctor` validates CodexBar binary, lists serial ports, runs runtime serial checks, and shows a live provider preview.
 
@@ -39,7 +47,8 @@ Setup flags:
 - Runtime retry backoff on errors is `1s -> 2s -> 4s -> ... -> 30s` (capped by poll interval).
 - When CodexBar fails temporarily, the daemon reuses the last good frame for up to `10m` (configurable).
 - Sleep/Wake gaps are auto-detected; retry state is reset for faster recovery after wake.
-- If a configured serial port disappears (for example `/dev/cu.usbmodem101` -> `/dev/cu.usbmodem1101` after reconnect), the daemon auto-falls back to port autodetection and continues.
+- By default, daemon resolves serial port via auto-detection each cycle, so USB renumbering is handled automatically.
+- If daemon is explicitly pinned to a port, it auto-falls back to autodetection when the pinned path disappears.
 - Local activity uses provider detectors:
   - `codex` detector: latest `~/.codex/sessions/**/*.jsonl` plus `~/.codex/history.jsonl`
   - `claude` detector: latest `~/.claude/history.jsonl` plus `~/.claude/projects/**/*.jsonl` and `~/.config/claude/projects/**/*.jsonl`

@@ -285,7 +285,7 @@ void setup() {
   digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
 #endif
   tft.init();
-  tft.setRotation(1);
+  tft.setRotation(0);
   drawSplash();
 #endif
 

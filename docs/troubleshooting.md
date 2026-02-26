@@ -30,14 +30,14 @@ Most common cause: serial device is busy (daemon/monitor still open).
 
 ```bash
 launchctl bootout gui/$(id -u)/com.vibeblock.daemon 2>/dev/null || true
-lsof /dev/cu.usbmodem101
+lsof /dev/cu.usbserial-10
 ```
 
 Then rerun setup with explicit port:
 
 ```bash
 cd companion
-go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101
+go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10
 ```
 
 ## Setup fails at `launchagent-*`
@@ -56,10 +56,43 @@ tail -n 100 /tmp/vibeblock-daemon.err.log
 - Run `ls /dev/cu.usb*`
 
 If you see repeated
-`serial port not found: /dev/cu.usbmodem...`
+`serial port not found: /dev/cu.usb...`
 after reconnect, macOS may have renumbered the device (for example `...101` to `...1101`).
-Current daemon behavior auto-falls back to port autodetection and logs:
+Current default daemon behavior is unpinned auto-detection and logs:
 `runtime event=port-fallback ...`
+
+If your LaunchAgent was pinned earlier, re-run setup without `--pin-port`:
+
+```bash
+cd companion
+go run ./cmd/vibeblock setup --yes --skip-flash --port /dev/cu.usbserial-10
+```
+
+## Display stuck on `Waiting for frames...`
+
+Check daemon health first:
+
+```bash
+launchctl print gui/$(id -u)/com.vibeblock.daemon | rg "state =|pid ="
+tail -n 30 /tmp/vibeblock-daemon.out.log
+tail -n 30 /tmp/vibeblock-daemon.err.log
+```
+
+You should see periodic `sent frame -> ...` lines in `out.log`.
+
+If not, restart runtime:
+
+```bash
+cd companion
+go run ./cmd/vibeblock setup --yes --skip-flash --port /dev/cu.usbserial-10
+```
+
+If firmware looks corrupted, restore known-good backup:
+
+```bash
+cd companion
+go run ./cmd/vibeblock restore-known-good --port /dev/cu.usbserial-10
+```
 
 ## Display shows error
 
@@ -82,7 +115,7 @@ Then run a one-shot daemon cycle for detailed context:
 
 ```bash
 cd companion
-go run ./cmd/vibeblock daemon --port /dev/cu.usbmodem101 --once
+go run ./cmd/vibeblock daemon --port /dev/cu.usbserial-10 --once
 ```
 
 That prints the exact error frame source in terminal.
@@ -113,7 +146,7 @@ If values still jump, run a direct one-shot check:
 
 ```bash
 cd companion
-./vibeblock daemon --port /dev/cu.usbmodem101 --once
+./vibeblock daemon --port /dev/cu.usbserial-10 --once
 ```
 
 ## Provider selection seems wrong
@@ -151,7 +184,7 @@ Usually another process (e.g. running daemon or serial monitor) still holds the 
 
 ```bash
 launchctl bootout gui/$(id -u)/com.vibeblock.daemon 2>/dev/null || true
-lsof /dev/cu.usbmodem101
+lsof /dev/cu.usbserial-10
 ```
 
 After flashing, restart the daemon:
