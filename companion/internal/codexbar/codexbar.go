@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -258,49 +257,6 @@ type ParsedFrame struct {
 	Provider     string
 	Source       string
 	AccountEmail string
-}
-
-const codexCLIRepairCacheMaxAge = 30 * time.Minute
-
-var codexCLIRepairCache struct {
-	mu      sync.Mutex
-	frame   ParsedFrame
-	at      time.Time
-	hasData bool
-}
-
-func resetCodexCLIRepairCache() {
-	codexCLIRepairCache.mu.Lock()
-	defer codexCLIRepairCache.mu.Unlock()
-	codexCLIRepairCache.frame = ParsedFrame{}
-	codexCLIRepairCache.at = time.Time{}
-	codexCLIRepairCache.hasData = false
-}
-
-func putCodexCLIRepairCache(frame ParsedFrame, now time.Time) {
-	if now.IsZero() {
-		now = time.Now()
-	}
-	codexCLIRepairCache.mu.Lock()
-	defer codexCLIRepairCache.mu.Unlock()
-	codexCLIRepairCache.frame = frame
-	codexCLIRepairCache.at = now
-	codexCLIRepairCache.hasData = true
-}
-
-func getCodexCLIRepairCache(now time.Time) (ParsedFrame, bool) {
-	if now.IsZero() {
-		now = time.Now()
-	}
-	codexCLIRepairCache.mu.Lock()
-	defer codexCLIRepairCache.mu.Unlock()
-	if !codexCLIRepairCache.hasData {
-		return ParsedFrame{}, false
-	}
-	if codexCLIRepairCache.at.IsZero() || now.Sub(codexCLIRepairCache.at) > codexCLIRepairCacheMaxAge {
-		return ParsedFrame{}, false
-	}
-	return codexCLIRepairCache.frame, true
 }
 
 func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
@@ -1483,24 +1439,21 @@ func repairCodexFromCLI(ctx context.Context, timeout time.Duration, bin string, 
 
 	cliOut, cliErr := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
 	cliAll, cliParseErr := parseAllProviders(cliOut)
-	if cliErr == nil && cliParseErr == nil && len(cliAll) > 0 {
-		for _, candidate := range cliAll {
-			if strings.EqualFold(strings.TrimSpace(candidate.Provider), "codex") {
-				putCodexCLIRepairCache(candidate, time.Now())
-				all[idx] = candidate
-				return all
-			}
-		}
-
-		// Codex CLI should return codex-only payload for this command. If it doesn't,
-		// we still keep behavior deterministic with the first entry.
-		all[idx] = cliAll[0]
+	if cliErr != nil {
+		return all
+	}
+	if cliParseErr != nil {
+		return all
+	}
+	if len(cliAll) == 0 {
 		return all
 	}
 
-	if cached, ok := getCodexCLIRepairCache(time.Now()); ok {
-		if strings.EqualFold(strings.TrimSpace(cached.Provider), "codex") {
-			all[idx] = cached
+	for _, candidate := range cliAll {
+		if strings.EqualFold(strings.TrimSpace(candidate.Provider), "codex") {
+			if shouldReplaceCodexWebWithCLI(all[idx].Frame, candidate.Frame) {
+				all[idx] = candidate
+			}
 			return all
 		}
 	}
@@ -1512,7 +1465,7 @@ func shouldTryCodexCLIRepair(parsed ParsedFrame) bool {
 	if !strings.EqualFold(strings.TrimSpace(parsed.Provider), "codex") {
 		return false
 	}
-	if !strings.EqualFold(strings.TrimSpace(parsed.Source), "openai-web") {
+	if !isCodexWebSource(parsed.Source) {
 		return false
 	}
 
@@ -1526,6 +1479,39 @@ func shouldTryCodexCLIRepair(parsed ParsedFrame) bool {
 		return true
 	}
 	return false
+}
+
+func isCodexWebSource(source string) bool {
+	s := strings.TrimSpace(strings.ToLower(source))
+	return s == "openai-web" || s == "web"
+}
+
+func shouldReplaceCodexWebWithCLI(webFrame, cliFrame protocol.Frame) bool {
+	// Avoid replacing web usage with an older/weaker weekly aggregate.
+	if cliFrame.Weekly < webFrame.Weekly {
+		return false
+	}
+	return codexFrameQuality(cliFrame) > codexFrameQuality(webFrame)
+}
+
+func codexFrameQuality(frame protocol.Frame) int {
+	score := 0
+	if frame.Session > 0 {
+		score += 4
+	}
+	if frame.Weekly > 0 {
+		score += 2
+	}
+	if frame.ResetSec > 0 && frame.ResetSec <= 24*60*60 {
+		score += 1
+	}
+	if frame.Session == 0 && frame.Weekly == 0 && frame.ResetSec == 0 {
+		score -= 3
+	}
+	if frame.Session == 0 && frame.ResetSec > 24*60*60 {
+		score -= 2
+	}
+	return score
 }
 
 func extractProviderList(root any) []any {

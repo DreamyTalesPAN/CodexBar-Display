@@ -427,7 +427,7 @@ func TestShouldTryCodexCLIRepair(t *testing.T) {
 	}
 
 	if !shouldTryCodexCLIRepair(parsed) {
-		t.Fatalf("expected repair=true for codex openai-web 0/0")
+		t.Fatalf("expected repair=true for codex openai-web")
 	}
 }
 
@@ -443,6 +443,18 @@ func TestShouldTryCodexCLIRepairForSuspiciousLongResetFallback(t *testing.T) {
 	}
 }
 
+func TestShouldTryCodexCLIRepairForWebAliasSource(t *testing.T) {
+	parsed := ParsedFrame{
+		Frame:    protocol.Frame{Session: 0, Weekly: 7, ResetSec: 120 * 60 * 60},
+		Provider: "codex",
+		Source:   "web",
+	}
+
+	if !shouldTryCodexCLIRepair(parsed) {
+		t.Fatalf("expected repair=true for codex source=web")
+	}
+}
+
 func TestShouldNotTryCodexCLIRepairForNonCodex(t *testing.T) {
 	parsed := ParsedFrame{
 		Frame:    protocol.Frame{Session: 0, Weekly: 0, ResetSec: 0},
@@ -455,27 +467,23 @@ func TestShouldNotTryCodexCLIRepairForNonCodex(t *testing.T) {
 	}
 }
 
-func TestRepairCodexFromCLIUsesCachedFrameWhenCLIRepairFails(t *testing.T) {
-	resetCodexCLIRepairCache()
-	defer resetCodexCLIRepairCache()
+func TestShouldNotTryCodexCLIRepairForNonWebSource(t *testing.T) {
+	parsed := ParsedFrame{
+		Frame:    protocol.Frame{Session: 3, Weekly: 11, ResetSec: 4 * 60 * 60},
+		Provider: "codex",
+		Source:   "codex-cli",
+	}
 
+	if shouldTryCodexCLIRepair(parsed) {
+		t.Fatalf("expected repair=false for non-openai-web source")
+	}
+}
+
+func TestRepairCodexFromCLKeepsWebFrameWhenCLIRepairFails(t *testing.T) {
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
 	}()
-
-	cached := ParsedFrame{
-		Provider: "codex",
-		Source:   "codex-cli",
-		Frame: protocol.Frame{
-			Provider: "codex",
-			Label:    "Codex",
-			Session:  3,
-			Weekly:   11,
-			ResetSec: 15000,
-		},
-	}
-	putCodexCLIRepairCache(cached, time.Now())
 
 	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 		return nil, errors.New("temporary codex cli failure")
@@ -496,15 +504,12 @@ func TestRepairCodexFromCLIUsesCachedFrameWhenCLIRepairFails(t *testing.T) {
 	}
 
 	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
-	if repaired[0].Frame.Session != 3 || repaired[0].Frame.Weekly != 11 {
-		t.Fatalf("expected cached CLI frame fallback, got session=%d weekly=%d", repaired[0].Frame.Session, repaired[0].Frame.Weekly)
+	if repaired[0].Frame.Session != 0 || repaired[0].Frame.Weekly != 1 {
+		t.Fatalf("expected original web frame on CLI failure, got session=%d weekly=%d", repaired[0].Frame.Session, repaired[0].Frame.Weekly)
 	}
 }
 
-func TestRepairCodexFromCLICachesSuccessfulCLIResult(t *testing.T) {
-	resetCodexCLIRepairCache()
-	defer resetCodexCLIRepairCache()
-
+func TestRepairCodexFromCLIRepairsWithCLIResult(t *testing.T) {
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -532,13 +537,35 @@ func TestRepairCodexFromCLICachesSuccessfulCLIResult(t *testing.T) {
 	if repaired[0].Frame.Session != 3 || repaired[0].Frame.Weekly != 11 {
 		t.Fatalf("expected CLI repair frame, got session=%d weekly=%d", repaired[0].Frame.Session, repaired[0].Frame.Weekly)
 	}
+}
 
-	cached, ok := getCodexCLIRepairCache(time.Now())
-	if !ok {
-		t.Fatalf("expected successful CLI repair to populate cache")
+func TestRepairCodexFromCLIDoesNotReplaceWhenCLIWeeklyLower(t *testing.T) {
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":2,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":10}}}]`), nil
 	}
-	if cached.Frame.Session != 3 || cached.Frame.Weekly != 11 {
-		t.Fatalf("expected cached CLI frame session=3 weekly=11, got session=%d weekly=%d", cached.Frame.Session, cached.Frame.Weekly)
+
+	all := []ParsedFrame{
+		{
+			Provider: "codex",
+			Source:   "openai-web",
+			Frame: protocol.Frame{
+				Provider: "codex",
+				Label:    "Codex",
+				Session:  0,
+				Weekly:   40,
+				ResetSec: 150 * 60 * 60,
+			},
+		},
+	}
+
+	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
+	if repaired[0].Frame.Weekly != 40 {
+		t.Fatalf("expected web weekly to be preserved when CLI weekly is lower, got %d", repaired[0].Frame.Weekly)
 	}
 }
 
