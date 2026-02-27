@@ -6,7 +6,8 @@ Single source of truth for install, runtime checks, recovery, and smoke testing.
 - macOS runtime (`launchctl` + LaunchAgent)
 - USB serial devices (`/dev/cu.usb*`)
 - Companion binary (`vibeblock`)
-- ESP32-S3 and ESP8266 firmware targets
+- ESP8266 firmware target for v1 production rollout
+- ESP32-S3 firmware path as experimental/non-blocking for v1
 
 ## Core Commands
 
@@ -33,6 +34,8 @@ go run ./cmd/vibeblock setup --yes
 ```
 
 ### ESP32-S3 target (override)
+
+Experimental path for v1 (non-blocking):
 
 ```bash
 cd companion
@@ -72,6 +75,7 @@ Preflight includes:
 Optional guard override:
 
 ```bash
+# experimental v1 path
 go run ./cmd/vibeblock upgrade \
   --firmware-env lilygo_t_display_s3 \
   --target-firmware-version 1.0.0

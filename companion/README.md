@@ -7,6 +7,10 @@ Go daemon that:
 - applies deterministic provider selection (`local activity -> usage delta -> sticky current -> CodexBar order`)
 - sends protocol JSON lines to the USB display
 
+v1 cutline:
+- release-gated hardware target: ESP8266 SmallTV ST7789 variants
+- ESP32 (`lilygo_t_display_s3`) stays available as an experimental/non-blocking path
+
 ## Commands
 
 ```bash
@@ -24,7 +28,9 @@ go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --skip-flash
 go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
 go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
 go run ./cmd/vibeblock setup --validate-only --firmware-env esp8266_smalltv_st7789
+# experimental v1 path
 go run ./cmd/vibeblock setup --dry-run --firmware-env lilygo_t_display_s3
+# experimental v1 path
 go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101 --firmware-env lilygo_t_display_s3
 go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
 go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
@@ -49,7 +55,7 @@ Setup flags:
 - `--yes`: auto-select defaults without prompt
 - `--skip-flash`: skip firmware flashing
 - `--pin-port`: pin daemon to selected `--port` in LaunchAgent (default is unpinned auto-detect)
-- `--firmware-env`: PlatformIO firmware environment (default `esp8266_smalltv_st7789`, example `lilygo_t_display_s3`)
+- `--firmware-env`: PlatformIO firmware environment (default `esp8266_smalltv_st7789`; `lilygo_t_display_s3` is experimental for v1)
 - `--theme`: persist runtime theme override (`classic`, `crt`, `none`)
 - `--validate-only`: run setup prerequisite checks only, no system changes
 - `--dry-run`: show setup actions without applying changes

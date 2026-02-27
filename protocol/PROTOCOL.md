@@ -107,4 +107,6 @@ Companion treats missing/legacy hello as unknown capabilities and falls back saf
 
 ## v1 Scope Boundary
 - v1 ships built-in themes only (`classic`, `crt`).
+- v1 release-gated hardware target is ESP8266 SmallTV ST7789.
+- ESP32 (`lilygo_t_display_s3`) is kept as experimental/non-blocking for v1.
 - External theme SDK/runtime plugin loading is out of scope for v1.

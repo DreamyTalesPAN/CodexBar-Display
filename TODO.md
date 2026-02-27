@@ -5,6 +5,8 @@
 - There is no market device fleet yet.
 - Current real hardware baseline is the connected ESP8266 SmallTV development unit.
 - First release scope includes rich rendering (`usage` + media on one screen) with built-in themes only.
+- v1 ship hardware target is ESP8266 SmallTV ST7789.
+- ESP32-S3 stays in-repo as an experimental/non-blocking path for v1.
 - External theme SDK/third-party themes are explicitly out of v1 scope.
 
 ## Backlog Hygiene
@@ -12,22 +14,24 @@
 - Completed milestones were moved to `docs/completed-milestones.md`.
 
 ## Product Assumptions (v1)
-- Supported board targets:
+- v1 release-gated board target:
   - ESP8266 SmallTV ST7789 (including alt mapping variants)
+- Experimental board path kept in repo (not v1 go-live blocking):
   - LILYGO T-Display-S3 (ESP32-S3)
 - Runtime transport remains USB serial (no WiFi/BLE for vibeblock runtime).
 - Companion stays "smart"; firmware stays renderer- and protocol-only.
 - Runtime frame is control-plane only; asset transfer remains a separate tooling flow.
 
-## Milestone 4: Dual-Target Hardening (P0)
-Goal: Software is robust against production variance across both board families.
+## Milestone 4: Device Contract Hardening (P0, ESP8266 ship target)
+Goal: Software is robust against production variance on the v1 ship hardware.
 
-- [ ] Document hardware contract as software artifact (`docs/hardware-contract.md`) for both targets.
-- [ ] Extend `doctor` with explicit board/protocol/capability contract checks.
+- [ ] Document hardware contract as software artifact (`docs/hardware-contract.md`) for ESP8266 ship target.
+- [ ] Extend `doctor` with explicit board/protocol/capability contract checks for release-gated target.
+- [ ] Keep experimental ESP32 checks as warnings only (must not block v1 go-live).
 
 Acceptance:
-- [ ] Wrong/incompatible hardware is detected clearly within 5s (ESP8266 and ESP32).
-- [ ] Correct ESP8266 and ESP32 hardware shows a valid frame within 15s after daemon start.
+- [ ] Wrong/incompatible hardware is detected clearly within 5s on ESP8266 ship path.
+- [ ] Correct ESP8266 hardware shows a valid frame within 15s after daemon start.
 
 ## Milestone 6: Observability & Supportability (P1)
 Goal: Diagnose field issues quickly without code changes.
@@ -83,3 +87,4 @@ Go-live criteria:
 - [ ] Milestones 4, 6, and 8 completed.
 - [ ] No open P0/P1 bugs.
 - [ ] Setup, upgrade, rollback, and troubleshooting docs are current.
+- [ ] No open ESP8266 P0/P1 bugs on release-gated flows.

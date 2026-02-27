@@ -27,7 +27,8 @@ Source of truth:
 
 Current working pre-release defaults:
 - Companion: `1.0.0`
-- Firmware environments (`esp8266_*`, `lilygo_t_display_s3`): `1.0.0`
+- Firmware (release-gated for v1): `esp8266_*` on `1.0.0`
+- Firmware (experimental for v1, non-blocking): `lilygo_t_display_s3` on `1.0.0`
 
 ## Protocol Contract Note
 
