@@ -4,6 +4,12 @@ vibeblock is a physical CodexBar status display for desk use.
 
 It reads local usage data from `codexbar usage --json`, selects one active provider, and renders usage on a USB-connected display.
 
+## Project Status
+
+- Pre-release: there is no public vibeblock release yet.
+- No market device fleet yet; current hardware baseline is the connected ESP8266 SmallTV development unit.
+- First release scope includes rich rendering (`usage` + media on one screen) with built-in themes only, tracked in `protocol/PROTOCOL.md` and `TODO.md`.
+
 Core dependency:
 - CodexBar: https://codexbar.app/
 
@@ -33,7 +39,6 @@ Core dependency:
 
 Protocol references:
 - `protocol/PROTOCOL.md`
-- `protocol/PROTOCOL_V2_DRAFT.md`
 
 ## Supported Firmware Environments
 
@@ -73,6 +78,7 @@ Theme development (high-level):
 - shared registries: `firmware_shared/theme_registry.h`, `companion/internal/theme/registry.go`
 - ESP8266 mapping/renderer: `firmware_esp8266/src/theme_defs.*`, `firmware_esp8266/src/renderer_esp8266.cpp`
 - protocol validation: `protocol/theme_registry.json`, `protocol/schema.json`
+- external Theme SDK is intentionally deferred to v2 (`docs/theme-sdk-v2-outlook.md`)
 
 ## Quick Start (macOS)
 
@@ -143,7 +149,7 @@ pio run -e lilygo_t_display_s3
 - `docs/` - operator and engineering docs
 - `scripts/` - backup/restore and smoke scripts
 
-## Documentation Index
+## Canonical Docs
 
 - Operator runbook: `docs/operator-runbook.md`
 - Provider selection rules: `docs/provider-selection.md`
@@ -153,9 +159,11 @@ pio run -e lilygo_t_display_s3
 - Versioning and compatibility: `docs/versioning-compatibility.md`
 - Release process: `docs/release-process.md`
 - Known-good firmware: `docs/known-good-firmware.md`
+- Theme SDK v2 outlook: `docs/theme-sdk-v2-outlook.md`
 - Hardware sourcing checklist: `docs/supplier-hardware-checklist.md`
 - ESP8266 spike notes: `docs/esp8266-spike.md`
-- Project roadmap: `TODO.md`
+- Open roadmap: `TODO.md`
+- Completed milestones: `docs/completed-milestones.md`
 
 ## Upstream Hardware References
 

@@ -1,6 +1,11 @@
-# Versioning & Compatibility (Milestone 5)
+# Versioning & Compatibility (Milestone 5, Pre-release)
 
 This document defines SemVer and the compatibility contract between `companion` and `firmware`.
+
+Status:
+- There is no public vibeblock release yet.
+- The matrix and versions below are the current working pre-release defaults and will be frozen before first shipment.
+- Protocol remains `v:1` for first release; rich rendering is modeled as optional v1 fields (no protocol v2 split for v1 ship scope).
 
 ## SemVer Policy
 
@@ -20,9 +25,15 @@ Source of truth:
 |---|---|---|---|
 | `v1-stable` | `>=1.0.0 <2.0.0` | `>=1.0.0 <2.0.0` | `1` |
 
-Current release defaults:
+Current working pre-release defaults:
 - Companion: `1.0.0`
 - Firmware environments (`esp8266_*`, `lilygo_t_display_s3`): `1.0.0`
+
+## Protocol Contract Note
+
+- Canonical protocol spec: `protocol/PROTOCOL.md`
+- Canonical frame schema: `protocol/schema.json`
+- Rich-render fields (`renderMode`, `shapePreset`, `mediaSlot`, `mediaFit`, `mediaLoop`) are optional v1 extensions and capability-gated via device hello.
 
 ## Version Guard
 
