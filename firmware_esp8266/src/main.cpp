@@ -17,6 +17,51 @@ namespace {
 vibeblock::app::RuntimeContext runtimeCtx;
 vibeblock::esp8266::RendererESP8266 renderer;
 
+#ifdef VIBEBLOCK_RUNTIME_BENCH
+struct RuntimeBenchWindow {
+  unsigned long windowStartMs = 0;
+  unsigned long loopCount = 0;
+  unsigned long renderCount = 0;
+  unsigned long loopCpuMaxUs = 0;
+  unsigned long renderMaxUs = 0;
+};
+
+RuntimeBenchWindow benchWindow;
+
+void recordBench(unsigned long loopStartUs, bool rendered, unsigned long renderUs) {
+  const unsigned long nowMs = millis();
+  if (benchWindow.windowStartMs == 0) {
+    benchWindow.windowStartMs = nowMs;
+  }
+
+  const unsigned long loopCpuUs = micros() - loopStartUs;
+  benchWindow.loopCount++;
+  if (loopCpuUs > benchWindow.loopCpuMaxUs) {
+    benchWindow.loopCpuMaxUs = loopCpuUs;
+  }
+
+  if (rendered) {
+    benchWindow.renderCount++;
+    if (renderUs > benchWindow.renderMaxUs) {
+      benchWindow.renderMaxUs = renderUs;
+    }
+  }
+
+  if (nowMs - benchWindow.windowStartMs >= 60000UL) {
+    Serial.printf(
+        "bench board=%s loops=%lu renders=%lu loop_cpu_us_max=%lu render_us_max=%lu\n",
+        VIBEBLOCK_BOARD_ID,
+        benchWindow.loopCount,
+        benchWindow.renderCount,
+        benchWindow.loopCpuMaxUs,
+        benchWindow.renderMaxUs);
+
+    benchWindow = {};
+    benchWindow.windowStartMs = nowMs;
+  }
+}
+#endif
+
 }  // namespace
 
 void setup() {
@@ -45,6 +90,10 @@ void setup() {
 }
 
 void loop() {
+  const unsigned long loopStartUs = micros();
+  bool rendered = false;
+  unsigned long renderDurationUs = 0;
+
   vibeblock::core::SerialConsumeEvent event;
   if (vibeblock::app::ConsumeSerial(runtimeCtx, true, millis(), event)) {
     renderer.OnFrameAccepted(runtimeCtx, event);
@@ -74,6 +123,7 @@ void loop() {
   }
 
   if (runtimeCtx.screenDirty) {
+    const unsigned long renderStartUs = micros();
 #ifdef VIBEBLOCK_PROBE_ONLY
     renderer.DrawUsage(runtimeCtx);
 #else
@@ -85,9 +135,14 @@ void loop() {
       renderer.DrawUsage(runtimeCtx);
     }
 #endif
+    rendered = true;
+    renderDurationUs = micros() - renderStartUs;
     runtimeCtx.screenDirty = false;
   }
 
+#ifdef VIBEBLOCK_RUNTIME_BENCH
+  recordBench(loopStartUs, rendered, renderDurationUs);
+#endif
+
   delay(20);
 }
-

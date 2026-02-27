@@ -15,18 +15,18 @@ Ziel: Nach dem Dual-Target-Merge die groessten Wartbarkeits- und Betriebsrisiken
 - [x] Setup/Runtime-Konfiguration konsolidieren:
   - [x] Prioritaetsregeln finalisieren und testen (`CLI > ENV > runtime config > firmware default`).
   - [x] `vibeblock setup` um `validate-only`/`dry-run` erweitern fuer sichere Produktions-Checks.
-- [ ] USB-Transport entkoppeln und testbarer machen:
-  - `usb` package weiter auf explizite Interfaces reduzieren (discover/open/send/read hello), um Race-/Reconnect-Pfade isoliert testen zu koennen.
-  - Serial-Integrationstests mit pseudo-tty/mock-device fuer reconnect/sleep-wake Fehlerbilder einfuehren.
-- [ ] Error-Codes und Logs standardisieren:
-  - Fehlertaxonomie finalisieren (`transport/*`, `protocol/*`, `runtime/*`, `setup/*`) und in Docs/Runbook spiegeln.
-  - Jeder user-facing Fehler bekommt einen stabilen Code + konkrete Recovery-Aktion.
+- [x] USB-Transport entkoppeln und testbarer machen:
+  - [x] `usb` package weiter auf explizite Interfaces reduzieren (discover/open/send/read hello), um Race-/Reconnect-Pfade isoliert testen zu koennen.
+  - [x] Serial-Integrationstests mit pseudo-tty/mock-device fuer reconnect/sleep-wake Fehlerbilder einfuehren.
+- [x] Error-Codes und Logs standardisieren:
+  - [x] Fehlertaxonomie finalisieren (`transport/*`, `protocol/*`, `runtime/*`, `setup/*`) und in Docs/Runbook spiegeln.
+  - [x] Jeder user-facing Fehler bekommt einen stabilen Code + konkrete Recovery-Aktion.
 - [x] CI-Qualitaetsgates erweitern:
   - [x] `golangci-lint`/`staticcheck` fuer Companion aktivieren.
   - [x] Firmware-Checks um grobe Groessenbudgets erweitern (Warnung/Fail bei deutlichen Regressions in Flash/RAM).
-- [ ] Benchmarks und Budgetgrenzen einfuehren:
-  - Polling-/Render-Zyklen im Companion und auf Firmware-Seite messbar machen.
-  - Zielbudgets fuer Latenz (frame render), CPU-Zeit und Speicherverbrauch je Target dokumentieren.
+- [x] Benchmarks und Budgetgrenzen einfuehren:
+  - [x] Polling-/Render-Zyklen im Companion und auf Firmware-Seite messbar machen.
+  - [x] Zielbudgets fuer Latenz (frame render), CPU-Zeit und Speicherverbrauch je Target dokumentieren.
 
 Acceptance:
 - [ ] Kritische Kernlogik ist in kleine, isoliert testbare Module getrennt (Firmware + Companion).

@@ -97,9 +97,27 @@ Setup flags:
 - For Codex specifically, if `source=openai-web` reports `0/0` with no reset, the daemon repairs Codex data via `--provider codex --source cli`.
 - Unified runtime error frames use stable codes like `runtime/codexbar-parse` and `runtime/serial-write`.
 - Daemon logs include `reason=<selection strategy>` and `detail=<tie-break context>` for each sent frame.
+- Error logs are standardized as `cycle error: code=<taxonomy-code> ... recovery=\"<action>\" ...`.
 - Optional theme override: set `VIBEBLOCK_THEME=classic` or `VIBEBLOCK_THEME=crt` to request a display theme.
 - Runtime theme precedence: `daemon --theme` CLI flag > `VIBEBLOCK_THEME` env > runtime config (`config.json`) > firmware compile default.
 - Theme is only sent to devices that advertise `features:["theme"]` in device hello.
+
+## Error Taxonomy
+
+User-facing errors now use stable codes with recovery actions:
+
+- `transport/*`: serial discovery/open/write/probe failures (`transport/serial-open`, `transport/no-usb-serial-ports`)
+- `protocol/*`: handshake/frame format/capability failures (`protocol/device-hello-unavailable`)
+- `runtime/*`: daemon cycle failures and runtime error frames (`runtime/serial-write`, `runtime/codexbar-parse`)
+- `setup/*`: setup/install/flash/launch-agent failures (`setup/flash-firmware`, `setup/launchagent-verify`)
+
+CLI commands print `error code=<...>` for coded errors. Runbook recovery mapping:
+- `../docs/operator-runbook.md`
+
+## Performance Budgets
+
+Companion + firmware performance budgets and measurement workflow:
+- `../docs/performance-budgets.md`
 
 Environment variables:
 

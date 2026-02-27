@@ -30,6 +30,9 @@ jobs:
           export PATH="$(go env GOPATH)/bin:$PATH"
           staticcheck ./...
 
+      - name: Check companion benchmark budgets
+        run: ./scripts/check-companion-bench-budget.sh
+
   firmware-build:
     runs-on: ubuntu-latest
     strategy:

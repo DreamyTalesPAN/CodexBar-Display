@@ -182,6 +182,7 @@ pio run -e lilygo_t_display_s3
 - Provider selection rules: `docs/provider-selection.md`
 - Provider activity detectors: `docs/provider-activity-sources.md`
 - Milestone test matrix: `docs/m1-test-matrix.md`
+- Performance budgets: `docs/performance-budgets.md`
 - Hardware sourcing checklist: `docs/supplier-hardware-checklist.md`
 - ESP8266 spike notes: `docs/esp8266-spike.md`
 - Project roadmap: `TODO.md`

@@ -29,7 +29,7 @@ Golden frame fixtures:
 ## Error Frame
 
 ```json
-{"v":1,"error":"codexbar unavailable"}
+{"v":1,"error":"runtime/codexbar-command"}
 ```
 
 ## Device Hello (Firmware -> Host)
@@ -54,6 +54,7 @@ Companion treats missing/legacy hello as unknown capabilities and falls back saf
 ## Rules
 - Unknown fields are ignored.
 - Missing numeric fields default to `0` on firmware side.
+- Host should prefer stable error codes in `error` (for example `runtime/*`, `protocol/*`) over free-form text.
 - `theme` is optional and should only be sent when device `hello.features` includes `theme`.
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.

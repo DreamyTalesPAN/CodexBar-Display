@@ -91,6 +91,14 @@ go run ./cmd/vibeblock health
 - last successful `sent frame` timestamp + port
 - last runtime error (if any)
 
+Runtime error logs use:
+- stable `code=<category/item>` (`transport/*`, `protocol/*`, `runtime/*`, `setup/*`)
+- concrete `recovery="..."` actions inline
+
+Examples:
+- `cycle error: code=runtime/serial-write ... recovery="Check cable/device power; daemon will retry automatically."`
+- `setup failed at flash-firmware [setup/flash-firmware] ...`
+
 Daemon logs:
 - `/tmp/vibeblock-daemon.out.log`
 - `/tmp/vibeblock-daemon.err.log`
@@ -167,3 +175,19 @@ tail -n 100 /tmp/vibeblock-daemon.err.log
 go run ./cmd/vibeblock health
 ./scripts/smoke-daemon-sent-frame.sh
 ```
+
+## Error Code Recovery Map
+
+Use this taxonomy for incident triage:
+
+| Category | Typical Codes | First Recovery Action |
+|---|---|---|
+| `transport/*` | `transport/serial-open`, `transport/no-usb-serial-ports`, `transport/serial-write` | Reconnect board/cable, check `ls /dev/cu.usb*`, release busy port via `lsof <port>` |
+| `protocol/*` | `protocol/device-hello-unavailable` | Reconnect device to force boot hello; runtime falls back when hello is missing |
+| `runtime/*` | `runtime/serial-resolve`, `runtime/codexbar-parse`, `runtime/frame-too-large` | Run `vibeblock doctor`, verify CodexBar output, inspect daemon logs |
+| `setup/*` | `setup/flash-firmware`, `setup/unsupported-hardware`, `setup/launchagent-verify` | Rerun setup with matching `--firmware-env`, verify PlatformIO + launchctl state |
+
+## Performance Budgets
+
+Companion benchmark limits, firmware probe-bench commands, and per-target budgets:
+- `docs/performance-budgets.md`

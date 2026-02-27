@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -107,6 +108,7 @@ func (d deps) withDefaults() deps {
 
 type StepError struct {
 	Step   string
+	Code   errcode.Code
 	Err    error
 	Hint   string
 	Output string
@@ -123,13 +125,18 @@ func (e *StepError) Error() string {
 		b.WriteString("setup failed at ")
 		b.WriteString(e.Step)
 	}
+	if code := e.ErrorCode(); code != "" {
+		b.WriteString(" [")
+		b.WriteString(string(code))
+		b.WriteString("]")
+	}
 	if e.Err != nil {
 		b.WriteString(": ")
 		b.WriteString(e.Err.Error())
 	}
-	if strings.TrimSpace(e.Hint) != "" {
+	if recovery := e.RecoveryAction(); recovery != "" {
 		b.WriteString("\nrecovery: ")
-		b.WriteString(strings.TrimSpace(e.Hint))
+		b.WriteString(recovery)
 	}
 	if strings.TrimSpace(e.Output) != "" {
 		b.WriteString("\noutput:\n")
@@ -143,6 +150,63 @@ func (e *StepError) Unwrap() error {
 		return nil
 	}
 	return e.Err
+}
+
+func (e *StepError) ErrorCode() errcode.Code {
+	if e == nil {
+		return ""
+	}
+	if e.Code != "" {
+		return e.Code
+	}
+	switch strings.TrimSpace(e.Step) {
+	case "codexbar-validate":
+		return errcode.SetupCodexbarValidate
+	case "codexbar-install":
+		return errcode.SetupCodexbarInstall
+	case "list-ports":
+		return errcode.SetupListPorts
+	case "select-port":
+		return errcode.SetupSelectPort
+	case "serial-probe":
+		return errcode.SetupSerialProbe
+	case "resolve-executable":
+		return errcode.SetupResolveExecutable
+	case "resolve-home":
+		return errcode.SetupResolveHome
+	case "unsupported-hardware":
+		return errcode.SetupUnsupportedHardware
+	case "locate-repository":
+		return errcode.SetupLocateRepository
+	case "flash-firmware", "flash-firmware-validate":
+		return errcode.SetupFlashFirmware
+	case "install-binary":
+		return errcode.SetupInstallBinary
+	case "install-recovery-assets":
+		return errcode.SetupInstallRecovery
+	case "write-runtime-config":
+		return errcode.SetupWriteRuntimeConfig
+	case "write-launchagent":
+		return errcode.SetupWriteLaunchAgent
+	case "launchagent-bootstrap":
+		return errcode.SetupLaunchBootstrap
+	case "launchagent-kickstart":
+		return errcode.SetupLaunchKickstart
+	case "launchagent-verify":
+		return errcode.SetupLaunchVerify
+	default:
+		return ""
+	}
+}
+
+func (e *StepError) RecoveryAction() string {
+	if e == nil {
+		return ""
+	}
+	if strings.TrimSpace(e.Hint) != "" {
+		return strings.TrimSpace(e.Hint)
+	}
+	return errcode.DefaultRecovery(e.ErrorCode())
 }
 
 func Run(ctx context.Context, opts Options) error {

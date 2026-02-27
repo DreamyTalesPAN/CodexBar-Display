@@ -15,6 +15,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/health"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -44,7 +45,14 @@ func main() {
 	}
 
 	if err != nil {
+		if code := errcode.Of(err); code != "" {
+			fmt.Fprintf(os.Stderr, "error code=%s\n", code)
+		}
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		recovery := strings.TrimSpace(errcode.Recovery(err))
+		if recovery != "" && !strings.Contains(err.Error(), "recovery:") {
+			fmt.Fprintf(os.Stderr, "recovery: %s\n", recovery)
+		}
 		os.Exit(1)
 	}
 }

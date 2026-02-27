@@ -11,11 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	serial "go.bug.st/serial"
 )
 
 var serialOpen = serial.Open
+var defaultDiscoverer PortDiscoverer = systemDiscoverer{}
 var defaultSender = NewSender()
 
 const (
@@ -29,20 +31,141 @@ const (
 
 var ErrDeviceHelloUnavailable = errors.New("device hello unavailable")
 
-func ListPorts() ([]string, error) {
+type PortDiscoverer interface {
+	Discover() ([]string, error)
+}
+
+type SerialPort interface {
+	Read([]byte) (int, error)
+	Write([]byte) (int, error)
+	Close() error
+	SetReadTimeout(time.Duration) error
+	ResetInputBuffer() error
+	SetDTR(bool) error
+	SetRTS(bool) error
+}
+
+type PortOpener interface {
+	Open(path string, mode *serial.Mode) (SerialPort, error)
+}
+
+type LineSender interface {
+	Send(path string, line []byte) error
+}
+
+type HelloReader interface {
+	ReadHello(path string) (protocol.DeviceHello, error)
+}
+
+type CapabilitiesReader interface {
+	ReadCapabilities(path string) (protocol.DeviceCapabilities, error)
+}
+
+type TransportError struct {
+	code     errcode.Code
+	op       string
+	path     string
+	err      error
+	recovery string
+}
+
+func (e *TransportError) Error() string {
+	if e == nil {
+		return ""
+	}
+	base := string(e.code)
+	if e.op != "" {
+		base = fmt.Sprintf("%s (%s)", base, e.op)
+	}
+	if e.path != "" {
+		base = fmt.Sprintf("%s path=%s", base, e.path)
+	}
+	if e.err != nil {
+		return fmt.Sprintf("%s: %v", base, e.err)
+	}
+	return base
+}
+
+func (e *TransportError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func (e *TransportError) ErrorCode() errcode.Code {
+	if e == nil {
+		return ""
+	}
+	return e.code
+}
+
+func (e *TransportError) RecoveryAction() string {
+	if e == nil {
+		return ""
+	}
+	if strings.TrimSpace(e.recovery) != "" {
+		return strings.TrimSpace(e.recovery)
+	}
+	return errcode.DefaultRecovery(e.code)
+}
+
+func wrapTransportError(code errcode.Code, op, path, recovery string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &TransportError{
+		code:     code,
+		op:       op,
+		path:     strings.TrimSpace(path),
+		err:      err,
+		recovery: recovery,
+	}
+}
+
+type systemDiscoverer struct{}
+
+func (systemDiscoverer) Discover() ([]string, error) {
 	ports, err := serial.GetPortsList()
 	if err != nil {
-		return nil, err
+		return nil, wrapTransportError(
+			errcode.TransportNoSerialPorts,
+			"discover-ports",
+			"",
+			"Reconnect the board and ensure the serial driver is available, then retry.",
+			err,
+		)
 	}
 	sort.Strings(ports)
 	return ports, nil
+}
+
+type serialOpener struct {
+	openFn func(string, *serial.Mode) (serial.Port, error)
+}
+
+func (o serialOpener) Open(path string, mode *serial.Mode) (SerialPort, error) {
+	if o.openFn == nil {
+		return nil, errors.New("serial opener is not configured")
+	}
+	return o.openFn(path, mode)
+}
+
+func ListPorts() ([]string, error) {
+	return defaultDiscoverer.Discover()
 }
 
 func ResolvePort(explicit string) (string, error) {
 	explicit = strings.TrimSpace(explicit)
 	if explicit != "" {
 		if _, err := os.Stat(explicit); err != nil {
-			return "", fmt.Errorf("serial port not found: %s", explicit)
+			return "", wrapTransportError(
+				errcode.TransportSerialPortNotFound,
+				"resolve-explicit-port",
+				explicit,
+				"Run `ls /dev/cu.usb*` and pass an existing port path.",
+				err,
+			)
 		}
 		return explicit, nil
 	}
@@ -63,26 +186,48 @@ func SendLine(port string, line []byte) error {
 }
 
 func ReadDeviceHello(port string) (protocol.DeviceHello, error) {
-	return defaultSender.DeviceHello(port)
+	return defaultSender.ReadHello(port)
 }
 
 func GetDeviceCapabilities(port string) (protocol.DeviceCapabilities, error) {
-	return defaultSender.DeviceCapabilities(port)
+	return defaultSender.ReadCapabilities(port)
 }
 
-func ProbePort(port string) error {
-	p, err := serialOpen(port, openMode())
+func ProbePort(path string) error {
+	opener := serialOpener{openFn: serialOpen}
+	port, err := opener.Open(path, openMode())
 	if err != nil {
-		return fmt.Errorf("open serial %s: %w", port, err)
+		return wrapTransportError(
+			errcode.TransportSerialProbe,
+			"probe-open",
+			path,
+			"Release the serial port (`lsof <port>`), reconnect device, and retry setup.",
+			err,
+		)
 	}
-	setControlLinesLow(p)
-	_ = closePortBestEffort(p, closeTimeout)
+	setControlLinesLow(port)
+	if err := closePortBestEffort(port, path, closeTimeout); err != nil {
+		return err
+	}
 	return nil
 }
 
+type SenderConfig struct {
+	Opener         PortOpener
+	Sleep          func(time.Duration)
+	SettleDuration time.Duration
+	HelloWindow    time.Duration
+}
+
 type Sender struct {
-	mu            sync.Mutex
-	port          serial.Port
+	mu sync.Mutex
+
+	opener         PortOpener
+	sleep          func(time.Duration)
+	settleDuration time.Duration
+	helloWindow    time.Duration
+
+	port          SerialPort
 	path          string
 	hello         protocol.DeviceHello
 	helloSeen     bool
@@ -91,7 +236,33 @@ type Sender struct {
 }
 
 func NewSender() *Sender {
-	return &Sender{}
+	return NewSenderWithConfig(SenderConfig{})
+}
+
+func NewSenderWithConfig(cfg SenderConfig) *Sender {
+	opener := cfg.Opener
+	if opener == nil {
+		opener = serialOpener{openFn: serialOpen}
+	}
+	sleep := cfg.Sleep
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	settle := cfg.SettleDuration
+	if settle <= 0 {
+		settle = reopenSettleDuration
+	}
+	window := cfg.HelloWindow
+	if window <= 0 {
+		window = helloReadWindow
+	}
+
+	return &Sender{
+		opener:         opener,
+		sleep:          sleep,
+		settleDuration: settle,
+		helloWindow:    window,
+	}
 }
 
 func (s *Sender) Send(path string, line []byte) error {
@@ -106,16 +277,30 @@ func (s *Sender) Send(path string, line []byte) error {
 		// Some ESP8266 USB bridges pulse reset/boot lines when a serial port is opened.
 		// Give the MCU a short settle window and capture boot hello before first write.
 		_ = s.port.ResetInputBuffer()
-		time.Sleep(reopenSettleDuration)
+		s.sleep(s.settleDuration)
 		s.captureHelloLocked()
 		_ = s.port.ResetInputBuffer()
 	}
 
 	if _, err := s.port.Write(line); err != nil {
 		s.closeCurrentLocked()
-		return fmt.Errorf("write serial %s: %w", path, err)
+		return wrapTransportError(
+			errcode.TransportSerialWrite,
+			"send-line",
+			path,
+			"Verify cable and power, then wait for daemon reconnect retry.",
+			err,
+		)
 	}
 	return nil
+}
+
+func (s *Sender) ReadHello(path string) (protocol.DeviceHello, error) {
+	return s.DeviceHello(path)
+}
+
+func (s *Sender) ReadCapabilities(path string) (protocol.DeviceCapabilities, error) {
+	return s.DeviceCapabilities(path)
 }
 
 func (s *Sender) ensurePort(path string) (bool, error) {
@@ -126,9 +311,15 @@ func (s *Sender) ensurePort(path string) (bool, error) {
 	// Port changed (for example after reconnect): drop stale handle and reopen.
 	s.closeCurrentLocked()
 
-	p, err := serialOpen(path, openMode())
+	p, err := s.opener.Open(path, openMode())
 	if err != nil {
-		return false, fmt.Errorf("open serial %s: %w", path, err)
+		return false, wrapTransportError(
+			errcode.TransportSerialOpen,
+			"open-port",
+			path,
+			"Release serial lock (`lsof <port>`), reconnect device, and retry.",
+			err,
+		)
 	}
 	setControlLinesLow(p)
 
@@ -151,7 +342,7 @@ func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	}
 	if opened {
 		_ = s.port.ResetInputBuffer()
-		time.Sleep(reopenSettleDuration)
+		s.sleep(s.settleDuration)
 		s.captureHelloLocked()
 		_ = s.port.ResetInputBuffer()
 	} else if !s.capsCollected {
@@ -159,7 +350,13 @@ func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	}
 
 	if !s.helloSeen {
-		return protocol.DeviceHello{}, ErrDeviceHelloUnavailable
+		return protocol.DeviceHello{}, wrapTransportError(
+			errcode.ProtocolDeviceHelloUnavailable,
+			"read-hello",
+			path,
+			"Reconnect the board to emit boot hello; runtime will fallback if still unavailable.",
+			ErrDeviceHelloUnavailable,
+		)
 	}
 	return s.hello, nil
 }
@@ -174,7 +371,7 @@ func (s *Sender) DeviceCapabilities(path string) (protocol.DeviceCapabilities, e
 	}
 	if opened {
 		_ = s.port.ResetInputBuffer()
-		time.Sleep(reopenSettleDuration)
+		s.sleep(s.settleDuration)
 		s.captureHelloLocked()
 		_ = s.port.ResetInputBuffer()
 	} else if !s.capsCollected {
@@ -188,7 +385,7 @@ func (s *Sender) closeCurrentLocked() {
 	if s.port == nil {
 		return
 	}
-	_ = closePortBestEffort(s.port, closeTimeout)
+	_ = closePortBestEffort(s.port, s.path, closeTimeout)
 	s.port = nil
 	s.path = ""
 	s.hello = protocol.DeviceHello{}
@@ -216,7 +413,7 @@ func openMode() *serial.Mode {
 	}
 }
 
-func setControlLinesLow(port serial.Port) {
+func setControlLinesLow(port SerialPort) {
 	if port == nil {
 		return
 	}
@@ -224,7 +421,7 @@ func setControlLinesLow(port serial.Port) {
 	_ = port.SetRTS(false)
 }
 
-func closePortBestEffort(port serial.Port, timeout time.Duration) error {
+func closePortBestEffort(port SerialPort, path string, timeout time.Duration) error {
 	if port == nil {
 		return nil
 	}
@@ -239,15 +436,36 @@ func closePortBestEffort(port serial.Port, timeout time.Duration) error {
 
 	select {
 	case err := <-done:
-		return err
+		if err == nil {
+			return nil
+		}
+		return wrapTransportError(
+			errcode.TransportSerialCloseTimeout,
+			"close-port",
+			path,
+			"Retry; if close keeps failing restart the daemon to reset serial state.",
+			err,
+		)
 	case <-time.After(timeout):
-		return errors.New("serial close timeout")
+		return wrapTransportError(
+			errcode.TransportSerialCloseTimeout,
+			"close-port-timeout",
+			path,
+			"Retry; if close keeps timing out restart the daemon to reset serial state.",
+			errors.New("serial close timeout"),
+		)
 	}
 }
 
 func chooseAutoPort(ports []string) (string, error) {
 	if len(ports) == 0 {
-		return "", errors.New("no serial ports found")
+		return "", wrapTransportError(
+			errcode.TransportNoSerialPorts,
+			"choose-auto-port",
+			"",
+			"Connect a board with USB data cable, then rerun command.",
+			errors.New("no serial ports found"),
+		)
 	}
 
 	normalized := make([]string, 0, len(ports))
@@ -259,7 +477,13 @@ func chooseAutoPort(ports []string) (string, error) {
 		normalized = append(normalized, p)
 	}
 	if len(normalized) == 0 {
-		return "", errors.New("no serial ports found")
+		return "", wrapTransportError(
+			errcode.TransportNoSerialPorts,
+			"choose-auto-port",
+			"",
+			"Connect a board with USB data cable, then rerun command.",
+			errors.New("no serial ports found"),
+		)
 	}
 
 	for _, p := range normalized {
@@ -278,14 +502,20 @@ func chooseAutoPort(ports []string) (string, error) {
 		}
 	}
 
-	return "", errors.New("no usb serial ports found")
+	return "", wrapTransportError(
+		errcode.TransportNoUSBSerialPorts,
+		"choose-auto-port",
+		"",
+		"Reconnect the board and verify that a `/dev/cu.usb*` device appears.",
+		errors.New("no usb serial ports found"),
+	)
 }
 
 func (s *Sender) captureHelloLocked() {
 	if s.port == nil {
 		return
 	}
-	hello, seen := readHelloFromPort(s.port, helloReadWindow)
+	hello, seen := readHelloFromPort(s.port, s.helloWindow)
 	if !seen {
 		s.hello = protocol.DeviceHello{}
 		s.helloSeen = false
@@ -300,7 +530,7 @@ func (s *Sender) captureHelloLocked() {
 	s.capsCollected = true
 }
 
-func readHelloFromPort(port serial.Port, window time.Duration) (protocol.DeviceHello, bool) {
+func readHelloFromPort(port SerialPort, window time.Duration) (protocol.DeviceHello, bool) {
 	if port == nil {
 		return protocol.DeviceHello{}, false
 	}
