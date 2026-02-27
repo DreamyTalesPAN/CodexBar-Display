@@ -15,6 +15,9 @@ cd companion
 go run ./cmd/vibeblock setup --yes
 go run ./cmd/vibeblock health
 go run ./cmd/vibeblock doctor
+go run ./cmd/vibeblock version
+go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
+go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
 ```
 
 ## Setup
@@ -43,12 +46,68 @@ Useful flags:
 - `--pin-port`: pin LaunchAgent to one explicit serial path
 - `--firmware-env <env>`: select PlatformIO environment
 - `--theme <classic|crt|none>`: persist runtime theme override in companion config
+- `--validate-only`: run setup prerequisite checks only
+- `--dry-run`: print setup actions without applying changes
 
 During setup, runtime assets are installed to:
 - Binary: `~/Library/Application Support/vibeblock/bin/vibeblock`
 - Recovery scripts: `~/Library/Application Support/vibeblock/scripts/`
 - Backups: `~/Library/Application Support/vibeblock/backups/`
 - LaunchAgent: `~/Library/LaunchAgents/com.vibeblock.daemon.plist`
+
+## Upgrade (No Re-Setup)
+
+Use `upgrade` for N -> N+1 updates with preflight:
+
+```bash
+cd companion
+go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
+```
+
+Preflight includes:
+- serial port busy check (`lsof`)
+- companion/firmware version guard (`upgrade/version-guard`)
+- target firmware env/version resolution
+
+Optional guard override:
+
+```bash
+go run ./cmd/vibeblock upgrade \
+  --firmware-env lilygo_t_display_s3 \
+  --target-firmware-version 1.0.0
+```
+
+If you need to bypass guard (not recommended):
+
+```bash
+go run ./cmd/vibeblock upgrade --skip-version-guard
+```
+
+## Rollback (Last-Known-Good)
+
+`upgrade` snapshots companion state for rollback and tracks known-good firmware paths.
+
+Default rollback:
+
+```bash
+cd companion
+go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
+```
+
+Wrapper scripts:
+
+```bash
+./scripts/upgrade-with-preflight.sh --firmware-env esp8266_smalltv_st7789
+./scripts/rollback-last-known-good.sh --port /dev/cu.usbserial-10
+```
+
+Rollback modes:
+- companion only: `go run ./cmd/vibeblock rollback --skip-firmware`
+- firmware only: `go run ./cmd/vibeblock rollback --skip-companion --port /dev/cu.usbserial-10`
+- explicit image: `go run ./cmd/vibeblock rollback --skip-companion --port /dev/cu.usbserial-10 --image /path/to/firmware.bin --manifest /path/to/firmware.bin.manifest`
+
+Rollback state file:
+- `~/Library/Application Support/vibeblock/release-state.json`
 
 ## Theme Override (ESP8266 Display Targets)
 
@@ -88,6 +147,14 @@ go run ./cmd/vibeblock health
 - auto-detected serial port
 - last successful `sent frame` timestamp + port
 - last runtime error (if any)
+
+Runtime error logs use:
+- stable `code=<category/item>` (`transport/*`, `protocol/*`, `runtime/*`, `setup/*`)
+- concrete `recovery="..."` actions inline
+
+Examples:
+- `cycle error: code=runtime/serial-write ... recovery="Check cable/device power; daemon will retry automatically."`
+- `setup failed at flash-firmware [setup/flash-firmware] ...`
 
 Daemon logs:
 - `/tmp/vibeblock-daemon.out.log`
@@ -165,3 +232,26 @@ tail -n 100 /tmp/vibeblock-daemon.err.log
 go run ./cmd/vibeblock health
 ./scripts/smoke-daemon-sent-frame.sh
 ```
+
+## Error Code Recovery Map
+
+Use this taxonomy for incident triage:
+
+| Category | Typical Codes | First Recovery Action |
+|---|---|---|
+| `transport/*` | `transport/serial-open`, `transport/no-usb-serial-ports`, `transport/serial-write` | Reconnect board/cable, check `ls /dev/cu.usb*`, release busy port via `lsof <port>` |
+| `protocol/*` | `protocol/device-hello-unavailable` | Reconnect device to force boot hello; runtime falls back when hello is missing |
+| `runtime/*` | `runtime/serial-resolve`, `runtime/codexbar-parse`, `runtime/frame-too-large` | Run `vibeblock doctor`, verify CodexBar output, inspect daemon logs |
+| `setup/*` | `setup/flash-firmware`, `setup/unsupported-hardware`, `setup/launchagent-verify` | Rerun setup with matching `--firmware-env`, verify PlatformIO + launchctl state |
+| `upgrade/*` | `upgrade/port-busy`, `upgrade/version-guard`, `upgrade/flash-firmware` | Free serial port, use compatible versions, rerun `vibeblock upgrade` |
+| `rollback/*` | `rollback/missing-known-good`, `rollback/companion-restore`, `rollback/firmware-restore` | Provide explicit rollback image/manifest or restore captured known-good state |
+
+## Performance Budgets
+
+Companion benchmark limits, firmware probe-bench commands, and per-target budgets:
+- `docs/performance-budgets.md`
+
+Versioning/release references:
+- `docs/versioning-compatibility.md`
+- `docs/release-process.md`
+- `docs/known-good-firmware.md`

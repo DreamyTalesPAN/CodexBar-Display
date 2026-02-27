@@ -576,6 +576,138 @@ func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T
 	}
 }
 
+func TestRunWithDepsValidateOnlyPerformsChecksWithoutApplyingChanges(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	repo := filepath.Join(tmp, "repo")
+	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+
+	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
+	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
+
+	var calls []commandCall
+	err := runWithDeps(context.Background(), Options{
+		AssumeYes:     true,
+		ValidateOnly:  true,
+		FirmwareEnv:   "esp8266_smalltv_st7789",
+		PinDaemonPort: true,
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		cwd: func() (string, error) {
+			return filepath.Join(repo, "companion"), nil
+		},
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			return []string{"/dev/cu.usbserial42"}, nil
+		},
+		resolvePort: func(p string) (string, error) { return p, nil },
+		probePort:   func(string) error { return nil },
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "pio" {
+				return "/usr/bin/pio", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, dir string, name string, args ...string) (string, error) {
+			calls = append(calls, commandCall{
+				dir:  dir,
+				name: name,
+				args: append([]string(nil), args...),
+			})
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected validate-only success, got %v", err)
+	}
+
+	if len(calls) > 0 {
+		t.Fatalf("expected no side-effect commands in validate-only mode, got %#v", calls)
+	}
+	installPath := filepath.Join(home, "Library", "Application Support", "vibeblock", "bin", "vibeblock")
+	if _, err := os.Stat(installPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected no installed binary in validate-only mode, err=%v", err)
+	}
+}
+
+func TestRunWithDepsDryRunSkipsApplyingChanges(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	repo := filepath.Join(tmp, "repo")
+	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+
+	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
+	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
+
+	var calls []commandCall
+	err := runWithDeps(context.Background(), Options{
+		AssumeYes:   true,
+		DryRun:      true,
+		FirmwareEnv: "esp8266_smalltv_st7789",
+		Theme:       "crt",
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		cwd: func() (string, error) {
+			return filepath.Join(repo, "companion"), nil
+		},
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			return []string{"/dev/cu.usbserial42"}, nil
+		},
+		resolvePort: func(p string) (string, error) { return p, nil },
+		probePort:   func(string) error { return nil },
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "pio" {
+				return "/usr/bin/pio", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, dir string, name string, args ...string) (string, error) {
+			calls = append(calls, commandCall{
+				dir:  dir,
+				name: name,
+				args: append([]string(nil), args...),
+			})
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected dry-run success, got %v", err)
+	}
+
+	if len(calls) > 0 {
+		t.Fatalf("expected no side-effect commands in dry-run mode, got %#v", calls)
+	}
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	if _, err := os.Stat(plistPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected no plist write in dry-run mode, err=%v", err)
+	}
+}
+
 func TestDefaultFirmwareEnvironment(t *testing.T) {
 	if got := DefaultFirmwareEnvironment(); got != "esp8266_smalltv_st7789" {
 		t.Fatalf("unexpected default firmware env: %q", got)

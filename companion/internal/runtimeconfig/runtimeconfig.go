@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
 )
 
 const (
@@ -19,14 +21,7 @@ type Config struct {
 }
 
 func NormalizeTheme(raw string) string {
-	switch strings.TrimSpace(strings.ToLower(raw)) {
-	case "classic":
-		return "classic"
-	case "crt":
-		return "crt"
-	default:
-		return ""
-	}
+	return theme.Normalize(raw)
 }
 
 func ClearThemeValue(raw string) bool {

@@ -20,10 +20,17 @@ Fields:
 - `theme` (string, optional): requested UI theme (`classic` or `crt`).
 - `error` (string, optional): if present, firmware should render error screen.
 
+Theme registry source of truth:
+- `protocol/theme_registry.json` (`id -> protocolName -> compileDefaultMacro`)
+- `protocol/compatibility_matrix.json` (`companion <-> firmware` SemVer compatibility rules)
+
+Golden frame fixtures:
+- `protocol/fixtures/v1/companion_frame_golden.json`
+
 ## Error Frame
 
 ```json
-{"v":1,"error":"codexbar unavailable"}
+{"v":1,"error":"runtime/codexbar-command"}
 ```
 
 ## Device Hello (Firmware -> Host)
@@ -31,14 +38,14 @@ Fields:
 On boot (or after serial reconnect), firmware may emit a capability line:
 
 ```json
-{"kind":"hello","protocolVersion":1,"board":"esp8266-smalltv-st7789","firmware":"2026.02","features":["theme"],"maxFrameBytes":512}
+{"kind":"hello","protocolVersion":1,"board":"esp8266-smalltv-st7789","firmware":"1.0.0","features":["theme"],"maxFrameBytes":512}
 ```
 
 Fields:
 - `kind` (string): must be `hello`
 - `protocolVersion` (number): protocol compatibility signal from firmware
 - `board` (string): board identity for setup/runtime compatibility checks
-- `firmware` (string): firmware version/build string
+- `firmware` (string): firmware SemVer (for example `1.0.0`)
 - `features` (array[string]): optional capabilities (for example `theme`)
 - `maxFrameBytes` (number): maximum safe frame payload size for this firmware
 
@@ -48,6 +55,7 @@ Companion treats missing/legacy hello as unknown capabilities and falls back saf
 ## Rules
 - Unknown fields are ignored.
 - Missing numeric fields default to `0` on firmware side.
+- Host should prefer stable error codes in `error` (for example `runtime/*`, `protocol/*`) over free-form text.
 - `theme` is optional and should only be sent when device `hello.features` includes `theme`.
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.

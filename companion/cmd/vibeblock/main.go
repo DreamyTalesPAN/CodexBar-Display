@@ -15,6 +15,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/health"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -34,6 +35,12 @@ func main() {
 		err = runDoctor()
 	case "health":
 		err = health.Run(context.Background())
+	case "version":
+		err = runVersion(os.Args[2:])
+	case "upgrade":
+		err = runUpgrade(os.Args[2:])
+	case "rollback":
+		err = runRollback(os.Args[2:])
 	case "restore-known-good":
 		err = runRestoreKnownGood(os.Args[2:])
 	case "setup":
@@ -44,18 +51,28 @@ func main() {
 	}
 
 	if err != nil {
+		if code := errcode.Of(err); code != "" {
+			fmt.Fprintf(os.Stderr, "error code=%s\n", code)
+		}
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		recovery := strings.TrimSpace(errcode.Recovery(err))
+		if recovery != "" && !strings.Contains(err.Error(), "recovery:") {
+			fmt.Fprintf(os.Stderr, "recovery: %s\n", recovery)
+		}
 		os.Exit(1)
 	}
 }
 
 func printUsage() {
 	fmt.Println("vibeblock commands:")
-	fmt.Println("  vibeblock daemon [--port /dev/cu.usbserial-10] [--interval 60s] [--once]")
+	fmt.Println("  vibeblock daemon [--port /dev/cu.usbserial-10] [--interval 60s] [--once] [--theme classic|crt]")
 	fmt.Println("  vibeblock doctor")
 	fmt.Println("  vibeblock health")
+	fmt.Println("  vibeblock version [--short] [--json]")
+	fmt.Println("  vibeblock upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--skip-version-guard]")
+	fmt.Println("  vibeblock rollback [--port /dev/cu.usbserial-10] [--skip-companion] [--skip-firmware] [--image path/to/backup.bin] [--manifest path/to/backup.manifest] [--backup-dir <dir>] [--script-path <path>] [--skip-verify]")
 	fmt.Println("  vibeblock restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
-	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|none]")
+	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|none] [--validate-only] [--dry-run]")
 }
 
 func runDaemon(args []string) error {
@@ -63,6 +80,7 @@ func runDaemon(args []string) error {
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
 	interval := fs.Duration("interval", 60*time.Second, "poll interval")
 	once := fs.Bool("once", false, "run one cycle and exit")
+	theme := fs.String("theme", "", "optional runtime theme override: classic|crt")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -71,6 +89,7 @@ func runDaemon(args []string) error {
 		Port:     strings.TrimSpace(*port),
 		Interval: *interval,
 		Once:     *once,
+		Theme:    strings.TrimSpace(*theme),
 	}
 	return daemon.Run(context.Background(), opts)
 }
@@ -154,6 +173,8 @@ func runSetup(args []string) error {
 	pinPort := fs.Bool("pin-port", false, "pin daemon to selected --port in LaunchAgent (default: auto-detect)")
 	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "PlatformIO environment to flash (examples: esp8266_smalltv_st7789, lilygo_t_display_s3)")
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|none (empty keeps existing setting)")
+	validateOnly := fs.Bool("validate-only", false, "validate setup prerequisites only; do not change system state")
+	dryRun := fs.Bool("dry-run", false, "show setup actions without applying changes")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -165,6 +186,8 @@ func runSetup(args []string) error {
 		PinDaemonPort: *pinPort,
 		FirmwareEnv:   strings.TrimSpace(*firmwareEnv),
 		Theme:         strings.TrimSpace(*theme),
+		ValidateOnly:  *validateOnly,
+		DryRun:        *dryRun,
 	})
 }
 
@@ -343,10 +366,12 @@ func resolveBackupSearchDirs(extraDirs []string) ([]string, error) {
 
 	if appSupport, err := runtimeSupportDir(); err == nil {
 		candidateDirs = append(candidateDirs, filepath.Join(appSupport, "backups"))
+		candidateDirs = append(candidateDirs, filepath.Join(appSupport, "known-good"))
 	}
 
 	if repoRoot, ok := findRepositoryRootFromWorkingDir(); ok {
 		candidateDirs = append(candidateDirs, filepath.Join(repoRoot, "tmp"))
+		candidateDirs = append(candidateDirs, filepath.Join(repoRoot, "known-good"))
 	}
 
 	if cwd, err := os.Getwd(); err == nil {

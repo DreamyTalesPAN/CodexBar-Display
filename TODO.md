@@ -3,30 +3,30 @@
 ## Prioritaet Jetzt: Refactor & Verbesserungen
 Ziel: Nach dem Dual-Target-Merge die groessten Wartbarkeits- und Betriebsrisiken reduzieren.
 
-- [ ] Firmware weiter modularisieren:
-  - `firmware_esp8266/src/main.cpp` in klar getrennte Module fuer transport, parser, rendering, runtime state aufteilen.
-  - Gleiches Modul-Schnittbild fuer ESP8266 und ESP32 etablieren, damit Features auf beiden Targets gleich eingefuehrt werden.
-- [ ] Theme-Registry zentralisieren:
-  - Ein zentrales Mapping (`theme id -> protocol name -> compile default`) fuer Firmware + Companion statt mehrfacher String-Konstanten.
-  - Theme-Validierung in einem Shared-Ort halten (Companion + Protokollschema + Docs synchron).
+- [x] Firmware weiter modularisieren:
+  - [x] `firmware_esp8266/src/main.cpp` in klar getrennte Module fuer transport, parser, rendering, runtime state aufteilen.
+  - [x] Gleiches Modul-Schnittbild fuer ESP8266 und ESP32 etablieren, damit Features auf beiden Targets gleich eingefuehrt werden.
+- [x] Theme-Registry zentralisieren:
+  - [x] Ein zentrales Mapping (`theme id -> protocol name -> compile default`) fuer Firmware + Companion statt mehrfacher String-Konstanten.
+  - [x] Theme-Validierung in einem Shared-Ort halten (Companion + Protokollschema + Docs synchron).
 - [ ] Protokoll-Hardening ausbauen:
-  - Golden-Frame-Tests fuer V1 (valid/invalid/oversized/capability-gated) zentral im `protocol/` Bereich pflegen.
+  - [x] Golden-Frame-Tests fuer V1 (valid/invalid/oversized/capability-gated) zentral im `protocol/` Bereich pflegen.
   - Parser- und Serializer-Verhalten fuer ESP8266, ESP32 und Companion gegen dieselben Fixtures pruefen.
-- [ ] Setup/Runtime-Konfiguration konsolidieren:
-  - Prioritaetsregeln finalisieren und testen (`CLI > ENV > runtime config > firmware default`).
-  - `vibeblock setup` um `validate-only`/`dry-run` erweitern fuer sichere Produktions-Checks.
-- [ ] USB-Transport entkoppeln und testbarer machen:
-  - `usb` package weiter auf explizite Interfaces reduzieren (discover/open/send/read hello), um Race-/Reconnect-Pfade isoliert testen zu koennen.
-  - Serial-Integrationstests mit pseudo-tty/mock-device fuer reconnect/sleep-wake Fehlerbilder einfuehren.
-- [ ] Error-Codes und Logs standardisieren:
-  - Fehlertaxonomie finalisieren (`transport/*`, `protocol/*`, `runtime/*`, `setup/*`) und in Docs/Runbook spiegeln.
-  - Jeder user-facing Fehler bekommt einen stabilen Code + konkrete Recovery-Aktion.
-- [ ] CI-Qualitaetsgates erweitern:
-  - `golangci-lint`/`staticcheck` fuer Companion aktivieren.
-  - Firmware-Checks um grobe Groessenbudgets erweitern (Warnung/Fail bei deutlichen Regressions in Flash/RAM).
-- [ ] Benchmarks und Budgetgrenzen einfuehren:
-  - Polling-/Render-Zyklen im Companion und auf Firmware-Seite messbar machen.
-  - Zielbudgets fuer Latenz (frame render), CPU-Zeit und Speicherverbrauch je Target dokumentieren.
+- [x] Setup/Runtime-Konfiguration konsolidieren:
+  - [x] Prioritaetsregeln finalisieren und testen (`CLI > ENV > runtime config > firmware default`).
+  - [x] `vibeblock setup` um `validate-only`/`dry-run` erweitern fuer sichere Produktions-Checks.
+- [x] USB-Transport entkoppeln und testbarer machen:
+  - [x] `usb` package weiter auf explizite Interfaces reduzieren (discover/open/send/read hello), um Race-/Reconnect-Pfade isoliert testen zu koennen.
+  - [x] Serial-Integrationstests mit pseudo-tty/mock-device fuer reconnect/sleep-wake Fehlerbilder einfuehren.
+- [x] Error-Codes und Logs standardisieren:
+  - [x] Fehlertaxonomie finalisieren (`transport/*`, `protocol/*`, `runtime/*`, `setup/*`) und in Docs/Runbook spiegeln.
+  - [x] Jeder user-facing Fehler bekommt einen stabilen Code + konkrete Recovery-Aktion.
+- [x] CI-Qualitaetsgates erweitern:
+  - [x] `golangci-lint`/`staticcheck` fuer Companion aktivieren.
+  - [x] Firmware-Checks um grobe Groessenbudgets erweitern (Warnung/Fail bei deutlichen Regressions in Flash/RAM).
+- [x] Benchmarks und Budgetgrenzen einfuehren:
+  - [x] Polling-/Render-Zyklen im Companion und auf Firmware-Seite messbar machen.
+  - [x] Zielbudgets fuer Latenz (frame render), CPU-Zeit und Speicherverbrauch je Target dokumentieren.
 
 Acceptance:
 - [ ] Kritische Kernlogik ist in kleine, isoliert testbare Module getrennt (Firmware + Companion).
@@ -114,16 +114,16 @@ Acceptance:
 ## Milestone 5: Versionierung, Upgrade, Rollback (P0)
 Ziel: Sicheres Updaten ohne Neu-Setup.
 
-- [ ] SemVer und Kompatibilitaetsmatrix fuer `companion` <-> `firmware` definieren.
-- [ ] Release-Prozess definieren (Tagging, Artefakte, Changelog, Checks).
-- [ ] Upgrade-Command inkl. Preflight bauen (`port busy`, `version guard`, `flash`).
-- [ ] Rollback auf last-known-good Firmware + Companion dokumentieren und scriptbar machen.
-- [ ] Known-good Recovery-Firmware offiziell bereitstellen.
+- [x] SemVer und Kompatibilitaetsmatrix fuer `companion` <-> `firmware` definieren.
+- [x] Release-Prozess definieren (Tagging, Artefakte, Changelog, Checks).
+- [x] Upgrade-Command inkl. Preflight bauen (`port busy`, `version guard`, `flash`).
+- [x] Rollback auf last-known-good Firmware + Companion dokumentieren und scriptbar machen.
+- [x] Known-good Recovery-Firmware offiziell bereitstellen.
 
 Acceptance:
-- [ ] Upgrade von N auf N+1 ohne Neu-Setup moeglich.
-- [ ] Inkompatible Versionen werden blockiert und mit konkretem Fix-Hinweis versehen.
-- [ ] Rollback-Pfad ist dokumentiert und getestet.
+- [x] Upgrade von N auf N+1 ohne Neu-Setup moeglich.
+- [x] Inkompatible Versionen werden blockiert und mit konkretem Fix-Hinweis versehen.
+- [x] Rollback-Pfad ist dokumentiert und getestet.
 
 ## Milestone 6: Observability & Supportability (P1)
 Ziel: Feldprobleme schnell diagnostizieren, ohne Codeaenderung.

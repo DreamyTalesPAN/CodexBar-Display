@@ -22,6 +22,7 @@ Core dependency:
 - Theme system on ESP8266 SmallTV (`classic`, `crt`)
 - One-command setup for flash + install + launch agent management
 - Runtime hardening for reconnect and sleep/wake workflows
+- Upgrade and rollback flows with compatibility guard + known-good recovery state
 
 ## Architecture
 
@@ -74,11 +75,19 @@ VIBEBLOCK_THEME=crt go run ./cmd/vibeblock daemon --interval 60s
 
 Accepted values are `classic` and `crt`. Invalid values are ignored.
 
+Runtime theme precedence is:
+1. `vibeblock daemon --theme <classic|crt>`
+2. `VIBEBLOCK_THEME` environment variable
+3. runtime config written by setup (`~/Library/Application Support/vibeblock/config.json`)
+4. firmware compile default
+
 Persistent runtime config via setup:
 
 ```bash
 cd companion
 go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
+go run ./cmd/vibeblock setup --validate-only --firmware-env esp8266_smalltv_st7789
+go run ./cmd/vibeblock setup --dry-run --firmware-env lilygo_t_display_s3
 ```
 
 If you run via LaunchAgent with manual env vars, add `VIBEBLOCK_THEME` to
@@ -133,7 +142,12 @@ cd companion
 
 go run ./cmd/vibeblock doctor
 go run ./cmd/vibeblock health
+go run ./cmd/vibeblock version
+go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
+go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
 go run ./cmd/vibeblock restore-known-good --port /dev/cu.usbserial-10
+./scripts/upgrade-with-preflight.sh --firmware-env esp8266_smalltv_st7789
+./scripts/rollback-last-known-good.sh --port /dev/cu.usbserial-10
 ```
 
 Detailed operator procedures (setup, recovery, smoke test, troubleshooting):
@@ -174,6 +188,10 @@ pio run -e lilygo_t_display_s3
 - Provider selection rules: `docs/provider-selection.md`
 - Provider activity detectors: `docs/provider-activity-sources.md`
 - Milestone test matrix: `docs/m1-test-matrix.md`
+- Performance budgets: `docs/performance-budgets.md`
+- Versioning and compatibility: `docs/versioning-compatibility.md`
+- Release process: `docs/release-process.md`
+- Known-good firmware: `docs/known-good-firmware.md`
 - Hardware sourcing checklist: `docs/supplier-hardware-checklist.md`
 - ESP8266 spike notes: `docs/esp8266-spike.md`
 - Project roadmap: `TODO.md`

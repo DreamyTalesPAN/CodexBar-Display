@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "defaultProtocolName": "classic",
+  "themes": [
+    {
+      "id": 0,
+      "protocolName": "classic",
+      "compileDefaultMacro": "VIBEBLOCK_THEME_CLASSIC"
+    },
+    {
+      "id": 1,
+      "protocolName": "crt",
+      "compileDefaultMacro": "VIBEBLOCK_THEME_CRT"
+    }
+  ]
+}

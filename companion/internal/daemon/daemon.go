@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -18,6 +19,7 @@ type Options struct {
 	Port     string
 	Interval time.Duration
 	Once     bool
+	Theme    string
 }
 
 const (
@@ -27,24 +29,27 @@ const (
 	themeEnvVar             = "VIBEBLOCK_THEME"
 )
 
-type runtimeErrorKind string
+var errMarshalFrameTooLarge = errors.New("frame exceeds max bytes")
+
+type runtimeErrorKind errcode.Code
 
 const (
-	runtimeErrorUnknown        runtimeErrorKind = "unknown"
-	runtimeErrorSerialResolve  runtimeErrorKind = "serial-resolve"
-	runtimeErrorSerialWrite    runtimeErrorKind = "serial-write"
-	runtimeErrorFrameEncode    runtimeErrorKind = "frame-encode"
-	runtimeErrorFrameTooLarge  runtimeErrorKind = "frame-too-large"
-	runtimeErrorCodexbarBinary runtimeErrorKind = "codexbar-binary"
-	runtimeErrorCodexbarCmd    runtimeErrorKind = "codexbar-command"
-	runtimeErrorCodexbarParse  runtimeErrorKind = "codexbar-parse"
-	runtimeErrorNoProviders    runtimeErrorKind = "no-providers"
+	runtimeErrorUnknown        runtimeErrorKind = runtimeErrorKind(errcode.Unknown)
+	runtimeErrorSerialResolve  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeSerialResolve)
+	runtimeErrorSerialWrite    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeSerialWrite)
+	runtimeErrorFrameEncode    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameEncode)
+	runtimeErrorFrameTooLarge  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameTooLarge)
+	runtimeErrorCodexbarBinary runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarBinary)
+	runtimeErrorCodexbarCmd    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarCmd)
+	runtimeErrorCodexbarParse  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarParse)
+	runtimeErrorNoProviders    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeNoProviders)
 )
 
 type RuntimeError struct {
 	Kind runtimeErrorKind
 	Op   string
 	Err  error
+	Hint string
 }
 
 func (e *RuntimeError) Error() string {
@@ -52,9 +57,9 @@ func (e *RuntimeError) Error() string {
 		return ""
 	}
 	if e.Op == "" {
-		return fmt.Sprintf("%s: %v", e.Kind, e.Err)
+		return fmt.Sprintf("%s: %v", e.ErrorCode(), e.Err)
 	}
-	return fmt.Sprintf("%s (%s): %v", e.Kind, e.Op, e.Err)
+	return fmt.Sprintf("%s (%s): %v", e.ErrorCode(), e.Op, e.Err)
 }
 
 func (e *RuntimeError) Unwrap() error {
@@ -62,6 +67,23 @@ func (e *RuntimeError) Unwrap() error {
 		return nil
 	}
 	return e.Err
+}
+
+func (e *RuntimeError) ErrorCode() errcode.Code {
+	if e == nil || e.Kind == "" {
+		return errcode.Unknown
+	}
+	return errcode.Code(e.Kind)
+}
+
+func (e *RuntimeError) RecoveryAction() string {
+	if e == nil {
+		return ""
+	}
+	if strings.TrimSpace(e.Hint) != "" {
+		return strings.TrimSpace(e.Hint)
+	}
+	return errcode.DefaultRecovery(e.ErrorCode())
 }
 
 type runtimeDeps struct {
@@ -115,6 +137,7 @@ type runtimeState struct {
 	lastGood    protocol.Frame
 	lastGoodAt  time.Time
 	hasLastGood bool
+	cliTheme    string
 }
 
 type retryBackoff struct {
@@ -182,6 +205,7 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 
 	state := &runtimeState{
 		selector: deps.newSelector(),
+		cliTheme: opts.Theme,
 	}
 	backoff := newRetryBackoff(opts.Interval)
 	var lastCycleStart time.Time
@@ -210,7 +234,13 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 		if err != nil {
 			runtimeErr := asRuntimeError(err)
 			waitFor = backoff.Next()
-			deps.logf("cycle error: kind=%s op=%s retry=%s err=%v\n", runtimeErr.Kind, runtimeErr.Op, waitFor, err)
+			deps.logf("cycle error: code=%s op=%s retry=%s recovery=%q err=%v\n",
+				runtimeErr.ErrorCode(),
+				runtimeErr.Op,
+				waitFor,
+				runtimeErr.RecoveryAction(),
+				err,
+			)
 		} else {
 			backoff.Reset()
 			uptime := cycleStart.Sub(startedAt)
@@ -238,7 +268,10 @@ func startupInterval(normal, uptime time.Duration) time.Duration {
 	return normal
 }
 
-func configuredTheme() string {
+func configuredTheme(cliTheme string) string {
+	if theme := runtimeconfig.NormalizeTheme(cliTheme); theme != "" {
+		return theme
+	}
 	if theme := runtimeconfig.NormalizeTheme(os.Getenv(themeEnvVar)); theme != "" {
 		return theme
 	}
@@ -269,6 +302,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 			Kind: runtimeErrorSerialResolve,
 			Op:   "resolve-port",
 			Err:  fmt.Errorf("detect serial device: %w", err),
+			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialResolve),
 		}
 	}
 
@@ -318,18 +352,22 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 		state.hasLastGood = true
 	}
 
-	if selectedTheme := configuredTheme(); selectedTheme != "" {
-		if !caps.Known || caps.SupportsTheme {
-			frame.Theme = selectedTheme
-		} else {
+	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
+		var applied bool
+		frame, applied = applyThemeToFrame(frame, selectedTheme, caps)
+		if !applied {
 			deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", port, caps.Board, selectedTheme)
 		}
 	}
 
 	line, marshaledFrame, err := marshalFrameWithinLimit(frame, maxFrameBytes)
 	if err != nil {
+		kind := runtimeErrorFrameEncode
+		if errors.Is(err, errMarshalFrameTooLarge) {
+			kind = runtimeErrorFrameTooLarge
+		}
 		return &RuntimeError{
-			Kind: runtimeErrorFrameTooLarge,
+			Kind: kind,
 			Op:   "marshal-frame-with-limit",
 			Err:  fmt.Errorf("encode frame: %w", err),
 		}
@@ -341,6 +379,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 			Kind: runtimeErrorSerialWrite,
 			Op:   "send-line",
 			Err:  err,
+			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
 
@@ -360,6 +399,18 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 	}
 
 	return nil
+}
+
+func applyThemeToFrame(frame protocol.Frame, selectedTheme string, caps protocol.DeviceCapabilities) (protocol.Frame, bool) {
+	selectedTheme = runtimeconfig.NormalizeTheme(selectedTheme)
+	if selectedTheme == "" {
+		return frame, false
+	}
+	if !caps.Known || caps.SupportsTheme {
+		frame.Theme = selectedTheme
+		return frame, true
+	}
+	return frame, false
 }
 
 func asRuntimeError(err error) *RuntimeError {
@@ -400,7 +451,7 @@ func runtimeErrorFrameCode(kind runtimeErrorKind) string {
 	if kind == "" {
 		kind = runtimeErrorUnknown
 	}
-	return "runtime/" + string(kind)
+	return string(kind)
 }
 
 func resolvePortWithFallback(requestedPort string, deps runtimeDeps) (string, error) {
@@ -449,10 +500,6 @@ func sleepWakeGapThreshold(interval time.Duration) time.Duration {
 
 func SleepWakeGapThreshold(interval time.Duration) time.Duration {
 	return sleepWakeGapThreshold(interval)
-}
-
-func isLastGoodFresh(lastGoodAt time.Time) bool {
-	return isLastGoodFreshAt(lastGoodAt, wallClockNow(), lastGoodMaxAge())
 }
 
 func isLastGoodFreshAt(lastGoodAt time.Time, now time.Time, maxAge time.Duration) bool {
@@ -514,5 +561,5 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		return line, fallback, nil
 	}
 
-	return nil, protocol.Frame{}, fmt.Errorf("frame exceeds maxFrameBytes=%d and fallback frame does not fit", maxBytes)
+	return nil, protocol.Frame{}, fmt.Errorf("%w: maxFrameBytes=%d and fallback frame does not fit", errMarshalFrameTooLarge, maxBytes)
 }

@@ -1,6 +1,13 @@
 # Firmware Update (MVP)
 
-Manual update over USB with PlatformIO:
+Preferred path (with preflight + version guard):
+
+```bash
+cd companion
+go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
+```
+
+Manual fallback over USB with PlatformIO:
 
 ```bash
 launchctl bootout gui/$(id -u)/com.vibeblock.daemon 2>/dev/null || true

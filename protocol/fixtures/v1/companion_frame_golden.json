@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "valid-normalized",
+      "inputFrame": {
+        "provider": "codex",
+        "label": "Codex",
+        "session": 120,
+        "weekly": -7,
+        "resetSecs": 3600
+      },
+      "requestedTheme": "crt",
+      "deviceCaps": {
+        "known": true,
+        "supportsTheme": true,
+        "maxFrameBytes": 512
+      },
+      "expectedFrame": {
+        "v": 1,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 100,
+        "weekly": 0,
+        "resetSecs": 3600,
+        "theme": "crt"
+      }
+    },
+    {
+      "name": "invalid-theme-dropped",
+      "inputFrame": {
+        "provider": "codex",
+        "label": "Codex",
+        "session": 2,
+        "weekly": 11,
+        "resetSecs": 15480
+      },
+      "requestedTheme": "amber",
+      "deviceCaps": {
+        "known": true,
+        "supportsTheme": true,
+        "maxFrameBytes": 512
+      },
+      "expectedFrame": {
+        "v": 1,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 2,
+        "weekly": 11,
+        "resetSecs": 15480
+      }
+    },
+    {
+      "name": "capability-gated-theme",
+      "inputFrame": {
+        "provider": "codex",
+        "label": "Codex",
+        "session": 2,
+        "weekly": 11,
+        "resetSecs": 15480
+      },
+      "requestedTheme": "crt",
+      "deviceCaps": {
+        "known": true,
+        "supportsTheme": false,
+        "maxFrameBytes": 512
+      },
+      "expectedFrame": {
+        "v": 1,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 2,
+        "weekly": 11,
+        "resetSecs": 15480
+      }
+    },
+    {
+      "name": "oversized-fallback",
+      "inputFrame": {
+        "provider": "codex",
+        "label": "very-long-label-very-long-label-very-long-label-very-long-label-very-long-label",
+        "session": 2,
+        "weekly": 11,
+        "resetSecs": 15480
+      },
+      "requestedTheme": "crt",
+      "deviceCaps": {
+        "known": true,
+        "supportsTheme": true,
+        "maxFrameBytes": 80
+      },
+      "expectedFrame": {
+        "v": 1,
+        "error": "runtime/frame-too-large"
+      }
+    }
+  ]
+}

@@ -30,6 +30,8 @@ var (
 	ErrUnexpectedProviderShape = errors.New("unexpected provider payload")
 )
 
+var runUsageCommandFn = runUsageCommand
+
 type FetchErrorKind string
 
 const (
@@ -1435,20 +1437,27 @@ func repairCodexFromCLI(ctx context.Context, timeout time.Duration, bin string, 
 		return all
 	}
 
-	cliOut, cliErr := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
+	cliOut, cliErr := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
 	cliAll, cliParseErr := parseAllProviders(cliOut)
-	if cliErr != nil || cliParseErr != nil || len(cliAll) == 0 {
+	if cliErr != nil {
+		return all
+	}
+	if cliParseErr != nil {
+		return all
+	}
+	if len(cliAll) == 0 {
 		return all
 	}
 
 	for _, candidate := range cliAll {
 		if strings.EqualFold(strings.TrimSpace(candidate.Provider), "codex") {
-			all[idx] = candidate
+			if shouldReplaceCodexWebWithCLI(all[idx].Frame, candidate.Frame) {
+				all[idx] = candidate
+			}
 			return all
 		}
 	}
 
-	all[idx] = cliAll[0]
 	return all
 }
 
@@ -1456,10 +1465,53 @@ func shouldTryCodexCLIRepair(parsed ParsedFrame) bool {
 	if !strings.EqualFold(strings.TrimSpace(parsed.Provider), "codex") {
 		return false
 	}
-	if !strings.EqualFold(strings.TrimSpace(parsed.Source), "openai-web") {
+	if !isCodexWebSource(parsed.Source) {
 		return false
 	}
-	return parsed.Frame.Session == 0 && parsed.Frame.Weekly == 0 && parsed.Frame.ResetSec == 0
+
+	// Known Codex web failure modes:
+	// 1) 0/0 with missing reset.
+	// 2) session=0 with a long weekly reset fallback (primary reset missing).
+	if parsed.Frame.Session == 0 && parsed.Frame.Weekly == 0 && parsed.Frame.ResetSec == 0 {
+		return true
+	}
+	if parsed.Frame.Session == 0 && parsed.Frame.ResetSec > 24*60*60 {
+		return true
+	}
+	return false
+}
+
+func isCodexWebSource(source string) bool {
+	s := strings.TrimSpace(strings.ToLower(source))
+	return s == "openai-web" || s == "web"
+}
+
+func shouldReplaceCodexWebWithCLI(webFrame, cliFrame protocol.Frame) bool {
+	// Avoid replacing web usage with an older/weaker weekly aggregate.
+	if cliFrame.Weekly < webFrame.Weekly {
+		return false
+	}
+	return codexFrameQuality(cliFrame) > codexFrameQuality(webFrame)
+}
+
+func codexFrameQuality(frame protocol.Frame) int {
+	score := 0
+	if frame.Session > 0 {
+		score += 4
+	}
+	if frame.Weekly > 0 {
+		score += 2
+	}
+	if frame.ResetSec > 0 && frame.ResetSec <= 24*60*60 {
+		score += 1
+	}
+	if frame.Session == 0 && frame.Weekly == 0 && frame.ResetSec == 0 {
+		score -= 3
+	}
+	if frame.Session == 0 && frame.ResetSec > 24*60*60 {
+		score -= 2
+	}
+	return score
 }
 
 func extractProviderList(root any) []any {

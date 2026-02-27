@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -36,6 +37,8 @@ type Options struct {
 	PinDaemonPort bool
 	FirmwareEnv   string
 	Theme         string
+	ValidateOnly  bool
+	DryRun        bool
 }
 
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
@@ -105,6 +108,7 @@ func (d deps) withDefaults() deps {
 
 type StepError struct {
 	Step   string
+	Code   errcode.Code
 	Err    error
 	Hint   string
 	Output string
@@ -121,13 +125,18 @@ func (e *StepError) Error() string {
 		b.WriteString("setup failed at ")
 		b.WriteString(e.Step)
 	}
+	if code := e.ErrorCode(); code != "" {
+		b.WriteString(" [")
+		b.WriteString(string(code))
+		b.WriteString("]")
+	}
 	if e.Err != nil {
 		b.WriteString(": ")
 		b.WriteString(e.Err.Error())
 	}
-	if strings.TrimSpace(e.Hint) != "" {
+	if recovery := e.RecoveryAction(); recovery != "" {
 		b.WriteString("\nrecovery: ")
-		b.WriteString(strings.TrimSpace(e.Hint))
+		b.WriteString(recovery)
 	}
 	if strings.TrimSpace(e.Output) != "" {
 		b.WriteString("\noutput:\n")
@@ -143,6 +152,63 @@ func (e *StepError) Unwrap() error {
 	return e.Err
 }
 
+func (e *StepError) ErrorCode() errcode.Code {
+	if e == nil {
+		return ""
+	}
+	if e.Code != "" {
+		return e.Code
+	}
+	switch strings.TrimSpace(e.Step) {
+	case "codexbar-validate":
+		return errcode.SetupCodexbarValidate
+	case "codexbar-install":
+		return errcode.SetupCodexbarInstall
+	case "list-ports":
+		return errcode.SetupListPorts
+	case "select-port":
+		return errcode.SetupSelectPort
+	case "serial-probe":
+		return errcode.SetupSerialProbe
+	case "resolve-executable":
+		return errcode.SetupResolveExecutable
+	case "resolve-home":
+		return errcode.SetupResolveHome
+	case "unsupported-hardware":
+		return errcode.SetupUnsupportedHardware
+	case "locate-repository":
+		return errcode.SetupLocateRepository
+	case "flash-firmware", "flash-firmware-validate":
+		return errcode.SetupFlashFirmware
+	case "install-binary":
+		return errcode.SetupInstallBinary
+	case "install-recovery-assets":
+		return errcode.SetupInstallRecovery
+	case "write-runtime-config":
+		return errcode.SetupWriteRuntimeConfig
+	case "write-launchagent":
+		return errcode.SetupWriteLaunchAgent
+	case "launchagent-bootstrap":
+		return errcode.SetupLaunchBootstrap
+	case "launchagent-kickstart":
+		return errcode.SetupLaunchKickstart
+	case "launchagent-verify":
+		return errcode.SetupLaunchVerify
+	default:
+		return ""
+	}
+}
+
+func (e *StepError) RecoveryAction() string {
+	if e == nil {
+		return ""
+	}
+	if strings.TrimSpace(e.Hint) != "" {
+		return strings.TrimSpace(e.Hint)
+	}
+	return errcode.DefaultRecovery(e.ErrorCode())
+}
+
 func Run(ctx context.Context, opts Options) error {
 	return runWithDeps(ctx, opts, deps{})
 }
@@ -152,7 +218,16 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 	fmt.Fprintln(d.stdout, "vibeblock setup")
 
-	codexbarBin, err := ensureCodexbar(ctx, d)
+	mode := "apply"
+	if opts.ValidateOnly {
+		mode = "validate-only"
+	} else if opts.DryRun {
+		mode = "dry-run"
+	}
+	fmt.Fprintf(d.stdout, "Mode: %s\n", mode)
+
+	allowInstall := !opts.ValidateOnly && !opts.DryRun
+	codexbarBin, err := ensureCodexbar(ctx, d, allowInstall)
 	if err != nil {
 		return err
 	}
@@ -164,7 +239,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 	fmt.Fprintf(d.stdout, "Serial port: %s\n", port)
 
-	stopLaunchAgentBestEffort(ctx, d)
+	if !opts.ValidateOnly && !opts.DryRun {
+		stopLaunchAgentBestEffort(ctx, d)
+	}
 
 	if err := d.probePort(port); err != nil {
 		return &StepError{
@@ -230,14 +307,57 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 		fmt.Fprintf(d.stdout, "Repository: %s\n", repoRoot)
 		fmt.Fprintf(d.stdout, "Firmware environment: %s\n", firmwareEnv)
-		fmt.Fprintln(d.stdout, "Flashing firmware ...")
-		if err := flashFirmware(ctx, d, repoRoot, port, firmwareEnv); err != nil {
-			return err
+		if opts.ValidateOnly || opts.DryRun {
+			if _, err := d.lookPath("pio"); err != nil {
+				return &StepError{
+					Step: "flash-firmware-validate",
+					Err:  err,
+					Hint: "install PlatformIO CLI (`python3 -m pip install --user platformio`) and ensure `pio` is in PATH",
+				}
+			}
+			firmwareDir := firmwareProjectDirForEnvironment(repoRoot, firmwareEnv)
+			if !fileExists(filepath.Join(firmwareDir, "platformio.ini")) {
+				return &StepError{
+					Step: "flash-firmware-validate",
+					Err:  fmt.Errorf("platformio project not found for env %q in %s", firmwareEnv, firmwareDir),
+					Hint: "verify repository layout and firmware environment selection",
+				}
+			}
+			fmt.Fprintf(d.stdout, "Firmware flash: validated (%s)\n", mode)
+		} else {
+			fmt.Fprintln(d.stdout, "Flashing firmware ...")
+			if err := flashFirmware(ctx, d, repoRoot, port, firmwareEnv); err != nil {
+				return err
+			}
+			fmt.Fprintln(d.stdout, "Firmware flash: ok")
 		}
-		fmt.Fprintln(d.stdout, "Firmware flash: ok")
 	} else {
 		fmt.Fprintln(d.stdout, "Firmware flash: skipped (--skip-flash)")
 		repoRoot, _ = locateRepository(d)
+	}
+
+	if opts.ValidateOnly {
+		fmt.Fprintln(d.stdout, "Validation complete. No changes applied.")
+		return nil
+	}
+
+	if opts.DryRun {
+		installPath := filepath.Join(home, "Library", "Application Support", "vibeblock", "bin", "vibeblock")
+		plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+		backupDir := filepath.Join(home, "Library", "Application Support", "vibeblock", "backups")
+		fmt.Fprintf(d.stdout, "Dry-run: would install companion binary to %s\n", installPath)
+		fmt.Fprintf(d.stdout, "Dry-run: would ensure backup dir %s\n", backupDir)
+		if strings.TrimSpace(opts.Theme) != "" {
+			fmt.Fprintf(d.stdout, "Dry-run: would apply runtime theme setting %q\n", opts.Theme)
+		}
+		if opts.PinDaemonPort {
+			fmt.Fprintf(d.stdout, "Dry-run: would pin LaunchAgent to port %s\n", port)
+		} else {
+			fmt.Fprintln(d.stdout, "Dry-run: would configure LaunchAgent in auto-detect mode")
+		}
+		fmt.Fprintf(d.stdout, "Dry-run: would write LaunchAgent plist %s\n", plistPath)
+		fmt.Fprintln(d.stdout, "Dry-run complete. No changes applied.")
+		return nil
 	}
 
 	fmt.Fprintln(d.stdout, "Installing companion binary ...")
@@ -345,10 +465,17 @@ func choosePort(opts Options, d deps) (string, error) {
 	return promptForPortSelection(d.stdin, d.stdout, sorted)
 }
 
-func ensureCodexbar(ctx context.Context, d deps) (string, error) {
+func ensureCodexbar(ctx context.Context, d deps, allowInstall bool) (string, error) {
 	bin, err := d.findCodexbar()
 	if err == nil {
 		return bin, nil
+	}
+	if !allowInstall {
+		return "", &StepError{
+			Step: "codexbar-validate",
+			Err:  err,
+			Hint: "install CodexBar CLI (`brew install --cask " + codexbarBrewCask + "`) and rerun setup",
+		}
 	}
 
 	fmt.Fprintln(d.stdout, "CodexBar CLI not found. Attempting install via Homebrew ...")
