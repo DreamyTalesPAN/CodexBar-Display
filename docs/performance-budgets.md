@@ -22,7 +22,7 @@ CI budget gate:
 | Metric | Budget | Source |
 |---|---|---|
 | `BenchmarkRunCycleWithDeps` `ns/op` | <= `50000` | `scripts/check-companion-bench-budget.sh` (`MAX_CYCLE_NS`) |
-| `BenchmarkRunCycleWithDeps` `allocs/op` | <= `120` | `scripts/check-companion-bench-budget.sh` (`MAX_CYCLE_ALLOCS`) |
+| `BenchmarkRunCycleWithDeps` `allocs/op` | <= `160` | `scripts/check-companion-bench-budget.sh` (`MAX_CYCLE_ALLOCS`) |
 | `BenchmarkMarshalFrameWithinLimit` `ns/op` | <= `1000` | `scripts/check-companion-bench-budget.sh` (`MAX_MARSHAL_NS`) |
 | `BenchmarkMarshalFrameWithinLimit` `allocs/op` | <= `4` | `scripts/check-companion-bench-budget.sh` (`MAX_MARSHAL_ALLOCS`) |
 

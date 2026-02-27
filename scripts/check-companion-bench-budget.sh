@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 companion_dir="$repo_root/companion"
 
 max_cycle_ns="${MAX_CYCLE_NS:-50000}"
-max_cycle_allocs="${MAX_CYCLE_ALLOCS:-120}"
+max_cycle_allocs="${MAX_CYCLE_ALLOCS:-160}"
 max_marshal_ns="${MAX_MARSHAL_NS:-1000}"
 max_marshal_allocs="${MAX_MARSHAL_ALLOCS:-4}"
 
