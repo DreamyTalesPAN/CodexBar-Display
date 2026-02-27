@@ -3,9 +3,9 @@
 ## Prioritaet Jetzt: Refactor & Verbesserungen
 Ziel: Nach dem Dual-Target-Merge die groessten Wartbarkeits- und Betriebsrisiken reduzieren.
 
-- [ ] Firmware weiter modularisieren:
-  - `firmware_esp8266/src/main.cpp` in klar getrennte Module fuer transport, parser, rendering, runtime state aufteilen.
-  - Gleiches Modul-Schnittbild fuer ESP8266 und ESP32 etablieren, damit Features auf beiden Targets gleich eingefuehrt werden.
+- [x] Firmware weiter modularisieren:
+  - [x] `firmware_esp8266/src/main.cpp` in klar getrennte Module fuer transport, parser, rendering, runtime state aufteilen.
+  - [x] Gleiches Modul-Schnittbild fuer ESP8266 und ESP32 etablieren, damit Features auf beiden Targets gleich eingefuehrt werden.
 - [ ] Theme-Registry zentralisieren:
   - Ein zentrales Mapping (`theme id -> protocol name -> compile default`) fuer Firmware + Companion statt mehrfacher String-Konstanten.
   - Theme-Validierung in einem Shared-Ort halten (Companion + Protokollschema + Docs synchron).

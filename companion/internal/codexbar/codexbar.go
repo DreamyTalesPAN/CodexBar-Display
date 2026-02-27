@@ -1459,7 +1459,17 @@ func shouldTryCodexCLIRepair(parsed ParsedFrame) bool {
 	if !strings.EqualFold(strings.TrimSpace(parsed.Source), "openai-web") {
 		return false
 	}
-	return parsed.Frame.Session == 0 && parsed.Frame.Weekly == 0 && parsed.Frame.ResetSec == 0
+
+	// Known Codex web failure modes:
+	// 1) 0/0 with missing reset.
+	// 2) session=0 with a long weekly reset fallback (primary reset missing).
+	if parsed.Frame.Session == 0 && parsed.Frame.Weekly == 0 && parsed.Frame.ResetSec == 0 {
+		return true
+	}
+	if parsed.Frame.Session == 0 && parsed.Frame.ResetSec > 24*60*60 {
+		return true
+	}
+	return false
 }
 
 func extractProviderList(root any) []any {

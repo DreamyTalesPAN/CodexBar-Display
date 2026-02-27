@@ -430,6 +430,18 @@ func TestShouldTryCodexCLIRepair(t *testing.T) {
 	}
 }
 
+func TestShouldTryCodexCLIRepairForSuspiciousLongResetFallback(t *testing.T) {
+	parsed := ParsedFrame{
+		Frame:    protocol.Frame{Session: 0, Weekly: 11, ResetSec: 150 * 60 * 60},
+		Provider: "codex",
+		Source:   "openai-web",
+	}
+
+	if !shouldTryCodexCLIRepair(parsed) {
+		t.Fatalf("expected repair=true for codex openai-web long-reset fallback")
+	}
+}
+
 func TestShouldNotTryCodexCLIRepairForNonCodex(t *testing.T) {
 	parsed := ParsedFrame{
 		Frame:    protocol.Frame{Session: 0, Weekly: 0, ResetSec: 0},
