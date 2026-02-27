@@ -164,6 +164,7 @@ Goal: Integrate shapes/GIF/JPG without losing the CodexBar usage core.
 - [ ] Define V2 schema formally (enums + bounds) and add golden-frame tests for companion/firmware pairs.
 - [ ] Integrate GIF/JPG decoder with hard guards (size, timeout, single decoder).
 - [ ] Implement decoder resource budgets and guardrails (watchdog-safe decode slices, memory caps, decode retry/backoff).
+- [ ] Add threshold-triggered GIF behavior (for example a waiting GIF when session or weekly reaches 100%) with deterministic fallback to usage UI.
 - [ ] Extend runtime/health with media telemetry (`media/decode-error`, `media/slot-miss`, `media/fallback-count`).
 - [ ] Define ESP8266-first render profile (asset limits, allowed resolutions, FPS/loop limits, preferred codecs) and document as baseline.
 - [ ] Implement fallback strategy: on asset/decode errors automatically return to usage UI.
