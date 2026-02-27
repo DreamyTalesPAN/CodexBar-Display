@@ -35,6 +35,12 @@ func main() {
 		err = runDoctor()
 	case "health":
 		err = health.Run(context.Background())
+	case "version":
+		err = runVersion(os.Args[2:])
+	case "upgrade":
+		err = runUpgrade(os.Args[2:])
+	case "rollback":
+		err = runRollback(os.Args[2:])
 	case "restore-known-good":
 		err = runRestoreKnownGood(os.Args[2:])
 	case "setup":
@@ -62,6 +68,9 @@ func printUsage() {
 	fmt.Println("  vibeblock daemon [--port /dev/cu.usbserial-10] [--interval 60s] [--once] [--theme classic|crt]")
 	fmt.Println("  vibeblock doctor")
 	fmt.Println("  vibeblock health")
+	fmt.Println("  vibeblock version [--short] [--json]")
+	fmt.Println("  vibeblock upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--skip-version-guard]")
+	fmt.Println("  vibeblock rollback [--port /dev/cu.usbserial-10] [--skip-companion] [--skip-firmware] [--image path/to/backup.bin] [--manifest path/to/backup.manifest] [--backup-dir <dir>] [--script-path <path>] [--skip-verify]")
 	fmt.Println("  vibeblock restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
 	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|none] [--validate-only] [--dry-run]")
 }
@@ -357,10 +366,12 @@ func resolveBackupSearchDirs(extraDirs []string) ([]string, error) {
 
 	if appSupport, err := runtimeSupportDir(); err == nil {
 		candidateDirs = append(candidateDirs, filepath.Join(appSupport, "backups"))
+		candidateDirs = append(candidateDirs, filepath.Join(appSupport, "known-good"))
 	}
 
 	if repoRoot, ok := findRepositoryRootFromWorkingDir(); ok {
 		candidateDirs = append(candidateDirs, filepath.Join(repoRoot, "tmp"))
+		candidateDirs = append(candidateDirs, filepath.Join(repoRoot, "known-good"))
 	}
 
 	if cwd, err := os.Getwd(); err == nil {

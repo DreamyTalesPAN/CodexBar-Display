@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build Release Artifacts
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${VERSION#v}"
+          mkdir -p dist/companion dist/firmware
+
+          cd companion
+          for ARCH in amd64 arm64; do
+            OUT="../dist/companion/vibeblock-darwin-${ARCH}-v${VERSION}"
+            GOOS=darwin GOARCH="${ARCH}" CGO_ENABLED=0 \
+              go build \
+              -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${VERSION} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o "${OUT}" ./cmd/vibeblock
+          done
+          cd ..
+
+          declare -a TARGETS=(
+            "firmware_esp8266 esp8266_probe esp8266-probe"
+            "firmware_esp8266 esp8266_smalltv_st7789 esp8266-smalltv-st7789"
+            "firmware_esp8266 esp8266_smalltv_st7789_crt esp8266-smalltv-st7789"
+            "firmware_esp8266 esp8266_smalltv_st7789_alt esp8266-smalltv-st7789-alt"
+            "firmware_esp8266 esp8266_smalltv_st7789_alt_crt esp8266-smalltv-st7789-alt"
+            "firmware lilygo_t_display_s3 esp32-lilygo-t-display-s3"
+          )
+
+          for SPEC in "${TARGETS[@]}"; do
+            set -- ${SPEC}
+            DIR="$1"
+            ENV_NAME="$2"
+
+            pio run -d "${DIR}" -e "${ENV_NAME}"
+
+            SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
+            DEST="dist/firmware/vibeblock-firmware-${ENV_NAME}-v${VERSION}.bin"
+            cp "${SRC}" "${DEST}"
+          done
+
+          VERSION="${VERSION}" python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+
+          version = os.environ["VERSION"]
+          targets = [
+              ("esp8266_probe", "esp8266-probe"),
+              ("esp8266_smalltv_st7789", "esp8266-smalltv-st7789"),
+              ("esp8266_smalltv_st7789_crt", "esp8266-smalltv-st7789"),
+              ("esp8266_smalltv_st7789_alt", "esp8266-smalltv-st7789-alt"),
+              ("esp8266_smalltv_st7789_alt_crt", "esp8266-smalltv-st7789-alt"),
+              ("lilygo_t_display_s3", "esp32-lilygo-t-display-s3"),
+          ]
+
+          manifest = {
+              "schemaVersion": 1,
+              "release": f"v{version}",
+              "protocolVersion": 1,
+              "artifacts": [],
+          }
+
+          for env_name, board in targets:
+              path = f"dist/firmware/vibeblock-firmware-{env_name}-v{version}.bin"
+              with open(path, "rb") as f:
+                  sha = hashlib.sha256(f.read()).hexdigest()
+
+              manifest["artifacts"].append(
+                  {
+                      "firmwareEnv": env_name,
+                      "board": board,
+                      "firmwareVersion": version,
+                      "asset": os.path.basename(path),
+                      "sha256": sha,
+                  }
+              )
+
+          out_path = f"dist/firmware/firmware-manifest-v{version}.json"
+          with open(out_path, "w", encoding="utf-8") as f:
+              json.dump(manifest, f, indent=2)
+              f.write("\n")
+          PY
+
+          (
+            cd dist
+            find . -type f ! -name "checksums-*" -print0 | sort -z | xargs -0 sha256sum > "checksums-v${VERSION}.txt"
+          )
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/companion/*
+            dist/firmware/*.bin
+            dist/firmware/firmware-manifest-*.json
+            dist/checksums-*.txt

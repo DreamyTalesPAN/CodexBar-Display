@@ -14,6 +14,7 @@ cd companion
 
 go run ./cmd/vibeblock doctor
 go run ./cmd/vibeblock health
+go run ./cmd/vibeblock version
 go run ./cmd/vibeblock daemon --port /dev/cu.usbserial-10 --once
 go run ./cmd/vibeblock daemon --port /dev/cu.usbserial-10 --interval 60s
 go run ./cmd/vibeblock daemon --theme crt --interval 60s
@@ -25,8 +26,12 @@ go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
 go run ./cmd/vibeblock setup --validate-only --firmware-env esp8266_smalltv_st7789
 go run ./cmd/vibeblock setup --dry-run --firmware-env lilygo_t_display_s3
 go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101 --firmware-env lilygo_t_display_s3
+go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
+go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
 go run ./cmd/vibeblock restore-known-good
 go run ./cmd/vibeblock restore-known-good --image tmp/backup_chunks_20260226_090152/weather_backup_full.bin --port /dev/cu.usbserial-10
+../scripts/upgrade-with-preflight.sh --firmware-env esp8266_smalltv_st7789
+../scripts/rollback-last-known-good.sh --port /dev/cu.usbserial-10
 ```
 
 `setup` is a one-command installer and is safe to run repeatedly:
@@ -55,6 +60,16 @@ Setup flags:
 - uses installed script path by default (`~/Library/Application Support/vibeblock/scripts/esp8266-restore.sh`)
 - verifies backup manifest + SHA256 + device MAC by default
 - supports `--backup-dir`, `--script-path`, `--manifest`, `--skip-verify`
+
+`upgrade` performs firmware upgrade with preflight checks:
+- resolves serial port and checks `port busy` via `lsof`
+- runs companion/firmware version guard against the compatibility matrix
+- executes flash + runtime install via setup flow (without manual re-setup steps)
+- snapshots current installed companion binary for rollback
+
+`rollback` restores last-known-good state:
+- companion binary from upgrade snapshot
+- firmware via `restore-known-good` (state-backed image/manifest or explicit flags)
 
 `doctor` validates CodexBar binary, lists serial ports, runs runtime serial checks, and shows a live provider preview.
 `health` prints launch agent status, detected port, last successful frame timestamp, and last error in one view.
@@ -110,6 +125,8 @@ User-facing errors now use stable codes with recovery actions:
 - `protocol/*`: handshake/frame format/capability failures (`protocol/device-hello-unavailable`)
 - `runtime/*`: daemon cycle failures and runtime error frames (`runtime/serial-write`, `runtime/codexbar-parse`)
 - `setup/*`: setup/install/flash/launch-agent failures (`setup/flash-firmware`, `setup/launchagent-verify`)
+- `upgrade/*`: update preflight and flash guard failures (`upgrade/port-busy`, `upgrade/version-guard`)
+- `rollback/*`: known-good restore failures (`rollback/missing-known-good`, `rollback/firmware-restore`)
 
 CLI commands print `error code=<...>` for coded errors. Runbook recovery mapping:
 - `../docs/operator-runbook.md`
@@ -118,6 +135,11 @@ CLI commands print `error code=<...>` for coded errors. Runbook recovery mapping
 
 Companion + firmware performance budgets and measurement workflow:
 - `../docs/performance-budgets.md`
+
+Versioning/release/rollback references:
+- `../docs/versioning-compatibility.md`
+- `../docs/release-process.md`
+- `../docs/known-good-firmware.md`
 
 Environment variables:
 

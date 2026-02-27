@@ -45,6 +45,19 @@ const (
 	SetupLaunchBootstrap     Code = "setup/launchagent-bootstrap"
 	SetupLaunchKickstart     Code = "setup/launchagent-kickstart"
 	SetupLaunchVerify        Code = "setup/launchagent-verify"
+
+	UpgradeResolvePort       Code = "upgrade/resolve-port"
+	UpgradePortBusy          Code = "upgrade/port-busy"
+	UpgradeVersionGuard      Code = "upgrade/version-guard"
+	UpgradeSnapshotCompanion Code = "upgrade/snapshot-companion"
+	UpgradeStateWrite        Code = "upgrade/state-write"
+	UpgradeFlashFirmware     Code = "upgrade/flash-firmware"
+
+	RollbackStateLoad        Code = "rollback/state-load"
+	RollbackMissingKnownGood Code = "rollback/missing-known-good"
+	RollbackCompanionRestore Code = "rollback/companion-restore"
+	RollbackFirmwareRestore  Code = "rollback/firmware-restore"
+	RollbackLaunchAgent      Code = "rollback/launchagent-restart"
 )
 
 type Coded interface {
@@ -131,6 +144,28 @@ func DefaultRecovery(code Code) string {
 		return "Verify write permissions under `~/Library` and rerun setup."
 	case SetupLaunchBootstrap, SetupLaunchKickstart, SetupLaunchVerify:
 		return "Inspect `launchctl print gui/$(id -u)/com.vibeblock.daemon` and daemon logs."
+	case UpgradeResolvePort:
+		return "Reconnect the board or pass a valid `--port`."
+	case UpgradePortBusy:
+		return "Stop processes using the serial port (`lsof <port>`) and retry upgrade."
+	case UpgradeVersionGuard:
+		return "Use a compatible firmware target/version or update companion/firmware together."
+	case UpgradeSnapshotCompanion:
+		return "Ensure companion install dir is writable, then retry upgrade."
+	case UpgradeStateWrite:
+		return "Verify write permissions under `~/Library/Application Support/vibeblock`."
+	case UpgradeFlashFirmware:
+		return "Fix flash/setup error details and rerun `vibeblock upgrade`."
+	case RollbackStateLoad:
+		return "Run one successful `vibeblock upgrade` first or provide explicit rollback flags."
+	case RollbackMissingKnownGood:
+		return "Provide explicit rollback inputs (`--image`, `--manifest`) or run upgrade to capture known-good state."
+	case RollbackCompanionRestore:
+		return "Verify known-good companion snapshot exists and is readable."
+	case RollbackFirmwareRestore:
+		return "Provide a valid firmware backup image/manifest and retry rollback."
+	case RollbackLaunchAgent:
+		return "Restart launch agent manually with `launchctl bootout/bootstrap/kickstart`."
 	default:
 		return ""
 	}

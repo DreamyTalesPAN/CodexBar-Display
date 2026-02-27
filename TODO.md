@@ -114,16 +114,16 @@ Acceptance:
 ## Milestone 5: Versionierung, Upgrade, Rollback (P0)
 Ziel: Sicheres Updaten ohne Neu-Setup.
 
-- [ ] SemVer und Kompatibilitaetsmatrix fuer `companion` <-> `firmware` definieren.
-- [ ] Release-Prozess definieren (Tagging, Artefakte, Changelog, Checks).
-- [ ] Upgrade-Command inkl. Preflight bauen (`port busy`, `version guard`, `flash`).
-- [ ] Rollback auf last-known-good Firmware + Companion dokumentieren und scriptbar machen.
-- [ ] Known-good Recovery-Firmware offiziell bereitstellen.
+- [x] SemVer und Kompatibilitaetsmatrix fuer `companion` <-> `firmware` definieren.
+- [x] Release-Prozess definieren (Tagging, Artefakte, Changelog, Checks).
+- [x] Upgrade-Command inkl. Preflight bauen (`port busy`, `version guard`, `flash`).
+- [x] Rollback auf last-known-good Firmware + Companion dokumentieren und scriptbar machen.
+- [x] Known-good Recovery-Firmware offiziell bereitstellen.
 
 Acceptance:
-- [ ] Upgrade von N auf N+1 ohne Neu-Setup moeglich.
-- [ ] Inkompatible Versionen werden blockiert und mit konkretem Fix-Hinweis versehen.
-- [ ] Rollback-Pfad ist dokumentiert und getestet.
+- [x] Upgrade von N auf N+1 ohne Neu-Setup moeglich.
+- [x] Inkompatible Versionen werden blockiert und mit konkretem Fix-Hinweis versehen.
+- [x] Rollback-Pfad ist dokumentiert und getestet.
 
 ## Milestone 6: Observability & Supportability (P1)
 Ziel: Feldprobleme schnell diagnostizieren, ohne Codeaenderung.

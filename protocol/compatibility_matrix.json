@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "rules": [
+    {
+      "name": "v1-stable",
+      "companionMin": "1.0.0",
+      "companionMaxExclusive": "2.0.0",
+      "firmwareMin": "1.0.0",
+      "firmwareMaxExclusive": "2.0.0",
+      "protocolVersion": 1,
+      "notes": "Companion v1.x supports firmware v1.x on protocol v1."
+    }
+  ]
+}
