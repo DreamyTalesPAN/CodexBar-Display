@@ -16,11 +16,14 @@ go run ./cmd/vibeblock doctor
 go run ./cmd/vibeblock health
 go run ./cmd/vibeblock daemon --port /dev/cu.usbserial-10 --once
 go run ./cmd/vibeblock daemon --port /dev/cu.usbserial-10 --interval 60s
+go run ./cmd/vibeblock daemon --theme crt --interval 60s
 go run ./cmd/vibeblock setup
 go run ./cmd/vibeblock setup --yes
 go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --skip-flash
 go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
 go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
+go run ./cmd/vibeblock setup --validate-only --firmware-env esp8266_smalltv_st7789
+go run ./cmd/vibeblock setup --dry-run --firmware-env lilygo_t_display_s3
 go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101 --firmware-env lilygo_t_display_s3
 go run ./cmd/vibeblock restore-known-good
 go run ./cmd/vibeblock restore-known-good --image tmp/backup_chunks_20260226_090152/weather_backup_full.bin --port /dev/cu.usbserial-10
@@ -43,6 +46,8 @@ Setup flags:
 - `--pin-port`: pin daemon to selected `--port` in LaunchAgent (default is unpinned auto-detect)
 - `--firmware-env`: PlatformIO firmware environment (default `esp8266_smalltv_st7789`, example `lilygo_t_display_s3`)
 - `--theme`: persist runtime theme override (`classic`, `crt`, `none`)
+- `--validate-only`: run setup prerequisite checks only, no system changes
+- `--dry-run`: show setup actions without applying changes
 
 `restore-known-good` restores a supplier backup image to ESP8266 hardware:
 - auto-detects serial port unless `--port` is provided
@@ -93,6 +98,7 @@ Setup flags:
 - Unified runtime error frames use stable codes like `runtime/codexbar-parse` and `runtime/serial-write`.
 - Daemon logs include `reason=<selection strategy>` and `detail=<tie-break context>` for each sent frame.
 - Optional theme override: set `VIBEBLOCK_THEME=classic` or `VIBEBLOCK_THEME=crt` to request a display theme.
+- Runtime theme precedence: `daemon --theme` CLI flag > `VIBEBLOCK_THEME` env > runtime config (`config.json`) > firmware compile default.
 - Theme is only sent to devices that advertise `features:["theme"]` in device hello.
 
 Environment variables:

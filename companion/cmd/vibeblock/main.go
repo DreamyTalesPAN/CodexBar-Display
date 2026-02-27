@@ -51,11 +51,11 @@ func main() {
 
 func printUsage() {
 	fmt.Println("vibeblock commands:")
-	fmt.Println("  vibeblock daemon [--port /dev/cu.usbserial-10] [--interval 60s] [--once]")
+	fmt.Println("  vibeblock daemon [--port /dev/cu.usbserial-10] [--interval 60s] [--once] [--theme classic|crt]")
 	fmt.Println("  vibeblock doctor")
 	fmt.Println("  vibeblock health")
 	fmt.Println("  vibeblock restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
-	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|none]")
+	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|none] [--validate-only] [--dry-run]")
 }
 
 func runDaemon(args []string) error {
@@ -63,6 +63,7 @@ func runDaemon(args []string) error {
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
 	interval := fs.Duration("interval", 60*time.Second, "poll interval")
 	once := fs.Bool("once", false, "run one cycle and exit")
+	theme := fs.String("theme", "", "optional runtime theme override: classic|crt")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -71,6 +72,7 @@ func runDaemon(args []string) error {
 		Port:     strings.TrimSpace(*port),
 		Interval: *interval,
 		Once:     *once,
+		Theme:    strings.TrimSpace(*theme),
 	}
 	return daemon.Run(context.Background(), opts)
 }
@@ -154,6 +156,8 @@ func runSetup(args []string) error {
 	pinPort := fs.Bool("pin-port", false, "pin daemon to selected --port in LaunchAgent (default: auto-detect)")
 	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "PlatformIO environment to flash (examples: esp8266_smalltv_st7789, lilygo_t_display_s3)")
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|none (empty keeps existing setting)")
+	validateOnly := fs.Bool("validate-only", false, "validate setup prerequisites only; do not change system state")
+	dryRun := fs.Bool("dry-run", false, "show setup actions without applying changes")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -165,6 +169,8 @@ func runSetup(args []string) error {
 		PinDaemonPort: *pinPort,
 		FirmwareEnv:   strings.TrimSpace(*firmwareEnv),
 		Theme:         strings.TrimSpace(*theme),
+		ValidateOnly:  *validateOnly,
+		DryRun:        *dryRun,
 	})
 }
 

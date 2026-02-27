@@ -36,6 +36,8 @@ type Options struct {
 	PinDaemonPort bool
 	FirmwareEnv   string
 	Theme         string
+	ValidateOnly  bool
+	DryRun        bool
 }
 
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
@@ -152,7 +154,16 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 	fmt.Fprintln(d.stdout, "vibeblock setup")
 
-	codexbarBin, err := ensureCodexbar(ctx, d)
+	mode := "apply"
+	if opts.ValidateOnly {
+		mode = "validate-only"
+	} else if opts.DryRun {
+		mode = "dry-run"
+	}
+	fmt.Fprintf(d.stdout, "Mode: %s\n", mode)
+
+	allowInstall := !opts.ValidateOnly && !opts.DryRun
+	codexbarBin, err := ensureCodexbar(ctx, d, allowInstall)
 	if err != nil {
 		return err
 	}
@@ -164,7 +175,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 	fmt.Fprintf(d.stdout, "Serial port: %s\n", port)
 
-	stopLaunchAgentBestEffort(ctx, d)
+	if !opts.ValidateOnly && !opts.DryRun {
+		stopLaunchAgentBestEffort(ctx, d)
+	}
 
 	if err := d.probePort(port); err != nil {
 		return &StepError{
@@ -230,14 +243,57 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 		fmt.Fprintf(d.stdout, "Repository: %s\n", repoRoot)
 		fmt.Fprintf(d.stdout, "Firmware environment: %s\n", firmwareEnv)
-		fmt.Fprintln(d.stdout, "Flashing firmware ...")
-		if err := flashFirmware(ctx, d, repoRoot, port, firmwareEnv); err != nil {
-			return err
+		if opts.ValidateOnly || opts.DryRun {
+			if _, err := d.lookPath("pio"); err != nil {
+				return &StepError{
+					Step: "flash-firmware-validate",
+					Err:  err,
+					Hint: "install PlatformIO CLI (`python3 -m pip install --user platformio`) and ensure `pio` is in PATH",
+				}
+			}
+			firmwareDir := firmwareProjectDirForEnvironment(repoRoot, firmwareEnv)
+			if !fileExists(filepath.Join(firmwareDir, "platformio.ini")) {
+				return &StepError{
+					Step: "flash-firmware-validate",
+					Err:  fmt.Errorf("platformio project not found for env %q in %s", firmwareEnv, firmwareDir),
+					Hint: "verify repository layout and firmware environment selection",
+				}
+			}
+			fmt.Fprintf(d.stdout, "Firmware flash: validated (%s)\n", mode)
+		} else {
+			fmt.Fprintln(d.stdout, "Flashing firmware ...")
+			if err := flashFirmware(ctx, d, repoRoot, port, firmwareEnv); err != nil {
+				return err
+			}
+			fmt.Fprintln(d.stdout, "Firmware flash: ok")
 		}
-		fmt.Fprintln(d.stdout, "Firmware flash: ok")
 	} else {
 		fmt.Fprintln(d.stdout, "Firmware flash: skipped (--skip-flash)")
 		repoRoot, _ = locateRepository(d)
+	}
+
+	if opts.ValidateOnly {
+		fmt.Fprintln(d.stdout, "Validation complete. No changes applied.")
+		return nil
+	}
+
+	if opts.DryRun {
+		installPath := filepath.Join(home, "Library", "Application Support", "vibeblock", "bin", "vibeblock")
+		plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+		backupDir := filepath.Join(home, "Library", "Application Support", "vibeblock", "backups")
+		fmt.Fprintf(d.stdout, "Dry-run: would install companion binary to %s\n", installPath)
+		fmt.Fprintf(d.stdout, "Dry-run: would ensure backup dir %s\n", backupDir)
+		if strings.TrimSpace(opts.Theme) != "" {
+			fmt.Fprintf(d.stdout, "Dry-run: would apply runtime theme setting %q\n", opts.Theme)
+		}
+		if opts.PinDaemonPort {
+			fmt.Fprintf(d.stdout, "Dry-run: would pin LaunchAgent to port %s\n", port)
+		} else {
+			fmt.Fprintln(d.stdout, "Dry-run: would configure LaunchAgent in auto-detect mode")
+		}
+		fmt.Fprintf(d.stdout, "Dry-run: would write LaunchAgent plist %s\n", plistPath)
+		fmt.Fprintln(d.stdout, "Dry-run complete. No changes applied.")
+		return nil
 	}
 
 	fmt.Fprintln(d.stdout, "Installing companion binary ...")
@@ -345,10 +401,17 @@ func choosePort(opts Options, d deps) (string, error) {
 	return promptForPortSelection(d.stdin, d.stdout, sorted)
 }
 
-func ensureCodexbar(ctx context.Context, d deps) (string, error) {
+func ensureCodexbar(ctx context.Context, d deps, allowInstall bool) (string, error) {
 	bin, err := d.findCodexbar()
 	if err == nil {
 		return bin, nil
+	}
+	if !allowInstall {
+		return "", &StepError{
+			Step: "codexbar-validate",
+			Err:  err,
+			Hint: "install CodexBar CLI (`brew install --cask " + codexbarBrewCask + "`) and rerun setup",
+		}
 	}
 
 	fmt.Fprintln(d.stdout, "CodexBar CLI not found. Attempting install via Homebrew ...")

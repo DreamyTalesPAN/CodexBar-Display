@@ -230,7 +230,7 @@ func TestConfiguredThemeFallsBackToRuntimeConfig(t *testing.T) {
 		t.Fatalf("save runtime config: %v", err)
 	}
 
-	if got := configuredTheme(); got != "crt" {
+	if got := configuredTheme(""); got != "crt" {
 		t.Fatalf("expected theme from runtime config, got %q", got)
 	}
 }
@@ -244,8 +244,22 @@ func TestConfiguredThemeEnvOverridesRuntimeConfig(t *testing.T) {
 		t.Fatalf("save runtime config: %v", err)
 	}
 
-	if got := configuredTheme(); got != "classic" {
+	if got := configuredTheme(""); got != "classic" {
 		t.Fatalf("expected env theme override, got %q", got)
+	}
+}
+
+func TestConfiguredThemeCLIOverridesEnvAndRuntimeConfig(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv(themeEnvVar, "classic")
+
+	if err := runtimeconfig.Save(tmpHome, runtimeconfig.Config{Theme: "crt"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	if got := configuredTheme("crt"); got != "crt" {
+		t.Fatalf("expected cli theme override, got %q", got)
 	}
 }
 

@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"encoding/json"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
 )
 
 type Frame struct {
@@ -32,6 +34,7 @@ func (f Frame) Normalize() Frame {
 	if f.ResetSec < 0 {
 		f.ResetSec = 0
 	}
+	f.Theme = theme.Normalize(f.Theme)
 	return f
 }
 

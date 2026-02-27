@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
+#include "theme_registry.h"
+
 namespace vibeblock {
 namespace core {
 
@@ -85,14 +87,7 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   bool hasTheme = false;
   String themeName;
   if (allowTheme && doc["theme"].is<const char*>()) {
-    themeName = String(doc["theme"].as<const char*>());
-    themeName.trim();
-    themeName.toLowerCase();
-    if (themeName == "classic" || themeName == "crt") {
-      hasTheme = true;
-    } else {
-      themeName = "";
-    }
+    hasTheme = theme::NormalizeThemeName(String(doc["theme"].as<const char*>()), themeName);
   }
 
   if (doc["error"].is<const char*>()) {

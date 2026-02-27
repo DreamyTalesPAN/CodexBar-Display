@@ -20,6 +20,16 @@ jobs:
         working-directory: companion
         run: go test ./...
 
+      - name: Install staticcheck
+        working-directory: companion
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Run staticcheck
+        working-directory: companion
+        run: |
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          staticcheck ./...
+
   firmware-build:
     runs-on: ubuntu-latest
     strategy:
@@ -28,16 +38,28 @@ jobs:
         include:
           - firmware_dir: firmware_esp8266
             env_name: esp8266_probe
+            max_flash_pct: 45
+            max_ram_pct: 60
           - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789
+            max_flash_pct: 45
+            max_ram_pct: 60
           - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789_crt
+            max_flash_pct: 45
+            max_ram_pct: 60
           - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789_alt
+            max_flash_pct: 45
+            max_ram_pct: 60
           - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789_alt_crt
+            max_flash_pct: 45
+            max_ram_pct: 60
           - firmware_dir: firmware
             env_name: lilygo_t_display_s3
+            max_flash_pct: 20
+            max_ram_pct: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,6 +72,10 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      - name: Build firmware
-        working-directory: ${{ matrix.firmware_dir }}
-        run: pio run -e ${{ matrix.env_name }}
+      - name: Build firmware + size budget
+        run: |
+          ./scripts/check-firmware-size-budget.sh \
+            "${{ matrix.firmware_dir }}" \
+            "${{ matrix.env_name }}" \
+            "${{ matrix.max_flash_pct }}" \
+            "${{ matrix.max_ram_pct }}"

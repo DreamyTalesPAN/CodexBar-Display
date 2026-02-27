@@ -20,6 +20,12 @@ Fields:
 - `theme` (string, optional): requested UI theme (`classic` or `crt`).
 - `error` (string, optional): if present, firmware should render error screen.
 
+Theme registry source of truth:
+- `protocol/theme_registry.json` (`id -> protocolName -> compileDefaultMacro`)
+
+Golden frame fixtures:
+- `protocol/fixtures/v1/companion_frame_golden.json`
+
 ## Error Frame
 
 ```json

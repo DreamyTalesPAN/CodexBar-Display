@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strconv"
 	"strings"
@@ -451,6 +452,93 @@ func TestShouldNotTryCodexCLIRepairForNonCodex(t *testing.T) {
 
 	if shouldTryCodexCLIRepair(parsed) {
 		t.Fatalf("expected repair=false for non-codex")
+	}
+}
+
+func TestRepairCodexFromCLIUsesCachedFrameWhenCLIRepairFails(t *testing.T) {
+	resetCodexCLIRepairCache()
+	defer resetCodexCLIRepairCache()
+
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	cached := ParsedFrame{
+		Provider: "codex",
+		Source:   "codex-cli",
+		Frame: protocol.Frame{
+			Provider: "codex",
+			Label:    "Codex",
+			Session:  3,
+			Weekly:   11,
+			ResetSec: 15000,
+		},
+	}
+	putCodexCLIRepairCache(cached, time.Now())
+
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return nil, errors.New("temporary codex cli failure")
+	}
+
+	all := []ParsedFrame{
+		{
+			Provider: "codex",
+			Source:   "openai-web",
+			Frame: protocol.Frame{
+				Provider: "codex",
+				Label:    "Codex",
+				Session:  0,
+				Weekly:   1,
+				ResetSec: 540000,
+			},
+		},
+	}
+
+	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
+	if repaired[0].Frame.Session != 3 || repaired[0].Frame.Weekly != 11 {
+		t.Fatalf("expected cached CLI frame fallback, got session=%d weekly=%d", repaired[0].Frame.Session, repaired[0].Frame.Weekly)
+	}
+}
+
+func TestRepairCodexFromCLICachesSuccessfulCLIResult(t *testing.T) {
+	resetCodexCLIRepairCache()
+	defer resetCodexCLIRepairCache()
+
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":3,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":11}}}]`), nil
+	}
+
+	all := []ParsedFrame{
+		{
+			Provider: "codex",
+			Source:   "openai-web",
+			Frame: protocol.Frame{
+				Provider: "codex",
+				Label:    "Codex",
+				Session:  0,
+				Weekly:   1,
+				ResetSec: 540000,
+			},
+		},
+	}
+
+	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
+	if repaired[0].Frame.Session != 3 || repaired[0].Frame.Weekly != 11 {
+		t.Fatalf("expected CLI repair frame, got session=%d weekly=%d", repaired[0].Frame.Session, repaired[0].Frame.Weekly)
+	}
+
+	cached, ok := getCodexCLIRepairCache(time.Now())
+	if !ok {
+		t.Fatalf("expected successful CLI repair to populate cache")
+	}
+	if cached.Frame.Session != 3 || cached.Frame.Weekly != 11 {
+		t.Fatalf("expected cached CLI frame session=3 weekly=11, got session=%d weekly=%d", cached.Frame.Session, cached.Frame.Weekly)
 	}
 }
 

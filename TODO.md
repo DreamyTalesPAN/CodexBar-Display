@@ -6,24 +6,24 @@ Ziel: Nach dem Dual-Target-Merge die groessten Wartbarkeits- und Betriebsrisiken
 - [x] Firmware weiter modularisieren:
   - [x] `firmware_esp8266/src/main.cpp` in klar getrennte Module fuer transport, parser, rendering, runtime state aufteilen.
   - [x] Gleiches Modul-Schnittbild fuer ESP8266 und ESP32 etablieren, damit Features auf beiden Targets gleich eingefuehrt werden.
-- [ ] Theme-Registry zentralisieren:
-  - Ein zentrales Mapping (`theme id -> protocol name -> compile default`) fuer Firmware + Companion statt mehrfacher String-Konstanten.
-  - Theme-Validierung in einem Shared-Ort halten (Companion + Protokollschema + Docs synchron).
+- [x] Theme-Registry zentralisieren:
+  - [x] Ein zentrales Mapping (`theme id -> protocol name -> compile default`) fuer Firmware + Companion statt mehrfacher String-Konstanten.
+  - [x] Theme-Validierung in einem Shared-Ort halten (Companion + Protokollschema + Docs synchron).
 - [ ] Protokoll-Hardening ausbauen:
-  - Golden-Frame-Tests fuer V1 (valid/invalid/oversized/capability-gated) zentral im `protocol/` Bereich pflegen.
+  - [x] Golden-Frame-Tests fuer V1 (valid/invalid/oversized/capability-gated) zentral im `protocol/` Bereich pflegen.
   - Parser- und Serializer-Verhalten fuer ESP8266, ESP32 und Companion gegen dieselben Fixtures pruefen.
-- [ ] Setup/Runtime-Konfiguration konsolidieren:
-  - Prioritaetsregeln finalisieren und testen (`CLI > ENV > runtime config > firmware default`).
-  - `vibeblock setup` um `validate-only`/`dry-run` erweitern fuer sichere Produktions-Checks.
+- [x] Setup/Runtime-Konfiguration konsolidieren:
+  - [x] Prioritaetsregeln finalisieren und testen (`CLI > ENV > runtime config > firmware default`).
+  - [x] `vibeblock setup` um `validate-only`/`dry-run` erweitern fuer sichere Produktions-Checks.
 - [ ] USB-Transport entkoppeln und testbarer machen:
   - `usb` package weiter auf explizite Interfaces reduzieren (discover/open/send/read hello), um Race-/Reconnect-Pfade isoliert testen zu koennen.
   - Serial-Integrationstests mit pseudo-tty/mock-device fuer reconnect/sleep-wake Fehlerbilder einfuehren.
 - [ ] Error-Codes und Logs standardisieren:
   - Fehlertaxonomie finalisieren (`transport/*`, `protocol/*`, `runtime/*`, `setup/*`) und in Docs/Runbook spiegeln.
   - Jeder user-facing Fehler bekommt einen stabilen Code + konkrete Recovery-Aktion.
-- [ ] CI-Qualitaetsgates erweitern:
-  - `golangci-lint`/`staticcheck` fuer Companion aktivieren.
-  - Firmware-Checks um grobe Groessenbudgets erweitern (Warnung/Fail bei deutlichen Regressions in Flash/RAM).
+- [x] CI-Qualitaetsgates erweitern:
+  - [x] `golangci-lint`/`staticcheck` fuer Companion aktivieren.
+  - [x] Firmware-Checks um grobe Groessenbudgets erweitern (Warnung/Fail bei deutlichen Regressions in Flash/RAM).
 - [ ] Benchmarks und Budgetgrenzen einfuehren:
   - Polling-/Render-Zyklen im Companion und auf Firmware-Seite messbar machen.
   - Zielbudgets fuer Latenz (frame render), CPU-Zeit und Speicherverbrauch je Target dokumentieren.

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -29,6 +30,8 @@ var (
 	ErrNoProviders             = errors.New("codexbar returned no providers")
 	ErrUnexpectedProviderShape = errors.New("unexpected provider payload")
 )
+
+var runUsageCommandFn = runUsageCommand
 
 type FetchErrorKind string
 
@@ -255,6 +258,49 @@ type ParsedFrame struct {
 	Provider     string
 	Source       string
 	AccountEmail string
+}
+
+const codexCLIRepairCacheMaxAge = 30 * time.Minute
+
+var codexCLIRepairCache struct {
+	mu      sync.Mutex
+	frame   ParsedFrame
+	at      time.Time
+	hasData bool
+}
+
+func resetCodexCLIRepairCache() {
+	codexCLIRepairCache.mu.Lock()
+	defer codexCLIRepairCache.mu.Unlock()
+	codexCLIRepairCache.frame = ParsedFrame{}
+	codexCLIRepairCache.at = time.Time{}
+	codexCLIRepairCache.hasData = false
+}
+
+func putCodexCLIRepairCache(frame ParsedFrame, now time.Time) {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	codexCLIRepairCache.mu.Lock()
+	defer codexCLIRepairCache.mu.Unlock()
+	codexCLIRepairCache.frame = frame
+	codexCLIRepairCache.at = now
+	codexCLIRepairCache.hasData = true
+}
+
+func getCodexCLIRepairCache(now time.Time) (ParsedFrame, bool) {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	codexCLIRepairCache.mu.Lock()
+	defer codexCLIRepairCache.mu.Unlock()
+	if !codexCLIRepairCache.hasData {
+		return ParsedFrame{}, false
+	}
+	if codexCLIRepairCache.at.IsZero() || now.Sub(codexCLIRepairCache.at) > codexCLIRepairCacheMaxAge {
+		return ParsedFrame{}, false
+	}
+	return codexCLIRepairCache.frame, true
 }
 
 func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
@@ -1435,20 +1481,30 @@ func repairCodexFromCLI(ctx context.Context, timeout time.Duration, bin string, 
 		return all
 	}
 
-	cliOut, cliErr := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
+	cliOut, cliErr := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
 	cliAll, cliParseErr := parseAllProviders(cliOut)
-	if cliErr != nil || cliParseErr != nil || len(cliAll) == 0 {
+	if cliErr == nil && cliParseErr == nil && len(cliAll) > 0 {
+		for _, candidate := range cliAll {
+			if strings.EqualFold(strings.TrimSpace(candidate.Provider), "codex") {
+				putCodexCLIRepairCache(candidate, time.Now())
+				all[idx] = candidate
+				return all
+			}
+		}
+
+		// Codex CLI should return codex-only payload for this command. If it doesn't,
+		// we still keep behavior deterministic with the first entry.
+		all[idx] = cliAll[0]
 		return all
 	}
 
-	for _, candidate := range cliAll {
-		if strings.EqualFold(strings.TrimSpace(candidate.Provider), "codex") {
-			all[idx] = candidate
+	if cached, ok := getCodexCLIRepairCache(time.Now()); ok {
+		if strings.EqualFold(strings.TrimSpace(cached.Provider), "codex") {
+			all[idx] = cached
 			return all
 		}
 	}
 
-	all[idx] = cliAll[0]
 	return all
 }
 

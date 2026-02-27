@@ -43,6 +43,8 @@ Useful flags:
 - `--pin-port`: pin LaunchAgent to one explicit serial path
 - `--firmware-env <env>`: select PlatformIO environment
 - `--theme <classic|crt|none>`: persist runtime theme override in companion config
+- `--validate-only`: run setup prerequisite checks only
+- `--dry-run`: print setup actions without applying changes
 
 During setup, runtime assets are installed to:
 - Binary: `~/Library/Application Support/vibeblock/bin/vibeblock`

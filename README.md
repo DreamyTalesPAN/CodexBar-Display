@@ -74,11 +74,19 @@ VIBEBLOCK_THEME=crt go run ./cmd/vibeblock daemon --interval 60s
 
 Accepted values are `classic` and `crt`. Invalid values are ignored.
 
+Runtime theme precedence is:
+1. `vibeblock daemon --theme <classic|crt>`
+2. `VIBEBLOCK_THEME` environment variable
+3. runtime config written by setup (`~/Library/Application Support/vibeblock/config.json`)
+4. firmware compile default
+
 Persistent runtime config via setup:
 
 ```bash
 cd companion
 go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
+go run ./cmd/vibeblock setup --validate-only --firmware-env esp8266_smalltv_st7789
+go run ./cmd/vibeblock setup --dry-run --firmware-env lilygo_t_display_s3
 ```
 
 If you run via LaunchAgent with manual env vars, add `VIBEBLOCK_THEME` to

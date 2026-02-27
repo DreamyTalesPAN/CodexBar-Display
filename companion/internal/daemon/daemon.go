@@ -18,6 +18,7 @@ type Options struct {
 	Port     string
 	Interval time.Duration
 	Once     bool
+	Theme    string
 }
 
 const (
@@ -115,6 +116,7 @@ type runtimeState struct {
 	lastGood    protocol.Frame
 	lastGoodAt  time.Time
 	hasLastGood bool
+	cliTheme    string
 }
 
 type retryBackoff struct {
@@ -182,6 +184,7 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 
 	state := &runtimeState{
 		selector: deps.newSelector(),
+		cliTheme: opts.Theme,
 	}
 	backoff := newRetryBackoff(opts.Interval)
 	var lastCycleStart time.Time
@@ -238,7 +241,10 @@ func startupInterval(normal, uptime time.Duration) time.Duration {
 	return normal
 }
 
-func configuredTheme() string {
+func configuredTheme(cliTheme string) string {
+	if theme := runtimeconfig.NormalizeTheme(cliTheme); theme != "" {
+		return theme
+	}
 	if theme := runtimeconfig.NormalizeTheme(os.Getenv(themeEnvVar)); theme != "" {
 		return theme
 	}
@@ -318,10 +324,10 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 		state.hasLastGood = true
 	}
 
-	if selectedTheme := configuredTheme(); selectedTheme != "" {
-		if !caps.Known || caps.SupportsTheme {
-			frame.Theme = selectedTheme
-		} else {
+	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
+		var applied bool
+		frame, applied = applyThemeToFrame(frame, selectedTheme, caps)
+		if !applied {
 			deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", port, caps.Board, selectedTheme)
 		}
 	}
@@ -360,6 +366,18 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 	}
 
 	return nil
+}
+
+func applyThemeToFrame(frame protocol.Frame, selectedTheme string, caps protocol.DeviceCapabilities) (protocol.Frame, bool) {
+	selectedTheme = runtimeconfig.NormalizeTheme(selectedTheme)
+	if selectedTheme == "" {
+		return frame, false
+	}
+	if !caps.Known || caps.SupportsTheme {
+		frame.Theme = selectedTheme
+		return frame, true
+	}
+	return frame, false
 }
 
 func asRuntimeError(err error) *RuntimeError {
@@ -449,10 +467,6 @@ func sleepWakeGapThreshold(interval time.Duration) time.Duration {
 
 func SleepWakeGapThreshold(interval time.Duration) time.Duration {
 	return sleepWakeGapThreshold(interval)
-}
-
-func isLastGoodFresh(lastGoodAt time.Time) bool {
-	return isLastGoodFreshAt(lastGoodAt, wallClockNow(), lastGoodMaxAge())
 }
 
 func isLastGoodFreshAt(lastGoodAt time.Time, now time.Time, maxAge time.Duration) bool {
