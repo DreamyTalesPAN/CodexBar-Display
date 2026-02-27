@@ -3,27 +3,27 @@
 Status: Draft  
 Date: 2026-02-26
 
-## Ziel
+## Goal
 
-V2 erweitert das bestehende Usage-Protokoll um kontrollierte Render-Features
-(Formen, lokale GIF/JPG-Assets), ohne den Kern zu aendern:
+V2 extends the existing usage protocol with controlled rendering features
+(shapes, local GIF/JPG assets) without changing the core principles:
 
-- CodexBar-Usage bleibt die Wahrheit.
-- Companion bleibt "smart".
-- Firmware bleibt render- und protocol-only.
-- Runtime-Frames bleiben klein und robust ueber USB serial.
+- CodexBar usage remains the source of truth.
+- Companion remains "smart".
+- Firmware remains renderer- and protocol-only.
+- Runtime frames stay compact and robust over USB serial.
 
-## Prinzipien
+## Principles
 
-1. `Usage first`: Provider/Session/Weekly/Reset bleiben Pflichtkern.
-2. `Control plane, not pixel stream`: Runtime sendet Steuerdaten, keine Bildframes.
-3. `Local assets`: GIF/JPG liegen auf dem Device (LittleFS), referenziert per Slot-ID.
-4. `Graceful fallback`: Unbekannte/ungueltige Render-Felder fallen auf V1-Usage-Screen zurueck.
-5. `Backward compatibility`: V1-Firmware ignoriert neue Felder.
+1. `Usage first`: provider/session/weekly/reset remain the required core.
+2. `Control plane, not pixel stream`: runtime sends control data, not image frames.
+3. `Local assets`: GIF/JPG files live on-device (LittleFS), referenced by slot ID.
+4. `Graceful fallback`: unknown/invalid render fields fall back to the V1 usage screen.
+5. `Backward compatibility`: V1 firmware ignores new fields.
 
 ## V2 Frame (Host -> Device)
 
-V2 behaelt alle V1-Felder bei und fuegt optionale Render-Felder hinzu.
+V2 keeps all V1 fields and adds optional render fields.
 
 ```json
 {
@@ -43,30 +43,30 @@ V2 behaelt alle V1-Felder bei und fuegt optionale Render-Felder hinzu.
 }
 ```
 
-### Neue Felder (optional)
+### New Fields (optional)
 
 - `renderMode`:
   - `usage` (default)
   - `usage_with_shapes`
   - `usage_with_media`
   - `media_only`
-- `shapePreset`: vordefinierte Formen/Ornamente auf Firmware-Seite
-- `mediaSlot`: logische Asset-ID (`provider/claude`, `weather/rain_01`, ...)
+- `shapePreset`: predefined shape/ornament preset on firmware side
+- `mediaSlot`: logical asset ID (`provider/claude`, `weather/rain_01`, ...)
 - `mediaFit`: `contain` | `cover` | `stretch`
 - `mediaLoop`: `once` | `forever` | `n:<count>`
 
-## Nicht Teil des Runtime-Frames
+## Not Part of the Runtime Frame
 
-Asset-Transfer (GIF/JPG Upload) laeuft nicht im Daemon-60s-Loop, sondern separat
-ueber Setup/Media-Tools:
+Asset transfer (GIF/JPG upload) does not run inside the daemon 60s loop.
+It runs through dedicated setup/media tooling:
 
-- `vibeblock media sync` (neu, Companion command)
-- schreibt Dateien + Manifest auf Device-LittleFS
-- Runtime-Frames referenzieren nur `mediaSlot`
+- `vibeblock media sync` (new companion command)
+- writes files + manifest to device LittleFS
+- runtime frames reference only `mediaSlot`
 
 ## Asset Manifest (Device)
 
-Beispiel `/.sys/assets.json`:
+Example `/.sys/assets.json`:
 
 ```json
 {
@@ -84,36 +84,36 @@ Beispiel `/.sys/assets.json`:
 
 ## Firmware Render Pipeline (V2)
 
-Reihenfolge pro Frame:
+Render order per frame:
 
-1. Base usage layer (V1-UI)
+1. Base usage layer (V1 UI)
 2. Shape preset layer (optional)
 3. Media layer (optional, region-bounded)
-4. Error override (falls `error` gesetzt)
+4. Error override (if `error` is set)
 
 ## Safety Limits
 
-- Max Assetgroesse pro Datei (z. B. 512 KB ESP8266 / 2 MB ESP32-S3)
-- Max gleichzeitige Decoder (1)
-- Timeout/abort fuer defekte GIFs
-- Bei Decode-Fehler: Slot deaktivieren, Usage-UI weiter rendern
+- Max asset size per file (for example 512 KB ESP8266 / 2 MB ESP32-S3)
+- Max concurrent decoders (1)
+- Timeout/abort for broken GIFs
+- On decode errors: disable slot, continue rendering usage UI
 
-## Rollout-Plan
+## Rollout Plan
 
 1. Parse-only:
-   - V2-Felder im Companion-Struct und Firmware-Parser akzeptieren.
-   - Noch keine neue Renderlogik.
+   - Accept V2 fields in companion struct and firmware parser.
+   - No new render behavior yet.
 2. Shapes:
-   - `shapePreset` implementieren (ohne Assets).
+   - Implement `shapePreset` (without assets).
 3. Media:
-   - LittleFS + Manifest + `mediaSlot` + GIF/JPG decode.
+   - LittleFS + manifest + `mediaSlot` + GIF/JPG decode.
 4. Tooling:
    - `vibeblock media sync`, `media ls`, `media verify`.
 5. Hardening:
-   - soak tests, corrupted assets, reconnect/sleep-wake Tests.
+   - soak tests, corrupted assets, reconnect/sleep-wake tests.
 
-## Offene Fragen
+## Open Questions
 
-1. MCU scope: V2 Media auch fuer ESP8266 oder nur ESP32-S3?
-2. Decoder-Auswahl: GIF-only zuerst oder GIF+JPG gleichzeitig?
-3. Strict mode: Soll `v=2` ohne bekannte `renderMode` hart fehlschlagen oder auf `usage` fallen?
+1. MCU scope: V2 media for ESP8266 too, or ESP32-S3 only?
+2. Decoder rollout: GIF-only first, or GIF+JPG together?
+3. Strict mode: should `v=2` with unknown `renderMode` fail hard, or fall back to `usage`?

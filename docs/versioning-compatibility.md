@@ -13,6 +13,9 @@ This document defines SemVer and the compatibility contract between `companion` 
 
 ## Compatibility Matrix
 
+Source of truth:
+- `protocol/compatibility_matrix.json`
+
 | Rule | Companion Range | Firmware Range | Protocol |
 |---|---|---|---|
 | `v1-stable` | `>=1.0.0 <2.0.0` | `>=1.0.0 <2.0.0` | `1` |

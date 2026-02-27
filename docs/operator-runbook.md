@@ -97,6 +97,7 @@ go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
 Wrapper scripts:
 
 ```bash
+cd /path/to/CodexBar-Display
 ./scripts/upgrade-with-preflight.sh --firmware-env esp8266_smalltv_st7789
 ./scripts/rollback-last-known-good.sh --port /dev/cu.usbserial-10
 ```

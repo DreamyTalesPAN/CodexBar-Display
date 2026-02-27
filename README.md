@@ -46,72 +46,33 @@ Protocol references:
 
 ## Theme Support
 
-Two themes currently exist:
+Supported themes:
 - `classic`
 - `crt`
 
-Theme support is currently implemented on ESP8266 SmallTV display firmware:
+Theme-capable firmware envs:
 - `esp8266_smalltv_st7789`
 - `esp8266_smalltv_st7789_crt`
 - `esp8266_smalltv_st7789_alt`
 - `esp8266_smalltv_st7789_alt_crt`
 
-Not theme-capable today:
-- `esp8266_probe`
-- `lilygo_t_display_s3`
-
-### Choosing a Theme
-
-Compile-time default theme comes from firmware environment:
-- `*_crt` envs boot with `crt` as default.
-- non-`*_crt` envs boot with `classic` as default.
-
-Runtime theme override is controlled by companion env var `VIBEBLOCK_THEME`:
-
-```bash
-cd companion
-VIBEBLOCK_THEME=crt go run ./cmd/vibeblock daemon --interval 60s
-```
-
-Accepted values are `classic` and `crt`. Invalid values are ignored.
-
-Runtime theme precedence is:
+Theme selection precedence:
 1. `vibeblock daemon --theme <classic|crt>`
-2. `VIBEBLOCK_THEME` environment variable
-3. runtime config written by setup (`~/Library/Application Support/vibeblock/config.json`)
+2. `VIBEBLOCK_THEME`
+3. runtime config (`~/Library/Application Support/vibeblock/config.json`)
 4. firmware compile default
 
-Persistent runtime config via setup:
+Persistent override:
 
 ```bash
 cd companion
 go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
-go run ./cmd/vibeblock setup --validate-only --firmware-env esp8266_smalltv_st7789
-go run ./cmd/vibeblock setup --dry-run --firmware-env lilygo_t_display_s3
 ```
 
-If you run via LaunchAgent with manual env vars, add `VIBEBLOCK_THEME` to
-`~/Library/LaunchAgents/com.vibeblock.daemon.plist` under `EnvironmentVariables`
-and reload the agent.
-Note: `vibeblock setup` rewrites this plist; re-apply custom env vars after rerunning setup.
-
-### Developing a New Theme
-
-To add a new theme (for example `amber`), update these parts:
-
-1. `firmware_esp8266/src/main.cpp`
-   - extend `enum class Theme`
-   - map name in `themeFromName(...)`
-   - add theme-specific render functions (splash/usage/error/reset)
-   - wire dispatch in `drawSplash`, `tickSplashWaitingDots`, `drawError`, `drawResetCountdownLine`, `drawUsage`
-2. `firmware_shared/vibeblock_core.h`
-   - allow the new theme name in `ParseFrameLine(...)`
-3. `companion/internal/daemon/daemon.go`
-   - allow the new value in `configuredTheme()`
-4. Optional: `firmware_esp8266/platformio.ini`
-   - add a `*_theme` environment with a compile-time default macro (same pattern as `VIBEBLOCK_THEME_CRT`)
-5. Docs + protocol
-   - document the new theme in this README and `protocol/PROTOCOL.md`
+Theme development (high-level):
+- shared registries: `firmware_shared/theme_registry.h`, `companion/internal/theme/registry.go`
+- ESP8266 mapping/renderer: `firmware_esp8266/src/theme_defs.*`, `firmware_esp8266/src/renderer_esp8266.cpp`
+- protocol validation: `protocol/theme_registry.json`, `protocol/schema.json`
 
 ## Quick Start (macOS)
 
@@ -146,8 +107,8 @@ go run ./cmd/vibeblock version
 go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
 go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
 go run ./cmd/vibeblock restore-known-good --port /dev/cu.usbserial-10
-./scripts/upgrade-with-preflight.sh --firmware-env esp8266_smalltv_st7789
-./scripts/rollback-last-known-good.sh --port /dev/cu.usbserial-10
+../scripts/upgrade-with-preflight.sh --firmware-env esp8266_smalltv_st7789
+../scripts/rollback-last-known-good.sh --port /dev/cu.usbserial-10
 ```
 
 Detailed operator procedures (setup, recovery, smoke test, troubleshooting):
