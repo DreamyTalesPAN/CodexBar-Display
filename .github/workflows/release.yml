@@ -58,7 +58,7 @@ jobs:
             DIR="$1"
             ENV_NAME="$2"
 
-            pio run -d "${DIR}" -e "${ENV_NAME}"
+            VIBEBLOCK_FW_VERSION="${VERSION}" pio run -d "${DIR}" -e "${ENV_NAME}"
 
             SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
             DEST="dist/firmware/vibeblock-firmware-${ENV_NAME}-v${VERSION}.bin"

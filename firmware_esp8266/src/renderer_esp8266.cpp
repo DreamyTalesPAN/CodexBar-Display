@@ -3,11 +3,10 @@
 #include <cstdio>
 #include <cstring>
 
+#include "gif_core_esp8266.h"
 #include "theme_defs.h"
 
 #ifndef VIBEBLOCK_PROBE_ONLY
-#include <AnimatedGIF.h>
-#include <LittleFS.h>
 #include <TFT_eSPI.h>
 #endif
 
@@ -18,12 +17,29 @@ namespace {
 
 app::RuntimeContext* gCtx = nullptr;
 
-#define runtimeState (gCtx->runtime)
-#define screenDirty (gCtx->screenDirty)
-#define current (gCtx->runtime.current)
-#define hasFrame (gCtx->runtime.hasFrame)
-#define lastRenderedSecs (gCtx->lastRenderedSecs)
-#define lastRenderedMinuteBucket (gCtx->lastRenderedMinuteBucket)
+core::RuntimeState& runtimeState() {
+  return gCtx->runtime;
+}
+
+core::Frame& current() {
+  return gCtx->runtime.current;
+}
+
+bool hasFrame() {
+  return gCtx->runtime.hasFrame;
+}
+
+bool& screenDirty() {
+  return gCtx->screenDirty;
+}
+
+int64_t& lastRenderedSecs() {
+  return gCtx->lastRenderedSecs;
+}
+
+int64_t& lastRenderedMinuteBucket() {
+  return gCtx->lastRenderedMinuteBucket;
+}
 
 #ifndef VIBEBLOCK_PROBE_ONLY
 uint8_t splashWaitingDots = 0;
@@ -48,7 +64,7 @@ TFT_eSPI tft = TFT_eSPI();
 #endif
 
 int64_t currentRemainingSecs() {
-  return vibeblock::core::CurrentRemainingSecs(runtimeState, millis());
+  return vibeblock::core::CurrentRemainingSecs(runtimeState(), millis());
 }
 
 String formatDuration(int64_t secs) {
@@ -164,40 +180,11 @@ constexpr int kCrtSplashHintClearH = 36;
 constexpr const char* kMiniGifPath = "/mini.gif";
 constexpr int kMiniGifMargin = 8;
 constexpr int kMiniFallbackGifSize = 80;
-constexpr int kMiniMaxLinePixels = 240;
 constexpr uint16_t kMiniBg = TFT_BLACK;
 constexpr uint16_t kMiniPrimary = rgb565(92, 204, 255);
 constexpr uint16_t kMiniSecondary = rgb565(167, 255, 201);
 constexpr uint16_t kMiniMuted = rgb565(121, 131, 148);
-
-struct MiniGifState {
-  AnimatedGIF decoder;
-  File file;
-  bool fsMounted = false;
-  bool filePresent = false;
-  bool decoderOpen = false;
-  bool suppressDraw = false;
-  unsigned long nextFrameAtMs = 0;
-  int gifWidth = 0;
-  int gifHeight = 0;
-  int drawX = 0;
-  int drawY = 0;
-
-  void resetPlayback() {
-    if (decoderOpen) {
-      decoder.close();
-    }
-    if (file) {
-      file.close();
-    }
-    decoderOpen = false;
-    suppressDraw = false;
-    nextFrameAtMs = 0;
-  }
-};
-
-MiniGifState miniGif;
-uint16_t miniGifLineBuffer[kMiniMaxLinePixels];
+GifCoreESP8266 gifCore;
 
 struct SplashLayout {
   int titleSize = 2;
@@ -262,288 +249,32 @@ int rightAlignedTextXCrt(const char* text, int rightPadding) {
   return x;
 }
 
-bool readMiniGifDimensions(int& width, int& height) {
-  width = 0;
-  height = 0;
-  if (!miniGif.fsMounted || !LittleFS.exists(kMiniGifPath)) {
-    return false;
-  }
-
-  File file = LittleFS.open(kMiniGifPath, "r");
-  if (!file) {
-    return false;
-  }
-
-  uint8_t header[10] = {0};
-  const size_t bytesRead = file.read(header, sizeof(header));
-  file.close();
-  if (bytesRead < sizeof(header)) {
-    return false;
-  }
-
-  const bool gifHeader = (memcmp(header, "GIF87a", 6) == 0) || (memcmp(header, "GIF89a", 6) == 0);
-  if (!gifHeader) {
-    return false;
-  }
-
-  width = static_cast<int>(header[6] | (static_cast<uint16_t>(header[7]) << 8));
-  height = static_cast<int>(header[8] | (static_cast<uint16_t>(header[9]) << 8));
-  return width > 0 && height > 0;
+const GifPlaybackRequest& miniThemeGifRequest() {
+  static constexpr GifPlaybackRequest kMiniThemeGifRequest = {
+      kMiniGifPath,
+      GifLayoutMode::BottomRightMini,
+      GifFailureSlot::MiniTheme,
+  };
+  return kMiniThemeGifRequest;
 }
 
-void* miniGifOpenCallback(const char* filename, int32_t* pFileSize) {
-  if (!miniGif.fsMounted || filename == nullptr || pFileSize == nullptr) {
-    return nullptr;
-  }
-
-  if (miniGif.file) {
-    miniGif.file.close();
-  }
-
-  miniGif.file = LittleFS.open(filename, "r");
-  if (!miniGif.file) {
-    return nullptr;
-  }
-
-  *pFileSize = static_cast<int32_t>(miniGif.file.size());
-  return static_cast<void*>(&miniGif.file);
+void stopMiniGifPlayback() {
+  gifCore.Stop();
 }
 
-void miniGifCloseCallback(void* pHandle) {
-  File* file = static_cast<File*>(pHandle);
-  if (file != nullptr && *file) {
-    file->close();
-  }
-}
-
-int32_t miniGifReadCallback(GIFFILE* pFile, uint8_t* pBuf, int32_t iLen) {
-  if (pFile == nullptr || pFile->fHandle == nullptr || pBuf == nullptr || iLen <= 0) {
-    return 0;
-  }
-
-  File* file = static_cast<File*>(pFile->fHandle);
-  int32_t bytesToRead = iLen;
-  const int32_t remaining = pFile->iSize - pFile->iPos;
-  if (remaining < bytesToRead) {
-    bytesToRead = remaining;
-  }
-  if (bytesToRead <= 0) {
-    return 0;
-  }
-
-  const int32_t bytesRead = static_cast<int32_t>(file->read(pBuf, static_cast<size_t>(bytesToRead)));
-  pFile->iPos = static_cast<int32_t>(file->position());
-  return bytesRead;
-}
-
-int32_t miniGifSeekCallback(GIFFILE* pFile, int32_t iPosition) {
-  if (pFile == nullptr || pFile->fHandle == nullptr || iPosition < 0) {
-    return -1;
-  }
-
-  File* file = static_cast<File*>(pFile->fHandle);
-  if (!file->seek(static_cast<size_t>(iPosition), SeekSet)) {
-    return -1;
-  }
-
-  pFile->iPos = static_cast<int32_t>(file->position());
-  return pFile->iPos;
-}
-
-void miniGifDrawCallback(GIFDRAW* pDraw) {
-  if (pDraw == nullptr || miniGif.suppressDraw) {
-    return;
-  }
-
-  int lineWidth = pDraw->iWidth;
-  if (lineWidth <= 0) {
-    return;
-  }
-  if (lineWidth > kMiniMaxLinePixels) {
-    lineWidth = kMiniMaxLinePixels;
-  }
-
-  int drawX = miniGif.drawX + pDraw->iX;
-  int drawY = miniGif.drawY + pDraw->iY + pDraw->y;
-  if (drawY < 0 || drawY >= tft.height() || drawX >= tft.width()) {
-    return;
-  }
-
-  int srcOffset = 0;
-  if (drawX < 0) {
-    srcOffset = -drawX;
-    drawX = 0;
-  }
-  if (srcOffset >= lineWidth) {
-    return;
-  }
-  lineWidth -= srcOffset;
-  if (drawX + lineWidth > tft.width()) {
-    lineWidth = tft.width() - drawX;
-  }
-  if (lineWidth <= 0) {
-    return;
-  }
-
-  uint8_t* src = pDraw->pPixels + srcOffset;
-  uint16_t* palette = pDraw->pPalette;
-  if (src == nullptr || palette == nullptr) {
-    return;
-  }
-
-  if (pDraw->ucDisposalMethod == 2) {
-    for (int i = 0; i < lineWidth; ++i) {
-      if (src[i] == pDraw->ucTransparent) {
-        src[i] = pDraw->ucBackground;
-      }
-    }
-    pDraw->ucHasTransparency = 0;
-  }
-
-  if (pDraw->ucHasTransparency) {
-    const uint8_t transparent = pDraw->ucTransparent;
-    uint8_t* cursor = src;
-    uint8_t* end = src + lineWidth;
-    int x = 0;
-    while (x < lineWidth) {
-      int count = 0;
-      uint16_t* out = miniGifLineBuffer;
-      while (cursor < end && count < kMiniMaxLinePixels) {
-        const uint8_t index = *cursor;
-        if (index == transparent) {
-          break;
-        }
-        *out++ = palette[index];
-        ++cursor;
-        ++count;
-      }
-      if (count > 0) {
-        tft.setAddrWindow(drawX + x, drawY, count, 1);
-        tft.pushPixels(miniGifLineBuffer, count);
-        x += count;
-      }
-      while (cursor < end && *cursor == transparent) {
-        ++cursor;
-        ++x;
-      }
-    }
-    return;
-  }
-
-  for (int i = 0; i < lineWidth; ++i) {
-    miniGifLineBuffer[i] = palette[src[i]];
-  }
-  tft.setAddrWindow(drawX, drawY, lineWidth, 1);
-  tft.pushPixels(miniGifLineBuffer, lineWidth);
-}
-
-void closeMiniGifPlayback() {
-  miniGif.resetPlayback();
-}
-
-bool ensureMiniGifStorageReady() {
-  if (miniGif.fsMounted) {
-    miniGif.filePresent = LittleFS.exists(kMiniGifPath);
-    return true;
-  }
-
-  miniGif.fsMounted = LittleFS.begin();
-  miniGif.filePresent = miniGif.fsMounted && LittleFS.exists(kMiniGifPath);
-  return miniGif.fsMounted;
-}
-
-bool ensureMiniGifPlayback() {
-  if (!ensureMiniGifStorageReady()) {
-    closeMiniGifPlayback();
-    return false;
-  }
-  if (!miniGif.filePresent) {
-    closeMiniGifPlayback();
-    return false;
-  }
-  if (miniGif.decoderOpen) {
-    return true;
-  }
-
-  int gifWidth = 0;
-  int gifHeight = 0;
-  if (!readMiniGifDimensions(gifWidth, gifHeight)) {
-    return false;
-  }
-  miniGif.gifWidth = gifWidth;
-  miniGif.gifHeight = gifHeight;
-  miniGif.drawX = tft.width() - miniGif.gifWidth - kMiniGifMargin;
-  miniGif.drawY = tft.height() - miniGif.gifHeight - kMiniGifMargin;
-  if (miniGif.drawX < 0) {
-    miniGif.drawX = 0;
-  }
-  if (miniGif.drawY < 0) {
-    miniGif.drawY = 0;
-  }
-
-  closeMiniGifPlayback();
-  miniGif.decoder.begin(BIG_ENDIAN_PIXELS);
-  if (!miniGif.decoder.open(
-          kMiniGifPath,
-          miniGifOpenCallback,
-          miniGifCloseCallback,
-          miniGifReadCallback,
-          miniGifSeekCallback,
-          miniGifDrawCallback)) {
-    return false;
-  }
-
-  miniGif.decoderOpen = true;
-  miniGif.nextFrameAtMs = 0;
-  return true;
+bool shouldRenderMiniGif() {
+  return activeTheme == Theme::Mini && hasFrame() && !current().hasError;
 }
 
 void tickMiniGif(bool forceFrame) {
-  if (activeTheme != Theme::Mini) {
+  if (!shouldRenderMiniGif()) {
     return;
   }
-  if (!hasFrame || current.hasError) {
-    return;
-  }
-  if (!ensureMiniGifPlayback()) {
-    return;
-  }
-
-  const unsigned long now = millis();
-  if (!forceFrame && miniGif.nextFrameAtMs != 0 && static_cast<long>(now - miniGif.nextFrameAtMs) < 0) {
-    return;
-  }
-
-  const unsigned long frameStartMs = now;
-  int delayMs = 0;
-  tft.startWrite();
-  bool played = miniGif.decoder.playFrame(false, &delayMs, nullptr);
-  tft.endWrite();
-  if (!played) {
-    miniGif.decoder.reset();
-    tft.startWrite();
-    played = miniGif.decoder.playFrame(false, &delayMs, nullptr);
-    tft.endWrite();
-    if (!played) {
-      closeMiniGifPlayback();
-      return;
-    }
-  }
-
-  if (delayMs < 0) {
-    delayMs = 0;
-  }
-  miniGif.nextFrameAtMs = frameStartMs + static_cast<unsigned long>(delayMs);
+  (void)gifCore.Tick(tft, miniThemeGifRequest(), forceFrame);
 }
 
 int miniGifReservedWidth() {
-  if (miniGif.decoderOpen && miniGif.gifWidth > 0) {
-    return miniGif.gifWidth;
-  }
-  if (miniGif.filePresent && miniGif.gifWidth > 0) {
-    return miniGif.gifWidth;
-  }
-  return kMiniFallbackGifSize;
+  return gifCore.ReservedWidthFor(kMiniGifPath, kMiniFallbackGifSize);
 }
 
 void drawMiniGifPlaceholder() {
@@ -557,7 +288,7 @@ void drawMiniGifPlaceholder() {
   }
 
   tft.drawRect(x - 2, y - 2, boxW + 4, boxH + 4, kMiniMuted);
-  if (!miniGif.filePresent) {
+  if (!gifCore.IsCurrentAssetPresent(kMiniGifPath)) {
     tft.fillRect(x, y, boxW, boxH, rgb565(18, 20, 24));
     tft.setTextFont(1);
     tft.setTextSize(1);
@@ -600,8 +331,8 @@ const char* splashDotsSuffix() {
 }
 
 const char* providerLabelText() {
-  if (current.label.length()) {
-    return current.label.c_str();
+  if (current().label.length()) {
+    return current().label.c_str();
   }
   return "Provider";
 }
@@ -617,6 +348,85 @@ int usageCoreHeightFor(const UsageLayout& layout) {
          textPixelHeight(layout.resetSize);
 }
 
+constexpr int kUsageSpacingSlots = 5;
+constexpr int kUsageMaxInternalGap = 8;
+
+bool shrinkUsageLayout(UsageLayout& layout, int& minGap) {
+  if (layout.resetSize > 2) {
+    --layout.resetSize;
+    return true;
+  }
+  if (layout.providerSize > 2) {
+    --layout.providerSize;
+    return true;
+  }
+  if (layout.labelSize > 2) {
+    --layout.labelSize;
+    return true;
+  }
+  if (layout.barH > 18) {
+    layout.barH -= 2;
+    return true;
+  }
+  if (layout.labelToBarGap > 1) {
+    --layout.labelToBarGap;
+    return true;
+  }
+  if (minGap > 1) {
+    --minGap;
+    return true;
+  }
+  if (layout.resetSize > 1) {
+    --layout.resetSize;
+    return true;
+  }
+  if (layout.labelSize > 1) {
+    --layout.labelSize;
+    return true;
+  }
+  if (layout.providerSize > 1) {
+    --layout.providerSize;
+    return true;
+  }
+  return false;
+}
+
+void distributeUsageGaps(int available, int minGap, int (&slotGaps)[kUsageSpacingSlots]) {
+  if (available <= 0) {
+    return;
+  }
+
+  if (available >= kUsageSpacingSlots * minGap) {
+    const int extra = available - (kUsageSpacingSlots * minGap);
+    const int extraEach = extra / kUsageSpacingSlots;
+    const int extraRemainder = extra % kUsageSpacingSlots;
+    for (int i = 0; i < kUsageSpacingSlots; ++i) {
+      slotGaps[i] = minGap + extraEach + (i < extraRemainder ? 1 : 0);
+    }
+    return;
+  }
+
+  const int gapEach = available / kUsageSpacingSlots;
+  const int gapRemainder = available % kUsageSpacingSlots;
+  for (int i = 0; i < kUsageSpacingSlots; ++i) {
+    slotGaps[i] = gapEach + (i < gapRemainder ? 1 : 0);
+  }
+}
+
+void capUsageInternalGaps(int (&slotGaps)[kUsageSpacingSlots]) {
+  int reclaimed = 0;
+  for (int i = 1; i <= 3; ++i) {
+    if (slotGaps[i] > kUsageMaxInternalGap) {
+      reclaimed += (slotGaps[i] - kUsageMaxInternalGap);
+      slotGaps[i] = kUsageMaxInternalGap;
+    }
+  }
+  if (reclaimed > 0) {
+    slotGaps[0] += reclaimed / 2;
+    slotGaps[4] += reclaimed - (reclaimed / 2);
+  }
+}
+
 UsageLayout usageLayoutForProvider(const char* providerText) {
   UsageLayout layout;
   layout.w = tft.width() - (layout.x * 2);
@@ -624,80 +434,22 @@ UsageLayout usageLayoutForProvider(const char* providerText) {
   layout.labelSize = chooseTextSizeToFit("Session 100% used", 3, 2, layout.w);
   layout.resetSize = chooseTextSizeToFit("Reset in 999h 59m", 3, 2, tft.width() - 4);
 
-  constexpr int spacingSlots = 5;
   int minGap = 5;
 
   for (;;) {
-    if (usageCoreHeightFor(layout) + (spacingSlots * minGap) <= tft.height()) {
+    if (usageCoreHeightFor(layout) + (kUsageSpacingSlots * minGap) <= tft.height()) {
       break;
     }
 
-    bool reduced = false;
-    if (layout.resetSize > 2) {
-      --layout.resetSize;
-      reduced = true;
-    } else if (layout.providerSize > 2) {
-      --layout.providerSize;
-      reduced = true;
-    } else if (layout.labelSize > 2) {
-      --layout.labelSize;
-      reduced = true;
-    } else if (layout.barH > 18) {
-      layout.barH -= 2;
-      reduced = true;
-    } else if (layout.labelToBarGap > 1) {
-      --layout.labelToBarGap;
-      reduced = true;
-    } else if (minGap > 1) {
-      --minGap;
-      reduced = true;
-    } else if (layout.resetSize > 1) {
-      --layout.resetSize;
-      reduced = true;
-    } else if (layout.labelSize > 1) {
-      --layout.labelSize;
-      reduced = true;
-    } else if (layout.providerSize > 1) {
-      --layout.providerSize;
-      reduced = true;
-    }
-
-    if (!reduced) {
+    if (!shrinkUsageLayout(layout, minGap)) {
       break;
     }
   }
 
-  int slotGaps[spacingSlots] = {0, 0, 0, 0, 0};
+  int slotGaps[kUsageSpacingSlots] = {0, 0, 0, 0, 0};
   const int available = tft.height() - usageCoreHeightFor(layout);
-  if (available > 0) {
-    if (available >= spacingSlots * minGap) {
-      const int extra = available - (spacingSlots * minGap);
-      const int extraEach = extra / spacingSlots;
-      const int extraRemainder = extra % spacingSlots;
-      for (int i = 0; i < spacingSlots; ++i) {
-        slotGaps[i] = minGap + extraEach + (i < extraRemainder ? 1 : 0);
-      }
-    } else {
-      const int gapEach = available / spacingSlots;
-      const int gapRemainder = available % spacingSlots;
-      for (int i = 0; i < spacingSlots; ++i) {
-        slotGaps[i] = gapEach + (i < gapRemainder ? 1 : 0);
-      }
-    }
-  }
-
-  constexpr int maxInternalGap = 8;
-  int reclaimed = 0;
-  for (int i = 1; i <= 3; ++i) {
-    if (slotGaps[i] > maxInternalGap) {
-      reclaimed += (slotGaps[i] - maxInternalGap);
-      slotGaps[i] = maxInternalGap;
-    }
-  }
-  if (reclaimed > 0) {
-    slotGaps[0] += reclaimed / 2;
-    slotGaps[4] += reclaimed - (reclaimed / 2);
-  }
+  distributeUsageGaps(available, minGap, slotGaps);
+  capUsageInternalGaps(slotGaps);
 
   layout.topPad = slotGaps[0];
   layout.gapProviderToSession = slotGaps[1];
@@ -812,12 +564,12 @@ void drawSplashClassic() {
   drawSplashWaitingLineClassic(layout);
   drawSplashHintLineClassic(layout);
 
-  lastRenderedSecs = -1;
-  lastRenderedMinuteBucket = -1;
+  lastRenderedSecs() = -1;
+  lastRenderedMinuteBucket() = -1;
 }
 
 void tickSplashWaitingDotsClassic() {
-  if (hasFrame) {
+  if (hasFrame()) {
     return;
   }
   const unsigned long now = millis();
@@ -846,8 +598,8 @@ void drawErrorClassic(const String& message) {
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(8, 50);
   tft.println(message);
-  lastRenderedSecs = -1;
-  lastRenderedMinuteBucket = -1;
+  lastRenderedSecs() = -1;
+  lastRenderedMinuteBucket() = -1;
 }
 
 void drawResetCountdownLineClassic(int64_t remain) {
@@ -860,8 +612,8 @@ void drawResetCountdownLineClassic(int64_t remain) {
   tft.setCursor(centeredTextX(resetLabel.c_str(), layout.resetSize), layout.resetY);
   tft.print(resetLabel);
 
-  lastRenderedSecs = remain;
-  lastRenderedMinuteBucket = remain / 60;
+  lastRenderedSecs() = remain;
+  lastRenderedMinuteBucket() = remain / 60;
 }
 
 void drawUsageClassic() {
@@ -875,18 +627,18 @@ void drawUsageClassic() {
   tft.setCursor(centeredTextX(providerText, layout.providerSize), layout.providerY);
   tft.print(providerText);
 
-  const String sessionLabel = String("Session ") + String(current.session) + "% used";
-  const String weeklyLabel = String("Weekly ") + String(current.weekly) + "% used";
+  const String sessionLabel = String("Session ") + String(current().session) + "% used";
+  const String weeklyLabel = String("Weekly ") + String(current().weekly) + "% used";
 
   setClassicTextSize(layout.labelSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(centeredTextX(sessionLabel.c_str(), layout.labelSize), layout.label1Y);
   tft.print(sessionLabel);
-  drawBar(layout.x, layout.bar1Y, layout.w, layout.barH, current.session, TFT_CYAN);
+  drawBar(layout.x, layout.bar1Y, layout.w, layout.barH, current().session, TFT_CYAN);
 
   tft.setCursor(centeredTextX(weeklyLabel.c_str(), layout.labelSize), layout.label2Y);
   tft.print(weeklyLabel);
-  drawBar(layout.x, layout.bar2Y, layout.w, layout.barH, current.weekly, TFT_GREEN);
+  drawBar(layout.x, layout.bar2Y, layout.w, layout.barH, current().weekly, TFT_GREEN);
 
   drawResetCountdownLineClassic(remain);
 }
@@ -956,12 +708,12 @@ void drawSplashCRT() {
   drawSplashWaitingLineCRT();
   drawSplashHintLineCRT();
 
-  lastRenderedSecs = -1;
-  lastRenderedMinuteBucket = -1;
+  lastRenderedSecs() = -1;
+  lastRenderedMinuteBucket() = -1;
 }
 
 void tickSplashWaitingDotsCRT() {
-  if (hasFrame) {
+  if (hasFrame()) {
     return;
   }
   const unsigned long now = millis();
@@ -1001,8 +753,8 @@ void drawErrorCRT(const String& message) {
   tft.print(message);
   tft.setTextWrap(false);
 
-  lastRenderedSecs = -1;
-  lastRenderedMinuteBucket = -1;
+  lastRenderedSecs() = -1;
+  lastRenderedMinuteBucket() = -1;
 }
 
 void drawResetCountdownLineCRT(int64_t remain) {
@@ -1025,14 +777,14 @@ void drawResetCountdownLineCRT(int64_t remain) {
   tft.setCursor(rightAlignedTextXCrt(countdown.c_str(), 8), resetY);
   tft.print(countdown);
 
-  lastRenderedSecs = remain;
-  lastRenderedMinuteBucket = remain / 60;
+  lastRenderedSecs() = remain;
+  lastRenderedMinuteBucket() = remain / 60;
 }
 
 void drawUsageCRT() {
   const int64_t remain = currentRemainingSecs();
-  const int session = vibeblock::core::ClampPct(current.session);
-  const int weekly = vibeblock::core::ClampPct(current.weekly);
+  const int session = vibeblock::core::ClampPct(current().session);
+  const int weekly = vibeblock::core::ClampPct(current().weekly);
   const int innerBarWidth = kCrtBodyW - 2;
   const int innerBarHeight = kCrtBarH - 2;
 
@@ -1091,8 +843,8 @@ void drawSplashMini() {
   tft.setCursor(12, 70);
   tft.print("GIF: /mini.gif");
 
-  lastRenderedSecs = -1;
-  lastRenderedMinuteBucket = -1;
+  lastRenderedSecs() = -1;
+  lastRenderedMinuteBucket() = -1;
 }
 
 void tickSplashWaitingDotsMini() {
@@ -1119,8 +871,8 @@ void drawErrorMini(const String& message) {
   tft.print(message);
   tft.setTextWrap(false);
 
-  lastRenderedSecs = -1;
-  lastRenderedMinuteBucket = -1;
+  lastRenderedSecs() = -1;
+  lastRenderedMinuteBucket() = -1;
 }
 
 void drawResetCountdownLineMini(int64_t remain) {
@@ -1137,13 +889,13 @@ void drawResetCountdownLineMini(int64_t remain) {
   tft.setCursor(10, resetY + 6);
   tft.print(resetLabel);
 
-  lastRenderedSecs = remain;
-  lastRenderedMinuteBucket = remain / 60;
+  lastRenderedSecs() = remain;
+  lastRenderedMinuteBucket() = remain / 60;
 }
 
 void drawUsageMini() {
   const int64_t remain = currentRemainingSecs();
-  (void)ensureMiniGifPlayback();
+  (void)gifCore.EnsureReady(tft, miniThemeGifRequest());
 
   const int contentRight = tft.width() - miniGifReservedWidth() - (kMiniGifMargin * 2);
   const int maxValueWidth = contentRight > 90 ? contentRight : 120;
@@ -1157,7 +909,7 @@ void drawUsageMini() {
   tft.print(providerLabelText());
 
   char pctBuf[8];
-  std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", vibeblock::core::ClampPct(current.session));
+  std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", vibeblock::core::ClampPct(current().session));
   int sessionValueSize = chooseTextSizeToFit(pctBuf, 7, 4, maxValueWidth);
   tft.setTextFont(1);
   tft.setTextSize(1);
@@ -1170,7 +922,7 @@ void drawUsageMini() {
   tft.setCursor(10, 46);
   tft.print(pctBuf);
 
-  std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", vibeblock::core::ClampPct(current.weekly));
+  std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", vibeblock::core::ClampPct(current().weekly));
   int weeklyValueSize = chooseTextSizeToFit(pctBuf, 7, 4, maxValueWidth);
   tft.setTextFont(1);
   tft.setTextSize(1);
@@ -1191,9 +943,11 @@ void drawUsageMini() {
 void drawSplash() {
   switch (activeTheme) {
     case Theme::Mini:
+      stopMiniGifPlayback();
       drawSplashMini();
       return;
     case Theme::CRT:
+      stopMiniGifPlayback();
       drawSplashCRT();
       return;
     case Theme::Classic:
@@ -1219,6 +973,7 @@ void tickSplashWaitingDots() {
 }
 
 void drawError(const String& message) {
+  stopMiniGifPlayback();
   switch (activeTheme) {
     case Theme::Mini:
       drawErrorMini(message);
@@ -1254,17 +1009,19 @@ void drawUsage() {
       drawUsageMini();
       return;
     case Theme::CRT:
+      stopMiniGifPlayback();
       drawUsageCRT();
       return;
     case Theme::Classic:
     default:
+      stopMiniGifPlayback();
       drawUsageClassic();
       return;
   }
 }
 #else
 void renderProbe() {
-  if (!hasFrame) {
+  if (!hasFrame()) {
     if (probeLastHasFrame) {
       Serial.println("probe_waiting_for_frame");
       probeLastHasFrame = false;
@@ -1280,51 +1037,51 @@ void renderProbe() {
   }
 
   const int64_t remain = currentRemainingSecs();
-  if (current.hasError) {
-    const bool changed = !probeLastHasFrame || !probeLastHadError || current.error != probeLastError;
+  if (current().hasError) {
+    const bool changed = !probeLastHasFrame || !probeLastHadError || current().error != probeLastError;
     if (changed) {
-      Serial.printf("probe_error error=%s\n", current.error.c_str());
+      Serial.printf("probe_error error=%s\n", current().error.c_str());
     }
     probeLastHasFrame = true;
     probeLastHadError = true;
-    probeLastError = current.error;
-    probeLastProvider = current.provider;
-    probeLastLabel = current.label;
-    probeLastSession = current.session;
-    probeLastWeekly = current.weekly;
+    probeLastError = current().error;
+    probeLastProvider = current().provider;
+    probeLastLabel = current().label;
+    probeLastSession = current().session;
+    probeLastWeekly = current().weekly;
     probeLastRemainSecs = remain;
-    lastRenderedSecs = remain;
+    lastRenderedSecs() = remain;
     return;
   }
 
   const bool changed =
       !probeLastHasFrame ||
       probeLastHadError ||
-      current.provider != probeLastProvider ||
-      current.label != probeLastLabel ||
-      current.session != probeLastSession ||
-      current.weekly != probeLastWeekly ||
+      current().provider != probeLastProvider ||
+      current().label != probeLastLabel ||
+      current().session != probeLastSession ||
+      current().weekly != probeLastWeekly ||
       remain != probeLastRemainSecs;
 
   if (changed) {
     Serial.printf(
         "probe_usage label=%s provider=%s session=%d weekly=%d reset=%s\n",
-        current.label.c_str(),
-        current.provider.c_str(),
-        current.session,
-        current.weekly,
+        current().label.c_str(),
+        current().provider.c_str(),
+        current().session,
+        current().weekly,
         formatDuration(remain).c_str());
   }
 
   probeLastHasFrame = true;
   probeLastHadError = false;
   probeLastError = "";
-  probeLastProvider = current.provider;
-  probeLastLabel = current.label;
-  probeLastSession = current.session;
-  probeLastWeekly = current.weekly;
+  probeLastProvider = current().provider;
+  probeLastLabel = current().label;
+  probeLastSession = current().session;
+  probeLastWeekly = current().weekly;
   probeLastRemainSecs = remain;
-  lastRenderedSecs = remain;
+  lastRenderedSecs() = remain;
 }
 #endif
 
@@ -1341,7 +1098,7 @@ void RendererESP8266::Setup(app::RuntimeContext& ctx) {
 #endif
   tft.init();
   tft.setRotation(0);
-  (void)ensureMiniGifStorageReady();
+  gifCore.Setup(kMiniGifPath);
 #endif
 }
 
@@ -1350,23 +1107,27 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
 
 #ifndef VIBEBLOCK_PROBE_ONLY
   Theme previousTheme = activeTheme;
-  if (current.hasTheme) {
+  if (current().hasTheme) {
     Theme frameTheme;
-    if (themeFromName(current.theme, frameTheme) && frameTheme != activeTheme) {
+    if (themeFromName(current().theme, frameTheme) && frameTheme != activeTheme) {
       activeTheme = frameTheme;
-      screenDirty = true;
+      screenDirty() = true;
     }
   }
 
   if (previousTheme == Theme::Mini && activeTheme != Theme::Mini) {
-    closeMiniGifPlayback();
+    stopMiniGifPlayback();
   } else if (activeTheme == Theme::Mini && (event.visualChanged || event.themeChanged)) {
-    miniGif.nextFrameAtMs = 0;
+    gifCore.ResetFrameSchedule();
+  }
+
+  if (!event.hadFrame) {
+    stopMiniGifPlayback();
   }
 #endif
 
   if (event.visualChanged) {
-    screenDirty = true;
+    screenDirty() = true;
   }
 }
 
@@ -1376,7 +1137,7 @@ void RendererESP8266::DrawSplash(app::RuntimeContext& ctx) {
 #ifndef VIBEBLOCK_PROBE_ONLY
   drawSplash();
 #else
-  if (!hasFrame) {
+  if (!hasFrame()) {
     Serial.println("probe_waiting_for_frame");
   }
 #endif
@@ -1426,7 +1187,7 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   drawResetCountdownLine(remainSecs);
 #else
   (void)remainSecs;
-  screenDirty = true;
+  screenDirty() = true;
 #endif
 }
 

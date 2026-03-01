@@ -90,7 +90,53 @@ func TestRunCycleWithDepsSkipsThemeWhenDeviceDoesNotSupportIt(t *testing.T) {
 	}
 }
 
-func TestRunCycleWithDepsKeepsThemeForUnknownDeviceCapabilities(t *testing.T) {
+func TestRunCycleWithDepsAppliesThemeWhenDeviceSupportsIt(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	for _, requestedTheme := range []string{"classic", "crt", "mini"} {
+		t.Run(requestedTheme, func(t *testing.T) {
+			t.Setenv(themeEnvVar, requestedTheme)
+
+			now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+			state := &runtimeState{
+				selector: codexbar.NewProviderSelector(),
+			}
+
+			var sentLine []byte
+			err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+				now:         func() time.Time { return now },
+				resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+				deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+					return protocol.DeviceCapabilities{
+						Known:         true,
+						Board:         "esp8266-smalltv-st7789",
+						SupportsTheme: true,
+					}, nil
+				},
+				fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+					return []codexbar.ParsedFrame{
+						testParsedFrame("codex", 12, 30, 3600),
+					}, nil
+				},
+				logf: func(string, ...any) {},
+				sendLine: func(port string, line []byte) error {
+					sentLine = append([]byte(nil), line...)
+					return nil
+				},
+			})
+			if err != nil {
+				t.Fatalf("expected cycle success, got %v", err)
+			}
+
+			frame := decodeFrameLine(t, sentLine)
+			if frame.Theme != requestedTheme {
+				t.Fatalf("expected theme %q for supported device, got %q", requestedTheme, frame.Theme)
+			}
+		})
+	}
+}
+
+func TestRunCycleWithDepsSkipsThemeForUnknownDeviceCapabilities(t *testing.T) {
 	prepareFastTestEnv(t)
 	t.Setenv(themeEnvVar, "crt")
 
@@ -122,8 +168,8 @@ func TestRunCycleWithDepsKeepsThemeForUnknownDeviceCapabilities(t *testing.T) {
 	}
 
 	frame := decodeFrameLine(t, sentLine)
-	if frame.Theme != "crt" {
-		t.Fatalf("expected theme to remain for unknown device capabilities, got %q", frame.Theme)
+	if frame.Theme != "" {
+		t.Fatalf("expected theme to be skipped for unknown device capabilities, got %q", frame.Theme)
 	}
 }
 

@@ -406,7 +406,7 @@ func applyThemeToFrame(frame protocol.Frame, selectedTheme string, caps protocol
 	if selectedTheme == "" {
 		return frame, false
 	}
-	if !caps.Known || caps.SupportsTheme {
+	if caps.Known && caps.SupportsTheme {
 		frame.Theme = selectedTheme
 		return frame, true
 	}

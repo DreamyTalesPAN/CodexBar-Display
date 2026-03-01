@@ -26,7 +26,7 @@ Fields:
 
 Theme registry source of truth:
 - `protocol/theme_registry.json` (`id -> protocolName -> compileDefaultMacro`)
-- `protocol/compatibility_matrix.json` (`companion <-> firmware` SemVer compatibility rules)
+- `protocol/compatibility_matrix.json` (`companion <-> firmware` SemVer compatibility rules + default env -> firmware version mapping)
 
 Golden frame fixtures:
 - `protocol/fixtures/v1/companion_frame_golden.json`

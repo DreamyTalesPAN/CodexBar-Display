@@ -1,44 +1,31 @@
-# vibeblock TODO (v0, Open Work Only)
+# vibeblock TODO (v0, Open Work)
 
-## Ziel (v0)
-- Eine stabile ESP8266-Firmware auf SmallTV ST7789 mit drei Runtime-Themes: `classic`, `crt`, `mini`.
-- `esp8266_smalltv_st7789` ist der einzige release-gated MVP-Pfad.
-- `esp8266_smalltv_st7789_alt` bleibt supported Variante (best effort, non-blocking).
-- ESP32-S3 bleibt Fallback/experimental und blockiert keinen Release.
-- Mini-GIF bleibt erhalten, und der GIF-Teil soll als wiederverwendbarer Core fuer neue Themes ausbaubar sein.
+## Scope Lock
+- Release-gated env: `esp8266_smalltv_st7789`.
+- Non-blocking envs: `esp8266_smalltv_st7789_alt` (supported variant), `lilygo_t_display_s3` (experimental fallback).
+- Runtime themes only (`classic`, `crt`, `mini`) on the same firmware.
+- Theme contract remains strict feature-gated (`theme` only when `hello.features` includes `theme`).
+- GIF core is reusable/modular; current product scope keeps GIF playback only in `mini`.
+- No runtime media upload protocol in v0.
 
-## Scope-Fix (bleibt konstant)
-- Release-gated Env: `esp8266_smalltv_st7789`.
-- Non-blocking Envs: `esp8266_smalltv_st7789_alt` (supported Variante), `lilygo_t_display_s3` (experimental fallback).
-- Standard-Operator-Flow nutzt nur Runtime-Theme-Switching, keine separaten Theme- oder GIF-Firmware-Builds.
-- Theme-Contract fuer v0: strict feature-gated (`theme` nur senden, wenn `hello.features` `theme` enthaelt; bei unknown/legacy hello kein Theme-Override senden).
-- Kein Runtime-Media-Upload-Protokoll fuer v0.
+## P0 (Ship Blockers)
+- [ ] E2E acceptance on at least 2 macOS machines.
+- [ ] Execute the full release readiness checklist in `docs/operator-runbook.md`.
+- [ ] Execute the `RC -> soak -> final` flow from `docs/operator-runbook.md` and document the decision.
 
-## P0 (Ship-Blocker, in Reihenfolge)
-- [ ] Release-Policy konsistent ziehen: README/Runbook/Protocol/CI auf "nur `esp8266_smalltv_st7789` ist release-blockend" angleichen.
-- [ ] Hardware-Contract als klare Referenz dokumentieren (`docs/hardware-contract.md`) fuer ESP8266-Zielhardware.
-- [ ] Theme-Contract strict feature-gated im Code + Tests + Doku konsistent machen.
-- [ ] Versioning-Contract schliessen: `protocol/compatibility_matrix.json` vs. Companion-Guard harmonisieren und Firmware-SemVer aus Release-Version ableiten (statt statisch `1.0.0`).
-- [ ] `doctor`/`setup` auf stabile Feldfaelle haerten: Board/Protocol-Checks, busy ports, reconnect/sleep-wake, sichere Port-Affinity.
-- [ ] Einen fokussierten ESP8266-Soak-Gate einfuehren (`classic`/`crt`/`mini` Theme-Switch + reconnect + sleep/wake).
-- [ ] GIF-Core aus dem aktuellen Mini-Theme-Pfad extrahieren (wiederverwendbarer Player statt Mini-only-Logik).
-- [ ] GIF-Core mit konfigurierbarem Asset-Pfad und Zeichenbereich aufbauen; `/mini.gif` bleibt kompatibel.
-- [ ] Mindestens einen zweiten Theme-Use-Case ueber denselben GIF-Core anbinden (z. B. Fullscreen-Splash-GIF), ohne separaten Firmware-Mode.
-- [ ] Garantieren: fehlendes/defektes GIF fuehrt nie zu Reboot-Loop oder Black-Screen-Loop.
+## P1 (Next, Non-Blocking)
+- [ ] Split `firmware_esp8266/src/renderer_esp8266.cpp` into theme-focused modules (`classic`, `crt`, `mini`) without behavior changes.
+- [ ] Extract probe rendering path into its own module to shrink renderer responsibilities.
+- [ ] Add targeted tests for GIF-core fallback/backoff and request switching behavior.
 
-## P1 (nach P0)
-- [ ] Go/No-Go-Checkliste finalisieren (Funktion, Stabilitaet, Setup, Upgrade, Rollback, Docs).
-- [ ] E2E-Abnahme auf mindestens 2 macOS-Maschinen laufen lassen.
-- [ ] RC-Flow sauber ziehen (RC -> Soak -> Final).
-
-## v0 Done-Kriterien
-- [ ] Keine offenen P0/P1-Bugs auf dem release-gated Flow (`esp8266_smalltv_st7789`).
-- [ ] `esp8266_smalltv_st7789_alt` ist lauffaehig als best-effort Variante (non-blocking).
-- [ ] `classic`, `crt`, `mini` laufen stabil auf `esp8266_smalltv_st7789` ohne Reflash beim Theme-Wechsel.
-- [ ] Mini-GIF und der neue GIF-Core bestehen die Stabilitaets-Gates.
-- [ ] Setup/Upgrade/Rollback/Troubleshooting-Doku ist konsistent mit dem echten Operator-Flow.
+## v0 Done Criteria
+- [ ] No open P0/P1 bugs on `esp8266_smalltv_st7789`.
+- [ ] `esp8266_smalltv_st7789_alt` runs as best-effort non-blocking variant.
+- [ ] `classic`, `crt`, `mini` run stable on `esp8266_smalltv_st7789` without reflashing.
+- [ ] Mini GIF path remains stable and falls back cleanly when assets are missing/corrupt.
+- [ ] `README.md`, `docs/operator-runbook.md`, `docs/hardware-contract.md`, and `protocol/PROTOCOL.md` are consistent.
 
 ## Out of Scope (v0)
-- Externes Theme-SDK oder Third-Party-Theme-Packaging.
-- `vibeblock theme init/dev/validate/build/flash/test` Command-Familie.
-- Separater GIF-Player-Firmwarepfad mit eigenem Upload-Protokoll.
+- External theme SDK or third-party theme packaging.
+- `vibeblock theme init/dev/validate/build/flash/test` command family.
+- Separate GIF-player firmware track with its own upload protocol.

@@ -120,7 +120,7 @@ func runDoctor() error {
 		}
 	}
 
-	if runtimeErr := runDoctorRuntimeChecks(); runtimeErr != nil {
+	if runtimeErr := runDoctorRuntimeChecks(ports); runtimeErr != nil {
 		doctorErrs = append(doctorErrs, runtimeErr)
 	}
 
@@ -144,7 +144,7 @@ func runDoctor() error {
 	return nil
 }
 
-func runDoctorRuntimeChecks() error {
+func runDoctorRuntimeChecks(ports []string) error {
 	fmt.Println("Runtime checks:")
 	fmt.Printf("  codexbar timeout: %s\n", codexbar.CommandTimeout())
 	fmt.Printf("  last-good max age: %s\n", daemon.LastGoodMaxAge())
@@ -162,6 +162,29 @@ func runDoctorRuntimeChecks() error {
 		return fmt.Errorf("runtime serial probe failed: %w", err)
 	}
 	fmt.Printf("  serial probe: ok (%s)\n", port)
+
+	pinnedPort, err := doctorPinnedLaunchAgentPort()
+	if err != nil {
+		fmt.Printf("  launchagent port affinity: failed (%v)\n", err)
+		return fmt.Errorf("runtime launchagent affinity check failed: %w", err)
+	}
+	if pinnedPort == "" {
+		fmt.Println("  launchagent port affinity: auto-detect")
+		if len(ports) > 1 {
+			return fmt.Errorf(
+				"runtime port affinity check failed: %d serial ports detected while LaunchAgent is unpinned; rerun setup with --pin-port",
+				len(ports),
+			)
+		}
+	} else {
+		fmt.Printf("  launchagent port affinity: pinned (%s)\n", pinnedPort)
+		if len(ports) > 0 && !containsPort(ports, pinnedPort) {
+			return fmt.Errorf(
+				"runtime port affinity check failed: pinned LaunchAgent port %q is not currently available",
+				pinnedPort,
+			)
+		}
+	}
 
 	hello, err := usb.ReadDeviceHello(port)
 	if err != nil {
@@ -525,4 +548,52 @@ func fileExists(path string) bool {
 		return false
 	}
 	return !info.IsDir()
+}
+
+func containsPort(ports []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, port := range ports {
+		if strings.TrimSpace(port) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func doctorPinnedLaunchAgentPort() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "com.vibeblock.daemon.plist")
+	data, err := os.ReadFile(plistPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	return parsePinnedPortFromLaunchAgentPlist(string(data)), nil
+}
+
+func parsePinnedPortFromLaunchAgentPlist(plist string) string {
+	const marker = "<string>--port</string>"
+	idx := strings.Index(plist, marker)
+	if idx < 0 {
+		return ""
+	}
+	rest := plist[idx+len(marker):]
+	start := strings.Index(rest, "<string>")
+	if start < 0 {
+		return ""
+	}
+	rest = rest[start+len("<string>"):]
+	end := strings.Index(rest, "</string>")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:end])
 }
