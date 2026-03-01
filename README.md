@@ -8,9 +8,9 @@ It reads local usage data from `codexbar usage --json`, selects one active provi
 
 - Pre-release: there is no public vibeblock release yet.
 - No market device fleet yet; current hardware baseline is the connected ESP8266 SmallTV development unit.
-- First release scope includes rich rendering (`usage` + media on one screen) with built-in themes only, tracked in `protocol/PROTOCOL.md` and `TODO.md`.
-- v1 production hardware target is ESP8266 SmallTV ST7789.
-- ESP32 LilyGO T-Display-S3 remains in-repo as experimental/non-blocking for v1.
+- v0 scope includes rich rendering (`usage` + GIF media on one screen) with built-in themes only, tracked in `protocol/PROTOCOL.md` and `TODO.md`.
+- v0 production hardware target is ESP8266 SmallTV ST7789.
+- ESP32 LilyGO T-Display-S3 remains in-repo as experimental/non-blocking for v0.
 
 Core dependency:
 - CodexBar: https://codexbar.app/
@@ -21,14 +21,15 @@ Core dependency:
 
 ## Key Capabilities
 
-- V1 release-gated firmware target:
+- v0 release-gated firmware target:
   - ESP8266 SmallTV ST7789 profile (default setup target)
-- Experimental firmware target (non-blocking for v1):
+- Experimental firmware target (non-blocking for v0):
   - ESP32 LilyGO T-Display-S3 profile
 - Shared firmware core for frame parsing and runtime state across boards
 - Device handshake and capability detection (`hello`, board ID, features)
 - Companion-side feature gating (for example optional `theme` field)
 - Theme system on ESP8266 SmallTV (`classic`, `crt`)
+- GIF player mode for full-color loop playback with timeline-preserving catch-up frame drops
 - One-command setup for flash + install + launch agent management
 - Runtime hardening for reconnect and sleep/wake workflows
 - Upgrade and rollback flows with compatibility guard + known-good recovery state
@@ -45,14 +46,16 @@ Protocol references:
 
 ## Supported Firmware Environments
 
-V1 release-gated:
+v0 release-gated:
 - `esp8266_smalltv_st7789` (default)
 - `esp8266_smalltv_st7789_crt`
 - `esp8266_smalltv_st7789_alt`
 - `esp8266_smalltv_st7789_alt_crt`
 - `esp8266_probe` (no-display probe profile)
+- `esp8266_smalltv_st7789_gif_player` (GIF loop playback profile)
+- `esp8266_smalltv_st7789_alt_gif_player` (GIF loop playback alt pin mapping)
 
-Experimental (non-blocking for v1):
+Experimental (non-blocking for v0):
 - `lilygo_t_display_s3`
 
 ## Theme Support
@@ -104,8 +107,11 @@ Common setup variants:
 # skip flashing (already flashed device)
 go run ./cmd/vibeblock setup --yes --skip-flash --port /dev/cu.usbserial-10
 
-# explicit ESP32 firmware target (experimental for v1)
+# explicit ESP32 firmware target (experimental for v0)
 go run ./cmd/vibeblock setup --yes --firmware-env lilygo_t_display_s3 --port /dev/cu.usbmodem101
+
+# v0 GIF workflow: upload and loop a local GIF on GIF-player firmware
+go run ./cmd/vibeblock gif-upload --port /dev/cu.usbserial-10 --gif ~/Downloads/testgif3.gif
 ```
 
 ## Operations
@@ -119,6 +125,7 @@ go run ./cmd/vibeblock version
 go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
 go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
 go run ./cmd/vibeblock restore-known-good --port /dev/cu.usbserial-10
+go run ./cmd/vibeblock gif-upload --port /dev/cu.usbserial-10 --gif ~/Downloads/testgif3.gif
 ../scripts/upgrade-with-preflight.sh --firmware-env esp8266_smalltv_st7789
 ../scripts/rollback-last-known-good.sh --port /dev/cu.usbserial-10
 ```
@@ -140,8 +147,9 @@ Firmware builds:
 ```bash
 cd firmware_esp8266
 pio run -e esp8266_smalltv_st7789
+pio run -e esp8266_smalltv_st7789_gif_player
 
-# optional ESP32 build (experimental for v1)
+# optional ESP32 build (experimental for v0)
 cd ../firmware
 pio run -e lilygo_t_display_s3
 ```
@@ -149,8 +157,8 @@ pio run -e lilygo_t_display_s3
 ## Repository Map
 
 - `companion/` - Go CLI/daemon (`setup`, `doctor`, `health`, runtime)
-- `firmware/` - ESP32 firmware (experimental for v1)
-- `firmware_esp8266/` - ESP8266 firmware and board profiles (v1 production target)
+- `firmware/` - ESP32 firmware (experimental for v0)
+- `firmware_esp8266/` - ESP8266 firmware and board profiles (`v0` production target, including GIF player profiles)
 - `firmware_shared/` - shared firmware core (parser/state)
 - `protocol/` - protocol documentation
 - `docs/` - operator and engineering docs

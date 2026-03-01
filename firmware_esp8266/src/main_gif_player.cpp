@@ -23,78 +23,154 @@ constexpr uint8_t kDisplayRotation = 0;
 constexpr int kInitialEstimatedFrameDelayMs = 33;
 constexpr int kMaxCatchupDropsPerTick = 8;
 
+struct FrameWindow {
+  bool active = false;
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+
+  void reset() {
+    active = false;
+    x = 0;
+    y = 0;
+    width = 0;
+    height = 0;
+  }
+};
+
+struct PlaybackMetrics {
+  uint32_t renderedFrames = 0;
+  uint32_t droppedFrames = 0;
+  uint16_t lastRenderMs = 0;
+  uint16_t avgRenderMs = 0;
+  int estimatedDelayMs = kInitialEstimatedFrameDelayMs;
+
+  void reset() {
+    renderedFrames = 0;
+    droppedFrames = 0;
+    lastRenderMs = 0;
+    avgRenderMs = 0;
+    estimatedDelayMs = kInitialEstimatedFrameDelayMs;
+  }
+
+  void noteDelaySample(int sampleMs) {
+    if (sampleMs < 1) {
+      sampleMs = 1;
+    }
+    estimatedDelayMs = ((estimatedDelayMs * 7) + sampleMs) / 8;
+    if (estimatedDelayMs < 1) {
+      estimatedDelayMs = 1;
+    }
+  }
+
+  void noteRenderedFrame(unsigned long renderMs) {
+    ++renderedFrames;
+    if (renderMs > 65535UL) {
+      renderMs = 65535UL;
+    }
+    lastRenderMs = static_cast<uint16_t>(renderMs);
+    if (avgRenderMs == 0) {
+      avgRenderMs = lastRenderMs;
+      return;
+    }
+    avgRenderMs = static_cast<uint16_t>((static_cast<uint32_t>(avgRenderMs) * 7U + lastRenderMs) / 8U);
+  }
+};
+
+struct AppState {
+  bool fsReady = false;
+  bool playbackEnabled = true;
+  bool gifOpen = false;
+  bool screenNeedsMessage = true;
+  bool suppressDraw = false;
+  unsigned long nextFrameAtMs = 0;
+
+  int gifWidth = 0;
+  int gifHeight = 0;
+  int gifOffsetX = 0;
+  int gifOffsetY = 0;
+
+  FrameWindow frameWindow;
+  PlaybackMetrics metrics;
+
+  void resetPlaybackCounters() {
+    metrics.reset();
+  }
+
+  void resetFrameScheduling() {
+    nextFrameAtMs = 0;
+    frameWindow.reset();
+    suppressDraw = false;
+  }
+};
+
 TFT_eSPI tft = TFT_eSPI();
 AnimatedGIF gifDecoder;
 File gifFile;
 
+AppState app;
+
 char commandBuffer[kCommandBufferBytes];
 size_t commandLen = 0;
-
 uint16_t gifLineBuffer[kGIFLineBufferPixels];
 uint8_t* gifTurboBuffer = nullptr;
-bool fsReady = false;
-bool playbackEnabled = true;
-bool gifOpen = false;
-bool screenNeedsMessage = true;
-unsigned long nextFrameAtMs = 0;
-int gifWidth = 0;
-int gifHeight = 0;
-int gifOffsetX = 0;
-int gifOffsetY = 0;
-bool frameStreamActive = false;
-int frameStreamX = 0;
-int frameStreamY = 0;
-int frameStreamWidth = 0;
-int frameStreamHeight = 0;
-bool suppressGIFDraw = false;
-int estimatedFrameDelayMs = kInitialEstimatedFrameDelayMs;
-uint32_t renderedFrames = 0;
-uint32_t droppedFrames = 0;
-uint16_t lastRenderMs = 0;
-uint16_t avgRenderMs = 0;
+
+bool isPastDeadline(unsigned long now, unsigned long deadlineMs) {
+  return static_cast<long>(now - deadlineMs) >= 0;
+}
+
+bool isGifHeader(const uint8_t* header, size_t bytesRead) {
+  if (header == nullptr || bytesRead < 10) {
+    return false;
+  }
+  return (memcmp(header, "GIF87a", 6) == 0) || (memcmp(header, "GIF89a", 6) == 0);
+}
 
 bool readGIFDimensions(const char* path, int& width, int& height) {
   width = 0;
   height = 0;
-  if (!fsReady || path == nullptr) {
+  if (!app.fsReady || path == nullptr) {
     return false;
   }
+
   File file = LittleFS.open(path, "r");
   if (!file) {
     return false;
   }
+
   uint8_t header[10] = {0};
   const size_t bytesRead = file.read(header, sizeof(header));
   file.close();
-  if (bytesRead < sizeof(header)) {
+  if (!isGifHeader(header, bytesRead)) {
     return false;
   }
-  const bool gifHeader = (memcmp(header, "GIF87a", 6) == 0) || (memcmp(header, "GIF89a", 6) == 0);
-  if (!gifHeader) {
-    return false;
-  }
+
   width = static_cast<int>(header[6] | (static_cast<uint16_t>(header[7]) << 8));
   height = static_cast<int>(header[8] | (static_cast<uint16_t>(header[9]) << 8));
   return width > 0 && height > 0;
 }
 
 size_t fileSizeBytes(const char* path) {
-  if (!fsReady || path == nullptr || !LittleFS.exists(path)) {
+  if (!app.fsReady || path == nullptr || !LittleFS.exists(path)) {
     return 0;
   }
+
   File file = LittleFS.open(path, "r");
   if (!file) {
     return 0;
   }
+
   const size_t bytes = file.size();
   file.close();
   return bytes;
 }
 
 size_t freeFSBytes() {
-  if (!fsReady) {
+  if (!app.fsReady) {
     return 0;
   }
+
   FSInfo fsInfo;
   if (!LittleFS.info(fsInfo)) {
     return 0;
@@ -110,6 +186,7 @@ size_t writeBudgetBytes() {
   if (freeBytes <= kFSReserveBytes) {
     return 0;
   }
+
   freeBytes -= kFSReserveBytes;
   if (freeBytes > kMaxGIFBytes) {
     freeBytes = kMaxGIFBytes;
@@ -123,6 +200,7 @@ size_t advertisedBudgetBytes() {
   if (budget <= kFSReserveBytes) {
     return 0;
   }
+
   budget -= kFSReserveBytes;
   if (budget > kMaxGIFBytes) {
     budget = kMaxGIFBytes;
@@ -137,9 +215,11 @@ void drawStatusScreen(const char* line1, const char* line2 = "") {
   tft.setTextSize(1);
   tft.setCursor(8, 24);
   tft.println("vibeblock gif player");
+
   tft.setTextColor(TFT_CYAN, TFT_BLACK);
   tft.setCursor(8, 58);
   tft.println(line1 == nullptr ? "" : line1);
+
   if (line2 != nullptr && line2[0] != '\0') {
     tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     tft.setCursor(8, 84);
@@ -148,31 +228,59 @@ void drawStatusScreen(const char* line1, const char* line2 = "") {
 }
 
 void closeGIFPlayback() {
-  if (gifOpen) {
+  if (app.gifOpen) {
     gifDecoder.close();
   }
-  gifOpen = false;
-  frameStreamActive = false;
-  suppressGIFDraw = false;
-  nextFrameAtMs = 0;
+  app.gifOpen = false;
+  app.resetFrameScheduling();
 }
 
 void resetPlaybackState() {
   closeGIFPlayback();
-  screenNeedsMessage = true;
+  app.screenNeedsMessage = true;
+}
+
+void resetPlaybackMetrics() {
+  app.resetPlaybackCounters();
+}
+
+void resetFrameWindowForFrame(const GIFDRAW* draw) {
+  app.frameWindow.reset();
+  if (draw == nullptr || draw->ucHasTransparency) {
+    return;
+  }
+
+  const int frameX = app.gifOffsetX + draw->iX;
+  const int frameY = app.gifOffsetY + draw->iY;
+  if (frameX < 0 || frameY < 0 || draw->iWidth <= 0 || draw->iHeight <= 0) {
+    return;
+  }
+  if (frameX + draw->iWidth > tft.width() || frameY + draw->iHeight > tft.height()) {
+    return;
+  }
+
+  app.frameWindow.active = true;
+  app.frameWindow.x = frameX;
+  app.frameWindow.y = frameY;
+  app.frameWindow.width = draw->iWidth;
+  app.frameWindow.height = draw->iHeight;
+  tft.setAddrWindow(app.frameWindow.x, app.frameWindow.y, app.frameWindow.width, app.frameWindow.height);
 }
 
 void* GIFOpenFileCallback(const char* filename, int32_t* pFileSize) {
-  if (!fsReady || filename == nullptr || pFileSize == nullptr) {
+  if (!app.fsReady || filename == nullptr || pFileSize == nullptr) {
     return nullptr;
   }
+
   if (gifFile) {
     gifFile.close();
   }
+
   gifFile = LittleFS.open(filename, "r");
   if (!gifFile) {
     return nullptr;
   }
+
   *pFileSize = static_cast<int32_t>(gifFile.size());
   return static_cast<void*>(&gifFile);
 }
@@ -188,6 +296,7 @@ int32_t GIFReadFileCallback(GIFFILE* pFile, uint8_t* pBuf, int32_t iLen) {
   if (pFile == nullptr || pFile->fHandle == nullptr || pBuf == nullptr || iLen <= 0) {
     return 0;
   }
+
   File* file = static_cast<File*>(pFile->fHandle);
   int32_t bytesToRead = iLen;
   const int32_t remaining = pFile->iSize - pFile->iPos;
@@ -197,6 +306,7 @@ int32_t GIFReadFileCallback(GIFFILE* pFile, uint8_t* pBuf, int32_t iLen) {
   if (bytesToRead <= 0) {
     return 0;
   }
+
   const int32_t bytesRead = static_cast<int32_t>(file->read(pBuf, static_cast<size_t>(bytesToRead)));
   pFile->iPos = static_cast<int32_t>(file->position());
   return bytesRead;
@@ -206,36 +316,67 @@ int32_t GIFSeekFileCallback(GIFFILE* pFile, int32_t iPosition) {
   if (pFile == nullptr || pFile->fHandle == nullptr || iPosition < 0) {
     return -1;
   }
+
   File* file = static_cast<File*>(pFile->fHandle);
   if (!file->seek(static_cast<size_t>(iPosition), SeekSet)) {
     return -1;
   }
+
   pFile->iPos = static_cast<int32_t>(file->position());
   return pFile->iPos;
 }
 
-void GIFDrawCallback(GIFDRAW* pDraw) {
-  if (pDraw == nullptr) {
-    return;
-  }
-  if (suppressGIFDraw) {
-    return;
-  }
-  const int frameX = gifOffsetX + pDraw->iX;
-  const int frameY = gifOffsetY + pDraw->iY;
-  if (pDraw->y == 0) {
-    frameStreamActive = false;
-    if (!pDraw->ucHasTransparency && frameX >= 0 && frameY >= 0 &&
-        frameX + pDraw->iWidth <= tft.width() &&
-        frameY + pDraw->iHeight <= tft.height() &&
-        pDraw->iWidth > 0 && pDraw->iHeight > 0) {
-      frameStreamActive = true;
-      frameStreamX = frameX;
-      frameStreamY = frameY;
-      frameStreamWidth = pDraw->iWidth;
-      frameStreamHeight = pDraw->iHeight;
-      tft.setAddrWindow(frameStreamX, frameStreamY, frameStreamWidth, frameStreamHeight);
+void drawTransparentSegments(int drawX, int drawY, uint8_t* src, int lineWidth, uint16_t* palette, uint8_t transparent) {
+  uint8_t* cursor = src;
+  uint8_t* end = src + lineWidth;
+  int x = 0;
+
+  while (x < lineWidth) {
+    int count = 0;
+    uint16_t* out = gifLineBuffer;
+    while (cursor < end && count < kGIFLineBufferPixels) {
+      const uint8_t index = *cursor;
+      if (index == transparent) {
+        break;
+      }
+      *out++ = palette[index];
+      ++cursor;
+      ++count;
     }
+
+    if (count > 0) {
+      tft.setAddrWindow(drawX + x, drawY, count, 1);
+      tft.pushPixels(gifLineBuffer, count);
+      x += count;
+    }
+
+    while (cursor < end && *cursor == transparent) {
+      ++cursor;
+      ++x;
+    }
+  }
+}
+
+bool canStreamOpaqueLine(int srcOffset, int drawX, int drawY, int lineWidth) {
+  if (!app.frameWindow.active) {
+    return false;
+  }
+  if (srcOffset != 0) {
+    return false;
+  }
+  if (drawX != app.frameWindow.x || lineWidth != app.frameWindow.width) {
+    return false;
+  }
+  return drawY >= app.frameWindow.y && drawY < (app.frameWindow.y + app.frameWindow.height);
+}
+
+void GIFDrawCallback(GIFDRAW* pDraw) {
+  if (pDraw == nullptr || app.suppressDraw) {
+    return;
+  }
+
+  if (pDraw->y == 0) {
+    resetFrameWindowForFrame(pDraw);
   }
 
   int lineWidth = pDraw->iWidth;
@@ -245,12 +386,10 @@ void GIFDrawCallback(GIFDRAW* pDraw) {
   if (lineWidth > kGIFLineBufferPixels) {
     lineWidth = kGIFLineBufferPixels;
   }
-  int drawX = gifOffsetX + pDraw->iX;
-  int drawY = gifOffsetY + pDraw->iY + pDraw->y;
-  if (drawY < 0 || drawY >= tft.height()) {
-    return;
-  }
-  if (drawX >= tft.width()) {
+
+  int drawX = app.gifOffsetX + pDraw->iX;
+  int drawY = app.gifOffsetY + pDraw->iY + pDraw->y;
+  if (drawY < 0 || drawY >= tft.height() || drawX >= tft.width()) {
     return;
   }
 
@@ -262,6 +401,7 @@ void GIFDrawCallback(GIFDRAW* pDraw) {
   if (srcOffset >= lineWidth) {
     return;
   }
+
   lineWidth -= srcOffset;
   if (drawX + lineWidth > tft.width()) {
     lineWidth = tft.width() - drawX;
@@ -286,70 +426,42 @@ void GIFDrawCallback(GIFDRAW* pDraw) {
   }
 
   if (pDraw->ucHasTransparency) {
-    frameStreamActive = false;
-    const uint8_t transparent = pDraw->ucTransparent;
-    uint8_t* cursor = src;
-    uint8_t* end = src + lineWidth;
-    int x = 0;
-    while (x < lineWidth) {
-      int count = 0;
-      uint16_t* out = gifLineBuffer;
-      while (cursor < end && count < kGIFLineBufferPixels) {
-        const uint8_t index = *cursor;
-        if (index == transparent) {
-          break;
-        }
-        *out++ = palette[index];
-        ++cursor;
-        ++count;
-      }
-      if (count > 0) {
-        tft.setAddrWindow(drawX + x, drawY, count, 1);
-        tft.pushPixels(gifLineBuffer, count);
-        x += count;
-      }
-      while (cursor < end && *cursor == transparent) {
-        ++cursor;
-        ++x;
-      }
-    }
+    app.frameWindow.reset();
+    drawTransparentSegments(drawX, drawY, src, lineWidth, palette, pDraw->ucTransparent);
     return;
   }
 
   for (int i = 0; i < lineWidth; ++i) {
     gifLineBuffer[i] = palette[src[i]];
   }
-  const bool canStreamLine =
-      frameStreamActive &&
-      srcOffset == 0 &&
-      drawX == frameStreamX &&
-      lineWidth == frameStreamWidth &&
-      drawY >= frameStreamY &&
-      drawY < (frameStreamY + frameStreamHeight);
 
-  if (canStreamLine) {
+  if (canStreamOpaqueLine(srcOffset, drawX, drawY, lineWidth)) {
     tft.pushPixels(gifLineBuffer, lineWidth);
-    if (drawY == frameStreamY + frameStreamHeight - 1) {
-      frameStreamActive = false;
+    if (drawY == app.frameWindow.y + app.frameWindow.height - 1) {
+      app.frameWindow.reset();
     }
     return;
   }
 
-  frameStreamActive = false;
+  app.frameWindow.reset();
   tft.setAddrWindow(drawX, drawY, lineWidth, 1);
   tft.pushPixels(gifLineBuffer, lineWidth);
 }
 
 bool openGIFPlayback() {
-  if (!fsReady || !LittleFS.exists(kGifPath)) {
+  if (!app.fsReady || !LittleFS.exists(kGifPath)) {
     return false;
   }
-  if (gifOpen) {
+  if (app.gifOpen) {
     return true;
   }
-  if (!readGIFDimensions(kGifPath, gifWidth, gifHeight)) {
+
+  int width = 0;
+  int height = 0;
+  if (!readGIFDimensions(kGifPath, width, height)) {
     return false;
   }
+
   closeGIFPlayback();
   if (!gifDecoder.open(
           kGifPath,
@@ -360,28 +472,28 @@ bool openGIFPlayback() {
           GIFDrawCallback)) {
     return false;
   }
-  gifOffsetX = (tft.width() - gifWidth) / 2;
-  gifOffsetY = (tft.height() - gifHeight) / 2;
-  if (gifOffsetX < 0) {
-    gifOffsetX = 0;
+
+  app.gifWidth = width;
+  app.gifHeight = height;
+  app.gifOffsetX = (tft.width() - app.gifWidth) / 2;
+  app.gifOffsetY = (tft.height() - app.gifHeight) / 2;
+  if (app.gifOffsetX < 0) {
+    app.gifOffsetX = 0;
   }
-  if (gifOffsetY < 0) {
-    gifOffsetY = 0;
+  if (app.gifOffsetY < 0) {
+    app.gifOffsetY = 0;
   }
-  gifOpen = true;
-  nextFrameAtMs = 0;
-  estimatedFrameDelayMs = kInitialEstimatedFrameDelayMs;
-  renderedFrames = 0;
-  droppedFrames = 0;
-  lastRenderMs = 0;
-  avgRenderMs = 0;
+
+  app.gifOpen = true;
+  app.nextFrameAtMs = 0;
+  resetPlaybackMetrics();
   return true;
 }
 
 bool playGIFFrame(bool drawFrame, int& delayMs, unsigned long* elapsedMs = nullptr) {
   delayMs = 0;
   const unsigned long startedAt = millis();
-  suppressGIFDraw = !drawFrame;
+  app.suppressDraw = !drawFrame;
 
   if (drawFrame) {
     tft.startWrite();
@@ -401,106 +513,106 @@ bool playGIFFrame(bool drawFrame, int& delayMs, unsigned long* elapsedMs = nullp
       tft.endWrite();
     }
     if (!played) {
-      suppressGIFDraw = false;
+      app.suppressDraw = false;
       return false;
     }
   }
 
-  suppressGIFDraw = false;
+  app.suppressDraw = false;
   if (delayMs < kMinGIFFrameDelayMs) {
     delayMs = kMinGIFFrameDelayMs;
   }
+
   if (elapsedMs != nullptr) {
     *elapsedMs = millis() - startedAt;
   }
   return true;
 }
 
+bool catchUpByDroppingFrames() {
+  int dropBudget = kMaxCatchupDropsPerTick;
+  while (dropBudget > 0) {
+    const unsigned long now = millis();
+    const long lagMs = static_cast<long>(now - app.nextFrameAtMs);
+    if (lagMs < app.metrics.estimatedDelayMs) {
+      return true;
+    }
+
+    int skippedDelayMs = 0;
+    if (!playGIFFrame(false, skippedDelayMs, nullptr)) {
+      return false;
+    }
+
+    ++app.metrics.droppedFrames;
+    app.nextFrameAtMs += static_cast<unsigned long>(skippedDelayMs);
+    app.metrics.noteDelaySample(skippedDelayMs);
+    --dropBudget;
+  }
+
+  return true;
+}
+
+bool renderDueFrame() {
+  const unsigned long frameStartMs = app.nextFrameAtMs;
+  int delayMs = 0;
+  unsigned long renderDurationMs = 0;
+  if (!playGIFFrame(true, delayMs, &renderDurationMs)) {
+    return false;
+  }
+
+  app.metrics.noteRenderedFrame(renderDurationMs);
+  app.metrics.noteDelaySample(delayMs);
+  app.nextFrameAtMs = frameStartMs + static_cast<unsigned long>(delayMs);
+  return true;
+}
+
 void tickGIFPlayback() {
-  if (!playbackEnabled) {
+  if (!app.playbackEnabled) {
     return;
   }
-  if (!fsReady || !LittleFS.exists(kGifPath)) {
+
+  if (!app.fsReady || !LittleFS.exists(kGifPath)) {
     closeGIFPlayback();
-    if (screenNeedsMessage) {
+    if (app.screenNeedsMessage) {
       drawStatusScreen("warte auf upload", "vibeblock gif-upload --gif ...");
-      screenNeedsMessage = false;
+      app.screenNeedsMessage = false;
     }
     return;
   }
+
   if (!openGIFPlayback()) {
     closeGIFPlayback();
-    if (screenNeedsMessage) {
+    if (app.screenNeedsMessage) {
       drawStatusScreen("gif konnte nicht geoeffnet werden");
-      screenNeedsMessage = false;
+      app.screenNeedsMessage = false;
     }
     return;
   }
 
   unsigned long now = millis();
-  if (nextFrameAtMs == 0) {
+  if (app.nextFrameAtMs == 0) {
     tft.fillScreen(TFT_BLACK);
-    nextFrameAtMs = now;
+    app.nextFrameAtMs = now;
   }
-  if (static_cast<long>(now - nextFrameAtMs) < 0) {
+  if (!isPastDeadline(now, app.nextFrameAtMs)) {
     return;
   }
 
-  screenNeedsMessage = false;
+  app.screenNeedsMessage = false;
 
-  int dropBudget = kMaxCatchupDropsPerTick;
-  while (dropBudget > 0) {
-    now = millis();
-    const long lagMs = static_cast<long>(now - nextFrameAtMs);
-    if (lagMs < estimatedFrameDelayMs) {
-      break;
-    }
-
-    int skippedDelayMs = 0;
-    if (!playGIFFrame(false, skippedDelayMs, nullptr)) {
-      closeGIFPlayback();
-      return;
-    }
-    ++droppedFrames;
-    nextFrameAtMs += static_cast<unsigned long>(skippedDelayMs);
-    estimatedFrameDelayMs = ((estimatedFrameDelayMs * 7) + skippedDelayMs) / 8;
-    if (estimatedFrameDelayMs < 1) {
-      estimatedFrameDelayMs = 1;
-    }
-    --dropBudget;
-  }
-
-  now = millis();
-  if (static_cast<long>(now - nextFrameAtMs) < 0) {
-    return;
-  }
-
-  const unsigned long frameStartMs = nextFrameAtMs;
-  int delayMs = 0;
-  unsigned long renderDurationMs = 0;
-  if (!playGIFFrame(true, delayMs, &renderDurationMs)) {
+  if (!catchUpByDroppingFrames()) {
     closeGIFPlayback();
     return;
   }
 
-  ++renderedFrames;
-  if (renderDurationMs > 65535UL) {
-    renderDurationMs = 65535UL;
-  }
-  lastRenderMs = static_cast<uint16_t>(renderDurationMs);
-  if (avgRenderMs == 0) {
-    avgRenderMs = lastRenderMs;
-  } else {
-    avgRenderMs = static_cast<uint16_t>((static_cast<uint32_t>(avgRenderMs) * 7U + lastRenderMs) / 8U);
+  now = millis();
+  if (!isPastDeadline(now, app.nextFrameAtMs)) {
+    return;
   }
 
-  estimatedFrameDelayMs = ((estimatedFrameDelayMs * 7) + delayMs) / 8;
-  if (estimatedFrameDelayMs < 1) {
-    estimatedFrameDelayMs = 1;
+  if (!renderDueFrame()) {
+    closeGIFPlayback();
   }
-
-  // Keep the GIF timeline anchored to scheduled frame start times.
-  nextFrameAtMs = frameStartMs + static_cast<unsigned long>(delayMs);
 }
 
 void emitStatus() {
@@ -510,15 +622,15 @@ void emitStatus() {
       "STATUS board=%s fw=%s fs=%d file=%d bytes=%u maxBytes=%u playing=%d rendered=%lu dropped=%lu avgRenderMs=%u estDelayMs=%d\n",
       kBoardID,
       kFirmwareVersion,
-      fsReady ? 1 : 0,
-      (fsReady && LittleFS.exists(kGifPath)) ? 1 : 0,
+      app.fsReady ? 1 : 0,
+      (app.fsReady && LittleFS.exists(kGifPath)) ? 1 : 0,
       static_cast<unsigned int>(bytes),
       static_cast<unsigned int>(maxBytes),
-      playbackEnabled ? 1 : 0,
-      static_cast<unsigned long>(renderedFrames),
-      static_cast<unsigned long>(droppedFrames),
-      static_cast<unsigned int>(avgRenderMs),
-      estimatedFrameDelayMs);
+      app.playbackEnabled ? 1 : 0,
+      static_cast<unsigned long>(app.metrics.renderedFrames),
+      static_cast<unsigned long>(app.metrics.droppedFrames),
+      static_cast<unsigned int>(app.metrics.avgRenderMs),
+      app.metrics.estimatedDelayMs);
 }
 
 bool parsePutSize(const String& line, size_t& out) {
@@ -526,23 +638,26 @@ bool parsePutSize(const String& line, size_t& out) {
   if (!line.startsWith("PUT ")) {
     return false;
   }
+
   String part = line.substring(4);
   part.trim();
   if (part.isEmpty()) {
     return false;
   }
+
   char* end = nullptr;
   const unsigned long value = strtoul(part.c_str(), &end, 10);
   if (end == nullptr || *end != '\0' || value == 0) {
     return false;
   }
+
   out = static_cast<size_t>(value);
   return true;
 }
 
 bool receiveGIFBytes(size_t expectedBytes, String& reason) {
   reason = "";
-  if (!fsReady) {
+  if (!app.fsReady) {
     reason = "fs-unavailable";
     return false;
   }
@@ -568,6 +683,7 @@ bool receiveGIFBytes(size_t expectedBytes, String& reason) {
   if (LittleFS.exists(kTempGifPath)) {
     LittleFS.remove(kTempGifPath);
   }
+
   File temp = LittleFS.open(kTempGifPath, "w");
   if (!temp) {
     reason = "temp-open-failed";
@@ -613,6 +729,7 @@ bool receiveGIFBytes(size_t expectedBytes, String& reason) {
       reason = "write-failed";
       return false;
     }
+
     received += static_cast<size_t>(readCount);
     yield();
   }
@@ -655,29 +772,33 @@ void handleCommand(const String& rawLine) {
         static_cast<unsigned int>(advertisedBudgetBytes()));
     return;
   }
+
   if (line.equalsIgnoreCase("STATUS")) {
     emitStatus();
     return;
   }
+
   if (line.equalsIgnoreCase("PLAY")) {
-    playbackEnabled = true;
+    app.playbackEnabled = true;
     resetPlaybackState();
     Serial.println("PLAY_OK");
     return;
   }
+
   if (line.equalsIgnoreCase("STOP")) {
-    playbackEnabled = false;
+    app.playbackEnabled = false;
     closeGIFPlayback();
     Serial.println("STOP_OK");
     return;
   }
+
   if (line.equalsIgnoreCase("DELETE")) {
     closeGIFPlayback();
     bool removed = false;
-    if (fsReady && LittleFS.exists(kGifPath)) {
+    if (app.fsReady && LittleFS.exists(kGifPath)) {
       removed = LittleFS.remove(kGifPath);
     }
-    screenNeedsMessage = true;
+    app.screenNeedsMessage = true;
     Serial.printf("DELETE_%s\n", removed ? "OK" : "NOFILE");
     return;
   }
@@ -685,11 +806,13 @@ void handleCommand(const String& rawLine) {
   size_t putBytes = 0;
   if (parsePutSize(line, putBytes)) {
     Serial.println("PUT_READY");
+
     String reason;
     if (!receiveGIFBytes(putBytes, reason)) {
       Serial.printf("PUT_ERR reason=%s\n", reason.c_str());
       return;
     }
+
     int width = 0;
     int height = 0;
     const bool hasDimensions = readGIFDimensions(kGifPath, width, height);
@@ -710,10 +833,12 @@ bool pollSerialCommand(String& outLine) {
     if (raw < 0) {
       return false;
     }
+
     const char c = static_cast<char>(raw);
     if (c == '\r') {
       continue;
     }
+
     if (c == '\n') {
       if (commandLen == 0) {
         continue;
@@ -723,12 +848,15 @@ bool pollSerialCommand(String& outLine) {
       commandLen = 0;
       return true;
     }
+
     if (commandLen + 1 >= sizeof(commandBuffer)) {
       commandLen = 0;
       continue;
     }
+
     commandBuffer[commandLen++] = c;
   }
+
   return false;
 }
 
@@ -737,9 +865,32 @@ void initDisplay() {
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
 #endif
+
   tft.init();
   tft.setRotation(kDisplayRotation);
   tft.fillScreen(TFT_BLACK);
+}
+
+void initGIFDecoder() {
+  gifDecoder.begin(BIG_ENDIAN_PIXELS);
+
+  const size_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap <= (TURBO_BUFFER_SIZE + 8192)) {
+    Serial.printf("GIF_TURBO disabled reason=low-heap freeHeap=%u\n",
+                  static_cast<unsigned int>(freeHeap));
+    return;
+  }
+
+  gifTurboBuffer = static_cast<uint8_t*>(malloc(TURBO_BUFFER_SIZE));
+  if (gifTurboBuffer == nullptr) {
+    Serial.println("GIF_TURBO disabled reason=alloc-failed");
+    return;
+  }
+
+  gifDecoder.setTurboBuf(gifTurboBuffer);
+  Serial.printf("GIF_TURBO enabled bytes=%u freeHeap=%u\n",
+                static_cast<unsigned int>(TURBO_BUFFER_SIZE),
+                static_cast<unsigned int>(ESP.getFreeHeap()));
 }
 
 }  // namespace
@@ -752,29 +903,14 @@ void setup() {
   initDisplay();
   drawStatusScreen("starte...", "mount littlefs");
 
-  fsReady = LittleFS.begin();
-  if (!fsReady) {
+  app.fsReady = LittleFS.begin();
+  if (!app.fsReady) {
     drawStatusScreen("littlefs mount fehlgeschlagen");
   } else {
     drawStatusScreen("bereit", "send HELLO / PUT <bytes>");
   }
 
-  gifDecoder.begin(BIG_ENDIAN_PIXELS);
-  const size_t freeHeap = ESP.getFreeHeap();
-  if (freeHeap > (TURBO_BUFFER_SIZE + 8192)) {
-    gifTurboBuffer = static_cast<uint8_t*>(malloc(TURBO_BUFFER_SIZE));
-    if (gifTurboBuffer != nullptr) {
-      gifDecoder.setTurboBuf(gifTurboBuffer);
-      Serial.printf("GIF_TURBO enabled bytes=%u freeHeap=%u\n",
-                    static_cast<unsigned int>(TURBO_BUFFER_SIZE),
-                    static_cast<unsigned int>(ESP.getFreeHeap()));
-    } else {
-      Serial.println("GIF_TURBO disabled reason=alloc-failed");
-    }
-  } else {
-    Serial.printf("GIF_TURBO disabled reason=low-heap freeHeap=%u\n",
-                  static_cast<unsigned int>(freeHeap));
-  }
+  initGIFDecoder();
   emitStatus();
   Serial.println("vibeblock_gif_ready");
 }
@@ -784,6 +920,7 @@ void loop() {
   if (pollSerialCommand(line)) {
     handleCommand(line);
   }
+
   tickGIFPlayback();
   yield();
 }

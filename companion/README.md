@@ -7,8 +7,9 @@ Go daemon that:
 - applies deterministic provider selection (`local activity -> usage delta -> sticky current -> CodexBar order`)
 - sends protocol JSON lines to the USB display
 
-v1 cutline:
+v0 cutline:
 - release-gated hardware target: ESP8266 SmallTV ST7789 variants
+- GIF rendering and loop playback are included in v0 scope
 - ESP32 (`lilygo_t_display_s3`) stays available as an experimental/non-blocking path
 
 ## Commands
@@ -28,9 +29,12 @@ go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --skip-flash
 go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
 go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
 go run ./cmd/vibeblock setup --validate-only --firmware-env esp8266_smalltv_st7789
-# experimental v1 path
+# v0 GIF-player firmware profile
+go run ./cmd/vibeblock setup --yes --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789_gif_player
+go run ./cmd/vibeblock gif-upload --port /dev/cu.usbserial-10 --gif ~/Downloads/testgif3.gif
+# experimental v0 path
 go run ./cmd/vibeblock setup --dry-run --firmware-env lilygo_t_display_s3
-# experimental v1 path
+# experimental v0 path
 go run ./cmd/vibeblock setup --port /dev/cu.usbmodem101 --firmware-env lilygo_t_display_s3
 go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
 go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
@@ -55,10 +59,16 @@ Setup flags:
 - `--yes`: auto-select defaults without prompt
 - `--skip-flash`: skip firmware flashing
 - `--pin-port`: pin daemon to selected `--port` in LaunchAgent (default is unpinned auto-detect)
-- `--firmware-env`: PlatformIO firmware environment (default `esp8266_smalltv_st7789`; `lilygo_t_display_s3` is experimental for v1)
+- `--firmware-env`: PlatformIO firmware environment (default `esp8266_smalltv_st7789`; `esp8266_smalltv_st7789_gif_player` for v0 GIF mode; `lilygo_t_display_s3` is experimental for v0)
 - `--theme`: persist runtime theme override (`classic`, `crt`, `none`)
 - `--validate-only`: run setup prerequisite checks only, no system changes
 - `--dry-run`: show setup actions without applying changes
+
+`gif-upload` pushes one GIF file to GIF-player firmware and starts looping playback:
+- path supports `--gif ~/Downloads/testgif` and automatic `.gif` suffix resolution
+- verifies GIF header/dimensions before upload
+- reads device `maxBytes` from `HELLO`; compacts source only if needed
+- starts playback by default (`--play=true`)
 
 `restore-known-good` restores a supplier backup image to ESP8266 hardware:
 - auto-detects serial port unless `--port` is provided
