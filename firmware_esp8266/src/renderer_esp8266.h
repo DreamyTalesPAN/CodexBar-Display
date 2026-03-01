@@ -14,6 +14,7 @@ class RendererESP8266 : public app::Renderer {
 
   void DrawSplash(app::RuntimeContext& ctx) override;
   void TickSplash(app::RuntimeContext& ctx) override;
+  void TickActive(app::RuntimeContext& ctx) override;
   void DrawError(app::RuntimeContext& ctx, const String& message) override;
   void DrawUsage(app::RuntimeContext& ctx) override;
   void DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) override;
@@ -21,4 +22,3 @@ class RendererESP8266 : public app::Renderer {
 
 }  // namespace esp8266
 }  // namespace vibeblock
-

@@ -32,7 +32,7 @@
     },
     "theme": {
       "type": "string",
-      "enum": ["classic", "crt"]
+      "enum": ["classic", "crt", "mini"]
     },
     "renderMode": {
       "type": "string",

@@ -31,6 +31,11 @@ var firmwareTargets = map[string]firmwareTarget{
 		ProjectDir:  "firmware_esp8266",
 		ExpectedIDs: []string{"esp8266-smalltv-st7789"},
 	},
+	"esp8266_smalltv_st7789_mini": {
+		Env:         "esp8266_smalltv_st7789_mini",
+		ProjectDir:  "firmware_esp8266",
+		ExpectedIDs: []string{"esp8266-smalltv-st7789"},
+	},
 	"esp8266_smalltv_st7789_alt": {
 		Env:         "esp8266_smalltv_st7789_alt",
 		ProjectDir:  "firmware_esp8266",
@@ -38,6 +43,11 @@ var firmwareTargets = map[string]firmwareTarget{
 	},
 	"esp8266_smalltv_st7789_alt_crt": {
 		Env:         "esp8266_smalltv_st7789_alt_crt",
+		ProjectDir:  "firmware_esp8266",
+		ExpectedIDs: []string{"esp8266-smalltv-st7789-alt"},
+	},
+	"esp8266_smalltv_st7789_alt_mini": {
+		Env:         "esp8266_smalltv_st7789_alt_mini",
 		ProjectDir:  "firmware_esp8266",
 		ExpectedIDs: []string{"esp8266-smalltv-st7789-alt"},
 	},

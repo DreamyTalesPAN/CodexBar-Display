@@ -51,8 +51,10 @@ jobs:
             "firmware_esp8266 esp8266_probe esp8266-probe"
             "firmware_esp8266 esp8266_smalltv_st7789 esp8266-smalltv-st7789"
             "firmware_esp8266 esp8266_smalltv_st7789_crt esp8266-smalltv-st7789"
+            "firmware_esp8266 esp8266_smalltv_st7789_mini esp8266-smalltv-st7789"
             "firmware_esp8266 esp8266_smalltv_st7789_alt esp8266-smalltv-st7789-alt"
             "firmware_esp8266 esp8266_smalltv_st7789_alt_crt esp8266-smalltv-st7789-alt"
+            "firmware_esp8266 esp8266_smalltv_st7789_alt_mini esp8266-smalltv-st7789-alt"
             "firmware lilygo_t_display_s3 esp32-lilygo-t-display-s3"
           )
 
@@ -78,8 +80,10 @@ jobs:
               ("esp8266_probe", "esp8266-probe"),
               ("esp8266_smalltv_st7789", "esp8266-smalltv-st7789"),
               ("esp8266_smalltv_st7789_crt", "esp8266-smalltv-st7789"),
+              ("esp8266_smalltv_st7789_mini", "esp8266-smalltv-st7789"),
               ("esp8266_smalltv_st7789_alt", "esp8266-smalltv-st7789-alt"),
               ("esp8266_smalltv_st7789_alt_crt", "esp8266-smalltv-st7789-alt"),
+              ("esp8266_smalltv_st7789_alt_mini", "esp8266-smalltv-st7789-alt"),
               ("lilygo_t_display_s3", "esp32-lilygo-t-display-s3"),
           ]
 

@@ -95,6 +95,7 @@ void loop() {
   if (vibeblock::app::HasFrame(runtimeCtx) &&
       !vibeblock::app::CurrentFrame(runtimeCtx).hasError &&
       !runtimeCtx.screenDirty) {
+    renderer.TickActive(runtimeCtx);
     const int64_t remain = vibeblock::app::CurrentRemainingSecs(runtimeCtx, millis());
     if (remain != runtimeCtx.lastRenderedSecs) {
       renderer.DrawReset(runtimeCtx, remain);

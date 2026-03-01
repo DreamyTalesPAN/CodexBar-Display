@@ -41,7 +41,7 @@ Fields:
 - `session` (number, optional): session usage percent `0..100`.
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
-- `theme` (string, optional): requested built-in UI theme (`classic` or `crt`).
+- `theme` (string, optional): requested built-in UI theme (`classic`, `crt`, `mini`).
 - `error` (string, optional): if present, firmware should render error screen.
 - `renderMode` (string, optional): `usage` (default) | `usage_with_shapes` | `usage_with_media` | `media_only`.
 - `shapePreset` (string, optional): predefined ornament preset on firmware side.
@@ -106,7 +106,7 @@ Companion treats missing/legacy hello as unknown capabilities and falls back saf
 - Companion may resend the last known good frame during short CodexBar outages (current default max age: 10 minutes).
 
 ## v1 Scope Boundary
-- v1 ships built-in themes only (`classic`, `crt`).
+- v1 ships built-in themes only (`classic`, `crt`, `mini`).
 - v1 release-gated hardware target is ESP8266 SmallTV ST7789.
 - ESP32 (`lilygo_t_display_s3`) is kept as experimental/non-blocking for v1.
 - External theme SDK/runtime plugin loading is out of scope for v1.

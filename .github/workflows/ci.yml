@@ -39,7 +39,7 @@ jobs:
       - name: Check companion benchmark budgets
         run: ./scripts/check-companion-bench-budget.sh
 
-  firmware-build:
+  firmware-build-v0:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -52,23 +52,27 @@ jobs:
           - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789
             max_flash_pct: 45
-            max_ram_pct: 60
+            max_ram_pct: 72
           - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789_crt
             max_flash_pct: 45
-            max_ram_pct: 60
+            max_ram_pct: 72
+          - firmware_dir: firmware_esp8266
+            env_name: esp8266_smalltv_st7789_mini
+            max_flash_pct: 45
+            max_ram_pct: 72
           - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789_alt
             max_flash_pct: 45
-            max_ram_pct: 60
+            max_ram_pct: 72
           - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789_alt_crt
             max_flash_pct: 45
-            max_ram_pct: 60
-          - firmware_dir: firmware
-            env_name: lilygo_t_display_s3
-            max_flash_pct: 20
-            max_ram_pct: 25
+            max_ram_pct: 72
+          - firmware_dir: firmware_esp8266
+            env_name: esp8266_smalltv_st7789_alt_mini
+            max_flash_pct: 45
+            max_ram_pct: 72
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,3 +92,26 @@ jobs:
             "${{ matrix.env_name }}" \
             "${{ matrix.max_flash_pct }}" \
             "${{ matrix.max_ram_pct }}"
+
+  firmware-build-experimental:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build ESP32 experimental profile
+        run: |
+          ./scripts/check-firmware-size-budget.sh \
+            "firmware" \
+            "lilygo_t_display_s3" \
+            "20" \
+            "25"

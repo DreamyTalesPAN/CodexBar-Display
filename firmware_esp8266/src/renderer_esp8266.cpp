@@ -6,6 +6,8 @@
 #include "theme_defs.h"
 
 #ifndef VIBEBLOCK_PROBE_ONLY
+#include <AnimatedGIF.h>
+#include <LittleFS.h>
 #include <TFT_eSPI.h>
 #endif
 
@@ -159,6 +161,44 @@ constexpr int kCrtSplashHintY = 196;
 constexpr int kCrtSplashHintClearY = 196;
 constexpr int kCrtSplashHintClearH = 36;
 
+constexpr const char* kMiniGifPath = "/mini.gif";
+constexpr int kMiniGifMargin = 8;
+constexpr int kMiniFallbackGifSize = 80;
+constexpr int kMiniMaxLinePixels = 240;
+constexpr uint16_t kMiniBg = TFT_BLACK;
+constexpr uint16_t kMiniPrimary = rgb565(92, 204, 255);
+constexpr uint16_t kMiniSecondary = rgb565(167, 255, 201);
+constexpr uint16_t kMiniMuted = rgb565(121, 131, 148);
+
+struct MiniGifState {
+  AnimatedGIF decoder;
+  File file;
+  bool fsMounted = false;
+  bool filePresent = false;
+  bool decoderOpen = false;
+  bool suppressDraw = false;
+  unsigned long nextFrameAtMs = 0;
+  int gifWidth = 0;
+  int gifHeight = 0;
+  int drawX = 0;
+  int drawY = 0;
+
+  void resetPlayback() {
+    if (decoderOpen) {
+      decoder.close();
+    }
+    if (file) {
+      file.close();
+    }
+    decoderOpen = false;
+    suppressDraw = false;
+    nextFrameAtMs = 0;
+  }
+};
+
+MiniGifState miniGif;
+uint16_t miniGifLineBuffer[kMiniMaxLinePixels];
+
 struct SplashLayout {
   int titleSize = 2;
   int subtitleSize = 1;
@@ -220,6 +260,311 @@ int rightAlignedTextXCrt(const char* text, int rightPadding) {
     return 0;
   }
   return x;
+}
+
+bool readMiniGifDimensions(int& width, int& height) {
+  width = 0;
+  height = 0;
+  if (!miniGif.fsMounted || !LittleFS.exists(kMiniGifPath)) {
+    return false;
+  }
+
+  File file = LittleFS.open(kMiniGifPath, "r");
+  if (!file) {
+    return false;
+  }
+
+  uint8_t header[10] = {0};
+  const size_t bytesRead = file.read(header, sizeof(header));
+  file.close();
+  if (bytesRead < sizeof(header)) {
+    return false;
+  }
+
+  const bool gifHeader = (memcmp(header, "GIF87a", 6) == 0) || (memcmp(header, "GIF89a", 6) == 0);
+  if (!gifHeader) {
+    return false;
+  }
+
+  width = static_cast<int>(header[6] | (static_cast<uint16_t>(header[7]) << 8));
+  height = static_cast<int>(header[8] | (static_cast<uint16_t>(header[9]) << 8));
+  return width > 0 && height > 0;
+}
+
+void* miniGifOpenCallback(const char* filename, int32_t* pFileSize) {
+  if (!miniGif.fsMounted || filename == nullptr || pFileSize == nullptr) {
+    return nullptr;
+  }
+
+  if (miniGif.file) {
+    miniGif.file.close();
+  }
+
+  miniGif.file = LittleFS.open(filename, "r");
+  if (!miniGif.file) {
+    return nullptr;
+  }
+
+  *pFileSize = static_cast<int32_t>(miniGif.file.size());
+  return static_cast<void*>(&miniGif.file);
+}
+
+void miniGifCloseCallback(void* pHandle) {
+  File* file = static_cast<File*>(pHandle);
+  if (file != nullptr && *file) {
+    file->close();
+  }
+}
+
+int32_t miniGifReadCallback(GIFFILE* pFile, uint8_t* pBuf, int32_t iLen) {
+  if (pFile == nullptr || pFile->fHandle == nullptr || pBuf == nullptr || iLen <= 0) {
+    return 0;
+  }
+
+  File* file = static_cast<File*>(pFile->fHandle);
+  int32_t bytesToRead = iLen;
+  const int32_t remaining = pFile->iSize - pFile->iPos;
+  if (remaining < bytesToRead) {
+    bytesToRead = remaining;
+  }
+  if (bytesToRead <= 0) {
+    return 0;
+  }
+
+  const int32_t bytesRead = static_cast<int32_t>(file->read(pBuf, static_cast<size_t>(bytesToRead)));
+  pFile->iPos = static_cast<int32_t>(file->position());
+  return bytesRead;
+}
+
+int32_t miniGifSeekCallback(GIFFILE* pFile, int32_t iPosition) {
+  if (pFile == nullptr || pFile->fHandle == nullptr || iPosition < 0) {
+    return -1;
+  }
+
+  File* file = static_cast<File*>(pFile->fHandle);
+  if (!file->seek(static_cast<size_t>(iPosition), SeekSet)) {
+    return -1;
+  }
+
+  pFile->iPos = static_cast<int32_t>(file->position());
+  return pFile->iPos;
+}
+
+void miniGifDrawCallback(GIFDRAW* pDraw) {
+  if (pDraw == nullptr || miniGif.suppressDraw) {
+    return;
+  }
+
+  int lineWidth = pDraw->iWidth;
+  if (lineWidth <= 0) {
+    return;
+  }
+  if (lineWidth > kMiniMaxLinePixels) {
+    lineWidth = kMiniMaxLinePixels;
+  }
+
+  int drawX = miniGif.drawX + pDraw->iX;
+  int drawY = miniGif.drawY + pDraw->iY + pDraw->y;
+  if (drawY < 0 || drawY >= tft.height() || drawX >= tft.width()) {
+    return;
+  }
+
+  int srcOffset = 0;
+  if (drawX < 0) {
+    srcOffset = -drawX;
+    drawX = 0;
+  }
+  if (srcOffset >= lineWidth) {
+    return;
+  }
+  lineWidth -= srcOffset;
+  if (drawX + lineWidth > tft.width()) {
+    lineWidth = tft.width() - drawX;
+  }
+  if (lineWidth <= 0) {
+    return;
+  }
+
+  uint8_t* src = pDraw->pPixels + srcOffset;
+  uint16_t* palette = pDraw->pPalette;
+  if (src == nullptr || palette == nullptr) {
+    return;
+  }
+
+  if (pDraw->ucDisposalMethod == 2) {
+    for (int i = 0; i < lineWidth; ++i) {
+      if (src[i] == pDraw->ucTransparent) {
+        src[i] = pDraw->ucBackground;
+      }
+    }
+    pDraw->ucHasTransparency = 0;
+  }
+
+  if (pDraw->ucHasTransparency) {
+    const uint8_t transparent = pDraw->ucTransparent;
+    uint8_t* cursor = src;
+    uint8_t* end = src + lineWidth;
+    int x = 0;
+    while (x < lineWidth) {
+      int count = 0;
+      uint16_t* out = miniGifLineBuffer;
+      while (cursor < end && count < kMiniMaxLinePixels) {
+        const uint8_t index = *cursor;
+        if (index == transparent) {
+          break;
+        }
+        *out++ = palette[index];
+        ++cursor;
+        ++count;
+      }
+      if (count > 0) {
+        tft.setAddrWindow(drawX + x, drawY, count, 1);
+        tft.pushPixels(miniGifLineBuffer, count);
+        x += count;
+      }
+      while (cursor < end && *cursor == transparent) {
+        ++cursor;
+        ++x;
+      }
+    }
+    return;
+  }
+
+  for (int i = 0; i < lineWidth; ++i) {
+    miniGifLineBuffer[i] = palette[src[i]];
+  }
+  tft.setAddrWindow(drawX, drawY, lineWidth, 1);
+  tft.pushPixels(miniGifLineBuffer, lineWidth);
+}
+
+void closeMiniGifPlayback() {
+  miniGif.resetPlayback();
+}
+
+bool ensureMiniGifStorageReady() {
+  if (miniGif.fsMounted) {
+    miniGif.filePresent = LittleFS.exists(kMiniGifPath);
+    return true;
+  }
+
+  miniGif.fsMounted = LittleFS.begin();
+  miniGif.filePresent = miniGif.fsMounted && LittleFS.exists(kMiniGifPath);
+  return miniGif.fsMounted;
+}
+
+bool ensureMiniGifPlayback() {
+  if (!ensureMiniGifStorageReady()) {
+    closeMiniGifPlayback();
+    return false;
+  }
+  if (!miniGif.filePresent) {
+    closeMiniGifPlayback();
+    return false;
+  }
+  if (miniGif.decoderOpen) {
+    return true;
+  }
+
+  int gifWidth = 0;
+  int gifHeight = 0;
+  if (!readMiniGifDimensions(gifWidth, gifHeight)) {
+    return false;
+  }
+  miniGif.gifWidth = gifWidth;
+  miniGif.gifHeight = gifHeight;
+  miniGif.drawX = tft.width() - miniGif.gifWidth - kMiniGifMargin;
+  miniGif.drawY = tft.height() - miniGif.gifHeight - kMiniGifMargin;
+  if (miniGif.drawX < 0) {
+    miniGif.drawX = 0;
+  }
+  if (miniGif.drawY < 0) {
+    miniGif.drawY = 0;
+  }
+
+  closeMiniGifPlayback();
+  miniGif.decoder.begin(BIG_ENDIAN_PIXELS);
+  if (!miniGif.decoder.open(
+          kMiniGifPath,
+          miniGifOpenCallback,
+          miniGifCloseCallback,
+          miniGifReadCallback,
+          miniGifSeekCallback,
+          miniGifDrawCallback)) {
+    return false;
+  }
+
+  miniGif.decoderOpen = true;
+  miniGif.nextFrameAtMs = 0;
+  return true;
+}
+
+void tickMiniGif(bool forceFrame) {
+  if (activeTheme != Theme::Mini) {
+    return;
+  }
+  if (!hasFrame || current.hasError) {
+    return;
+  }
+  if (!ensureMiniGifPlayback()) {
+    return;
+  }
+
+  const unsigned long now = millis();
+  if (!forceFrame && miniGif.nextFrameAtMs != 0 && static_cast<long>(now - miniGif.nextFrameAtMs) < 0) {
+    return;
+  }
+
+  const unsigned long frameStartMs = now;
+  int delayMs = 0;
+  tft.startWrite();
+  bool played = miniGif.decoder.playFrame(false, &delayMs, nullptr);
+  tft.endWrite();
+  if (!played) {
+    miniGif.decoder.reset();
+    tft.startWrite();
+    played = miniGif.decoder.playFrame(false, &delayMs, nullptr);
+    tft.endWrite();
+    if (!played) {
+      closeMiniGifPlayback();
+      return;
+    }
+  }
+
+  if (delayMs < 0) {
+    delayMs = 0;
+  }
+  miniGif.nextFrameAtMs = frameStartMs + static_cast<unsigned long>(delayMs);
+}
+
+int miniGifReservedWidth() {
+  if (miniGif.decoderOpen && miniGif.gifWidth > 0) {
+    return miniGif.gifWidth;
+  }
+  if (miniGif.filePresent && miniGif.gifWidth > 0) {
+    return miniGif.gifWidth;
+  }
+  return kMiniFallbackGifSize;
+}
+
+void drawMiniGifPlaceholder() {
+  const int placeholderSize = miniGifReservedWidth();
+  const int x = tft.width() - placeholderSize - kMiniGifMargin;
+  const int y = tft.height() - placeholderSize - kMiniGifMargin;
+  const int boxW = placeholderSize;
+  const int boxH = placeholderSize;
+  if (boxW <= 0 || boxH <= 0) {
+    return;
+  }
+
+  tft.drawRect(x - 2, y - 2, boxW + 4, boxH + 4, kMiniMuted);
+  if (!miniGif.filePresent) {
+    tft.fillRect(x, y, boxW, boxH, rgb565(18, 20, 24));
+    tft.setTextFont(1);
+    tft.setTextSize(1);
+    tft.setTextColor(kMiniMuted, rgb565(18, 20, 24));
+    tft.setCursor(x + 8, y + (boxH / 2) - 4);
+    tft.print("mini.gif");
+  }
 }
 
 void drawCrtHeader(const char* title, bool showStatusDot) {
@@ -730,8 +1075,124 @@ void drawUsageCRT() {
   drawResetCountdownLineCRT(remain);
 }
 
+void drawSplashMini() {
+  tft.fillScreen(kMiniBg);
+  tft.setTextColor(kMiniPrimary, kMiniBg);
+  tft.setTextFont(2);
+  tft.setTextSize(2);
+  tft.setCursor(12, 20);
+  tft.print("MINI");
+
+  tft.setTextFont(2);
+  tft.setTextSize(1);
+  tft.setTextColor(kMiniMuted, kMiniBg);
+  tft.setCursor(12, 52);
+  tft.print("Waiting for usage frame...");
+  tft.setCursor(12, 70);
+  tft.print("GIF: /mini.gif");
+
+  lastRenderedSecs = -1;
+  lastRenderedMinuteBucket = -1;
+}
+
+void tickSplashWaitingDotsMini() {
+  // Static splash for this theme.
+}
+
+void drawErrorMini(const String& message) {
+  tft.fillScreen(kMiniBg);
+  tft.setTextFont(2);
+  tft.setTextSize(2);
+  tft.setTextColor(kMiniPrimary, kMiniBg);
+  tft.setCursor(12, 20);
+  tft.print("MINI");
+
+  tft.setTextFont(2);
+  tft.setTextSize(1);
+  tft.setTextColor(TFT_ORANGE, kMiniBg);
+  tft.setCursor(12, 56);
+  tft.print("error");
+
+  tft.setTextColor(TFT_WHITE, kMiniBg);
+  tft.setTextWrap(true);
+  tft.setCursor(12, 78);
+  tft.print(message);
+  tft.setTextWrap(false);
+
+  lastRenderedSecs = -1;
+  lastRenderedMinuteBucket = -1;
+}
+
+void drawResetCountdownLineMini(int64_t remain) {
+  const int contentRight = tft.width() - miniGifReservedWidth() - (kMiniGifMargin * 2);
+  const int maxWidth = contentRight > 100 ? contentRight : (tft.width() - 12);
+  const int resetY = 206;
+  const int resetH = 22;
+  const String resetLabel = String("Reset in ") + formatDuration(remain);
+
+  tft.fillRect(10, resetY, maxWidth, resetH, kMiniBg);
+  tft.setTextFont(2);
+  tft.setTextSize(1);
+  tft.setTextColor(kMiniMuted, kMiniBg);
+  tft.setCursor(10, resetY + 6);
+  tft.print(resetLabel);
+
+  lastRenderedSecs = remain;
+  lastRenderedMinuteBucket = remain / 60;
+}
+
+void drawUsageMini() {
+  const int64_t remain = currentRemainingSecs();
+  (void)ensureMiniGifPlayback();
+
+  const int contentRight = tft.width() - miniGifReservedWidth() - (kMiniGifMargin * 2);
+  const int maxValueWidth = contentRight > 90 ? contentRight : 120;
+
+  tft.fillScreen(kMiniBg);
+
+  tft.setTextFont(2);
+  tft.setTextSize(1);
+  tft.setTextColor(kMiniMuted, kMiniBg);
+  tft.setCursor(10, 8);
+  tft.print(providerLabelText());
+
+  char pctBuf[8];
+  std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", vibeblock::core::ClampPct(current.session));
+  int sessionValueSize = chooseTextSizeToFit(pctBuf, 7, 4, maxValueWidth);
+  tft.setTextFont(1);
+  tft.setTextSize(1);
+  tft.setTextColor(kMiniMuted, kMiniBg);
+  tft.setCursor(10, 34);
+  tft.print("Session");
+  tft.setTextFont(1);
+  tft.setTextSize(sessionValueSize);
+  tft.setTextColor(kMiniPrimary, kMiniBg);
+  tft.setCursor(10, 46);
+  tft.print(pctBuf);
+
+  std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", vibeblock::core::ClampPct(current.weekly));
+  int weeklyValueSize = chooseTextSizeToFit(pctBuf, 7, 4, maxValueWidth);
+  tft.setTextFont(1);
+  tft.setTextSize(1);
+  tft.setTextColor(kMiniMuted, kMiniBg);
+  tft.setCursor(10, 124);
+  tft.print("Weekly");
+  tft.setTextFont(1);
+  tft.setTextSize(weeklyValueSize);
+  tft.setTextColor(kMiniSecondary, kMiniBg);
+  tft.setCursor(10, 136);
+  tft.print(pctBuf);
+
+  drawResetCountdownLineMini(remain);
+  drawMiniGifPlaceholder();
+  tickMiniGif(true);
+}
+
 void drawSplash() {
   switch (activeTheme) {
+    case Theme::Mini:
+      drawSplashMini();
+      return;
     case Theme::CRT:
       drawSplashCRT();
       return;
@@ -744,6 +1205,9 @@ void drawSplash() {
 
 void tickSplashWaitingDots() {
   switch (activeTheme) {
+    case Theme::Mini:
+      tickSplashWaitingDotsMini();
+      return;
     case Theme::CRT:
       tickSplashWaitingDotsCRT();
       return;
@@ -756,6 +1220,9 @@ void tickSplashWaitingDots() {
 
 void drawError(const String& message) {
   switch (activeTheme) {
+    case Theme::Mini:
+      drawErrorMini(message);
+      return;
     case Theme::CRT:
       drawErrorCRT(message);
       return;
@@ -768,6 +1235,9 @@ void drawError(const String& message) {
 
 void drawResetCountdownLine(int64_t remain) {
   switch (activeTheme) {
+    case Theme::Mini:
+      drawResetCountdownLineMini(remain);
+      return;
     case Theme::CRT:
       drawResetCountdownLineCRT(remain);
       return;
@@ -780,6 +1250,9 @@ void drawResetCountdownLine(int64_t remain) {
 
 void drawUsage() {
   switch (activeTheme) {
+    case Theme::Mini:
+      drawUsageMini();
+      return;
     case Theme::CRT:
       drawUsageCRT();
       return;
@@ -868,6 +1341,7 @@ void RendererESP8266::Setup(app::RuntimeContext& ctx) {
 #endif
   tft.init();
   tft.setRotation(0);
+  (void)ensureMiniGifStorageReady();
 #endif
 }
 
@@ -875,12 +1349,19 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
   gCtx = &ctx;
 
 #ifndef VIBEBLOCK_PROBE_ONLY
+  Theme previousTheme = activeTheme;
   if (current.hasTheme) {
     Theme frameTheme;
     if (themeFromName(current.theme, frameTheme) && frameTheme != activeTheme) {
       activeTheme = frameTheme;
       screenDirty = true;
     }
+  }
+
+  if (previousTheme == Theme::Mini && activeTheme != Theme::Mini) {
+    closeMiniGifPlayback();
+  } else if (activeTheme == Theme::Mini && (event.visualChanged || event.themeChanged)) {
+    miniGif.nextFrameAtMs = 0;
   }
 #endif
 
@@ -906,6 +1387,14 @@ void RendererESP8266::TickSplash(app::RuntimeContext& ctx) {
 
 #ifndef VIBEBLOCK_PROBE_ONLY
   tickSplashWaitingDots();
+#endif
+}
+
+void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
+  gCtx = &ctx;
+
+#ifndef VIBEBLOCK_PROBE_ONLY
+  tickMiniGif(false);
 #endif
 }
 
