@@ -136,7 +136,7 @@ func TestRunCycleWithDepsAppliesThemeWhenDeviceSupportsIt(t *testing.T) {
 	}
 }
 
-func TestRunCycleWithDepsSkipsThemeForUnknownDeviceCapabilities(t *testing.T) {
+func TestRunCycleWithDepsAppliesThemeForUnknownDeviceCapabilities(t *testing.T) {
 	prepareFastTestEnv(t)
 	t.Setenv(themeEnvVar, "crt")
 
@@ -168,8 +168,8 @@ func TestRunCycleWithDepsSkipsThemeForUnknownDeviceCapabilities(t *testing.T) {
 	}
 
 	frame := decodeFrameLine(t, sentLine)
-	if frame.Theme != "" {
-		t.Fatalf("expected theme to be skipped for unknown device capabilities, got %q", frame.Theme)
+	if frame.Theme != "crt" {
+		t.Fatalf("expected theme for unknown device capabilities fallback, got %q", frame.Theme)
 	}
 }
 

@@ -50,7 +50,8 @@ Experimental fallback (non-blocking):
 Release go/no-go for MVP is gated only by `esp8266_smalltv_st7789`.
 
 Theme selection is runtime-driven (`classic|crt|mini`) via `--theme` or `VIBEBLOCK_THEME`.
-Protocol contract (v0 target): companion sends `theme` only when device hello advertises `features:["theme"]`.
+Protocol contract (v0 target): companion applies `theme` when capability handshake confirms support.
+If device hello is temporarily unavailable on the MVP device path, companion falls back to optimistic theme send.
 
 GIF core scenarios on ESP8266:
 - `/mini.gif`: mini theme ambient overlay

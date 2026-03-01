@@ -30,8 +30,8 @@ Companion setup enforces this mapping when a device hello is available.
   - `maxFrameBytes` (current contract: `512`)
 
 ## Theme Capability Contract
-- Host may send `theme` only when `hello.features` explicitly includes `theme`.
-- If hello is missing/legacy, host continues base usage/error frames and omits `theme`.
+- If capabilities are explicitly known and `theme` is unsupported, host must omit `theme`.
+- If hello is missing/legacy (unknown capabilities), host may use optimistic `theme` send on the MVP path.
 
 ## ESP8266 Pin Contract
 

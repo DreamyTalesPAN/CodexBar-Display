@@ -406,11 +406,14 @@ func applyThemeToFrame(frame protocol.Frame, selectedTheme string, caps protocol
 	if selectedTheme == "" {
 		return frame, false
 	}
-	if caps.Known && caps.SupportsTheme {
-		frame.Theme = selectedTheme
-		return frame, true
+	// For v0 MVP hardware we optimize for the single supported device path:
+	// - known + explicit "no theme" => do not send theme
+	// - unknown capabilities (missing hello) => optimistic send
+	if caps.Known && !caps.SupportsTheme {
+		return frame, false
 	}
-	return frame, false
+	frame.Theme = selectedTheme
+	return frame, true
 }
 
 func asRuntimeError(err error) *RuntimeError {

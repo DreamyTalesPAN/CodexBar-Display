@@ -243,12 +243,25 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		stopLaunchAgentBestEffort(ctx, d)
 	}
 
-	if err := d.probePort(port); err != nil {
-		return &StepError{
-			Step: "serial-probe",
-			Err:  err,
-			Hint: "disconnect and reconnect the board, check cable quality, then rerun setup",
+	// Avoid probe-close contention on the flash path; upload itself is the authoritative serial check.
+	shouldProbe := opts.SkipFlash || opts.ValidateOnly || opts.DryRun
+	if shouldProbe {
+		if err := d.probePort(port); err != nil {
+			code := errcode.Of(err)
+			if opts.SkipFlash {
+				fmt.Fprintf(d.stdout, "warning: serial probe failed (%v); continuing because --skip-flash\n", err)
+			} else if code == errcode.TransportSerialCloseTimeout {
+				fmt.Fprintf(d.stdout, "warning: serial probe close timed out (%v); continuing\n", err)
+			} else {
+				return &StepError{
+					Step: "serial-probe",
+					Err:  err,
+					Hint: "disconnect and reconnect the board, check cable quality, then rerun setup",
+				}
+			}
 		}
+	} else {
+		fmt.Fprintln(d.stdout, "Serial probe: skipped (flash step verifies port access)")
 	}
 
 	execPath, err := d.executablePath()
@@ -284,6 +297,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	targetBoardIDs := firmwareTargetExpectedIDs(firmwareEnv)
 	if len(targetBoardIDs) > 0 {
 		hello, helloErr := d.readDeviceHello(port)
+		usb.CloseDefaultSender()
 		if helloErr == nil {
 			detectedBoard := strings.TrimSpace(strings.ToLower(hello.Board))
 			if detectedBoard != "" && !containsString(targetBoardIDs, detectedBoard) {

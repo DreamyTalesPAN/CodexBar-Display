@@ -134,6 +134,11 @@ Rollback state file:
 Theme override is optional and currently applies to ESP8266 display firmware
 that advertises `features:["theme"]`.
 
+Runtime behavior:
+- If capability handshake confirms `supportsTheme=true`, companion sends the selected theme.
+- If capability handshake is temporarily unavailable (missing hello), companion uses optimistic send on the MVP path.
+- If capabilities are known and explicitly do not support theme, companion omits `theme`.
+
 For an ad-hoc run:
 
 ```bash
@@ -285,7 +290,7 @@ Run this list before every v0 release decision.
 
 ### Functional Gate (release-gated env)
 - [ ] Device hello reports expected board id for `esp8266_smalltv_st7789`.
-- [ ] Theme contract is strict feature-gated (`theme` only when `features:["theme"]`).
+- [ ] Theme contract is capability-aware (`known && !supportsTheme` blocks theme; unknown hello uses MVP optimistic send).
 - [ ] Runtime theme switching `classic`/`crt`/`mini` works without reflashing.
 - [ ] GIF path is safe: `/mini.gif` works in mini theme (or clean fallback if missing/corrupt).
 - [ ] `classic`/`crt` remain stable without GIF playback.

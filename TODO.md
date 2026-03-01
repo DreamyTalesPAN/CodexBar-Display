@@ -4,7 +4,7 @@
 - Release-gated env: `esp8266_smalltv_st7789`.
 - Non-blocking envs: `esp8266_smalltv_st7789_alt` (supported variant), `lilygo_t_display_s3` (experimental fallback).
 - Runtime themes only (`classic`, `crt`, `mini`) on the same firmware.
-- Theme contract remains strict feature-gated (`theme` only when `hello.features` includes `theme`).
+- Theme contract: capability-aware with MVP fallback (`theme` is blocked only on explicit `known && !supportsTheme`; unknown hello uses optimistic send).
 - GIF core is reusable/modular; current product scope keeps GIF playback only in `mini`.
 - No runtime media upload protocol in v0.
 

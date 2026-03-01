@@ -62,15 +62,17 @@ Fields:
 
 Legacy firmware may emit plain readiness lines (`vibeblock_ready*`) instead of JSON hello.
 Companion treats missing/legacy hello as unknown capabilities.
-For v1 contract, host should continue base usage/error frames but omit `theme` until
-`features:["theme"]` is explicitly known.
+For v1 MVP operations, host continues usage/error frames and may use optimistic `theme`
+send when hello is unavailable; if capabilities are explicitly known and do not include
+`theme`, host must omit `theme`.
 
 ## Rules
 - Unknown fields are ignored.
 - Missing numeric fields default to `0` on firmware side.
 - Host should prefer stable error codes in `error` (for example `runtime/*`, `protocol/*`) over free-form text.
-- `theme` is optional and must only be sent when device `hello.features` includes `theme`.
-- If hello is missing/legacy, host should omit `theme` and continue without runtime theme override.
+- `theme` is optional.
+- If device capabilities are explicitly known and `theme` is unsupported, host must omit `theme`.
+- If hello is missing/legacy (unknown capabilities), host may send `theme` on the MVP path and rely on device-side ignore/fallback behavior.
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.
 - Firmware ticks down `resetSecs` locally between host updates.

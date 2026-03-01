@@ -158,10 +158,15 @@ func runDoctorRuntimeChecks(ports []string) error {
 	fmt.Printf("  serial resolve: ok (%s)\n", port)
 
 	if err := usb.ProbePort(port); err != nil {
-		fmt.Printf("  serial probe: failed (%v)\n", err)
-		return fmt.Errorf("runtime serial probe failed: %w", err)
+		if errcode.Of(err) == errcode.TransportSerialCloseTimeout {
+			fmt.Printf("  serial probe: warning (%v)\n", err)
+		} else {
+			fmt.Printf("  serial probe: failed (%v)\n", err)
+			return fmt.Errorf("runtime serial probe failed: %w", err)
+		}
+	} else {
+		fmt.Printf("  serial probe: ok (%s)\n", port)
 	}
-	fmt.Printf("  serial probe: ok (%s)\n", port)
 
 	pinnedPort, err := doctorPinnedLaunchAgentPort()
 	if err != nil {
@@ -188,13 +193,18 @@ func runDoctorRuntimeChecks(ports []string) error {
 
 	hello, err := usb.ReadDeviceHello(port)
 	if err != nil {
-		fmt.Printf("  device hello: failed (%v)\n", err)
-		return fmt.Errorf("runtime device hello failed: %w", err)
+		fmt.Printf("  device hello: warning (%v)\n", err)
+		fmt.Println("  warning: capability handshake unavailable; runtime will use optimistic theme send fallback")
+		return nil
 	}
 
 	caps := protocol.CapabilitiesFromHello(hello)
 	fmt.Printf("  device hello: ok board=%s protocol=%d firmware=%s theme=%t maxFrameBytes=%d\n",
 		caps.Board, caps.ProtocolVersion, hello.Firmware, caps.SupportsTheme, caps.MaxFrameBytes)
+	if !caps.Known {
+		fmt.Println("  warning: device capabilities are unknown; skipping strict hardware/theme contract checks")
+		return nil
+	}
 
 	switch caps.Board {
 	case "esp8266-smalltv-st7789", "esp8266-smalltv-st7789-alt":
