@@ -16,9 +16,10 @@ constexpr unsigned long kSerialBaudRate = 115200UL;
 constexpr size_t kMaxGIFBytes = 3145728;
 constexpr size_t kFSReserveBytes = 8192;
 constexpr unsigned long kUploadIdleTimeoutMs = 20000UL;
-constexpr int kMinGIFFrameDelayMs = 20;
+constexpr int kMinGIFFrameDelayMs = 1;
 constexpr int kGIFLineBufferPixels = 240;
 constexpr size_t kCommandBufferBytes = 128;
+constexpr uint8_t kDisplayRotation = 0;
 
 TFT_eSPI tft = TFT_eSPI();
 AnimatedGIF gifDecoder;
@@ -28,6 +29,7 @@ char commandBuffer[kCommandBufferBytes];
 size_t commandLen = 0;
 
 uint16_t gifLineBuffer[kGIFLineBufferPixels];
+uint8_t* gifTurboBuffer = nullptr;
 bool fsReady = false;
 bool playbackEnabled = true;
 bool gifOpen = false;
@@ -37,6 +39,11 @@ int gifWidth = 0;
 int gifHeight = 0;
 int gifOffsetX = 0;
 int gifOffsetY = 0;
+bool frameStreamActive = false;
+int frameStreamX = 0;
+int frameStreamY = 0;
+int frameStreamWidth = 0;
+int frameStreamHeight = 0;
 
 bool readGIFDimensions(const char* path, int& width, int& height) {
   width = 0;
@@ -137,6 +144,7 @@ void closeGIFPlayback() {
     gifDecoder.close();
   }
   gifOpen = false;
+  frameStreamActive = false;
   nextFrameAtMs = 0;
 }
 
@@ -201,6 +209,23 @@ void GIFDrawCallback(GIFDRAW* pDraw) {
   if (pDraw == nullptr) {
     return;
   }
+  const int frameX = gifOffsetX + pDraw->iX;
+  const int frameY = gifOffsetY + pDraw->iY;
+  if (pDraw->y == 0) {
+    frameStreamActive = false;
+    if (!pDraw->ucHasTransparency && frameX >= 0 && frameY >= 0 &&
+        frameX + pDraw->iWidth <= tft.width() &&
+        frameY + pDraw->iHeight <= tft.height() &&
+        pDraw->iWidth > 0 && pDraw->iHeight > 0) {
+      frameStreamActive = true;
+      frameStreamX = frameX;
+      frameStreamY = frameY;
+      frameStreamWidth = pDraw->iWidth;
+      frameStreamHeight = pDraw->iHeight;
+      tft.setAddrWindow(frameStreamX, frameStreamY, frameStreamWidth, frameStreamHeight);
+    }
+  }
+
   int lineWidth = pDraw->iWidth;
   if (lineWidth <= 0) {
     return;
@@ -249,6 +274,7 @@ void GIFDrawCallback(GIFDRAW* pDraw) {
   }
 
   if (pDraw->ucHasTransparency) {
+    frameStreamActive = false;
     const uint8_t transparent = pDraw->ucTransparent;
     uint8_t* cursor = src;
     uint8_t* end = src + lineWidth;
@@ -281,6 +307,23 @@ void GIFDrawCallback(GIFDRAW* pDraw) {
   for (int i = 0; i < lineWidth; ++i) {
     gifLineBuffer[i] = palette[src[i]];
   }
+  const bool canStreamLine =
+      frameStreamActive &&
+      srcOffset == 0 &&
+      drawX == frameStreamX &&
+      lineWidth == frameStreamWidth &&
+      drawY >= frameStreamY &&
+      drawY < (frameStreamY + frameStreamHeight);
+
+  if (canStreamLine) {
+    tft.pushPixels(gifLineBuffer, lineWidth);
+    if (drawY == frameStreamY + frameStreamHeight - 1) {
+      frameStreamActive = false;
+    }
+    return;
+  }
+
+  frameStreamActive = false;
   tft.setAddrWindow(drawX, drawY, lineWidth, 1);
   tft.pushPixels(gifLineBuffer, lineWidth);
 }
@@ -600,7 +643,7 @@ void initDisplay() {
   digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
 #endif
   tft.init();
-  tft.setRotation(3);
+  tft.setRotation(kDisplayRotation);
   tft.fillScreen(TFT_BLACK);
 }
 
@@ -621,7 +664,22 @@ void setup() {
     drawStatusScreen("bereit", "send HELLO / PUT <bytes>");
   }
 
-  gifDecoder.begin(LITTLE_ENDIAN_PIXELS);
+  gifDecoder.begin(BIG_ENDIAN_PIXELS);
+  const size_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap > (TURBO_BUFFER_SIZE + 8192)) {
+    gifTurboBuffer = static_cast<uint8_t*>(malloc(TURBO_BUFFER_SIZE));
+    if (gifTurboBuffer != nullptr) {
+      gifDecoder.setTurboBuf(gifTurboBuffer);
+      Serial.printf("GIF_TURBO enabled bytes=%u freeHeap=%u\n",
+                    static_cast<unsigned int>(TURBO_BUFFER_SIZE),
+                    static_cast<unsigned int>(ESP.getFreeHeap()));
+    } else {
+      Serial.println("GIF_TURBO disabled reason=alloc-failed");
+    }
+  } else {
+    Serial.printf("GIF_TURBO disabled reason=low-heap freeHeap=%u\n",
+                  static_cast<unsigned int>(freeHeap));
+  }
   emitStatus();
   Serial.println("vibeblock_gif_ready");
 }
@@ -632,7 +690,7 @@ void loop() {
     handleCommand(line);
   }
   tickGIFPlayback();
-  delay(1);
+  yield();
 }
 
 #endif  // VIBEBLOCK_GIF_PLAYER

@@ -216,7 +216,7 @@ func writeSerialBytesWithProgress(port serial.Port, payload []byte) error {
 	written := 0
 	lastProgress := time.Now().Add(-time.Second)
 	for written < len(payload) {
-		end := written + 512
+		end := written + 64
 		if end > len(payload) {
 			end = len(payload)
 		}
@@ -233,7 +233,7 @@ func writeSerialBytesWithProgress(port serial.Port, payload []byte) error {
 			fmt.Printf("\rupload progress: %.1f%% (%d/%d bytes)", pct, written, len(payload))
 			lastProgress = time.Now()
 		}
-		time.Sleep(2 * time.Millisecond)
+		time.Sleep(8 * time.Millisecond)
 	}
 	fmt.Println()
 	return nil
