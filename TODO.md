@@ -56,7 +56,7 @@ KISS ship path:
 - [ ] Implement device asset store + `vibeblock media sync` (simple + reliable; atomic commit before ship).
 - [ ] Keep GIF playback at source timing by default; allow frame drops for catch-up when decode/render falls behind.
 - [ ] Emit runtime render metrics (`rendered`, `dropped`, `avgRenderMs`, `estDelayMs`) and document interpretation in runbook.
-- [ ] Migrate built-in themes (`classic`, `crt`) to the rich-render pipeline.
+- [ ] Migrate built-in themes (`classic`, `crt`, `mini`) to the rich-render pipeline.
 - [ ] Add essential test gates: corrupted asset, missing slot, reconnect/sleep-wake, long soak, budget checks.
 
 Acceptance:

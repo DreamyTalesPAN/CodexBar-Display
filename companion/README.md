@@ -22,12 +22,12 @@ go run ./cmd/vibeblock health
 go run ./cmd/vibeblock version
 go run ./cmd/vibeblock daemon --port /dev/cu.usbserial-10 --once
 go run ./cmd/vibeblock daemon --port /dev/cu.usbserial-10 --interval 60s
-go run ./cmd/vibeblock daemon --theme crt --interval 60s
+go run ./cmd/vibeblock daemon --theme mini --interval 60s
 go run ./cmd/vibeblock setup
 go run ./cmd/vibeblock setup --yes
 go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --skip-flash
 go run ./cmd/vibeblock setup --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789
-go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
+go run ./cmd/vibeblock setup --yes --skip-flash --theme mini
 go run ./cmd/vibeblock setup --validate-only --firmware-env esp8266_smalltv_st7789
 # v0 GIF-player firmware profile
 go run ./cmd/vibeblock setup --yes --port /dev/cu.usbserial-10 --firmware-env esp8266_smalltv_st7789_gif_player
@@ -60,7 +60,7 @@ Setup flags:
 - `--skip-flash`: skip firmware flashing
 - `--pin-port`: pin daemon to selected `--port` in LaunchAgent (default is unpinned auto-detect)
 - `--firmware-env`: PlatformIO firmware environment (default `esp8266_smalltv_st7789`; `esp8266_smalltv_st7789_gif_player` for v0 GIF mode; `lilygo_t_display_s3` is experimental for v0)
-- `--theme`: persist runtime theme override (`classic`, `crt`, `none`)
+- `--theme`: persist runtime theme override (`classic`, `crt`, `mini`, `none`)
 - `--validate-only`: run setup prerequisite checks only, no system changes
 - `--dry-run`: show setup actions without applying changes
 
@@ -129,7 +129,7 @@ Setup flags:
 - Unified runtime error frames use stable codes like `runtime/codexbar-parse` and `runtime/serial-write`.
 - Daemon logs include `reason=<selection strategy>` and `detail=<tie-break context>` for each sent frame.
 - Error logs are standardized as `cycle error: code=<taxonomy-code> ... recovery=\"<action>\" ...`.
-- Optional theme override: set `VIBEBLOCK_THEME=classic` or `VIBEBLOCK_THEME=crt` to request a display theme.
+- Optional theme override: set `VIBEBLOCK_THEME=classic`, `VIBEBLOCK_THEME=crt`, or `VIBEBLOCK_THEME=mini` to request a display theme.
 - Runtime theme precedence: `daemon --theme` CLI flag > `VIBEBLOCK_THEME` env > runtime config (`config.json`) > firmware compile default.
 - Theme is only sent to devices that advertise `features:["theme"]` in device hello.
 
@@ -160,7 +160,7 @@ Versioning/release/rollback references:
 Environment variables:
 
 - `CODEXBAR_BIN`: force CodexBar executable path
-- `VIBEBLOCK_THEME`: optional theme override (`classic` or `crt`)
+- `VIBEBLOCK_THEME`: optional theme override (`classic`, `crt`, or `mini`)
 - `VIBEBLOCK_CODEXBAR_TIMEOUT_SECS`: timeout per CodexBar command (default `90`)
 - `VIBEBLOCK_LAST_GOOD_MAX_AGE`: max age for stale fallback frame (Go duration format, default `10m`)
 - `VIBEBLOCK_ACTIVITY_MAX_AGE`: max age for local activity signals before they are ignored (default `6h`)

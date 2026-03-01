@@ -390,7 +390,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		return &StepError{
 			Step: "write-runtime-config",
 			Err:  err,
-			Hint: "use --theme classic|crt or --theme none to clear",
+			Hint: "use --theme classic|crt|mini or --theme none to clear",
 		}
 	}
 

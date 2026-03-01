@@ -11,6 +11,11 @@
       "id": 1,
       "protocolName": "crt",
       "compileDefaultMacro": "VIBEBLOCK_THEME_CRT"
+    },
+    {
+      "id": 2,
+      "protocolName": "mini",
+      "compileDefaultMacro": "VIBEBLOCK_THEME_MINI"
     }
   ]
 }

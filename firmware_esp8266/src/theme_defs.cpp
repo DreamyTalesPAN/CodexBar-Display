@@ -4,6 +4,9 @@
 
 Theme defaultTheme() {
   const char* compileDefault = vibeblock::theme::CompileDefaultThemeName();
+  if (String(compileDefault) == vibeblock::theme::kThemeNameMini) {
+    return Theme::Mini;
+  }
   if (String(compileDefault) == vibeblock::theme::kThemeNameCRT) {
     return Theme::CRT;
   }
@@ -21,6 +24,10 @@ bool themeFromName(const String& themeName, Theme& out) {
   }
   if (normalized == vibeblock::theme::kThemeNameCRT) {
     out = Theme::CRT;
+    return true;
+  }
+  if (normalized == vibeblock::theme::kThemeNameMini) {
+    out = Theme::Mini;
     return true;
   }
   return false;

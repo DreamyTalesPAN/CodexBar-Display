@@ -28,7 +28,7 @@ Core dependency:
 - Shared firmware core for frame parsing and runtime state across boards
 - Device handshake and capability detection (`hello`, board ID, features)
 - Companion-side feature gating (for example optional `theme` field)
-- Theme system on ESP8266 SmallTV (`classic`, `crt`)
+- Theme system on ESP8266 SmallTV (`classic`, `crt`, `mini`)
 - GIF player mode for full-color loop playback with timeline-preserving catch-up frame drops
 - One-command setup for flash + install + launch agent management
 - Runtime hardening for reconnect and sleep/wake workflows
@@ -49,8 +49,10 @@ Protocol references:
 v0 release-gated:
 - `esp8266_smalltv_st7789` (default)
 - `esp8266_smalltv_st7789_crt`
+- `esp8266_smalltv_st7789_mini`
 - `esp8266_smalltv_st7789_alt`
 - `esp8266_smalltv_st7789_alt_crt`
+- `esp8266_smalltv_st7789_alt_mini`
 - `esp8266_probe` (no-display probe profile)
 - `esp8266_smalltv_st7789_gif_player` (GIF loop playback profile)
 - `esp8266_smalltv_st7789_alt_gif_player` (GIF loop playback alt pin mapping)
@@ -63,15 +65,18 @@ Experimental (non-blocking for v0):
 Supported themes:
 - `classic`
 - `crt`
+- `mini`
 
 Theme-capable firmware envs:
 - `esp8266_smalltv_st7789`
 - `esp8266_smalltv_st7789_crt`
+- `esp8266_smalltv_st7789_mini`
 - `esp8266_smalltv_st7789_alt`
 - `esp8266_smalltv_st7789_alt_crt`
+- `esp8266_smalltv_st7789_alt_mini`
 
 Theme selection precedence:
-1. `vibeblock daemon --theme <classic|crt>`
+1. `vibeblock daemon --theme <classic|crt|mini>`
 2. `VIBEBLOCK_THEME`
 3. runtime config (`~/Library/Application Support/vibeblock/config.json`)
 4. firmware compile default

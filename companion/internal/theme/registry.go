@@ -11,6 +11,7 @@ type Definition struct {
 const (
 	Classic = "classic"
 	CRT     = "crt"
+	Mini    = "mini"
 )
 
 var registry = []Definition{
@@ -23,6 +24,11 @@ var registry = []Definition{
 		ID:                  1,
 		ProtocolName:        CRT,
 		CompileDefaultMacro: "VIBEBLOCK_THEME_CRT",
+	},
+	{
+		ID:                  2,
+		ProtocolName:        Mini,
+		CompileDefaultMacro: "VIBEBLOCK_THEME_MINI",
 	},
 }
 
@@ -46,6 +52,9 @@ func Names() []string {
 
 func Normalize(value string) string {
 	normalized := strings.TrimSpace(strings.ToLower(value))
+	if normalized == "standard" {
+		return Classic
+	}
 	for _, def := range registry {
 		if normalized == def.ProtocolName {
 			return normalized
