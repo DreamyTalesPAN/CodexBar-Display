@@ -20,6 +20,8 @@ constexpr int kMinGIFFrameDelayMs = 0;
 constexpr int kGIFLineBufferPixels = 240;
 constexpr size_t kCommandBufferBytes = 128;
 constexpr uint8_t kDisplayRotation = 0;
+constexpr int kInitialEstimatedFrameDelayMs = 33;
+constexpr int kMaxCatchupDropsPerTick = 8;
 
 TFT_eSPI tft = TFT_eSPI();
 AnimatedGIF gifDecoder;
@@ -44,6 +46,12 @@ int frameStreamX = 0;
 int frameStreamY = 0;
 int frameStreamWidth = 0;
 int frameStreamHeight = 0;
+bool suppressGIFDraw = false;
+int estimatedFrameDelayMs = kInitialEstimatedFrameDelayMs;
+uint32_t renderedFrames = 0;
+uint32_t droppedFrames = 0;
+uint16_t lastRenderMs = 0;
+uint16_t avgRenderMs = 0;
 
 bool readGIFDimensions(const char* path, int& width, int& height) {
   width = 0;
@@ -145,6 +153,7 @@ void closeGIFPlayback() {
   }
   gifOpen = false;
   frameStreamActive = false;
+  suppressGIFDraw = false;
   nextFrameAtMs = 0;
 }
 
@@ -207,6 +216,9 @@ int32_t GIFSeekFileCallback(GIFFILE* pFile, int32_t iPosition) {
 
 void GIFDrawCallback(GIFDRAW* pDraw) {
   if (pDraw == nullptr) {
+    return;
+  }
+  if (suppressGIFDraw) {
     return;
   }
   const int frameX = gifOffsetX + pDraw->iX;
@@ -358,6 +370,49 @@ bool openGIFPlayback() {
   }
   gifOpen = true;
   nextFrameAtMs = 0;
+  estimatedFrameDelayMs = kInitialEstimatedFrameDelayMs;
+  renderedFrames = 0;
+  droppedFrames = 0;
+  lastRenderMs = 0;
+  avgRenderMs = 0;
+  return true;
+}
+
+bool playGIFFrame(bool drawFrame, int& delayMs, unsigned long* elapsedMs = nullptr) {
+  delayMs = 0;
+  const unsigned long startedAt = millis();
+  suppressGIFDraw = !drawFrame;
+
+  if (drawFrame) {
+    tft.startWrite();
+  }
+  bool played = gifDecoder.playFrame(false, &delayMs, nullptr);
+  if (drawFrame) {
+    tft.endWrite();
+  }
+
+  if (!played) {
+    gifDecoder.reset();
+    if (drawFrame) {
+      tft.startWrite();
+    }
+    played = gifDecoder.playFrame(false, &delayMs, nullptr);
+    if (drawFrame) {
+      tft.endWrite();
+    }
+    if (!played) {
+      suppressGIFDraw = false;
+      return false;
+    }
+  }
+
+  suppressGIFDraw = false;
+  if (delayMs < kMinGIFFrameDelayMs) {
+    delayMs = kMinGIFFrameDelayMs;
+  }
+  if (elapsedMs != nullptr) {
+    *elapsedMs = millis() - startedAt;
+  }
   return true;
 }
 
@@ -382,36 +437,69 @@ void tickGIFPlayback() {
     return;
   }
 
-  const unsigned long now = millis();
-  if (nextFrameAtMs != 0 &&
-      static_cast<long>(now - nextFrameAtMs) < 0) {
+  unsigned long now = millis();
+  if (nextFrameAtMs == 0) {
+    tft.fillScreen(TFT_BLACK);
+    nextFrameAtMs = now;
+  }
+  if (static_cast<long>(now - nextFrameAtMs) < 0) {
     return;
   }
 
-  if (nextFrameAtMs == 0) {
-    tft.fillScreen(TFT_BLACK);
-  }
   screenNeedsMessage = false;
 
-  const unsigned long frameStartMs = now;
-  int delayMs = 0;
-  tft.startWrite();
-  bool played = gifDecoder.playFrame(false, &delayMs, nullptr);
-  tft.endWrite();
-  if (!played) {
-    gifDecoder.reset();
-    tft.startWrite();
-    played = gifDecoder.playFrame(false, &delayMs, nullptr);
-    tft.endWrite();
-    if (!played) {
+  int dropBudget = kMaxCatchupDropsPerTick;
+  while (dropBudget > 0) {
+    now = millis();
+    const long lagMs = static_cast<long>(now - nextFrameAtMs);
+    if (lagMs < estimatedFrameDelayMs) {
+      break;
+    }
+
+    int skippedDelayMs = 0;
+    if (!playGIFFrame(false, skippedDelayMs, nullptr)) {
       closeGIFPlayback();
       return;
     }
+    ++droppedFrames;
+    nextFrameAtMs += static_cast<unsigned long>(skippedDelayMs);
+    estimatedFrameDelayMs = ((estimatedFrameDelayMs * 7) + skippedDelayMs) / 8;
+    if (estimatedFrameDelayMs < 1) {
+      estimatedFrameDelayMs = 1;
+    }
+    --dropBudget;
   }
-  if (delayMs < kMinGIFFrameDelayMs) {
-    delayMs = kMinGIFFrameDelayMs;
+
+  now = millis();
+  if (static_cast<long>(now - nextFrameAtMs) < 0) {
+    return;
   }
-  // Schedule based on frame start time so render cost is not added on top.
+
+  const unsigned long frameStartMs = nextFrameAtMs;
+  int delayMs = 0;
+  unsigned long renderDurationMs = 0;
+  if (!playGIFFrame(true, delayMs, &renderDurationMs)) {
+    closeGIFPlayback();
+    return;
+  }
+
+  ++renderedFrames;
+  if (renderDurationMs > 65535UL) {
+    renderDurationMs = 65535UL;
+  }
+  lastRenderMs = static_cast<uint16_t>(renderDurationMs);
+  if (avgRenderMs == 0) {
+    avgRenderMs = lastRenderMs;
+  } else {
+    avgRenderMs = static_cast<uint16_t>((static_cast<uint32_t>(avgRenderMs) * 7U + lastRenderMs) / 8U);
+  }
+
+  estimatedFrameDelayMs = ((estimatedFrameDelayMs * 7) + delayMs) / 8;
+  if (estimatedFrameDelayMs < 1) {
+    estimatedFrameDelayMs = 1;
+  }
+
+  // Keep the GIF timeline anchored to scheduled frame start times.
   nextFrameAtMs = frameStartMs + static_cast<unsigned long>(delayMs);
 }
 
@@ -419,14 +507,18 @@ void emitStatus() {
   const size_t bytes = fileSizeBytes(kGifPath);
   const size_t maxBytes = advertisedBudgetBytes();
   Serial.printf(
-      "STATUS board=%s fw=%s fs=%d file=%d bytes=%u maxBytes=%u playing=%d\n",
+      "STATUS board=%s fw=%s fs=%d file=%d bytes=%u maxBytes=%u playing=%d rendered=%lu dropped=%lu avgRenderMs=%u estDelayMs=%d\n",
       kBoardID,
       kFirmwareVersion,
       fsReady ? 1 : 0,
       (fsReady && LittleFS.exists(kGifPath)) ? 1 : 0,
       static_cast<unsigned int>(bytes),
       static_cast<unsigned int>(maxBytes),
-      playbackEnabled ? 1 : 0);
+      playbackEnabled ? 1 : 0,
+      static_cast<unsigned long>(renderedFrames),
+      static_cast<unsigned long>(droppedFrames),
+      static_cast<unsigned int>(avgRenderMs),
+      estimatedFrameDelayMs);
 }
 
 bool parsePutSize(const String& line, size_t& out) {
