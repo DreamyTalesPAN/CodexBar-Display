@@ -46,31 +46,11 @@ jobs:
       matrix:
         include:
           - firmware_dir: firmware_esp8266
-            env_name: esp8266_probe
-            max_flash_pct: 45
-            max_ram_pct: 60
-          - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789
             max_flash_pct: 45
             max_ram_pct: 72
           - firmware_dir: firmware_esp8266
-            env_name: esp8266_smalltv_st7789_crt
-            max_flash_pct: 45
-            max_ram_pct: 72
-          - firmware_dir: firmware_esp8266
-            env_name: esp8266_smalltv_st7789_mini
-            max_flash_pct: 45
-            max_ram_pct: 72
-          - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789_alt
-            max_flash_pct: 45
-            max_ram_pct: 72
-          - firmware_dir: firmware_esp8266
-            env_name: esp8266_smalltv_st7789_alt_crt
-            max_flash_pct: 45
-            max_ram_pct: 72
-          - firmware_dir: firmware_esp8266
-            env_name: esp8266_smalltv_st7789_alt_mini
             max_flash_pct: 45
             max_ram_pct: 72
     steps:

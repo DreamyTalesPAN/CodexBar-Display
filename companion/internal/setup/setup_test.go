@@ -714,6 +714,15 @@ func TestDefaultFirmwareEnvironment(t *testing.T) {
 	}
 }
 
+func TestResolveFirmwareEnvironmentRejectsUnsupported(t *testing.T) {
+	if _, ok := ResolveFirmwareEnvironment("esp8266_smalltv_st7789_crt"); ok {
+		t.Fatalf("expected legacy compile-theme env to be rejected")
+	}
+	if _, ok := ResolveFirmwareEnvironment("esp8266_probe"); ok {
+		t.Fatalf("expected unsupported firmware env to be rejected")
+	}
+}
+
 func TestFirmwareProjectDirForLilygoEnvironment(t *testing.T) {
 	repo := t.TempDir()
 	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)

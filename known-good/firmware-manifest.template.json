@@ -4,13 +4,6 @@
   "protocolVersion": 1,
   "artifacts": [
     {
-      "firmwareEnv": "esp8266_probe",
-      "board": "esp8266-probe",
-      "firmwareVersion": "X.Y.Z",
-      "asset": "vibeblock-firmware-esp8266_probe-vX.Y.Z.bin",
-      "sha256": "<filled-by-release-workflow>"
-    },
-    {
       "firmwareEnv": "esp8266_smalltv_st7789",
       "board": "esp8266-smalltv-st7789",
       "firmwareVersion": "X.Y.Z",
@@ -18,38 +11,10 @@
       "sha256": "<filled-by-release-workflow>"
     },
     {
-      "firmwareEnv": "esp8266_smalltv_st7789_crt",
-      "board": "esp8266-smalltv-st7789",
-      "firmwareVersion": "X.Y.Z",
-      "asset": "vibeblock-firmware-esp8266_smalltv_st7789_crt-vX.Y.Z.bin",
-      "sha256": "<filled-by-release-workflow>"
-    },
-    {
-      "firmwareEnv": "esp8266_smalltv_st7789_mini",
-      "board": "esp8266-smalltv-st7789",
-      "firmwareVersion": "X.Y.Z",
-      "asset": "vibeblock-firmware-esp8266_smalltv_st7789_mini-vX.Y.Z.bin",
-      "sha256": "<filled-by-release-workflow>"
-    },
-    {
       "firmwareEnv": "esp8266_smalltv_st7789_alt",
       "board": "esp8266-smalltv-st7789-alt",
       "firmwareVersion": "X.Y.Z",
       "asset": "vibeblock-firmware-esp8266_smalltv_st7789_alt-vX.Y.Z.bin",
-      "sha256": "<filled-by-release-workflow>"
-    },
-    {
-      "firmwareEnv": "esp8266_smalltv_st7789_alt_crt",
-      "board": "esp8266-smalltv-st7789-alt",
-      "firmwareVersion": "X.Y.Z",
-      "asset": "vibeblock-firmware-esp8266_smalltv_st7789_alt_crt-vX.Y.Z.bin",
-      "sha256": "<filled-by-release-workflow>"
-    },
-    {
-      "firmwareEnv": "esp8266_smalltv_st7789_alt_mini",
-      "board": "esp8266-smalltv-st7789-alt",
-      "firmwareVersion": "X.Y.Z",
-      "asset": "vibeblock-firmware-esp8266_smalltv_st7789_alt_mini-vX.Y.Z.bin",
       "sha256": "<filled-by-release-workflow>"
     },
     {

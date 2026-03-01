@@ -6,8 +6,9 @@ Single source of truth for install, runtime checks, recovery, and smoke testing.
 - macOS runtime (`launchctl` + LaunchAgent)
 - USB serial devices (`/dev/cu.usb*`)
 - Companion binary (`vibeblock`)
-- ESP8266 firmware target for v1 production rollout
-- ESP32-S3 firmware path as experimental/non-blocking for v1
+- Primary release-gated target for the v0 pre-release track: `esp8266_smalltv_st7789` (SemVer `1.x`)
+- Supported ESP8266 variant target (best effort, non-blocking): `esp8266_smalltv_st7789_alt`
+- ESP32-S3 firmware path as experimental fallback/non-blocking for v0
 
 ## Core Commands
 
@@ -35,7 +36,7 @@ go run ./cmd/vibeblock setup --yes
 
 ### ESP32-S3 target (override)
 
-Experimental path for v1 (non-blocking):
+Experimental fallback path (non-blocking):
 
 ```bash
 cd companion
@@ -48,9 +49,20 @@ Useful flags:
 - `--skip-flash`: install/update runtime only
 - `--pin-port`: pin LaunchAgent to one explicit serial path
 - `--firmware-env <env>`: select PlatformIO environment
-- `--theme <classic|crt|none>`: persist runtime theme override in companion config
+- `--theme <classic|crt|mini|none>`: persist runtime theme override in companion config
 - `--validate-only`: run setup prerequisite checks only
 - `--dry-run`: print setup actions without applying changes
+
+## Firmware Environment Selection (ESP8266-first)
+
+Use these rules when selecting `--firmware-env`:
+
+- KISS default runtime firmware: `esp8266_smalltv_st7789` (release-gated)
+- Alternate wiring units only: `esp8266_smalltv_st7789_alt` (supported, non-blocking)
+- Themes are runtime-configured (`classic`, `crt`, `mini`) via `--theme`/`VIBEBLOCK_THEME` on the same firmware.
+- Legacy compile-theme/GIF/probe env names are unsupported; use only the runtime envs above.
+- `lilygo_t_display_s3` is an experimental fallback and does not block v0 release decisions.
+- MVP release go/no-go is gated only by `esp8266_smalltv_st7789`.
 
 During setup, runtime assets are installed to:
 - Binary: `~/Library/Application Support/vibeblock/bin/vibeblock`
@@ -75,7 +87,7 @@ Preflight includes:
 Optional guard override:
 
 ```bash
-# experimental v1 path
+# experimental fallback path
 go run ./cmd/vibeblock upgrade \
   --firmware-env lilygo_t_display_s3 \
   --target-firmware-version 1.0.0
@@ -253,10 +265,21 @@ Use this taxonomy for incident triage:
 
 ## Performance Budgets
 
-Companion benchmark limits, firmware probe-bench commands, and per-target budgets:
-- `docs/performance-budgets.md`
+Companion benchmark gate:
 
-Versioning/release references:
-- `docs/versioning-compatibility.md`
-- `docs/release-process.md`
-- `docs/known-good-firmware.md`
+```bash
+cd companion
+go test ./internal/daemon -run '^$' -bench 'BenchmarkRunCycleWithDeps|BenchmarkMarshalFrameWithinLimit' -benchmem -count=1
+./scripts/check-companion-bench-budget.sh
+```
+
+Firmware bench envs:
+- ESP8266: `esp8266_smalltv_st7789_bench`
+- ESP32 fallback: `lilygo_t_display_s3_bench`
+
+## Versioning and Release Notes
+
+- SemVer is `1.x` for companion and firmware lines in the current pre-release track.
+- Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`; `esp8266_smalltv_st7789_alt` is supported best-effort/non-blocking.
+- `vibeblock upgrade` enforces companion/firmware compatibility with a version guard.
+- GitHub release artifacts include companion binaries, firmware binaries, and checksums.

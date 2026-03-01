@@ -6,9 +6,10 @@ The companion reads `codexbar usage --json` and sends newline-delimited JSON fra
 
 ## v0 Status
 - Pre-release.
-- Release-gated hardware target: ESP8266 SmallTV ST7789 (including alt pin mappings).
-- v0 includes GIF rendering/loop playback and built-in themes (`classic`, `crt`, `mini`).
-- ESP32 (`lilygo_t_display_s3`) remains experimental/non-blocking for v0.
+- Primary (and only release-gated MVP) hardware target: ESP8266 SmallTV ST7789 (`esp8266_smalltv_st7789`).
+- ESP8266 alt pin mapping (`esp8266_smalltv_st7789_alt`) remains a supported best-effort variant (non-blocking).
+- v0 includes built-in themes (`classic`, `crt`, `mini`) and mini-theme local GIF rendering.
+- ESP32 (`lilygo_t_display_s3`) remains experimental fallback/non-blocking for v0.
 
 ## Quick Start (macOS)
 ```bash
@@ -34,26 +35,22 @@ go run ./cmd/vibeblock setup --yes --skip-flash --theme mini
 # Upgrade / rollback
 go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
 go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
-
-# GIF-player profile + upload flow
-go run ./cmd/vibeblock setup --yes --firmware-env esp8266_smalltv_st7789_gif_player --port /dev/cu.usbserial-10
-go run ./cmd/vibeblock gif-upload --port /dev/cu.usbserial-10 --gif ~/Downloads/testgif3.gif
 ```
 
 ## Firmware Environments
-Release-gated (ESP8266):
-- `esp8266_smalltv_st7789` (default)
-- `esp8266_smalltv_st7789_crt`
-- `esp8266_smalltv_st7789_mini`
-- `esp8266_smalltv_st7789_alt`
-- `esp8266_smalltv_st7789_alt_crt`
-- `esp8266_smalltv_st7789_alt_mini`
-- `esp8266_probe`
-- `esp8266_smalltv_st7789_gif_player`
-- `esp8266_smalltv_st7789_alt_gif_player`
+KISS runtime path:
+- `esp8266_smalltv_st7789` (default, release-gated)
 
-Experimental:
+Optional hardware variant (only for alternate-wiring units):
+- `esp8266_smalltv_st7789_alt` (supported, non-blocking)
+
+Experimental fallback (non-blocking):
 - `lilygo_t_display_s3`
+
+Release go/no-go for MVP is gated only by `esp8266_smalltv_st7789`.
+
+Theme selection is runtime-driven (`classic|crt|mini`) via `--theme` or `VIBEBLOCK_THEME`.
+Protocol contract (v0 target): companion sends `theme` only when device hello advertises `features:["theme"]`.
 
 ## Theme Precedence
 1. `vibeblock daemon --theme <classic|crt|mini>`
@@ -79,8 +76,4 @@ pio run -e lilygo_t_display_s3
 ## Docs
 - Operator runbook: `docs/operator-runbook.md`
 - Open roadmap: `TODO.md`
-- Completed milestones: `docs/completed-milestones.md`
 - Protocol: `protocol/PROTOCOL.md`
-- Versioning/compatibility: `docs/versioning-compatibility.md`
-- Release process: `docs/release-process.md`
-- Known-good firmware: `docs/known-good-firmware.md`

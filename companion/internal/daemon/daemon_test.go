@@ -313,7 +313,7 @@ func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing
 	}
 }
 
-func TestRunCycleWithDepsFallsBackToAutoDetectedPortWhenRequestedPortDisappears(t *testing.T) {
+func TestRunCycleWithDepsDoesNotFallbackWhenRequestedPortDisappears(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -322,46 +322,31 @@ func TestRunCycleWithDepsFallsBackToAutoDetectedPortWhenRequestedPortDisappears(
 	}
 
 	requestedPort := "/dev/cu.usbmodem101"
-	resolvedPort := ""
 	sentPort := ""
-	loggedFallback := false
 
 	err := runCycleWithDeps(context.Background(), requestedPort, state, runtimeDeps{
 		now: func() time.Time { return now },
 		resolvePort: func(port string) (string, error) {
-			switch port {
-			case requestedPort:
+			if port == requestedPort {
 				return "", errors.New("serial port not found: " + requestedPort)
-			case "":
-				resolvedPort = "/dev/cu.usbmodem1101"
-				return resolvedPort, nil
-			default:
-				return "", errors.New("unexpected resolve input: " + port)
 			}
+			return "", errors.New("unexpected resolve input: " + port)
 		},
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
 			return []codexbar.ParsedFrame{
 				testParsedFrame("codex", 12, 30, 3600),
 			}, nil
 		},
-		logf: func(format string, args ...any) {
-			if strings.Contains(format, "port-fallback") {
-				loggedFallback = true
-			}
-		},
 		sendLine: func(port string, line []byte) error {
 			sentPort = port
 			return nil
 		},
 	})
-	if err != nil {
-		t.Fatalf("expected auto-port fallback to recover, got %v", err)
+	if err == nil {
+		t.Fatalf("expected explicit-port resolve error")
 	}
-	if sentPort != resolvedPort {
-		t.Fatalf("expected send on auto-detected port %q, got %q", resolvedPort, sentPort)
-	}
-	if !loggedFallback {
-		t.Fatalf("expected port-fallback runtime log")
+	if sentPort != "" {
+		t.Fatalf("expected no send on resolve failure, got %q", sentPort)
 	}
 }
 

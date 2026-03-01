@@ -271,6 +271,15 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	if firmwareEnv == "" {
 		firmwareEnv = DefaultFirmwareEnvironment()
 	}
+	resolvedFirmwareEnv, ok := ResolveFirmwareEnvironment(firmwareEnv)
+	if !ok {
+		return &StepError{
+			Step: "validate-firmware-env",
+			Err:  fmt.Errorf("unsupported firmware environment %q", firmwareEnv),
+			Hint: "use esp8266_smalltv_st7789 (default), esp8266_smalltv_st7789_alt, or lilygo_t_display_s3",
+		}
+	}
+	firmwareEnv = resolvedFirmwareEnv
 
 	targetBoardIDs := firmwareTargetExpectedIDs(firmwareEnv)
 	if len(targetBoardIDs) > 0 {

@@ -17,6 +17,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/health"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
@@ -43,8 +44,6 @@ func main() {
 		err = runRollback(os.Args[2:])
 	case "restore-known-good":
 		err = runRestoreKnownGood(os.Args[2:])
-	case "gif-upload":
-		err = runGIFUpload(os.Args[2:])
 	case "setup":
 		err = runSetup(os.Args[2:])
 	default:
@@ -74,7 +73,6 @@ func printUsage() {
 	fmt.Println("  vibeblock upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--skip-version-guard]")
 	fmt.Println("  vibeblock rollback [--port /dev/cu.usbserial-10] [--skip-companion] [--skip-firmware] [--image path/to/backup.bin] [--manifest path/to/backup.manifest] [--backup-dir <dir>] [--script-path <path>] [--skip-verify]")
 	fmt.Println("  vibeblock restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
-	fmt.Println("  vibeblock gif-upload [--port /dev/cu.usbserial-10] [--gif ~/Downloads/testgif(.gif)] [--baud 115200] [--play=true]")
 	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
@@ -164,6 +162,31 @@ func runDoctorRuntimeChecks() error {
 		return fmt.Errorf("runtime serial probe failed: %w", err)
 	}
 	fmt.Printf("  serial probe: ok (%s)\n", port)
+
+	hello, err := usb.ReadDeviceHello(port)
+	if err != nil {
+		fmt.Printf("  device hello: failed (%v)\n", err)
+		return fmt.Errorf("runtime device hello failed: %w", err)
+	}
+
+	caps := protocol.CapabilitiesFromHello(hello)
+	fmt.Printf("  device hello: ok board=%s protocol=%d firmware=%s theme=%t maxFrameBytes=%d\n",
+		caps.Board, caps.ProtocolVersion, hello.Firmware, caps.SupportsTheme, caps.MaxFrameBytes)
+
+	switch caps.Board {
+	case "esp8266-smalltv-st7789", "esp8266-smalltv-st7789-alt":
+		if caps.Known && !caps.SupportsTheme {
+			return fmt.Errorf("runtime capability check failed: board %q does not advertise theme support", caps.Board)
+		}
+	case "esp32-lilygo-t-display-s3":
+		fmt.Println("  warning: esp32 fallback board detected (non-blocking)")
+	default:
+		return fmt.Errorf("runtime hardware contract failed: unsupported board %q", caps.Board)
+	}
+
+	if caps.ProtocolVersion > 0 && caps.ProtocolVersion != 1 {
+		return fmt.Errorf("runtime protocol contract failed: unsupported protocol version %d", caps.ProtocolVersion)
+	}
 
 	return nil
 }

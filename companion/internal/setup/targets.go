@@ -16,38 +16,13 @@ var firmwareTargets = map[string]firmwareTarget{
 		ProjectDir:  "firmware",
 		ExpectedIDs: []string{"esp32-lilygo-t-display-s3"},
 	},
-	"esp8266_probe": {
-		Env:         "esp8266_probe",
-		ProjectDir:  "firmware_esp8266",
-		ExpectedIDs: []string{"esp8266-probe"},
-	},
 	"esp8266_smalltv_st7789": {
 		Env:         "esp8266_smalltv_st7789",
 		ProjectDir:  "firmware_esp8266",
 		ExpectedIDs: []string{"esp8266-smalltv-st7789"},
 	},
-	"esp8266_smalltv_st7789_crt": {
-		Env:         "esp8266_smalltv_st7789_crt",
-		ProjectDir:  "firmware_esp8266",
-		ExpectedIDs: []string{"esp8266-smalltv-st7789"},
-	},
-	"esp8266_smalltv_st7789_mini": {
-		Env:         "esp8266_smalltv_st7789_mini",
-		ProjectDir:  "firmware_esp8266",
-		ExpectedIDs: []string{"esp8266-smalltv-st7789"},
-	},
 	"esp8266_smalltv_st7789_alt": {
 		Env:         "esp8266_smalltv_st7789_alt",
-		ProjectDir:  "firmware_esp8266",
-		ExpectedIDs: []string{"esp8266-smalltv-st7789-alt"},
-	},
-	"esp8266_smalltv_st7789_alt_crt": {
-		Env:         "esp8266_smalltv_st7789_alt_crt",
-		ProjectDir:  "firmware_esp8266",
-		ExpectedIDs: []string{"esp8266-smalltv-st7789-alt"},
-	},
-	"esp8266_smalltv_st7789_alt_mini": {
-		Env:         "esp8266_smalltv_st7789_alt_mini",
 		ProjectDir:  "firmware_esp8266",
 		ExpectedIDs: []string{"esp8266-smalltv-st7789-alt"},
 	},
@@ -58,7 +33,7 @@ func DefaultFirmwareEnvironment() string {
 }
 
 func lookupFirmwareTarget(env string) (firmwareTarget, bool) {
-	key := strings.TrimSpace(strings.ToLower(env))
+	key := normalizeFirmwareEnvKey(env)
 	target, ok := firmwareTargets[key]
 	return target, ok
 }
@@ -69,4 +44,19 @@ func firmwareTargetExpectedIDs(env string) []string {
 		return nil
 	}
 	return append([]string(nil), target.ExpectedIDs...)
+}
+
+func normalizeFirmwareEnvKey(env string) string {
+	return strings.TrimSpace(strings.ToLower(env))
+}
+
+// ResolveFirmwareEnvironment validates whether the firmware environment
+// is supported by the current runtime path.
+func ResolveFirmwareEnvironment(env string) (string, bool) {
+	key := normalizeFirmwareEnvKey(env)
+	target, ok := firmwareTargets[key]
+	if !ok {
+		return "", false
+	}
+	return target.Env, true
 }
