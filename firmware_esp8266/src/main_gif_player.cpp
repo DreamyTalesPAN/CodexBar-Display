@@ -16,7 +16,7 @@ constexpr unsigned long kSerialBaudRate = 115200UL;
 constexpr size_t kMaxGIFBytes = 3145728;
 constexpr size_t kFSReserveBytes = 8192;
 constexpr unsigned long kUploadIdleTimeoutMs = 20000UL;
-constexpr int kMinGIFFrameDelayMs = 1;
+constexpr int kMinGIFFrameDelayMs = 0;
 constexpr int kGIFLineBufferPixels = 240;
 constexpr size_t kCommandBufferBytes = 128;
 constexpr uint8_t kDisplayRotation = 0;
@@ -383,7 +383,8 @@ void tickGIFPlayback() {
   }
 
   const unsigned long now = millis();
-  if (nextFrameAtMs != 0 && now < nextFrameAtMs) {
+  if (nextFrameAtMs != 0 &&
+      static_cast<long>(now - nextFrameAtMs) < 0) {
     return;
   }
 
@@ -392,6 +393,7 @@ void tickGIFPlayback() {
   }
   screenNeedsMessage = false;
 
+  const unsigned long frameStartMs = now;
   int delayMs = 0;
   tft.startWrite();
   bool played = gifDecoder.playFrame(false, &delayMs, nullptr);
@@ -409,7 +411,8 @@ void tickGIFPlayback() {
   if (delayMs < kMinGIFFrameDelayMs) {
     delayMs = kMinGIFFrameDelayMs;
   }
-  nextFrameAtMs = millis() + static_cast<unsigned long>(delayMs);
+  // Schedule based on frame start time so render cost is not added on top.
+  nextFrameAtMs = frameStartMs + static_cast<unsigned long>(delayMs);
 }
 
 void emitStatus() {
