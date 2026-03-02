@@ -70,6 +70,35 @@ func TestParseUsageJSONHandlesLeadingGarbageBeforeJSON(t *testing.T) {
 	}
 }
 
+func TestParseAllProvidersSkipsProviderErrorPayloads(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"codex-cli",
+			"usage":{
+				"primary":{"usedPercent":1,"resetsAt":"2099-01-01T00:00:00Z"},
+				"secondary":{"usedPercent":28}
+			}
+		},
+		{
+			"provider":"cursor",
+			"source":"auto",
+			"error":{"kind":"provider","message":"No Cursor session found.","code":1}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected exactly one usable provider, got %d", len(parsed))
+	}
+	if got := providerKey(parsed[0]); got != "codex" {
+		t.Fatalf("expected codex provider after filtering error payloads, got %q", got)
+	}
+}
+
 func TestShouldRetryAfterStartingCodexBarAppWhenDashboardMissing(t *testing.T) {
 	raw := []byte("Error: OpenAI dashboard data not found. Body sample: Download app")
 	should := shouldRetryAfterStartingCodexBarApp(errors.New("exit status 1"), ErrNoProviders, nil, raw)
@@ -725,6 +754,24 @@ func TestFetchAllProvidersUsesDetachedContextForProviderScopedFallback(t *testin
 	}
 	if len(parsed) != 1 || providerKey(parsed[0]) != "claude" {
 		t.Fatalf("expected claude fallback frame, got %#v", parsed)
+	}
+}
+
+func TestFetchProviderScopedUsageRejectsProviderErrorPayload(t *testing.T) {
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, _ ...string) ([]byte, error) {
+		return []byte(`[
+			{"provider":"cursor","source":"auto","error":{"kind":"provider","message":"No Cursor session found.","code":1}},
+			{"provider":"cli","source":"cli","error":{"kind":"provider","message":"Error","code":1}}
+		]`), errors.New("exit status 1")
+	}
+
+	if _, ok := fetchProviderScopedUsage(context.Background(), 5*time.Second, "/bin/sh", "cursor"); ok {
+		t.Fatalf("expected provider-scoped usage to reject error-only payload")
 	}
 }
 

@@ -328,6 +328,10 @@ func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 }
 
 func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
+	if providerPayloadHasError(payload) {
+		return ParsedFrame{}, errors.New("provider error payload")
+	}
+
 	provider := firstString(payload, "provider", "id", "slug", "name")
 	source := firstString(payload, "source")
 	label := humanLabel(provider)
@@ -388,6 +392,26 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		Source:       source,
 		AccountEmail: accountEmail,
 	}, nil
+}
+
+func providerPayloadHasError(payload map[string]any) bool {
+	raw, ok := payload["error"]
+	if !ok || raw == nil {
+		return false
+	}
+
+	switch v := raw.(type) {
+	case string:
+		return strings.TrimSpace(v) != ""
+	case map[string]any:
+		if len(v) == 0 {
+			return false
+		}
+		// Non-empty provider error payloads are not usable usage frames.
+		return true
+	default:
+		return true
+	}
 }
 
 const (
