@@ -3,6 +3,7 @@
 vibeblock is a physical CodexBar status display.
 
 The companion reads `codexbar usage --json` and sends newline-delimited JSON frames over USB serial to the firmware.
+For the Codex provider, companion prioritizes `--provider codex --source cli` over web-derived values.
 
 ## v0 Status
 - Pre-release.

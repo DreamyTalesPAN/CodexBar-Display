@@ -13,6 +13,15 @@
 - [ ] Execute the full release readiness checklist in `docs/operator-runbook.md`.
 - [ ] Execute the `RC -> soak -> final` flow from `docs/operator-runbook.md` and document the decision.
 
+## Current Status (2026-03-02, Machine A)
+- [x] `setup --yes --firmware-env esp8266_smalltv_st7789 --theme mini` (flash + runtime config + launch agent) works.
+- [x] `go test ./...` (companion), `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789`, and `./scripts/check-esp8266-soak-gate.sh` are green.
+- [x] `upgrade --firmware-env esp8266_smalltv_st7789` works.
+- [x] `restore-known-good` with manifest/device verification works (explicit image+manifest path).
+- [x] `rollback --skip-companion --image ... --manifest ...` works when the port is free.
+- [ ] `rollback --port ...` default known-good firmware image path still needs cleanup/fix (currently points to missing backup image).
+- [ ] Machine-B E2E run still open.
+
 ## P1 (Next, Non-Blocking)
 - [ ] Split `firmware_esp8266/src/renderer_esp8266.cpp` into theme-focused modules (`classic`, `crt`, `mini`) without behavior changes.
 - [ ] Extract probe rendering path into its own module to shrink renderer responsibilities.

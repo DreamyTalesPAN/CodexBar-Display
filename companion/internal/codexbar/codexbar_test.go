@@ -419,63 +419,45 @@ func TestProviderSelectionMatrix30Scenarios(t *testing.T) {
 	}
 }
 
-func TestShouldTryCodexCLIRepair(t *testing.T) {
-	parsed := ParsedFrame{
-		Frame:    protocol.Frame{Session: 0, Weekly: 0, ResetSec: 0},
-		Provider: "codex",
-		Source:   "openai-web",
+func TestNeedsCodexCLIPriorityForWebCodex(t *testing.T) {
+	all := []ParsedFrame{
+		{
+			Provider: "codex",
+			Source:   "openai-web",
+			Frame:    protocol.Frame{Provider: "codex", Label: "Codex"},
+		},
 	}
 
-	if !shouldTryCodexCLIRepair(parsed) {
-		t.Fatalf("expected repair=true for codex openai-web")
-	}
-}
-
-func TestShouldTryCodexCLIRepairForSuspiciousLongResetFallback(t *testing.T) {
-	parsed := ParsedFrame{
-		Frame:    protocol.Frame{Session: 0, Weekly: 11, ResetSec: 150 * 60 * 60},
-		Provider: "codex",
-		Source:   "openai-web",
-	}
-
-	if !shouldTryCodexCLIRepair(parsed) {
-		t.Fatalf("expected repair=true for codex openai-web long-reset fallback")
+	if !needsCodexCLIPriority(all) {
+		t.Fatalf("expected CLI priority for codex web source")
 	}
 }
 
-func TestShouldTryCodexCLIRepairForWebAliasSource(t *testing.T) {
-	parsed := ParsedFrame{
-		Frame:    protocol.Frame{Session: 0, Weekly: 7, ResetSec: 120 * 60 * 60},
-		Provider: "codex",
-		Source:   "web",
+func TestNeedsCodexCLIPriorityWhenCodexMissing(t *testing.T) {
+	all := []ParsedFrame{
+		{
+			Provider: "claude",
+			Source:   "web",
+			Frame:    protocol.Frame{Provider: "claude", Label: "Claude"},
+		},
 	}
 
-	if !shouldTryCodexCLIRepair(parsed) {
-		t.Fatalf("expected repair=true for codex source=web")
-	}
-}
-
-func TestShouldNotTryCodexCLIRepairForNonCodex(t *testing.T) {
-	parsed := ParsedFrame{
-		Frame:    protocol.Frame{Session: 0, Weekly: 0, ResetSec: 0},
-		Provider: "claude",
-		Source:   "openai-web",
-	}
-
-	if shouldTryCodexCLIRepair(parsed) {
-		t.Fatalf("expected repair=false for non-codex")
+	if !needsCodexCLIPriority(all) {
+		t.Fatalf("expected CLI priority when codex provider missing")
 	}
 }
 
-func TestShouldNotTryCodexCLIRepairForNonWebSource(t *testing.T) {
-	parsed := ParsedFrame{
-		Frame:    protocol.Frame{Session: 3, Weekly: 11, ResetSec: 4 * 60 * 60},
-		Provider: "codex",
-		Source:   "codex-cli",
+func TestNeedsCodexCLIPriorityFalseWhenCodexAlreadyCLI(t *testing.T) {
+	all := []ParsedFrame{
+		{
+			Provider: "codex",
+			Source:   "codex-cli",
+			Frame:    protocol.Frame{Provider: "codex", Label: "Codex"},
+		},
 	}
 
-	if shouldTryCodexCLIRepair(parsed) {
-		t.Fatalf("expected repair=false for non-openai-web source")
+	if needsCodexCLIPriority(all) {
+		t.Fatalf("expected no CLI repair when codex already from CLI")
 	}
 }
 
@@ -539,7 +521,7 @@ func TestRepairCodexFromCLIRepairsWithCLIResult(t *testing.T) {
 	}
 }
 
-func TestRepairCodexFromCLIDoesNotReplaceWhenCLIWeeklyLower(t *testing.T) {
+func TestRepairCodexFromCLIReplacesEvenWhenCLIWeeklyLower(t *testing.T) {
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -564,8 +546,185 @@ func TestRepairCodexFromCLIDoesNotReplaceWhenCLIWeeklyLower(t *testing.T) {
 	}
 
 	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
-	if repaired[0].Frame.Weekly != 40 {
-		t.Fatalf("expected web weekly to be preserved when CLI weekly is lower, got %d", repaired[0].Frame.Weekly)
+	if repaired[0].Frame.Weekly != 10 {
+		t.Fatalf("expected CLI weekly to be preferred, got %d", repaired[0].Frame.Weekly)
+	}
+}
+
+func TestRepairCodexFromCLIAppendsCodexWhenMissing(t *testing.T) {
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":7,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":13}}}]`), nil
+	}
+
+	all := []ParsedFrame{
+		{
+			Provider: "claude",
+			Source:   "web",
+			Frame: protocol.Frame{
+				Provider: "claude",
+				Label:    "Claude",
+				Session:  5,
+				Weekly:   9,
+				ResetSec: 3600,
+			},
+		},
+	}
+
+	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
+	if len(repaired) != 2 {
+		t.Fatalf("expected codex provider to be appended, got %d providers", len(repaired))
+	}
+	if providerKey(repaired[1]) != "codex" {
+		t.Fatalf("expected appended provider codex, got %q", providerKey(repaired[1]))
+	}
+}
+
+func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testing.T) {
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		argLine := strings.Join(args, " ")
+		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
+			return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":7,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":13}}}]`), nil
+		}
+		if strings.Contains(argLine, "--web-timeout 8") {
+			return []byte("signal: killed"), errors.New("signal: killed")
+		}
+		return nil, errors.New("unexpected command")
+	}
+
+	parsed, err := FetchAllProviders(context.Background())
+	if err != nil {
+		t.Fatalf("expected CLI fallback to succeed, got %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected single fallback provider, got %d", len(parsed))
+	}
+	if providerKey(parsed[0]) != "codex" {
+		t.Fatalf("expected fallback provider codex, got %q", providerKey(parsed[0]))
+	}
+	if parsed[0].Frame.Session != 7 || parsed[0].Frame.Weekly != 13 {
+		t.Fatalf("expected fallback session=7 weekly=13, got session=%d weekly=%d", parsed[0].Frame.Session, parsed[0].Frame.Weekly)
+	}
+}
+
+func TestFetchAllProvidersFallsBackToProviderScopedWhenCodexCLIFallbackFails(t *testing.T) {
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		argLine := strings.Join(args, " ")
+		switch {
+		case strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli"):
+			return nil, errors.New("codex cli crashed")
+		case strings.Contains(argLine, "--provider claude") && strings.Contains(argLine, "--web-timeout 8"):
+			return []byte(`[{"provider":"claude","source":"web","usage":{"primary":{"usedPercent":13,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":24}}}]`), nil
+		case strings.Contains(argLine, "--web-timeout 8"):
+			return []byte("signal: killed"), errors.New("signal: killed")
+		default:
+			return nil, errors.New("unexpected command")
+		}
+	}
+
+	parsed, err := FetchAllProviders(context.Background())
+	if err != nil {
+		t.Fatalf("expected provider-scoped fallback to succeed, got %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected single provider from provider-scoped fallback, got %d", len(parsed))
+	}
+	if providerKey(parsed[0]) != "claude" {
+		t.Fatalf("expected claude fallback provider, got %q", providerKey(parsed[0]))
+	}
+	if parsed[0].Frame.Session != 13 || parsed[0].Frame.Weekly != 24 {
+		t.Fatalf("expected claude fallback session=13 weekly=24, got session=%d weekly=%d", parsed[0].Frame.Session, parsed[0].Frame.Weekly)
+	}
+}
+
+func TestFetchAllProvidersUsesDetachedContextForCLIFallback(t *testing.T) {
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	cliCtxAlive := false
+
+	runUsageCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		argLine := strings.Join(args, " ")
+		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
+			cliCtxAlive = ctx.Err() == nil
+			return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":2,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":5}}}]`), nil
+		}
+		if strings.Contains(argLine, "--web-timeout 8") {
+			return []byte("signal: killed"), errors.New("signal: killed")
+		}
+		return nil, errors.New("unexpected command")
+	}
+
+	expiredCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	parsed, err := FetchAllProviders(expiredCtx)
+	if err != nil {
+		t.Fatalf("expected CLI fallback to recover from expired parent context, got %v", err)
+	}
+	if !cliCtxAlive {
+		t.Fatalf("expected detached fallback context with remaining budget")
+	}
+	if len(parsed) != 1 || providerKey(parsed[0]) != "codex" {
+		t.Fatalf("expected codex fallback frame, got %#v", parsed)
+	}
+}
+
+func TestFetchAllProvidersUsesDetachedContextForProviderScopedFallback(t *testing.T) {
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	claudeCtxAlive := false
+
+	runUsageCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		argLine := strings.Join(args, " ")
+		switch {
+		case strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli"):
+			return nil, errors.New("codex cli crashed")
+		case strings.Contains(argLine, "--provider claude") && strings.Contains(argLine, "--web-timeout 8"):
+			claudeCtxAlive = ctx.Err() == nil
+			return []byte(`[{"provider":"claude","source":"web","usage":{"primary":{"usedPercent":9,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":22}}}]`), nil
+		case strings.Contains(argLine, "--web-timeout 8"):
+			return []byte("signal: killed"), errors.New("signal: killed")
+		default:
+			return nil, errors.New("unexpected command")
+		}
+	}
+
+	expiredCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	parsed, err := FetchAllProviders(expiredCtx)
+	if err != nil {
+		t.Fatalf("expected provider-scoped fallback from expired parent context, got %v", err)
+	}
+	if !claudeCtxAlive {
+		t.Fatalf("expected detached fallback context for provider-scoped command")
+	}
+	if len(parsed) != 1 || providerKey(parsed[0]) != "claude" {
+		t.Fatalf("expected claude fallback frame, got %#v", parsed)
 	}
 }
 

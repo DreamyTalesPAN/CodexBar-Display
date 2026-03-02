@@ -4,7 +4,6 @@ Single source of truth for install, runtime checks, recovery, and smoke testing.
 
 Hardware identity and board/env contract reference:
 - `docs/hardware-contract.md`
-- `docs/firmware-environments.md`
 
 ## Scope
 - macOS runtime (`launchctl` + LaunchAgent)
@@ -28,8 +27,8 @@ go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
 
 ## Setup
 
-`setup` is idempotent and now handles the common "port busy" case automatically by attempting
-`launchctl bootout gui/$(id -u)/com.vibeblock.daemon` before serial probe and flash.
+`setup` is idempotent and handles the common serial busy case by stopping the LaunchAgent
+before flash operations.
 
 ### Default firmware target (ESP8266 SmallTV)
 
@@ -134,6 +133,11 @@ Rollback state file:
 
 Theme override is optional and currently applies to ESP8266 display firmware
 that advertises `features:["theme"]`.
+
+Runtime behavior:
+- If capability handshake confirms `supportsTheme=true`, companion sends the selected theme.
+- If capability handshake is temporarily unavailable (missing hello), companion uses optimistic send on the MVP path.
+- If capabilities are known and explicitly do not support theme, companion omits `theme`.
 
 For an ad-hoc run:
 
@@ -247,6 +251,40 @@ Focused daemon resilience gate for v0:
 ./scripts/check-esp8266-soak-gate.sh
 ```
 
+## Release Readiness (Go/No-Go)
+
+Run this list before every v0 release decision.
+
+### Build + Artifacts
+- [ ] `go test ./...` in `companion` is green.
+- [ ] `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789` is green.
+- [ ] Release artifacts include companion binaries, firmware binaries, checksums.
+- [ ] Firmware artifact reports expected `VIBEBLOCK_FW_VERSION` for the release tag.
+
+### Functional Gate (release-gated env)
+- [ ] Device hello reports expected board id for `esp8266_smalltv_st7789`.
+- [ ] Theme contract is capability-aware (`known && !supportsTheme` blocks theme; unknown hello uses MVP optimistic send).
+- [ ] Runtime theme switching `classic`/`crt`/`mini` works without reflashing.
+- [ ] GIF path is safe: `/mini.gif` works in mini theme (or clean fallback if missing/corrupt).
+- [ ] `classic`/`crt` remain stable without GIF playback.
+
+### Stability + Recovery
+- [ ] `./scripts/check-esp8266-soak-gate.sh` passes.
+- [ ] No reboot loop / black-screen loop when GIF files are missing or invalid.
+- [ ] `setup`, `upgrade`, `rollback`, `restore-known-good` pass on operator path.
+
+### Decision
+- [ ] GO: all checklist items done, no open P0/P1 blockers.
+- [ ] NO-GO: at least one blocker open (record blocker, owner, next check time).
+
+## RC -> Soak -> Final Flow
+
+1. Cut RC tag (for example `v1.0.0-rc.1`) and publish artifacts.
+2. Run checklist above + soak gate + setup/upgrade/rollback validation.
+3. Soak in realistic operator mode; monitor daemon logs and fix regressions via new RC tags.
+4. Promote to final tag (for example `v1.0.0`) only after soak passes with no blockers.
+5. Keep prior known-good artifact set available for rollback/hotfix RC.
+
 ## Quick Troubleshooting
 
 ### Serial busy
@@ -268,6 +306,13 @@ tail -n 100 /tmp/vibeblock-daemon.err.log
 ```bash
 go run ./cmd/vibeblock health
 ./scripts/smoke-daemon-sent-frame.sh
+```
+
+### `runtime/codexbar-command`
+
+```bash
+codexbar usage --json --provider codex --source cli
+codexbar usage --json --web-timeout 8
 ```
 
 ## Error Code Recovery Map
