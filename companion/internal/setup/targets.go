@@ -21,11 +21,6 @@ var firmwareTargets = map[string]firmwareTarget{
 		ProjectDir:  "firmware_esp8266",
 		ExpectedIDs: []string{"esp8266-smalltv-st7789"},
 	},
-	"esp8266_smalltv_st7789_alt": {
-		Env:         "esp8266_smalltv_st7789_alt",
-		ProjectDir:  "firmware_esp8266",
-		ExpectedIDs: []string{"esp8266-smalltv-st7789-alt"},
-	},
 }
 
 func DefaultFirmwareEnvironment() string {

@@ -4,7 +4,6 @@ This document defines the required hardware/runtime contract for vibeblock v0.
 
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
-- Supported best-effort variant (non-blocking): `esp8266_smalltv_st7789_alt`
 - Experimental fallback (non-blocking): `lilygo_t_display_s3`
 
 ## Firmware Environment -> Board Identity
@@ -14,7 +13,6 @@ The firmware `hello.board` value must match the selected firmware environment:
 | Firmware Env | Expected `hello.board` | Release Role |
 |---|---|---|
 | `esp8266_smalltv_st7789` | `esp8266-smalltv-st7789` | release-gated |
-| `esp8266_smalltv_st7789_alt` | `esp8266-smalltv-st7789-alt` | supported, non-blocking |
 | `lilygo_t_display_s3` | `esp32-lilygo-t-display-s3` | experimental, non-blocking |
 
 Companion setup enforces this mapping when a device hello is available.
@@ -41,14 +39,6 @@ Companion setup enforces this mapping when a device hello is available.
 - `TFT_CS=-1`
 - `TFT_DC=0`
 - `TFT_RST=2`
-- `TFT_BL=5`
-
-`esp8266_smalltv_st7789_alt`:
-- `TFT_MOSI=13`
-- `TFT_SCLK=14`
-- `TFT_CS=15`
-- `TFT_DC=2`
-- `TFT_RST=4`
 - `TFT_BL=5`
 
 Common display assumptions:

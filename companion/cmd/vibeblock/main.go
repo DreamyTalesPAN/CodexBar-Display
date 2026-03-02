@@ -207,7 +207,7 @@ func runDoctorRuntimeChecks(ports []string) error {
 	}
 
 	switch caps.Board {
-	case "esp8266-smalltv-st7789", "esp8266-smalltv-st7789-alt":
+	case "esp8266-smalltv-st7789":
 		if caps.Known && !caps.SupportsTheme {
 			return fmt.Errorf("runtime capability check failed: board %q does not advertise theme support", caps.Board)
 		}

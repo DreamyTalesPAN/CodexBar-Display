@@ -10,8 +10,6 @@ namespace esp8266 {
 
 namespace {
 
-constexpr unsigned long kGifFailureBackoffMs = 30000UL;
-constexpr uint8_t kGifFailureThreshold = 3;
 constexpr int kLayoutMargin = 8;
 
 }  // namespace
@@ -66,23 +64,24 @@ void GifCoreESP8266::NoteFailure(GifFailureSlot slot, const char* path, const ch
   }
 
   GifFailureGuard& guard = GuardForSlot(slot);
-  if (guard.consecutiveFailures < 255) {
-    ++guard.consecutiveFailures;
-  }
+  const uint8_t failuresBefore = guard.consecutiveFailures;
+  const bool enteredBackoff = GifCorePolicy::RecordFailure(guard, millis());
+  const unsigned int reportedFailures = enteredBackoff
+                                            ? static_cast<unsigned int>(
+                                                  failuresBefore + (failuresBefore < 255 ? 1 : 0))
+                                            : static_cast<unsigned int>(guard.consecutiveFailures);
 
   Serial.printf(
       "gif_playback_failure path=%s stage=%s failures=%u\n",
       path,
       stage != nullptr ? stage : "unknown",
-      static_cast<unsigned int>(guard.consecutiveFailures));
+      reportedFailures);
 
-  if (guard.consecutiveFailures < kGifFailureThreshold) {
+  if (!enteredBackoff) {
     return;
   }
 
-  guard.consecutiveFailures = 0;
-  guard.backoffUntilMs = millis() + kGifFailureBackoffMs;
-  Serial.printf("gif_playback_backoff path=%s retry_in_ms=%lu\n", path, kGifFailureBackoffMs);
+  Serial.printf("gif_playback_backoff path=%s retry_in_ms=%lu\n", path, GifCorePolicy::kFailureBackoffMs);
 }
 
 void GifCoreESP8266::NoteSuccess(GifFailureSlot slot, const char* path) {
@@ -90,8 +89,7 @@ void GifCoreESP8266::NoteSuccess(GifFailureSlot slot, const char* path) {
     return;
   }
   GifFailureGuard& guard = GuardForSlot(slot);
-  guard.consecutiveFailures = 0;
-  guard.backoffUntilMs = 0;
+  GifCorePolicy::RecordSuccess(guard);
 }
 
 bool GifCoreESP8266::IsBlocked(GifFailureSlot slot, const char* path) {
@@ -100,16 +98,7 @@ bool GifCoreESP8266::IsBlocked(GifFailureSlot slot, const char* path) {
   }
 
   GifFailureGuard& guard = GuardForSlot(slot);
-  if (guard.backoffUntilMs == 0) {
-    return false;
-  }
-
-  const unsigned long now = millis();
-  if (static_cast<long>(now - guard.backoffUntilMs) >= 0) {
-    guard.backoffUntilMs = 0;
-    return false;
-  }
-  return true;
+  return GifCorePolicy::IsBlocked(guard, millis());
 }
 
 bool GifCoreESP8266::ReadGifDimensions(const char* path, int& width, int& height) {
@@ -166,7 +155,13 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
   tft_ = &tft;
 
   const String requestPath(request.assetPath);
-  if (assetPath_ != requestPath || layoutMode_ != request.layoutMode || failureSlot_ != request.failureSlot) {
+  if (GifCorePolicy::RequestChanged(
+          assetPath_.c_str(),
+          static_cast<uint8_t>(layoutMode_),
+          static_cast<uint8_t>(failureSlot_),
+          requestPath.c_str(),
+          static_cast<uint8_t>(request.layoutMode),
+          static_cast<uint8_t>(request.failureSlot))) {
     Stop();
     assetPath_ = requestPath;
     layoutMode_ = request.layoutMode;

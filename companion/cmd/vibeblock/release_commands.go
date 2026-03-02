@@ -164,7 +164,7 @@ func runUpgrade(args []string) error {
 			Op:   "resolve-firmware-env",
 			Code: errcode.UpgradeVersionGuard,
 			Err: fmt.Errorf(
-				"unsupported firmware env %q (supported: esp8266_smalltv_st7789, esp8266_smalltv_st7789_alt, lilygo_t_display_s3)",
+				"unsupported firmware env %q (supported: esp8266_smalltv_st7789, lilygo_t_display_s3)",
 				selectedEnv,
 			),
 		}

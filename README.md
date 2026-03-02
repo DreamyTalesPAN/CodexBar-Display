@@ -8,7 +8,6 @@ For the Codex provider, companion prioritizes `--provider codex --source cli` ov
 ## v0 Status
 - Pre-release.
 - Primary (and only release-gated MVP) hardware target: ESP8266 SmallTV ST7789 (`esp8266_smalltv_st7789`).
-- ESP8266 alt pin mapping (`esp8266_smalltv_st7789_alt`) remains a supported best-effort variant (non-blocking).
 - v0 includes built-in themes (`classic`, `crt`, `mini`) and a shared GIF core for scenario-based playback.
 - ESP32 (`lilygo_t_display_s3`) remains experimental fallback/non-blocking for v0.
 
@@ -42,9 +41,6 @@ go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
 KISS runtime path:
 - `esp8266_smalltv_st7789` (default, release-gated)
 
-Optional hardware variant (only for alternate-wiring units):
-- `esp8266_smalltv_st7789_alt` (supported, non-blocking)
-
 Experimental fallback (non-blocking):
 - `lilygo_t_display_s3`
 
@@ -76,6 +72,9 @@ go test ./...
 # Focused ESP8266 soak gate (theme/reconnect/sleep-wake/24h simulation)
 cd ..
 ./scripts/check-esp8266-soak-gate.sh
+
+# GIF core policy tests (fallback/backoff/request-switching)
+./scripts/check-gif-core-policy-tests.sh
 
 # ESP8266 firmware
 cd firmware_esp8266

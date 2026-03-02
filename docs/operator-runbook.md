@@ -10,7 +10,6 @@ Hardware identity and board/env contract reference:
 - USB serial devices (`/dev/cu.usb*`)
 - Companion binary (`vibeblock`)
 - Primary release-gated target for the v0 pre-release track: `esp8266_smalltv_st7789` (SemVer `1.x`)
-- Supported ESP8266 variant target (best effort, non-blocking): `esp8266_smalltv_st7789_alt`
 - ESP32-S3 firmware path as experimental fallback/non-blocking for v0
 
 ## Core Commands
@@ -61,7 +60,6 @@ Useful flags:
 Use these rules when selecting `--firmware-env`:
 
 - KISS default runtime firmware: `esp8266_smalltv_st7789` (release-gated)
-- Alternate wiring units only: `esp8266_smalltv_st7789_alt` (supported, non-blocking)
 - Themes are runtime-configured (`classic`, `crt`, `mini`) via `--theme`/`VIBEBLOCK_THEME` on the same firmware.
 - Legacy compile-theme/GIF/probe env names are unsupported; use only the runtime envs above.
 - `lilygo_t_display_s3` is an experimental fallback and does not block v0 release decisions.
@@ -345,7 +343,7 @@ Firmware bench envs:
 ## Versioning and Release Notes
 
 - SemVer is `1.x` for companion and firmware lines in the current pre-release track.
-- Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`; `esp8266_smalltv_st7789_alt` is supported best-effort/non-blocking.
+- Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
 - `vibeblock upgrade` enforces companion/firmware compatibility with a version guard.
 - Release firmware builds stamp `VIBEBLOCK_FW_VERSION` from the release tag version.
 - GitHub release artifacts include companion binaries, firmware binaries, and checksums.

@@ -212,9 +212,8 @@ func inRange(v, min, max SemVer) bool {
 }
 
 var firmwareVersionByEnvironment = map[string]string{
-	"lilygo_t_display_s3":        "1.0.0",
-	"esp8266_smalltv_st7789":     "1.0.0",
-	"esp8266_smalltv_st7789_alt": "1.0.0",
+	"lilygo_t_display_s3":    "1.0.0",
+	"esp8266_smalltv_st7789": "1.0.0",
 }
 
 func FirmwareVersionForEnvironment(env string) (string, bool) {

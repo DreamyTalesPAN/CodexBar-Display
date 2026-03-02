@@ -81,6 +81,5 @@ send when hello is unavailable; if capabilities are explicitly known and do not 
 ## v1 Scope Boundary
 - v1 ships built-in themes only (`classic`, `crt`, `mini`).
 - v1 release-gated MVP hardware target is ESP8266 SmallTV ST7789 (`esp8266_smalltv_st7789`).
-- ESP8266 alt pin mapping (`esp8266_smalltv_st7789_alt`) is supported as best-effort/non-blocking.
 - ESP32 (`lilygo_t_display_s3`) is kept as experimental/non-blocking for v1.
 - External theme SDK/runtime plugin loading is out of scope for v1.

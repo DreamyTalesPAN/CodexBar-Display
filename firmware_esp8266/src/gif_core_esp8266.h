@@ -8,6 +8,8 @@
 #include <TFT_eSPI.h>
 #endif
 
+#include "gif_core_policy.h"
+
 namespace vibeblock {
 namespace esp8266 {
 
@@ -42,13 +44,10 @@ class GifCoreESP8266 {
   bool Tick(TFT_eSPI& tft, const GifPlaybackRequest& request, bool forceFrame);
 
   int ReservedWidthFor(const char* assetPath, int fallbackWidth) const;
-  bool IsCurrentAssetPresent(const char* assetPath) const;
+ bool IsCurrentAssetPresent(const char* assetPath) const;
 
  private:
-  struct GifFailureGuard {
-    uint8_t consecutiveFailures = 0;
-    unsigned long backoffUntilMs = 0;
-  };
+  using GifFailureGuard = GifFailureGuardState;
 
   static constexpr int kMaxLinePixels = 240;
   static constexpr uint8_t kFailureGuardSlots = 4;
