@@ -645,7 +645,7 @@ func locateRepository(d deps) (string, error) {
 func walkUpToRepositoryRoot(start string) string {
 	dir := filepath.Clean(start)
 	for {
-		if fileExists(filepath.Join(dir, "firmware", "platformio.ini")) && fileExists(filepath.Join(dir, "companion", "go.mod")) {
+		if fileExists(filepath.Join(dir, "firmware_esp32", "platformio.ini")) && fileExists(filepath.Join(dir, "companion", "go.mod")) {
 			return dir
 		}
 		parent := filepath.Dir(dir)
@@ -705,12 +705,12 @@ func firmwareProjectDirForEnvironment(repoRoot, firmwareEnv string) string {
 			return esp8266Dir
 		}
 	case strings.HasPrefix(env, "lilygo_"), strings.HasPrefix(env, "esp32_"):
-		esp32Dir := filepath.Join(repoRoot, "firmware")
+		esp32Dir := filepath.Join(repoRoot, "firmware_esp32")
 		if fileExists(filepath.Join(esp32Dir, "platformio.ini")) {
 			return esp32Dir
 		}
 	}
-	return filepath.Join(repoRoot, "firmware")
+	return filepath.Join(repoRoot, "firmware_esp32")
 }
 
 func flashRecoveryHint(output, port string, uid int) string {

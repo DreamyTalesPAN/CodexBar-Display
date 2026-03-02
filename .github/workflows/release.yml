@@ -50,7 +50,7 @@ jobs:
           declare -a TARGETS=(
             "firmware_esp8266 esp8266_smalltv_st7789 esp8266-smalltv-st7789"
             "firmware_esp8266 esp8266_smalltv_st7789_alt esp8266-smalltv-st7789-alt"
-            "firmware lilygo_t_display_s3 esp32-lilygo-t-display-s3"
+            "firmware_esp32 lilygo_t_display_s3 esp32-lilygo-t-display-s3"
           )
 
           for SPEC in "${TARGETS[@]}"; do

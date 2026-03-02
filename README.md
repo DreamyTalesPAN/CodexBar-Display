@@ -82,7 +82,7 @@ cd firmware_esp8266
 pio run -e esp8266_smalltv_st7789
 
 # ESP32 (experimental)
-cd ../firmware
+cd ../firmware_esp32
 pio run -e lilygo_t_display_s3
 ```
 

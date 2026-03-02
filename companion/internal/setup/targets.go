@@ -13,7 +13,7 @@ const firmwareEnvironment = "esp8266_smalltv_st7789"
 var firmwareTargets = map[string]firmwareTarget{
 	"lilygo_t_display_s3": {
 		Env:         "lilygo_t_display_s3",
-		ProjectDir:  "firmware",
+		ProjectDir:  "firmware_esp32",
 		ExpectedIDs: []string{"esp32-lilygo-t-display-s3"},
 	},
 	"esp8266_smalltv_st7789": {

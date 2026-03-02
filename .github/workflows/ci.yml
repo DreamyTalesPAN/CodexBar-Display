@@ -121,7 +121,7 @@ jobs:
       - name: Build ESP32 experimental profile
         run: |
           ./scripts/check-firmware-size-budget.sh \
-            "firmware" \
+            "firmware_esp32" \
             "lilygo_t_display_s3" \
             "20" \
             "25"
