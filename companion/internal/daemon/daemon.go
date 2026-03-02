@@ -406,11 +406,14 @@ func applyThemeToFrame(frame protocol.Frame, selectedTheme string, caps protocol
 	if selectedTheme == "" {
 		return frame, false
 	}
-	if !caps.Known || caps.SupportsTheme {
-		frame.Theme = selectedTheme
-		return frame, true
+	// For v0 MVP hardware we optimize for the single supported device path:
+	// - known + explicit "no theme" => do not send theme
+	// - unknown capabilities (missing hello) => optimistic send
+	if caps.Known && !caps.SupportsTheme {
+		return frame, false
 	}
-	return frame, false
+	frame.Theme = selectedTheme
+	return frame, true
 }
 
 func asRuntimeError(err error) *RuntimeError {
@@ -455,21 +458,9 @@ func runtimeErrorFrameCode(kind runtimeErrorKind) string {
 }
 
 func resolvePortWithFallback(requestedPort string, deps runtimeDeps) (string, error) {
-	port, err := deps.resolvePort(requestedPort)
-	if err == nil {
-		return port, nil
-	}
-
-	if strings.TrimSpace(requestedPort) == "" {
-		return "", err
-	}
-
-	autoPort, autoErr := deps.resolvePort("")
-	if autoErr != nil {
-		return "", err
-	}
-	deps.logf("runtime event=port-fallback requested=%s resolved=%s cause=%v\n", requestedPort, autoPort, err)
-	return autoPort, nil
+	// KISS + safety: never auto-switch away from an explicit requested port.
+	// If the port disappears, surface the error and let operator action decide.
+	return deps.resolvePort(requestedPort)
 }
 
 func wallClockNow() time.Time {

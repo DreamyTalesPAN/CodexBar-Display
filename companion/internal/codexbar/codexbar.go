@@ -32,6 +32,19 @@ var (
 
 var runUsageCommandFn = runUsageCommand
 
+const minSharedFallbackTimeBudget = 8 * time.Second
+
+var providerScopedFallbackOrder = []string{
+	"claude",
+	"cursor",
+	"copilot",
+	"gemini",
+	"vertexai",
+	"jetbrains",
+	"augment",
+	"factory",
+}
+
 type FetchErrorKind string
 
 const (
@@ -135,8 +148,8 @@ func isExecutable(path string) bool {
 
 // FetchAllProviders reads provider usage from CodexBar and normalizes it.
 //
-// To handle the known Codex web bug (0/0 usage), we patch the Codex provider
-// from `--provider codex --source cli` when needed.
+// Codex provider data is CLI-prioritized: if a Codex CLI frame is available
+// it replaces/adds the Codex provider entry from the aggregated payload.
 func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	bin, err := FindBinary()
 	if err != nil {
@@ -144,16 +157,32 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	}
 
 	timeout := commandTimeout()
-	out, err := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
+	out, err := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
 	allParsed, parseErr := parseAllProviders(out)
 	if shouldRetryAfterStartingCodexBarApp(err, parseErr, allParsed, out) {
 		startCodexBarApp(ctx)
-		retryOut, retryErr := runUsageCommand(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
+		retryOut, retryErr := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
 		retryParsed, retryParseErr := parseAllProviders(retryOut)
 		out = retryOut
 		err = retryErr
 		allParsed = retryParsed
 		parseErr = retryParseErr
+	}
+
+	// KISS fallback: when aggregated usage is unavailable, fall back to a
+	// Codex CLI-only payload (then provider-scoped web fallback) instead of
+	// failing hard.
+	if err != nil || parseErr != nil {
+		fallbackCtx := fallbackContext(ctx)
+		if fallback, ok := fetchCodexCLIOnly(fallbackCtx, cliFallbackTimeout(timeout), bin); ok {
+			allParsed = fallback
+			err = nil
+			parseErr = nil
+		} else if fallback, ok := fetchFirstProviderScopedFallback(fallbackCtx, providerScopedFallbackTimeout(timeout), bin); ok {
+			allParsed = fallback
+			err = nil
+			parseErr = nil
+		}
 	}
 
 	if err != nil {
@@ -299,6 +328,10 @@ func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 }
 
 func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
+	if providerPayloadHasError(payload) {
+		return ParsedFrame{}, errors.New("provider error payload")
+	}
+
 	provider := firstString(payload, "provider", "id", "slug", "name")
 	source := firstString(payload, "source")
 	label := humanLabel(provider)
@@ -359,6 +392,26 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		Source:       source,
 		AccountEmail: accountEmail,
 	}, nil
+}
+
+func providerPayloadHasError(payload map[string]any) bool {
+	raw, ok := payload["error"]
+	if !ok || raw == nil {
+		return false
+	}
+
+	switch v := raw.(type) {
+	case string:
+		return strings.TrimSpace(v) != ""
+	case map[string]any:
+		if len(v) == 0 {
+			return false
+		}
+		// Non-empty provider error payloads are not usable usage frames.
+		return true
+	default:
+		return true
+	}
 }
 
 const (
@@ -1425,93 +1478,155 @@ func indexOfProviderKey(all []ParsedFrame, key string) int {
 	return -1
 }
 
-func repairCodexFromCLI(ctx context.Context, timeout time.Duration, bin string, all []ParsedFrame) []ParsedFrame {
-	idx := -1
-	for i := range all {
-		if shouldTryCodexCLIRepair(all[i]) {
-			idx = i
-			break
-		}
+func fetchCodexCLIOnly(ctx context.Context, timeout time.Duration, bin string) ([]ParsedFrame, bool) {
+	codexParsed, ok := fetchCodexCLIProvider(ctx, timeout, bin)
+	if !ok {
+		return nil, false
 	}
-	if idx == -1 {
-		return all
-	}
+	return []ParsedFrame{codexParsed}, true
+}
 
+func fetchCodexCLIProvider(ctx context.Context, timeout time.Duration, bin string) (ParsedFrame, bool) {
 	cliOut, cliErr := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
-	cliAll, cliParseErr := parseAllProviders(cliOut)
 	if cliErr != nil {
-		return all
+		return ParsedFrame{}, false
 	}
-	if cliParseErr != nil {
-		return all
-	}
-	if len(cliAll) == 0 {
-		return all
+	cliAll, cliParseErr := parseAllProviders(cliOut)
+	if cliParseErr != nil || len(cliAll) == 0 {
+		return ParsedFrame{}, false
 	}
 
 	for _, candidate := range cliAll {
-		if strings.EqualFold(strings.TrimSpace(candidate.Provider), "codex") {
-			if shouldReplaceCodexWebWithCLI(all[idx].Frame, candidate.Frame) {
-				all[idx] = candidate
-			}
-			return all
+		if providerKey(candidate) == "codex" {
+			return candidate, true
 		}
 	}
-
-	return all
+	return ParsedFrame{}, false
 }
 
-func shouldTryCodexCLIRepair(parsed ParsedFrame) bool {
-	if !strings.EqualFold(strings.TrimSpace(parsed.Provider), "codex") {
-		return false
+func fetchFirstProviderScopedFallback(ctx context.Context, timeout time.Duration, bin string) ([]ParsedFrame, bool) {
+	for _, provider := range providerScopedFallbackOrder {
+		parsed, ok := fetchProviderScopedUsage(ctx, timeout, bin, provider)
+		if !ok {
+			continue
+		}
+		return []ParsedFrame{parsed}, true
 	}
-	if !isCodexWebSource(parsed.Source) {
-		return false
-	}
-
-	// Known Codex web failure modes:
-	// 1) 0/0 with missing reset.
-	// 2) session=0 with a long weekly reset fallback (primary reset missing).
-	if parsed.Frame.Session == 0 && parsed.Frame.Weekly == 0 && parsed.Frame.ResetSec == 0 {
-		return true
-	}
-	if parsed.Frame.Session == 0 && parsed.Frame.ResetSec > 24*60*60 {
-		return true
-	}
-	return false
+	return nil, false
 }
 
-func isCodexWebSource(source string) bool {
+func fetchProviderScopedUsage(ctx context.Context, timeout time.Duration, bin string, provider string) (ParsedFrame, bool) {
+	args := []string{"usage", "--json", "--provider", provider, "--web-timeout", "8"}
+	raw, cmdErr := runUsageCommandFn(ctx, timeout, bin, args...)
+
+	parsed, parseErr := parseAllProviders(raw)
+	if parseErr != nil || len(parsed) == 0 {
+		return ParsedFrame{}, false
+	}
+
+	// Keep parsed payload when command exits non-zero but still emitted JSON.
+	if cmdErr != nil && len(bytes.TrimSpace(raw)) == 0 {
+		return ParsedFrame{}, false
+	}
+
+	key := strings.TrimSpace(strings.ToLower(provider))
+	for _, candidate := range parsed {
+		if providerKey(candidate) == key {
+			return candidate, true
+		}
+	}
+	return parsed[0], true
+}
+
+func fallbackContext(parent context.Context) context.Context {
+	if parent == nil {
+		return context.Background()
+	}
+	if parent.Err() != nil {
+		return context.Background()
+	}
+	if deadline, ok := parent.Deadline(); ok {
+		if time.Until(deadline) < minSharedFallbackTimeBudget {
+			return context.Background()
+		}
+	}
+	return parent
+}
+
+func cliFallbackTimeout(primaryTimeout time.Duration) time.Duration {
+	if primaryTimeout > 0 {
+		return primaryTimeout
+	}
+	return commandTimeout()
+}
+
+func providerScopedFallbackTimeout(primaryTimeout time.Duration) time.Duration {
+	const (
+		minTimeout = 4 * time.Second
+		maxTimeout = 12 * time.Second
+	)
+
+	timeout := primaryTimeout / 8
+	if timeout <= 0 {
+		timeout = minTimeout
+	}
+	if timeout < minTimeout {
+		return minTimeout
+	}
+	if timeout > maxTimeout {
+		return maxTimeout
+	}
+	return timeout
+}
+
+func needsCodexCLIPriority(all []ParsedFrame) bool {
+	hasCodex := false
+	for _, parsed := range all {
+		if providerKey(parsed) != "codex" {
+			continue
+		}
+		hasCodex = true
+		if !isCodexCLISource(parsed.Source) {
+			return true
+		}
+	}
+	return !hasCodex
+}
+
+func isCodexCLISource(source string) bool {
 	s := strings.TrimSpace(strings.ToLower(source))
-	return s == "openai-web" || s == "web"
+	return s == "codex-cli" || s == "cli"
 }
 
-func shouldReplaceCodexWebWithCLI(webFrame, cliFrame protocol.Frame) bool {
-	// Avoid replacing web usage with an older/weaker weekly aggregate.
-	if cliFrame.Weekly < webFrame.Weekly {
-		return false
+func replaceOrAppendCodexProvider(all []ParsedFrame, codex ParsedFrame) []ParsedFrame {
+	out := make([]ParsedFrame, 0, len(all)+1)
+	replaced := false
+	for _, parsed := range all {
+		if providerKey(parsed) != "codex" {
+			out = append(out, parsed)
+			continue
+		}
+		if !replaced {
+			out = append(out, codex)
+			replaced = true
+		}
 	}
-	return codexFrameQuality(cliFrame) > codexFrameQuality(webFrame)
+	if !replaced {
+		out = append(out, codex)
+	}
+	return out
 }
 
-func codexFrameQuality(frame protocol.Frame) int {
-	score := 0
-	if frame.Session > 0 {
-		score += 4
+func repairCodexFromCLI(ctx context.Context, timeout time.Duration, bin string, all []ParsedFrame) []ParsedFrame {
+	if !needsCodexCLIPriority(all) {
+		return all
 	}
-	if frame.Weekly > 0 {
-		score += 2
+
+	codexCLI, ok := fetchCodexCLIProvider(fallbackContext(ctx), cliFallbackTimeout(timeout), bin)
+	if !ok {
+		return all
 	}
-	if frame.ResetSec > 0 && frame.ResetSec <= 24*60*60 {
-		score += 1
-	}
-	if frame.Session == 0 && frame.Weekly == 0 && frame.ResetSec == 0 {
-		score -= 3
-	}
-	if frame.Session == 0 && frame.ResetSec > 24*60*60 {
-		score -= 2
-	}
-	return score
+	return replaceOrAppendCodexProvider(all, codexCLI)
 }
 
 func extractProviderList(root any) []any {

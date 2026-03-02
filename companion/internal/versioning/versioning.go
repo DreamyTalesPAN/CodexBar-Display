@@ -150,16 +150,16 @@ type CompatibilityRule struct {
 }
 
 var defaultCompatibilityRules = []CompatibilityRule{
-	{
-		Name:                  "v1-stable",
-		CompanionMin:          "1.0.0",
-		CompanionMaxExclusive: "2.0.0",
-		FirmwareMin:           "1.0.0",
-		FirmwareMaxExclusive:  "2.0.0",
-		ProtocolVersion:       1,
-		Notes:                 "Companion v1.x supports firmware v1.x (protocol v1).",
-	},
-}
+		{
+			Name:                  "v1-stable",
+			CompanionMin:          "1.0.0",
+			CompanionMaxExclusive: "2.0.0",
+			FirmwareMin:           "1.0.0",
+			FirmwareMaxExclusive:  "2.0.0",
+			ProtocolVersion:       1,
+			Notes:                 "Companion v1.x supports firmware v1.x on protocol v1.",
+		},
+	}
 
 func DefaultCompatibilityMatrix() []CompatibilityRule {
 	out := make([]CompatibilityRule, len(defaultCompatibilityRules))
@@ -212,14 +212,8 @@ func inRange(v, min, max SemVer) bool {
 }
 
 var firmwareVersionByEnvironment = map[string]string{
-	"lilygo_t_display_s3":             "1.0.0",
-	"esp8266_probe":                   "1.0.0",
-	"esp8266_smalltv_st7789":          "1.0.0",
-	"esp8266_smalltv_st7789_crt":      "1.0.0",
-	"esp8266_smalltv_st7789_mini":     "1.0.0",
-	"esp8266_smalltv_st7789_alt":      "1.0.0",
-	"esp8266_smalltv_st7789_alt_crt":  "1.0.0",
-	"esp8266_smalltv_st7789_alt_mini": "1.0.0",
+	"lilygo_t_display_s3":    "1.0.0",
+	"esp8266_smalltv_st7789": "1.0.0",
 }
 
 func FirmwareVersionForEnvironment(env string) (string, bool) {

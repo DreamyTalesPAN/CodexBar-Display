@@ -1,5 +1,9 @@
 {
   "schemaVersion": 1,
+  "firmwareByEnvironment": {
+    "esp8266_smalltv_st7789": "1.0.0",
+    "lilygo_t_display_s3": "1.0.0"
+  },
   "rules": [
     {
       "name": "v1-stable",

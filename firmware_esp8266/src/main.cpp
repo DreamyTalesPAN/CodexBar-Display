@@ -1,5 +1,3 @@
-#ifndef VIBEBLOCK_GIF_PLAYER
-
 #include <Arduino.h>
 
 #include "../../firmware_shared/app_runtime.h"
@@ -149,5 +147,3 @@ void loop() {
 
   delay(20);
 }
-
-#endif  // VIBEBLOCK_GIF_PLAYER

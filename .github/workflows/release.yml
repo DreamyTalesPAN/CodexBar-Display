@@ -48,14 +48,8 @@ jobs:
           cd ..
 
           declare -a TARGETS=(
-            "firmware_esp8266 esp8266_probe esp8266-probe"
             "firmware_esp8266 esp8266_smalltv_st7789 esp8266-smalltv-st7789"
-            "firmware_esp8266 esp8266_smalltv_st7789_crt esp8266-smalltv-st7789"
-            "firmware_esp8266 esp8266_smalltv_st7789_mini esp8266-smalltv-st7789"
-            "firmware_esp8266 esp8266_smalltv_st7789_alt esp8266-smalltv-st7789-alt"
-            "firmware_esp8266 esp8266_smalltv_st7789_alt_crt esp8266-smalltv-st7789-alt"
-            "firmware_esp8266 esp8266_smalltv_st7789_alt_mini esp8266-smalltv-st7789-alt"
-            "firmware lilygo_t_display_s3 esp32-lilygo-t-display-s3"
+            "firmware_esp32 lilygo_t_display_s3 esp32-lilygo-t-display-s3"
           )
 
           for SPEC in "${TARGETS[@]}"; do
@@ -63,7 +57,7 @@ jobs:
             DIR="$1"
             ENV_NAME="$2"
 
-            pio run -d "${DIR}" -e "${ENV_NAME}"
+            VIBEBLOCK_FW_VERSION="${VERSION}" pio run -d "${DIR}" -e "${ENV_NAME}"
 
             SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
             DEST="dist/firmware/vibeblock-firmware-${ENV_NAME}-v${VERSION}.bin"
@@ -77,13 +71,7 @@ jobs:
 
           version = os.environ["VERSION"]
           targets = [
-              ("esp8266_probe", "esp8266-probe"),
               ("esp8266_smalltv_st7789", "esp8266-smalltv-st7789"),
-              ("esp8266_smalltv_st7789_crt", "esp8266-smalltv-st7789"),
-              ("esp8266_smalltv_st7789_mini", "esp8266-smalltv-st7789"),
-              ("esp8266_smalltv_st7789_alt", "esp8266-smalltv-st7789-alt"),
-              ("esp8266_smalltv_st7789_alt_crt", "esp8266-smalltv-st7789-alt"),
-              ("esp8266_smalltv_st7789_alt_mini", "esp8266-smalltv-st7789-alt"),
               ("lilygo_t_display_s3", "esp32-lilygo-t-display-s3"),
           ]
 

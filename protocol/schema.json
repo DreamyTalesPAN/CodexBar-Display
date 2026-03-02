@@ -34,26 +34,6 @@
       "type": "string",
       "enum": ["classic", "crt", "mini"]
     },
-    "renderMode": {
-      "type": "string",
-      "enum": ["usage", "usage_with_shapes", "usage_with_media", "media_only"]
-    },
-    "shapePreset": {
-      "type": "string",
-      "minLength": 1
-    },
-    "mediaSlot": {
-      "type": "string",
-      "minLength": 1
-    },
-    "mediaFit": {
-      "type": "string",
-      "enum": ["contain", "cover", "stretch"]
-    },
-    "mediaLoop": {
-      "type": "string",
-      "minLength": 1
-    },
     "error": {
       "type": "string",
       "minLength": 1

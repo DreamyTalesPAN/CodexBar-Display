@@ -39,6 +39,9 @@ jobs:
       - name: Check companion benchmark budgets
         run: ./scripts/check-companion-bench-budget.sh
 
+      - name: Check ESP8266 soak gate
+        run: ./scripts/check-esp8266-soak-gate.sh
+
   firmware-build-v0:
     runs-on: ubuntu-latest
     strategy:
@@ -46,31 +49,7 @@ jobs:
       matrix:
         include:
           - firmware_dir: firmware_esp8266
-            env_name: esp8266_probe
-            max_flash_pct: 45
-            max_ram_pct: 60
-          - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789
-            max_flash_pct: 45
-            max_ram_pct: 72
-          - firmware_dir: firmware_esp8266
-            env_name: esp8266_smalltv_st7789_crt
-            max_flash_pct: 45
-            max_ram_pct: 72
-          - firmware_dir: firmware_esp8266
-            env_name: esp8266_smalltv_st7789_mini
-            max_flash_pct: 45
-            max_ram_pct: 72
-          - firmware_dir: firmware_esp8266
-            env_name: esp8266_smalltv_st7789_alt
-            max_flash_pct: 45
-            max_ram_pct: 72
-          - firmware_dir: firmware_esp8266
-            env_name: esp8266_smalltv_st7789_alt_crt
-            max_flash_pct: 45
-            max_ram_pct: 72
-          - firmware_dir: firmware_esp8266
-            env_name: esp8266_smalltv_st7789_alt_mini
             max_flash_pct: 45
             max_ram_pct: 72
     steps:
@@ -111,7 +90,7 @@ jobs:
       - name: Build ESP32 experimental profile
         run: |
           ./scripts/check-firmware-size-budget.sh \
-            "firmware" \
+            "firmware_esp32" \
             "lilygo_t_display_s3" \
             "20" \
             "25"

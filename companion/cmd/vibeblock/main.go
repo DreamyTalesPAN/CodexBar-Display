@@ -17,6 +17,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/health"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
@@ -43,8 +44,6 @@ func main() {
 		err = runRollback(os.Args[2:])
 	case "restore-known-good":
 		err = runRestoreKnownGood(os.Args[2:])
-	case "gif-upload":
-		err = runGIFUpload(os.Args[2:])
 	case "setup":
 		err = runSetup(os.Args[2:])
 	default:
@@ -74,7 +73,6 @@ func printUsage() {
 	fmt.Println("  vibeblock upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--skip-version-guard]")
 	fmt.Println("  vibeblock rollback [--port /dev/cu.usbserial-10] [--skip-companion] [--skip-firmware] [--image path/to/backup.bin] [--manifest path/to/backup.manifest] [--backup-dir <dir>] [--script-path <path>] [--skip-verify]")
 	fmt.Println("  vibeblock restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
-	fmt.Println("  vibeblock gif-upload [--port /dev/cu.usbserial-10] [--gif ~/Downloads/testgif(.gif)] [--baud 115200] [--play=true]")
 	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
@@ -122,7 +120,7 @@ func runDoctor() error {
 		}
 	}
 
-	if runtimeErr := runDoctorRuntimeChecks(); runtimeErr != nil {
+	if runtimeErr := runDoctorRuntimeChecks(ports); runtimeErr != nil {
 		doctorErrs = append(doctorErrs, runtimeErr)
 	}
 
@@ -146,7 +144,7 @@ func runDoctor() error {
 	return nil
 }
 
-func runDoctorRuntimeChecks() error {
+func runDoctorRuntimeChecks(ports []string) error {
 	fmt.Println("Runtime checks:")
 	fmt.Printf("  codexbar timeout: %s\n", codexbar.CommandTimeout())
 	fmt.Printf("  last-good max age: %s\n", daemon.LastGoodMaxAge())
@@ -160,10 +158,68 @@ func runDoctorRuntimeChecks() error {
 	fmt.Printf("  serial resolve: ok (%s)\n", port)
 
 	if err := usb.ProbePort(port); err != nil {
-		fmt.Printf("  serial probe: failed (%v)\n", err)
-		return fmt.Errorf("runtime serial probe failed: %w", err)
+		if errcode.Of(err) == errcode.TransportSerialCloseTimeout {
+			fmt.Printf("  serial probe: warning (%v)\n", err)
+		} else {
+			fmt.Printf("  serial probe: failed (%v)\n", err)
+			return fmt.Errorf("runtime serial probe failed: %w", err)
+		}
+	} else {
+		fmt.Printf("  serial probe: ok (%s)\n", port)
 	}
-	fmt.Printf("  serial probe: ok (%s)\n", port)
+
+	pinnedPort, err := doctorPinnedLaunchAgentPort()
+	if err != nil {
+		fmt.Printf("  launchagent port affinity: failed (%v)\n", err)
+		return fmt.Errorf("runtime launchagent affinity check failed: %w", err)
+	}
+	if pinnedPort == "" {
+		fmt.Println("  launchagent port affinity: auto-detect")
+		if len(ports) > 1 {
+			return fmt.Errorf(
+				"runtime port affinity check failed: %d serial ports detected while LaunchAgent is unpinned; rerun setup with --pin-port",
+				len(ports),
+			)
+		}
+	} else {
+		fmt.Printf("  launchagent port affinity: pinned (%s)\n", pinnedPort)
+		if len(ports) > 0 && !containsPort(ports, pinnedPort) {
+			return fmt.Errorf(
+				"runtime port affinity check failed: pinned LaunchAgent port %q is not currently available",
+				pinnedPort,
+			)
+		}
+	}
+
+	hello, err := usb.ReadDeviceHello(port)
+	if err != nil {
+		fmt.Printf("  device hello: warning (%v)\n", err)
+		fmt.Println("  warning: capability handshake unavailable; runtime will use optimistic theme send fallback")
+		return nil
+	}
+
+	caps := protocol.CapabilitiesFromHello(hello)
+	fmt.Printf("  device hello: ok board=%s protocol=%d firmware=%s theme=%t maxFrameBytes=%d\n",
+		caps.Board, caps.ProtocolVersion, hello.Firmware, caps.SupportsTheme, caps.MaxFrameBytes)
+	if !caps.Known {
+		fmt.Println("  warning: device capabilities are unknown; skipping strict hardware/theme contract checks")
+		return nil
+	}
+
+	switch caps.Board {
+	case "esp8266-smalltv-st7789":
+		if caps.Known && !caps.SupportsTheme {
+			return fmt.Errorf("runtime capability check failed: board %q does not advertise theme support", caps.Board)
+		}
+	case "esp32-lilygo-t-display-s3":
+		fmt.Println("  warning: esp32 fallback board detected (non-blocking)")
+	default:
+		return fmt.Errorf("runtime hardware contract failed: unsupported board %q", caps.Board)
+	}
+
+	if caps.ProtocolVersion > 0 && caps.ProtocolVersion != 1 {
+		return fmt.Errorf("runtime protocol contract failed: unsupported protocol version %d", caps.ProtocolVersion)
+	}
 
 	return nil
 }
@@ -502,4 +558,52 @@ func fileExists(path string) bool {
 		return false
 	}
 	return !info.IsDir()
+}
+
+func containsPort(ports []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, port := range ports {
+		if strings.TrimSpace(port) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func doctorPinnedLaunchAgentPort() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "com.vibeblock.daemon.plist")
+	data, err := os.ReadFile(plistPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	return parsePinnedPortFromLaunchAgentPlist(string(data)), nil
+}
+
+func parsePinnedPortFromLaunchAgentPlist(plist string) string {
+	const marker = "<string>--port</string>"
+	idx := strings.Index(plist, marker)
+	if idx < 0 {
+		return ""
+	}
+	rest := plist[idx+len(marker):]
+	start := strings.Index(rest, "<string>")
+	if start < 0 {
+		return ""
+	}
+	rest = rest[start+len("<string>"):]
+	end := strings.Index(rest, "</string>")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:end])
 }

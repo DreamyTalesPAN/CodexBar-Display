@@ -193,6 +193,10 @@ func GetDeviceCapabilities(port string) (protocol.DeviceCapabilities, error) {
 	return defaultSender.ReadCapabilities(port)
 }
 
+func CloseDefaultSender() {
+	defaultSender.Close()
+}
+
 func ProbePort(path string) error {
 	opener := serialOpener{openFn: serialOpen}
 	port, err := opener.Open(path, openMode())
@@ -608,8 +612,7 @@ func parseLegacyReadyLine(line string) (protocol.DeviceHello, bool) {
 	switch strings.TrimSpace(line) {
 	case "vibeblock_ready_display", "vibeblock_ready_probe", "vibeblock_ready":
 		return protocol.DeviceHello{
-			Kind:            "hello",
-			ProtocolVersion: 1,
+			Kind: "hello",
 		}, true
 	default:
 		return protocol.DeviceHello{}, false

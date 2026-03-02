@@ -1,90 +1,39 @@
-# vibeblock Roadmap (Open Work Only)
+# vibeblock TODO (v0, Open Work)
 
-## Release Framing (v0)
-- No public vibeblock release yet.
-- No market device fleet yet.
-- Current hardware baseline is the connected ESP8266 SmallTV dev unit.
-- v0 scope includes rich rendering (`usage` + media on one screen), including GIF loop playback.
-- v0 ship hardware target is ESP8266 SmallTV ST7789.
-- ESP32-S3 stays in-repo as experimental/non-blocking for v0.
-- External theme SDK/third-party themes are out of v0 scope.
+## Scope Lock
+- Release-gated env: `esp8266_smalltv_st7789`.
+- Non-blocking env: `lilygo_t_display_s3` (experimental fallback).
+- Runtime themes only (`classic`, `crt`, `mini`) on the same firmware.
+- Theme contract: capability-aware with MVP fallback (`theme` is blocked only on explicit `known && !supportsTheme`; unknown hello uses optimistic send).
+- GIF core is reusable/modular; current product scope keeps GIF playback only in `mini`.
+- No runtime media upload protocol in v0.
 
-## Backlog Hygiene
-- This file tracks only open work.
-- Completed milestones are in `docs/completed-milestones.md`.
+## P0 (Ship Blockers)
+- [ ] E2E acceptance on at least 2 macOS machines.
+- [ ] Execute the full release readiness checklist in `docs/operator-runbook.md`.
+- [ ] Execute the `RC -> soak -> final` flow from `docs/operator-runbook.md` and document the decision.
 
-## Product Assumptions (v0)
-- Release-gated board target: ESP8266 SmallTV ST7789 (incl. alt mapping variants).
-- Experimental board path (non-blocking): LILYGO T-Display-S3 (ESP32-S3).
-- Runtime transport remains USB serial (no WiFi/BLE runtime path).
-- Companion stays "smart"; firmware stays renderer/protocol-focused.
-- Runtime frame is control-plane only; asset transfer is a separate tooling flow.
+## Current Status (2026-03-02, Machine A)
+- [x] `setup --yes --firmware-env esp8266_smalltv_st7789 --theme mini` (flash + runtime config + launch agent) works.
+- [x] `go test ./...` (companion), `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789`, and `./scripts/check-esp8266-soak-gate.sh` are green.
+- [x] `upgrade --firmware-env esp8266_smalltv_st7789` works.
+- [x] `restore-known-good` with manifest/device verification works (explicit image+manifest path).
+- [x] `rollback --skip-companion --image ... --manifest ...` works when the port is free.
+- [ ] `rollback --port ...` default known-good firmware image path still needs cleanup/fix (currently points to missing backup image).
+- [ ] Machine-B E2E run still open.
 
-## Milestone 4: Device Contract + Runtime Hardening (P0, v0 ship-blocker)
-Goal: Robust behavior on real desk setups (multiple USB devices, reconnects, sleep/wake, mixed firmware generations).
+## P1 (Next, Non-Blocking)
+- [x] Split `firmware_esp8266/src/renderer_esp8266.cpp` into theme-focused modules (`classic`, `crt`, `mini`) without behavior changes.
+- [x] Extract probe rendering path into its own module to shrink renderer responsibilities.
+- [x] Add targeted tests for GIF-core fallback/backoff and request switching behavior.
 
-- [ ] Document hardware contract as software artifact (`docs/hardware-contract.md`) for ESP8266 ship target.
-- [ ] Extend `doctor` with explicit board/protocol/capability contract checks for release-gated target.
-- [ ] Keep experimental ESP32 checks as warnings only (must not block v0 go-live).
-- [ ] Make `setup` resilient when serial probe is flaky/busy (no partial install state; deterministic recovery path).
-- [ ] Make theme negotiation robust for legacy hello paths (avoid false `theme-skipped` when capabilities are unknown).
-- [ ] Add deterministic serial port affinity with safe fallback (avoid silently switching to the wrong USB device).
-- [ ] Add optional debug mode with increased detail (without increasing default log noise).
-- [ ] Build support-bundle command (doctor output, recent logs, relevant env/runtime config snapshot).
-- [ ] Expand troubleshooting guide for top field failures and coded recoveries.
+## v0 Done Criteria
+- [ ] No open P0/P1 bugs on `esp8266_smalltv_st7789`.
+- [ ] `classic`, `crt`, `mini` run stable on `esp8266_smalltv_st7789` without reflashing.
+- [ ] Mini GIF path remains stable and falls back cleanly when assets are missing/corrupt.
+- [ ] `README.md`, `docs/operator-runbook.md`, `docs/hardware-contract.md`, and `protocol/PROTOCOL.md` are consistent.
 
-Acceptance:
-- [ ] Wrong/incompatible hardware is detected clearly within 5s on ESP8266 ship path.
-- [ ] Correct ESP8266 hardware shows a valid frame within 15s after daemon start.
-- [ ] Common support cases are solvable reproducibly with `doctor` + support bundle.
-- [ ] Support bundle generation completes in <30s on macOS baseline hardware.
-
-## Milestone 8: Rich Rendering & Built-in Themes (P0, v0 ship-blocker)
-Goal: Ship hybrid rendering in v0 (`usage` + GIF/JPG on one screen) without losing the CodexBar usage core.
-
-KISS ship path:
-- [ ] Freeze first-release rich-render protocol fields directly in `protocol/PROTOCOL.md` (`renderMode`, `shapePreset`, `mediaSlot`, `mediaFit`, `mediaLoop`).
-- [ ] Extend companion + firmware parser for render fields (unknown fields ignored).
-- [ ] Add capability handshake gating (`features`, `codecs`, `maxAssetBytes`) before sending render fields.
-- [ ] Implement one shared media pipeline in firmware core (decode + guardrails).
-- [ ] Implement layered renderer (usage -> shapes -> media -> overlay/error) with media-only degradation on failures.
-- [ ] Implement device asset store + `vibeblock media sync` (simple + reliable; atomic commit before ship).
-- [ ] Integrate asset sync into setup/upgrade so required GIF assets are not a manual post-flash step.
-- [ ] Keep GIF playback at source timing by default; allow frame drops for catch-up when decode/render falls behind.
-- [ ] Emit runtime render metrics (`rendered`, `dropped`, `avgRenderMs`, `estDelayMs`) and document interpretation in runbook.
-- [ ] Migrate built-in themes (`classic`, `crt`, `mini`) to the rich-render pipeline.
-- [ ] Add essential test gates: corrupted asset, missing slot, reconnect/sleep-wake, long soak, budget checks.
-
-Acceptance:
-- [ ] `usage_with_media` renders usage + media concurrently on one screen.
-- [ ] `gif_loop` mode can run continuously without watchdog resets on ESP8266 baseline.
-- [ ] Usage data remains correctly visible in all render modes except explicit `media_only`.
-- [ ] Backward compatibility mode remains intact (firmware without render support ignores new render fields).
-- [ ] Broken assets do not cause reboots/hangs.
-- [ ] Slot/decode failures degrade media only (no black screen, no reboot loop).
-- [ ] Runtime remains robust under USB reconnect and sleep/wake.
-- [ ] ESP8266 baseline remains stable (no OOM/watchdog resets under soak and bad assets).
-
-Out of scope for v0:
-- External theme SDK + third-party theme packaging/tooling (`docs/theme-sdk-v2-outlook.md` is v2 outlook only).
+## Out of Scope (v0)
+- External theme SDK or third-party theme packaging.
 - `vibeblock theme init/dev/validate/build/flash/test` command family.
-
-Later (not v0 ship-blockers):
-- [ ] Threshold-triggered GIF behaviors tied to usage levels.
-- [ ] Expanded media telemetry beyond core error counters.
-- [ ] Additional convenience commands around media/theme workflows if needed.
-- [ ] Revisit Theme SDK scope for v2 after v0 stability goals are met.
-
-## Milestone 7: Production Gate (Go/No-Go)
-Goal: Binding acceptance criteria before first production rollout.
-
-- [ ] Create final Go/No-Go checklist (functionality, stability, setup, upgrade, docs).
-- [ ] Run E2E acceptance on at least 2 macOS devices.
-- [ ] Introduce release candidate process (RC -> soak -> final).
-
-Go-live criteria:
-- [ ] Milestones 4 and 8 completed.
-- [ ] No open P0/P1 bugs.
-- [ ] Setup, upgrade, rollback, and troubleshooting docs are current.
-- [ ] GIF rendering path is part of release validation and passes v0 acceptance gates.
-- [ ] No open ESP8266 P0/P1 bugs on release-gated flows.
+- Separate GIF-player firmware track with its own upload protocol.

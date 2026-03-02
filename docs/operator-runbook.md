@@ -2,12 +2,15 @@
 
 Single source of truth for install, runtime checks, recovery, and smoke testing.
 
+Hardware identity and board/env contract reference:
+- `docs/hardware-contract.md`
+
 ## Scope
 - macOS runtime (`launchctl` + LaunchAgent)
 - USB serial devices (`/dev/cu.usb*`)
 - Companion binary (`vibeblock`)
-- ESP8266 firmware target for v1 production rollout
-- ESP32-S3 firmware path as experimental/non-blocking for v1
+- Primary release-gated target for the v0 pre-release track: `esp8266_smalltv_st7789` (SemVer `1.x`)
+- ESP32-S3 firmware path as experimental fallback/non-blocking for v0
 
 ## Core Commands
 
@@ -23,8 +26,8 @@ go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
 
 ## Setup
 
-`setup` is idempotent and now handles the common "port busy" case automatically by attempting
-`launchctl bootout gui/$(id -u)/com.vibeblock.daemon` before serial probe and flash.
+`setup` is idempotent and handles the common serial busy case by stopping the LaunchAgent
+before flash operations.
 
 ### Default firmware target (ESP8266 SmallTV)
 
@@ -35,7 +38,7 @@ go run ./cmd/vibeblock setup --yes
 
 ### ESP32-S3 target (override)
 
-Experimental path for v1 (non-blocking):
+Experimental fallback path (non-blocking):
 
 ```bash
 cd companion
@@ -46,11 +49,21 @@ go run ./cmd/vibeblock setup --yes \
 
 Useful flags:
 - `--skip-flash`: install/update runtime only
-- `--pin-port`: pin LaunchAgent to one explicit serial path
+- `--pin-port`: pin LaunchAgent to one explicit serial path (recommended when multiple USB serial devices are present)
 - `--firmware-env <env>`: select PlatformIO environment
-- `--theme <classic|crt|none>`: persist runtime theme override in companion config
+- `--theme <classic|crt|mini|none>`: persist runtime theme override in companion config
 - `--validate-only`: run setup prerequisite checks only
 - `--dry-run`: print setup actions without applying changes
+
+## Firmware Environment Selection (ESP8266-first)
+
+Use these rules when selecting `--firmware-env`:
+
+- KISS default runtime firmware: `esp8266_smalltv_st7789` (release-gated)
+- Themes are runtime-configured (`classic`, `crt`, `mini`) via `--theme`/`VIBEBLOCK_THEME` on the same firmware.
+- Legacy compile-theme/GIF/probe env names are unsupported; use only the runtime envs above.
+- `lilygo_t_display_s3` is an experimental fallback and does not block v0 release decisions.
+- MVP release go/no-go is gated only by `esp8266_smalltv_st7789`.
 
 During setup, runtime assets are installed to:
 - Binary: `~/Library/Application Support/vibeblock/bin/vibeblock`
@@ -75,10 +88,10 @@ Preflight includes:
 Optional guard override:
 
 ```bash
-# experimental v1 path
+# experimental fallback path
 go run ./cmd/vibeblock upgrade \
   --firmware-env lilygo_t_display_s3 \
-  --target-firmware-version 1.0.0
+  --target-firmware-version <x.y.z>
 ```
 
 If you need to bypass guard (not recommended):
@@ -119,6 +132,11 @@ Rollback state file:
 Theme override is optional and currently applies to ESP8266 display firmware
 that advertises `features:["theme"]`.
 
+Runtime behavior:
+- If capability handshake confirms `supportsTheme=true`, companion sends the selected theme.
+- If capability handshake is temporarily unavailable (missing hello), companion uses optimistic send on the MVP path.
+- If capabilities are known and explicitly do not support theme, companion omits `theme`.
+
 For an ad-hoc run:
 
 ```bash
@@ -152,6 +170,10 @@ go run ./cmd/vibeblock health
 - auto-detected serial port
 - last successful `sent frame` timestamp + port
 - last runtime error (if any)
+
+`doctor` runtime checks additionally validate:
+- board/protocol/theme capability contract from device hello
+- LaunchAgent port affinity safety (fails when multiple serial ports are present and daemon is unpinned)
 
 Runtime error logs use:
 - stable `code=<category/item>` (`transport/*`, `protocol/*`, `runtime/*`, `setup/*`)
@@ -215,6 +237,52 @@ Optional args:
 2. out log path (default: `/tmp/vibeblock-daemon.out.log`)
 3. timeout seconds (default: `90`)
 
+## Soak Gate (ESP8266)
+
+Focused daemon resilience gate for v0:
+- theme contract on supported device capabilities (`classic`, `crt`, `mini`)
+- reconnect recovery backoff behavior
+- sleep/wake retry-reset behavior
+- 24h-equivalent daemon soak simulation
+
+```bash
+./scripts/check-esp8266-soak-gate.sh
+```
+
+## Release Readiness (Go/No-Go)
+
+Run this list before every v0 release decision.
+
+### Build + Artifacts
+- [ ] `go test ./...` in `companion` is green.
+- [ ] `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789` is green.
+- [ ] Release artifacts include companion binaries, firmware binaries, checksums.
+- [ ] Firmware artifact reports expected `VIBEBLOCK_FW_VERSION` for the release tag.
+
+### Functional Gate (release-gated env)
+- [ ] Device hello reports expected board id for `esp8266_smalltv_st7789`.
+- [ ] Theme contract is capability-aware (`known && !supportsTheme` blocks theme; unknown hello uses MVP optimistic send).
+- [ ] Runtime theme switching `classic`/`crt`/`mini` works without reflashing.
+- [ ] GIF path is safe: `/mini.gif` works in mini theme (or clean fallback if missing/corrupt).
+- [ ] `classic`/`crt` remain stable without GIF playback.
+
+### Stability + Recovery
+- [ ] `./scripts/check-esp8266-soak-gate.sh` passes.
+- [ ] No reboot loop / black-screen loop when GIF files are missing or invalid.
+- [ ] `setup`, `upgrade`, `rollback`, `restore-known-good` pass on operator path.
+
+### Decision
+- [ ] GO: all checklist items done, no open P0/P1 blockers.
+- [ ] NO-GO: at least one blocker open (record blocker, owner, next check time).
+
+## RC -> Soak -> Final Flow
+
+1. Cut RC tag (for example `v1.0.0-rc.1`) and publish artifacts.
+2. Run checklist above + soak gate + setup/upgrade/rollback validation.
+3. Soak in realistic operator mode; monitor daemon logs and fix regressions via new RC tags.
+4. Promote to final tag (for example `v1.0.0`) only after soak passes with no blockers.
+5. Keep prior known-good artifact set available for rollback/hotfix RC.
+
 ## Quick Troubleshooting
 
 ### Serial busy
@@ -238,6 +306,13 @@ go run ./cmd/vibeblock health
 ./scripts/smoke-daemon-sent-frame.sh
 ```
 
+### `runtime/codexbar-command`
+
+```bash
+codexbar usage --json --provider codex --source cli
+codexbar usage --json --web-timeout 8
+```
+
 ## Error Code Recovery Map
 
 Use this taxonomy for incident triage:
@@ -253,10 +328,22 @@ Use this taxonomy for incident triage:
 
 ## Performance Budgets
 
-Companion benchmark limits, firmware probe-bench commands, and per-target budgets:
-- `docs/performance-budgets.md`
+Companion benchmark gate:
 
-Versioning/release references:
-- `docs/versioning-compatibility.md`
-- `docs/release-process.md`
-- `docs/known-good-firmware.md`
+```bash
+cd companion
+go test ./internal/daemon -run '^$' -bench 'BenchmarkRunCycleWithDeps|BenchmarkMarshalFrameWithinLimit' -benchmem -count=1
+./scripts/check-companion-bench-budget.sh
+```
+
+Firmware bench envs:
+- ESP8266: `esp8266_smalltv_st7789_bench`
+- ESP32 fallback: `lilygo_t_display_s3_bench`
+
+## Versioning and Release Notes
+
+- SemVer is `1.x` for companion and firmware lines in the current pre-release track.
+- Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
+- `vibeblock upgrade` enforces companion/firmware compatibility with a version guard.
+- Release firmware builds stamp `VIBEBLOCK_FW_VERSION` from the release tag version.
+- GitHub release artifacts include companion binaries, firmware binaries, and checksums.

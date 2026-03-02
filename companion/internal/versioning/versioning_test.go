@@ -67,3 +67,9 @@ func TestFirmwareVersionForEnvironment(t *testing.T) {
 		t.Fatalf("unexpected firmware version: %q", v)
 	}
 }
+
+func TestFirmwareVersionForLegacyEnvironmentAliasIsRejected(t *testing.T) {
+	if _, ok := FirmwareVersionForEnvironment("esp8266_smalltv_st7789_mini"); ok {
+		t.Fatalf("expected legacy environment alias to be rejected")
+	}
+}

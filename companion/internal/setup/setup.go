@@ -243,12 +243,25 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		stopLaunchAgentBestEffort(ctx, d)
 	}
 
-	if err := d.probePort(port); err != nil {
-		return &StepError{
-			Step: "serial-probe",
-			Err:  err,
-			Hint: "disconnect and reconnect the board, check cable quality, then rerun setup",
+	// Avoid probe-close contention on the flash path; upload itself is the authoritative serial check.
+	shouldProbe := opts.SkipFlash || opts.ValidateOnly || opts.DryRun
+	if shouldProbe {
+		if err := d.probePort(port); err != nil {
+			code := errcode.Of(err)
+			if opts.SkipFlash {
+				fmt.Fprintf(d.stdout, "warning: serial probe failed (%v); continuing because --skip-flash\n", err)
+			} else if code == errcode.TransportSerialCloseTimeout {
+				fmt.Fprintf(d.stdout, "warning: serial probe close timed out (%v); continuing\n", err)
+			} else {
+				return &StepError{
+					Step: "serial-probe",
+					Err:  err,
+					Hint: "disconnect and reconnect the board, check cable quality, then rerun setup",
+				}
+			}
 		}
+	} else {
+		fmt.Fprintln(d.stdout, "Serial probe: skipped (flash step verifies port access)")
 	}
 
 	execPath, err := d.executablePath()
@@ -271,10 +284,20 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	if firmwareEnv == "" {
 		firmwareEnv = DefaultFirmwareEnvironment()
 	}
+	resolvedFirmwareEnv, ok := ResolveFirmwareEnvironment(firmwareEnv)
+	if !ok {
+		return &StepError{
+			Step: "validate-firmware-env",
+			Err:  fmt.Errorf("unsupported firmware environment %q", firmwareEnv),
+			Hint: "use esp8266_smalltv_st7789 (default) or lilygo_t_display_s3",
+		}
+	}
+	firmwareEnv = resolvedFirmwareEnv
 
 	targetBoardIDs := firmwareTargetExpectedIDs(firmwareEnv)
 	if len(targetBoardIDs) > 0 {
 		hello, helloErr := d.readDeviceHello(port)
+		usb.CloseDefaultSender()
 		if helloErr == nil {
 			detectedBoard := strings.TrimSpace(strings.ToLower(hello.Board))
 			if detectedBoard != "" && !containsString(targetBoardIDs, detectedBoard) {
@@ -622,7 +645,7 @@ func locateRepository(d deps) (string, error) {
 func walkUpToRepositoryRoot(start string) string {
 	dir := filepath.Clean(start)
 	for {
-		if fileExists(filepath.Join(dir, "firmware", "platformio.ini")) && fileExists(filepath.Join(dir, "companion", "go.mod")) {
+		if fileExists(filepath.Join(dir, "firmware_esp32", "platformio.ini")) && fileExists(filepath.Join(dir, "companion", "go.mod")) {
 			return dir
 		}
 		parent := filepath.Dir(dir)
@@ -682,12 +705,12 @@ func firmwareProjectDirForEnvironment(repoRoot, firmwareEnv string) string {
 			return esp8266Dir
 		}
 	case strings.HasPrefix(env, "lilygo_"), strings.HasPrefix(env, "esp32_"):
-		esp32Dir := filepath.Join(repoRoot, "firmware")
+		esp32Dir := filepath.Join(repoRoot, "firmware_esp32")
 		if fileExists(filepath.Join(esp32Dir, "platformio.ini")) {
 			return esp32Dir
 		}
 	}
-	return filepath.Join(repoRoot, "firmware")
+	return filepath.Join(repoRoot, "firmware_esp32")
 }
 
 func flashRecoveryHint(output, port string, uid int) string {

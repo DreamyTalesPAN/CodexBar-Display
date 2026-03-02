@@ -158,6 +158,18 @@ func runUpgrade(args []string) error {
 	if selectedEnv == "" {
 		selectedEnv = setup.DefaultFirmwareEnvironment()
 	}
+	resolvedEnv, ok := setup.ResolveFirmwareEnvironment(selectedEnv)
+	if !ok {
+		return &commandError{
+			Op:   "resolve-firmware-env",
+			Code: errcode.UpgradeVersionGuard,
+			Err: fmt.Errorf(
+				"unsupported firmware env %q (supported: esp8266_smalltv_st7789, lilygo_t_display_s3)",
+				selectedEnv,
+			),
+		}
+	}
+	selectedEnv = resolvedEnv
 
 	resolvedPort, err := usb.ResolvePort(strings.TrimSpace(*port))
 	if err != nil {

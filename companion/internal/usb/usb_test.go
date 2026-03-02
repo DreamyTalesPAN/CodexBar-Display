@@ -55,7 +55,7 @@ func TestParseDeviceHelloLineLegacyReady(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected legacy ready to parse as hello")
 	}
-	if hello.ProtocolVersion != 1 {
+	if hello.ProtocolVersion != 0 {
 		t.Fatalf("unexpected protocol version %d", hello.ProtocolVersion)
 	}
 }

@@ -26,7 +26,7 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
 	codexbarPath := "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"
 
-	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
 
@@ -237,6 +237,56 @@ func TestRunWithDepsWritesRuntimeThemeConfig(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsContinuesWhenSkipFlashAndProbeFails(t *testing.T) {
+	home := t.TempDir()
+	execPath := mustCreateExecutable(t)
+	var stdout bytes.Buffer
+
+	err := runWithDeps(context.Background(), Options{
+		Port:      "/dev/cu.usbserial10",
+		AssumeYes: true,
+		SkipFlash: true,
+		Theme:     "mini",
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &stdout,
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		resolvePort: func(p string) (string, error) {
+			return p, nil
+		},
+		probePort: func(string) error {
+			return errors.New("serial close timeout")
+		},
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success for --skip-flash probe fallback, got %v", err)
+	}
+	if !strings.Contains(stdout.String(), "warning: serial probe failed") {
+		t.Fatalf("expected warning in output, got:\n%s", stdout.String())
+	}
+}
+
 func TestRunWithDepsFailsWithRecoveryWhenCodexbarInstallNotPossible(t *testing.T) {
 	var calls []commandCall
 	err := runWithDeps(context.Background(), Options{SkipFlash: true, AssumeYes: true}, deps{
@@ -335,7 +385,7 @@ func TestRunWithDepsReportsFlashFailureWithConcreteHint(t *testing.T) {
 	repo := filepath.Join(tmp, "repo")
 	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
 
-	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
 
@@ -397,7 +447,7 @@ func TestRunWithDepsWaitsForLaunchAgentToBecomeRunning(t *testing.T) {
 	repo := filepath.Join(tmp, "repo")
 	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
 
-	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
 
@@ -504,13 +554,74 @@ func TestRunWithDepsStopsLaunchAgentBeforeSerialProbe(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	repo := filepath.Join(tmp, "repo")
+	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
+	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
+
+	probeCalled := false
+
+	err := runWithDeps(context.Background(), Options{
+		Port:      "/dev/cu.usbserial10",
+		AssumeYes: true,
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		cwd: func() (string, error) {
+			return filepath.Join(repo, "companion"), nil
+		},
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		resolvePort: func(p string) (string, error) {
+			return p, nil
+		},
+		probePort: func(string) error {
+			probeCalled = true
+			return nil
+		},
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			switch file {
+			case "launchctl", "pio":
+				return "/bin/" + file, nil
+			default:
+				return "", errors.New("not found")
+			}
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success, got %v", err)
+	}
+	if probeCalled {
+		t.Fatalf("expected serial probe to be skipped on flash path")
+	}
+}
+
 func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	repo := filepath.Join(tmp, "repo")
 	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
 
-	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
@@ -582,7 +693,7 @@ func TestRunWithDepsValidateOnlyPerformsChecksWithoutApplyingChanges(t *testing.
 	repo := filepath.Join(tmp, "repo")
 	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
 
-	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
@@ -648,7 +759,7 @@ func TestRunWithDepsDryRunSkipsApplyingChanges(t *testing.T) {
 	repo := filepath.Join(tmp, "repo")
 	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
 
-	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
@@ -714,13 +825,22 @@ func TestDefaultFirmwareEnvironment(t *testing.T) {
 	}
 }
 
+func TestResolveFirmwareEnvironmentRejectsUnsupported(t *testing.T) {
+	if _, ok := ResolveFirmwareEnvironment("esp8266_smalltv_st7789_crt"); ok {
+		t.Fatalf("expected legacy compile-theme env to be rejected")
+	}
+	if _, ok := ResolveFirmwareEnvironment("esp8266_probe"); ok {
+		t.Fatalf("expected unsupported firmware env to be rejected")
+	}
+}
+
 func TestFirmwareProjectDirForLilygoEnvironment(t *testing.T) {
 	repo := t.TempDir()
-	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
 
 	got := firmwareProjectDirForEnvironment(repo, "lilygo_t_display_s3")
-	want := filepath.Join(repo, "firmware")
+	want := filepath.Join(repo, "firmware_esp32")
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
@@ -732,7 +852,7 @@ func TestRunWithDepsFailsWhenDetectedBoardMismatchesFirmwareEnvironment(t *testi
 	repo := filepath.Join(tmp, "repo")
 	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
 
-	mustWriteFile(t, filepath.Join(repo, "firmware", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
