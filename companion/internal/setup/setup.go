@@ -26,6 +26,7 @@ import (
 const (
 	launchAgentLabel      = "com.vibeblock.daemon"
 	defaultDaemonInterval = "60s"
+	defaultLastGoodMaxAge = "168h"
 	codexbarInstallURL    = "https://codexbar.app/"
 	codexbarBrewCask      = "steipete/tap/codexbar"
 )
@@ -827,6 +828,8 @@ func renderLaunchAgentPlist(binaryPath, port string) []byte {
 	b.WriteString("    <dict>\n")
 	b.WriteString("      <key>PATH</key>\n")
 	b.WriteString("      <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>\n")
+	b.WriteString("      <key>VIBEBLOCK_LAST_GOOD_MAX_AGE</key>\n")
+	b.WriteString("      <string>" + xmlEscape(defaultLastGoodMaxAge) + "</string>\n")
 	b.WriteString("    </dict>\n")
 	b.WriteString("    <key>RunAtLoad</key>\n")
 	b.WriteString("    <true/>\n")

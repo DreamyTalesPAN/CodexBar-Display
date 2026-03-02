@@ -99,6 +99,49 @@ func TestParseAllProvidersSkipsProviderErrorPayloads(t *testing.T) {
 	}
 }
 
+func TestUsageBarsShowUsedFromEnv(t *testing.T) {
+	t.Setenv(usageModeEnvVar, "")
+	if _, ok := usageBarsShowUsedFromEnv(); ok {
+		t.Fatalf("expected empty env to skip override")
+	}
+
+	t.Setenv(usageModeEnvVar, "used")
+	if showUsed, ok := usageBarsShowUsedFromEnv(); !ok || !showUsed {
+		t.Fatalf("expected used override, got showUsed=%v ok=%v", showUsed, ok)
+	}
+
+	t.Setenv(usageModeEnvVar, "remaining")
+	if showUsed, ok := usageBarsShowUsedFromEnv(); !ok || showUsed {
+		t.Fatalf("expected remaining override, got showUsed=%v ok=%v", showUsed, ok)
+	}
+
+	t.Setenv(usageModeEnvVar, "invalid")
+	if _, ok := usageBarsShowUsedFromEnv(); ok {
+		t.Fatalf("expected invalid env to skip override")
+	}
+}
+
+func TestParseBoolPreference(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want bool
+		ok   bool
+	}{
+		{raw: "1", want: true, ok: true},
+		{raw: "true", want: true, ok: true},
+		{raw: "0", want: false, ok: true},
+		{raw: "false", want: false, ok: true},
+		{raw: "unknown", want: false, ok: false},
+	}
+
+	for _, tc := range cases {
+		got, ok := parseBoolPreference([]byte(tc.raw))
+		if ok != tc.ok || got != tc.want {
+			t.Fatalf("parseBoolPreference(%q) got=(%v,%v) want=(%v,%v)", tc.raw, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
 func TestShouldRetryAfterStartingCodexBarAppWhenDashboardMissing(t *testing.T) {
 	raw := []byte("Error: OpenAI dashboard data not found. Body sample: Download app")
 	should := shouldRetryAfterStartingCodexBarApp(errors.New("exit status 1"), ErrNoProviders, nil, raw)

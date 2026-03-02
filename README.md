@@ -63,6 +63,15 @@ Missing or invalid GIF assets automatically fall back to non-GIF UI and enter pe
 3. `~/Library/Application Support/vibeblock/config.json`
 4. Firmware compile default
 
+## Mini Theme Preview (No Flash)
+```bash
+# From repo root
+./scripts/mini-theme-preview.sh
+```
+
+This opens a browser preview for the `mini` layout with mocked usage fields and live position/size controls.
+Default GIF path is `/firmware_esp8266/data/mini.gif` (served from the repo).
+
 ## Development
 ```bash
 # Companion tests

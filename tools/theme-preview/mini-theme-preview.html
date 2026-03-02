@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mini Theme Preview</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --panel-border: #30363d;
+        --text: #c9d1d9;
+        --muted: #8b949e;
+        --accent: #58a6ff;
+        --danger: #f85149;
+        --screen-scale: 2.3;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "SF Mono", "Menlo", "Consolas", monospace;
+        background: radial-gradient(circle at 15% 0%, #1b2638, var(--bg) 45%);
+        color: var(--text);
+      }
+
+      .wrap {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 18px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 18px;
+        grid-template-columns: minmax(320px, 480px) 1fr;
+      }
+
+      @media (max-width: 1020px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .panel {
+        background: color-mix(in srgb, var(--panel) 92%, black 8%);
+        border: 1px solid var(--panel-border);
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      .title {
+        margin: 0 0 6px 0;
+        font-size: 16px;
+      }
+
+      .hint {
+        margin: 0 0 12px 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .section {
+        border: 1px solid #2c313a;
+        border-radius: 10px;
+        padding: 10px;
+      }
+
+      .section > h3 {
+        margin: 0 0 10px 0;
+        font-size: 12px;
+        color: var(--accent);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .row label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      input[type="text"],
+      select {
+        width: 100%;
+        border: 1px solid #2f3540;
+        border-radius: 8px;
+        background: #0f141b;
+        color: var(--text);
+        font-size: 13px;
+        padding: 6px 8px;
+      }
+
+      .slider-row {
+        margin-bottom: 10px;
+      }
+
+      .slider-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+      }
+
+      .slider-head label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .slider-value {
+        min-width: 54px;
+        text-align: right;
+        font-size: 12px;
+        color: #9ecbff;
+      }
+
+      input[type="range"] {
+        width: 100%;
+      }
+
+      .checkbox-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+
+      .checkbox-row label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .preview-area {
+        display: grid;
+        gap: 10px;
+        place-items: center;
+      }
+
+      .device {
+        background: linear-gradient(180deg, #e6e6e8, #c9c9cc);
+        border-radius: 20px;
+        padding: 18px;
+        box-shadow:
+          inset 0 0 0 1px #f5f5f7,
+          0 18px 40px rgba(0, 0, 0, 0.35);
+      }
+
+      .screen-shell {
+        transform: scale(var(--screen-scale));
+        transform-origin: center;
+        padding: 7px;
+        background: #0f1318;
+        border: 1px solid #434a54;
+        border-radius: 3px;
+      }
+
+      .screen {
+        position: relative;
+        width: 240px;
+        height: 240px;
+        background: #000;
+        overflow: hidden;
+      }
+
+      .text {
+        position: absolute;
+        white-space: nowrap;
+        line-height: 1;
+        user-select: none;
+        pointer-events: none;
+      }
+
+      .font1 {
+        font-family: "Courier New", "Menlo", monospace;
+        font-weight: 700;
+      }
+
+      .font2 {
+        font-family: "Trebuchet MS", "Arial Narrow", sans-serif;
+        font-weight: 700;
+      }
+
+      #gif-window {
+        position: absolute;
+        overflow: hidden;
+      }
+
+      #gif-image {
+        position: absolute;
+        image-rendering: pixelated;
+      }
+
+      .guide {
+        position: absolute;
+        pointer-events: none;
+        border: 1px dashed transparent;
+        display: none;
+      }
+
+      .screen.show-guides .guide {
+        display: block;
+      }
+
+      #guide-draw {
+        border-color: #fcbf49;
+      }
+
+      .meta {
+        width: 100%;
+        display: grid;
+        gap: 8px;
+      }
+
+      .meta-line {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .codebox {
+        width: 100%;
+        background: #0b1016;
+        border: 1px solid #2f3540;
+        border-radius: 8px;
+        padding: 8px;
+        color: #9ecbff;
+        font-size: 12px;
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 8px;
+      }
+
+      button {
+        border: 1px solid #3a4453;
+        background: #1a2230;
+        color: var(--text);
+        border-radius: 8px;
+        padding: 7px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      button:hover {
+        border-color: #4f6587;
+      }
+
+      .warning {
+        color: var(--danger);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="grid">
+        <section class="panel stack">
+          <h1 class="title">Mini Theme Preview (No Flash)</h1>
+          <p class="hint">
+            Layout-only simulator for <code>renderer_esp8266_theme_mini.cpp</code>. Numeric controls are sliders.
+          </p>
+
+          <div class="section">
+            <h3>Frame Mock</h3>
+            <div class="row">
+              <label for="provider">Provider</label>
+              <input id="provider" type="text" value="Codex" />
+            </div>
+            <div class="row">
+              <label for="usageMode">Usage mode text</label>
+              <select id="usageMode">
+                <option value="used">used</option>
+                <option value="remaining" selected>remaining</option>
+              </select>
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="sessionPct">Session %</label>
+                <span id="sessionPctVal" class="slider-value"></span>
+              </div>
+              <input id="sessionPct" type="range" min="0" max="100" value="97" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="weeklyPct">Weekly %</label>
+                <span id="weeklyPctVal" class="slider-value"></span>
+              </div>
+              <input id="weeklyPct" type="range" min="0" max="100" value="71" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="resetSecs">Reset secs</label>
+                <span id="resetSecsVal" class="slider-value"></span>
+              </div>
+              <input id="resetSecs" type="range" min="0" max="86400" value="10569" />
+            </div>
+          </div>
+
+          <div class="section">
+            <h3>Typography + Usage Layout</h3>
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="providerSize">Provider size</label>
+                <span id="providerSizeVal" class="slider-value"></span>
+              </div>
+              <input id="providerSize" type="range" min="1" max="4" value="2" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="metaTextSize">Session/Weekly/used size</label>
+                <span id="metaTextSizeVal" class="slider-value"></span>
+              </div>
+              <input id="metaTextSize" type="range" min="1" max="3" value="1" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="pctSize">% text size</label>
+                <span id="pctSizeVal" class="slider-value"></span>
+              </div>
+              <input id="pctSize" type="range" min="1" max="6" value="4" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="resetSize">Reset text size</label>
+                <span id="resetSizeVal" class="slider-value"></span>
+              </div>
+              <input id="resetSize" type="range" min="1" max="4" value="2" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="leftCenter">Session column center X</label>
+                <span id="leftCenterVal" class="slider-value"></span>
+              </div>
+              <input id="leftCenter" type="range" min="0" max="120" value="36" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="labelY">Label Y</label>
+                <span id="labelYVal" class="slider-value"></span>
+              </div>
+              <input id="labelY" type="range" min="0" max="239" value="22" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="valueY">% Y</label>
+                <span id="valueYVal" class="slider-value"></span>
+              </div>
+              <input id="valueY" type="range" min="0" max="239" value="30" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="modeY">used/remaining Y</label>
+                <span id="modeYVal" class="slider-value"></span>
+              </div>
+              <input id="modeY" type="range" min="0" max="239" value="63" />
+            </div>
+          </div>
+
+          <div class="section">
+            <h3>GIF Position</h3>
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="gifOffsetX">GIF X offset (left/right)</label>
+                <span id="gifOffsetXVal" class="slider-value"></span>
+              </div>
+              <input id="gifOffsetX" type="range" min="-120" max="120" value="0" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="gifOffsetY">GIF Y offset (up/down)</label>
+                <span id="gifOffsetYVal" class="slider-value"></span>
+              </div>
+              <input id="gifOffsetY" type="range" min="-120" max="120" value="24" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="gifSpacing">Gap below GIF (reset line)</label>
+                <span id="gifSpacingVal" class="slider-value"></span>
+              </div>
+              <input id="gifSpacing" type="range" min="0" max="32" value="2" />
+            </div>
+          </div>
+
+          <div class="section">
+            <h3>Preview Controls</h3>
+            <div class="row">
+              <label for="gifPath">GIF path (from repo root)</label>
+              <input id="gifPath" type="text" value="/firmware_esp8266/data/mini.gif" />
+            </div>
+            <div class="row">
+              <label for="gifFile">or choose local GIF file</label>
+              <input id="gifFile" type="file" accept="image/gif" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="scale">Zoom</label>
+                <span id="scaleVal" class="slider-value"></span>
+              </div>
+              <input id="scale" type="range" min="1" max="4" step="0.1" value="2.3" />
+            </div>
+
+            <div class="checkbox-row">
+              <label for="showGuides">Show guide box</label>
+              <input id="showGuides" type="checkbox" />
+            </div>
+
+            <div class="toolbar">
+              <button id="reloadGif" type="button">Reload GIF Path</button>
+              <button id="copyConstants" type="button">Copy Constants</button>
+            </div>
+            <div id="copyStatus" class="meta-line"></div>
+          </div>
+        </section>
+
+        <section class="panel preview-area">
+          <div class="device">
+            <div class="screen-shell">
+              <div id="screen" class="screen">
+                <div id="providerText" class="text font1"></div>
+                <div id="sessionLabel" class="text font2">Session</div>
+                <div id="weeklyLabel" class="text font2">Weekly</div>
+                <div id="sessionValue" class="text font1"></div>
+                <div id="weeklyValue" class="text font1"></div>
+                <div id="sessionMode" class="text font2"></div>
+                <div id="weeklyMode" class="text font2"></div>
+                <div id="resetText" class="text font1"></div>
+                <div id="gif-window">
+                  <img id="gif-image" alt="mini gif preview" />
+                </div>
+                <div id="guide-draw" class="guide"></div>
+              </div>
+            </div>
+          </div>
+          <div class="meta">
+            <div id="layoutMeta" class="meta-line"></div>
+            <div id="gifMeta" class="meta-line"></div>
+            <textarea id="constantsOut" class="codebox" readonly></textarea>
+            <div class="warning" id="gifWarning"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const displaySize = 240;
+      const kMiniBg = "#000000";
+      const kMiniPrimary = "#5ccfff";
+      const kMiniSecondary = "#a7ffc9";
+      const kMiniMuted = "#798394";
+      const fallbackGifSize = 64;
+
+      const dom = {
+        screen: document.getElementById("screen"),
+        provider: document.getElementById("provider"),
+        usageMode: document.getElementById("usageMode"),
+        sessionPct: document.getElementById("sessionPct"),
+        weeklyPct: document.getElementById("weeklyPct"),
+        resetSecs: document.getElementById("resetSecs"),
+        providerSize: document.getElementById("providerSize"),
+        metaTextSize: document.getElementById("metaTextSize"),
+        pctSize: document.getElementById("pctSize"),
+        resetSize: document.getElementById("resetSize"),
+        leftCenter: document.getElementById("leftCenter"),
+        labelY: document.getElementById("labelY"),
+        valueY: document.getElementById("valueY"),
+        modeY: document.getElementById("modeY"),
+        gifOffsetX: document.getElementById("gifOffsetX"),
+        gifOffsetY: document.getElementById("gifOffsetY"),
+        gifSpacing: document.getElementById("gifSpacing"),
+        gifPath: document.getElementById("gifPath"),
+        gifFile: document.getElementById("gifFile"),
+        scale: document.getElementById("scale"),
+        showGuides: document.getElementById("showGuides"),
+        reloadGif: document.getElementById("reloadGif"),
+        copyConstants: document.getElementById("copyConstants"),
+        copyStatus: document.getElementById("copyStatus"),
+        providerText: document.getElementById("providerText"),
+        sessionLabel: document.getElementById("sessionLabel"),
+        weeklyLabel: document.getElementById("weeklyLabel"),
+        sessionValue: document.getElementById("sessionValue"),
+        weeklyValue: document.getElementById("weeklyValue"),
+        sessionMode: document.getElementById("sessionMode"),
+        weeklyMode: document.getElementById("weeklyMode"),
+        resetText: document.getElementById("resetText"),
+        gifWindow: document.getElementById("gif-window"),
+        gifImage: document.getElementById("gif-image"),
+        guideDraw: document.getElementById("guide-draw"),
+        layoutMeta: document.getElementById("layoutMeta"),
+        gifMeta: document.getElementById("gifMeta"),
+        constantsOut: document.getElementById("constantsOut"),
+        gifWarning: document.getElementById("gifWarning"),
+      };
+
+      const sliderValueIds = [
+        "sessionPct",
+        "weeklyPct",
+        "resetSecs",
+        "providerSize",
+        "metaTextSize",
+        "pctSize",
+        "resetSize",
+        "leftCenter",
+        "labelY",
+        "valueY",
+        "modeY",
+        "gifOffsetX",
+        "gifOffsetY",
+        "gifSpacing",
+        "scale",
+      ];
+
+      const measureCanvas = document.createElement("canvas");
+      const measureCtx = measureCanvas.getContext("2d");
+      let objectGifUrl = "";
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function sliderNumber(el, fallback) {
+        const raw = Number(el.value);
+        if (!Number.isFinite(raw)) {
+          return fallback;
+        }
+        return raw;
+      }
+
+      function textPixelWidth(text, textSize) {
+        return text.length * 6 * textSize;
+      }
+
+      function textPixelHeight(textSize) {
+        return 8 * textSize;
+      }
+
+      function font2Width(text, textSize) {
+        measureCtx.font = `700 ${textSize * 8}px "Trebuchet MS", "Arial Narrow", sans-serif`;
+        return Math.ceil(measureCtx.measureText(text).width);
+      }
+
+      function centerXForFont1(text, textSize) {
+        return Math.max(0, Math.floor((displaySize - textPixelWidth(text, textSize)) / 2));
+      }
+
+      function centerXForColumnFont1(text, textSize, centerX) {
+        return Math.max(0, Math.floor(centerX - textPixelWidth(text, textSize) / 2));
+      }
+
+      function centerXForColumnPixels(widthPx, centerX) {
+        return Math.max(0, Math.floor(centerX - widthPx / 2));
+      }
+
+      function formatDuration(secs) {
+        const safe = Math.max(0, Number(secs) || 0);
+        const hours = Math.floor(safe / 3600);
+        const minutes = Math.floor((safe % 3600) / 60);
+        if (hours > 0) {
+          return `${hours}h ${minutes}m`;
+        }
+        return `${minutes}m`;
+      }
+
+      function setText(el, text, x, y, size, color) {
+        el.textContent = text;
+        el.style.left = `${Math.round(x)}px`;
+        el.style.top = `${Math.round(y)}px`;
+        el.style.fontSize = `${8 * size}px`;
+        el.style.color = color;
+      }
+
+      function currentGifSize() {
+        if (dom.gifImage.naturalWidth > 0) {
+          return dom.gifImage.naturalWidth;
+        }
+        return fallbackGifSize;
+      }
+
+      function updateSliderValueLabels() {
+        sliderValueIds.forEach((id) => {
+          const slider = document.getElementById(id);
+          const out = document.getElementById(`${id}Val`);
+          if (!slider || !out) {
+            return;
+          }
+          let suffix = "";
+          if (id === "sessionPct" || id === "weeklyPct") {
+            suffix = "%";
+          } else if (id === "resetSecs") {
+            suffix = "s";
+          } else if (id === "scale") {
+            suffix = "x";
+          } else if (id === "gifOffsetX" || id === "gifOffsetY") {
+            suffix = "px";
+          }
+          out.textContent = `${slider.value}${suffix}`;
+        });
+      }
+
+      function computeLayout() {
+        const provider = dom.provider.value.trim() || "Provider";
+        const usageMode = dom.usageMode.value === "remaining" ? "remaining" : "used";
+
+        const session = clamp(Math.round(sliderNumber(dom.sessionPct, 97)), 0, 100);
+        const weekly = clamp(Math.round(sliderNumber(dom.weeklyPct, 71)), 0, 100);
+        const resetSecs = clamp(Math.round(sliderNumber(dom.resetSecs, 10569)), 0, 86400);
+
+        const providerSize = clamp(Math.round(sliderNumber(dom.providerSize, 2)), 1, 4);
+        const metaTextSize = clamp(Math.round(sliderNumber(dom.metaTextSize, 1)), 1, 3);
+        const pctSize = clamp(Math.round(sliderNumber(dom.pctSize, 4)), 1, 6);
+        const resetSize = clamp(Math.round(sliderNumber(dom.resetSize, 2)), 1, 4);
+
+        const leftCenter = clamp(Math.round(sliderNumber(dom.leftCenter, 36)), 0, 120);
+        const rightCenter = displaySize - leftCenter;
+        const labelY = clamp(Math.round(sliderNumber(dom.labelY, 22)), 0, 239);
+        const valueY = clamp(Math.round(sliderNumber(dom.valueY, 30)), 0, 239);
+        const modeY = clamp(Math.round(sliderNumber(dom.modeY, 63)), 0, 239);
+
+        const gifOffsetX = clamp(Math.round(sliderNumber(dom.gifOffsetX, 0)), -120, 120);
+        const gifOffsetY = clamp(Math.round(sliderNumber(dom.gifOffsetY, 24)), -120, 120);
+        const gifSpacing = clamp(Math.round(sliderNumber(dom.gifSpacing, 2)), 0, 32);
+
+        const gifSize = currentGifSize();
+        const drawX = Math.round((displaySize - gifSize) / 2 + gifOffsetX);
+        const drawY = Math.round((displaySize - gifSize) / 2 + gifOffsetY);
+
+        const resetLabel = `Reset ${formatDuration(resetSecs)}`;
+        const clearY = drawY + gifSize + gifSpacing;
+        const clearStart = clamp(clearY, 0, displaySize);
+        const clearH = displaySize - clearStart;
+        const showReset = clearH > 0;
+        const resetX = centerXForFont1(resetLabel, resetSize);
+        const resetY = clearStart + Math.floor((clearH - textPixelHeight(resetSize)) / 2);
+
+        return {
+          provider,
+          usageMode,
+          sessionText: `${session}%`,
+          weeklyText: `${weekly}%`,
+          providerSize,
+          metaTextSize,
+          pctSize,
+          resetSize,
+          leftCenter,
+          rightCenter,
+          labelY,
+          valueY,
+          modeY,
+          drawX,
+          drawY,
+          gifSize,
+          gifOffsetX,
+          gifOffsetY,
+          gifSpacing,
+          resetLabel,
+          resetX,
+          resetY,
+          showReset,
+        };
+      }
+
+      function applyLayout(layout) {
+        dom.screen.style.background = kMiniBg;
+        dom.screen.classList.toggle("show-guides", dom.showGuides.checked);
+        document.documentElement.style.setProperty("--screen-scale", String(sliderNumber(dom.scale, 2.3)));
+
+        setText(
+          dom.providerText,
+          layout.provider,
+          centerXForFont1(layout.provider, layout.providerSize),
+          4,
+          layout.providerSize,
+          kMiniMuted
+        );
+
+        setText(
+          dom.sessionLabel,
+          "Session",
+          centerXForColumnPixels(font2Width("Session", layout.metaTextSize), layout.leftCenter),
+          layout.labelY,
+          layout.metaTextSize,
+          kMiniMuted
+        );
+        setText(
+          dom.weeklyLabel,
+          "Weekly",
+          centerXForColumnPixels(font2Width("Weekly", layout.metaTextSize), layout.rightCenter),
+          layout.labelY,
+          layout.metaTextSize,
+          kMiniMuted
+        );
+
+        setText(
+          dom.sessionValue,
+          layout.sessionText,
+          centerXForColumnFont1(layout.sessionText, layout.pctSize, layout.leftCenter),
+          layout.valueY,
+          layout.pctSize,
+          kMiniPrimary
+        );
+        setText(
+          dom.weeklyValue,
+          layout.weeklyText,
+          centerXForColumnFont1(layout.weeklyText, layout.pctSize, layout.rightCenter),
+          layout.valueY,
+          layout.pctSize,
+          kMiniSecondary
+        );
+
+        setText(
+          dom.sessionMode,
+          layout.usageMode,
+          centerXForColumnPixels(font2Width(layout.usageMode, layout.metaTextSize), layout.leftCenter),
+          layout.modeY,
+          layout.metaTextSize,
+          kMiniMuted
+        );
+        setText(
+          dom.weeklyMode,
+          layout.usageMode,
+          centerXForColumnPixels(font2Width(layout.usageMode, layout.metaTextSize), layout.rightCenter),
+          layout.modeY,
+          layout.metaTextSize,
+          kMiniMuted
+        );
+
+        if (layout.showReset) {
+          setText(dom.resetText, layout.resetLabel, layout.resetX, layout.resetY, layout.resetSize, kMiniMuted);
+          dom.resetText.style.display = "block";
+        } else {
+          dom.resetText.style.display = "none";
+        }
+
+        dom.gifWindow.style.left = `${layout.drawX}px`;
+        dom.gifWindow.style.top = `${layout.drawY}px`;
+        dom.gifWindow.style.width = `${layout.gifSize}px`;
+        dom.gifWindow.style.height = `${layout.gifSize}px`;
+
+        dom.gifImage.style.left = "0px";
+        dom.gifImage.style.top = "0px";
+        dom.gifImage.style.width = `${layout.gifSize}px`;
+        dom.gifImage.style.height = `${layout.gifSize}px`;
+
+        dom.guideDraw.style.left = `${layout.drawX}px`;
+        dom.guideDraw.style.top = `${layout.drawY}px`;
+        dom.guideDraw.style.width = `${layout.gifSize}px`;
+        dom.guideDraw.style.height = `${layout.gifSize}px`;
+
+        dom.layoutMeta.textContent =
+          `row: left=${layout.leftCenter}, right=${layout.rightCenter}, labelY=${layout.labelY}, valueY=${layout.valueY}, modeY=${layout.modeY}`;
+        dom.gifMeta.textContent =
+          `gif: ${layout.gifSize}px @ (${layout.drawX},${layout.drawY}), offsetX=${layout.gifOffsetX}px, offsetY=${layout.gifOffsetY}px, gap=${layout.gifSpacing}px`;
+
+        dom.constantsOut.value = [
+          `const int leftCenter = ${layout.leftCenter};`,
+          `const int labelY = ${layout.labelY};`,
+          `const int valueY = ${layout.valueY};`,
+          `const int modeY = ${layout.modeY};`,
+          `const int providerTextSize = ${layout.providerSize}; // preview`,
+          `const int usageMetaTextSize = ${layout.metaTextSize}; // preview`,
+          `const int percentTextSize = ${layout.pctSize}; // preview`,
+          `const int resetTextSize = ${layout.resetSize}; // preview`,
+          `constexpr int kMiniGifSpacing = ${layout.gifSpacing};`,
+          `constexpr int kLayoutLowerOffset = ${layout.gifOffsetY}; // maps to firmware y-offset`,
+          `const int gifOffsetX = ${layout.gifOffsetX}; // preview only`,
+        ].join("\n");
+      }
+
+      function render() {
+        updateSliderValueLabels();
+        const layout = computeLayout();
+        applyLayout(layout);
+      }
+
+      function loadGifFromPath() {
+        if (objectGifUrl) {
+          URL.revokeObjectURL(objectGifUrl);
+          objectGifUrl = "";
+        }
+        dom.gifWarning.textContent = "";
+        dom.gifImage.src = dom.gifPath.value.trim() || "/firmware_esp8266/data/mini.gif";
+      }
+
+      function loadGifFromFile(file) {
+        if (!file) {
+          return;
+        }
+        if (objectGifUrl) {
+          URL.revokeObjectURL(objectGifUrl);
+          objectGifUrl = "";
+        }
+        objectGifUrl = URL.createObjectURL(file);
+        dom.gifImage.src = objectGifUrl;
+      }
+
+      dom.gifImage.addEventListener("load", () => {
+        dom.gifWarning.textContent = "";
+        render();
+      });
+
+      dom.gifImage.addEventListener("error", () => {
+        dom.gifWarning.textContent = "GIF not found. Check path or choose a local file.";
+        render();
+      });
+
+      dom.gifFile.addEventListener("change", (event) => {
+        const [file] = event.target.files || [];
+        loadGifFromFile(file);
+      });
+
+      dom.reloadGif.addEventListener("click", loadGifFromPath);
+
+      dom.copyConstants.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(dom.constantsOut.value);
+          dom.copyStatus.textContent = "Copied constants to clipboard.";
+          setTimeout(() => {
+            dom.copyStatus.textContent = "";
+          }, 1800);
+        } catch (error) {
+          dom.copyStatus.textContent = "Clipboard denied. Copy from the box below.";
+        }
+      });
+
+      document.querySelectorAll("input, select").forEach((el) => {
+        if (el === dom.gifFile) {
+          return;
+        }
+        el.addEventListener("input", render);
+      });
+
+      loadGifFromPath();
+      render();
+    </script>
+  </body>
+</html>

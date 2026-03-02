@@ -21,6 +21,7 @@ Fields:
 - `session` (number, optional): session usage percent `0..100`.
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
+- `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
 - `theme` (string, optional): requested built-in UI theme (`classic`, `crt`, `mini`).
 - `error` (string, optional): if present, firmware should render error screen.
 

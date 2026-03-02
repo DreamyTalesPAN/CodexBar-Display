@@ -74,6 +74,9 @@ func assertFrameMatch(t *testing.T, got, want protocol.Frame) {
 	if got.ResetSec != want.ResetSec {
 		t.Fatalf("reset mismatch: got=%d want=%d", got.ResetSec, want.ResetSec)
 	}
+	if got.UsageMode != want.UsageMode {
+		t.Fatalf("usageMode mismatch: got=%q want=%q", got.UsageMode, want.UsageMode)
+	}
 	if got.Theme != want.Theme {
 		t.Fatalf("theme mismatch: got=%q want=%q", got.Theme, want.Theme)
 	}

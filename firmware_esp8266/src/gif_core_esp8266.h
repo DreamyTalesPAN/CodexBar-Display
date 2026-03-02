@@ -18,6 +18,7 @@ namespace esp8266 {
 enum class GifLayoutMode : uint8_t {
   BottomRightMini,
   FullscreenCenter,
+  FullscreenCenterLower,
   TopRightOverlay,
 };
 
