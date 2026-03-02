@@ -35,6 +35,7 @@ var runUsageCommandFn = runUsageCommand
 const minSharedFallbackTimeBudget = 4 * time.Second
 
 var providerScopedFallbackOrder = []string{
+	"codex",
 	"claude",
 	"cursor",
 	"copilot",
@@ -263,7 +264,7 @@ func CommandTimeout() time.Duration {
 
 func commandTimeout() time.Duration {
 	// Keep default bounded so display startup is responsive even when codexbar stalls.
-	d := 8 * time.Second
+	d := 30 * time.Second
 	raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_CODEXBAR_TIMEOUT_SECS"))
 	if raw == "" {
 		return d
@@ -1101,12 +1102,22 @@ func latestClaudeActivityAt(home string) (time.Time, bool) {
 	}
 
 	for _, projectsDir := range claudeProjectsActivityDirs(home) {
-		if t, err := latestJSONLModTime(projectsDir); err == nil {
+		if t, err := latestJSONLModTimeMatching(projectsDir, func(path string, _ os.FileInfo) bool {
+			return !isCodexBarClaudeProbePath(path)
+		}); err == nil {
 			latest = newerTime(latest, t)
 		}
 	}
 
 	return latest, !latest.IsZero()
+}
+
+func isCodexBarClaudeProbePath(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	lower := strings.ToLower(path)
+	return strings.Contains(lower, "codexbar") && strings.Contains(lower, "claudeprobe")
 }
 
 func latestVertexAIActivityAt(home string) (time.Time, bool) {

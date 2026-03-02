@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -419,6 +421,57 @@ func TestReadLocalProviderActivityLowConfidenceHasShorterTTL(t *testing.T) {
 	}
 	if len(activity) != 0 {
 		t.Fatalf("expected low-confidence activity to expire with short ttl, got %v", activity)
+	}
+}
+
+func TestLatestClaudeActivityAtIgnoresCodexBarProbeArtifacts(t *testing.T) {
+	home := t.TempDir()
+	probePath := filepath.Join(home, ".claude", "projects", "-Users-test-Library-Application-Support-CodexBar-ClaudeProbe", "probe.jsonl")
+	if err := os.MkdirAll(filepath.Dir(probePath), 0o755); err != nil {
+		t.Fatalf("mkdir probe path: %v", err)
+	}
+	if err := os.WriteFile(probePath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write probe file: %v", err)
+	}
+	probeAt := time.Date(2026, 3, 2, 15, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(probePath, probeAt, probeAt); err != nil {
+		t.Fatalf("chtimes probe file: %v", err)
+	}
+
+	if at, ok := latestClaudeActivityAt(home); ok {
+		t.Fatalf("expected no claude activity from codexbar probe artifacts, got %s", at)
+	}
+}
+
+func TestLatestClaudeActivityAtUsesNonProbeProjectFiles(t *testing.T) {
+	home := t.TempDir()
+
+	probePath := filepath.Join(home, ".claude", "projects", "-Users-test-Library-Application-Support-CodexBar-ClaudeProbe", "probe.jsonl")
+	realPath := filepath.Join(home, ".claude", "projects", "-Users-test-code-real-project", "session.jsonl")
+	for _, path := range []string{probePath, realPath} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	probeAt := time.Date(2026, 3, 2, 16, 0, 0, 0, time.UTC)
+	realAt := time.Date(2026, 3, 2, 15, 30, 0, 0, time.UTC)
+	if err := os.Chtimes(probePath, probeAt, probeAt); err != nil {
+		t.Fatalf("chtimes probe: %v", err)
+	}
+	if err := os.Chtimes(realPath, realAt, realAt); err != nil {
+		t.Fatalf("chtimes real: %v", err)
+	}
+
+	got, ok := latestClaudeActivityAt(home)
+	if !ok {
+		t.Fatalf("expected claude activity from real project file")
+	}
+	if !got.Equal(realAt) {
+		t.Fatalf("expected real project modtime %s, got %s", realAt, got)
 	}
 }
 
