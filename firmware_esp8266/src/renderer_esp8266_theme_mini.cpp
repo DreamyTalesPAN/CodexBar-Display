@@ -16,7 +16,7 @@ constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
 
 constexpr const char* kMiniGifPath = "/mini.gif";
 constexpr int kMiniGifMargin = 8;
-constexpr int kMiniFallbackGifSize = 80;
+constexpr int kMiniFallbackGifSize = 64;
 constexpr uint16_t kMiniBg = TFT_BLACK;
 constexpr uint16_t kMiniPrimary = rgb565(92, 204, 255);
 constexpr uint16_t kMiniSecondary = rgb565(167, 255, 201);
@@ -36,15 +36,16 @@ void drawResetCountdownLineMini(int64_t remain) {
 
   const int contentRight = tft.width() - MiniGifReservedWidth() - (kMiniGifMargin * 2);
   const int maxWidth = contentRight > 100 ? contentRight : (tft.width() - 12);
-  const int resetY = 206;
-  const int resetH = 22;
-  const String resetLabel = String("Reset in ") + FormatDuration(remain);
+  const int resetY = 212;
+  const int resetH = 24;
+  const String resetLabel = String("Reset ") + FormatDuration(remain);
+  const int resetTextSize = ChooseTextSizeToFit(resetLabel.c_str(), 2, 1, maxWidth);
 
   tft.fillRect(10, resetY, maxWidth, resetH, kMiniBg);
-  tft.setTextFont(2);
-  tft.setTextSize(1);
+  tft.setTextFont(1);
+  tft.setTextSize(resetTextSize);
   tft.setTextColor(kMiniMuted, kMiniBg);
-  tft.setCursor(10, resetY + 6);
+  tft.setCursor(10, resetY + 4);
   tft.print(resetLabel);
 
   LastRenderedSecs() = remain;
@@ -92,7 +93,6 @@ void DrawMiniGifPlaceholder() {
     return;
   }
 
-  tft.drawRect(x - 2, y - 2, boxW + 4, boxH + 4, kMiniMuted);
   if (!GifCore().IsCurrentAssetPresent(kMiniGifPath)) {
     tft.fillRect(x, y, boxW, boxH, rgb565(18, 20, 24));
     tft.setTextFont(1);
@@ -167,36 +167,36 @@ void DrawUsageMini() {
   tft.fillScreen(kMiniBg);
 
   tft.setTextFont(2);
-  tft.setTextSize(1);
+  tft.setTextSize(2);
   tft.setTextColor(kMiniMuted, kMiniBg);
   tft.setCursor(10, 8);
   tft.print(ProviderLabelText());
 
   char pctBuf[8];
   std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", vibeblock::core::ClampPct(CurrentFrame().session));
-  int sessionValueSize = ChooseTextSizeToFit(pctBuf, 7, 4, maxValueWidth);
+  int sessionValueSize = ChooseTextSizeToFit(pctBuf, 5, 3, maxValueWidth);
   tft.setTextFont(1);
-  tft.setTextSize(1);
+  tft.setTextSize(2);
   tft.setTextColor(kMiniMuted, kMiniBg);
-  tft.setCursor(10, 34);
+  tft.setCursor(10, 46);
   tft.print("Session");
   tft.setTextFont(1);
   tft.setTextSize(sessionValueSize);
   tft.setTextColor(kMiniPrimary, kMiniBg);
-  tft.setCursor(10, 46);
+  tft.setCursor(10, 70);
   tft.print(pctBuf);
 
   std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", vibeblock::core::ClampPct(CurrentFrame().weekly));
-  int weeklyValueSize = ChooseTextSizeToFit(pctBuf, 7, 4, maxValueWidth);
+  int weeklyValueSize = ChooseTextSizeToFit(pctBuf, 5, 3, maxValueWidth);
   tft.setTextFont(1);
-  tft.setTextSize(1);
+  tft.setTextSize(2);
   tft.setTextColor(kMiniMuted, kMiniBg);
-  tft.setCursor(10, 124);
+  tft.setCursor(10, 132);
   tft.print("Weekly");
   tft.setTextFont(1);
   tft.setTextSize(weeklyValueSize);
   tft.setTextColor(kMiniSecondary, kMiniBg);
-  tft.setCursor(10, 136);
+  tft.setCursor(10, 156);
   tft.print(pctBuf);
 
   drawResetCountdownLineMini(remain);
