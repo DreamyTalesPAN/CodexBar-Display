@@ -29,6 +29,7 @@ const (
 	defaultInterval         = 60 * time.Second
 	startupFastPollWindow   = 2 * time.Minute
 	startupFastPollInterval = 30 * time.Second
+	lastGoodPersistInterval = 1 * time.Minute
 	themeEnvVar             = "VIBEBLOCK_THEME"
 	coldStartTimeoutEnvVar  = "VIBEBLOCK_CODEXBAR_COLDSTART_TIMEOUT_SECS"
 )
@@ -141,11 +142,14 @@ func defaultRuntimeLogf(format string, args ...any) {
 }
 
 type runtimeState struct {
-	selector    *codexbar.ProviderSelector
-	lastGood    protocol.Frame
-	lastGoodAt  time.Time
-	hasLastGood bool
-	cliTheme    string
+	selector          *codexbar.ProviderSelector
+	lastGood          protocol.Frame
+	lastGoodAt        time.Time
+	hasLastGood       bool
+	lastPersistedGood protocol.Frame
+	lastPersistedAt   time.Time
+	hasPersistedGood  bool
+	cliTheme          string
 }
 
 type persistedLastGood struct {
@@ -226,10 +230,16 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 		state.lastGood = frame
 		state.lastGoodAt = savedAt
 		state.hasLastGood = true
+		state.lastPersistedGood = frame
+		state.lastPersistedAt = savedAt
+		state.hasPersistedGood = true
 	} else if frame, savedAt, ok := loadPersistedLastGoodAnyAge(); ok {
 		state.lastGood = frame
 		state.lastGoodAt = savedAt
 		state.hasLastGood = true
+		state.lastPersistedGood = frame
+		state.lastPersistedAt = savedAt
+		state.hasPersistedGood = true
 		age := now.Sub(savedAt)
 		if age < 0 {
 			age = 0
@@ -386,11 +396,25 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 			selectionDetail = decision.Detail
 		}
 		if failureErr == nil {
-			state.lastGood = frame
-			state.lastGoodAt = deps.now()
+			now := deps.now()
+			normalized := frame.Normalize()
+
+			state.lastGood = normalized
+			state.lastGoodAt = now
 			state.hasLastGood = true
-			if err := persistLastGood(state.lastGood, state.lastGoodAt); err != nil {
-				deps.logf("runtime event=last-good-persist-failed err=%v\n", err)
+
+			shouldPersist := !state.hasPersistedGood ||
+				state.lastPersistedGood != normalized ||
+				state.lastPersistedAt.IsZero() ||
+				now.Sub(state.lastPersistedAt) >= lastGoodPersistInterval
+			if shouldPersist {
+				if err := persistLastGood(normalized, now); err != nil {
+					deps.logf("runtime event=last-good-persist-failed err=%v\n", err)
+				} else {
+					state.lastPersistedGood = normalized
+					state.lastPersistedAt = now
+					state.hasPersistedGood = true
+				}
 			}
 		}
 	}

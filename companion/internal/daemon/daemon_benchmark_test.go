@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
 func BenchmarkRunCycleWithDeps(b *testing.B) {
@@ -18,6 +19,7 @@ func BenchmarkRunCycleWithDeps(b *testing.B) {
 	deps := runtimeDeps{
 		now:         func() time.Time { return time.Date(2026, 2, 26, 12, 0, 0, 0, time.UTC) },
 		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-bench", nil },
+		deviceCaps:  func(string) (protocol.DeviceCapabilities, error) { return protocol.UnknownDeviceCapabilities(), nil },
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
 			return []codexbar.ParsedFrame{
 				testParsedFrame("codex", 13, 41, 3600),

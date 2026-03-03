@@ -281,6 +281,68 @@ func TestLoadPersistedLastGoodAnyAgeLoadsExpiredSnapshot(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithDepsRateLimitsPersistedLastGoodWrites(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	current := now
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	deps := runtimeDeps{
+		now:         func() time.Time { return current },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.UnknownDeviceCapabilities(), nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 12, 30, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(string, []byte) error {
+			return nil
+		},
+	}
+
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected first cycle success, got %v", err)
+	}
+	_, savedAt, ok := loadPersistedLastGoodAnyAge()
+	if !ok {
+		t.Fatalf("expected first cycle to persist last-good frame")
+	}
+	if !savedAt.Equal(now) {
+		t.Fatalf("expected initial savedAt %s, got %s", now, savedAt)
+	}
+
+	current = current.Add(30 * time.Second)
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected second cycle success, got %v", err)
+	}
+	_, savedAt, ok = loadPersistedLastGoodAnyAge()
+	if !ok {
+		t.Fatalf("expected persisted last-good frame after second cycle")
+	}
+	if !savedAt.Equal(now) {
+		t.Fatalf("expected persisted savedAt to remain %s before interval, got %s", now, savedAt)
+	}
+
+	current = now.Add(lastGoodPersistInterval + time.Second)
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected third cycle success, got %v", err)
+	}
+	_, savedAt, ok = loadPersistedLastGoodAnyAge()
+	if !ok {
+		t.Fatalf("expected persisted last-good frame after third cycle")
+	}
+	if !savedAt.Equal(current) {
+		t.Fatalf("expected persisted savedAt to refresh to %s, got %s", current, savedAt)
+	}
+}
+
 func TestRunWithDepsBootstrapsFromExpiredPersistedLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
