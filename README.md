@@ -1,5 +1,7 @@
 # codexbar-display
 
+![Preview of the currently supported device running the mini theme](docs/assets/codexbar-display-preview.jpg)
+
 `codexbar-display` is the open-source companion + firmware stack for a physical CodexBar status display.
 
 Repository, firmware track, CLI, and release artifacts are all named `codexbar-display`.
@@ -9,6 +11,13 @@ Repository, firmware track, CLI, and release artifacts are all named `codexbar-d
 - Primary (and only release-gated MVP) hardware target: ESP8266 SmallTV ST7789 (`esp8266_smalltv_st7789`).
 - v0 includes built-in themes (`classic`, `crt`, `mini`) and a shared GIF core for scenario-based playback.
 - ESP32 (`lilygo_t_display_s3`) remains experimental fallback/non-blocking for v0.
+
+## Theme Previews
+### Mini Theme
+![Preview of the mini theme](docs/assets/codexbar-display-theme-mini.jpeg)
+
+### CRT Theme
+![Preview of the crt theme](docs/assets/codexbar-display-theme-crt.jpg)
 
 ## Quick Start (macOS)
 ```bash
