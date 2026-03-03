@@ -19,7 +19,7 @@
 - [x] `upgrade --firmware-env esp8266_smalltv_st7789` works.
 - [x] `restore-known-good` with manifest/device verification works (explicit image+manifest path).
 - [x] `rollback --skip-companion --image ... --manifest ...` works when the port is free.
-- [ ] `rollback --port ...` default known-good firmware image path still needs cleanup/fix (currently points to missing backup image).
+- [x] `rollback --port ...` falls back to backup discovery when state known-good firmware image path is stale/missing.
 - [ ] Machine-B E2E run still open.
 
 ## P1 (Next, Non-Blocking)

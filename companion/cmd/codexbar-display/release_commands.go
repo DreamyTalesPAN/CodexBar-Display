@@ -418,13 +418,16 @@ func runRollback(args []string) error {
 	}
 
 	if !*skipFirmware {
-		imagePath := strings.TrimSpace(*image)
-		manifestPath := strings.TrimSpace(*manifest)
-		if imagePath == "" {
-			imagePath = strings.TrimSpace(state.LastKnownGood.FirmwareImage)
-			if manifestPath == "" {
-				manifestPath = strings.TrimSpace(state.LastKnownGood.FirmwareManifest)
-			}
+		imagePath, manifestPath, staleStateImage := resolveRollbackFirmwareInputs(
+			strings.TrimSpace(*image),
+			strings.TrimSpace(*manifest),
+			state,
+		)
+		if staleStateImage {
+			fmt.Printf(
+				"rollback firmware: known-good state image missing (%s); falling back to backup discovery\n",
+				strings.TrimSpace(state.LastKnownGood.FirmwareImage),
+			)
 		}
 
 		restoreArgs := make([]string, 0, 16)
@@ -460,6 +463,28 @@ func runRollback(args []string) error {
 
 	fmt.Println("rollback complete")
 	return nil
+}
+
+func resolveRollbackFirmwareInputs(requestedImage, requestedManifest string, state releaseState) (imagePath, manifestPath string, staleStateImage bool) {
+	imagePath = strings.TrimSpace(requestedImage)
+	manifestPath = strings.TrimSpace(requestedManifest)
+	if imagePath != "" {
+		return imagePath, manifestPath, false
+	}
+
+	stateImage := strings.TrimSpace(state.LastKnownGood.FirmwareImage)
+	if stateImage == "" {
+		return "", manifestPath, false
+	}
+	if !fileExists(stateImage) {
+		return "", manifestPath, true
+	}
+
+	imagePath = stateImage
+	if manifestPath == "" {
+		manifestPath = strings.TrimSpace(state.LastKnownGood.FirmwareManifest)
+	}
+	return imagePath, manifestPath, false
 }
 
 func ensureSerialPortNotBusy(port string) error {
