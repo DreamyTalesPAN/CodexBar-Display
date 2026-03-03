@@ -79,3 +79,77 @@ func TestSanitizePathToken(t *testing.T) {
 		t.Fatalf("unexpected sanitized token %q", got)
 	}
 }
+
+func TestResolveRollbackFirmwareInputsUsesStateImageAndManifest(t *testing.T) {
+	tmp := t.TempDir()
+	imagePath := filepath.Join(tmp, "known-good.bin")
+	manifestPath := imagePath + ".manifest"
+	if err := os.WriteFile(imagePath, []byte("firmware"), 0o644); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	state := releaseState{
+		LastKnownGood: lastKnownGoodState{
+			FirmwareImage:    imagePath,
+			FirmwareManifest: manifestPath,
+		},
+	}
+
+	gotImage, gotManifest, stale := resolveRollbackFirmwareInputs("", "", state)
+	if stale {
+		t.Fatal("expected stale=false for existing state image")
+	}
+	if gotImage != imagePath {
+		t.Fatalf("unexpected image %q", gotImage)
+	}
+	if gotManifest != manifestPath {
+		t.Fatalf("unexpected manifest %q", gotManifest)
+	}
+}
+
+func TestResolveRollbackFirmwareInputsFallbackWhenStateImageMissing(t *testing.T) {
+	tmp := t.TempDir()
+	staleImage := filepath.Join(tmp, "missing.bin")
+	staleManifest := staleImage + ".manifest"
+
+	state := releaseState{
+		LastKnownGood: lastKnownGoodState{
+			FirmwareImage:    staleImage,
+			FirmwareManifest: staleManifest,
+		},
+	}
+
+	gotImage, gotManifest, stale := resolveRollbackFirmwareInputs("", "", state)
+	if !stale {
+		t.Fatal("expected stale=true for missing state image")
+	}
+	if gotImage != "" {
+		t.Fatalf("expected empty image for fallback, got %q", gotImage)
+	}
+	if gotManifest != "" {
+		t.Fatalf("expected empty manifest for fallback, got %q", gotManifest)
+	}
+}
+
+func TestResolveRollbackFirmwareInputsKeepsExplicitImageAndManifest(t *testing.T) {
+	state := releaseState{
+		LastKnownGood: lastKnownGoodState{
+			FirmwareImage:    "/tmp/state-image.bin",
+			FirmwareManifest: "/tmp/state-image.bin.manifest",
+		},
+	}
+
+	gotImage, gotManifest, stale := resolveRollbackFirmwareInputs(" /tmp/requested.bin ", " /tmp/requested.manifest ", state)
+	if stale {
+		t.Fatal("expected stale=false for explicit image input")
+	}
+	if gotImage != "/tmp/requested.bin" {
+		t.Fatalf("unexpected explicit image %q", gotImage)
+	}
+	if gotManifest != "/tmp/requested.manifest" {
+		t.Fatalf("unexpected explicit manifest %q", gotManifest)
+	}
+}
