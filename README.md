@@ -1,6 +1,5 @@
 # codexbar-display
 
-![Preview of the currently supported device running the mini theme](docs/assets/codexbar-display-preview.jpg)
 
 `codexbar-display` is the open-source companion + firmware stack for a physical CodexBar status display.
 
