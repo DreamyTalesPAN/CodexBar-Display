@@ -32,9 +32,10 @@ var (
 
 var runUsageCommandFn = runUsageCommand
 
-const minSharedFallbackTimeBudget = 8 * time.Second
+const minSharedFallbackTimeBudget = 4 * time.Second
 
 var providerScopedFallbackOrder = []string{
+	"codex",
 	"claude",
 	"cursor",
 	"copilot",
@@ -44,6 +45,8 @@ var providerScopedFallbackOrder = []string{
 	"augment",
 	"factory",
 }
+
+const usageModeEnvVar = "VIBEBLOCK_USAGE_MODE"
 
 type FetchErrorKind string
 
@@ -260,8 +263,8 @@ func CommandTimeout() time.Duration {
 }
 
 func commandTimeout() time.Duration {
-	// Default timeout is intentionally generous because provider aggregation can be slow.
-	d := 90 * time.Second
+	// Keep default bounded so display startup is responsive even when codexbar stalls.
+	d := 30 * time.Second
 	raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_CODEXBAR_TIMEOUT_SECS"))
 	if raw == "" {
 		return d
@@ -273,12 +276,57 @@ func commandTimeout() time.Duration {
 	return time.Duration(n) * time.Second
 }
 
+// UsageBarsShowUsed reflects CodexBar's "used vs remaining" display mode.
+// It defaults to "used" when the preference is unavailable.
+func UsageBarsShowUsed() bool {
+	if showUsed, ok := usageBarsShowUsedFromEnv(); ok {
+		return showUsed
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "defaults", "read", "com.steipete.codexbar", "usageBarsShowUsed").Output()
+	if err != nil {
+		return true
+	}
+	if showUsed, ok := parseBoolPreference(out); ok {
+		return showUsed
+	}
+	return true
+}
+
 func runUsageCommand(parent context.Context, timeout time.Duration, bin string, args ...string) ([]byte, error) {
 	cmdCtx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, bin, args...)
 	return cmd.Output()
+}
+
+func usageBarsShowUsedFromEnv() (bool, bool) {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(usageModeEnvVar)))
+	switch raw {
+	case "":
+		return false, false
+	case "used":
+		return true, true
+	case "remaining", "remain":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func parseBoolPreference(raw []byte) (bool, bool) {
+	switch strings.TrimSpace(strings.ToLower(string(raw))) {
+	case "1", "true", "yes", "on":
+		return true, true
+	case "0", "false", "no", "off":
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 type ParsedFrame struct {
@@ -1054,12 +1102,22 @@ func latestClaudeActivityAt(home string) (time.Time, bool) {
 	}
 
 	for _, projectsDir := range claudeProjectsActivityDirs(home) {
-		if t, err := latestJSONLModTime(projectsDir); err == nil {
+		if t, err := latestJSONLModTimeMatching(projectsDir, func(path string, _ os.FileInfo) bool {
+			return !isCodexBarClaudeProbePath(path)
+		}); err == nil {
 			latest = newerTime(latest, t)
 		}
 	}
 
 	return latest, !latest.IsZero()
+}
+
+func isCodexBarClaudeProbePath(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	lower := strings.ToLower(path)
+	return strings.Contains(lower, "codexbar") && strings.Contains(lower, "claudeprobe")
 }
 
 func latestVertexAIActivityAt(home string) (time.Time, bool) {
@@ -1540,14 +1598,17 @@ func fetchProviderScopedUsage(ctx context.Context, timeout time.Duration, bin st
 
 func fallbackContext(parent context.Context) context.Context {
 	if parent == nil {
-		return context.Background()
+		ctx, _ := context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
+		return ctx
 	}
 	if parent.Err() != nil {
-		return context.Background()
+		ctx, _ := context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
+		return ctx
 	}
 	if deadline, ok := parent.Deadline(); ok {
 		if time.Until(deadline) < minSharedFallbackTimeBudget {
-			return context.Background()
+			ctx, _ := context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
+			return ctx
 		}
 	}
 	return parent

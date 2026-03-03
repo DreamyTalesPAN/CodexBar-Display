@@ -16,6 +16,8 @@ struct Frame {
   int session = 0;
   int weekly = 0;
   int64_t resetSecs = 0;
+  bool hasUsageMode = false;
+  String usageMode;
   bool hasTheme = false;
   String theme;
   bool hasError = false;
@@ -90,8 +92,23 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     hasTheme = theme::NormalizeThemeName(String(doc["theme"].as<const char*>()), themeName);
   }
 
+  bool hasUsageMode = false;
+  String usageMode;
+  if (doc["usageMode"].is<const char*>()) {
+    usageMode = String(doc["usageMode"].as<const char*>());
+    usageMode.trim();
+    usageMode.toLowerCase();
+    if (usageMode == "used" || usageMode == "remaining") {
+      hasUsageMode = true;
+    } else {
+      usageMode = "";
+    }
+  }
+
   if (doc["error"].is<const char*>()) {
     out = {};
+    out.hasUsageMode = hasUsageMode;
+    out.usageMode = usageMode;
     out.hasTheme = hasTheme;
     out.theme = themeName;
     out.hasError = true;
@@ -105,6 +122,8 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   out.session = ClampPct(doc["session"] | 0);
   out.weekly = ClampPct(doc["weekly"] | 0);
   out.resetSecs = static_cast<int64_t>(doc["resetSecs"] | 0);
+  out.hasUsageMode = hasUsageMode;
+  out.usageMode = usageMode;
   out.hasTheme = hasTheme;
   out.theme = themeName;
   out.hasError = false;
@@ -122,7 +141,9 @@ inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
   return previous.provider != next.provider ||
          previous.label != next.label ||
          previous.session != next.session ||
-         previous.weekly != next.weekly;
+         previous.weekly != next.weekly ||
+         previous.hasUsageMode != next.hasUsageMode ||
+         previous.usageMode != next.usageMode;
 }
 
 inline bool FrameThemeChanged(const Frame& previous, const Frame& next) {

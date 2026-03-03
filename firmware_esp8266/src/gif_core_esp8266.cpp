@@ -11,6 +11,7 @@ namespace esp8266 {
 namespace {
 
 constexpr int kLayoutMargin = 8;
+constexpr int kLayoutLowerOffset = 35;
 
 }  // namespace
 
@@ -201,6 +202,9 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
   } else if (request.layoutMode == GifLayoutMode::FullscreenCenter) {
     drawX_ = (tft.width() - gifWidth_) / 2;
     drawY_ = (tft.height() - gifHeight_) / 2;
+  } else if (request.layoutMode == GifLayoutMode::FullscreenCenterLower) {
+    drawX_ = (tft.width() - gifWidth_) / 2;
+    drawY_ = ((tft.height() - gifHeight_) / 2) + kLayoutLowerOffset;
   } else {
     drawX_ = tft.width() - gifWidth_ - kLayoutMargin;
     drawY_ = kLayoutMargin;

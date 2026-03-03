@@ -2,19 +2,21 @@ package protocol
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
 )
 
 type Frame struct {
-	V        int    `json:"v"`
-	Provider string `json:"provider,omitempty"`
-	Label    string `json:"label,omitempty"`
-	Session  int    `json:"session,omitempty"`
-	Weekly   int    `json:"weekly,omitempty"`
-	ResetSec int64  `json:"resetSecs,omitempty"`
-	Theme    string `json:"theme,omitempty"`
-	Error    string `json:"error,omitempty"`
+	V         int    `json:"v"`
+	Provider  string `json:"provider,omitempty"`
+	Label     string `json:"label,omitempty"`
+	Session   int    `json:"session,omitempty"`
+	Weekly    int    `json:"weekly,omitempty"`
+	ResetSec  int64  `json:"resetSecs,omitempty"`
+	UsageMode string `json:"usageMode,omitempty"`
+	Theme     string `json:"theme,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 func (f Frame) Normalize() Frame {
@@ -33,6 +35,12 @@ func (f Frame) Normalize() Frame {
 	}
 	if f.ResetSec < 0 {
 		f.ResetSec = 0
+	}
+	switch strings.TrimSpace(strings.ToLower(f.UsageMode)) {
+	case "used", "remaining":
+		f.UsageMode = strings.TrimSpace(strings.ToLower(f.UsageMode))
+	default:
+		f.UsageMode = ""
 	}
 	f.Theme = theme.Normalize(f.Theme)
 	return f

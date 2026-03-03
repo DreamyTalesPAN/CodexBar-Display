@@ -13,7 +13,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
-func TestRunCycleWithDepsUsesUnifiedErrorFrameWhenNoLastGood(t *testing.T) {
+func TestRunCycleWithDepsSendsErrorFrameWhenNoLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -43,9 +43,12 @@ func TestRunCycleWithDepsUsesUnifiedErrorFrameWhenNoLastGood(t *testing.T) {
 		t.Fatalf("expected codexbar parse runtime error, got %s", runtimeErr.Kind)
 	}
 
+	if len(sentLine) == 0 {
+		t.Fatalf("expected error frame to be sent without last-good fallback")
+	}
 	frame := decodeFrameLine(t, sentLine)
-	if frame.Error != "runtime/codexbar-parse" {
-		t.Fatalf("expected unified parse error frame, got %q", frame.Error)
+	if frame.Error != string(runtimeErrorCodexbarParse) {
+		t.Fatalf("expected runtime error frame code %q, got %q", runtimeErrorCodexbarParse, frame.Error)
 	}
 }
 
@@ -87,6 +90,297 @@ func TestRunCycleWithDepsSkipsThemeWhenDeviceDoesNotSupportIt(t *testing.T) {
 	frame := decodeFrameLine(t, sentLine)
 	if frame.Theme != "" {
 		t.Fatalf("expected theme to be skipped for unsupported device, got %q", frame.Theme)
+	}
+}
+
+func TestRunCycleWithDepsShowsRemainingWhenUsageBarsShowUsedDisabled(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	var sentLine []byte
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:               func() time.Time { return now },
+		resolvePort:       func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		usageBarsShowUsed: func() bool { return false },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 1, 28, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(port string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Session != 99 || frame.Weekly != 72 {
+		t.Fatalf("expected remaining view inversion, got session=%d weekly=%d", frame.Session, frame.Weekly)
+	}
+	if frame.UsageMode != "remaining" {
+		t.Fatalf("expected remaining usage mode, got %q", frame.UsageMode)
+	}
+}
+
+func TestRunCycleWithDepsUsesConfiguredUsageModeWhenShowingUsed(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	var sentLine []byte
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:               func() time.Time { return now },
+		resolvePort:       func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		usageBarsShowUsed: func() bool { return true },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 1, 28, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(port string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Session != 1 || frame.Weekly != 28 {
+		t.Fatalf("expected used values unchanged, got session=%d weekly=%d", frame.Session, frame.Weekly)
+	}
+	if frame.UsageMode != "used" {
+		t.Fatalf("expected used usage mode, got %q", frame.UsageMode)
+	}
+}
+
+func TestRunCycleWithDepsUsesColdStartFetchTimeout(t *testing.T) {
+	prepareFastTestEnv(t)
+	t.Setenv(coldStartTimeoutEnvVar, "5")
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(ctx context.Context) ([]codexbar.ParsedFrame, error) {
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Fatalf("expected cold-start fetch context deadline")
+			}
+			remaining := time.Until(deadline)
+			if remaining < 3*time.Second || remaining > 6*time.Second {
+				t.Fatalf("unexpected cold-start deadline budget: %s", remaining)
+			}
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 1, 28, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(port string, line []byte) error {
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+}
+
+func TestPersistAndLoadLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	frame := protocol.Frame{
+		Provider:  "codex",
+		Label:     "Codex",
+		Session:   98,
+		Weekly:    72,
+		ResetSec:  3600,
+		UsageMode: "remaining",
+	}
+
+	if err := persistLastGood(frame, now); err != nil {
+		t.Fatalf("persist last good: %v", err)
+	}
+
+	loaded, savedAt, ok := loadPersistedLastGood(now.Add(2 * time.Minute))
+	if !ok {
+		t.Fatalf("expected persisted last-good frame to load")
+	}
+	if !savedAt.Equal(now) {
+		t.Fatalf("expected savedAt %s, got %s", now, savedAt)
+	}
+	if loaded.Provider != frame.Provider || loaded.Session != frame.Session || loaded.UsageMode != frame.UsageMode {
+		t.Fatalf("loaded frame mismatch: got=%+v want=%+v", loaded, frame)
+	}
+}
+
+func TestLoadPersistedLastGoodIgnoresExpiredSnapshot(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	frame := protocol.Frame{
+		Provider: "codex",
+		Label:    "Codex",
+		Session:  2,
+		Weekly:   28,
+		ResetSec: 3600,
+	}
+
+	if err := persistLastGood(frame, now); err != nil {
+		t.Fatalf("persist last good: %v", err)
+	}
+
+	_, _, ok := loadPersistedLastGood(now.Add(lastGoodMaxAge() + time.Minute))
+	if ok {
+		t.Fatalf("expected expired snapshot to be ignored")
+	}
+}
+
+func TestLoadPersistedLastGoodAnyAgeLoadsExpiredSnapshot(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	frame := protocol.Frame{
+		Provider: "codex",
+		Label:    "Codex",
+		Session:  2,
+		Weekly:   28,
+		ResetSec: 3600,
+	}
+
+	if err := persistLastGood(frame, now); err != nil {
+		t.Fatalf("persist last good: %v", err)
+	}
+
+	loaded, savedAt, ok := loadPersistedLastGoodAnyAge()
+	if !ok {
+		t.Fatalf("expected bootstrap loader to accept expired snapshot")
+	}
+	if !savedAt.Equal(now) {
+		t.Fatalf("expected savedAt %s, got %s", now, savedAt)
+	}
+	if loaded.Provider != frame.Provider || loaded.Session != frame.Session {
+		t.Fatalf("loaded frame mismatch: got=%+v want=%+v", loaded, frame)
+	}
+}
+
+func TestRunCycleWithDepsRateLimitsPersistedLastGoodWrites(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	current := now
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	deps := runtimeDeps{
+		now:         func() time.Time { return current },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.UnknownDeviceCapabilities(), nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 12, 30, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(string, []byte) error {
+			return nil
+		},
+	}
+
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected first cycle success, got %v", err)
+	}
+	_, savedAt, ok := loadPersistedLastGoodAnyAge()
+	if !ok {
+		t.Fatalf("expected first cycle to persist last-good frame")
+	}
+	if !savedAt.Equal(now) {
+		t.Fatalf("expected initial savedAt %s, got %s", now, savedAt)
+	}
+
+	current = current.Add(30 * time.Second)
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected second cycle success, got %v", err)
+	}
+	_, savedAt, ok = loadPersistedLastGoodAnyAge()
+	if !ok {
+		t.Fatalf("expected persisted last-good frame after second cycle")
+	}
+	if !savedAt.Equal(now) {
+		t.Fatalf("expected persisted savedAt to remain %s before interval, got %s", now, savedAt)
+	}
+
+	current = now.Add(lastGoodPersistInterval + time.Second)
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected third cycle success, got %v", err)
+	}
+	_, savedAt, ok = loadPersistedLastGoodAnyAge()
+	if !ok {
+		t.Fatalf("expected persisted last-good frame after third cycle")
+	}
+	if !savedAt.Equal(current) {
+		t.Fatalf("expected persisted savedAt to refresh to %s, got %s", current, savedAt)
+	}
+}
+
+func TestRunWithDepsBootstrapsFromExpiredPersistedLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	savedAt := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
+	current := savedAt.Add(lastGoodMaxAge() + 2*time.Minute)
+	stale := protocol.Frame{
+		Provider: "codex",
+		Label:    "Codex",
+		Session:  98,
+		Weekly:   72,
+		ResetSec: 3600,
+	}
+	if err := persistLastGood(stale, savedAt); err != nil {
+		t.Fatalf("persist last good: %v", err)
+	}
+
+	var sentLine []byte
+	err := runWithDeps(context.Background(), Options{Interval: 60 * time.Second, Once: true}, runtimeDeps{
+		now:         func() time.Time { return current },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("context deadline exceeded")}
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(port string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected stale bootstrap frame to avoid hard error, got %v", err)
+	}
+	if len(sentLine) == 0 {
+		t.Fatalf("expected stale bootstrap frame to be sent")
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Provider != stale.Provider || frame.Session != stale.Session || frame.Weekly != stale.Weekly {
+		t.Fatalf("expected stale bootstrap frame, got %+v", frame)
 	}
 }
 
@@ -339,12 +633,61 @@ func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing
 		t.Fatalf("expected first cycle to succeed, got %v", err)
 	}
 
-	current = current.Add(2 * time.Minute)
+	current = current.Add(lastGoodMaxAge() + time.Minute)
 	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
 		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("transient failure")}
 	}
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected stale-last-good fallback to avoid hard error, got %v", err)
+	}
+
+	if len(lines) != 2 {
+		t.Fatalf("expected two sent frames, got %d", len(lines))
+	}
+	second := decodeFrameLine(t, lines[1])
+	if second.Error != "" {
+		t.Fatalf("expected stale-good provider frame, got error %q", second.Error)
+	}
+	if second.Provider != "codex" {
+		t.Fatalf("expected stale codex frame, got %q", second.Provider)
+	}
+}
+
+func TestRunCycleWithDepsUsesLastGoodFrameWhenNoProvidersAfterSelection(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	current := now
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	lines := make([][]byte, 0, 2)
+	deps := runtimeDeps{
+		now:         func() time.Time { return current },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		logf:        func(string, ...any) {},
+		sendLine: func(port string, line []byte) error {
+			lines = append(lines, append([]byte(nil), line...))
+			return nil
+		},
+	}
+
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{
+			testParsedFrame("codex", 12, 30, 3600),
+		}, nil
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected first cycle to succeed, got %v", err)
+	}
+
+	current = current.Add(2 * time.Minute)
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{}, nil
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected no-provider fallback to avoid hard error, got %v", err)
 	}
 
 	if len(lines) != 2 {
@@ -531,9 +874,7 @@ func TestRunWithDepsResetsRetryBackoffAfterSleepWakeGap(t *testing.T) {
 		},
 		logf: func(string, ...any) {},
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
-			return []codexbar.ParsedFrame{
-				testParsedFrame("codex", 10, 20, 3600),
-			}, nil
+			return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("context deadline exceeded")}
 		},
 		sendLine: func(port string, line []byte) error {
 			return errors.New("write serial /dev/cu.usbmodem-test: I/O error")
