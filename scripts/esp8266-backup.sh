@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PORT="${1:-/dev/cu.usbserial-10}"
-DEFAULT_BACKUP_DIR="${VIBEBLOCK_BACKUP_DIR:-$HOME/Library/Application Support/vibeblock/backups}"
+DEFAULT_BACKUP_DIR="${CODEXBAR_DISPLAY_BACKUP_DIR:-$HOME/Library/Application Support/codexbar-display/backups}"
 OUT="${2:-$DEFAULT_BACKUP_DIR/weather_backup_$(date +%Y%m%d_%H%M%S).bin}"
 FLASH_SIZE_INPUT="${3:-0x400000}"
 
@@ -11,7 +11,7 @@ MAX_ATTEMPTS=6
 FAST_BAUD=460800
 SLOW_BAUD=115200
 READ_TIMEOUT_TICKS=60
-LOG_FILE="/tmp/vibeblock-esptool.log"
+LOG_FILE="/tmp/codexbar-display-esptool.log"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"

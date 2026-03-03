@@ -5,8 +5,8 @@
 
 namespace {
 
-using vibeblock::esp8266::GifCorePolicy;
-using vibeblock::esp8266::GifFailureGuardState;
+using codexbar_display::esp8266::GifCorePolicy;
+using codexbar_display::esp8266::GifFailureGuardState;
 
 bool expect(bool cond, const char* message) {
   if (!cond) {

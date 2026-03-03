@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PLIST_PATH="${1:-$HOME/Library/LaunchAgents/com.vibeblock.daemon.plist}"
-LOG_PATH="${2:-/tmp/vibeblock-daemon.out.log}"
+PLIST_PATH="${1:-$HOME/Library/LaunchAgents/com.codexbar-display.daemon.plist}"
+LOG_PATH="${2:-/tmp/codexbar-display-daemon.out.log}"
 TIMEOUT_SECS="${3:-90}"
 POLL_SECS=3
 
@@ -17,7 +17,7 @@ if ! [[ "$TIMEOUT_SECS" =~ ^[0-9]+$ ]] || (( TIMEOUT_SECS <= 0 )); then
 fi
 
 DOMAIN="gui/$(id -u)"
-SERVICE="$DOMAIN/com.vibeblock.daemon"
+SERVICE="$DOMAIN/com.codexbar-display.daemon"
 
 baseline_count="$(rg -c "sent frame ->" "$LOG_PATH" 2>/dev/null || true)"
 if [[ -z "$baseline_count" ]]; then

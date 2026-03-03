@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vibeblock.dev/schema/frame-v1.json",
-  "title": "vibeblock frame v1",
+  "$id": "https://codexbar-display.dev/schema/frame-v1.json",
+  "title": "codexbar-display frame v1",
   "type": "object",
   "required": ["v"],
   "properties": {

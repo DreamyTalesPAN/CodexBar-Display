@@ -51,7 +51,7 @@ func TestParseDeviceHelloLineJSON(t *testing.T) {
 }
 
 func TestParseDeviceHelloLineLegacyReady(t *testing.T) {
-	hello, ok := parseDeviceHelloLine("vibeblock_ready_display")
+	hello, ok := parseDeviceHelloLine("codexbar_display_ready_display")
 	if !ok {
 		t.Fatalf("expected legacy ready to parse as hello")
 	}

@@ -11,7 +11,7 @@ func TestReleaseStateRoundTrip(t *testing.T) {
 	state := releaseState{
 		SchemaVersion: releaseStateSchemaVersion,
 		LastKnownGood: lastKnownGoodState{
-			CompanionBinary:  "/tmp/vibeblock-lkg",
+			CompanionBinary:  "/tmp/codexbar-display-lkg",
 			CompanionVersion: "1.0.0",
 			FirmwareImage:    "/tmp/firmware.bin",
 			FirmwareManifest: "/tmp/firmware.bin.manifest",

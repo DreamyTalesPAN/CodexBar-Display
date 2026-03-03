@@ -871,6 +871,67 @@ func TestFetchProviderScopedUsageRejectsProviderErrorPayload(t *testing.T) {
 	}
 }
 
+func TestFetchProviderPrefersCodexCLI(t *testing.T) {
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	cliCalled := false
+
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		argLine := strings.Join(args, " ")
+		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
+			cliCalled = true
+			return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":11,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":23}}}]`), nil
+		}
+		return nil, errors.New("unexpected command")
+	}
+
+	parsed, err := FetchProvider(context.Background(), "codex")
+	if err != nil {
+		t.Fatalf("expected codex provider fetch success, got %v", err)
+	}
+	if !cliCalled {
+		t.Fatalf("expected codex CLI command path")
+	}
+	if providerKey(parsed) != "codex" {
+		t.Fatalf("expected codex provider, got %q", providerKey(parsed))
+	}
+	if parsed.Frame.Session != 11 || parsed.Frame.Weekly != 23 {
+		t.Fatalf("unexpected parsed values session=%d weekly=%d", parsed.Frame.Session, parsed.Frame.Weekly)
+	}
+}
+
+func TestFetchProviderUsesProviderScopedUsage(t *testing.T) {
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		argLine := strings.Join(args, " ")
+		if strings.Contains(argLine, "--provider claude") && strings.Contains(argLine, "--web-timeout 3") {
+			return []byte(`[{"provider":"claude","source":"web","usage":{"primary":{"usedPercent":17,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":31}}}]`), nil
+		}
+		return nil, errors.New("unexpected command")
+	}
+
+	parsed, err := FetchProvider(context.Background(), "claude")
+	if err != nil {
+		t.Fatalf("expected claude provider fetch success, got %v", err)
+	}
+	if providerKey(parsed) != "claude" {
+		t.Fatalf("expected claude provider, got %q", providerKey(parsed))
+	}
+	if parsed.Frame.Session != 17 || parsed.Frame.Weekly != 31 {
+		t.Fatalf("unexpected parsed values session=%d weekly=%d", parsed.Frame.Session, parsed.Frame.Weekly)
+	}
+}
+
 func TestFetchErrorKindOf(t *testing.T) {
 	parseErr := wrapFetchError(FetchErrorParse, errors.New("parse failure"))
 	if got := FetchErrorKindOf(parseErr); got != FetchErrorParse {

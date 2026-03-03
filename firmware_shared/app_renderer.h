@@ -4,7 +4,7 @@
 
 #include "app_runtime.h"
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace app {
 
 class Renderer {
@@ -23,4 +23,4 @@ class Renderer {
 };
 
 }  // namespace app
-}  // namespace vibeblock
+}  // namespace codexbar_display

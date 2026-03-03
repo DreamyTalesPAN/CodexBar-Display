@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 
 struct GifFailureGuardState {
@@ -80,4 +80,4 @@ class GifCorePolicy {
 };
 
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display

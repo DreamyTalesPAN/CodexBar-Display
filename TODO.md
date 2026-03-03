@@ -1,4 +1,4 @@
-# vibeblock TODO (v0, Open Work)
+# codexbar-display TODO (v0, Open Work)
 
 ## Scope Lock
 - Release-gated env: `esp8266_smalltv_st7789`.
@@ -35,5 +35,5 @@
 
 ## Out of Scope (v0)
 - External theme SDK or third-party theme packaging.
-- `vibeblock theme init/dev/validate/build/flash/test` command family.
+- `codexbar-display theme init/dev/validate/build/flash/test` command family.
 - Separate GIF-player firmware track with its own upload protocol.

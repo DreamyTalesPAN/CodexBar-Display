@@ -5,17 +5,17 @@
     {
       "id": 0,
       "protocolName": "classic",
-      "compileDefaultMacro": "VIBEBLOCK_THEME_CLASSIC"
+      "compileDefaultMacro": "CODEXBAR_DISPLAY_THEME_CLASSIC"
     },
     {
       "id": 1,
       "protocolName": "crt",
-      "compileDefaultMacro": "VIBEBLOCK_THEME_CRT"
+      "compileDefaultMacro": "CODEXBAR_DISPLAY_THEME_CRT"
     },
     {
       "id": 2,
       "protocolName": "mini",
-      "compileDefaultMacro": "VIBEBLOCK_THEME_MINI"
+      "compileDefaultMacro": "CODEXBAR_DISPLAY_THEME_MINI"
     }
   ]
 }

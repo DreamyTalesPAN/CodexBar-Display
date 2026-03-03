@@ -23,7 +23,7 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	repo := filepath.Join(tmp, "repo")
-	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+	execPath := filepath.Join(tmp, "bin", "codexbar-display-source")
 	codexbarPath := "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"
 
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env]"), 0o644)
@@ -102,7 +102,7 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 		t.Fatalf("expected launchctl bootstrap call, got %#v", calls)
 	}
 
-	installedBinary := filepath.Join(home, "Library", "Application Support", "vibeblock", "bin", "vibeblock")
+	installedBinary := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin", "codexbar-display")
 	installedData, readErr := os.ReadFile(installedBinary)
 	if readErr != nil {
 		t.Fatalf("read installed binary: %v", readErr)
@@ -383,7 +383,7 @@ func TestRunWithDepsReportsFlashFailureWithConcreteHint(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	repo := filepath.Join(tmp, "repo")
-	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+	execPath := filepath.Join(tmp, "bin", "codexbar-display-source")
 
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
@@ -445,7 +445,7 @@ func TestRunWithDepsWaitsForLaunchAgentToBecomeRunning(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	repo := filepath.Join(tmp, "repo")
-	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+	execPath := filepath.Join(tmp, "bin", "codexbar-display-source")
 
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
@@ -558,7 +558,7 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	repo := filepath.Join(tmp, "repo")
-	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+	execPath := filepath.Join(tmp, "bin", "codexbar-display-source")
 
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
@@ -619,7 +619,7 @@ func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	repo := filepath.Join(tmp, "repo")
-	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+	execPath := filepath.Join(tmp, "bin", "codexbar-display-source")
 
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
@@ -691,7 +691,7 @@ func TestRunWithDepsValidateOnlyPerformsChecksWithoutApplyingChanges(t *testing.
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	repo := filepath.Join(tmp, "repo")
-	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+	execPath := filepath.Join(tmp, "bin", "codexbar-display-source")
 
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
@@ -747,7 +747,7 @@ func TestRunWithDepsValidateOnlyPerformsChecksWithoutApplyingChanges(t *testing.
 	if len(calls) > 0 {
 		t.Fatalf("expected no side-effect commands in validate-only mode, got %#v", calls)
 	}
-	installPath := filepath.Join(home, "Library", "Application Support", "vibeblock", "bin", "vibeblock")
+	installPath := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin", "codexbar-display")
 	if _, err := os.Stat(installPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected no installed binary in validate-only mode, err=%v", err)
 	}
@@ -757,7 +757,7 @@ func TestRunWithDepsDryRunSkipsApplyingChanges(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	repo := filepath.Join(tmp, "repo")
-	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+	execPath := filepath.Join(tmp, "bin", "codexbar-display-source")
 
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
@@ -850,7 +850,7 @@ func TestRunWithDepsFailsWhenDetectedBoardMismatchesFirmwareEnvironment(t *testi
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	repo := filepath.Join(tmp, "repo")
-	execPath := filepath.Join(tmp, "bin", "vibeblock-source")
+	execPath := filepath.Join(tmp, "bin", "codexbar-display-source")
 
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env:lilygo_t_display_s3]"), 0o644)
 	mustWriteFile(t, filepath.Join(repo, "firmware_esp8266", "platformio.ini"), []byte("[env:esp8266_smalltv_st7789]"), 0o644)
@@ -946,7 +946,7 @@ func mustWriteFile(t *testing.T, path string, data []byte, mode os.FileMode) {
 
 func mustCreateExecutable(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "vibeblock-source")
+	path := filepath.Join(t.TempDir(), "codexbar-display-source")
 	mustWriteFile(t, path, []byte("binary-content"), 0o755)
 	return path
 }

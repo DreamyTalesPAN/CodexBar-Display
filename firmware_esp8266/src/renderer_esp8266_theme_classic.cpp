@@ -1,11 +1,11 @@
 #include "renderer_esp8266_display_state.h"
 
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 
 #include <cstdio>
 #include <cstring>
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 namespace display {
 
@@ -184,7 +184,7 @@ UsageLayout usageLayoutForProvider(const char* providerText) {
 SplashLayout splashLayoutClassic() {
   TFT_eSPI& tft = Tft();
 
-  constexpr char kTitle[] = "VIBEBLOCK";
+  constexpr char kTitle[] = "CODEXBAR";
   constexpr char kLine1[] = "Waiting for";
   constexpr char kHintSample[] = "Frames in ~30s";
 
@@ -277,7 +277,7 @@ void drawResetCountdownLineClassic(int64_t remain) {
 void DrawSplashClassic() {
   TFT_eSPI& tft = Tft();
 
-  constexpr char kTitle[] = "VIBEBLOCK";
+  constexpr char kTitle[] = "CODEXBAR";
   constexpr char kLine1[] = "Waiting for";
 
   const SplashLayout layout = splashLayoutClassic();
@@ -378,6 +378,6 @@ void DrawResetClassic(int64_t remainSecs) {
 
 }  // namespace display
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display
 
 #endif

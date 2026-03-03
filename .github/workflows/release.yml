@@ -19,6 +19,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -26,7 +27,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install PlatformIO
-        run: pip install platformio
+        run: pip install platformio intelhex
 
       - name: Build Release Artifacts
         env:
@@ -39,11 +40,11 @@ jobs:
 
           cd companion
           for ARCH in amd64 arm64; do
-            OUT="../dist/companion/vibeblock-darwin-${ARCH}-v${VERSION}"
+            OUT="../dist/companion/codexbar-display-darwin-${ARCH}-v${VERSION}"
             GOOS=darwin GOARCH="${ARCH}" CGO_ENABLED=0 \
               go build \
               -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${VERSION} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              -o "${OUT}" ./cmd/vibeblock
+              -o "${OUT}" ./cmd/codexbar-display
           done
           cd ..
 
@@ -57,10 +58,10 @@ jobs:
             DIR="$1"
             ENV_NAME="$2"
 
-            VIBEBLOCK_FW_VERSION="${VERSION}" pio run -d "${DIR}" -e "${ENV_NAME}"
+            CODEXBAR_DISPLAY_FW_VERSION="${VERSION}" pio run -d "${DIR}" -e "${ENV_NAME}"
 
             SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
-            DEST="dist/firmware/vibeblock-firmware-${ENV_NAME}-v${VERSION}.bin"
+            DEST="dist/firmware/codexbar-display-firmware-${ENV_NAME}-v${VERSION}.bin"
             cp "${SRC}" "${DEST}"
           done
 
@@ -83,7 +84,7 @@ jobs:
           }
 
           for env_name, board in targets:
-              path = f"dist/firmware/vibeblock-firmware-{env_name}-v{version}.bin"
+              path = f"dist/firmware/codexbar-display-firmware-{env_name}-v{version}.bin"
               with open(path, "rb") as f:
                   sha = hashlib.sha256(f.read()).hexdigest()
 

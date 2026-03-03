@@ -2,11 +2,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-INSTALLED_BIN="${VIBEBLOCK_BIN:-$HOME/Library/Application Support/vibeblock/bin/vibeblock}"
+INSTALLED_BIN="${CODEXBAR_DISPLAY_BIN:-$HOME/Library/Application Support/codexbar-display/bin/codexbar-display}"
 
 if [[ -x "$INSTALLED_BIN" ]]; then
   exec "$INSTALLED_BIN" rollback "$@"
 fi
 
 cd "$ROOT_DIR/companion"
-exec go run ./cmd/vibeblock rollback "$@"
+exec go run ./cmd/codexbar-display rollback "$@"

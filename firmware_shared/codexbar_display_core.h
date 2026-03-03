@@ -5,7 +5,7 @@
 
 #include "theme_registry.h"
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace core {
 
 constexpr size_t kFrameLineBufferBytes = 512;
@@ -201,4 +201,4 @@ inline bool ConsumeSerialByte(
 }
 
 }  // namespace core
-}  // namespace vibeblock
+}  // namespace codexbar_display

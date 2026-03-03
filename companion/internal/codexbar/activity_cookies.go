@@ -69,12 +69,12 @@ func latestChromiumCookieActivityAt(home string, spec chromiumCookieActivityQuer
 }
 
 func resolveSQLite3Binary() (string, error) {
-	bin := envOrDefault("VIBEBLOCK_SQLITE3_BIN", "sqlite3")
+	bin := envOrDefault("CODEXBAR_DISPLAY_SQLITE3_BIN", "sqlite3")
 	return exec.LookPath(bin)
 }
 
 func chromiumCookieDBPaths(home string) []string {
-	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_CHROMIUM_COOKIE_DB_PATHS")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_CHROMIUM_COOKIE_DB_PATHS")); raw != "" {
 		return splitAndResolvePaths(home, raw)
 	}
 

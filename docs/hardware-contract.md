@@ -1,6 +1,6 @@
 # Hardware Contract (v0 MVP)
 
-This document defines the required hardware/runtime contract for vibeblock v0.
+This document defines the required hardware/runtime contract for codexbar-display v0.
 
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
@@ -29,7 +29,7 @@ Companion setup enforces this mapping when a device hello is available.
 
 ## Theme Capability Contract
 - If capabilities are explicitly known and `theme` is unsupported, host must omit `theme`.
-- If hello is missing/legacy (unknown capabilities), host may use optimistic `theme` send on the MVP path.
+- If hello is missing (unknown capabilities), host may use optimistic `theme` send on the MVP path.
 
 ## ESP8266 Pin Contract
 
@@ -47,9 +47,9 @@ Common display assumptions:
 - filesystem: LittleFS
 
 ## Operator Verification
-- `go run ./cmd/vibeblock doctor`:
+- `codexbar-display doctor`:
   - validates board/protocol contract and theme capability for ESP8266 boards
-- `go run ./cmd/vibeblock setup --yes [--firmware-env ...]`:
+- `codexbar-display setup --yes [--firmware-env ...]`:
   - validates firmware env support
   - rejects incompatible board <-> env pair when hello is available
 

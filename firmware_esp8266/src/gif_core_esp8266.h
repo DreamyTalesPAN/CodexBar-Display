@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 #include <AnimatedGIF.h>
 #include <LittleFS.h>
 #include <TFT_eSPI.h>
@@ -10,10 +10,10 @@
 
 #include "gif_core_policy.h"
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 
 enum class GifLayoutMode : uint8_t {
   BottomRightMini,
@@ -95,4 +95,4 @@ class GifCoreESP8266 {
 #endif
 
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display

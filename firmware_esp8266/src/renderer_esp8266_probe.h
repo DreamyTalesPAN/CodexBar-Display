@@ -1,12 +1,12 @@
 #pragma once
 
-#ifdef VIBEBLOCK_PROBE_ONLY
+#ifdef CODEXBAR_DISPLAY_PROBE_ONLY
 
 #include <Arduino.h>
 
 #include "../../firmware_shared/app_runtime.h"
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 namespace probe {
 
@@ -17,6 +17,6 @@ void DrawReset(app::RuntimeContext& ctx);
 
 }  // namespace probe
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display
 
 #endif

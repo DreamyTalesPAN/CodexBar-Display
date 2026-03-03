@@ -1,11 +1,11 @@
 #include "gif_core_esp8266.h"
 
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 
 #include <cstdio>
 #include <cstring>
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 
 namespace {
@@ -460,6 +460,6 @@ void GifCoreESP8266::DrawCallbackImpl(GIFDRAW* draw) {
 }
 
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display
 
 #endif

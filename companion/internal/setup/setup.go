@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	launchAgentLabel      = "com.vibeblock.daemon"
+	launchAgentLabel      = "com.codexbar-display.daemon"
 	defaultDaemonInterval = "60s"
 	defaultLastGoodMaxAge = "168h"
 	codexbarInstallURL    = "https://codexbar.app/"
@@ -217,7 +217,7 @@ func Run(ctx context.Context, opts Options) error {
 func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	d = d.withDefaults()
 
-	fmt.Fprintln(d.stdout, "vibeblock setup")
+	fmt.Fprintln(d.stdout, "codexbar-display setup")
 
 	mode := "apply"
 	if opts.ValidateOnly {
@@ -366,9 +366,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 
 	if opts.DryRun {
-		installPath := filepath.Join(home, "Library", "Application Support", "vibeblock", "bin", "vibeblock")
+		installPath := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin", "codexbar-display")
 		plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
-		backupDir := filepath.Join(home, "Library", "Application Support", "vibeblock", "backups")
+		backupDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "backups")
 		fmt.Fprintf(d.stdout, "Dry-run: would install companion binary to %s\n", installPath)
 		fmt.Fprintf(d.stdout, "Dry-run: would ensure backup dir %s\n", backupDir)
 		if strings.TrimSpace(opts.Theme) != "" {
@@ -390,7 +390,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		return &StepError{
 			Step: "install-binary",
 			Err:  err,
-			Hint: "verify write permission for $HOME/Library/Application Support/vibeblock/bin",
+			Hint: "verify write permission for $HOME/Library/Application Support/codexbar-display/bin",
 		}
 	}
 	fmt.Fprintf(d.stdout, "Companion binary: %s\n", installPath)
@@ -400,7 +400,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		return &StepError{
 			Step: "install-recovery-assets",
 			Err:  err,
-			Hint: "verify write permission for $HOME/Library/Application Support/vibeblock",
+			Hint: "verify write permission for $HOME/Library/Application Support/codexbar-display",
 		}
 	}
 	if strings.TrimSpace(restoreScriptPath) != "" {
@@ -442,7 +442,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 	fmt.Fprintln(d.stdout, "Launch agent: running")
 	fmt.Fprintln(d.stdout, "Setup complete.")
-	fmt.Fprintln(d.stdout, "Re-run `vibeblock setup` anytime; it is safe and idempotent.")
+	fmt.Fprintln(d.stdout, "Re-run `codexbar-display setup` anytime; it is safe and idempotent.")
 	return nil
 }
 
@@ -736,12 +736,12 @@ func containsString(all []string, target string) bool {
 }
 
 func installBinary(sourcePath, home string) (string, error) {
-	targetDir := filepath.Join(home, "Library", "Application Support", "vibeblock", "bin")
+	targetDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "bin")
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return "", err
 	}
 
-	targetPath := filepath.Join(targetDir, "vibeblock")
+	targetPath := filepath.Join(targetDir, "codexbar-display")
 	if err := copyFileAtomic(sourcePath, targetPath, 0o755); err != nil {
 		return "", err
 	}
@@ -828,7 +828,7 @@ func renderLaunchAgentPlist(binaryPath, port string) []byte {
 	b.WriteString("    <dict>\n")
 	b.WriteString("      <key>PATH</key>\n")
 	b.WriteString("      <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>\n")
-	b.WriteString("      <key>VIBEBLOCK_LAST_GOOD_MAX_AGE</key>\n")
+	b.WriteString("      <key>CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE</key>\n")
 	b.WriteString("      <string>" + xmlEscape(defaultLastGoodMaxAge) + "</string>\n")
 	b.WriteString("    </dict>\n")
 	b.WriteString("    <key>RunAtLoad</key>\n")
@@ -836,9 +836,9 @@ func renderLaunchAgentPlist(binaryPath, port string) []byte {
 	b.WriteString("    <key>KeepAlive</key>\n")
 	b.WriteString("    <true/>\n")
 	b.WriteString("    <key>StandardOutPath</key>\n")
-	b.WriteString("    <string>/tmp/vibeblock-daemon.out.log</string>\n")
+	b.WriteString("    <string>/tmp/codexbar-display-daemon.out.log</string>\n")
 	b.WriteString("    <key>StandardErrorPath</key>\n")
-	b.WriteString("    <string>/tmp/vibeblock-daemon.err.log</string>\n")
+	b.WriteString("    <string>/tmp/codexbar-display-daemon.err.log</string>\n")
 	b.WriteString("  </dict>\n")
 	b.WriteString("</plist>\n")
 	return []byte(b.String())
@@ -883,7 +883,7 @@ func reloadLaunchAgent(ctx context.Context, d deps, plistPath string) error {
 		return &StepError{
 			Step:   "launchagent-kickstart",
 			Err:    err,
-			Hint:   "run `launchctl print " + service + "` and inspect /tmp/vibeblock-daemon.err.log",
+			Hint:   "run `launchctl print " + service + "` and inspect /tmp/codexbar-display-daemon.err.log",
 			Output: tailLines(output, 20),
 		}
 	}
@@ -901,7 +901,7 @@ func reloadLaunchAgent(ctx context.Context, d deps, plistPath string) error {
 		return &StepError{
 			Step:   "launchagent-verify",
 			Err:    errors.New("launch agent not in running/waiting state"),
-			Hint:   "inspect /tmp/vibeblock-daemon.err.log and run `launchctl kickstart -k " + service + "`",
+			Hint:   "inspect /tmp/codexbar-display-daemon.err.log and run `launchctl kickstart -k " + service + "`",
 			Output: tailLines(status, 20),
 		}
 	}
@@ -989,7 +989,7 @@ func stopLaunchAgentBestEffort(ctx context.Context, d deps) {
 }
 
 func installRecoveryAssets(repoRoot, home string) (string, string, error) {
-	appSupportDir := filepath.Join(home, "Library", "Application Support", "vibeblock")
+	appSupportDir := filepath.Join(home, "Library", "Application Support", "codexbar-display")
 	backupDir := filepath.Join(appSupportDir, "backups")
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		return "", "", err

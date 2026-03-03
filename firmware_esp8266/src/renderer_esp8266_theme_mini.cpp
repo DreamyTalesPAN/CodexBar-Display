@@ -1,10 +1,10 @@
 #include "renderer_esp8266_display_state.h"
 
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 
 #include <cstdio>
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 namespace display {
 
@@ -24,6 +24,7 @@ constexpr int kUsageModeTextSize = 1;
 constexpr int kPercentTextSize = 5;
 constexpr int kResetTextSize = 2;
 constexpr int kUsageLeftCenter = 58;
+constexpr int kUsageOuterPadding = 4;
 constexpr int kUsageLabelY = 30;
 constexpr int kUsageValueY = 66;
 constexpr int kUsageModeY = 106;
@@ -232,6 +233,7 @@ void DrawUsageMini() {
   const char* usageMode = miniUsageModeText();
 
   tft.fillScreen(kMiniBg);
+  tft.setTextWrap(false);
 
   const char* provider = ProviderLabelText();
   tft.setTextFont(1);
@@ -248,8 +250,8 @@ void DrawUsageMini() {
 
   char sessionPctBuf[8];
   char weeklyPctBuf[8];
-  std::snprintf(sessionPctBuf, sizeof(sessionPctBuf), "%d%%", vibeblock::core::ClampPct(CurrentFrame().session));
-  std::snprintf(weeklyPctBuf, sizeof(weeklyPctBuf), "%d%%", vibeblock::core::ClampPct(CurrentFrame().weekly));
+  std::snprintf(sessionPctBuf, sizeof(sessionPctBuf), "%d%%", codexbar_display::core::ClampPct(CurrentFrame().session));
+  std::snprintf(weeklyPctBuf, sizeof(weeklyPctBuf), "%d%%", codexbar_display::core::ClampPct(CurrentFrame().weekly));
 
   tft.setTextFont(2);
   tft.setTextSize(kUsageMetaTextSize);
@@ -258,8 +260,8 @@ void DrawUsageMini() {
 
   tft.setTextFont(1);
   tft.setTextSize(kPercentTextSize);
-  const int sessionPctW = TextPixelWidth(sessionPctBuf, kPercentTextSize);
-  const int weeklyPctW = TextPixelWidth(weeklyPctBuf, kPercentTextSize);
+  const int sessionPctW = tft.textWidth(sessionPctBuf);
+  const int weeklyPctW = tft.textWidth(weeklyPctBuf);
 
   tft.setTextFont(2);
   tft.setTextSize(kUsageModeTextSize);
@@ -277,8 +279,19 @@ void DrawUsageMini() {
   };
   const int leftColW = max3(sessionLabelW, sessionPctW, usageModeW);
   const int rightColW = max3(weeklyLabelW, weeklyPctW, usageModeW);
-  const int leftColX = centeredXForColumnPixels(leftColW, leftCenter);
-  const int rightColX = centeredXForColumnPixels(rightColW, rightCenter);
+  int leftColX = centeredXForColumnPixels(leftColW, leftCenter);
+  if (leftColX < kUsageOuterPadding) {
+    leftColX = kUsageOuterPadding;
+  }
+
+  int rightColX = centeredXForColumnPixels(rightColW, rightCenter);
+  const int maxRightColRight = tft.width() - kUsageOuterPadding;
+  if ((rightColX + rightColW) > maxRightColRight) {
+    rightColX = maxRightColRight - rightColW;
+  }
+  if (rightColX < kUsageOuterPadding) {
+    rightColX = kUsageOuterPadding;
+  }
   const int rightColRight = rightColX + rightColW;
 
   tft.setTextFont(2);
@@ -324,6 +337,6 @@ void DrawResetMini(int64_t remainSecs) {
 
 }  // namespace display
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display
 
 #endif

@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	launchAgentLabel = "com.vibeblock.daemon"
-	defaultOutLog    = "/tmp/vibeblock-daemon.out.log"
-	defaultErrLog    = "/tmp/vibeblock-daemon.err.log"
+	launchAgentLabel = "com.codexbar-display.daemon"
+	defaultOutLog    = "/tmp/codexbar-display-daemon.out.log"
+	defaultErrLog    = "/tmp/codexbar-display-daemon.err.log"
 )
 
 type deps struct {
@@ -71,7 +71,7 @@ func runWithDeps(ctx context.Context, d deps) error {
 	lastErrLogLine := findLastNonEmptyEvent(defaultErrLog, d.readFile)
 	lastError := latestEvent(lastOutError, lastErrLogLine)
 
-	fmt.Fprintln(d.stdout, "vibeblock health")
+	fmt.Fprintln(d.stdout, "codexbar-display health")
 	fmt.Fprintf(d.stdout, "launchagent: %s", state)
 	if pid != "" {
 		fmt.Fprintf(d.stdout, " pid=%s", pid)

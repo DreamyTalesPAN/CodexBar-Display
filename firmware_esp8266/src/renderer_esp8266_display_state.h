@@ -1,16 +1,16 @@
 #pragma once
 
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
 #include "../../firmware_shared/app_runtime.h"
-#include "../../firmware_shared/vibeblock_core.h"
+#include "../../firmware_shared/codexbar_display_core.h"
 #include "gif_core_esp8266.h"
 #include "theme_defs.h"
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 namespace display {
 
@@ -85,11 +85,11 @@ inline unsigned long& SplashHintLastTick() {
 }
 
 inline int64_t CurrentRemainingSecs() {
-  return vibeblock::core::CurrentRemainingSecs(RuntimeState(), millis());
+  return codexbar_display::core::CurrentRemainingSecs(RuntimeState(), millis());
 }
 
 inline String FormatDuration(int64_t secs) {
-  return vibeblock::core::FormatDuration(secs);
+  return codexbar_display::core::FormatDuration(secs);
 }
 
 void DrawBar(int x, int y, int w, int h, int pct, uint16_t fillColor);
@@ -131,6 +131,6 @@ void DrawResetMini(int64_t remainSecs);
 
 }  // namespace display
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display
 
 #endif
