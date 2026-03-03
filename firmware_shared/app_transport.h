@@ -5,7 +5,7 @@
 
 #include "app_runtime.h"
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace app {
 
 constexpr int kDefaultMaxFrameBytes = 512;
@@ -58,5 +58,5 @@ inline void EmitDeviceHello(const TransportConfig& config) {
 }
 
 }  // namespace app
-}  // namespace vibeblock
+}  // namespace codexbar_display
 

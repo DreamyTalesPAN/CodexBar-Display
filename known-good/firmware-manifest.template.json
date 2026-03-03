@@ -7,14 +7,14 @@
       "firmwareEnv": "esp8266_smalltv_st7789",
       "board": "esp8266-smalltv-st7789",
       "firmwareVersion": "X.Y.Z",
-      "asset": "vibeblock-firmware-esp8266_smalltv_st7789-vX.Y.Z.bin",
+      "asset": "codexbar-display-firmware-esp8266_smalltv_st7789-vX.Y.Z.bin",
       "sha256": "<filled-by-release-workflow>"
     },
     {
       "firmwareEnv": "lilygo_t_display_s3",
       "board": "esp32-lilygo-t-display-s3",
       "firmwareVersion": "X.Y.Z",
-      "asset": "vibeblock-firmware-lilygo_t_display_s3-vX.Y.Z.bin",
+      "asset": "codexbar-display-firmware-lilygo_t_display_s3-vX.Y.Z.bin",
       "sha256": "<filled-by-release-workflow>"
     }
   ]

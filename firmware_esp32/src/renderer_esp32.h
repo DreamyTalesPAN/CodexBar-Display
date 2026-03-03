@@ -5,7 +5,7 @@
 
 #include "../../firmware_shared/app_renderer.h"
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp32 {
 
 class RendererESP32 : public app::Renderer {
@@ -37,4 +37,4 @@ class RendererESP32 : public app::Renderer {
 };
 
 }  // namespace esp32
-}  // namespace vibeblock
+}  // namespace codexbar_display

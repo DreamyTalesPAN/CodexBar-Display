@@ -99,9 +99,9 @@ func DefaultRecovery(code Code) string {
 	case TransportSerialOpen:
 		return "Release the port (`lsof <port>`), reconnect device, then retry."
 	case TransportSerialWrite:
-		return "Wait for reconnect or run `vibeblock doctor` to verify serial health."
+		return "Wait for reconnect or run `codexbar-display doctor` to verify serial health."
 	case TransportSerialProbe:
-		return "Disconnect/reconnect the board and re-run `vibeblock setup`."
+		return "Disconnect/reconnect the board and re-run `codexbar-display setup`."
 	case TransportSerialCloseTimeout:
 		return "Retry; if persistent, restart the daemon to clear stale serial handles."
 	case ProtocolDeviceHelloUnavailable:
@@ -111,7 +111,7 @@ func DefaultRecovery(code Code) string {
 	case ProtocolFrameTooLarge:
 		return "Use a shorter frame payload or device profile with larger `maxFrameBytes`."
 	case RuntimeSerialResolve:
-		return "Reconnect the board or pass `--port` to `vibeblock daemon`."
+		return "Reconnect the board or pass `--port` to `codexbar-display daemon`."
 	case RuntimeSerialWrite:
 		return "Check cable/device power; daemon will retry automatically."
 	case RuntimeFrameEncode, RuntimeFrameTooLarge:
@@ -143,7 +143,7 @@ func DefaultRecovery(code Code) string {
 	case SetupInstallBinary, SetupInstallRecovery, SetupWriteRuntimeConfig, SetupWriteLaunchAgent:
 		return "Verify write permissions under `~/Library` and rerun setup."
 	case SetupLaunchBootstrap, SetupLaunchKickstart, SetupLaunchVerify:
-		return "Inspect `launchctl print gui/$(id -u)/com.vibeblock.daemon` and daemon logs."
+		return "Inspect `launchctl print gui/$(id -u)/com.codexbar-display.daemon` and daemon logs."
 	case UpgradeResolvePort:
 		return "Reconnect the board or pass a valid `--port`."
 	case UpgradePortBusy:
@@ -153,11 +153,11 @@ func DefaultRecovery(code Code) string {
 	case UpgradeSnapshotCompanion:
 		return "Ensure companion install dir is writable, then retry upgrade."
 	case UpgradeStateWrite:
-		return "Verify write permissions under `~/Library/Application Support/vibeblock`."
+		return "Verify write permissions under `~/Library/Application Support/codexbar-display`."
 	case UpgradeFlashFirmware:
-		return "Fix flash/setup error details and rerun `vibeblock upgrade`."
+		return "Fix flash/setup error details and rerun `codexbar-display upgrade`."
 	case RollbackStateLoad:
-		return "Run one successful `vibeblock upgrade` first or provide explicit rollback flags."
+		return "Run one successful `codexbar-display upgrade` first or provide explicit rollback flags."
 	case RollbackMissingKnownGood:
 		return "Provide explicit rollback inputs (`--image`, `--manifest`) or run upgrade to capture known-good state."
 	case RollbackCompanionRestore:

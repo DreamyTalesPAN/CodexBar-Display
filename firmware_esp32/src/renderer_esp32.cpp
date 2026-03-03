@@ -1,8 +1,8 @@
 #include "renderer_esp32.h"
 
-#include "../../firmware_shared/vibeblock_core.h"
+#include "../../firmware_shared/codexbar_display_core.h"
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp32 {
 
 void RendererESP32::Setup(app::RuntimeContext&) {
@@ -29,7 +29,7 @@ void RendererESP32::DrawSplash(app::RuntimeContext& ctx) {
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setTextFont(2);
   tft.setCursor(14, 40);
-  tft.println("vibeblock 1");
+  tft.println("codexbar display");
   tft.setCursor(14, 80);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   tft.println("Waiting for CodexBar...");
@@ -46,7 +46,7 @@ void RendererESP32::DrawError(app::RuntimeContext& ctx, const String& message) {
   tft.setTextFont(2);
   tft.setTextColor(TFT_ORANGE, TFT_BLACK);
   tft.setCursor(10, 16);
-  tft.println("vibeblock error");
+  tft.println("codexbar error");
 
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(10, 48);
@@ -125,4 +125,4 @@ void RendererESP32::drawBar(int x, int y, int w, int h, int pct, uint16_t fillCo
 }
 
 }  // namespace esp32
-}  // namespace vibeblock
+}  // namespace codexbar_display

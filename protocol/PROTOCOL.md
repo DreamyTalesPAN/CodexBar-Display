@@ -1,4 +1,4 @@
-# vibeblock Protocol v1
+# codexbar-display Protocol v1
 
 Transport is line-delimited JSON over USB CDC serial at `115200` baud.
 Each frame must be a single JSON object followed by `\n`.
@@ -61,8 +61,8 @@ Fields:
 - `features` (array[string], optional): capabilities (for example `theme`).
 - `maxFrameBytes` (number, optional): maximum safe frame payload size for this firmware.
 
-Legacy firmware may emit plain readiness lines (`vibeblock_ready*`) instead of JSON hello.
-Companion treats missing/legacy hello as unknown capabilities.
+Firmware may emit plain readiness lines (`codexbar_display_ready*`) instead of JSON hello.
+Companion treats missing hello as unknown capabilities.
 For v1 MVP operations, host continues usage/error frames and may use optimistic `theme`
 send when hello is unavailable; if capabilities are explicitly known and do not include
 `theme`, host must omit `theme`.
@@ -73,7 +73,7 @@ send when hello is unavailable; if capabilities are explicitly known and do not 
 - Host should prefer stable error codes in `error` (for example `runtime/*`, `protocol/*`) over free-form text.
 - `theme` is optional.
 - If device capabilities are explicitly known and `theme` is unsupported, host must omit `theme`.
-- If hello is missing/legacy (unknown capabilities), host may send `theme` on the MVP path and rely on device-side ignore/fallback behavior.
+- If hello is missing (unknown capabilities), host may send `theme` on the MVP path and rely on device-side ignore/fallback behavior.
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.
 - Firmware ticks down `resetSecs` locally between host updates.

@@ -1,10 +1,10 @@
 #include "renderer_esp8266_display_state.h"
 
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 
 #include <cstring>
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 namespace display {
 
@@ -19,7 +19,7 @@ void AttachContext(app::RuntimeContext& ctx) {
 
 void DrawBar(int x, int y, int w, int h, int pct, uint16_t fillColor) {
   TFT_eSPI& tft = Tft();
-  const int p = vibeblock::core::ClampPct(pct);
+  const int p = codexbar_display::core::ClampPct(pct);
   int filled = (w * p) / 100;
   if (filled > (w - 2)) {
     filled = w - 2;
@@ -112,6 +112,6 @@ const char* SplashDotsSuffix() {
 
 }  // namespace display
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display
 
 #endif

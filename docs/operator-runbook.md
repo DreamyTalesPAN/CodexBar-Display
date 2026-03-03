@@ -8,20 +8,23 @@ Hardware identity and board/env contract reference:
 ## Scope
 - macOS runtime (`launchctl` + LaunchAgent)
 - USB serial devices (`/dev/cu.usb*`)
-- Companion binary (`vibeblock`)
+- Companion binary (`codexbar-display`)
 - Primary release-gated target for the v0 pre-release track: `esp8266_smalltv_st7789` (SemVer `1.x`)
 - ESP32-S3 firmware path as experimental fallback/non-blocking for v0
+
+Note: source entrypoint remains `./cmd/codexbar-display` in this repo. For branded demos, build once with
+`go build -o ../codexbar-display ./cmd/codexbar-display` and run `../codexbar-display ...` equivalently.
 
 ## Core Commands
 
 ```bash
 cd companion
-go run ./cmd/vibeblock setup --yes
-go run ./cmd/vibeblock health
-go run ./cmd/vibeblock doctor
-go run ./cmd/vibeblock version
-go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
-go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
+../codexbar-display setup --yes
+../codexbar-display health
+../codexbar-display doctor
+../codexbar-display version
+../codexbar-display upgrade --firmware-env esp8266_smalltv_st7789
+../codexbar-display rollback --port /dev/cu.usbserial-10
 ```
 
 ## Setup
@@ -33,7 +36,7 @@ before flash operations.
 
 ```bash
 cd companion
-go run ./cmd/vibeblock setup --yes
+../codexbar-display setup --yes
 ```
 
 ### ESP32-S3 target (override)
@@ -42,7 +45,7 @@ Experimental fallback path (non-blocking):
 
 ```bash
 cd companion
-go run ./cmd/vibeblock setup --yes \
+../codexbar-display setup --yes \
   --port /dev/cu.usbmodem101 \
   --firmware-env lilygo_t_display_s3
 ```
@@ -60,16 +63,16 @@ Useful flags:
 Use these rules when selecting `--firmware-env`:
 
 - KISS default runtime firmware: `esp8266_smalltv_st7789` (release-gated)
-- Themes are runtime-configured (`classic`, `crt`, `mini`) via `--theme`/`VIBEBLOCK_THEME` on the same firmware.
+- Themes are runtime-configured (`classic`, `crt`, `mini`) via `--theme`/`CODEXBAR_DISPLAY_THEME` on the same firmware.
 - Legacy compile-theme/GIF/probe env names are unsupported; use only the runtime envs above.
 - `lilygo_t_display_s3` is an experimental fallback and does not block v0 release decisions.
 - MVP release go/no-go is gated only by `esp8266_smalltv_st7789`.
 
 During setup, runtime assets are installed to:
-- Binary: `~/Library/Application Support/vibeblock/bin/vibeblock`
-- Recovery scripts: `~/Library/Application Support/vibeblock/scripts/`
-- Backups: `~/Library/Application Support/vibeblock/backups/`
-- LaunchAgent: `~/Library/LaunchAgents/com.vibeblock.daemon.plist`
+- Binary: `~/Library/Application Support/codexbar-display/bin/codexbar-display`
+- Recovery scripts: `~/Library/Application Support/codexbar-display/scripts/`
+- Backups: `~/Library/Application Support/codexbar-display/backups/`
+- LaunchAgent: `~/Library/LaunchAgents/com.codexbar-display.daemon.plist`
 
 ## Upgrade (No Re-Setup)
 
@@ -77,7 +80,7 @@ Use `upgrade` for N -> N+1 updates with preflight:
 
 ```bash
 cd companion
-go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
+../codexbar-display upgrade --firmware-env esp8266_smalltv_st7789
 ```
 
 Preflight includes:
@@ -89,7 +92,7 @@ Optional guard override:
 
 ```bash
 # experimental fallback path
-go run ./cmd/vibeblock upgrade \
+../codexbar-display upgrade \
   --firmware-env lilygo_t_display_s3 \
   --target-firmware-version <x.y.z>
 ```
@@ -97,7 +100,7 @@ go run ./cmd/vibeblock upgrade \
 If you need to bypass guard (not recommended):
 
 ```bash
-go run ./cmd/vibeblock upgrade --skip-version-guard
+../codexbar-display upgrade --skip-version-guard
 ```
 
 ## Rollback (Last-Known-Good)
@@ -108,7 +111,7 @@ Default rollback:
 
 ```bash
 cd companion
-go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
+../codexbar-display rollback --port /dev/cu.usbserial-10
 ```
 
 Wrapper scripts:
@@ -120,12 +123,12 @@ cd /path/to/CodexBar-Display
 ```
 
 Rollback modes:
-- companion only: `go run ./cmd/vibeblock rollback --skip-firmware`
-- firmware only: `go run ./cmd/vibeblock rollback --skip-companion --port /dev/cu.usbserial-10`
-- explicit image: `go run ./cmd/vibeblock rollback --skip-companion --port /dev/cu.usbserial-10 --image /path/to/firmware.bin --manifest /path/to/firmware.bin.manifest`
+- companion only: `../codexbar-display rollback --skip-firmware`
+- firmware only: `../codexbar-display rollback --skip-companion --port /dev/cu.usbserial-10`
+- explicit image: `../codexbar-display rollback --skip-companion --port /dev/cu.usbserial-10 --image /path/to/firmware.bin --manifest /path/to/firmware.bin.manifest`
 
 Rollback state file:
-- `~/Library/Application Support/vibeblock/release-state.json`
+- `~/Library/Application Support/codexbar-display/release-state.json`
 
 ## Theme Override (ESP8266 Display Targets)
 
@@ -141,28 +144,28 @@ For an ad-hoc run:
 
 ```bash
 cd companion
-VIBEBLOCK_THEME=crt go run ./cmd/vibeblock daemon --interval 60s
+CODEXBAR_DISPLAY_THEME=crt ../codexbar-display daemon --interval 60s
 ```
 
 Preferred persistent config:
 
 ```bash
 cd companion
-go run ./cmd/vibeblock setup --yes --skip-flash --theme crt
+../codexbar-display setup --yes --skip-flash --theme crt
 ```
 
 For LaunchAgent runtime:
-- add `VIBEBLOCK_THEME` under `EnvironmentVariables` in `~/Library/LaunchAgents/com.vibeblock.daemon.plist`
+- add `CODEXBAR_DISPLAY_THEME` under `EnvironmentVariables` in `~/Library/LaunchAgents/com.codexbar-display.daemon.plist`
 - reload agent with `launchctl bootout/bootstrap/kickstart`
-- verify with `go run ./cmd/vibeblock health` and daemon logs
+- verify with `../codexbar-display health` and daemon logs
 
-Note: rerunning `vibeblock setup` rewrites the LaunchAgent plist; re-apply custom env vars afterward.
+Note: rerunning `codexbar-display setup` rewrites the LaunchAgent plist; re-apply custom env vars afterward.
 
 ## Runtime Health
 
 ```bash
 cd companion
-go run ./cmd/vibeblock health
+../codexbar-display health
 ```
 
 `health` reports in one output:
@@ -184,8 +187,8 @@ Examples:
 - `setup failed at flash-firmware [setup/flash-firmware] ...`
 
 Daemon logs:
-- `/tmp/vibeblock-daemon.out.log`
-- `/tmp/vibeblock-daemon.err.log`
+- `/tmp/codexbar-display-daemon.out.log`
+- `/tmp/codexbar-display-daemon.err.log`
 
 ## Backup and Restore (ESP8266)
 
@@ -200,13 +203,13 @@ Backup now writes:
 - manifest (`.manifest`) with file name, `sha256`, size, device MAC, UTC timestamp
 
 Default backup location:
-- `~/Library/Application Support/vibeblock/backups/`
+- `~/Library/Application Support/codexbar-display/backups/`
 
 ### Restore known-good image (verified by default)
 
 ```bash
 cd companion
-go run ./cmd/vibeblock restore-known-good --port /dev/cu.usbserial-10
+../codexbar-display restore-known-good --port /dev/cu.usbserial-10
 ```
 
 By default restore verifies:
@@ -233,8 +236,8 @@ Minimal runtime smoke:
 ```
 
 Optional args:
-1. plist path (default: `~/Library/LaunchAgents/com.vibeblock.daemon.plist`)
-2. out log path (default: `/tmp/vibeblock-daemon.out.log`)
+1. plist path (default: `~/Library/LaunchAgents/com.codexbar-display.daemon.plist`)
+2. out log path (default: `/tmp/codexbar-display-daemon.out.log`)
 3. timeout seconds (default: `90`)
 
 ## Soak Gate (ESP8266)
@@ -257,7 +260,7 @@ Run this list before every v0 release decision.
 - [ ] `go test ./...` in `companion` is green.
 - [ ] `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789` is green.
 - [ ] Release artifacts include companion binaries, firmware binaries, checksums.
-- [ ] Firmware artifact reports expected `VIBEBLOCK_FW_VERSION` for the release tag.
+- [ ] Firmware artifact reports expected `CODEXBAR_DISPLAY_FW_VERSION` for the release tag.
 
 ### Functional Gate (release-gated env)
 - [ ] Device hello reports expected board id for `esp8266_smalltv_st7789`.
@@ -288,21 +291,21 @@ Run this list before every v0 release decision.
 ### Serial busy
 
 ```bash
-launchctl bootout gui/$(id -u)/com.vibeblock.daemon 2>/dev/null || true
+launchctl bootout gui/$(id -u)/com.codexbar-display.daemon 2>/dev/null || true
 lsof /dev/cu.usbserial-10
 ```
 
 ### LaunchAgent not running
 
 ```bash
-launchctl print gui/$(id -u)/com.vibeblock.daemon
-tail -n 100 /tmp/vibeblock-daemon.err.log
+launchctl print gui/$(id -u)/com.codexbar-display.daemon
+tail -n 100 /tmp/codexbar-display-daemon.err.log
 ```
 
 ### No new frames
 
 ```bash
-go run ./cmd/vibeblock health
+../codexbar-display health
 ./scripts/smoke-daemon-sent-frame.sh
 ```
 
@@ -321,9 +324,9 @@ Use this taxonomy for incident triage:
 |---|---|---|
 | `transport/*` | `transport/serial-open`, `transport/no-usb-serial-ports`, `transport/serial-write` | Reconnect board/cable, check `ls /dev/cu.usb*`, release busy port via `lsof <port>` |
 | `protocol/*` | `protocol/device-hello-unavailable` | Reconnect device to force boot hello; runtime falls back when hello is missing |
-| `runtime/*` | `runtime/serial-resolve`, `runtime/codexbar-parse`, `runtime/frame-too-large` | Run `vibeblock doctor`, verify CodexBar output, inspect daemon logs |
+| `runtime/*` | `runtime/serial-resolve`, `runtime/codexbar-parse`, `runtime/frame-too-large` | Run `codexbar-display doctor`, verify CodexBar output, inspect daemon logs |
 | `setup/*` | `setup/flash-firmware`, `setup/unsupported-hardware`, `setup/launchagent-verify` | Rerun setup with matching `--firmware-env`, verify PlatformIO + launchctl state |
-| `upgrade/*` | `upgrade/port-busy`, `upgrade/version-guard`, `upgrade/flash-firmware` | Free serial port, use compatible versions, rerun `vibeblock upgrade` |
+| `upgrade/*` | `upgrade/port-busy`, `upgrade/version-guard`, `upgrade/flash-firmware` | Free serial port, use compatible versions, rerun `codexbar-display upgrade` |
 | `rollback/*` | `rollback/missing-known-good`, `rollback/companion-restore`, `rollback/firmware-restore` | Provide explicit rollback image/manifest or restore captured known-good state |
 
 ## Performance Budgets
@@ -344,6 +347,6 @@ Firmware bench envs:
 
 - SemVer is `1.x` for companion and firmware lines in the current pre-release track.
 - Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
-- `vibeblock upgrade` enforces companion/firmware compatibility with a version guard.
-- Release firmware builds stamp `VIBEBLOCK_FW_VERSION` from the release tag version.
+- `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
+- Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
 - GitHub release artifacts include companion binaries, firmware binaries, and checksums.

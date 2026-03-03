@@ -46,7 +46,7 @@ var providerScopedFallbackOrder = []string{
 	"factory",
 }
 
-const usageModeEnvVar = "VIBEBLOCK_USAGE_MODE"
+const usageModeEnvVar = "CODEXBAR_DISPLAY_USAGE_MODE"
 
 type FetchErrorKind string
 
@@ -265,7 +265,7 @@ func CommandTimeout() time.Duration {
 func commandTimeout() time.Duration {
 	// Keep default bounded so display startup is responsive even when codexbar stalls.
 	d := 30 * time.Second
-	raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_CODEXBAR_TIMEOUT_SECS"))
+	raw := strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_TIMEOUT_SECS"))
 	if raw == "" {
 		return d
 	}
@@ -1038,11 +1038,11 @@ func formatActivityScore(score activityScore) string {
 }
 
 func activityConflictWindow() time.Duration {
-	return parsePositiveDurationEnv("VIBEBLOCK_ACTIVITY_CONFLICT_WINDOW", defaultActivityConflictWindow)
+	return parsePositiveDurationEnv("CODEXBAR_DISPLAY_ACTIVITY_CONFLICT_WINDOW", defaultActivityConflictWindow)
 }
 
 func activityMaxAge() time.Duration {
-	return parsePositiveDurationEnv("VIBEBLOCK_ACTIVITY_MAX_AGE", defaultActivityMaxAge)
+	return parsePositiveDurationEnv("CODEXBAR_DISPLAY_ACTIVITY_MAX_AGE", defaultActivityMaxAge)
 }
 
 func parsePositiveDurationEnv(key string, def time.Duration) time.Duration {
@@ -1080,12 +1080,12 @@ func isStaleActivity(now, at time.Time, maxAge time.Duration) bool {
 func latestCodexActivityAt(home string) (time.Time, bool) {
 	var latest time.Time
 
-	sessionsDir := withHome(home, envOrDefault("VIBEBLOCK_CODEX_ACTIVITY_DIR", filepath.Join("~", ".codex", "sessions")))
+	sessionsDir := withHome(home, envOrDefault("CODEXBAR_DISPLAY_CODEX_ACTIVITY_DIR", filepath.Join("~", ".codex", "sessions")))
 	if t, err := latestJSONLModTime(sessionsDir); err == nil {
 		latest = newerTime(latest, t)
 	}
 
-	historyFile := withHome(home, envOrDefault("VIBEBLOCK_CODEX_ACTIVITY_FILE", filepath.Join("~", ".codex", "history.jsonl")))
+	historyFile := withHome(home, envOrDefault("CODEXBAR_DISPLAY_CODEX_ACTIVITY_FILE", filepath.Join("~", ".codex", "history.jsonl")))
 	if t, err := fileModTime(historyFile); err == nil {
 		latest = newerTime(latest, t)
 	}
@@ -1096,7 +1096,7 @@ func latestCodexActivityAt(home string) (time.Time, bool) {
 func latestClaudeActivityAt(home string) (time.Time, bool) {
 	var latest time.Time
 
-	historyFile := withHome(home, envOrDefault("VIBEBLOCK_CLAUDE_ACTIVITY_FILE", filepath.Join("~", ".claude", "history.jsonl")))
+	historyFile := withHome(home, envOrDefault("CODEXBAR_DISPLAY_CLAUDE_ACTIVITY_FILE", filepath.Join("~", ".claude", "history.jsonl")))
 	if t, err := fileModTime(historyFile); err == nil {
 		latest = newerTime(latest, t)
 	}
@@ -1149,7 +1149,7 @@ func latestJetBrainsActivityAt(home string) (time.Time, bool) {
 }
 
 func latestCursorSessionActivityAt(home string) (time.Time, bool) {
-	path := withHome(home, envOrDefault("VIBEBLOCK_CURSOR_ACTIVITY_FILE", filepath.Join("~", "Library", "Application Support", "CodexBar", "cursor-session.json")))
+	path := withHome(home, envOrDefault("CODEXBAR_DISPLAY_CURSOR_ACTIVITY_FILE", filepath.Join("~", "Library", "Application Support", "CodexBar", "cursor-session.json")))
 	if t, err := fileModTime(path); err == nil {
 		return t, true
 	}
@@ -1157,7 +1157,7 @@ func latestCursorSessionActivityAt(home string) (time.Time, bool) {
 }
 
 func latestFactorySessionActivityAt(home string) (time.Time, bool) {
-	path := withHome(home, envOrDefault("VIBEBLOCK_FACTORY_ACTIVITY_FILE", filepath.Join("~", "Library", "Application Support", "CodexBar", "factory-session.json")))
+	path := withHome(home, envOrDefault("CODEXBAR_DISPLAY_FACTORY_ACTIVITY_FILE", filepath.Join("~", "Library", "Application Support", "CodexBar", "factory-session.json")))
 	if t, err := fileModTime(path); err == nil {
 		return t, true
 	}
@@ -1165,7 +1165,7 @@ func latestFactorySessionActivityAt(home string) (time.Time, bool) {
 }
 
 func latestAugmentSessionActivityAt(home string) (time.Time, bool) {
-	path := withHome(home, envOrDefault("VIBEBLOCK_AUGMENT_ACTIVITY_FILE", filepath.Join("~", "Library", "Application Support", "CodexBar", "augment-session.json")))
+	path := withHome(home, envOrDefault("CODEXBAR_DISPLAY_AUGMENT_ACTIVITY_FILE", filepath.Join("~", "Library", "Application Support", "CodexBar", "augment-session.json")))
 	if t, err := fileModTime(path); err == nil {
 		return t, true
 	}
@@ -1175,12 +1175,12 @@ func latestAugmentSessionActivityAt(home string) (time.Time, bool) {
 func latestGeminiActivityAt(home string) (time.Time, bool) {
 	var latest time.Time
 
-	creds := withHome(home, envOrDefault("VIBEBLOCK_GEMINI_OAUTH_FILE", filepath.Join("~", ".gemini", "oauth_creds.json")))
+	creds := withHome(home, envOrDefault("CODEXBAR_DISPLAY_GEMINI_OAUTH_FILE", filepath.Join("~", ".gemini", "oauth_creds.json")))
 	if t, err := fileModTime(creds); err == nil {
 		latest = newerTime(latest, t)
 	}
 
-	settings := withHome(home, envOrDefault("VIBEBLOCK_GEMINI_SETTINGS_FILE", filepath.Join("~", ".gemini", "settings.json")))
+	settings := withHome(home, envOrDefault("CODEXBAR_DISPLAY_GEMINI_SETTINGS_FILE", filepath.Join("~", ".gemini", "settings.json")))
 	if t, err := fileModTime(settings); err == nil {
 		latest = newerTime(latest, t)
 	}
@@ -1189,10 +1189,10 @@ func latestGeminiActivityAt(home string) (time.Time, bool) {
 }
 
 func claudeProjectsActivityDirs(home string) []string {
-	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_CLAUDE_ACTIVITY_DIRS")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_CLAUDE_ACTIVITY_DIRS")); raw != "" {
 		return splitAndResolvePaths(home, raw)
 	}
-	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_CLAUDE_ACTIVITY_DIR")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_CLAUDE_ACTIVITY_DIR")); raw != "" {
 		return []string{withHome(home, raw)}
 	}
 	return []string{
@@ -1202,17 +1202,17 @@ func claudeProjectsActivityDirs(home string) []string {
 }
 
 func vertexActivityDirs(home string) []string {
-	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_VERTEX_ACTIVITY_DIRS")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_VERTEX_ACTIVITY_DIRS")); raw != "" {
 		return splitAndResolvePaths(home, raw)
 	}
-	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_VERTEX_ACTIVITY_DIR")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_VERTEX_ACTIVITY_DIR")); raw != "" {
 		return []string{withHome(home, raw)}
 	}
 	return claudeProjectsActivityDirs(home)
 }
 
 func jetbrainsActivityDirs(home string) []string {
-	if raw := strings.TrimSpace(os.Getenv("VIBEBLOCK_JETBRAINS_ACTIVITY_DIRS")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_JETBRAINS_ACTIVITY_DIRS")); raw != "" {
 		return splitAndResolvePaths(home, raw)
 	}
 	return []string{
@@ -1238,8 +1238,8 @@ func splitAndResolvePaths(home, csv string) []string {
 
 func customActivityDetectors() []ProviderActivityDetector {
 	const (
-		filePrefix = "VIBEBLOCK_ACTIVITY_FILE_"
-		dirPrefix  = "VIBEBLOCK_ACTIVITY_DIR_"
+		filePrefix = "CODEXBAR_DISPLAY_ACTIVITY_FILE_"
+		dirPrefix  = "CODEXBAR_DISPLAY_ACTIVITY_DIR_"
 	)
 
 	fileByProvider := make(map[string][]string)

@@ -1,10 +1,10 @@
 #include "renderer_esp8266_display_state.h"
 
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 
 #include <cstdio>
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 namespace display {
 
@@ -248,8 +248,8 @@ void DrawUsageMini() {
 
   char sessionPctBuf[8];
   char weeklyPctBuf[8];
-  std::snprintf(sessionPctBuf, sizeof(sessionPctBuf), "%d%%", vibeblock::core::ClampPct(CurrentFrame().session));
-  std::snprintf(weeklyPctBuf, sizeof(weeklyPctBuf), "%d%%", vibeblock::core::ClampPct(CurrentFrame().weekly));
+  std::snprintf(sessionPctBuf, sizeof(sessionPctBuf), "%d%%", codexbar_display::core::ClampPct(CurrentFrame().session));
+  std::snprintf(weeklyPctBuf, sizeof(weeklyPctBuf), "%d%%", codexbar_display::core::ClampPct(CurrentFrame().weekly));
 
   tft.setTextFont(2);
   tft.setTextSize(kUsageMetaTextSize);
@@ -324,6 +324,6 @@ void DrawResetMini(int64_t remainSecs) {
 
 }  // namespace display
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display
 
 #endif

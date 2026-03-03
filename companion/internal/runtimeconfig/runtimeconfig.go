@@ -34,7 +34,7 @@ func ClearThemeValue(raw string) bool {
 }
 
 func ConfigPath(home string) string {
-	return filepath.Join(home, "Library", "Application Support", "vibeblock", configFileName)
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", configFileName)
 }
 
 func Load(home string) (Config, error) {

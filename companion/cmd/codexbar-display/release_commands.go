@@ -123,7 +123,7 @@ func runVersion(args []string) error {
 		return enc.Encode(payload)
 	}
 
-	fmt.Printf("vibeblock companion %s\n", version)
+	fmt.Printf("codexbar-display companion %s\n", version)
 	if strings.TrimSpace(buildinfo.Commit) != "" {
 		fmt.Printf("commit: %s\n", strings.TrimSpace(buildinfo.Commit))
 	}
@@ -325,7 +325,7 @@ func runUpgrade(args []string) error {
 						postHello.ProtocolVersion,
 						companionVersion,
 					),
-					Hint: "rollback with `vibeblock rollback` or flash a compatible firmware image",
+					Hint: "rollback with `codexbar-display rollback` or flash a compatible firmware image",
 				}
 			default:
 				fmt.Printf("post-upgrade version guard: ok (rule=%s)\n", rule)
@@ -353,7 +353,7 @@ func runUpgrade(args []string) error {
 	}
 
 	fmt.Println("upgrade complete")
-	fmt.Println("rollback path ready: `vibeblock rollback`")
+	fmt.Println("rollback path ready: `codexbar-display rollback`")
 	return nil
 }
 
@@ -410,7 +410,7 @@ func runRollback(args []string) error {
 		if err := os.MkdirAll(targetDir, 0o755); err != nil {
 			return &commandError{Op: "rollback-companion", Code: errcode.RollbackCompanionRestore, Err: err}
 		}
-		target := filepath.Join(targetDir, "vibeblock")
+		target := filepath.Join(targetDir, "codexbar-display")
 		if err := copyRegularFileAtomic(source, target, 0o755); err != nil {
 			return &commandError{Op: "rollback-companion", Code: errcode.RollbackCompanionRestore, Err: err}
 		}
@@ -490,12 +490,12 @@ func ensureSerialPortNotBusy(port string) error {
 }
 
 func stopLaunchAgentBestEffort() {
-	service := fmt.Sprintf("gui/%d/com.vibeblock.daemon", os.Getuid())
+	service := fmt.Sprintf("gui/%d/com.codexbar-display.daemon", os.Getuid())
 	_, _ = exec.Command("launchctl", "bootout", service).CombinedOutput()
 }
 
 func releaseStatePath(home string) string {
-	return filepath.Join(home, "Library", "Application Support", "vibeblock", releaseStateFileName)
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", releaseStateFileName)
 }
 
 func loadReleaseState(home string) (releaseState, error) {
@@ -551,8 +551,8 @@ func saveReleaseState(home string, state releaseState) error {
 }
 
 func snapshotInstalledCompanionBinary(home string) (string, string, error) {
-	supportDir := filepath.Join(home, "Library", "Application Support", "vibeblock")
-	installed := filepath.Join(supportDir, "bin", "vibeblock")
+	supportDir := filepath.Join(home, "Library", "Application Support", "codexbar-display")
+	installed := filepath.Join(supportDir, "bin", "codexbar-display")
 	if !fileExists(installed) {
 		return "", "", nil
 	}
@@ -564,7 +564,7 @@ func snapshotInstalledCompanionBinary(home string) (string, string, error) {
 		return "", "", err
 	}
 
-	snapshotPath := filepath.Join(snapshotDir, "vibeblock")
+	snapshotPath := filepath.Join(snapshotDir, "codexbar-display")
 	if err := copyRegularFileAtomic(installed, snapshotPath, 0o755); err != nil {
 		return "", "", err
 	}
@@ -651,13 +651,13 @@ func copyRegularFileAtomic(sourcePath, targetPath string, mode os.FileMode) erro
 }
 
 func restartLaunchAgent(home string) error {
-	plist := filepath.Join(home, "Library", "LaunchAgents", "com.vibeblock.daemon.plist")
+	plist := filepath.Join(home, "Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
 	if !fileExists(plist) {
 		return nil
 	}
 
 	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	service := domain + "/com.vibeblock.daemon"
+	service := domain + "/com.codexbar-display.daemon"
 	_, _ = exec.Command("launchctl", "bootout", service).CombinedOutput()
 
 	bootstrapOut, bootstrapErr := exec.Command("launchctl", "bootstrap", domain, plist).CombinedOutput()

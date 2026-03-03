@@ -18,17 +18,17 @@ var registry = []Definition{
 	{
 		ID:                  0,
 		ProtocolName:        Classic,
-		CompileDefaultMacro: "VIBEBLOCK_THEME_CLASSIC",
+		CompileDefaultMacro: "CODEXBAR_DISPLAY_THEME_CLASSIC",
 	},
 	{
 		ID:                  1,
 		ProtocolName:        CRT,
-		CompileDefaultMacro: "VIBEBLOCK_THEME_CRT",
+		CompileDefaultMacro: "CODEXBAR_DISPLAY_THEME_CRT",
 	},
 	{
 		ID:                  2,
 		ProtocolName:        Mini,
-		CompileDefaultMacro: "VIBEBLOCK_THEME_MINI",
+		CompileDefaultMacro: "CODEXBAR_DISPLAY_THEME_MINI",
 	},
 }
 

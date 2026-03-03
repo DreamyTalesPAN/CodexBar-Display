@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace theme {
 
 enum class ThemeId : uint8_t {
@@ -22,9 +22,9 @@ constexpr const char* kThemeNameCRT = "crt";
 constexpr const char* kThemeNameMini = "mini";
 
 constexpr ThemeDefinition kRegistry[] = {
-    {ThemeId::Classic, kThemeNameClassic, "VIBEBLOCK_THEME_CLASSIC"},
-    {ThemeId::CRT, kThemeNameCRT, "VIBEBLOCK_THEME_CRT"},
-    {ThemeId::Mini, kThemeNameMini, "VIBEBLOCK_THEME_MINI"},
+    {ThemeId::Classic, kThemeNameClassic, "CODEXBAR_DISPLAY_THEME_CLASSIC"},
+    {ThemeId::CRT, kThemeNameCRT, "CODEXBAR_DISPLAY_THEME_CRT"},
+    {ThemeId::Mini, kThemeNameMini, "CODEXBAR_DISPLAY_THEME_MINI"},
 };
 constexpr size_t kRegistryCount = sizeof(kRegistry) / sizeof(kRegistry[0]);
 
@@ -48,9 +48,9 @@ inline bool NormalizeThemeName(const String& raw, String& normalizedOut) {
 }
 
 inline const char* CompileDefaultThemeName() {
-#if defined(VIBEBLOCK_THEME_MINI)
+#if defined(CODEXBAR_DISPLAY_THEME_MINI)
   return kThemeNameMini;
-#elif defined(VIBEBLOCK_THEME_CRT)
+#elif defined(CODEXBAR_DISPLAY_THEME_CRT)
   return kThemeNameCRT;
 #else
   return kThemeNameClassic;
@@ -58,4 +58,4 @@ inline const char* CompileDefaultThemeName() {
 }
 
 }  // namespace theme
-}  // namespace vibeblock
+}  // namespace codexbar_display

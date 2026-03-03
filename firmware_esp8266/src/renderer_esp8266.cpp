@@ -1,17 +1,17 @@
 #include "renderer_esp8266.h"
 
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 #include "renderer_esp8266_display_state.h"
 #include "theme_defs.h"
 #else
 #include "renderer_esp8266_probe.h"
 #endif
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 
 void RendererESP8266::Setup(app::RuntimeContext& ctx) {
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
 
 #ifdef TFT_BL
@@ -27,7 +27,7 @@ void RendererESP8266::Setup(app::RuntimeContext& ctx) {
 }
 
 void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::SerialConsumeEvent& event) {
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
 
   Theme previousTheme = display::ActiveTheme();
@@ -60,7 +60,7 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
 }
 
 void RendererESP8266::DrawSplash(app::RuntimeContext& ctx) {
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
 
   switch (display::ActiveTheme()) {
@@ -83,7 +83,7 @@ void RendererESP8266::DrawSplash(app::RuntimeContext& ctx) {
 }
 
 void RendererESP8266::TickSplash(app::RuntimeContext& ctx) {
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
 
   switch (display::ActiveTheme()) {
@@ -104,7 +104,7 @@ void RendererESP8266::TickSplash(app::RuntimeContext& ctx) {
 }
 
 void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   display::TickMiniGif(false);
 #else
@@ -113,7 +113,7 @@ void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
 }
 
 void RendererESP8266::DrawError(app::RuntimeContext& ctx, const String& message) {
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   display::StopMiniGifPlayback();
 
@@ -136,7 +136,7 @@ void RendererESP8266::DrawError(app::RuntimeContext& ctx, const String& message)
 }
 
 void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
 
   switch (display::ActiveTheme()) {
@@ -159,7 +159,7 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
 }
 
 void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
 
   switch (display::ActiveTheme()) {
@@ -181,4 +181,4 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
 }
 
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display

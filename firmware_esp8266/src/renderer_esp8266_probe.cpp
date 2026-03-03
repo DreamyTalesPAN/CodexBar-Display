@@ -1,10 +1,10 @@
 #include "renderer_esp8266_probe.h"
 
-#ifdef VIBEBLOCK_PROBE_ONLY
+#ifdef CODEXBAR_DISPLAY_PROBE_ONLY
 
-#include "../../firmware_shared/vibeblock_core.h"
+#include "../../firmware_shared/codexbar_display_core.h"
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 namespace probe {
 
@@ -42,11 +42,11 @@ inline int64_t& lastRenderedSecs() {
 }
 
 int64_t currentRemainingSecs() {
-  return vibeblock::core::CurrentRemainingSecs(runtimeState(), millis());
+  return codexbar_display::core::CurrentRemainingSecs(runtimeState(), millis());
 }
 
 String formatDuration(int64_t secs) {
-  return vibeblock::core::FormatDuration(secs);
+  return codexbar_display::core::FormatDuration(secs);
 }
 
 void resetProbeState() {
@@ -140,6 +140,6 @@ void DrawReset(app::RuntimeContext& ctx) {
 
 }  // namespace probe
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display
 
 #endif

@@ -1,11 +1,11 @@
 #include "renderer_esp8266_display_state.h"
 
-#ifndef VIBEBLOCK_PROBE_ONLY
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 
 #include <cstdio>
 #include <cstring>
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace esp8266 {
 namespace display {
 
@@ -175,7 +175,7 @@ void DrawSplashCRT() {
   TFT_eSPI& tft = Tft();
 
   tft.fillScreen(kCrtBg);
-  drawCrtHeader("VIBEBLOCK", false);
+  drawCrtHeader("CODEXBAR", false);
 
   setCrtTextStyle(2);
   tft.setTextColor(kCrtDim, kCrtBg);
@@ -216,7 +216,7 @@ void DrawErrorCRT(const String& message) {
   TFT_eSPI& tft = Tft();
 
   tft.fillScreen(kCrtBg);
-  drawCrtHeader("VIBEBLOCK", false);
+  drawCrtHeader("CODEXBAR", false);
 
   setCrtTextStyle(2);
   tft.setTextColor(kCrtDim, kCrtBg);
@@ -244,8 +244,8 @@ void DrawUsageCRT() {
   TFT_eSPI& tft = Tft();
 
   const int64_t remain = CurrentRemainingSecs();
-  const int session = vibeblock::core::ClampPct(CurrentFrame().session);
-  const int weekly = vibeblock::core::ClampPct(CurrentFrame().weekly);
+  const int session = codexbar_display::core::ClampPct(CurrentFrame().session);
+  const int weekly = codexbar_display::core::ClampPct(CurrentFrame().weekly);
   const int innerBarWidth = kCrtBodyW - 2;
   const int innerBarHeight = kCrtBarH - 2;
 
@@ -294,6 +294,6 @@ void DrawResetCRT(int64_t remainSecs) {
 
 }  // namespace display
 }  // namespace esp8266
-}  // namespace vibeblock
+}  // namespace codexbar_display
 
 #endif

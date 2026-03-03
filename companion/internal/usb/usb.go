@@ -610,7 +610,7 @@ func parseDeviceHelloLine(line string) (protocol.DeviceHello, bool) {
 
 func parseLegacyReadyLine(line string) (protocol.DeviceHello, bool) {
 	switch strings.TrimSpace(line) {
-	case "vibeblock_ready_display", "vibeblock_ready_probe", "vibeblock_ready":
+	case "codexbar_display_ready_display", "codexbar_display_ready_probe", "codexbar_display_ready":
 		return protocol.DeviceHello{
 			Kind: "hello",
 		}, true

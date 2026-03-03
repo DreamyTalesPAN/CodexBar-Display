@@ -2,9 +2,9 @@
 
 #include <Arduino.h>
 
-#include "vibeblock_core.h"
+#include "codexbar_display_core.h"
 
-namespace vibeblock {
+namespace codexbar_display {
 namespace app {
 
 struct RuntimeContext {
@@ -36,5 +36,5 @@ inline String FormatDuration(int64_t secs) {
 }
 
 }  // namespace app
-}  // namespace vibeblock
+}  // namespace codexbar_display
 

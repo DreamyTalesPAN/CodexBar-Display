@@ -4,7 +4,7 @@ import "testing"
 
 func TestParsePinnedPortFromLaunchAgentPlist(t *testing.T) {
 	t.Run("unpinned", func(t *testing.T) {
-		plist := `<plist><dict><key>ProgramArguments</key><array><string>vibeblock</string></array></dict></plist>`
+		plist := `<plist><dict><key>ProgramArguments</key><array><string>codexbar-display</string></array></dict></plist>`
 		if got := parsePinnedPortFromLaunchAgentPlist(plist); got != "" {
 			t.Fatalf("expected no pinned port, got %q", got)
 		}

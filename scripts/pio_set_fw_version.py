@@ -12,7 +12,7 @@ def normalize_version(raw):
 
 
 version = normalize_version(
-    os.getenv("VIBEBLOCK_FW_VERSION", env.GetProjectOption("custom_fw_version", "1.0.0"))
+    os.getenv("CODEXBAR_DISPLAY_FW_VERSION", env.GetProjectOption("custom_fw_version", "1.0.0"))
 )
-env.Append(CPPDEFINES=[("VIBEBLOCK_FW_VERSION", '\\"{}\\"'.format(version))])
-print("[vibeblock] firmware semver {}".format(version))
+env.Append(CPPDEFINES=[("CODEXBAR_DISPLAY_FW_VERSION", '\\"{}\\"'.format(version))])
+print("[codexbar-display] firmware semver {}".format(version))

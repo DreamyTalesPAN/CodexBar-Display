@@ -8,7 +8,7 @@ import (
 
 func TestParseLaunchctlStatus(t *testing.T) {
 	output := `
-com.vibeblock.daemon = {
+com.codexbar-display.daemon = {
 	state = running
 	pid = 12345
 }`

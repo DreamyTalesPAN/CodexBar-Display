@@ -3,13 +3,13 @@
 <plist version="1.0">
   <dict>
     <key>Label</key>
-    <string>com.vibeblock.daemon</string>
+    <string>com.codexbar-display.daemon</string>
 
     <key>ProgramArguments</key>
     <array>
       <string>/bin/zsh</string>
       <string>-lc</string>
-      <string>$HOME/Library/Application\ Support/vibeblock/bin/vibeblock daemon --interval 60s</string>
+      <string>$HOME/Library/Application\ Support/codexbar-display/bin/codexbar-display daemon --interval 60s</string>
     </array>
 
     <key>EnvironmentVariables</key>
@@ -25,9 +25,9 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/tmp/vibeblock-daemon.out.log</string>
+    <string>/tmp/codexbar-display-daemon.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/tmp/vibeblock-daemon.err.log</string>
+    <string>/tmp/codexbar-display-daemon.err.log</string>
   </dict>
 </plist>

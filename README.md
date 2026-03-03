@@ -1,9 +1,8 @@
-# vibeblock
+# codexbar-display
 
-vibeblock is a physical CodexBar status display.
+`codexbar-display` is the open-source companion + firmware stack for a physical CodexBar status display.
 
-The companion reads `codexbar usage --json` and sends newline-delimited JSON frames over USB serial to the firmware.
-For the Codex provider, companion prioritizes `--provider codex --source cli` over web-derived values.
+Repository, firmware track, CLI, and release artifacts are all named `codexbar-display`.
 
 ## v0 Status
 - Pre-release.
@@ -15,26 +14,31 @@ For the Codex provider, companion prioritizes `--provider codex --source cli` ov
 ```bash
 cd companion
 
+# Optional: build branded local binary for demos
+go build -o ../codexbar-display ./cmd/codexbar-display
+
 # Full setup (flash + install + launch agent)
-go run ./cmd/vibeblock setup --yes
+../codexbar-display setup --yes
 
 # Health snapshot
-go run ./cmd/vibeblock health
+../codexbar-display health
 ```
+
+If you skip the local binary step, you can still run the same commands via `go run ./cmd/codexbar-display ...`.
 
 ## Common Commands
 ```bash
 cd companion
 
 # One-shot runtime test
-go run ./cmd/vibeblock daemon --once --port /dev/cu.usbserial-10 --theme mini
+../codexbar-display daemon --once --port /dev/cu.usbserial-10 --theme mini
 
 # Persist runtime theme
-go run ./cmd/vibeblock setup --yes --skip-flash --theme mini
+../codexbar-display setup --yes --skip-flash --theme mini
 
 # Upgrade / rollback
-go run ./cmd/vibeblock upgrade --firmware-env esp8266_smalltv_st7789
-go run ./cmd/vibeblock rollback --port /dev/cu.usbserial-10
+../codexbar-display upgrade --firmware-env esp8266_smalltv_st7789
+../codexbar-display rollback --port /dev/cu.usbserial-10
 ```
 
 ## Firmware Environments
@@ -46,7 +50,7 @@ Experimental fallback (non-blocking):
 
 Release go/no-go for MVP is gated only by `esp8266_smalltv_st7789`.
 
-Theme selection is runtime-driven (`classic|crt|mini`) via `--theme` or `VIBEBLOCK_THEME`.
+Theme selection is runtime-driven (`classic|crt|mini`) via `--theme` or `CODEXBAR_DISPLAY_THEME`.
 Protocol contract (v0 target): companion applies `theme` when capability handshake confirms support.
 If device hello is temporarily unavailable on the MVP device path, companion falls back to optimistic theme send.
 
@@ -58,9 +62,9 @@ The GIF core is request-based so additional theme/event scenarios can be added w
 Missing or invalid GIF assets automatically fall back to non-GIF UI and enter per-asset retry backoff.
 
 ## Theme Precedence
-1. `vibeblock daemon --theme <classic|crt|mini>`
-2. `VIBEBLOCK_THEME`
-3. `~/Library/Application Support/vibeblock/config.json`
+1. `codexbar-display daemon --theme <classic|crt|mini>`
+2. `CODEXBAR_DISPLAY_THEME`
+3. `~/Library/Application Support/codexbar-display/config.json`
 4. Firmware compile default
 
 ## Mini Theme Preview (No Flash)
@@ -99,3 +103,6 @@ pio run -e lilygo_t_display_s3
 - Hardware contract: `docs/hardware-contract.md`
 - Open roadmap: `TODO.md`
 - Protocol: `protocol/PROTOCOL.md`
+
+## License
+Released under the MIT License. See `LICENSE`.

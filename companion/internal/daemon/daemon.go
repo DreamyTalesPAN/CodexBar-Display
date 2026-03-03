@@ -30,8 +30,8 @@ const (
 	startupFastPollWindow   = 2 * time.Minute
 	startupFastPollInterval = 30 * time.Second
 	lastGoodPersistInterval = 1 * time.Minute
-	themeEnvVar             = "VIBEBLOCK_THEME"
-	coldStartTimeoutEnvVar  = "VIBEBLOCK_CODEXBAR_COLDSTART_TIMEOUT_SECS"
+	themeEnvVar             = "CODEXBAR_DISPLAY_THEME"
+	coldStartTimeoutEnvVar  = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
 )
 
 var errMarshalFrameTooLarge = errors.New("frame exceeds max bytes")
@@ -626,7 +626,7 @@ func lastGoodSnapshotPath() string {
 	if err != nil || strings.TrimSpace(home) == "" {
 		return ""
 	}
-	return filepath.Join(home, "Library", "Application Support", "vibeblock", "last-good-frame.json")
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "last-good-frame.json")
 }
 
 func asRuntimeError(err error) *RuntimeError {
@@ -716,7 +716,7 @@ func isLastGoodFreshAt(lastGoodAt time.Time, now time.Time, maxAge time.Duration
 func lastGoodMaxAge() time.Duration {
 	// If CodexBar requests fail for a short period, keep rendering the most recent good frame.
 	d := 10 * time.Minute
-	raw := os.Getenv("VIBEBLOCK_LAST_GOOD_MAX_AGE")
+	raw := os.Getenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE")
 	if raw == "" {
 		return d
 	}

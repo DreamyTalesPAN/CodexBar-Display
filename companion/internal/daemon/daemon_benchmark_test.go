@@ -57,5 +57,5 @@ func prepareFastTestEnvForBench(tb testing.TB) {
 	tb.Helper()
 	tmpHome := tb.TempDir()
 	tb.Setenv("HOME", tmpHome)
-	tb.Setenv("VIBEBLOCK_CHROMIUM_COOKIE_DB_PATHS", tmpHome+"/missing-cookies.db")
+	tb.Setenv("CODEXBAR_DISPLAY_CHROMIUM_COOKIE_DB_PATHS", tmpHome+"/missing-cookies.db")
 }

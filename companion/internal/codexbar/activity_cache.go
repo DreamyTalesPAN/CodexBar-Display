@@ -17,7 +17,7 @@ type localActivityCache struct {
 var providerActivityCache localActivityCache
 
 func activityCacheTTL() time.Duration {
-	return parsePositiveDurationEnv("VIBEBLOCK_ACTIVITY_CACHE_TTL", defaultActivityCacheTTL)
+	return parsePositiveDurationEnv("CODEXBAR_DISPLAY_ACTIVITY_CACHE_TTL", defaultActivityCacheTTL)
 }
 
 func copyProviderSignals(in map[string]providerActivitySignal) map[string]providerActivitySignal {

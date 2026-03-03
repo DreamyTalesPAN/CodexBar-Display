@@ -65,15 +65,15 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("vibeblock commands:")
-	fmt.Println("  vibeblock daemon [--port /dev/cu.usbserial-10] [--interval 60s] [--once] [--theme classic|crt|mini]")
-	fmt.Println("  vibeblock doctor")
-	fmt.Println("  vibeblock health")
-	fmt.Println("  vibeblock version [--short] [--json]")
-	fmt.Println("  vibeblock upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--skip-version-guard]")
-	fmt.Println("  vibeblock rollback [--port /dev/cu.usbserial-10] [--skip-companion] [--skip-firmware] [--image path/to/backup.bin] [--manifest path/to/backup.manifest] [--backup-dir <dir>] [--script-path <path>] [--skip-verify]")
-	fmt.Println("  vibeblock restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
-	fmt.Println("  vibeblock setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
+	fmt.Println("codexbar-display commands:")
+	fmt.Println("  codexbar-display daemon [--port /dev/cu.usbserial-10] [--interval 60s] [--once] [--theme classic|crt|mini]")
+	fmt.Println("  codexbar-display doctor")
+	fmt.Println("  codexbar-display health")
+	fmt.Println("  codexbar-display version [--short] [--json]")
+	fmt.Println("  codexbar-display upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--skip-version-guard]")
+	fmt.Println("  codexbar-display rollback [--port /dev/cu.usbserial-10] [--skip-companion] [--skip-firmware] [--image path/to/backup.bin] [--manifest path/to/backup.manifest] [--backup-dir <dir>] [--script-path <path>] [--skip-verify]")
+	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
+	fmt.Println("  codexbar-display setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
 func runDaemon(args []string) error {
@@ -416,7 +416,7 @@ func resolveRestoreScriptPath(requested string) (string, error) {
 		}
 	}
 
-	return "", errors.New("restore script not found; run `vibeblock setup` first or pass --script-path /path/to/esp8266-restore.sh")
+	return "", errors.New("restore script not found; run `codexbar-display setup` first or pass --script-path /path/to/esp8266-restore.sh")
 }
 
 func resolveBackupSearchDirs(extraDirs []string) ([]string, error) {
@@ -509,7 +509,7 @@ func runtimeSupportDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, "Library", "Application Support", "vibeblock"), nil
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display"), nil
 }
 
 func resolvePathFromCwd(path string) (string, error) {
@@ -578,7 +578,7 @@ func doctorPinnedLaunchAgentPort() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	plistPath := filepath.Join(home, "Library", "LaunchAgents", "com.vibeblock.daemon.plist")
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
 	data, err := os.ReadFile(plistPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

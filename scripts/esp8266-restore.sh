@@ -6,7 +6,7 @@ IMAGE="${2:-}"
 BAUD="${BAUD:-460800}"
 MANIFEST="${MANIFEST:-${IMAGE}.manifest}"
 SKIP_VERIFY="${SKIP_VERIFY:-0}"
-LOG_FILE="/tmp/vibeblock-esptool.log"
+LOG_FILE="/tmp/codexbar-display-esptool.log"
 
 if [[ -z "$IMAGE" ]]; then
   echo "usage: $0 <port> <backup.bin>" >&2
