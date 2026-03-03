@@ -258,6 +258,35 @@ func FetchFirstFrame(ctx context.Context) (protocol.Frame, error) {
 	return selected.Frame, nil
 }
 
+// FetchProvider returns usage for a single provider using provider-scoped CodexBar calls.
+// It is optimized for low-latency polling loops and honors the parent context deadline.
+func FetchProvider(ctx context.Context, provider string) (ParsedFrame, error) {
+	key := strings.TrimSpace(strings.ToLower(provider))
+	if key == "" {
+		return ParsedFrame{}, wrapFetchError(FetchErrorParse, errors.New("provider key is empty"))
+	}
+
+	bin, err := FindBinary()
+	if err != nil {
+		return ParsedFrame{}, wrapFetchError(FetchErrorBinary, err)
+	}
+
+	timeout := commandTimeout()
+	if key == "codex" {
+		if codexCLI, ok := fetchCodexCLIProvider(ctx, cliFallbackTimeout(timeout), bin); ok {
+			codexCLI.Frame = codexCLI.Frame.Normalize()
+			return codexCLI, nil
+		}
+	}
+
+	parsed, err := fetchProviderScopedUsageDetailed(ctx, providerScopedFallbackTimeout(timeout), bin, key, providerScopedWebTimeoutSeconds(), "")
+	if err != nil {
+		return ParsedFrame{}, err
+	}
+	parsed.Frame = parsed.Frame.Normalize()
+	return parsed, nil
+}
+
 func CommandTimeout() time.Duration {
 	return commandTimeout()
 }
@@ -753,6 +782,13 @@ func NewProviderSelectorWithConfig(reader providerActivityReader, conflictWindow
 		activityReader: reader,
 		conflictWindow: conflictWindow,
 	}
+}
+
+func (s *ProviderSelector) SetCurrentProvider(provider string) {
+	if s == nil {
+		return
+	}
+	s.currentKey = strings.TrimSpace(strings.ToLower(provider))
 }
 
 func (s *ProviderSelector) Select(all []ParsedFrame) (ParsedFrame, bool) {
@@ -1574,26 +1610,51 @@ func fetchFirstProviderScopedFallback(ctx context.Context, timeout time.Duration
 }
 
 func fetchProviderScopedUsage(ctx context.Context, timeout time.Duration, bin string, provider string) (ParsedFrame, bool) {
-	args := []string{"usage", "--json", "--provider", provider, "--web-timeout", "8"}
-	raw, cmdErr := runUsageCommandFn(ctx, timeout, bin, args...)
+	parsed, err := fetchProviderScopedUsageDetailed(ctx, timeout, bin, provider, 8, "")
+	return parsed, err == nil
+}
 
+func fetchProviderScopedUsageDetailed(ctx context.Context, timeout time.Duration, bin string, provider string, webTimeoutSeconds int, source string) (ParsedFrame, error) {
+	key := strings.TrimSpace(strings.ToLower(provider))
+	if key == "" {
+		return ParsedFrame{}, wrapFetchError(FetchErrorParse, errors.New("provider key is empty"))
+	}
+
+	args := []string{"usage", "--json", "--provider", key}
+	source = strings.TrimSpace(strings.ToLower(source))
+	if source != "" {
+		args = append(args, "--source", source)
+	}
+	if webTimeoutSeconds <= 0 {
+		webTimeoutSeconds = 8
+	}
+	args = append(args, "--web-timeout", strconv.Itoa(webTimeoutSeconds))
+
+	raw, cmdErr := runUsageCommandFn(ctx, timeout, bin, args...)
 	parsed, parseErr := parseAllProviders(raw)
 	if parseErr != nil || len(parsed) == 0 {
-		return ParsedFrame{}, false
+		if cmdErr != nil && len(bytes.TrimSpace(raw)) == 0 {
+			return ParsedFrame{}, wrapFetchError(FetchErrorCommand, fmt.Errorf("run codexbar usage --provider %s: %w", key, cmdErr))
+		}
+		if parseErr != nil {
+			return ParsedFrame{}, wrapFetchError(classifyParseError(parseErr), parseErr)
+		}
+		return ParsedFrame{}, wrapFetchError(FetchErrorNoProviders, ErrNoProviders)
 	}
 
 	// Keep parsed payload when command exits non-zero but still emitted JSON.
 	if cmdErr != nil && len(bytes.TrimSpace(raw)) == 0 {
-		return ParsedFrame{}, false
+		return ParsedFrame{}, wrapFetchError(FetchErrorCommand, fmt.Errorf("run codexbar usage --provider %s: %w", key, cmdErr))
 	}
 
-	key := strings.TrimSpace(strings.ToLower(provider))
 	for _, candidate := range parsed {
 		if providerKey(candidate) == key {
-			return candidate, true
+			candidate.Frame = candidate.Frame.Normalize()
+			return candidate, nil
 		}
 	}
-	return parsed[0], true
+	parsed[0].Frame = parsed[0].Frame.Normalize()
+	return parsed[0], nil
 }
 
 func fallbackContext(parent context.Context) context.Context {
@@ -1638,6 +1699,30 @@ func providerScopedFallbackTimeout(primaryTimeout time.Duration) time.Duration {
 		return maxTimeout
 	}
 	return timeout
+}
+
+func providerScopedWebTimeoutSeconds() int {
+	const (
+		def = 3
+		min = 2
+		max = 8
+	)
+
+	raw := strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_PROVIDER_WEB_TIMEOUT_SECS"))
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	if n < min {
+		return min
+	}
+	if n > max {
+		return max
+	}
+	return n
 }
 
 func needsCodexCLIPriority(all []ParsedFrame) bool {

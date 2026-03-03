@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
@@ -32,6 +34,11 @@ const (
 	lastGoodPersistInterval = 1 * time.Minute
 	themeEnvVar             = "CODEXBAR_DISPLAY_THEME"
 	coldStartTimeoutEnvVar  = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
+	collectorIntervalEnvVar = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
+	collectorTimeoutEnvVar  = "CODEXBAR_DISPLAY_PROVIDER_TIMEOUT_SECS"
+	collectorParallelEnvVar = "CODEXBAR_DISPLAY_PROVIDER_MAX_PARALLEL"
+	collectorOrderEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
+	providerMaxAgeEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
 )
 
 var errMarshalFrameTooLarge = errors.New("frame exceeds max bytes")
@@ -97,6 +104,7 @@ type runtimeDeps struct {
 	resolvePort       func(string) (string, error)
 	deviceCaps        func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders    func(context.Context) ([]codexbar.ParsedFrame, error)
+	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
 	usageBarsShowUsed func() bool
 	sendLine          func(string, []byte) error
 	newSelector       func() *codexbar.ProviderSelector
@@ -118,6 +126,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
+	}
+	if d.fetchProvider == nil {
+		d.fetchProvider = codexbar.FetchProvider
 	}
 	if d.usageBarsShowUsed == nil {
 		d.usageBarsShowUsed = func() bool { return true }
@@ -152,15 +163,279 @@ type runtimeState struct {
 	cliTheme          string
 }
 
+type cycleResult struct {
+	frame           protocol.Frame
+	selectionReason string
+	selectionDetail string
+	failureKind     runtimeErrorKind
+	failureOp       string
+	failureErr      error
+	usedLastGood    bool
+	errorSource     string
+}
+
 type persistedLastGood struct {
 	SavedAt time.Time      `json:"savedAt"`
 	Frame   protocol.Frame `json:"frame"`
+}
+
+type providerSnapshot struct {
+	Provider  string         `json:"provider"`
+	Frame     protocol.Frame `json:"frame"`
+	Source    string         `json:"source,omitempty"`
+	Collected time.Time      `json:"collectedAt"`
+}
+
+type persistedProviderSnapshots struct {
+	SavedAt   time.Time          `json:"savedAt"`
+	Providers []providerSnapshot `json:"providers"`
 }
 
 type retryBackoff struct {
 	base    time.Duration
 	max     time.Duration
 	current time.Duration
+}
+
+type providerCollector struct {
+	now             func() time.Time
+	logf            func(string, ...any)
+	fetchProvider   func(context.Context, string) (codexbar.ParsedFrame, error)
+	order           []string
+	interval        time.Duration
+	timeout         time.Duration
+	maxParallel     int
+	snapshotMaxAge  time.Duration
+	persistInterval time.Duration
+
+	mu               sync.RWMutex
+	providers        map[string]providerSnapshot
+	lastPersistedRaw string
+	lastPersistedAt  time.Time
+}
+
+func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
+	nowFn := deps.now
+	if nowFn == nil {
+		nowFn = wallClockNow
+	}
+	logFn := deps.logf
+	if logFn == nil {
+		logFn = defaultRuntimeLogf
+	}
+
+	collector := &providerCollector{
+		now:             nowFn,
+		logf:            logFn,
+		fetchProvider:   deps.fetchProvider,
+		order:           collectorProviderOrder(),
+		interval:        collectorInterval(opts.Interval),
+		timeout:         collectorProviderTimeout(),
+		maxParallel:     collectorMaxParallel(),
+		snapshotMaxAge:  providerSnapshotMaxAge(),
+		persistInterval: 1 * time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+
+	if loaded, savedAt, ok := loadPersistedProviderSnapshotsAnyAge(); ok {
+		collector.providers = loaded
+		collector.lastPersistedAt = savedAt
+		if raw := encodeProviderSnapshotsForCompare(loaded); raw != "" {
+			collector.lastPersistedRaw = raw
+		}
+	}
+	return collector
+}
+
+func (c *providerCollector) start(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	go c.run(ctx)
+}
+
+func (c *providerCollector) run(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	c.collectOnce(ctx)
+
+	ticker := time.NewTicker(c.interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.collectOnce(ctx)
+		}
+	}
+}
+
+func (c *providerCollector) collectOnce(parent context.Context) {
+	if c == nil || c.fetchProvider == nil {
+		return
+	}
+
+	now := c.now()
+	type collectResult struct {
+		key   string
+		frame codexbar.ParsedFrame
+		err   error
+	}
+
+	results := make(chan collectResult, len(c.order))
+	semaphore := make(chan struct{}, c.maxParallel)
+	var wg sync.WaitGroup
+
+	for _, provider := range c.order {
+		key := normalizeProviderKey(provider)
+		if key == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(providerKey string) {
+			defer wg.Done()
+			select {
+			case semaphore <- struct{}{}:
+			case <-parent.Done():
+				return
+			}
+			defer func() { <-semaphore }()
+
+			ctx, cancel := context.WithTimeout(parent, c.timeout)
+			defer cancel()
+
+			parsed, err := c.fetchProvider(ctx, providerKey)
+			results <- collectResult{key: providerKey, frame: parsed, err: err}
+		}(key)
+	}
+
+	wg.Wait()
+	close(results)
+
+	updated := false
+	successes := 0
+
+	c.mu.Lock()
+	for result := range results {
+		if result.err != nil {
+			c.logf("collector provider=%s err=%v\n", result.key, result.err)
+			continue
+		}
+		frame := result.frame.Frame.Normalize()
+		if strings.TrimSpace(frame.Error) != "" {
+			continue
+		}
+
+		key := normalizeProviderKey(result.key)
+		if parsedKey := normalizeProviderKey(result.frame.Provider); parsedKey != "" {
+			key = parsedKey
+		}
+		if key == "" {
+			continue
+		}
+
+		frame.Provider = key
+		snapshot := providerSnapshot{
+			Provider:  key,
+			Frame:     frame,
+			Source:    strings.TrimSpace(result.frame.Source),
+			Collected: now.UTC(),
+		}
+		c.providers[key] = snapshot
+		successes++
+		updated = true
+	}
+	c.mu.Unlock()
+
+	if updated {
+		c.persistIfNeeded(now)
+	}
+	c.logf("collector complete providers=%d succeeded=%d timeout=%s parallel=%d\n", len(c.order), successes, c.timeout, c.maxParallel)
+}
+
+func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame {
+	if c == nil {
+		return nil
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if len(c.providers) == 0 {
+		return nil
+	}
+
+	var frames []codexbar.ParsedFrame
+	for _, key := range c.orderedKeysLocked() {
+		snapshot, ok := c.providers[key]
+		if !ok {
+			continue
+		}
+		if !snapshot.Collected.IsZero() && !isLastGoodFreshAt(snapshot.Collected, now, c.snapshotMaxAge) {
+			continue
+		}
+
+		frame := snapshot.Frame.Normalize()
+		frame.Provider = normalizeProviderKey(frame.Provider)
+		if frame.Provider == "" {
+			frame.Provider = key
+		}
+		frames = append(frames, codexbar.ParsedFrame{
+			Frame:    frame,
+			Provider: key,
+			Source:   snapshot.Source,
+		})
+	}
+	return frames
+}
+
+func (c *providerCollector) orderedKeysLocked() []string {
+	keys := make([]string, 0, len(c.providers))
+	seen := make(map[string]struct{}, len(c.providers))
+	for _, key := range c.order {
+		key = normalizeProviderKey(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := c.providers[key]; !ok {
+			continue
+		}
+		keys = append(keys, key)
+		seen[key] = struct{}{}
+	}
+	for key := range c.providers {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func (c *providerCollector) persistIfNeeded(now time.Time) {
+	if c == nil {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	encoded := encodeProviderSnapshotsForCompare(c.providers)
+	if encoded == "" {
+		return
+	}
+	if c.lastPersistedRaw == encoded && !c.lastPersistedAt.IsZero() && now.Sub(c.lastPersistedAt) < c.persistInterval {
+		return
+	}
+
+	if err := persistProviderSnapshots(c.providers, now); err != nil {
+		c.logf("runtime event=provider-snapshot-persist-failed err=%v\n", err)
+		return
+	}
+	c.lastPersistedRaw = encoded
+	c.lastPersistedAt = now
 }
 
 func newRetryBackoff(interval time.Duration) *retryBackoff {
@@ -219,13 +494,39 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
 		opts.Interval = defaultInterval
 	}
+	legacySyncFetch := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
-	now := deps.now()
 
+	state := initializeRuntimeState(deps.now(), opts, deps)
+	collector, collectorCancel := startProviderCollector(ctx, opts, deps, legacySyncFetch)
+	if collectorCancel != nil {
+		defer collectorCancel()
+	}
+
+	runCycle := func(cycleCtx context.Context) error {
+		if collector != nil {
+			return runCycleFromCollector(cycleCtx, opts.Port, state, collector, deps)
+		}
+		return runCycleWithDeps(cycleCtx, opts.Port, state, deps)
+	}
+
+	return runDaemonLoop(ctx, opts, deps, runCycle)
+}
+
+func initializeRuntimeState(now time.Time, opts Options, deps runtimeDeps) *runtimeState {
 	state := &runtimeState{
 		selector: deps.newSelector(),
 		cliTheme: opts.Theme,
 	}
+	bootstrapStateFromPersistedLastGood(state, now, deps)
+	return state
+}
+
+func bootstrapStateFromPersistedLastGood(state *runtimeState, now time.Time, deps runtimeDeps) {
+	if state == nil {
+		return
+	}
+
 	if frame, savedAt, ok := loadPersistedLastGood(now); ok {
 		state.lastGood = frame
 		state.lastGoodAt = savedAt
@@ -250,6 +551,30 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 			age.Round(time.Second),
 		)
 	}
+
+	if state.hasLastGood && state.selector != nil {
+		state.selector.SetCurrentProvider(state.lastGood.Provider)
+	}
+}
+
+func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps, legacySyncFetch bool) (*providerCollector, context.CancelFunc) {
+	if legacySyncFetch {
+		return nil, nil
+	}
+
+	collector := newProviderCollector(deps, opts)
+	collectorCtx, cancel := context.WithCancel(ctx)
+	collector.start(collectorCtx)
+	deps.logf("collector started interval=%s timeout=%s max_parallel=%d providers=%s\n",
+		collector.interval,
+		collector.timeout,
+		collector.maxParallel,
+		strings.Join(collector.order, ","),
+	)
+	return collector, cancel
+}
+
+func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle func(context.Context) error) error {
 	backoff := newRetryBackoff(opts.Interval)
 	var lastCycleStart time.Time
 	var startedAt time.Time
@@ -268,7 +593,7 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 		}
 		lastCycleStart = cycleStart
 
-		err := runCycleWithDeps(ctx, opts.Port, state, deps)
+		err := runCycle(ctx)
 		if opts.Once {
 			return err
 		}
@@ -330,18 +655,20 @@ func configuredTheme(cliTheme string) string {
 	return runtimeconfig.NormalizeTheme(cfg.Theme)
 }
 
-func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
-	deps = deps.withDefaults()
+func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
 	if state == nil {
 		state = &runtimeState{}
 	}
 	if state.selector == nil {
 		state.selector = deps.newSelector()
 	}
+	return state
+}
 
+func resolveCycleDevice(requestedPort string, deps runtimeDeps) (string, protocol.DeviceCapabilities, int, error) {
 	port, err := resolvePortWithFallback(requestedPort, deps)
 	if err != nil {
-		return &RuntimeError{
+		return "", protocol.DeviceCapabilities{}, 0, &RuntimeError{
 			Kind: runtimeErrorSerialResolve,
 			Op:   "resolve-port",
 			Err:  fmt.Errorf("detect serial device: %w", err),
@@ -359,80 +686,66 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 		maxFrameBytes = caps.MaxFrameBytes
 	}
 
-	fetchCtx := ctx
-	if !state.hasLastGood {
-		timeout := coldStartFetchTimeout()
-		if timeout > 0 {
-			var cancel context.CancelFunc
-			fetchCtx, cancel = context.WithTimeout(ctx, timeout)
-			defer cancel()
-		}
+	return port, caps, maxFrameBytes, nil
+}
+
+func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
+	result := cycleResult{
+		selectionReason: emptyReason,
+		selectionDetail: emptyDetail,
+		errorSource:     errorSource,
 	}
 
-	allProviders, fetchErr := deps.fetchProviders(fetchCtx)
-	fetchKind := runtimeErrorKindFromFetchErr(fetchErr)
-
-	var frame protocol.Frame
-	usedLastGood := false
-	failureKind := runtimeErrorKind("")
-	failureOp := ""
-	var failureErr error
-	selectionReason := "fetch-error"
-	selectionDetail := ""
-
-	if fetchErr != nil {
-		failureKind = fetchKind
-		failureOp = "fetch-usage"
-		failureErr = fetchErr
-	} else {
-		decision, ok := state.selector.SelectWithDecision(allProviders)
-		if !ok {
-			failureKind = runtimeErrorNoProviders
-			failureOp = "select-provider"
-			failureErr = codexbar.ErrNoProviders
-		} else {
-			frame = decision.Selected.Frame
-			selectionReason = string(decision.Reason)
-			selectionDetail = decision.Detail
-		}
-		if failureErr == nil {
-			now := deps.now()
-			normalized := frame.Normalize()
-
-			state.lastGood = normalized
-			state.lastGoodAt = now
-			state.hasLastGood = true
-
-			shouldPersist := !state.hasPersistedGood ||
-				state.lastPersistedGood != normalized ||
-				state.lastPersistedAt.IsZero() ||
-				now.Sub(state.lastPersistedAt) >= lastGoodPersistInterval
-			if shouldPersist {
-				if err := persistLastGood(normalized, now); err != nil {
-					deps.logf("runtime event=last-good-persist-failed err=%v\n", err)
-				} else {
-					state.lastPersistedGood = normalized
-					state.lastPersistedAt = now
-					state.hasPersistedGood = true
-				}
-			}
-		}
+	if len(allProviders) == 0 {
+		result.failureKind = runtimeErrorNoProviders
+		result.failureOp = emptyProvidersOp
+		result.failureErr = codexbar.ErrNoProviders
+		return finalizeCycleResult(state, result)
 	}
 
-	if failureErr != nil {
-		if state.hasLastGood {
-			frame = state.lastGood
-			usedLastGood = true
-			selectionReason = "stale-last-good"
-			selectionDetail = fmt.Sprintf("kind=%s", failureKind)
-		} else {
-			frame = protocol.ErrorFrame(runtimeErrorFrameCode(failureKind))
-			selectionReason = "error-frame"
-			selectionDetail = fmt.Sprintf("kind=%s source=codexbar", failureKind)
-		}
+	decision, ok := state.selector.SelectWithDecision(allProviders)
+	if !ok {
+		result.failureKind = runtimeErrorNoProviders
+		result.failureOp = "select-provider"
+		result.failureErr = codexbar.ErrNoProviders
+		return finalizeCycleResult(state, result)
 	}
 
-	frame = applyUsageBarsPreference(frame, deps.usageBarsShowUsed())
+	result.frame = decision.Selected.Frame
+	result.selectionReason = string(decision.Reason)
+	result.selectionDetail = decision.Detail
+	updateLastGoodState(state, result.frame, now, deps)
+	return result
+}
+
+func finalizeCycleResult(state *runtimeState, result cycleResult) cycleResult {
+	if result.failureErr == nil {
+		return result
+	}
+
+	if state != nil && state.hasLastGood {
+		result.frame = state.lastGood
+		result.usedLastGood = true
+		result.selectionReason = "stale-last-good"
+		result.selectionDetail = fmt.Sprintf("kind=%s", result.failureKind)
+		return result
+	}
+
+	if result.failureKind == "" {
+		result.failureKind = runtimeErrorUnknown
+	}
+	source := strings.TrimSpace(result.errorSource)
+	if source == "" {
+		source = "codexbar"
+	}
+	result.frame = protocol.ErrorFrame(runtimeErrorFrameCode(result.failureKind))
+	result.selectionReason = "error-frame"
+	result.selectionDetail = fmt.Sprintf("kind=%s source=%s", result.failureKind, source)
+	return result
+}
+
+func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
+	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
 		var applied bool
@@ -466,21 +779,118 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 	}
 
 	deps.logf("sent frame -> %s provider=%s label=%s session=%d weekly=%d reset=%ds error=%q reason=%s detail=%q\n",
-		port, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Error, selectionReason, selectionDetail)
+		port, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Error, result.selectionReason, result.selectionDetail)
 
-	if failureErr != nil {
-		if usedLastGood {
+	if result.failureErr != nil {
+		if result.usedLastGood {
 			deps.logf("warning: usage data unavailable kind=%s op=%s, sent stale frame: %v\n",
-				failureKind,
-				failureOp,
-				failureErr,
+				result.failureKind,
+				result.failureOp,
+				result.failureErr,
 			)
 			return nil
 		}
-		return usageDataRuntimeError(failureKind, failureOp, failureErr)
+		return usageDataRuntimeError(result.failureKind, result.failureOp, result.failureErr)
 	}
 
 	return nil
+}
+
+func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
+	deps = deps.withDefaults()
+	state = ensureCycleState(state, deps)
+
+	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, deps)
+	if err != nil {
+		return err
+	}
+
+	fetchCtx := ctx
+	if !state.hasLastGood {
+		timeout := coldStartFetchTimeout()
+		if timeout > 0 {
+			var cancel context.CancelFunc
+			fetchCtx, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
+		}
+	}
+
+	allProviders, fetchErr := deps.fetchProviders(fetchCtx)
+	result := cycleResult{
+		selectionReason: "fetch-error",
+		errorSource:     "codexbar",
+	}
+	if fetchErr != nil {
+		result.failureKind = runtimeErrorKindFromFetchErr(fetchErr)
+		result.failureOp = "fetch-usage"
+		result.failureErr = fetchErr
+		result = finalizeCycleResult(state, result)
+	} else {
+		result = selectCycleFrameFromProviders(
+			state,
+			allProviders,
+			deps.now(),
+			deps,
+			"select-provider",
+			"fetch-error",
+			"",
+			"codexbar",
+		)
+	}
+
+	return sendCycleResult(port, caps, maxFrameBytes, state, deps, result)
+}
+
+func runCycleFromCollector(ctx context.Context, requestedPort string, state *runtimeState, collector *providerCollector, deps runtimeDeps) error {
+	deps = deps.withDefaults()
+	state = ensureCycleState(state, deps)
+
+	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, deps)
+	if err != nil {
+		return err
+	}
+
+	now := deps.now()
+	allProviders := collector.providerFrames(now)
+	result := selectCycleFrameFromProviders(
+		state,
+		allProviders,
+		now,
+		deps,
+		"collect-provider",
+		"collector-empty",
+		fmt.Sprintf("snapshot_max_age=%s", collector.snapshotMaxAge),
+		"collector",
+	)
+
+	return sendCycleResult(port, caps, maxFrameBytes, state, deps, result)
+}
+
+func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {
+	if state == nil {
+		return
+	}
+
+	normalized := frame.Normalize()
+	state.lastGood = normalized
+	state.lastGoodAt = now
+	state.hasLastGood = true
+
+	shouldPersist := !state.hasPersistedGood ||
+		state.lastPersistedGood != normalized ||
+		state.lastPersistedAt.IsZero() ||
+		now.Sub(state.lastPersistedAt) >= lastGoodPersistInterval
+	if !shouldPersist {
+		return
+	}
+
+	if err := persistLastGood(normalized, now); err != nil {
+		deps.logf("runtime event=last-good-persist-failed err=%v\n", err)
+		return
+	}
+	state.lastPersistedGood = normalized
+	state.lastPersistedAt = now
+	state.hasPersistedGood = true
 }
 
 func usageDataRuntimeError(kind runtimeErrorKind, op string, err error) *RuntimeError {
@@ -627,6 +1037,268 @@ func lastGoodSnapshotPath() string {
 		return ""
 	}
 	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "last-good-frame.json")
+}
+
+func collectorInterval(renderInterval time.Duration) time.Duration {
+	const (
+		min = 30 * time.Second
+		max = 60 * time.Second
+	)
+
+	if override := parseSecondsEnv(collectorIntervalEnvVar, 0); override > 0 {
+		if override < min {
+			return min
+		}
+		if override > max {
+			return max
+		}
+		return override
+	}
+
+	if renderInterval <= 0 {
+		return max
+	}
+	if renderInterval < min {
+		return min
+	}
+	if renderInterval > max {
+		return max
+	}
+	return renderInterval
+}
+
+func collectorProviderTimeout() time.Duration {
+	const (
+		def = 3 * time.Second
+		min = 2 * time.Second
+		max = 4 * time.Second
+	)
+
+	override := parseSecondsEnv(collectorTimeoutEnvVar, int(def.Seconds()))
+	if override < min {
+		return min
+	}
+	if override > max {
+		return max
+	}
+	return override
+}
+
+func collectorMaxParallel() int {
+	const (
+		def = 3
+		min = 1
+		max = 4
+	)
+
+	raw := strings.TrimSpace(os.Getenv(collectorParallelEnvVar))
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	if n < min {
+		return min
+	}
+	if n > max {
+		return max
+	}
+	return n
+}
+
+func collectorProviderOrder() []string {
+	defaults := []string{
+		"codex",
+		"claude",
+		"cursor",
+		"copilot",
+		"gemini",
+		"vertexai",
+		"jetbrains",
+		"augment",
+		"factory",
+		"kimi",
+		"ollama",
+		"antigravity",
+	}
+
+	raw := strings.TrimSpace(os.Getenv(collectorOrderEnvVar))
+	if raw == "" {
+		return defaults
+	}
+
+	var out []string
+	seen := make(map[string]struct{}, len(defaults))
+	for _, part := range strings.Split(raw, ",") {
+		key := normalizeProviderKey(part)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	if len(out) == 0 {
+		return defaults
+	}
+	return out
+}
+
+func providerSnapshotMaxAge() time.Duration {
+	// Keep per-provider snapshots alive for stale-while-revalidate rendering.
+	d := lastGoodMaxAge()
+	raw := strings.TrimSpace(os.Getenv(providerMaxAgeEnvVar))
+	if raw == "" {
+		return d
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed <= 0 {
+		return d
+	}
+	return parsed
+}
+
+func parseSecondsEnv(key string, fallback int) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return time.Duration(fallback) * time.Second
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return time.Duration(fallback) * time.Second
+	}
+	return time.Duration(n) * time.Second
+}
+
+func normalizeProviderKey(raw string) string {
+	return strings.TrimSpace(strings.ToLower(raw))
+}
+
+func providerSnapshotsPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
+	}
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "provider-snapshots.json")
+}
+
+func persistProviderSnapshots(snapshots map[string]providerSnapshot, savedAt time.Time) error {
+	if len(snapshots) == 0 || savedAt.IsZero() {
+		return nil
+	}
+
+	path := providerSnapshotsPath()
+	if path == "" {
+		return nil
+	}
+
+	payload := persistedProviderSnapshots{
+		SavedAt:   savedAt.UTC(),
+		Providers: make([]providerSnapshot, 0, len(snapshots)),
+	}
+	for _, key := range sortedSnapshotKeys(snapshots) {
+		snapshot := snapshots[key]
+		snapshot.Provider = normalizeProviderKey(snapshot.Provider)
+		if snapshot.Provider == "" {
+			snapshot.Provider = key
+		}
+		snapshot.Frame = snapshot.Frame.Normalize()
+		if strings.TrimSpace(snapshot.Frame.Error) != "" {
+			continue
+		}
+		payload.Providers = append(payload.Providers, snapshot)
+	}
+	if len(payload.Providers) == 0 {
+		return nil
+	}
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, raw, 0o644)
+}
+
+func loadPersistedProviderSnapshotsAnyAge() (map[string]providerSnapshot, time.Time, bool) {
+	path := providerSnapshotsPath()
+	if path == "" {
+		return nil, time.Time{}, false
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, time.Time{}, false
+	}
+
+	var saved persistedProviderSnapshots
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		return nil, time.Time{}, false
+	}
+
+	out := make(map[string]providerSnapshot, len(saved.Providers))
+	for _, snapshot := range saved.Providers {
+		key := normalizeProviderKey(snapshot.Provider)
+		if key == "" {
+			key = normalizeProviderKey(snapshot.Frame.Provider)
+		}
+		if key == "" {
+			continue
+		}
+		snapshot.Provider = key
+		snapshot.Frame = snapshot.Frame.Normalize()
+		if strings.TrimSpace(snapshot.Frame.Error) != "" {
+			continue
+		}
+		out[key] = snapshot
+	}
+	if len(out) == 0 {
+		return nil, time.Time{}, false
+	}
+	return out, saved.SavedAt, true
+}
+
+func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) string {
+	if len(snapshots) == 0 {
+		return ""
+	}
+
+	ordered := make([]providerSnapshot, 0, len(snapshots))
+	for _, key := range sortedSnapshotKeys(snapshots) {
+		snapshot := snapshots[key]
+		snapshot.Provider = normalizeProviderKey(snapshot.Provider)
+		if snapshot.Provider == "" {
+			snapshot.Provider = key
+		}
+		snapshot.Frame = snapshot.Frame.Normalize()
+		if strings.TrimSpace(snapshot.Frame.Error) != "" {
+			continue
+		}
+		ordered = append(ordered, snapshot)
+	}
+	if len(ordered) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(ordered)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+func sortedSnapshotKeys(snapshots map[string]providerSnapshot) []string {
+	keys := make([]string, 0, len(snapshots))
+	for key := range snapshots {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func asRuntimeError(err error) *RuntimeError {

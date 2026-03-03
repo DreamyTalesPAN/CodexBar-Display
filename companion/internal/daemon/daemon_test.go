@@ -384,6 +384,51 @@ func TestRunWithDepsBootstrapsFromExpiredPersistedLastGood(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsBootstrapsStickyProviderFromPersistedLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	savedAt := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
+	current := savedAt.Add(2 * time.Minute)
+	lastGood := protocol.Frame{
+		Provider: "claude",
+		Label:    "Claude",
+		Session:  74,
+		Weekly:   51,
+		ResetSec: 3600,
+	}
+	if err := persistLastGood(lastGood, savedAt); err != nil {
+		t.Fatalf("persist last good: %v", err)
+	}
+
+	var sentLine []byte
+	err := runWithDeps(context.Background(), Options{Interval: 60 * time.Second, Once: true}, runtimeDeps{
+		now:         func() time.Time { return current },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			// Same score and no local-activity signal: selection must keep persisted sticky provider.
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 10, 10, 3600),
+				testParsedFrame("claude", 10, 10, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(port string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+	if len(sentLine) == 0 {
+		t.Fatalf("expected frame to be sent")
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Provider != "claude" {
+		t.Fatalf("expected sticky persisted provider claude, got %q", frame.Provider)
+	}
+}
+
 func TestRunCycleWithDepsAppliesThemeWhenDeviceSupportsIt(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -960,6 +1005,108 @@ func TestDaemonSoakSimulation24hEquivalent(t *testing.T) {
 	}
 	if errorCount > 40 {
 		t.Fatalf("too many runtime errors in soak simulation: %d", errorCount)
+	}
+}
+
+func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	current := now
+
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex", "claude"},
+		interval:        30 * time.Second,
+		timeout:         3 * time.Second,
+		maxParallel:     2,
+		snapshotMaxAge:  2 * time.Hour,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+
+	collector.fetchProvider = func(_ context.Context, provider string) (codexbar.ParsedFrame, error) {
+		switch provider {
+		case "codex":
+			return testParsedFrame("codex", 14, 22, 3600), nil
+		case "claude":
+			return codexbar.ParsedFrame{}, errors.New("timeout")
+		default:
+			return codexbar.ParsedFrame{}, errors.New("unknown provider")
+		}
+	}
+	collector.collectOnce(context.Background())
+
+	initial := collector.providerFrames(current)
+	if len(initial) != 1 || initial[0].Provider != "codex" {
+		t.Fatalf("expected only codex snapshot after first collect, got %#v", initial)
+	}
+
+	current = current.Add(30 * time.Second)
+	collector.fetchProvider = func(_ context.Context, provider string) (codexbar.ParsedFrame, error) {
+		switch provider {
+		case "codex":
+			return codexbar.ParsedFrame{}, errors.New("codex unavailable")
+		case "claude":
+			return testParsedFrame("claude", 28, 35, 7200), nil
+		default:
+			return codexbar.ParsedFrame{}, errors.New("unknown provider")
+		}
+	}
+	collector.collectOnce(context.Background())
+
+	second := collector.providerFrames(current)
+	if len(second) != 2 {
+		t.Fatalf("expected codex stale + claude fresh snapshots, got %#v", second)
+	}
+	if second[0].Provider != "codex" || second[1].Provider != "claude" {
+		t.Fatalf("expected provider order codex,claude; got %#v", second)
+	}
+
+	current = current.Add(3 * time.Hour)
+	expired := collector.providerFrames(current)
+	if len(expired) != 0 {
+		t.Fatalf("expected snapshots to expire by max age, got %#v", expired)
+	}
+}
+
+func TestRunCycleFromCollectorUsesStaleLastGoodWhenCollectorEmpty(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    protocol.Frame{Provider: "claude", Label: "Claude", Session: 61, Weekly: 49, ResetSec: 3600},
+		lastGoodAt:  now.Add(-time.Minute),
+		hasLastGood: true,
+	}
+
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		order:          []string{"codex", "claude"},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+	}
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("expected stale-last-good fallback, got %v", err)
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Provider != "claude" || frame.Session != 61 {
+		t.Fatalf("expected stale last-good claude frame, got %+v", frame)
 	}
 }
 
