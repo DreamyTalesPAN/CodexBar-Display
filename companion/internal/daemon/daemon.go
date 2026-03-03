@@ -1069,7 +1069,7 @@ func collectorInterval(renderInterval time.Duration) time.Duration {
 
 func collectorProviderTimeout() time.Duration {
 	const (
-		def = 3 * time.Second
+		def = 4 * time.Second
 		min = 2 * time.Second
 		max = 4 * time.Second
 	)
