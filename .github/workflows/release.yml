@@ -19,6 +19,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -26,7 +27,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install PlatformIO
-        run: pip install platformio
+        run: pip install platformio intelhex
 
       - name: Build Release Artifacts
         env:
