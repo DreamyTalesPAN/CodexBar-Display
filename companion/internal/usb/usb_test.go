@@ -144,6 +144,54 @@ func TestSenderReconnectsAfterWriteFailure(t *testing.T) {
 	}
 }
 
+func TestSenderReconnectsAfterWriteTimeout(t *testing.T) {
+	first := newMockSerialPort()
+	first.writeDelay = 40 * time.Millisecond
+	second := newMockSerialPort()
+
+	openSeq := []SerialPort{first, second}
+	opener := &mockOpener{
+		openFn: func(path string, _ *serial.Mode) (SerialPort, error) {
+			if len(openSeq) == 0 {
+				return nil, errors.New("unexpected open")
+			}
+			next := openSeq[0]
+			openSeq = openSeq[1:]
+			return next, nil
+		},
+	}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:         opener,
+		Sleep:          func(time.Duration) {},
+		SettleDuration: time.Millisecond,
+		HelloWindow:    10 * time.Millisecond,
+		WriteTimeout:   5 * time.Millisecond,
+	})
+	defer sender.Close()
+
+	started := time.Now()
+	err := sender.Send("/dev/mock", []byte("{\"v\":1}\n"))
+	if err == nil {
+		t.Fatalf("expected first send timeout error")
+	}
+	if elapsed := time.Since(started); elapsed >= 30*time.Millisecond {
+		t.Fatalf("expected write timeout before delay elapsed, got %s", elapsed)
+	}
+	if got := errcode.Of(err); got != errcode.TransportSerialWrite {
+		t.Fatalf("expected serial write code, got %s", got)
+	}
+	if first.closeCalls == 0 {
+		t.Fatalf("expected first port to be closed after write timeout")
+	}
+
+	if err := sender.Send("/dev/mock", []byte("{\"v\":1}\n")); err != nil {
+		t.Fatalf("expected reconnect send success, got %v", err)
+	}
+	if got := opener.openCount("/dev/mock"); got != 2 {
+		t.Fatalf("expected reopen after timeout, got %d opens", got)
+	}
+}
+
 func TestDeviceHelloUnavailableReturnsProtocolCode(t *testing.T) {
 	port := newMockSerialPort()
 	opener := &mockOpener{
@@ -204,6 +252,7 @@ type mockSerialPort struct {
 	readQueue  [][]byte
 	writeCalls int
 	writeErr   error
+	writeDelay time.Duration
 	closeCalls int
 }
 
@@ -225,10 +274,15 @@ func (m *mockSerialPort) Read(p []byte) (int, error) {
 
 func (m *mockSerialPort) Write(p []byte) (int, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.writeCalls++
-	if m.writeErr != nil {
-		return 0, m.writeErr
+	writeDelay := m.writeDelay
+	writeErr := m.writeErr
+	m.mu.Unlock()
+	if writeDelay > 0 {
+		time.Sleep(writeDelay)
+	}
+	if writeErr != nil {
+		return 0, writeErr
 	}
 	return len(p), nil
 }

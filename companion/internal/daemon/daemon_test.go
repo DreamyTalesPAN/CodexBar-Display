@@ -1122,6 +1122,39 @@ func TestDetectSleepWakeGap(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithTimeoutReturnsRuntimeCycleTimeout(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	block := make(chan struct{})
+	err := runCycleWithTimeout(context.Background(), 10*time.Millisecond, func(context.Context) error {
+		<-block
+		return nil
+	})
+	close(block)
+
+	if err == nil {
+		t.Fatalf("expected timeout error")
+	}
+	runtimeErr := asRuntimeError(err)
+	if runtimeErr.Kind != runtimeErrorCycleTimeout {
+		t.Fatalf("expected runtime cycle timeout, got %s", runtimeErr.Kind)
+	}
+}
+
+func TestCycleRunTimeoutHonorsBounds(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	t.Setenv(cycleTimeoutEnvVar, "999")
+	if got := cycleRunTimeout(); got != 120*time.Second {
+		t.Fatalf("expected max clamp, got %s", got)
+	}
+
+	t.Setenv(cycleTimeoutEnvVar, "1")
+	if got := cycleRunTimeout(); got != 5*time.Second {
+		t.Fatalf("expected min clamp, got %s", got)
+	}
+}
+
 func decodeFrameLine(t *testing.T, line []byte) protocol.Frame {
 	t.Helper()
 

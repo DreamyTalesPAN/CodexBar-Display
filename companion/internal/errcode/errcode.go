@@ -21,6 +21,7 @@ const (
 
 	RuntimeSerialResolve  Code = "runtime/serial-resolve"
 	RuntimeSerialWrite    Code = "runtime/serial-write"
+	RuntimeCycleTimeout   Code = "runtime/cycle-timeout"
 	RuntimeFrameEncode    Code = "runtime/frame-encode"
 	RuntimeFrameTooLarge  Code = "runtime/frame-too-large"
 	RuntimeCodexbarBinary Code = "runtime/codexbar-binary"
@@ -114,6 +115,8 @@ func DefaultRecovery(code Code) string {
 		return "Reconnect the board or pass `--port` to `codexbar-display daemon`."
 	case RuntimeSerialWrite:
 		return "Check cable/device power; daemon will retry automatically."
+	case RuntimeCycleTimeout:
+		return "Daemon cycle timed out; restart daemon (LaunchAgent KeepAlive will auto-restart) and run `codexbar-display doctor` to verify USB serial health."
 	case RuntimeFrameEncode, RuntimeFrameTooLarge:
 		return "Inspect payload size and optional fields; reduce frame footprint."
 	case RuntimeCodexbarBinary:
