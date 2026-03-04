@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestReleaseStateRoundTrip(t *testing.T) {
@@ -77,6 +78,119 @@ func TestCopyRegularFileAtomic(t *testing.T) {
 func TestSanitizePathToken(t *testing.T) {
 	if got := sanitizePathToken("v1.0.0+meta/alpha"); got != "v1.0.0_meta_alpha" {
 		t.Fatalf("unexpected sanitized token %q", got)
+	}
+}
+
+func TestRefreshLastKnownGoodFirmwareUpdatesPrepopulatedState(t *testing.T) {
+	scratch := t.TempDir()
+	home := filepath.Join(scratch, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(scratch); err != nil {
+		t.Fatalf("chdir scratch: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWD)
+	})
+
+	backupDir := filepath.Join(scratch, "backups")
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		t.Fatalf("mkdir backup dir: %v", err)
+	}
+
+	olderImage := filepath.Join(backupDir, "weather_backup_old.bin")
+	newerImage := filepath.Join(backupDir, "weather_backup_new.bin")
+	for _, image := range []string{olderImage, newerImage} {
+		if err := os.WriteFile(image, []byte("firmware"), 0o644); err != nil {
+			t.Fatalf("write image %s: %v", image, err)
+		}
+		if err := os.WriteFile(image+".manifest", []byte("{}"), 0o644); err != nil {
+			t.Fatalf("write manifest for %s: %v", image, err)
+		}
+	}
+
+	now := time.Now()
+	if err := os.Chtimes(olderImage, now.Add(-2*time.Hour), now.Add(-2*time.Hour)); err != nil {
+		t.Fatalf("set older mtime: %v", err)
+	}
+	if err := os.Chtimes(newerImage, now.Add(-1*time.Hour), now.Add(-1*time.Hour)); err != nil {
+		t.Fatalf("set newer mtime: %v", err)
+	}
+
+	state := releaseState{
+		LastKnownGood: lastKnownGoodState{
+			FirmwareImage:    filepath.Join(scratch, "stale.bin"),
+			FirmwareManifest: filepath.Join(scratch, "stale.bin.manifest"),
+		},
+	}
+
+	refreshLastKnownGoodFirmware(&state, []string{backupDir})
+
+	if state.LastKnownGood.FirmwareImage != newerImage {
+		t.Fatalf("expected refreshed image %q, got %q", newerImage, state.LastKnownGood.FirmwareImage)
+	}
+	if state.LastKnownGood.FirmwareManifest != newerImage+".manifest" {
+		t.Fatalf(
+			"expected refreshed manifest %q, got %q",
+			newerImage+".manifest",
+			state.LastKnownGood.FirmwareManifest,
+		)
+	}
+}
+
+func TestRefreshLastKnownGoodFirmwareKeepsStateWhenNoValidBackupFound(t *testing.T) {
+	scratch := t.TempDir()
+	home := filepath.Join(scratch, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(scratch); err != nil {
+		t.Fatalf("chdir scratch: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWD)
+	})
+
+	backupDir := filepath.Join(scratch, "backups")
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		t.Fatalf("mkdir backup dir: %v", err)
+	}
+	invalidImage := filepath.Join(backupDir, "weather_backup_invalid.bin")
+	if err := os.WriteFile(invalidImage, []byte("firmware"), 0o644); err != nil {
+		t.Fatalf("write invalid image: %v", err)
+	}
+
+	const (
+		existingImage    = "/tmp/existing.bin"
+		existingManifest = "/tmp/existing.bin.manifest"
+	)
+	state := releaseState{
+		LastKnownGood: lastKnownGoodState{
+			FirmwareImage:    existingImage,
+			FirmwareManifest: existingManifest,
+		},
+	}
+
+	refreshLastKnownGoodFirmware(&state, []string{backupDir})
+
+	if state.LastKnownGood.FirmwareImage != existingImage {
+		t.Fatalf("expected image to stay %q, got %q", existingImage, state.LastKnownGood.FirmwareImage)
+	}
+	if state.LastKnownGood.FirmwareManifest != existingManifest {
+		t.Fatalf("expected manifest to stay %q, got %q", existingManifest, state.LastKnownGood.FirmwareManifest)
 	}
 }
 
