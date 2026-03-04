@@ -1,9 +1,13 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 )
 
 func TestReleaseStateRoundTrip(t *testing.T) {
@@ -151,5 +155,97 @@ func TestResolveRollbackFirmwareInputsKeepsExplicitImageAndManifest(t *testing.T
 	}
 	if gotManifest != "/tmp/requested.manifest" {
 		t.Fatalf("unexpected explicit manifest %q", gotManifest)
+	}
+}
+
+func TestBeginUpgradeLaunchAgentRecoveryRestartsOnErrorPath(t *testing.T) {
+	previousStop := upgradeStopLaunchAgentFn
+	previousRestart := upgradeRestartLaunchAgentFn
+	t.Cleanup(func() {
+		upgradeStopLaunchAgentFn = previousStop
+		upgradeRestartLaunchAgentFn = previousRestart
+	})
+
+	stopCalls := 0
+	restartCalls := 0
+	upgradeStopLaunchAgentFn = func() {
+		stopCalls++
+	}
+	upgradeRestartLaunchAgentFn = func(home string) error {
+		restartCalls++
+		if home != "/tmp/home" {
+			t.Fatalf("unexpected home path %q", home)
+		}
+		return nil
+	}
+
+	runErr := &commandError{
+		Op:   "flash-and-install",
+		Code: errcode.UpgradeFlashFirmware,
+		Err:  errors.New("flash failed"),
+		Hint: "retry flash",
+	}
+	var retErr error = runErr
+	cleanup := beginUpgradeLaunchAgentRecovery("/tmp/home", &retErr)
+	if stopCalls != 1 {
+		t.Fatalf("expected launch agent stop once, got %d", stopCalls)
+	}
+
+	cleanup()
+
+	if restartCalls != 1 {
+		t.Fatalf("expected launch agent restart once, got %d", restartCalls)
+	}
+	if errcode.Of(retErr) != errcode.UpgradeFlashFirmware {
+		t.Fatalf("expected flash firmware error code, got %s", errcode.Of(retErr))
+	}
+}
+
+func TestWrapUpgradeLaunchAgentRecoveryErrorReturnsRecoveryErrorOnRestartFailure(t *testing.T) {
+	previousRestart := upgradeRestartLaunchAgentFn
+	t.Cleanup(func() {
+		upgradeRestartLaunchAgentFn = previousRestart
+	})
+	upgradeRestartLaunchAgentFn = func(home string) error {
+		if home != "/tmp/home" {
+			t.Fatalf("unexpected home path %q", home)
+		}
+		return errors.New("kickstart failed")
+	}
+
+	err := wrapUpgradeLaunchAgentRecoveryError(nil, "/tmp/home")
+	if errcode.Of(err) != errcode.UpgradeLaunchAgent {
+		t.Fatalf("expected launch agent recovery code, got %s", errcode.Of(err))
+	}
+	if recovery := errcode.Recovery(err); !strings.Contains(recovery, "launchctl") {
+		t.Fatalf("expected recovery hint to mention launchctl, got %q", recovery)
+	}
+}
+
+func TestWrapUpgradeLaunchAgentRecoveryErrorAppendsHint(t *testing.T) {
+	previousRestart := upgradeRestartLaunchAgentFn
+	t.Cleanup(func() {
+		upgradeRestartLaunchAgentFn = previousRestart
+	})
+	upgradeRestartLaunchAgentFn = func(string) error {
+		return errors.New("bootstrap failed")
+	}
+
+	original := &commandError{
+		Op:   "flash-and-install",
+		Code: errcode.UpgradeFlashFirmware,
+		Err:  errors.New("flash failed"),
+		Hint: "retry flash",
+	}
+	err := wrapUpgradeLaunchAgentRecoveryError(original, "/tmp/home")
+	if errcode.Of(err) != errcode.UpgradeFlashFirmware {
+		t.Fatalf("expected original error code to be preserved, got %s", errcode.Of(err))
+	}
+	recovery := errcode.Recovery(err)
+	if !strings.Contains(recovery, "retry flash") {
+		t.Fatalf("expected original hint in recovery, got %q", recovery)
+	}
+	if !strings.Contains(recovery, "restart launch agent manually") {
+		t.Fatalf("expected launch agent hint in recovery, got %q", recovery)
 	}
 }

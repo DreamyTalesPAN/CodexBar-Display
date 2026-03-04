@@ -26,6 +26,11 @@ const (
 	protocolVersionV1         = 1
 )
 
+var (
+	upgradeStopLaunchAgentFn    = stopLaunchAgentBestEffort
+	upgradeRestartLaunchAgentFn = restartLaunchAgent
+)
+
 type commandError struct {
 	Op   string
 	Code errcode.Code
@@ -144,7 +149,7 @@ func runVersion(args []string) error {
 	return nil
 }
 
-func runUpgrade(args []string) error {
+func runUpgrade(args []string) (retErr error) {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
 	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "PlatformIO environment to flash")
@@ -179,7 +184,17 @@ func runUpgrade(args []string) error {
 			Err:  err,
 		}
 	}
-	stopLaunchAgentBestEffort()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return &commandError{
+			Op:   "resolve-home",
+			Code: errcode.UpgradeStateWrite,
+			Err:  err,
+		}
+	}
+	cleanupUpgradeLaunchAgent := beginUpgradeLaunchAgentRecovery(home, &retErr)
+	defer cleanupUpgradeLaunchAgent()
+
 	if err := ensureSerialPortNotBusy(resolvedPort); err != nil {
 		return &commandError{
 			Op:   "preflight-port-busy",
@@ -238,15 +253,6 @@ func runUpgrade(args []string) error {
 		fmt.Printf("device hello: board=%s firmware=%s protocol=%d\n", hello.Board, hello.Firmware, hello.ProtocolVersion)
 	} else {
 		fmt.Printf("device hello: unavailable (%v)\n", helloErr)
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return &commandError{
-			Op:   "resolve-home",
-			Code: errcode.UpgradeStateWrite,
-			Err:  err,
-		}
 	}
 
 	state, err := loadReleaseState(home)
@@ -517,6 +523,60 @@ func ensureSerialPortNotBusy(port string) error {
 func stopLaunchAgentBestEffort() {
 	service := fmt.Sprintf("gui/%d/com.codexbar-display.daemon", os.Getuid())
 	_, _ = exec.Command("launchctl", "bootout", service).CombinedOutput()
+}
+
+func beginUpgradeLaunchAgentRecovery(home string, retErr *error) func() {
+	upgradeStopLaunchAgentFn()
+	return func() {
+		if retErr == nil {
+			return
+		}
+		*retErr = wrapUpgradeLaunchAgentRecoveryError(*retErr, home)
+	}
+}
+
+func wrapUpgradeLaunchAgentRecoveryError(existingErr error, home string) error {
+	restartErr := upgradeRestartLaunchAgentFn(home)
+	if restartErr == nil {
+		return existingErr
+	}
+
+	const restartHint = "restart launch agent manually with `launchctl bootout/bootstrap/kickstart`"
+	hintWithDetails := fmt.Sprintf("%s (restart failure: %v)", restartHint, restartErr)
+	if existingErr == nil {
+		return &commandError{
+			Op:   "restart-launchagent",
+			Code: errcode.UpgradeLaunchAgent,
+			Err:  restartErr,
+			Hint: hintWithDetails,
+		}
+	}
+
+	var cmdErr *commandError
+	if errors.As(existingErr, &cmdErr) {
+		cmdErr.Hint = appendRecoveryHint(cmdErr.Hint, hintWithDetails)
+		return cmdErr
+	}
+
+	return &commandError{
+		Op:   "upgrade",
+		Code: errcode.UpgradeLaunchAgent,
+		Err:  fmt.Errorf("%w; launch agent recovery failed: %v", existingErr, restartErr),
+		Hint: hintWithDetails,
+	}
+}
+
+func appendRecoveryHint(existing, extra string) string {
+	existing = strings.TrimSpace(existing)
+	extra = strings.TrimSpace(extra)
+	switch {
+	case existing == "":
+		return extra
+	case extra == "":
+		return existing
+	default:
+		return existing + "; " + extra
+	}
 }
 
 func releaseStatePath(home string) string {

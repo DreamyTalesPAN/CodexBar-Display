@@ -53,6 +53,7 @@ const (
 	UpgradeSnapshotCompanion Code = "upgrade/snapshot-companion"
 	UpgradeStateWrite        Code = "upgrade/state-write"
 	UpgradeFlashFirmware     Code = "upgrade/flash-firmware"
+	UpgradeLaunchAgent       Code = "upgrade/launchagent-restart"
 
 	RollbackStateLoad        Code = "rollback/state-load"
 	RollbackMissingKnownGood Code = "rollback/missing-known-good"
@@ -159,6 +160,8 @@ func DefaultRecovery(code Code) string {
 		return "Verify write permissions under `~/Library/Application Support/codexbar-display`."
 	case UpgradeFlashFirmware:
 		return "Fix flash/setup error details and rerun `codexbar-display upgrade`."
+	case UpgradeLaunchAgent:
+		return "Restart launch agent manually with `launchctl bootout/bootstrap/kickstart`."
 	case RollbackStateLoad:
 		return "Run one successful `codexbar-display upgrade` first or provide explicit rollback flags."
 	case RollbackMissingKnownGood:
