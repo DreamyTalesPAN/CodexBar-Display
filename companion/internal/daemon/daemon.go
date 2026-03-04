@@ -29,7 +29,7 @@ type Options struct {
 
 const (
 	defaultInterval         = 60 * time.Second
-	defaultCycleTimeout     = 20 * time.Second
+	defaultCycleTimeout     = 180 * time.Second
 	startupFastPollWindow   = 2 * time.Minute
 	startupFastPollInterval = 30 * time.Second
 	lastGoodPersistInterval = 1 * time.Minute
@@ -1091,7 +1091,7 @@ func collectorInterval(renderInterval time.Duration) time.Duration {
 func cycleRunTimeout() time.Duration {
 	const (
 		min = 5 * time.Second
-		max = 120 * time.Second
+		max = 600 * time.Second
 	)
 
 	override := parseSecondsEnv(cycleTimeoutEnvVar, int(defaultCycleTimeout.Seconds()))
@@ -1106,9 +1106,9 @@ func cycleRunTimeout() time.Duration {
 
 func collectorProviderTimeout() time.Duration {
 	const (
-		def = 120 * time.Second
-		min = 15 * time.Second
-		max = 180 * time.Second
+		def = 600 * time.Second
+		min = 60 * time.Second
+		max = 900 * time.Second
 	)
 
 	override := parseSecondsEnv(collectorTimeoutEnvVar, int(def.Seconds()))

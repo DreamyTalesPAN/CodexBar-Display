@@ -1134,13 +1134,21 @@ func TestCycleRunTimeoutHonorsBounds(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	t.Setenv(cycleTimeoutEnvVar, "999")
-	if got := cycleRunTimeout(); got != 120*time.Second {
+	if got := cycleRunTimeout(); got != 600*time.Second {
 		t.Fatalf("expected max clamp, got %s", got)
 	}
 
 	t.Setenv(cycleTimeoutEnvVar, "1")
 	if got := cycleRunTimeout(); got != 5*time.Second {
 		t.Fatalf("expected min clamp, got %s", got)
+	}
+}
+
+func TestCycleRunTimeoutDefault(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	if got := cycleRunTimeout(); got != defaultCycleTimeout {
+		t.Fatalf("expected default cycle timeout %s, got %s", defaultCycleTimeout, got)
 	}
 }
 

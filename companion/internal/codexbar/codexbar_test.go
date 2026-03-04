@@ -544,7 +544,7 @@ func TestProviderSelectionMatrix30Scenarios(t *testing.T) {
 	}
 }
 
-func TestNeedsCodexCLIPriorityForWebCodex(t *testing.T) {
+func TestNeedsCodexCLIPriorityFalseForExistingWebCodex(t *testing.T) {
 	all := []ParsedFrame{
 		{
 			Provider: "codex",
@@ -553,8 +553,8 @@ func TestNeedsCodexCLIPriorityForWebCodex(t *testing.T) {
 		},
 	}
 
-	if !needsCodexCLIPriority(all) {
-		t.Fatalf("expected CLI priority for codex web source")
+	if needsCodexCLIPriority(all) {
+		t.Fatalf("expected no CLI priority when aggregate payload already contains codex")
 	}
 }
 
@@ -616,7 +616,7 @@ func TestRepairCodexFromCLKeepsWebFrameWhenCLIRepairFails(t *testing.T) {
 	}
 }
 
-func TestRepairCodexFromCLIRepairsWithCLIResult(t *testing.T) {
+func TestRepairCodexFromCLIPreservesAggregateCodex(t *testing.T) {
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -641,12 +641,12 @@ func TestRepairCodexFromCLIRepairsWithCLIResult(t *testing.T) {
 	}
 
 	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
-	if repaired[0].Frame.Session != 3 || repaired[0].Frame.Weekly != 11 {
-		t.Fatalf("expected CLI repair frame, got session=%d weekly=%d", repaired[0].Frame.Session, repaired[0].Frame.Weekly)
+	if repaired[0].Frame.Session != 0 || repaired[0].Frame.Weekly != 1 {
+		t.Fatalf("expected aggregate codex frame to be preserved, got session=%d weekly=%d", repaired[0].Frame.Session, repaired[0].Frame.Weekly)
 	}
 }
 
-func TestRepairCodexFromCLIReplacesEvenWhenCLIWeeklyLower(t *testing.T) {
+func TestRepairCodexFromCLIDoesNotReplaceAggregateCodex(t *testing.T) {
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -671,8 +671,8 @@ func TestRepairCodexFromCLIReplacesEvenWhenCLIWeeklyLower(t *testing.T) {
 	}
 
 	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
-	if repaired[0].Frame.Weekly != 10 {
-		t.Fatalf("expected CLI weekly to be preferred, got %d", repaired[0].Frame.Weekly)
+	if repaired[0].Frame.Weekly != 40 {
+		t.Fatalf("expected aggregate weekly to be preserved, got %d", repaired[0].Frame.Weekly)
 	}
 }
 
