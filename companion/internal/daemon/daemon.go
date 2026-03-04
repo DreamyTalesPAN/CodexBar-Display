@@ -37,8 +37,7 @@ const (
 	coldStartTimeoutEnvVar  = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
 	cycleTimeoutEnvVar      = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
 	collectorIntervalEnvVar = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
-	collectorTimeoutEnvVar  = "CODEXBAR_DISPLAY_PROVIDER_TIMEOUT_SECS"
-	collectorParallelEnvVar = "CODEXBAR_DISPLAY_PROVIDER_MAX_PARALLEL"
+	collectorTimeoutEnvVar  = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
 	collectorOrderEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
 	providerMaxAgeEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
 )
@@ -203,11 +202,10 @@ type retryBackoff struct {
 type providerCollector struct {
 	now             func() time.Time
 	logf            func(string, ...any)
-	fetchProvider   func(context.Context, string) (codexbar.ParsedFrame, error)
+	fetchProviders  func(context.Context) ([]codexbar.ParsedFrame, error)
 	order           []string
 	interval        time.Duration
 	timeout         time.Duration
-	maxParallel     int
 	snapshotMaxAge  time.Duration
 	persistInterval time.Duration
 
@@ -230,11 +228,10 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 	collector := &providerCollector{
 		now:             nowFn,
 		logf:            logFn,
-		fetchProvider:   deps.fetchProvider,
+		fetchProviders:  deps.fetchProviders,
 		order:           collectorProviderOrder(),
 		interval:        collectorInterval(opts.Interval),
 		timeout:         collectorProviderTimeout(),
-		maxParallel:     collectorMaxParallel(),
 		snapshotMaxAge:  providerSnapshotMaxAge(),
 		persistInterval: 1 * time.Minute,
 		providers:       make(map[string]providerSnapshot),
@@ -276,64 +273,39 @@ func (c *providerCollector) run(ctx context.Context) {
 }
 
 func (c *providerCollector) collectOnce(parent context.Context) {
-	if c == nil || c.fetchProvider == nil {
+	if c == nil || c.fetchProviders == nil {
 		return
 	}
 
 	now := c.now()
-	type collectResult struct {
-		key   string
-		frame codexbar.ParsedFrame
-		err   error
+	ctx := parent
+	cancel := func() {}
+	if c.timeout > 0 {
+		var timeoutCancel context.CancelFunc
+		ctx, timeoutCancel = context.WithTimeout(parent, c.timeout)
+		cancel = timeoutCancel
 	}
+	defer cancel()
 
-	results := make(chan collectResult, len(c.order))
-	semaphore := make(chan struct{}, c.maxParallel)
-	var wg sync.WaitGroup
-
-	for _, provider := range c.order {
-		key := normalizeProviderKey(provider)
-		if key == "" {
-			continue
-		}
-		wg.Add(1)
-		go func(providerKey string) {
-			defer wg.Done()
-			select {
-			case semaphore <- struct{}{}:
-			case <-parent.Done():
-				return
-			}
-			defer func() { <-semaphore }()
-
-			ctx, cancel := context.WithTimeout(parent, c.timeout)
-			defer cancel()
-
-			parsed, err := c.fetchProvider(ctx, providerKey)
-			results <- collectResult{key: providerKey, frame: parsed, err: err}
-		}(key)
+	allProviders, err := c.fetchProviders(ctx)
+	if err != nil {
+		c.logf("collector fetch-all err=%v timeout=%s\n", err, c.timeout)
+		return
 	}
-
-	wg.Wait()
-	close(results)
 
 	updated := false
 	successes := 0
 
 	c.mu.Lock()
-	for result := range results {
-		if result.err != nil {
-			c.logf("collector provider=%s err=%v\n", result.key, result.err)
-			continue
-		}
-		frame := result.frame.Frame.Normalize()
+	for _, parsed := range allProviders {
+		frame := parsed.Frame.Normalize()
 		if strings.TrimSpace(frame.Error) != "" {
 			continue
 		}
 
-		key := normalizeProviderKey(result.key)
-		if parsedKey := normalizeProviderKey(result.frame.Provider); parsedKey != "" {
-			key = parsedKey
+		key := normalizeProviderKey(parsed.Provider)
+		if key == "" {
+			key = normalizeProviderKey(parsed.Frame.Provider)
 		}
 		if key == "" {
 			continue
@@ -343,7 +315,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		snapshot := providerSnapshot{
 			Provider:  key,
 			Frame:     frame,
-			Source:    strings.TrimSpace(result.frame.Source),
+			Source:    strings.TrimSpace(parsed.Source),
 			Collected: now.UTC(),
 		}
 		c.providers[key] = snapshot
@@ -355,7 +327,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	if updated {
 		c.persistIfNeeded(now)
 	}
-	c.logf("collector complete providers=%d succeeded=%d timeout=%s parallel=%d\n", len(c.order), successes, c.timeout, c.maxParallel)
+	c.logf("collector complete providers=%d succeeded=%d timeout=%s mode=fetch-all\n", len(allProviders), successes, c.timeout)
 }
 
 func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame {
@@ -568,10 +540,9 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 	collector := newProviderCollector(deps, opts)
 	collectorCtx, cancel := context.WithCancel(ctx)
 	collector.start(collectorCtx)
-	deps.logf("collector started interval=%s timeout=%s max_parallel=%d providers=%s\n",
+	deps.logf("collector started interval=%s timeout=%s providers=%s mode=fetch-all\n",
 		collector.interval,
 		collector.timeout,
-		collector.maxParallel,
 		strings.Join(collector.order, ","),
 	)
 	return collector, cancel
@@ -1135,9 +1106,9 @@ func cycleRunTimeout() time.Duration {
 
 func collectorProviderTimeout() time.Duration {
 	const (
-		def = 4 * time.Second
-		min = 2 * time.Second
-		max = 4 * time.Second
+		def = 120 * time.Second
+		min = 15 * time.Second
+		max = 180 * time.Second
 	)
 
 	override := parseSecondsEnv(collectorTimeoutEnvVar, int(def.Seconds()))
@@ -1148,30 +1119,6 @@ func collectorProviderTimeout() time.Duration {
 		return max
 	}
 	return override
-}
-
-func collectorMaxParallel() int {
-	const (
-		def = 3
-		min = 1
-		max = 4
-	)
-
-	raw := strings.TrimSpace(os.Getenv(collectorParallelEnvVar))
-	if raw == "" {
-		return def
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil {
-		return def
-	}
-	if n < min {
-		return min
-	}
-	if n > max {
-		return max
-	}
-	return n
 }
 
 func collectorProviderOrder() []string {

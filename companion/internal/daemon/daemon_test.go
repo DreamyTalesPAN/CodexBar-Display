@@ -1020,21 +1020,15 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 		order:           []string{"codex", "claude"},
 		interval:        30 * time.Second,
 		timeout:         3 * time.Second,
-		maxParallel:     2,
 		snapshotMaxAge:  2 * time.Hour,
 		persistInterval: time.Minute,
 		providers:       make(map[string]providerSnapshot),
 	}
 
-	collector.fetchProvider = func(_ context.Context, provider string) (codexbar.ParsedFrame, error) {
-		switch provider {
-		case "codex":
-			return testParsedFrame("codex", 14, 22, 3600), nil
-		case "claude":
-			return codexbar.ParsedFrame{}, errors.New("timeout")
-		default:
-			return codexbar.ParsedFrame{}, errors.New("unknown provider")
-		}
+	collector.fetchProviders = func(_ context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{
+			testParsedFrame("codex", 14, 22, 3600),
+		}, nil
 	}
 	collector.collectOnce(context.Background())
 
@@ -1044,15 +1038,10 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	}
 
 	current = current.Add(30 * time.Second)
-	collector.fetchProvider = func(_ context.Context, provider string) (codexbar.ParsedFrame, error) {
-		switch provider {
-		case "codex":
-			return codexbar.ParsedFrame{}, errors.New("codex unavailable")
-		case "claude":
-			return testParsedFrame("claude", 28, 35, 7200), nil
-		default:
-			return codexbar.ParsedFrame{}, errors.New("unknown provider")
-		}
+	collector.fetchProviders = func(_ context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{
+			testParsedFrame("claude", 28, 35, 7200),
+		}, nil
 	}
 	collector.collectOnce(context.Background())
 

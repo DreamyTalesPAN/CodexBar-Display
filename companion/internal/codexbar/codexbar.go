@@ -293,7 +293,7 @@ func CommandTimeout() time.Duration {
 
 func commandTimeout() time.Duration {
 	// Keep default bounded so display startup is responsive even when codexbar stalls.
-	d := 30 * time.Second
+	d := 120 * time.Second
 	raw := strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_TIMEOUT_SECS"))
 	if raw == "" {
 		return d
