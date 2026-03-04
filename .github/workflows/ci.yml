@@ -22,6 +22,10 @@ jobs:
         with:
           go-version-file: companion/go.mod
 
+      - name: Run go vet
+        working-directory: companion
+        run: go vet ./...
+
       - name: Run Go tests
         working-directory: companion
         run: go test ./...
