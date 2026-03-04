@@ -1,107 +1,80 @@
 # Usage Polling Architecture and Benchmarks
 
-This document is the single reference for how `codexbar-display` fetches usage data, why stale values can appear, and how to benchmark/tune polling behavior.
+This document is the reference for how `codexbar-display` fetches usage data, why stale values can appear, and how to benchmark/tune polling behavior.
 
-## Scope
+## Goal
 
-- Companion runtime (`companion/internal/daemon`)
-- CodexBar fetch layer (`companion/internal/codexbar`)
-- macOS LaunchAgent runtime behavior
-- Benchmark workflow for latency and allocation budgets
+Keep firmware dumb and mirror CodexBar desktop values on the device, while keeping render cycles responsive even when upstream usage calls are slow.
 
-## Upstream CodexBar CLI Reference
-
-Primary upstream docs:
+## Upstream CodexBar References
 
 - CLI reference: <https://github.com/steipete/CodexBar/blob/main/docs/cli.md>
 - Refresh loop: <https://github.com/steipete/CodexBar/blob/main/docs/refresh-loop.md>
 - Status polling: <https://github.com/steipete/CodexBar/blob/main/docs/status.md>
 
-Upstream commands we rely on in this repo:
+Primary commands used by companion:
 
 - Aggregated usage: `codexbar usage --json --web-timeout 8`
-- Provider-scoped usage: `codexbar usage --json --provider <provider> --web-timeout <n>`
-- Codex CLI-priority path: `codexbar usage --json --provider codex --source cli`
-- Debug/structured logging flags:
-  - `--json-output`
-  - `--json-only`
-  - `--log-level <trace|debug|...>`
+- Codex CLI fallback: `codexbar usage --json --provider codex --source cli`
 
-## Current Polling Architecture (This Repo)
+## Current Runtime Architecture
 
 ### 1) Daemon cadence
 
-- Default render interval: `60s`
-- Runtime loop is in `companion/internal/daemon/daemon.go`
-- Collector runs in background and provides provider snapshots to render cycles
+- LaunchAgent runs `codexbar-display daemon --interval 60s`.
+- Daemon starts a background collector (`mode=fetch-all`).
+- Render cycle reads collector snapshots and sends one serial frame to device.
 
-### 2) Provider collector behavior
+### 2) Collector behavior
 
-Collector knobs (env vars):
+Collector is aggregate-first:
 
-- `CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS`
-  - bounded to `30s..60s`
-- `CODEXBAR_DISPLAY_PROVIDER_TIMEOUT_SECS`
-  - bounded to `2s..4s` (default `4s`)
-- `CODEXBAR_DISPLAY_PROVIDER_MAX_PARALLEL`
-  - bounded to `1..4` (default `3`)
-- `CODEXBAR_DISPLAY_PROVIDER_ORDER`
-  - comma-separated provider order override
+1. Call `codexbar usage --json --web-timeout 8`.
+2. Optional retry after starting CodexBar app when output indicates app/bootstrap issue.
+3. If aggregate still fails, try codex CLI-only fallback (`--provider codex --source cli`).
+4. If no usable payload exists, daemon serves last-good frame (stale-while-revalidate).
 
-Per-provider fetch path:
+Notes:
 
-1. For `codex`: try CLI-priority provider call first (`--provider codex --source cli`)
-2. Otherwise call provider-scoped usage (`--provider <key> --web-timeout <n>`)
-3. `CODEXBAR_DISPLAY_PROVIDER_WEB_TIMEOUT_SECS` controls provider web timeout (`2..8`, default `3`)
+- No per-provider fanout polling loop in daemon collector mode.
+- Aggregate Codex values are preserved as-is (no replacement by separate codex-cli value when aggregate already contains Codex).
 
-### 3) Selection path
+### 3) Selection and staleness
 
-Provider selection order in `ProviderSelector`:
+Provider selection in render cycles uses local activity + usage deltas + sticky/current behavior. If collector fetch fails temporarily:
 
-1. Local activity signal (`local-activity`)
-2. Usage delta (`usage-delta`)
-3. Sticky current provider (`sticky-current`)
-4. CodexBar provider order (`codexbar-order`)
+- previous provider snapshots can still be used,
+- then persisted last-good frame fallback is used within max-age window.
 
-### 4) Fallback/staleness behavior
+## Runtime Defaults and Env Knobs
 
-When provider fetches fail:
-
-- Collector keeps previously successful provider snapshots
-- Render cycle can continue sending stale values via:
-  - snapshot reuse
-  - last-good fallback frame
-
-Related env vars:
-
-- `CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE`
-- `CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE`
-
-Important practical implication:
-
-- If real command latency is above collector timeout, `collector succeeded=0` can persist while stale values remain visible on device.
+| Area | Env | Default | Bounds / Notes |
+|---|---|---:|---|
+| Collector fetch timeout | `CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS` | `600s` | clamped `60..900s` |
+| CodexBar command timeout | `CODEXBAR_DISPLAY_TIMEOUT_SECS` | `300s` | used by usage command calls |
+| Cycle watchdog timeout | `CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS` | `180s` | clamped `5..600s` |
+| Collector interval | `CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS` | `60s` | clamped `30..60s` |
+| Cold-start fetch timeout (sync path) | `CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS` | `2s` | only when no last-good frame exists |
+| Last-good frame max age | `CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE` | `10m` | stale frame serving window |
+| Provider snapshot max age | `CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE` | inherits last-good max age | snapshot freshness gate |
 
 ## Benchmark Workflow
 
-Use both host-command latency measurements and daemon micro-benchmarks.
+### A) Command latency benchmark
 
-### A) Command latency benchmarks (real machine behavior)
-
-Run:
+Quick loop benchmark:
 
 ```bash
 ./scripts/bench-codexbar-usage-latency.sh 5
 ```
 
-This script measures:
+Single-shot check:
 
-- `codexbar usage --provider codex --source cli --json`
-- `codexbar usage --provider codex --json --web-timeout 8`
-- `codexbar usage --json --web-timeout 8`
+```bash
+/usr/bin/time -p codexbar usage --json --web-timeout 8 > /tmp/codexbar-usage.json
+```
 
-### B) Daemon micro-benchmarks (code-level budget)
-
-Run:
+### B) Daemon micro-benchmarks
 
 ```bash
 cd companion
@@ -117,52 +90,30 @@ Optional budget gate:
 ### C) Runtime observability checks
 
 ```bash
-~/Library/Application\ Support/codexbar-display/bin/codexbar-display health
+codexbar-display health
 tail -n 200 /tmp/codexbar-display-daemon.out.log
 ```
 
 Look for:
 
-- `collector complete ... succeeded=<n> timeout=<x>s`
-- `sent frame -> ... reason=<...>`
-- large gaps between `sent frame ->` events
+- `collector started ... mode=fetch-all`
+- `collector complete providers=... succeeded=... timeout=... mode=fetch-all`
+- `sent frame -> ...`
+- absence of `fatal cycle timeout` and `collector fetch-all err=...`
 
-## Sample Measurements (2026-03-04, MacBook Pro M3)
+## Benchmark Template
 
-Host command latency (under local load):
-
-| Command | Observed real time |
-|---|---|
-| `codexbar usage --provider codex --source cli --json` | `1.92s` |
-| `codexbar usage --provider codex --json --web-timeout 8` | `54.61s` |
-| `codexbar usage --json --web-timeout 8` | `99.51s` |
-
-Additional spot-check (same day): `codexbar usage --provider codex --source cli --json` also measured `5.98s` and `5.42s`.
-
-Daemon benchmark:
-
-| Benchmark | Result |
-|---|---|
-| `BenchmarkRunCycleWithDeps` | `45867 ns/op`, `4351 B/op`, `71 allocs/op` |
-| `BenchmarkMarshalFrameWithinLimit` | `1911 ns/op`, `224 B/op`, `2 allocs/op` |
-
-Interpretation:
-
-- If collector timeout is `3s` or `4s`, even moderate provider latency (`~5s`) will fail consistently.
-- Long-tail spikes (`50s+`) make stale fallback behavior inevitable with current timeout caps.
-- Persistent provider timeouts lead to stale snapshot rendering.
+| UTC timestamp | Machine load | Command | Real seconds | Providers returned | Notes |
+|---|---|---|---:|---:|---|
+| 2026-03-04T10:21:00Z | high (parallel video render) | `codexbar usage --json --web-timeout 8` | 45.55 | 2 | matched device values |
+| 2026-03-04T10:13:00Z | high | `codexbar usage --json --web-timeout 8` | 46.69 | 2 | collector stable |
+| 2026-03-04T10:08:00Z | very high | `codexbar usage --json --web-timeout 8` | 93.75 | 1 | still within 10m collector budget |
 
 ## Tuning Checklist
 
-1. Measure `p50/p95` command latency on target hardware (idle and loaded).
-2. Set collector/provider timeouts to exceed `p95` with margin.
-3. Validate `collector succeeded` is non-zero during normal operation.
-4. Validate `last sent frame` freshness in `health`.
-5. Re-run daemon micro-benchmarks after changes.
-
-## Known Constraints (Current Main Branch)
-
-- `CODEXBAR_DISPLAY_PROVIDER_TIMEOUT_SECS` max is currently hard-clamped to `4s`.
-- `CODEXBAR_DISPLAY_PROVIDER_WEB_TIMEOUT_SECS` max is currently hard-clamped to `8s`.
-
-If measured `p95` exceeds these caps on real machines, reliability requires code changes (not only config changes).
+1. Measure `p50/p95` usage latency on target hardware (idle + loaded).
+2. Keep collector timeout above observed `p95` with margin.
+3. Verify `collector complete ... succeeded>0` in normal operation.
+4. Verify `codexbar-display health` shows fresh `last sent frame`.
+5. Re-run daemon micro-benchmarks after runtime changes.
+6. Periodically do parity check: device frame session/weekly vs `codexbar usage --json` codex remaining values.

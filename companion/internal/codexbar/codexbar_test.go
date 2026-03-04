@@ -742,7 +742,7 @@ func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testin
 	}
 }
 
-func TestFetchAllProvidersFallsBackToProviderScopedWhenCodexCLIFallbackFails(t *testing.T) {
+func TestFetchAllProvidersReturnsErrorWhenAggregateAndCLIFallbackFail(t *testing.T) {
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -751,30 +751,18 @@ func TestFetchAllProvidersFallsBackToProviderScopedWhenCodexCLIFallbackFails(t *
 	t.Setenv("CODEXBAR_BIN", "/bin/sh")
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		argLine := strings.Join(args, " ")
-		switch {
-		case strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli"):
+		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
 			return nil, errors.New("codex cli crashed")
-		case strings.Contains(argLine, "--provider claude") && strings.Contains(argLine, "--web-timeout 8"):
-			return []byte(`[{"provider":"claude","source":"web","usage":{"primary":{"usedPercent":13,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":24}}}]`), nil
-		case strings.Contains(argLine, "--web-timeout 8"):
-			return []byte("signal: killed"), errors.New("signal: killed")
-		default:
-			return nil, errors.New("unexpected command")
 		}
+		if strings.Contains(argLine, "--web-timeout 8") {
+			return []byte("signal: killed"), errors.New("signal: killed")
+		}
+		return nil, errors.New("unexpected command")
 	}
 
-	parsed, err := FetchAllProviders(context.Background())
-	if err != nil {
-		t.Fatalf("expected provider-scoped fallback to succeed, got %v", err)
-	}
-	if len(parsed) != 1 {
-		t.Fatalf("expected single provider from provider-scoped fallback, got %d", len(parsed))
-	}
-	if providerKey(parsed[0]) != "claude" {
-		t.Fatalf("expected claude fallback provider, got %q", providerKey(parsed[0]))
-	}
-	if parsed[0].Frame.Session != 13 || parsed[0].Frame.Weekly != 24 {
-		t.Fatalf("expected claude fallback session=13 weekly=24, got session=%d weekly=%d", parsed[0].Frame.Session, parsed[0].Frame.Weekly)
+	_, err := FetchAllProviders(context.Background())
+	if err == nil {
+		t.Fatalf("expected fetch-all failure when no fallback succeeds")
 	}
 }
 
@@ -814,46 +802,7 @@ func TestFetchAllProvidersUsesDetachedContextForCLIFallback(t *testing.T) {
 	}
 }
 
-func TestFetchAllProvidersUsesDetachedContextForProviderScopedFallback(t *testing.T) {
-	originalRunUsageCommand := runUsageCommandFn
-	defer func() {
-		runUsageCommandFn = originalRunUsageCommand
-	}()
-
-	t.Setenv("CODEXBAR_BIN", "/bin/sh")
-	claudeCtxAlive := false
-
-	runUsageCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
-		argLine := strings.Join(args, " ")
-		switch {
-		case strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli"):
-			return nil, errors.New("codex cli crashed")
-		case strings.Contains(argLine, "--provider claude") && strings.Contains(argLine, "--web-timeout 8"):
-			claudeCtxAlive = ctx.Err() == nil
-			return []byte(`[{"provider":"claude","source":"web","usage":{"primary":{"usedPercent":9,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":22}}}]`), nil
-		case strings.Contains(argLine, "--web-timeout 8"):
-			return []byte("signal: killed"), errors.New("signal: killed")
-		default:
-			return nil, errors.New("unexpected command")
-		}
-	}
-
-	expiredCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
-	defer cancel()
-
-	parsed, err := FetchAllProviders(expiredCtx)
-	if err != nil {
-		t.Fatalf("expected provider-scoped fallback from expired parent context, got %v", err)
-	}
-	if !claudeCtxAlive {
-		t.Fatalf("expected detached fallback context for provider-scoped command")
-	}
-	if len(parsed) != 1 || providerKey(parsed[0]) != "claude" {
-		t.Fatalf("expected claude fallback frame, got %#v", parsed)
-	}
-}
-
-func TestFetchProviderScopedUsageRejectsProviderErrorPayload(t *testing.T) {
+func TestFetchProviderScopedUsageDetailedRejectsProviderErrorPayload(t *testing.T) {
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -866,8 +815,32 @@ func TestFetchProviderScopedUsageRejectsProviderErrorPayload(t *testing.T) {
 		]`), errors.New("exit status 1")
 	}
 
-	if _, ok := fetchProviderScopedUsage(context.Background(), 5*time.Second, "/bin/sh", "cursor"); ok {
+	if _, err := fetchProviderScopedUsageDetailed(context.Background(), 5*time.Second, "/bin/sh", "cursor", 8, ""); err == nil {
 		t.Fatalf("expected provider-scoped usage to reject error-only payload")
+	}
+}
+
+func TestFallbackContextDetachedWhenParentExpired(t *testing.T) {
+	expiredCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	fallbackCtx, fallbackCancel := fallbackContext(expiredCtx)
+	defer fallbackCancel()
+
+	if fallbackCtx.Err() != nil {
+		t.Fatalf("expected detached fallback context to be alive")
+	}
+}
+
+func TestFallbackContextReusesParentWhenBudgetIsSufficient(t *testing.T) {
+	parentCtx, parentCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer parentCancel()
+
+	fallbackCtx, fallbackCancel := fallbackContext(parentCtx)
+	defer fallbackCancel()
+
+	if fallbackCtx != parentCtx {
+		t.Fatalf("expected fallback context to reuse parent context")
 	}
 }
 

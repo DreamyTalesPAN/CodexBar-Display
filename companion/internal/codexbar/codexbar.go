@@ -34,18 +34,6 @@ var runUsageCommandFn = runUsageCommand
 
 const minSharedFallbackTimeBudget = 4 * time.Second
 
-var providerScopedFallbackOrder = []string{
-	"codex",
-	"claude",
-	"cursor",
-	"copilot",
-	"gemini",
-	"vertexai",
-	"jetbrains",
-	"augment",
-	"factory",
-}
-
 const usageModeEnvVar = "CODEXBAR_DISPLAY_USAGE_MODE"
 
 type FetchErrorKind string
@@ -151,8 +139,8 @@ func isExecutable(path string) bool {
 
 // FetchAllProviders reads provider usage from CodexBar and normalizes it.
 //
-// Codex provider data is CLI-prioritized: if a Codex CLI frame is available
-// it replaces/adds the Codex provider entry from the aggregated payload.
+// It prefers one aggregate `usage --json` call. If aggregate usage is
+// unavailable, a Codex CLI-only fallback can still return a minimal payload.
 func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	bin, err := FindBinary()
 	if err != nil {
@@ -173,15 +161,11 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	}
 
 	// KISS fallback: when aggregated usage is unavailable, fall back to a
-	// Codex CLI-only payload (then provider-scoped web fallback) instead of
-	// failing hard.
+	// Codex CLI-only payload instead of failing hard.
 	if err != nil || parseErr != nil {
-		fallbackCtx := fallbackContext(ctx)
+		fallbackCtx, fallbackCancel := fallbackContext(ctx)
+		defer fallbackCancel()
 		if fallback, ok := fetchCodexCLIOnly(fallbackCtx, cliFallbackTimeout(timeout), bin); ok {
-			allParsed = fallback
-			err = nil
-			parseErr = nil
-		} else if fallback, ok := fetchFirstProviderScopedFallback(fallbackCtx, providerScopedFallbackTimeout(timeout), bin); ok {
 			allParsed = fallback
 			err = nil
 			parseErr = nil
@@ -1599,22 +1583,6 @@ func fetchCodexCLIProvider(ctx context.Context, timeout time.Duration, bin strin
 	return ParsedFrame{}, false
 }
 
-func fetchFirstProviderScopedFallback(ctx context.Context, timeout time.Duration, bin string) ([]ParsedFrame, bool) {
-	for _, provider := range providerScopedFallbackOrder {
-		parsed, ok := fetchProviderScopedUsage(ctx, timeout, bin, provider)
-		if !ok {
-			continue
-		}
-		return []ParsedFrame{parsed}, true
-	}
-	return nil, false
-}
-
-func fetchProviderScopedUsage(ctx context.Context, timeout time.Duration, bin string, provider string) (ParsedFrame, bool) {
-	parsed, err := fetchProviderScopedUsageDetailed(ctx, timeout, bin, provider, 8, "")
-	return parsed, err == nil
-}
-
 func fetchProviderScopedUsageDetailed(ctx context.Context, timeout time.Duration, bin string, provider string, webTimeoutSeconds int, source string) (ParsedFrame, error) {
 	key := strings.TrimSpace(strings.ToLower(provider))
 	if key == "" {
@@ -1658,22 +1626,19 @@ func fetchProviderScopedUsageDetailed(ctx context.Context, timeout time.Duration
 	return parsed[0], nil
 }
 
-func fallbackContext(parent context.Context) context.Context {
+func fallbackContext(parent context.Context) (context.Context, context.CancelFunc) {
 	if parent == nil {
-		ctx, _ := context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
-		return ctx
+		return context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
 	}
 	if parent.Err() != nil {
-		ctx, _ := context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
-		return ctx
+		return context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
 	}
 	if deadline, ok := parent.Deadline(); ok {
 		if time.Until(deadline) < minSharedFallbackTimeBudget {
-			ctx, _ := context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
-			return ctx
+			return context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
 		}
 	}
-	return parent
+	return parent, func() {}
 }
 
 func cliFallbackTimeout(primaryTimeout time.Duration) time.Duration {
@@ -1760,7 +1725,9 @@ func repairCodexFromCLI(ctx context.Context, timeout time.Duration, bin string, 
 		return all
 	}
 
-	codexCLI, ok := fetchCodexCLIProvider(fallbackContext(ctx), cliFallbackTimeout(timeout), bin)
+	fallbackCtx, fallbackCancel := fallbackContext(ctx)
+	defer fallbackCancel()
+	codexCLI, ok := fetchCodexCLIProvider(fallbackCtx, cliFallbackTimeout(timeout), bin)
 	if !ok {
 		return all
 	}

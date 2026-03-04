@@ -332,6 +332,9 @@ Use this taxonomy for incident triage:
 
 ## Performance Budgets
 
+Usage polling architecture, timeout knobs, and benchmark workflow are documented in:
+- [`docs/usage-polling-architecture.md`](usage-polling-architecture.md)
+
 Companion benchmark gate:
 
 ```bash
