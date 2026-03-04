@@ -4,6 +4,7 @@ Single source of truth for install, runtime checks, recovery, and smoke testing.
 
 Hardware identity and board/env contract reference:
 - `docs/hardware-contract.md`
+- `docs/usage-polling-architecture.md` (usage command latency, polling architecture, tuning/bench workflow)
 
 ## Scope
 - macOS runtime (`launchctl` + LaunchAgent)

@@ -109,6 +109,7 @@ pio run -e lilygo_t_display_s3
 ## Docs
 - Operator runbook: `docs/operator-runbook.md`
 - Hardware contract: `docs/hardware-contract.md`
+- Usage polling architecture + benchmarks: `docs/usage-polling-architecture.md`
 - Open roadmap: `TODO.md`
 - Protocol: `protocol/PROTOCOL.md`
 
