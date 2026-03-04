@@ -272,16 +272,7 @@ func runUpgrade(args []string) error {
 		state.LastKnownGood.CompanionVersion = snapshotVersion
 	}
 
-	if state.LastKnownGood.FirmwareImage == "" {
-		if backupSearchDirs, backupErr := resolveBackupSearchDirs(nil); backupErr == nil {
-			if latestBackup, imageErr := resolveRestoreImage("", backupSearchDirs); imageErr == nil {
-				state.LastKnownGood.FirmwareImage = latestBackup
-				if manifestPath, manifestErr := resolveRestoreManifestPath(latestBackup, "", false); manifestErr == nil {
-					state.LastKnownGood.FirmwareManifest = manifestPath
-				}
-			}
-		}
-	}
+	refreshLastKnownGoodFirmware(&state, nil)
 	state.LastKnownGood.FirmwareEnv = selectedEnv
 	state.LastKnownGood.CapturedAtUTC = time.Now().UTC().Format(time.RFC3339)
 	state.UpdatedAtUTC = state.LastKnownGood.CapturedAtUTC
@@ -463,6 +454,30 @@ func runRollback(args []string) error {
 
 	fmt.Println("rollback complete")
 	return nil
+}
+
+func refreshLastKnownGoodFirmware(state *releaseState, extraBackupDirs []string) {
+	if state == nil {
+		return
+	}
+
+	backupSearchDirs, backupErr := resolveBackupSearchDirs(extraBackupDirs)
+	if backupErr != nil {
+		return
+	}
+
+	latestBackup, imageErr := resolveRestoreImage("", backupSearchDirs)
+	if imageErr != nil {
+		return
+	}
+
+	manifestPath, manifestErr := resolveRestoreManifestPath(latestBackup, "", false)
+	if manifestErr != nil {
+		return
+	}
+
+	state.LastKnownGood.FirmwareImage = latestBackup
+	state.LastKnownGood.FirmwareManifest = manifestPath
 }
 
 func resolveRollbackFirmwareInputs(requestedImage, requestedManifest string, state releaseState) (imagePath, manifestPath string, staleStateImage bool) {
