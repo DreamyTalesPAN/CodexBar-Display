@@ -469,11 +469,11 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
 		opts.Interval = defaultInterval
 	}
-	legacySyncFetch := deps.fetchProviders != nil && deps.fetchProvider == nil
+	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
 
 	state := initializeRuntimeState(deps.now(), opts, deps)
-	collector, collectorCancel := startProviderCollector(ctx, opts, deps, legacySyncFetch)
+	collector, collectorCancel := startProviderCollector(ctx, opts, deps, syncCycleMode)
 	if collectorCancel != nil {
 		defer collectorCancel()
 	}
@@ -532,8 +532,10 @@ func bootstrapStateFromPersistedLastGood(state *runtimeState, now time.Time, dep
 	}
 }
 
-func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps, legacySyncFetch bool) (*providerCollector, context.CancelFunc) {
-	if legacySyncFetch {
+func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps, syncCycleMode bool) (*providerCollector, context.CancelFunc) {
+	if syncCycleMode {
+		// Deterministic unit tests can run synchronous cycle fetches without a
+		// background collector goroutine by injecting only fetchProviders.
 		return nil, nil
 	}
 
@@ -878,7 +880,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		allProviders,
 		now,
 		deps,
-		"collect-provider",
+		"select-provider",
 		"collector-empty",
 		fmt.Sprintf("snapshot_max_age=%s", collector.snapshotMaxAge),
 		"collector",
