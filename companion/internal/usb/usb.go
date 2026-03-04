@@ -24,6 +24,7 @@ const (
 	serialBaudRate       = 115200
 	closeTimeout         = 200 * time.Millisecond
 	reopenSettleDuration = 1200 * time.Millisecond
+	writeTimeout         = 2 * time.Second
 	helloReadWindow      = 300 * time.Millisecond
 	helloReadStepTimeout = 80 * time.Millisecond
 	helloReadBufferBytes = 1024
@@ -221,6 +222,7 @@ type SenderConfig struct {
 	Sleep          func(time.Duration)
 	SettleDuration time.Duration
 	HelloWindow    time.Duration
+	WriteTimeout   time.Duration
 }
 
 type Sender struct {
@@ -230,6 +232,7 @@ type Sender struct {
 	sleep          func(time.Duration)
 	settleDuration time.Duration
 	helloWindow    time.Duration
+	writeTimeout   time.Duration
 
 	port          SerialPort
 	path          string
@@ -260,12 +263,17 @@ func NewSenderWithConfig(cfg SenderConfig) *Sender {
 	if window <= 0 {
 		window = helloReadWindow
 	}
+	writeLimit := cfg.WriteTimeout
+	if writeLimit <= 0 {
+		writeLimit = writeTimeout
+	}
 
 	return &Sender{
 		opener:         opener,
 		sleep:          sleep,
 		settleDuration: settle,
 		helloWindow:    window,
+		writeTimeout:   writeLimit,
 	}
 }
 
@@ -286,7 +294,7 @@ func (s *Sender) Send(path string, line []byte) error {
 		_ = s.port.ResetInputBuffer()
 	}
 
-	if _, err := s.port.Write(line); err != nil {
+	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
 		s.closeCurrentLocked()
 		return wrapTransportError(
 			errcode.TransportSerialWrite,
@@ -297,6 +305,32 @@ func (s *Sender) Send(path string, line []byte) error {
 		)
 	}
 	return nil
+}
+
+func writeWithTimeout(port SerialPort, payload []byte, timeout time.Duration) error {
+	if port == nil {
+		return errors.New("serial port is nil")
+	}
+	if timeout <= 0 {
+		_, err := port.Write(payload)
+		return err
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := port.Write(payload)
+		done <- err
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case err := <-done:
+		return err
+	case <-timer.C:
+		return errors.New("serial write timeout")
+	}
 }
 
 func (s *Sender) ReadHello(path string) (protocol.DeviceHello, error) {

@@ -29,11 +29,13 @@ type Options struct {
 
 const (
 	defaultInterval         = 60 * time.Second
+	defaultCycleTimeout     = 20 * time.Second
 	startupFastPollWindow   = 2 * time.Minute
 	startupFastPollInterval = 30 * time.Second
 	lastGoodPersistInterval = 1 * time.Minute
 	themeEnvVar             = "CODEXBAR_DISPLAY_THEME"
 	coldStartTimeoutEnvVar  = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
+	cycleTimeoutEnvVar      = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
 	collectorIntervalEnvVar = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
 	collectorTimeoutEnvVar  = "CODEXBAR_DISPLAY_PROVIDER_TIMEOUT_SECS"
 	collectorParallelEnvVar = "CODEXBAR_DISPLAY_PROVIDER_MAX_PARALLEL"
@@ -49,6 +51,7 @@ const (
 	runtimeErrorUnknown        runtimeErrorKind = runtimeErrorKind(errcode.Unknown)
 	runtimeErrorSerialResolve  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeSerialResolve)
 	runtimeErrorSerialWrite    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeSerialWrite)
+	runtimeErrorCycleTimeout   runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCycleTimeout)
 	runtimeErrorFrameEncode    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameEncode)
 	runtimeErrorFrameTooLarge  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameTooLarge)
 	runtimeErrorCodexbarBinary runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarBinary)
@@ -576,6 +579,7 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 
 func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle func(context.Context) error) error {
 	backoff := newRetryBackoff(opts.Interval)
+	cycleTimeout := cycleRunTimeout()
 	var lastCycleStart time.Time
 	var startedAt time.Time
 
@@ -593,7 +597,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		}
 		lastCycleStart = cycleStart
 
-		err := runCycle(ctx)
+		err := runCycleWithTimeout(ctx, cycleTimeout, runCycle)
 		if opts.Once {
 			return err
 		}
@@ -601,6 +605,14 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		waitFor := opts.Interval
 		if err != nil {
 			runtimeErr := asRuntimeError(err)
+			if runtimeErr.Kind == runtimeErrorCycleTimeout {
+				deps.logf("fatal cycle timeout: code=%s op=%s timeout=%s action=exit-for-launchd-restart\n",
+					runtimeErr.ErrorCode(),
+					runtimeErr.Op,
+					cycleTimeout,
+				)
+				return runtimeErr
+			}
 			waitFor = backoff.Next()
 			deps.logf("cycle error: code=%s op=%s retry=%s recovery=%q err=%v\n",
 				runtimeErr.ErrorCode(),
@@ -620,6 +632,44 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			return ctx.Err()
 		case <-deps.after(waitFor):
 		}
+	}
+}
+
+func runCycleWithTimeout(parent context.Context, timeout time.Duration, runCycle func(context.Context) error) error {
+	if timeout <= 0 {
+		return runCycle(parent)
+	}
+
+	cycleCtx, cancel := context.WithCancel(parent)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- runCycle(cycleCtx)
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case err := <-done:
+		return err
+	case <-timer.C:
+		cancel()
+		return &RuntimeError{
+			Kind: runtimeErrorCycleTimeout,
+			Op:   "run-cycle-timeout",
+			Err:  fmt.Errorf("cycle exceeded timeout %s", timeout),
+			Hint: errcode.DefaultRecovery(errcode.RuntimeCycleTimeout),
+		}
+	case <-parent.Done():
+		cancel()
+		select {
+		case err := <-done:
+			return err
+		default:
+		}
+		return parent.Err()
 	}
 }
 
@@ -1065,6 +1115,22 @@ func collectorInterval(renderInterval time.Duration) time.Duration {
 		return max
 	}
 	return renderInterval
+}
+
+func cycleRunTimeout() time.Duration {
+	const (
+		min = 5 * time.Second
+		max = 120 * time.Second
+	)
+
+	override := parseSecondsEnv(cycleTimeoutEnvVar, int(defaultCycleTimeout.Seconds()))
+	if override < min {
+		return min
+	}
+	if override > max {
+		return max
+	}
+	return override
 }
 
 func collectorProviderTimeout() time.Duration {

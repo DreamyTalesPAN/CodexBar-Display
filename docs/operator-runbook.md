@@ -324,7 +324,7 @@ Use this taxonomy for incident triage:
 |---|---|---|
 | `transport/*` | `transport/serial-open`, `transport/no-usb-serial-ports`, `transport/serial-write` | Reconnect board/cable, check `ls /dev/cu.usb*`, release busy port via `lsof <port>` |
 | `protocol/*` | `protocol/device-hello-unavailable` | Reconnect device to force boot hello; runtime falls back when hello is missing |
-| `runtime/*` | `runtime/serial-resolve`, `runtime/codexbar-parse`, `runtime/frame-too-large` | Run `codexbar-display doctor`, verify CodexBar output, inspect daemon logs |
+| `runtime/*` | `runtime/serial-resolve`, `runtime/cycle-timeout`, `runtime/codexbar-parse`, `runtime/frame-too-large` | Run `codexbar-display doctor`, verify CodexBar output, inspect daemon logs |
 | `setup/*` | `setup/flash-firmware`, `setup/unsupported-hardware`, `setup/launchagent-verify` | Rerun setup with matching `--firmware-env`, verify PlatformIO + launchctl state |
 | `upgrade/*` | `upgrade/port-busy`, `upgrade/version-guard`, `upgrade/flash-firmware` | Free serial port, use compatible versions, rerun `codexbar-display upgrade` |
 | `rollback/*` | `rollback/missing-known-good`, `rollback/companion-restore`, `rollback/firmware-restore` | Provide explicit rollback image/manifest or restore captured known-good state |
