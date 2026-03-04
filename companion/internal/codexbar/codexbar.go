@@ -292,8 +292,9 @@ func CommandTimeout() time.Duration {
 }
 
 func commandTimeout() time.Duration {
-	// Keep default bounded so display startup is responsive even when codexbar stalls.
-	d := 30 * time.Second
+	// Collector runs in the background, so allow a generous default to reduce
+	// false timeout churn on loaded machines.
+	d := 300 * time.Second
 	raw := strings.TrimSpace(os.Getenv("CODEXBAR_DISPLAY_TIMEOUT_SECS"))
 	if raw == "" {
 		return d
@@ -1726,22 +1727,13 @@ func providerScopedWebTimeoutSeconds() int {
 }
 
 func needsCodexCLIPriority(all []ParsedFrame) bool {
-	hasCodex := false
 	for _, parsed := range all {
-		if providerKey(parsed) != "codex" {
-			continue
-		}
-		hasCodex = true
-		if !isCodexCLISource(parsed.Source) {
-			return true
+		if providerKey(parsed) == "codex" {
+			// Keep aggregated codex usage as-is to mirror CodexBar desktop values.
+			return false
 		}
 	}
-	return !hasCodex
-}
-
-func isCodexCLISource(source string) bool {
-	s := strings.TrimSpace(strings.ToLower(source))
-	return s == "codex-cli" || s == "cli"
+	return true
 }
 
 func replaceOrAppendCodexProvider(all []ParsedFrame, codex ParsedFrame) []ParsedFrame {
