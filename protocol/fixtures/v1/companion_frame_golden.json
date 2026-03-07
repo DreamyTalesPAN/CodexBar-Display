@@ -51,6 +51,37 @@
       }
     },
     {
+      "name": "token-stats-additive",
+      "inputFrame": {
+        "provider": "codex",
+        "label": "Codex",
+        "session": 17,
+        "weekly": 42,
+        "resetSecs": 15480,
+        "sessionTokens": 1437166,
+        "weekTokens": 382243544,
+        "totalTokens": 1078397605
+      },
+      "requestedTheme": "mini",
+      "deviceCaps": {
+        "known": true,
+        "supportsTheme": true,
+        "maxFrameBytes": 512
+      },
+      "expectedFrame": {
+        "v": 1,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 17,
+        "weekly": 42,
+        "resetSecs": 15480,
+        "sessionTokens": 1437166,
+        "weekTokens": 382243544,
+        "totalTokens": 1078397605,
+        "theme": "mini"
+      }
+    },
+    {
       "name": "capability-gated-theme",
       "inputFrame": {
         "provider": "codex",

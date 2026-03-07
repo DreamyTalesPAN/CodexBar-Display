@@ -16,6 +16,9 @@ struct Frame {
   int session = 0;
   int weekly = 0;
   int64_t resetSecs = 0;
+  int64_t sessionTokens = 0;
+  int64_t weekTokens = 0;
+  int64_t totalTokens = 0;
   bool hasUsageMode = false;
   String usageMode;
   bool hasTheme = false;
@@ -50,6 +53,13 @@ inline int ClampPct(int value) {
   }
   if (value > 100) {
     return 100;
+  }
+  return value;
+}
+
+inline int64_t ClampNonNegativeInt64(int64_t value) {
+  if (value < 0) {
+    return 0;
   }
   return value;
 }
@@ -121,7 +131,10 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   out.label = String(doc["label"] | "Provider");
   out.session = ClampPct(doc["session"] | 0);
   out.weekly = ClampPct(doc["weekly"] | 0);
-  out.resetSecs = static_cast<int64_t>(doc["resetSecs"] | 0);
+  out.resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(doc["resetSecs"] | 0));
+  out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | 0));
+  out.weekTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["weekTokens"] | 0));
+  out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | 0));
   out.hasUsageMode = hasUsageMode;
   out.usageMode = usageMode;
   out.hasTheme = hasTheme;
@@ -142,6 +155,9 @@ inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
          previous.label != next.label ||
          previous.session != next.session ||
          previous.weekly != next.weekly ||
+         previous.sessionTokens != next.sessionTokens ||
+         previous.weekTokens != next.weekTokens ||
+         previous.totalTokens != next.totalTokens ||
          previous.hasUsageMode != next.hasUsageMode ||
          previous.usageMode != next.usageMode;
 }

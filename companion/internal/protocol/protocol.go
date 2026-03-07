@@ -8,15 +8,18 @@ import (
 )
 
 type Frame struct {
-	V         int    `json:"v"`
-	Provider  string `json:"provider,omitempty"`
-	Label     string `json:"label,omitempty"`
-	Session   int    `json:"session,omitempty"`
-	Weekly    int    `json:"weekly,omitempty"`
-	ResetSec  int64  `json:"resetSecs,omitempty"`
-	UsageMode string `json:"usageMode,omitempty"`
-	Theme     string `json:"theme,omitempty"`
-	Error     string `json:"error,omitempty"`
+	V             int    `json:"v"`
+	Provider      string `json:"provider,omitempty"`
+	Label         string `json:"label,omitempty"`
+	Session       int    `json:"session,omitempty"`
+	Weekly        int    `json:"weekly,omitempty"`
+	ResetSec      int64  `json:"resetSecs,omitempty"`
+	UsageMode     string `json:"usageMode,omitempty"`
+	SessionTokens int64  `json:"sessionTokens,omitempty"`
+	WeekTokens    int64  `json:"weekTokens,omitempty"`
+	TotalTokens   int64  `json:"totalTokens,omitempty"`
+	Theme         string `json:"theme,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 func (f Frame) Normalize() Frame {
@@ -35,6 +38,15 @@ func (f Frame) Normalize() Frame {
 	}
 	if f.ResetSec < 0 {
 		f.ResetSec = 0
+	}
+	if f.SessionTokens < 0 {
+		f.SessionTokens = 0
+	}
+	if f.WeekTokens < 0 {
+		f.WeekTokens = 0
+	}
+	if f.TotalTokens < 0 {
+		f.TotalTokens = 0
 	}
 	switch strings.TrimSpace(strings.ToLower(f.UsageMode)) {
 	case "used", "remaining":

@@ -22,8 +22,17 @@ Fields:
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
 - `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
+- `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
+- `weekTokens` (number, optional): rolling 7-day token total when available.
+- `totalTokens` (number, optional): lifetime token total when available.
 - `theme` (string, optional): requested built-in UI theme (`classic`, `crt`, `mini`).
 - `error` (string, optional): if present, firmware should render error screen.
+
+Example with additive token stats:
+
+```json
+{"v":1,"provider":"codex","label":"Codex","session":17,"weekly":42,"resetSecs":15480,"sessionTokens":1437166,"weekTokens":384312010,"totalTokens":1078397605,"theme":"mini"}
+```
 
 Theme registry source of truth:
 - `protocol/theme_registry.json` (`id -> protocolName -> compileDefaultMacro`)
@@ -72,12 +81,14 @@ send when hello is unavailable; if capabilities are explicitly known and do not 
 - Missing numeric fields default to `0` on firmware side.
 - Host should prefer stable error codes in `error` (for example `runtime/*`, `protocol/*`) over free-form text.
 - `theme` is optional.
+- Token stats are optional and additive; existing percentage/quota rendering remains valid when they are absent.
 - If device capabilities are explicitly known and `theme` is unsupported, host must omit `theme`.
 - If hello is missing (unknown capabilities), host may send `theme` on the MVP path and rely on device-side ignore/fallback behavior.
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.
 - Firmware ticks down `resetSecs` locally between host updates.
 - Companion may resend the last known good frame during short CodexBar outages (current default max age: 10 minutes).
+- If frame payload exceeds `maxFrameBytes`, companion drops `theme` first, then token stats, before falling back to an error frame.
 
 ## v1 Scope Boundary
 - v1 ships built-in themes only (`classic`, `crt`, `mini`).

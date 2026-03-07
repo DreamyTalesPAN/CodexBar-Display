@@ -49,3 +49,18 @@ func TestFrameNormalizeDropsUnsupportedUsageMode(t *testing.T) {
 		t.Fatalf("expected unsupported usage mode to be dropped, got %q", normalized.UsageMode)
 	}
 }
+
+func TestFrameNormalizeClampsNegativeTokenStats(t *testing.T) {
+	frame := Frame{
+		Provider:      "codex",
+		Label:         "Codex",
+		SessionTokens: -1,
+		WeekTokens:    -7,
+		TotalTokens:   -9,
+	}
+
+	normalized := frame.Normalize()
+	if normalized.SessionTokens != 0 || normalized.WeekTokens != 0 || normalized.TotalTokens != 0 {
+		t.Fatalf("expected negative token stats to clamp to zero, got %+v", normalized)
+	}
+}

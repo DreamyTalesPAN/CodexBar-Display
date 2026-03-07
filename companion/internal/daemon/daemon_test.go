@@ -562,6 +562,42 @@ func TestMarshalFrameWithinLimitFallsBackToErrorFrame(t *testing.T) {
 	}
 }
 
+func TestMarshalFrameWithinLimitDropsTokenStatsBeforeFallback(t *testing.T) {
+	frame := protocol.Frame{
+		Provider:      "codex",
+		Label:         "Codex",
+		Session:       12,
+		Weekly:        30,
+		ResetSec:      3600,
+		SessionTokens: 1437166,
+		WeekTokens:    382243544,
+		TotalTokens:   1078397605,
+	}
+
+	withoutTokens := frame
+	withoutTokens.SessionTokens = 0
+	withoutTokens.WeekTokens = 0
+	withoutTokens.TotalTokens = 0
+	withoutTokensLine, err := withoutTokens.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal base frame without tokens: %v", err)
+	}
+
+	line, marshaled, err := marshalFrameWithinLimit(frame, len(withoutTokensLine))
+	if err != nil {
+		t.Fatalf("marshal within limit: %v", err)
+	}
+	if marshaled.Error != "" {
+		t.Fatalf("expected token stats to be dropped before error fallback, got %q", marshaled.Error)
+	}
+	if marshaled.SessionTokens != 0 || marshaled.WeekTokens != 0 || marshaled.TotalTokens != 0 {
+		t.Fatalf("expected token stats to be removed to fit frame, got %+v", marshaled)
+	}
+	if len(line) > len(withoutTokensLine) {
+		t.Fatalf("expected line to fit limit %d, got %d", len(withoutTokensLine), len(line))
+	}
+}
+
 func TestRunCycleWithDepsUsesMaxFrameBytesFromDeviceHello(t *testing.T) {
 	prepareFastTestEnv(t)
 

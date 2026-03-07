@@ -1443,6 +1443,20 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		}
 	}
 
+	if frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0 {
+		noTokens := frame
+		noTokens.SessionTokens = 0
+		noTokens.WeekTokens = 0
+		noTokens.TotalTokens = 0
+		line, err = noTokens.MarshalLine()
+		if err != nil {
+			return nil, protocol.Frame{}, err
+		}
+		if len(line) <= maxBytes {
+			return line, noTokens, nil
+		}
+	}
+
 	fallback := protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge))
 	line, err = fallback.MarshalLine()
 	if err != nil {

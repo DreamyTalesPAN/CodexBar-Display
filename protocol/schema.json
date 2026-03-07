@@ -34,6 +34,18 @@
       "type": "string",
       "enum": ["used", "remaining"]
     },
+    "sessionTokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "weekTokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "totalTokens": {
+      "type": "integer",
+      "minimum": 0
+    },
     "theme": {
       "type": "string",
       "enum": ["classic", "crt", "mini"]

@@ -31,6 +31,7 @@ var (
 )
 
 var runUsageCommandFn = runUsageCommand
+var runCostCommandFn = runUsageCommand
 
 const minSharedFallbackTimeBudget = 4 * time.Second
 
@@ -184,6 +185,7 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	}
 
 	allParsed = repairCodexFromCLI(ctx, timeout, bin, allParsed)
+	allParsed = mergeTokenStats(ctx, allParsed, bin)
 
 	for i := range allParsed {
 		allParsed[i].Frame = allParsed[i].Frame.Normalize()
@@ -267,6 +269,7 @@ func FetchProvider(ctx context.Context, provider string) (ParsedFrame, error) {
 	if err != nil {
 		return ParsedFrame{}, err
 	}
+	parsed = mergeProviderTokenStats(ctx, parsed, bin)
 	parsed.Frame = parsed.Frame.Normalize()
 	return parsed, nil
 }
