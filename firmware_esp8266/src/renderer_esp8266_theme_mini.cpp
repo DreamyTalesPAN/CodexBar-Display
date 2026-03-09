@@ -23,6 +23,7 @@ constexpr int kUsageMetaTextSize = 2;
 constexpr int kUsageModeTextSize = 1;
 constexpr int kPercentTextSize = 5;
 constexpr int kResetTextSize = 2;
+constexpr int kTokenTextSize = 1;
 constexpr int kUsageLeftCenter = 58;
 constexpr int kUsageOuterPadding = 4;
 constexpr int kUsageLabelY = 30;
@@ -38,6 +39,8 @@ struct MiniGifBox {
   int drawY = 0;
   int drawSize = 0;
 };
+
+String formatCompactTokens(int64_t tokens);
 
 const GifPlaybackRequest& miniThemeGifRequest() {
   static constexpr GifPlaybackRequest kMiniThemeGifRequest = {
@@ -109,9 +112,26 @@ void drawResetCountdownLineMini(int64_t remain) {
 
   const int clearH = tft.height() - clearY;
   const String resetLabel = String("Reset ") + FormatDuration(remain);
-  const int resetY = clearY + ((clearH - TextPixelHeight(kResetTextSize)) / 2);
+  const bool hasTokenStats = CurrentFrame().sessionTokens > 0 || CurrentFrame().weekTokens > 0 || CurrentFrame().totalTokens > 0;
+  int resetY = clearY + ((clearH - TextPixelHeight(kResetTextSize)) / 2);
 
   tft.fillRect(0, clearY, tft.width(), clearH, kMiniBg);
+  if (hasTokenStats) {
+    const String tokenLine = String("S ") + formatCompactTokens(CurrentFrame().sessionTokens) +
+                             "  W " + formatCompactTokens(CurrentFrame().weekTokens) +
+                             "  T " + formatCompactTokens(CurrentFrame().totalTokens);
+    tft.setTextFont(2);
+    tft.setTextSize(kTokenTextSize);
+    tft.setTextColor(TFT_WHITE, kMiniBg);
+    tft.setCursor(centeredXForText(tokenLine.c_str(), kTokenTextSize), clearY + 2);
+    tft.print(tokenLine);
+
+    const int tokenBlockHeight = TextPixelHeight(kTokenTextSize) + 6;
+    const int resetZoneY = clearY + tokenBlockHeight;
+    const int resetZoneH = clearH - tokenBlockHeight;
+    resetY = resetZoneY + ((resetZoneH - TextPixelHeight(kResetTextSize)) / 2);
+  }
+
   tft.setTextFont(1);
   tft.setTextSize(kResetTextSize);
   tft.setTextColor(kMiniMuted, kMiniBg);
@@ -120,6 +140,40 @@ void drawResetCountdownLineMini(int64_t remain) {
 
   LastRenderedSecs() = remain;
   LastRenderedMinuteBucket() = remain / 60;
+}
+
+String formatCompactTokens(int64_t tokens) {
+  if (tokens <= 0) {
+    return "--";
+  }
+
+  struct Unit {
+    int64_t divisor;
+    const char* suffix;
+  };
+
+  static constexpr Unit kUnits[] = {
+      {1000000000000LL, "T"},
+      {1000000000LL, "B"},
+      {1000000LL, "M"},
+      {1000LL, "K"},
+  };
+
+  for (const Unit& unit : kUnits) {
+    if (tokens < unit.divisor) {
+      continue;
+    }
+    const double scaled = static_cast<double>(tokens) / static_cast<double>(unit.divisor);
+    char buf[16];
+    if (scaled >= 100.0) {
+      std::snprintf(buf, sizeof(buf), "%.0f%s", scaled, unit.suffix);
+    } else {
+      std::snprintf(buf, sizeof(buf), "%.1f%s", scaled, unit.suffix);
+    }
+    return String(buf);
+  }
+
+  return String(static_cast<long long>(tokens));
 }
 
 }  // namespace

@@ -77,6 +77,15 @@ func assertFrameMatch(t *testing.T, got, want protocol.Frame) {
 	if got.UsageMode != want.UsageMode {
 		t.Fatalf("usageMode mismatch: got=%q want=%q", got.UsageMode, want.UsageMode)
 	}
+	if got.SessionTokens != want.SessionTokens {
+		t.Fatalf("sessionTokens mismatch: got=%d want=%d", got.SessionTokens, want.SessionTokens)
+	}
+	if got.WeekTokens != want.WeekTokens {
+		t.Fatalf("weekTokens mismatch: got=%d want=%d", got.WeekTokens, want.WeekTokens)
+	}
+	if got.TotalTokens != want.TotalTokens {
+		t.Fatalf("totalTokens mismatch: got=%d want=%d", got.TotalTokens, want.TotalTokens)
+	}
 	if got.Theme != want.Theme {
 		t.Fatalf("theme mismatch: got=%q want=%q", got.Theme, want.Theme)
 	}

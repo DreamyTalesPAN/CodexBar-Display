@@ -9,6 +9,7 @@ Repository, firmware track, CLI, and release artifacts are all named `codexbar-d
 - Pre-release.
 - Primary (and only release-gated MVP) hardware target: ESP8266 SmallTV ST7789 (`esp8266_smalltv_st7789`).
 - v0 includes built-in themes (`classic`, `crt`, `mini`) and a shared GIF core for scenario-based playback.
+- The mini theme can add a compact absolute token line (`S/W/T`) when `codexbar cost --json` provides local stats.
 - ESP32 (`lilygo_t_display_s3`) remains experimental fallback/non-blocking for v0.
 
 ## Theme Previews
@@ -110,6 +111,7 @@ pio run -e lilygo_t_display_s3
 - Operator runbook: `docs/operator-runbook.md`
 - Hardware contract: `docs/hardware-contract.md`
 - Usage polling architecture + benchmarks: `docs/usage-polling-architecture.md`
+- Token usage support matrix: `docs/token-usage-support-matrix.md`
 - Open roadmap: `TODO.md`
 - Protocol: `protocol/PROTOCOL.md`
 

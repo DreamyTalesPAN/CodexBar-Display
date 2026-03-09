@@ -16,6 +16,7 @@ Primary commands used by companion:
 
 - Aggregated usage: `codexbar usage --json --web-timeout 8`
 - Codex CLI fallback: `codexbar usage --json --provider codex --source cli`
+- Absolute token stats: `codexbar cost --json`
 
 ## Current Runtime Architecture
 
@@ -39,6 +40,22 @@ Notes:
 - No per-provider fanout polling loop in daemon collector mode.
 - Aggregate Codex values are preserved as-is (no replacement by separate codex-cli value when aggregate already contains Codex).
 
+### 2b) Token stats side-channel
+
+Absolute token stats are fetched separately from the percentage collector:
+
+1. Read provider usage/quota percentages from `codexbar usage --json`.
+2. Read local token totals from `codexbar cost --json`.
+3. Cache token stats for 60 seconds to avoid repeated local log scans on every render cycle.
+4. On token-stats refresh failure, reuse cached values for up to 15 minutes instead of failing the main percentage pipeline.
+5. Merge token stats into provider frames only when reliable values are available.
+
+Notes:
+
+- Token stats do not affect provider selection logic.
+- The percentage/quota display remains authoritative for session/weekly bars and reset countdowns.
+- Frame size enforcement drops `theme` first, then token stats, before falling back to a runtime error frame.
+
 ### 3) Selection and staleness
 
 Provider selection in render cycles uses local activity + usage deltas + sticky/current behavior. If collector fetch fails temporarily:
@@ -52,6 +69,8 @@ Provider selection in render cycles uses local activity + usage deltas + sticky/
 |---|---|---:|---|
 | Collector fetch timeout | `CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS` | `600s` | clamped `60..900s` |
 | CodexBar command timeout | `CODEXBAR_DISPLAY_TIMEOUT_SECS` | `300s` | used by usage command calls |
+| Token stats refresh interval | built-in | `60s` | cache TTL for `codexbar cost --json` |
+| Token stats stale max age | built-in | `15m` | stale cache fallback when cost refresh fails |
 | Cycle watchdog timeout | `CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS` | `180s` | clamped `5..600s` |
 | Collector interval | `CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS` | `60s` | clamped `30..60s` |
 | Cold-start fetch timeout (sync path) | `CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS` | `2s` | only when no last-good frame exists |
