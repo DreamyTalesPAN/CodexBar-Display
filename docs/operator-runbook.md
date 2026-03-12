@@ -123,6 +123,10 @@ cd /path/to/CodexBar-Display
 ./scripts/rollback-last-known-good.sh --port /dev/cu.usbserial-10
 ```
 
+Wrapper behavior:
+- `upgrade-with-preflight.sh` delegates to `codexbar-display upgrade` and therefore runs the same preflight checks (port busy + version guard).
+- `rollback-last-known-good.sh` delegates to `codexbar-display rollback` with identical rollback/restore semantics.
+
 Rollback modes:
 - companion only: `../codexbar-display rollback --skip-firmware`
 - firmware only: `../codexbar-display rollback --skip-companion --port /dev/cu.usbserial-10`

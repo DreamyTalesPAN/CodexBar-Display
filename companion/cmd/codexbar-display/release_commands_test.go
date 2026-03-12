@@ -2,11 +2,11 @@ package main
 
 import (
 	"errors"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"time"
 )
 
@@ -360,5 +360,175 @@ func TestWrapUpgradeLaunchAgentRecoveryErrorAppendsHint(t *testing.T) {
 	}
 	if !strings.Contains(recovery, "restart launch agent manually") {
 		t.Fatalf("expected launch agent hint in recovery, got %q", recovery)
+	}
+}
+
+func TestRunRollbackFirmwareOnlyRestartsLaunchAgent(t *testing.T) {
+	previousResolve := resolveSerialPortFn
+	previousLoadState := loadReleaseStateFn
+	previousRunRestore := runRestoreKnownGoodCommandFn
+	previousRestart := rollbackRestartLaunchAgentFn
+	t.Cleanup(func() {
+		resolveSerialPortFn = previousResolve
+		loadReleaseStateFn = previousLoadState
+		runRestoreKnownGoodCommandFn = previousRunRestore
+		rollbackRestartLaunchAgentFn = previousRestart
+	})
+
+	t.Setenv("HOME", t.TempDir())
+
+	restoreCalls := 0
+	restartCalls := 0
+	resolveSerialPortFn = func(port string) (string, error) {
+		return strings.TrimSpace(port), nil
+	}
+	loadReleaseStateFn = func(string) (releaseState, error) {
+		return releaseState{
+			LastKnownGood: lastKnownGoodState{
+				FirmwareImage:    "/tmp/missing.bin",
+				FirmwareManifest: "/tmp/missing.bin.manifest",
+			},
+		}, nil
+	}
+	runRestoreKnownGoodCommandFn = func(args []string) error {
+		restoreCalls++
+		if !containsArg(args, "--port", "/dev/cu.usbserial-110") {
+			t.Fatalf("expected --port argument in restore call, got %v", args)
+		}
+		return nil
+	}
+	rollbackRestartLaunchAgentFn = func(home string) error {
+		restartCalls++
+		if strings.TrimSpace(home) == "" {
+			t.Fatal("expected non-empty home for restart call")
+		}
+		return nil
+	}
+
+	if err := runRollback([]string{"--skip-companion", "--port", "/dev/cu.usbserial-110"}); err != nil {
+		t.Fatalf("runRollback failed: %v", err)
+	}
+	if restoreCalls != 1 {
+		t.Fatalf("expected restore invocation once, got %d", restoreCalls)
+	}
+	if restartCalls != 1 {
+		t.Fatalf("expected launchagent restart once, got %d", restartCalls)
+	}
+}
+
+func TestRunRollbackReturnsLaunchAgentErrorCodeWhenRestartFails(t *testing.T) {
+	previousResolve := resolveSerialPortFn
+	previousLoadState := loadReleaseStateFn
+	previousRunRestore := runRestoreKnownGoodCommandFn
+	previousRestart := rollbackRestartLaunchAgentFn
+	t.Cleanup(func() {
+		resolveSerialPortFn = previousResolve
+		loadReleaseStateFn = previousLoadState
+		runRestoreKnownGoodCommandFn = previousRunRestore
+		rollbackRestartLaunchAgentFn = previousRestart
+	})
+
+	t.Setenv("HOME", t.TempDir())
+
+	resolveSerialPortFn = func(port string) (string, error) {
+		return strings.TrimSpace(port), nil
+	}
+	loadReleaseStateFn = func(string) (releaseState, error) {
+		return releaseState{}, nil
+	}
+	runRestoreKnownGoodCommandFn = func([]string) error {
+		return nil
+	}
+	rollbackRestartLaunchAgentFn = func(string) error {
+		return errors.New("launchctl kickstart failed")
+	}
+
+	err := runRollback([]string{"--skip-companion", "--port", "/dev/cu.usbserial-110"})
+	if err == nil {
+		t.Fatal("expected rollback restart error")
+	}
+	if got := errcode.Of(err); got != errcode.RollbackLaunchAgent {
+		t.Fatalf("expected rollback launchagent code, got %s", got)
+	}
+}
+
+func TestRunUpgradePreflightPortBusyReturnsUpgradePortBusyCode(t *testing.T) {
+	previousResolve := resolveSerialPortFn
+	previousEnsureBusy := ensureSerialPortNotBusyFn
+	previousStop := upgradeStopLaunchAgentFn
+	previousRestart := upgradeRestartLaunchAgentFn
+	t.Cleanup(func() {
+		resolveSerialPortFn = previousResolve
+		ensureSerialPortNotBusyFn = previousEnsureBusy
+		upgradeStopLaunchAgentFn = previousStop
+		upgradeRestartLaunchAgentFn = previousRestart
+	})
+
+	t.Setenv("HOME", t.TempDir())
+
+	resolveSerialPortFn = func(port string) (string, error) {
+		return strings.TrimSpace(port), nil
+	}
+	ensureSerialPortNotBusyFn = func(string) error {
+		return errors.New("serial port busy")
+	}
+	upgradeStopLaunchAgentFn = func() {}
+	upgradeRestartLaunchAgentFn = func(string) error { return nil }
+
+	err := runUpgrade([]string{"--port", "/dev/cu.usbserial-110"})
+	if err == nil {
+		t.Fatal("expected preflight busy error")
+	}
+	if got := errcode.Of(err); got != errcode.UpgradePortBusy {
+		t.Fatalf("expected upgrade/port-busy code, got %s", got)
+	}
+}
+
+func TestReleaseWrapperScriptsCallExpectedCommands(t *testing.T) {
+	root := repoRoot(t)
+	upgradeWrapper := filepath.Join(root, "scripts", "upgrade-with-preflight.sh")
+	rollbackWrapper := filepath.Join(root, "scripts", "rollback-last-known-good.sh")
+
+	upgradeData, err := os.ReadFile(upgradeWrapper)
+	if err != nil {
+		t.Fatalf("read upgrade wrapper: %v", err)
+	}
+	rollbackData, err := os.ReadFile(rollbackWrapper)
+	if err != nil {
+		t.Fatalf("read rollback wrapper: %v", err)
+	}
+
+	if !strings.Contains(string(upgradeData), " upgrade ") {
+		t.Fatalf("expected upgrade wrapper to invoke upgrade command")
+	}
+	if !strings.Contains(string(rollbackData), " rollback ") {
+		t.Fatalf("expected rollback wrapper to invoke rollback command")
+	}
+}
+
+func containsArg(args []string, flag, value string) bool {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == flag && args[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "companion", "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("repository root not found from %s", dir)
+		}
+		dir = parent
 	}
 }
