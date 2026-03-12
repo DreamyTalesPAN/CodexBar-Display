@@ -75,7 +75,11 @@ void setup() {
   transportConfig.boardId = CODEXBAR_DISPLAY_BOARD_ID;
   transportConfig.firmwareVersion = CODEXBAR_DISPLAY_FW_VERSION;
   transportConfig.featuresJSON = "[]";
-  transportConfig.maxFrameBytes = 512;
+  transportConfig.capabilitiesJSON =
+      "{\"display\":{\"widthPx\":170,\"heightPx\":320,\"colorDepthBits\":16},"
+      "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,\"builtinThemes\":[]},"
+      "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\"]}}";
+  transportConfig.maxFrameBytes = 1024;
   codexbar_display::app::EmitDeviceHello(transportConfig);
 
   Serial.println("codexbar_display_ready");

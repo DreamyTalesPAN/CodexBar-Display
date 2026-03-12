@@ -115,7 +115,7 @@ void drawResetCountdownLineMini(int64_t remain) {
   const bool hasTokenStats = CurrentFrame().sessionTokens > 0 || CurrentFrame().weekTokens > 0 || CurrentFrame().totalTokens > 0;
   int resetY = clearY + ((clearH - TextPixelHeight(kResetTextSize)) / 2);
 
-  tft.fillRect(0, clearY, tft.width(), clearH, kMiniBg);
+  PrimitiveFillRect(0, clearY, tft.width(), clearH, kMiniBg);
   if (hasTokenStats) {
     const String tokenLine = String("S ") + formatCompactTokens(CurrentFrame().sessionTokens) +
                              "  W " + formatCompactTokens(CurrentFrame().weekTokens) +
@@ -218,7 +218,7 @@ void DrawMiniGifPlaceholder() {
   }
 
   if (!GifCore().IsCurrentAssetPresent(kMiniGifPath)) {
-    tft.fillRect(x, y, boxW, boxH, rgb565(18, 20, 24));
+    PrimitiveFillRect(x, y, boxW, boxH, rgb565(18, 20, 24));
     tft.setTextFont(1);
     tft.setTextSize(1);
     tft.setTextColor(kMiniMuted, rgb565(18, 20, 24));
@@ -230,7 +230,7 @@ void DrawMiniGifPlaceholder() {
 void DrawSplashMini() {
   TFT_eSPI& tft = Tft();
 
-  tft.fillScreen(kMiniBg);
+  PrimitiveFillScreen(kMiniBg);
   tft.setTextColor(kMiniPrimary, kMiniBg);
   tft.setTextFont(2);
   tft.setTextSize(2);
@@ -256,7 +256,7 @@ void TickSplashMini() {
 void DrawErrorMini(const String& message) {
   TFT_eSPI& tft = Tft();
 
-  tft.fillScreen(kMiniBg);
+  PrimitiveFillScreen(kMiniBg);
   tft.setTextFont(2);
   tft.setTextSize(2);
   tft.setTextColor(kMiniPrimary, kMiniBg);
@@ -286,7 +286,7 @@ void DrawUsageMini() {
   (void)GifCore().EnsureReady(tft, miniThemeGifRequest());
   const char* usageMode = miniUsageModeText();
 
-  tft.fillScreen(kMiniBg);
+  PrimitiveFillScreen(kMiniBg);
   tft.setTextWrap(false);
 
   const char* provider = ProviderLabelText();

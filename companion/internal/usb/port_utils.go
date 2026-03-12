@@ -82,6 +82,25 @@ func setControlLinesLow(port SerialPort) {
 	_ = port.SetRTS(false)
 }
 
+func pulseControlLines(port SerialPort, sleepFn func(time.Duration), pulse time.Duration) {
+	if port == nil {
+		return
+	}
+	if sleepFn == nil {
+		sleepFn = time.Sleep
+	}
+	if pulse <= 0 {
+		pulse = 20 * time.Millisecond
+	}
+
+	_ = port.SetDTR(true)
+	_ = port.SetRTS(true)
+	sleepFn(pulse)
+	_ = port.SetDTR(false)
+	_ = port.SetRTS(false)
+	sleepFn(pulse)
+}
+
 func closePortBestEffort(port SerialPort, path string, timeout time.Duration) error {
 	if port == nil {
 		return nil

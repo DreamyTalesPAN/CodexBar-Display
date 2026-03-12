@@ -8,7 +8,7 @@
 namespace codexbar_display {
 namespace core {
 
-constexpr size_t kFrameLineBufferBytes = 512;
+constexpr size_t kFrameLineBufferBytes = 1024;
 
 struct Frame {
   String provider;
@@ -23,6 +23,9 @@ struct Frame {
   String usageMode;
   bool hasTheme = false;
   String theme;
+  bool hasThemeSpec = false;
+  String themeSpecId;
+  int themeSpecRev = 0;
   bool hasError = false;
   String error;
 };
@@ -32,6 +35,8 @@ struct RuntimeState {
   bool hasFrame = false;
   unsigned long resetBaseMillis = 0;
   int64_t resetBaseSecs = 0;
+  String cachedThemeId;
+  int cachedThemeRev = 0;
 };
 
 struct LineReaderState {
@@ -45,6 +50,8 @@ struct SerialConsumeEvent {
   bool hadFrame = false;
   bool visualChanged = false;
   bool themeChanged = false;
+  bool themeSpecChanged = false;
+  bool themeSpecCacheHit = false;
 };
 
 inline int ClampPct(int value) {
@@ -102,6 +109,27 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     hasTheme = theme::NormalizeThemeName(String(doc["theme"].as<const char*>()), themeName);
   }
 
+  bool hasThemeSpec = false;
+  String themeSpecId;
+  int themeSpecRev = 0;
+  if (doc["themeSpec"].is<JsonObjectConst>()) {
+    JsonObjectConst spec = doc["themeSpec"].as<JsonObjectConst>();
+    if (spec["themeId"].is<const char*>()) {
+      themeSpecId = String(spec["themeId"].as<const char*>());
+      themeSpecId.trim();
+    }
+    themeSpecRev = static_cast<int>(spec["themeRev"] | 0);
+    hasThemeSpec = (themeSpecId.length() > 0 && themeSpecRev > 0);
+
+    if (allowTheme && !hasTheme && spec["fallbackTheme"].is<const char*>()) {
+      String fallbackTheme;
+      if (theme::NormalizeThemeName(String(spec["fallbackTheme"].as<const char*>()), fallbackTheme)) {
+        hasTheme = true;
+        themeName = fallbackTheme;
+      }
+    }
+  }
+
   bool hasUsageMode = false;
   String usageMode;
   if (doc["usageMode"].is<const char*>()) {
@@ -121,6 +149,9 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     out.usageMode = usageMode;
     out.hasTheme = hasTheme;
     out.theme = themeName;
+    out.hasThemeSpec = hasThemeSpec;
+    out.themeSpecId = themeSpecId;
+    out.themeSpecRev = themeSpecRev;
     out.hasError = true;
     out.error = String(doc["error"].as<const char*>());
     return true;
@@ -139,6 +170,9 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   out.usageMode = usageMode;
   out.hasTheme = hasTheme;
   out.theme = themeName;
+  out.hasThemeSpec = hasThemeSpec;
+  out.themeSpecId = themeSpecId;
+  out.themeSpecRev = themeSpecRev;
   out.hasError = false;
   out.error = "";
   return true;
@@ -202,6 +236,19 @@ inline bool ConsumeSerialByte(
       outEvent.hadFrame = runtimeState.hasFrame;
       outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChanged(previous, next);
       outEvent.themeChanged = outEvent.hadFrame && FrameThemeChanged(previous, next);
+
+      if (next.hasThemeSpec) {
+        if (runtimeState.cachedThemeRev > 0 &&
+            runtimeState.cachedThemeId == next.themeSpecId &&
+            runtimeState.cachedThemeRev == next.themeSpecRev) {
+          outEvent.themeSpecCacheHit = true;
+        } else {
+          runtimeState.cachedThemeId = next.themeSpecId;
+          runtimeState.cachedThemeRev = next.themeSpecRev;
+          outEvent.themeSpecChanged = true;
+          outEvent.visualChanged = true;
+        }
+      }
 
       runtimeState.current = next;
       runtimeState.hasFrame = true;

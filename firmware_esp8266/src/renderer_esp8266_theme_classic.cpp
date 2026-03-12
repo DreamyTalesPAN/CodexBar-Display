@@ -238,7 +238,7 @@ void drawSplashHintLineClassic(const SplashLayout& layout) {
   }
 
   TFT_eSPI& tft = Tft();
-  tft.fillRect(0, layout.hintClearY, tft.width(), layout.hintClearH, TFT_BLACK);
+  PrimitiveFillRect(0, layout.hintClearY, tft.width(), layout.hintClearH, TFT_BLACK);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   SetClassicTextSize(layout.hintSize);
   tft.setCursor(CenteredTextX(hint, layout.hintSize), layout.hintY);
@@ -250,7 +250,7 @@ void drawSplashWaitingLineClassic(const SplashLayout& layout) {
   std::strcat(line2, SplashDotsSuffix());
 
   TFT_eSPI& tft = Tft();
-  tft.fillRect(0, layout.line2ClearY, tft.width(), layout.line2ClearH, TFT_BLACK);
+  PrimitiveFillRect(0, layout.line2ClearY, tft.width(), layout.line2ClearH, TFT_BLACK);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   SetClassicTextSize(layout.subtitleSize);
   tft.setCursor(CenteredTextX(line2, layout.subtitleSize), layout.line2Y);
@@ -262,7 +262,7 @@ void drawResetCountdownLineClassic(int64_t remain) {
   const UsageLayout layout = usageLayoutForProvider(ProviderLabelText());
   const String resetLabel = String("Reset in ") + FormatDuration(remain);
 
-  tft.fillRect(0, layout.resetClearY, tft.width(), layout.resetClearH, TFT_BLACK);
+  PrimitiveFillRect(0, layout.resetClearY, tft.width(), layout.resetClearH, TFT_BLACK);
   SetClassicTextSize(layout.resetSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(CenteredTextX(resetLabel.c_str(), layout.resetSize), layout.resetY);
@@ -281,7 +281,7 @@ void DrawSplashClassic() {
   constexpr char kLine1[] = "Waiting for";
 
   const SplashLayout layout = splashLayoutClassic();
-  tft.fillScreen(TFT_BLACK);
+  PrimitiveFillScreen(TFT_BLACK);
 
   tft.setTextColor(TFT_CYAN, TFT_BLACK);
   SetClassicTextSize(layout.titleSize);
@@ -328,7 +328,7 @@ void TickSplashClassic() {
 void DrawErrorClassic(const String& message) {
   TFT_eSPI& tft = Tft();
 
-  tft.fillScreen(TFT_BLACK);
+  PrimitiveFillScreen(TFT_BLACK);
   SetClassicTextSize(2);
   tft.setTextColor(TFT_ORANGE, TFT_BLACK);
   tft.setCursor(8, 16);
@@ -350,7 +350,7 @@ void DrawUsageClassic() {
   const char* providerText = ProviderLabelText();
   const UsageLayout layout = usageLayoutForProvider(providerText);
 
-  tft.fillScreen(TFT_BLACK);
+  PrimitiveFillScreen(TFT_BLACK);
   tft.setTextColor(TFT_CYAN, TFT_BLACK);
   SetClassicTextSize(layout.providerSize);
   tft.setCursor(CenteredTextX(providerText, layout.providerSize), layout.providerY);

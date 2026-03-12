@@ -18,6 +18,8 @@ const (
 	ProtocolDeviceHelloUnavailable Code = "protocol/device-hello-unavailable"
 	ProtocolFrameEncode            Code = "protocol/frame-encode"
 	ProtocolFrameTooLarge          Code = "protocol/frame-too-large"
+	ProtocolThemeSpecInvalid       Code = "protocol/theme-spec-invalid"
+	ProtocolThemeSpecIncompatible  Code = "protocol/theme-spec-incompatible"
 
 	RuntimeSerialResolve  Code = "runtime/serial-resolve"
 	RuntimeSerialWrite    Code = "runtime/serial-write"
@@ -112,6 +114,10 @@ func DefaultRecovery(code Code) string {
 		return "Reduce optional payload fields and retry."
 	case ProtocolFrameTooLarge:
 		return "Use a shorter frame payload or device profile with larger `maxFrameBytes`."
+	case ProtocolThemeSpecInvalid:
+		return "Fix ThemeSpec schema/fields and retry (`codexbar-display theme-validate --spec ...`)."
+	case ProtocolThemeSpecIncompatible:
+		return "Use a ThemeSpec compatible with device capabilities (`maxThemeSpecBytes`, `maxThemePrimitives`, fallback theme)."
 	case RuntimeSerialResolve:
 		return "Reconnect the board or pass `--port` to `codexbar-display daemon`."
 	case RuntimeSerialWrite:

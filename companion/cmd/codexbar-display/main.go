@@ -19,6 +19,8 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/health"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themespec"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -44,6 +46,10 @@ func main() {
 		err = runRollback(os.Args[2:])
 	case "restore-known-good":
 		err = runRestoreKnownGood(os.Args[2:])
+	case "theme-validate":
+		err = runThemeValidate(os.Args[2:])
+	case "theme-apply":
+		err = runThemeApply(os.Args[2:])
 	case "setup":
 		err = runSetup(os.Args[2:])
 	default:
@@ -73,6 +79,8 @@ func printUsage() {
 	fmt.Println("  codexbar-display upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--skip-version-guard]")
 	fmt.Println("  codexbar-display rollback [--port /dev/cu.usbserial-10] [--skip-companion] [--skip-firmware] [--image path/to/backup.bin] [--manifest path/to/backup.manifest] [--backup-dir <dir>] [--script-path <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
+	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
+	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
@@ -199,8 +207,17 @@ func runDoctorRuntimeChecks(ports []string) error {
 	}
 
 	caps := protocol.CapabilitiesFromHello(hello)
-	fmt.Printf("  device hello: ok board=%s protocol=%d firmware=%s theme=%t maxFrameBytes=%d\n",
-		caps.Board, caps.ProtocolVersion, hello.Firmware, caps.SupportsTheme, caps.MaxFrameBytes)
+	fmt.Printf("  device hello: ok board=%s protocol=%d negotiated=%d firmware=%s theme=%t themeSpecV1=%t maxFrameBytes=%d\n",
+		caps.Board,
+		caps.ProtocolVersion,
+		caps.NegotiatedProtocolVersion,
+		hello.Firmware,
+		caps.SupportsTheme,
+		caps.SupportsThemeSpecV1,
+		caps.MaxFrameBytes)
+	if len(caps.SupportedProtocolVersions) > 0 {
+		fmt.Printf("  device hello protocols: %v (preferred=%d)\n", caps.SupportedProtocolVersions, caps.PreferredProtocolVersion)
+	}
 	if !caps.Known {
 		fmt.Println("  warning: device capabilities are unknown; skipping strict hardware/theme contract checks")
 		return nil
@@ -217,8 +234,11 @@ func runDoctorRuntimeChecks(ports []string) error {
 		return fmt.Errorf("runtime hardware contract failed: unsupported board %q", caps.Board)
 	}
 
-	if caps.ProtocolVersion > 0 && caps.ProtocolVersion != 1 {
-		return fmt.Errorf("runtime protocol contract failed: unsupported protocol version %d", caps.ProtocolVersion)
+	if !protocol.IsSupportedProtocolVersion(caps.NegotiatedProtocolVersion) {
+		return fmt.Errorf(
+			"runtime protocol contract failed: negotiated protocol version %d unsupported by companion",
+			caps.NegotiatedProtocolVersion,
+		)
 	}
 
 	return nil
@@ -248,6 +268,180 @@ func runSetup(args []string) error {
 		ValidateOnly:  *validateOnly,
 		DryRun:        *dryRun,
 	})
+}
+
+func runThemeValidate(args []string) error {
+	fs := flag.NewFlagSet("theme-validate", flag.ContinueOnError)
+	specPath := fs.String("spec", "", "path to ThemeSpec v1 JSON")
+	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	allowUnknown := fs.Bool(
+		"allow-unknown-capabilities",
+		false,
+		"allow local USB fallback profile when device hello is unavailable",
+	)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	_, _, resolvedPort, caps, err := loadAndValidateThemeSpec(
+		strings.TrimSpace(*specPath),
+		strings.TrimSpace(*port),
+		*allowUnknown,
+	)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf(
+		"theme-spec valid: protocol=%d board=%s port=%s maxBytes=%d maxPrimitives=%d\n",
+		caps.NegotiatedProtocolVersion,
+		caps.Board,
+		resolvedPort,
+		caps.MaxThemeSpecBytes,
+		caps.MaxThemePrimitives,
+	)
+	return nil
+}
+
+func runThemeApply(args []string) error {
+	fs := flag.NewFlagSet("theme-apply", flag.ContinueOnError)
+	specPath := fs.String("spec", "", "path to ThemeSpec v1 JSON")
+	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	allowUnknown := fs.Bool(
+		"allow-unknown-capabilities",
+		false,
+		"allow local USB fallback profile when device hello is unavailable",
+	)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	spec, raw, resolvedPort, caps, err := loadAndValidateThemeSpec(
+		strings.TrimSpace(*specPath),
+		strings.TrimSpace(*port),
+		*allowUnknown,
+	)
+	if err != nil {
+		return err
+	}
+
+	frame := protocol.Frame{
+		V:         protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion),
+		ThemeSpec: raw,
+	}
+	if spec.FallbackTheme != "" {
+		frame.Theme = spec.FallbackTheme
+	}
+	line, err := frame.MarshalLine()
+	if err != nil {
+		return &commandError{
+			Op:   "theme-apply/marshal-frame",
+			Code: errcode.ProtocolFrameEncode,
+			Err:  err,
+		}
+	}
+	if caps.MaxFrameBytes > 0 && len(line) > caps.MaxFrameBytes {
+		return &commandError{
+			Op:   "theme-apply/frame-size",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err: fmt.Errorf(
+				"encoded frame exceeds maxFrameBytes: frame=%d limit=%d",
+				len(line),
+				caps.MaxFrameBytes,
+			),
+		}
+	}
+	if err := usb.SendLine(resolvedPort, line); err != nil {
+		return err
+	}
+
+	fmt.Printf(
+		"theme-spec applied: id=%s rev=%d protocol=%d board=%s port=%s\n",
+		spec.ThemeID,
+		spec.ThemeRev,
+		frame.V,
+		caps.Board,
+		resolvedPort,
+	)
+	return nil
+}
+
+func loadAndValidateThemeSpec(specPath, requestedPort string, allowUnknown bool) (themespec.Spec, []byte, string, protocol.DeviceCapabilities, error) {
+	if strings.TrimSpace(specPath) == "" {
+		return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, &commandError{
+			Op:   "theme-spec/load",
+			Code: errcode.ProtocolThemeSpecInvalid,
+			Err:  errors.New("missing required --spec path"),
+		}
+	}
+
+	spec, raw, err := themespec.Load(specPath)
+	if err != nil {
+		return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, &commandError{
+			Op:   "theme-spec/load",
+			Code: errcode.ProtocolThemeSpecInvalid,
+			Err:  err,
+		}
+	}
+	if err := themespec.Validate(spec); err != nil {
+		return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, &commandError{
+			Op:   "theme-spec/validate",
+			Code: errcode.ProtocolThemeSpecInvalid,
+			Err:  err,
+		}
+	}
+
+	resolvedPort, err := usb.ResolvePort(requestedPort)
+	if err != nil {
+		return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, err
+	}
+	caps, err := usb.GetDeviceCapabilities(resolvedPort)
+	if err != nil {
+		if allowUnknown && errcode.Of(err) == errcode.ProtocolDeviceHelloUnavailable {
+			caps = fallbackThemeSpecCapabilities()
+			fmt.Printf("warning: device hello unavailable; using local USB fallback capabilities for validation on %s\n", resolvedPort)
+		} else {
+			return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, err
+		}
+	}
+	if allowUnknown && !caps.Known {
+		caps = fallbackThemeSpecCapabilities()
+		fmt.Printf("warning: capabilities unknown; using local USB fallback profile on %s\n", resolvedPort)
+	}
+	if !allowUnknown && !caps.Known {
+		return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, &commandError{
+			Op:   "theme-spec/capabilities",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err:  errors.New("device capabilities unavailable; connect device and retry"),
+		}
+	}
+	if err := themespec.ValidateAgainstCapabilities(spec, raw, caps); err != nil {
+		return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, &commandError{
+			Op:   "theme-spec/capabilities",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err:  err,
+		}
+	}
+
+	return spec, raw, resolvedPort, caps, nil
+}
+
+func fallbackThemeSpecCapabilities() protocol.DeviceCapabilities {
+	return protocol.DeviceCapabilities{
+		Known:                     true,
+		ProtocolVersion:           protocol.ProtocolVersionV2,
+		SupportedProtocolVersions: []int{protocol.ProtocolVersionV2, protocol.ProtocolVersionV1},
+		PreferredProtocolVersion:  protocol.ProtocolVersionV2,
+		NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+		Board:                     "assumed-usb-profile",
+		SupportsTheme:             true,
+		SupportsThemeSpecV1:       true,
+		MaxFrameBytes:             1024,
+		MaxThemeSpecBytes:         1024,
+		MaxThemePrimitives:        32,
+		BuiltinThemes:             theme.Names(),
+		ActiveTransport:           "usb",
+	}
 }
 
 func runRestoreKnownGood(args []string) error {

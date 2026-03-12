@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -101,6 +103,7 @@ func (e *RuntimeError) RecoveryAction() string {
 }
 
 type runtimeDeps struct {
+	transport         transportlayer.DeviceTransport
 	now               func() time.Time
 	after             func(time.Duration) <-chan time.Time
 	resolvePort       func(string) (string, error)
@@ -114,6 +117,9 @@ type runtimeDeps struct {
 }
 
 func (d runtimeDeps) withDefaults() runtimeDeps {
+	if d.transport == nil {
+		d.transport = transportlayer.NewUSBTransport()
+	}
 	if d.now == nil {
 		d.now = wallClockNow
 	}
@@ -121,10 +127,10 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 		d.after = time.After
 	}
 	if d.resolvePort == nil {
-		d.resolvePort = usb.ResolvePort
+		d.resolvePort = d.transport.ResolvePort
 	}
 	if d.deviceCaps == nil {
-		d.deviceCaps = usb.GetDeviceCapabilities
+		d.deviceCaps = d.transport.DeviceCapabilities
 	}
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
@@ -136,7 +142,7 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 		d.usageBarsShowUsed = func() bool { return true }
 	}
 	if d.sendLine == nil {
-		d.sendLine = usb.SendLine
+		d.sendLine = d.transport.SendLine
 	}
 	if d.newSelector == nil {
 		d.newSelector = codexbar.NewProviderSelector
@@ -769,6 +775,7 @@ func finalizeCycleResult(state *runtimeState, result cycleResult) cycleResult {
 
 func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
+	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
 		var applied bool
@@ -900,7 +907,7 @@ func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Tim
 	state.hasLastGood = true
 
 	shouldPersist := !state.hasPersistedGood ||
-		state.lastPersistedGood != normalized ||
+		!framesEqual(state.lastPersistedGood, normalized) ||
 		state.lastPersistedAt.IsZero() ||
 		now.Sub(state.lastPersistedAt) >= lastGoodPersistInterval
 	if !shouldPersist {
@@ -914,6 +921,10 @@ func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Tim
 	state.lastPersistedGood = normalized
 	state.lastPersistedAt = now
 	state.hasPersistedGood = true
+}
+
+func framesEqual(a, b protocol.Frame) bool {
+	return reflect.DeepEqual(a.Normalize(), b.Normalize())
 }
 
 func usageDataRuntimeError(kind runtimeErrorKind, op string, err error) *RuntimeError {

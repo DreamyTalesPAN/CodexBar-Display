@@ -34,3 +34,19 @@ func TestContainsPort(t *testing.T) {
 		t.Fatalf("did not expect unknown port to match")
 	}
 }
+
+func TestFallbackThemeSpecCapabilities(t *testing.T) {
+	caps := fallbackThemeSpecCapabilities()
+	if !caps.Known {
+		t.Fatalf("expected fallback capabilities to be known")
+	}
+	if !caps.SupportsThemeSpecV1 {
+		t.Fatalf("expected fallback profile to support ThemeSpec v1")
+	}
+	if caps.NegotiatedProtocolVersion != 2 {
+		t.Fatalf("expected protocol v2 fallback, got %d", caps.NegotiatedProtocolVersion)
+	}
+	if caps.MaxThemeSpecBytes <= 0 || caps.MaxThemePrimitives <= 0 {
+		t.Fatalf("expected positive fallback limits, got bytes=%d primitives=%d", caps.MaxThemeSpecBytes, caps.MaxThemePrimitives)
+	}
+}

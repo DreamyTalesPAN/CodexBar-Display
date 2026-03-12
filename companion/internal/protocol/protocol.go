@@ -8,22 +8,23 @@ import (
 )
 
 type Frame struct {
-	V             int    `json:"v"`
-	Provider      string `json:"provider,omitempty"`
-	Label         string `json:"label,omitempty"`
-	Session       int    `json:"session,omitempty"`
-	Weekly        int    `json:"weekly,omitempty"`
-	ResetSec      int64  `json:"resetSecs,omitempty"`
-	UsageMode     string `json:"usageMode,omitempty"`
-	SessionTokens int64  `json:"sessionTokens,omitempty"`
-	WeekTokens    int64  `json:"weekTokens,omitempty"`
-	TotalTokens   int64  `json:"totalTokens,omitempty"`
-	Theme         string `json:"theme,omitempty"`
-	Error         string `json:"error,omitempty"`
+	V             int             `json:"v"`
+	Provider      string          `json:"provider,omitempty"`
+	Label         string          `json:"label,omitempty"`
+	Session       int             `json:"session,omitempty"`
+	Weekly        int             `json:"weekly,omitempty"`
+	ResetSec      int64           `json:"resetSecs,omitempty"`
+	UsageMode     string          `json:"usageMode,omitempty"`
+	SessionTokens int64           `json:"sessionTokens,omitempty"`
+	WeekTokens    int64           `json:"weekTokens,omitempty"`
+	TotalTokens   int64           `json:"totalTokens,omitempty"`
+	Theme         string          `json:"theme,omitempty"`
+	ThemeSpec     json.RawMessage `json:"themeSpec,omitempty"`
+	Error         string          `json:"error,omitempty"`
 }
 
 func (f Frame) Normalize() Frame {
-	f.V = 1
+	f.V = NormalizeProtocolVersion(f.V)
 	if f.Session < 0 {
 		f.Session = 0
 	}
@@ -55,6 +56,9 @@ func (f Frame) Normalize() Frame {
 		f.UsageMode = ""
 	}
 	f.Theme = theme.Normalize(f.Theme)
+	if len(f.ThemeSpec) > 0 && !json.Valid(f.ThemeSpec) {
+		f.ThemeSpec = nil
+	}
 	return f
 }
 
@@ -68,5 +72,5 @@ func (f Frame) MarshalLine() ([]byte, error) {
 }
 
 func ErrorFrame(msg string) Frame {
-	return Frame{V: 1, Error: msg}
+	return Frame{V: ProtocolVersionV1, Error: msg}
 }

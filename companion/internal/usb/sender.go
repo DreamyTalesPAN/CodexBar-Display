@@ -175,6 +175,7 @@ func (s *Sender) ensurePort(path string) (bool, error) {
 func (s *Sender) captureHelloAfterOpenLocked() {
 	// Some ESP8266 USB bridges pulse reset/boot lines when a serial port is opened.
 	// Give the MCU a short settle window and capture boot hello before first write.
+	pulseControlLines(s.port, s.sleep, resetPulseDuration)
 	_ = s.port.ResetInputBuffer()
 	s.sleep(s.settleDuration)
 	s.captureHelloLocked()
