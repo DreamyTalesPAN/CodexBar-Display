@@ -27,8 +27,17 @@ const (
 )
 
 var (
-	upgradeStopLaunchAgentFn    = stopLaunchAgentBestEffort
-	upgradeRestartLaunchAgentFn = restartLaunchAgent
+	upgradeStopLaunchAgentFn           = stopLaunchAgentBestEffort
+	upgradeRestartLaunchAgentFn        = restartLaunchAgent
+	rollbackRestartLaunchAgentFn       = restartLaunchAgent
+	resolveSerialPortFn                = usb.ResolvePort
+	readDeviceHelloFn                  = usb.ReadDeviceHello
+	ensureSerialPortNotBusyFn          = ensureSerialPortNotBusy
+	setupRunFn                         = setup.Run
+	loadReleaseStateFn                 = loadReleaseState
+	saveReleaseStateFn                 = saveReleaseState
+	snapshotInstalledCompanionBinaryFn = snapshotInstalledCompanionBinary
+	runRestoreKnownGoodCommandFn       = runRestoreKnownGood
 )
 
 type commandError struct {
@@ -176,7 +185,7 @@ func runUpgrade(args []string) (retErr error) {
 	}
 	selectedEnv = resolvedEnv
 
-	resolvedPort, err := usb.ResolvePort(strings.TrimSpace(*port))
+	resolvedPort, err := resolveSerialPortFn(strings.TrimSpace(*port))
 	if err != nil {
 		return &commandError{
 			Op:   "resolve-port",
@@ -195,7 +204,7 @@ func runUpgrade(args []string) (retErr error) {
 	cleanupUpgradeLaunchAgent := beginUpgradeLaunchAgentRecovery(home, &retErr)
 	defer cleanupUpgradeLaunchAgent()
 
-	if err := ensureSerialPortNotBusy(resolvedPort); err != nil {
+	if err := ensureSerialPortNotBusyFn(resolvedPort); err != nil {
 		return &commandError{
 			Op:   "preflight-port-busy",
 			Code: errcode.UpgradePortBusy,
@@ -248,14 +257,14 @@ func runUpgrade(args []string) (retErr error) {
 		fmt.Println("version guard: skipped (--skip-version-guard)")
 	}
 
-	hello, helloErr := usb.ReadDeviceHello(resolvedPort)
+	hello, helloErr := readDeviceHelloFn(resolvedPort)
 	if helloErr == nil {
 		fmt.Printf("device hello: board=%s firmware=%s protocol=%d\n", hello.Board, hello.Firmware, hello.ProtocolVersion)
 	} else {
 		fmt.Printf("device hello: unavailable (%v)\n", helloErr)
 	}
 
-	state, err := loadReleaseState(home)
+	state, err := loadReleaseStateFn(home)
 	if err != nil {
 		return &commandError{
 			Op:   "load-release-state",
@@ -264,7 +273,7 @@ func runUpgrade(args []string) (retErr error) {
 		}
 	}
 
-	snapshotPath, snapshotVersion, err := snapshotInstalledCompanionBinary(home)
+	snapshotPath, snapshotVersion, err := snapshotInstalledCompanionBinaryFn(home)
 	if err != nil {
 		return &commandError{
 			Op:   "snapshot-companion",
@@ -282,7 +291,7 @@ func runUpgrade(args []string) (retErr error) {
 	state.LastKnownGood.FirmwareEnv = selectedEnv
 	state.LastKnownGood.CapturedAtUTC = time.Now().UTC().Format(time.RFC3339)
 	state.UpdatedAtUTC = state.LastKnownGood.CapturedAtUTC
-	if err := saveReleaseState(home, state); err != nil {
+	if err := saveReleaseStateFn(home, state); err != nil {
 		return &commandError{
 			Op:   "save-release-state",
 			Code: errcode.UpgradeStateWrite,
@@ -291,7 +300,7 @@ func runUpgrade(args []string) (retErr error) {
 	}
 
 	fmt.Printf("upgrade: port=%s firmware_env=%s target_firmware=%s\n", resolvedPort, selectedEnv, targetVersion)
-	if err := setup.Run(context.Background(), setup.Options{
+	if err := setupRunFn(context.Background(), setup.Options{
 		Port:        resolvedPort,
 		AssumeYes:   true,
 		SkipFlash:   false,
@@ -304,7 +313,7 @@ func runUpgrade(args []string) (retErr error) {
 		}
 	}
 
-	postHello, postHelloErr := usb.ReadDeviceHello(resolvedPort)
+	postHello, postHelloErr := readDeviceHelloFn(resolvedPort)
 	if postHelloErr == nil {
 		fmt.Printf("post-upgrade hello: board=%s firmware=%s protocol=%d\n", postHello.Board, postHello.Firmware, postHello.ProtocolVersion)
 		if !*skipVersionGuard && strings.TrimSpace(postHello.Firmware) != "" {
@@ -341,7 +350,7 @@ func runUpgrade(args []string) (retErr error) {
 		state.LastUpgrade.DeviceBoard = postHello.Board
 	}
 	state.UpdatedAtUTC = state.LastUpgrade.UpgradedAtUTC
-	if err := saveReleaseState(home, state); err != nil {
+	if err := saveReleaseStateFn(home, state); err != nil {
 		return &commandError{
 			Op:   "save-release-state",
 			Code: errcode.UpgradeStateWrite,
@@ -377,7 +386,7 @@ func runRollback(args []string) error {
 		return &commandError{Op: "resolve-home", Code: errcode.RollbackStateLoad, Err: err}
 	}
 
-	state, err := loadReleaseState(home)
+	state, err := loadReleaseStateFn(home)
 	if err != nil {
 		return &commandError{Op: "load-release-state", Code: errcode.RollbackStateLoad, Err: err}
 	}
@@ -447,13 +456,13 @@ func runRollback(args []string) error {
 			restoreArgs = append(restoreArgs, "--skip-verify")
 		}
 
-		if err := runRestoreKnownGood(restoreArgs); err != nil {
+		if err := runRestoreKnownGoodCommandFn(restoreArgs); err != nil {
 			return &commandError{Op: "rollback-firmware", Code: errcode.RollbackFirmwareRestore, Err: err}
 		}
 	}
 
-	if !*skipCompanion {
-		if err := restartLaunchAgent(home); err != nil {
+	if !*skipCompanion || !*skipFirmware {
+		if err := rollbackRestartLaunchAgentFn(home); err != nil {
 			return &commandError{Op: "restart-launchagent", Code: errcode.RollbackLaunchAgent, Err: err}
 		}
 	}
