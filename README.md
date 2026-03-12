@@ -118,6 +118,7 @@ pio run -e lilygo_t_display_s3
 - Operator runbook: `docs/operator-runbook.md`
 - Hardware contract: `docs/hardware-contract.md`
 - USB-first v2 minimaldesign: `docs/v2-usb-first-minimaldesign.md`
+- Companion refactor notes: `docs/companion-refactor-notes.md`
 - Usage polling architecture + benchmarks: `docs/usage-polling-architecture.md`
 - Token usage support matrix: `docs/token-usage-support-matrix.md`
 - Open roadmap: `TODO.md`
