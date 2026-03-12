@@ -6,13 +6,22 @@
   },
   "rules": [
     {
+      "name": "v2-usb-first",
+      "companionMin": "1.0.0",
+      "companionMaxExclusive": "2.0.0",
+      "firmwareMin": "1.0.0",
+      "firmwareMaxExclusive": "2.0.0",
+      "protocolVersion": 2,
+      "notes": "Companion v1.x negotiates protocol v2 on USB-first firmware when available."
+    },
+    {
       "name": "v1-stable",
       "companionMin": "1.0.0",
       "companionMaxExclusive": "2.0.0",
       "firmwareMin": "1.0.0",
       "firmwareMaxExclusive": "2.0.0",
       "protocolVersion": 1,
-      "notes": "Companion v1.x supports firmware v1.x on protocol v1."
+      "notes": "Companion v1.x supports firmware v1.x on protocol v1 fallback."
     }
   ]
 }

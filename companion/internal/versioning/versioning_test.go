@@ -48,6 +48,19 @@ func TestCompatibilityMatrixAllowsV1(t *testing.T) {
 	}
 }
 
+func TestCompatibilityMatrixAllowsV2(t *testing.T) {
+	ok, rule, err := IsCompatible("1.2.0", "1.9.4", 2)
+	if err != nil {
+		t.Fatalf("compatibility check failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected versions to be compatible on protocol v2")
+	}
+	if rule != "v2-usb-first" {
+		t.Fatalf("expected v2 rule, got %q", rule)
+	}
+}
+
 func TestCompatibilityMatrixBlocksMajorMismatch(t *testing.T) {
 	ok, _, err := IsCompatible("1.2.0", "2.0.0", 1)
 	if err != nil {

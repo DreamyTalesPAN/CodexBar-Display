@@ -64,3 +64,16 @@ func TestFrameNormalizeClampsNegativeTokenStats(t *testing.T) {
 		t.Fatalf("expected negative token stats to clamp to zero, got %+v", normalized)
 	}
 }
+
+func TestFrameNormalizeKeepsNegotiatedV2(t *testing.T) {
+	frame := Frame{
+		V:        2,
+		Provider: "codex",
+		Label:    "Codex",
+	}
+
+	normalized := frame.Normalize()
+	if normalized.V != 2 {
+		t.Fatalf("expected frame version 2, got %d", normalized.V)
+	}
+}

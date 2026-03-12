@@ -7,6 +7,7 @@
 
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/codexbar_display_core.h"
+#include "../../firmware_shared/render_primitives.h"
 #include "gif_core_esp8266.h"
 #include "theme_defs.h"
 
@@ -93,6 +94,19 @@ inline String FormatDuration(int64_t secs) {
 }
 
 void DrawBar(int x, int y, int w, int h, int pct, uint16_t fillColor);
+primitive::Sink& PrimitiveLayer();
+void PrimitiveFillScreen(uint16_t color);
+void PrimitiveFillRect(int x, int y, int w, int h, uint16_t color);
+void PrimitiveDrawText(
+    const char* text,
+    int x,
+    int y,
+    int font,
+    int size,
+    uint16_t fg,
+    uint16_t bg,
+    bool wrap);
+void PrimitiveDrawProgress(int x, int y, int w, int h, int pct, uint16_t fillColor);
 
 int TextPixelWidth(const char* text, int textSize);
 int TextPixelHeight(int textSize);

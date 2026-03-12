@@ -37,16 +37,25 @@ func TestChooseAutoPortSkipsBluetoothOnlySet(t *testing.T) {
 }
 
 func TestParseDeviceHelloLineJSON(t *testing.T) {
-	line := `{"kind":"hello","protocolVersion":1,"board":"esp8266-smalltv-st7789","features":["theme"]}`
+	line := `{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"]}`
 	hello, ok := parseDeviceHelloLine(line)
 	if !ok {
 		t.Fatalf("expected hello parse success")
+	}
+	if hello.ProtocolVersion != 2 {
+		t.Fatalf("unexpected protocol version %d", hello.ProtocolVersion)
+	}
+	if len(hello.SupportedProtocolVersions) != 2 || hello.SupportedProtocolVersions[0] != 2 || hello.SupportedProtocolVersions[1] != 1 {
+		t.Fatalf("unexpected supported protocols: %v", hello.SupportedProtocolVersions)
 	}
 	if hello.Board != "esp8266-smalltv-st7789" {
 		t.Fatalf("unexpected board %q", hello.Board)
 	}
 	if !hello.HasFeature(protocol.FeatureTheme) {
 		t.Fatalf("expected theme feature in hello")
+	}
+	if !hello.HasFeature(protocol.FeatureThemeSpecV1) {
+		t.Fatalf("expected theme spec v1 feature in hello")
 	}
 }
 

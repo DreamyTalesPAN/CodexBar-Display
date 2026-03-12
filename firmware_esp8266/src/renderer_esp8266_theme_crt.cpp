@@ -88,7 +88,7 @@ void drawCrtHeader(const char* title, bool showStatusDot) {
   tft.setCursor(kCrtBodyX, titleY);
   tft.print(title);
   if (showStatusDot) {
-    tft.fillRect(kCrtStatusDotX, kCrtStatusDotY, kCrtStatusDotSize, kCrtStatusDotSize, kCrtGreen);
+    PrimitiveFillRect(kCrtStatusDotX, kCrtStatusDotY, kCrtStatusDotSize, kCrtStatusDotSize, kCrtGreen);
   }
 }
 
@@ -118,7 +118,7 @@ void drawSplashHintLineCRT() {
     hintSize = 1;
     setCrtTextStyle(hintSize);
   }
-  tft.fillRect(0, kCrtSplashHintClearY, tft.width(), kCrtSplashHintClearH, kCrtBg);
+  PrimitiveFillRect(0, kCrtSplashHintClearY, tft.width(), kCrtSplashHintClearH, kCrtBg);
   tft.setTextColor(kCrtDim, kCrtBg);
   const int hintY = hintSize > 1 ? kCrtSplashHintY : (kCrtSplashHintY + 8);
   tft.setCursor(centeredTextXCrt(hint), hintY);
@@ -136,7 +136,7 @@ void drawSplashWaitingLineCRT() {
     lineSize = 1;
     setCrtTextStyle(lineSize);
   }
-  tft.fillRect(0, kCrtSplashLine2ClearY, tft.width(), kCrtSplashLine2ClearH, kCrtBg);
+  PrimitiveFillRect(0, kCrtSplashLine2ClearY, tft.width(), kCrtSplashLine2ClearH, kCrtBg);
   tft.setTextColor(kCrtGreen, kCrtBg);
   const int lineY = lineSize > 1 ? kCrtSplashLine2Y : (kCrtSplashLine2Y + 8);
   tft.setCursor(centeredTextXCrt(line2), lineY);
@@ -155,7 +155,7 @@ void drawResetCountdownLineCRT(int64_t remain) {
     resetSize = 1;
     setCrtTextStyle(resetSize);
   }
-  tft.fillRect(0, kCrtResetClearY, tft.width(), kCrtResetClearH, kCrtBg);
+  PrimitiveFillRect(0, kCrtResetClearY, tft.width(), kCrtResetClearH, kCrtBg);
   tft.setTextColor(kCrtDim, kCrtBg);
   const int resetY = resetSize > 1 ? kCrtResetLabelY : (kCrtResetLabelY + 8);
   tft.setCursor(kCrtBodyX, resetY);
@@ -174,7 +174,7 @@ void drawResetCountdownLineCRT(int64_t remain) {
 void DrawSplashCRT() {
   TFT_eSPI& tft = Tft();
 
-  tft.fillScreen(kCrtBg);
+  PrimitiveFillScreen(kCrtBg);
   drawCrtHeader("CODEXBAR", false);
 
   setCrtTextStyle(2);
@@ -215,7 +215,7 @@ void TickSplashCRT() {
 void DrawErrorCRT(const String& message) {
   TFT_eSPI& tft = Tft();
 
-  tft.fillScreen(kCrtBg);
+  PrimitiveFillScreen(kCrtBg);
   drawCrtHeader("CODEXBAR", false);
 
   setCrtTextStyle(2);
@@ -249,7 +249,7 @@ void DrawUsageCRT() {
   const int innerBarWidth = kCrtBodyW - 2;
   const int innerBarHeight = kCrtBarH - 2;
 
-  tft.fillScreen(kCrtBg);
+  PrimitiveFillScreen(kCrtBg);
   drawCrtHeader(ProviderLabelText(), true);
 
   setCrtTextStyle(2);
@@ -262,11 +262,11 @@ void DrawUsageCRT() {
   tft.setTextColor(kCrtGreen, kCrtBg);
   tft.setCursor(rightAlignedTextXCrt(pctBuf, 8), kCrtSessionLabelY);
   tft.print(pctBuf);
-  tft.fillRect(kCrtBodyX, kCrtSessionBarY, kCrtBodyW, kCrtBarH, kCrtTrack);
+  PrimitiveFillRect(kCrtBodyX, kCrtSessionBarY, kCrtBodyW, kCrtBarH, kCrtTrack);
   tft.drawRect(kCrtBodyX, kCrtSessionBarY, kCrtBodyW, kCrtBarH, kCrtBorder);
   const int sessionFill = (innerBarWidth * session) / 100;
   if (sessionFill > 0) {
-    tft.fillRect(kCrtBodyX + 1, kCrtSessionBarY + 1, sessionFill, innerBarHeight, kCrtGreen);
+    PrimitiveFillRect(kCrtBodyX + 1, kCrtSessionBarY + 1, sessionFill, innerBarHeight, kCrtGreen);
   }
 
   tft.setTextColor(kCrtDim, kCrtBg);
@@ -276,11 +276,11 @@ void DrawUsageCRT() {
   tft.setTextColor(kCrtGreen, kCrtBg);
   tft.setCursor(rightAlignedTextXCrt(pctBuf, 8), kCrtWeeklyLabelY);
   tft.print(pctBuf);
-  tft.fillRect(kCrtBodyX, kCrtWeeklyBarY, kCrtBodyW, kCrtBarH, kCrtTrack);
+  PrimitiveFillRect(kCrtBodyX, kCrtWeeklyBarY, kCrtBodyW, kCrtBarH, kCrtTrack);
   tft.drawRect(kCrtBodyX, kCrtWeeklyBarY, kCrtBodyW, kCrtBarH, kCrtBorder);
   const int weeklyFill = (innerBarWidth * weekly) / 100;
   if (weeklyFill > 0) {
-    tft.fillRect(kCrtBodyX + 1, kCrtWeeklyBarY + 1, weeklyFill, innerBarHeight, kCrtGreen);
+    PrimitiveFillRect(kCrtBodyX + 1, kCrtWeeklyBarY + 1, weeklyFill, innerBarHeight, kCrtGreen);
   }
 
   tft.drawFastHLine(kCrtBodyX, kCrtMidDividerY, kCrtBodyW, kCrtBorder);

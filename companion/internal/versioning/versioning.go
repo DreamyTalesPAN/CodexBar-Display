@@ -150,16 +150,25 @@ type CompatibilityRule struct {
 }
 
 var defaultCompatibilityRules = []CompatibilityRule{
-		{
-			Name:                  "v1-stable",
-			CompanionMin:          "1.0.0",
-			CompanionMaxExclusive: "2.0.0",
-			FirmwareMin:           "1.0.0",
-			FirmwareMaxExclusive:  "2.0.0",
-			ProtocolVersion:       1,
-			Notes:                 "Companion v1.x supports firmware v1.x on protocol v1.",
-		},
-	}
+	{
+		Name:                  "v2-usb-first",
+		CompanionMin:          "1.0.0",
+		CompanionMaxExclusive: "2.0.0",
+		FirmwareMin:           "1.0.0",
+		FirmwareMaxExclusive:  "2.0.0",
+		ProtocolVersion:       2,
+		Notes:                 "Companion v1.x negotiates protocol v2 on USB-first firmware when available.",
+	},
+	{
+		Name:                  "v1-stable",
+		CompanionMin:          "1.0.0",
+		CompanionMaxExclusive: "2.0.0",
+		FirmwareMin:           "1.0.0",
+		FirmwareMaxExclusive:  "2.0.0",
+		ProtocolVersion:       1,
+		Notes:                 "Companion v1.x supports firmware v1.x on protocol v1 fallback.",
+	},
+}
 
 func DefaultCompatibilityMatrix() []CompatibilityRule {
 	out := make([]CompatibilityRule, len(defaultCompatibilityRules))

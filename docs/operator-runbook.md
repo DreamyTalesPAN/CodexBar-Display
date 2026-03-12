@@ -140,6 +140,7 @@ Runtime behavior:
 - If capability handshake confirms `supportsTheme=true`, companion sends the selected theme.
 - If capability handshake is temporarily unavailable (missing hello), companion uses optimistic send on the MVP path.
 - If capabilities are known and explicitly do not support theme, companion omits `theme`.
+- Companion negotiates protocol `v2` first and falls back to `v1` when device support is legacy/missing.
 
 For an ad-hoc run:
 
@@ -161,6 +162,25 @@ For LaunchAgent runtime:
 - verify with `../codexbar-display health` and daemon logs
 
 Note: rerunning `codexbar-display setup` rewrites the LaunchAgent plist; re-apply custom env vars afterward.
+
+### ThemeSpec v1 (local USB flow)
+
+```bash
+cd companion
+../codexbar-display theme-validate --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
+../codexbar-display theme-apply --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
+```
+
+If hello negotiation is temporarily unavailable, you can opt into local USB fallback limits:
+
+```bash
+../codexbar-display theme-validate --allow-unknown-capabilities --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
+../codexbar-display theme-apply --allow-unknown-capabilities --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
+```
+
+Validation checks:
+- ThemeSpec schema/field rules (`protocol/theme_spec_v1.schema.json`)
+- capability compatibility (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`)
 
 ## Runtime Health
 

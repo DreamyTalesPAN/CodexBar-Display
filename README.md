@@ -48,6 +48,12 @@ cd companion
 # Upgrade / rollback
 ../codexbar-display upgrade --firmware-env esp8266_smalltv_st7789
 ../codexbar-display rollback --port /dev/cu.usbserial-10
+
+# Local ThemeSpec flow (USB, no cloud)
+../codexbar-display theme-validate --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
+../codexbar-display theme-apply --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
+# Optional fallback if hello is unavailable:
+../codexbar-display theme-validate --allow-unknown-capabilities --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
 ```
 
 ## Firmware Environments
@@ -62,6 +68,7 @@ Release go/no-go for MVP is gated only by `esp8266_smalltv_st7789`.
 Theme selection is runtime-driven (`classic|crt|mini`) via `--theme` or `CODEXBAR_DISPLAY_THEME`.
 Protocol contract (v0 target): companion applies `theme` when capability handshake confirms support.
 If device hello is temporarily unavailable on the MVP device path, companion falls back to optimistic theme send.
+On USB-first transition builds, negotiation prefers protocol v2 and falls back to v1 automatically.
 
 GIF core scenarios on ESP8266:
 - `/mini.gif`: mini theme ambient overlay
@@ -110,10 +117,12 @@ pio run -e lilygo_t_display_s3
 ## Docs
 - Operator runbook: `docs/operator-runbook.md`
 - Hardware contract: `docs/hardware-contract.md`
+- USB-first v2 minimaldesign: `docs/v2-usb-first-minimaldesign.md`
 - Usage polling architecture + benchmarks: `docs/usage-polling-architecture.md`
 - Token usage support matrix: `docs/token-usage-support-matrix.md`
 - Open roadmap: `TODO.md`
 - Protocol: `protocol/PROTOCOL.md`
+- Firmware guardrails: `docs/firmware-guardrails.md`
 
 ## License
 Released under the MIT License. See `LICENSE`.

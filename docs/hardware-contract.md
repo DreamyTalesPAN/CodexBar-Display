@@ -1,10 +1,11 @@
-# Hardware Contract (v0 MVP)
+# Hardware Contract (USB-first transition)
 
-This document defines the required hardware/runtime contract for codexbar-display v0.
+This document defines the required hardware/runtime contract for codexbar-display on the USB-first path.
 
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
 - Experimental fallback (non-blocking): `lilygo_t_display_s3`
+- Transport in this phase: USB CDC serial only (`transport.active=usb`)
 
 ## Firmware Environment -> Board Identity
 
@@ -21,15 +22,33 @@ Companion setup enforces this mapping when a device hello is available.
 - USB CDC serial at `115200` baud.
 - Host sends newline-delimited JSON frames.
 - Firmware emits JSON `hello` on boot/reconnect with:
-  - `protocolVersion: 1`
-  - `board` (mapped above)
-  - `firmware` (SemVer line, v0 track: `1.x`)
-  - `features` (for v0 display targets this includes `theme`)
-  - `maxFrameBytes` (current contract: `512`)
+  - `supportedProtocolVersions: [2,1]`
+  - `preferredProtocolVersion: 2`
+  - `protocolVersion` (legacy single-value signal)
+  - `board`, `firmware`, `features`, `maxFrameBytes`
+  - `capabilities` block (`display`, `theme`, `transport`)
 
-## Theme Capability Contract
-- If capabilities are explicitly known and `theme` is unsupported, host must omit `theme`.
-- If hello is missing (unknown capabilities), host may use optimistic `theme` send on the MVP path.
+Companion negotiation:
+- prefers v2 when available.
+- falls back to v1 when negotiation data is missing/legacy.
+
+## Theme Contract
+- Built-in runtime themes: `classic`, `crt`, `mini`.
+- Capability-aware behavior:
+  - known + unsupported `theme` => host omits `theme`
+  - unknown hello => optimistic `theme` send remains allowed
+- ThemeSpec v1 (declarative JSON):
+  - validated by companion before send
+  - checked against capability limits (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`)
+  - no user-script execution on firmware
+
+## Local USB ThemeSpec Flow
+
+```bash
+cd companion
+../codexbar-display theme-validate --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
+../codexbar-display theme-apply --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
+```
 
 ## ESP8266 Pin Contract
 
@@ -49,11 +68,13 @@ Common display assumptions:
 ## Operator Verification
 - `codexbar-display doctor`:
   - validates board/protocol contract and theme capability for ESP8266 boards
+  - reports negotiated protocol version
 - `codexbar-display setup --yes [--firmware-env ...]`:
   - validates firmware env support
   - rejects incompatible board <-> env pair when hello is available
 
-## Out of Scope (v0)
-- Runtime media upload protocol
-- External theme SDK/plugin loading
-- Additional release-gated hardware beyond `esp8266_smalltv_st7789`
+## Out of Scope
+- WiFi transport protocol implementation
+- Cloud-hosted backend
+- OTA over network
+- Executing third-party theme code on firmware

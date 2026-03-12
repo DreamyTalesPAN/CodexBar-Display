@@ -14,6 +14,7 @@ var defaultSender = NewSender()
 const (
 	serialBaudRate       = 115200
 	closeTimeout         = 200 * time.Millisecond
+	resetPulseDuration   = 120 * time.Millisecond
 	reopenSettleDuration = 1200 * time.Millisecond
 	writeTimeout         = 2 * time.Second
 	helloReadWindow      = 300 * time.Millisecond

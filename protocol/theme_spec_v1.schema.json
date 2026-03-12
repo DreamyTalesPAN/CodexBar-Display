@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codexbar-display.dev/schema/theme-spec-v1.json",
+  "title": "codexbar-display ThemeSpec v1",
+  "type": "object",
+  "required": ["themeSpecVersion", "themeId", "themeRev", "primitives"],
+  "properties": {
+    "themeSpecVersion": {
+      "const": 1
+    },
+    "themeId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9\\-_]{2,63}$"
+    },
+    "themeRev": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fallbackTheme": {
+      "type": "string",
+      "enum": ["classic", "crt", "mini"]
+    },
+    "primitives": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["text", "rect", "progress"]
+          },
+          "x": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "y": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string"
+          },
+          "fontSize": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "bgColor": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

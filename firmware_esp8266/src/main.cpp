@@ -76,10 +76,19 @@ void setup() {
   transportConfig.firmwareVersion = CODEXBAR_DISPLAY_FW_VERSION;
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
   transportConfig.featuresJSON = "[]";
+  transportConfig.capabilitiesJSON =
+      "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
+      "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,\"builtinThemes\":[]},"
+      "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\"]}}";
 #else
-  transportConfig.featuresJSON = "[\"theme\"]";
+  transportConfig.featuresJSON = "[\"theme\",\"theme-spec-v1\"]";
+  transportConfig.capabilitiesJSON =
+      "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
+      "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32,"
+      "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
+      "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\"]}}";
 #endif
-  transportConfig.maxFrameBytes = 512;
+  transportConfig.maxFrameBytes = 1024;
   codexbar_display::app::EmitDeviceHello(transportConfig);
 
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
