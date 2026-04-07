@@ -11,8 +11,39 @@ This guide is for customers: connect the device, run one command, and you are do
 ## Installation
 
 1. Connect the Vibe TV to your Mac.
-2. Open Terminal.
-3. Run this command:
+2. Choose one path.
+
+### AI-native path
+
+Copy this prompt into any AI:
+
+```text
+I just connected my Vibe TV to my Mac via USB. Please help me set it up end-to-end.
+
+Your job:
+- Assume I want the normal customer setup flow on macOS.
+- Have me run the official installer:
+  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
+- Wait for the installer to finish.
+- Then help me verify that the setup worked.
+
+Success means:
+- setup completes without errors
+- the Vibe TV no longer stays on "Waiting for frames"
+- usage appears automatically on the display
+
+If something fails, troubleshoot in this order:
+- check whether the USB cable is a data cable
+- reconnect the device
+- rerun the installer
+- if I am using a USB hub, have me test directly on the Mac
+
+Keep the instructions short and practical, and only give me the next action.
+```
+
+### Alternative: run the installer directly
+
+Open Terminal and run this command:
 
 ```bash
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
