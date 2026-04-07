@@ -1,48 +1,49 @@
-# Vibe TV Customer Setup
+# Vibe TV Setup auf dem Mac
 
-This page is for people who bought a Vibe TV and want it to work on a Mac with the smallest possible setup.
+Diese Anleitung ist für Endkunden gedacht: Gerät anschließen, einen Befehl ausführen, fertig.
 
-## What you need
+## Das brauchst du
 
-- a Vibe TV
-- a USB data cable
-- a Mac with internet access
-- the installer from the latest GitHub Release
+- ein Vibe TV
+- ein USB-Datenkabel
+- einen Mac mit Internetzugang
 
-## What the setup is
+## Installation
 
-For customers, the setup should feel like one command.
-Under the hood, that command is a small shell script called `install.sh`.
-The script downloads the correct release assets, installs the companion, checks CodexBar, and starts the background service that sends frames to the display.
-
-## Expected install flow
+1. Verbinde das Vibe TV mit deinem Mac.
+2. Öffne das Terminal.
+3. Führe diesen Befehl aus:
 
 ```bash
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 ```
 
-What happens next:
+## Was der Installer macht
 
-1. the script detects your Mac architecture
-2. it downloads the matching `codexbar-display` binary from GitHub Releases
-3. it verifies the download
-4. it installs CodexBar if needed
-5. it runs `codexbar-display setup --yes --skip-flash`
-6. it warms up CodexBar on fresh installs until provider data is available
-7. it runs a health check so you can confirm the companion is ready
+Der Installer erledigt alles automatisch:
 
-## What success looks like
+1. Er erkennt die Architektur deines Macs.
+2. Er lädt die passende `codexbar-display`-Version aus dem neuesten GitHub Release.
+3. Er prüft die Checksumme.
+4. Er installiert CodexBar, falls CodexBar noch fehlt.
+5. Er führt `codexbar-display setup --yes --skip-flash` aus.
+6. Er startet den Hintergrunddienst, der die Frames an das Display sendet.
+7. Er führt am Ende einen Health-Check aus.
 
-- the terminal prints a setup success message
-- the Vibe TV stops showing `Waiting for frames`
-- usage appears automatically on the display
+## Woran du Erfolg erkennst
 
-## If something goes wrong
+- Im Terminal erscheint eine erfolgreiche Setup-Meldung.
+- Das Gerät bleibt nicht mehr auf `Waiting for frames` stehen.
+- Die Nutzung erscheint automatisch auf dem Display.
 
-- `Waiting for frames` usually means the Mac companion is not running yet
-- if the device is not detected, unplug and reconnect the USB cable
-- if CodexBar is missing, rerun the installer after confirming internet access
+## Wenn etwas nicht klappt
 
-## Next step
+- `Waiting for frames` bedeutet meist: Der Mac hat noch keine Frames geschickt.
+- Wenn das Gerät nicht erkannt wird, ziehe das USB-Kabel kurz ab und stecke es wieder ein.
+- Wenn CodexBar fehlt oder nicht startet, führe den Installer einfach noch einmal aus.
+- Wenn du ein USB-Hub benutzt, teste direkt am Mac.
 
-If you want the technical details, read the [hardware contract](hardware-contract.md) and [operator runbook](operator-runbook.md).
+## Wichtig
+
+- Der Kunden-Flow ist für macOS gedacht.
+- Du musst die Firmware im normalen Kunden-Setup nicht selbst flashen.

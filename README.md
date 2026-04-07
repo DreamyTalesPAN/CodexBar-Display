@@ -1,73 +1,60 @@
-# Vibe TV firmware and companion
+# Vibe TV for Mac
 
-This repository contains the firmware and macOS companion layer that powers [Vibe TV](https://vibetv.shop/).
-Vibe TV is the hardware. CodexBar provides the usage signal. CodexBar-Display renders it on the screen so usage, limits, and status stay off-screen and on-desk.
+This repository ships the firmware, macOS companion, and release artifacts for [Vibe TV](https://vibetv.shop/).
+Vibe TV is the hardware. CodexBar provides the usage signal. `codexbar-display` sends that signal to the screen over USB so usage stays off-screen and on-desk.
 
-If you bought a Vibe TV, start here:
+## Endkunden-Setup
 
-1. Plug the device into your Mac with a USB data cable.
-2. Run the installer from the latest GitHub Release.
-3. Wait for the companion to finish setup.
-4. Usage should appear automatically.
-
-Customer install path:
+1. Verbinde dein Vibe TV per USB-Datenkabel mit deinem Mac.
+2. Führe diesen Installer aus:
 
 ```bash
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 ```
 
-What the installer does:
+3. Warte, bis der Setup-Lauf fertig ist.
+4. Die Anzeige sollte danach automatisch starten.
 
-- checks that you are on macOS
-- downloads the matching `codexbar-display` release for your Mac
-- verifies the download
-- installs or updates CodexBar if it is missing
-- sets up the background companion
-- warms up CodexBar on fresh installs so provider data is available
-- runs a health check after setup
+Der Installer:
 
-If the screen says `Waiting for frames`, the hardware is fine. It just means the host companion has not sent a frame yet.
+- prüft, dass du auf macOS bist
+- lädt die passende `codexbar-display`-Version für deinen Mac
+- verifiziert die Checksumme
+- installiert CodexBar, falls es noch fehlt
+- richtet den Hintergrunddienst ein
+- wärmt CodexBar bei frischen Installationen auf
+- führt am Ende einen Health-Check aus
 
-## What this repo ships
+Wenn auf dem Gerät `Waiting for frames` steht, ist die Hardware normalerweise in Ordnung. Dann hat dein Mac nur noch keine Frames gesendet.
 
-- ESP8266 firmware for the release-gated Vibe TV target
-- macOS companion that polls usage and sends frames over USB
-- GitHub Release artifacts for firmware, companion binaries, and checksums
+Die vollständige Endkunden-Anleitung steht in [docs/customer-setup.md](docs/customer-setup.md).
 
-## For developers
+## Was dieses Repo enthält
 
-Current release-gated hardware target:
+- ESP8266-Firmware für das aktuelle Vibe-TV-Zielgerät
+- den macOS-Companion `codexbar-display`
+- Release-Artefakte wie Companion-Binaries, Firmware-Binaries und Checksummen
 
-- `esp8266_smalltv_st7789`
+## Technische Referenzen
 
-Experimental fallback:
+Diese Seiten sind für Entwicklung, Support und Betrieb:
 
-- `lilygo_t_display_s3`
+- Hardware-Vertrag: [docs/hardware-contract.md](docs/hardware-contract.md)
+- Operator-Runbook: [docs/operator-runbook.md](docs/operator-runbook.md)
+- Protokoll: [protocol/PROTOCOL.md](protocol/PROTOCOL.md)
 
-Local build and test:
+## Lokale Entwicklung
 
 ```bash
 cd companion
 go test ./...
+go vet ./...
 
 cd ..
 ./scripts/check-esp8266-soak-gate.sh
+pio run -d firmware_esp8266 -e esp8266_smalltv_st7789
 ```
 
-Firmware build:
-
-```bash
-cd firmware_esp8266
-pio run -e esp8266_smalltv_st7789
-```
-
-## Docs
-
-- Customer setup: [docs/customer-setup.md](docs/customer-setup.md)
-- Hardware contract: [docs/hardware-contract.md](docs/hardware-contract.md)
-- Operator runbook: [docs/operator-runbook.md](docs/operator-runbook.md)
-- Protocol: [protocol/PROTOCOL.md](protocol/PROTOCOL.md)
-
-## License
+## Lizenz
 
 Released under the MIT License. See [LICENSE](LICENSE).

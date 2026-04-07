@@ -19,6 +19,7 @@ bin/
 *.test
 *.out
 companion/vibeblock
+codexbar-display
 
 # Firmware / PlatformIO / Arduino
 .pio/
