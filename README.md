@@ -40,25 +40,10 @@ If something fails, troubleshoot in this order:
 If you cannot act directly, do not dump a long checklist. Give me only the next action, wait for the result, and then continue.
 ```
 
-Alternative: run this installer directly:
-
-
 3. Wait for setup to finish.
 4. The display should start automatically.
 
-The installer:
-
-- checks that you are on macOS
-- downloads the matching `codexbar-display` build for your Mac
-- verifies the checksum
-- installs CodexBar if it is missing
-- sets up the background service
-- warms up CodexBar on fresh installs
-- runs a health check at the end
-
 If the device shows `Waiting for frames`, the hardware is usually fine. It just means your Mac has not sent any frames yet.
-
-The full customer guide is in [docs/customer-setup.md](docs/customer-setup.md).
 
 ## What This Repo Contains
 
