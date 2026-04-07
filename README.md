@@ -13,10 +13,11 @@ I just connected my Vibe TV to my Mac via USB. Please help me set it up end-to-e
 
 Your job:
 - Assume I want the normal customer setup flow on macOS.
-- Have me run the official installer:
+- If you have terminal or tool access, do the setup yourself instead of asking me to copy commands.
+- Use the official installer:
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
-- Wait for the installer to finish.
-- Then help me verify that the setup worked.
+- After running it, verify that the setup worked.
+- Only if you cannot run commands yourself, explain exactly what I should do in simple ELI5 language, one small step at a time.
 
 Success means:
 - setup completes without errors
@@ -29,7 +30,7 @@ If something fails, troubleshoot in this order:
 - rerun the installer
 - if I am using a USB hub, have me test directly on the Mac
 
-Keep the instructions short and practical, and only give me the next action.
+If you cannot act directly, do not dump a long checklist. Give me only the next action, wait for the result, and then continue.
 ```
 
 Alternative: run this installer directly:
