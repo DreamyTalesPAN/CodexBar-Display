@@ -288,6 +288,53 @@ func TestRunWithDepsWritesDefaultMiniThemeConfigWhenUnset(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsRejectsBluetoothOnlyPortsWhenUnset(t *testing.T) {
+	home := t.TempDir()
+	execPath := mustCreateExecutable(t)
+
+	err := runWithDeps(context.Background(), Options{
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			return []string{
+				"/dev/cu.Bluetooth-Incoming-Port",
+				"/dev/cu.iPhone-WirelessiAP",
+			}, nil
+		},
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected setup to fail without usb serial ports")
+	}
+	if !strings.Contains(err.Error(), "no usb serial ports found") {
+		t.Fatalf("expected usb serial error, got %v", err)
+	}
+}
+
 func TestRunWithDepsKeepsExistingThemeWhenUnset(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)

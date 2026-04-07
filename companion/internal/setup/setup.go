@@ -477,6 +477,13 @@ func choosePort(opts Options, d deps) (string, error) {
 	}
 
 	sorted := sortPreferredPorts(ports)
+	if !containsUSBSerialPort(sorted) {
+		return "", &StepError{
+			Step: "list-ports",
+			Err:  errors.New("no usb serial ports found"),
+			Hint: "connect the board with a data-capable USB cable and run `ls /dev/cu.usb*`",
+		}
+	}
 	if len(sorted) == 1 {
 		return sorted[0], nil
 	}
@@ -487,6 +494,15 @@ func choosePort(opts Options, d deps) (string, error) {
 	}
 
 	return promptForPortSelection(d.stdin, d.stdout, sorted)
+}
+
+func containsUSBSerialPort(ports []string) bool {
+	for _, port := range ports {
+		if portRank(port) < 2 {
+			return true
+		}
+	}
+	return false
 }
 
 func ensureCodexbar(ctx context.Context, d deps, allowInstall bool) (string, error) {
