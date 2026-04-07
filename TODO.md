@@ -1,24 +1,24 @@
 # codexbar-display Status
 
-## Aktueller Fokus
+## Current Focus
 
-- stabiler Endkunden-Setup auf dem Mac
-- ein Install-Befehl ohne manuelles Flashen
-- automatischer Start des Hintergrunddiensts nach dem Setup
+- stable customer setup on Mac
+- a one-command install flow without manual flashing
+- automatic background service startup after setup
 
-## Verifiziert
+## Verified
 
-- [x] Frischer Kundenlauf über `install.sh` funktioniert auf macOS arm64.
-- [x] CodexBar wird bei Bedarf automatisch installiert.
-- [x] Der Setup-Flow erkennt den USB-Port automatisch.
-- [x] Der LaunchAgent startet nach dem Setup automatisch.
-- [x] Das Gerät bekommt nach dem Setup automatisch neue Frames.
-- [x] `./scripts/smoke-daemon-sent-frame.sh` ist grün.
-- [x] `go test ./...`, `go vet ./...`, `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789` und `./scripts/check-esp8266-soak-gate.sh` sind grün.
-- [x] E2E-Setup ist auf zwei macOS-Maschinen validiert.
+- [x] Fresh customer install via `install.sh` works on macOS arm64.
+- [x] CodexBar is installed automatically when needed.
+- [x] The setup flow auto-detects the USB port.
+- [x] The LaunchAgent starts automatically after setup.
+- [x] The device receives frames automatically after setup.
+- [x] `./scripts/smoke-daemon-sent-frame.sh` is green.
+- [x] `go test ./...`, `go vet ./...`, `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789`, and `./scripts/check-esp8266-soak-gate.sh` are green.
+- [x] E2E setup has been validated on two macOS machines.
 
-## Nicht Teil des aktuellen Setup-Meilensteins
+## Not Part of the Current Setup Milestone
 
-- formale Release-Readiness-Checklist
+- formal release-readiness checklist
 - `RC -> soak -> final`
-- zusätzliche SDK- oder Theme-Packaging-Themen
+- additional SDK or theme-packaging work

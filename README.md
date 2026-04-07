@@ -3,47 +3,47 @@
 This repository ships the firmware, macOS companion, and release artifacts for [Vibe TV](https://vibetv.shop/).
 Vibe TV is the hardware. CodexBar provides the usage signal. `codexbar-display` sends that signal to the screen over USB so usage stays off-screen and on-desk.
 
-## Endkunden-Setup
+## Customer Setup
 
-1. Verbinde dein Vibe TV per USB-Datenkabel mit deinem Mac.
-2. Führe diesen Installer aus:
+1. Connect your Vibe TV to your Mac with a USB data cable.
+2. Run this installer:
 
 ```bash
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 ```
 
-3. Warte, bis der Setup-Lauf fertig ist.
-4. Die Anzeige sollte danach automatisch starten.
+3. Wait for setup to finish.
+4. The display should start automatically.
 
-Der Installer:
+The installer:
 
-- prüft, dass du auf macOS bist
-- lädt die passende `codexbar-display`-Version für deinen Mac
-- verifiziert die Checksumme
-- installiert CodexBar, falls es noch fehlt
-- richtet den Hintergrunddienst ein
-- wärmt CodexBar bei frischen Installationen auf
-- führt am Ende einen Health-Check aus
+- checks that you are on macOS
+- downloads the matching `codexbar-display` build for your Mac
+- verifies the checksum
+- installs CodexBar if it is missing
+- sets up the background service
+- warms up CodexBar on fresh installs
+- runs a health check at the end
 
-Wenn auf dem Gerät `Waiting for frames` steht, ist die Hardware normalerweise in Ordnung. Dann hat dein Mac nur noch keine Frames gesendet.
+If the device shows `Waiting for frames`, the hardware is usually fine. It just means your Mac has not sent any frames yet.
 
-Die vollständige Endkunden-Anleitung steht in [docs/customer-setup.md](docs/customer-setup.md).
+The full customer guide is in [docs/customer-setup.md](docs/customer-setup.md).
 
-## Was dieses Repo enthält
+## What This Repo Contains
 
-- ESP8266-Firmware für das aktuelle Vibe-TV-Zielgerät
-- den macOS-Companion `codexbar-display`
-- Release-Artefakte wie Companion-Binaries, Firmware-Binaries und Checksummen
+- ESP8266 firmware for the current Vibe TV target
+- the macOS companion `codexbar-display`
+- release artifacts such as companion binaries, firmware binaries, and checksums
 
-## Technische Referenzen
+## Technical References
 
-Diese Seiten sind für Entwicklung, Support und Betrieb:
+These docs are for development, support, and operations:
 
-- Hardware-Vertrag: [docs/hardware-contract.md](docs/hardware-contract.md)
-- Operator-Runbook: [docs/operator-runbook.md](docs/operator-runbook.md)
-- Protokoll: [protocol/PROTOCOL.md](protocol/PROTOCOL.md)
+- Hardware contract: [docs/hardware-contract.md](docs/hardware-contract.md)
+- Operator runbook: [docs/operator-runbook.md](docs/operator-runbook.md)
+- Protocol: [protocol/PROTOCOL.md](protocol/PROTOCOL.md)
 
-## Lokale Entwicklung
+## Local Development
 
 ```bash
 cd companion
@@ -55,6 +55,6 @@ cd ..
 pio run -d firmware_esp8266 -e esp8266_smalltv_st7789
 ```
 
-## Lizenz
+## License
 
 Released under the MIT License. See [LICENSE](LICENSE).

@@ -1,49 +1,49 @@
-# Vibe TV Setup auf dem Mac
+# Vibe TV Setup on Mac
 
-Diese Anleitung ist für Endkunden gedacht: Gerät anschließen, einen Befehl ausführen, fertig.
+This guide is for customers: connect the device, run one command, and you are done.
 
-## Das brauchst du
+## What You Need
 
-- ein Vibe TV
-- ein USB-Datenkabel
-- einen Mac mit Internetzugang
+- a Vibe TV
+- a USB data cable
+- a Mac with internet access
 
 ## Installation
 
-1. Verbinde das Vibe TV mit deinem Mac.
-2. Öffne das Terminal.
-3. Führe diesen Befehl aus:
+1. Connect the Vibe TV to your Mac.
+2. Open Terminal.
+3. Run this command:
 
 ```bash
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 ```
 
-## Was der Installer macht
+## What the Installer Does
 
-Der Installer erledigt alles automatisch:
+The installer handles everything automatically:
 
-1. Er erkennt die Architektur deines Macs.
-2. Er lädt die passende `codexbar-display`-Version aus dem neuesten GitHub Release.
-3. Er prüft die Checksumme.
-4. Er installiert CodexBar, falls CodexBar noch fehlt.
-5. Er führt `codexbar-display setup --yes --skip-flash` aus.
-6. Er startet den Hintergrunddienst, der die Frames an das Display sendet.
-7. Er führt am Ende einen Health-Check aus.
+1. It detects your Mac architecture.
+2. It downloads the matching `codexbar-display` version from the latest GitHub release.
+3. It verifies the checksum.
+4. It installs CodexBar if CodexBar is missing.
+5. It runs `codexbar-display setup --yes --skip-flash`.
+6. It starts the background service that sends frames to the display.
+7. It runs a health check at the end.
 
-## Woran du Erfolg erkennst
+## What Success Looks Like
 
-- Im Terminal erscheint eine erfolgreiche Setup-Meldung.
-- Das Gerät bleibt nicht mehr auf `Waiting for frames` stehen.
-- Die Nutzung erscheint automatisch auf dem Display.
+- Terminal prints a successful setup message.
+- The device no longer stays on `Waiting for frames`.
+- Usage appears automatically on the display.
 
-## Wenn etwas nicht klappt
+## If Something Does Not Work
 
-- `Waiting for frames` bedeutet meist: Der Mac hat noch keine Frames geschickt.
-- Wenn das Gerät nicht erkannt wird, ziehe das USB-Kabel kurz ab und stecke es wieder ein.
-- Wenn CodexBar fehlt oder nicht startet, führe den Installer einfach noch einmal aus.
-- Wenn du ein USB-Hub benutzt, teste direkt am Mac.
+- `Waiting for frames` usually means the Mac has not sent any frames yet.
+- If the device is not detected, unplug the USB cable and reconnect it.
+- If CodexBar is missing or does not start, run the installer again.
+- If you are using a USB hub, test directly on the Mac.
 
-## Wichtig
+## Important
 
-- Der Kunden-Flow ist für macOS gedacht.
-- Du musst die Firmware im normalen Kunden-Setup nicht selbst flashen.
+- The customer flow is for macOS.
+- You do not need to flash firmware manually in the normal customer setup flow.
