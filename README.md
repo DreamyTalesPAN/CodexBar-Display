@@ -6,9 +6,7 @@ Vibe TV is the hardware. CodexBar provides the usage signal. `codexbar-display` 
 ## Customer Setup
 
 1. Connect your Vibe TV to your Mac with a USB data cable.
-2. Choose one path:
-
-Copy this prompt into any AI:
+2. Copy this prompt into any AI:
 
 ```text
 I just connected my Vibe TV to my Mac via USB. Please help me set it up end-to-end.
