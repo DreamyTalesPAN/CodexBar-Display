@@ -6,7 +6,14 @@ Vibe TV is the hardware. CodexBar provides the usage signal. `codexbar-display` 
 ## Customer Setup
 
 1. Connect your Vibe TV to your Mac with a USB data cable.
-2. Copy this prompt into any AI:
+2. Open your Terminal (On Mac: Cmd + Space, type Terminal, hit enter)
+3. Paste this:
+
+```bash
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
+```
+
+5. Or copy this prompt into any AI:
 
 ```text
 I just connected my Vibe TV to my Mac via USB. Please help me set it up end-to-end.
@@ -35,9 +42,6 @@ If you cannot act directly, do not dump a long checklist. Give me only the next 
 
 Alternative: run this installer directly:
 
-```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
-```
 
 3. Wait for setup to finish.
 4. The display should start automatically.
