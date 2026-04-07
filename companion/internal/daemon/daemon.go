@@ -34,6 +34,7 @@ const (
 	startupFastPollWindow   = 2 * time.Minute
 	startupFastPollInterval = 30 * time.Second
 	lastGoodPersistInterval = 1 * time.Minute
+	directProviderProbeMax  = 3
 	themeEnvVar             = "CODEXBAR_DISPLAY_THEME"
 	coldStartTimeoutEnvVar  = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
 	cycleTimeoutEnvVar      = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
@@ -608,6 +609,9 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 
 	now := deps.now()
 	allProviders := collector.providerFrames(now)
+	if len(allProviders) == 0 {
+		allProviders = probeProvidersDirectly(ctx, collector.order, deps)
+	}
 	result := selectCycleFrameFromProviders(
 		state,
 		allProviders,
@@ -620,6 +624,48 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	)
 
 	return sendCycleResult(port, caps, maxFrameBytes, state, deps, result)
+}
+
+func probeProvidersDirectly(parent context.Context, order []string, deps runtimeDeps) []codexbar.ParsedFrame {
+	if deps.fetchProvider == nil {
+		return nil
+	}
+
+	ctx := parent
+	cancel := func() {}
+	if deadline, ok := parent.Deadline(); !ok || time.Until(deadline) > 20*time.Second {
+		ctx, cancel = context.WithTimeout(parent, 20*time.Second)
+	}
+	defer cancel()
+
+	providers := order
+	if len(providers) > directProviderProbeMax {
+		providers = providers[:directProviderProbeMax]
+	}
+
+	seen := make(map[string]struct{}, len(providers))
+	result := make([]codexbar.ParsedFrame, 0, len(providers))
+	for _, provider := range providers {
+		key := normalizeProviderKey(provider)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		parsed, err := deps.fetchProvider(ctx, key)
+		if err != nil {
+			continue
+		}
+		if strings.TrimSpace(parsed.Frame.Error) != "" {
+			continue
+		}
+		result = append(result, parsed)
+	}
+
+	return result
 }
 
 func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {

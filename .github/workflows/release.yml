@@ -38,6 +38,13 @@ jobs:
           VERSION="${VERSION#v}"
           mkdir -p dist/companion dist/firmware
 
+          if [[ ! -f scripts/install.sh ]]; then
+            echo "error: scripts/install.sh is missing" >&2
+            exit 1
+          fi
+          cp scripts/install.sh dist/install.sh
+          chmod +x dist/install.sh
+
           cd companion
           for ARCH in amd64 arm64; do
             OUT="../dist/companion/codexbar-display-darwin-${ARCH}-v${VERSION}"
@@ -114,6 +121,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
+            dist/install.sh
             dist/companion/*
             dist/firmware/*.bin
             dist/firmware/firmware-manifest-*.json

@@ -1,129 +1,73 @@
-# codexbar-display
+# Vibe TV firmware and companion
 
+This repository contains the firmware and macOS companion layer that powers [Vibe TV](https://vibetv.shop/).
+Vibe TV is the hardware. CodexBar provides the usage signal. CodexBar-Display renders it on the screen so usage, limits, and status stay off-screen and on-desk.
 
-`codexbar-display` is the open-source companion + firmware stack for a physical CodexBar status display.
+If you bought a Vibe TV, start here:
 
-Repository, firmware track, CLI, and release artifacts are all named `codexbar-display`.
+1. Plug the device into your Mac with a USB data cable.
+2. Run the installer from the latest GitHub Release.
+3. Wait for the companion to finish setup.
+4. Usage should appear automatically.
 
-## v0 Status
-- Pre-release.
-- Primary (and only release-gated MVP) hardware target: ESP8266 SmallTV ST7789 (`esp8266_smalltv_st7789`).
-- v0 includes built-in themes (`classic`, `crt`, `mini`) and a shared GIF core for scenario-based playback.
-- The mini theme can add a compact absolute token line (`S/W/T`) when `codexbar cost --json` provides local stats.
-- ESP32 (`lilygo_t_display_s3`) remains experimental fallback/non-blocking for v0.
+Customer install path:
 
-## Theme Previews
-### Mini Theme
-![Preview of the mini theme](docs/assets/codexbar-display-theme-mini.jpeg)
-
-### CRT Theme
-![Preview of the crt theme](docs/assets/codexbar-display-theme-crt.jpg)
-
-## Quick Start (macOS)
 ```bash
-cd companion
-
-# Optional: build branded local binary for demos
-go build -o ../codexbar-display ./cmd/codexbar-display
-
-# Full setup (flash + install + launch agent)
-../codexbar-display setup --yes
-
-# Health snapshot
-../codexbar-display health
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 ```
 
-If you skip the local binary step, you can still run the same commands via `go run ./cmd/codexbar-display ...`.
+What the installer does:
 
-## Common Commands
-```bash
-cd companion
+- checks that you are on macOS
+- downloads the matching `codexbar-display` release for your Mac
+- verifies the download
+- installs or updates CodexBar if it is missing
+- sets up the background companion
+- warms up CodexBar on fresh installs so provider data is available
+- runs a health check after setup
 
-# One-shot runtime test
-../codexbar-display daemon --once --port /dev/cu.usbserial-10 --theme mini
+If the screen says `Waiting for frames`, the hardware is fine. It just means the host companion has not sent a frame yet.
 
-# Persist runtime theme
-../codexbar-display setup --yes --skip-flash --theme mini
+## What this repo ships
 
-# Upgrade / rollback
-../codexbar-display upgrade --firmware-env esp8266_smalltv_st7789
-../codexbar-display rollback --port /dev/cu.usbserial-10
+- ESP8266 firmware for the release-gated Vibe TV target
+- macOS companion that polls usage and sends frames over USB
+- GitHub Release artifacts for firmware, companion binaries, and checksums
 
-# Local ThemeSpec flow (USB, no cloud)
-../codexbar-display theme-validate --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
-../codexbar-display theme-apply --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
-# Optional fallback if hello is unavailable:
-../codexbar-display theme-validate --allow-unknown-capabilities --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
-```
+## For developers
 
-## Firmware Environments
-KISS runtime path:
-- `esp8266_smalltv_st7789` (default, release-gated)
+Current release-gated hardware target:
 
-Experimental fallback (non-blocking):
+- `esp8266_smalltv_st7789`
+
+Experimental fallback:
+
 - `lilygo_t_display_s3`
 
-Release go/no-go for MVP is gated only by `esp8266_smalltv_st7789`.
+Local build and test:
 
-Theme selection is runtime-driven (`classic|crt|mini`) via `--theme` or `CODEXBAR_DISPLAY_THEME`.
-Protocol contract (v0 target): companion applies `theme` when capability handshake confirms support.
-If device hello is temporarily unavailable on the MVP device path, companion falls back to optimistic theme send.
-On USB-first transition builds, negotiation prefers protocol v2 and falls back to v1 automatically.
-
-GIF core scenarios on ESP8266:
-- `/mini.gif`: mini theme ambient overlay
-
-`classic`/`crt` use no GIF playback at the moment.
-The GIF core is request-based so additional theme/event scenarios can be added without reworking decode/retry logic.
-Missing or invalid GIF assets automatically fall back to non-GIF UI and enter per-asset retry backoff.
-
-## Theme Precedence
-1. `codexbar-display daemon --theme <classic|crt|mini>`
-2. `CODEXBAR_DISPLAY_THEME`
-3. `~/Library/Application Support/codexbar-display/config.json`
-4. Firmware compile default
-
-## Mini Theme Preview (No Flash)
 ```bash
-# From repo root
-./scripts/mini-theme-preview.sh
-```
-
-This opens a browser preview for the `mini` layout with mocked usage fields and live position/size controls.
-Default GIF path is `/firmware_esp8266/data/mini.gif` (served from the repo).
-
-## Development
-```bash
-# Companion tests
 cd companion
 go test ./...
 
-# Focused ESP8266 soak gate (theme/reconnect/sleep-wake/24h simulation)
 cd ..
 ./scripts/check-esp8266-soak-gate.sh
+```
 
-# GIF core policy tests (fallback/backoff/request-switching)
-./scripts/check-gif-core-policy-tests.sh
+Firmware build:
 
-# ESP8266 firmware
+```bash
 cd firmware_esp8266
 pio run -e esp8266_smalltv_st7789
-
-# ESP32 (experimental)
-cd ../firmware_esp32
-pio run -e lilygo_t_display_s3
 ```
 
 ## Docs
-- Operator runbook: `docs/operator-runbook.md`
-- Hardware contract: `docs/hardware-contract.md`
-- USB-first v2 minimaldesign: `docs/v2-usb-first-minimaldesign.md`
-- Companion refactor notes: `docs/companion-refactor-notes.md`
-- Usage polling architecture + benchmarks: `docs/usage-polling-architecture.md`
-- Token usage support matrix: `docs/token-usage-support-matrix.md`
-- Open roadmap: `TODO.md`
-- Protocol: `protocol/PROTOCOL.md`
-- Firmware guardrails: `docs/firmware-guardrails.md`
+
+- Customer setup: [docs/customer-setup.md](docs/customer-setup.md)
+- Hardware contract: [docs/hardware-contract.md](docs/hardware-contract.md)
+- Operator runbook: [docs/operator-runbook.md](docs/operator-runbook.md)
+- Protocol: [protocol/PROTOCOL.md](protocol/PROTOCOL.md)
 
 ## License
-Released under the MIT License. See `LICENSE`.
+
+Released under the MIT License. See [LICENSE](LICENSE).

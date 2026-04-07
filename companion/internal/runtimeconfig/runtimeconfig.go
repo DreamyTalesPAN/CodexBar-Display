@@ -14,6 +14,7 @@ import (
 
 const (
 	configFileName = "config.json"
+	defaultTheme   = "mini"
 )
 
 type Config struct {
@@ -22,6 +23,10 @@ type Config struct {
 
 func NormalizeTheme(raw string) string {
 	return theme.Normalize(raw)
+}
+
+func DefaultTheme() string {
+	return defaultTheme
 }
 
 func ClearThemeValue(raw string) bool {

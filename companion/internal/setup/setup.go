@@ -1026,6 +1026,20 @@ func installRecoveryAssets(repoRoot, home string) (string, string, error) {
 func applyRuntimeConfig(home, rawTheme string, stdout io.Writer) error {
 	themeInput := strings.TrimSpace(rawTheme)
 	if themeInput == "" {
+		cfg, err := runtimeconfig.Load(home)
+		if err != nil {
+			return err
+		}
+		if runtimeconfig.NormalizeTheme(cfg.Theme) != "" {
+			return nil
+		}
+		cfg.Theme = runtimeconfig.DefaultTheme()
+		if err := runtimeconfig.Save(home, cfg); err != nil {
+			return err
+		}
+		if stdout != nil {
+			fmt.Fprintf(stdout, "Runtime config: theme=%s (default)\n", cfg.Theme)
+		}
 		return nil
 	}
 

@@ -1135,6 +1135,50 @@ func TestRunCycleFromCollectorUsesStaleLastGoodWhenCollectorEmpty(t *testing.T) 
 	}
 }
 
+func TestRunCycleFromCollectorUsesDirectProviderFallbackWhenCollectorEmpty(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		order:          []string{"codex", "claude", "cursor"},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+	}
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProvider: func(_ context.Context, provider string) (codexbar.ParsedFrame, error) {
+			switch provider {
+			case "codex":
+				return testParsedFrame("codex", 12, 34, 3600), nil
+			default:
+				return codexbar.ParsedFrame{}, codexbar.ErrNoProviders
+			}
+		},
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("expected direct provider fallback success, got %v", err)
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Provider != "codex" || frame.Session != 12 || frame.Weekly != 34 {
+		t.Fatalf("expected direct fallback codex frame, got %+v", frame)
+	}
+}
+
 func TestDetectSleepWakeGap(t *testing.T) {
 	prepareFastTestEnv(t)
 
