@@ -151,15 +151,6 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	timeout := commandTimeout()
 	out, err := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
 	allParsed, parseErr := parseAllProviders(out)
-	if shouldRetryAfterStartingCodexBarApp(err, parseErr, allParsed, out) {
-		startCodexBarApp(ctx)
-		retryOut, retryErr := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
-		retryParsed, retryParseErr := parseAllProviders(retryOut)
-		out = retryOut
-		err = retryErr
-		allParsed = retryParsed
-		parseErr = retryParseErr
-	}
 
 	// KISS fallback: when aggregated usage is unavailable, fall back to a
 	// Codex CLI-only payload instead of failing hard.
@@ -192,42 +183,6 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	}
 
 	return allParsed, nil
-}
-
-func shouldRetryAfterStartingCodexBarApp(cmdErr error, parseErr error, parsed []ParsedFrame, raw []byte) bool {
-	if cmdErr == nil {
-		return false
-	}
-	if len(parsed) > 0 {
-		return false
-	}
-
-	lower := strings.ToLower(string(raw))
-	if strings.Contains(lower, "dashboard data not found") ||
-		strings.Contains(lower, "download app") ||
-		strings.Contains(lower, "openai dashboard data not found") {
-		return true
-	}
-
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return true
-	}
-
-	return errors.Is(parseErr, ErrNoProviders)
-}
-
-func startCodexBarApp(parent context.Context) {
-	cmdCtx, cancel := context.WithTimeout(parent, 5*time.Second)
-	defer cancel()
-
-	_ = exec.CommandContext(cmdCtx, "open", "-a", "CodexBar").Run()
-
-	// Give launch services a short moment to bring up app internals before retry.
-	select {
-	case <-parent.Done():
-		return
-	case <-time.After(1500 * time.Millisecond):
-	}
 }
 
 // FetchFirstFrame returns one selected frame for one-shot calls (doctor/setup).

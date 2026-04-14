@@ -22,11 +22,30 @@ Note: source entrypoint remains `./cmd/codexbar-display` in this repo. For brand
 cd companion
 ../codexbar-display setup --yes
 ../codexbar-display health
+../codexbar-display service status
+../codexbar-display service stop
+../codexbar-display service start
 ../codexbar-display doctor
 ../codexbar-display version
 ../codexbar-display upgrade --firmware-env esp8266_smalltv_st7789
 ../codexbar-display rollback --port /dev/cu.usbserial-10
 ```
+
+## Service Control
+
+Use the explicit service commands instead of killing processes in Activity Monitor:
+
+```bash
+cd companion
+../codexbar-display service status
+../codexbar-display service stop
+../codexbar-display service start
+```
+
+Behavior:
+- `service stop` unloads the LaunchAgent and disables it, so macOS will not respawn `codexbar-display` until you run `service start` or `setup` again.
+- `service start` re-enables the LaunchAgent and starts it from the installed plist.
+- `service status` reports whether the LaunchAgent is enabled and whether it is currently loaded/running.
 
 ## Setup
 

@@ -52,6 +52,18 @@ The installer:
 - warms up CodexBar on fresh installs
 - runs a health check at the end
 
+To stop the background service for good until you explicitly re-enable it:
+
+```bash
+codexbar-display service stop
+```
+
+To start it again:
+
+```bash
+codexbar-display service start
+```
+
 If the device shows `Waiting for frames`, the hardware is usually fine. It just means your Mac has not sent any frames yet.
 
 The full customer guide is in [docs/customer-setup.md](docs/customer-setup.md).

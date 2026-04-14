@@ -1,7 +1,6 @@
 package codexbar
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -141,32 +140,6 @@ func TestParseBoolPreference(t *testing.T) {
 		if ok != tc.ok || got != tc.want {
 			t.Fatalf("parseBoolPreference(%q) got=(%v,%v) want=(%v,%v)", tc.raw, got, ok, tc.want, tc.ok)
 		}
-	}
-}
-
-func TestShouldRetryAfterStartingCodexBarAppWhenDashboardMissing(t *testing.T) {
-	raw := []byte("Error: OpenAI dashboard data not found. Body sample: Download app")
-	should := shouldRetryAfterStartingCodexBarApp(errors.New("exit status 1"), ErrNoProviders, nil, raw)
-	if !should {
-		t.Fatalf("expected retry when codexbar output indicates dashboard app requirement")
-	}
-}
-
-func TestShouldRetryAfterStartingCodexBarAppSkipsWhenParsedDataExists(t *testing.T) {
-	raw := []byte("Error but with usable payload")
-	parsed := []ParsedFrame{
-		{Frame: protocol.Frame{Provider: "claude"}, Provider: "claude"},
-	}
-	should := shouldRetryAfterStartingCodexBarApp(errors.New("exit status 1"), nil, parsed, raw)
-	if should {
-		t.Fatalf("expected no retry when parsed providers already exist")
-	}
-}
-
-func TestShouldRetryAfterStartingCodexBarAppOnEmptyOutput(t *testing.T) {
-	should := shouldRetryAfterStartingCodexBarApp(errors.New("exit status 1"), ErrNoProviders, nil, bytes.TrimSpace([]byte{}))
-	if !should {
-		t.Fatalf("expected retry on empty output + command error")
 	}
 }
 
@@ -739,6 +712,35 @@ func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testin
 	}
 	if parsed[0].Frame.Session != 7 || parsed[0].Frame.Weekly != 13 {
 		t.Fatalf("expected fallback session=7 weekly=13, got session=%d weekly=%d", parsed[0].Frame.Session, parsed[0].Frame.Weekly)
+	}
+}
+
+func TestFetchAllProvidersDoesNotRetryByStartingCodexBarApp(t *testing.T) {
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	var aggregateCalls int
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		argLine := strings.Join(args, " ")
+		if strings.Contains(argLine, "--web-timeout 8") {
+			aggregateCalls++
+			return []byte("dashboard data not found"), errors.New("exit status 1")
+		}
+		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
+			return nil, errors.New("codex cli unavailable")
+		}
+		return nil, errors.New("unexpected command")
+	}
+
+	_, err := FetchAllProviders(context.Background())
+	if err == nil {
+		t.Fatalf("expected fetch to fail when aggregate and CLI fallback fail")
+	}
+	if aggregateCalls != 1 {
+		t.Fatalf("expected exactly one aggregate usage attempt, got %d", aggregateCalls)
 	}
 }
 

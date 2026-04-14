@@ -1053,6 +1053,7 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	collector := &providerCollector{
 		now:             func() time.Time { return current },
 		logf:            func(string, ...any) {},
+		resolvePort:     func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
 		order:           []string{"codex", "claude"},
 		interval:        30 * time.Second,
 		timeout:         3 * time.Second,
@@ -1093,6 +1094,37 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	expired := collector.providerFrames(current)
 	if len(expired) != 0 {
 		t.Fatalf("expected snapshots to expire by max age, got %#v", expired)
+	}
+}
+
+func TestProviderCollectorCollectOnceSkipsFetchWithoutDevice(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	var fetchCalled bool
+	var logged string
+	collector := &providerCollector{
+		now:             func() time.Time { return time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC) },
+		logf:            func(format string, args ...any) { logged = logged + strings.TrimSpace(format) },
+		resolvePort:     func(string) (string, error) { return "", errors.New("no usb serial ports found") },
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		timeout:         3 * time.Second,
+		snapshotMaxAge:  2 * time.Hour,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(_ context.Context) ([]codexbar.ParsedFrame, error) {
+			fetchCalled = true
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600)}, nil
+		},
+	}
+
+	collector.collectOnce(context.Background())
+
+	if fetchCalled {
+		t.Fatalf("expected collector to skip fetchProviders when no device is available")
+	}
+	if !strings.Contains(logged, "collector paused reason=no-device") {
+		t.Fatalf("expected no-device pause log, got %q", logged)
 	}
 }
 
