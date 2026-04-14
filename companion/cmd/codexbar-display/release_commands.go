@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,8 @@ var (
 	snapshotInstalledCompanionBinaryFn = snapshotInstalledCompanionBinary
 	runRestoreKnownGoodCommandFn       = runRestoreKnownGood
 )
+
+const launchAgentLabel = "com.codexbar-display.daemon.plist"
 
 type commandError struct {
 	Op   string
@@ -760,14 +763,15 @@ func copyRegularFileAtomic(sourcePath, targetPath string, mode os.FileMode) erro
 }
 
 func restartLaunchAgent(home string) error {
-	plist := filepath.Join(home, "Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
+	plist := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel)
 	if !fileExists(plist) {
 		return nil
 	}
 
 	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	service := domain + "/com.codexbar-display.daemon"
+	service := domain + "/" + strings.TrimSuffix(launchAgentLabel, ".plist")
 	_, _ = exec.Command("launchctl", "bootout", service).CombinedOutput()
+	_, _ = exec.Command("launchctl", "enable", service).CombinedOutput()
 
 	bootstrapOut, bootstrapErr := exec.Command("launchctl", "bootstrap", domain, plist).CombinedOutput()
 	if bootstrapErr != nil {
@@ -782,4 +786,95 @@ func restartLaunchAgent(home string) error {
 		return fmt.Errorf("kickstart launchagent: %w (%s)", kickErr, strings.TrimSpace(string(kickOut)))
 	}
 	return nil
+}
+
+func startLaunchAgent(home string) error {
+	plist := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel)
+	if !fileExists(plist) {
+		return fmt.Errorf("launchagent plist not found: %s", plist)
+	}
+	return restartLaunchAgent(home)
+}
+
+func stopLaunchAgent(disable bool) error {
+	domain := fmt.Sprintf("gui/%d", os.Getuid())
+	service := domain + "/" + strings.TrimSuffix(launchAgentLabel, ".plist")
+
+	bootoutOut, bootoutErr := exec.Command("launchctl", "bootout", service).CombinedOutput()
+	if bootoutErr != nil {
+		trimmed := strings.TrimSpace(string(bootoutOut))
+		if trimmed != "" &&
+			!strings.Contains(strings.ToLower(trimmed), "could not find service") &&
+			!strings.Contains(strings.ToLower(trimmed), "service is disabled") {
+			return fmt.Errorf("bootout launchagent: %w (%s)", bootoutErr, trimmed)
+		}
+	}
+	if disable {
+		disableOut, disableErr := exec.Command("launchctl", "disable", service).CombinedOutput()
+		if disableErr != nil {
+			trimmed := strings.TrimSpace(string(disableOut))
+			if trimmed != "" && !strings.Contains(strings.ToLower(trimmed), "already disabled") {
+				return fmt.Errorf("disable launchagent: %w (%s)", disableErr, trimmed)
+			}
+		}
+	}
+	return nil
+}
+
+type launchAgentStatus struct {
+	Enabled bool
+	State   string
+	PID     string
+}
+
+func queryLaunchAgentStatus() (launchAgentStatus, error) {
+	domain := fmt.Sprintf("gui/%d", os.Getuid())
+	serviceName := strings.TrimSuffix(launchAgentLabel, ".plist")
+	service := domain + "/" + serviceName
+
+	status := launchAgentStatus{
+		Enabled: true,
+		State:   "not-loaded",
+	}
+
+	disabledOut, disabledErr := exec.Command("launchctl", "print-disabled", domain).CombinedOutput()
+	if disabledErr == nil {
+		if strings.Contains(string(disabledOut), fmt.Sprintf("\"%s\" => disabled", serviceName)) {
+			status.Enabled = false
+		}
+	}
+
+	printOut, printErr := exec.Command("launchctl", "print", service).CombinedOutput()
+	trimmed := strings.TrimSpace(string(printOut))
+	if printErr != nil {
+		lower := strings.ToLower(trimmed)
+		if strings.Contains(lower, "could not find service") || strings.Contains(lower, "not found") || trimmed == "" {
+			return status, nil
+		}
+		return launchAgentStatus{}, fmt.Errorf("inspect launchagent: %w (%s)", printErr, trimmed)
+	}
+
+	state, pid := parseLaunchctlServiceStatus(trimmed)
+	if state != "" {
+		status.State = state
+	}
+	status.PID = pid
+	return status, nil
+}
+
+func parseLaunchctlServiceStatus(output string) (state, pid string) {
+	lines := strings.Split(output, "\n")
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "state =") {
+			state = strings.TrimSpace(strings.TrimPrefix(line, "state ="))
+		}
+		if strings.HasPrefix(line, "pid =") {
+			candidate := strings.TrimSpace(strings.TrimPrefix(line, "pid ="))
+			if _, err := strconv.Atoi(candidate); err == nil {
+				pid = candidate
+			}
+		}
+	}
+	return state, pid
 }

@@ -38,6 +38,8 @@ func main() {
 		err = runDoctor()
 	case "health":
 		err = health.Run(context.Background())
+	case "service":
+		err = runService(os.Args[2:])
 	case "version":
 		err = runVersion(os.Args[2:])
 	case "upgrade":
@@ -75,6 +77,7 @@ func printUsage() {
 	fmt.Println("  codexbar-display daemon [--port /dev/cu.usbserial-10] [--interval 60s] [--once] [--theme classic|crt|mini]")
 	fmt.Println("  codexbar-display doctor")
 	fmt.Println("  codexbar-display health")
+	fmt.Println("  codexbar-display service <start|stop|status>")
 	fmt.Println("  codexbar-display version [--short] [--json]")
 	fmt.Println("  codexbar-display upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--skip-version-guard]")
 	fmt.Println("  codexbar-display rollback [--port /dev/cu.usbserial-10] [--skip-companion] [--skip-firmware] [--image path/to/backup.bin] [--manifest path/to/backup.manifest] [--backup-dir <dir>] [--script-path <path>] [--skip-verify]")
@@ -268,6 +271,51 @@ func runSetup(args []string) error {
 		ValidateOnly:  *validateOnly,
 		DryRun:        *dryRun,
 	})
+}
+
+func runService(args []string) error {
+	if len(args) == 0 {
+		return errors.New("missing service subcommand: expected start, stop, or status")
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve home directory: %w", err)
+	}
+
+	switch strings.TrimSpace(strings.ToLower(args[0])) {
+	case "start":
+		if err := startLaunchAgent(home); err != nil {
+			return err
+		}
+		fmt.Println("launchagent: enabled and started")
+		return nil
+	case "stop":
+		if err := stopLaunchAgent(true); err != nil {
+			return err
+		}
+		fmt.Println("launchagent: stopped and disabled")
+		return nil
+	case "status":
+		status, err := queryLaunchAgentStatus()
+		if err != nil {
+			return err
+		}
+		fmt.Println("codexbar-display service")
+		if status.Enabled {
+			fmt.Println("enabled: yes")
+		} else {
+			fmt.Println("enabled: no")
+		}
+		fmt.Printf("state: %s\n", status.State)
+		if status.PID != "" {
+			fmt.Printf("pid: %s\n", status.PID)
+		}
+		fmt.Printf("plist: %s\n", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel))
+		return nil
+	default:
+		return fmt.Errorf("unknown service subcommand %q: expected start, stop, or status", args[0])
+	}
 }
 
 func runThemeValidate(args []string) error {

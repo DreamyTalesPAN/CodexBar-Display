@@ -883,6 +883,7 @@ func reloadLaunchAgent(ctx context.Context, d deps, plistPath string) error {
 	service := launchServiceTarget(d.uid())
 
 	_, _ = d.runCommand(ctx, "", "launchctl", "bootout", service)
+	_, _ = d.runCommand(ctx, "", "launchctl", "enable", service)
 
 	output, err := d.runCommand(ctx, "", "launchctl", "bootstrap", domain, plistPath)
 	if err != nil {

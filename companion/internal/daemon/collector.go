@@ -32,6 +32,8 @@ type providerCollector struct {
 	now             func() time.Time
 	logf            func(string, ...any)
 	fetchProviders  func(context.Context) ([]codexbar.ParsedFrame, error)
+	resolvePort     func(string) (string, error)
+	requestedPort   string
 	order           []string
 	interval        time.Duration
 	timeout         time.Duration
@@ -58,6 +60,8 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		now:             nowFn,
 		logf:            logFn,
 		fetchProviders:  deps.fetchProviders,
+		resolvePort:     deps.resolvePort,
+		requestedPort:   strings.TrimSpace(opts.Port),
 		order:           collectorProviderOrder(),
 		interval:        collectorInterval(opts.Interval),
 		timeout:         collectorProviderTimeout(),
@@ -104,6 +108,12 @@ func (c *providerCollector) run(ctx context.Context) {
 func (c *providerCollector) collectOnce(parent context.Context) {
 	if c == nil || c.fetchProviders == nil {
 		return
+	}
+	if c.resolvePort != nil {
+		if _, err := c.resolvePort(c.requestedPort); err != nil {
+			c.logf("collector paused reason=no-device err=%v\n", err)
+			return
+		}
 	}
 
 	now := c.now()
