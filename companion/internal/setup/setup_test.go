@@ -654,6 +654,140 @@ func TestRunWithDepsWaitsForLaunchAgentToBecomeRunning(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsRetriesLaunchAgentBootstrapRace(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	repo := filepath.Join(tmp, "repo")
+	execPath := filepath.Join(tmp, "bin", "codexbar-display-source")
+
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
+	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
+
+	bootstrapAttempts := 0
+
+	err := runWithDeps(context.Background(), Options{Port: "/dev/cu.usbserial10", AssumeYes: true, SkipFlash: true}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		cwd: func() (string, error) {
+			return filepath.Join(repo, "companion"), nil
+		},
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		resolvePort: func(p string) (string, error) {
+			if p != "" {
+				return p, nil
+			}
+			return "/dev/cu.usbserial10", nil
+		},
+		probePort: func(string) error { return nil },
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			switch file {
+			case "pio", "brew", "open":
+				return "/usr/bin/" + file, nil
+			default:
+				return "", errors.New("not found")
+			}
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 {
+				switch args[0] {
+				case "bootstrap":
+					bootstrapAttempts++
+					if bootstrapAttempts == 1 {
+						return "Bootstrap failed: 5: Input/output error", errors.New("exit status 5")
+					}
+				case "print":
+					if bootstrapAttempts == 1 {
+						return "Could not find service", errors.New("exit status 113")
+					}
+					return "state = running", nil
+				}
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success after bootstrap retry, got %v", err)
+	}
+	if bootstrapAttempts != 2 {
+		t.Fatalf("expected bootstrap retry, got %d attempts", bootstrapAttempts)
+	}
+}
+
+func TestRunWithDepsFallsBackToKickstartWhenLaunchAgentAlreadyLoaded(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	repo := filepath.Join(tmp, "repo")
+	execPath := filepath.Join(tmp, "bin", "codexbar-display-source")
+
+	mustWriteFile(t, filepath.Join(repo, "firmware_esp32", "platformio.ini"), []byte("[env]"), 0o644)
+	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
+	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
+
+	kickstartCalled := false
+
+	err := runWithDeps(context.Background(), Options{Port: "/dev/cu.usbserial10", AssumeYes: true, SkipFlash: true}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		cwd: func() (string, error) {
+			return filepath.Join(repo, "companion"), nil
+		},
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		resolvePort: func(p string) (string, error) {
+			if p != "" {
+				return p, nil
+			}
+			return "/dev/cu.usbserial10", nil
+		},
+		probePort: func(string) error { return nil },
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			switch file {
+			case "pio", "brew", "open":
+				return "/usr/bin/" + file, nil
+			default:
+				return "", errors.New("not found")
+			}
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 {
+				switch args[0] {
+				case "bootstrap":
+					return "Bootstrap failed: 5: Input/output error", errors.New("exit status 5")
+				case "kickstart":
+					kickstartCalled = true
+				case "print":
+					return "state = running", nil
+				}
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success with loaded launch agent fallback, got %v", err)
+	}
+	if !kickstartCalled {
+		t.Fatalf("expected kickstart fallback")
+	}
+}
+
 func TestRunWithDepsStopsLaunchAgentBeforeSerialProbe(t *testing.T) {
 	bootoutCalled := false
 

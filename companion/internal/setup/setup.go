@@ -882,10 +882,10 @@ func reloadLaunchAgent(ctx context.Context, d deps, plistPath string) error {
 	domain := fmt.Sprintf("gui/%d", d.uid())
 	service := launchServiceTarget(d.uid())
 
-	_, _ = d.runCommand(ctx, "", "launchctl", "bootout", service)
+	bootoutLaunchAgentBestEffort(ctx, d, domain, service, plistPath)
 	_, _ = d.runCommand(ctx, "", "launchctl", "enable", service)
 
-	output, err := d.runCommand(ctx, "", "launchctl", "bootstrap", domain, plistPath)
+	output, err := bootstrapLaunchAgentWithRetry(ctx, d, domain, service, plistPath, 3, 300*time.Millisecond)
 	if err != nil {
 		return &StepError{
 			Step:   "launchagent-bootstrap",
@@ -924,6 +924,50 @@ func reloadLaunchAgent(ctx context.Context, d deps, plistPath string) error {
 	}
 
 	return nil
+}
+
+func bootstrapLaunchAgentWithRetry(ctx context.Context, d deps, domain, service, plistPath string, attempts int, delay time.Duration) (string, error) {
+	if attempts <= 0 {
+		attempts = 1
+	}
+
+	var lastOutput string
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		output, err := d.runCommand(ctx, "", "launchctl", "bootstrap", domain, plistPath)
+		if err == nil {
+			return output, nil
+		}
+		lastOutput = output
+		lastErr = err
+
+		if launchAgentLoaded(ctx, d, service) {
+			return output, nil
+		}
+
+		if attempt < attempts {
+			bootoutLaunchAgentBestEffort(ctx, d, domain, service, plistPath)
+			select {
+			case <-ctx.Done():
+				return lastOutput, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+	}
+
+	return lastOutput, lastErr
+}
+
+func launchAgentLoaded(ctx context.Context, d deps, service string) bool {
+	_, err := d.runCommand(ctx, "", "launchctl", "print", service)
+	return err == nil
+}
+
+func bootoutLaunchAgentBestEffort(ctx context.Context, d deps, domain, service, plistPath string) {
+	_, _ = d.runCommand(ctx, "", "launchctl", "bootout", service)
+	if strings.TrimSpace(plistPath) != "" {
+		_, _ = d.runCommand(ctx, "", "launchctl", "bootout", domain, plistPath)
+	}
 }
 
 func waitForLaunchAgentState(ctx context.Context, d deps, service string, attempts int, delay time.Duration) (string, error) {
@@ -1001,8 +1045,13 @@ func runSystemCommand(ctx context.Context, dir string, name string, args ...stri
 }
 
 func stopLaunchAgentBestEffort(ctx context.Context, d deps) {
+	domain := fmt.Sprintf("gui/%d", d.uid())
 	service := launchServiceTarget(d.uid())
-	_, _ = d.runCommand(ctx, "", "launchctl", "bootout", service)
+	plistPath := ""
+	if home, err := d.homeDir(); err == nil {
+		plistPath = filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	}
+	bootoutLaunchAgentBestEffort(ctx, d, domain, service, plistPath)
 }
 
 func installRecoveryAssets(repoRoot, home string) (string, string, error) {
