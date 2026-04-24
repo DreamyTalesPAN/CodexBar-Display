@@ -884,8 +884,9 @@ func ensureSerialPortNotBusy(port string) error {
 }
 
 func stopLaunchAgentBestEffort() {
-	service := fmt.Sprintf("gui/%d/com.codexbar-display.daemon", os.Getuid())
-	_, _ = exec.Command("launchctl", "bootout", service).CombinedOutput()
+	domain := fmt.Sprintf("gui/%d", os.Getuid())
+	service := domain + "/com.codexbar-display.daemon"
+	bootoutLaunchAgentBestEffort(domain, service, "")
 }
 
 func beginUpgradeLaunchAgentRecovery(home string, retErr *error) func() {
@@ -1106,15 +1107,11 @@ func restartLaunchAgent(home string) error {
 
 	domain := fmt.Sprintf("gui/%d", os.Getuid())
 	service := domain + "/" + strings.TrimSuffix(launchAgentLabel, ".plist")
-	_, _ = exec.Command("launchctl", "bootout", service).CombinedOutput()
+	bootoutLaunchAgentBestEffort(domain, service, plist)
 	_, _ = exec.Command("launchctl", "enable", service).CombinedOutput()
 
-	bootstrapOut, bootstrapErr := exec.Command("launchctl", "bootstrap", domain, plist).CombinedOutput()
-	if bootstrapErr != nil {
-		trimmed := strings.TrimSpace(string(bootstrapOut))
-		if !strings.Contains(trimmed, "already") {
-			return fmt.Errorf("bootstrap launchagent: %w (%s)", bootstrapErr, trimmed)
-		}
+	if err := bootstrapLaunchAgentWithRetry(domain, service, plist, 3, 300*time.Millisecond); err != nil {
+		return err
 	}
 
 	kickOut, kickErr := exec.Command("launchctl", "kickstart", "-k", service).CombinedOutput()
@@ -1122,6 +1119,45 @@ func restartLaunchAgent(home string) error {
 		return fmt.Errorf("kickstart launchagent: %w (%s)", kickErr, strings.TrimSpace(string(kickOut)))
 	}
 	return nil
+}
+
+func bootstrapLaunchAgentWithRetry(domain, service, plist string, attempts int, delay time.Duration) error {
+	if attempts <= 0 {
+		attempts = 1
+	}
+
+	var lastOut []byte
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		out, err := exec.Command("launchctl", "bootstrap", domain, plist).CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		lastOut = out
+		lastErr = err
+
+		if launchAgentLoaded(service) {
+			return nil
+		}
+
+		if attempt < attempts {
+			bootoutLaunchAgentBestEffort(domain, service, plist)
+			time.Sleep(delay)
+		}
+	}
+
+	return fmt.Errorf("bootstrap launchagent: %w (%s)", lastErr, strings.TrimSpace(string(lastOut)))
+}
+
+func launchAgentLoaded(service string) bool {
+	return exec.Command("launchctl", "print", service).Run() == nil
+}
+
+func bootoutLaunchAgentBestEffort(domain, service, plist string) {
+	_, _ = exec.Command("launchctl", "bootout", service).CombinedOutput()
+	if strings.TrimSpace(plist) != "" {
+		_, _ = exec.Command("launchctl", "bootout", domain, plist).CombinedOutput()
+	}
 }
 
 func startLaunchAgent(home string) error {
