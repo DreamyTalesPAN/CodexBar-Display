@@ -23,24 +23,26 @@ constexpr int kUsageMetaTextSize = 2;
 constexpr int kUsageModeTextSize = 1;
 constexpr int kPercentTextSize = 5;
 constexpr int kResetTextSize = 2;
-constexpr int kTokenTextSize = 1;
 constexpr int kUsageLeftCenter = 58;
 constexpr int kUsageOuterPadding = 4;
 constexpr int kUsageLabelY = 30;
 constexpr int kUsageValueY = 66;
 constexpr int kUsageModeY = 106;
 constexpr uint16_t kMiniBg = TFT_BLACK;
-constexpr uint16_t kMiniPrimary = rgb565(92, 204, 255);
-constexpr uint16_t kMiniSecondary = rgb565(167, 255, 201);
-constexpr uint16_t kMiniMuted = rgb565(121, 131, 148);
+constexpr uint16_t kMiniAction = rgb565(204, 255, 0);
+constexpr uint16_t kMiniPrimary = kMiniAction;
+constexpr uint16_t kMiniSecondary = rgb565(250, 250, 250);
+constexpr uint16_t kMiniMuted = rgb565(153, 153, 153);
+constexpr uint16_t kMiniPanel = TFT_BLACK;
+constexpr int kMiniSplashActionY = 132;
+constexpr int kMiniSplashActionLineGap = 34;
+constexpr int kMiniSplashActionClearY = 124;
 
 struct MiniGifBox {
   int drawX = 0;
   int drawY = 0;
   int drawSize = 0;
 };
-
-String formatCompactTokens(int64_t tokens);
 
 const GifPlaybackRequest& miniThemeGifRequest() {
   static constexpr GifPlaybackRequest kMiniThemeGifRequest = {
@@ -82,6 +84,38 @@ int centeredXForColumnPixels(int textWidthPx, int columnCenterX) {
   return x;
 }
 
+int centeredXForCurrentFont(const char* text) {
+  TFT_eSPI& tft = Tft();
+  int x = (tft.width() - tft.textWidth(text)) / 2;
+  if (x < 0) {
+    return 0;
+  }
+  return x;
+}
+
+void printBoldCurrentFont(const char* text, int x, int y) {
+  TFT_eSPI& tft = Tft();
+  tft.setCursor(x, y);
+  tft.print(text);
+  tft.setCursor(x + 1, y);
+  tft.print(text);
+}
+
+void drawSplashActionLineMini() {
+  char line2[24];
+  std::snprintf(line2, sizeof(line2), "ANY AI TOOL%s", SplashDotsSuffix());
+
+  TFT_eSPI& tft = Tft();
+  PrimitiveFillRect(0, kMiniSplashActionClearY, tft.width(), tft.height() - kMiniSplashActionClearY, kMiniBg);
+  tft.setTextFont(2);
+  tft.setTextSize(2);
+  tft.setTextColor(kMiniSecondary, kMiniBg);
+  tft.setCursor(centeredXForCurrentFont("START USING"), kMiniSplashActionY);
+  tft.print("START USING");
+  tft.setCursor(centeredXForCurrentFont(line2), kMiniSplashActionY + kMiniSplashActionLineGap);
+  tft.print(line2);
+}
+
 MiniGifBox currentMiniGifBox() {
   TFT_eSPI& tft = Tft();
 
@@ -112,26 +146,9 @@ void drawResetCountdownLineMini(int64_t remain) {
 
   const int clearH = tft.height() - clearY;
   const String resetLabel = String("Reset ") + FormatDuration(remain);
-  const bool hasTokenStats = CurrentFrame().sessionTokens > 0 || CurrentFrame().weekTokens > 0 || CurrentFrame().totalTokens > 0;
-  int resetY = clearY + ((clearH - TextPixelHeight(kResetTextSize)) / 2);
+  const int resetY = clearY + ((clearH - TextPixelHeight(kResetTextSize)) / 2);
 
   PrimitiveFillRect(0, clearY, tft.width(), clearH, kMiniBg);
-  if (hasTokenStats) {
-    const String tokenLine = String("S ") + formatCompactTokens(CurrentFrame().sessionTokens) +
-                             "  W " + formatCompactTokens(CurrentFrame().weekTokens) +
-                             "  T " + formatCompactTokens(CurrentFrame().totalTokens);
-    tft.setTextFont(2);
-    tft.setTextSize(kTokenTextSize);
-    tft.setTextColor(TFT_WHITE, kMiniBg);
-    tft.setCursor(centeredXForText(tokenLine.c_str(), kTokenTextSize), clearY + 2);
-    tft.print(tokenLine);
-
-    const int tokenBlockHeight = TextPixelHeight(kTokenTextSize) + 6;
-    const int resetZoneY = clearY + tokenBlockHeight;
-    const int resetZoneH = clearH - tokenBlockHeight;
-    resetY = resetZoneY + ((resetZoneH - TextPixelHeight(kResetTextSize)) / 2);
-  }
-
   tft.setTextFont(1);
   tft.setTextSize(kResetTextSize);
   tft.setTextColor(kMiniMuted, kMiniBg);
@@ -140,40 +157,6 @@ void drawResetCountdownLineMini(int64_t remain) {
 
   LastRenderedSecs() = remain;
   LastRenderedMinuteBucket() = remain / 60;
-}
-
-String formatCompactTokens(int64_t tokens) {
-  if (tokens <= 0) {
-    return "--";
-  }
-
-  struct Unit {
-    int64_t divisor;
-    const char* suffix;
-  };
-
-  static constexpr Unit kUnits[] = {
-      {1000000000000LL, "T"},
-      {1000000000LL, "B"},
-      {1000000LL, "M"},
-      {1000LL, "K"},
-  };
-
-  for (const Unit& unit : kUnits) {
-    if (tokens < unit.divisor) {
-      continue;
-    }
-    const double scaled = static_cast<double>(tokens) / static_cast<double>(unit.divisor);
-    char buf[16];
-    if (scaled >= 100.0) {
-      std::snprintf(buf, sizeof(buf), "%.0f%s", scaled, unit.suffix);
-    } else {
-      std::snprintf(buf, sizeof(buf), "%.1f%s", scaled, unit.suffix);
-    }
-    return String(buf);
-  }
-
-  return String(static_cast<long long>(tokens));
 }
 
 }  // namespace
@@ -218,10 +201,10 @@ void DrawMiniGifPlaceholder() {
   }
 
   if (!GifCore().IsCurrentAssetPresent(kMiniGifPath)) {
-    PrimitiveFillRect(x, y, boxW, boxH, rgb565(18, 20, 24));
+    PrimitiveFillRect(x, y, boxW, boxH, kMiniPanel);
     tft.setTextFont(1);
     tft.setTextSize(1);
-    tft.setTextColor(kMiniMuted, rgb565(18, 20, 24));
+    tft.setTextColor(kMiniMuted, kMiniPanel);
     tft.setCursor(x + ((boxW - TextPixelWidth("mini.gif", 1)) / 2), y + ((boxH - TextPixelHeight(1)) / 2));
     tft.print("mini.gif");
   }
@@ -231,26 +214,37 @@ void DrawSplashMini() {
   TFT_eSPI& tft = Tft();
 
   PrimitiveFillScreen(kMiniBg);
-  tft.setTextColor(kMiniPrimary, kMiniBg);
-  tft.setTextFont(2);
-  tft.setTextSize(2);
-  tft.setCursor(12, 20);
-  tft.print("MINI");
+
+  constexpr char kTitle[] = "VIBETV";
+
+  tft.setTextWrap(false);
 
   tft.setTextFont(2);
-  tft.setTextSize(1);
-  tft.setTextColor(kMiniMuted, kMiniBg);
-  tft.setCursor(12, 52);
-  tft.print("Waiting for usage frame...");
-  tft.setCursor(12, 70);
-  tft.print("GIF: /mini.gif");
+  tft.setTextSize(4);
+  tft.setTextColor(kMiniPrimary, kMiniBg);
+  printBoldCurrentFont(kTitle, centeredXForCurrentFont(kTitle), 58);
+
+  SplashWaitingDots() = 0;
+  SplashDotsLastTick() = millis();
+  drawSplashActionLineMini();
 
   LastRenderedSecs() = -1;
   LastRenderedMinuteBucket() = -1;
 }
 
 void TickSplashMini() {
-  // Static splash for this theme.
+  if (HasFrame()) {
+    return;
+  }
+
+  const unsigned long now = millis();
+  if (SplashDotsLastTick() == 0 || (now - SplashDotsLastTick()) < 450UL) {
+    return;
+  }
+
+  SplashDotsLastTick() = now;
+  SplashWaitingDots() = static_cast<uint8_t>((SplashWaitingDots() + 1) % 3);
+  drawSplashActionLineMini();
 }
 
 void DrawErrorMini(const String& message) {
@@ -261,7 +255,7 @@ void DrawErrorMini(const String& message) {
   tft.setTextSize(2);
   tft.setTextColor(kMiniPrimary, kMiniBg);
   tft.setCursor(12, 20);
-  tft.print("MINI");
+  tft.print("VIBETV");
 
   tft.setTextFont(2);
   tft.setTextSize(1);
@@ -371,7 +365,7 @@ void DrawUsageMini() {
   tft.print("Weekly");
   tft.setTextFont(1);
   tft.setTextSize(kPercentTextSize);
-  tft.setTextColor(kMiniSecondary, kMiniBg);
+  tft.setTextColor(kMiniPrimary, kMiniBg);
   tft.setCursor(rightColRight - weeklyPctW, valueY);
   tft.print(weeklyPctBuf);
   tft.setTextFont(2);
