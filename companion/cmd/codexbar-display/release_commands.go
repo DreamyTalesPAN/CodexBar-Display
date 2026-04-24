@@ -40,6 +40,7 @@ var (
 	rollbackRestartLaunchAgentFn                       = restartLaunchAgent
 	resolveSerialPortFn                                = usb.ResolvePort
 	readDeviceHelloFn                                  = usb.ReadDeviceHello
+	closeDefaultSenderFn                               = usb.CloseDefaultSender
 	ensureSerialPortNotBusyFn                          = ensureSerialPortNotBusy
 	loadReleaseStateFn                                 = loadReleaseState
 	saveReleaseStateFn                                 = saveReleaseState
@@ -284,6 +285,7 @@ func runUpgrade(args []string) (retErr error) {
 	}
 
 	hello, helloErr := readDeviceHelloFn(resolvedPort)
+	closeDefaultSenderFn()
 	if helloErr == nil {
 		fmt.Printf("device hello: board=%s firmware=%s protocol=%d\n", hello.Board, hello.Firmware, hello.ProtocolVersion)
 	} else {
@@ -363,6 +365,7 @@ func runUpgrade(args []string) (retErr error) {
 	fmt.Println("firmware flash: ok")
 
 	postHello, postHelloErr := readDeviceHelloFn(resolvedPort)
+	closeDefaultSenderFn()
 	if postHelloErr == nil {
 		fmt.Printf("post-upgrade hello: board=%s firmware=%s protocol=%d\n", postHello.Board, postHello.Firmware, postHello.ProtocolVersion)
 		if !*skipVersionGuard && strings.TrimSpace(postHello.Firmware) != "" {
