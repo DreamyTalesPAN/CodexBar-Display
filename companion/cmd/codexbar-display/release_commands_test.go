@@ -367,6 +367,7 @@ func TestRunUpgradeDownloadsAndFlashesReleaseFirmware(t *testing.T) {
 	previousSaveState := saveReleaseStateFn
 	previousSnapshot := snapshotInstalledCompanionBinaryFn
 	previousReadHello := readDeviceHelloFn
+	previousCloseDefaultSender := closeDefaultSenderFn
 	previousHTTPClient := releaseHTTPClient
 	previousFlash := flashReleaseFirmwareImageFn
 	t.Cleanup(func() {
@@ -378,6 +379,7 @@ func TestRunUpgradeDownloadsAndFlashesReleaseFirmware(t *testing.T) {
 		saveReleaseStateFn = previousSaveState
 		snapshotInstalledCompanionBinaryFn = previousSnapshot
 		readDeviceHelloFn = previousReadHello
+		closeDefaultSenderFn = previousCloseDefaultSender
 		releaseHTTPClient = previousHTTPClient
 		flashReleaseFirmwareImageFn = previousFlash
 	})
@@ -425,6 +427,10 @@ func TestRunUpgradeDownloadsAndFlashesReleaseFirmware(t *testing.T) {
 	readDeviceHelloFn = func(string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{}, errors.New("no hello")
 	}
+	closeCalls := 0
+	closeDefaultSenderFn = func() {
+		closeCalls++
+	}
 	flashed := false
 	flashReleaseFirmwareImageFn = func(_ context.Context, port string, artifact releaseFirmwareArtifact, imagePath string) error {
 		flashed = true
@@ -450,6 +456,9 @@ func TestRunUpgradeDownloadsAndFlashesReleaseFirmware(t *testing.T) {
 	}
 	if !flashed {
 		t.Fatal("expected flash function to be called")
+	}
+	if closeCalls != 2 {
+		t.Fatalf("expected sender close after pre/post hello reads, got %d", closeCalls)
 	}
 	if saveCalls != 2 {
 		t.Fatalf("expected release state save twice, got %d", saveCalls)
