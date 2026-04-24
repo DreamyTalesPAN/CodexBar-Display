@@ -50,6 +50,22 @@ Open Terminal and run this command:
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 ```
 
+### Firmware update path
+
+If support asks you to update the firmware, run:
+
+```bash
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --flash-firmware
+```
+
+Firmware flashing requires PlatformIO CLI (`pio`). If it is missing, the installer will stop with a recovery hint.
+
+If you need to use a specific serial port, run:
+
+```bash
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --flash-firmware -- --port /dev/cu.usbserial-110
+```
+
 ## What the Installer Does
 
 The installer handles everything automatically:
@@ -60,7 +76,8 @@ The installer handles everything automatically:
 4. It installs CodexBar if CodexBar is missing.
 5. It runs `codexbar-display setup --yes --skip-flash`.
 6. It starts the background service that sends frames to the display.
-7. It runs a health check at the end.
+7. If `--flash-firmware` is passed, it downloads the matching firmware from the GitHub release, verifies it, and flashes the connected device.
+8. It runs a health check at the end.
 
 ## What Success Looks Like
 

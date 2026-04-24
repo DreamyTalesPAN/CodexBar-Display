@@ -1,13 +1,20 @@
 package main
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
 func TestReleaseStateRoundTrip(t *testing.T) {
@@ -271,6 +278,184 @@ func TestResolveRollbackFirmwareInputsKeepsExplicitImageAndManifest(t *testing.T
 	}
 }
 
+func TestSelectReleaseFirmwareArtifact(t *testing.T) {
+	manifest := releaseFirmwareManifest{
+		Artifacts: []releaseFirmwareArtifact{
+			{
+				FirmwareEnv:     "lilygo_t_display_s3",
+				FirmwareVersion: "1.0.3",
+				Asset:           "lilygo.bin",
+				SHA256:          strings.Repeat("a", 64),
+			},
+			{
+				FirmwareEnv:     "esp8266_smalltv_st7789",
+				FirmwareVersion: "1.0.3",
+				Asset:           "mini.bin",
+				SHA256:          strings.Repeat("b", 64),
+			},
+		},
+	}
+
+	artifact, err := selectReleaseFirmwareArtifact(manifest, "esp8266_smalltv_st7789", "v1.0.3")
+	if err != nil {
+		t.Fatalf("select artifact: %v", err)
+	}
+	if artifact.Asset != "mini.bin" {
+		t.Fatalf("unexpected asset %q", artifact.Asset)
+	}
+}
+
+func TestDownloadReleaseFirmwareVerifiesManifestAndChecksum(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	home := t.TempDir()
+	imageBody := "firmware image"
+	imageSHA := sha256String(imageBody)
+	manifestBody := `{
+  "schemaVersion": 1,
+  "release": "v1.0.3",
+  "protocolVersion": 1,
+  "artifacts": [
+    {
+      "firmwareEnv": "esp8266_smalltv_st7789",
+      "board": "esp8266-smalltv-st7789",
+      "firmwareVersion": "1.0.3",
+      "asset": "codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.3.bin",
+      "sha256": "` + imageSHA + `"
+    }
+  ]
+}`
+
+	releaseHTTPClient = fakeReleaseHTTPClient{
+		responses: map[string]string{
+			"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.3/firmware-manifest-v1.0.3.json":                               manifestBody,
+			"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.3/codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.3.bin": imageBody,
+		},
+	}
+
+	imagePath, manifestPath, artifact, err := downloadReleaseFirmware(
+		context.Background(),
+		home,
+		"DreamyTalesPAN/CodexBar-Display",
+		"v1.0.3",
+		"1.0.3",
+		"esp8266_smalltv_st7789",
+	)
+	if err != nil {
+		t.Fatalf("download release firmware: %v", err)
+	}
+	if artifact.Asset != "codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.3.bin" {
+		t.Fatalf("unexpected artifact asset %q", artifact.Asset)
+	}
+	if data, err := os.ReadFile(imagePath); err != nil || string(data) != imageBody {
+		t.Fatalf("unexpected image data data=%q err=%v", string(data), err)
+	}
+	if data, err := os.ReadFile(manifestPath); err != nil || !strings.Contains(string(data), `"release": "v1.0.3"`) {
+		t.Fatalf("unexpected manifest data data=%q err=%v", string(data), err)
+	}
+}
+
+func TestRunUpgradeDownloadsAndFlashesReleaseFirmware(t *testing.T) {
+	previousResolve := resolveSerialPortFn
+	previousEnsureBusy := ensureSerialPortNotBusyFn
+	previousStop := upgradeStopLaunchAgentFn
+	previousRestart := upgradeRestartLaunchAgentFn
+	previousLoadState := loadReleaseStateFn
+	previousSaveState := saveReleaseStateFn
+	previousSnapshot := snapshotInstalledCompanionBinaryFn
+	previousReadHello := readDeviceHelloFn
+	previousHTTPClient := releaseHTTPClient
+	previousFlash := flashReleaseFirmwareImageFn
+	t.Cleanup(func() {
+		resolveSerialPortFn = previousResolve
+		ensureSerialPortNotBusyFn = previousEnsureBusy
+		upgradeStopLaunchAgentFn = previousStop
+		upgradeRestartLaunchAgentFn = previousRestart
+		loadReleaseStateFn = previousLoadState
+		saveReleaseStateFn = previousSaveState
+		snapshotInstalledCompanionBinaryFn = previousSnapshot
+		readDeviceHelloFn = previousReadHello
+		releaseHTTPClient = previousHTTPClient
+		flashReleaseFirmwareImageFn = previousFlash
+	})
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	imageBody := "firmware image"
+	imageSHA := sha256String(imageBody)
+	manifestBody := `{
+  "schemaVersion": 1,
+  "release": "v1.0.3",
+  "protocolVersion": 1,
+  "artifacts": [
+    {
+      "firmwareEnv": "esp8266_smalltv_st7789",
+      "board": "esp8266-smalltv-st7789",
+      "firmwareVersion": "1.0.3",
+      "asset": "codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.3.bin",
+      "sha256": "` + imageSHA + `"
+    }
+  ]
+}`
+
+	releaseHTTPClient = fakeReleaseHTTPClient{
+		responses: map[string]string{
+			"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.3/firmware-manifest-v1.0.3.json":                               manifestBody,
+			"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.3/codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.3.bin": imageBody,
+		},
+	}
+	resolveSerialPortFn = func(port string) (string, error) {
+		return strings.TrimSpace(port), nil
+	}
+	ensureSerialPortNotBusyFn = func(string) error { return nil }
+	upgradeStopLaunchAgentFn = func() {}
+	upgradeRestartLaunchAgentFn = func(string) error { return nil }
+	loadReleaseStateFn = func(string) (releaseState, error) { return releaseState{}, nil }
+	saveCalls := 0
+	saveReleaseStateFn = func(string, releaseState) error {
+		saveCalls++
+		return nil
+	}
+	snapshotInstalledCompanionBinaryFn = func(string) (string, string, error) {
+		return "", "", nil
+	}
+	readDeviceHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{}, errors.New("no hello")
+	}
+	flashed := false
+	flashReleaseFirmwareImageFn = func(_ context.Context, port string, artifact releaseFirmwareArtifact, imagePath string) error {
+		flashed = true
+		if port != "/dev/cu.usbserial-110" {
+			t.Fatalf("unexpected port %q", port)
+		}
+		if artifact.FirmwareEnv != "esp8266_smalltv_st7789" {
+			t.Fatalf("unexpected firmware env %q", artifact.FirmwareEnv)
+		}
+		if data, err := os.ReadFile(imagePath); err != nil || string(data) != imageBody {
+			t.Fatalf("unexpected flashed image data=%q err=%v", string(data), err)
+		}
+		return nil
+	}
+
+	err := runUpgrade([]string{
+		"--port", "/dev/cu.usbserial-110",
+		"--target-firmware-version", "1.0.3",
+		"--skip-version-guard",
+	})
+	if err != nil {
+		t.Fatalf("runUpgrade failed: %v", err)
+	}
+	if !flashed {
+		t.Fatal("expected flash function to be called")
+	}
+	if saveCalls != 2 {
+		t.Fatalf("expected release state save twice, got %d", saveCalls)
+	}
+}
+
 func TestBeginUpgradeLaunchAgentRecoveryRestartsOnErrorPath(t *testing.T) {
 	previousStop := upgradeStopLaunchAgentFn
 	previousRestart := upgradeRestartLaunchAgentFn
@@ -531,4 +716,31 @@ func repoRoot(t *testing.T) string {
 		}
 		dir = parent
 	}
+}
+
+type fakeReleaseHTTPClient struct {
+	responses map[string]string
+}
+
+func (f fakeReleaseHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	body, ok := f.responses[req.URL.String()]
+	if !ok {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Status:     "404 Not Found",
+			Body:       io.NopCloser(strings.NewReader("not found")),
+			Header:     make(http.Header),
+		}, nil
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+	}, nil
+}
+
+func sha256String(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
 }
