@@ -12,7 +12,9 @@ CODEXBAR_CONFIG_PATH="${CODEXBAR_CONFIG_DIR}/config.json"
 
 REPO="${CODEXBAR_DISPLAY_REPO:-$DEFAULT_REPO}"
 RELEASE_VERSION="${CODEXBAR_DISPLAY_VERSION:-}"
+FLASH_FIRMWARE="${CODEXBAR_DISPLAY_FLASH_FIRMWARE:-0}"
 SETUP_ARGS=()
+FIRMWARE_UPGRADE_ARGS=()
 TMPDIR_INSTALL=""
 DOWNLOAD_BIN=""
 CHECKSUMS_FILE=""
@@ -22,19 +24,21 @@ BINARY_ARCH=""
 usage() {
   cat <<'EOF'
 Usage:
-  install.sh [--repo owner/name] [--version x.y.z] [--] [setup args...]
+  install.sh [--repo owner/name] [--version x.y.z] [--flash-firmware] [--] [setup args...]
 
 What it does:
   - detects macOS architecture
   - downloads the matching codexbar-display release binary from GitHub Releases
   - verifies the SHA-256 checksum from the release checksum file
   - runs `codexbar-display setup --yes --skip-flash`
+  - optionally runs `codexbar-display upgrade` to flash release firmware when --flash-firmware is passed
   - warms up CodexBar on fresh installs so providers are usable
   - runs a health check after setup
 
 Examples:
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --port /dev/cu.usbserial-110
+  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --flash-firmware -- --port /dev/cu.usbserial-110
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --version 1.0.0
 EOF
 }
@@ -105,6 +109,32 @@ verify_checksum() {
   if [[ "$actual" != "$expected" ]]; then
     die "checksum mismatch for ${DOWNLOAD_BIN##*/}"
   fi
+}
+
+build_firmware_upgrade_args() {
+  local args=("$@")
+  local i arg next
+
+  FIRMWARE_UPGRADE_ARGS=(--repo "$REPO" --target-firmware-version "$RELEASE_VERSION")
+
+  i=0
+  while [[ "$i" -lt "${#args[@]}" ]]; do
+    arg="${args[$i]}"
+    case "$arg" in
+      --port|--firmware-env)
+        next=$((i + 1))
+        if [[ "$next" -lt "${#args[@]}" ]]; then
+          FIRMWARE_UPGRADE_ARGS+=("$arg" "${args[$next]}")
+          i=$((i + 2))
+          continue
+        fi
+        ;;
+      --port=*|--firmware-env=*)
+        FIRMWARE_UPGRADE_ARGS+=("$arg")
+        ;;
+    esac
+    i=$((i + 1))
+  done
 }
 
 seed_codexbar_config_if_missing() {
@@ -242,6 +272,10 @@ main() {
         RELEASE_VERSION="$(normalize_version "${1#*=}")"
         shift
         ;;
+      --flash-firmware)
+        FLASH_FIRMWARE=1
+        shift
+        ;;
       --)
         shift
         SETUP_ARGS=("$@")
@@ -294,6 +328,12 @@ main() {
   seed_codexbar_config_if_missing
   if ! wait_for_codexbar_ready; then
     die "CodexBar installed, but provider warm-up did not complete. Open CodexBar once, make sure at least one provider is active, then rerun the installer."
+  fi
+
+  if [[ "$FLASH_FIRMWARE" == "1" ]]; then
+    log "vibetv: upgrading firmware from release..."
+    build_firmware_upgrade_args "${SETUP_ARGS[@]}"
+    "$INSTALL_PATH" upgrade "${FIRMWARE_UPGRADE_ARGS[@]}"
   fi
 
   log "vibetv: installed binary at ${INSTALL_PATH}"

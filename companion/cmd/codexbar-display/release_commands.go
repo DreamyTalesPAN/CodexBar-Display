@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,20 +29,24 @@ const (
 	releaseStateSchemaVersion = 1
 	releaseStateFileName      = "release-state.json"
 	protocolVersionV1         = 1
+	defaultReleaseRepo        = "DreamyTalesPAN/CodexBar-Display"
+	githubAPIBaseURL          = "https://api.github.com"
+	githubDownloadBaseURL     = "https://github.com"
 )
 
 var (
-	upgradeStopLaunchAgentFn           = stopLaunchAgentBestEffort
-	upgradeRestartLaunchAgentFn        = restartLaunchAgent
-	rollbackRestartLaunchAgentFn       = restartLaunchAgent
-	resolveSerialPortFn                = usb.ResolvePort
-	readDeviceHelloFn                  = usb.ReadDeviceHello
-	ensureSerialPortNotBusyFn          = ensureSerialPortNotBusy
-	setupRunFn                         = setup.Run
-	loadReleaseStateFn                 = loadReleaseState
-	saveReleaseStateFn                 = saveReleaseState
-	snapshotInstalledCompanionBinaryFn = snapshotInstalledCompanionBinary
-	runRestoreKnownGoodCommandFn       = runRestoreKnownGood
+	upgradeStopLaunchAgentFn                           = stopLaunchAgentBestEffort
+	upgradeRestartLaunchAgentFn                        = restartLaunchAgent
+	rollbackRestartLaunchAgentFn                       = restartLaunchAgent
+	resolveSerialPortFn                                = usb.ResolvePort
+	readDeviceHelloFn                                  = usb.ReadDeviceHello
+	ensureSerialPortNotBusyFn                          = ensureSerialPortNotBusy
+	loadReleaseStateFn                                 = loadReleaseState
+	saveReleaseStateFn                                 = saveReleaseState
+	snapshotInstalledCompanionBinaryFn                 = snapshotInstalledCompanionBinary
+	runRestoreKnownGoodCommandFn                       = runRestoreKnownGood
+	releaseHTTPClient                  releaseHTTPDoer = &http.Client{Timeout: 5 * time.Minute}
+	flashReleaseFirmwareImageFn                        = flashReleaseFirmwareImage
 )
 
 const launchAgentLabel = "com.codexbar-display.daemon.plist"
@@ -165,11 +173,13 @@ func runUpgrade(args []string) (retErr error) {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
 	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "PlatformIO environment to flash")
-	targetFirmwareVersion := fs.String("target-firmware-version", "", "target firmware semver for version guard (default from compatibility matrix)")
+	targetFirmwareVersion := fs.String("target-firmware-version", "", "target firmware semver/release version (default: latest GitHub release)")
+	repo := fs.String("repo", defaultReleaseRepo, "GitHub repository for release firmware assets")
 	skipVersionGuard := fs.Bool("skip-version-guard", false, "skip companion/firmware compatibility guard")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	ctx := context.Background()
 
 	selectedEnv := strings.TrimSpace(*firmwareEnv)
 	if selectedEnv == "" {
@@ -216,20 +226,33 @@ func runUpgrade(args []string) (retErr error) {
 		}
 	}
 
+	releaseRepo, err := normalizeReleaseRepo(*repo)
+	if err != nil {
+		return &commandError{
+			Op:   "resolve-release-repo",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  err,
+			Hint: "pass --repo owner/name",
+		}
+	}
+
 	targetVersion := strings.TrimSpace(*targetFirmwareVersion)
+	releaseTag := ""
 	if targetVersion == "" {
-		mapped, ok := versioning.FirmwareVersionForEnvironment(selectedEnv)
-		if !ok {
+		latestTag, latestVersion, err := fetchLatestReleaseVersion(ctx, releaseRepo)
+		if err != nil {
 			return &commandError{
 				Op:   "resolve-target-firmware-version",
-				Code: errcode.UpgradeVersionGuard,
-				Err: fmt.Errorf(
-					"no compatibility matrix entry for firmware env %q; pass --target-firmware-version",
-					selectedEnv,
-				),
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  err,
+				Hint: "check network access or pass --target-firmware-version for a known release",
 			}
 		}
-		targetVersion = mapped
+		targetVersion = latestVersion
+		releaseTag = latestTag
+	} else {
+		targetVersion = normalizeReleaseVersion(targetVersion)
+		releaseTag = "v" + targetVersion
 	}
 
 	companionVersion := buildinfo.NormalizedVersion()
@@ -302,19 +325,42 @@ func runUpgrade(args []string) (retErr error) {
 		}
 	}
 
-	fmt.Printf("upgrade: port=%s firmware_env=%s target_firmware=%s\n", resolvedPort, selectedEnv, targetVersion)
-	if err := setupRunFn(context.Background(), setup.Options{
-		Port:        resolvedPort,
-		AssumeYes:   true,
-		SkipFlash:   false,
-		FirmwareEnv: selectedEnv,
-	}); err != nil {
+	fmt.Printf("upgrade: port=%s firmware_env=%s target_firmware=%s release=%s repo=%s\n", resolvedPort, selectedEnv, targetVersion, releaseTag, releaseRepo)
+	imagePath, manifestPath, artifact, err := downloadReleaseFirmware(ctx, home, releaseRepo, releaseTag, targetVersion, selectedEnv)
+	if err != nil {
 		return &commandError{
-			Op:   "flash-and-install",
+			Op:   "download-release-firmware",
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  err,
+			Hint: "verify the GitHub release contains firmware artifacts and checksums, then retry upgrade",
 		}
 	}
+	fmt.Printf("release firmware: %s manifest=%s sha256=%s\n", imagePath, manifestPath, artifact.SHA256)
+	if helloErr == nil {
+		detectedBoard := strings.TrimSpace(strings.ToLower(hello.Board))
+		expectedBoard := strings.TrimSpace(strings.ToLower(artifact.Board))
+		if detectedBoard != "" && expectedBoard != "" && detectedBoard != expectedBoard {
+			return &commandError{
+				Op:   "hardware-guard",
+				Code: errcode.UpgradeVersionGuard,
+				Err: fmt.Errorf(
+					"device board %q is incompatible with release firmware board %q",
+					detectedBoard,
+					expectedBoard,
+				),
+				Hint: "choose a matching --firmware-env for the connected VibeTV hardware",
+			}
+		}
+	}
+	if err := flashReleaseFirmwareImageFn(ctx, resolvedPort, artifact, imagePath); err != nil {
+		return &commandError{
+			Op:   "flash-release-firmware",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  err,
+			Hint: fmt.Sprintf("ensure no process holds %s, install PlatformIO CLI if missing, then rerun upgrade", resolvedPort),
+		}
+	}
+	fmt.Println("firmware flash: ok")
 
 	postHello, postHelloErr := readDeviceHelloFn(resolvedPort)
 	if postHelloErr == nil {
@@ -363,6 +409,293 @@ func runUpgrade(args []string) (retErr error) {
 
 	fmt.Println("upgrade complete")
 	fmt.Println("rollback path ready: `codexbar-display rollback`")
+	return nil
+}
+
+type releaseHTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+type releaseFirmwareManifest struct {
+	SchemaVersion   int                       `json:"schemaVersion"`
+	Release         string                    `json:"release"`
+	ProtocolVersion int                       `json:"protocolVersion"`
+	Artifacts       []releaseFirmwareArtifact `json:"artifacts"`
+}
+
+type releaseFirmwareArtifact struct {
+	FirmwareEnv     string `json:"firmwareEnv"`
+	Board           string `json:"board"`
+	FirmwareVersion string `json:"firmwareVersion"`
+	Asset           string `json:"asset"`
+	SHA256          string `json:"sha256"`
+}
+
+type firmwareFlashSpec struct {
+	Chip    string
+	Baud    string
+	Address string
+}
+
+var releaseFirmwareFlashSpecs = map[string]firmwareFlashSpec{
+	"esp8266_smalltv_st7789": {
+		Chip:    "esp8266",
+		Baud:    "460800",
+		Address: "0x000000",
+	},
+}
+
+func normalizeReleaseRepo(raw string) (string, error) {
+	repo := strings.TrimSpace(raw)
+	repo = strings.TrimPrefix(repo, "https://github.com/")
+	repo = strings.TrimSuffix(repo, ".git")
+	repo = strings.Trim(repo, "/")
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", fmt.Errorf("invalid repository %q", raw)
+	}
+	return parts[0] + "/" + parts[1], nil
+}
+
+func normalizeReleaseVersion(raw string) string {
+	version := strings.TrimSpace(raw)
+	version = strings.TrimPrefix(version, "v")
+	return version
+}
+
+func fetchLatestReleaseVersion(ctx context.Context, repo string) (tag, version string, err error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/releases/latest", githubAPIBaseURL, repo)
+	var payload struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := fetchJSON(ctx, endpoint, &payload); err != nil {
+		return "", "", err
+	}
+	tag = strings.TrimSpace(payload.TagName)
+	if tag == "" {
+		return "", "", fmt.Errorf("latest release response for %s did not include tag_name", repo)
+	}
+	return tag, normalizeReleaseVersion(tag), nil
+}
+
+func downloadReleaseFirmware(ctx context.Context, home, repo, releaseTag, version, firmwareEnv string) (imagePath, manifestPath string, artifact releaseFirmwareArtifact, err error) {
+	version = normalizeReleaseVersion(version)
+	if version == "" {
+		return "", "", releaseFirmwareArtifact{}, errors.New("release version cannot be empty")
+	}
+	releaseTag = strings.TrimSpace(releaseTag)
+	if releaseTag == "" {
+		releaseTag = "v" + version
+	}
+
+	releaseDir := filepath.Join(
+		home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
+		"releases",
+		"firmware",
+		sanitizePathToken(releaseTag),
+	)
+	if err := os.MkdirAll(releaseDir, 0o755); err != nil {
+		return "", "", releaseFirmwareArtifact{}, err
+	}
+
+	manifestAsset := fmt.Sprintf("firmware-manifest-v%s.json", version)
+	manifestPath = filepath.Join(releaseDir, manifestAsset)
+	manifestURL := githubReleaseAssetURL(repo, releaseTag, manifestAsset)
+	if err := downloadURLToFile(ctx, manifestURL, manifestPath, 0o644); err != nil {
+		return "", "", releaseFirmwareArtifact{}, fmt.Errorf("download manifest: %w", err)
+	}
+
+	var manifest releaseFirmwareManifest
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return "", "", releaseFirmwareArtifact{}, err
+	}
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		return "", "", releaseFirmwareArtifact{}, fmt.Errorf("parse firmware manifest: %w", err)
+	}
+
+	artifact, err = selectReleaseFirmwareArtifact(manifest, firmwareEnv, version)
+	if err != nil {
+		return "", "", releaseFirmwareArtifact{}, err
+	}
+
+	imagePath = filepath.Join(releaseDir, artifact.Asset)
+	imageURL := githubReleaseAssetURL(repo, releaseTag, artifact.Asset)
+	if err := downloadURLToFile(ctx, imageURL, imagePath, 0o644); err != nil {
+		return "", "", releaseFirmwareArtifact{}, fmt.Errorf("download firmware image: %w", err)
+	}
+
+	actualSHA, err := sha256File(imagePath)
+	if err != nil {
+		return "", "", releaseFirmwareArtifact{}, err
+	}
+	expectedSHA := strings.ToLower(strings.TrimSpace(artifact.SHA256))
+	if expectedSHA == "" {
+		return "", "", releaseFirmwareArtifact{}, fmt.Errorf("manifest artifact %q has empty sha256", artifact.Asset)
+	}
+	if actualSHA != expectedSHA {
+		return "", "", releaseFirmwareArtifact{}, fmt.Errorf("sha256 mismatch for %s: expected %s actual %s", artifact.Asset, expectedSHA, actualSHA)
+	}
+
+	return imagePath, manifestPath, artifact, nil
+}
+
+func githubReleaseAssetURL(repo, releaseTag, asset string) string {
+	return fmt.Sprintf(
+		"%s/%s/releases/download/%s/%s",
+		githubDownloadBaseURL,
+		repo,
+		url.PathEscape(strings.TrimSpace(releaseTag)),
+		url.PathEscape(strings.TrimSpace(asset)),
+	)
+}
+
+func selectReleaseFirmwareArtifact(manifest releaseFirmwareManifest, firmwareEnv, version string) (releaseFirmwareArtifact, error) {
+	firmwareEnv = strings.TrimSpace(firmwareEnv)
+	version = normalizeReleaseVersion(version)
+	for _, artifact := range manifest.Artifacts {
+		if strings.TrimSpace(artifact.FirmwareEnv) != firmwareEnv {
+			continue
+		}
+		if version != "" && normalizeReleaseVersion(artifact.FirmwareVersion) != version {
+			return releaseFirmwareArtifact{}, fmt.Errorf(
+				"manifest artifact for %s has firmware version %q, expected %q",
+				firmwareEnv,
+				artifact.FirmwareVersion,
+				version,
+			)
+		}
+		if strings.TrimSpace(artifact.Asset) == "" {
+			return releaseFirmwareArtifact{}, fmt.Errorf("manifest artifact for %s has empty asset", firmwareEnv)
+		}
+		if strings.TrimSpace(artifact.SHA256) == "" {
+			return releaseFirmwareArtifact{}, fmt.Errorf("manifest artifact for %s has empty sha256", firmwareEnv)
+		}
+		return artifact, nil
+	}
+	return releaseFirmwareArtifact{}, fmt.Errorf("no firmware artifact for env %q in release manifest", firmwareEnv)
+}
+
+func fetchJSON(ctx context.Context, endpoint string, target any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "codexbar-display-upgrade")
+
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("GET %s returned %s", endpoint, resp.Status)
+	}
+	return json.NewDecoder(resp.Body).Decode(target)
+}
+
+func downloadURLToFile(ctx context.Context, endpoint, path string, mode os.FileMode) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "codexbar-display-upgrade")
+
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("GET %s returned %s", endpoint, resp.Status)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmpPath := fmt.Sprintf("%s.tmp-%d", path, time.Now().UnixNano())
+	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		_ = out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, mode); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}
+
+func sha256File(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func flashReleaseFirmwareImage(ctx context.Context, port string, artifact releaseFirmwareArtifact, imagePath string) error {
+	env := strings.TrimSpace(artifact.FirmwareEnv)
+	spec, ok := releaseFirmwareFlashSpecs[env]
+	if !ok {
+		return fmt.Errorf("release firmware flashing is not implemented for env %q", env)
+	}
+	if strings.TrimSpace(port) == "" {
+		return errors.New("serial port is empty")
+	}
+	if _, err := exec.LookPath("pio"); err != nil {
+		return fmt.Errorf("PlatformIO CLI not found: %w", err)
+	}
+
+	args := []string{
+		"pkg", "exec",
+		"--package", "platformio/tool-esptoolpy",
+		"--",
+		"esptool.py",
+		"--chip", spec.Chip,
+		"--port", port,
+		"--baud", spec.Baud,
+		"write_flash",
+		"--flash_size", "detect",
+		spec.Address,
+		imagePath,
+	}
+	output, err := exec.CommandContext(ctx, "pio", args...).CombinedOutput()
+	if err != nil {
+		trimmed := strings.TrimSpace(string(output))
+		if trimmed != "" {
+			return fmt.Errorf("%w: %s", err, trimmed)
+		}
+		return err
+	}
 	return nil
 }
 
