@@ -49,14 +49,29 @@ Behavior:
 
 ## Setup
 
-`setup` is idempotent and handles the common serial busy case by stopping the LaunchAgent
-before flash operations.
+`setup` is idempotent. The default LaunchAgent runtime is WiFi and targets `http://vibetv.local`.
+USB setup is an explicit development/support path.
 
-### Default firmware target (ESP8266 SmallTV)
+### Default WiFi runtime
 
 ```bash
 cd companion
 ../codexbar-display setup --yes
+```
+
+This installs the companion runtime, persists the Mini theme on fresh installs, and writes a WiFi LaunchAgent.
+It does not require USB serial.
+
+### USB development flash path
+
+Use only when a device is physically attached with a working data-capable USB serial connection:
+
+```bash
+cd companion
+../codexbar-display setup --yes \
+  --transport usb \
+  --port /dev/cu.usbserial-10 \
+  --firmware-env esp8266_smalltv_st7789
 ```
 
 ### ESP32-S3 target (override)
@@ -66,6 +81,7 @@ Experimental fallback path (non-blocking):
 ```bash
 cd companion
 ../codexbar-display setup --yes \
+  --transport usb \
   --port /dev/cu.usbmodem101 \
   --firmware-env lilygo_t_display_s3
 ```

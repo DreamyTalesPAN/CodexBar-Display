@@ -466,7 +466,7 @@ func resolveCycleDevice(requestedPort string, deps runtimeDeps) (string, protoco
 	if err != nil {
 		hint := errcode.DefaultRecovery(errcode.RuntimeSerialResolve)
 		if deps.transportName == "wifi" {
-			hint = "Pass `--transport wifi --target http://<device-ip>` and verify the Mac can reach the VibeTV IP."
+			hint = "Verify the Mac can open http://vibetv.local. If not, rerun setup with --target http://<device-ip>."
 		}
 		return "", protocol.DeviceCapabilities{}, 0, &RuntimeError{
 			Kind: runtimeErrorSerialResolve,

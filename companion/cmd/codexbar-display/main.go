@@ -74,7 +74,7 @@ func main() {
 
 func printUsage() {
 	fmt.Println("codexbar-display commands:")
-	fmt.Println("  codexbar-display daemon [--transport usb|wifi] [--port /dev/cu.usbserial-10] [--target http://192.168.178.123] [--interval 60s] [--once] [--theme classic|crt|mini]")
+	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 60s] [--once] [--theme classic|crt|mini]")
 	fmt.Println("  codexbar-display doctor")
 	fmt.Println("  codexbar-display health")
 	fmt.Println("  codexbar-display service <start|stop|status>")
@@ -84,7 +84,7 @@ func printUsage() {
 	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
-	fmt.Println("  codexbar-display setup [--transport usb|wifi] [--target http://192.168.178.123] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
+	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
 func runDaemon(args []string) error {
@@ -98,8 +98,8 @@ func runDaemon(args []string) error {
 func parseDaemonOptions(args []string) (daemon.Options, error) {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
-	transportName := fs.String("transport", "usb", "device transport: usb|wifi")
-	target := fs.String("target", "", "WiFi target base URL, for example http://192.168.178.123")
+	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
+	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
 	interval := fs.Duration("interval", 60*time.Second, "poll interval")
 	once := fs.Bool("once", false, "run one cycle and exit")
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|mini")
@@ -109,7 +109,7 @@ func parseDaemonOptions(args []string) (daemon.Options, error) {
 
 	normalizedTransport := strings.TrimSpace(strings.ToLower(*transportName))
 	if normalizedTransport == "" {
-		normalizedTransport = "usb"
+		normalizedTransport = setup.DefaultTransport()
 	}
 	if normalizedTransport != "usb" && normalizedTransport != "wifi" {
 		return daemon.Options{}, fmt.Errorf("unsupported transport %q", *transportName)
@@ -281,8 +281,8 @@ func runDoctorRuntimeChecks(ports []string) error {
 func runSetup(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
-	transportName := fs.String("transport", "usb", "device transport for LaunchAgent: usb|wifi")
-	target := fs.String("target", "", "WiFi target base URL, for example http://192.168.178.123")
+	transportName := fs.String("transport", setup.DefaultTransport(), "device transport for LaunchAgent: wifi|usb")
+	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
 	yes := fs.Bool("yes", false, "auto-select defaults without prompts")
 	skipFlash := fs.Bool("skip-flash", false, "skip firmware flashing")
 	pinPort := fs.Bool("pin-port", false, "pin daemon to selected --port in LaunchAgent (default: auto-detect)")

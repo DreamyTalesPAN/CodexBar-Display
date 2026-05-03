@@ -41,7 +41,7 @@ Companion negotiation:
 - Setup UI is served at `http://vibetv.local`. In setup mode this is backed by AP mDNS plus captive DNS; `http://192.168.4.1` remains the fallback address.
 - The setup flow stores home WiFi credentials and restarts the device.
 - Connected devices expose `http://vibetv.local` with mDNS, show/log the fallback IP, serve a local setup hub with a copyable Mac setup command, and wait for the Mac Companion.
-- Companion runtime command: `codexbar-display daemon --transport wifi --target http://<device-ip>`.
+- Companion runtime defaults to WiFi with `http://vibetv.local`; explicit device IPs remain supported when `.local` does not resolve.
 - Saved WiFi credentials can be cleared from the local web UI with `POST /reset-wifi`.
 - If the device is not reachable on WiFi, three interrupted early boots clear saved WiFi credentials and return the device to `VibeTV-Setup`.
 - Generic theme assets can be managed over WiFi with `GET /assets`, `POST /assets?path=...`, and `DELETE /assets?path=...`.
