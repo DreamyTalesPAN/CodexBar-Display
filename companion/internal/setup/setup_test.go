@@ -185,6 +185,97 @@ func TestRunWithDepsPinsDaemonPortWhenRequested(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsConfiguresWiFiLaunchAgentTarget(t *testing.T) {
+	home := t.TempDir()
+	execPath := mustCreateExecutable(t)
+
+	err := runWithDeps(context.Background(), Options{
+		Transport: "wifi",
+		Target:    "192.168.178.66/",
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			t.Fatalf("wifi setup must not list serial ports")
+			return nil, nil
+		},
+		resolvePort: func(string) (string, error) {
+			t.Fatalf("wifi setup must not resolve serial ports")
+			return "", nil
+		},
+		probePort: func(string) error {
+			t.Fatalf("wifi setup must not probe serial ports")
+			return nil
+		},
+		readDeviceHello: func(string) (protocol.DeviceHello, error) {
+			t.Fatalf("wifi setup must not read USB device hello")
+			return protocol.DeviceHello{}, nil
+		},
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success, got %v", err)
+	}
+
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	plistData, readErr := os.ReadFile(plistPath)
+	if readErr != nil {
+		t.Fatalf("read plist: %v", readErr)
+	}
+	plist := string(plistData)
+	if !strings.Contains(plist, "<string>--transport</string>") ||
+		!strings.Contains(plist, "<string>wifi</string>") ||
+		!strings.Contains(plist, "<string>--target</string>") ||
+		!strings.Contains(plist, "<string>http://192.168.178.66</string>") {
+		t.Fatalf("expected WiFi launch agent target in plist, got:\n%s", plist)
+	}
+	if strings.Contains(plist, "<string>--port</string>") {
+		t.Fatalf("expected no serial port flag in WiFi plist, got:\n%s", plist)
+	}
+}
+
+func TestRunWithDepsRequiresWiFiTarget(t *testing.T) {
+	err := runWithDeps(context.Background(), Options{
+		Transport: "wifi",
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdout: &bytes.Buffer{},
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected setup to require --target for WiFi")
+	}
+	if !strings.Contains(err.Error(), "--target is required") {
+		t.Fatalf("expected target validation error, got %v", err)
+	}
+}
+
 func TestRunWithDepsWritesRuntimeThemeConfig(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)

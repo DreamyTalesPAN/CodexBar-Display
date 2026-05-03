@@ -11,6 +11,10 @@ func NewUSBTransport() DeviceTransport {
 	return USBTransport{}
 }
 
+func (USBTransport) Name() string {
+	return "usb"
+}
+
 func (USBTransport) ResolvePort(requested string) (string, error) {
 	return usb.ResolvePort(requested)
 }

@@ -21,15 +21,16 @@ const (
 	ProtocolThemeSpecInvalid       Code = "protocol/theme-spec-invalid"
 	ProtocolThemeSpecIncompatible  Code = "protocol/theme-spec-incompatible"
 
-	RuntimeSerialResolve  Code = "runtime/serial-resolve"
-	RuntimeSerialWrite    Code = "runtime/serial-write"
-	RuntimeCycleTimeout   Code = "runtime/cycle-timeout"
-	RuntimeFrameEncode    Code = "runtime/frame-encode"
-	RuntimeFrameTooLarge  Code = "runtime/frame-too-large"
-	RuntimeCodexbarBinary Code = "runtime/codexbar-binary"
-	RuntimeCodexbarCmd    Code = "runtime/codexbar-command"
-	RuntimeCodexbarParse  Code = "runtime/codexbar-parse"
-	RuntimeNoProviders    Code = "runtime/no-providers"
+	RuntimeSerialResolve   Code = "runtime/serial-resolve"
+	RuntimeSerialWrite     Code = "runtime/serial-write"
+	RuntimeCycleTimeout    Code = "runtime/cycle-timeout"
+	RuntimeFrameEncode     Code = "runtime/frame-encode"
+	RuntimeFrameTooLarge   Code = "runtime/frame-too-large"
+	RuntimeCodexbarBinary  Code = "runtime/codexbar-binary"
+	RuntimeCodexbarVersion Code = "runtime/codexbar-version"
+	RuntimeCodexbarCmd     Code = "runtime/codexbar-command"
+	RuntimeCodexbarParse   Code = "runtime/codexbar-parse"
+	RuntimeNoProviders     Code = "runtime/no-providers"
 
 	SetupCodexbarValidate    Code = "setup/codexbar-validate"
 	SetupCodexbarInstall     Code = "setup/codexbar-install"
@@ -128,6 +129,8 @@ func DefaultRecovery(code Code) string {
 		return "Inspect payload size and optional fields; reduce frame footprint."
 	case RuntimeCodexbarBinary:
 		return "Install CodexBar CLI or set `CODEXBAR_BIN`."
+	case RuntimeCodexbarVersion:
+		return "Update CodexBar to version 0.23 or newer, then rerun `codexbar-display doctor`."
 	case RuntimeCodexbarCmd:
 		return "Retry; if persistent run `codexbar usage --json` manually and inspect output."
 	case RuntimeCodexbarParse:

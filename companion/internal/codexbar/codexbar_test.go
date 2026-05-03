@@ -122,6 +122,49 @@ func TestUsageBarsShowUsedFromEnv(t *testing.T) {
 	}
 }
 
+func TestCheckMinimumVersionReadsAppInfoPlistWhenCLIHasNoVersion(t *testing.T) {
+	origRunVersion := runVersionCommandFn
+	origReadFile := readFileFn
+	t.Cleanup(func() {
+		runVersionCommandFn = origRunVersion
+		readFileFn = origReadFile
+	})
+
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar\n"), nil
+	}
+	readFileFn = func(string) ([]byte, error) {
+		return []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleShortVersionString</key><string>0.23</string>
+</dict></plist>`), nil
+	}
+
+	err := CheckMinimumVersion(context.Background(), "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI")
+	if err != nil {
+		t.Fatalf("expected compatible version, got %v", err)
+	}
+}
+
+func TestCheckMinimumVersionRejectsTooOldVersion(t *testing.T) {
+	origRunVersion := runVersionCommandFn
+	t.Cleanup(func() {
+		runVersionCommandFn = origRunVersion
+	})
+
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.22\n"), nil
+	}
+
+	err := CheckMinimumVersion(context.Background(), "/opt/homebrew/bin/codexbar")
+	if err == nil {
+		t.Fatalf("expected version check to reject old CodexBar")
+	}
+	if !strings.Contains(err.Error(), "need >= 0.23") {
+		t.Fatalf("expected recovery-ready version error, got %v", err)
+	}
+}
+
 func TestParseBoolPreference(t *testing.T) {
 	cases := []struct {
 		raw  string
@@ -683,6 +726,8 @@ func TestRepairCodexFromCLIAppendsCodexWhenMissing(t *testing.T) {
 }
 
 func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -716,6 +761,8 @@ func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testin
 }
 
 func TestFetchAllProvidersDoesNotRetryByStartingCodexBarApp(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -745,6 +792,8 @@ func TestFetchAllProvidersDoesNotRetryByStartingCodexBarApp(t *testing.T) {
 }
 
 func TestFetchAllProvidersReturnsErrorWhenAggregateAndCLIFallbackFail(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -769,6 +818,8 @@ func TestFetchAllProvidersReturnsErrorWhenAggregateAndCLIFallbackFail(t *testing
 }
 
 func TestFetchAllProvidersUsesDetachedContextForCLIFallback(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -847,6 +898,8 @@ func TestFallbackContextReusesParentWhenBudgetIsSufficient(t *testing.T) {
 }
 
 func TestFetchProviderPrefersCodexCLI(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -880,6 +933,8 @@ func TestFetchProviderPrefersCodexCLI(t *testing.T) {
 }
 
 func TestFetchProviderUsesProviderScopedUsage(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -925,6 +980,18 @@ func TestClassifyParseError(t *testing.T) {
 	if got := classifyParseError(errors.New("bad payload")); got != FetchErrorParse {
 		t.Fatalf("expected parse kind, got %s", got)
 	}
+}
+
+func stubSupportedCodexBarVersion(t *testing.T) {
+	t.Helper()
+
+	originalRunVersionCommand := runVersionCommandFn
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.23\n"), nil
+	}
+	t.Cleanup(func() {
+		runVersionCommandFn = originalRunVersionCommand
+	})
 }
 
 type staticActivityDetector struct {

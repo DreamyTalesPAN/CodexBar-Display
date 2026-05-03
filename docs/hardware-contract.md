@@ -1,11 +1,12 @@
-# Hardware Contract (USB-first transition)
+# Hardware Contract (WiFi runtime MVP)
 
-This document defines the required hardware/runtime contract for codexbar-display on the USB-first path.
+This document defines the required hardware/runtime contract for codexbar-display on the VibeTV WiFi runtime path.
 
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
 - Experimental fallback (non-blocking): `lilygo_t_display_s3`
-- Transport in this phase: USB CDC serial only (`transport.active=usb`)
+- MVP runtime transport: WiFi HTTP (`transport.active=wifi`)
+- USB CDC serial remains optional for development, flashing, logs, and support (`supported=["usb","wifi"]`)
 
 ## Firmware Environment -> Board Identity
 
@@ -18,9 +19,11 @@ The firmware `hello.board` value must match the selected firmware environment:
 
 Companion setup enforces this mapping when a device hello is available.
 
-## Serial and Protocol Contract
+## Transport and Protocol Contract
 - USB CDC serial at `115200` baud.
-- Host sends newline-delimited JSON frames.
+- WiFi HTTP on port 80 after the device joins the customer WiFi network.
+- Host sends newline-delimited JSON frames either over USB Serial or as the body of `POST /frame`.
+- Firmware exposes `GET /hello` over WiFi with the same hello shape as USB.
 - Firmware emits JSON `hello` on boot/reconnect with:
   - `supportedProtocolVersions: [2,1]`
   - `preferredProtocolVersion: 2`
@@ -32,8 +35,20 @@ Companion negotiation:
 - prefers v2 when available.
 - falls back to v1 when negotiation data is missing/legacy.
 
+## WiFi Setup Contract
+- Devices ship with firmware installed.
+- Fresh or failed WiFi devices start an open `VibeTV-Setup` access point.
+- Setup UI is served at `http://vibetv.local`. In setup mode this is backed by AP mDNS plus captive DNS; `http://192.168.4.1` remains the fallback address.
+- The setup flow stores home WiFi credentials and restarts the device.
+- Connected devices expose `http://vibetv.local` with mDNS, show/log the fallback IP, serve a local setup hub with a copyable Mac setup command, and wait for the Mac Companion.
+- Companion runtime command: `codexbar-display daemon --transport wifi --target http://<device-ip>`.
+- Saved WiFi credentials can be cleared from the local web UI with `POST /reset-wifi`.
+- If the device is not reachable on WiFi, three interrupted early boots clear saved WiFi credentials and return the device to `VibeTV-Setup`.
+- Generic theme assets can be managed over WiFi with `GET /assets`, `POST /assets?path=...`, and `DELETE /assets?path=...`.
+
 ## Theme Contract
 - Built-in runtime themes: `classic`, `crt`, `mini`.
+- Theme assets are stored as data files in LittleFS and are not hardcoded into the transport protocol.
 - Capability-aware behavior:
   - known + unsupported `theme` => host omits `theme`
   - unknown hello => optimistic `theme` send remains allowed
@@ -74,7 +89,7 @@ Common display assumptions:
   - rejects incompatible board <-> env pair when hello is available
 
 ## Out of Scope
-- WiFi transport protocol implementation
 - Cloud-hosted backend
-- OTA over network
+- Cloud-hosted OTA orchestration
+- Hosted theme store/catalog
 - Executing third-party theme code on firmware

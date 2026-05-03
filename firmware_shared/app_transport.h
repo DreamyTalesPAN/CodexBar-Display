@@ -45,7 +45,7 @@ inline bool ConsumeSerial(
   return false;
 }
 
-inline void EmitDeviceHello(const TransportConfig& config) {
+inline String BuildDeviceHelloJSON(const TransportConfig& config) {
   const char* boardId = config.boardId == nullptr ? "unknown" : config.boardId;
   const char* firmware = config.firmwareVersion == nullptr ? "dev" : config.firmwareVersion;
   const char* features = config.featuresJSON == nullptr ? "[]" : config.featuresJSON;
@@ -55,18 +55,30 @@ inline void EmitDeviceHello(const TransportConfig& config) {
   const int maxFrameBytes = config.maxFrameBytes > 0 ? config.maxFrameBytes : kDefaultMaxFrameBytes;
   const char* capabilities = config.capabilitiesJSON == nullptr ? "{}" : config.capabilitiesJSON;
 
-  Serial.printf(
-      "{\"kind\":\"hello\",\"protocolVersion\":%d,\"supportedProtocolVersions\":%s,"
-      "\"preferredProtocolVersion\":%d,\"board\":\"%s\",\"firmware\":\"%s\","
-      "\"features\":%s,\"maxFrameBytes\":%d,\"capabilities\":%s}\n",
-      preferredProtocol,
-      supportedProtocols,
-      preferredProtocol,
-      boardId,
-      firmware,
-      features,
-      maxFrameBytes,
-      capabilities);
+  String out;
+  out.reserve(384);
+  out += "{\"kind\":\"hello\",\"protocolVersion\":";
+  out += String(preferredProtocol);
+  out += ",\"supportedProtocolVersions\":";
+  out += supportedProtocols;
+  out += ",\"preferredProtocolVersion\":";
+  out += String(preferredProtocol);
+  out += ",\"board\":\"";
+  out += boardId;
+  out += "\",\"firmware\":\"";
+  out += firmware;
+  out += "\",\"features\":";
+  out += features;
+  out += ",\"maxFrameBytes\":";
+  out += String(maxFrameBytes);
+  out += ",\"capabilities\":";
+  out += capabilities;
+  out += "}";
+  return out;
+}
+
+inline void EmitDeviceHello(const TransportConfig& config) {
+  Serial.println(BuildDeviceHelloJSON(config));
 }
 
 }  // namespace app

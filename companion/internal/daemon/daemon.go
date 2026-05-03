@@ -22,10 +22,12 @@ import (
 )
 
 type Options struct {
-	Port     string
-	Interval time.Duration
-	Once     bool
-	Theme    string
+	Port      string
+	Transport string
+	Target    string
+	Interval  time.Duration
+	Once      bool
+	Theme     string
 }
 
 const (
@@ -49,16 +51,17 @@ var errMarshalFrameTooLarge = errors.New("frame exceeds max bytes")
 type runtimeErrorKind errcode.Code
 
 const (
-	runtimeErrorUnknown        runtimeErrorKind = runtimeErrorKind(errcode.Unknown)
-	runtimeErrorSerialResolve  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeSerialResolve)
-	runtimeErrorSerialWrite    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeSerialWrite)
-	runtimeErrorCycleTimeout   runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCycleTimeout)
-	runtimeErrorFrameEncode    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameEncode)
-	runtimeErrorFrameTooLarge  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameTooLarge)
-	runtimeErrorCodexbarBinary runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarBinary)
-	runtimeErrorCodexbarCmd    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarCmd)
-	runtimeErrorCodexbarParse  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarParse)
-	runtimeErrorNoProviders    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeNoProviders)
+	runtimeErrorUnknown         runtimeErrorKind = runtimeErrorKind(errcode.Unknown)
+	runtimeErrorSerialResolve   runtimeErrorKind = runtimeErrorKind(errcode.RuntimeSerialResolve)
+	runtimeErrorSerialWrite     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeSerialWrite)
+	runtimeErrorCycleTimeout    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCycleTimeout)
+	runtimeErrorFrameEncode     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameEncode)
+	runtimeErrorFrameTooLarge   runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameTooLarge)
+	runtimeErrorCodexbarBinary  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarBinary)
+	runtimeErrorCodexbarVersion runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarVersion)
+	runtimeErrorCodexbarCmd     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarCmd)
+	runtimeErrorCodexbarParse   runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarParse)
+	runtimeErrorNoProviders     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeNoProviders)
 )
 
 type RuntimeError struct {
@@ -114,11 +117,15 @@ type runtimeDeps struct {
 	sendLine          func(string, []byte) error
 	newSelector       func() *codexbar.ProviderSelector
 	logf              func(string, ...any)
+	transportName     string
 }
 
 func (d runtimeDeps) withDefaults() runtimeDeps {
 	if d.transport == nil {
 		d.transport = transportlayer.NewUSBTransport()
+	}
+	if d.transportName == "" {
+		d.transportName = d.transport.Name()
 	}
 	if d.now == nil {
 		d.now = wallClockNow
@@ -180,6 +187,8 @@ type cycleResult struct {
 	failureErr      error
 	usedLastGood    bool
 	errorSource     string
+	usageSource     string
+	usageFresh      bool
 }
 
 type persistedLastGood struct {
@@ -188,12 +197,27 @@ type persistedLastGood struct {
 }
 
 func Run(ctx context.Context, opts Options) error {
+	transportName := normalizeTransportName(opts.Transport)
+	if transportName == "" {
+		transportName = "usb"
+	}
+	if transportName != "usb" && transportName != "wifi" {
+		return fmt.Errorf("unsupported transport %q", opts.Transport)
+	}
+	if transportName == "wifi" {
+		return runWithDeps(ctx, opts, runtimeDeps{
+			transport:         transportlayer.NewWiFiTransport(),
+			transportName:     "wifi",
+			usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+		})
+	}
+
 	sender := usb.NewSender()
 	defer sender.Close()
-
 	return runWithDeps(ctx, opts, runtimeDeps{
 		deviceCaps:        sender.DeviceCapabilities,
 		sendLine:          sender.Send,
+		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
 	})
 }
@@ -212,10 +236,11 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	}
 
 	runCycle := func(cycleCtx context.Context) error {
+		requestedTarget := requestedDeviceTarget(opts)
 		if collector != nil {
-			return runCycleFromCollector(cycleCtx, opts.Port, state, collector, deps)
+			return runCycleFromCollector(cycleCtx, requestedTarget, state, collector, deps)
 		}
-		return runCycleWithDeps(cycleCtx, opts.Port, state, deps)
+		return runCycleWithDeps(cycleCtx, requestedTarget, state, deps)
 	}
 
 	return runDaemonLoop(ctx, opts, deps, runCycle)
@@ -275,7 +300,8 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 	collector := newProviderCollector(deps, opts)
 	collectorCtx, cancel := context.WithCancel(ctx)
 	collector.start(collectorCtx)
-	deps.logf("collector started interval=%s timeout=%s providers=%s mode=fetch-all\n",
+	deps.logf("collector started transport=%s interval=%s timeout=%s providers=%s mode=fetch-all\n",
+		deps.transportName,
 		collector.interval,
 		collector.timeout,
 		strings.Join(collector.order, ","),
@@ -411,6 +437,20 @@ func configuredTheme(cliTheme string) string {
 	return runtimeconfig.NormalizeTheme(cfg.Theme)
 }
 
+func normalizeTransportName(raw string) string {
+	return strings.TrimSpace(strings.ToLower(raw))
+}
+
+func requestedDeviceTarget(opts Options) string {
+	if normalizeTransportName(opts.Transport) == "wifi" {
+		if target := strings.TrimSpace(opts.Target); target != "" {
+			return target
+		}
+		return strings.TrimSpace(opts.Port)
+	}
+	return strings.TrimSpace(opts.Port)
+}
+
 func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
 	if state == nil {
 		state = &runtimeState{}
@@ -424,17 +464,21 @@ func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
 func resolveCycleDevice(requestedPort string, deps runtimeDeps) (string, protocol.DeviceCapabilities, int, error) {
 	port, err := resolvePortWithFallback(requestedPort, deps)
 	if err != nil {
+		hint := errcode.DefaultRecovery(errcode.RuntimeSerialResolve)
+		if deps.transportName == "wifi" {
+			hint = "Pass `--transport wifi --target http://<device-ip>` and verify the Mac can reach the VibeTV IP."
+		}
 		return "", protocol.DeviceCapabilities{}, 0, &RuntimeError{
 			Kind: runtimeErrorSerialResolve,
-			Op:   "resolve-port",
-			Err:  fmt.Errorf("detect serial device: %w", err),
-			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialResolve),
+			Op:   "resolve-target",
+			Err:  fmt.Errorf("detect display target: %w", err),
+			Hint: hint,
 		}
 	}
 
 	caps, capsErr := deps.deviceCaps(port)
 	if capsErr != nil {
-		deps.logf("runtime event=device-caps-read-failed port=%s err=%v\n", port, capsErr)
+		deps.logf("runtime event=device-caps-read-failed target=%s transport=%s err=%v\n", port, deps.transportName, capsErr)
 		caps = protocol.UnknownDeviceCapabilities()
 	}
 	maxFrameBytes := protocol.DefaultMaxFrameBytes
@@ -470,7 +514,13 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	result.frame = decision.Selected.Frame
 	result.selectionReason = string(decision.Reason)
 	result.selectionDetail = decision.Detail
-	updateLastGoodState(state, result.frame, now, deps)
+	result.usageSource = usageSourceOrDefault(decision.Selected.Source, "codexbar")
+	result.usageFresh = !decision.Selected.Stale
+	collectedAt := decision.Selected.CollectedAt
+	if collectedAt.IsZero() {
+		collectedAt = now
+	}
+	updateLastGoodState(state, result.frame, collectedAt, deps)
 	return result
 }
 
@@ -484,6 +534,8 @@ func finalizeCycleResult(state *runtimeState, result cycleResult) cycleResult {
 		result.usedLastGood = true
 		result.selectionReason = "stale-last-good"
 		result.selectionDetail = fmt.Sprintf("kind=%s", result.failureKind)
+		result.usageSource = "last-good"
+		result.usageFresh = false
 		return result
 	}
 
@@ -497,6 +549,8 @@ func finalizeCycleResult(state *runtimeState, result cycleResult) cycleResult {
 	result.frame = protocol.ErrorFrame(runtimeErrorFrameCode(result.failureKind))
 	result.selectionReason = "error-frame"
 	result.selectionDetail = fmt.Sprintf("kind=%s source=%s", result.failureKind, source)
+	result.usageSource = source
+	result.usageFresh = false
 	return result
 }
 
@@ -535,8 +589,8 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 		}
 	}
 
-	deps.logf("sent frame -> %s provider=%s label=%s session=%d weekly=%d reset=%ds error=%q reason=%s detail=%q\n",
-		port, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Error, result.selectionReason, result.selectionDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds error=%q reason=%s detail=%q\n",
+		port, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Error, result.selectionReason, result.selectionDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -1119,6 +1173,8 @@ func runtimeErrorKindFromFetchErr(err error) runtimeErrorKind {
 	switch codexbar.FetchErrorKindOf(err) {
 	case codexbar.FetchErrorBinary:
 		return runtimeErrorCodexbarBinary
+	case codexbar.FetchErrorVersion:
+		return runtimeErrorCodexbarVersion
 	case codexbar.FetchErrorCommand:
 		return runtimeErrorCodexbarCmd
 	case codexbar.FetchErrorParse:
@@ -1131,6 +1187,18 @@ func runtimeErrorKindFromFetchErr(err error) runtimeErrorKind {
 		}
 		return runtimeErrorCodexbarCmd
 	}
+}
+
+func usageSourceOrDefault(source string, fallback string) string {
+	source = strings.TrimSpace(strings.ToLower(source))
+	if source != "" {
+		return source
+	}
+	fallback = strings.TrimSpace(strings.ToLower(fallback))
+	if fallback != "" {
+		return fallback
+	}
+	return "unknown"
 }
 
 func runtimeErrorFrameCode(kind runtimeErrorKind) string {

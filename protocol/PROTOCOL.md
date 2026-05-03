@@ -1,11 +1,14 @@
-# codexbar-display Protocol (USB-first transition: v1 + v2)
+# codexbar-display Protocol (USB + WiFi: v1 + v2)
 
-Transport is line-delimited JSON over USB CDC serial at `115200` baud.
-Each frame must be a single JSON object followed by `\n`.
+The payload protocol is line-delimited JSON. Each frame must be a single JSON object followed by `\n`.
+
+Supported transports:
+- USB CDC serial at `115200` baud for development/support.
+- HTTP over device WiFi for the VibeTV runtime path.
 
 Status:
 - v1 usage/error/theme frames remain supported.
-- USB-first transition adds v2 handshake negotiation and ThemeSpec v1 payload support.
+- v2 handshake negotiation and ThemeSpec v1 payload support are available on supported firmware.
 - Negotiation prefers v2 and falls back to v1.
 
 ## Host -> Device Frame
@@ -63,9 +66,33 @@ Design constraints:
 {"v":1,"error":"runtime/codexbar-command"}
 ```
 
+## HTTP Runtime API
+
+When the ESP8266 is connected to WiFi, it serves:
+
+- `GET /hello`: returns the same Device Hello JSON shape as USB Serial. For WiFi, `capabilities.transport.active` is `wifi` and `supported` includes both `usb` and `wifi`.
+- `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
+- `POST /reset-wifi`: clears saved WiFi credentials and restarts the device into setup mode.
+- `GET /assets`: returns mounted filesystem status and a generic list of stored asset paths/sizes.
+- `POST /assets?path=/themes/<theme-id>/<asset>`: uploads one theme asset using multipart field `asset`.
+- `DELETE /assets?path=/themes/<theme-id>/<asset>`: deletes one stored asset.
+
+HTTP responses:
+- `200 OK`: frame accepted.
+- `400 Bad Request`: empty body or invalid request shape.
+- `413 Payload Too Large`: body exceeds `maxFrameBytes`.
+
+Example:
+
+```bash
+curl http://192.168.178.123/hello
+printf '{"v":2,"provider":"codex","label":"Codex","session":17,"weekly":42,"resetSecs":15480}\n' \
+  | curl -X POST --data-binary @- http://192.168.178.123/frame
+```
+
 ## Device Hello (Firmware -> Host)
 
-On boot (or after serial reconnect), firmware emits a capability line:
+On boot or after serial reconnect, firmware emits a capability line over USB. `GET /hello` returns the equivalent JSON over WiFi:
 
 ```json
 {
@@ -85,7 +112,7 @@ On boot (or after serial reconnect), firmware emits a capability line:
       "maxThemePrimitives": 32,
       "builtinThemes": ["classic", "crt", "mini"]
     },
-    "transport": {"active": "usb", "supported": ["usb"]}
+    "transport": {"active": "wifi", "supported": ["usb", "wifi"]}
   }
 }
 ```
@@ -121,6 +148,7 @@ Result:
 - Token stats are optional and additive; existing percentage/quota rendering remains valid when they are absent.
 - If device capabilities are explicitly known and `theme` is unsupported, host must omit `theme`.
 - If hello is missing (unknown capabilities), host may send `theme` on MVP USB path and rely on device-side ignore/fallback behavior.
+- WiFi Companion usage: `codexbar-display daemon --transport wifi --target http://<device-ip>`.
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.
 - Firmware ticks down `resetSecs` locally between host updates.

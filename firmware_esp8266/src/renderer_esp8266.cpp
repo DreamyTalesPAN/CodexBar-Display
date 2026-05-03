@@ -103,6 +103,179 @@ void RendererESP8266::TickSplash(app::RuntimeContext& ctx) {
 #endif
 }
 
+void RendererESP8266::DrawStatus(
+    app::RuntimeContext& ctx,
+    const String& title,
+    const String& line1,
+    const String& line2) {
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  display::AttachContext(ctx);
+  display::StopMiniGifPlayback();
+
+  TFT_eSPI& tft = display::Tft();
+  display::PrimitiveFillScreen(TFT_BLACK);
+  tft.setTextWrap(false);
+  tft.setTextFont(1);
+
+  const int titleSize = display::ChooseTextSizeToFit(title.c_str(), 4, 2, tft.width() - 8);
+  const int lineSize = display::ChooseTextSizeToFit(line1.c_str(), 3, 1, tft.width() - 8);
+  const int line2Size = display::ChooseTextSizeToFit(line2.c_str(), 2, 1, tft.width() - 8);
+  const int totalH =
+      display::TextPixelHeight(titleSize) + 14 +
+      display::TextPixelHeight(lineSize) + 8 +
+      display::TextPixelHeight(line2Size);
+  int y = (tft.height() - totalH) / 2;
+  if (y < 6) {
+    y = 6;
+  }
+
+  display::SetClassicTextSize(titleSize);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(title.c_str(), titleSize), y);
+  tft.print(title);
+
+  y += display::TextPixelHeight(titleSize) + 14;
+  display::SetClassicTextSize(lineSize);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(line1.c_str(), lineSize), y);
+  tft.print(line1);
+
+  y += display::TextPixelHeight(lineSize) + 8;
+  display::SetClassicTextSize(line2Size);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(line2.c_str(), line2Size), y);
+  tft.print(line2);
+
+  ctx.lastRenderedSecs = -1;
+  ctx.lastRenderedMinuteBucket = -1;
+  ctx.screenDirty = false;
+#else
+  (void)ctx;
+  Serial.printf("probe_status title=%s line1=%s line2=%s\n", title.c_str(), line1.c_str(), line2.c_str());
+#endif
+}
+
+void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const String& ssid, const String& address) {
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  (void)address;
+  display::AttachContext(ctx);
+  display::StopMiniGifPlayback();
+
+  TFT_eSPI& tft = display::Tft();
+  display::PrimitiveFillScreen(TFT_BLACK);
+  tft.setTextWrap(false);
+  tft.setTextFont(1);
+
+  const char* title = "VIBE TV SETUP";
+  const char* action = "Connect to";
+  const char* detail = "this WiFi:";
+  const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
+  const int ssidSize = display::ChooseTextSizeToFit(ssid.c_str(), 3, 2, tft.width() - 8);
+  const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);
+  const int detailSize = display::ChooseTextSizeToFit(detail, 2, 1, tft.width() - 14);
+
+  const int totalH =
+      display::TextPixelHeight(titleSize) + 14 +
+      display::TextPixelHeight(actionSize) + 4 +
+      display::TextPixelHeight(detailSize) + 8 +
+      display::TextPixelHeight(ssidSize);
+  int y = (tft.height() - totalH) / 2;
+  if (y < 6) {
+    y = 6;
+  }
+
+  display::SetClassicTextSize(titleSize);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(title, titleSize), y);
+  tft.print(title);
+
+  y += display::TextPixelHeight(titleSize) + 14;
+  display::SetClassicTextSize(actionSize);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(action, actionSize), y);
+  tft.print(action);
+
+  y += display::TextPixelHeight(actionSize) + 4;
+  display::SetClassicTextSize(detailSize);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(detail, detailSize), y);
+  tft.print(detail);
+
+  y += display::TextPixelHeight(detailSize) + 8;
+  display::SetClassicTextSize(ssidSize);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(ssid.c_str(), ssidSize), y);
+  tft.print(ssid);
+
+  ctx.lastRenderedSecs = -1;
+  ctx.lastRenderedMinuteBucket = -1;
+  ctx.screenDirty = false;
+#else
+  (void)ctx;
+  Serial.printf("probe_setup ssid=%s address=%s\n", ssid.c_str(), address.c_str());
+#endif
+}
+
+void RendererESP8266::DrawConnectedSetupInstructions(app::RuntimeContext& ctx, const String& ip) {
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  display::AttachContext(ctx);
+  display::StopMiniGifPlayback();
+
+  TFT_eSPI& tft = display::Tft();
+  display::PrimitiveFillScreen(TFT_BLACK);
+  tft.setTextWrap(false);
+  tft.setTextFont(1);
+
+  const char* title = "VIBE TV";
+  const char* action = "Open this address";
+  const char* detail = "in your browser";
+  const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
+  const int ipSize = display::ChooseTextSizeToFit(ip.c_str(), 3, 2, tft.width() - 8);
+  const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);
+  const int detailSize = display::ChooseTextSizeToFit(detail, 2, 1, tft.width() - 14);
+
+  const int totalH =
+      display::TextPixelHeight(titleSize) + 12 +
+      display::TextPixelHeight(actionSize) + 4 +
+      display::TextPixelHeight(detailSize) + 8 +
+      display::TextPixelHeight(ipSize);
+  int y = (tft.height() - totalH) / 2;
+  if (y < 6) {
+    y = 6;
+  }
+
+  display::SetClassicTextSize(titleSize);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(title, titleSize), y);
+  tft.print(title);
+
+  y += display::TextPixelHeight(titleSize) + 12;
+  display::SetClassicTextSize(actionSize);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(action, actionSize), y);
+  tft.print(action);
+
+  y += display::TextPixelHeight(actionSize) + 4;
+  display::SetClassicTextSize(detailSize);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(detail, detailSize), y);
+  tft.print(detail);
+
+  y += display::TextPixelHeight(detailSize) + 8;
+  display::SetClassicTextSize(ipSize);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(ip.c_str(), ipSize), y);
+  tft.print(ip);
+
+  ctx.lastRenderedSecs = -1;
+  ctx.lastRenderedMinuteBucket = -1;
+  ctx.screenDirty = false;
+#else
+  (void)ctx;
+  Serial.printf("probe_connected_setup ip=%s\n", ip.c_str());
+#endif
+}
+
 void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);

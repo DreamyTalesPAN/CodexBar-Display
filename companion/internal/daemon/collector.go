@@ -34,6 +34,7 @@ type providerCollector struct {
 	fetchProviders  func(context.Context) ([]codexbar.ParsedFrame, error)
 	resolvePort     func(string) (string, error)
 	requestedPort   string
+	transportName   string
 	order           []string
 	interval        time.Duration
 	timeout         time.Duration
@@ -61,7 +62,8 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		logf:            logFn,
 		fetchProviders:  deps.fetchProviders,
 		resolvePort:     deps.resolvePort,
-		requestedPort:   strings.TrimSpace(opts.Port),
+		requestedPort:   requestedDeviceTarget(opts),
+		transportName:   usageSourceOrDefault(deps.transportName, "usb"),
 		order:           collectorProviderOrder(),
 		interval:        collectorInterval(opts.Interval),
 		timeout:         collectorProviderTimeout(),
@@ -111,7 +113,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	}
 	if c.resolvePort != nil {
 		if _, err := c.resolvePort(c.requestedPort); err != nil {
-			c.logf("collector paused reason=no-device err=%v\n", err)
+			c.logf("collector paused reason=no-device transport=%s target=%s err=%v\n", usageSourceOrDefault(c.transportName, "usb"), c.requestedPort, err)
 			return
 		}
 	}
@@ -128,7 +130,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 
 	allProviders, err := c.fetchProviders(ctx)
 	if err != nil {
-		c.logf("collector fetch-all err=%v timeout=%s\n", err, c.timeout)
+		c.logf("collector fetch-all transport=%s source=codexbar fresh=false err=%v timeout=%s\n", usageSourceOrDefault(c.transportName, "usb"), err, c.timeout)
 		return
 	}
 
@@ -166,7 +168,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	if updated {
 		c.persistIfNeeded(now)
 	}
-	c.logf("collector complete providers=%d succeeded=%d timeout=%s mode=fetch-all\n", len(allProviders), successes, c.timeout)
+	c.logf("collector complete transport=%s source=codexbar fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), len(allProviders), successes, c.timeout)
 }
 
 func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame {
@@ -197,12 +199,29 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			frame.Provider = key
 		}
 		frames = append(frames, codexbar.ParsedFrame{
-			Frame:    frame,
-			Provider: key,
-			Source:   snapshot.Source,
+			Frame:       frame,
+			Provider:    key,
+			Source:      snapshot.Source,
+			CollectedAt: snapshot.Collected,
+			Stale:       !c.snapshotIsFresh(snapshot, now),
 		})
 	}
 	return frames
+}
+
+func (c *providerCollector) snapshotIsFresh(snapshot providerSnapshot, now time.Time) bool {
+	if snapshot.Collected.IsZero() || now.IsZero() {
+		return false
+	}
+	age := now.Sub(snapshot.Collected)
+	if age < 0 {
+		return true
+	}
+	freshFor := c.interval + 5*time.Second
+	if freshFor <= 5*time.Second {
+		freshFor = 35 * time.Second
+	}
+	return age <= freshFor
 }
 
 func (c *providerCollector) orderedKeysLocked() []string {

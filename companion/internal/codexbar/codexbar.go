@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,8 +34,14 @@ var (
 
 var runUsageCommandFn = runUsageCommand
 var runCostCommandFn = runUsageCommand
+var runVersionCommandFn = runUsageCommand
+var readFileFn = os.ReadFile
 
-const minSharedFallbackTimeBudget = 4 * time.Second
+const (
+	minSharedFallbackTimeBudget = 4 * time.Second
+	minSupportedVersionString   = "0.23"
+	versionCheckTimeout         = 2 * time.Second
+)
 
 const usageModeEnvVar = "CODEXBAR_DISPLAY_USAGE_MODE"
 
@@ -45,6 +53,7 @@ const (
 	FetchErrorCommand     FetchErrorKind = "command"
 	FetchErrorParse       FetchErrorKind = "parse"
 	FetchErrorNoProviders FetchErrorKind = "no-providers"
+	FetchErrorVersion     FetchErrorKind = "version"
 )
 
 type FetchError struct {
@@ -127,6 +136,33 @@ func FindBinary() (string, error) {
 	return "", errors.New("could not find CodexBar CLI binary")
 }
 
+func MinimumSupportedVersion() string {
+	return minSupportedVersionString
+}
+
+func CheckMinimumVersion(ctx context.Context, bin string) error {
+	version, err := installedVersion(ctx, bin)
+	if err != nil {
+		return err
+	}
+	minimum, err := parseLooseVersion(minSupportedVersionString)
+	if err != nil {
+		return err
+	}
+	if version.Compare(minimum) < 0 {
+		return fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minSupportedVersionString)
+	}
+	return nil
+}
+
+func InstalledVersion(ctx context.Context, bin string) (string, error) {
+	version, err := installedVersion(ctx, bin)
+	if err != nil {
+		return "", err
+	}
+	return version.String(), nil
+}
+
 func isExecutable(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -146,6 +182,9 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	bin, err := FindBinary()
 	if err != nil {
 		return nil, wrapFetchError(FetchErrorBinary, err)
+	}
+	if err := CheckMinimumVersion(ctx, bin); err != nil {
+		return nil, wrapFetchError(FetchErrorVersion, err)
 	}
 
 	timeout := commandTimeout()
@@ -210,6 +249,9 @@ func FetchProvider(ctx context.Context, provider string) (ParsedFrame, error) {
 	bin, err := FindBinary()
 	if err != nil {
 		return ParsedFrame{}, wrapFetchError(FetchErrorBinary, err)
+	}
+	if err := CheckMinimumVersion(ctx, bin); err != nil {
+		return ParsedFrame{}, wrapFetchError(FetchErrorVersion, err)
 	}
 
 	timeout := commandTimeout()
@@ -306,6 +348,171 @@ type ParsedFrame struct {
 	Provider     string
 	Source       string
 	AccountEmail string
+	CollectedAt  time.Time
+	Stale        bool
+}
+
+type looseVersion struct {
+	major int
+	minor int
+	patch int
+}
+
+func (v looseVersion) String() string {
+	if v.patch == 0 {
+		return fmt.Sprintf("%d.%d", v.major, v.minor)
+	}
+	return fmt.Sprintf("%d.%d.%d", v.major, v.minor, v.patch)
+}
+
+func (v looseVersion) Compare(other looseVersion) int {
+	if v.major != other.major {
+		if v.major < other.major {
+			return -1
+		}
+		return 1
+	}
+	if v.minor != other.minor {
+		if v.minor < other.minor {
+			return -1
+		}
+		return 1
+	}
+	if v.patch != other.patch {
+		if v.patch < other.patch {
+			return -1
+		}
+		return 1
+	}
+	return 0
+}
+
+var looseVersionPattern = regexp.MustCompile(`\bv?([0-9]+)\.([0-9]+)(?:\.([0-9]+))?\b`)
+
+func installedVersion(ctx context.Context, bin string) (looseVersion, error) {
+	bin = strings.TrimSpace(bin)
+	if bin == "" {
+		return looseVersion{}, errors.New("CodexBar binary path is empty")
+	}
+
+	if out, err := runVersionCommandFn(ctx, versionCheckTimeout, bin, "--version"); err == nil {
+		if version, ok := extractLooseVersion(string(out)); ok {
+			return version, nil
+		}
+	}
+
+	infoPath, ok := appInfoPlistPath(bin)
+	if !ok {
+		if resolved, err := filepath.EvalSymlinks(bin); err == nil {
+			infoPath, ok = appInfoPlistPath(resolved)
+		}
+	}
+	if !ok {
+		return looseVersion{}, fmt.Errorf("could not determine CodexBar version from %s", bin)
+	}
+	raw, err := readFileFn(infoPath)
+	if err != nil {
+		return looseVersion{}, fmt.Errorf("read CodexBar Info.plist: %w", err)
+	}
+	rawVersion, err := plistStringValue(raw, "CFBundleShortVersionString")
+	if err != nil || strings.TrimSpace(rawVersion) == "" {
+		rawVersion, err = plistStringValue(raw, "CFBundleVersion")
+	}
+	if err != nil {
+		return looseVersion{}, fmt.Errorf("read CodexBar version from Info.plist: %w", err)
+	}
+	version, err := parseLooseVersion(rawVersion)
+	if err != nil {
+		return looseVersion{}, fmt.Errorf("parse CodexBar version %q: %w", rawVersion, err)
+	}
+	return version, nil
+}
+
+func extractLooseVersion(raw string) (looseVersion, bool) {
+	match := looseVersionPattern.FindStringSubmatch(raw)
+	if len(match) == 0 {
+		return looseVersion{}, false
+	}
+	version, err := parseLooseVersion(match[0])
+	if err != nil {
+		return looseVersion{}, false
+	}
+	return version, true
+}
+
+func parseLooseVersion(raw string) (looseVersion, error) {
+	match := looseVersionPattern.FindStringSubmatch(strings.TrimSpace(raw))
+	if len(match) == 0 {
+		return looseVersion{}, fmt.Errorf("invalid version %q", raw)
+	}
+
+	major, err := strconv.Atoi(match[1])
+	if err != nil {
+		return looseVersion{}, err
+	}
+	minor, err := strconv.Atoi(match[2])
+	if err != nil {
+		return looseVersion{}, err
+	}
+	patch := 0
+	if match[3] != "" {
+		patch, err = strconv.Atoi(match[3])
+		if err != nil {
+			return looseVersion{}, err
+		}
+	}
+	return looseVersion{major: major, minor: minor, patch: patch}, nil
+}
+
+func appInfoPlistPath(bin string) (string, bool) {
+	clean := filepath.Clean(strings.TrimSpace(bin))
+	marker := ".app" + string(os.PathSeparator) + "Contents"
+	idx := strings.Index(clean, marker)
+	if idx == -1 {
+		return "", false
+	}
+	appRoot := clean[:idx+len(".app")]
+	if appRoot == "" {
+		return "", false
+	}
+	return filepath.Join(appRoot, "Contents", "Info.plist"), true
+}
+
+func plistStringValue(raw []byte, key string) (string, error) {
+	decoder := xml.NewDecoder(bytes.NewReader(raw))
+	var lastKey string
+	for {
+		tok, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+
+		start, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		switch start.Name.Local {
+		case "key":
+			var value string
+			if err := decoder.DecodeElement(&value, &start); err != nil {
+				return "", err
+			}
+			lastKey = strings.TrimSpace(value)
+		case "string":
+			var value string
+			if err := decoder.DecodeElement(&value, &start); err != nil {
+				return "", err
+			}
+			if lastKey == key {
+				return strings.TrimSpace(value), nil
+			}
+			lastKey = ""
+		}
+	}
+	return "", fmt.Errorf("key %q not found", key)
 }
 
 func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
@@ -349,6 +556,9 @@ func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 
 func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 	if providerPayloadHasError(payload) {
+		if recovered, ok := recoverCodexFrameFromErrorPayload(payload); ok {
+			return recovered, nil
+		}
 		return ParsedFrame{}, errors.New("provider error payload")
 	}
 
@@ -412,6 +622,77 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		Source:       source,
 		AccountEmail: accountEmail,
 	}, nil
+}
+
+func recoverCodexFrameFromErrorPayload(payload map[string]any) (ParsedFrame, bool) {
+	provider := strings.TrimSpace(strings.ToLower(firstString(payload, "provider", "id", "slug", "name")))
+	if provider != "codex" {
+		return ParsedFrame{}, false
+	}
+
+	errorPayload, ok := payload["error"].(map[string]any)
+	if !ok {
+		return ParsedFrame{}, false
+	}
+	message, ok := anyToString(errorPayload["message"])
+	if !ok || !strings.Contains(message, "body=") {
+		return ParsedFrame{}, false
+	}
+
+	body, ok := decodeEmbeddedJSONBody(message)
+	if !ok {
+		return ParsedFrame{}, false
+	}
+
+	session := percentAtPaths(body, "rate_limit.primary_window.used_percent")
+	weekly := percentAtPaths(body, "rate_limit.secondary_window.used_percent")
+	resetSecs := int64(0)
+	if n, ok := intAtPath(body, "rate_limit.primary_window.reset_after_seconds"); ok && n > 0 {
+		resetSecs = int64(n)
+	}
+	if session == 0 && weekly == 0 && resetSecs == 0 {
+		return ParsedFrame{}, false
+	}
+
+	return ParsedFrame{
+		Frame: protocol.Frame{
+			V:        1,
+			Provider: "codex",
+			Label:    "Codex",
+			Session:  session,
+			Weekly:   weekly,
+			ResetSec: resetSecs,
+		},
+		Provider: "codex",
+		Source:   "openai-web-recovered",
+	}, true
+}
+
+func decodeEmbeddedJSONBody(message string) (map[string]any, bool) {
+	idx := strings.Index(message, "body=")
+	if idx == -1 {
+		return nil, false
+	}
+	remainder := message[idx+len("body="):]
+	start := strings.Index(remainder, "{")
+	if start == -1 {
+		return nil, false
+	}
+
+	dec := json.NewDecoder(strings.NewReader(remainder[start:]))
+	var body map[string]any
+	if err := dec.Decode(&body); err != nil {
+		return nil, false
+	}
+	return body, len(body) > 0
+}
+
+func intAtPath(m map[string]any, path string) (int, bool) {
+	v, ok := getPath(m, path)
+	if !ok {
+		return 0, false
+	}
+	return anyToInt(v)
 }
 
 func providerPayloadHasError(payload map[string]any) bool {
@@ -1520,6 +1801,7 @@ func fetchCodexCLIOnly(ctx context.Context, timeout time.Duration, bin string) (
 	if !ok {
 		return nil, false
 	}
+	codexParsed.Source = fallbackSource(codexParsed.Source, "codex-cli-fallback")
 	return []ParsedFrame{codexParsed}, true
 }
 
@@ -1535,6 +1817,7 @@ func fetchCodexCLIProvider(ctx context.Context, timeout time.Duration, bin strin
 
 	for _, candidate := range cliAll {
 		if providerKey(candidate) == "codex" {
+			candidate.Source = fallbackSource(candidate.Source, "codex-cli")
 			return candidate, true
 		}
 	}
@@ -1689,7 +1972,19 @@ func repairCodexFromCLI(ctx context.Context, timeout time.Duration, bin string, 
 	if !ok {
 		return all
 	}
+	codexCLI.Source = fallbackSource(codexCLI.Source, "codex-cli-repair")
 	return replaceOrAppendCodexProvider(all, codexCLI)
+}
+
+func fallbackSource(current string, fallback string) string {
+	current = strings.TrimSpace(strings.ToLower(current))
+	if current == "" {
+		return fallback
+	}
+	if strings.Contains(current, "fallback") || strings.Contains(current, "repair") {
+		return current
+	}
+	return current + "+" + fallback
 }
 
 func extractProviderList(root any) []any {

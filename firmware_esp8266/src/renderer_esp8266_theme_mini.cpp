@@ -205,8 +205,8 @@ void DrawMiniGifPlaceholder() {
     tft.setTextFont(1);
     tft.setTextSize(1);
     tft.setTextColor(kMiniMuted, kMiniPanel);
-    tft.setCursor(x + ((boxW - TextPixelWidth("mini.gif", 1)) / 2), y + ((boxH - TextPixelHeight(1)) / 2));
-    tft.print("mini.gif");
+    tft.setCursor(x + ((boxW - TextPixelWidth("Theme fehlt", 1)) / 2), y + ((boxH - TextPixelHeight(1)) / 2));
+    tft.print("Theme fehlt");
   }
 }
 
