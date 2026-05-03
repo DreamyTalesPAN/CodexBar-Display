@@ -30,13 +30,14 @@ What it does:
   - detects macOS architecture
   - downloads the matching codexbar-display release binary from GitHub Releases
   - verifies the SHA-256 checksum from the release checksum file
-  - runs `codexbar-display setup --yes --skip-flash`
+  - runs `codexbar-display setup --yes --skip-flash [setup args...]`
   - optionally runs `codexbar-display upgrade` to flash release firmware when --flash-firmware is passed
   - warms up CodexBar on fresh installs so providers are usable
   - runs a health check after setup
 
 Examples:
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
+  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --transport wifi --target http://vibetv.local --theme mini
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --port /dev/cu.usbserial-110
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --flash-firmware -- --port /dev/cu.usbserial-110
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --version 1.0.0

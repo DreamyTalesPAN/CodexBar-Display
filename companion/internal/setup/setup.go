@@ -33,6 +33,8 @@ const (
 
 type Options struct {
 	Port          string
+	Transport     string
+	Target        string
 	AssumeYes     bool
 	SkipFlash     bool
 	PinDaemonPort bool
@@ -234,11 +236,38 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 	fmt.Fprintf(d.stdout, "CodexBar CLI: %s\n", codexbarBin)
 
-	port, err := choosePort(opts, d)
-	if err != nil {
-		return err
+	transportName := normalizeSetupTransport(opts.Transport)
+	if transportName == "" {
+		transportName = "usb"
 	}
-	fmt.Fprintf(d.stdout, "Serial port: %s\n", port)
+	if transportName != "usb" && transportName != "wifi" {
+		return &StepError{
+			Step: "validate-transport",
+			Err:  fmt.Errorf("unsupported transport %q", opts.Transport),
+			Hint: "use --transport usb or --transport wifi",
+		}
+	}
+	target := normalizeSetupTarget(opts.Target)
+	if transportName == "wifi" && target == "" {
+		return &StepError{
+			Step: "validate-target",
+			Err:  errors.New("--target is required with --transport wifi"),
+			Hint: "use the IP shown on Vibe TV, for example --target http://192.168.178.66",
+		}
+	}
+	fmt.Fprintf(d.stdout, "Launch agent transport: %s\n", transportName)
+	if target != "" {
+		fmt.Fprintf(d.stdout, "Launch agent target: %s\n", target)
+	}
+
+	port := ""
+	if transportName == "usb" {
+		port, err = choosePort(opts, d)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(d.stdout, "Serial port: %s\n", port)
+	}
 
 	if !opts.ValidateOnly && !opts.DryRun {
 		stopLaunchAgentBestEffort(ctx, d)
@@ -246,7 +275,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 	// Avoid probe-close contention on the flash path; upload itself is the authoritative serial check.
 	shouldProbe := opts.SkipFlash || opts.ValidateOnly || opts.DryRun
-	if shouldProbe {
+	if transportName == "usb" && shouldProbe {
 		if err := d.probePort(port); err != nil {
 			code := errcode.Of(err)
 			if opts.SkipFlash {
@@ -261,7 +290,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 				}
 			}
 		}
-	} else {
+	} else if transportName == "usb" {
 		fmt.Fprintln(d.stdout, "Serial probe: skipped (flash step verifies port access)")
 	}
 
@@ -296,7 +325,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	firmwareEnv = resolvedFirmwareEnv
 
 	targetBoardIDs := firmwareTargetExpectedIDs(firmwareEnv)
-	if len(targetBoardIDs) > 0 {
+	if transportName == "usb" && len(targetBoardIDs) > 0 {
 		hello, helloErr := d.readDeviceHello(port)
 		usb.CloseDefaultSender()
 		if helloErr == nil {
@@ -319,7 +348,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 
 	var repoRoot string
-	if !opts.SkipFlash {
+	if !opts.SkipFlash && transportName == "usb" {
 		repoRoot, err = locateRepository(d)
 		if err != nil {
 			return &StepError{
@@ -374,7 +403,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		if strings.TrimSpace(opts.Theme) != "" {
 			fmt.Fprintf(d.stdout, "Dry-run: would apply runtime theme setting %q\n", opts.Theme)
 		}
-		if opts.PinDaemonPort {
+		if transportName == "wifi" {
+			fmt.Fprintf(d.stdout, "Dry-run: would configure LaunchAgent for WiFi target %s\n", target)
+		} else if opts.PinDaemonPort {
 			fmt.Fprintf(d.stdout, "Dry-run: would pin LaunchAgent to port %s\n", port)
 		} else {
 			fmt.Fprintln(d.stdout, "Dry-run: would configure LaunchAgent in auto-detect mode")
@@ -419,14 +450,19 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 
 	daemonPort := ""
-	if opts.PinDaemonPort {
+	daemonTransport := transportName
+	daemonTarget := ""
+	if transportName == "wifi" {
+		daemonTarget = target
+		fmt.Fprintf(d.stdout, "Launch agent WiFi target: %s\n", daemonTarget)
+	} else if opts.PinDaemonPort {
 		daemonPort = port
 		fmt.Fprintf(d.stdout, "Launch agent serial mode: pinned (%s)\n", daemonPort)
 	} else {
 		fmt.Fprintln(d.stdout, "Launch agent serial mode: auto-detect")
 	}
 
-	plistPath, err := writeLaunchAgentPlist(home, installPath, daemonPort)
+	plistPath, err := writeLaunchAgentPlist(home, installPath, daemonTransport, daemonTarget, daemonPort)
 	if err != nil {
 		return &StepError{
 			Step: "write-launchagent",
@@ -503,6 +539,23 @@ func containsUSBSerialPort(ports []string) bool {
 		}
 	}
 	return false
+}
+
+func normalizeSetupTransport(value string) string {
+	return strings.TrimSpace(strings.ToLower(value))
+}
+
+func normalizeSetupTarget(value string) string {
+	target := strings.TrimSpace(value)
+	target = strings.TrimRight(target, "/")
+	if target == "" {
+		return ""
+	}
+	lower := strings.ToLower(target)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+		target = "http://" + target
+	}
+	return target
 }
 
 func ensureCodexbar(ctx context.Context, d deps, allowInstall bool) (string, error) {
@@ -803,14 +856,14 @@ func copyFileAtomic(sourcePath, targetPath string, mode os.FileMode) error {
 	return nil
 }
 
-func writeLaunchAgentPlist(home, binaryPath, port string) (string, error) {
+func writeLaunchAgentPlist(home, binaryPath, transportName, target, port string) (string, error) {
 	launchAgentDir := filepath.Join(home, "Library", "LaunchAgents")
 	if err := os.MkdirAll(launchAgentDir, 0o755); err != nil {
 		return "", err
 	}
 
 	plistPath := filepath.Join(launchAgentDir, launchAgentLabel+".plist")
-	plistData := renderLaunchAgentPlist(binaryPath, port)
+	plistData := renderLaunchAgentPlist(binaryPath, transportName, target, port)
 	existing, err := os.ReadFile(plistPath)
 	if err == nil && bytes.Equal(existing, plistData) {
 		return plistPath, nil
@@ -821,9 +874,11 @@ func writeLaunchAgentPlist(home, binaryPath, port string) (string, error) {
 	return plistPath, nil
 }
 
-func renderLaunchAgentPlist(binaryPath, port string) []byte {
+func renderLaunchAgentPlist(binaryPath, transportName, target, port string) []byte {
 	args := []string{binaryPath, "daemon", "--interval", defaultDaemonInterval}
-	if strings.TrimSpace(port) != "" {
+	if normalizeSetupTransport(transportName) == "wifi" {
+		args = append(args, "--transport", "wifi", "--target", normalizeSetupTarget(target))
+	} else if strings.TrimSpace(port) != "" {
 		args = append(args, "--port", strings.TrimSpace(port))
 	}
 

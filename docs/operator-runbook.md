@@ -146,6 +146,36 @@ Wrapper behavior:
 - `upgrade-with-preflight.sh` delegates to `codexbar-display upgrade` and therefore runs the same preflight checks (port busy + version guard).
 - `rollback-last-known-good.sh` delegates to `codexbar-display rollback` with identical rollback/restore semantics.
 
+## Firmware Provisioning
+
+Use the OTA package and WiFi upload wrapper for repeatable device provisioning instead of manual `curl` commands:
+
+```bash
+./scripts/vibetv-provision.sh build \
+  --package-dir dist/vibetv-ota/release-2026-05-03
+
+./scripts/vibetv-provision.sh flash \
+  --target 192.168.178.123 \
+  --package-dir dist/vibetv-ota/release-2026-05-03 \
+  --expect-board esp8266-smalltv-st7789 \
+  --yes
+```
+
+Per device:
+- connect the device to the provisioning WiFi
+- replace only `--target` with that device IP
+- keep the same `--package-dir` for the provisioning run
+- confirm `/health`, `/hello`, `/assets`, LittleFS upload, and the `mini` smoke frame pass
+
+During normal operation the display uses explicit support states:
+- `Open Setup`: WiFi is connected and the device is waiting for the Mac Companion setup command. `vibetv.local` is shown on-screen; the local Web UI also shows the fallback IP.
+- `Check Mac App`: the device previously had data, but no fresh frame arrived for more than two minutes.
+- `Update Mac App`: the Companion reported an incompatible usage app version or payload format.
+
+Before packaging a device for a customer, clear local provisioning WiFi credentials with `POST /reset-wifi` while the device is still reachable. After reboot, the display must show both setup steps on one screen: connect to `VibeTV-Setup`, then open `vibetv.local` in a browser. `192.168.4.1` remains the fallback address.
+
+Full flow and endpoint overrides are documented in `docs/firmware-provisioning.md`.
+
 Rollback modes:
 - companion only: `../codexbar-display rollback --skip-firmware`
 - firmware only: `../codexbar-display rollback --skip-companion --port /dev/cu.usbserial-10`
@@ -169,14 +199,14 @@ For an ad-hoc run:
 
 ```bash
 cd companion
-CODEXBAR_DISPLAY_THEME=crt ../codexbar-display daemon --interval 60s
+CODEXBAR_DISPLAY_THEME=mini ../codexbar-display daemon --interval 60s
 ```
 
 Preferred persistent config:
 
 ```bash
 cd companion
-../codexbar-display setup --yes --skip-flash --theme crt
+../codexbar-display setup --yes --skip-flash --theme mini
 ```
 
 For LaunchAgent runtime:
@@ -310,7 +340,7 @@ Run this list before every v0 release decision.
 - [ ] Device hello reports expected board id for `esp8266_smalltv_st7789`.
 - [ ] Theme contract is capability-aware (`known && !supportsTheme` blocks theme; unknown hello uses MVP optimistic send).
 - [ ] Runtime theme switching `classic`/`crt`/`mini` works without reflashing.
-- [ ] GIF path is safe: `/mini.gif` works in mini theme (or clean fallback if missing/corrupt).
+- [ ] Asset-backed themes render correctly when assets are present and fall back cleanly when assets are missing/corrupt.
 - [ ] `classic`/`crt` remain stable without GIF playback.
 
 ### Stability + Recovery

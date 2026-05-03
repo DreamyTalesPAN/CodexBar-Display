@@ -206,6 +206,48 @@ inline bool FrameThemeChanged(const Frame& previous, const Frame& next) {
   return previous.theme != next.theme;
 }
 
+inline bool ConsumeFrameLine(
+    RuntimeState& runtimeState,
+    const char* line,
+    unsigned long nowMillis,
+    bool allowTheme,
+    SerialConsumeEvent& outEvent) {
+  outEvent = {};
+  if (line == nullptr || line[0] == '\0') {
+    return false;
+  }
+
+  Frame next;
+  if (!ParseFrameLine(line, allowTheme, next)) {
+    return false;
+  }
+
+  const Frame previous = runtimeState.current;
+  outEvent.hadFrame = runtimeState.hasFrame;
+  outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChanged(previous, next);
+  outEvent.themeChanged = outEvent.hadFrame && FrameThemeChanged(previous, next);
+
+  if (next.hasThemeSpec) {
+    if (runtimeState.cachedThemeRev > 0 &&
+        runtimeState.cachedThemeId == next.themeSpecId &&
+        runtimeState.cachedThemeRev == next.themeSpecRev) {
+      outEvent.themeSpecCacheHit = true;
+    } else {
+      runtimeState.cachedThemeId = next.themeSpecId;
+      runtimeState.cachedThemeRev = next.themeSpecRev;
+      outEvent.themeSpecChanged = true;
+      outEvent.visualChanged = true;
+    }
+  }
+
+  runtimeState.current = next;
+  runtimeState.hasFrame = true;
+  runtimeState.resetBaseSecs = runtimeState.current.resetSecs;
+  runtimeState.resetBaseMillis = nowMillis;
+  outEvent.frameAccepted = true;
+  return true;
+}
+
 inline bool ConsumeSerialByte(
     LineReaderState& lineState,
     RuntimeState& runtimeState,
@@ -230,32 +272,7 @@ inline bool ConsumeSerialByte(
 
   lineState.buffer[lineState.len] = '\0';
   if (!lineState.overflowed && lineState.len > 0) {
-    Frame next;
-    if (ParseFrameLine(lineState.buffer, allowTheme, next)) {
-      const Frame previous = runtimeState.current;
-      outEvent.hadFrame = runtimeState.hasFrame;
-      outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChanged(previous, next);
-      outEvent.themeChanged = outEvent.hadFrame && FrameThemeChanged(previous, next);
-
-      if (next.hasThemeSpec) {
-        if (runtimeState.cachedThemeRev > 0 &&
-            runtimeState.cachedThemeId == next.themeSpecId &&
-            runtimeState.cachedThemeRev == next.themeSpecRev) {
-          outEvent.themeSpecCacheHit = true;
-        } else {
-          runtimeState.cachedThemeId = next.themeSpecId;
-          runtimeState.cachedThemeRev = next.themeSpecRev;
-          outEvent.themeSpecChanged = true;
-          outEvent.visualChanged = true;
-        }
-      }
-
-      runtimeState.current = next;
-      runtimeState.hasFrame = true;
-      runtimeState.resetBaseSecs = runtimeState.current.resetSecs;
-      runtimeState.resetBaseMillis = nowMillis;
-      outEvent.frameAccepted = true;
-    }
+    (void)ConsumeFrameLine(runtimeState, lineState.buffer, nowMillis, allowTheme, outEvent);
   }
 
   lineState.len = 0;

@@ -74,7 +74,7 @@ func main() {
 
 func printUsage() {
 	fmt.Println("codexbar-display commands:")
-	fmt.Println("  codexbar-display daemon [--port /dev/cu.usbserial-10] [--interval 60s] [--once] [--theme classic|crt|mini]")
+	fmt.Println("  codexbar-display daemon [--transport usb|wifi] [--port /dev/cu.usbserial-10] [--target http://192.168.178.123] [--interval 60s] [--once] [--theme classic|crt|mini]")
 	fmt.Println("  codexbar-display doctor")
 	fmt.Println("  codexbar-display health")
 	fmt.Println("  codexbar-display service <start|stop|status>")
@@ -84,26 +84,45 @@ func printUsage() {
 	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
-	fmt.Println("  codexbar-display setup [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
+	fmt.Println("  codexbar-display setup [--transport usb|wifi] [--target http://192.168.178.123] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
 func runDaemon(args []string) error {
+	opts, err := parseDaemonOptions(args)
+	if err != nil {
+		return err
+	}
+	return daemon.Run(context.Background(), opts)
+}
+
+func parseDaemonOptions(args []string) (daemon.Options, error) {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	transportName := fs.String("transport", "usb", "device transport: usb|wifi")
+	target := fs.String("target", "", "WiFi target base URL, for example http://192.168.178.123")
 	interval := fs.Duration("interval", 60*time.Second, "poll interval")
 	once := fs.Bool("once", false, "run one cycle and exit")
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|mini")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return daemon.Options{}, err
 	}
 
-	opts := daemon.Options{
-		Port:     strings.TrimSpace(*port),
-		Interval: *interval,
-		Once:     *once,
-		Theme:    strings.TrimSpace(*theme),
+	normalizedTransport := strings.TrimSpace(strings.ToLower(*transportName))
+	if normalizedTransport == "" {
+		normalizedTransport = "usb"
 	}
-	return daemon.Run(context.Background(), opts)
+	if normalizedTransport != "usb" && normalizedTransport != "wifi" {
+		return daemon.Options{}, fmt.Errorf("unsupported transport %q", *transportName)
+	}
+
+	return daemon.Options{
+		Port:      strings.TrimSpace(*port),
+		Transport: normalizedTransport,
+		Target:    strings.TrimSpace(*target),
+		Interval:  *interval,
+		Once:      *once,
+		Theme:     strings.TrimSpace(*theme),
+	}, nil
 }
 
 func runDoctor() error {
@@ -115,6 +134,18 @@ func runDoctor() error {
 		doctorErrs = append(doctorErrs, errors.New("CodexBar CLI not found"))
 	} else {
 		fmt.Printf("CodexBar CLI: %s\n", bin)
+		versionCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		version, versionErr := codexbar.InstalledVersion(versionCtx, bin)
+		if versionErr != nil {
+			fmt.Printf("CodexBar version: failed (%v)\n", versionErr)
+			doctorErrs = append(doctorErrs, fmt.Errorf("CodexBar version check failed: %w", versionErr))
+		} else if versionCheckErr := codexbar.CheckMinimumVersion(versionCtx, bin); versionCheckErr != nil {
+			fmt.Printf("CodexBar version: %s (too old, need >= %s)\n", version, codexbar.MinimumSupportedVersion())
+			doctorErrs = append(doctorErrs, versionCheckErr)
+		} else {
+			fmt.Printf("CodexBar version: %s (ok, need >= %s)\n", version, codexbar.MinimumSupportedVersion())
+		}
 	}
 
 	ports, err := usb.ListPorts()
@@ -250,6 +281,8 @@ func runDoctorRuntimeChecks(ports []string) error {
 func runSetup(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	transportName := fs.String("transport", "usb", "device transport for LaunchAgent: usb|wifi")
+	target := fs.String("target", "", "WiFi target base URL, for example http://192.168.178.123")
 	yes := fs.Bool("yes", false, "auto-select defaults without prompts")
 	skipFlash := fs.Bool("skip-flash", false, "skip firmware flashing")
 	pinPort := fs.Bool("pin-port", false, "pin daemon to selected --port in LaunchAgent (default: auto-detect)")
@@ -263,6 +296,8 @@ func runSetup(args []string) error {
 
 	return setup.Run(context.Background(), setup.Options{
 		Port:          strings.TrimSpace(*port),
+		Transport:     strings.TrimSpace(*transportName),
+		Target:        strings.TrimSpace(*target),
 		AssumeYes:     *yes,
 		SkipFlash:     *skipFlash,
 		PinDaemonPort: *pinPort,

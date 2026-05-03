@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,79 @@ func TestRunCycleWithDepsSendsErrorFrameWhenNoLastGood(t *testing.T) {
 	frame := decodeFrameLine(t, sentLine)
 	if frame.Error != string(runtimeErrorCodexbarParse) {
 		t.Fatalf("expected runtime error frame code %q, got %q", runtimeErrorCodexbarParse, frame.Error)
+	}
+}
+
+func TestRunCycleWithDepsSendsVersionErrorFrameWhenCodexBarTooOld(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	var sentLine []byte
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorVersion, Err: errors.New("CodexBar 0.22 is too old; need >= 0.23")}
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(port string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected cycle error without last-good fallback")
+	}
+
+	runtimeErr := asRuntimeError(err)
+	if runtimeErr.Kind != runtimeErrorCodexbarVersion {
+		t.Fatalf("expected codexbar version runtime error, got %s", runtimeErr.Kind)
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Error != string(runtimeErrorCodexbarVersion) {
+		t.Fatalf("expected runtime error frame code %q, got %q", runtimeErrorCodexbarVersion, frame.Error)
+	}
+}
+
+func TestRunCycleWithDepsLogsUsageSourceFreshModeAndTransport(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	var logged strings.Builder
+	err := runCycleWithDeps(context.Background(), "http://192.168.178.65", state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		resolvePort:   func(string) (string, error) { return "http://192.168.178.65", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("codex", 12, 30, 3600)
+			frame.Source = "web"
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		logf: func(format string, args ...any) {
+			logged.WriteString(fmt.Sprintf(format, args...))
+		},
+		sendLine: func(string, []byte) error {
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+
+	log := logged.String()
+	for _, want := range []string{"transport=wifi", "source=web", "fresh=true", "usageMode=used"} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("expected log to contain %q, got %q", want, log)
+		}
 	}
 }
 
@@ -1074,7 +1148,7 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 		t.Fatalf("expected only codex snapshot after first collect, got %#v", initial)
 	}
 
-	current = current.Add(30 * time.Second)
+	current = current.Add(40 * time.Second)
 	collector.fetchProviders = func(_ context.Context) ([]codexbar.ParsedFrame, error) {
 		return []codexbar.ParsedFrame{
 			testParsedFrame("claude", 28, 35, 7200),
@@ -1088,6 +1162,9 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	}
 	if second[0].Provider != "codex" || second[1].Provider != "claude" {
 		t.Fatalf("expected provider order codex,claude; got %#v", second)
+	}
+	if !second[0].Stale || second[1].Stale {
+		t.Fatalf("expected codex stale and claude fresh snapshots, got %#v", second)
 	}
 
 	current = current.Add(3 * time.Hour)
@@ -1125,6 +1202,37 @@ func TestProviderCollectorCollectOnceSkipsFetchWithoutDevice(t *testing.T) {
 	}
 	if !strings.Contains(logged, "collector paused reason=no-device") {
 		t.Fatalf("expected no-device pause log, got %q", logged)
+	}
+}
+
+func TestProviderCollectorUsesWiFiTarget(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	const target = "http://192.168.178.65"
+	var resolved string
+	deps := runtimeDeps{
+		now:  func() time.Time { return time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC) },
+		logf: func(string, ...any) {},
+		resolvePort: func(requested string) (string, error) {
+			resolved = requested
+			return requested, nil
+		},
+		fetchProviders: func(_ context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600)}, nil
+		},
+	}
+	collector := newProviderCollector(deps, Options{
+		Transport: "wifi",
+		Target:    target,
+		Interval:  60 * time.Second,
+	})
+	collector.collectOnce(context.Background())
+
+	if resolved != target {
+		t.Fatalf("expected collector to resolve wifi target %q, got %q", target, resolved)
+	}
+	if got := collector.providerFrames(deps.now()); len(got) != 1 {
+		t.Fatalf("expected collector to fetch providers, got %#v", got)
 	}
 }
 
