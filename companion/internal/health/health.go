@@ -1,11 +1,14 @@
 package health
 
 import (
+	"bytes"
 	"context"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +25,7 @@ const (
 type deps struct {
 	stdout      io.Writer
 	uid         func() int
+	homeDir     func() (string, error)
 	runCommand  func(context.Context, string, ...string) (string, error)
 	resolvePort func(string) (string, error)
 	readFile    func(string) ([]byte, error)
@@ -33,6 +37,9 @@ func (d deps) withDefaults() deps {
 	}
 	if d.uid == nil {
 		d.uid = os.Getuid
+	}
+	if d.homeDir == nil {
+		d.homeDir = os.UserHomeDir
 	}
 	if d.runCommand == nil {
 		d.runCommand = runSystemCommand
@@ -51,6 +58,12 @@ type logEvent struct {
 	Timestamp time.Time
 }
 
+type launchAgentConfig struct {
+	Transport string
+	Target    string
+	Port      string
+}
+
 func Run(ctx context.Context) error {
 	return runWithDeps(ctx, deps{})
 }
@@ -65,11 +78,15 @@ func runWithDeps(ctx context.Context, d deps) error {
 		state = "unknown"
 	}
 
-	detectedPort, portErr := d.resolvePort("")
+	config := readLaunchAgentConfig(d)
 	lastSent := findLastSentFrameEvent(defaultOutLog, d.readFile)
 	lastOutError := findLastOutErrorEvent(defaultOutLog, d.readFile)
 	lastErrLogLine := findLastNonEmptyEvent(defaultErrLog, d.readFile)
 	lastError := latestEvent(lastOutError, lastErrLogLine)
+	errorRecovered := eventIsNotAfter(lastError, lastSent)
+	if errorRecovered {
+		lastError = logEvent{}
+	}
 
 	fmt.Fprintln(d.stdout, "codexbar-display health")
 	fmt.Fprintf(d.stdout, "launchagent: %s", state)
@@ -81,10 +98,21 @@ func runWithDeps(ctx context.Context, d deps) error {
 	}
 	fmt.Fprintln(d.stdout)
 
-	if portErr != nil {
-		fmt.Fprintf(d.stdout, "detected port: unavailable (%v)\n", portErr)
+	if config.Transport == "wifi" {
+		fmt.Fprintln(d.stdout, "transport: wifi")
+		if config.Target == "" {
+			fmt.Fprintln(d.stdout, "device target: unavailable (run setup with --transport wifi --target http://vibetv.local)")
+		} else {
+			fmt.Fprintf(d.stdout, "device target: %s\n", config.Target)
+		}
 	} else {
-		fmt.Fprintf(d.stdout, "detected port: %s\n", detectedPort)
+		detectedPort, portErr := d.resolvePort("")
+		fmt.Fprintln(d.stdout, "transport: usb")
+		if portErr != nil {
+			fmt.Fprintf(d.stdout, "detected port: unavailable (%v)\n", portErr)
+		} else {
+			fmt.Fprintf(d.stdout, "detected port: %s\n", detectedPort)
+		}
 	}
 
 	if lastSent.Line == "" {
@@ -94,13 +122,19 @@ func runWithDeps(ctx context.Context, d deps) error {
 		port := extractSentFramePort(lastSent.Line)
 		if port == "" {
 			fmt.Fprintf(d.stdout, "last sent frame: %s\n", when)
+		} else if config.Transport == "wifi" {
+			fmt.Fprintf(d.stdout, "last sent frame: %s target=%s\n", when, port)
 		} else {
 			fmt.Fprintf(d.stdout, "last sent frame: %s port=%s\n", when, port)
 		}
 	}
 
 	if lastError.Line == "" {
-		fmt.Fprintln(d.stdout, "last error: none")
+		if errorRecovered {
+			fmt.Fprintln(d.stdout, "last error: none since last sent frame")
+		} else {
+			fmt.Fprintln(d.stdout, "last error: none")
+		}
 	} else {
 		fmt.Fprintf(d.stdout, "last error: %s %s\n", formatTimestamp(lastError.Timestamp), strings.TrimSpace(lastError.Line))
 	}
@@ -112,6 +146,72 @@ func runSystemCommand(ctx context.Context, name string, args ...string) (string,
 	cmd := exec.CommandContext(ctx, name, args...)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
+}
+
+func readLaunchAgentConfig(d deps) launchAgentConfig {
+	if d.homeDir == nil || d.readFile == nil {
+		return launchAgentConfig{}
+	}
+	home, err := d.homeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return launchAgentConfig{}
+	}
+	path := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	data, err := d.readFile(path)
+	if err != nil {
+		return launchAgentConfig{}
+	}
+	return parseLaunchAgentConfig(data)
+}
+
+func parseLaunchAgentConfig(data []byte) launchAgentConfig {
+	args := plistStringValues(data)
+	config := launchAgentConfig{}
+	for i, arg := range args {
+		switch strings.TrimSpace(arg) {
+		case "--transport":
+			if i+1 < len(args) {
+				config.Transport = strings.ToLower(strings.TrimSpace(args[i+1]))
+			}
+		case "--target":
+			if i+1 < len(args) {
+				config.Target = strings.TrimSpace(args[i+1])
+			}
+		case "--port":
+			if i+1 < len(args) {
+				config.Port = strings.TrimSpace(args[i+1])
+			}
+		}
+	}
+	if config.Transport == "" {
+		if config.Target != "" {
+			config.Transport = "wifi"
+		} else {
+			config.Transport = "usb"
+		}
+	}
+	return config
+}
+
+func plistStringValues(data []byte) []string {
+	decoder := xml.NewDecoder(bytes.NewReader(data))
+	values := []string{}
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			break
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok || start.Name.Local != "string" {
+			continue
+		}
+		var value string
+		if err := decoder.DecodeElement(&value, &start); err != nil {
+			break
+		}
+		values = append(values, value)
+	}
+	return values
 }
 
 func parseLaunchctlStatus(output string) (state, pid string) {
@@ -189,6 +289,16 @@ func latestEvent(a, b logEvent) logEvent {
 		return b
 	}
 	return a
+}
+
+func eventIsNotAfter(event, reference logEvent) bool {
+	if strings.TrimSpace(event.Line) == "" || strings.TrimSpace(reference.Line) == "" {
+		return false
+	}
+	if event.Timestamp.IsZero() || reference.Timestamp.IsZero() {
+		return false
+	}
+	return !event.Timestamp.After(reference.Timestamp)
 }
 
 func parseLogTimestamp(line string) time.Time {
