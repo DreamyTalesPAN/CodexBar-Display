@@ -16,10 +16,10 @@ Vibe TV ships ready for WiFi setup.
 7. Open Terminal (on Mac: Cmd + Space, type Terminal, hit enter), paste the copied command, and press Enter.
 
 ```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --transport wifi --target http://vibetv.local --theme mini
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 ```
 
-The Web UI fills in the target automatically.
+The installer defaults to WiFi, `http://vibetv.local`, and the Mini theme.
 
 Or copy this prompt into any AI:
 
@@ -30,7 +30,7 @@ Your job:
 - Assume I want the standard setup flow on macOS.
 - If you have terminal or tool access, do the setup yourself instead of asking me to copy commands.
 - Use the official installer:
-  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --transport wifi --target http://vibetv.local --theme mini
+  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 - After running it, verify that the setup worked.
 - Only if you cannot run commands yourself, explain exactly what I should do in simple ELI5 language, one small step at a time.
 
@@ -43,7 +43,7 @@ If something fails, troubleshoot in this order:
 - confirm the Vibe TV IP address
 - confirm the Mac is on the same WiFi
 - rerun the installer
-- check the daemon target with --transport wifi --target http://vibetv.local
+- check that the daemon target is http://vibetv.local
 
 If you cannot act directly, do not dump a long checklist. Give me only the next action, wait for the result, and then continue.
 ```

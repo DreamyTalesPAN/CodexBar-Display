@@ -101,7 +101,7 @@ func runWithDeps(ctx context.Context, d deps) error {
 	if config.Transport == "wifi" {
 		fmt.Fprintln(d.stdout, "transport: wifi")
 		if config.Target == "" {
-			fmt.Fprintln(d.stdout, "device target: unavailable (run setup with --transport wifi --target http://vibetv.local)")
+			fmt.Fprintln(d.stdout, "device target: unavailable (rerun setup)")
 		} else {
 			fmt.Fprintf(d.stdout, "device target: %s\n", config.Target)
 		}

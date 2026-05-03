@@ -34,7 +34,7 @@ Your job:
 - Assume I want the standard setup flow on macOS.
 - If you have terminal or tool access, do the setup yourself instead of asking me to copy commands.
 - Use the official installer:
-  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --transport wifi --target http://vibetv.local --theme mini
+  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 - After running it, verify that the setup worked.
 - Only if you cannot run commands yourself, explain exactly what I should do in simple ELI5 language, one small step at a time.
 
@@ -47,7 +47,7 @@ If something fails, troubleshoot in this order:
 - confirm the Vibe TV IP address
 - confirm the Mac is on the same WiFi
 - rerun the installer
-- check the daemon target with --transport wifi --target http://vibetv.local
+- check that the daemon target is http://vibetv.local
 
 If you cannot act directly, do not dump a long checklist. Give me only the next action, wait for the result, and then continue.
 ```
@@ -58,26 +58,20 @@ Open `http://vibetv.local` in your browser and select `Copy Mac Setup Command`.
 Then open Terminal and paste the copied command. It looks like this:
 
 ```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --transport wifi --target http://vibetv.local --theme mini
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 ```
 
-The Web UI also shows the fallback IP if `.local` does not resolve.
+The installer defaults to WiFi, `http://vibetv.local`, and the Mini theme. The Web UI also shows the fallback IP if `.local` does not resolve.
 
-### Firmware update path
+### Update path
 
-If support asks you to update the firmware, run:
+If support asks you to update the Mac Companion, rerun:
 
 ```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --flash-firmware
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 ```
 
-Firmware flashing requires PlatformIO CLI (`pio`). If it is missing, the installer will stop with a recovery hint.
-
-If you need to use a specific serial port, run:
-
-```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --flash-firmware -- --port /dev/cu.usbserial-110
-```
+Firmware updates are handled by support over the Vibe TV web updater. USB flashing is not part of the customer flow.
 
 ## What the Installer Does
 
@@ -87,10 +81,9 @@ The installer handles everything automatically:
 2. It downloads the matching `codexbar-display` version from the latest GitHub release.
 3. It verifies the checksum.
 4. It installs CodexBar if CodexBar is missing.
-5. It runs `codexbar-display setup --yes --skip-flash --transport wifi --target http://vibetv.local --theme mini`.
+5. It runs `codexbar-display setup --yes --skip-flash`.
 6. It starts the background service that sends frames to the Vibe TV IP.
-7. If `--flash-firmware` is passed, it downloads the matching firmware from the GitHub release, verifies it, and flashes the connected device.
-8. It runs a health check at the end.
+7. It runs a health check at the end.
 
 ## What Success Looks Like
 
@@ -117,4 +110,4 @@ If the device is not reachable, unplug power during early boot three times in a 
 
 - The standard setup flow is for macOS.
 - You do not need to flash firmware manually in the standard setup flow.
-- USB-C is used for power in the standard setup flow. USB serial remains available for development and support.
+- USB-C is used for power in the standard setup flow. USB serial is only for development and support.

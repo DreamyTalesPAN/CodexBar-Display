@@ -27,6 +27,8 @@ const (
 	launchAgentLabel      = "com.codexbar-display.daemon"
 	defaultDaemonInterval = "60s"
 	defaultLastGoodMaxAge = "168h"
+	defaultTransport      = "wifi"
+	defaultWiFiTarget     = "http://vibetv.local"
 	codexbarInstallURL    = "https://codexbar.app/"
 	codexbarBrewCask      = "steipete/tap/codexbar"
 )
@@ -42,6 +44,14 @@ type Options struct {
 	Theme         string
 	ValidateOnly  bool
 	DryRun        bool
+}
+
+func DefaultTransport() string {
+	return defaultTransport
+}
+
+func DefaultWiFiTarget() string {
+	return defaultWiFiTarget
 }
 
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
@@ -238,21 +248,24 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 	transportName := normalizeSetupTransport(opts.Transport)
 	if transportName == "" {
-		transportName = "usb"
+		transportName = defaultTransport
 	}
 	if transportName != "usb" && transportName != "wifi" {
 		return &StepError{
 			Step: "validate-transport",
 			Err:  fmt.Errorf("unsupported transport %q", opts.Transport),
-			Hint: "use --transport usb or --transport wifi",
+			Hint: "use --transport wifi or --transport usb",
 		}
 	}
 	target := normalizeSetupTarget(opts.Target)
 	if transportName == "wifi" && target == "" {
+		target = defaultWiFiTarget
+	}
+	if transportName == "wifi" && target == "" {
 		return &StepError{
 			Step: "validate-target",
 			Err:  errors.New("--target is required with --transport wifi"),
-			Hint: "use the IP shown on Vibe TV, for example --target http://192.168.178.66",
+			Hint: "use --target http://vibetv.local or the IP shown on Vibe TV",
 		}
 	}
 	fmt.Fprintf(d.stdout, "Launch agent transport: %s\n", transportName)

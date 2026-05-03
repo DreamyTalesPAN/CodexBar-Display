@@ -408,10 +408,8 @@ String setupPageHTML() {
 String connectedPageHTML() {
   const String ip = WiFi.localIP().toString();
   String setupCommand;
-  setupCommand.reserve(220);
-  setupCommand += "curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --transport wifi --target http://";
-  setupCommand += kMdnsHost;
-  setupCommand += " --theme mini";
+  setupCommand.reserve(120);
+  setupCommand += "curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash";
 
   String html;
   html.reserve(2600);
