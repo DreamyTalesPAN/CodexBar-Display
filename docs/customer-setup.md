@@ -96,6 +96,7 @@ The installer handles everything automatically:
 - `Open Setup` means Vibe TV is on WiFi and is waiting for the Mac Companion setup command.
 - `Check Mac App` means Vibe TV had data before, but no fresh frame arrived for more than two minutes.
 - `Update Mac App` means the Mac Companion can reach Vibe TV, but the usage app needs an update.
+- `Reconnecting WiFi` means Vibe TV lost WiFi and is retrying. If WiFi does not recover, it starts the `VibeTV-Setup` hotspot again.
 - If WiFi sending fails, verify `http://vibetv.local` opens from the Mac. The API check is `http://vibetv.local/hello`.
 - If the IP changed, rerun the installer with the new `--target`.
 - If CodexBar is missing or does not start, run the installer again.
