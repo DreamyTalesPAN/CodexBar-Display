@@ -37,6 +37,8 @@ constexpr size_t kBootRecoveryOffset = kWifiCredsBytes;
 constexpr size_t kBootRecoveryBytes = 5;
 constexpr size_t kEepromBytes = kWifiCredsBytes + kBootRecoveryBytes;
 constexpr unsigned long kWifiConnectTimeoutMs = 20000UL;
+constexpr unsigned long kWifiReconnectRetryMs = 5000UL;
+constexpr unsigned long kWifiReconnectFallbackMs = 120000UL;
 constexpr unsigned long kRebootDelayMs = 750UL;
 constexpr unsigned long kBootRecoveryStableMs = 30000UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
@@ -69,6 +71,9 @@ unsigned long lastFrameAcceptedAtMs = 0;
 bool frameStaleStatusRendered = false;
 bool captiveDnsStarted = false;
 bool mdnsStarted = false;
+unsigned long wifiDisconnectedAtMs = 0;
+unsigned long wifiReconnectAttemptAtMs = 0;
+bool wifiReconnectStatusRendered = false;
 
 String jsonEscape(const String& raw) {
   String escaped;
@@ -102,6 +107,12 @@ String jsonEscape(const String& raw) {
 void drawWaitingForCompanionStatus() {
   renderer.DrawConnectedSetupInstructions(runtimeCtx, kMdnsHost);
   waitStatusRendered = true;
+}
+
+void resetWifiReconnectState() {
+  wifiDisconnectedAtMs = 0;
+  wifiReconnectAttemptAtMs = 0;
+  wifiReconnectStatusRendered = false;
 }
 
 void startMdnsResponder(const IPAddress& address) {
@@ -967,6 +978,7 @@ void startHttpServer() {
 
 void startSetupAccessPoint() {
   setupMode = true;
+  resetWifiReconnectState();
   scanSetupNetworks();
   WiFi.mode(WIFI_AP);
   WiFi.softAP(kSetupApSsid);
@@ -978,6 +990,49 @@ void startSetupAccessPoint() {
   waitStatusRendered = true;
   startHttpServer();
   startMdnsResponder(WiFi.softAPIP());
+}
+
+void maintainWifiConnection() {
+  if (setupMode || rebootPending) {
+    return;
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    if (wifiDisconnectedAtMs != 0) {
+      Serial.printf("wifi_reconnected ip=%s\n", WiFi.localIP().toString().c_str());
+      drawWaitingForCompanionStatus();
+    }
+    resetWifiReconnectState();
+    return;
+  }
+
+  const unsigned long nowMs = millis();
+  if (wifiDisconnectedAtMs == 0) {
+    wifiDisconnectedAtMs = nowMs;
+    wifiReconnectAttemptAtMs = 0;
+    Serial.printf("wifi_disconnected status=%d fallback_ms=%lu\n",
+                  static_cast<int>(WiFi.status()),
+                  kWifiReconnectFallbackMs);
+  }
+
+  if (!wifiReconnectStatusRendered) {
+    renderer.DrawStatus(runtimeCtx, "VIBE TV", "Reconnecting WiFi", "Please wait");
+    wifiReconnectStatusRendered = true;
+  }
+
+  if (wifiReconnectAttemptAtMs == 0 || (nowMs - wifiReconnectAttemptAtMs) >= kWifiReconnectRetryMs) {
+    wifiReconnectAttemptAtMs = nowMs;
+    WiFi.reconnect();
+    Serial.printf("wifi_reconnect_attempt status=%d elapsed_ms=%lu\n",
+                  static_cast<int>(WiFi.status()),
+                  nowMs - wifiDisconnectedAtMs);
+  }
+
+  if ((nowMs - wifiDisconnectedAtMs) >= kWifiReconnectFallbackMs) {
+    Serial.println("wifi_reconnect_failed action=setup_ap");
+    renderer.DrawStatus(runtimeCtx, "VIBE TV SETUP", "WiFi unavailable", "Starting setup");
+    delay(750);
+    startSetupAccessPoint();
+  }
 }
 
 #ifdef CODEXBAR_DISPLAY_RUNTIME_BENCH
@@ -1066,6 +1121,8 @@ void loop() {
   if (codexbar_display::app::ConsumeSerial(runtimeCtx, true, millis(), event)) {
     markFrameAccepted(event, "usb");
   }
+
+  maintainWifiConnection();
 
   if (codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&

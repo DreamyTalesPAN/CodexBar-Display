@@ -43,6 +43,7 @@ Companion negotiation:
 - Connected devices expose `http://vibetv.local` with mDNS, show/log the fallback IP, serve a local setup hub with a copyable Mac setup command, and wait for the Mac Companion.
 - Companion runtime defaults to WiFi with `http://vibetv.local`; explicit device IPs remain supported when `.local` does not resolve.
 - Saved WiFi credentials can be cleared from the local web UI with `POST /reset-wifi`.
+- If a connected device loses WiFi, it retries in station mode first. After a persistent outage it starts `VibeTV-Setup` again so the user can choose a different network.
 - If the device is not reachable on WiFi, three interrupted early boots clear saved WiFi credentials and return the device to `VibeTV-Setup`.
 - Generic theme assets can be managed over WiFi with `GET /assets`, `POST /assets?path=...`, and `DELETE /assets?path=...`.
 
