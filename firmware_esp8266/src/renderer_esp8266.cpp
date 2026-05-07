@@ -216,7 +216,10 @@ void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const Stri
 #endif
 }
 
-void RendererESP8266::DrawConnectedSetupInstructions(app::RuntimeContext& ctx, const String& ip) {
+void RendererESP8266::DrawConnectedSetupInstructions(
+    app::RuntimeContext& ctx,
+    const String& host,
+    const String& fallbackIp) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   display::StopMiniGifPlayback();
@@ -229,16 +232,21 @@ void RendererESP8266::DrawConnectedSetupInstructions(app::RuntimeContext& ctx, c
   const char* title = "VIBE TV";
   const char* action = "Open this address";
   const char* detail = "in your browser";
+  const char* fallback = "Fallback IP:";
   const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
-  const int ipSize = display::ChooseTextSizeToFit(ip.c_str(), 3, 2, tft.width() - 8);
+  const int hostSize = display::ChooseTextSizeToFit(host.c_str(), 3, 2, tft.width() - 8);
   const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);
   const int detailSize = display::ChooseTextSizeToFit(detail, 2, 1, tft.width() - 14);
+  const int fallbackSize = display::ChooseTextSizeToFit(fallback, 2, 1, tft.width() - 14);
+  const int fallbackIpSize = display::ChooseTextSizeToFit(fallbackIp.c_str(), 2, 1, tft.width() - 8);
 
   const int totalH =
       display::TextPixelHeight(titleSize) + 12 +
       display::TextPixelHeight(actionSize) + 4 +
       display::TextPixelHeight(detailSize) + 8 +
-      display::TextPixelHeight(ipSize);
+      display::TextPixelHeight(hostSize) + 10 +
+      display::TextPixelHeight(fallbackSize) + 4 +
+      display::TextPixelHeight(fallbackIpSize);
   int y = (tft.height() - totalH) / 2;
   if (y < 6) {
     y = 6;
@@ -262,17 +270,29 @@ void RendererESP8266::DrawConnectedSetupInstructions(app::RuntimeContext& ctx, c
   tft.print(detail);
 
   y += display::TextPixelHeight(detailSize) + 8;
-  display::SetClassicTextSize(ipSize);
+  display::SetClassicTextSize(hostSize);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(ip.c_str(), ipSize), y);
-  tft.print(ip);
+  tft.setCursor(display::CenteredTextX(host.c_str(), hostSize), y);
+  tft.print(host);
+
+  y += display::TextPixelHeight(hostSize) + 10;
+  display::SetClassicTextSize(fallbackSize);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(fallback, fallbackSize), y);
+  tft.print(fallback);
+
+  y += display::TextPixelHeight(fallbackSize) + 4;
+  display::SetClassicTextSize(fallbackIpSize);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(fallbackIp.c_str(), fallbackIpSize), y);
+  tft.print(fallbackIp);
 
   ctx.lastRenderedSecs = -1;
   ctx.lastRenderedMinuteBucket = -1;
   ctx.screenDirty = false;
 #else
   (void)ctx;
-  Serial.printf("probe_connected_setup ip=%s\n", ip.c_str());
+  Serial.printf("probe_connected_setup host=%s fallback_ip=%s\n", host.c_str(), fallbackIp.c_str());
 #endif
 }
 

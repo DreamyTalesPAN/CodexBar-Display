@@ -17,7 +17,7 @@ Vibe TV ships with firmware installed. USB debugging and manual firmware flashin
 3. Join `VibeTV-Setup` from your Mac or phone.
 4. If your device opens a setup browser automatically, use it. Otherwise open `http://vibetv.local`. If that does not load, open `http://192.168.4.1`.
 5. Select your home WiFi, enter the password, and save.
-6. Vibe TV restarts and connects to your WiFi. The display shows `Open Setup` and `vibetv.local`.
+6. Vibe TV restarts and connects to your WiFi. The display shows `vibetv.local` plus a fallback IP address.
 
 ## Install the Mac Companion
 
@@ -54,7 +54,7 @@ If you cannot act directly, do not dump a long checklist. Give me only the next 
 
 ### Alternative: run the installer directly
 
-Open `http://vibetv.local` in your browser and select `Copy Mac Setup Command`.
+Open `http://vibetv.local` in your browser. If that does not load, use the fallback IP shown on the Vibe TV display. Then select `Copy Mac Setup Command`.
 Then open Terminal and paste the copied command. It looks like this:
 
 ```bash
