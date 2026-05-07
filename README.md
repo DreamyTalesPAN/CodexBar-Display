@@ -11,8 +11,8 @@ Vibe TV ships ready for WiFi setup.
 2. Join the `VibeTV-Setup` WiFi hotspot from your Mac or phone.
 3. If your device opens a setup browser automatically, use it. Otherwise open `http://vibetv.local`. If that does not load, open `http://192.168.4.1`.
 4. Choose your home WiFi, enter the password, and save.
-5. After Vibe TV restarts, the display shows `Open Setup` and `vibetv.local`.
-6. Open `http://vibetv.local` in your browser and select `Copy Mac Setup Command`.
+5. After Vibe TV restarts, the display shows `vibetv.local` plus a fallback IP address.
+6. Open `http://vibetv.local` in your browser. If that does not load, use the fallback IP shown on the display. Then select `Copy Mac Setup Command`.
 7. Open Terminal (on Mac: Cmd + Space, type Terminal, hit enter), paste the copied command, and press Enter.
 
 ```bash

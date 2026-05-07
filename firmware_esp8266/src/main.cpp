@@ -105,7 +105,7 @@ String jsonEscape(const String& raw) {
 }
 
 void drawWaitingForCompanionStatus() {
-  renderer.DrawConnectedSetupInstructions(runtimeCtx, kMdnsHost);
+  renderer.DrawConnectedSetupInstructions(runtimeCtx, kMdnsHost, WiFi.localIP().toString());
   waitStatusRendered = true;
 }
 

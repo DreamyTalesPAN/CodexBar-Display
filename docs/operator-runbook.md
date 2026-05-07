@@ -184,7 +184,7 @@ Per device:
 - confirm `/health`, `/hello`, `/assets`, LittleFS upload, and the `mini` smoke frame pass
 
 During normal operation the display uses explicit support states:
-- `Open Setup`: WiFi is connected and the device is waiting for the Mac Companion setup command. `vibetv.local` is shown on-screen; the local Web UI also shows the fallback IP.
+- `Open Setup`: WiFi is connected and the device is waiting for the Mac Companion setup command. `vibetv.local` and the fallback IP are shown on-screen; the local Web UI also shows the fallback IP.
 - `Check Mac App`: the device previously had data, but no fresh frame arrived for more than two minutes.
 - `Update Mac App`: the Companion reported an incompatible usage app version or payload format.
 
