@@ -1,4 +1,4 @@
-# Firmware Architecture Guardrails (USB-first v2)
+# Firmware Architecture Guardrails (WiFi runtime v2)
 
 Goal: keep firmware transport/theme evolution modular and prevent monolith regressions.
 

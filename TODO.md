@@ -10,7 +10,7 @@
 
 - [x] Fresh customer install via `install.sh` works on macOS arm64.
 - [x] CodexBar is installed automatically when needed.
-- [x] The setup flow auto-detects the USB port.
+- [x] The standard setup flow defaults to WiFi and does not require USB data.
 - [x] The LaunchAgent starts automatically after setup.
 - [x] The device receives frames automatically after setup.
 - [x] `./scripts/smoke-daemon-sent-frame.sh` is green.

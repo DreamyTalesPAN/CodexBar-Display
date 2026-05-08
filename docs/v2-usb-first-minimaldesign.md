@@ -1,11 +1,14 @@
-# v2 USB-first Minimaldesign
+# v2 Transport Minimaldesign
+
+Historical note: this document started during the USB-first transition. The
+standard Vibe TV customer runtime now uses WiFi for data and USB-C for power.
 
 This document captures the transport-agnostic architecture baseline introduced for issue `#41`.
 
 ## Architecture Summary
 - Companion runtime now has an explicit transport boundary via `companion/internal/transport`.
-- Current concrete adapter: `USBTransport` (`ResolvePort`, `DeviceCapabilities`, `SendLine`).
-- Future channels (WiFi/cloud relay) can implement the same interface without changing daemon frame selection logic.
+- Concrete adapters: `USBTransport` and `WiFiTransport` implement the same
+  transport boundary without changing daemon frame selection logic.
 
 ## Protocol Handshake + Negotiation
 - Device hello advertises:
@@ -38,8 +41,6 @@ This document captures the transport-agnostic architecture baseline introduced f
 - ESP8266 adapter exposes primitive operations through `renderer_esp8266_display_state.*`.
 - Built-in theme rendering now routes screen clears/rect fills/progress bars through the primitive layer.
 
-## Non-goals in this step
-- No WiFi protocol implementation.
+## Non-goals in the original step
 - No hosted/cloud backend.
-- No network OTA.
 - No user-code execution on firmware.
