@@ -200,13 +200,17 @@ void DrawMiniGifPlaceholder() {
     return;
   }
 
-  if (!GifCore().IsCurrentAssetPresent(kMiniGifPath)) {
+  const GifCoreStatusSnapshot status = GifCore().StatusSnapshot();
+  const bool missing = !GifCore().IsCurrentAssetPresent(kMiniGifPath);
+  const bool failed = status.activePath == kMiniGifPath && status.lastErrorStage.length() > 0;
+  if (missing || failed) {
+    const char* label = failed ? "GIF Fehler" : "Theme fehlt";
     PrimitiveFillRect(x, y, boxW, boxH, kMiniPanel);
     tft.setTextFont(1);
     tft.setTextSize(1);
     tft.setTextColor(kMiniMuted, kMiniPanel);
-    tft.setCursor(x + ((boxW - TextPixelWidth("Theme fehlt", 1)) / 2), y + ((boxH - TextPixelHeight(1)) / 2));
-    tft.print("Theme fehlt");
+    tft.setCursor(x + ((boxW - TextPixelWidth(label, 1)) / 2), y + ((boxH - TextPixelHeight(1)) / 2));
+    tft.print(label);
   }
 }
 

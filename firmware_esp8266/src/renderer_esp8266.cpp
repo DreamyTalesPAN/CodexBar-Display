@@ -10,6 +10,24 @@
 namespace codexbar_display {
 namespace esp8266 {
 
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+namespace {
+
+const char* themeName(Theme theme) {
+  switch (theme) {
+    case Theme::Mini:
+      return "mini";
+    case Theme::CRT:
+      return "crt";
+    case Theme::Classic:
+    default:
+      return "classic";
+  }
+}
+
+}  // namespace
+#endif
+
 void RendererESP8266::Setup(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
@@ -23,6 +41,34 @@ void RendererESP8266::Setup(app::RuntimeContext& ctx) {
   display::GifCore().Setup(display::MiniGifAssetPath());
 #else
   probe::Setup(ctx);
+#endif
+}
+
+RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
+  RendererDebugSnapshot snapshot;
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  snapshot.activeTheme = themeName(display::ActiveTheme());
+  const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
+  snapshot.gifActivePath = gif.activePath;
+  snapshot.gifFilePresent = gif.filePresent;
+  snapshot.gifFileOpen = gif.fileOpen;
+  snapshot.gifDecoderOpen = gif.decoderOpen;
+  snapshot.gifBlocked = gif.blocked;
+  snapshot.gifConsecutiveFailures = gif.consecutiveFailures;
+  snapshot.gifBackoffRemainingMs = gif.backoffRemainingMs;
+  snapshot.gifLastErrorPath = gif.lastErrorPath;
+  snapshot.gifLastErrorStage = gif.lastErrorStage;
+  snapshot.gifLastErrorFailures = gif.lastErrorFailures;
+  snapshot.gifLastErrorAgeMs = gif.lastErrorAgeMs;
+#else
+  snapshot.activeTheme = "probe";
+#endif
+  return snapshot;
+}
+
+void RendererESP8266::ResetGifStateForAssetUpdate() {
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  display::GifCore().ResetForAssetUpdate();
 #endif
 }
 
@@ -157,7 +203,6 @@ void RendererESP8266::DrawStatus(
 
 void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const String& ssid, const String& address) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
-  (void)address;
   display::AttachContext(ctx);
   display::StopMiniGifPlayback();
 
@@ -167,18 +212,20 @@ void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const Stri
   tft.setTextFont(1);
 
   const char* title = "VIBE TV SETUP";
-  const char* action = "Connect to";
-  const char* detail = "this WiFi:";
+  const char* action = "Join WiFi:";
+  const char* detail = "Open:";
   const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
   const int ssidSize = display::ChooseTextSizeToFit(ssid.c_str(), 3, 2, tft.width() - 8);
   const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);
   const int detailSize = display::ChooseTextSizeToFit(detail, 2, 1, tft.width() - 14);
+  const int addressSize = display::ChooseTextSizeToFit(address.c_str(), 2, 1, tft.width() - 8);
 
   const int totalH =
       display::TextPixelHeight(titleSize) + 14 +
       display::TextPixelHeight(actionSize) + 4 +
-      display::TextPixelHeight(detailSize) + 8 +
-      display::TextPixelHeight(ssidSize);
+      display::TextPixelHeight(ssidSize) + 10 +
+      display::TextPixelHeight(detailSize) + 4 +
+      display::TextPixelHeight(addressSize);
   int y = (tft.height() - totalH) / 2;
   if (y < 6) {
     y = 6;
@@ -196,16 +243,22 @@ void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const Stri
   tft.print(action);
 
   y += display::TextPixelHeight(actionSize) + 4;
+  display::SetClassicTextSize(ssidSize);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(ssid.c_str(), ssidSize), y);
+  tft.print(ssid);
+
+  y += display::TextPixelHeight(ssidSize) + 10;
   display::SetClassicTextSize(detailSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(detail, detailSize), y);
   tft.print(detail);
 
-  y += display::TextPixelHeight(detailSize) + 8;
-  display::SetClassicTextSize(ssidSize);
+  y += display::TextPixelHeight(detailSize) + 4;
+  display::SetClassicTextSize(addressSize);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(ssid.c_str(), ssidSize), y);
-  tft.print(ssid);
+  tft.setCursor(display::CenteredTextX(address.c_str(), addressSize), y);
+  tft.print(address);
 
   ctx.lastRenderedSecs = -1;
   ctx.lastRenderedMinuteBucket = -1;
@@ -229,10 +282,10 @@ void RendererESP8266::DrawConnectedSetupInstructions(
   tft.setTextWrap(false);
   tft.setTextFont(1);
 
-  const char* title = "VIBE TV";
-  const char* action = "Open this address";
-  const char* detail = "in your browser";
-  const char* fallback = "Fallback IP:";
+  const char* title = "VIBE TV READY";
+  const char* action = "Open Setup";
+  const char* detail = "Browser:";
+  const char* fallback = "IP:";
   const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
   const int hostSize = display::ChooseTextSizeToFit(host.c_str(), 3, 2, tft.width() - 8);
   const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);
@@ -242,7 +295,7 @@ void RendererESP8266::DrawConnectedSetupInstructions(
 
   const int totalH =
       display::TextPixelHeight(titleSize) + 12 +
-      display::TextPixelHeight(actionSize) + 4 +
+      display::TextPixelHeight(actionSize) + 10 +
       display::TextPixelHeight(detailSize) + 8 +
       display::TextPixelHeight(hostSize) + 10 +
       display::TextPixelHeight(fallbackSize) + 4 +
@@ -263,7 +316,7 @@ void RendererESP8266::DrawConnectedSetupInstructions(
   tft.setCursor(display::CenteredTextX(action, actionSize), y);
   tft.print(action);
 
-  y += display::TextPixelHeight(actionSize) + 4;
+  y += display::TextPixelHeight(actionSize) + 10;
   display::SetClassicTextSize(detailSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(detail, detailSize), y);

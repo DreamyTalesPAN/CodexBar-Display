@@ -51,6 +51,20 @@ void GifCoreESP8266::ResetFrameSchedule() {
   nextFrameAtMs_ = 0;
 }
 
+void GifCoreESP8266::ResetForAssetUpdate() {
+  Stop();
+  fsMounted_ = false;
+  filePresent_ = false;
+  assetPath_ = "";
+  lastErrorPath_ = "";
+  lastErrorStage_ = "";
+  lastErrorFailures_ = 0;
+  lastFailureAtMs_ = 0;
+  for (uint8_t i = 0; i < kFailureGuardSlots; ++i) {
+    guards_[i] = GifFailureGuard();
+  }
+}
+
 GifCoreESP8266::GifFailureGuard& GifCoreESP8266::GuardForSlot(GifFailureSlot slot) {
   uint8_t idx = static_cast<uint8_t>(slot);
   if (idx >= kFailureGuardSlots) {
@@ -71,6 +85,10 @@ void GifCoreESP8266::NoteFailure(GifFailureSlot slot, const char* path, const ch
                                             ? static_cast<unsigned int>(
                                                   failuresBefore + (failuresBefore < 255 ? 1 : 0))
                                             : static_cast<unsigned int>(guard.consecutiveFailures);
+  lastErrorPath_ = path;
+  lastErrorStage_ = stage != nullptr ? stage : "unknown";
+  lastErrorFailures_ = reportedFailures;
+  lastFailureAtMs_ = millis();
 
   Serial.printf(
       "gif_playback_failure path=%s stage=%s failures=%u\n",
@@ -91,6 +109,10 @@ void GifCoreESP8266::NoteSuccess(GifFailureSlot slot, const char* path) {
   }
   GifFailureGuard& guard = GuardForSlot(slot);
   GifCorePolicy::RecordSuccess(guard);
+  lastErrorPath_ = "";
+  lastErrorStage_ = "";
+  lastErrorFailures_ = 0;
+  lastFailureAtMs_ = 0;
 }
 
 bool GifCoreESP8266::IsBlocked(GifFailureSlot slot, const char* path) {
@@ -300,6 +322,32 @@ bool GifCoreESP8266::IsCurrentAssetPresent(const char* assetPath) const {
     return false;
   }
   return filePresent_;
+}
+
+GifCoreStatusSnapshot GifCoreESP8266::StatusSnapshot() const {
+  GifCoreStatusSnapshot snapshot;
+  snapshot.activePath = assetPath_;
+  snapshot.fsMounted = fsMounted_;
+  snapshot.filePresent = filePresent_;
+  snapshot.fileOpen = static_cast<bool>(file_);
+  snapshot.decoderOpen = decoderOpen_;
+  snapshot.lastErrorPath = lastErrorPath_;
+  snapshot.lastErrorStage = lastErrorStage_;
+  snapshot.lastErrorFailures = lastErrorFailures_;
+
+  const unsigned long now = millis();
+  const GifFailureGuard& guard = guards_[static_cast<uint8_t>(failureSlot_) < kFailureGuardSlots
+                                             ? static_cast<uint8_t>(failureSlot_)
+                                             : 0];
+  snapshot.consecutiveFailures = guard.consecutiveFailures;
+  if (guard.backoffUntilMs != 0 && static_cast<long>(now - guard.backoffUntilMs) < 0) {
+    snapshot.blocked = true;
+    snapshot.backoffRemainingMs = guard.backoffUntilMs - now;
+  }
+  if (lastFailureAtMs_ != 0) {
+    snapshot.lastErrorAgeMs = now - lastFailureAtMs_;
+  }
+  return snapshot;
 }
 
 void* GifCoreESP8266::OpenCallback(const char* filename, int32_t* fileSize) {

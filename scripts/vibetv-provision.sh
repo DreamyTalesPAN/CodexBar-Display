@@ -29,11 +29,24 @@ skip_asset_check=0
 skip_smoke=0
 dry_run=0
 assume_yes=0
-allow_reboot_close=0
+allow_reboot_close=1
 poll_timeout_secs=120
 poll_interval_secs=3
 curl_timeout_secs=30
+upload_timeout_secs=90
+filesystem_upload_timeout_secs=300
 required_assets=("/mini.gif")
+current_stage="startup"
+last_upload_result=""
+failure_reported=0
+
+report_unhandled_failure() {
+  local status=$?
+  if [[ "$status" -ne 0 && "${failure_reported:-0}" != "1" ]]; then
+    printf 'provision: FAIL stage=%s exit=%s\n' "$current_stage" "$status" >&2
+  fi
+}
+trap report_unhandled_failure EXIT
 
 usage() {
   cat <<'EOF'
@@ -44,8 +57,8 @@ Usage:
 
 Builds firmware.bin + littlefs.bin, writes an OTA package with SHA-256 checksums,
 uploads firmware to the GeekMagic manufacturer updater, waits for VibeTV firmware,
-uploads LittleFS to the VibeTV updater, checks /health and /hello, then sends
-a mini theme test frame.
+uploads LittleFS to the VibeTV updater, checks /health, /hello, and /assets,
+verifies required theme asset bytes + SHA-256, then sends a mini theme test frame.
 
 Commands:
   build                 Build and package artifacts only.
@@ -94,6 +107,13 @@ Flow toggles:
   --skip-asset-check    Do not require theme assets to be visible through /assets.
   --skip-smoke          Do not send the mini test frame.
   --allow-reboot-close  Treat curl exit 52/56 during OTA as a reboot close.
+                        This is the default; post-upload checks still decide pass/fail.
+  --strict-upload-response
+                        Fail immediately on curl exit 52/56 instead of classifying it
+                        as a reboot-related connection close.
+  --upload-timeout SECS Upload timeout for firmware OTA requests. Default: 90.
+  --filesystem-upload-timeout SECS
+                        Upload timeout for LittleFS OTA requests. Default: 300.
   --require-asset PATH  Require an asset path in /assets after flashing.
                         Repeatable. Default: /mini.gif.
 
@@ -107,6 +127,8 @@ EOF
 }
 
 die() {
+  failure_reported=1
+  printf 'provision: FAIL stage=%s\n' "$current_stage" >&2
   printf 'error: %s\n' "$*" >&2
   exit 1
 }
@@ -119,6 +141,15 @@ require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     die "missing required command: $1"
   fi
+}
+
+normalize_asset_path() {
+  local path="$1"
+  [[ -n "$path" ]] || die "asset path must not be empty"
+  if [[ "$path" != /* ]]; then
+    path="/${path}"
+  fi
+  printf '%s\n' "$path"
 }
 
 normalize_target() {
@@ -159,6 +190,34 @@ json_escape() {
   sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+lower_ascii() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+build_theme_assets_json() {
+  local assets_json="[]"
+  local asset normalized rel src bytes sha
+
+  for asset in "${required_assets[@]}"; do
+    normalized="$(normalize_asset_path "$asset")"
+    rel="${normalized#/}"
+    src="${project_dir}/data/${rel}"
+    [[ -f "$src" ]] || die "required theme asset not found in data dir: ${src}"
+    bytes="$(wc -c <"$src" | tr -d ' ')"
+    [[ "$bytes" -gt 0 ]] || die "required theme asset is empty: ${src}"
+    sha="$(sha256_file "$src")"
+    assets_json="$(jq -c \
+      --arg path "$normalized" \
+      --arg file "data/${rel}" \
+      --arg sha "$sha" \
+      --argjson bytes "$bytes" \
+      '. + [{"path":$path,"file":$file,"bytes":$bytes,"sha256":$sha,"required":true}] | unique_by(.path)' \
+      <<<"$assets_json")"
+  done
+
+  printf '%s\n' "$assets_json"
+}
+
 confirm_destructive() {
   if [[ "$dry_run" == "1" || "$assume_yes" == "1" ]]; then
     return
@@ -184,6 +243,11 @@ run_or_print() {
   "$@"
 }
 
+is_reboot_close_status() {
+  local status="$1"
+  [[ "$status" -eq 52 || "$status" -eq 56 ]]
+}
+
 ensure_package_dir() {
   if [[ -n "$package_dir" ]]; then
     return
@@ -192,8 +256,10 @@ ensure_package_dir() {
 }
 
 build_package() {
+  current_stage="build package"
   require_cmd pio
   require_cmd shasum
+  require_cmd jq
   ensure_package_dir
 
   [[ -d "$project_dir" ]] || die "project dir not found: $project_dir"
@@ -212,16 +278,13 @@ build_package() {
   cp "$firmware_src" "$(artifact_path firmware.bin)"
   cp "$littlefs_src" "$(artifact_path littlefs.bin)"
 
-  local firmware_sha littlefs_sha git_commit created_utc
+  local firmware_sha littlefs_sha manifest_sha git_commit created_utc theme_assets_json required_asset_paths_json
   firmware_sha="$(sha256_file "$(artifact_path firmware.bin)")"
   littlefs_sha="$(sha256_file "$(artifact_path littlefs.bin)")"
   git_commit="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
   created_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-  {
-    printf '%s  firmware.bin\n' "$firmware_sha"
-    printf '%s  littlefs.bin\n' "$littlefs_sha"
-  } >"$(artifact_path SHA256SUMS)"
+  theme_assets_json="$(build_theme_assets_json)"
+  required_asset_paths_json="$(jq -c '[.[].path]' <<<"$theme_assets_json")"
 
   local escaped_env escaped_commit escaped_created
   escaped_env="$(printf '%s' "$env_name" | json_escape)"
@@ -238,9 +301,20 @@ build_package() {
       "$firmware_sha" "$(wc -c <"$(artifact_path firmware.bin)" | tr -d ' ')"
     printf '    "filesystem": {"file": "littlefs.bin", "sha256": "%s", "bytes": %s}\n' \
       "$littlefs_sha" "$(wc -c <"$(artifact_path littlefs.bin)" | tr -d ' ')"
-    printf '  }\n'
+    printf '  },\n'
+    printf '  "themeAssets": %s,\n' "$theme_assets_json"
+    printf '  "themePacks": [\n'
+    printf '    {"id": "mini", "requiredAssets": %s}\n' "$required_asset_paths_json"
+    printf '  ]\n'
     printf '}\n'
   } >"$(artifact_path manifest.json)"
+
+  manifest_sha="$(sha256_file "$(artifact_path manifest.json)")"
+  {
+    printf '%s  firmware.bin\n' "$firmware_sha"
+    printf '%s  littlefs.bin\n' "$littlefs_sha"
+    printf '%s  manifest.json\n' "$manifest_sha"
+  } >"$(artifact_path SHA256SUMS)"
 
   log "package: ${package_dir}"
   log "checksums:"
@@ -248,12 +322,18 @@ build_package() {
 }
 
 verify_package() {
+  current_stage="verify package"
   require_cmd shasum
+  require_cmd jq
   [[ -n "$package_dir" ]] || die "--package-dir is required with flash or --skip-build"
   [[ -f "$(artifact_path firmware.bin)" ]] || die "missing package artifact: $(artifact_path firmware.bin)"
   [[ -f "$(artifact_path littlefs.bin)" ]] || die "missing package artifact: $(artifact_path littlefs.bin)"
   [[ -f "$(artifact_path SHA256SUMS)" ]] || die "missing package checksum file: $(artifact_path SHA256SUMS)"
+  [[ -f "$(artifact_path manifest.json)" ]] || die "missing package manifest: $(artifact_path manifest.json)"
   (cd "$package_dir" && shasum -a 256 -c SHA256SUMS)
+  jq -e '.kind == "vibetv-ota-package" and (.themeAssets | type == "array") and (.themeAssets | length > 0)' \
+    "$(artifact_path manifest.json)" >/dev/null ||
+    die "package manifest does not contain themeAssets metadata"
 }
 
 curl_get() {
@@ -338,7 +418,10 @@ check_hello() {
     log "dry-run: would read hello ${url}"
     return 0
   fi
-  curl_get "$url" >"$body_file"
+  curl_get "$url" >"$body_file" || {
+    rm -f "$body_file"
+    die "hello check request failed"
+  }
   if [[ -n "$expect_board" ]] && ! grep -F "$expect_board" "$body_file" >/dev/null 2>&1; then
     log "hello response:" >&2
     sed 's/^/  /' "$body_file" >&2
@@ -352,7 +435,10 @@ check_hello() {
 
 check_assets() {
   local url="$1"
+  local require_runtime_assets="${2:-1}"
   local body_file="/tmp/vibetv-provision-assets.$$"
+  local expected_file="/tmp/vibetv-provision-expected-assets.$$"
+  local sorted_expected_file="/tmp/vibetv-provision-expected-assets-sorted.$$"
   if [[ "$skip_asset_check" == "1" ]]; then
     log "skip: asset check"
     return 0
@@ -362,30 +448,83 @@ check_assets() {
     return 0
   fi
 
-  curl_get "$url" >"$body_file"
-  if ! grep -F '"mounted":true' "$body_file" >/dev/null 2>&1; then
+  curl_get "$url" >"$body_file" || {
+    rm -f "$body_file"
+    die "asset verification request failed"
+  }
+  if [[ "$require_runtime_assets" != "1" ]]; then
+    log "assets endpoint:"
+    sed 's/^/  /' "$body_file"
+    rm -f "$body_file"
+    return 0
+  fi
+
+  if ! jq -e '.filesystem.mounted == true' "$body_file" >/dev/null 2>&1; then
     log "assets response:" >&2
     sed 's/^/  /' "$body_file" >&2
     rm -f "$body_file"
     die "filesystem is not mounted according to /assets"
   fi
 
-  local asset
+  : >"$expected_file"
+  jq -r '.themeAssets[] | select(.required != false) | [.path, (.bytes | tostring), (.sha256 // "")] | @tsv' \
+    "$(artifact_path manifest.json)" >>"$expected_file"
+
+  local asset normalized
   for asset in "${required_assets[@]}"; do
     if [[ -z "$asset" ]]; then
       continue
     fi
-    if ! grep -F "\"path\":\"${asset}\"" "$body_file" >/dev/null 2>&1; then
+    normalized="$(normalize_asset_path "$asset")"
+    printf '%s\t\t\n' "$normalized" >>"$expected_file"
+  done
+  sort -u "$expected_file" >"$sorted_expected_file"
+
+  local expected_path expected_bytes expected_sha asset_metadata actual_bytes actual_sha
+  while IFS=$'\t' read -r expected_path expected_bytes expected_sha; do
+    if [[ -z "$expected_path" ]]; then
+      continue
+    fi
+    if ! asset_metadata="$(jq -er --arg path "$expected_path" \
+      'first(.assets[]? | select(.path == $path) | [(.sizeBytes // -1), (.sha256 // "")] | @tsv) // empty' \
+      "$body_file" 2>/dev/null)"; then
       log "assets response:" >&2
       sed 's/^/  /' "$body_file" >&2
-      rm -f "$body_file"
-      die "required asset missing from /assets: ${asset}"
+      rm -f "$body_file" "$expected_file" "$sorted_expected_file"
+      die "required asset missing from /assets: ${expected_path}"
     fi
-  done
+    IFS=$'\t' read -r actual_bytes actual_sha <<<"$asset_metadata"
+    if [[ ! "$actual_bytes" =~ ^[0-9]+$ || "$actual_bytes" -le 0 ]]; then
+      log "assets response:" >&2
+      sed 's/^/  /' "$body_file" >&2
+      rm -f "$body_file" "$expected_file" "$sorted_expected_file"
+      die "required asset has invalid or zero size: ${expected_path}"
+    fi
+    if [[ -n "$expected_bytes" && "$actual_bytes" != "$expected_bytes" ]]; then
+      log "assets response:" >&2
+      sed 's/^/  /' "$body_file" >&2
+      rm -f "$body_file" "$expected_file" "$sorted_expected_file"
+      die "required asset size mismatch: ${expected_path} expected=${expected_bytes} actual=${actual_bytes}"
+    fi
+    if [[ -n "$expected_sha" ]]; then
+      if [[ -z "$actual_sha" || "$actual_sha" == "null" ]]; then
+        log "assets response:" >&2
+        sed 's/^/  /' "$body_file" >&2
+        rm -f "$body_file" "$expected_file" "$sorted_expected_file"
+        die "required asset missing sha256 metadata: ${expected_path}"
+      fi
+      if [[ "$(lower_ascii "$actual_sha")" != "$(lower_ascii "$expected_sha")" ]]; then
+        log "assets response:" >&2
+        sed 's/^/  /' "$body_file" >&2
+        rm -f "$body_file" "$expected_file" "$sorted_expected_file"
+        die "required asset sha256 mismatch: ${expected_path} expected=${expected_sha} actual=${actual_sha}"
+      fi
+    fi
+  done <"$sorted_expected_file"
 
   log "assets:"
   sed 's/^/  /' "$body_file"
-  rm -f "$body_file"
+  rm -f "$body_file" "$expected_file" "$sorted_expected_file"
 }
 
 upload_multipart() {
@@ -393,29 +532,86 @@ upload_multipart() {
   local url="$2"
   local field="$3"
   local file="$4"
+  local timeout_secs="${5:-$upload_timeout_secs}"
+  local response_file="/tmp/vibetv-provision-upload-response.$$"
+  local error_file="/tmp/vibetv-provision-upload-error.$$"
   [[ -f "$file" ]] || die "${label} file not found: $file"
+  current_stage="upload: ${label}"
+  last_upload_result=""
 
   log "upload: ${label} -> ${url} field=${field} file=${file}"
   if [[ "$dry_run" == "1" ]]; then
     printf 'dry-run: curl -fsS --connect-timeout 5 --max-time %q -X POST -F %q %q\n' \
-      "$curl_timeout_secs" "${field}=@${file}" "$url"
+      "$timeout_secs" "${field}=@${file}" "$url"
+    last_upload_result="dry-run"
     return 0
   fi
 
   set +e
-  curl -fsS --connect-timeout 5 --max-time "$curl_timeout_secs" \
-    -X POST -F "${field}=@${file};filename=$(basename "$file")" "$url"
+  curl -fsS --connect-timeout 5 --max-time "$timeout_secs" \
+    -X POST -F "${field}=@${file};filename=$(basename "$file")" "$url" \
+    >"$response_file" 2>"$error_file"
   local status=$?
   set -e
-  printf '\n'
   if [[ "$status" -eq 0 ]]; then
+    last_upload_result="http-response"
+    if [[ -s "$response_file" ]]; then
+      log "upload: ${label} HTTP response:"
+      sed 's/^/  /' "$response_file"
+    fi
+    rm -f "$response_file" "$error_file"
+    log "upload: ${label} HTTP response received; continuing with post-upload checks"
     return 0
   fi
-  if [[ "$allow_reboot_close" == "1" && ( "$status" -eq 52 || "$status" -eq 56 ) ]]; then
-    log "upload: ${label} curl status ${status}; treating as reboot close"
+  if [[ "$allow_reboot_close" == "1" ]] && is_reboot_close_status "$status"; then
+    last_upload_result="reboot-close"
+    log "upload: ${label} curl status ${status}; classified as reboot-related connection close"
+    if [[ -s "$error_file" ]]; then
+      sed 's/^/  /' "$error_file" >&2 || true
+    fi
+    rm -f "$response_file" "$error_file"
+    log "upload: ${label} response was interrupted by reboot; continuing with post-upload checks"
     return 0
   fi
+  if [[ -s "$error_file" ]]; then
+    log "upload error:" >&2
+    sed 's/^/  /' "$error_file" >&2 || true
+  fi
+  rm -f "$response_file" "$error_file"
   die "${label} upload failed with curl status ${status}"
+}
+
+post_upload_checks() {
+  local phase="$1"
+  local health_url="$2"
+  local hello_url="$3"
+  local assets_url="$4"
+  local asset_mode="${5:-required}"
+  local require_runtime_assets=1
+
+  log "verify: ${phase}: post-upload checks start (upload=${last_upload_result:-unknown})"
+  if [[ "$skip_health" != "1" ]]; then
+    current_stage="reboot wait: ${phase} health"
+    wait_for_endpoint "${phase} health check" "$health_url" ||
+      die "reboot wait/health check failed for ${phase}"
+  else
+    log "skip: health check for ${phase}"
+  fi
+
+  current_stage="health check: ${phase} hello"
+  wait_for_endpoint "${phase} hello check" "$hello_url" ||
+    die "hello check failed for ${phase}"
+  check_hello "$hello_url"
+
+  if [[ "$asset_mode" == "endpoint" ]]; then
+    require_runtime_assets=0
+  fi
+  current_stage="asset verification: ${phase}"
+  wait_for_endpoint "${phase} assets check" "$assets_url" ||
+    die "asset verification failed for ${phase}"
+  check_assets "$assets_url" "$require_runtime_assets"
+
+  log "verify: ${phase}: post-upload checks passed"
 }
 
 send_frame() {
@@ -460,7 +656,52 @@ send_smoke_frames() {
     '{"v":2,"provider":"vibetv","label":"Vibe TV","session":23,"weekly":64,"resetSecs":12000,"sessionTokens":203211,"weekTokens":9231002,"totalTokens":1087628607,"theme":"mini"}'
 }
 
+check_post_smoke_gif_state() {
+  local health_url="$1"
+  local body_file="/tmp/vibetv-provision-gif-health.$$"
+  local attempt stage error_path
+
+  if [[ "$skip_health" == "1" ]]; then
+    log "skip: post-smoke GIF state check because health checks are disabled"
+    return 0
+  fi
+  if [[ "$dry_run" == "1" ]]; then
+    log "dry-run: would verify mini GIF state via ${health_url}"
+    return 0
+  fi
+
+  current_stage="post-smoke GIF state"
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if curl_get "$health_url" >"$body_file"; then
+      if jq -e '.display.activeTheme == "mini" and .display.gif.activePath == "/mini.gif" and .display.gif.filePresent == true and .display.gif.decoderOpen == true and .display.gif.lastError == null' "$body_file" >/dev/null 2>&1; then
+        log "smoke: mini GIF decoder healthy"
+        rm -f "$body_file"
+        return 0
+      fi
+      if jq -e '.display.gif.lastError != null' "$body_file" >/dev/null 2>&1; then
+        stage="$(jq -r '.display.gif.lastError.stage // "unknown"' "$body_file")"
+        error_path="$(jq -r '.display.gif.lastError.path // ""' "$body_file")"
+        log "health response:" >&2
+        sed 's/^/  /' "$body_file" >&2
+        rm -f "$body_file"
+        die "mini GIF renderer reported error stage=${stage} path=${error_path}"
+      fi
+    fi
+    if [[ "$attempt" != "8" ]]; then
+      sleep 1
+    fi
+  done
+
+  log "health response:" >&2
+  if [[ -f "$body_file" ]]; then
+    sed 's/^/  /' "$body_file" >&2
+  fi
+  rm -f "$body_file"
+  die "mini GIF decoder did not report healthy state after smoke frame"
+}
+
 flash_package() {
+  current_stage="flash package"
   require_cmd curl
   verify_package
   target="$(normalize_target "$target")"
@@ -478,40 +719,29 @@ flash_package() {
   confirm_destructive
 
   if [[ "$skip_manufacturer_ota" != "1" ]]; then
-    upload_multipart "manufacturer firmware OTA" "$manufacturer_url" "$manufacturer_field" "$(artifact_path firmware.bin)"
-    if [[ "$skip_health" != "1" ]]; then
-      wait_for_endpoint "health" "$health_url"
-    fi
-    wait_for_endpoint "hello" "$hello_url"
-    check_hello "$hello_url"
+    upload_multipart "manufacturer firmware OTA" "$manufacturer_url" "$manufacturer_field" "$(artifact_path firmware.bin)" "$upload_timeout_secs"
+    post_upload_checks "manufacturer firmware OTA" "$health_url" "$hello_url" "$assets_url" "endpoint"
   else
     log "skip: manufacturer firmware OTA"
   fi
 
   if [[ "$skip_firmware_ota" != "1" ]]; then
-    upload_multipart "VibeTV firmware OTA" "$firmware_url" "$firmware_field" "$(artifact_path firmware.bin)"
-    if [[ "$skip_health" != "1" ]]; then
-      wait_for_endpoint "health" "$health_url"
-    fi
-    wait_for_endpoint "hello" "$hello_url"
-    check_hello "$hello_url"
+    upload_multipart "VibeTV firmware OTA" "$firmware_url" "$firmware_field" "$(artifact_path firmware.bin)" "$upload_timeout_secs"
+    post_upload_checks "VibeTV firmware OTA" "$health_url" "$hello_url" "$assets_url" "endpoint"
   fi
 
   if [[ "$skip_filesystem_ota" != "1" ]]; then
-    upload_multipart "VibeTV filesystem OTA" "$filesystem_url" "$filesystem_field" "$(artifact_path littlefs.bin)"
-    if [[ "$skip_health" != "1" ]]; then
-      wait_for_endpoint "health" "$health_url"
-    fi
-    wait_for_endpoint "hello" "$hello_url"
-    check_hello "$hello_url"
+    upload_multipart "VibeTV filesystem OTA" "$filesystem_url" "$filesystem_field" "$(artifact_path littlefs.bin)" "$filesystem_upload_timeout_secs"
+    post_upload_checks "VibeTV filesystem OTA" "$health_url" "$hello_url" "$assets_url" "required"
   else
     log "skip: filesystem OTA"
+    post_upload_checks "final runtime verification" "$health_url" "$hello_url" "$assets_url" "required"
   fi
 
-  check_assets "$assets_url"
-
   if [[ "$skip_smoke" != "1" ]]; then
+    current_stage="smoke frame"
     send_smoke_frames "$frame_url"
+    check_post_smoke_gif_state "$health_url"
   else
     log "skip: smoke frames"
   fi
@@ -608,6 +838,14 @@ while [[ "$#" -gt 0 ]]; do
       curl_timeout_secs="${2:-}"
       shift 2
       ;;
+    --upload-timeout)
+      upload_timeout_secs="${2:-}"
+      shift 2
+      ;;
+    --filesystem-upload-timeout)
+      filesystem_upload_timeout_secs="${2:-}"
+      shift 2
+      ;;
     --skip-build)
       skip_build=1
       shift
@@ -644,6 +882,10 @@ while [[ "$#" -gt 0 ]]; do
       allow_reboot_close=1
       shift
       ;;
+    --strict-upload-response)
+      allow_reboot_close=0
+      shift
+      ;;
     --dry-run)
       dry_run=1
       shift
@@ -675,3 +917,6 @@ case "$command" in
     die "unknown command: $command"
     ;;
 esac
+
+current_stage="complete"
+log "provision: PASS command=${command}"

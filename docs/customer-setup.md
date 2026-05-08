@@ -91,6 +91,23 @@ The installer handles everything automatically:
 - The device no longer stays on the Open Setup screen.
 - Usage appears automatically on the display.
 
+## Display Messages
+
+The small display uses short English status messages:
+
+| Display | Meaning | What to do |
+| --- | --- | --- |
+| `Starting` | Vibe TV is booting. | Wait. |
+| `Join WiFi` / `VibeTV-Setup` | Vibe TV is in setup mode. | Join the `VibeTV-Setup` WiFi and open the browser address shown on the display. |
+| `Connecting WiFi` | Vibe TV is joining your home WiFi. | Wait. |
+| `Open Setup` | WiFi works; Vibe TV is waiting for the Mac Companion setup. | Open the shown browser address or run the Mac setup command. |
+| `Check Mac App` | Vibe TV had data before, but no fresh data arrived. | Check that the Mac is on, CodexBar is running, and the Mac is on the same WiFi. |
+| `Update Mac App` | The Mac app reached Vibe TV, but the app is too old or sent an old format. | Rerun the installer. |
+| `Update running` | Firmware or display assets are being updated. | Do not unplug power. |
+| `WiFi reset` | Saved WiFi settings are being cleared. | Wait for `VibeTV-Setup` to appear again. |
+
+The setup screen shows the setup IP. The waiting screen shows `vibetv.local` and the fallback IP, so support can ask for the address directly from the display.
+
 ## If Something Does Not Work
 
 - `Open Setup` means Vibe TV is on WiFi and is waiting for the Mac Companion setup command.
