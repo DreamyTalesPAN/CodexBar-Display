@@ -27,7 +27,7 @@ The package is written to `dist/vibetv-ota/<timestamp>-esp8266_smalltv_st7789/` 
 - `firmware.bin`
 - `littlefs.bin`
 - `SHA256SUMS`
-- `manifest.json`
+- `manifest.json` with required theme asset paths, byte sizes, and SHA-256 hashes
 
 Use a fixed output directory when the same artifact set should be reused across a provisioning run:
 
@@ -64,21 +64,23 @@ What this does:
 1. Builds `firmware.bin` and `littlefs.bin`.
 2. Verifies `SHA256SUMS`.
 3. Uploads `firmware.bin` to the GeekMagic factory endpoint with multipart field `firmware`.
-4. Waits for the new firmware to answer `/health` and `/hello`.
+4. Waits for the new firmware to answer `/health`, `/hello`, and `/assets`.
 5. Uploads `littlefs.bin` to the VibeTV endpoint with multipart field `filesystem`.
-6. Checks `/health` and `/hello` again.
-7. Checks `/assets` and requires the runtime theme assets for the bundled theme.
+6. Checks `/health`, `/hello`, and `/assets` again.
+7. Compares the runtime theme asset metadata from `/assets` against the package `manifest.json`.
 8. Sends one `mini` frame to `/frame` and requires `ok`.
 
-`/health` reports generic filesystem status. `/assets` is the generic inspection path for future theme-pack tooling.
+`/health` reports generic filesystem status plus display debug state. `display.activeTheme` names the active built-in theme, and `display.gif` reports the active GIF path, file/decoder open state, backoff state, and `lastError` when GIF open or decode fails. `/assets` is the generic inspection path for future theme-pack tooling. Each asset entry must include `path`, `sizeBytes`, and `sha256`. Required assets must be present, non-empty, byte-exact, and hash-exact compared with the package manifest.
 
-For devices that close the HTTP connection while rebooting, add:
+The filesystem upload timeout defaults to 300 seconds because slow ESP8266 LittleFS writes can outlive a normal short HTTP timeout. Firmware uploads default to 90 seconds.
+
+Devices can close the HTTP connection while rebooting. The script classifies curl exit 52/56 as a reboot-related close by default, then continues to the post-upload `/health`, `/hello`, and `/assets` checks. Those checks still decide pass/fail. To fail immediately on that curl status instead, add:
 
 ```bash
---allow-reboot-close
+--strict-upload-response
 ```
 
-That treats curl exit 52/56 as an expected reboot close and continues with polling.
+Every failed run prints `provision: FAIL stage=...` so the failing phase is visible: upload, reboot wait, health check, asset verification, or smoke frame. Successful runs end with `provision: PASS`.
 
 ## Reuse a Built Package
 
@@ -94,7 +96,7 @@ For additional devices, keep the package and change only the IP:
 
 Repeat for each device that should receive the same firmware and filesystem artifacts.
 
-The provisioning wrapper is intentionally strict: a device is not accepted if `/hello` reports the wrong board, the filesystem is not mounted, a required asset is missing, or a smoke frame is rejected by `/frame`.
+The provisioning wrapper is intentionally strict: a device is not accepted if `/hello` reports the wrong board, the filesystem is not mounted, a required asset is missing, empty, has the wrong size, has the wrong SHA-256, a smoke frame is rejected by `/frame`, or `/health` reports a mini GIF renderer error after the smoke frame.
 
 ## Endpoint Overrides
 

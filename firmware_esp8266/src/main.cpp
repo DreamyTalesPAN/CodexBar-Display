@@ -6,6 +6,7 @@
 #include <ESP8266WiFi.h>
 #include <LittleFS.h>
 #include <Updater.h>
+#include <bearssl/bearssl_hash.h>
 
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
@@ -104,9 +105,57 @@ String jsonEscape(const String& raw) {
   return escaped;
 }
 
+String bytesToHex(const uint8_t* bytes, size_t len) {
+  static const char kHex[] = "0123456789abcdef";
+  String out;
+  out.reserve(len * 2);
+  for (size_t i = 0; i < len; ++i) {
+    out += kHex[(bytes[i] >> 4) & 0x0f];
+    out += kHex[bytes[i] & 0x0f];
+  }
+  return out;
+}
+
+bool sha256FileHex(const String& path, String& out) {
+  File file = LittleFS.open(path, "r");
+  if (!file) {
+    return false;
+  }
+
+  br_sha256_context ctx;
+  br_sha256_init(&ctx);
+
+  uint8_t buffer[512];
+  while (true) {
+    const size_t readLen = file.read(buffer, sizeof(buffer));
+    if (readLen == 0) {
+      break;
+    }
+    br_sha256_update(&ctx, buffer, readLen);
+    yield();
+  }
+
+  uint8_t digest[br_sha256_SIZE];
+  br_sha256_out(&ctx, digest);
+  out = bytesToHex(digest, sizeof(digest));
+  return true;
+}
+
 void drawWaitingForCompanionStatus() {
   renderer.DrawConnectedSetupInstructions(runtimeCtx, kMdnsHost, WiFi.localIP().toString());
   waitStatusRendered = true;
+}
+
+void drawWifiConnectingStatus(const String& ssid) {
+  renderer.DrawStatus(runtimeCtx, "VIBE TV", "Connecting WiFi", ssid);
+}
+
+void drawWifiResetStatus(const String& line2) {
+  renderer.DrawStatus(runtimeCtx, "VIBE TV RESET", "WiFi reset", line2);
+}
+
+void drawUpdateStatus(const String& line2) {
+  renderer.DrawStatus(runtimeCtx, "VIBE TV UPDATE", "Update running", line2);
 }
 
 void resetWifiReconnectState() {
@@ -142,9 +191,9 @@ String displayErrorMessage(const String& message) {
     return "Check Mac App";
   }
   if (message == "runtime/cycle-timeout") {
-    return "Check Mac Companion";
+    return "Check Mac App";
   }
-  return message;
+  return "Check Mac App";
 }
 
 void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, const char* transport) {
@@ -302,7 +351,7 @@ bool consumeBootRecoveryTrigger() {
     clearWifiCredentials();
     clearBootRecoveryCounter();
     Serial.println("boot_recovery_triggered action=wifi_setup");
-    renderer.DrawStatus(runtimeCtx, "VIBETV RESET", "WiFi cleared", "Setup starts");
+    drawWifiResetStatus("Starting setup");
     delay(1000);
     return true;
   }
@@ -314,7 +363,7 @@ bool consumeBootRecoveryTrigger() {
 
 bool connectToSavedWifi(const WifiCredentials& creds) {
   Serial.printf("wifi_connect ssid=%s\n", creds.ssid);
-  renderer.DrawStatus(runtimeCtx, "VIBETV", "Connecting WiFi", creds.ssid);
+  drawWifiConnectingStatus(creds.ssid);
   WiFi.mode(WIFI_STA);
   WiFi.begin(creds.ssid, creds.password);
 
@@ -344,7 +393,7 @@ bool connectToSdkWifiConfig() {
   }
 
   Serial.printf("wifi_sdk_connect ssid=%s\n", ssid.c_str());
-  renderer.DrawStatus(runtimeCtx, "VIBETV", "Connecting WiFi", ssid);
+  drawWifiConnectingStatus(ssid);
   WiFi.begin();
 
   const unsigned long startedAt = millis();
@@ -507,7 +556,7 @@ void handleResetWifi() {
   clearWifiCredentials();
   clearBootRecoveryCounter();
   webServer.send(200, "text/html; charset=utf-8", "<!doctype html><p>WiFi settings cleared. Vibe TV is restarting setup.</p>");
-  renderer.DrawStatus(runtimeCtx, "VIBETV RESET", "WiFi cleared", "Restarting");
+  drawWifiResetStatus("Restarting");
   waitStatusRendered = true;
   delay(500);
   ESP.restart();
@@ -579,6 +628,41 @@ bool filesystemInfoJSON(String& out) {
   return mounted;
 }
 
+void appendRendererDebugJSON(String& out) {
+  const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
+  out += "\"display\":{\"activeTheme\":\"";
+  out += jsonEscape(snapshot.activeTheme);
+  out += "\",\"gif\":{\"activePath\":\"";
+  out += jsonEscape(snapshot.gifActivePath);
+  out += "\",\"filePresent\":";
+  out += snapshot.gifFilePresent ? "true" : "false";
+  out += ",\"fileOpen\":";
+  out += snapshot.gifFileOpen ? "true" : "false";
+  out += ",\"decoderOpen\":";
+  out += snapshot.gifDecoderOpen ? "true" : "false";
+  out += ",\"blocked\":";
+  out += snapshot.gifBlocked ? "true" : "false";
+  out += ",\"consecutiveFailures\":";
+  out += String(snapshot.gifConsecutiveFailures);
+  out += ",\"backoffRemainingMs\":";
+  out += String(snapshot.gifBackoffRemainingMs);
+  out += ",\"lastError\":";
+  if (snapshot.gifLastErrorStage.length() == 0) {
+    out += "null";
+  } else {
+    out += "{\"path\":\"";
+    out += jsonEscape(snapshot.gifLastErrorPath);
+    out += "\",\"stage\":\"";
+    out += jsonEscape(snapshot.gifLastErrorStage);
+    out += "\",\"failures\":";
+    out += String(snapshot.gifLastErrorFailures);
+    out += ",\"ageMs\":";
+    out += String(snapshot.gifLastErrorAgeMs);
+    out += "}";
+  }
+  out += "}}";
+}
+
 void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uint8_t depth) {
   if (depth > 4) {
     return;
@@ -601,6 +685,14 @@ void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uin
     out += jsonEscape(path);
     out += "\",\"sizeBytes\":";
     out += String(dir.fileSize());
+    String sha256;
+    if (sha256FileHex(path, sha256)) {
+      out += ",\"sha256\":\"";
+      out += sha256;
+      out += "\"";
+    } else {
+      out += ",\"sha256\":null,\"hashError\":\"read_failed\"";
+    }
     out += "}";
   }
 }
@@ -636,6 +728,8 @@ void handleHealth() {
   out += wifiConnected ? String(WiFi.RSSI()) : "0";
   out += "},";
   const bool filesystemMounted = filesystemInfoJSON(out);
+  out += ",";
+  appendRendererDebugJSON(out);
   out += ",\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"],\"httpPort\":80,\"maxFrameBytes\":";
   out += String(kMaxFrameBytes);
   out += "}}";
@@ -689,7 +783,8 @@ void handleAssetUpload() {
     assetUploadError = "";
     assetUploadPath = requestedAssetPath();
     Serial.printf("asset_upload_start path=%s filename=%s content_length=%zu\n", assetUploadPath.c_str(), upload.filename.c_str(), upload.contentLength);
-    renderer.DrawStatus(runtimeCtx, "VIBETV ASSETS", "Upload running", assetUploadPath);
+    drawUpdateStatus("Loading display");
+    renderer.ResetGifStateForAssetUpdate();
     waitStatusRendered = true;
 
     if (!isSafeAssetPath(assetUploadPath)) {
@@ -767,6 +862,7 @@ void handleAssetDelete() {
     webServer.send(404, "text/plain; charset=utf-8", "asset not found");
     return;
   }
+  renderer.ResetGifStateForAssetUpdate();
   if (!LittleFS.remove(path)) {
     webServer.send(500, "text/plain; charset=utf-8", "asset delete failed");
     return;
@@ -790,16 +886,16 @@ String updatePageHTML() {
   html += "<form method='post' action='/update/firmware' enctype='multipart/form-data'>";
   html += "<input type='file' name='firmware' accept='.bin,application/octet-stream' required>";
   html += "<button type='submit'>Upload firmware</button></form></section>";
-  html += "<section><h2>LittleFS</h2><p class='muted'><code>littlefs.bin</code> replaces the filesystem partition.</p>";
+  html += "<section><h2>Display files</h2><p class='muted'>Upload the support-provided display package. Vibe TV restarts after a successful upload.</p>";
   html += "<form method='post' action='/update/filesystem' enctype='multipart/form-data'>";
   html += "<input type='file' name='filesystem' accept='.bin,application/octet-stream' required>";
-  html += "<button type='submit'>Upload LittleFS</button></form></section>";
-  html += "<section><h2>Assets</h2><p class='muted'>Upload individual theme files to the filesystem.</p>";
+  html += "<button type='submit'>Upload display files</button></form></section>";
+  html += "<section><h2>Single display file</h2><p class='muted'>Support may ask you to upload one file here.</p>";
   html += "<form method='post' action='/assets' enctype='multipart/form-data'>";
-  html += "<input name='path' placeholder='/themes/example/asset.gif' required>";
+  html += "<input name='path' placeholder='/asset.gif' required>";
   html += "<input type='file' name='asset' accept='.gif,.jpg,.jpeg,.png,.json,application/octet-stream' required>";
-  html += "<button type='submit'>Upload asset</button></form></section>";
-  html += "<p class='muted'><a href='/health'>Health JSON</a> · <a href='/assets'>Assets JSON</a></p></main></body></html>";
+  html += "<button type='submit'>Upload file</button></form></section>";
+  html += "<p class='muted'><a href='/health'>Device status</a> · <a href='/assets'>File list</a></p></main></body></html>";
   return html;
 }
 
@@ -835,10 +931,12 @@ void handleOtaUpload(int command, const char* target) {
         upload.filename.c_str(),
         upload.contentLength,
         maxSize);
-    renderer.DrawStatus(runtimeCtx, "VIBETV UPDATE", target, "Upload running");
+    const String targetLabel = command == U_FS ? "Loading display" : "Loading firmware";
+    drawUpdateStatus(targetLabel);
     waitStatusRendered = true;
 
     if (command == U_FS) {
+      renderer.ResetGifStateForAssetUpdate();
       close_all_fs();
     }
     if (!Update.begin(maxSize, command)) {
@@ -885,7 +983,7 @@ void handleOtaResult(const char* target) {
   html += target;
   html += " was written. Vibe TV is restarting.</p></body></html>";
   webServer.send(200, "text/html; charset=utf-8", html);
-    renderer.DrawStatus(runtimeCtx, "VIBETV UPDATE", target, "Restarting");
+  drawUpdateStatus("Restarting");
   waitStatusRendered = true;
   scheduleReboot(target);
 }
@@ -986,7 +1084,7 @@ void startSetupAccessPoint() {
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
   captiveDnsStarted = true;
   Serial.printf("captive_dns_started port=%u host=%s ip=%s\n", kDnsPort, kSetupHost, WiFi.softAPIP().toString().c_str());
-  renderer.DrawSetupInstructions(runtimeCtx, kSetupApSsid, kSetupHost);
+  renderer.DrawSetupInstructions(runtimeCtx, kSetupApSsid, WiFi.softAPIP().toString());
   waitStatusRendered = true;
   startHttpServer();
   startMdnsResponder(WiFi.softAPIP());
@@ -1087,7 +1185,7 @@ void setup() {
   delay(200);
 
   renderer.Setup(runtimeCtx);
-  renderer.DrawSplash(runtimeCtx);
+  renderer.DrawStatus(runtimeCtx, "VIBE TV", "Starting", "Please wait");
   const bool forceSetupMode = consumeBootRecoveryTrigger();
 
   codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
@@ -1167,7 +1265,11 @@ void loop() {
     if (!codexbar_display::app::HasFrame(runtimeCtx)) {
       renderer.DrawSplash(runtimeCtx);
     } else if (codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
-      renderer.DrawError(runtimeCtx, displayErrorMessage(codexbar_display::app::CurrentFrame(runtimeCtx).error));
+      renderer.DrawStatus(
+          runtimeCtx,
+          "VIBE TV",
+          displayErrorMessage(codexbar_display::app::CurrentFrame(runtimeCtx).error),
+          "On your Mac");
     } else {
       renderer.DrawUsage(runtimeCtx);
     }

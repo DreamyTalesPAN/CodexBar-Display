@@ -35,17 +35,34 @@ struct GifPlaybackRequest {
   GifFailureSlot failureSlot = GifFailureSlot::MiniTheme;
 };
 
+struct GifCoreStatusSnapshot {
+  String activePath;
+  bool fsMounted = false;
+  bool filePresent = false;
+  bool fileOpen = false;
+  bool decoderOpen = false;
+  bool blocked = false;
+  uint8_t consecutiveFailures = 0;
+  unsigned long backoffRemainingMs = 0;
+  String lastErrorPath;
+  String lastErrorStage;
+  unsigned int lastErrorFailures = 0;
+  unsigned long lastErrorAgeMs = 0;
+};
+
 class GifCoreESP8266 {
  public:
   void Setup(const char* preloadAssetPath = nullptr);
   void Stop();
   void ResetFrameSchedule();
+  void ResetForAssetUpdate();
 
   bool EnsureReady(TFT_eSPI& tft, const GifPlaybackRequest& request);
   bool Tick(TFT_eSPI& tft, const GifPlaybackRequest& request, bool forceFrame);
 
   int ReservedWidthFor(const char* assetPath, int fallbackWidth) const;
- bool IsCurrentAssetPresent(const char* assetPath) const;
+  bool IsCurrentAssetPresent(const char* assetPath) const;
+  GifCoreStatusSnapshot StatusSnapshot() const;
 
  private:
   using GifFailureGuard = GifFailureGuardState;
@@ -80,11 +97,15 @@ class GifCoreESP8266 {
   bool decoderOpen_ = false;
   bool suppressDraw_ = false;
   unsigned long nextFrameAtMs_ = 0;
+  unsigned long lastFailureAtMs_ = 0;
   int gifWidth_ = 0;
   int gifHeight_ = 0;
   int drawX_ = 0;
   int drawY_ = 0;
   String assetPath_ = "";
+  String lastErrorPath_ = "";
+  String lastErrorStage_ = "";
+  unsigned int lastErrorFailures_ = 0;
   GifLayoutMode layoutMode_ = GifLayoutMode::BottomRightMini;
   GifFailureSlot failureSlot_ = GifFailureSlot::MiniTheme;
   GifFailureGuard guards_[kFailureGuardSlots];

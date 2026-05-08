@@ -7,10 +7,27 @@
 namespace codexbar_display {
 namespace esp8266 {
 
+struct RendererDebugSnapshot {
+  String activeTheme;
+  String gifActivePath;
+  bool gifFilePresent = false;
+  bool gifFileOpen = false;
+  bool gifDecoderOpen = false;
+  bool gifBlocked = false;
+  uint8_t gifConsecutiveFailures = 0;
+  unsigned long gifBackoffRemainingMs = 0;
+  String gifLastErrorPath;
+  String gifLastErrorStage;
+  unsigned int gifLastErrorFailures = 0;
+  unsigned long gifLastErrorAgeMs = 0;
+};
+
 class RendererESP8266 : public app::Renderer {
  public:
   void Setup(app::RuntimeContext& ctx) override;
   void OnFrameAccepted(app::RuntimeContext& ctx, const core::SerialConsumeEvent& event) override;
+  RendererDebugSnapshot DebugSnapshot() const;
+  void ResetGifStateForAssetUpdate();
 
   void DrawSplash(app::RuntimeContext& ctx) override;
   void TickSplash(app::RuntimeContext& ctx) override;

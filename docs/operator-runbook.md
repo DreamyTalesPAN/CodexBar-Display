@@ -184,11 +184,29 @@ Per device:
 - confirm `/health`, `/hello`, `/assets`, LittleFS upload, and the `mini` smoke frame pass
 
 During normal operation the display uses explicit support states:
+- `Starting`: boot is running before WiFi mode is known.
+- `VIBE TV SETUP` with `VibeTV-Setup` and the setup IP: setup AP is active; customer should join the setup WiFi and open the shown address.
+- `Connecting WiFi`: station mode is connecting to the saved or imported SSID.
 - `Open Setup`: WiFi is connected and the device is waiting for the Mac Companion setup command. `vibetv.local` and the fallback IP are shown on-screen; the local Web UI also shows the fallback IP.
+- Live usage: a valid USB or WiFi frame is rendering; provider/usage data is shown, not theme asset names.
 - `Check Mac App`: the device previously had data, but no fresh frame arrived for more than two minutes.
 - `Update Mac App`: the Companion reported an incompatible usage app version or payload format.
+- `Update running`: firmware, filesystem, or display asset upload is in progress. The display intentionally does not show internal paths such as GIF or theme asset filenames.
+- `WiFi reset`: saved WiFi credentials are being cleared before setup mode restarts.
 
-Before packaging a device for a customer, clear local provisioning WiFi credentials with `POST /reset-wifi` while the device is still reachable. After reboot, the display must show both setup steps on one screen: connect to `VibeTV-Setup`, then open `vibetv.local` in a browser. `192.168.4.1` remains the fallback address.
+Before packaging a device for a customer, clear local provisioning WiFi credentials with `POST /reset-wifi` while the device is still reachable. After reboot, the display must show both setup steps on one screen: connect to `VibeTV-Setup`, then open the shown setup IP in a browser. The web setup flow still supports `vibetv.local`, with `192.168.4.1` as the fallback address in setup AP mode.
+
+QR codes are deferred. They would be useful on the setup and connected screens, but adding QR generation to the ESP8266 firmware is a larger dependency and rendering-risk item. Keep the plain IP/host display as the supported customer path for now.
+
+Smoke checklist for #53:
+- Boot device and confirm the first screen says `Starting`.
+- Clear WiFi and confirm setup AP screen shows `VibeTV-Setup` plus the setup IP.
+- Save WiFi and confirm the connecting screen shows `Connecting WiFi` plus the SSID.
+- After WiFi connects, confirm the waiting screen shows `Open Setup`, `vibetv.local`, and the fallback IP.
+- Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.
+- Stop the Companion for more than two minutes after a frame and confirm `Check Mac App`.
+- Send a runtime error frame and confirm the display shows a customer-friendly CodexBar action, not an internal error code.
+- Start firmware/filesystem/asset upload and confirm the display says `Update running` without asset paths.
 
 Full flow and endpoint overrides are documented in `docs/firmware-provisioning.md`.
 
