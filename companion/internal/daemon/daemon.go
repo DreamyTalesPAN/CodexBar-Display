@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -19,6 +21,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
 )
 
 type Options struct {
@@ -44,6 +47,10 @@ const (
 	collectorTimeoutEnvVar  = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
 	collectorOrderEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
 	providerMaxAgeEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
+	firmwareManifestEnvVar  = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareManifestURL     = "https://vibetv.shop/cdn/shop/t/1/assets/firmware-manifest.json"
+	firmwareUpdateCheckGap  = 6 * time.Hour
+	firmwareManifestTimeout = 5 * time.Second
 )
 
 var errMarshalFrameTooLarge = errors.New("frame exceeds max bytes")
@@ -115,6 +122,7 @@ type runtimeDeps struct {
 	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
 	usageBarsShowUsed func() bool
 	sendLine          func(string, []byte) error
+	fetchUpdateState  func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
 	newSelector       func() *codexbar.ProviderSelector
 	logf              func(string, ...any)
 	transportName     string
@@ -151,6 +159,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	if d.sendLine == nil {
 		d.sendLine = d.transport.SendLine
 	}
+	if d.fetchUpdateState == nil {
+		d.fetchUpdateState = fetchFirmwareUpdateState
+	}
 	if d.newSelector == nil {
 		d.newSelector = codexbar.NewProviderSelector
 	}
@@ -176,6 +187,9 @@ type runtimeState struct {
 	lastPersistedAt   time.Time
 	hasPersistedGood  bool
 	cliTheme          string
+	firmwareUpdate    protocol.UpdateState
+	hasFirmwareUpdate bool
+	updateCheckedAt   time.Time
 }
 
 type cycleResult struct {
@@ -489,6 +503,113 @@ func resolveCycleDevice(requestedPort string, deps runtimeDeps) (string, protoco
 	return port, caps, maxFrameBytes, nil
 }
 
+func attachFirmwareUpdateState(ctx context.Context, state *runtimeState, deps runtimeDeps, caps protocol.DeviceCapabilities, result *cycleResult) {
+	if result == nil || strings.TrimSpace(caps.Board) == "" || strings.TrimSpace(caps.Firmware) == "" {
+		return
+	}
+
+	now := deps.now()
+	if state.hasFirmwareUpdate && now.Sub(state.updateCheckedAt) >= 0 && now.Sub(state.updateCheckedAt) < firmwareUpdateCheckGap {
+		update := state.firmwareUpdate
+		result.frame.Update = &update
+		return
+	}
+
+	update, err := deps.fetchUpdateState(ctx, caps)
+	if err != nil {
+		update = protocol.UpdateState{
+			Available: false,
+			Status:    "check_failed",
+			LastError: truncateUpdateError(err.Error()),
+		}
+	}
+	state.firmwareUpdate = update
+	state.hasFirmwareUpdate = true
+	state.updateCheckedAt = now
+	result.frame.Update = &update
+}
+
+func truncateUpdateError(raw string) string {
+	const maxLen = 160
+	value := strings.TrimSpace(raw)
+	if len(value) <= maxLen {
+		return value
+	}
+	return strings.TrimSpace(value[:maxLen]) + "..."
+}
+
+type firmwareManifest struct {
+	Artifacts []firmwareArtifact `json:"artifacts"`
+}
+
+type firmwareArtifact struct {
+	Board           string `json:"board"`
+	FirmwareVersion string `json:"firmwareVersion"`
+}
+
+func fetchFirmwareUpdateState(ctx context.Context, caps protocol.DeviceCapabilities) (protocol.UpdateState, error) {
+	manifestURL := strings.TrimSpace(os.Getenv(firmwareManifestEnvVar))
+	if manifestURL == "" {
+		manifestURL = firmwareManifestURL
+	}
+	if manifestURL == "-" || strings.EqualFold(manifestURL, "off") || strings.EqualFold(manifestURL, "disabled") {
+		return protocol.UpdateState{Available: false, Status: "disabled"}, nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, manifestURL, nil)
+	if err != nil {
+		return protocol.UpdateState{}, fmt.Errorf("build firmware manifest request: %w", err)
+	}
+	client := http.Client{Timeout: firmwareManifestTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return protocol.UpdateState{}, fmt.Errorf("fetch firmware manifest: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return protocol.UpdateState{}, fmt.Errorf("fetch firmware manifest: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var manifest firmwareManifest
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 128*1024)).Decode(&manifest); err != nil {
+		return protocol.UpdateState{}, fmt.Errorf("decode firmware manifest: %w", err)
+	}
+	return selectFirmwareUpdate(caps, manifest)
+}
+
+func selectFirmwareUpdate(caps protocol.DeviceCapabilities, manifest firmwareManifest) (protocol.UpdateState, error) {
+	current, err := versioning.ParseSemVer(caps.Firmware)
+	if err != nil {
+		return protocol.UpdateState{}, fmt.Errorf("parse current firmware version %q: %w", caps.Firmware, err)
+	}
+
+	board := strings.TrimSpace(strings.ToLower(caps.Board))
+	var latest *versioning.SemVer
+	var latestRaw string
+	for _, artifact := range manifest.Artifacts {
+		if strings.TrimSpace(strings.ToLower(artifact.Board)) != board {
+			continue
+		}
+		artifactVersion, err := versioning.ParseSemVer(artifact.FirmwareVersion)
+		if err != nil {
+			continue
+		}
+		if latest == nil || artifactVersion.Compare(*latest) > 0 {
+			candidate := artifactVersion
+			latest = &candidate
+			latestRaw = strings.TrimSpace(artifact.FirmwareVersion)
+		}
+	}
+	if latest == nil {
+		return protocol.UpdateState{Available: false, Status: "no_board_release"}, nil
+	}
+	if latest.Compare(current) <= 0 {
+		return protocol.UpdateState{Available: false, LatestVersion: latestRaw, Status: "current"}, nil
+	}
+	return protocol.UpdateState{Available: true, LatestVersion: latestRaw, Status: "update_available"}, nil
+}
+
 func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
 	result := cycleResult{
 		selectionReason: emptyReason,
@@ -649,6 +770,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 		)
 	}
 
+	attachFirmwareUpdateState(ctx, state, deps, caps, &result)
 	return sendCycleResult(port, caps, maxFrameBytes, state, deps, result)
 }
 
@@ -677,6 +799,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		"collector",
 	)
 
+	attachFirmwareUpdateState(ctx, state, deps, caps, &result)
 	return sendCycleResult(port, caps, maxFrameBytes, state, deps, result)
 }
 
@@ -1280,6 +1403,18 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 	}
 	if len(line) <= maxBytes {
 		return line, frame, nil
+	}
+
+	if frame.Update != nil {
+		noUpdate := frame
+		noUpdate.Update = nil
+		line, err = noUpdate.MarshalLine()
+		if err != nil {
+			return nil, protocol.Frame{}, err
+		}
+		if len(line) <= maxBytes {
+			return line, noUpdate, nil
+		}
 	}
 
 	if frame.Theme != "" {

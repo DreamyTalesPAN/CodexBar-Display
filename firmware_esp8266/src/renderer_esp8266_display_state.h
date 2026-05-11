@@ -136,6 +136,7 @@ bool ShouldRenderMiniGif();
 void TickMiniGif(bool forceFrame);
 int MiniGifReservedWidth();
 void DrawMiniGifPlaceholder();
+bool DrawMiniProviderLineOnly();
 
 void DrawSplashMini();
 void TickSplashMini();

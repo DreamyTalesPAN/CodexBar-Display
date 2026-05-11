@@ -6,7 +6,6 @@
 #include <ESP8266WiFi.h>
 #include <LittleFS.h>
 #include <Updater.h>
-#include <bearssl/bearssl_hash.h>
 
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
@@ -18,6 +17,12 @@
 
 #ifndef CODEXBAR_DISPLAY_FW_VERSION
 #define CODEXBAR_DISPLAY_FW_VERSION "dev"
+#endif
+
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+const char kThemeFeatureJSON[] = "[\"theme\",\"theme-spec-v1\"]";
+#else
+const char kThemeFeatureJSON[] = "[\"theme\"]";
 #endif
 
 namespace {
@@ -43,22 +48,45 @@ constexpr unsigned long kWifiReconnectFallbackMs = 120000UL;
 constexpr unsigned long kRebootDelayMs = 750UL;
 constexpr unsigned long kBootRecoveryStableMs = 30000UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
+constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr uint8_t kBootRecoveryThreshold = 3;
 constexpr size_t kMaxAssetPathBytes = 96;
 const char kSetupApSsid[] = "VibeTV-Setup";
 const char kSetupHost[] = "vibetv.local";
 const char kMdnsName[] = "vibetv";
 const char kMdnsHost[] = "vibetv.local";
+const char kFirmwareManifestUrl[] = "https://vibetv.shop/cdn/shop/t/1/assets/firmware-manifest.json";
+const char* const kFirmwareUpdateNoticeTexts[] = {
+    "Update",
+    "available",
+    "go to",
+    "www.vibetv.local",
+};
+constexpr uint8_t kFirmwareUpdateNoticeTextCount =
+    sizeof(kFirmwareUpdateNoticeTexts) / sizeof(kFirmwareUpdateNoticeTexts[0]);
 
 struct WifiCredentials {
   char ssid[kWifiSsidBytes] = {0};
   char password[kWifiPasswordBytes] = {0};
 };
 
+struct FirmwareUpdateState {
+  bool available = false;
+  String latestVersion;
+  String lastStatus = "disabled";
+  String lastError;
+  unsigned long lastCheckedAtMs = 0;
+  unsigned long nextCheckAtMs = 0;
+  bool noticeVisible = false;
+  uint8_t noticePhase = 0;
+  unsigned long noticeLastToggleAtMs = 0;
+};
+
 bool httpServerStarted = false;
 bool setupMode = false;
 bool waitStatusRendered = false;
 bool otaUploadSucceeded = false;
+bool otaUploadInProgress = false;
 String otaUploadError;
 bool assetUploadSucceeded = false;
 String assetUploadError;
@@ -75,6 +103,8 @@ bool mdnsStarted = false;
 unsigned long wifiDisconnectedAtMs = 0;
 unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
+FirmwareUpdateState firmwareUpdate;
+bool firmwareUpdateTopLineDirty = false;
 
 String jsonEscape(const String& raw) {
   String escaped;
@@ -105,40 +135,103 @@ String jsonEscape(const String& raw) {
   return escaped;
 }
 
-String bytesToHex(const uint8_t* bytes, size_t len) {
-  static const char kHex[] = "0123456789abcdef";
-  String out;
-  out.reserve(len * 2);
-  for (size_t i = 0; i < len; ++i) {
-    out += kHex[(bytes[i] >> 4) & 0x0f];
-    out += kHex[bytes[i] & 0x0f];
+void markFirmwareUpdateNoticeDirty() {
+  if (!codexbar_display::app::HasFrame(runtimeCtx) ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+    return;
   }
-  return out;
+  if (!runtimeCtx.screenDirty && !waitStatusRendered && !frameStaleStatusRendered) {
+    firmwareUpdateTopLineDirty = true;
+  } else {
+    runtimeCtx.screenDirty = true;
+  }
 }
 
-bool sha256FileHex(const String& path, String& out) {
-  File file = LittleFS.open(path, "r");
-  if (!file) {
-    return false;
+void applyFirmwareUpdateNoticePhase() {
+  if (firmwareUpdate.noticePhase == 0 ||
+      firmwareUpdate.noticePhase > kFirmwareUpdateNoticeTextCount) {
+    runtimeCtx.topLineOverride = "";
+    firmwareUpdate.noticeVisible = false;
+    firmwareUpdate.noticePhase = 0;
+    return;
+  }
+  runtimeCtx.topLineOverride = kFirmwareUpdateNoticeTexts[firmwareUpdate.noticePhase - 1];
+  firmwareUpdate.noticeVisible = true;
+}
+
+void clearFirmwareUpdateNotice() {
+  if (runtimeCtx.topLineOverride.length() == 0 && !firmwareUpdate.noticeVisible) {
+    return;
+  }
+  runtimeCtx.topLineOverride = "";
+  firmwareUpdate.noticeVisible = false;
+  firmwareUpdate.noticePhase = 0;
+  firmwareUpdate.noticeLastToggleAtMs = millis();
+  markFirmwareUpdateNoticeDirty();
+}
+
+void maintainFirmwareUpdateNotice() {
+  if (!firmwareUpdate.available ||
+      setupMode ||
+      frameStaleStatusRendered ||
+      !codexbar_display::app::HasFrame(runtimeCtx) ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+    clearFirmwareUpdateNotice();
+    return;
   }
 
-  br_sha256_context ctx;
-  br_sha256_init(&ctx);
-
-  uint8_t buffer[512];
-  while (true) {
-    const size_t readLen = file.read(buffer, sizeof(buffer));
-    if (readLen == 0) {
-      break;
-    }
-    br_sha256_update(&ctx, buffer, readLen);
-    yield();
+  const unsigned long nowMs = millis();
+  if (firmwareUpdate.noticeLastToggleAtMs == 0) {
+    firmwareUpdate.noticeLastToggleAtMs = nowMs;
+    return;
+  }
+  if ((nowMs - firmwareUpdate.noticeLastToggleAtMs) < kFirmwareUpdateNoticeToggleMs) {
+    return;
   }
 
-  uint8_t digest[br_sha256_SIZE];
-  br_sha256_out(&ctx, digest);
-  out = bytesToHex(digest, sizeof(digest));
-  return true;
+  firmwareUpdate.noticeLastToggleAtMs = nowMs;
+  firmwareUpdate.noticePhase =
+      (firmwareUpdate.noticePhase + 1) % (kFirmwareUpdateNoticeTextCount + 1);
+  applyFirmwareUpdateNoticePhase();
+  markFirmwareUpdateNoticeDirty();
+}
+
+void applyFrameUpdateState() {
+  if (!codexbar_display::app::HasFrame(runtimeCtx)) {
+    return;
+  }
+
+  const codexbar_display::core::Frame& frame = codexbar_display::app::CurrentFrame(runtimeCtx);
+  if (!frame.hasUpdateAvailable) {
+    return;
+  }
+
+  String nextStatus = frame.updateStatus;
+  if (nextStatus.length() == 0) {
+    nextStatus = frame.updateAvailable ? "update_available" : "current";
+  }
+  const bool changed = firmwareUpdate.available != frame.updateAvailable ||
+                       firmwareUpdate.latestVersion != frame.updateLatestVersion ||
+                       firmwareUpdate.lastStatus != nextStatus ||
+                       firmwareUpdate.lastError != frame.updateLastError;
+  firmwareUpdate.available = frame.updateAvailable;
+  firmwareUpdate.latestVersion = frame.updateLatestVersion;
+  firmwareUpdate.lastError = frame.updateLastError;
+  firmwareUpdate.lastCheckedAtMs = millis();
+  firmwareUpdate.nextCheckAtMs = 0;
+  firmwareUpdate.lastStatus = nextStatus;
+
+  if (!firmwareUpdate.available) {
+    clearFirmwareUpdateNotice();
+    return;
+  }
+  if (changed) {
+    firmwareUpdate.noticeVisible = true;
+    firmwareUpdate.noticePhase = 1;
+    firmwareUpdate.noticeLastToggleAtMs = millis();
+    applyFirmwareUpdateNoticePhase();
+    runtimeCtx.screenDirty = true;
+  }
 }
 
 void drawWaitingForCompanionStatus() {
@@ -156,6 +249,10 @@ void drawWifiResetStatus(const String& line2) {
 
 void drawUpdateStatus(const String& line2) {
   renderer.DrawStatus(runtimeCtx, "VIBE TV UPDATE", "Update running", line2);
+}
+
+bool statusScreenLocked() {
+  return otaUploadInProgress || rebootPending;
 }
 
 void resetWifiReconnectState() {
@@ -197,10 +294,16 @@ String displayErrorMessage(const String& message) {
 }
 
 void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, const char* transport) {
+  if (statusScreenLocked()) {
+    Serial.printf("frame_ignored transport=%s reason=status_screen_locked\n", transport);
+    return;
+  }
+
   const bool redrawAfterStaleStatus = frameStaleStatusRendered;
   waitStatusRendered = false;
   frameStaleStatusRendered = false;
   lastFrameAcceptedAtMs = millis();
+  applyFrameUpdateState();
   renderer.OnFrameAccepted(runtimeCtx, event);
   if (redrawAfterStaleStatus) {
     runtimeCtx.screenDirty = true;
@@ -220,15 +323,29 @@ const char* transportCapabilitiesJSON(const char* activeTransport) {
          "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
 #else
   if (activeTransport != nullptr && String(activeTransport) == "usb") {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
            "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32,"
            "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
            "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
+#else
+    return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
+           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,"
+           "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
+           "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
+#endif
   }
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
          "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32,"
          "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
          "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
+#else
+  return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
+         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,"
+         "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
+         "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
+#endif
 #endif
 }
 
@@ -239,7 +356,7 @@ codexbar_display::app::TransportConfig makeTransportConfig(const char* activeTra
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
   config.featuresJSON = "[]";
 #else
-  config.featuresJSON = "[\"theme\",\"theme-spec-v1\"]";
+  config.featuresJSON = kThemeFeatureJSON;
 #endif
   config.capabilitiesJSON = transportCapabilitiesJSON(activeTransport);
   config.maxFrameBytes = kMaxFrameBytes;
@@ -663,6 +780,37 @@ void appendRendererDebugJSON(String& out) {
   out += "}}";
 }
 
+void appendFirmwareUpdateJSON(String& out) {
+  out += "\"update\":{\"available\":";
+  out += firmwareUpdate.available ? "true" : "false";
+  out += ",\"latestVersion\":";
+  if (firmwareUpdate.latestVersion.length() == 0) {
+    out += "null";
+  } else {
+    out += "\"";
+    out += jsonEscape(firmwareUpdate.latestVersion);
+    out += "\"";
+  }
+  out += ",\"manifestUrl\":\"";
+  out += jsonEscape(kFirmwareManifestUrl);
+  out += "\",\"lastCheckedAtMs\":";
+  out += String(firmwareUpdate.lastCheckedAtMs);
+  out += ",\"nextCheckAtMs\":";
+  out += String(firmwareUpdate.nextCheckAtMs);
+  out += ",\"status\":\"";
+  out += jsonEscape(firmwareUpdate.lastStatus);
+  out += "\",\"lastError\":";
+  if (firmwareUpdate.lastError.length() == 0) {
+    out += "null";
+  } else {
+    out += "\"";
+    out += jsonEscape(firmwareUpdate.lastError);
+    out += "\"";
+  }
+  out += ",\"severity\":null,\"message\":null,\"firmwareUrl\":null,\"filesystemUrl\":null,\"sha256\":null";
+  out += "}";
+}
+
 void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uint8_t depth) {
   if (depth > 4) {
     return;
@@ -685,14 +833,6 @@ void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uin
     out += jsonEscape(path);
     out += "\",\"sizeBytes\":";
     out += String(dir.fileSize());
-    String sha256;
-    if (sha256FileHex(path, sha256)) {
-      out += ",\"sha256\":\"";
-      out += sha256;
-      out += "\"";
-    } else {
-      out += ",\"sha256\":null,\"hashError\":\"read_failed\"";
-    }
     out += "}";
   }
 }
@@ -730,6 +870,8 @@ void handleHealth() {
   const bool filesystemMounted = filesystemInfoJSON(out);
   out += ",";
   appendRendererDebugJSON(out);
+  out += ",";
+  appendFirmwareUpdateJSON(out);
   out += ",\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"],\"httpPort\":80,\"maxFrameBytes\":";
   out += String(kMaxFrameBytes);
   out += "}}";
@@ -923,6 +1065,7 @@ void handleOtaUpload(int command, const char* target) {
 
   if (upload.status == UPLOAD_FILE_START) {
     otaUploadSucceeded = false;
+    otaUploadInProgress = true;
     otaUploadError = "";
     const size_t maxSize = otaMaxSizeForCommand(command);
     Serial.printf(
@@ -969,6 +1112,7 @@ void scheduleReboot(const char* reason) {
 
 void handleOtaResult(const char* target) {
   if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
+    otaUploadInProgress = false;
     const String error = otaUploadError.length() > 0 ? otaUploadError : Update.getErrorString();
     Serial.printf("ota_upload_failed target=%s error=%s\n", target, error.c_str());
     webServer.send(500, "text/plain; charset=utf-8", "Update failed: " + error);
@@ -986,6 +1130,7 @@ void handleOtaResult(const char* target) {
   drawUpdateStatus("Restarting");
   waitStatusRendered = true;
   scheduleReboot(target);
+  otaUploadInProgress = false;
 }
 
 void handleFrame() {
@@ -1221,8 +1366,27 @@ void loop() {
   }
 
   maintainWifiConnection();
+  maintainFirmwareUpdateNotice();
 
-  if (codexbar_display::app::HasFrame(runtimeCtx) &&
+  if (firmwareUpdateTopLineDirty &&
+      !waitStatusRendered &&
+      codexbar_display::app::HasFrame(runtimeCtx) &&
+      !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+      !runtimeCtx.screenDirty &&
+      !frameStaleStatusRendered) {
+    const unsigned long renderStartUs = micros();
+    if (renderer.DrawTopLine(runtimeCtx)) {
+      rendered = true;
+      renderDurationUs = micros() - renderStartUs;
+      firmwareUpdateTopLineDirty = false;
+    } else {
+      firmwareUpdateTopLineDirty = false;
+      runtimeCtx.screenDirty = true;
+    }
+  }
+
+  if (!waitStatusRendered &&
+      codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
       !runtimeCtx.screenDirty &&
       !frameStaleStatusRendered) {
@@ -1243,6 +1407,7 @@ void loop() {
   }
 
   if (!setupMode &&
+      !waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
       !runtimeCtx.screenDirty &&
@@ -1257,7 +1422,7 @@ void loop() {
     renderer.TickSplash(runtimeCtx);
   }
 
-  if (runtimeCtx.screenDirty) {
+  if (runtimeCtx.screenDirty && !waitStatusRendered) {
     const unsigned long renderStartUs = micros();
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
     renderer.DrawUsage(runtimeCtx);
@@ -1277,6 +1442,7 @@ void loop() {
     rendered = true;
     renderDurationUs = micros() - renderStartUs;
     runtimeCtx.screenDirty = false;
+    firmwareUpdateTopLineDirty = false;
   }
 
 #ifdef CODEXBAR_DISPLAY_RUNTIME_BENCH

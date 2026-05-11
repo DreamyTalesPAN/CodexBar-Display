@@ -5,6 +5,10 @@
 
 #include "theme_registry.h"
 
+#ifndef CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+#define CODEXBAR_DISPLAY_THEME_SPEC_RENDERER 0
+#endif
+
 namespace codexbar_display {
 namespace core {
 
@@ -26,6 +30,14 @@ struct Frame {
   bool hasThemeSpec = false;
   String themeSpecId;
   int themeSpecRev = 0;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  String themeSpecRaw;
+#endif
+  bool hasUpdateAvailable = false;
+  bool updateAvailable = false;
+  String updateLatestVersion;
+  String updateStatus;
+  String updateLastError;
   bool hasError = false;
   String error;
 };
@@ -112,8 +124,14 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   bool hasThemeSpec = false;
   String themeSpecId;
   int themeSpecRev = 0;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  String themeSpecRaw;
+#endif
   if (doc["themeSpec"].is<JsonObjectConst>()) {
     JsonObjectConst spec = doc["themeSpec"].as<JsonObjectConst>();
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    serializeJson(spec, themeSpecRaw);
+#endif
     if (spec["themeId"].is<const char*>()) {
       themeSpecId = String(spec["themeId"].as<const char*>());
       themeSpecId.trim();
@@ -143,6 +161,25 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     }
   }
 
+  bool hasUpdateAvailable = false;
+  bool updateAvailable = false;
+  String updateLatestVersion;
+  String updateStatus;
+  String updateLastError;
+  if (doc["update"].is<JsonObjectConst>()) {
+    JsonObjectConst update = doc["update"].as<JsonObjectConst>();
+    if (update["available"].is<bool>()) {
+      hasUpdateAvailable = true;
+      updateAvailable = update["available"].as<bool>();
+    }
+    updateLatestVersion = String(update["latestVersion"] | "");
+    updateLatestVersion.trim();
+    updateStatus = String(update["status"] | "");
+    updateStatus.trim();
+    updateLastError = String(update["lastError"] | "");
+    updateLastError.trim();
+  }
+
   if (doc["error"].is<const char*>()) {
     out = {};
     out.hasUsageMode = hasUsageMode;
@@ -152,6 +189,14 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     out.hasThemeSpec = hasThemeSpec;
     out.themeSpecId = themeSpecId;
     out.themeSpecRev = themeSpecRev;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    out.themeSpecRaw = themeSpecRaw;
+#endif
+    out.hasUpdateAvailable = hasUpdateAvailable;
+    out.updateAvailable = updateAvailable;
+    out.updateLatestVersion = updateLatestVersion;
+    out.updateStatus = updateStatus;
+    out.updateLastError = updateLastError;
     out.hasError = true;
     out.error = String(doc["error"].as<const char*>());
     return true;
@@ -173,6 +218,14 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   out.hasThemeSpec = hasThemeSpec;
   out.themeSpecId = themeSpecId;
   out.themeSpecRev = themeSpecRev;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  out.themeSpecRaw = themeSpecRaw;
+#endif
+  out.hasUpdateAvailable = hasUpdateAvailable;
+  out.updateAvailable = updateAvailable;
+  out.updateLatestVersion = updateLatestVersion;
+  out.updateStatus = updateStatus;
+  out.updateLastError = updateLastError;
   out.hasError = false;
   out.error = "";
   return true;
@@ -193,7 +246,16 @@ inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
          previous.weekTokens != next.weekTokens ||
          previous.totalTokens != next.totalTokens ||
          previous.hasUsageMode != next.hasUsageMode ||
-         previous.usageMode != next.usageMode;
+         previous.usageMode != next.usageMode ||
+         previous.hasThemeSpec != next.hasThemeSpec ||
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+         previous.themeSpecRaw != next.themeSpecRaw ||
+#endif
+         previous.hasUpdateAvailable != next.hasUpdateAvailable ||
+         previous.updateAvailable != next.updateAvailable ||
+         previous.updateLatestVersion != next.updateLatestVersion ||
+         previous.updateStatus != next.updateStatus ||
+         previous.updateLastError != next.updateLastError;
 }
 
 inline bool FrameThemeChanged(const Frame& previous, const Frame& next) {
@@ -232,6 +294,11 @@ inline bool ConsumeFrameLine(
         runtimeState.cachedThemeId == next.themeSpecId &&
         runtimeState.cachedThemeRev == next.themeSpecRev) {
       outEvent.themeSpecCacheHit = true;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+      if (next.themeSpecRaw.length() == 0) {
+        next.themeSpecRaw = previous.themeSpecRaw;
+      }
+#endif
     } else {
       runtimeState.cachedThemeId = next.themeSpecId;
       runtimeState.cachedThemeRev = next.themeSpecRev;

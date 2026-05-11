@@ -20,7 +20,15 @@ type Frame struct {
 	TotalTokens   int64           `json:"totalTokens,omitempty"`
 	Theme         string          `json:"theme,omitempty"`
 	ThemeSpec     json.RawMessage `json:"themeSpec,omitempty"`
+	Update        *UpdateState    `json:"update,omitempty"`
 	Error         string          `json:"error,omitempty"`
+}
+
+type UpdateState struct {
+	Available     bool   `json:"available"`
+	LatestVersion string `json:"latestVersion,omitempty"`
+	Status        string `json:"status,omitempty"`
+	LastError     string `json:"lastError,omitempty"`
 }
 
 func (f Frame) Normalize() Frame {
@@ -58,6 +66,11 @@ func (f Frame) Normalize() Frame {
 	f.Theme = theme.Normalize(f.Theme)
 	if len(f.ThemeSpec) > 0 && !json.Valid(f.ThemeSpec) {
 		f.ThemeSpec = nil
+	}
+	if f.Update != nil {
+		f.Update.LatestVersion = strings.TrimSpace(f.Update.LatestVersion)
+		f.Update.Status = strings.TrimSpace(f.Update.Status)
+		f.Update.LastError = strings.TrimSpace(f.Update.LastError)
 	}
 	return f
 }
