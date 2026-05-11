@@ -545,6 +545,11 @@ type firmwareManifest struct {
 type firmwareArtifact struct {
 	Board           string `json:"board"`
 	FirmwareVersion string `json:"firmwareVersion"`
+	Severity        string `json:"severity"`
+	Message         string `json:"message"`
+	FirmwareURL     string `json:"firmwareUrl"`
+	FilesystemURL   string `json:"filesystemUrl"`
+	SHA256          string `json:"sha256"`
 }
 
 func fetchFirmwareUpdateState(ctx context.Context, caps protocol.DeviceCapabilities) (protocol.UpdateState, error) {
@@ -587,6 +592,7 @@ func selectFirmwareUpdate(caps protocol.DeviceCapabilities, manifest firmwareMan
 	board := strings.TrimSpace(strings.ToLower(caps.Board))
 	var latest *versioning.SemVer
 	var latestRaw string
+	var latestArtifact firmwareArtifact
 	for _, artifact := range manifest.Artifacts {
 		if strings.TrimSpace(strings.ToLower(artifact.Board)) != board {
 			continue
@@ -599,15 +605,27 @@ func selectFirmwareUpdate(caps protocol.DeviceCapabilities, manifest firmwareMan
 			candidate := artifactVersion
 			latest = &candidate
 			latestRaw = strings.TrimSpace(artifact.FirmwareVersion)
+			latestArtifact = artifact
 		}
 	}
 	if latest == nil {
 		return protocol.UpdateState{Available: false, Status: "no_board_release"}, nil
 	}
-	if latest.Compare(current) <= 0 {
-		return protocol.UpdateState{Available: false, LatestVersion: latestRaw, Status: "current"}, nil
+	update := protocol.UpdateState{
+		Available:     latest.Compare(current) > 0,
+		LatestVersion: latestRaw,
+		Severity:      latestArtifact.Severity,
+		Message:       latestArtifact.Message,
+		FirmwareURL:   latestArtifact.FirmwareURL,
+		FilesystemURL: latestArtifact.FilesystemURL,
+		SHA256:        latestArtifact.SHA256,
 	}
-	return protocol.UpdateState{Available: true, LatestVersion: latestRaw, Status: "update_available"}, nil
+	if latest.Compare(current) <= 0 {
+		update.Status = "current"
+		return update, nil
+	}
+	update.Status = "update_available"
+	return update, nil
 }
 
 func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {

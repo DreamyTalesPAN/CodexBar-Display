@@ -29,6 +29,11 @@ type UpdateState struct {
 	LatestVersion string `json:"latestVersion,omitempty"`
 	Status        string `json:"status,omitempty"`
 	LastError     string `json:"lastError,omitempty"`
+	Severity      string `json:"severity,omitempty"`
+	Message       string `json:"message,omitempty"`
+	FirmwareURL   string `json:"firmwareUrl,omitempty"`
+	FilesystemURL string `json:"filesystemUrl,omitempty"`
+	SHA256        string `json:"sha256,omitempty"`
 }
 
 func (f Frame) Normalize() Frame {
@@ -71,6 +76,11 @@ func (f Frame) Normalize() Frame {
 		f.Update.LatestVersion = strings.TrimSpace(f.Update.LatestVersion)
 		f.Update.Status = strings.TrimSpace(f.Update.Status)
 		f.Update.LastError = strings.TrimSpace(f.Update.LastError)
+		f.Update.Severity = strings.TrimSpace(f.Update.Severity)
+		f.Update.Message = strings.TrimSpace(f.Update.Message)
+		f.Update.FirmwareURL = strings.TrimSpace(f.Update.FirmwareURL)
+		f.Update.FilesystemURL = strings.TrimSpace(f.Update.FilesystemURL)
+		f.Update.SHA256 = strings.TrimSpace(f.Update.SHA256)
 	}
 	return f
 }

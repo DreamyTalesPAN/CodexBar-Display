@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -355,6 +356,77 @@ func TestDownloadReleaseFirmwareVerifiesManifestAndChecksum(t *testing.T) {
 	}
 	if data, err := os.ReadFile(manifestPath); err != nil || !strings.Contains(string(data), `"release": "v1.0.3"`) {
 		t.Fatalf("unexpected manifest data data=%q err=%v", string(data), err)
+	}
+}
+
+func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	imageBody := "firmware image"
+	imageSHA := sha256String(imageBody)
+	uploaded := false
+	firmwareVersion := "1.0.0"
+	serverURL := ""
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"` + firmwareVersion + `","features":["theme"],"maxFrameBytes":1024}`))
+		case "/manifest.json":
+			_, _ = w.Write([]byte(`{
+  "schemaVersion": 1,
+  "release": "v1.0.1",
+  "artifacts": [{
+    "firmwareEnv": "esp8266_smalltv_st7789",
+    "board": "esp8266-smalltv-st7789",
+    "firmwareVersion": "1.0.1",
+    "asset": "firmware.bin",
+    "firmwareUrl": "` + serverURL + `/firmware.bin",
+    "sha256": "` + imageSHA + `"
+  }]
+}`))
+		case "/firmware.bin":
+			_, _ = w.Write([]byte(imageBody))
+		case "/update/firmware":
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Errorf("parse multipart: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			file, _, err := r.FormFile("firmware")
+			if err != nil {
+				t.Errorf("firmware file missing: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			data, err := io.ReadAll(file)
+			_ = file.Close()
+			if err != nil || string(data) != imageBody {
+				t.Errorf("unexpected uploaded body=%q err=%v", string(data), err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			uploaded = true
+			firmwareVersion = "1.0.1"
+			_, _ = w.Write([]byte("ok"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	serverURL = server.URL
+	releaseHTTPClient = server.Client()
+
+	err := runInstallUpdate([]string{"--target", server.URL, "--manifest-url", server.URL + "/manifest.json"})
+	if err != nil {
+		t.Fatalf("install update: %v", err)
+	}
+	if !uploaded {
+		t.Fatal("expected OTA upload")
 	}
 }
 

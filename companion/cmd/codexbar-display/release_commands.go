@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
@@ -32,6 +35,7 @@ const (
 	defaultReleaseRepo        = "DreamyTalesPAN/CodexBar-Display"
 	githubAPIBaseURL          = "https://api.github.com"
 	githubDownloadBaseURL     = "https://github.com"
+	vibeTVFirmwareManifestURL = "https://vibetv.shop/cdn/shop/t/1/assets/firmware-manifest.json"
 )
 
 var (
@@ -48,6 +52,7 @@ var (
 	runRestoreKnownGoodCommandFn                       = runRestoreKnownGood
 	releaseHTTPClient                  releaseHTTPDoer = &http.Client{Timeout: 5 * time.Minute}
 	flashReleaseFirmwareImageFn                        = flashReleaseFirmwareImage
+	uploadFirmwareOTAFn                                = uploadFirmwareOTA
 )
 
 const launchAgentLabel = "com.codexbar-display.daemon.plist"
@@ -415,6 +420,93 @@ func runUpgrade(args []string) (retErr error) {
 	return nil
 }
 
+func runInstallUpdate(args []string) error {
+	fs := flag.NewFlagSet("install-update", flag.ContinueOnError)
+	target := fs.String("target", setup.DefaultWiFiTarget(), "VibeTV URL, for example http://vibetv.local")
+	manifestURL := fs.String("manifest-url", vibeTVFirmwareManifestURL, "firmware manifest URL")
+	force := fs.Bool("force", false, "install even when the device already reports the latest firmware")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	base, err := normalizeHTTPBaseURL(*target)
+	if err != nil {
+		return &commandError{Op: "resolve-target", Code: errcode.UpgradeFlashFirmware, Err: err}
+	}
+
+	hello, err := fetchDeviceHelloHTTP(ctx, base)
+	if err != nil {
+		return &commandError{
+			Op:   "device-hello",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  err,
+			Hint: "open http://vibetv.local/health or pass --target http://<device-ip>",
+		}
+	}
+	caps := protocol.CapabilitiesFromHello(hello)
+	fmt.Printf("device: target=%s board=%s firmware=%s\n", base, caps.Board, caps.Firmware)
+
+	manifest, err := fetchReleaseFirmwareManifestURL(ctx, strings.TrimSpace(*manifestURL))
+	if err != nil {
+		return &commandError{Op: "fetch-firmware-manifest", Code: errcode.UpgradeFlashFirmware, Err: err}
+	}
+	artifact, err := selectLatestFirmwareArtifactForBoard(manifest, caps.Board)
+	if err != nil {
+		return &commandError{Op: "select-firmware", Code: errcode.UpgradeVersionGuard, Err: err}
+	}
+	targetVersion := normalizeReleaseVersion(artifact.FirmwareVersion)
+
+	current, currentErr := versioning.ParseSemVer(caps.Firmware)
+	next, nextErr := versioning.ParseSemVer(targetVersion)
+	if currentErr != nil {
+		return &commandError{Op: "parse-current-firmware", Code: errcode.UpgradeVersionGuard, Err: currentErr}
+	}
+	if nextErr != nil {
+		return &commandError{Op: "parse-target-firmware", Code: errcode.UpgradeVersionGuard, Err: nextErr}
+	}
+	if current.Compare(next) >= 0 && !*force {
+		fmt.Printf("firmware already current: installed=%s latest=%s\n", caps.Firmware, targetVersion)
+		return nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return &commandError{Op: "resolve-home", Code: errcode.UpgradeStateWrite, Err: err}
+	}
+	imagePath, err := downloadManifestFirmwareArtifact(ctx, home, manifest, artifact)
+	if err != nil {
+		return &commandError{
+			Op:   "download-firmware",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  err,
+			Hint: "check network access and the manifest firmwareUrl/sha256 fields",
+		}
+	}
+	fmt.Printf("firmware downloaded: %s sha256=%s\n", imagePath, strings.TrimSpace(artifact.SHA256))
+
+	if err := uploadFirmwareOTAFn(ctx, base, imagePath); err != nil {
+		return &commandError{
+			Op:   "ota-upload",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  err,
+			Hint: "keep VibeTV powered and on the same WiFi, then retry",
+		}
+	}
+	fmt.Println("firmware upload: ok; waiting for VibeTV to restart")
+
+	if err := waitForHTTPFirmwareVersion(ctx, base, targetVersion, 90*time.Second); err != nil {
+		return &commandError{
+			Op:   "post-update-verify",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  err,
+			Hint: "wait one minute, then open http://vibetv.local/health",
+		}
+	}
+	fmt.Printf("update complete: firmware=%s\n", targetVersion)
+	return nil
+}
+
 type releaseHTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
@@ -430,7 +522,11 @@ type releaseFirmwareArtifact struct {
 	FirmwareEnv     string `json:"firmwareEnv"`
 	Board           string `json:"board"`
 	FirmwareVersion string `json:"firmwareVersion"`
+	Severity        string `json:"severity"`
+	Message         string `json:"message"`
 	Asset           string `json:"asset"`
+	FirmwareURL     string `json:"firmwareUrl"`
+	FilesystemURL   string `json:"filesystemUrl"`
 	SHA256          string `json:"sha256"`
 }
 
@@ -582,6 +678,108 @@ func selectReleaseFirmwareArtifact(manifest releaseFirmwareManifest, firmwareEnv
 	return releaseFirmwareArtifact{}, fmt.Errorf("no firmware artifact for env %q in release manifest", firmwareEnv)
 }
 
+func selectLatestFirmwareArtifactForBoard(manifest releaseFirmwareManifest, board string) (releaseFirmwareArtifact, error) {
+	board = strings.TrimSpace(strings.ToLower(board))
+	if board == "" {
+		return releaseFirmwareArtifact{}, errors.New("device board is empty")
+	}
+
+	var selected releaseFirmwareArtifact
+	var selectedVersion *versioning.SemVer
+	for _, artifact := range manifest.Artifacts {
+		if strings.TrimSpace(strings.ToLower(artifact.Board)) != board {
+			continue
+		}
+		parsed, err := versioning.ParseSemVer(artifact.FirmwareVersion)
+		if err != nil {
+			continue
+		}
+		if selectedVersion == nil || parsed.Compare(*selectedVersion) > 0 {
+			candidate := parsed
+			selectedVersion = &candidate
+			selected = artifact
+		}
+	}
+	if selectedVersion == nil {
+		return releaseFirmwareArtifact{}, fmt.Errorf("no firmware artifact for board %q", board)
+	}
+	if strings.TrimSpace(selected.SHA256) == "" {
+		return releaseFirmwareArtifact{}, fmt.Errorf("manifest artifact for board %q has empty sha256", board)
+	}
+	return selected, nil
+}
+
+func fetchReleaseFirmwareManifestURL(ctx context.Context, manifestURL string) (releaseFirmwareManifest, error) {
+	manifestURL = strings.TrimSpace(manifestURL)
+	if manifestURL == "" {
+		return releaseFirmwareManifest{}, errors.New("manifest URL cannot be empty")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, manifestURL, nil)
+	if err != nil {
+		return releaseFirmwareManifest{}, err
+	}
+	req.Header.Set("User-Agent", "codexbar-display-update")
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return releaseFirmwareManifest{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return releaseFirmwareManifest{}, fmt.Errorf("GET %s returned %s body=%q", manifestURL, resp.Status, strings.TrimSpace(string(body)))
+	}
+	var manifest releaseFirmwareManifest
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 128*1024)).Decode(&manifest); err != nil {
+		return releaseFirmwareManifest{}, err
+	}
+	return manifest, nil
+}
+
+func downloadManifestFirmwareArtifact(ctx context.Context, home string, manifest releaseFirmwareManifest, artifact releaseFirmwareArtifact) (string, error) {
+	firmwareURL := strings.TrimSpace(artifact.FirmwareURL)
+	if firmwareURL == "" && strings.HasPrefix(strings.TrimSpace(artifact.Asset), "http") {
+		firmwareURL = strings.TrimSpace(artifact.Asset)
+	}
+	if firmwareURL == "" && strings.TrimSpace(manifest.Release) != "" && strings.TrimSpace(artifact.Asset) != "" {
+		firmwareURL = githubReleaseAssetURL(defaultReleaseRepo, manifest.Release, artifact.Asset)
+	}
+	if firmwareURL == "" {
+		return "", errors.New("manifest artifact has no firmwareUrl or downloadable asset")
+	}
+
+	version := normalizeReleaseVersion(artifact.FirmwareVersion)
+	releaseDir := filepath.Join(
+		home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
+		"updates",
+		"firmware",
+		sanitizePathToken(version),
+	)
+	assetName := strings.TrimSpace(artifact.Asset)
+	if assetName == "" {
+		assetName = "firmware-" + sanitizePathToken(version) + ".bin"
+	}
+	imagePath := filepath.Join(releaseDir, filepath.Base(assetName))
+	if err := downloadURLToFile(ctx, firmwareURL, imagePath, 0o644); err != nil {
+		return "", err
+	}
+
+	actualSHA, err := sha256File(imagePath)
+	if err != nil {
+		return "", err
+	}
+	expectedSHA := strings.ToLower(strings.TrimSpace(artifact.SHA256))
+	if expectedSHA == "" {
+		return "", errors.New("manifest artifact has empty sha256")
+	}
+	if actualSHA != expectedSHA {
+		return "", fmt.Errorf("sha256 mismatch for %s: expected %s actual %s", assetName, expectedSHA, actualSHA)
+	}
+	return imagePath, nil
+}
+
 func fetchJSON(ctx context.Context, endpoint string, target any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -663,6 +861,113 @@ func sha256File(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func normalizeHTTPBaseURL(raw string) (string, error) {
+	target := strings.TrimSpace(raw)
+	if target == "" {
+		return "", errors.New("target is required, for example http://vibetv.local")
+	}
+	if !strings.Contains(target, "://") {
+		target = "http://" + target
+	}
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("unsupported target scheme %q", parsed.Scheme)
+	}
+	if strings.TrimSpace(parsed.Host) == "" {
+		return "", errors.New("target host is required")
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func fetchDeviceHelloHTTP(ctx context.Context, base string) (protocol.DeviceHello, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/hello", nil)
+	if err != nil {
+		return protocol.DeviceHello{}, err
+	}
+	req.Header.Set("User-Agent", "codexbar-display-update")
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return protocol.DeviceHello{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return protocol.DeviceHello{}, fmt.Errorf("GET /hello returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var hello protocol.DeviceHello
+	if err := json.NewDecoder(resp.Body).Decode(&hello); err != nil {
+		return protocol.DeviceHello{}, err
+	}
+	return hello.Normalize(), nil
+}
+
+func uploadFirmwareOTA(ctx context.Context, base, imagePath string) error {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("firmware", filepath.Base(imagePath))
+	if err != nil {
+		return err
+	}
+	file, err := os.Open(imagePath)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/update/firmware", &body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("User-Agent", "codexbar-display-update")
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("POST /update/firmware returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func waitForHTTPFirmwareVersion(ctx context.Context, base, version string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		hello, err := fetchDeviceHelloHTTP(ctx, base)
+		if err == nil && normalizeReleaseVersion(hello.Firmware) == normalizeReleaseVersion(version) {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("device reported firmware %q, want %q", hello.Firmware, version)
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if lastErr != nil {
+		return fmt.Errorf("timed out waiting for firmware %s: %w", version, lastErr)
+	}
+	return fmt.Errorf("timed out waiting for firmware %s", version)
 }
 
 func flashReleaseFirmwareImage(ctx context.Context, port string, artifact releaseFirmwareArtifact, imagePath string) error {
