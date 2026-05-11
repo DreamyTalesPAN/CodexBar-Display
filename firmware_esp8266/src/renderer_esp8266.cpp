@@ -76,6 +76,10 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
 
+  if (display::CurrentFrame().hasThemeSpec) {
+    display::StopMiniGifPlayback();
+  }
+
   Theme previousTheme = display::ActiveTheme();
   if (display::CurrentFrame().hasTheme) {
     Theme frameTheme;
@@ -384,6 +388,9 @@ void RendererESP8266::DrawError(app::RuntimeContext& ctx, const String& message)
 void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
+  if (display::DrawThemeSpecUsage()) {
+    return;
+  }
 
   switch (display::ActiveTheme()) {
     case Theme::Mini:
@@ -404,9 +411,25 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
 #endif
 }
 
+bool RendererESP8266::DrawTopLine(app::RuntimeContext& ctx) {
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  display::AttachContext(ctx);
+  if (display::ActiveTheme() == Theme::Mini && !display::CurrentFrame().hasThemeSpec) {
+    return display::DrawMiniProviderLineOnly();
+  }
+  return false;
+#else
+  (void)ctx;
+  return false;
+#endif
+}
+
 void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
+  if (display::CurrentFrame().hasThemeSpec && display::DrawThemeSpecUsage()) {
+    return;
+  }
 
   switch (display::ActiveTheme()) {
     case Theme::Mini:

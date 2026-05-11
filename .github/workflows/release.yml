@@ -64,8 +64,19 @@ jobs:
             set -- ${SPEC}
             DIR="$1"
             ENV_NAME="$2"
+            MAX_FLASH_PCT="45"
+            MAX_RAM_PCT="82"
+            MAX_BIN_BYTES="0"
+            if [[ "${ENV_NAME}" == "esp8266_smalltv_st7789" ]]; then
+              MAX_BIN_BYTES="450000"
+            fi
 
-            CODEXBAR_DISPLAY_FW_VERSION="${VERSION}" pio run -d "${DIR}" -e "${ENV_NAME}"
+            CODEXBAR_DISPLAY_FW_VERSION="${VERSION}" ./scripts/check-firmware-size-budget.sh \
+              "${DIR}" \
+              "${ENV_NAME}" \
+              "${MAX_FLASH_PCT}" \
+              "${MAX_RAM_PCT}" \
+              "${MAX_BIN_BYTES}"
 
             SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
             DEST="dist/firmware/codexbar-display-firmware-${ENV_NAME}-v${VERSION}.bin"

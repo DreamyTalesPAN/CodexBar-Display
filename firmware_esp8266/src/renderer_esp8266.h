@@ -37,6 +37,7 @@ class RendererESP8266 : public app::Renderer {
   void TickActive(app::RuntimeContext& ctx) override;
   void DrawError(app::RuntimeContext& ctx, const String& message) override;
   void DrawUsage(app::RuntimeContext& ctx) override;
+  bool DrawTopLine(app::RuntimeContext& ctx);
   void DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) override;
 };
 

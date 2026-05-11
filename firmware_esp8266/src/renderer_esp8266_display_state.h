@@ -129,6 +129,8 @@ void DrawErrorCRT(const String& message);
 void DrawUsageCRT();
 void DrawResetCRT(int64_t remainSecs);
 
+bool DrawThemeSpecUsage();
+
 const char* MiniGifAssetPath();
 void ResetMiniGifFrameSchedule();
 void StopMiniGifPlayback();
@@ -136,6 +138,7 @@ bool ShouldRenderMiniGif();
 void TickMiniGif(bool forceFrame);
 int MiniGifReservedWidth();
 void DrawMiniGifPlaceholder();
+bool DrawMiniProviderLineOnly();
 
 void DrawSplashMini();
 void TickSplashMini();

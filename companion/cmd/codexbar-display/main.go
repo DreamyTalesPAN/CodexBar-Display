@@ -21,6 +21,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themespec"
+	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -82,8 +83,8 @@ func printUsage() {
 	fmt.Println("  codexbar-display upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--repo owner/name] [--skip-version-guard]")
 	fmt.Println("  codexbar-display rollback [--port /dev/cu.usbserial-10] [--skip-companion] [--skip-firmware] [--image path/to/backup.bin] [--manifest path/to/backup.manifest] [--backup-dir <dir>] [--script-path <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
-	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
-	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
+	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
+	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
@@ -357,18 +358,30 @@ func runThemeValidate(args []string) error {
 	fs := flag.NewFlagSet("theme-validate", flag.ContinueOnError)
 	specPath := fs.String("spec", "", "path to ThemeSpec v1 JSON")
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
+	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
 	allowUnknown := fs.Bool(
 		"allow-unknown-capabilities",
 		false,
-		"allow local USB fallback profile when device hello is unavailable",
+		"allow local fallback profile when device capabilities are unavailable",
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	_, _, resolvedPort, caps, err := loadAndValidateThemeSpec(
-		strings.TrimSpace(*specPath),
+	selectedTransport, requestedTarget, err := resolveThemeSpecTransport(
+		resolveThemeSpecTransportName(*transportName, strings.TrimSpace(*port), flagWasSet(fs, "transport")),
+		strings.TrimSpace(*target),
 		strings.TrimSpace(*port),
+	)
+	if err != nil {
+		return err
+	}
+
+	_, _, resolvedTarget, caps, err := loadAndValidateThemeSpec(
+		strings.TrimSpace(*specPath),
+		selectedTransport,
+		requestedTarget,
 		*allowUnknown,
 	)
 	if err != nil {
@@ -376,10 +389,11 @@ func runThemeValidate(args []string) error {
 	}
 
 	fmt.Printf(
-		"theme-spec valid: protocol=%d board=%s port=%s maxBytes=%d maxPrimitives=%d\n",
+		"theme-spec valid: transport=%s protocol=%d board=%s target=%s maxBytes=%d maxPrimitives=%d\n",
+		selectedTransport.Name(),
 		caps.NegotiatedProtocolVersion,
 		caps.Board,
-		resolvedPort,
+		resolvedTarget,
 		caps.MaxThemeSpecBytes,
 		caps.MaxThemePrimitives,
 	)
@@ -390,18 +404,30 @@ func runThemeApply(args []string) error {
 	fs := flag.NewFlagSet("theme-apply", flag.ContinueOnError)
 	specPath := fs.String("spec", "", "path to ThemeSpec v1 JSON")
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
+	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
 	allowUnknown := fs.Bool(
 		"allow-unknown-capabilities",
 		false,
-		"allow local USB fallback profile when device hello is unavailable",
+		"allow local fallback profile when device capabilities are unavailable",
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	spec, raw, resolvedPort, caps, err := loadAndValidateThemeSpec(
-		strings.TrimSpace(*specPath),
+	selectedTransport, requestedTarget, err := resolveThemeSpecTransport(
+		resolveThemeSpecTransportName(*transportName, strings.TrimSpace(*port), flagWasSet(fs, "transport")),
+		strings.TrimSpace(*target),
 		strings.TrimSpace(*port),
+	)
+	if err != nil {
+		return err
+	}
+
+	spec, raw, resolvedTarget, caps, err := loadAndValidateThemeSpec(
+		strings.TrimSpace(*specPath),
+		selectedTransport,
+		requestedTarget,
 		*allowUnknown,
 	)
 	if err != nil {
@@ -434,28 +460,69 @@ func runThemeApply(args []string) error {
 			),
 		}
 	}
-	if err := usb.SendLine(resolvedPort, line); err != nil {
+	if err := selectedTransport.SendLine(resolvedTarget, line); err != nil {
 		return err
 	}
 
 	fmt.Printf(
-		"theme-spec applied: id=%s rev=%d protocol=%d board=%s port=%s\n",
+		"theme-spec applied: id=%s rev=%d transport=%s protocol=%d board=%s target=%s\n",
 		spec.ThemeID,
 		spec.ThemeRev,
+		selectedTransport.Name(),
 		frame.V,
 		caps.Board,
-		resolvedPort,
+		resolvedTarget,
 	)
 	return nil
 }
 
-func loadAndValidateThemeSpec(specPath, requestedPort string, allowUnknown bool) (themespec.Spec, []byte, string, protocol.DeviceCapabilities, error) {
+func resolveThemeSpecTransport(transportName, target, port string) (transportlayer.DeviceTransport, string, error) {
+	normalizedTransport := strings.TrimSpace(strings.ToLower(transportName))
+	if normalizedTransport == "" {
+		normalizedTransport = setup.DefaultTransport()
+	}
+	switch normalizedTransport {
+	case "wifi":
+		return transportlayer.NewWiFiTransport(), strings.TrimSpace(target), nil
+	case "usb":
+		return transportlayer.NewUSBTransport(), strings.TrimSpace(port), nil
+	default:
+		return nil, "", fmt.Errorf("unsupported transport %q", transportName)
+	}
+}
+
+func resolveThemeSpecTransportName(transportName, port string, transportExplicit bool) string {
+	if !transportExplicit && strings.TrimSpace(port) != "" {
+		return "usb"
+	}
+	return strings.TrimSpace(transportName)
+}
+
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	wasSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			wasSet = true
+		}
+	})
+	return wasSet
+}
+
+func loadAndValidateThemeSpec(
+	specPath string,
+	deviceTransport transportlayer.DeviceTransport,
+	requestedTarget string,
+	allowUnknown bool,
+) (themespec.Spec, []byte, string, protocol.DeviceCapabilities, error) {
 	if strings.TrimSpace(specPath) == "" {
 		return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, &commandError{
 			Op:   "theme-spec/load",
 			Code: errcode.ProtocolThemeSpecInvalid,
 			Err:  errors.New("missing required --spec path"),
 		}
+	}
+	if deviceTransport == nil {
+		return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, errors.New("device transport is required")
 	}
 
 	spec, raw, err := themespec.Load(specPath)
@@ -474,22 +541,24 @@ func loadAndValidateThemeSpec(specPath, requestedPort string, allowUnknown bool)
 		}
 	}
 
-	resolvedPort, err := usb.ResolvePort(requestedPort)
+	resolvedTarget, err := deviceTransport.ResolvePort(requestedTarget)
 	if err != nil {
 		return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, err
 	}
-	caps, err := usb.GetDeviceCapabilities(resolvedPort)
+	caps, err := deviceTransport.DeviceCapabilities(resolvedTarget)
 	if err != nil {
 		if allowUnknown && errcode.Of(err) == errcode.ProtocolDeviceHelloUnavailable {
 			caps = fallbackThemeSpecCapabilities()
-			fmt.Printf("warning: device hello unavailable; using local USB fallback capabilities for validation on %s\n", resolvedPort)
+			caps.ActiveTransport = deviceTransport.Name()
+			fmt.Printf("warning: device hello unavailable; using local fallback capabilities for validation on %s\n", resolvedTarget)
 		} else {
 			return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, err
 		}
 	}
 	if allowUnknown && !caps.Known {
 		caps = fallbackThemeSpecCapabilities()
-		fmt.Printf("warning: capabilities unknown; using local USB fallback profile on %s\n", resolvedPort)
+		caps.ActiveTransport = deviceTransport.Name()
+		fmt.Printf("warning: capabilities unknown; using local fallback profile on %s\n", resolvedTarget)
 	}
 	if !allowUnknown && !caps.Known {
 		return themespec.Spec{}, nil, "", protocol.DeviceCapabilities{}, &commandError{
@@ -506,7 +575,7 @@ func loadAndValidateThemeSpec(specPath, requestedPort string, allowUnknown bool)
 		}
 	}
 
-	return spec, raw, resolvedPort, caps, nil
+	return spec, raw, resolvedTarget, caps, nil
 }
 
 func fallbackThemeSpecCapabilities() protocol.DeviceCapabilities {

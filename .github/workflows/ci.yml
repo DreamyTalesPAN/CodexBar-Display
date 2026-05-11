@@ -46,6 +46,27 @@ jobs:
       - name: Check ESP8266 soak gate
         run: ./scripts/check-esp8266-soak-gate.sh
 
+  theme-studio-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tools/theme-studio/package-lock.json
+
+      - name: Install Theme Studio dependencies
+        working-directory: tools/theme-studio
+        run: npm ci
+
+      - name: Build Theme Studio
+        working-directory: tools/theme-studio
+        run: npm run test:preview
+
   firmware-build-v0:
     runs-on: ubuntu-latest
     strategy:
@@ -56,6 +77,7 @@ jobs:
             env_name: esp8266_smalltv_st7789
             max_flash_pct: 45
             max_ram_pct: 82
+            max_bin_bytes: 450000
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,13 +90,18 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
+      - name: Test ThemeSpec renderer core
+        working-directory: firmware_esp8266
+        run: pio test -e native_theme_spec_renderer
+
       - name: Build firmware + size budget
         run: |
           ./scripts/check-firmware-size-budget.sh \
             "${{ matrix.firmware_dir }}" \
             "${{ matrix.env_name }}" \
             "${{ matrix.max_flash_pct }}" \
-            "${{ matrix.max_ram_pct }}"
+            "${{ matrix.max_ram_pct }}" \
+            "${{ matrix.max_bin_bytes }}"
 
   firmware-build-experimental:
     runs-on: ubuntu-latest
@@ -97,4 +124,5 @@ jobs:
             "firmware_esp32" \
             "lilygo_t_display_s3" \
             "20" \
-            "25"
+            "25" \
+            "0"
