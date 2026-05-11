@@ -425,8 +425,18 @@ func runInstallUpdate(args []string) error {
 	target := fs.String("target", setup.DefaultWiFiTarget(), "VibeTV URL, for example http://vibetv.local")
 	manifestURL := fs.String("manifest-url", vibeTVFirmwareManifestURL, "firmware manifest URL")
 	force := fs.Bool("force", false, "install even when the device already reports the latest firmware")
+	confirmLiveUpdate := fs.Bool("confirm-live-update", false, "allow installing from the default live Shopify firmware manifest")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	manifestURLExplicit := flagWasSet(fs, "manifest-url")
+	if !manifestURLExplicit && !*confirmLiveUpdate {
+		return &commandError{
+			Op:   "confirm-live-update",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  errors.New("refusing to install from the live firmware manifest without --confirm-live-update"),
+			Hint: "for PR or hardware tests, pass an explicit --manifest-url for the test manifest; for production live updates, rerun with --confirm-live-update",
+		}
 	}
 
 	ctx := context.Background()
@@ -469,6 +479,14 @@ func runInstallUpdate(args []string) error {
 		fmt.Printf("firmware already current: installed=%s latest=%s\n", caps.Firmware, targetVersion)
 		return nil
 	}
+	fmt.Printf(
+		"update plan: manifest=%s installed=%s target=%s board=%s asset=%s\n",
+		strings.TrimSpace(*manifestURL),
+		caps.Firmware,
+		targetVersion,
+		caps.Board,
+		strings.TrimSpace(artifact.Asset),
+	)
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -885,6 +903,16 @@ func normalizeHTTPBaseURL(raw string) (string, error) {
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String(), nil
+}
+
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	wasSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			wasSet = true
+		}
+	})
+	return wasSet
 }
 
 func fetchDeviceHelloHTTP(ctx context.Context, base string) (protocol.DeviceHello, error) {

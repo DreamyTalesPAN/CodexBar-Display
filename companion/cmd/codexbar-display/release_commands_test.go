@@ -430,6 +430,32 @@ func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
 	}
 }
 
+func TestRunInstallUpdateRequiresLiveManifestConfirmation(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Errorf("unexpected request before confirmation: %s", r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.0","features":["theme"],"maxFrameBytes":1024}`))
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	err := runInstallUpdate([]string{"--target", server.URL})
+	if err == nil {
+		t.Fatal("expected confirmation error")
+	}
+	if !strings.Contains(err.Error(), "confirm-live-update") {
+		t.Fatalf("expected live confirmation error, got %v", err)
+	}
+}
+
 func TestRunUpgradeDownloadsAndFlashesReleaseFirmware(t *testing.T) {
 	previousResolve := resolveSerialPortFn
 	previousEnsureBusy := ensureSerialPortNotBusyFn

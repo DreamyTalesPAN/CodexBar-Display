@@ -398,7 +398,7 @@ String htmlEscape(const String& raw) {
 }
 
 String updateInstallCommand() {
-  return String("codexbar-display install-update --target http://") + kMdnsHost;
+  return String("codexbar-display install-update --confirm-live-update --target http://") + kMdnsHost;
 }
 
 String updateStatusHTML(bool compact) {
@@ -643,48 +643,33 @@ String connectedPageHTML() {
   setupCommand += "curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash";
 
   String html;
-  html.reserve(6600);
-  html += "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
-  html += "<title>VibeTV Setup</title><style>";
-  html += ":root{color-scheme:dark;--bg:#0b0c0d;--panel:#15171a;--line:#2b2f35;--text:#f6f4ed;--muted:#a9adb3;--signal:#c7ff00}";
-  html += "*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:var(--bg);color:var(--text)}";
-  html += "main{max-width:640px;margin:0 auto;padding:28px 20px 34px}.device{border:1px solid var(--line);border-radius:8px;background:#101214;padding:14px;margin-bottom:28px}";
-  html += ".device-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.brand{font-weight:900;letter-spacing:0}.pill{border:1px solid #314100;color:var(--signal);padding:6px 10px;border-radius:999px;font-size:13px;font-weight:800}";
-  html += ".device-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.device-item{border-top:1px solid #252a30;padding-top:10px}.label{display:block;color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase}";
-  html += "h1{font-size:40px;line-height:1.02;margin:0 0 12px;letter-spacing:0}.lead{font-size:18px;line-height:1.45;margin:0 0 24px;color:#d8d8d2}";
-  html += ".update{border:1px solid #6f8f00;background:#1b2400;color:#f1ffd0;border-radius:8px;padding:12px;margin-top:12px}.update strong{display:block;color:var(--signal);margin-bottom:4px}.update span{display:block;color:#f1ffd0;line-height:1.45}.update-link{display:inline-block;margin-top:8px;color:var(--signal);font-weight:900}";
-  html += "code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}code{color:#fff}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;border-radius:8px;margin:0 0 14px;padding:14px;color:#fff;line-height:1.25}";
-  html += "button{font:inherit}.primary{width:100%;min-height:48px;border:0;border-radius:8px;background:var(--signal);color:#111;font-weight:900;cursor:pointer}";
-  html += ".steps{display:grid;gap:14px;margin:22px 0 0}.step{border-top:1px solid #30343a;padding-top:14px;color:#d8d8d2;line-height:1.45}.step-title{display:block;color:#fff;font-weight:900;margin-bottom:8px}.num{color:var(--signal);font-weight:900;margin-right:6px}";
-  html += ".tools{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px;align-items:center}.tools form{margin:0}.tools a,.reset{color:var(--muted);background:transparent;border:0;padding:0;text-decoration:underline;text-underline-offset:3px;font:inherit;cursor:pointer}.tools a:hover,.reset:hover{color:var(--signal)}";
-  html += ".note{margin:18px 0 0;color:var(--muted);font-size:14px;line-height:1.45}@media(max-width:560px){main{padding-top:22px}.device-head{display:block}.pill{display:inline-block;margin-top:10px}h1{font-size:34px}.device-grid{grid-template-columns:1fr}}</style></head><body><main>";
-  html += "<section class='device' aria-label='Vibe TV status'><div class='device-head'><div class='brand'>Vibe TV</div><div class='pill'>Connected</div></div><div class='device-grid'><div class='device-item'><span class='label'>Vibe TV address</span><code>http://";
+  html.reserve(3600);
+  html += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
+  html += F("<title>VibeTV Setup</title><style>");
+  html += F(":root{color-scheme:dark;--bg:#0b0c0d;--panel:#15171a;--line:#2b2f35;--text:#f6f4ed;--muted:#a9adb3;--signal:#c7ff00}");
+  html += F("*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:var(--bg);color:var(--text)}");
+  html += F("main{max-width:620px;margin:0 auto;padding:28px 20px 34px}.device,.step{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}");
+  html += F(".brand,.pill,.step-title{font-weight:900}.pill,.update strong,a{color:var(--signal)}h1{font-size:36px;line-height:1.05;margin:22px 0 10px}.lead,.muted,.step{color:var(--muted);line-height:1.45}");
+  html += F(".update{border:1px solid #6f8f00;background:#1b2400;border-radius:8px;padding:12px;margin-top:12px;color:#f1ffd0}.update-link{display:inline-block;margin-top:8px}");
+  html += F("code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;border-radius:8px;padding:14px;color:#fff}");
+  html += F("button{width:100%;min-height:46px;border:0;border-radius:8px;background:var(--signal);color:#111;font:inherit;font-weight:900}.tools{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}.reset{color:var(--muted);background:transparent;border:0;padding:0;text-decoration:underline;width:auto;min-height:0}</style></head><body><main>");
+  html += F("<div class='brand'>Vibe TV</div><section class='device'><div class='pill'>Connected</div><p class='muted'>Address: <code>http://");
   html += kMdnsHost;
-  html += "</code></div><div class='device-item'><span class='label'>Fallback IP</span><code>http://";
+  html += F("</code><br>Fallback IP: <code>http://");
   html += ip;
-  html += "</code></div></div>";
+  html += F("</code></p>");
   html += updateStatusHTML(true);
-  html += "</section>";
+  html += F("</section>");
   if (hasFrame) {
-    html += "<h1>Vibe TV is live.</h1>";
-    html += "<p class='lead'>Your Mac is sending workflow signals. Keep this page for device status, firmware updates, or WiFi reset.</p>";
+    html += F("<h1>Vibe TV is live.</h1><p class='lead'>Your Mac is sending workflow signals.</p>");
   } else {
-    html += "<h1>Finish Mac setup.</h1>";
-    html += "<p class='lead'>Follow these three steps to connect this Mac to Vibe TV.</p>";
-    html += "<section class='steps' aria-label='Mac setup steps'><div class='step'><span class='step-title'><span class='num'>01</span>Copy command</span><pre id='cmd'>";
+    html += F("<h1>Finish Mac setup.</h1><p class='lead'>Copy the command, paste it in Terminal, then wait for live signals.</p><section><div class='step'><span class='step-title'>1. Copy command</span><pre id='cmd'>");
     html += htmlEscape(setupCommand);
-    html += "</pre><textarea id='cmdFallback' readonly style='position:absolute;left:-9999px'></textarea>";
-    html += "<button class='primary' type='button' onclick='copyCmd()' id='copyBtn'>Copy setup command</button></div>";
-    html += "<div class='step'><span class='step-title'><span class='num'>02</span>Paste in Terminal</span>Open Terminal on your Mac, paste the command, and press Enter.</div>";
-    html += "<div class='step'><span class='step-title'><span class='num'>03</span>Wait for live signals</span>When the Mac app starts sending frames, this page changes to the live status view.</div></section>";
+    html += F("</pre><textarea id='cmdFallback' readonly style='position:absolute;left:-9999px'></textarea><button type='button' onclick='copyCmd()' id='copyBtn'>Copy setup command</button></div>");
+    html += F("<div class='step'><span class='step-title'>2. Paste in Terminal</span>Open Terminal, paste, press Enter.</div><div class='step'><span class='step-title'>3. Wait</span>This page changes when frames arrive.</div></section>");
   }
-  html += "<div class='tools'><a href='/health'>Device status</a><a href='/update'>Firmware update</a>";
-  html += "<form method='post' action='/reset-wifi' onsubmit=\"return confirm('Clear WiFi settings and restart setup?')\">";
-  html += "<button class='reset' type='submit'>Reset WiFi</button></form></div>";
-  html += "<script>function copied(){document.getElementById('copyBtn').textContent='Copied';}";
-  html += "function fallbackCopy(t){var a=document.getElementById('cmdFallback');a.value=t;a.focus();a.select();try{document.execCommand('copy');copied();}catch(e){window.prompt('Copy this command',t);}}";
-  html += "function copyCmd(){var t=document.getElementById('cmd').textContent.trim();if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(copied,function(){fallbackCopy(t);});}else{fallbackCopy(t);}}</script>";
-  html += "</body></html>";
+  html += F("<div class='tools'><a href='/health'>Device status</a><a href='/update'>Firmware update</a><form method='post' action='/reset-wifi' onsubmit=\"return confirm('Clear WiFi settings and restart setup?')\"><button class='reset' type='submit'>Reset WiFi</button></form></div>");
+  html += F("<script>function copied(){document.getElementById('copyBtn').textContent='Copied';}function fallbackCopy(t){var a=document.getElementById('cmdFallback');a.value=t;a.focus();a.select();try{document.execCommand('copy');copied();}catch(e){window.prompt('Copy this command',t);}}function copyCmd(){var t=document.getElementById('cmd').textContent.trim();if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(copied,function(){fallbackCopy(t);});}else{fallbackCopy(t);}}</script></body></html>");
   return html;
 }
 
@@ -1082,38 +1067,20 @@ void handleAssetDelete() {
 String updatePageHTML() {
   const String installCommand = updateInstallCommand();
   String html;
-  html.reserve(4600);
+  html.reserve(3000);
   html += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
   html += F("<title>VibeTV Update</title><style>");
-  html += F(":root{color-scheme:dark;--bg:#0b0c0d;--panel:#15171a;--line:#2b2f35;--text:#f6f4ed;--muted:#a9adb3;--signal:#c7ff00}");
-  html += F("*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:var(--bg);color:var(--text)}");
-  html += F("main{max-width:640px;margin:0 auto;padding:28px 20px 34px}.brand{font-weight:900;margin-bottom:28px}");
-  html += F("h1{font-size:40px;line-height:1.02;margin:0 0 12px;letter-spacing:0}.lead{font-size:18px;line-height:1.45;margin:0 0 24px;color:#d8d8d2}");
-  html += F("section{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:16px;margin-top:14px}.update{border-color:#6f8f00;background:#1b2400;color:#f1ffd0}.update strong{display:block;color:var(--signal);margin-bottom:6px}.update span{display:block;line-height:1.45}.update-link{display:none}");
-  html += F("details{border-top:1px solid #30343a;margin-top:22px;padding-top:16px}summary{cursor:pointer;color:var(--signal);font-weight:900}.muted{color:var(--muted);line-height:1.45}");
-  html += F("input,button{box-sizing:border-box;width:100%;font:inherit;padding:12px;border-radius:8px;border:1px solid #3a3f47;background:#101214;color:#fff}input{margin-top:10px}");
-  html += F("button{margin-top:10px;background:var(--signal);color:#111;border:0;font-weight:900}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}code{background:#101214;padding:2px 5px;border-radius:4px}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;border-radius:8px;margin:0;padding:14px;color:#fff;line-height:1.25}");
-  html += F("a{color:var(--muted);text-underline-offset:3px}a:hover{color:var(--signal)}@media(max-width:560px){main{padding-top:22px}h1{font-size:34px}}</style></head><body><main>");
-  html += F("<div class='brand'>Vibe TV</div><h1>Firmware update.</h1>");
-  html += F("<p class='lead'>Use the Mac app to download, verify, upload, and restart Vibe TV.</p>");
+  html += F(":root{color-scheme:dark;--bg:#0b0c0d;--line:#2b2f35;--text:#f6f4ed;--muted:#a9adb3;--signal:#c7ff00}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:var(--bg);color:var(--text)}main{max-width:620px;margin:0 auto;padding:28px 20px 34px}.brand,summary{font-weight:900;color:var(--signal)}h1{font-size:36px;line-height:1.05;margin:22px 0 10px}.lead,.muted{color:var(--muted);line-height:1.45}section{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}.update{border:1px solid #6f8f00;background:#1b2400;border-radius:8px;padding:12px;color:#f1ffd0}.update-link{display:none}input,button{width:100%;font:inherit;padding:12px;border-radius:8px;border:1px solid #3a3f47;background:#101214;color:#fff;margin-top:10px}button{background:var(--signal);color:#111;border:0;font-weight:900}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;border-radius:8px;padding:14px}</style></head><body><main>");
+  html += F("<div class='brand'>Vibe TV</div><h1>Firmware update.</h1><p class='lead'>Use the Mac app to download, verify, upload, and restart Vibe TV.</p>");
   html += updateStatusHTML(false);
   html += F("<section><h2>Install with Mac</h2><p class='muted'>Run this on the connected Mac. Companion downloads firmware, checks SHA256, uploads it, and waits for restart.</p><pre>");
   html += htmlEscape(installCommand);
   html += F("</pre></section>");
-  html += F("<details><summary>Manual upload tools</summary>");
-  html += F("<section><h2>Firmware</h2><p class='muted'>Upload <code>firmware.bin</code> only when support asks for it.</p>");
+  html += F("<details><summary>Manual upload tools</summary><section><h2>Firmware</h2><p class='muted'>Upload <code>firmware.bin</code> only when support asks for it.</p>");
   html += F("<form method='post' action='/update/firmware' enctype='multipart/form-data'>");
   html += F("<input type='file' name='firmware' accept='.bin,application/octet-stream' required>");
   html += F("<button type='submit'>Upload firmware</button></form></section>");
-  html += F("<section><h2>Display files</h2><p class='muted'>Upload the support-provided display package.</p>");
-  html += F("<form method='post' action='/update/filesystem' enctype='multipart/form-data'>");
-  html += F("<input type='file' name='filesystem' accept='.bin,application/octet-stream' required>");
-  html += F("<button type='submit'>Upload display files</button></form>");
-  html += F("<h2>Single display file</h2><p class='muted'>Upload one display asset only when support provides a path.</p>");
-  html += F("<form method='post' action='/assets' enctype='multipart/form-data'>");
-  html += F("<input name='path' placeholder='/asset.gif' required>");
-  html += F("<input type='file' name='asset' accept='.gif,.jpg,.jpeg,.png,.json,application/octet-stream' required>");
-  html += F("<button type='submit'>Upload file</button></form></section></details>");
+  html += F("</details>");
   html += F("<p class='muted'><a href='/'>Back to setup</a> | <a href='/health'>Device status</a> | <a href='/assets'>File list</a></p></main></body></html>");
   return html;
 }
