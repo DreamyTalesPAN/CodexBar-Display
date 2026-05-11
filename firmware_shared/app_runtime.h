@@ -11,6 +11,7 @@ struct RuntimeContext {
   core::RuntimeState runtime;
   core::LineReaderState lineReader;
   bool screenDirty = true;
+  String topLineOverride;
   int64_t lastRenderedSecs = -1;
   int64_t lastRenderedMinuteBucket = -1;
 };
@@ -37,4 +38,3 @@ inline String FormatDuration(int64_t secs) {
 
 }  // namespace app
 }  // namespace codexbar_display
-

@@ -404,6 +404,19 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
 #endif
 }
 
+bool RendererESP8266::DrawTopLine(app::RuntimeContext& ctx) {
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  display::AttachContext(ctx);
+  if (display::ActiveTheme() == Theme::Mini && !display::CurrentFrame().hasThemeSpec) {
+    return display::DrawMiniProviderLineOnly();
+  }
+  return false;
+#else
+  (void)ctx;
+  return false;
+#endif
+}
+
 void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);

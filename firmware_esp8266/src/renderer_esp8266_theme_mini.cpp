@@ -68,12 +68,23 @@ int centeredXForText(const char* text, int textSize) {
   return x;
 }
 
-int centeredXForColumn(const char* text, int textSize, int columnCenterX) {
-  int x = columnCenterX - (TextPixelWidth(text, textSize) / 2);
-  if (x < 0) {
-    return 0;
+void drawProviderLineMini(bool clearLine) {
+  TFT_eSPI& tft = Tft();
+  const char* provider = ProviderLabelText();
+  const int textSize = ChooseTextSizeToFit(provider, kProviderTextSize, 1, tft.width() - 4);
+  int y = (kUsageLabelY - TextPixelHeight(textSize)) / 2;
+  if (y < 0) {
+    y = 0;
   }
-  return x;
+
+  if (clearLine) {
+    PrimitiveFillRect(0, 0, tft.width(), kUsageLabelY, kMiniBg);
+  }
+  tft.setTextFont(1);
+  tft.setTextSize(textSize);
+  tft.setTextColor(kMiniMuted, kMiniBg);
+  tft.setCursor(centeredXForText(provider, textSize), y);
+  tft.print(provider);
 }
 
 int centeredXForColumnPixels(int textWidthPx, int columnCenterX) {
@@ -174,7 +185,7 @@ void StopMiniGifPlayback() {
 }
 
 bool ShouldRenderMiniGif() {
-  return ActiveTheme() == Theme::Mini && HasFrame() && !CurrentFrame().hasError;
+  return ActiveTheme() == Theme::Mini && HasFrame() && !CurrentFrame().hasError && !CurrentFrame().hasThemeSpec;
 }
 
 void TickMiniGif(bool forceFrame) {
@@ -212,6 +223,14 @@ void DrawMiniGifPlaceholder() {
     tft.setCursor(x + ((boxW - TextPixelWidth(label, 1)) / 2), y + ((boxH - TextPixelHeight(1)) / 2));
     tft.print(label);
   }
+}
+
+bool DrawMiniProviderLineOnly() {
+  if (!ShouldRenderMiniGif()) {
+    return false;
+  }
+  drawProviderLineMini(true);
+  return true;
 }
 
 void DrawSplashMini() {
@@ -287,12 +306,7 @@ void DrawUsageMini() {
   PrimitiveFillScreen(kMiniBg);
   tft.setTextWrap(false);
 
-  const char* provider = ProviderLabelText();
-  tft.setTextFont(1);
-  tft.setTextSize(kProviderTextSize);
-  tft.setTextColor(kMiniMuted, kMiniBg);
-  tft.setCursor(centeredXForText(provider, kProviderTextSize), 4);
-  tft.print(provider);
+  drawProviderLineMini(false);
 
   const int leftCenter = kUsageLeftCenter;
   const int rightCenter = tft.width() - leftCenter;

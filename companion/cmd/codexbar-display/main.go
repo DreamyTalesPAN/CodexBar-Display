@@ -44,6 +44,8 @@ func main() {
 		err = runVersion(os.Args[2:])
 	case "upgrade":
 		err = runUpgrade(os.Args[2:])
+	case "install-update":
+		err = runInstallUpdate(os.Args[2:])
 	case "rollback":
 		err = runRollback(os.Args[2:])
 	case "restore-known-good":
@@ -80,6 +82,7 @@ func printUsage() {
 	fmt.Println("  codexbar-display service <start|stop|status>")
 	fmt.Println("  codexbar-display version [--short] [--json]")
 	fmt.Println("  codexbar-display upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--repo owner/name] [--skip-version-guard]")
+	fmt.Println("  codexbar-display install-update [--target http://vibetv.local] [--manifest-url url] [--confirm-live-update] [--force]")
 	fmt.Println("  codexbar-display rollback [--port /dev/cu.usbserial-10] [--skip-companion] [--skip-firmware] [--image path/to/backup.bin] [--manifest path/to/backup.manifest] [--backup-dir <dir>] [--script-path <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")

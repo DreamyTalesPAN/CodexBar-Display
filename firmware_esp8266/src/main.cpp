@@ -6,7 +6,6 @@
 #include <ESP8266WiFi.h>
 #include <LittleFS.h>
 #include <Updater.h>
-#include <bearssl/bearssl_hash.h>
 
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
@@ -18,6 +17,12 @@
 
 #ifndef CODEXBAR_DISPLAY_FW_VERSION
 #define CODEXBAR_DISPLAY_FW_VERSION "dev"
+#endif
+
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+const char kThemeFeatureJSON[] = "[\"theme\",\"theme-spec-v1\"]";
+#else
+const char kThemeFeatureJSON[] = "[\"theme\"]";
 #endif
 
 namespace {
@@ -43,22 +48,43 @@ constexpr unsigned long kWifiReconnectFallbackMs = 120000UL;
 constexpr unsigned long kRebootDelayMs = 750UL;
 constexpr unsigned long kBootRecoveryStableMs = 30000UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
+constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr uint8_t kBootRecoveryThreshold = 3;
 constexpr size_t kMaxAssetPathBytes = 96;
 const char kSetupApSsid[] = "VibeTV-Setup";
 const char kSetupHost[] = "vibetv.local";
 const char kMdnsName[] = "vibetv";
 const char kMdnsHost[] = "vibetv.local";
+const char kFirmwareManifestUrl[] = "https://vibetv.shop/cdn/shop/t/1/assets/firmware-manifest.json";
+const char* const kFirmwareUpdateNoticeTexts[] = {
+    "Update Available:",
+    "vibetv.local",
+};
+constexpr uint8_t kFirmwareUpdateNoticeTextCount =
+    sizeof(kFirmwareUpdateNoticeTexts) / sizeof(kFirmwareUpdateNoticeTexts[0]);
 
 struct WifiCredentials {
   char ssid[kWifiSsidBytes] = {0};
   char password[kWifiPasswordBytes] = {0};
 };
 
+struct FirmwareUpdateState {
+  bool available = false;
+  String latestVersion;
+  String lastStatus = "disabled";
+  String lastError;
+  unsigned long lastCheckedAtMs = 0;
+  unsigned long nextCheckAtMs = 0;
+  bool noticeVisible = false;
+  uint8_t noticePhase = 0;
+  unsigned long noticeLastToggleAtMs = 0;
+};
+
 bool httpServerStarted = false;
 bool setupMode = false;
 bool waitStatusRendered = false;
 bool otaUploadSucceeded = false;
+bool otaUploadInProgress = false;
 String otaUploadError;
 bool assetUploadSucceeded = false;
 String assetUploadError;
@@ -75,6 +101,8 @@ bool mdnsStarted = false;
 unsigned long wifiDisconnectedAtMs = 0;
 unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
+FirmwareUpdateState firmwareUpdate;
+bool firmwareUpdateTopLineDirty = false;
 
 String jsonEscape(const String& raw) {
   String escaped;
@@ -105,40 +133,113 @@ String jsonEscape(const String& raw) {
   return escaped;
 }
 
-String bytesToHex(const uint8_t* bytes, size_t len) {
-  static const char kHex[] = "0123456789abcdef";
-  String out;
-  out.reserve(len * 2);
-  for (size_t i = 0; i < len; ++i) {
-    out += kHex[(bytes[i] >> 4) & 0x0f];
-    out += kHex[bytes[i] & 0x0f];
+void appendJSONNullableString(String& out, const String& value) {
+  if (value.length() == 0) {
+    out += "null";
+    return;
   }
-  return out;
+  out += "\"";
+  out += jsonEscape(value);
+  out += "\"";
 }
 
-bool sha256FileHex(const String& path, String& out) {
-  File file = LittleFS.open(path, "r");
-  if (!file) {
-    return false;
+void markFirmwareUpdateNoticeDirty() {
+  if (!codexbar_display::app::HasFrame(runtimeCtx) ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+    return;
+  }
+  if (!runtimeCtx.screenDirty && !waitStatusRendered && !frameStaleStatusRendered) {
+    firmwareUpdateTopLineDirty = true;
+  } else {
+    runtimeCtx.screenDirty = true;
+  }
+}
+
+void applyFirmwareUpdateNoticePhase() {
+  if (firmwareUpdate.noticePhase == 0 ||
+      firmwareUpdate.noticePhase > kFirmwareUpdateNoticeTextCount) {
+    runtimeCtx.topLineOverride = "";
+    firmwareUpdate.noticeVisible = false;
+    firmwareUpdate.noticePhase = 0;
+    return;
+  }
+  runtimeCtx.topLineOverride = kFirmwareUpdateNoticeTexts[firmwareUpdate.noticePhase - 1];
+  firmwareUpdate.noticeVisible = true;
+}
+
+void clearFirmwareUpdateNotice() {
+  if (runtimeCtx.topLineOverride.length() == 0 && !firmwareUpdate.noticeVisible) {
+    return;
+  }
+  runtimeCtx.topLineOverride = "";
+  firmwareUpdate.noticeVisible = false;
+  firmwareUpdate.noticePhase = 0;
+  firmwareUpdate.noticeLastToggleAtMs = millis();
+  markFirmwareUpdateNoticeDirty();
+}
+
+void maintainFirmwareUpdateNotice() {
+  if (!firmwareUpdate.available ||
+      setupMode ||
+      frameStaleStatusRendered ||
+      !codexbar_display::app::HasFrame(runtimeCtx) ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+    clearFirmwareUpdateNotice();
+    return;
   }
 
-  br_sha256_context ctx;
-  br_sha256_init(&ctx);
-
-  uint8_t buffer[512];
-  while (true) {
-    const size_t readLen = file.read(buffer, sizeof(buffer));
-    if (readLen == 0) {
-      break;
-    }
-    br_sha256_update(&ctx, buffer, readLen);
-    yield();
+  const unsigned long nowMs = millis();
+  if (firmwareUpdate.noticeLastToggleAtMs == 0) {
+    firmwareUpdate.noticeLastToggleAtMs = nowMs;
+    return;
+  }
+  if ((nowMs - firmwareUpdate.noticeLastToggleAtMs) < kFirmwareUpdateNoticeToggleMs) {
+    return;
   }
 
-  uint8_t digest[br_sha256_SIZE];
-  br_sha256_out(&ctx, digest);
-  out = bytesToHex(digest, sizeof(digest));
-  return true;
+  firmwareUpdate.noticeLastToggleAtMs = nowMs;
+  firmwareUpdate.noticePhase =
+      (firmwareUpdate.noticePhase + 1) % (kFirmwareUpdateNoticeTextCount + 1);
+  applyFirmwareUpdateNoticePhase();
+  markFirmwareUpdateNoticeDirty();
+}
+
+void applyFrameUpdateState() {
+  if (!codexbar_display::app::HasFrame(runtimeCtx)) {
+    return;
+  }
+
+  const codexbar_display::core::Frame& frame = codexbar_display::app::CurrentFrame(runtimeCtx);
+  if (!frame.hasUpdateAvailable) {
+    return;
+  }
+
+  String nextStatus = frame.updateStatus;
+  if (nextStatus.length() == 0) {
+    nextStatus = frame.updateAvailable ? "update_available" : "current";
+  }
+  const bool changed = firmwareUpdate.available != frame.updateAvailable ||
+                       firmwareUpdate.latestVersion != frame.updateLatestVersion ||
+                       firmwareUpdate.lastStatus != nextStatus ||
+                       firmwareUpdate.lastError != frame.updateLastError;
+  firmwareUpdate.available = frame.updateAvailable;
+  firmwareUpdate.latestVersion = frame.updateLatestVersion;
+  firmwareUpdate.lastError = frame.updateLastError;
+  firmwareUpdate.lastCheckedAtMs = millis();
+  firmwareUpdate.nextCheckAtMs = 0;
+  firmwareUpdate.lastStatus = nextStatus;
+
+  if (!firmwareUpdate.available) {
+    clearFirmwareUpdateNotice();
+    return;
+  }
+  if (changed) {
+    firmwareUpdate.noticeVisible = true;
+    firmwareUpdate.noticePhase = 1;
+    firmwareUpdate.noticeLastToggleAtMs = millis();
+    applyFirmwareUpdateNoticePhase();
+    runtimeCtx.screenDirty = true;
+  }
 }
 
 void drawWaitingForCompanionStatus() {
@@ -156,6 +257,10 @@ void drawWifiResetStatus(const String& line2) {
 
 void drawUpdateStatus(const String& line2) {
   renderer.DrawStatus(runtimeCtx, "VIBE TV UPDATE", "Update running", line2);
+}
+
+bool statusScreenLocked() {
+  return otaUploadInProgress || rebootPending;
 }
 
 void resetWifiReconnectState() {
@@ -197,10 +302,16 @@ String displayErrorMessage(const String& message) {
 }
 
 void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, const char* transport) {
+  if (statusScreenLocked()) {
+    Serial.printf("frame_ignored transport=%s reason=status_screen_locked\n", transport);
+    return;
+  }
+
   const bool redrawAfterStaleStatus = frameStaleStatusRendered;
   waitStatusRendered = false;
   frameStaleStatusRendered = false;
   lastFrameAcceptedAtMs = millis();
+  applyFrameUpdateState();
   renderer.OnFrameAccepted(runtimeCtx, event);
   if (redrawAfterStaleStatus) {
     runtimeCtx.screenDirty = true;
@@ -220,15 +331,29 @@ const char* transportCapabilitiesJSON(const char* activeTransport) {
          "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
 #else
   if (activeTransport != nullptr && String(activeTransport) == "usb") {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
            "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32,"
            "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
            "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
+#else
+    return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
+           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,"
+           "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
+           "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
+#endif
   }
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
          "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32,"
          "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
          "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
+#else
+  return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
+         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,"
+         "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
+         "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
+#endif
 #endif
 }
 
@@ -239,7 +364,7 @@ codexbar_display::app::TransportConfig makeTransportConfig(const char* activeTra
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
   config.featuresJSON = "[]";
 #else
-  config.featuresJSON = "[\"theme\",\"theme-spec-v1\"]";
+  config.featuresJSON = kThemeFeatureJSON;
 #endif
   config.capabilitiesJSON = transportCapabilitiesJSON(activeTransport);
   config.maxFrameBytes = kMaxFrameBytes;
@@ -270,6 +395,51 @@ String htmlEscape(const String& raw) {
     }
   }
   return escaped;
+}
+
+String updateInstallCommand() {
+  return String("codexbar-display install-update --confirm-live-update --target http://") + kMdnsHost;
+}
+
+String updateStatusHTML(bool compact) {
+  String html;
+  html.reserve(700);
+  if (firmwareUpdate.available) {
+    html += compact ? F("<div class='update'>") : F("<section class='update'>");
+    html += F("<strong>Firmware update available</strong>");
+    html += F("<span>Installed: <code>");
+    html += htmlEscape(String(CODEXBAR_DISPLAY_FW_VERSION));
+    html += F("</code>");
+    if (firmwareUpdate.latestVersion.length() > 0) {
+      html += F(" / Latest: <code>");
+      html += htmlEscape(firmwareUpdate.latestVersion);
+      html += F("</code>");
+    }
+    html += F("</span><a class='update-link' href='/update'>Install update</a>");
+    html += compact ? F("</div>") : F("</section>");
+    return html;
+  }
+
+  if (!compact) {
+    html += F("<section><h2>Firmware status</h2><p class='muted'>Installed: <code>");
+    html += htmlEscape(String(CODEXBAR_DISPLAY_FW_VERSION));
+    html += F("</code>");
+    if (firmwareUpdate.latestVersion.length() > 0) {
+      html += F("<br>Latest known: <code>");
+      html += htmlEscape(firmwareUpdate.latestVersion);
+      html += F("</code>");
+    }
+    html += F("<br>Status: <code>");
+    html += htmlEscape(firmwareUpdate.lastStatus);
+    html += F("</code>");
+    if (firmwareUpdate.lastError.length() > 0) {
+      html += F("<br>Last check error: <code>");
+      html += htmlEscape(firmwareUpdate.lastError);
+      html += F("</code>");
+    }
+    html += F("</p></section>");
+  }
+  return html;
 }
 
 bool readWifiCredentials(WifiCredentials& creds) {
@@ -467,38 +637,39 @@ String setupPageHTML() {
 
 String connectedPageHTML() {
   const String ip = WiFi.localIP().toString();
+  const bool hasFrame = codexbar_display::app::HasFrame(runtimeCtx);
   String setupCommand;
   setupCommand.reserve(120);
   setupCommand += "curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash";
 
   String html;
-  html.reserve(2600);
-  html += "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
-  html += "<title>VibeTV Setup</title><style>";
-  html += "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:#101113;color:#f7f7f2}";
-  html += "main{max-width:560px;margin:0 auto;padding:32px 20px}.card{border:1px solid #2c3036;border-radius:8px;padding:18px;background:#181a1d}";
-  html += "h1{margin:0 0 10px}.muted{color:#aaa;line-height:1.45}.ok{color:#c7ff00;font-weight:700}";
-  html += "code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;background:#0c0d0f;border:1px solid #333;border-radius:8px;padding:14px;color:#fff}";
-  html += "button,a.button{box-sizing:border-box;display:block;width:100%;font:inherit;text-align:center;text-decoration:none;margin-top:14px;padding:13px;border-radius:8px;border:0;background:#c7ff00;color:#111;font-weight:800}";
-  html += "a{color:#c7ff00}.secondary{background:#24272c;color:#f7f7f2;border:1px solid #3a3f47}</style></head><body><main>";
-  html += "<p class='ok'>Vibe TV is connected</p><h1>Set up your Mac</h1>";
-  html += "<p class='muted'>Open Terminal on your Mac, paste this command, and press Enter. It installs the Mac app and connects it to this Vibe TV.</p>";
-  html += "<section class='card'><p class='muted'>Vibe TV address: <code>http://";
+  html.reserve(3600);
+  html += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
+  html += F("<title>VibeTV Setup</title><style>");
+  html += F(":root{color-scheme:dark;--bg:#0b0c0d;--panel:#15171a;--line:#2b2f35;--text:#f6f4ed;--muted:#a9adb3;--signal:#c7ff00}");
+  html += F("*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:var(--bg);color:var(--text)}");
+  html += F("main{max-width:620px;margin:0 auto;padding:28px 20px 34px}.device,.step{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}");
+  html += F(".brand,.pill,.step-title{font-weight:900}.pill,.update strong,a{color:var(--signal)}h1{font-size:36px;line-height:1.05;margin:22px 0 10px}.lead,.muted,.step{color:var(--muted);line-height:1.45}");
+  html += F(".update{border:1px solid #6f8f00;background:#1b2400;border-radius:8px;padding:12px;margin-top:12px;color:#f1ffd0}.update-link{display:inline-block;margin-top:8px}");
+  html += F("code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;border-radius:8px;padding:14px;color:#fff}");
+  html += F("button{width:100%;min-height:46px;border:0;border-radius:8px;background:var(--signal);color:#111;font:inherit;font-weight:900}.tools{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}.reset{color:var(--muted);background:transparent;border:0;padding:0;text-decoration:underline;width:auto;min-height:0}</style></head><body><main>");
+  html += F("<div class='brand'>Vibe TV</div><section class='device'><div class='pill'>Connected</div><p class='muted'>Address: <code>http://");
   html += kMdnsHost;
-  html += "</code><br>Fallback IP: <code>http://";
+  html += F("</code><br>Fallback IP: <code>http://");
   html += ip;
-  html += "</code></p><pre id='cmd'>";
-  html += htmlEscape(setupCommand);
-  html += "</pre><textarea id='cmdFallback' readonly style='position:absolute;left:-9999px'></textarea>";
-  html += "<button type='button' onclick='copyCmd()' id='copyBtn'>Copy Mac Setup Command</button></section>";
-  html += "<a class='button secondary' href='/health'>Check Status</a>";
-  html += "<p class='muted'>Advanced: <a href='/update'>Firmware update</a></p>";
-  html += "<form method='post' action='/reset-wifi' onsubmit=\"return confirm('Clear WiFi settings and restart setup?')\">";
-  html += "<button class='secondary' type='submit'>Reset WiFi Setup</button></form>";
-  html += "<script>function copied(){document.getElementById('copyBtn').textContent='Copied';}";
-  html += "function fallbackCopy(t){var a=document.getElementById('cmdFallback');a.value=t;a.focus();a.select();try{document.execCommand('copy');copied();}catch(e){window.prompt('Copy this command',t);}}";
-  html += "function copyCmd(){var t=document.getElementById('cmd').textContent.trim();if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(copied,function(){fallbackCopy(t);});}else{fallbackCopy(t);}}</script>";
-  html += "</body></html>";
+  html += F("</code></p>");
+  html += updateStatusHTML(true);
+  html += F("</section>");
+  if (hasFrame) {
+    html += F("<h1>Vibe TV is live.</h1><p class='lead'>Your Mac is sending workflow signals.</p>");
+  } else {
+    html += F("<h1>Finish Mac setup.</h1><p class='lead'>Copy the command, paste it in Terminal, then wait for live signals.</p><section><div class='step'><span class='step-title'>1. Copy command</span><pre id='cmd'>");
+    html += htmlEscape(setupCommand);
+    html += F("</pre><textarea id='cmdFallback' readonly style='position:absolute;left:-9999px'></textarea><button type='button' onclick='copyCmd()' id='copyBtn'>Copy setup command</button></div>");
+    html += F("<div class='step'><span class='step-title'>2. Paste in Terminal</span>Open Terminal, paste, press Enter.</div><div class='step'><span class='step-title'>3. Wait</span>This page changes when frames arrive.</div></section>");
+  }
+  html += F("<div class='tools'><a href='/health'>Device status</a><a href='/update'>Firmware update</a><form method='post' action='/reset-wifi' onsubmit=\"return confirm('Clear WiFi settings and restart setup?')\"><button class='reset' type='submit'>Reset WiFi</button></form></div>");
+  html += F("<script>function copied(){document.getElementById('copyBtn').textContent='Copied';}function fallbackCopy(t){var a=document.getElementById('cmdFallback');a.value=t;a.focus();a.select();try{document.execCommand('copy');copied();}catch(e){window.prompt('Copy this command',t);}}function copyCmd(){var t=document.getElementById('cmd').textContent.trim();if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(copied,function(){fallbackCopy(t);});}else{fallbackCopy(t);}}</script></body></html>");
   return html;
 }
 
@@ -663,6 +834,34 @@ void appendRendererDebugJSON(String& out) {
   out += "}}";
 }
 
+void appendFirmwareUpdateJSON(String& out) {
+  out += "\"update\":{\"available\":";
+  out += firmwareUpdate.available ? "true" : "false";
+  out += ",\"latestVersion\":";
+  appendJSONNullableString(out, firmwareUpdate.latestVersion);
+  out += ",\"manifestUrl\":\"";
+  out += jsonEscape(kFirmwareManifestUrl);
+  out += "\",\"lastCheckedAtMs\":";
+  out += String(firmwareUpdate.lastCheckedAtMs);
+  out += ",\"nextCheckAtMs\":";
+  out += String(firmwareUpdate.nextCheckAtMs);
+  out += ",\"status\":\"";
+  out += jsonEscape(firmwareUpdate.lastStatus);
+  out += "\",\"lastError\":";
+  appendJSONNullableString(out, firmwareUpdate.lastError);
+  out += ",\"severity\":";
+  out += "null";
+  out += ",\"message\":";
+  out += "null";
+  out += ",\"firmwareUrl\":";
+  out += "null";
+  out += ",\"filesystemUrl\":";
+  out += "null";
+  out += ",\"sha256\":";
+  out += "null";
+  out += "}";
+}
+
 void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uint8_t depth) {
   if (depth > 4) {
     return;
@@ -685,14 +884,6 @@ void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uin
     out += jsonEscape(path);
     out += "\",\"sizeBytes\":";
     out += String(dir.fileSize());
-    String sha256;
-    if (sha256FileHex(path, sha256)) {
-      out += ",\"sha256\":\"";
-      out += sha256;
-      out += "\"";
-    } else {
-      out += ",\"sha256\":null,\"hashError\":\"read_failed\"";
-    }
     out += "}";
   }
 }
@@ -730,6 +921,8 @@ void handleHealth() {
   const bool filesystemMounted = filesystemInfoJSON(out);
   out += ",";
   appendRendererDebugJSON(out);
+  out += ",";
+  appendFirmwareUpdateJSON(out);
   out += ",\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"],\"httpPort\":80,\"maxFrameBytes\":";
   out += String(kMaxFrameBytes);
   out += "}}";
@@ -872,30 +1065,23 @@ void handleAssetDelete() {
 }
 
 String updatePageHTML() {
+  const String installCommand = updateInstallCommand();
   String html;
-  html.reserve(2200);
-  html += "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
-  html += "<title>VibeTV Update</title><style>";
-  html += "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:#101113;color:#f7f7f2}";
-  html += "main{max-width:520px;margin:0 auto;padding:32px 20px}section{border-top:1px solid #333;padding:22px 0}";
-  html += "input,button{box-sizing:border-box;width:100%;font:inherit;padding:12px;border-radius:8px;border:1px solid #555;background:#181a1d;color:#fff}";
-  html += "button{margin-top:12px;background:#c7ff00;color:#111;border:0;font-weight:700}.muted{color:#aaa;line-height:1.4}";
-  html += "code{background:#181a1d;padding:2px 5px;border-radius:4px}</style></head><body><main>";
-  html += "<h1>VibeTV Update</h1><p class='muted'>Upload a matching ESP8266 binary. The device restarts after a successful upload.</p>";
-  html += "<section><h2>Firmware</h2><p class='muted'><code>firmware.bin</code> is written to the sketch slot.</p>";
-  html += "<form method='post' action='/update/firmware' enctype='multipart/form-data'>";
-  html += "<input type='file' name='firmware' accept='.bin,application/octet-stream' required>";
-  html += "<button type='submit'>Upload firmware</button></form></section>";
-  html += "<section><h2>Display files</h2><p class='muted'>Upload the support-provided display package. Vibe TV restarts after a successful upload.</p>";
-  html += "<form method='post' action='/update/filesystem' enctype='multipart/form-data'>";
-  html += "<input type='file' name='filesystem' accept='.bin,application/octet-stream' required>";
-  html += "<button type='submit'>Upload display files</button></form></section>";
-  html += "<section><h2>Single display file</h2><p class='muted'>Support may ask you to upload one file here.</p>";
-  html += "<form method='post' action='/assets' enctype='multipart/form-data'>";
-  html += "<input name='path' placeholder='/asset.gif' required>";
-  html += "<input type='file' name='asset' accept='.gif,.jpg,.jpeg,.png,.json,application/octet-stream' required>";
-  html += "<button type='submit'>Upload file</button></form></section>";
-  html += "<p class='muted'><a href='/health'>Device status</a> · <a href='/assets'>File list</a></p></main></body></html>";
+  html.reserve(3000);
+  html += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
+  html += F("<title>VibeTV Update</title><style>");
+  html += F(":root{color-scheme:dark;--bg:#0b0c0d;--line:#2b2f35;--text:#f6f4ed;--muted:#a9adb3;--signal:#c7ff00}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:var(--bg);color:var(--text)}main{max-width:620px;margin:0 auto;padding:28px 20px 34px}.brand,summary{font-weight:900;color:var(--signal)}h1{font-size:36px;line-height:1.05;margin:22px 0 10px}.lead,.muted{color:var(--muted);line-height:1.45}section{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}.update{border:1px solid #6f8f00;background:#1b2400;border-radius:8px;padding:12px;color:#f1ffd0}.update-link{display:none}input,button{width:100%;font:inherit;padding:12px;border-radius:8px;border:1px solid #3a3f47;background:#101214;color:#fff;margin-top:10px}button{background:var(--signal);color:#111;border:0;font-weight:900}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;border-radius:8px;padding:14px}</style></head><body><main>");
+  html += F("<div class='brand'>Vibe TV</div><h1>Firmware update.</h1><p class='lead'>Use the Mac app to download, verify, upload, and restart Vibe TV.</p>");
+  html += updateStatusHTML(false);
+  html += F("<section><h2>Install with Mac</h2><p class='muted'>Run this on the connected Mac. Companion downloads firmware, checks SHA256, uploads it, and waits for restart.</p><pre>");
+  html += htmlEscape(installCommand);
+  html += F("</pre></section>");
+  html += F("<details><summary>Manual upload tools</summary><section><h2>Firmware</h2><p class='muted'>Upload <code>firmware.bin</code> only when support asks for it.</p>");
+  html += F("<form method='post' action='/update/firmware' enctype='multipart/form-data'>");
+  html += F("<input type='file' name='firmware' accept='.bin,application/octet-stream' required>");
+  html += F("<button type='submit'>Upload firmware</button></form></section>");
+  html += F("</details>");
+  html += F("<p class='muted'><a href='/'>Back to setup</a> | <a href='/health'>Device status</a> | <a href='/assets'>File list</a></p></main></body></html>");
   return html;
 }
 
@@ -923,6 +1109,7 @@ void handleOtaUpload(int command, const char* target) {
 
   if (upload.status == UPLOAD_FILE_START) {
     otaUploadSucceeded = false;
+    otaUploadInProgress = true;
     otaUploadError = "";
     const size_t maxSize = otaMaxSizeForCommand(command);
     Serial.printf(
@@ -969,6 +1156,7 @@ void scheduleReboot(const char* reason) {
 
 void handleOtaResult(const char* target) {
   if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
+    otaUploadInProgress = false;
     const String error = otaUploadError.length() > 0 ? otaUploadError : Update.getErrorString();
     Serial.printf("ota_upload_failed target=%s error=%s\n", target, error.c_str());
     webServer.send(500, "text/plain; charset=utf-8", "Update failed: " + error);
@@ -986,6 +1174,7 @@ void handleOtaResult(const char* target) {
   drawUpdateStatus("Restarting");
   waitStatusRendered = true;
   scheduleReboot(target);
+  otaUploadInProgress = false;
 }
 
 void handleFrame() {
@@ -1221,8 +1410,27 @@ void loop() {
   }
 
   maintainWifiConnection();
+  maintainFirmwareUpdateNotice();
 
-  if (codexbar_display::app::HasFrame(runtimeCtx) &&
+  if (firmwareUpdateTopLineDirty &&
+      !waitStatusRendered &&
+      codexbar_display::app::HasFrame(runtimeCtx) &&
+      !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+      !runtimeCtx.screenDirty &&
+      !frameStaleStatusRendered) {
+    const unsigned long renderStartUs = micros();
+    if (renderer.DrawTopLine(runtimeCtx)) {
+      rendered = true;
+      renderDurationUs = micros() - renderStartUs;
+      firmwareUpdateTopLineDirty = false;
+    } else {
+      firmwareUpdateTopLineDirty = false;
+      runtimeCtx.screenDirty = true;
+    }
+  }
+
+  if (!waitStatusRendered &&
+      codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
       !runtimeCtx.screenDirty &&
       !frameStaleStatusRendered) {
@@ -1243,6 +1451,7 @@ void loop() {
   }
 
   if (!setupMode &&
+      !waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
       !runtimeCtx.screenDirty &&
@@ -1257,7 +1466,7 @@ void loop() {
     renderer.TickSplash(runtimeCtx);
   }
 
-  if (runtimeCtx.screenDirty) {
+  if (runtimeCtx.screenDirty && !waitStatusRendered) {
     const unsigned long renderStartUs = micros();
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
     renderer.DrawUsage(runtimeCtx);
@@ -1277,6 +1486,7 @@ void loop() {
     rendered = true;
     renderDurationUs = micros() - renderStartUs;
     runtimeCtx.screenDirty = false;
+    firmwareUpdateTopLineDirty = false;
   }
 
 #ifdef CODEXBAR_DISPLAY_RUNTIME_BENCH

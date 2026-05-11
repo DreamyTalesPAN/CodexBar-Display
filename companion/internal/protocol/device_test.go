@@ -9,6 +9,7 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 		SupportedProtocolVersions: []int{2, 1},
 		PreferredProtocolVersion:  2,
 		Board:                     "ESP8266-SMALLTV-ST7789",
+		Firmware:                  "1.0.0",
 		Features:                  []string{"theme", "theme-spec-v1"},
 		MaxFrameBytes:             512,
 		Capabilities: CapabilityBlock{
@@ -46,6 +47,9 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	}
 	if caps.Board != "esp8266-smalltv-st7789" {
 		t.Fatalf("unexpected normalized board: %q", caps.Board)
+	}
+	if caps.Firmware != "1.0.0" {
+		t.Fatalf("unexpected firmware version: %q", caps.Firmware)
 	}
 	if caps.MaxThemeSpecBytes != 1024 || caps.MaxThemePrimitives != 32 {
 		t.Fatalf("unexpected theme limits: bytes=%d primitives=%d", caps.MaxThemeSpecBytes, caps.MaxThemePrimitives)

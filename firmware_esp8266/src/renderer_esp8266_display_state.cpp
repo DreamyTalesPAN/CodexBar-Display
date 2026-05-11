@@ -179,6 +179,9 @@ void SetClassicTextSize(int size) {
 }
 
 const char* ProviderLabelText() {
+  if (Context().topLineOverride.length()) {
+    return Context().topLineOverride.c_str();
+  }
   if (CurrentFrame().label.length()) {
     return CurrentFrame().label.c_str();
   }
