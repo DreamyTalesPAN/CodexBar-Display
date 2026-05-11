@@ -278,6 +278,29 @@ textarea:focus {
   pointer-events: none;
 }
 
+.resize-handle {
+  fill: #c7ff68;
+  stroke: #090b0e;
+  stroke-width: 1;
+  pointer-events: all;
+}
+
+.resize-e {
+  cursor: ew-resize;
+}
+
+.resize-s {
+  cursor: ns-resize;
+}
+
+.resize-se {
+  cursor: nwse-resize;
+}
+
+.resize-handle:hover {
+  fill: #ffffff;
+}
+
 .selected-shape {
   stroke: #c7ff68;
   stroke-width: 1.5;

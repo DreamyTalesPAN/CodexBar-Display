@@ -7,6 +7,7 @@ const COLOR_RE = /^#[A-Fa-f0-9]{6}$/;
 const THEME_ID_RE = /^[a-z0-9][a-z0-9\-_]{2,63}$/;
 
 type PrimitiveType = "rect" | "text" | "progress";
+type ResizeHandle = "e" | "s" | "se";
 type BindingKey =
   | "label"
   | "provider"
@@ -418,7 +419,20 @@ function primitiveHitTarget(primitive: Primitive, index: number): string {
 function selectionHandle(primitive: Primitive, index: number): string {
   const width = estimatePrimitiveWidth(primitive);
   const height = estimatePrimitiveHeight(primitive);
-  return `<rect class="selection-box" data-drag="${index}" x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}" fill="none"></rect>`;
+  const box = `<rect class="selection-box" x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}" fill="none"></rect>`;
+  const handles = primitive.type === "text"
+    ? resizeHandle(index, "se", primitive.x + width, primitive.y + height)
+    : [
+        resizeHandle(index, "e", primitive.x + width, primitive.y + height / 2),
+        resizeHandle(index, "s", primitive.x + width / 2, primitive.y + height),
+        resizeHandle(index, "se", primitive.x + width, primitive.y + height),
+      ].join("");
+  return `${box}${handles}`;
+}
+
+function resizeHandle(index: number, handle: ResizeHandle, x: number, y: number): string {
+  const size = 7;
+  return `<rect class="resize-handle resize-${handle}" data-resize-index="${index}" data-resize-handle="${handle}" x="${x - size / 2}" y="${y - size / 2}" width="${size}" height="${size}" rx="1.5"></rect>`;
 }
 
 function estimatePrimitiveWidth(primitive: Primitive): number {
@@ -517,6 +531,13 @@ function bindEvents() {
       render();
     });
     element.addEventListener("pointerdown", startDrag);
+  });
+
+  app.querySelectorAll<SVGElement>("[data-resize-index]").forEach((element) => {
+    element.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    element.addEventListener("pointerdown", startResize);
   });
 }
 
@@ -625,6 +646,59 @@ function startDrag(event: PointerEvent) {
     const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
     primitive.x = clamp(Math.round(originX + point.x - start.x), 0, maxX);
     primitive.y = clamp(Math.round(originY + point.y - start.y), 0, maxY);
+    syncJsonFromSpec();
+    render();
+  };
+  const onUp = () => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+}
+
+function startResize(event: PointerEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const target = event.currentTarget as SVGElement;
+  const index = Number(target.dataset.resizeIndex);
+  const handle = target.dataset.resizeHandle as ResizeHandle;
+  const primitive = state.spec.primitives[index];
+  if (!primitive || !handle) {
+    return;
+  }
+
+  state.selectedIndex = index;
+  const svg = target.closest("svg");
+  if (!svg) {
+    return;
+  }
+
+  const start = pointerPosition(svg, event);
+  const originWidth = estimatePrimitiveWidth(primitive);
+  const originHeight = estimatePrimitiveHeight(primitive);
+  const originFontSize = Math.max(1, primitive.fontSize ?? 1);
+  target.setPointerCapture(event.pointerId);
+
+  const onMove = (moveEvent: PointerEvent) => {
+    const liveSvg = app.querySelector<SVGSVGElement>(".display") ?? svg;
+    const point = pointerPosition(liveSvg, moveEvent);
+    const deltaX = point.x - start.x;
+    const deltaY = point.y - start.y;
+
+    if (primitive.type === "text") {
+      const nextSize = clamp(Math.round(originFontSize + deltaY / 10), 1, 12);
+      primitive.fontSize = nextSize;
+    } else {
+      if (handle === "e" || handle === "se") {
+        primitive.width = clamp(Math.round(originWidth + deltaX), 1, DISPLAY_SIZE - primitive.x);
+      }
+      if (handle === "s" || handle === "se") {
+        primitive.height = clamp(Math.round(originHeight + deltaY), 1, DISPLAY_SIZE - primitive.y);
+      }
+    }
+
     syncJsonFromSpec();
     render();
   };
