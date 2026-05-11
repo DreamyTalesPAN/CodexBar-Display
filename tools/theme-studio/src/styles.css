@@ -251,9 +251,23 @@ textarea:focus {
   touch-action: none;
 }
 
-.preview-text,
 .primitive-hit {
-  cursor: move;
+  cursor: grab;
+  user-select: none;
+}
+
+.primitive-hit:hover {
+  stroke: #c7ff68;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.primitive-hit:active {
+  cursor: grabbing;
+}
+
+.preview-text {
+  pointer-events: none;
   user-select: none;
 }
 
@@ -261,8 +275,7 @@ textarea:focus {
   stroke: #c7ff68;
   stroke-width: 1.5;
   stroke-dasharray: 4 3;
-  pointer-events: all;
-  cursor: move;
+  pointer-events: none;
 }
 
 .selected-shape {

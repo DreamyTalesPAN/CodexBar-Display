@@ -378,9 +378,11 @@ function renderPreview(): string {
 function renderPrimitive(primitive: Primitive, index: number): string {
   const selected = index === state.selectedIndex;
   const handle = selected ? selectionHandle(primitive, index) : "";
+  const hitTarget = primitiveHitTarget(primitive, index);
   if (primitive.type === "rect") {
     return `
-      <rect class="primitive-hit ${selected ? "selected-shape" : ""}" data-drag="${index}" x="${primitive.x}" y="${primitive.y}" width="${primitive.width ?? 1}" height="${primitive.height ?? 1}" fill="${escapeAttr(primitive.color ?? "#000000")}"></rect>
+      <rect class="${selected ? "selected-shape" : ""}" x="${primitive.x}" y="${primitive.y}" width="${primitive.width ?? 1}" height="${primitive.height ?? 1}" fill="${escapeAttr(primitive.color ?? "#000000")}"></rect>
+      ${hitTarget}
       ${handle}
     `;
   }
@@ -390,8 +392,9 @@ function renderPrimitive(primitive: Primitive, index: number): string {
     const pct = primitive.binding === "weekly" || primitive.binding === "weeklyPercent" ? frame.weekly : frame.session;
     const fillWidth = Math.max(0, Math.min(width, Math.round((width * pct) / 100)));
     return `
-      <rect data-drag="${index}" x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}" fill="${escapeAttr(primitive.bgColor ?? "#000000")}" stroke="${escapeAttr(primitive.borderColor ?? "#7B7B7B")}" stroke-width="1"></rect>
-      <rect data-drag="${index}" x="${primitive.x + 2}" y="${primitive.y + 2}" width="${Math.max(0, fillWidth - 4)}" height="${Math.max(0, height - 4)}" fill="${escapeAttr(primitive.color ?? "#FFFFFF")}"></rect>
+      <rect x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}" fill="${escapeAttr(primitive.bgColor ?? "#000000")}" stroke="${escapeAttr(primitive.borderColor ?? "#7B7B7B")}" stroke-width="1"></rect>
+      <rect x="${primitive.x + 2}" y="${primitive.y + 2}" width="${Math.max(0, fillWidth - 4)}" height="${Math.max(0, height - 4)}" fill="${escapeAttr(primitive.color ?? "#FFFFFF")}"></rect>
+      ${hitTarget}
       ${handle}
     `;
   }
@@ -400,9 +403,16 @@ function renderPrimitive(primitive: Primitive, index: number): string {
   const fontPx = size * 9;
   const text = renderTemplate(primitive.text ?? "");
   return `
-    <text class="preview-text ${selected ? "selected-text" : ""}" data-drag="${index}" x="${primitive.x}" y="${primitive.y + fontPx}" font-size="${fontPx}" fill="${escapeAttr(primitive.color ?? "#FFFFFF")}" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-weight="800">${escapeHtml(text)}</text>
+    <text class="preview-text ${selected ? "selected-text" : ""}" x="${primitive.x}" y="${primitive.y + fontPx}" font-size="${fontPx}" fill="${escapeAttr(primitive.color ?? "#FFFFFF")}" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-weight="800">${escapeHtml(text)}</text>
+    ${hitTarget}
     ${handle}
   `;
+}
+
+function primitiveHitTarget(primitive: Primitive, index: number): string {
+  const width = estimatePrimitiveWidth(primitive);
+  const height = estimatePrimitiveHeight(primitive);
+  return `<rect class="primitive-hit" data-drag="${index}" x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}" fill="transparent"></rect>`;
 }
 
 function selectionHandle(primitive: Primitive, index: number): string {
@@ -501,6 +511,11 @@ function bindEvents() {
   });
 
   app.querySelectorAll<SVGElement>("[data-drag]").forEach((element) => {
+    element.addEventListener("click", () => {
+      state.selectedIndex = Number(element.dataset.drag);
+      state.notice = "";
+      render();
+    });
     element.addEventListener("pointerdown", startDrag);
   });
 }
