@@ -5,6 +5,8 @@ const MAX_SPEC_BYTES = 1024;
 const MAX_PRIMITIVES = 32;
 const COLOR_RE = /^#[A-Fa-f0-9]{6}$/;
 const THEME_ID_RE = /^[a-z0-9][a-z0-9\-_]{2,63}$/;
+const FIXED_THEME_REV = 1;
+const FIXED_FALLBACK_THEME = "mini";
 
 type PrimitiveType = "rect" | "text" | "progress";
 type ResizeHandle = "e" | "s" | "se";
@@ -82,8 +84,8 @@ const frame: FrameData = {
 const initialSpec: ThemeSpec = {
   themeSpecVersion: 1,
   themeId: "mini-transport",
-  themeRev: 3,
-  fallbackTheme: "mini",
+  themeRev: FIXED_THEME_REV,
+  fallbackTheme: FIXED_FALLBACK_THEME,
   primitives: [
     { type: "rect", x: 0, y: 0, width: 240, height: 240, color: "#04070E" },
     { type: "text", x: 14, y: 18, text: "Codex", fontSize: 2, color: "#E9F2FF", bgColor: "#04070E" },
@@ -125,9 +127,16 @@ function prettyJson(spec: ThemeSpec): string {
 }
 
 function syncJsonFromSpec() {
+  normalizeMiniThemeSpec();
   state.jsonText = prettyJson(state.spec);
   state.jsonDirty = false;
   validateCurrentSpec();
+}
+
+function normalizeMiniThemeSpec() {
+  state.spec.themeSpecVersion = 1;
+  state.spec.themeRev = FIXED_THEME_REV;
+  state.spec.fallbackTheme = FIXED_FALLBACK_THEME;
 }
 
 function validateCurrentSpec() {
@@ -141,11 +150,11 @@ function validateCurrentSpec() {
   if (!THEME_ID_RE.test(spec.themeId)) {
     errors.push("themeId muss klein geschrieben sein und 3-64 Zeichen haben.");
   }
-  if (!Number.isInteger(spec.themeRev) || spec.themeRev < 1) {
-    errors.push("themeRev muss eine ganze Zahl ab 1 sein.");
+  if (spec.themeRev !== FIXED_THEME_REV) {
+    errors.push(`themeRev muss ${FIXED_THEME_REV} sein.`);
   }
-  if (spec.fallbackTheme && !["classic", "crt", "mini"].includes(spec.fallbackTheme)) {
-    errors.push("fallbackTheme muss classic, crt oder mini sein.");
+  if (spec.fallbackTheme !== FIXED_FALLBACK_THEME) {
+    errors.push("fallbackTheme muss mini sein.");
   }
   if (!Array.isArray(spec.primitives) || spec.primitives.length === 0) {
     errors.push("Mindestens ein Primitive ist erforderlich.");
@@ -284,15 +293,7 @@ function metric(label: string, value: number, max: number): string {
 
 function themeFields(): string {
   return `
-    <label>Theme ID<input data-field="themeId" value="${escapeAttr(state.spec.themeId)}" /></label>
-    <div class="field-grid">
-      <label>Rev<input type="number" min="1" step="1" data-field="themeRev" value="${state.spec.themeRev}" /></label>
-      <label>Fallback
-        <select data-field="fallbackTheme">
-          ${["mini", "classic", "crt"].map((value) => `<option value="${value}" ${state.spec.fallbackTheme === value ? "selected" : ""}>${value}</option>`).join("")}
-        </select>
-      </label>
-    </div>
+    <label>Theme Name<input data-field="themeId" value="${escapeAttr(state.spec.themeId)}" /></label>
   `;
 }
 
@@ -496,12 +497,6 @@ function bindEvents() {
       if (key === "themeId") {
         state.spec.themeId = input.value.trim().toLowerCase();
       }
-      if (key === "themeRev") {
-        state.spec.themeRev = toInt(input.value, 1);
-      }
-      if (key === "fallbackTheme") {
-        state.spec.fallbackTheme = input.value as ThemeSpec["fallbackTheme"];
-      }
       syncJsonFromSpec();
       render();
     });
@@ -614,6 +609,7 @@ function applyJson() {
   try {
     const parsed = JSON.parse(state.jsonText) as ThemeSpec;
     state.spec = parsed;
+    normalizeMiniThemeSpec();
     state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.spec.primitives.length - 1));
     state.notice = "JSON applied.";
     syncJsonFromSpec();

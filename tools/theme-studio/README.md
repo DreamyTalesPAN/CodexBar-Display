@@ -1,6 +1,7 @@
 # Vibe TV Theme Studio
 
 Local ThemeSpec v1 editor for Vibe TV display layouts.
+The MVP targets the Mini theme only. ThemeSpec metadata is kept fixed where possible: `fallbackTheme` is always `mini`, and the UI exposes the stable theme name instead of internal revision/fallback controls.
 
 ```bash
 ../../scripts/theme-studio.sh
