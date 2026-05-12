@@ -116,6 +116,22 @@ const fontOptions = [
 ];
 
 const fallbackFont = fontOptions[0];
+const firmwareFont2Widths = [
+  6, 3, 4, 9, 8, 9, 9, 3,
+  7, 7, 8, 6, 3, 6, 5, 7,
+  8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 3, 3, 6, 6, 6, 8,
+  9, 8, 8, 8, 8, 8, 8, 8,
+  8, 4, 8, 8, 7, 10, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 10,
+  8, 8, 8, 4, 7, 4, 7, 9,
+  5, 7, 7, 7, 7, 7, 6, 7,
+  7, 4, 5, 6, 4, 8, 7, 8,
+  7, 8, 6, 6, 5, 7, 8, 8,
+  6, 7, 7, 5, 3, 5, 8, 6,
+];
+const textMeasureCanvas = document.createElement("canvas");
+const textMeasureContext = textMeasureCanvas.getContext("2d");
 
 const initialSpec: ThemeSpec = {
   themeSpecVersion: 1,
@@ -633,16 +649,7 @@ function konvaNodeForPrimitive(primitive: Primitive, index: number): { node: Edi
     node = result.node;
     animated = result.animated;
   } else {
-    const font = fontOptionFor(primitive.font);
-    node = new Konva.Text({
-      ...commonKonvaProps(primitive, index),
-      text: primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? ""),
-      fontSize: textPixelSize(primitive),
-      fontFamily: font.family,
-      fontStyle: font.weight >= 800 ? "800" : "700",
-      fill: primitive.color ?? "#FFFFFF",
-      listening: true,
-    });
+    node = textKonvaGroup(primitive, index);
   }
 
   bindKonvaNodeEvents(node, index);
@@ -665,7 +672,7 @@ function progressKonvaGroup(primitive: Primitive, index: number): Konva.Group {
   const width = primitive.width ?? 1;
   const height = primitive.height ?? 1;
   const pct = primitive.binding === "weekly" || primitive.binding === "weeklyPercent" ? frame.weekly : frame.session;
-  const fillWidth = Math.max(0, Math.min(width, Math.round((width * pct) / 100)));
+  const fillWidth = Math.max(0, Math.min(width - 2, Math.floor((width * pct) / 100)));
   const group = new Konva.Group({
     ...commonKonvaProps(primitive, index),
     width,
@@ -681,12 +688,48 @@ function progressKonvaGroup(primitive: Primitive, index: number): Konva.Group {
     strokeWidth: 1,
   }));
   group.add(new Konva.Rect({
-    x: 2,
-    y: 2,
-    width: Math.max(0, fillWidth - 4),
-    height: Math.max(0, height - 4),
+    x: 1,
+    y: 1,
+    width: fillWidth,
+    height: Math.max(0, height - 2),
     fill: primitive.color ?? "#FFFFFF",
   }));
+  return group;
+}
+
+function textKonvaGroup(primitive: Primitive, index: number): Konva.Group {
+  const font = fontOptionFor(primitive.font);
+  const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
+  const fontSize = textPixelSize(primitive);
+  const width = estimatePrimitiveWidth(primitive);
+  const height = estimatePrimitiveHeight(primitive);
+  const group = new Konva.Group({
+    ...commonKonvaProps(primitive, index),
+    width,
+    height,
+  });
+  group.add(new Konva.Rect({
+    x: 0,
+    y: 0,
+    width,
+    height,
+    fill: "rgba(0,0,0,0)",
+  }));
+  const textNode = new Konva.Text({
+    x: 0,
+    y: 0,
+    text,
+    fontSize,
+    fontFamily: previewFontFamily(primitive.font, font.family),
+    fontStyle: font.weight >= 800 ? "800" : "700",
+    fill: primitive.color ?? "#FFFFFF",
+    listening: false,
+  });
+  const measuredWidth = measureKonvaTextWidth(text, fontSize, textNode.fontFamily(), textNode.fontStyle());
+  if (measuredWidth > 0) {
+    textNode.scaleX(width / measuredWidth);
+  }
+  group.add(textNode);
   return group;
 }
 
@@ -1026,7 +1069,7 @@ function resizeHandle(index: number, handle: ResizeHandle, x: number, y: number)
 function estimatePrimitiveWidth(primitive: Primitive): number {
   if (primitive.type === "text") {
     const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
-    return Math.max(12, Math.round(text.length * Math.max(1, primitive.fontSize ?? 1) * fontWidthFactor(primitive.font)));
+    return Math.max(1, firmwareTextWidth(text, primitive.font, primitive.fontSize));
   }
   return primitive.width ?? 1;
 }
@@ -1039,12 +1082,50 @@ function estimatePrimitiveHeight(primitive: Primitive): number {
 }
 
 function textPixelSize(primitive: Primitive): number {
-  const size = Math.max(1, primitive.fontSize ?? 1);
-  const font = fontOptionFor(primitive.font);
+  return firmwareFontHeight(primitive.font, primitive.fontSize);
+}
+
+function firmwareFontHeight(fontValue: number | undefined, fontSizeValue: number | undefined): number {
+  const size = Math.max(1, fontSizeValue ?? 1);
+  const font = fontOptionFor(fontValue);
   if (font.value === 2) {
-    return size * 10;
+    return size * 16;
   }
   return size * 8;
+}
+
+function firmwareTextWidth(text: string, fontValue: number | undefined, fontSizeValue: number | undefined): number {
+  const size = Math.max(1, fontSizeValue ?? 1);
+  const font = fontOptionFor(fontValue);
+  if (font.value === 2) {
+    return textWidthFromTable(text, firmwareFont2Widths) * size;
+  }
+  return text.length * 6 * size;
+}
+
+function textWidthFromTable(text: string, widths: number[]): number {
+  let width = 0;
+  for (const char of text) {
+    const code = char.charCodeAt(0);
+    width += code >= 32 && code < 128 ? widths[code - 32] : widths[0];
+  }
+  return width;
+}
+
+function previewFontFamily(fontValue: number | undefined, fallbackFamily: string): string {
+  const font = fontOptionFor(fontValue);
+  if (font.value === 1 || font.value === 2) {
+    return "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  }
+  return fallbackFamily;
+}
+
+function measureKonvaTextWidth(text: string, fontSize: number, family: string, style: string): number {
+  if (!textMeasureContext) {
+    return 0;
+  }
+  textMeasureContext.font = `${style} ${fontSize}px ${family}`;
+  return textMeasureContext.measureText(text).width;
 }
 
 function renderTemplate(text: string): string {
