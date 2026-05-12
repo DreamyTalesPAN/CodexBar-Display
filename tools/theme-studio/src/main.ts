@@ -17,6 +17,7 @@ const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 
 type PrimitiveType = "rect" | "text" | "progress" | "gif" | "pixels";
 type ResizeHandle = "e" | "s" | "se";
+type PixelTool = "move" | "paint" | "erase";
 type EditableKonvaNode = Konva.Group | Konva.Shape;
 type GiflerAnimator = {
   width: number;
@@ -105,6 +106,8 @@ interface AppState {
   warnings: string[];
   notice: string;
   targetOrigin: string;
+  pixelTool: PixelTool;
+  pixelBrushToken: string;
 }
 
 const frame: FrameData = {
@@ -247,10 +250,19 @@ const state: AppState = {
   warnings: [],
   notice: "",
   targetOrigin: storedTargetOrigin(),
+  pixelTool: "move",
+  pixelBrushToken: "a",
 };
 syncJsonFromSpec();
 render();
 window.addEventListener("keydown", handleGlobalKeydown);
+window.addEventListener("pointerup", () => {
+  pixelCanvasPaintActive = false;
+  pixelInspectorPaintActive = false;
+});
+
+let pixelCanvasPaintActive = false;
+let pixelInspectorPaintActive = false;
 
 function cloneSpec(spec: ThemeSpec): ThemeSpec {
   return JSON.parse(JSON.stringify(spec)) as ThemeSpec;
@@ -609,6 +621,10 @@ function addElementPalette(): string {
           <span class="add-icon rect-icon"></span>
           <strong>Rect</strong>
         </button>
+        <button class="add-card" data-action="add-line">
+          <span class="add-icon line-icon"></span>
+          <strong>Line</strong>
+        </button>
         <button class="add-card" data-action="add-gif">
           <span class="add-icon gif-icon">GIF</span>
           <strong>GIF</strong>
@@ -722,11 +738,13 @@ function inspectorFields(primitive: Primitive): string {
         <label>Height<input type="number" min="1" step="1" data-primitive-field="height" value="${primitive.height ?? DEFAULT_PIXELS_HEIGHT}" /></label>
       </div>
       ${rleMode ? `
+        ${pixelPaintPanel(primitive)}
         <label>Palette<textarea rows="3" data-primitive-field="p" spellcheck="false">${escapeHtml((primitive.p ?? []).join("\n"))}</textarea></label>
         <label>RLE rows<textarea rows="8" data-primitive-field="r" spellcheck="false">${escapeHtml((primitive.r ?? []).join("\n"))}</textarea></label>
       ` : `
         ${colorField("Color", "color", primitive.color ?? "#FFFFFF")}
         ${pixelEditorGrid(primitive)}
+        <button type="button" data-action="convert-pixels-rle">Color paint mode</button>
         <label>Bitmap hex<textarea rows="4" data-primitive-field="data" spellcheck="false">${escapeHtml(primitive.data ?? "")}</textarea></label>
       `}
     `;
@@ -758,6 +776,57 @@ function pixelEditorGrid(primitive: Primitive): string {
       ${cells.join("")}
     </div>
   `;
+}
+
+function pixelPaintPanel(primitive: Primitive): string {
+  const width = primitive.width ?? 0;
+  const height = primitive.height ?? 0;
+  if (primitive.type !== "pixels" || width <= 0 || height <= 0 || width * height > 1024) {
+    return "";
+  }
+  const palette = normalizedRlePalette(primitive);
+  const rows = decodeRleTokenRows(primitive);
+  const brush = validPixelBrushToken(palette);
+  const cells: string[] = [];
+  for (let index = 0; index < width * height; index += 1) {
+    const token = rows[Math.floor(index / width)]?.[index % width] ?? ".";
+    const color = token === "." ? "" : palette[token.charCodeAt(0) - 97] ?? "";
+    cells.push(`
+      <button
+        type="button"
+        class="pixel-cell paint-cell ${token !== "." ? "on" : ""}"
+        style="${color ? `--pixel-color:${escapeAttr(color)}` : ""}"
+        data-pixel-paint="${index}"
+        aria-label="Pixel ${index + 1}"
+      ></button>
+    `);
+  }
+  return `
+    <div class="pixel-tool-panel">
+      <div class="segmented pixel-mode">
+        ${pixelToolButton("move", "Move")}
+        ${pixelToolButton("paint", "Paint")}
+        ${pixelToolButton("erase", "Erase")}
+      </div>
+      <div class="pixel-palette">
+        ${palette.map((color, index) => {
+          const token = String.fromCharCode(97 + index);
+          return `
+            <button type="button" class="pixel-swatch ${brush === token ? "selected" : ""}" style="--swatch:${escapeAttr(color)}" data-pixel-brush="${token}" aria-label="Color ${index + 1}"></button>
+            <input type="color" value="${escapeAttr(color)}" data-pixel-palette-color="${index}" aria-label="Edit color ${index + 1}" />
+          `;
+        }).join("")}
+        <button type="button" class="small-button" data-action="add-pixel-color" ${palette.length >= 26 ? "disabled" : ""}>+ Color</button>
+      </div>
+      <div class="pixel-editor pixel-paint-grid" style="--pixel-cols:${width}">
+        ${cells.join("")}
+      </div>
+    </div>
+  `;
+}
+
+function pixelToolButton(tool: PixelTool, label: string): string {
+  return `<button type="button" class="${state.pixelTool === tool ? "selected" : ""}" data-pixel-tool="${tool}">${label}</button>`;
 }
 
 function colorField(label: string, key: keyof Primitive, value: string): string {
@@ -823,7 +892,7 @@ function mountKonvaPreview() {
 
   const nodes: EditableKonvaNode[] = [];
   state.spec.primitives.forEach((primitive, index) => {
-    const result = konvaNodeForPrimitive(primitive, index);
+    const result = konvaNodeForPrimitive(primitive, index, konvaStage, previewScale);
     if (!result) {
       return;
     }
@@ -857,6 +926,13 @@ function mountKonvaPreview() {
   let fallbackDrag: { index: number; startX: number; startY: number; originX: number; originY: number } | null = null;
 
   konvaStage.on("pointerdown", (event) => {
+    if (paintSelectedPixelsAtPointer(konvaStage, previewScale)) {
+      pixelCanvasPaintActive = true;
+      event.cancelBubble = true;
+      syncJsonFromSpec();
+      render();
+      return;
+    }
     if (event.target !== konvaStage) {
       return;
     }
@@ -886,6 +962,11 @@ function mountKonvaPreview() {
   });
 
   konvaStage.on("pointermove", () => {
+    if (pixelCanvasPaintActive && paintSelectedPixelsAtPointer(konvaStage, previewScale)) {
+      syncJsonFromSpec();
+      render();
+      return;
+    }
     if (!fallbackDrag) {
       return;
     }
@@ -1076,9 +1157,9 @@ function pointInPrimitive(primitive: Primitive, x: number, y: number): boolean {
   return localX >= 0 && localX <= width && localY >= 0 && localY <= height;
 }
 
-function konvaNodeForPrimitive(primitive: Primitive, index: number): { node: EditableKonvaNode; animated: boolean } | null {
+function konvaNodeForPrimitive(primitive: Primitive, index: number, konvaStage: Konva.Stage, previewScale: number): { node: EditableKonvaNode; animated: boolean } | null {
   const node = overlayKonvaRect(primitive, index);
-  bindKonvaNodeEvents(node, index);
+  bindKonvaNodeEvents(node, index, konvaStage, previewScale);
   return { node, animated: false };
 }
 
@@ -1086,7 +1167,7 @@ function commonKonvaProps(primitive: Primitive, index: number) {
   return {
     x: primitive.x,
     y: primitive.y,
-    draggable: true,
+    draggable: !(primitive.type === "pixels" && index === state.selectedIndex && state.pixelTool !== "move"),
     id: `primitive-${index}`,
     name: "primitive",
     primitiveIndex: index,
@@ -1301,8 +1382,15 @@ function stopGifPreviewAnimations() {
   });
 }
 
-function bindKonvaNodeEvents(node: Konva.Node, index: number) {
-  node.on("pointerdown", () => {
+function bindKonvaNodeEvents(node: Konva.Node, index: number, konvaStage: Konva.Stage, previewScale: number) {
+  node.on("pointerdown", (event) => {
+    if (index === state.selectedIndex && paintPixelsAtPointer(index, konvaStage, previewScale)) {
+      pixelCanvasPaintActive = true;
+      event.cancelBubble = true;
+      syncJsonFromSpec();
+      render();
+      return;
+    }
     state.selectedIndex = index;
     state.editingTextIndex = null;
     state.notice = "";
@@ -1626,6 +1714,147 @@ function normalizeRleRows(rows: string[]): string[] {
   return rows.map((row) => row.trim()).filter(Boolean);
 }
 
+function normalizedRlePalette(primitive: Primitive): string[] {
+  const palette = (primitive.p ?? [])
+    .map((color) => color.trim().toUpperCase())
+    .filter((color) => COLOR_RE.test(color))
+    .slice(0, 26);
+  if (palette.length > 0) {
+    return palette;
+  }
+  const fallback = primitive.color && COLOR_RE.test(primitive.color) ? primitive.color : "#FFFFFF";
+  return [fallback.toUpperCase()];
+}
+
+function validPixelBrushToken(palette: string[]): string {
+  const requested = state.pixelBrushToken;
+  const index = requested.length === 1 ? requested.charCodeAt(0) - 97 : -1;
+  if (index >= 0 && index < palette.length) {
+    return requested;
+  }
+  state.pixelBrushToken = "a";
+  return "a";
+}
+
+function decodeRleTokenRows(primitive: Primitive): string[][] {
+  const width = primitive.width ?? 0;
+  const height = primitive.height ?? 0;
+  const rows = Array.from({ length: Math.max(0, height) }, () => Array.from({ length: Math.max(0, width) }, () => "."));
+  if (width <= 0 || height <= 0) {
+    return rows;
+  }
+
+  if (!isRlePixels(primitive)) {
+    const data = normalizedBitmapData(primitive.data ?? "", width, height);
+    for (let index = 0; index < width * height; index += 1) {
+      if (bitmapBitSet(data, index)) {
+        rows[Math.floor(index / width)][index % width] = "a";
+      }
+    }
+    return rows;
+  }
+
+  const rawRows = primitive.r ?? [];
+  rawRows.slice(0, height).forEach((row, rowIndex) => {
+    parseRleRow(row, width, (col, count, token) => {
+      for (let offset = 0; offset < count && col + offset < width; offset += 1) {
+        rows[rowIndex][col + offset] = token;
+      }
+    });
+  });
+  return rows;
+}
+
+function ensureRlePixelPrimitive(primitive: Primitive): string[][] {
+  const rows = decodeRleTokenRows(primitive);
+  primitive.p = normalizedRlePalette(primitive);
+  primitive.r = rows.map(encodeRleTokenRow);
+  delete primitive.color;
+  delete primitive.data;
+  return rows;
+}
+
+function encodeRleTokenRow(tokens: string[]): string {
+  if (tokens.length === 0) {
+    return "";
+  }
+  let output = "";
+  let current = tokens[0] || ".";
+  let count = 1;
+  for (let index = 1; index <= tokens.length; index += 1) {
+    const token = tokens[index] || ".";
+    if (token === current && index < tokens.length) {
+      count += 1;
+      continue;
+    }
+    output += `${count > 1 ? count : ""}${current}`;
+    current = token;
+    count = 1;
+  }
+  return output;
+}
+
+function paintSelectedPixelCell(index: number) {
+  const primitive = selectedPrimitive();
+  if (!primitive || primitive.type !== "pixels") {
+    return;
+  }
+  if (!setRlePixelToken(primitive, index)) {
+    return;
+  }
+  syncJsonFromSpec();
+  render();
+}
+
+function paintSelectedPixelsAtPointer(konvaStage: Konva.Stage, previewScale: number): boolean {
+  if (state.selectedIndex < 0) {
+    return false;
+  }
+  return paintPixelsAtPointer(state.selectedIndex, konvaStage, previewScale);
+}
+
+function paintPixelsAtPointer(index: number, konvaStage: Konva.Stage, previewScale: number): boolean {
+  if (state.pixelTool === "move") {
+    return false;
+  }
+  const primitive = state.spec.primitives[index];
+  if (primitive?.type !== "pixels") {
+    return false;
+  }
+  const pointer = logicalStagePointer(konvaStage, previewScale);
+  if (!pointer || !pointInPrimitive(primitive, pointer.x, pointer.y)) {
+    return false;
+  }
+  const col = Math.floor(pointer.x - primitive.x);
+  const row = Math.floor(pointer.y - primitive.y);
+  setRlePixelToken(primitive, row * (primitive.width ?? 0) + col);
+  return true;
+}
+
+function setRlePixelToken(primitive: Primitive, index: number): boolean {
+  const width = primitive.width ?? 0;
+  const height = primitive.height ?? 0;
+  if (width <= 0 || height <= 0 || index < 0 || index >= width * height) {
+    return false;
+  }
+  const rows = ensureRlePixelPrimitive(primitive);
+  const palette = primitive.p ?? ["#FFFFFF"];
+  const token = state.pixelTool === "erase" ? "." : validPixelBrushToken(palette);
+  const row = Math.floor(index / width);
+  const col = index % width;
+  if (rows[row]?.[col] === token) {
+    return false;
+  }
+  rows[row][col] = token;
+  primitive.r = rows.map(encodeRleTokenRow);
+  return true;
+}
+
+function nextPaletteColor(index: number): string {
+  const colors = ["#C7FF68", "#FFFFFF", "#9DE7F7", "#FFDE59", "#FF667A", "#8A7CFF", "#111827"];
+  return colors[index % colors.length];
+}
+
 function validateRlePixels(primitive: Primitive): string {
   const width = primitive.width ?? 0;
   const height = primitive.height ?? 0;
@@ -1852,6 +2081,56 @@ function bindEvents() {
       primitive.data = toggleBitmapBit(primitive.data ?? "", primitive.width ?? 0, primitive.height ?? 0, index);
       syncJsonFromSpec();
       render();
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-pixel-tool]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.pixelTool = (button.dataset.pixelTool ?? "move") as PixelTool;
+      render();
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-pixel-brush]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.pixelBrushToken = button.dataset.pixelBrush ?? "a";
+      state.pixelTool = "paint";
+      render();
+    });
+  });
+
+  app.querySelectorAll<HTMLInputElement>("[data-pixel-palette-color]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const primitive = selectedPrimitive();
+      if (!primitive || primitive.type !== "pixels") {
+        return;
+      }
+      const index = toInt(input.dataset.pixelPaletteColor ?? "0", 0);
+      ensureRlePixelPrimitive(primitive);
+      const palette = primitive.p ?? [];
+      if (index < 0 || index >= palette.length) {
+        return;
+      }
+      palette[index] = input.value.toUpperCase();
+      syncStateWithoutRender();
+      renderDeviceCanvas(app.querySelector<HTMLCanvasElement>("[data-role='device-canvas']") ?? document.createElement("canvas"));
+    });
+    input.addEventListener("change", () => {
+      syncJsonFromSpec();
+      render();
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-pixel-paint]").forEach((button) => {
+    button.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      pixelInspectorPaintActive = true;
+      paintSelectedPixelCell(toInt(button.dataset.pixelPaint ?? "0", 0));
+    });
+    button.addEventListener("pointerenter", () => {
+      if (pixelInspectorPaintActive) {
+        paintSelectedPixelCell(toInt(button.dataset.pixelPaint ?? "0", 0));
+      }
     });
   });
 
@@ -2259,6 +2538,9 @@ async function handleAction(action: string) {
   if (action === "add-rect") {
     addPrimitive({ type: "rect", x: 24, y: 24, width: 64, height: 38, color: "#1E2738" });
   }
+  if (action === "add-line") {
+    addPrimitive({ type: "rect", x: 24, y: 120, width: 96, height: 2, color: "#C7FF68" }, "Line added.");
+  }
   if (action === "add-text") {
     addPrimitive({ type: "text", x: 24, y: 24, text: "{label}", fontSize: 2, color: "#FFFFFF" });
   }
@@ -2269,6 +2551,7 @@ async function handleAction(action: string) {
     app.querySelector<HTMLInputElement>("[data-role='gif-input']")?.click();
   }
   if (action === "add-pixels") {
+    state.pixelTool = "paint";
     addPrimitive({
       type: "pixels",
       x: 8,
@@ -2278,6 +2561,30 @@ async function handleAction(action: string) {
       p: [...DEFAULT_CLOUD_PIXEL_PALETTE],
       r: [...DEFAULT_CLOUD_PIXEL_ROWS],
     }, "Pixel shape placed.");
+  }
+  if (action === "convert-pixels-rle") {
+    const primitive = selectedPrimitive();
+    if (primitive?.type === "pixels") {
+      ensureRlePixelPrimitive(primitive);
+      state.pixelTool = "paint";
+      state.notice = "Color paint mode enabled.";
+      syncJsonFromSpec();
+      render();
+    }
+  }
+  if (action === "add-pixel-color") {
+    const primitive = selectedPrimitive();
+    if (primitive?.type === "pixels") {
+      ensureRlePixelPrimitive(primitive);
+      const palette = primitive.p ?? [];
+      if (palette.length < 26) {
+        palette.push(nextPaletteColor(palette.length));
+        state.pixelBrushToken = String.fromCharCode(96 + palette.length);
+        state.pixelTool = "paint";
+        syncJsonFromSpec();
+        render();
+      }
+    }
   }
   if (action === "delete-selected") {
     deleteSelectedPrimitive();
