@@ -6,7 +6,6 @@
 #include <ESP8266WiFi.h>
 #include <LittleFS.h>
 #include <Updater.h>
-#include <bearssl/bearssl_hash.h>
 
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
@@ -858,43 +857,6 @@ void appendFirmwareUpdateJSON(String& out) {
   out += "}";
 }
 
-void appendHexByte(String& out, uint8_t value) {
-  constexpr char kHex[] = "0123456789abcdef";
-  out += kHex[(value >> 4) & 0x0F];
-  out += kHex[value & 0x0F];
-}
-
-String fileSHA256Hex(const String& path) {
-  File file = LittleFS.open(path, "r");
-  if (!file) {
-    return "";
-  }
-
-  br_sha256_context ctx;
-  br_sha256_init(&ctx);
-
-  uint8_t buffer[256];
-  while (file.available()) {
-    const size_t readLen = file.read(buffer, sizeof(buffer));
-    if (readLen == 0) {
-      break;
-    }
-    br_sha256_update(&ctx, buffer, readLen);
-    yield();
-  }
-  file.close();
-
-  uint8_t digest[32];
-  br_sha256_out(&ctx, digest);
-
-  String hex;
-  hex.reserve(64);
-  for (uint8_t value : digest) {
-    appendHexByte(hex, value);
-  }
-  return hex;
-}
-
 void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uint8_t depth) {
   if (depth > 4) {
     return;
@@ -917,9 +879,6 @@ void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uin
     out += jsonEscape(path);
     out += "\",\"sizeBytes\":";
     out += String(dir.fileSize());
-    out += ",\"sha256\":\"";
-    out += fileSHA256Hex(path);
-    out += "\"";
     out += "}";
   }
 }

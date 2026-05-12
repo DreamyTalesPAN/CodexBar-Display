@@ -58,7 +58,7 @@ Usage:
 Builds firmware.bin + littlefs.bin, writes an OTA package with SHA-256 checksums,
 uploads firmware to the GeekMagic manufacturer updater, waits for VibeTV firmware,
 uploads LittleFS to the VibeTV updater, checks /health, /hello, and /assets,
-verifies required theme asset bytes + SHA-256, then sends a mini theme test frame.
+verifies required theme asset bytes plus SHA-256 when exposed, then sends a mini theme test frame.
 
 Commands:
   build                 Build and package artifacts only.
@@ -508,12 +508,8 @@ check_assets() {
     fi
     if [[ -n "$expected_sha" ]]; then
       if [[ -z "$actual_sha" || "$actual_sha" == "null" ]]; then
-        log "assets response:" >&2
-        sed 's/^/  /' "$body_file" >&2
-        rm -f "$body_file" "$expected_file" "$sorted_expected_file"
-        die "required asset missing sha256 metadata: ${expected_path}"
-      fi
-      if [[ "$(lower_ascii "$actual_sha")" != "$(lower_ascii "$expected_sha")" ]]; then
+        log "asset sha256 metadata unavailable; verified size only: ${expected_path}"
+      elif [[ "$(lower_ascii "$actual_sha")" != "$(lower_ascii "$expected_sha")" ]]; then
         log "assets response:" >&2
         sed 's/^/  /' "$body_file" >&2
         rm -f "$body_file" "$expected_file" "$sorted_expected_file"

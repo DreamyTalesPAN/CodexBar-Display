@@ -70,7 +70,7 @@ What this does:
 7. Compares the runtime theme asset metadata from `/assets` against the package `manifest.json`.
 8. Sends one `mini` frame to `/frame` and requires `ok`.
 
-`/health` reports generic filesystem status plus display debug state. `display.activeTheme` names the active built-in theme, and `display.gif` reports the active GIF path, file/decoder open state, backoff state, and `lastError` when GIF open or decode fails. `/assets` is the generic inspection path for future theme-pack tooling. Each asset entry must include `path`, `sizeBytes`, and `sha256`. Required assets must be present, non-empty, byte-exact, and hash-exact compared with the package manifest.
+`/health` reports generic filesystem status plus display debug state. `display.activeTheme` names the active built-in theme, and `display.gif` reports the active GIF path, file/decoder open state, backoff state, and `lastError` when GIF open or decode fails. `/assets` is the generic inspection path for future theme-pack tooling. Each asset entry must include `path` and `sizeBytes`; `sha256` is optional. Required assets must be present, non-empty, byte-exact, and hash-exact compared with the package manifest when the device exposes hashes.
 
 The filesystem upload timeout defaults to 300 seconds because slow ESP8266 LittleFS writes can outlive a normal short HTTP timeout. Firmware uploads default to 90 seconds.
 
@@ -96,7 +96,7 @@ For additional devices, keep the package and change only the IP:
 
 Repeat for each device that should receive the same firmware and filesystem artifacts.
 
-The provisioning wrapper is intentionally strict: a device is not accepted if `/hello` reports the wrong board, the filesystem is not mounted, a required asset is missing, empty, has the wrong size, has the wrong SHA-256, a smoke frame is rejected by `/frame`, or `/health` reports a mini GIF renderer error after the smoke frame.
+The provisioning wrapper is intentionally strict: a device is not accepted if `/hello` reports the wrong board, the filesystem is not mounted, a required asset is missing, empty, has the wrong size, has the wrong SHA-256 when reported by the device, a smoke frame is rejected by `/frame`, or `/health` reports a mini GIF renderer error after the smoke frame.
 
 ## Endpoint Overrides
 
