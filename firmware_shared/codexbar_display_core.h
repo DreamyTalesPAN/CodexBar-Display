@@ -49,6 +49,9 @@ struct RuntimeState {
   int64_t resetBaseSecs = 0;
   String cachedThemeId;
   int cachedThemeRev = 0;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  String cachedThemeSpecRaw;
+#endif
 };
 
 struct LineReaderState {
@@ -268,6 +271,53 @@ inline bool FrameThemeChanged(const Frame& previous, const Frame& next) {
   return previous.theme != next.theme;
 }
 
+inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previous, Frame& next, SerialConsumeEvent& outEvent) {
+  if (next.hasError) {
+    return;
+  }
+
+  if (next.hasThemeSpec) {
+    const bool sameCachedTheme = runtimeState.cachedThemeRev > 0 &&
+                                 runtimeState.cachedThemeId == next.themeSpecId &&
+                                 runtimeState.cachedThemeRev == next.themeSpecRev;
+    if (sameCachedTheme) {
+      outEvent.themeSpecCacheHit = true;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+      if (next.themeSpecRaw.length() == 0) {
+        if (runtimeState.cachedThemeSpecRaw.length() > 0) {
+          next.themeSpecRaw = runtimeState.cachedThemeSpecRaw;
+        } else {
+          next.themeSpecRaw = previous.themeSpecRaw;
+        }
+      }
+#endif
+    } else {
+      runtimeState.cachedThemeId = next.themeSpecId;
+      runtimeState.cachedThemeRev = next.themeSpecRev;
+      outEvent.themeSpecChanged = true;
+    }
+
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    if (next.themeSpecRaw.length() > 0) {
+      runtimeState.cachedThemeId = next.themeSpecId;
+      runtimeState.cachedThemeRev = next.themeSpecRev;
+      runtimeState.cachedThemeSpecRaw = next.themeSpecRaw;
+    }
+#endif
+    return;
+  }
+
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (runtimeState.cachedThemeRev > 0 && runtimeState.cachedThemeSpecRaw.length() > 0) {
+    next.hasThemeSpec = true;
+    next.themeSpecId = runtimeState.cachedThemeId;
+    next.themeSpecRev = runtimeState.cachedThemeRev;
+    next.themeSpecRaw = runtimeState.cachedThemeSpecRaw;
+    outEvent.themeSpecCacheHit = true;
+  }
+#endif
+}
+
 inline bool ConsumeFrameLine(
     RuntimeState& runtimeState,
     const char* line,
@@ -285,27 +335,11 @@ inline bool ConsumeFrameLine(
   }
 
   const Frame previous = runtimeState.current;
-  outEvent.hadFrame = runtimeState.hasFrame;
-  outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChanged(previous, next);
-  outEvent.themeChanged = outEvent.hadFrame && FrameThemeChanged(previous, next);
+  ApplyThemeSpecCache(runtimeState, previous, next, outEvent);
 
-  if (next.hasThemeSpec) {
-    if (runtimeState.cachedThemeRev > 0 &&
-        runtimeState.cachedThemeId == next.themeSpecId &&
-        runtimeState.cachedThemeRev == next.themeSpecRev) {
-      outEvent.themeSpecCacheHit = true;
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-      if (next.themeSpecRaw.length() == 0) {
-        next.themeSpecRaw = previous.themeSpecRaw;
-      }
-#endif
-    } else {
-      runtimeState.cachedThemeId = next.themeSpecId;
-      runtimeState.cachedThemeRev = next.themeSpecRev;
-      outEvent.themeSpecChanged = true;
-      outEvent.visualChanged = true;
-    }
-  }
+  outEvent.hadFrame = runtimeState.hasFrame;
+  outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChanged(previous, next) || outEvent.themeSpecChanged;
+  outEvent.themeChanged = outEvent.hadFrame && FrameThemeChanged(previous, next);
 
   runtimeState.current = next;
   runtimeState.hasFrame = true;

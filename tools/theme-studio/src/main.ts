@@ -2,6 +2,7 @@ import "./styles.css";
 
 const DISPLAY_SIZE = 240;
 const MAX_SPEC_BYTES = 1024;
+const MAX_FRAME_BYTES = 1024;
 const MAX_PRIMITIVES = 32;
 const COLOR_RE = /^#[A-Fa-f0-9]{6}$/;
 const THEME_ID_RE = /^[a-z0-9][a-z0-9\-_]{2,63}$/;
@@ -246,6 +247,10 @@ function validateCurrentSpec() {
   if (bytes > MAX_SPEC_BYTES) {
     errors.push(`ThemeSpec ist zu groß: ${bytes}/${MAX_SPEC_BYTES} Bytes.`);
   }
+  const frameBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload())).length;
+  if (frameBytes > MAX_FRAME_BYTES) {
+    errors.push(`Frame ist zu groß für Vibe TV: ${frameBytes}/${MAX_FRAME_BYTES} Bytes.`);
+  }
 
   state.errors = errors;
   state.warnings = warnings;
@@ -263,6 +268,7 @@ function render() {
   validateCurrentSpec();
   const selected = state.spec.primitives[state.selectedIndex];
   const bytes = new TextEncoder().encode(minifiedJson(state.spec)).length;
+  const frameBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload())).length;
 
   app.innerHTML = `
     <section class="studio-shell">
@@ -270,6 +276,7 @@ function render() {
         <h1>Theme Studio</h1>
         <div class="status-strip">
           ${metric("Bytes", bytes, MAX_SPEC_BYTES)}
+          ${metric("Frame", frameBytes, MAX_FRAME_BYTES)}
           ${metric("Primitives", state.spec.primitives.length, MAX_PRIMITIVES)}
           <span class="health ${state.errors.length ? "bad" : "ok"}">${state.errors.length ? "Invalid" : "Valid"}</span>
         </div>
@@ -1428,21 +1435,42 @@ async function builtInGifAsset(path: string): Promise<{ file: File; previewUrl: 
 }
 
 function buildFramePayload() {
-  return {
+  const payload: Record<string, unknown> = {
     v: 2,
     provider: frame.provider,
     label: frame.label,
     session: frame.session,
     weekly: frame.weekly,
-    reset: frame.reset,
     resetSecs: frame.resetSecs,
     usageMode: frame.usageMode,
-    sessionTokens: frame.sessionTokens,
-    weekTokens: frame.weekTokens,
-    totalTokens: frame.totalTokens,
-    theme: FIXED_FALLBACK_THEME,
     themeSpec: state.spec,
   };
+  const bindings = usedThemeBindings();
+  if (bindings.has("sessionTokens")) {
+    payload.sessionTokens = frame.sessionTokens;
+  }
+  if (bindings.has("weekTokens")) {
+    payload.weekTokens = frame.weekTokens;
+  }
+  if (bindings.has("totalTokens")) {
+    payload.totalTokens = frame.totalTokens;
+  }
+  return payload;
+}
+
+function usedThemeBindings(): Set<string> {
+  const bindings = new Set<string>();
+  for (const primitive of state.spec.primitives) {
+    if (primitive.binding) {
+      bindings.add(primitive.binding);
+    }
+    if (primitive.text) {
+      for (const match of primitive.text.matchAll(/\{([a-zA-Z]+)\}/g)) {
+        bindings.add(match[1]);
+      }
+    }
+  }
+  return bindings;
 }
 
 async function copyText(text: string, notice: string) {

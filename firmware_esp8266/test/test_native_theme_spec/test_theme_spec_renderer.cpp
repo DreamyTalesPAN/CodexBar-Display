@@ -1,4 +1,5 @@
 #include "../../../firmware_shared/theme_spec_renderer_core.h"
+#include "../../../firmware_shared/codexbar_display_core.h"
 
 #include <string>
 #include <vector>
@@ -15,6 +16,9 @@ using codexbar_display::themespec::RenderThemeSpecAnimatedPrimitives;
 using codexbar_display::themespec::RenderThemeSpec;
 using codexbar_display::themespec::Sink;
 using codexbar_display::themespec::TextCommand;
+using codexbar_display::core::ConsumeFrameLine;
+using codexbar_display::core::RuntimeState;
+using codexbar_display::core::SerialConsumeEvent;
 
 enum class CommandType {
   FillScreen,
@@ -247,6 +251,44 @@ void testAnimatedPrimitivePassRendersOnlyGifsWithoutClear() {
   TEST_ASSERT_EQUAL_STRING("/themes/demo/loop.gif", sink.commands[0].assetPath.c_str());
 }
 
+void testThemeSpecCacheCarriesLayoutAcrossLiveFrames() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* studioFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":94,"weekly":87,"resetSecs":5394,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"{session}%"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, studioFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
+  TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("{session}%") >= 0);
+
+  const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":96,"weekly":99,"resetSecs":4200,"usageMode":"remaining","theme":"mini"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_EQUAL_INT(96, state.current.session);
+  TEST_ASSERT_EQUAL_INT(99, state.current.weekly);
+  TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
+  TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("{session}%") >= 0);
+}
+
+void testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"first"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("first") >= 0);
+
+  const char* editedFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":21,"resetSecs":31,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"edited"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, editedFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("edited") >= 0);
+
+  const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":12,"weekly":22,"resetSecs":32})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 3000, true, event));
+  TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("edited") >= 0);
+  TEST_ASSERT_FALSE(state.current.themeSpecRaw.indexOf("first") >= 0);
+}
+
 }  // namespace
 
 int main() {
@@ -256,5 +298,7 @@ int main() {
   RUN_TEST(testInvalidPrimitivesAreSkipped);
   RUN_TEST(testColorFallbacks);
   RUN_TEST(testAnimatedPrimitivePassRendersOnlyGifsWithoutClear);
+  RUN_TEST(testThemeSpecCacheCarriesLayoutAcrossLiveFrames);
+  RUN_TEST(testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent);
   return UNITY_END();
 }
