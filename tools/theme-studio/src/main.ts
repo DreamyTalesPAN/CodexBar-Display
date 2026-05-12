@@ -127,26 +127,8 @@ const variableTokens = [
   { label: "Total tokens", token: "{totalTokens}", preview: String(frame.totalTokens) },
 ];
 
-const fontOptions = [
-  { value: 1, label: "TFT Font 1", family: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", weight: 800 },
-  { value: 2, label: "TFT Font 2", family: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", weight: 800 },
-];
-
-const fallbackFont = fontOptions[0];
-const firmwareFont2Widths = [
-  6, 3, 4, 9, 8, 9, 9, 3,
-  7, 7, 8, 6, 3, 6, 5, 7,
-  8, 8, 8, 8, 8, 8, 8, 8,
-  8, 8, 3, 3, 6, 6, 6, 8,
-  9, 8, 8, 8, 8, 8, 8, 8,
-  8, 4, 8, 8, 7, 10, 8, 8,
-  8, 8, 8, 8, 8, 8, 8, 10,
-  8, 8, 8, 4, 7, 4, 7, 9,
-  5, 7, 7, 7, 7, 7, 6, 7,
-  7, 4, 5, 6, 4, 8, 7, 8,
-  7, 8, 6, 6, 5, 7, 8, 8,
-  6, 7, 7, 5, 3, 5, 8, 6,
-];
+const PREVIEW_FONT_FAMILY = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+const PREVIEW_FONT_WEIGHT = 800;
 const textMeasureCanvas = document.createElement("canvas");
 const textMeasureContext = textMeasureCanvas.getContext("2d");
 
@@ -158,12 +140,12 @@ const initialSpec: ThemeSpec = {
   bgColor: "#000000",
   primitives: [
     { type: "text", x: 75, y: 4, binding: "label", fontSize: 3, color: "#999999" },
-    { type: "text", x: 7, y: 30, text: "Session", font: 2, fontSize: 2, color: "#999999" },
+    { type: "text", x: 7, y: 30, text: "Session", fontSize: 2, color: "#999999" },
     { type: "text", x: 7, y: 66, text: "{session}%", fontSize: 5, color: "#CCFF00" },
-    { type: "text", x: 31, y: 106, binding: "usageMode", font: 2, fontSize: 1, color: "#999999" },
-    { type: "text", x: 129, y: 30, text: "Weekly", font: 2, fontSize: 2, color: "#999999" },
-    { type: "text", x: 134, y: 66, text: "{weekly}%", fontSize: 5, color: "#CCFF00" },
-    { type: "text", x: 151, y: 106, binding: "usageMode", font: 2, fontSize: 1, color: "#999999" },
+    { type: "text", x: 20, y: 106, binding: "usageMode", fontSize: 2, color: "#999999" },
+    { type: "text", x: 129, y: 30, text: "Weekly", fontSize: 2, color: "#999999" },
+    { type: "text", x: 120, y: 66, text: "{weekly}%", fontSize: 5, color: "#CCFF00" },
+    { type: "text", x: 132, y: 106, binding: "usageMode", fontSize: 2, color: "#999999" },
     { type: "gif", x: 80, y: 115, width: 80, height: 80, assetPath: "/themes/mini/mini.gif" },
     { type: "text", x: 42, y: 209, text: "Reset {reset}", fontSize: 2, color: "#999999" },
   ],
@@ -242,6 +224,11 @@ function normalizeMiniThemeSpec() {
   state.spec.themeSpecVersion = 1;
   state.spec.themeRev = FIXED_THEME_REV;
   state.spec.fallbackTheme = FIXED_FALLBACK_THEME;
+  state.spec.primitives.forEach((primitive) => {
+    if (primitive.type === "text") {
+      delete primitive.font;
+    }
+  });
 }
 
 function validateCurrentSpec() {
@@ -291,9 +278,6 @@ function validateCurrentSpec() {
       }
       if (primitive.fontSize !== undefined && (!Number.isInteger(primitive.fontSize) || primitive.fontSize < 1)) {
         errors.push(`${prefix}: fontSize sollte mindestens 1 sein.`);
-      }
-      if (primitive.font !== undefined && !fontOptions.some((font) => font.value === primitive.font)) {
-        errors.push(`${prefix}: font wird vom VibeTV nicht unterstützt.`);
       }
     }
     if (primitive.type === "rect" || primitive.type === "progress") {
@@ -505,14 +489,7 @@ function inspectorFields(primitive: Primitive): string {
     return `
       ${common}
       <label>Text<input data-primitive-field="text" value="${escapeAttr(primitive.text ?? "")}" /></label>
-      <div class="field-grid">
-        <label>Font
-          <select data-primitive-field="font">
-            ${fontSelectOptions(primitive.font)}
-          </select>
-        </label>
-        <label>Size<input type="number" min="1" step="1" data-primitive-field="fontSize" value="${primitive.fontSize ?? 1}" /></label>
-      </div>
+      <label>Size<input type="number" min="1" step="1" data-primitive-field="fontSize" value="${primitive.fontSize ?? 1}" /></label>
       ${colorField("Color", "color", primitive.color ?? "#FFFFFF")}
       ${optionalColorField("Background", "bgColor", primitive.bgColor)}
     `;
@@ -833,7 +810,6 @@ function progressKonvaGroup(primitive: Primitive, index: number): Konva.Group {
 }
 
 function textKonvaGroup(primitive: Primitive, index: number): Konva.Group {
-  const font = fontOptionFor(primitive.font);
   const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
   const fontSize = textPixelSize(primitive);
   const width = estimatePrimitiveWidth(primitive);
@@ -848,8 +824,8 @@ function textKonvaGroup(primitive: Primitive, index: number): Konva.Group {
     y: 0,
     text,
     fontSize,
-    fontFamily: previewFontFamily(primitive.font, font.family),
-    fontStyle: font.weight >= 800 ? "800" : "700",
+    fontFamily: PREVIEW_FONT_FAMILY,
+    fontStyle: String(PREVIEW_FONT_WEIGHT),
     fill: primitive.color ?? "#FFFFFF",
     listening: false,
   });
@@ -925,8 +901,8 @@ function gifKonvaGroup(primitive: Primitive, index: number): { node: Konva.Group
     text: "GIF",
     align: "center",
     fontSize: 12,
-    fontFamily: fallbackFont.family,
-    fontStyle: "800",
+    fontFamily: PREVIEW_FONT_FAMILY,
+    fontStyle: String(PREVIEW_FONT_WEIGHT),
     fill: "#c7ff68",
     listening: false,
   }));
@@ -1125,10 +1101,9 @@ function renderPrimitive(primitive: Primitive, index: number): string {
   const fontPx = textPixelSize(primitive);
   const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
   const isEditing = state.editingTextIndex === index;
-  const font = fontOptionFor(primitive.font);
   return `
     <g${transform}>
-      ${isEditing ? inlineTextEditor(primitive, index) : `<text class="preview-text ${selected ? "selected-text" : ""}" x="${primitive.x}" y="${primitive.y}" dominant-baseline="hanging" font-size="${fontPx}" fill="${escapeAttr(primitive.color ?? "#FFFFFF")}" font-family="${escapeAttr(font.family)}" font-weight="${font.weight}">${escapeHtml(text)}</text>`}
+      ${isEditing ? inlineTextEditor(primitive, index) : `<text class="preview-text ${selected ? "selected-text" : ""}" x="${primitive.x}" y="${primitive.y}" dominant-baseline="hanging" font-size="${fontPx}" fill="${escapeAttr(primitive.color ?? "#FFFFFF")}" font-family="${escapeAttr(PREVIEW_FONT_FAMILY)}" font-weight="${PREVIEW_FONT_WEIGHT}">${escapeHtml(text)}</text>`}
       ${isEditing ? "" : hitTarget}
     </g>
     ${handle}
@@ -1138,10 +1113,9 @@ function renderPrimitive(primitive: Primitive, index: number): string {
 function inlineTextEditor(primitive: Primitive, index: number): string {
   const width = Math.min(DISPLAY_SIZE - primitive.x, Math.max(42, estimatePrimitiveWidth(primitive) + 10));
   const height = Math.max(18, estimatePrimitiveHeight(primitive) + 6);
-  const font = fontOptionFor(primitive.font);
   return `
     <foreignObject class="inline-text-editor" x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}">
-      <input xmlns="http://www.w3.org/1999/xhtml" style="font-family:${escapeAttr(font.family)};font-weight:${font.weight}" data-inline-text="${index}" value="${escapeAttr(primitive.text ?? "")}" />
+      <input xmlns="http://www.w3.org/1999/xhtml" style="font-family:${escapeAttr(PREVIEW_FONT_FAMILY)};font-weight:${PREVIEW_FONT_WEIGHT}" data-inline-text="${index}" value="${escapeAttr(primitive.text ?? "")}" />
     </foreignObject>
   `;
 }
@@ -1254,7 +1228,7 @@ function resizeHandle(index: number, handle: ResizeHandle, x: number, y: number)
 function estimatePrimitiveWidth(primitive: Primitive): number {
   if (primitive.type === "text") {
     const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
-    return Math.max(1, firmwareTextWidth(text, primitive.font, primitive.fontSize));
+    return Math.max(1, firmwareTextWidth(text, primitive.fontSize));
   }
   return primitive.width ?? 1;
 }
@@ -1267,39 +1241,17 @@ function estimatePrimitiveHeight(primitive: Primitive): number {
 }
 
 function textPixelSize(primitive: Primitive): number {
-  return firmwareFontHeight(primitive.font, primitive.fontSize);
+  return firmwareFontHeight(primitive.fontSize);
 }
 
-function firmwareFontHeight(fontValue: number | undefined, fontSizeValue: number | undefined): number {
+function firmwareFontHeight(fontSizeValue: number | undefined): number {
   const size = Math.max(1, fontSizeValue ?? 1);
-  const font = fontOptionFor(fontValue);
-  if (font.value === 2) {
-    return size * 16;
-  }
   return size * 8;
 }
 
-function firmwareTextWidth(text: string, fontValue: number | undefined, fontSizeValue: number | undefined): number {
+function firmwareTextWidth(text: string, fontSizeValue: number | undefined): number {
   const size = Math.max(1, fontSizeValue ?? 1);
-  const font = fontOptionFor(fontValue);
-  if (font.value === 2) {
-    return textWidthFromTable(text, firmwareFont2Widths) * size;
-  }
   return text.length * 6 * size;
-}
-
-function textWidthFromTable(text: string, widths: number[]): number {
-  let width = 0;
-  for (const char of text) {
-    const code = char.charCodeAt(0);
-    width += code >= 32 && code < 128 ? widths[code - 32] : widths[0];
-  }
-  return width;
-}
-
-function previewFontFamily(fontValue: number | undefined, fallbackFamily: string): string {
-  const font = fontOptionFor(fontValue);
-  return font.value === 1 || font.value === 2 ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" : fallbackFamily;
 }
 
 function measureKonvaTextWidth(text: string, fontSize: number, family: string, style: string): number {
@@ -1378,23 +1330,6 @@ function builtInGifPreviewUrl(assetPath: string): string | undefined {
     return assetPath;
   }
   return undefined;
-}
-
-function fontOptionFor(value: number | undefined) {
-  return fontOptions.find((font) => font.value === value) ?? fallbackFont;
-}
-
-function fontSelectOptions(value: number | undefined): string {
-  const selectedValue = fontOptionFor(value).value;
-  return fontOptions.map((font) => `<option value="${font.value}" ${font.value === selectedValue ? "selected" : ""}>${font.label}</option>`).join("");
-}
-
-function fontWidthFactor(value: number | undefined): number {
-  const font = fontOptionFor(value);
-  if (font.value === 2) {
-    return 5.8;
-  }
-  return 6;
 }
 
 function messageList(): string {
@@ -1805,7 +1740,7 @@ function updateSelectedPrimitive(key: string, value: string) {
     resizeGifPrimitive(primitive, key, toInt(value, DEFAULT_GIF_SIZE));
     return;
   }
-  if (["x", "y", "width", "height", "font", "fontSize"].includes(key)) {
+  if (["x", "y", "width", "height", "fontSize"].includes(key)) {
     primitive[key as "x"] = Math.max(key === "x" || key === "y" ? 0 : 1, toInt(value, key === "x" || key === "y" ? 0 : 1));
     return;
   }

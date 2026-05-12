@@ -259,8 +259,7 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     TextCommand cmd;
     cmd.x = x;
     cmd.y = y;
-    const int font = primitive["font"] | 1;
-    cmd.font = font == 2 ? 2 : 1;
+    cmd.font = 1;
     cmd.size = primitive["fontSize"] | 1;
     if (cmd.size <= 0) {
       return false;

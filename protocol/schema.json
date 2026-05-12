@@ -110,10 +110,6 @@
                 "type": "integer",
                 "minimum": 0
               },
-              "font": {
-                "type": "integer",
-                "enum": [1, 2]
-              },
               "color": {
                 "type": "string",
                 "pattern": "^#[A-Fa-f0-9]{6}$"

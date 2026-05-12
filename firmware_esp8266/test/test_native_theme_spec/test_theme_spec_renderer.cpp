@@ -168,7 +168,7 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_STRING("Codex codex 97/71 1h 29m remaining 1234 5678 9012", text.text.c_str());
   TEST_ASSERT_EQUAL_INT(5, text.x);
   TEST_ASSERT_EQUAL_INT(6, text.y);
-  TEST_ASSERT_EQUAL_INT(2, text.font);
+  TEST_ASSERT_EQUAL_INT(1, text.font);
   TEST_ASSERT_EQUAL_INT(3, text.size);
   TEST_ASSERT_EQUAL_HEX16(0xCFE0, text.fg);
   TEST_ASSERT_EQUAL_HEX16(0x0000, text.bg);

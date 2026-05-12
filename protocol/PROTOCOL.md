@@ -59,7 +59,7 @@ Design constraints:
 - No user code execution on device.
 - Primitives are declarative (`text`, `rect`, `progress`, `gif`) and validated by companion before send.
 - Optional top-level `bgColor` fills the whole 240x240 screen before primitives are drawn.
-- Text primitives support the firmware-loaded TFT fonts only (`font: 1` or `font: 2`).
+- Text primitives use the single firmware-loaded TFT GLCD font; scale with `fontSize`.
 - Text primitive `bgColor` is optional; when omitted, text is drawn transparent over the theme background.
 - `gif` primitives reference uploaded display assets with `assetPath` under `/themes/...`; ESP8266 LittleFS paths are capped at 31 characters.
 - Compatibility is checked against device capability limits (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`).
