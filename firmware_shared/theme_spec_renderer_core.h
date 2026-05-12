@@ -60,6 +60,15 @@ struct GifCommand {
   int height = 0;
 };
 
+struct PixelsCommand {
+  const char* data = "";
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+  uint16_t color = 0xFFFF;
+};
+
 class Sink {
  public:
   virtual ~Sink() = default;
@@ -69,6 +78,7 @@ class Sink {
   virtual void DrawText(const TextCommand& cmd) = 0;
   virtual void DrawProgress(const ProgressCommand& cmd) = 0;
   virtual void DrawGif(const GifCommand& cmd) = 0;
+  virtual void DrawPixels(const PixelsCommand& cmd) = 0;
 };
 
 inline int ClampPct(int value) {
@@ -85,17 +95,17 @@ inline uint16_t RGB565(uint8_t r, uint8_t g, uint8_t b) {
   return static_cast<uint16_t>(((r & 0xF8U) << 8) | ((g & 0xFCU) << 3) | (b >> 3));
 }
 
-inline uint8_t HexNibble(char c) {
+inline int HexNibble(char c) {
   if (c >= '0' && c <= '9') {
-    return static_cast<uint8_t>(c - '0');
+    return c - '0';
   }
   if (c >= 'a' && c <= 'f') {
-    return static_cast<uint8_t>(c - 'a' + 10);
+    return c - 'a' + 10;
   }
   if (c >= 'A' && c <= 'F') {
-    return static_cast<uint8_t>(c - 'A' + 10);
+    return c - 'A' + 10;
   }
-  return 0;
+  return -1;
 }
 
 inline uint8_t HexByte(const char* value) {
@@ -121,6 +131,34 @@ inline uint16_t ParseColor(const char* value, uint16_t fallback) {
 
 inline const char* JsonStringOrNull(JsonVariantConst value) {
   return value.is<const char*>() ? value.as<const char*>() : nullptr;
+}
+
+inline bool HasHexBitmapBits(const char* data, int width, int height) {
+  if (data == nullptr || width <= 0 || height <= 0) {
+    return false;
+  }
+  const int bits = width * height;
+  const int hexChars = ((bits + 7) / 8) * 2;
+  for (int i = 0; i < hexChars; ++i) {
+    if (HexNibble(data[i]) < 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline bool BitmapBitSet(const char* data, int bitIndex) {
+  if (data == nullptr || bitIndex < 0) {
+    return false;
+  }
+  const int byteIndex = bitIndex / 8;
+  const int high = HexNibble(data[byteIndex * 2]);
+  const int low = HexNibble(data[byteIndex * 2 + 1]);
+  if (high < 0 || low < 0) {
+    return false;
+  }
+  const uint8_t value = static_cast<uint8_t>((high << 4) | low);
+  return (value & (0x80 >> (bitIndex % 8))) != 0;
 }
 
 inline void FormatDuration(int64_t secs, char* out, size_t outSize) {
@@ -307,6 +345,21 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
       return false;
     }
     sink.DrawGif(cmd);
+    return true;
+  }
+
+  if (std::strcmp(type, "pixels") == 0) {
+    PixelsCommand cmd;
+    cmd.x = x;
+    cmd.y = y;
+    cmd.width = primitive["width"] | 0;
+    cmd.height = primitive["height"] | 0;
+    cmd.data = JsonStringOrNull(primitive["data"]);
+    if (!HasHexBitmapBits(cmd.data, cmd.width, cmd.height)) {
+      return false;
+    }
+    cmd.color = ParseColor(JsonStringOrNull(primitive["color"]), 0xFFFF);
+    sink.DrawPixels(cmd);
     return true;
   }
 

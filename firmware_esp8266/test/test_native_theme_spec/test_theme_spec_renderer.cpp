@@ -10,6 +10,7 @@ namespace {
 
 using codexbar_display::themespec::FrameData;
 using codexbar_display::themespec::GifCommand;
+using codexbar_display::themespec::PixelsCommand;
 using codexbar_display::themespec::ProgressCommand;
 using codexbar_display::themespec::RectCommand;
 using codexbar_display::themespec::RenderThemeSpecAnimatedPrimitives;
@@ -26,6 +27,7 @@ enum class CommandType {
   Text,
   Progress,
   Gif,
+  Pixels,
 };
 
 struct RecordedCommand {
@@ -44,6 +46,7 @@ struct RecordedCommand {
   uint16_t border = 0;
   bool hasBg = false;
   std::string assetPath;
+  std::string data;
 };
 
 class RecordingSink final : public Sink {
@@ -105,6 +108,18 @@ class RecordingSink final : public Sink {
     commands.push_back(cmd);
   }
 
+  void DrawPixels(const PixelsCommand& pixels) override {
+    RecordedCommand cmd;
+    cmd.type = CommandType::Pixels;
+    cmd.x = pixels.x;
+    cmd.y = pixels.y;
+    cmd.width = pixels.width;
+    cmd.height = pixels.height;
+    cmd.color = pixels.color;
+    cmd.data = pixels.data == nullptr ? "" : pixels.data;
+    commands.push_back(cmd);
+  }
+
   std::vector<RecordedCommand> commands;
 };
 
@@ -143,13 +158,14 @@ void testRendersCommandsAndBindings() {
       {"type":"text","x":7,"y":8,"fontSize":1,"binding":"weeklyPercent"},
       {"type":"progress","x":9,"y":10,"width":111,"height":12,"color":"#00FF00","bgColor":"#101010","borderColor":"#FFFFFF"},
       {"type":"progress","x":13,"y":14,"width":99,"height":15,"binding":"weekly","color":"#0000FF"},
-      {"type":"gif","x":15,"y":16,"width":80,"height":64,"assetPath":"/themes/mini/mini.gif"}
+      {"type":"gif","x":15,"y":16,"width":80,"height":64,"assetPath":"/themes/mini/mini.gif"},
+      {"type":"pixels","x":2,"y":3,"width":4,"height":2,"color":"#FFFFFF","data":"A5"}
     ]
   })JSON";
 
   RecordingSink sink;
   TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
-  TEST_ASSERT_EQUAL_UINT32(7, sink.commands.size());
+  TEST_ASSERT_EQUAL_UINT32(8, sink.commands.size());
 
   const RecordedCommand& clear = sink.commands[0];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(clear.type));
@@ -196,6 +212,15 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_INT(80, gif.width);
   TEST_ASSERT_EQUAL_INT(64, gif.height);
   TEST_ASSERT_EQUAL_STRING("/themes/mini/mini.gif", gif.assetPath.c_str());
+
+  const RecordedCommand& pixels = sink.commands[7];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Pixels), static_cast<int>(pixels.type));
+  TEST_ASSERT_EQUAL_INT(2, pixels.x);
+  TEST_ASSERT_EQUAL_INT(3, pixels.y);
+  TEST_ASSERT_EQUAL_INT(4, pixels.width);
+  TEST_ASSERT_EQUAL_INT(2, pixels.height);
+  TEST_ASSERT_EQUAL_HEX16(0xFFFF, pixels.color);
+  TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
 }
 
 void testInvalidPrimitivesAreSkipped() {
@@ -208,6 +233,7 @@ void testInvalidPrimitivesAreSkipped() {
       {"type":"text","x":3,"y":4,"fontSize":0,"text":"bad"},
       {"type":"progress","x":5,"y":6,"width":10,"height":0},
       {"type":"gif","x":5,"y":6,"width":10,"height":10},
+      {"type":"pixels","x":1,"y":1,"width":8,"height":1,"data":"X0"},
       {"type":"text","x":7,"y":8,"fontSize":1,"text":"ok"}
     ]
   })JSON";

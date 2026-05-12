@@ -33,7 +33,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["text", "rect", "progress", "gif"]
+            "enum": ["text", "rect", "progress", "gif", "pixels"]
           },
           "x": {
             "type": "integer",
@@ -69,10 +69,18 @@
             "type": "string",
             "pattern": "^#[A-Fa-f0-9]{6}$"
           },
+          "borderColor": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
           "assetPath": {
             "type": "string",
             "maxLength": 31,
             "pattern": "^/themes/[^\\\\.].*"
+          },
+          "data": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]+$"
           }
         },
         "additionalProperties": true

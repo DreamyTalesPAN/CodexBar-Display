@@ -190,6 +190,30 @@ textarea:focus {
   margin-top: 10px;
 }
 
+.pixel-editor {
+  display: grid;
+  grid-template-columns: repeat(var(--pixel-cols), 1fr);
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid #2e3440;
+  border-radius: 6px;
+  background: #080a0d;
+}
+
+.pixel-cell {
+  aspect-ratio: 1;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid #242a33;
+  border-radius: 0;
+  background: #11141a;
+}
+
+.pixel-cell.on {
+  border-color: #c7ff68;
+  background: #c7ff68;
+}
+
 .segmented {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -267,6 +291,21 @@ textarea:focus {
 .gif-icon {
   font-size: 11px;
   letter-spacing: 0;
+}
+
+.pixels-icon::before {
+  width: 4px;
+  height: 4px;
+  background: #c7ff68;
+  box-shadow:
+    8px 0 0 #c7ff68,
+    16px 0 0 #c7ff68,
+    4px 8px 0 #c7ff68,
+    12px 8px 0 #c7ff68,
+    0 16px 0 #c7ff68,
+    8px 16px 0 #c7ff68,
+    16px 16px 0 #c7ff68;
+  content: "";
 }
 
 .hidden-file-input {
@@ -355,18 +394,32 @@ textarea:focus {
   touch-action: none;
 }
 
-.konva-display {
+.preview-stack {
+  position: relative;
   overflow: hidden;
 }
 
-.konva-display .konvajs-content,
-.konva-display canvas {
+.device-canvas,
+.konva-overlay,
+.konva-overlay .konvajs-content,
+.konva-overlay canvas {
   width: 100% !important;
   height: 100% !important;
 }
 
-.konva-display canvas {
+.device-canvas,
+.konva-overlay canvas {
   image-rendering: pixelated;
+}
+
+.device-canvas,
+.konva-overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.konva-overlay {
+  z-index: 1;
 }
 
 .primitive-hit {

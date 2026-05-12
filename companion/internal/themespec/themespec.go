@@ -24,20 +24,23 @@ var (
 	errUnknownCapability = errors.New("device capabilities unavailable; connect device and retry")
 	themeIDPattern       = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{2,63}$`)
 	colorPattern         = regexp.MustCompile(`^#[A-Fa-f0-9]{6}$`)
+	hexPattern           = regexp.MustCompile(`^[A-Fa-f0-9]+$`)
 )
 
 type Primitive struct {
-	Type      string `json:"type"`
-	X         int    `json:"x,omitempty"`
-	Y         int    `json:"y,omitempty"`
-	Width     int    `json:"width,omitempty"`
-	Height    int    `json:"height,omitempty"`
-	Text      string `json:"text,omitempty"`
-	Binding   string `json:"binding,omitempty"`
-	FontSize  int    `json:"fontSize,omitempty"`
-	Color     string `json:"color,omitempty"`
-	BgColor   string `json:"bgColor,omitempty"`
-	AssetPath string `json:"assetPath,omitempty"`
+	Type        string `json:"type"`
+	X           int    `json:"x,omitempty"`
+	Y           int    `json:"y,omitempty"`
+	Width       int    `json:"width,omitempty"`
+	Height      int    `json:"height,omitempty"`
+	Text        string `json:"text,omitempty"`
+	Binding     string `json:"binding,omitempty"`
+	FontSize    int    `json:"fontSize,omitempty"`
+	Color       string `json:"color,omitempty"`
+	BgColor     string `json:"bgColor,omitempty"`
+	BorderColor string `json:"borderColor,omitempty"`
+	AssetPath   string `json:"assetPath,omitempty"`
+	Data        string `json:"data,omitempty"`
 }
 
 type Spec struct {
@@ -127,7 +130,9 @@ func normalizeSpec(spec Spec) Spec {
 		spec.Primitives[i].Binding = strings.TrimSpace(spec.Primitives[i].Binding)
 		spec.Primitives[i].Color = strings.TrimSpace(spec.Primitives[i].Color)
 		spec.Primitives[i].BgColor = strings.TrimSpace(spec.Primitives[i].BgColor)
+		spec.Primitives[i].BorderColor = strings.TrimSpace(spec.Primitives[i].BorderColor)
 		spec.Primitives[i].AssetPath = strings.TrimSpace(spec.Primitives[i].AssetPath)
+		spec.Primitives[i].Data = strings.TrimSpace(spec.Primitives[i].Data)
 	}
 	return spec
 }
@@ -149,6 +154,16 @@ func validatePrimitive(p Primitive) error {
 		if !isSafeThemeAssetPath(p.AssetPath) {
 			return errors.New("gif primitive requires assetPath under /themes/")
 		}
+	case "pixels":
+		if p.Width <= 0 || p.Height <= 0 {
+			return errors.New("pixels primitive requires width/height > 0")
+		}
+		if p.Width*p.Height > 1024 {
+			return errors.New("pixels primitive must be <= 1024 pixels")
+		}
+		if !isValidBitmapData(p.Data, p.Width, p.Height) {
+			return errors.New("pixels primitive requires hex data sized for width/height")
+		}
 	default:
 		return fmt.Errorf("%w: %s", errUnknownPrimitive, p.Type)
 	}
@@ -165,7 +180,18 @@ func validatePrimitive(p Primitive) error {
 	if p.BgColor != "" && !colorPattern.MatchString(p.BgColor) {
 		return errUnsupportedColor
 	}
+	if p.BorderColor != "" && !colorPattern.MatchString(p.BorderColor) {
+		return errUnsupportedColor
+	}
 	return nil
+}
+
+func isValidBitmapData(data string, width, height int) bool {
+	if width <= 0 || height <= 0 {
+		return false
+	}
+	expected := ((width*height + 7) / 8) * 2
+	return len(data) == expected && hexPattern.MatchString(data)
 }
 
 func isSafeThemeAssetPath(path string) bool {

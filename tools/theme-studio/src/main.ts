@@ -15,7 +15,7 @@ const TARGET_STORAGE_KEY = "codexbar.themeStudio.targetOrigin";
 const DEFAULT_GIF_SIZE = 80;
 const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 
-type PrimitiveType = "rect" | "text" | "progress" | "gif";
+type PrimitiveType = "rect" | "text" | "progress" | "gif" | "pixels";
 type ResizeHandle = "e" | "s" | "se";
 type EditableKonvaNode = Konva.Group | Konva.Shape;
 type GiflerAnimator = {
@@ -34,6 +34,7 @@ type GifPreview = {
   key: string;
   loading: boolean;
   animator: GiflerAnimator | null;
+  playing: boolean;
 };
 type BindingKey =
   | "label"
@@ -64,6 +65,7 @@ interface Primitive {
   borderColor?: string;
   rotation?: number;
   assetPath?: string;
+  data?: string;
 }
 
 interface ThemeSpec {
@@ -129,6 +131,9 @@ const variableTokens = [
 
 const PREVIEW_FONT_FAMILY = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const PREVIEW_FONT_WEIGHT = 800;
+const DEFAULT_PIXELS_WIDTH = 16;
+const DEFAULT_PIXELS_HEIGHT = 10;
+const DEFAULT_CLOUD_PIXELS = "07801FE03FF07FF8FFFCFFFE7FFE3FFC0FF003C0";
 const GLCD_FONT_FIRST_CHAR = 32;
 const GLCD_FONT_LAST_CHAR = 126;
 const GLCD_FONT_COLUMNS = 5;
@@ -279,14 +284,12 @@ function normalizeMiniThemeSpec() {
   state.spec.themeRev = FIXED_THEME_REV;
   state.spec.fallbackTheme = FIXED_FALLBACK_THEME;
   state.spec.primitives.forEach((primitive) => {
-    const rotation = normalizeRotation(primitive.rotation ?? 0);
-    if (rotation === 0) {
-      delete primitive.rotation;
-    } else {
-      primitive.rotation = rotation;
-    }
+    delete primitive.rotation;
     if (primitive.type === "text") {
       delete primitive.font;
+    }
+    if (primitive.type === "pixels") {
+      primitive.data = normalizedBitmapData(primitive.data ?? "", primitive.width ?? 0, primitive.height ?? 0);
     }
   });
 }
@@ -320,8 +323,8 @@ function validateCurrentSpec() {
 
   spec.primitives.forEach((primitive, index) => {
     const prefix = `Primitive ${index + 1}`;
-    if (!["rect", "text", "progress", "gif"].includes(primitive.type)) {
-      errors.push(`${prefix}: type muss rect, text, progress oder gif sein.`);
+    if (!["rect", "text", "progress", "gif", "pixels"].includes(primitive.type)) {
+      errors.push(`${prefix}: type muss rect, text, progress, gif oder pixels sein.`);
     }
     if (!isNonNegativeInteger(primitive.x) || !isNonNegativeInteger(primitive.y)) {
       errors.push(`${prefix}: x/y müssen ganze Zahlen ab 0 sein.`);
@@ -354,6 +357,16 @@ function validateCurrentSpec() {
       }
       if (primitive.assetPath && primitive.assetPath.length > MAX_ESP8266_LITTLEFS_PATH_CHARS) {
         errors.push(`${prefix}: assetPath ist zu lang für ESP8266 LittleFS (${primitive.assetPath.length}/${MAX_ESP8266_LITTLEFS_PATH_CHARS}).`);
+      }
+    }
+    if (primitive.type === "pixels") {
+      if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
+        errors.push(`${prefix}: width/height müssen größer als 0 sein.`);
+      } else if (primitive.width * primitive.height > 1024) {
+        errors.push(`${prefix}: Pixelmasken dürfen maximal 1024 Pixel groß sein.`);
+      }
+      if (!isValidBitmapData(primitive.data ?? "", primitive.width ?? 0, primitive.height ?? 0)) {
+        errors.push(`${prefix}: data muss Hex für width*height Bits enthalten.`);
       }
     }
     const width = primitive.width ?? estimatePrimitiveWidth(primitive);
@@ -490,6 +503,10 @@ function addElementPalette(): string {
           <span class="add-icon gif-icon">GIF</span>
           <strong>GIF</strong>
         </button>
+        <button class="add-card" data-action="add-pixels">
+          <span class="add-icon pixels-icon"></span>
+          <strong>Pixels</strong>
+        </button>
       </div>
     </section>
   `;
@@ -533,6 +550,9 @@ function primitiveTitle(primitive: Primitive): string {
   if (primitive.type === "gif") {
     return primitive.assetPath?.split("/").pop() || "GIF";
   }
+  if (primitive.type === "pixels") {
+    return `${primitive.width ?? 0}x${primitive.height ?? 0}`;
+  }
   return primitive.color || "Rect";
 }
 
@@ -542,7 +562,6 @@ function inspectorFields(primitive: Primitive): string {
       <label>X<input type="number" min="0" step="1" data-primitive-field="x" value="${primitive.x}" /></label>
       <label>Y<input type="number" min="0" step="1" data-primitive-field="y" value="${primitive.y}" /></label>
     </div>
-    <label>Rotation<input type="number" min="0" max="359" step="1" data-primitive-field="rotation" value="${primitive.rotation ?? 0}" /></label>
   `;
 
   if (primitive.type === "text") {
@@ -584,6 +603,19 @@ function inspectorFields(primitive: Primitive): string {
     `;
   }
 
+  if (primitive.type === "pixels") {
+    return `
+      ${common}
+      <div class="field-grid">
+        <label>Width<input type="number" min="1" step="1" data-primitive-field="width" value="${primitive.width ?? DEFAULT_PIXELS_WIDTH}" /></label>
+        <label>Height<input type="number" min="1" step="1" data-primitive-field="height" value="${primitive.height ?? DEFAULT_PIXELS_HEIGHT}" /></label>
+      </div>
+      ${colorField("Color", "color", primitive.color ?? "#FFFFFF")}
+      ${pixelEditorGrid(primitive)}
+      <label>Bitmap hex<textarea rows="4" data-primitive-field="data" spellcheck="false">${escapeHtml(primitive.data ?? "")}</textarea></label>
+    `;
+  }
+
   return `
     ${common}
     <div class="field-grid">
@@ -591,6 +623,24 @@ function inspectorFields(primitive: Primitive): string {
       <label>Height<input type="number" min="1" step="1" data-primitive-field="height" value="${primitive.height ?? 32}" /></label>
     </div>
     ${colorField("Color", "color", primitive.color ?? "#FFFFFF")}
+  `;
+}
+
+function pixelEditorGrid(primitive: Primitive): string {
+  const width = primitive.width ?? 0;
+  const height = primitive.height ?? 0;
+  if (primitive.type !== "pixels" || width <= 0 || height <= 0 || width * height > 512) {
+    return "";
+  }
+  const data = normalizedBitmapData(primitive.data ?? "", width, height);
+  const cells: string[] = [];
+  for (let index = 0; index < width * height; index += 1) {
+    cells.push(`<button type="button" class="pixel-cell ${bitmapBitSet(data, index) ? "on" : ""}" data-pixel-toggle="${index}" aria-label="Pixel ${index + 1}"></button>`);
+  }
+  return `
+    <div class="pixel-editor" style="--pixel-cols:${width}">
+      ${cells.join("")}
+    </div>
   `;
 }
 
@@ -619,11 +669,17 @@ function optionalColorField(label: string, key: keyof Primitive, value: string |
 }
 
 function renderPreview(): string {
-  return `<div class="display konva-display" data-role="konva-stage" aria-label="Theme preview"></div>`;
+  return `
+    <div class="display preview-stack" aria-label="Theme preview">
+      <canvas class="device-canvas" data-role="device-canvas" width="${DISPLAY_SIZE}" height="${DISPLAY_SIZE}"></canvas>
+      <div class="konva-overlay" data-role="konva-stage"></div>
+    </div>
+  `;
 }
 
 function mountKonvaPreview() {
   const container = app.querySelector<HTMLDivElement>("[data-role='konva-stage']");
+  const deviceCanvas = app.querySelector<HTMLCanvasElement>("[data-role='device-canvas']");
   gifPreviewGeneration += 1;
   stopGifPreviewAnimations();
   gifRedrawAnimation?.stop();
@@ -631,10 +687,11 @@ function mountKonvaPreview() {
   stage?.destroy();
   stage = null;
 
-  if (!container) {
+  if (!container || !deviceCanvas) {
     return;
   }
 
+  const hasAnimatedGif = renderDeviceCanvas(deviceCanvas);
   const stageSize = previewStageSize(container);
   const previewScale = stageSize / DISPLAY_SIZE;
   const konvaStage = new Konva.Stage({
@@ -647,17 +704,8 @@ function mountKonvaPreview() {
   const layer = new Konva.Layer();
   layer.scale({ x: previewScale, y: previewScale });
   konvaStage.add(layer);
-  layer.add(new Konva.Rect({
-    x: 0,
-    y: 0,
-    width: DISPLAY_SIZE,
-    height: DISPLAY_SIZE,
-    fill: state.spec.bgColor ?? "#000000",
-    listening: false,
-  }));
 
   const nodes: EditableKonvaNode[] = [];
-  let hasAnimatedGif = false;
   state.spec.primitives.forEach((primitive, index) => {
     const result = konvaNodeForPrimitive(primitive, index);
     if (!result) {
@@ -665,7 +713,6 @@ function mountKonvaPreview() {
     }
     layer.add(result.node);
     nodes[index] = result.node;
-    hasAnimatedGif = hasAnimatedGif || result.animated;
   });
 
   const selected = state.spec.primitives[state.selectedIndex];
@@ -673,7 +720,7 @@ function mountKonvaPreview() {
   if (selected && selectedNode) {
     const transformer = new Konva.Transformer({
       nodes: [selectedNode],
-      rotateEnabled: true,
+      rotateEnabled: false,
       keepRatio: selected.type === "gif",
       borderStroke: "#c7ff68",
       borderStrokeWidth: 1.5,
@@ -681,7 +728,6 @@ function mountKonvaPreview() {
       anchorStroke: "#0a0b0d",
       anchorSize: 8,
       anchorCornerRadius: 2,
-      rotationSnaps: [0, 45, 90, 135, 180, 225, 270, 315],
       boundBoxFunc: (_oldBox, newBox) => {
         if (newBox.width < 4 || newBox.height < 4) {
           return _oldBox;
@@ -752,8 +798,94 @@ function mountKonvaPreview() {
 
   layer.draw();
   if (hasAnimatedGif) {
-    gifRedrawAnimation = new Konva.Animation(() => undefined, layer);
+    gifRedrawAnimation = new Konva.Animation(() => {
+      renderDeviceCanvas(deviceCanvas);
+    }, layer);
     gifRedrawAnimation.start();
+  }
+}
+
+function renderDeviceCanvas(canvas: HTMLCanvasElement): boolean {
+  canvas.width = DISPLAY_SIZE;
+  canvas.height = DISPLAY_SIZE;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return false;
+  }
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = state.spec.bgColor ?? "#000000";
+  context.fillRect(0, 0, DISPLAY_SIZE, DISPLAY_SIZE);
+
+  let hasAnimatedGif = false;
+  for (const primitive of state.spec.primitives) {
+    if (primitive.type === "rect") {
+      context.fillStyle = primitive.color ?? "#000000";
+      context.fillRect(primitive.x, primitive.y, primitive.width ?? 1, primitive.height ?? 1);
+    } else if (primitive.type === "progress") {
+      drawDeviceProgress(context, primitive);
+    } else if (primitive.type === "text") {
+      const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
+      const width = estimatePrimitiveWidth(primitive);
+      const height = estimatePrimitiveHeight(primitive);
+      context.drawImage(textPreviewCanvas(primitive, text, width, height), primitive.x, primitive.y);
+    } else if (primitive.type === "gif") {
+      hasAnimatedGif = drawDeviceGif(context, primitive) || hasAnimatedGif;
+    } else if (primitive.type === "pixels") {
+      drawDevicePixels(context, primitive);
+    }
+  }
+  return hasAnimatedGif;
+}
+
+function drawDeviceProgress(context: CanvasRenderingContext2D, primitive: Primitive) {
+  const width = primitive.width ?? 1;
+  const height = primitive.height ?? 1;
+  const pct = primitive.binding === "weekly" || primitive.binding === "weeklyPercent" ? frame.weekly : frame.session;
+  const fillWidth = clamp(Math.floor((width * pct) / 100), 0, Math.max(0, width - 2));
+
+  context.fillStyle = primitive.borderColor ?? "#7B7B7B";
+  context.fillRect(primitive.x, primitive.y, width, height);
+  context.fillStyle = primitive.bgColor ?? "#000000";
+  context.fillRect(primitive.x + 1, primitive.y + 1, Math.max(0, width - 2), Math.max(0, height - 2));
+  if (fillWidth > 0) {
+    context.fillStyle = primitive.color ?? "#FFFFFF";
+    context.fillRect(primitive.x + 1, primitive.y + 1, fillWidth, Math.max(0, height - 2));
+  }
+}
+
+function drawDeviceGif(context: CanvasRenderingContext2D, primitive: Primitive): boolean {
+  const width = primitive.width ?? DEFAULT_GIF_SIZE;
+  const height = primitive.height ?? DEFAULT_GIF_SIZE;
+  const preview = primitive.assetPath ? gifPreviewFor(primitive.assetPath, gifPreviewGeneration) : null;
+  if (!preview) {
+    context.fillStyle = "#141922";
+    context.fillRect(primitive.x, primitive.y, width, height);
+    return false;
+  }
+  const rect = fitContainRect(primitive.x, primitive.y, width, height, gifAspectRatio(primitive));
+  context.imageSmoothingEnabled = false;
+  context.drawImage(preview.canvas, rect.x, rect.y, rect.width, rect.height);
+  return true;
+}
+
+function drawDevicePixels(context: CanvasRenderingContext2D, primitive: Primitive) {
+  const width = primitive.width ?? 0;
+  const height = primitive.height ?? 0;
+  if (!isValidBitmapData(primitive.data ?? "", width, height)) {
+    return;
+  }
+  context.fillStyle = primitive.color ?? "#FFFFFF";
+  for (let row = 0; row < height; row += 1) {
+    let runStart = -1;
+    for (let col = 0; col <= width; col += 1) {
+      const on = col < width && bitmapBitSet(primitive.data ?? "", row * width + col);
+      if (on && runStart < 0) {
+        runStart = col;
+      } else if (!on && runStart >= 0) {
+        context.fillRect(primitive.x + runStart, primitive.y + row, col - runStart, 1);
+        runStart = -1;
+      }
+    }
   }
 }
 
@@ -804,40 +936,31 @@ function pointInPrimitive(primitive: Primitive, x: number, y: number): boolean {
 }
 
 function konvaNodeForPrimitive(primitive: Primitive, index: number): { node: EditableKonvaNode; animated: boolean } | null {
-  let node: EditableKonvaNode;
-  let animated = false;
-
-  if (primitive.type === "rect") {
-    node = new Konva.Rect({
-      ...commonKonvaProps(primitive, index),
-      width: primitive.width ?? 1,
-      height: primitive.height ?? 1,
-      fill: primitive.color ?? "#000000",
-    });
-  } else if (primitive.type === "progress") {
-    node = progressKonvaGroup(primitive, index);
-  } else if (primitive.type === "gif") {
-    const result = gifKonvaGroup(primitive, index);
-    node = result.node;
-    animated = result.animated;
-  } else {
-    node = textKonvaGroup(primitive, index);
-  }
-
+  const node = overlayKonvaRect(primitive, index);
   bindKonvaNodeEvents(node, index);
-  return { node, animated };
+  return { node, animated: false };
 }
 
 function commonKonvaProps(primitive: Primitive, index: number) {
   return {
     x: primitive.x,
     y: primitive.y,
-    rotation: normalizeRotation(primitive.rotation ?? 0),
     draggable: true,
     id: `primitive-${index}`,
     name: "primitive",
     primitiveIndex: index,
   };
+}
+
+function overlayKonvaRect(primitive: Primitive, index: number): Konva.Rect {
+  return new Konva.Rect({
+    ...commonKonvaProps(primitive, index),
+    width: estimatePrimitiveWidth(primitive),
+    height: estimatePrimitiveHeight(primitive),
+    fill: "rgba(199,255,104,0.001)",
+    stroke: index === state.selectedIndex ? "#c7ff68" : "rgba(0,0,0,0)",
+    strokeWidth: index === state.selectedIndex ? 1 : 0,
+  });
 }
 
 function progressKonvaGroup(primitive: Primitive, index: number): Konva.Group {
@@ -992,6 +1115,7 @@ function gifPreviewFor(assetPath: string, generation: number): GifPreview | null
     key,
     loading: true,
     animator: null,
+    playing: false,
   };
   gifPreviewCache.set(key, preview);
 
@@ -1020,13 +1144,20 @@ function startGifPreview(preview: GifPreview) {
   if (!preview.animator) {
     return;
   }
+  if (preview.playing) {
+    return;
+  }
   preview.animator.stop();
   preview.animator.reset();
   preview.animator.animateInCanvas(preview.canvas, true);
+  preview.playing = true;
 }
 
 function stopGifPreviewAnimations() {
-  gifPreviewCache.forEach((preview) => preview.animator?.stop());
+  gifPreviewCache.forEach((preview) => {
+    preview.animator?.stop();
+    preview.playing = false;
+  });
 }
 
 function bindKonvaNodeEvents(node: Konva.Node, index: number) {
@@ -1073,7 +1204,6 @@ function commitKonvaTransform(node: Konva.Node, index: number) {
 
   primitive.x = clamp(Math.round(node.x()), 0, DISPLAY_SIZE - 1);
   primitive.y = clamp(Math.round(node.y()), 0, DISPLAY_SIZE - 1);
-  primitive.rotation = normalizeRotation(Math.round(node.rotation()));
 
   if (primitive.type === "text") {
     const nextSize = Math.max(Math.abs(scaleX || 1), Math.abs(scaleY || 1));
@@ -1343,6 +1473,51 @@ function glcdGlyphColumn(code: number, column: number): number {
   return GLCD_FONT_5X7[index] ?? 0;
 }
 
+function bitmapHexLength(width: number, height: number): number {
+  if (width <= 0 || height <= 0) {
+    return 0;
+  }
+  return Math.ceil((width * height) / 8) * 2;
+}
+
+function normalizedBitmapData(data: string, width: number, height: number): string {
+  const expected = bitmapHexLength(width, height);
+  const cleaned = data.replace(/[^A-Fa-f0-9]/g, "").toUpperCase();
+  return cleaned.padEnd(expected, "0").slice(0, expected);
+}
+
+function isValidBitmapData(data: string, width: number, height: number): boolean {
+  const expected = bitmapHexLength(width, height);
+  return expected > 0 && data.length === expected && /^[A-Fa-f0-9]+$/.test(data);
+}
+
+function bitmapBitSet(data: string, bitIndex: number): boolean {
+  const byteIndex = Math.floor(bitIndex / 8);
+  const hex = data.slice(byteIndex * 2, byteIndex * 2 + 2);
+  if (hex.length !== 2) {
+    return false;
+  }
+  const value = Number.parseInt(hex, 16);
+  if (Number.isNaN(value)) {
+    return false;
+  }
+  return (value & (0x80 >> (bitIndex % 8))) !== 0;
+}
+
+function toggleBitmapBit(data: string, width: number, height: number, bitIndex: number): string {
+  const expectedBits = width * height;
+  if (bitIndex < 0 || bitIndex >= expectedBits) {
+    return normalizedBitmapData(data, width, height);
+  }
+  const bytes = new Uint8Array(Math.ceil(expectedBits / 8));
+  const normalized = normalizedBitmapData(data, width, height);
+  for (let i = 0; i < bytes.length; i += 1) {
+    bytes[i] = Number.parseInt(normalized.slice(i * 2, i * 2 + 2), 16);
+  }
+  bytes[Math.floor(bitIndex / 8)] ^= 0x80 >> (bitIndex % 8);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
 function renderTemplate(text: string): string {
   return text.replace(/\{([a-zA-Z]+)\}/g, (_, key: string) => {
     return bindingValue(key);
@@ -1414,7 +1589,7 @@ function bindEvents() {
     });
   });
 
-  app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-primitive-field]").forEach((input) => {
+  app.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("[data-primitive-field]").forEach((input) => {
     input.addEventListener("input", () => {
       updateSelectedPrimitive(input.dataset.primitiveField ?? "", input.value);
       if (isColorInput(input)) {
@@ -1437,6 +1612,19 @@ function bindEvents() {
   app.querySelectorAll<HTMLButtonElement>("[data-clear-primitive-field]").forEach((button) => {
     button.addEventListener("click", () => {
       clearSelectedPrimitiveField(button.dataset.clearPrimitiveField ?? "");
+      syncJsonFromSpec();
+      render();
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-pixel-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const primitive = selectedPrimitive();
+      if (!primitive || primitive.type !== "pixels") {
+        return;
+      }
+      const index = toInt(button.dataset.pixelToggle ?? "0", 0);
+      primitive.data = toggleBitmapBit(primitive.data ?? "", primitive.width ?? 0, primitive.height ?? 0, index);
       syncJsonFromSpec();
       render();
     });
@@ -1775,10 +1963,6 @@ function updateSelectedPrimitive(key: string, value: string) {
   if (!primitive) {
     return;
   }
-  if (key === "rotation") {
-    primitive.rotation = normalizeRotation(toInt(value, 0));
-    return;
-  }
   if ((key === "width" || key === "height") && primitive.type === "gif") {
     resizeGifPrimitive(primitive, key, toInt(value, DEFAULT_GIF_SIZE));
     return;
@@ -1802,6 +1986,10 @@ function updateSelectedPrimitive(key: string, value: string) {
   }
   if (key === "assetPath") {
     primitive.assetPath = value.trim();
+    return;
+  }
+  if (key === "data") {
+    primitive.data = value.trim();
     return;
   }
   if (key === "text") {
@@ -1840,6 +2028,17 @@ async function handleAction(action: string) {
   }
   if (action === "add-gif") {
     app.querySelector<HTMLInputElement>("[data-role='gif-input']")?.click();
+  }
+  if (action === "add-pixels") {
+    addPrimitive({
+      type: "pixels",
+      x: 8,
+      y: 8,
+      width: DEFAULT_PIXELS_WIDTH,
+      height: DEFAULT_PIXELS_HEIGHT,
+      color: "#FFFFFF",
+      data: DEFAULT_CLOUD_PIXELS,
+    }, "Pixel shape placed.");
   }
   if (action === "delete-selected") {
     deleteSelectedPrimitive();

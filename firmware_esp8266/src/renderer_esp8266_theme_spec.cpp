@@ -67,6 +67,22 @@ class ThemeSpecSink final : public themespec::Sink {
     (void)GifCore().Tick(Tft(), request, forceGifFrame_);
   }
 
+  void DrawPixels(const themespec::PixelsCommand& cmd) override {
+    for (int row = 0; row < cmd.height; ++row) {
+      int runStart = -1;
+      for (int col = 0; col <= cmd.width; ++col) {
+        const int bitIndex = row * cmd.width + col;
+        const bool on = col < cmd.width && themespec::BitmapBitSet(cmd.data, bitIndex);
+        if (on && runStart < 0) {
+          runStart = col;
+        } else if (!on && runStart >= 0) {
+          PrimitiveFillRect(cmd.x + runStart, cmd.y + row, col - runStart, 1, cmd.color);
+          runStart = -1;
+        }
+      }
+    }
+  }
+
  private:
   bool forceGifFrame_ = false;
 };

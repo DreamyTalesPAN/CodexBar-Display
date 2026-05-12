@@ -18,11 +18,27 @@ func TestValidateAcceptsMinimalV1Spec(t *testing.T) {
 			{Type: "text", X: 8, Y: 20, Text: "Codex", FontSize: 2, Color: "#FFFFFF"},
 			{Type: "text", X: 8, Y: 48, Binding: "label", FontSize: 2, Color: "#FFFFFF"},
 			{Type: "gif", X: 80, Y: 96, Width: 64, Height: 64, AssetPath: "/themes/mini/mini.gif"},
+			{Type: "pixels", X: 4, Y: 4, Width: 8, Height: 2, Color: "#FFFFFF", Data: "A5F0"},
 		},
 	}
 
 	if err := Validate(spec); err != nil {
 		t.Fatalf("expected valid spec, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidPixelsData(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "mini-transport",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{Type: "pixels", X: 0, Y: 0, Width: 8, Height: 2, Color: "#FFFFFF", Data: "A5"},
+		},
+	}
+
+	if err := Validate(spec); err == nil {
+		t.Fatalf("expected validation error")
 	}
 }
 

@@ -48,32 +48,11 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
       filled = 0;
     }
 
-    int radius = 2;
-    if (cmd.height >= 14) {
-      radius = 3;
-    }
-    if (radius > ((cmd.height - 2) / 2)) {
-      radius = (cmd.height - 2) / 2;
-    }
-    if (radius < 0) {
-      radius = 0;
-    }
-
     TFT_eSPI& tft = Tft();
-    if (radius > 0) {
-      tft.drawRoundRect(cmd.x, cmd.y, cmd.width, cmd.height, radius, cmd.borderColor);
-      tft.fillRoundRect(cmd.x + 1, cmd.y + 1, cmd.width - 2, cmd.height - 2, radius - 1, cmd.bgColor);
-    } else {
-      tft.drawRect(cmd.x, cmd.y, cmd.width, cmd.height, cmd.borderColor);
-      tft.fillRect(cmd.x + 1, cmd.y + 1, cmd.width - 2, cmd.height - 2, cmd.bgColor);
-    }
-
+    tft.drawRect(cmd.x, cmd.y, cmd.width, cmd.height, cmd.borderColor);
+    tft.fillRect(cmd.x + 1, cmd.y + 1, cmd.width - 2, cmd.height - 2, cmd.bgColor);
     if (filled > 0) {
-      if (radius > 1 && filled > (radius * 2)) {
-        tft.fillRoundRect(cmd.x + 1, cmd.y + 1, filled, cmd.height - 2, radius - 1, cmd.fillColor);
-      } else {
-        tft.fillRect(cmd.x + 1, cmd.y + 1, filled, cmd.height - 2, cmd.fillColor);
-      }
+      tft.fillRect(cmd.x + 1, cmd.y + 1, filled, cmd.height - 2, cmd.fillColor);
     }
   }
 };

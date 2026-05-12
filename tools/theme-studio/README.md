@@ -7,8 +7,9 @@ The MVP targets the Mini theme only. ThemeSpec metadata is kept fixed where poss
 ../../scripts/theme-studio.sh
 ```
 
-Open the Vite URL, set the theme background, edit, drag, resize, or rotate primitives on the Konva-backed 240x240 preview, then select `Send to Vibe TV`.
+Open the Vite URL, set the theme background, edit, drag, or resize primitives on the 240x240 device preview, then select `Send to Vibe TV`.
 Text uses the single TFT GLCD font compiled into the ESP8266 firmware; use Size to scale it.
+Pixel shapes use a compact 1-bit bitmap mask so small icons can be drawn exactly on the device.
 Set the Vibe TV field to the device URL, for example `http://192.168.178.163` or `http://vibetv.local`.
 The Studio clears any cached ThemeSpec, uploads referenced GIF assets, then sends the full `/frame` payload.
 GIF uploads use short `/themes/u/...` paths because ESP8266 LittleFS rejects paths longer than 31 characters.
@@ -37,7 +38,7 @@ go run ./cmd/codexbar-display theme-apply --transport wifi --target http://vibet
 ```
 
 Current MVP scope:
-- `rect`, `text`, `progress`, `gif` primitives
+- `rect`, `text`, `progress`, `gif`, `pixels` primitives
 - Konva 240x240 preview with one selected Transformer at a time
 - drag-to-position plus resize/rotate handles
 - animated GIF preview through `gifler`
