@@ -29,7 +29,17 @@ class ThemeSpecSink final : public themespec::Sink {
   }
 
   void DrawText(const themespec::TextCommand& cmd) override {
-    PrimitiveDrawText(cmd.text, cmd.x, cmd.y, cmd.font, cmd.size, cmd.fg, cmd.bg, cmd.wrap);
+    primitive::TextCommand text;
+    text.text = cmd.text;
+    text.x = cmd.x;
+    text.y = cmd.y;
+    text.font = cmd.font;
+    text.size = cmd.size;
+    text.fg = cmd.fg;
+    text.bg = cmd.bg;
+    text.hasBg = cmd.hasBg;
+    text.wrap = cmd.wrap;
+    PrimitiveLayer().DrawText(text);
   }
 
   void DrawProgress(const themespec::ProgressCommand& cmd) override {

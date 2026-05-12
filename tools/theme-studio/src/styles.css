@@ -579,8 +579,18 @@ textarea:focus {
   gap: 8px;
 }
 
+.optional-color-row {
+  grid-template-columns: 44px 1fr auto;
+}
+
 .color-row input[type="color"] {
   padding: 2px;
+}
+
+.small-button {
+  min-height: 34px;
+  padding: 0 10px;
+  white-space: nowrap;
 }
 
 .advanced-panel {

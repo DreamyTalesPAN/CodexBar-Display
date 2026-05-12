@@ -28,7 +28,11 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
     tft.setTextWrap(cmd.wrap);
     tft.setTextFont(cmd.font);
     tft.setTextSize(cmd.size);
-    tft.setTextColor(cmd.fg, cmd.bg);
+    if (cmd.hasBg) {
+      tft.setTextColor(cmd.fg, cmd.bg);
+    } else {
+      tft.setTextColor(cmd.fg);
+    }
     tft.setCursor(cmd.x, cmd.y);
     tft.print(cmd.text == nullptr ? "" : cmd.text);
     tft.setTextWrap(false);
@@ -121,6 +125,7 @@ void PrimitiveDrawText(
   cmd.size = size;
   cmd.fg = fg;
   cmd.bg = bg;
+  cmd.hasBg = true;
   cmd.wrap = wrap;
   PrimitiveLayer().DrawText(cmd);
 }

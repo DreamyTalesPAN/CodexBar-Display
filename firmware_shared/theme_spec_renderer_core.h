@@ -37,6 +37,7 @@ struct TextCommand {
   int size = 1;
   uint16_t fg = 0xFFFF;
   uint16_t bg = 0x0000;
+  bool hasBg = false;
   bool wrap = false;
 };
 
@@ -272,7 +273,9 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     }
     cmd.text = text;
     cmd.fg = ParseColor(JsonStringOrNull(primitive["color"]), 0xFFFF);
-    cmd.bg = ParseColor(JsonStringOrNull(primitive["bgColor"]), 0x0000);
+    const char* bgColor = JsonStringOrNull(primitive["bgColor"]);
+    cmd.hasBg = bgColor != nullptr;
+    cmd.bg = ParseColor(bgColor, 0x0000);
     sink.DrawText(cmd);
     return true;
   }

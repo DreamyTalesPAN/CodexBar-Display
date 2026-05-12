@@ -42,6 +42,7 @@ struct RecordedCommand {
   uint16_t fg = 0;
   uint16_t bg = 0;
   uint16_t border = 0;
+  bool hasBg = false;
   std::string assetPath;
 };
 
@@ -75,6 +76,7 @@ class RecordingSink final : public Sink {
     cmd.size = text.size;
     cmd.fg = text.fg;
     cmd.bg = text.bg;
+    cmd.hasBg = text.hasBg;
     commands.push_back(cmd);
   }
 
@@ -170,10 +172,12 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_INT(3, text.size);
   TEST_ASSERT_EQUAL_HEX16(0xCFE0, text.fg);
   TEST_ASSERT_EQUAL_HEX16(0x0000, text.bg);
+  TEST_ASSERT_TRUE(text.hasBg);
 
   const RecordedCommand& boundText = sink.commands[3];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(boundText.type));
   TEST_ASSERT_EQUAL_STRING("71", boundText.text.c_str());
+  TEST_ASSERT_FALSE(boundText.hasBg);
 
   const RecordedCommand& sessionProgress = sink.commands[4];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(sessionProgress.type));
@@ -231,6 +235,7 @@ void testColorFallbacks() {
   TEST_ASSERT_EQUAL_HEX16(0x0000, sink.commands[1].color);
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, sink.commands[2].fg);
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, sink.commands[2].bg);
+  TEST_ASSERT_TRUE(sink.commands[2].hasBg);
 }
 
 void testAnimatedPrimitivePassRendersOnlyGifsWithoutClear() {

@@ -514,7 +514,7 @@ function inspectorFields(primitive: Primitive): string {
         <label>Size<input type="number" min="1" step="1" data-primitive-field="fontSize" value="${primitive.fontSize ?? 1}" /></label>
       </div>
       ${colorField("Color", "color", primitive.color ?? "#FFFFFF")}
-      ${colorField("Background", "bgColor", primitive.bgColor ?? "#000000")}
+      ${optionalColorField("Background", "bgColor", primitive.bgColor)}
     `;
   }
 
@@ -563,6 +563,19 @@ function colorField(label: string, key: keyof Primitive, value: string): string 
       <span class="color-row">
         <input type="color" data-primitive-field="${key}" value="${escapeAttr(value)}" />
         <input data-primitive-field="${key}" value="${escapeAttr(value)}" />
+      </span>
+    </label>
+  `;
+}
+
+function optionalColorField(label: string, key: keyof Primitive, value: string | undefined): string {
+  const colorValue = value ?? "#000000";
+  return `
+    <label>${label}
+      <span class="color-row optional-color-row">
+        <input type="color" data-primitive-field="${key}" value="${escapeAttr(colorValue)}" />
+        <input data-primitive-field="${key}" value="${escapeAttr(value ?? "")}" placeholder="transparent" />
+        <button type="button" class="small-button" data-clear-primitive-field="${key}">Transparent</button>
       </span>
     </label>
   `;
@@ -850,7 +863,7 @@ function textKonvaGroup(primitive: Primitive, index: number): Konva.Group {
     y: 0,
     width,
     height,
-    fill: primitive.bgColor ?? "#000000",
+    fill: primitive.bgColor ?? "rgba(0,0,0,0)",
   }));
   group.add(new Konva.Image({
     x: 0,
@@ -1314,8 +1327,12 @@ function textPreviewCanvas(
     return canvas;
   }
   context.imageSmoothingEnabled = false;
-  context.fillStyle = primitive.bgColor ?? "#000000";
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  if (primitive.bgColor) {
+    context.fillStyle = primitive.bgColor;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  }
   context.fillStyle = primitive.color ?? "#FFFFFF";
   context.textBaseline = "top";
   context.font = `${style} ${fontSize}px ${family}`;
@@ -1434,6 +1451,14 @@ function bindEvents() {
         return;
       }
       updateSelectedPrimitive(input.dataset.primitiveField ?? "", input.value);
+      syncJsonFromSpec();
+      render();
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-clear-primitive-field]").forEach((button) => {
+    button.addEventListener("click", () => {
+      clearSelectedPrimitiveField(button.dataset.clearPrimitiveField ?? "");
       syncJsonFromSpec();
       render();
     });
@@ -1603,7 +1628,7 @@ function insertToken(token: string) {
     primitive.text = `${primitive.text ?? ""}${token}`;
     state.editingTextIndex = state.selectedIndex;
   } else {
-    state.spec.primitives.push({ type: "text", x: 24, y: 24, text: token, fontSize: 2, color: "#FFFFFF", bgColor: "#000000" });
+    state.spec.primitives.push({ type: "text", x: 24, y: 24, text: token, fontSize: 2, color: "#FFFFFF" });
     state.selectedIndex = state.spec.primitives.length - 1;
     state.editingTextIndex = state.selectedIndex;
   }
@@ -1785,7 +1810,12 @@ function updateSelectedPrimitive(key: string, value: string) {
     return;
   }
   if (["color", "bgColor", "borderColor"].includes(key)) {
-    primitive[key as "color"] = value.trim();
+    const trimmed = value.trim();
+    if (key === "bgColor" && trimmed === "") {
+      delete primitive.bgColor;
+      return;
+    }
+    primitive[key as "color"] = trimmed;
     return;
   }
   if (key === "binding") {
@@ -1798,6 +1828,16 @@ function updateSelectedPrimitive(key: string, value: string) {
   }
   if (key === "text") {
     primitive.text = value;
+  }
+}
+
+function clearSelectedPrimitiveField(key: string) {
+  const primitive = state.spec.primitives[state.selectedIndex];
+  if (!primitive) {
+    return;
+  }
+  if (key === "bgColor") {
+    delete primitive.bgColor;
   }
 }
 
@@ -1815,7 +1855,7 @@ async function handleAction(action: string) {
     addPrimitive({ type: "rect", x: 24, y: 24, width: 64, height: 38, color: "#1E2738" });
   }
   if (action === "add-text") {
-    addPrimitive({ type: "text", x: 24, y: 24, text: "{label}", fontSize: 2, color: "#FFFFFF", bgColor: "#000000" });
+    addPrimitive({ type: "text", x: 24, y: 24, text: "{label}", fontSize: 2, color: "#FFFFFF" });
   }
   if (action === "add-progress") {
     addPrimitive({ type: "progress", x: 24, y: 190, width: 160, height: 16, binding: "session", color: "#C7FF68", bgColor: "#202632", borderColor: "#667084" });
