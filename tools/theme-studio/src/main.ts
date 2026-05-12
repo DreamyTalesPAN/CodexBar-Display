@@ -532,13 +532,16 @@ function mountKonvaPreview() {
     return;
   }
 
+  const stageSize = previewStageSize(container);
+  const previewScale = stageSize / DISPLAY_SIZE;
   stage = new Konva.Stage({
     container,
-    width: DISPLAY_SIZE,
-    height: DISPLAY_SIZE,
+    width: stageSize,
+    height: stageSize,
   });
 
   const layer = new Konva.Layer();
+  layer.scale({ x: previewScale, y: previewScale });
   stage.add(layer);
   layer.add(new Konva.Rect({
     x: 0,
@@ -600,6 +603,12 @@ function mountKonvaPreview() {
     gifRedrawAnimation = new Konva.Animation(() => undefined, layer);
     gifRedrawAnimation.start();
   }
+}
+
+function previewStageSize(container: HTMLDivElement): number {
+  const rect = container.getBoundingClientRect();
+  const measured = Math.round(Math.min(rect.width, rect.height));
+  return measured > 0 ? measured : DISPLAY_SIZE;
 }
 
 function konvaNodeForPrimitive(primitive: Primitive, index: number): { node: EditableKonvaNode; animated: boolean } | null {
