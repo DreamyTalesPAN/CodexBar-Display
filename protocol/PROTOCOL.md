@@ -58,6 +58,7 @@ Example:
 Design constraints:
 - No user code execution on device.
 - Primitives are declarative (`text`, `rect`, `progress`, `gif`, `pixels`) and validated by companion before send.
+- Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/c/bg/bc/a/d`, and type aliases `tx/r/p/g/px`.
 - Optional top-level `bgColor` fills the whole 240x240 screen before primitives are drawn.
 - Text primitives use the single firmware-loaded TFT GLCD font; scale with `fontSize`.
 - Text primitive `bgColor` is optional; when omitted, text is drawn transparent over the theme background.

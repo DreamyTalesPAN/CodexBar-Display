@@ -203,16 +203,28 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     (void)ExtractJsonObjectRaw(line, "\"themeSpec\"", themeSpecRaw);
 #endif
+    const char* themeId = nullptr;
     if (spec["themeId"].is<const char*>()) {
-      themeSpecId = String(spec["themeId"].as<const char*>());
+      themeId = spec["themeId"].as<const char*>();
+    } else if (spec["id"].is<const char*>()) {
+      themeId = spec["id"].as<const char*>();
+    }
+    if (themeId != nullptr) {
+      themeSpecId = String(themeId);
       themeSpecId.trim();
     }
-    themeSpecRev = static_cast<int>(spec["themeRev"] | 0);
+    themeSpecRev = static_cast<int>(spec["themeRev"] | spec["rev"] | 0);
     hasThemeSpec = (themeSpecId.length() > 0 && themeSpecRev > 0);
 
-    if (allowTheme && !hasTheme && spec["fallbackTheme"].is<const char*>()) {
+    const char* fallback = nullptr;
+    if (spec["fallbackTheme"].is<const char*>()) {
+      fallback = spec["fallbackTheme"].as<const char*>();
+    } else if (spec["fb"].is<const char*>()) {
+      fallback = spec["fb"].as<const char*>();
+    }
+    if (allowTheme && !hasTheme && fallback != nullptr) {
       String fallbackTheme;
-      if (theme::NormalizeThemeName(String(spec["fallbackTheme"].as<const char*>()), fallbackTheme)) {
+      if (theme::NormalizeThemeName(String(fallback), fallbackTheme)) {
         hasTheme = true;
         themeName = fallbackTheme;
       }

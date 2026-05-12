@@ -404,7 +404,7 @@ function validateCurrentSpec() {
     }
   });
 
-  const bytes = new TextEncoder().encode(minifiedJson(spec)).length;
+  const bytes = new TextEncoder().encode(JSON.stringify(buildDeviceThemeSpec(spec))).length;
   if (bytes > MAX_SPEC_BYTES) {
     errors.push(`ThemeSpec ist zu groß: ${bytes}/${MAX_SPEC_BYTES} Bytes.`);
   }
@@ -428,7 +428,7 @@ function isPositiveInteger(value: unknown): value is number {
 function render() {
   validateCurrentSpec();
   const selected = state.spec.primitives[state.selectedIndex];
-  const bytes = new TextEncoder().encode(minifiedJson(state.spec)).length;
+  const bytes = new TextEncoder().encode(JSON.stringify(buildDeviceThemeSpec(state.spec))).length;
   const frameBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload())).length;
 
   app.innerHTML = `
@@ -2571,7 +2571,7 @@ function buildFramePayload() {
     weekly: frame.weekly,
     resetSecs: frame.resetSecs,
     usageMode: frame.usageMode,
-    themeSpec: state.spec,
+    themeSpec: buildDeviceThemeSpec(state.spec),
   };
   const bindings = usedThemeBindings();
   if (bindings.has("sessionTokens")) {
@@ -2584,6 +2584,96 @@ function buildFramePayload() {
     payload.totalTokens = frame.totalTokens;
   }
   return payload;
+}
+
+function buildDeviceThemeSpec(spec: ThemeSpec): Record<string, unknown> {
+  const compact: Record<string, unknown> = {
+    v: spec.themeSpecVersion,
+    id: spec.themeId,
+    rev: spec.themeRev,
+    p: spec.primitives.map(buildDevicePrimitive),
+  };
+  if (spec.fallbackTheme) {
+    compact.fb = spec.fallbackTheme;
+  }
+  if (spec.bgColor) {
+    compact.bg = spec.bgColor;
+  }
+  return compact;
+}
+
+function buildDevicePrimitive(primitive: Primitive): Record<string, unknown> {
+  const compact: Record<string, unknown> = {
+    t: compactPrimitiveType(primitive.type),
+    x: primitive.x,
+    y: primitive.y,
+  };
+  if (primitive.width !== undefined) {
+    compact.w = primitive.width;
+  }
+  if (primitive.height !== undefined) {
+    compact.h = primitive.height;
+  }
+  if (primitive.text !== undefined) {
+    compact.v = primitive.text;
+  }
+  if (primitive.binding !== undefined) {
+    compact.b = compactBinding(primitive.binding);
+  }
+  if (primitive.fontSize !== undefined) {
+    compact.s = primitive.fontSize;
+  }
+  if (primitive.color !== undefined) {
+    compact.c = primitive.color;
+  }
+  if (primitive.bgColor !== undefined) {
+    compact.bg = primitive.bgColor;
+  }
+  if (primitive.borderColor !== undefined) {
+    compact.bc = primitive.borderColor;
+  }
+  if (primitive.assetPath !== undefined) {
+    compact.a = primitive.assetPath;
+  }
+  if (primitive.data !== undefined) {
+    compact.d = primitive.data;
+  }
+  if (primitive.p !== undefined) {
+    compact.p = primitive.p;
+  }
+  if (primitive.r !== undefined) {
+    compact.r = primitive.r;
+  }
+  return compact;
+}
+
+function compactPrimitiveType(type: PrimitiveType): string {
+  const values: Record<PrimitiveType, string> = {
+    rect: "r",
+    text: "tx",
+    progress: "p",
+    gif: "g",
+    pixels: "px",
+  };
+  return values[type];
+}
+
+function compactBinding(binding: BindingKey): string {
+  const values: Record<BindingKey, string> = {
+    label: "l",
+    provider: "pr",
+    session: "s",
+    sessionPercent: "s",
+    weekly: "w",
+    weeklyPercent: "w",
+    reset: "r",
+    resetCountdown: "r",
+    usageMode: "u",
+    sessionTokens: "st",
+    weekTokens: "wt",
+    totalTokens: "tt",
+  };
+  return values[binding] ?? binding;
 }
 
 function buildThemeSpecClearPayload(): Record<string, unknown> {

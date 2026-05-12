@@ -28,29 +28,45 @@ var (
 )
 
 type Primitive struct {
-	Type        string   `json:"type"`
-	X           int      `json:"x,omitempty"`
-	Y           int      `json:"y,omitempty"`
-	Width       int      `json:"width,omitempty"`
-	Height      int      `json:"height,omitempty"`
-	Text        string   `json:"text,omitempty"`
-	Binding     string   `json:"binding,omitempty"`
-	FontSize    int      `json:"fontSize,omitempty"`
-	Color       string   `json:"color,omitempty"`
-	BgColor     string   `json:"bgColor,omitempty"`
-	BorderColor string   `json:"borderColor,omitempty"`
-	AssetPath   string   `json:"assetPath,omitempty"`
-	Data        string   `json:"data,omitempty"`
-	Palette     []string `json:"p,omitempty"`
-	Rows        []string `json:"r,omitempty"`
+	Type         string   `json:"type"`
+	ShortType    string   `json:"t,omitempty"`
+	X            int      `json:"x,omitempty"`
+	Y            int      `json:"y,omitempty"`
+	Width        int      `json:"width,omitempty"`
+	ShortWidth   int      `json:"w,omitempty"`
+	Height       int      `json:"height,omitempty"`
+	ShortHeight  int      `json:"h,omitempty"`
+	Text         string   `json:"text,omitempty"`
+	ShortText    string   `json:"v,omitempty"`
+	Binding      string   `json:"binding,omitempty"`
+	ShortBinding string   `json:"b,omitempty"`
+	FontSize     int      `json:"fontSize,omitempty"`
+	ShortSize    int      `json:"s,omitempty"`
+	Color        string   `json:"color,omitempty"`
+	ShortColor   string   `json:"c,omitempty"`
+	BgColor      string   `json:"bgColor,omitempty"`
+	ShortBg      string   `json:"bg,omitempty"`
+	BorderColor  string   `json:"borderColor,omitempty"`
+	ShortBorder  string   `json:"bc,omitempty"`
+	AssetPath    string   `json:"assetPath,omitempty"`
+	ShortAsset   string   `json:"a,omitempty"`
+	Data         string   `json:"data,omitempty"`
+	ShortData    string   `json:"d,omitempty"`
+	Palette      []string `json:"p,omitempty"`
+	Rows         []string `json:"r,omitempty"`
 }
 
 type Spec struct {
 	ThemeSpecVersion int         `json:"themeSpecVersion"`
+	ShortVersion     int         `json:"v,omitempty"`
 	ThemeID          string      `json:"themeId"`
+	ShortThemeID     string      `json:"id,omitempty"`
 	ThemeRev         int         `json:"themeRev"`
+	ShortThemeRev    int         `json:"rev,omitempty"`
 	FallbackTheme    string      `json:"fallbackTheme,omitempty"`
+	ShortFallback    string      `json:"fb,omitempty"`
 	Primitives       []Primitive `json:"primitives"`
+	ShortPrimitives  []Primitive `json:"p,omitempty"`
 }
 
 func Load(path string) (Spec, json.RawMessage, error) {
@@ -68,6 +84,7 @@ func Load(path string) (Spec, json.RawMessage, error) {
 }
 
 func Validate(spec Spec) error {
+	spec = normalizeSpec(spec)
 	if spec.ThemeSpecVersion != VersionV1 {
 		return fmt.Errorf("themeSpecVersion=%d unsupported (expected %d)", spec.ThemeSpecVersion, VersionV1)
 	}
@@ -125,9 +142,25 @@ func ValidateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 }
 
 func normalizeSpec(spec Spec) Spec {
+	if spec.ThemeSpecVersion == 0 {
+		spec.ThemeSpecVersion = spec.ShortVersion
+	}
+	if spec.ThemeID == "" {
+		spec.ThemeID = spec.ShortThemeID
+	}
+	if spec.ThemeRev == 0 {
+		spec.ThemeRev = spec.ShortThemeRev
+	}
+	if spec.FallbackTheme == "" {
+		spec.FallbackTheme = spec.ShortFallback
+	}
+	if len(spec.Primitives) == 0 && len(spec.ShortPrimitives) > 0 {
+		spec.Primitives = spec.ShortPrimitives
+	}
 	spec.ThemeID = strings.TrimSpace(strings.ToLower(spec.ThemeID))
 	spec.FallbackTheme = strings.TrimSpace(strings.ToLower(spec.FallbackTheme))
 	for i := range spec.Primitives {
+		spec.Primitives[i] = normalizePrimitive(spec.Primitives[i])
 		spec.Primitives[i].Type = strings.TrimSpace(strings.ToLower(spec.Primitives[i].Type))
 		spec.Primitives[i].Binding = strings.TrimSpace(spec.Primitives[i].Binding)
 		spec.Primitives[i].Color = strings.TrimSpace(spec.Primitives[i].Color)
@@ -143,6 +176,85 @@ func normalizeSpec(spec Spec) Spec {
 		}
 	}
 	return spec
+}
+
+func normalizePrimitive(p Primitive) Primitive {
+	if p.Type == "" {
+		p.Type = expandPrimitiveType(p.ShortType)
+	}
+	if p.Width == 0 {
+		p.Width = p.ShortWidth
+	}
+	if p.Height == 0 {
+		p.Height = p.ShortHeight
+	}
+	if p.Text == "" {
+		p.Text = p.ShortText
+	}
+	if p.Binding == "" {
+		p.Binding = expandBinding(p.ShortBinding)
+	}
+	if p.FontSize == 0 {
+		p.FontSize = p.ShortSize
+	}
+	if p.Color == "" {
+		p.Color = p.ShortColor
+	}
+	if p.BgColor == "" {
+		p.BgColor = p.ShortBg
+	}
+	if p.BorderColor == "" {
+		p.BorderColor = p.ShortBorder
+	}
+	if p.AssetPath == "" {
+		p.AssetPath = p.ShortAsset
+	}
+	if p.Data == "" {
+		p.Data = p.ShortData
+	}
+	return p
+}
+
+func expandPrimitiveType(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "tx":
+		return "text"
+	case "r":
+		return "rect"
+	case "p":
+		return "progress"
+	case "g":
+		return "gif"
+	case "px":
+		return "pixels"
+	default:
+		return value
+	}
+}
+
+func expandBinding(value string) string {
+	switch strings.TrimSpace(value) {
+	case "l":
+		return "label"
+	case "pr":
+		return "provider"
+	case "s":
+		return "session"
+	case "w":
+		return "weekly"
+	case "r":
+		return "reset"
+	case "u":
+		return "usageMode"
+	case "st":
+		return "sessionTokens"
+	case "wt":
+		return "weekTokens"
+	case "tt":
+		return "totalTokens"
+	default:
+		return value
+	}
 }
 
 func validatePrimitive(p Primitive) error {

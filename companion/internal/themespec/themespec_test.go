@@ -27,6 +27,29 @@ func TestValidateAcceptsMinimalV1Spec(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsCompactV1Spec(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"mini-transport",
+		"rev":1,
+		"fb":"mini",
+		"p":[
+			{"t":"tx","x":8,"y":20,"v":"Codex","s":2,"c":"#FFFFFF"},
+			{"t":"tx","x":8,"y":48,"b":"l","s":2,"c":"#FFFFFF"},
+			{"t":"g","x":80,"y":96,"w":64,"h":64,"a":"/themes/mini/mini.gif"},
+			{"t":"px","x":4,"y":4,"w":8,"h":2,"c":"#FFFFFF","d":"A5F0"}
+		]
+	}`)
+	var spec Spec
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatalf("unmarshal compact spec: %v", err)
+	}
+
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected compact spec to validate, got %v", err)
+	}
+}
+
 func TestValidateRejectsInvalidPixelsData(t *testing.T) {
 	spec := Spec{
 		ThemeSpecVersion: 1,

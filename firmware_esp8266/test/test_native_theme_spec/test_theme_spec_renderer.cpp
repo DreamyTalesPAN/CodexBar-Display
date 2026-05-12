@@ -223,6 +223,45 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
 }
 
+void testRendersCompactCommandsAndBindings() {
+  const char* spec = R"JSON({
+    "v": 1,
+    "id": "codex-test",
+    "rev": 1,
+    "bg": "#123456",
+    "p": [
+      {"t":"tx","x":5,"y":6,"s":3,"c":"#CCFF00","bg":"#000000","v":"{l} {s}/{w} {r} {u}"},
+      {"t":"p","x":9,"y":10,"w":111,"h":12,"b":"w","c":"#00FF00","bg":"#101010","bc":"#FFFFFF"},
+      {"t":"g","x":15,"y":16,"w":80,"h":64,"a":"/themes/mini/mini.gif"},
+      {"t":"px","x":2,"y":3,"w":4,"h":2,"c":"#FFFFFF","d":"A5"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_UINT32(5, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
+  TEST_ASSERT_EQUAL_HEX16(0x11AA, sink.commands[0].color);
+
+  const RecordedCommand& text = sink.commands[1];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(text.type));
+  TEST_ASSERT_EQUAL_STRING("Codex 97/71 1h 29m remaining", text.text.c_str());
+  TEST_ASSERT_EQUAL_INT(3, text.size);
+
+  const RecordedCommand& progress = sink.commands[2];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(progress.type));
+  TEST_ASSERT_EQUAL_INT(71, progress.percent);
+  TEST_ASSERT_EQUAL_HEX16(0xFFFF, progress.border);
+
+  const RecordedCommand& gif = sink.commands[3];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Gif), static_cast<int>(gif.type));
+  TEST_ASSERT_EQUAL_STRING("/themes/mini/mini.gif", gif.assetPath.c_str());
+
+  const RecordedCommand& pixels = sink.commands[4];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Pixels), static_cast<int>(pixels.type));
+  TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
+}
+
 void testRendersMulticolorRlePixelsAsFillRects() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -363,6 +402,18 @@ void testThemeSpecCacheCarriesLayoutAcrossLiveFrames() {
   TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("{session}%") >= 0);
 }
 
+void testCompactThemeSpecFrameIsCached() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* frame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":94,"weekly":87,"resetSecs":5394,"themeSpec":{"v":1,"id":"mini-transport","rev":1,"fb":"mini","p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{s}%"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frame, 1000, true, event));
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
+  TEST_ASSERT_EQUAL_INT(1, state.current.themeSpecRev);
+  TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("\"t\":\"tx\"") >= 0);
+}
+
 void testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -410,12 +461,14 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(testInvalidSpecsReturnFalse);
   RUN_TEST(testRendersCommandsAndBindings);
+  RUN_TEST(testRendersCompactCommandsAndBindings);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
   RUN_TEST(testInvalidMulticolorRlePixelsAreSkippedWithoutPartialDraw);
   RUN_TEST(testInvalidPrimitivesAreSkipped);
   RUN_TEST(testColorFallbacks);
   RUN_TEST(testAnimatedPrimitivePassRendersOnlyGifsWithoutClear);
   RUN_TEST(testThemeSpecCacheCarriesLayoutAcrossLiveFrames);
+  RUN_TEST(testCompactThemeSpecFrameIsCached);
   RUN_TEST(testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent);
   RUN_TEST(testThemeSpecNullClearsCachedLayout);
   return UNITY_END();

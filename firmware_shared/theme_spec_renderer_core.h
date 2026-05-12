@@ -137,6 +137,37 @@ inline const char* JsonStringOrNull(JsonVariantConst value) {
   return value.is<const char*>() ? value.as<const char*>() : nullptr;
 }
 
+inline const char* JsonStringFor(JsonObjectConst object, const char* longKey, const char* shortKey) {
+  const char* longValue = JsonStringOrNull(object[longKey]);
+  if (longValue != nullptr) {
+    return longValue;
+  }
+  return JsonStringOrNull(object[shortKey]);
+}
+
+inline int JsonIntFor(JsonObjectConst object, const char* longKey, const char* shortKey, int fallback) {
+  if (object[longKey].is<int>()) {
+    return object[longKey].as<int>();
+  }
+  return object[shortKey] | fallback;
+}
+
+inline JsonArrayConst JsonArrayFor(JsonObjectConst object, const char* longKey, const char* shortKey) {
+  if (object[longKey].is<JsonArrayConst>()) {
+    return object[longKey].as<JsonArrayConst>();
+  }
+  return object[shortKey].as<JsonArrayConst>();
+}
+
+inline const char* PrimitiveTypeFor(JsonObjectConst primitive) {
+  return JsonStringFor(primitive, "type", "t");
+}
+
+inline bool PrimitiveTypeIs(JsonObjectConst primitive, const char* longType, const char* shortType) {
+  const char* type = PrimitiveTypeFor(primitive);
+  return type != nullptr && (std::strcmp(type, longType) == 0 || std::strcmp(type, shortType) == 0);
+}
+
 inline bool HasHexBitmapBits(const char* data, int width, int height) {
   if (data == nullptr || width <= 0 || height <= 0) {
     return false;
@@ -275,39 +306,39 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
   out[0] = '\0';
   key = SafeText(key);
 
-  if (std::strcmp(key, "label") == 0 || std::strcmp(key, "providerLabel") == 0) {
+  if (std::strcmp(key, "label") == 0 || std::strcmp(key, "providerLabel") == 0 || std::strcmp(key, "l") == 0) {
     std::snprintf(out, outSize, "%s", SafeText(frame.label));
     return;
   }
-  if (std::strcmp(key, "provider") == 0) {
+  if (std::strcmp(key, "provider") == 0 || std::strcmp(key, "pr") == 0) {
     std::snprintf(out, outSize, "%s", SafeText(frame.provider));
     return;
   }
-  if (std::strcmp(key, "session") == 0 || std::strcmp(key, "sessionPercent") == 0) {
+  if (std::strcmp(key, "session") == 0 || std::strcmp(key, "sessionPercent") == 0 || std::strcmp(key, "s") == 0) {
     std::snprintf(out, outSize, "%d", ClampPct(frame.session));
     return;
   }
-  if (std::strcmp(key, "weekly") == 0 || std::strcmp(key, "weeklyPercent") == 0) {
+  if (std::strcmp(key, "weekly") == 0 || std::strcmp(key, "weeklyPercent") == 0 || std::strcmp(key, "w") == 0) {
     std::snprintf(out, outSize, "%d", ClampPct(frame.weekly));
     return;
   }
-  if (std::strcmp(key, "reset") == 0 || std::strcmp(key, "resetCountdown") == 0) {
+  if (std::strcmp(key, "reset") == 0 || std::strcmp(key, "resetCountdown") == 0 || std::strcmp(key, "r") == 0) {
     FormatDuration(frame.resetSecs, out, outSize);
     return;
   }
-  if (std::strcmp(key, "usageMode") == 0) {
+  if (std::strcmp(key, "usageMode") == 0 || std::strcmp(key, "u") == 0) {
     std::snprintf(out, outSize, "%s", SafeText(frame.usageMode));
     return;
   }
-  if (std::strcmp(key, "sessionTokens") == 0) {
+  if (std::strcmp(key, "sessionTokens") == 0 || std::strcmp(key, "st") == 0) {
     std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.sessionTokens));
     return;
   }
-  if (std::strcmp(key, "weekTokens") == 0) {
+  if (std::strcmp(key, "weekTokens") == 0 || std::strcmp(key, "wt") == 0) {
     std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.weekTokens));
     return;
   }
-  if (std::strcmp(key, "totalTokens") == 0) {
+  if (std::strcmp(key, "totalTokens") == 0 || std::strcmp(key, "tt") == 0) {
     std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.totalTokens));
     return;
   }
@@ -354,80 +385,82 @@ inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* ou
 }
 
 inline int ProgressPercentFor(JsonObjectConst primitive, const FrameData& frame) {
-  const char* binding = primitive["binding"] | "session";
-  if (std::strcmp(binding, "weekly") == 0 || std::strcmp(binding, "weeklyPercent") == 0) {
+  const char* binding = JsonStringFor(primitive, "binding", "b");
+  if (binding != nullptr &&
+      (std::strcmp(binding, "weekly") == 0 || std::strcmp(binding, "weeklyPercent") == 0 || std::strcmp(binding, "w") == 0)) {
     return ClampPct(frame.weekly);
   }
   return ClampPct(frame.session);
 }
 
 inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sink& sink) {
-  const char* type = primitive["type"] | "";
   const int x = primitive["x"] | 0;
   const int y = primitive["y"] | 0;
 
-  if (std::strcmp(type, "rect") == 0) {
+  if (PrimitiveTypeIs(primitive, "rect", "r")) {
     RectCommand cmd;
     cmd.x = x;
     cmd.y = y;
-    cmd.width = primitive["width"] | 0;
-    cmd.height = primitive["height"] | 0;
+    cmd.width = JsonIntFor(primitive, "width", "w", 0);
+    cmd.height = JsonIntFor(primitive, "height", "h", 0);
     if (cmd.width <= 0 || cmd.height <= 0) {
       return false;
     }
-    cmd.color = ParseColor(JsonStringOrNull(primitive["color"]), 0x0000);
+    cmd.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0x0000);
     sink.FillRect(cmd);
     return true;
   }
 
-  if (std::strcmp(type, "text") == 0) {
+  if (PrimitiveTypeIs(primitive, "text", "tx")) {
     TextCommand cmd;
     cmd.x = x;
     cmd.y = y;
     cmd.font = 1;
-    cmd.size = primitive["fontSize"] | 1;
+    cmd.size = JsonIntFor(primitive, "fontSize", "s", 1);
     if (cmd.size <= 0) {
       return false;
     }
     char text[128] = {0};
-    if (primitive["binding"].is<const char*>()) {
-      BoundValue(primitive["binding"].as<const char*>(), frame, text, sizeof(text));
+    const char* binding = JsonStringFor(primitive, "binding", "b");
+    if (binding != nullptr) {
+      BoundValue(binding, frame, text, sizeof(text));
     } else {
-      RenderTextTemplate(primitive["text"] | "", frame, text, sizeof(text));
+      const char* rawText = JsonStringFor(primitive, "text", "v");
+      RenderTextTemplate(rawText == nullptr ? "" : rawText, frame, text, sizeof(text));
     }
     cmd.text = text;
-    cmd.fg = ParseColor(JsonStringOrNull(primitive["color"]), 0xFFFF);
-    const char* bgColor = JsonStringOrNull(primitive["bgColor"]);
+    cmd.fg = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
+    const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
     cmd.hasBg = bgColor != nullptr;
     cmd.bg = ParseColor(bgColor, 0x0000);
     sink.DrawText(cmd);
     return true;
   }
 
-  if (std::strcmp(type, "progress") == 0) {
+  if (PrimitiveTypeIs(primitive, "progress", "p")) {
     ProgressCommand cmd;
     cmd.x = x;
     cmd.y = y;
-    cmd.width = primitive["width"] | 0;
-    cmd.height = primitive["height"] | 0;
+    cmd.width = JsonIntFor(primitive, "width", "w", 0);
+    cmd.height = JsonIntFor(primitive, "height", "h", 0);
     if (cmd.width <= 0 || cmd.height <= 0) {
       return false;
     }
     cmd.percent = ProgressPercentFor(primitive, frame);
-    cmd.fillColor = ParseColor(JsonStringOrNull(primitive["color"]), 0xFFFF);
-    cmd.bgColor = ParseColor(JsonStringOrNull(primitive["bgColor"]), 0x0000);
-    cmd.borderColor = ParseColor(JsonStringOrNull(primitive["borderColor"]), 0x7BEF);
+    cmd.fillColor = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
+    cmd.bgColor = ParseColor(JsonStringFor(primitive, "bgColor", "bg"), 0x0000);
+    cmd.borderColor = ParseColor(JsonStringFor(primitive, "borderColor", "bc"), 0x7BEF);
     sink.DrawProgress(cmd);
     return true;
   }
 
-  if (std::strcmp(type, "gif") == 0) {
+  if (PrimitiveTypeIs(primitive, "gif", "g")) {
     GifCommand cmd;
     cmd.x = x;
     cmd.y = y;
-    cmd.width = primitive["width"] | 0;
-    cmd.height = primitive["height"] | 0;
-    cmd.assetPath = JsonStringOrNull(primitive["assetPath"]);
+    cmd.width = JsonIntFor(primitive, "width", "w", 0);
+    cmd.height = JsonIntFor(primitive, "height", "h", 0);
+    cmd.assetPath = JsonStringFor(primitive, "assetPath", "a");
     if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0' || cmd.width <= 0 || cmd.height <= 0) {
       return false;
     }
@@ -435,12 +468,12 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     return true;
   }
 
-  if (std::strcmp(type, "pixels") == 0) {
+  if (PrimitiveTypeIs(primitive, "pixels", "px")) {
     PixelsCommand cmd;
     cmd.x = x;
     cmd.y = y;
-    cmd.width = primitive["width"] | 0;
-    cmd.height = primitive["height"] | 0;
+    cmd.width = JsonIntFor(primitive, "width", "w", 0);
+    cmd.height = JsonIntFor(primitive, "height", "h", 0);
     if (primitive["p"].is<JsonArrayConst>() || primitive["r"].is<JsonArrayConst>()) {
       JsonArrayConst rawPalette = primitive["p"].as<JsonArrayConst>();
       JsonArrayConst rows = primitive["r"].as<JsonArrayConst>();
@@ -453,11 +486,11 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
       return RenderRlePixelRows(rows, palette, paletteSize, cmd.x, cmd.y, cmd.width, cmd.height, &sink);
     }
 
-    cmd.data = JsonStringOrNull(primitive["data"]);
+    cmd.data = JsonStringFor(primitive, "data", "d");
     if (!HasHexBitmapBits(cmd.data, cmd.width, cmd.height)) {
       return false;
     }
-    cmd.color = ParseColor(JsonStringOrNull(primitive["color"]), 0xFFFF);
+    cmd.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     sink.DrawPixels(cmd);
     return true;
   }
@@ -472,16 +505,19 @@ inline bool RenderThemeSpec(const char* themeSpecRaw, const FrameData& frame, Si
 
   JsonDocument doc;
   const DeserializationError err = deserializeJson(doc, themeSpecRaw);
-  if (err || !doc["primitives"].is<JsonArrayConst>()) {
+  if (err) {
     return false;
   }
 
-  JsonArrayConst primitives = doc["primitives"].as<JsonArrayConst>();
+  JsonArrayConst primitives = JsonArrayFor(doc.as<JsonObjectConst>(), "primitives", "p");
+  if (primitives.isNull()) {
+    return false;
+  }
   if (primitives.size() == 0) {
     return false;
   }
 
-  sink.FillScreen(ParseColor(JsonStringOrNull(doc["bgColor"]), 0x0000));
+  sink.FillScreen(ParseColor(JsonStringFor(doc.as<JsonObjectConst>(), "bgColor", "bg"), 0x0000));
   for (JsonObjectConst primitive : primitives) {
     (void)DrawPrimitive(primitive, frame, sink);
   }
@@ -495,15 +531,17 @@ inline bool RenderThemeSpecAnimatedPrimitives(const char* themeSpecRaw, const Fr
 
   JsonDocument doc;
   const DeserializationError err = deserializeJson(doc, themeSpecRaw);
-  if (err || !doc["primitives"].is<JsonArrayConst>()) {
+  if (err) {
     return false;
   }
 
   bool rendered = false;
-  JsonArrayConst primitives = doc["primitives"].as<JsonArrayConst>();
+  JsonArrayConst primitives = JsonArrayFor(doc.as<JsonObjectConst>(), "primitives", "p");
+  if (primitives.isNull()) {
+    return false;
+  }
   for (JsonObjectConst primitive : primitives) {
-    const char* type = primitive["type"] | "";
-    if (std::strcmp(type, "gif") == 0) {
+    if (PrimitiveTypeIs(primitive, "gif", "g")) {
       rendered = DrawPrimitive(primitive, frame, sink) || rendered;
     }
   }
