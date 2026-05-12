@@ -279,6 +279,12 @@ function normalizeMiniThemeSpec() {
   state.spec.themeRev = FIXED_THEME_REV;
   state.spec.fallbackTheme = FIXED_FALLBACK_THEME;
   state.spec.primitives.forEach((primitive) => {
+    const rotation = normalizeRotation(primitive.rotation ?? 0);
+    if (rotation === 0) {
+      delete primitive.rotation;
+    } else {
+      primitive.rotation = rotation;
+    }
     if (primitive.type === "text") {
       delete primitive.font;
     }
@@ -363,7 +369,7 @@ function validateCurrentSpec() {
   }
   const frameBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload())).length;
   if (frameBytes > MAX_FRAME_BYTES) {
-    errors.push(`Frame ist zu groß für Vibe TV: ${frameBytes}/${MAX_FRAME_BYTES} Bytes.`);
+    errors.push(`Payload ist zu groß für Vibe TV: ${frameBytes}/${MAX_FRAME_BYTES} Bytes.`);
   }
 
   state.errors = errors;
@@ -390,7 +396,7 @@ function render() {
         <h1>Theme Studio</h1>
         <div class="status-strip">
           ${metric("Bytes", bytes, MAX_SPEC_BYTES)}
-          ${metric("Frame", frameBytes, MAX_FRAME_BYTES)}
+          ${metric("Payload", frameBytes, MAX_FRAME_BYTES)}
           ${metric("Primitives", state.spec.primitives.length, MAX_PRIMITIVES)}
           <span class="health ${state.errors.length ? "bad" : "ok"}">${state.errors.length ? "Invalid" : "Valid"}</span>
         </div>
