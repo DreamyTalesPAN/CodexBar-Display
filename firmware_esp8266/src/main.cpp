@@ -320,38 +320,35 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
 }
 
 const char* transportCapabilitiesJSON(const char* activeTransport) {
+  const bool isUsb = activeTransport != nullptr && strcmp(activeTransport, "usb") == 0;
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
-  if (activeTransport != nullptr && String(activeTransport) == "usb") {
+  if (isUsb) {
     return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,\"builtinThemes\":[]},"
+           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
            "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
   }
   return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,\"builtinThemes\":[]},"
+         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
          "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
 #else
-  if (activeTransport != nullptr && String(activeTransport) == "usb") {
+  if (isUsb) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-           "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32,"
-           "\"builtinThemes\":[\"mini\"]},"
+           "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32},"
            "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
 #else
     return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,"
-           "\"builtinThemes\":[\"mini\"]},"
+           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
            "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
 #endif
   }
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-         "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32,"
-         "\"builtinThemes\":[\"mini\"]},"
+         "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32},"
          "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
 #else
   return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,"
-         "\"builtinThemes\":[\"mini\"]},"
+         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
          "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
 #endif
 #endif
@@ -849,16 +846,6 @@ void appendFirmwareUpdateJSON(String& out) {
   out += jsonEscape(firmwareUpdate.lastStatus);
   out += "\",\"lastError\":";
   appendJSONNullableString(out, firmwareUpdate.lastError);
-  out += ",\"severity\":";
-  out += "null";
-  out += ",\"message\":";
-  out += "null";
-  out += ",\"firmwareUrl\":";
-  out += "null";
-  out += ",\"filesystemUrl\":";
-  out += "null";
-  out += ",\"sha256\":";
-  out += "null";
   out += "}";
 }
 
@@ -1067,21 +1054,20 @@ void handleAssetDelete() {
 String updatePageHTML() {
   const String installCommand = updateInstallCommand();
   String html;
-  html.reserve(3000);
+  html.reserve(1600);
   html += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
   html += F("<title>VibeTV Update</title><style>");
-  html += F(":root{color-scheme:dark;--bg:#0b0c0d;--line:#2b2f35;--text:#f6f4ed;--muted:#a9adb3;--signal:#c7ff00}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:var(--bg);color:var(--text)}main{max-width:620px;margin:0 auto;padding:28px 20px 34px}.brand,summary{font-weight:900;color:var(--signal)}h1{font-size:36px;line-height:1.05;margin:22px 0 10px}.lead,.muted{color:var(--muted);line-height:1.45}section{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}.update{border:1px solid #6f8f00;background:#1b2400;border-radius:8px;padding:12px;color:#f1ffd0}.update-link{display:none}input,button{width:100%;font:inherit;padding:12px;border-radius:8px;border:1px solid #3a3f47;background:#101214;color:#fff;margin-top:10px}button{background:var(--signal);color:#111;border:0;font-weight:900}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;border-radius:8px;padding:14px}</style></head><body><main>");
-  html += F("<div class='brand'>Vibe TV</div><h1>Firmware update.</h1><p class='lead'>Use the Mac app to download, verify, upload, and restart Vibe TV.</p>");
+  html += F(":root{color-scheme:dark}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:#0b0c0d;color:#f6f4ed}main{max-width:620px;margin:auto;padding:24px 18px}a,summary{color:#c7ff00;font-weight:800}h1{margin:16px 0}.muted{color:#a9adb3}.update,input,button,pre{border-radius:8px}.update{border:1px solid #6f8f00;padding:10px}.update-link{display:none}input,button{width:100%;font:inherit;padding:12px;margin-top:10px}button{background:#c7ff00;color:#111;border:0;font-weight:900}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;padding:12px}</style></head><body><main>");
+  html += F("<h1>VibeTV Update</h1>");
   html += updateStatusHTML(false);
-  html += F("<section><h2>Install with Mac</h2><p class='muted'>Run this on the connected Mac. Companion downloads firmware, checks SHA256, uploads it, and waits for restart.</p><pre>");
+  html += F("<h2>Install with Mac</h2><pre>");
   html += htmlEscape(installCommand);
-  html += F("</pre></section>");
-  html += F("<details><summary>Manual upload tools</summary><section><h2>Firmware</h2><p class='muted'>Upload <code>firmware.bin</code> only when support asks for it.</p>");
+  html += F("</pre><details><summary>Manual upload</summary>");
   html += F("<form method='post' action='/update/firmware' enctype='multipart/form-data'>");
   html += F("<input type='file' name='firmware' accept='.bin,application/octet-stream' required>");
-  html += F("<button type='submit'>Upload firmware</button></form></section>");
+  html += F("<button type='submit'>Upload firmware</button></form>");
   html += F("</details>");
-  html += F("<p class='muted'><a href='/'>Back to setup</a> | <a href='/health'>Device status</a> | <a href='/assets'>File list</a></p></main></body></html>");
+  html += F("<p class='muted'><a href='/'>Setup</a> | <a href='/health'>Status</a> | <a href='/assets'>Files</a></p></main></body></html>");
   return html;
 }
 
