@@ -432,7 +432,81 @@ function isPositiveInteger(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) > 0;
 }
 
+interface FocusSnapshot {
+  selector: string;
+  index: number;
+  selectionStart: number | null;
+  selectionEnd: number | null;
+}
+
+function captureFocusSnapshot(): FocusSnapshot | null {
+  const active = document.activeElement;
+  if (!isFocusableFormElement(active) || !app.contains(active)) {
+    return null;
+  }
+
+  const selector = focusSelectorFor(active);
+  if (!selector) {
+    return null;
+  }
+
+  const matches = Array.from(app.querySelectorAll(selector));
+  return {
+    selector,
+    index: Math.max(0, matches.indexOf(active)),
+    selectionStart: canSelectText(active) ? active.selectionStart : null,
+    selectionEnd: canSelectText(active) ? active.selectionEnd : null,
+  };
+}
+
+function restoreFocusSnapshot(snapshot: FocusSnapshot | null) {
+  if (!snapshot) {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    const matches = Array.from(app.querySelectorAll(snapshot.selector));
+    const element = matches[snapshot.index] ?? matches[0];
+    if (!isFocusableFormElement(element)) {
+      return;
+    }
+
+    element.focus({ preventScroll: true });
+    if (!canSelectText(element) || snapshot.selectionStart === null) {
+      return;
+    }
+
+    const start = Math.min(snapshot.selectionStart, element.value.length);
+    const end = Math.min(snapshot.selectionEnd ?? start, element.value.length);
+    element.setSelectionRange(start, end);
+  });
+}
+
+function isFocusableFormElement(element: Element | null): element is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
+  return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement;
+}
+
+function canSelectText(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): element is HTMLInputElement | HTMLTextAreaElement {
+  const selectableInputTypes = new Set(["", "email", "password", "search", "tel", "text", "url"]);
+  return element instanceof HTMLTextAreaElement || (element instanceof HTMLInputElement && selectableInputTypes.has(element.type));
+}
+
+function focusSelectorFor(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string | null {
+  for (const attribute of ["data-primitive-field", "data-canvas-field", "data-field", "data-role", "data-inline-text"]) {
+    const value = element.getAttribute(attribute);
+    if (value !== null) {
+      return `[${attribute}="${escapeCssAttribute(value)}"]`;
+    }
+  }
+  return null;
+}
+
+function escapeCssAttribute(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
 function render() {
+  const focusSnapshot = captureFocusSnapshot();
   validateCurrentSpec();
   const selected = state.spec.primitives[state.selectedIndex];
   const bytes = new TextEncoder().encode(JSON.stringify(buildDeviceThemeSpec(state.spec))).length;
@@ -510,6 +584,7 @@ function render() {
   bindEvents();
   mountKonvaPreview();
   focusInlineTextEditor();
+  restoreFocusSnapshot(focusSnapshot);
 }
 
 function metric(label: string, value: number, max: number): string {
