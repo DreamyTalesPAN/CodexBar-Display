@@ -66,6 +66,8 @@ interface Primitive {
   rotation?: number;
   assetPath?: string;
   data?: string;
+  p?: string[];
+  r?: string[];
 }
 
 interface ThemeSpec {
@@ -133,7 +135,19 @@ const PREVIEW_FONT_FAMILY = "ui-monospace, SFMono-Regular, Menlo, Consolas, mono
 const PREVIEW_FONT_WEIGHT = 800;
 const DEFAULT_PIXELS_WIDTH = 16;
 const DEFAULT_PIXELS_HEIGHT = 10;
-const DEFAULT_CLOUD_PIXELS = "07801FE03FF07FF8FFFCFFFE7FFE3FFC0FF003C0";
+const DEFAULT_CLOUD_PIXEL_PALETTE = ["#FFFFFF", "#9DE7F7", "#C7FF68"];
+const DEFAULT_CLOUD_PIXEL_ROWS = [
+  "5.4a7.",
+  "3.2a3b2a6.",
+  "2.2a5b2a5.",
+  "1.3a5b3a4.",
+  "2a4b2c4b3a.",
+  "3a8b4a.",
+  "1.12a3.",
+  "3.8a5.",
+  "5.4a7.",
+  "16.",
+];
 const GLCD_FONT_FIRST_CHAR = 32;
 const GLCD_FONT_LAST_CHAR = 126;
 const GLCD_FONT_COLUMNS = 5;
@@ -289,7 +303,16 @@ function normalizeMiniThemeSpec() {
       delete primitive.font;
     }
     if (primitive.type === "pixels") {
-      primitive.data = normalizedBitmapData(primitive.data ?? "", primitive.width ?? 0, primitive.height ?? 0);
+      if (isRlePixels(primitive)) {
+        primitive.p = normalizePalette(primitive.p ?? []);
+        primitive.r = normalizeRleRows(primitive.r ?? []);
+        delete primitive.color;
+        delete primitive.data;
+      } else {
+        primitive.data = normalizedBitmapData(primitive.data ?? "", primitive.width ?? 0, primitive.height ?? 0);
+        delete primitive.p;
+        delete primitive.r;
+      }
     }
   });
 }
@@ -365,7 +388,12 @@ function validateCurrentSpec() {
       } else if (primitive.width * primitive.height > 1024) {
         errors.push(`${prefix}: Pixelmasken dürfen maximal 1024 Pixel groß sein.`);
       }
-      if (!isValidBitmapData(primitive.data ?? "", primitive.width ?? 0, primitive.height ?? 0)) {
+      if (isRlePixels(primitive)) {
+        const rleError = validateRlePixels(primitive);
+        if (rleError) {
+          errors.push(`${prefix}: ${rleError}`);
+        }
+      } else if (!isValidBitmapData(primitive.data ?? "", primitive.width ?? 0, primitive.height ?? 0)) {
         errors.push(`${prefix}: data muss Hex für width*height Bits enthalten.`);
       }
     }
@@ -551,7 +579,7 @@ function primitiveTitle(primitive: Primitive): string {
     return primitive.assetPath?.split("/").pop() || "GIF";
   }
   if (primitive.type === "pixels") {
-    return `${primitive.width ?? 0}x${primitive.height ?? 0}`;
+    return `${primitive.width ?? 0}x${primitive.height ?? 0}${isRlePixels(primitive) ? " rle" : ""}`;
   }
   return primitive.color || "Rect";
 }
@@ -604,15 +632,21 @@ function inspectorFields(primitive: Primitive): string {
   }
 
   if (primitive.type === "pixels") {
+    const rleMode = isRlePixels(primitive);
     return `
       ${common}
       <div class="field-grid">
         <label>Width<input type="number" min="1" step="1" data-primitive-field="width" value="${primitive.width ?? DEFAULT_PIXELS_WIDTH}" /></label>
         <label>Height<input type="number" min="1" step="1" data-primitive-field="height" value="${primitive.height ?? DEFAULT_PIXELS_HEIGHT}" /></label>
       </div>
-      ${colorField("Color", "color", primitive.color ?? "#FFFFFF")}
-      ${pixelEditorGrid(primitive)}
-      <label>Bitmap hex<textarea rows="4" data-primitive-field="data" spellcheck="false">${escapeHtml(primitive.data ?? "")}</textarea></label>
+      ${rleMode ? `
+        <label>Palette<textarea rows="3" data-primitive-field="p" spellcheck="false">${escapeHtml((primitive.p ?? []).join("\n"))}</textarea></label>
+        <label>RLE rows<textarea rows="8" data-primitive-field="r" spellcheck="false">${escapeHtml((primitive.r ?? []).join("\n"))}</textarea></label>
+      ` : `
+        ${colorField("Color", "color", primitive.color ?? "#FFFFFF")}
+        ${pixelEditorGrid(primitive)}
+        <label>Bitmap hex<textarea rows="4" data-primitive-field="data" spellcheck="false">${escapeHtml(primitive.data ?? "")}</textarea></label>
+      `}
     `;
   }
 
@@ -871,6 +905,10 @@ function drawDeviceGif(context: CanvasRenderingContext2D, primitive: Primitive):
 function drawDevicePixels(context: CanvasRenderingContext2D, primitive: Primitive) {
   const width = primitive.width ?? 0;
   const height = primitive.height ?? 0;
+  if (isRlePixels(primitive)) {
+    drawDeviceRlePixels(context, primitive, width, height);
+    return;
+  }
   if (!isValidBitmapData(primitive.data ?? "", width, height)) {
     return;
   }
@@ -887,6 +925,27 @@ function drawDevicePixels(context: CanvasRenderingContext2D, primitive: Primitiv
       }
     }
   }
+}
+
+function drawDeviceRlePixels(context: CanvasRenderingContext2D, primitive: Primitive, width: number, height: number) {
+  if (validateRlePixels(primitive)) {
+    return;
+  }
+  const palette = primitive.p ?? [];
+  const rows = primitive.r ?? [];
+  rows.slice(0, height).forEach((row, rowIndex) => {
+    parseRleRow(row, width, (col, count, token) => {
+      if (token === ".") {
+        return;
+      }
+      const color = palette[token.charCodeAt(0) - 97];
+      if (!color) {
+        return;
+      }
+      context.fillStyle = color;
+      context.fillRect(primitive.x + col, primitive.y + rowIndex, count, 1);
+    });
+  });
 }
 
 function previewStageSize(container: HTMLDivElement): number {
@@ -1473,6 +1532,90 @@ function glcdGlyphColumn(code: number, column: number): number {
   return GLCD_FONT_5X7[index] ?? 0;
 }
 
+function isRlePixels(primitive: Primitive): boolean {
+  return Array.isArray(primitive.r) || Array.isArray(primitive.p);
+}
+
+function normalizePalette(palette: string[]): string[] {
+  return palette.map((color) => color.trim().toUpperCase()).filter(Boolean);
+}
+
+function normalizeRleRows(rows: string[]): string[] {
+  return rows.map((row) => row.trim()).filter(Boolean);
+}
+
+function validateRlePixels(primitive: Primitive): string {
+  const width = primitive.width ?? 0;
+  const height = primitive.height ?? 0;
+  const palette = primitive.p ?? [];
+  const rows = primitive.r ?? [];
+  if (!Array.isArray(palette) || palette.length === 0 || palette.length > 26) {
+    return "RLE braucht 1-26 Palette-Farben.";
+  }
+  if (!palette.every((color) => COLOR_RE.test(color))) {
+    return "Palette muss #RRGGBB-Farben enthalten.";
+  }
+  if (!Array.isArray(rows) || rows.length !== height) {
+    return `RLE braucht exakt ${height} Zeilen.`;
+  }
+  for (const [index, row] of rows.entries()) {
+    const result = parseRleRow(row, width);
+    if (!result.ok) {
+      return `RLE-Zeile ${index + 1}: ${result.error}`;
+    }
+    if (result.maxPaletteIndex >= palette.length) {
+      return `RLE-Zeile ${index + 1}: Palette-Farbe fehlt.`;
+    }
+  }
+  return "";
+}
+
+function parseRleRow(
+  row: string,
+  width: number,
+  onRun?: (col: number, count: number, token: string) => void,
+): { ok: boolean; error: string; maxPaletteIndex: number } {
+  let col = 0;
+  let index = 0;
+  let maxPaletteIndex = -1;
+  while (index < row.length) {
+    let count = 0;
+    let hasCount = false;
+    while (index < row.length && row[index] >= "0" && row[index] <= "9") {
+      hasCount = true;
+      count = count * 10 + Number(row[index]);
+      index += 1;
+    }
+    if (hasCount && count <= 0) {
+      return { ok: false, error: "Run-Length muss größer als 0 sein.", maxPaletteIndex };
+    }
+    if (!hasCount) {
+      count = 1;
+    }
+    const token = row[index];
+    if (!token) {
+      return { ok: false, error: "Run ohne Token.", maxPaletteIndex };
+    }
+    index += 1;
+    const paletteIndex = token === "." ? -1 : token.charCodeAt(0) - 97;
+    if (token !== "." && (paletteIndex < 0 || paletteIndex > 25)) {
+      return { ok: false, error: "Token muss . oder a-z sein.", maxPaletteIndex };
+    }
+    if (col + count > width) {
+      return { ok: false, error: "Zeile ist breiter als width.", maxPaletteIndex };
+    }
+    if (paletteIndex >= 0) {
+      maxPaletteIndex = Math.max(maxPaletteIndex, paletteIndex);
+    }
+    onRun?.(col, count, token);
+    col += count;
+  }
+  if (col !== width) {
+    return { ok: false, error: `Zeile ist ${col}px statt ${width}px breit.`, maxPaletteIndex };
+  }
+  return { ok: true, error: "", maxPaletteIndex };
+}
+
 function bitmapHexLength(width: number, height: number): number {
   if (width <= 0 || height <= 0) {
     return 0;
@@ -1990,6 +2133,20 @@ function updateSelectedPrimitive(key: string, value: string) {
   }
   if (key === "data") {
     primitive.data = value.trim();
+    delete primitive.p;
+    delete primitive.r;
+    return;
+  }
+  if (key === "p") {
+    primitive.p = normalizePalette(value.split(/[\n,]+/));
+    delete primitive.color;
+    delete primitive.data;
+    return;
+  }
+  if (key === "r") {
+    primitive.r = normalizeRleRows(value.split(/\n+/));
+    delete primitive.color;
+    delete primitive.data;
     return;
   }
   if (key === "text") {
@@ -2036,8 +2193,8 @@ async function handleAction(action: string) {
       y: 8,
       width: DEFAULT_PIXELS_WIDTH,
       height: DEFAULT_PIXELS_HEIGHT,
-      color: "#FFFFFF",
-      data: DEFAULT_CLOUD_PIXELS,
+      p: [...DEFAULT_CLOUD_PIXEL_PALETTE],
+      r: [...DEFAULT_CLOUD_PIXEL_ROWS],
     }, "Pixel shape placed.");
   }
   if (action === "delete-selected") {

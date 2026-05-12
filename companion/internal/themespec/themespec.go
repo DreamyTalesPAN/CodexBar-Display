@@ -28,19 +28,21 @@ var (
 )
 
 type Primitive struct {
-	Type        string `json:"type"`
-	X           int    `json:"x,omitempty"`
-	Y           int    `json:"y,omitempty"`
-	Width       int    `json:"width,omitempty"`
-	Height      int    `json:"height,omitempty"`
-	Text        string `json:"text,omitempty"`
-	Binding     string `json:"binding,omitempty"`
-	FontSize    int    `json:"fontSize,omitempty"`
-	Color       string `json:"color,omitempty"`
-	BgColor     string `json:"bgColor,omitempty"`
-	BorderColor string `json:"borderColor,omitempty"`
-	AssetPath   string `json:"assetPath,omitempty"`
-	Data        string `json:"data,omitempty"`
+	Type        string   `json:"type"`
+	X           int      `json:"x,omitempty"`
+	Y           int      `json:"y,omitempty"`
+	Width       int      `json:"width,omitempty"`
+	Height      int      `json:"height,omitempty"`
+	Text        string   `json:"text,omitempty"`
+	Binding     string   `json:"binding,omitempty"`
+	FontSize    int      `json:"fontSize,omitempty"`
+	Color       string   `json:"color,omitempty"`
+	BgColor     string   `json:"bgColor,omitempty"`
+	BorderColor string   `json:"borderColor,omitempty"`
+	AssetPath   string   `json:"assetPath,omitempty"`
+	Data        string   `json:"data,omitempty"`
+	Palette     []string `json:"p,omitempty"`
+	Rows        []string `json:"r,omitempty"`
 }
 
 type Spec struct {
@@ -133,6 +135,12 @@ func normalizeSpec(spec Spec) Spec {
 		spec.Primitives[i].BorderColor = strings.TrimSpace(spec.Primitives[i].BorderColor)
 		spec.Primitives[i].AssetPath = strings.TrimSpace(spec.Primitives[i].AssetPath)
 		spec.Primitives[i].Data = strings.TrimSpace(spec.Primitives[i].Data)
+		for j := range spec.Primitives[i].Palette {
+			spec.Primitives[i].Palette[j] = strings.TrimSpace(spec.Primitives[i].Palette[j])
+		}
+		for j := range spec.Primitives[i].Rows {
+			spec.Primitives[i].Rows[j] = strings.TrimSpace(spec.Primitives[i].Rows[j])
+		}
 	}
 	return spec
 }
@@ -161,8 +169,16 @@ func validatePrimitive(p Primitive) error {
 		if p.Width*p.Height > 1024 {
 			return errors.New("pixels primitive must be <= 1024 pixels")
 		}
-		if !isValidBitmapData(p.Data, p.Width, p.Height) {
+		hasBitmapData := p.Data != ""
+		hasRLEData := len(p.Palette) > 0 || len(p.Rows) > 0
+		if !hasBitmapData && !hasRLEData {
+			return errors.New("pixels primitive requires hex data or palette/RLE rows")
+		}
+		if hasBitmapData && !isValidBitmapData(p.Data, p.Width, p.Height) {
 			return errors.New("pixels primitive requires hex data sized for width/height")
+		}
+		if hasRLEData && !isValidPaletteRows(p.Palette, p.Rows, p.Width, p.Height) {
+			return errors.New("pixels primitive requires palette colors and RLE rows sized for width/height")
 		}
 	default:
 		return fmt.Errorf("%w: %s", errUnknownPrimitive, p.Type)
@@ -192,6 +208,68 @@ func isValidBitmapData(data string, width, height int) bool {
 	}
 	expected := ((width*height + 7) / 8) * 2
 	return len(data) == expected && hexPattern.MatchString(data)
+}
+
+func isValidPaletteRows(palette, rows []string, width, height int) bool {
+	if width <= 0 || height <= 0 || len(palette) == 0 || len(palette) > 26 || len(rows) != height {
+		return false
+	}
+	for _, color := range palette {
+		if !colorPattern.MatchString(color) {
+			return false
+		}
+	}
+	for _, row := range rows {
+		if !isValidPaletteRow(row, width, len(palette)) {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidPaletteRow(row string, width, paletteSize int) bool {
+	x := 0
+	for i := 0; i < len(row); {
+		runLength := 0
+		hasRunLength := false
+		if row[i] == '0' {
+			return false
+		}
+		for i < len(row) && row[i] >= '0' && row[i] <= '9' {
+			hasRunLength = true
+			runLength = runLength*10 + int(row[i]-'0')
+			if runLength > width {
+				return false
+			}
+			i++
+		}
+		if i >= len(row) {
+			return false
+		}
+		token := row[i]
+		i++
+		if !isValidPaletteToken(token, paletteSize) {
+			return false
+		}
+		if !hasRunLength {
+			runLength = 1
+		}
+		if runLength <= 0 {
+			return false
+		}
+		x += runLength
+		if x > width {
+			return false
+		}
+	}
+	return x == width
+}
+
+func isValidPaletteToken(token byte, paletteSize int) bool {
+	if token == '.' {
+		return true
+	}
+	return token >= 'a' && token < byte('a'+paletteSize)
 }
 
 func isSafeThemeAssetPath(path string) bool {

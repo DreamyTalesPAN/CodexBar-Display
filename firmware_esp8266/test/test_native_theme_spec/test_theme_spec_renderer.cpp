@@ -223,6 +223,66 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
 }
 
+void testRendersMulticolorRlePixelsAsFillRects() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "primitives": [
+      {"type":"pixels","x":10,"y":20,"width":5,"height":2,"p":["#FF0000","#00FF00","#0000FF"],"r":["2a.2b","3.2c"]}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
+
+  const RecordedCommand& red = sink.commands[1];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(red.type));
+  TEST_ASSERT_EQUAL_INT(10, red.x);
+  TEST_ASSERT_EQUAL_INT(20, red.y);
+  TEST_ASSERT_EQUAL_INT(2, red.width);
+  TEST_ASSERT_EQUAL_INT(1, red.height);
+  TEST_ASSERT_EQUAL_HEX16(0xF800, red.color);
+
+  const RecordedCommand& green = sink.commands[2];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(green.type));
+  TEST_ASSERT_EQUAL_INT(13, green.x);
+  TEST_ASSERT_EQUAL_INT(20, green.y);
+  TEST_ASSERT_EQUAL_INT(2, green.width);
+  TEST_ASSERT_EQUAL_INT(1, green.height);
+  TEST_ASSERT_EQUAL_HEX16(0x07E0, green.color);
+
+  const RecordedCommand& blue = sink.commands[3];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(blue.type));
+  TEST_ASSERT_EQUAL_INT(13, blue.x);
+  TEST_ASSERT_EQUAL_INT(21, blue.y);
+  TEST_ASSERT_EQUAL_INT(2, blue.width);
+  TEST_ASSERT_EQUAL_INT(1, blue.height);
+  TEST_ASSERT_EQUAL_HEX16(0x001F, blue.color);
+}
+
+void testInvalidMulticolorRlePixelsAreSkippedWithoutPartialDraw() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "primitives": [
+      {"type":"pixels","x":1,"y":2,"width":4,"height":2,"p":["#FF0000"],"r":["4a","2a"]},
+      {"type":"pixels","x":3,"y":4,"width":2,"height":1,"p":["#00FF00"],"r":["aB"]},
+      {"type":"text","x":7,"y":8,"fontSize":1,"text":"ok"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_STRING("ok", sink.commands[1].text.c_str());
+}
+
 void testInvalidPrimitivesAreSkipped() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -350,6 +410,8 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(testInvalidSpecsReturnFalse);
   RUN_TEST(testRendersCommandsAndBindings);
+  RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
+  RUN_TEST(testInvalidMulticolorRlePixelsAreSkippedWithoutPartialDraw);
   RUN_TEST(testInvalidPrimitivesAreSkipped);
   RUN_TEST(testColorFallbacks);
   RUN_TEST(testAnimatedPrimitivePassRendersOnlyGifsWithoutClear);

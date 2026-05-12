@@ -112,18 +112,22 @@ inline uint8_t HexByte(const char* value) {
   return static_cast<uint8_t>((HexNibble(value[0]) << 4) | HexNibble(value[1]));
 }
 
-inline uint16_t ParseColor(const char* value, uint16_t fallback) {
+inline bool IsHexColor(const char* value) {
   if (value == nullptr || value[0] != '#') {
-    return fallback;
+    return false;
   }
   for (int i = 1; i < 7; ++i) {
     const char c = value[i];
     const bool valid = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
     if (!valid) {
-      return fallback;
+      return false;
     }
   }
-  if (value[7] != '\0') {
+  return value[7] == '\0';
+}
+
+inline uint16_t ParseColor(const char* value, uint16_t fallback) {
+  if (!IsHexColor(value)) {
     return fallback;
   }
   return RGB565(HexByte(value + 1), HexByte(value + 3), HexByte(value + 5));
@@ -159,6 +163,89 @@ inline bool BitmapBitSet(const char* data, int bitIndex) {
   }
   const uint8_t value = static_cast<uint8_t>((high << 4) | low);
   return (value & (0x80 >> (bitIndex % 8))) != 0;
+}
+
+inline bool ParseColorPalette(JsonArrayConst rawPalette, uint16_t* palette, int& paletteSize) {
+  paletteSize = 0;
+  if (palette == nullptr || rawPalette.size() == 0 || rawPalette.size() > 26) {
+    return false;
+  }
+
+  for (JsonVariantConst rawColor : rawPalette) {
+    const char* color = JsonStringOrNull(rawColor);
+    if (!IsHexColor(color)) {
+      return false;
+    }
+    palette[paletteSize++] = ParseColor(color, 0x0000);
+  }
+  return true;
+}
+
+inline bool RenderRlePixelRows(JsonArrayConst rows, const uint16_t* palette, int paletteSize, int x, int y, int width, int height, Sink* sink) {
+  if (palette == nullptr || paletteSize <= 0 || width <= 0 || height <= 0 || rows.size() != static_cast<size_t>(height)) {
+    return false;
+  }
+
+  int rowIndex = 0;
+  for (JsonVariantConst rawRow : rows) {
+    const char* row = JsonStringOrNull(rawRow);
+    if (row == nullptr) {
+      return false;
+    }
+
+    int offset = 0;
+    for (int i = 0; row[i] != '\0';) {
+      int runLength = 0;
+      bool hasRunLength = false;
+      while (row[i] >= '0' && row[i] <= '9') {
+        hasRunLength = true;
+        runLength = (runLength * 10) + (row[i] - '0');
+        if (runLength > width) {
+          return false;
+        }
+        ++i;
+      }
+      if (!hasRunLength) {
+        runLength = 1;
+      } else if (runLength <= 0) {
+        return false;
+      }
+
+      const char token = row[i++];
+      if (token == '\0' || offset + runLength > width) {
+        return false;
+      }
+      if (token == '.') {
+        offset += runLength;
+        continue;
+      }
+      if (token < 'a' || token > 'z') {
+        return false;
+      }
+
+      const int colorIndex = token - 'a';
+      if (colorIndex >= paletteSize) {
+        return false;
+      }
+      if (sink != nullptr) {
+        RectCommand cmd;
+        cmd.x = x + offset;
+        cmd.y = y + rowIndex;
+        cmd.width = runLength;
+        cmd.height = 1;
+        cmd.color = palette[colorIndex];
+        sink->FillRect(cmd);
+      }
+      offset += runLength;
+    }
+
+    if (offset != width) {
+      return false;
+    }
+    ++rowIndex;
+  }
+
+  return rowIndex == height;
 }
 
 inline void FormatDuration(int64_t secs, char* out, size_t outSize) {
@@ -354,6 +441,18 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     cmd.y = y;
     cmd.width = primitive["width"] | 0;
     cmd.height = primitive["height"] | 0;
+    if (primitive["p"].is<JsonArrayConst>() || primitive["r"].is<JsonArrayConst>()) {
+      JsonArrayConst rawPalette = primitive["p"].as<JsonArrayConst>();
+      JsonArrayConst rows = primitive["r"].as<JsonArrayConst>();
+      uint16_t palette[26] = {0};
+      int paletteSize = 0;
+      if (!ParseColorPalette(rawPalette, palette, paletteSize) ||
+          !RenderRlePixelRows(rows, palette, paletteSize, cmd.x, cmd.y, cmd.width, cmd.height, nullptr)) {
+        return false;
+      }
+      return RenderRlePixelRows(rows, palette, paletteSize, cmd.x, cmd.y, cmd.width, cmd.height, &sink);
+    }
+
     cmd.data = JsonStringOrNull(primitive["data"]);
     if (!HasHexBitmapBits(cmd.data, cmd.width, cmd.height)) {
       return false;

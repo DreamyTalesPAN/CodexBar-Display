@@ -81,9 +81,48 @@
           "data": {
             "type": "string",
             "pattern": "^[A-Fa-f0-9]+$"
+          },
+          "p": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 26,
+            "items": {
+              "type": "string",
+              "pattern": "^#[A-Fa-f0-9]{6}$"
+            }
+          },
+          "r": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^(([1-9][0-9]*)?(\\.|[a-z]))+$"
+            }
           }
         },
-        "additionalProperties": true
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "pixels"
+                }
+              },
+              "required": ["type"]
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "required": ["data"]
+                },
+                {
+                  "required": ["p", "r"]
+                }
+              ]
+            }
+          }
+        ]
       }
     }
   },

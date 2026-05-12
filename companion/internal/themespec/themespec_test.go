@@ -42,6 +42,102 @@ func TestValidateRejectsInvalidPixelsData(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsMulticolorPixelsRLE(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "mini-transport",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{
+				Type:    "pixels",
+				X:       0,
+				Y:       0,
+				Width:   16,
+				Height:  2,
+				Palette: []string{"#FF0000", "#00FF00"},
+				Rows:    []string{"5.4a7.", "2b12.2a"},
+			},
+		},
+	}
+
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected valid multicolor pixels spec, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidMulticolorPixelsRLE(t *testing.T) {
+	tests := []struct {
+		name      string
+		primitive Primitive
+	}{
+		{
+			name: "row count mismatch",
+			primitive: Primitive{
+				Type:    "pixels",
+				Width:   4,
+				Height:  2,
+				Palette: []string{"#FF0000"},
+				Rows:    []string{"4a"},
+			},
+		},
+		{
+			name: "row width mismatch",
+			primitive: Primitive{
+				Type:    "pixels",
+				Width:   4,
+				Height:  1,
+				Palette: []string{"#FF0000"},
+				Rows:    []string{"3a"},
+			},
+		},
+		{
+			name: "palette index out of range",
+			primitive: Primitive{
+				Type:    "pixels",
+				Width:   4,
+				Height:  1,
+				Palette: []string{"#FF0000"},
+				Rows:    []string{"4b"},
+			},
+		},
+		{
+			name: "zero run length",
+			primitive: Primitive{
+				Type:    "pixels",
+				Width:   4,
+				Height:  1,
+				Palette: []string{"#FF0000"},
+				Rows:    []string{"0a4."},
+			},
+		},
+		{
+			name: "bad palette color",
+			primitive: Primitive{
+				Type:    "pixels",
+				Width:   4,
+				Height:  1,
+				Palette: []string{"red"},
+				Rows:    []string{"4a"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := Spec{
+				ThemeSpecVersion: 1,
+				ThemeID:          "mini-transport",
+				ThemeRev:         1,
+				Primitives:       []Primitive{tt.primitive},
+			}
+
+			if err := Validate(spec); err == nil {
+				t.Fatalf("expected validation error")
+			}
+		})
+	}
+}
+
 func TestValidateRejectsUnsafeGifAssetPath(t *testing.T) {
 	spec := Spec{
 		ThemeSpecVersion: 1,
