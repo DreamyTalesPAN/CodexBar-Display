@@ -355,6 +355,20 @@ textarea:focus {
   touch-action: none;
 }
 
+.konva-display {
+  overflow: hidden;
+}
+
+.konva-display .konvajs-content,
+.konva-display canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.konva-display canvas {
+  image-rendering: pixelated;
+}
+
 .primitive-hit {
   cursor: grab;
   user-select: none;

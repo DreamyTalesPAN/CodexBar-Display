@@ -1,3 +1,4 @@
+import Konva from "konva";
 import "./styles.css";
 
 const DISPLAY_SIZE = 240;
@@ -14,6 +15,7 @@ const DEFAULT_GIF_SIZE = 80;
 
 type PrimitiveType = "rect" | "text" | "progress" | "gif";
 type ResizeHandle = "e" | "s" | "se";
+type EditableKonvaNode = Konva.Group | Konva.Shape;
 type BindingKey =
   | "label"
   | "provider"
@@ -137,6 +139,9 @@ if (!appRoot) {
   throw new Error("missing #app root");
 }
 const app = appRoot;
+let stage: Konva.Stage | null = null;
+let gifRedrawAnimation: Konva.Animation | null = null;
+const gifImageCache = new Map<string, HTMLImageElement>();
 
 const state: AppState = {
   spec: cloneSpec(initialSpec),
@@ -360,6 +365,7 @@ function render() {
   `;
 
   bindEvents();
+  mountKonvaPreview();
   focusInlineTextEditor();
 }
 
@@ -512,12 +518,321 @@ function colorField(label: string, key: keyof Primitive, value: string): string 
 }
 
 function renderPreview(): string {
-  return `
-    <svg class="display" viewBox="0 0 ${DISPLAY_SIZE} ${DISPLAY_SIZE}" role="img" aria-label="Theme preview">
-      <rect x="0" y="0" width="${DISPLAY_SIZE}" height="${DISPLAY_SIZE}" fill="#000000"></rect>
-      ${state.spec.primitives.map((primitive, index) => renderPrimitive(primitive, index)).join("")}
-    </svg>
-  `;
+  return `<div class="display konva-display" data-role="konva-stage" aria-label="Theme preview"></div>`;
+}
+
+function mountKonvaPreview() {
+  const container = app.querySelector<HTMLDivElement>("[data-role='konva-stage']");
+  gifRedrawAnimation?.stop();
+  gifRedrawAnimation = null;
+  stage?.destroy();
+  stage = null;
+
+  if (!container) {
+    return;
+  }
+
+  stage = new Konva.Stage({
+    container,
+    width: DISPLAY_SIZE,
+    height: DISPLAY_SIZE,
+  });
+
+  const layer = new Konva.Layer();
+  stage.add(layer);
+  layer.add(new Konva.Rect({
+    x: 0,
+    y: 0,
+    width: DISPLAY_SIZE,
+    height: DISPLAY_SIZE,
+    fill: "#000000",
+    listening: false,
+  }));
+
+  const nodes: EditableKonvaNode[] = [];
+  let hasAnimatedGif = false;
+  state.spec.primitives.forEach((primitive, index) => {
+    const result = konvaNodeForPrimitive(primitive, index);
+    if (!result) {
+      return;
+    }
+    layer.add(result.node);
+    nodes[index] = result.node;
+    hasAnimatedGif = hasAnimatedGif || result.animated;
+  });
+
+  const selected = state.spec.primitives[state.selectedIndex];
+  const selectedNode = nodes[state.selectedIndex];
+  if (selected && selectedNode) {
+    const transformer = new Konva.Transformer({
+      nodes: [selectedNode],
+      rotateEnabled: true,
+      keepRatio: selected.type === "gif",
+      borderStroke: "#c7ff68",
+      borderStrokeWidth: 1.5,
+      anchorFill: "#c7ff68",
+      anchorStroke: "#0a0b0d",
+      anchorSize: 8,
+      anchorCornerRadius: 2,
+      rotationSnaps: [0, 45, 90, 135, 180, 225, 270, 315],
+      boundBoxFunc: (_oldBox, newBox) => {
+        if (newBox.width < 4 || newBox.height < 4) {
+          return _oldBox;
+        }
+        return newBox;
+      },
+    });
+    layer.add(transformer);
+  }
+
+  stage.on("pointerdown", (event) => {
+    if (event.target !== stage) {
+      return;
+    }
+    state.selectedIndex = -1;
+    state.editingTextIndex = null;
+    state.notice = "";
+    render();
+  });
+
+  layer.draw();
+  if (hasAnimatedGif) {
+    gifRedrawAnimation = new Konva.Animation(() => undefined, layer);
+    gifRedrawAnimation.start();
+  }
+}
+
+function konvaNodeForPrimitive(primitive: Primitive, index: number): { node: EditableKonvaNode; animated: boolean } | null {
+  let node: EditableKonvaNode;
+  let animated = false;
+
+  if (primitive.type === "rect") {
+    node = new Konva.Rect({
+      ...commonKonvaProps(primitive, index),
+      width: primitive.width ?? 1,
+      height: primitive.height ?? 1,
+      fill: primitive.color ?? "#000000",
+    });
+  } else if (primitive.type === "progress") {
+    node = progressKonvaGroup(primitive, index);
+  } else if (primitive.type === "gif") {
+    const result = gifKonvaGroup(primitive, index);
+    node = result.node;
+    animated = result.animated;
+  } else {
+    const font = fontOptionFor(primitive.font);
+    node = new Konva.Text({
+      ...commonKonvaProps(primitive, index),
+      text: primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? ""),
+      fontSize: textPixelSize(primitive),
+      fontFamily: font.family,
+      fontStyle: font.weight >= 800 ? "800" : "700",
+      fill: primitive.color ?? "#FFFFFF",
+      listening: true,
+    });
+  }
+
+  bindKonvaNodeEvents(node, index);
+  return { node, animated };
+}
+
+function commonKonvaProps(primitive: Primitive, index: number) {
+  return {
+    x: primitive.x,
+    y: primitive.y,
+    rotation: normalizeRotation(primitive.rotation ?? 0),
+    draggable: true,
+    id: `primitive-${index}`,
+    name: "primitive",
+    primitiveIndex: index,
+  };
+}
+
+function progressKonvaGroup(primitive: Primitive, index: number): Konva.Group {
+  const width = primitive.width ?? 1;
+  const height = primitive.height ?? 1;
+  const pct = primitive.binding === "weekly" || primitive.binding === "weeklyPercent" ? frame.weekly : frame.session;
+  const fillWidth = Math.max(0, Math.min(width, Math.round((width * pct) / 100)));
+  const group = new Konva.Group({
+    ...commonKonvaProps(primitive, index),
+    width,
+    height,
+  });
+  group.add(new Konva.Rect({
+    x: 0,
+    y: 0,
+    width,
+    height,
+    fill: primitive.bgColor ?? "#000000",
+    stroke: primitive.borderColor ?? "#7B7B7B",
+    strokeWidth: 1,
+  }));
+  group.add(new Konva.Rect({
+    x: 2,
+    y: 2,
+    width: Math.max(0, fillWidth - 4),
+    height: Math.max(0, height - 4),
+    fill: primitive.color ?? "#FFFFFF",
+  }));
+  return group;
+}
+
+function gifKonvaGroup(primitive: Primitive, index: number): { node: Konva.Group; animated: boolean } {
+  const width = primitive.width ?? DEFAULT_GIF_SIZE;
+  const height = primitive.height ?? DEFAULT_GIF_SIZE;
+  const group = new Konva.Group({
+    ...commonKonvaProps(primitive, index),
+    width,
+    height,
+  });
+  const image = primitive.assetPath ? gifImageFor(primitive.assetPath) : null;
+  if (image) {
+    const rect = fitContainRect(0, 0, width, height, gifAspectRatio(primitive));
+    group.add(new Konva.Rect({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      fill: "rgba(0,0,0,0)",
+    }));
+    group.add(new Konva.Image({
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      image,
+    }));
+    return { node: group, animated: true };
+  }
+
+  group.add(new Konva.Rect({
+    x: 0,
+    y: 0,
+    width,
+    height,
+    fill: "#141922",
+    stroke: "#c7ff68",
+    strokeWidth: 1,
+    dash: [4, 3],
+  }));
+  group.add(new Konva.Text({
+    x: 0,
+    y: Math.max(0, height / 2 - 6),
+    width,
+    height: 14,
+    text: "GIF",
+    align: "center",
+    fontSize: 12,
+    fontFamily: fallbackFont.family,
+    fontStyle: "800",
+    fill: "#c7ff68",
+    listening: false,
+  }));
+  return { node: group, animated: false };
+}
+
+function fitContainRect(x: number, y: number, width: number, height: number, ratio: number) {
+  if (width <= 0 || height <= 0 || ratio <= 0) {
+    return { x, y, width: Math.max(1, width), height: Math.max(1, height) };
+  }
+  let drawWidth = width;
+  let drawHeight = Math.round(width / ratio);
+  if (drawHeight > height) {
+    drawHeight = height;
+    drawWidth = Math.round(height * ratio);
+  }
+  return {
+    x: x + Math.round((width - drawWidth) / 2),
+    y: y + Math.round((height - drawHeight) / 2),
+    width: Math.max(1, drawWidth),
+    height: Math.max(1, drawHeight),
+  };
+}
+
+function gifImageFor(assetPath: string): HTMLImageElement | null {
+  const previewUrl = state.gifAssets[assetPath]?.previewUrl ?? builtInGifPreviewUrl(assetPath);
+  if (!previewUrl) {
+    return null;
+  }
+  const key = `${assetPath}|${previewUrl}`;
+  const cached = gifImageCache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const image = new Image();
+  image.decoding = "async";
+  image.src = previewUrl;
+  gifImageCache.set(key, image);
+  return image;
+}
+
+function bindKonvaNodeEvents(node: Konva.Node, index: number) {
+  node.on("pointerdown", () => {
+    state.selectedIndex = index;
+    state.editingTextIndex = null;
+    state.notice = "";
+  });
+  node.on("click tap", () => {
+    state.selectedIndex = index;
+    state.editingTextIndex = null;
+    state.notice = "";
+    render();
+  });
+  node.on("dblclick dbltap", () => {
+    const primitive = state.spec.primitives[index];
+    if (primitive?.type === "text") {
+      state.selectedIndex = index;
+      state.editingTextIndex = index;
+      state.notice = "";
+      render();
+    }
+  });
+  node.on("dragend", () => {
+    commitKonvaTransform(node, index);
+  });
+  node.on("transformend", () => {
+    commitKonvaTransform(node, index);
+  });
+}
+
+function commitKonvaTransform(node: Konva.Node, index: number) {
+  const primitive = state.spec.primitives[index];
+  if (!primitive) {
+    return;
+  }
+
+  const scaleX = node.scaleX();
+  const scaleY = node.scaleY();
+  const baseWidth = estimatePrimitiveWidth(primitive);
+  const baseHeight = estimatePrimitiveHeight(primitive);
+  const nextWidth = Math.max(1, Math.round(baseWidth * Math.abs(scaleX || 1)));
+  const nextHeight = Math.max(1, Math.round(baseHeight * Math.abs(scaleY || 1)));
+
+  primitive.x = clamp(Math.round(node.x()), 0, DISPLAY_SIZE - 1);
+  primitive.y = clamp(Math.round(node.y()), 0, DISPLAY_SIZE - 1);
+  primitive.rotation = normalizeRotation(Math.round(node.rotation()));
+
+  if (primitive.type === "text") {
+    const nextSize = Math.max(Math.abs(scaleX || 1), Math.abs(scaleY || 1));
+    primitive.fontSize = clamp(Math.round((primitive.fontSize ?? 1) * nextSize), 1, 12);
+  } else if (primitive.type === "gif") {
+    const ratio = gifAspectRatio(primitive);
+    if (Math.abs(scaleY) > Math.abs(scaleX)) {
+      applyGifHeight(primitive, ratio, nextHeight);
+    } else {
+      applyGifWidth(primitive, ratio, nextWidth);
+    }
+  } else {
+    primitive.width = clamp(nextWidth, 1, DISPLAY_SIZE - primitive.x);
+    primitive.height = clamp(nextHeight, 1, DISPLAY_SIZE - primitive.y);
+  }
+
+  node.scale({ x: 1, y: 1 });
+  state.selectedIndex = index;
+  state.editingTextIndex = null;
+  syncJsonFromSpec();
+  render();
 }
 
 function renderPrimitive(primitive: Primitive, index: number): string {

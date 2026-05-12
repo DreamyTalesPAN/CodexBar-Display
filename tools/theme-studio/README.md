@@ -7,7 +7,7 @@ The MVP targets the Mini theme only. ThemeSpec metadata is kept fixed where poss
 ../../scripts/theme-studio.sh
 ```
 
-Open the Vite URL, edit or drag primitives on the 240x240 preview, then select `Send to Vibe TV`.
+Open the Vite URL, edit, drag, resize, or rotate primitives on the Konva-backed 240x240 preview, then select `Send to Vibe TV`.
 Set the Vibe TV field to the device URL, for example `http://192.168.178.163` or `http://vibetv.local`.
 The Studio clears any cached ThemeSpec, uploads referenced GIF assets, then sends the full `/frame` payload.
 Use `Save Theme` to keep a JSON file locally, or `Copy JSON` for debugging.
@@ -36,8 +36,9 @@ go run ./cmd/codexbar-display theme-apply --transport wifi --target http://vibet
 
 Current MVP scope:
 - `rect`, `text`, `progress`, `gif` primitives
-- 240x240 preview
-- drag-to-position
+- Konva 240x240 preview with one selected Transformer at a time
+- drag-to-position plus resize/rotate handles
+- animated built-in GIF preview
 - property inspector
 - WiFi send flow with asset upload
 - JSON editor
