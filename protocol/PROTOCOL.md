@@ -73,6 +73,7 @@ When the ESP8266 is connected to WiFi, it serves:
 
 - `GET /hello`: returns the same Device Hello JSON shape as USB Serial. For WiFi, `capabilities.transport.active` is `wifi` and `supported` includes both `usb` and `wifi`.
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
+- Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This only updates the cached display/diagnostic update state; the ESP8266 firmware must not fetch public HTTPS manifests directly.
 - `POST /reset-wifi`: clears saved WiFi credentials and restarts the device into setup mode.
 - `GET /assets`: returns mounted filesystem status and a generic list of stored asset paths/sizes.
 - `POST /assets?path=/themes/<theme-id>/<asset>`: uploads one theme asset using multipart field `asset`.

@@ -614,6 +614,38 @@ func TestMarshalFrameWithinLimitDropsThemeBeforeFallback(t *testing.T) {
 	}
 }
 
+func TestMarshalFrameWithinLimitDropsUpdateBeforeFallback(t *testing.T) {
+	base := protocol.Frame{
+		Provider: "codex",
+		Label:    "Codex",
+		Session:  12,
+		Weekly:   30,
+		ResetSec: 3600,
+	}
+	withUpdate := base
+	withUpdate.Update = &protocol.UpdateState{
+		Available:     true,
+		LatestVersion: strings.Repeat("9", 80),
+		Status:        "update_available",
+	}
+
+	baseLine, err := base.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal base frame: %v", err)
+	}
+
+	line, marshaled, err := marshalFrameWithinLimit(withUpdate, len(baseLine))
+	if err != nil {
+		t.Fatalf("marshal within limit: %v", err)
+	}
+	if marshaled.Update != nil {
+		t.Fatalf("expected update state to be dropped to fit frame, got %+v", marshaled.Update)
+	}
+	if len(line) > len(baseLine) {
+		t.Fatalf("expected line to fit limit %d, got %d", len(baseLine), len(line))
+	}
+}
+
 func TestMarshalFrameWithinLimitFallsBackToErrorFrame(t *testing.T) {
 	frame := protocol.Frame{
 		Provider: "codex",
@@ -633,6 +665,78 @@ func TestMarshalFrameWithinLimitFallsBackToErrorFrame(t *testing.T) {
 	}
 	if len(line) > 80 {
 		t.Fatalf("expected fallback line to fit limit, got %d", len(line))
+	}
+}
+
+func TestRunCycleWithDepsAttachesFirmwareUpdateState(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	var sentLine []byte
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				Board:                     "esp8266-smalltv-st7789",
+				Firmware:                  "1.0.0",
+				NegotiatedProtocolVersion: 2,
+				MaxFrameBytes:             1024,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+		},
+		fetchUpdateState: func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error) {
+			return protocol.UpdateState{Available: true, LatestVersion: "1.0.1", Status: "update_available"}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(port string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Update == nil || !frame.Update.Available || frame.Update.LatestVersion != "1.0.1" {
+		t.Fatalf("expected update state in frame, got %+v", frame.Update)
+	}
+}
+
+func TestSelectFirmwareUpdateComparesBoardRelease(t *testing.T) {
+	update, err := selectFirmwareUpdate(protocol.DeviceCapabilities{
+		Board:    "esp8266-smalltv-st7789",
+		Firmware: "1.0.0",
+	}, firmwareManifest{Artifacts: []firmwareArtifact{
+		{Board: "esp8266-smalltv-st7789", FirmwareVersion: "1.0.1"},
+		{Board: "other-board", FirmwareVersion: "9.0.0"},
+	}})
+	if err != nil {
+		t.Fatalf("select update: %v", err)
+	}
+	if !update.Available || update.LatestVersion != "1.0.1" || update.Status != "update_available" {
+		t.Fatalf("unexpected update state: %+v", update)
+	}
+
+	current, err := selectFirmwareUpdate(protocol.DeviceCapabilities{
+		Board:    "esp8266-smalltv-st7789",
+		Firmware: "1.0.1",
+	}, firmwareManifest{Artifacts: []firmwareArtifact{
+		{Board: "esp8266-smalltv-st7789", FirmwareVersion: "1.0.1"},
+	}})
+	if err != nil {
+		t.Fatalf("select current: %v", err)
+	}
+	if current.Available || current.Status != "current" {
+		t.Fatalf("expected current state, got %+v", current)
 	}
 }
 

@@ -68,7 +68,7 @@ jobs:
             MAX_RAM_PCT="82"
             MAX_BIN_BYTES="0"
             if [[ "${ENV_NAME}" == "esp8266_smalltv_st7789" ]]; then
-              MAX_BIN_BYTES="450000"
+              MAX_BIN_BYTES="440000"
             fi
 
             CODEXBAR_DISPLAY_FW_VERSION="${VERSION}" ./scripts/check-firmware-size-budget.sh \

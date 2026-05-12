@@ -77,3 +77,24 @@ func TestFrameNormalizeKeepsNegotiatedV2(t *testing.T) {
 		t.Fatalf("expected frame version 2, got %d", normalized.V)
 	}
 }
+
+func TestFrameNormalizeTrimsUpdateState(t *testing.T) {
+	frame := Frame{
+		Update: &UpdateState{
+			Available:     true,
+			LatestVersion: " 1.2.3 ",
+			Status:        " update_available ",
+			LastError:     " timeout ",
+		},
+	}
+
+	normalized := frame.Normalize()
+	if normalized.Update == nil {
+		t.Fatalf("expected update state to remain")
+	}
+	if normalized.Update.LatestVersion != "1.2.3" ||
+		normalized.Update.Status != "update_available" ||
+		normalized.Update.LastError != "timeout" {
+		t.Fatalf("unexpected normalized update state: %+v", normalized.Update)
+	}
+}

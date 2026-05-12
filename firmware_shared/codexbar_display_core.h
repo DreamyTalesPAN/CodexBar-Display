@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <cstring>
 
 #include "theme_registry.h"
 
@@ -99,6 +100,68 @@ inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long now
   return remain;
 }
 
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+inline bool ExtractJsonObjectRaw(const char* json, const char* key, String& out) {
+  out = "";
+  if (json == nullptr || key == nullptr) {
+    return false;
+  }
+
+  const char* keyPos = std::strstr(json, key);
+  if (keyPos == nullptr) {
+    return false;
+  }
+  const char* cursor = keyPos + std::strlen(key);
+  while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+    ++cursor;
+  }
+  if (*cursor != ':') {
+    return false;
+  }
+  ++cursor;
+  while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+    ++cursor;
+  }
+  if (*cursor != '{') {
+    return false;
+  }
+
+  const char* start = cursor;
+  int depth = 0;
+  bool inString = false;
+  bool escaped = false;
+  for (; *cursor != '\0'; ++cursor) {
+    const char c = *cursor;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (c == '\\') {
+        escaped = true;
+      } else if (c == '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (c == '"') {
+      inString = true;
+    } else if (c == '{') {
+      ++depth;
+    } else if (c == '}') {
+      --depth;
+      if (depth == 0) {
+        for (const char* p = start; p <= cursor; ++p) {
+          out += *p;
+        }
+        return true;
+      }
+    }
+  }
+  out = "";
+  return false;
+}
+#endif
+
 inline String FormatDuration(int64_t secs) {
   const int64_t hours = secs / 3600;
   const int64_t minutes = (secs % 3600) / 60;
@@ -133,7 +196,7 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   if (doc["themeSpec"].is<JsonObjectConst>()) {
     JsonObjectConst spec = doc["themeSpec"].as<JsonObjectConst>();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    serializeJson(spec, themeSpecRaw);
+    (void)ExtractJsonObjectRaw(line, "\"themeSpec\"", themeSpecRaw);
 #endif
     if (spec["themeId"].is<const char*>()) {
       themeSpecId = String(spec["themeId"].as<const char*>());

@@ -33,9 +33,9 @@ flash_ok="$(awk -v used="$flash_pct" -v max="$max_flash_pct" 'BEGIN{if (used <= 
 
 echo "budget env=$env_name ram=${ram_pct}%/${max_ram_pct}% flash=${flash_pct}%/${max_flash_pct}%"
 
+bin_path="${firmware_dir}/.pio/build/${env_name}/firmware.bin"
 bin_ok="1"
 if [ "$max_bin_bytes" != "0" ]; then
-  bin_path="${firmware_dir}/.pio/build/${env_name}/firmware.bin"
   if [ ! -f "$bin_path" ]; then
     echo "firmware binary not found: $bin_path" >&2
     exit 1

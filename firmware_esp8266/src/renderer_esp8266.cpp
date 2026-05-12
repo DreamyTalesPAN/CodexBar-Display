@@ -14,15 +14,8 @@ namespace esp8266 {
 namespace {
 
 const char* themeName(Theme theme) {
-  switch (theme) {
-    case Theme::Mini:
-      return "mini";
-    case Theme::CRT:
-      return "crt";
-    case Theme::Classic:
-    default:
-      return "classic";
-  }
+  (void)theme;
+  return "mini";
 }
 
 }  // namespace
@@ -112,21 +105,8 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
 void RendererESP8266::DrawSplash(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-
-  switch (display::ActiveTheme()) {
-    case Theme::Mini:
-      display::StopMiniGifPlayback();
-      display::DrawSplashMini();
-      return;
-    case Theme::CRT:
-      display::StopMiniGifPlayback();
-      display::DrawSplashCRT();
-      return;
-    case Theme::Classic:
-    default:
-      display::DrawSplashClassic();
-      return;
-  }
+  display::StopMiniGifPlayback();
+  display::DrawSplashMini();
 #else
   probe::DrawSplash(ctx);
 #endif
@@ -135,19 +115,7 @@ void RendererESP8266::DrawSplash(app::RuntimeContext& ctx) {
 void RendererESP8266::TickSplash(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-
-  switch (display::ActiveTheme()) {
-    case Theme::Mini:
-      display::TickSplashMini();
-      return;
-    case Theme::CRT:
-      display::TickSplashCRT();
-      return;
-    case Theme::Classic:
-    default:
-      display::TickSplashClassic();
-      return;
-  }
+  display::TickSplashMini();
 #else
   (void)ctx;
 #endif
@@ -370,19 +338,7 @@ void RendererESP8266::DrawError(app::RuntimeContext& ctx, const String& message)
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   display::StopMiniGifPlayback();
-
-  switch (display::ActiveTheme()) {
-    case Theme::Mini:
-      display::DrawErrorMini(message);
-      return;
-    case Theme::CRT:
-      display::DrawErrorCRT(message);
-      return;
-    case Theme::Classic:
-    default:
-      display::DrawErrorClassic(message);
-      return;
-  }
+  display::DrawErrorMini(message);
 #else
   (void)message;
   probe::Render(ctx);
@@ -395,21 +351,7 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
   if (display::DrawThemeSpecUsage()) {
     return;
   }
-
-  switch (display::ActiveTheme()) {
-    case Theme::Mini:
-      display::DrawUsageMini();
-      return;
-    case Theme::CRT:
-      display::StopMiniGifPlayback();
-      display::DrawUsageCRT();
-      return;
-    case Theme::Classic:
-    default:
-      display::StopMiniGifPlayback();
-      display::DrawUsageClassic();
-      return;
-  }
+  display::DrawUsageMini();
 #else
   probe::Render(ctx);
 #endif
@@ -434,19 +376,7 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   if (display::CurrentFrame().hasThemeSpec && display::DrawThemeSpecUsage()) {
     return;
   }
-
-  switch (display::ActiveTheme()) {
-    case Theme::Mini:
-      display::DrawResetMini(remainSecs);
-      return;
-    case Theme::CRT:
-      display::DrawResetCRT(remainSecs);
-      return;
-    case Theme::Classic:
-    default:
-      display::DrawResetClassic(remainSecs);
-      return;
-  }
+  display::DrawResetMini(remainSecs);
 #else
   (void)remainSecs;
   probe::DrawReset(ctx);

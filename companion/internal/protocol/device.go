@@ -88,6 +88,7 @@ type DeviceCapabilities struct {
 	PreferredProtocolVersion   int
 	NegotiatedProtocolVersion  int
 	Board                      string
+	Firmware                   string
 	Features                   []string
 	SupportsTheme              bool
 	SupportsThemeSpecV1        bool
@@ -130,6 +131,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		PreferredProtocolVersion:   h.PreferredProtocolVersion,
 		NegotiatedProtocolVersion:  negotiated,
 		Board:                      h.Board,
+		Firmware:                   h.Firmware,
 		Features:                   append([]string(nil), h.Features...),
 		SupportsTheme:              supportsTheme,
 		SupportsThemeSpecV1:        supportsThemeSpecV1,
