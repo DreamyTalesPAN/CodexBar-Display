@@ -14,6 +14,7 @@ Set the Vibe TV field to the device URL, for example `http://192.168.178.163` or
 The Studio clears any cached ThemeSpec, uploads referenced GIF assets, then sends the full `/frame` payload.
 GIF uploads use short `/themes/u/...` paths because ESP8266 LittleFS rejects paths longer than 31 characters.
 Use `Save Theme` to keep a JSON file locally, or `Copy JSON` for debugging.
+Use `Advanced JSON` -> `Apply JSON` to import a readable ThemeSpec or the compact device form into the preview. Invalid JSON or invalid ThemeSpec content is rejected without changing the current canvas.
 
 Keyboard controls:
 - `Cmd/Ctrl+C`: copy selected element
@@ -46,3 +47,8 @@ Current MVP scope:
 - WiFi send flow with asset upload
 - JSON editor
 - byte and primitive limit checks for the ESP8266 ThemeSpec MVP
+
+Manual JSON import checks for issue #72:
+- Paste a valid ThemeSpec with `text`, `rect`, `progress`, and `gif`, then apply; preview, element list, inspector, save, copy, and send should use the imported theme.
+- Paste invalid JSON; the current canvas should stay unchanged and a parse error should be shown.
+- Paste valid JSON with invalid ThemeSpec content, for example a bad color or too many primitives; the current canvas should stay unchanged and the error should explain the problem.

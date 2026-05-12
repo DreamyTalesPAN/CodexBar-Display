@@ -287,17 +287,20 @@ function normalizeTargetOrigin(value: string): string {
 }
 
 function syncJsonFromSpec() {
-  normalizeMiniThemeSpec();
+  normalizeMiniThemeSpec(state.spec);
   state.jsonText = prettyJson(state.spec);
   state.jsonDirty = false;
   validateCurrentSpec();
 }
 
-function normalizeMiniThemeSpec() {
-  state.spec.themeSpecVersion = 1;
-  state.spec.themeRev = FIXED_THEME_REV;
-  state.spec.fallbackTheme = FIXED_FALLBACK_THEME;
-  state.spec.primitives.forEach((primitive) => {
+function normalizeMiniThemeSpec(spec: ThemeSpec) {
+  spec.themeSpecVersion = 1;
+  spec.themeRev = FIXED_THEME_REV;
+  spec.fallbackTheme = FIXED_FALLBACK_THEME;
+  if (!Array.isArray(spec.primitives)) {
+    spec.primitives = [];
+  }
+  spec.primitives.forEach((primitive) => {
     delete primitive.rotation;
     if (primitive.type === "text") {
       delete primitive.font;
@@ -318,9 +321,14 @@ function normalizeMiniThemeSpec() {
 }
 
 function validateCurrentSpec() {
+  const result = validateSpec(state.spec);
+  state.errors = result.errors;
+  state.warnings = result.warnings;
+}
+
+function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const spec = state.spec;
 
   if (spec.themeSpecVersion !== 1) {
     errors.push("themeSpecVersion muss 1 sein.");
@@ -408,13 +416,12 @@ function validateCurrentSpec() {
   if (bytes > MAX_SPEC_BYTES) {
     errors.push(`ThemeSpec ist zu groß: ${bytes}/${MAX_SPEC_BYTES} Bytes.`);
   }
-  const frameBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload())).length;
+  const frameBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload(spec))).length;
   if (frameBytes > MAX_FRAME_BYTES) {
     errors.push(`Payload ist zu groß für Vibe TV: ${frameBytes}/${MAX_FRAME_BYTES} Bytes.`);
   }
 
-  state.errors = errors;
-  state.warnings = warnings;
+  return { errors, warnings };
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -1803,7 +1810,7 @@ function bindEvents() {
       const primitive = state.spec.primitives[index];
       if (primitive?.type === "text") {
         primitive.text = input.value;
-        normalizeMiniThemeSpec();
+        normalizeMiniThemeSpec(state.spec);
         state.jsonText = prettyJson(state.spec);
         state.jsonDirty = false;
         validateCurrentSpec();
@@ -1909,7 +1916,7 @@ function focusInlineTextEditor() {
 }
 
 function syncStateWithoutRender() {
-  normalizeMiniThemeSpec();
+  normalizeMiniThemeSpec(state.spec);
   state.jsonText = prettyJson(state.spec);
   state.jsonDirty = false;
   validateCurrentSpec();
@@ -2257,10 +2264,16 @@ function safeAssetName(name: string): string {
 
 function applyJson() {
   try {
-    const parsed = JSON.parse(state.jsonText) as ThemeSpec;
-    state.spec = parsed;
-    normalizeMiniThemeSpec();
-    state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.spec.primitives.length - 1));
+    const imported = importThemeSpec(JSON.parse(state.jsonText));
+    normalizeMiniThemeSpec(imported);
+    const result = validateSpec(imported);
+    if (result.errors.length > 0) {
+      state.notice = `JSON not applied: ${result.errors.slice(0, 3).join(" ")}`;
+      render();
+      return;
+    }
+    state.spec = imported;
+    state.selectedIndex = imported.primitives.length > 0 ? Math.max(0, Math.min(state.selectedIndex, imported.primitives.length - 1)) : -1;
     state.editingTextIndex = null;
     state.notice = "JSON applied.";
     syncJsonFromSpec();
@@ -2268,6 +2281,116 @@ function applyJson() {
     state.notice = error instanceof Error ? error.message : "Invalid JSON.";
   }
   render();
+}
+
+function importThemeSpec(value: unknown): ThemeSpec {
+  if (!isRecord(value)) {
+    throw new Error("JSON not applied: root must be an object.");
+  }
+  const primitives = arrayValue(value.primitives) ?? arrayValue(value.p);
+  if (!primitives) {
+    throw new Error("JSON not applied: primitives array is required.");
+  }
+  return {
+    themeSpecVersion: 1,
+    themeId: stringValue(value.themeId) ?? stringValue(value.id) ?? "",
+    themeRev: numberValue(value.themeRev) ?? numberValue(value.rev) ?? FIXED_THEME_REV,
+    fallbackTheme: (stringValue(value.fallbackTheme) ?? stringValue(value.fb) ?? FIXED_FALLBACK_THEME) as ThemeSpec["fallbackTheme"],
+    bgColor: stringValue(value.bgColor) ?? stringValue(value.bg),
+    primitives: primitives.map(importPrimitive),
+  };
+}
+
+function importPrimitive(value: unknown): Primitive {
+  if (!isRecord(value)) {
+    throw new Error("JSON not applied: every primitive must be an object.");
+  }
+  const type = expandPrimitiveType(stringValue(value.type) ?? stringValue(value.t) ?? "");
+  const primitive: Primitive = {
+    type,
+    x: numberValue(value.x) ?? 0,
+    y: numberValue(value.y) ?? 0,
+  };
+  const width = numberValue(value.width) ?? numberValue(value.w);
+  const height = numberValue(value.height) ?? numberValue(value.h);
+  if (width !== undefined) {
+    primitive.width = width;
+  }
+  if (height !== undefined) {
+    primitive.height = height;
+  }
+  const text = stringValue(value.text) ?? stringValue(value.v);
+  if (text !== undefined) {
+    primitive.text = text;
+  }
+  const binding = stringValue(value.binding) ?? stringValue(value.b);
+  if (binding !== undefined) {
+    primitive.binding = expandBinding(binding) as BindingKey;
+  }
+  const fontSize = numberValue(value.fontSize) ?? numberValue(value.s);
+  if (fontSize !== undefined) {
+    primitive.fontSize = fontSize;
+  }
+  primitive.color = stringValue(value.color) ?? stringValue(value.c);
+  primitive.bgColor = stringValue(value.bgColor) ?? stringValue(value.bg);
+  primitive.borderColor = stringValue(value.borderColor) ?? stringValue(value.bc);
+  primitive.assetPath = stringValue(value.assetPath) ?? stringValue(value.a);
+  primitive.data = stringValue(value.data) ?? stringValue(value.d);
+  const palette = stringArrayValue(value.p);
+  if (palette) {
+    primitive.p = palette;
+  }
+  const rows = stringArrayValue(value.r);
+  if (rows) {
+    primitive.r = rows;
+  }
+  return primitive;
+}
+
+function expandPrimitiveType(value: string): PrimitiveType {
+  const map: Record<string, PrimitiveType> = {
+    tx: "text",
+    r: "rect",
+    p: "progress",
+    g: "gif",
+    px: "pixels",
+  };
+  return map[value] ?? value as PrimitiveType;
+}
+
+function expandBinding(value: string): BindingKey | string {
+  const map: Record<string, BindingKey> = {
+    l: "label",
+    pr: "provider",
+    s: "session",
+    w: "weekly",
+    r: "reset",
+    u: "usageMode",
+    st: "sessionTokens",
+    wt: "weekTokens",
+    tt: "totalTokens",
+  };
+  return map[value] ?? value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return Number.isInteger(value) ? value as number : undefined;
+}
+
+function arrayValue(value: unknown): unknown[] | undefined {
+  return Array.isArray(value) ? value : undefined;
+}
+
+function stringArrayValue(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined;
 }
 
 function startDrag(event: PointerEvent) {
@@ -2562,7 +2685,7 @@ async function builtInGifAsset(path: string): Promise<{ file: File; previewUrl: 
   };
 }
 
-function buildFramePayload() {
+function buildFramePayload(spec: ThemeSpec = state.spec) {
   const payload: Record<string, unknown> = {
     v: 2,
     provider: frame.provider,
@@ -2571,9 +2694,9 @@ function buildFramePayload() {
     weekly: frame.weekly,
     resetSecs: frame.resetSecs,
     usageMode: frame.usageMode,
-    themeSpec: buildDeviceThemeSpec(state.spec),
+    themeSpec: buildDeviceThemeSpec(spec),
   };
-  const bindings = usedThemeBindings();
+  const bindings = usedThemeBindings(spec);
   if (bindings.has("sessionTokens")) {
     payload.sessionTokens = frame.sessionTokens;
   }
@@ -2690,9 +2813,9 @@ function buildThemeSpecClearPayload(): Record<string, unknown> {
   };
 }
 
-function usedThemeBindings(): Set<string> {
+function usedThemeBindings(spec: ThemeSpec = state.spec): Set<string> {
   const bindings = new Set<string>();
-  for (const primitive of state.spec.primitives) {
+  for (const primitive of spec.primitives) {
     if (primitive.binding) {
       bindings.add(primitive.binding);
     }
