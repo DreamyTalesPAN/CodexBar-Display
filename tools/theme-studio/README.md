@@ -40,7 +40,7 @@ Current MVP scope:
 - `rect`, `text`, `progress`, `gif` primitives
 - Konva 240x240 preview with one selected Transformer at a time
 - drag-to-position plus resize/rotate handles
-- animated built-in GIF preview
+- animated GIF preview through `gifler`
 - property inspector
 - WiFi send flow with asset upload
 - JSON editor

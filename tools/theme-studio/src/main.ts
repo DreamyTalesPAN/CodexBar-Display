@@ -1,4 +1,5 @@
 import Konva from "konva";
+import "gifler";
 import "./styles.css";
 
 const DISPLAY_SIZE = 240;
@@ -17,6 +18,23 @@ const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 type PrimitiveType = "rect" | "text" | "progress" | "gif";
 type ResizeHandle = "e" | "s" | "se";
 type EditableKonvaNode = Konva.Group | Konva.Shape;
+type GiflerAnimator = {
+  width: number;
+  height: number;
+  start(): GiflerAnimator;
+  stop(): GiflerAnimator;
+  reset(): GiflerAnimator;
+  animateInCanvas(canvas: HTMLCanvasElement, setDimension?: boolean): GiflerAnimator;
+};
+type GiflerFactory = (url: string) => {
+  get(callback: (animator: GiflerAnimator) => void): unknown;
+};
+type GifPreview = {
+  canvas: HTMLCanvasElement;
+  key: string;
+  loading: boolean;
+  animator: GiflerAnimator | null;
+};
 type BindingKey =
   | "label"
   | "provider"
@@ -158,7 +176,8 @@ if (!appRoot) {
 const app = appRoot;
 let stage: Konva.Stage | null = null;
 let gifRedrawAnimation: Konva.Animation | null = null;
-const gifImageCache = new Map<string, HTMLImageElement>();
+let gifPreviewGeneration = 0;
+const gifPreviewCache = new Map<string, GifPreview>();
 
 const state: AppState = {
   spec: cloneSpec(initialSpec),
@@ -555,6 +574,8 @@ function renderPreview(): string {
 
 function mountKonvaPreview() {
   const container = app.querySelector<HTMLDivElement>("[data-role='konva-stage']");
+  gifPreviewGeneration += 1;
+  stopGifPreviewAnimations();
   gifRedrawAnimation?.stop();
   gifRedrawAnimation = null;
   stage?.destroy();
@@ -851,8 +872,8 @@ function gifKonvaGroup(primitive: Primitive, index: number): { node: Konva.Group
     width,
     height,
   });
-  const image = primitive.assetPath ? gifImageFor(primitive.assetPath) : null;
-  if (image) {
+  const preview = primitive.assetPath ? gifPreviewFor(primitive.assetPath, gifPreviewGeneration) : null;
+  if (preview) {
     const rect = fitContainRect(0, 0, width, height, gifAspectRatio(primitive));
     group.add(new Konva.Rect({
       x: 0,
@@ -866,7 +887,9 @@ function gifKonvaGroup(primitive: Primitive, index: number): { node: Konva.Group
       y: rect.y,
       width: rect.width,
       height: rect.height,
-      image,
+      image: preview.canvas,
+      imageSmoothingEnabled: false,
+      listening: false,
     }));
     return { node: group, animated: true };
   }
@@ -915,22 +938,61 @@ function fitContainRect(x: number, y: number, width: number, height: number, rat
   };
 }
 
-function gifImageFor(assetPath: string): HTMLImageElement | null {
+function gifPreviewFor(assetPath: string, generation: number): GifPreview | null {
   const previewUrl = state.gifAssets[assetPath]?.previewUrl ?? builtInGifPreviewUrl(assetPath);
   if (!previewUrl) {
     return null;
   }
   const key = `${assetPath}|${previewUrl}`;
-  const cached = gifImageCache.get(key);
+  const cached = gifPreviewCache.get(key);
   if (cached) {
+    startGifPreview(cached);
     return cached;
   }
 
-  const image = new Image();
-  image.decoding = "async";
-  image.src = previewUrl;
-  gifImageCache.set(key, image);
-  return image;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  const preview: GifPreview = {
+    canvas,
+    key,
+    loading: true,
+    animator: null,
+  };
+  gifPreviewCache.set(key, preview);
+
+  const giflerApi = (window as Window & { gifler?: GiflerFactory }).gifler;
+  if (!giflerApi) {
+    preview.loading = false;
+    return preview;
+  }
+
+  giflerApi(previewUrl).get((animator) => {
+    if (gifPreviewCache.get(key) !== preview) {
+      animator.stop();
+      return;
+    }
+    preview.loading = false;
+    preview.animator = animator;
+    if (generation === gifPreviewGeneration) {
+      startGifPreview(preview);
+    }
+  });
+
+  return preview;
+}
+
+function startGifPreview(preview: GifPreview) {
+  if (!preview.animator) {
+    return;
+  }
+  preview.animator.stop();
+  preview.animator.reset();
+  preview.animator.animateInCanvas(preview.canvas, true);
+}
+
+function stopGifPreviewAnimations() {
+  gifPreviewCache.forEach((preview) => preview.animator?.stop());
 }
 
 function bindKonvaNodeEvents(node: Konva.Node, index: number) {
