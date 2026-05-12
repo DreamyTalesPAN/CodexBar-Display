@@ -58,7 +58,7 @@ Example:
 Design constraints:
 - No user code execution on device.
 - Primitives are declarative (`text`, `rect`, `progress`, `gif`) and validated by companion before send.
-- `gif` primitives reference uploaded display assets with `assetPath` under `/themes/<theme-id>/...`.
+- `gif` primitives reference uploaded display assets with `assetPath` under `/themes/...`; ESP8266 LittleFS paths are capped at 31 characters.
 - Compatibility is checked against device capability limits (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`).
 - A frame with `"themeSpec": null` clears the cached declarative layout and falls back to the builtin `theme`.
 
@@ -77,8 +77,8 @@ When the ESP8266 is connected to WiFi, it serves:
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This only updates the cached display/diagnostic update state; the ESP8266 firmware must not fetch public HTTPS manifests directly.
 - `POST /reset-wifi`: clears saved WiFi credentials and restarts the device into setup mode.
 - `GET /assets`: returns mounted filesystem status and a generic list of stored asset paths/sizes.
-- `POST /assets?path=/themes/<theme-id>/<asset>`: uploads one theme asset using multipart field `asset`.
-- `DELETE /assets?path=/themes/<theme-id>/<asset>`: deletes one stored asset.
+- `POST /assets?path=/themes/<short-id>/<asset>`: uploads one theme asset using multipart field `asset`.
+- `DELETE /assets?path=/themes/<short-id>/<asset>`: deletes one stored asset.
 
 HTTP responses:
 - `200 OK`: frame accepted.

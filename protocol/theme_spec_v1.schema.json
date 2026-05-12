@@ -67,6 +67,7 @@
           },
           "assetPath": {
             "type": "string",
+            "maxLength": 31,
             "pattern": "^/themes/[^\\\\.].*"
           }
         },

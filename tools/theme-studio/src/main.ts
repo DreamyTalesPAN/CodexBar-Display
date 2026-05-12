@@ -12,6 +12,7 @@ const FIXED_FALLBACK_THEME = "mini";
 const DEFAULT_TARGET_ORIGIN = "http://vibetv.local";
 const TARGET_STORAGE_KEY = "codexbar.themeStudio.targetOrigin";
 const DEFAULT_GIF_SIZE = 80;
+const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 
 type PrimitiveType = "rect" | "text" | "progress" | "gif";
 type ResizeHandle = "e" | "s" | "se";
@@ -265,6 +266,9 @@ function validateCurrentSpec() {
       }
       if (!primitive.assetPath || !primitive.assetPath.startsWith("/themes/")) {
         errors.push(`${prefix}: assetPath muss unter /themes/... liegen.`);
+      }
+      if (primitive.assetPath && primitive.assetPath.length > MAX_ESP8266_LITTLEFS_PATH_CHARS) {
+        errors.push(`${prefix}: assetPath ist zu lang für ESP8266 LittleFS (${primitive.assetPath.length}/${MAX_ESP8266_LITTLEFS_PATH_CHARS}).`);
       }
     }
     const width = primitive.width ?? estimatePrimitiveWidth(primitive);
@@ -1570,7 +1574,7 @@ function addGifPrimitive(file: File) {
     render();
     return;
   }
-  const assetPath = `/themes/${state.spec.themeId}/${safeAssetName(file.name)}`;
+  const assetPath = themeAssetPathForFile(file.name);
   const existing = state.gifAssets[assetPath];
   if (existing) {
     URL.revokeObjectURL(existing.previewUrl);
@@ -1582,9 +1586,18 @@ function addGifPrimitive(file: File) {
   addPrimitive({ type: "gif", x: 24, y: 24, width: DEFAULT_GIF_SIZE, height: DEFAULT_GIF_SIZE, assetPath }, "GIF placed.");
 }
 
+function themeAssetPathForFile(name: string): string {
+  return `/themes/u/${safeAssetName(name)}`;
+}
+
 function safeAssetName(name: string): string {
   const cleaned = name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-  return cleaned.endsWith(".gif") ? cleaned : `${cleaned || "asset"}.gif`;
+  const withExtension = cleaned.endsWith(".gif") ? cleaned : `${cleaned || "asset"}.gif`;
+  if (withExtension.length <= 21) {
+    return withExtension;
+  }
+  const base = withExtension.replace(/\.gif$/i, "");
+  return `${base.slice(0, 17).replace(/[._-]+$/g, "") || "asset"}.gif`;
 }
 
 function applyJson() {
@@ -1854,7 +1867,8 @@ async function uploadThemeAssets(targetOrigin: string) {
       body,
     });
     if (response.type !== "opaque" && !response.ok) {
-      throw new Error(`GIF upload failed (${response.status}).`);
+      const detail = await response.text().catch(() => "");
+      throw new Error(`GIF upload failed (${response.status})${detail ? `: ${detail}` : ""}.`);
     }
   }
 }

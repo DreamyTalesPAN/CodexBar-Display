@@ -83,6 +83,7 @@ Common display assumptions:
 - ST7789 driver
 - `240x240`
 - filesystem: LittleFS
+- asset paths: 31 characters max on ESP8266 LittleFS
 
 ## Operator Verification
 - `codexbar-display doctor`:

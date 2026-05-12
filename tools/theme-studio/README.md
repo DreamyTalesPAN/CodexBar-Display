@@ -10,6 +10,7 @@ The MVP targets the Mini theme only. ThemeSpec metadata is kept fixed where poss
 Open the Vite URL, edit, drag, resize, or rotate primitives on the Konva-backed 240x240 preview, then select `Send to Vibe TV`.
 Set the Vibe TV field to the device URL, for example `http://192.168.178.163` or `http://vibetv.local`.
 The Studio clears any cached ThemeSpec, uploads referenced GIF assets, then sends the full `/frame` payload.
+GIF uploads use short `/themes/u/...` paths because ESP8266 LittleFS rejects paths longer than 31 characters.
 Use `Save Theme` to keep a JSON file locally, or `Copy JSON` for debugging.
 
 Keyboard controls:
