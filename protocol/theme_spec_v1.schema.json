@@ -20,6 +20,10 @@
       "type": "string",
       "enum": ["classic", "crt", "mini"]
     },
+    "bgColor": {
+      "type": "string",
+      "pattern": "^#[A-Fa-f0-9]{6}$"
+    },
     "primitives": {
       "type": "array",
       "minItems": 1,
@@ -56,6 +60,10 @@
           "fontSize": {
             "type": "integer",
             "minimum": 0
+          },
+          "font": {
+            "type": "integer",
+            "enum": [1, 2]
           },
           "color": {
             "type": "string",

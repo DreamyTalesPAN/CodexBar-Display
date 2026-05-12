@@ -134,6 +134,7 @@ void testRendersCommandsAndBindings() {
     "themeSpecVersion": 1,
     "themeId": "codex-test",
     "themeRev": 1,
+    "bgColor": "#123456",
     "primitives": [
       {"type":"rect","x":1,"y":2,"width":3,"height":4,"color":"#FFFFFF"},
       {"type":"text","x":5,"y":6,"font":2,"fontSize":3,"color":"#CCFF00","bgColor":"#000000","text":"{label} {provider} {session}/{weekly} {reset} {usageMode} {sessionTokens} {weekTokens} {totalTokens}"},
@@ -150,7 +151,7 @@ void testRendersCommandsAndBindings() {
 
   const RecordedCommand& clear = sink.commands[0];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(clear.type));
-  TEST_ASSERT_EQUAL_HEX16(0x0000, clear.color);
+  TEST_ASSERT_EQUAL_HEX16(0x11AA, clear.color);
 
   const RecordedCommand& rect = sink.commands[1];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(rect.type));

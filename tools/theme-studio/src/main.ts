@@ -53,6 +53,7 @@ interface ThemeSpec {
   themeId: string;
   themeRev: number;
   fallbackTheme?: "classic" | "crt" | "mini";
+  bgColor?: string;
   primitives: Primitive[];
 }
 
@@ -109,10 +110,8 @@ const variableTokens = [
 ];
 
 const fontOptions = [
-  { value: 1, label: "Mono", family: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", weight: 800 },
-  { value: 2, label: "Sans", family: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", weight: 800 },
-  { value: 3, label: "Serif", family: "Georgia, Times New Roman, serif", weight: 700 },
-  { value: 4, label: "Display", family: "Impact, Haettenschweiler, Arial Narrow Bold, sans-serif", weight: 700 },
+  { value: 1, label: "TFT Font 1", family: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", weight: 800 },
+  { value: 2, label: "TFT Font 2", family: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", weight: 800 },
 ];
 
 const fallbackFont = fontOptions[0];
@@ -138,6 +137,7 @@ const initialSpec: ThemeSpec = {
   themeId: "mini-classic",
   themeRev: FIXED_THEME_REV,
   fallbackTheme: FIXED_FALLBACK_THEME,
+  bgColor: "#000000",
   primitives: [
     { type: "text", x: 75, y: 4, binding: "label", fontSize: 3, color: "#999999" },
     { type: "text", x: 7, y: 30, text: "Session", font: 2, fontSize: 2, color: "#999999" },
@@ -242,6 +242,9 @@ function validateCurrentSpec() {
   if (spec.fallbackTheme !== FIXED_FALLBACK_THEME) {
     errors.push("fallbackTheme muss mini sein.");
   }
+  if (spec.bgColor && !COLOR_RE.test(spec.bgColor)) {
+    errors.push("Background muss #RRGGBB sein.");
+  }
   if (!Array.isArray(spec.primitives) || spec.primitives.length === 0) {
     errors.push("Mindestens ein Primitive ist erforderlich.");
   }
@@ -269,6 +272,9 @@ function validateCurrentSpec() {
       }
       if (primitive.fontSize !== undefined && (!Number.isInteger(primitive.fontSize) || primitive.fontSize < 1)) {
         errors.push(`${prefix}: fontSize sollte mindestens 1 sein.`);
+      }
+      if (primitive.font !== undefined && !fontOptions.some((font) => font.value === primitive.font)) {
+        errors.push(`${prefix}: font wird vom VibeTV nicht unterstützt.`);
       }
     }
     if (primitive.type === "rect" || primitive.type === "progress") {
@@ -341,6 +347,12 @@ function render() {
           </div>
           <label>Vibe TV
             <input data-field="targetOrigin" aria-label="Vibe TV URL" value="${escapeAttr(state.targetOrigin)}" />
+          </label>
+          <label>Background
+            <span class="color-row">
+              <input type="color" data-field="bgColor" value="${escapeAttr(state.spec.bgColor ?? "#000000")}" />
+              <input data-field="bgColor" value="${escapeAttr(state.spec.bgColor ?? "#000000")}" />
+            </span>
           </label>
           <div class="divider"></div>
           ${addElementPalette()}
@@ -568,7 +580,7 @@ function mountKonvaPreview() {
     y: 0,
     width: DISPLAY_SIZE,
     height: DISPLAY_SIZE,
-    fill: "#000000",
+    fill: state.spec.bgColor ?? "#000000",
     listening: false,
   }));
 
@@ -708,13 +720,6 @@ function textKonvaGroup(primitive: Primitive, index: number): Konva.Group {
     width,
     height,
   });
-  group.add(new Konva.Rect({
-    x: 0,
-    y: 0,
-    width,
-    height,
-    fill: "rgba(0,0,0,0)",
-  }));
   const textNode = new Konva.Text({
     x: 0,
     y: 0,
@@ -729,7 +734,16 @@ function textKonvaGroup(primitive: Primitive, index: number): Konva.Group {
   if (measuredWidth > 0) {
     textNode.scaleX(width / measuredWidth);
   }
-  group.add(textNode);
+  const previewCanvas = textPreviewCanvas(primitive, text, width, height, fontSize, textNode.fontFamily(), textNode.fontStyle());
+  group.add(new Konva.Image({
+    x: 0,
+    y: 0,
+    width,
+    height,
+    image: previewCanvas,
+    imageSmoothingEnabled: false,
+    listening: false,
+  }));
   return group;
 }
 
@@ -1114,10 +1128,7 @@ function textWidthFromTable(text: string, widths: number[]): number {
 
 function previewFontFamily(fontValue: number | undefined, fallbackFamily: string): string {
   const font = fontOptionFor(fontValue);
-  if (font.value === 1 || font.value === 2) {
-    return "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-  }
-  return fallbackFamily;
+  return font.value === 1 || font.value === 2 ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" : fallbackFamily;
 }
 
 function measureKonvaTextWidth(text: string, fontSize: number, family: string, style: string): number {
@@ -1126,6 +1137,40 @@ function measureKonvaTextWidth(text: string, fontSize: number, family: string, s
   }
   textMeasureContext.font = `${style} ${fontSize}px ${family}`;
   return textMeasureContext.measureText(text).width;
+}
+
+function textPreviewCanvas(
+  primitive: Primitive,
+  text: string,
+  width: number,
+  height: number,
+  fontSize: number,
+  family: string,
+  style: string,
+): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil(width));
+  canvas.height = Math.max(1, Math.ceil(height));
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return canvas;
+  }
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = primitive.bgColor ?? "#000000";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = primitive.color ?? "#FFFFFF";
+  context.textBaseline = "top";
+  context.font = `${style} ${fontSize}px ${family}`;
+  const measuredWidth = context.measureText(text).width;
+  if (measuredWidth > 0) {
+    context.save();
+    context.scale(width / measuredWidth, 1);
+    context.fillText(text, 0, 0);
+    context.restore();
+    return canvas;
+  }
+  context.fillText(text, 0, 0);
+  return canvas;
 }
 
 function renderTemplate(text: string): string {
@@ -1171,12 +1216,6 @@ function fontSelectOptions(value: number | undefined): string {
 
 function fontWidthFactor(value: number | undefined): number {
   const font = fontOptionFor(value);
-  if (font.value === 3) {
-    return 5.1;
-  }
-  if (font.value === 4) {
-    return 5.9;
-  }
   if (font.value === 2) {
     return 5.8;
   }
@@ -1213,6 +1252,9 @@ function bindEvents() {
       if (key === "targetOrigin") {
         state.targetOrigin = input.value.trim();
         persistTargetOrigin();
+      }
+      if (key === "bgColor") {
+        state.spec.bgColor = input.value.trim();
       }
       syncJsonFromSpec();
       render();

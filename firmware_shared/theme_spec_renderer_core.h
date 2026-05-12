@@ -258,7 +258,8 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     TextCommand cmd;
     cmd.x = x;
     cmd.y = y;
-    cmd.font = primitive["font"] | 1;
+    const int font = primitive["font"] | 1;
+    cmd.font = font == 2 ? 2 : 1;
     cmd.size = primitive["fontSize"] | 1;
     if (cmd.size <= 0) {
       return false;
@@ -326,7 +327,7 @@ inline bool RenderThemeSpec(const char* themeSpecRaw, const FrameData& frame, Si
     return false;
   }
 
-  sink.FillScreen(0x0000);
+  sink.FillScreen(ParseColor(JsonStringOrNull(doc["bgColor"]), 0x0000));
   for (JsonObjectConst primitive : primitives) {
     (void)DrawPrimitive(primitive, frame, sink);
   }
