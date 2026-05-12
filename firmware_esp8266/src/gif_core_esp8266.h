@@ -38,6 +38,8 @@ struct GifPlaybackRequest {
   int y = 0;
   int width = 0;
   int height = 0;
+  bool hasBackgroundColor = false;
+  uint16_t backgroundColor = 0x0000;
 };
 
 struct GifCoreStatusSnapshot {
@@ -111,6 +113,8 @@ class GifCoreESP8266 {
   int drawY_ = 0;
   int drawWidth_ = 0;
   int drawHeight_ = 0;
+  bool hasBackgroundColor_ = false;
+  uint16_t backgroundColor_ = 0x0000;
   String assetPath_ = "";
   String lastErrorPath_ = "";
   String lastErrorStage_ = "";

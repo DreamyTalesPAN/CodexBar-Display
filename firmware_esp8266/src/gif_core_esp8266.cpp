@@ -47,6 +47,8 @@ void GifCoreESP8266::Stop() {
   gifHeight_ = 0;
   drawWidth_ = 0;
   drawHeight_ = 0;
+  hasBackgroundColor_ = false;
+  backgroundColor_ = 0x0000;
 }
 
 void GifCoreESP8266::ResetFrameSchedule() {
@@ -218,6 +220,8 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
   }
 
   tft_ = &tft;
+  hasBackgroundColor_ = request.hasBackgroundColor;
+  backgroundColor_ = request.backgroundColor;
 
   const String requestPath(request.assetPath);
   if (GifCorePolicy::RequestChanged(
@@ -486,13 +490,17 @@ void GifCoreESP8266::DrawCallbackImpl(GIFDRAW* draw) {
     return;
   }
 
-  if (draw->ucDisposalMethod == 2) {
+  const bool restoreTransparentToBackground =
+      draw->ucHasTransparency && draw->ucDisposalMethod == 2 && hasBackgroundColor_;
+
+  if (restoreTransparentToBackground) {
+    const uint8_t transparent = draw->ucTransparent;
     for (int i = 0; i < lineWidth; ++i) {
-      if (src[i] == draw->ucTransparent) {
-        src[i] = draw->ucBackground;
-      }
+      lineBuffer_[i] = src[i] == transparent ? backgroundColor_ : palette[src[i]];
     }
-    draw->ucHasTransparency = 0;
+    tft_->setAddrWindow(outX, outY, lineWidth, 1);
+    tft_->pushPixels(lineBuffer_, lineWidth);
+    return;
   }
 
   if (draw->ucHasTransparency) {
@@ -550,15 +558,6 @@ void GifCoreESP8266::DrawScaledCallbackImpl(GIFDRAW* draw) {
     return;
   }
 
-  if (draw->ucDisposalMethod == 2) {
-    for (int i = 0; i < sourceWidth; ++i) {
-      if (src[i] == draw->ucTransparent) {
-        src[i] = draw->ucBackground;
-      }
-    }
-    draw->ucHasTransparency = 0;
-  }
-
   const int sourceY = draw->iY + draw->y;
   int outYStart = drawY_ + ((sourceY * drawHeight_) / gifHeight_);
   int outYEnd = drawY_ + (((sourceY + 1) * drawHeight_ + gifHeight_ - 1) / gifHeight_);
@@ -568,6 +567,7 @@ void GifCoreESP8266::DrawScaledCallbackImpl(GIFDRAW* draw) {
 
   const bool transparent = draw->ucHasTransparency != 0;
   const uint8_t transparentIndex = draw->ucTransparent;
+  const bool restoreTransparentToBackground = transparent && draw->ucDisposalMethod == 2 && hasBackgroundColor_;
 
   for (int outY = outYStart; outY < outYEnd; ++outY) {
     if (outY < 0 || outY >= tft_->height()) {
@@ -580,12 +580,13 @@ void GifCoreESP8266::DrawScaledCallbackImpl(GIFDRAW* draw) {
       const int outX = drawX_ + outRelX;
       const int sourceX = (outRelX * gifWidth_) / drawWidth_;
       const int sourceOffset = sourceX - draw->iX;
+      const bool sourceInside = sourceOffset >= 0 && sourceOffset < sourceWidth;
+      const bool sourceTransparent = sourceInside && transparent && src[sourceOffset] == transparentIndex;
       const bool visible =
           outX >= 0 &&
           outX < tft_->width() &&
-          sourceOffset >= 0 &&
-          sourceOffset < sourceWidth &&
-          (!transparent || src[sourceOffset] != transparentIndex);
+          sourceInside &&
+          (!sourceTransparent || restoreTransparentToBackground);
 
       if (!visible) {
         if (runLength > 0) {
@@ -599,7 +600,7 @@ void GifCoreESP8266::DrawScaledCallbackImpl(GIFDRAW* draw) {
       if (runLength == 0) {
         runStartX = outX;
       }
-      lineBuffer_[runLength++] = palette[src[sourceOffset]];
+      lineBuffer_[runLength++] = sourceTransparent ? backgroundColor_ : palette[src[sourceOffset]];
       if (runLength == kMaxLinePixels) {
         tft_->setAddrWindow(runStartX, outY, runLength, 1);
         tft_->pushPixels(lineBuffer_, runLength);

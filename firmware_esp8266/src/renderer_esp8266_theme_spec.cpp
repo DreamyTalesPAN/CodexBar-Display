@@ -21,6 +21,8 @@ class ThemeSpecSink final : public themespec::Sink {
   explicit ThemeSpecSink(bool forceGifFrame) : forceGifFrame_(forceGifFrame) {}
 
   void FillScreen(uint16_t color) override {
+    backgroundColor_ = color;
+    hasBackgroundColor_ = true;
     PrimitiveFillScreen(color);
   }
 
@@ -64,6 +66,8 @@ class ThemeSpecSink final : public themespec::Sink {
     request.y = cmd.y;
     request.width = cmd.width;
     request.height = cmd.height;
+    request.hasBackgroundColor = hasBackgroundColor_;
+    request.backgroundColor = backgroundColor_;
     (void)GifCore().Tick(Tft(), request, forceGifFrame_);
   }
 
@@ -85,6 +89,8 @@ class ThemeSpecSink final : public themespec::Sink {
 
  private:
   bool forceGifFrame_ = false;
+  bool hasBackgroundColor_ = false;
+  uint16_t backgroundColor_ = 0x0000;
 };
 
 const char* usageModeText() {
