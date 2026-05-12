@@ -20,6 +20,7 @@ enum class GifLayoutMode : uint8_t {
   FullscreenCenter,
   FullscreenCenterLower,
   TopRightOverlay,
+  Explicit,
 };
 
 enum class GifFailureSlot : uint8_t {
@@ -33,6 +34,10 @@ struct GifPlaybackRequest {
   const char* assetPath = nullptr;
   GifLayoutMode layoutMode = GifLayoutMode::BottomRightMini;
   GifFailureSlot failureSlot = GifFailureSlot::MiniTheme;
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
 };
 
 struct GifCoreStatusSnapshot {
@@ -87,8 +92,10 @@ class GifCoreESP8266 {
 
   bool ReadGifDimensions(const char* path, int& width, int& height);
   bool EnsureStorage(const char* path);
+  void ConfigureDrawRect(TFT_eSPI& tft, const GifPlaybackRequest& request);
   bool EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& request);
   bool PlayFrame(TFT_eSPI& tft, bool forceFrame);
+  void DrawScaledCallbackImpl(GIFDRAW* draw);
 
   AnimatedGIF decoder_;
   File file_;
@@ -102,6 +109,8 @@ class GifCoreESP8266 {
   int gifHeight_ = 0;
   int drawX_ = 0;
   int drawY_ = 0;
+  int drawWidth_ = 0;
+  int drawHeight_ = 0;
   String assetPath_ = "";
   String lastErrorPath_ = "";
   String lastErrorStage_ = "";

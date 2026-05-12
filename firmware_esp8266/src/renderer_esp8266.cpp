@@ -356,6 +356,10 @@ void RendererESP8266::DrawConnectedSetupInstructions(
 void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
+  if (display::CurrentFrame().hasThemeSpec) {
+    (void)display::TickThemeSpecGifs();
+    return;
+  }
   display::TickMiniGif(false);
 #else
   (void)ctx;

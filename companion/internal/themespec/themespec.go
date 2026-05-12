@@ -27,15 +27,17 @@ var (
 )
 
 type Primitive struct {
-	Type     string `json:"type"`
-	X        int    `json:"x,omitempty"`
-	Y        int    `json:"y,omitempty"`
-	Width    int    `json:"width,omitempty"`
-	Height   int    `json:"height,omitempty"`
-	Text     string `json:"text,omitempty"`
-	FontSize int    `json:"fontSize,omitempty"`
-	Color    string `json:"color,omitempty"`
-	BgColor  string `json:"bgColor,omitempty"`
+	Type      string `json:"type"`
+	X         int    `json:"x,omitempty"`
+	Y         int    `json:"y,omitempty"`
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Binding   string `json:"binding,omitempty"`
+	FontSize  int    `json:"fontSize,omitempty"`
+	Color     string `json:"color,omitempty"`
+	BgColor   string `json:"bgColor,omitempty"`
+	AssetPath string `json:"assetPath,omitempty"`
 }
 
 type Spec struct {
@@ -122,8 +124,10 @@ func normalizeSpec(spec Spec) Spec {
 	spec.FallbackTheme = strings.TrimSpace(strings.ToLower(spec.FallbackTheme))
 	for i := range spec.Primitives {
 		spec.Primitives[i].Type = strings.TrimSpace(strings.ToLower(spec.Primitives[i].Type))
+		spec.Primitives[i].Binding = strings.TrimSpace(spec.Primitives[i].Binding)
 		spec.Primitives[i].Color = strings.TrimSpace(spec.Primitives[i].Color)
 		spec.Primitives[i].BgColor = strings.TrimSpace(spec.Primitives[i].BgColor)
+		spec.Primitives[i].AssetPath = strings.TrimSpace(spec.Primitives[i].AssetPath)
 	}
 	return spec
 }
@@ -131,12 +135,19 @@ func normalizeSpec(spec Spec) Spec {
 func validatePrimitive(p Primitive) error {
 	switch p.Type {
 	case "text":
-		if strings.TrimSpace(p.Text) == "" {
-			return errors.New("text primitive requires non-empty text")
+		if strings.TrimSpace(p.Text) == "" && strings.TrimSpace(p.Binding) == "" {
+			return errors.New("text primitive requires non-empty text or binding")
 		}
 	case "rect", "progress":
 		if p.Width <= 0 || p.Height <= 0 {
 			return errors.New("rect/progress primitive requires width/height > 0")
+		}
+	case "gif":
+		if p.Width <= 0 || p.Height <= 0 {
+			return errors.New("gif primitive requires width/height > 0")
+		}
+		if !isSafeThemeAssetPath(p.AssetPath) {
+			return errors.New("gif primitive requires assetPath under /themes/")
 		}
 	default:
 		return fmt.Errorf("%w: %s", errUnknownPrimitive, p.Type)
@@ -155,6 +166,14 @@ func validatePrimitive(p Primitive) error {
 		return errUnsupportedColor
 	}
 	return nil
+}
+
+func isSafeThemeAssetPath(path string) bool {
+	path = strings.TrimSpace(path)
+	return strings.HasPrefix(path, "/themes/") &&
+		!strings.Contains(path, "..") &&
+		!strings.Contains(path, "\\") &&
+		!strings.HasSuffix(path, "/")
 }
 
 func containsString(values []string, candidate string) bool {

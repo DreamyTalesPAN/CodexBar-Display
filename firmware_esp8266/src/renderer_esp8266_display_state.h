@@ -130,6 +130,7 @@ void DrawUsageCRT();
 void DrawResetCRT(int64_t remainSecs);
 
 bool DrawThemeSpecUsage();
+bool TickThemeSpecGifs();
 
 const char* MiniGifAssetPath();
 void ResetMiniGifFrameSchedule();

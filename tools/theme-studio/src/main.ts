@@ -7,8 +7,9 @@ const COLOR_RE = /^#[A-Fa-f0-9]{6}$/;
 const THEME_ID_RE = /^[a-z0-9][a-z0-9\-_]{2,63}$/;
 const FIXED_THEME_REV = 1;
 const FIXED_FALLBACK_THEME = "mini";
+const DEFAULT_TARGET_ORIGIN = "http://vibetv.local";
 
-type PrimitiveType = "rect" | "text" | "progress";
+type PrimitiveType = "rect" | "text" | "progress" | "gif";
 type ResizeHandle = "e" | "s" | "se";
 type BindingKey =
   | "label"
@@ -37,6 +38,8 @@ interface Primitive {
   color?: string;
   bgColor?: string;
   borderColor?: string;
+  rotation?: number;
+  assetPath?: string;
 }
 
 interface ThemeSpec {
@@ -53,6 +56,7 @@ interface FrameData {
   session: number;
   weekly: number;
   reset: string;
+  resetSecs: number;
   usageMode: string;
   sessionTokens: number;
   weekTokens: number;
@@ -62,6 +66,10 @@ interface FrameData {
 interface AppState {
   spec: ThemeSpec;
   selectedIndex: number;
+  hoveredIndex: number | null;
+  editingTextIndex: number | null;
+  copiedPrimitive: Primitive | null;
+  gifAssets: Record<string, { file: File; previewUrl: string }>;
   jsonText: string;
   jsonDirty: boolean;
   errors: string[];
@@ -75,24 +83,48 @@ const frame: FrameData = {
   session: 94,
   weekly: 87,
   reset: "89h 54m",
+  resetSecs: 323640,
   usageMode: "remaining",
   sessionTokens: 12840,
   weekTokens: 68120,
   totalTokens: 190420,
 };
 
+const variableTokens = [
+  { label: "Name", token: "{label}", preview: frame.label },
+  { label: "Session", token: "{session}%", preview: `${frame.session}%` },
+  { label: "Weekly", token: "{weekly}%", preview: `${frame.weekly}%` },
+  { label: "Reset", token: "{reset}", preview: frame.reset },
+  { label: "Mode", token: "{usageMode}", preview: frame.usageMode },
+  { label: "Session tokens", token: "{sessionTokens}", preview: String(frame.sessionTokens) },
+  { label: "Week tokens", token: "{weekTokens}", preview: String(frame.weekTokens) },
+  { label: "Total tokens", token: "{totalTokens}", preview: String(frame.totalTokens) },
+];
+
+const fontOptions = [
+  { value: 1, label: "Mono", family: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", weight: 800 },
+  { value: 2, label: "Sans", family: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", weight: 800 },
+  { value: 3, label: "Serif", family: "Georgia, Times New Roman, serif", weight: 700 },
+  { value: 4, label: "Display", family: "Impact, Haettenschweiler, Arial Narrow Bold, sans-serif", weight: 700 },
+];
+
+const fallbackFont = fontOptions[0];
+
 const initialSpec: ThemeSpec = {
   themeSpecVersion: 1,
-  themeId: "mini-transport",
+  themeId: "mini-classic",
   themeRev: FIXED_THEME_REV,
   fallbackTheme: FIXED_FALLBACK_THEME,
   primitives: [
-    { type: "rect", x: 0, y: 0, width: 240, height: 240, color: "#04070E" },
-    { type: "text", x: 14, y: 18, text: "Codex", fontSize: 2, color: "#E9F2FF", bgColor: "#04070E" },
-    { type: "text", x: 14, y: 54, text: "Session", fontSize: 1, color: "#AAB6C7", bgColor: "#04070E" },
-    { type: "text", x: 14, y: 76, text: "{session}%", fontSize: 4, color: "#C7FF68", bgColor: "#04070E" },
-    { type: "progress", x: 14, y: 176, width: 212, height: 18, binding: "weekly", color: "#A7FFC9", bgColor: "#1E2738", borderColor: "#526078" },
-    { type: "text", x: 14, y: 206, text: "Reset {reset}", fontSize: 1, color: "#B8C2D1", bgColor: "#04070E" },
+    { type: "text", x: 75, y: 4, binding: "label", fontSize: 3, color: "#999999" },
+    { type: "text", x: 7, y: 30, text: "Session", font: 2, fontSize: 2, color: "#999999" },
+    { type: "text", x: 7, y: 66, text: "{session}%", fontSize: 5, color: "#CCFF00" },
+    { type: "text", x: 31, y: 106, binding: "usageMode", font: 2, fontSize: 1, color: "#999999" },
+    { type: "text", x: 129, y: 30, text: "Weekly", font: 2, fontSize: 2, color: "#999999" },
+    { type: "text", x: 134, y: 66, text: "{weekly}%", fontSize: 5, color: "#CCFF00" },
+    { type: "text", x: 151, y: 106, binding: "usageMode", font: 2, fontSize: 1, color: "#999999" },
+    { type: "gif", x: 80, y: 115, width: 80, height: 80, assetPath: "/themes/mini/mini.gif" },
+    { type: "text", x: 42, y: 209, text: "Reset {reset}", fontSize: 2, color: "#999999" },
   ],
 };
 
@@ -104,7 +136,11 @@ const app = appRoot;
 
 const state: AppState = {
   spec: cloneSpec(initialSpec),
-  selectedIndex: 1,
+  selectedIndex: -1,
+  hoveredIndex: null,
+  editingTextIndex: null,
+  copiedPrimitive: null,
+  gifAssets: {},
   jsonText: "",
   jsonDirty: false,
   errors: [],
@@ -113,6 +149,7 @@ const state: AppState = {
 };
 syncJsonFromSpec();
 render();
+window.addEventListener("keydown", handleGlobalKeydown);
 
 function cloneSpec(spec: ThemeSpec): ThemeSpec {
   return JSON.parse(JSON.stringify(spec)) as ThemeSpec;
@@ -165,8 +202,8 @@ function validateCurrentSpec() {
 
   spec.primitives.forEach((primitive, index) => {
     const prefix = `Primitive ${index + 1}`;
-    if (!["rect", "text", "progress"].includes(primitive.type)) {
-      errors.push(`${prefix}: type muss rect, text oder progress sein.`);
+    if (!["rect", "text", "progress", "gif"].includes(primitive.type)) {
+      errors.push(`${prefix}: type muss rect, text, progress oder gif sein.`);
     }
     if (!isNonNegativeInteger(primitive.x) || !isNonNegativeInteger(primitive.y)) {
       errors.push(`${prefix}: x/y müssen ganze Zahlen ab 0 sein.`);
@@ -178,8 +215,8 @@ function validateCurrentSpec() {
       }
     }
     if (primitive.type === "text") {
-      if (!primitive.text || primitive.text.trim() === "") {
-        errors.push(`${prefix}: text darf nicht leer sein.`);
+      if ((!primitive.text || primitive.text.trim() === "") && !primitive.binding) {
+        errors.push(`${prefix}: text oder binding ist erforderlich.`);
       }
       if (primitive.fontSize !== undefined && (!Number.isInteger(primitive.fontSize) || primitive.fontSize < 1)) {
         errors.push(`${prefix}: fontSize sollte mindestens 1 sein.`);
@@ -188,6 +225,14 @@ function validateCurrentSpec() {
     if (primitive.type === "rect" || primitive.type === "progress") {
       if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
         errors.push(`${prefix}: width/height müssen größer als 0 sein.`);
+      }
+    }
+    if (primitive.type === "gif") {
+      if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
+        errors.push(`${prefix}: width/height müssen größer als 0 sein.`);
+      }
+      if (!primitive.assetPath || !primitive.assetPath.startsWith("/themes/")) {
+        errors.push(`${prefix}: assetPath muss unter /themes/... liegen.`);
       }
     }
     const width = primitive.width ?? estimatePrimitiveWidth(primitive);
@@ -222,10 +267,7 @@ function render() {
   app.innerHTML = `
     <section class="studio-shell">
       <header class="appbar">
-        <div>
-          <div class="eyebrow">Vibe TV</div>
-          <h1>Theme Studio</h1>
-        </div>
+        <h1>Theme Studio</h1>
         <div class="status-strip">
           ${metric("Bytes", bytes, MAX_SPEC_BYTES)}
           ${metric("Primitives", state.spec.primitives.length, MAX_PRIMITIVES)}
@@ -235,23 +277,20 @@ function render() {
 
       <section class="workspace">
         <aside class="panel left-panel">
-          <div class="panel-head">
+          <div class="panel-head theme-head">
             <h2>Theme</h2>
-            <button class="icon-button" data-action="reset" title="Reset sample">Reset</button>
+            <input class="theme-name-input" data-field="themeId" aria-label="Theme name" value="${escapeAttr(state.spec.themeId)}" />
           </div>
-          ${themeFields()}
           <div class="divider"></div>
-          <div class="panel-head compact">
-            <h2>Elements</h2>
-            <div class="segmented">
-              <button data-action="add-rect" title="Add rectangle">Rect</button>
-              <button data-action="add-text" title="Add text">Text</button>
-              <button data-action="add-progress" title="Add progress">Bar</button>
-            </div>
-          </div>
+          ${addElementPalette()}
+          <div class="divider"></div>
+          ${variableGuide()}
+          <div class="divider"></div>
+          <h2 class="section-title">Elements</h2>
           <div class="primitive-list">
             ${state.spec.primitives.map((primitive, index) => primitiveRow(primitive, index)).join("")}
           </div>
+          <input class="hidden-file-input" data-role="gif-input" type="file" accept="image/gif,.gif" />
         </aside>
 
         <section class="preview-column">
@@ -259,31 +298,33 @@ function render() {
             ${renderPreview()}
           </div>
           <div class="preview-actions">
+            <button class="primary-action" data-action="send-theme" ${state.errors.length ? "disabled" : ""}>Send to Vibe TV</button>
+            <button data-action="download-json">Save Theme</button>
             <button data-action="copy-json">Copy JSON</button>
-            <button data-action="download-json">Download</button>
-            <button data-action="copy-validate">Copy validate command</button>
           </div>
           ${messageList()}
         </section>
 
         <aside class="panel right-panel">
-          <div class="panel-head">
-            <h2>${selected ? `${selected.type} ${state.selectedIndex + 1}` : "Inspector"}</h2>
-            ${selected ? `<button class="danger-button" data-action="delete-selected">Delete</button>` : ""}
-          </div>
-          ${selected ? inspectorFields(selected) : `<p class="empty">Select an element.</p>`}
-          <div class="divider"></div>
-          <div class="panel-head compact">
-            <h2>JSON</h2>
-            <button data-action="apply-json">Apply JSON</button>
-          </div>
-          <textarea class="json-editor" spellcheck="false" data-role="json-editor">${escapeHtml(state.jsonText)}</textarea>
+          <details class="inspector-panel" open>
+            <summary>${selected ? `${selected.type} ${state.selectedIndex + 1}` : "Inspector"}</summary>
+            ${selected ? `<button class="danger-button full-width" data-action="delete-selected">Delete</button>${inspectorFields(selected)}` : `<p class="empty">Select an element.</p>`}
+          </details>
+          <details class="advanced-panel">
+            <summary>Advanced JSON</summary>
+            <div class="panel-head compact">
+              <h2>Theme JSON</h2>
+              <button data-action="apply-json">Apply JSON</button>
+            </div>
+            <textarea class="json-editor" spellcheck="false" data-role="json-editor">${escapeHtml(state.jsonText)}</textarea>
+          </details>
         </aside>
       </section>
     </section>
   `;
 
   bindEvents();
+  focusInlineTextEditor();
 }
 
 function metric(label: string, value: number, max: number): string {
@@ -291,14 +332,51 @@ function metric(label: string, value: number, max: number): string {
   return `<span class="metric ${over ? "bad" : ""}"><b>${value}</b><small>${label} / ${max}</small></span>`;
 }
 
-function themeFields(): string {
+function addElementPalette(): string {
   return `
-    <label>Theme Name<input data-field="themeId" value="${escapeAttr(state.spec.themeId)}" /></label>
+    <section class="add-elements">
+      <h2 class="section-title">Add Element</h2>
+      <div class="add-card-grid">
+        <button class="add-card" data-action="add-text">
+          <span class="add-icon text-icon">T</span>
+          <strong>Text</strong>
+        </button>
+        <button class="add-card" data-action="add-progress">
+          <span class="add-icon bar-icon"><i></i></span>
+          <strong>Bar</strong>
+        </button>
+        <button class="add-card" data-action="add-rect">
+          <span class="add-icon rect-icon"></span>
+          <strong>Rect</strong>
+        </button>
+        <button class="add-card" data-action="add-gif">
+          <span class="add-icon gif-icon">GIF</span>
+          <strong>GIF</strong>
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+function variableGuide(): string {
+  return `
+    <section class="variable-guide">
+      <h2 class="section-title">Variables</h2>
+      <div class="token-grid">
+        ${variableTokens.map((item) => `
+          <button class="token-chip" data-insert-token="${escapeAttr(item.token)}" title="Insert ${escapeAttr(item.token)}">
+            <strong>${escapeHtml(item.label)}</strong>
+            <code>${escapeHtml(item.token)}</code>
+            <span>${escapeHtml(item.preview)}</span>
+          </button>
+        `).join("")}
+      </div>
+    </section>
   `;
 }
 
 function primitiveRow(primitive: Primitive, index: number): string {
-  const title = primitive.type === "text" ? primitive.text || "Text" : primitive.type === "progress" ? primitive.binding || "session" : primitive.color || "Rect";
+  const title = primitiveTitle(primitive);
   return `
     <button class="primitive-row ${index === state.selectedIndex ? "selected" : ""}" data-select="${index}">
       <span>${index + 1}</span>
@@ -308,12 +386,26 @@ function primitiveRow(primitive: Primitive, index: number): string {
   `;
 }
 
+function primitiveTitle(primitive: Primitive): string {
+  if (primitive.type === "text") {
+    return primitive.text || primitive.binding || "Text";
+  }
+  if (primitive.type === "progress") {
+    return primitive.binding || "session";
+  }
+  if (primitive.type === "gif") {
+    return primitive.assetPath?.split("/").pop() || "GIF";
+  }
+  return primitive.color || "Rect";
+}
+
 function inspectorFields(primitive: Primitive): string {
   const common = `
     <div class="field-grid">
       <label>X<input type="number" min="0" step="1" data-primitive-field="x" value="${primitive.x}" /></label>
       <label>Y<input type="number" min="0" step="1" data-primitive-field="y" value="${primitive.y}" /></label>
     </div>
+    <label>Rotation<input type="number" min="0" max="359" step="1" data-primitive-field="rotation" value="${primitive.rotation ?? 0}" /></label>
   `;
 
   if (primitive.type === "text") {
@@ -321,7 +413,11 @@ function inspectorFields(primitive: Primitive): string {
       ${common}
       <label>Text<input data-primitive-field="text" value="${escapeAttr(primitive.text ?? "")}" /></label>
       <div class="field-grid">
-        <label>Font<input type="number" min="1" step="1" data-primitive-field="font" value="${primitive.font ?? 1}" /></label>
+        <label>Font
+          <select data-primitive-field="font">
+            ${fontSelectOptions(primitive.font)}
+          </select>
+        </label>
         <label>Size<input type="number" min="1" step="1" data-primitive-field="fontSize" value="${primitive.fontSize ?? 1}" /></label>
       </div>
       ${colorField("Color", "color", primitive.color ?? "#FFFFFF")}
@@ -344,6 +440,17 @@ function inspectorFields(primitive: Primitive): string {
       ${colorField("Fill", "color", primitive.color ?? "#FFFFFF")}
       ${colorField("Track", "bgColor", primitive.bgColor ?? "#000000")}
       ${colorField("Border", "borderColor", primitive.borderColor ?? "#7B7B7B")}
+    `;
+  }
+
+  if (primitive.type === "gif") {
+    return `
+      ${common}
+      <label>Asset<input data-primitive-field="assetPath" value="${escapeAttr(primitive.assetPath ?? "")}" /></label>
+      <div class="field-grid">
+        <label>Width<input type="number" min="1" step="1" data-primitive-field="width" value="${primitive.width ?? 64}" /></label>
+        <label>Height<input type="number" min="1" step="1" data-primitive-field="height" value="${primitive.height ?? 64}" /></label>
+      </div>
     `;
   }
 
@@ -379,12 +486,16 @@ function renderPreview(): string {
 
 function renderPrimitive(primitive: Primitive, index: number): string {
   const selected = index === state.selectedIndex;
-  const handle = selected ? selectionHandle(primitive, index) : "";
+  const active = selected || index === state.hoveredIndex;
+  const handle = active ? selectionHandle(primitive, index) : "";
   const hitTarget = primitiveHitTarget(primitive, index);
+  const transform = rotationTransform(primitive);
   if (primitive.type === "rect") {
     return `
-      <rect class="${selected ? "selected-shape" : ""}" x="${primitive.x}" y="${primitive.y}" width="${primitive.width ?? 1}" height="${primitive.height ?? 1}" fill="${escapeAttr(primitive.color ?? "#000000")}"></rect>
-      ${hitTarget}
+      <g${transform}>
+        <rect class="${selected ? "selected-shape" : ""}" x="${primitive.x}" y="${primitive.y}" width="${primitive.width ?? 1}" height="${primitive.height ?? 1}" fill="${escapeAttr(primitive.color ?? "#000000")}"></rect>
+        ${hitTarget}
+      </g>
       ${handle}
     `;
   }
@@ -394,20 +505,52 @@ function renderPrimitive(primitive: Primitive, index: number): string {
     const pct = primitive.binding === "weekly" || primitive.binding === "weeklyPercent" ? frame.weekly : frame.session;
     const fillWidth = Math.max(0, Math.min(width, Math.round((width * pct) / 100)));
     return `
-      <rect x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}" fill="${escapeAttr(primitive.bgColor ?? "#000000")}" stroke="${escapeAttr(primitive.borderColor ?? "#7B7B7B")}" stroke-width="1"></rect>
-      <rect x="${primitive.x + 2}" y="${primitive.y + 2}" width="${Math.max(0, fillWidth - 4)}" height="${Math.max(0, height - 4)}" fill="${escapeAttr(primitive.color ?? "#FFFFFF")}"></rect>
-      ${hitTarget}
+      <g${transform}>
+        <rect x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}" fill="${escapeAttr(primitive.bgColor ?? "#000000")}" stroke="${escapeAttr(primitive.borderColor ?? "#7B7B7B")}" stroke-width="1"></rect>
+        <rect x="${primitive.x + 2}" y="${primitive.y + 2}" width="${Math.max(0, fillWidth - 4)}" height="${Math.max(0, height - 4)}" fill="${escapeAttr(primitive.color ?? "#FFFFFF")}"></rect>
+        ${hitTarget}
+      </g>
+      ${handle}
+    `;
+  }
+  if (primitive.type === "gif") {
+    const width = primitive.width ?? 64;
+    const height = primitive.height ?? 64;
+    const previewUrl = primitive.assetPath ? state.gifAssets[primitive.assetPath]?.previewUrl ?? builtInGifPreviewUrl(primitive.assetPath) : undefined;
+    const placeholder = `
+      <rect x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}" fill="#141922" stroke="#c7ff68" stroke-width="1" stroke-dasharray="4 3"></rect>
+      <text x="${primitive.x + width / 2}" y="${primitive.y + height / 2 + 4}" text-anchor="middle" font-size="12" fill="#c7ff68" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-weight="800">GIF</text>
+    `;
+    return `
+      <g${transform}>
+        ${previewUrl ? `<image href="${escapeAttr(previewUrl)}" x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet"></image>` : placeholder}
+        ${hitTarget}
+      </g>
       ${handle}
     `;
   }
 
-  const size = Math.max(1, primitive.fontSize ?? 1);
-  const fontPx = size * 9;
-  const text = renderTemplate(primitive.text ?? "");
+  const fontPx = textPixelSize(primitive);
+  const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
+  const isEditing = state.editingTextIndex === index;
+  const font = fontOptionFor(primitive.font);
   return `
-    <text class="preview-text ${selected ? "selected-text" : ""}" x="${primitive.x}" y="${primitive.y + fontPx}" font-size="${fontPx}" fill="${escapeAttr(primitive.color ?? "#FFFFFF")}" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-weight="800">${escapeHtml(text)}</text>
-    ${hitTarget}
+    <g${transform}>
+      ${isEditing ? inlineTextEditor(primitive, index) : `<text class="preview-text ${selected ? "selected-text" : ""}" x="${primitive.x}" y="${primitive.y}" dominant-baseline="hanging" font-size="${fontPx}" fill="${escapeAttr(primitive.color ?? "#FFFFFF")}" font-family="${escapeAttr(font.family)}" font-weight="${font.weight}">${escapeHtml(text)}</text>`}
+      ${isEditing ? "" : hitTarget}
+    </g>
     ${handle}
+  `;
+}
+
+function inlineTextEditor(primitive: Primitive, index: number): string {
+  const width = Math.min(DISPLAY_SIZE - primitive.x, Math.max(42, estimatePrimitiveWidth(primitive) + 10));
+  const height = Math.max(18, estimatePrimitiveHeight(primitive) + 6);
+  const font = fontOptionFor(primitive.font);
+  return `
+    <foreignObject class="inline-text-editor" x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}">
+      <input xmlns="http://www.w3.org/1999/xhtml" style="font-family:${escapeAttr(font.family)};font-weight:${font.weight}" data-inline-text="${index}" value="${escapeAttr(primitive.text ?? "")}" />
+    </foreignObject>
   `;
 }
 
@@ -428,7 +571,87 @@ function selectionHandle(primitive: Primitive, index: number): string {
         resizeHandle(index, "s", primitive.x + width / 2, primitive.y + height),
         resizeHandle(index, "se", primitive.x + width, primitive.y + height),
       ].join("");
-  return `${box}${handles}`;
+  return `<g${rotationTransform(primitive)}>${box}${handles}</g>${canvasToolbar(primitive)}`;
+}
+
+function canvasToolbar(primitive: Primitive): string {
+  const width = primitive.type === "text" ? 128 : primitive.type === "progress" ? 110 : primitive.type === "gif" ? 48 : 74;
+  const height = 22;
+  const x = clamp(primitive.x, 0, Math.max(0, DISPLAY_SIZE - width));
+  const y = primitive.y > height + 4 ? primitive.y - height - 4 : primitive.y + estimatePrimitiveHeight(primitive) + 6;
+
+  if (primitive.type === "text") {
+    return `
+      <foreignObject class="canvas-toolbar" x="${x}" y="${clamp(y, 0, DISPLAY_SIZE - height)}" width="${width}" height="${height}">
+        <div xmlns="http://www.w3.org/1999/xhtml" class="canvas-toolbar-inner">
+          ${rotationControls(primitive)}
+          <span class="toolbar-separator"></span>
+          <button class="toolbar-icon" data-font-size-delta="-1" title="Smaller text" aria-label="Smaller text">A-</button>
+          <button class="toolbar-icon" data-font-size-delta="1" title="Bigger text" aria-label="Bigger text">A+</button>
+          <span class="toolbar-separator"></span>
+          <input data-canvas-field="color" type="color" value="${escapeAttr(primitive.color ?? "#FFFFFF")}" aria-label="Text color" />
+          <input data-canvas-field="bgColor" type="color" value="${escapeAttr(primitive.bgColor ?? "#000000")}" aria-label="Text background" />
+        </div>
+      </foreignObject>
+    `;
+  }
+
+  if (primitive.type === "progress") {
+    return `
+      <foreignObject class="canvas-toolbar" x="${x}" y="${clamp(y, 0, DISPLAY_SIZE - height)}" width="${width}" height="${height}">
+        <div xmlns="http://www.w3.org/1999/xhtml" class="canvas-toolbar-inner">
+          ${rotationControls(primitive)}
+          <span class="toolbar-separator"></span>
+          <input data-canvas-field="color" type="color" value="${escapeAttr(primitive.color ?? "#FFFFFF")}" aria-label="Fill color" />
+          <input data-canvas-field="bgColor" type="color" value="${escapeAttr(primitive.bgColor ?? "#000000")}" aria-label="Track color" />
+          <input data-canvas-field="borderColor" type="color" value="${escapeAttr(primitive.borderColor ?? "#7B7B7B")}" aria-label="Border color" />
+        </div>
+      </foreignObject>
+    `;
+  }
+
+  if (primitive.type === "gif") {
+    return `
+      <foreignObject class="canvas-toolbar" x="${x}" y="${clamp(y, 0, DISPLAY_SIZE - height)}" width="${width}" height="${height}">
+        <div xmlns="http://www.w3.org/1999/xhtml" class="canvas-toolbar-inner">
+          ${rotationControls(primitive)}
+        </div>
+      </foreignObject>
+    `;
+  }
+
+  return `
+    <foreignObject class="canvas-toolbar" x="${x}" y="${clamp(y, 0, DISPLAY_SIZE - height)}" width="${width}" height="${height}">
+      <div xmlns="http://www.w3.org/1999/xhtml" class="canvas-toolbar-inner">
+        ${rotationControls(primitive)}
+        <span class="toolbar-separator"></span>
+        <input data-canvas-field="color" type="color" value="${escapeAttr(primitive.color ?? "#FFFFFF")}" aria-label="Color" />
+      </div>
+    </foreignObject>
+  `;
+}
+
+function rotationControls(primitive: Primitive): string {
+  return `
+    <button class="toolbar-icon" data-rotate-delta="-15" title="Rotate left" aria-label="Rotate left">↶</button>
+    <button class="toolbar-icon" data-rotate-delta="15" title="Rotate right" aria-label="Rotate right">↷</button>
+  `;
+}
+
+function rotationTransform(primitive: Primitive): string {
+  const rotation = normalizeRotation(primitive.rotation ?? 0);
+  if (rotation === 0) {
+    return "";
+  }
+  const center = primitiveCenter(primitive);
+  return ` transform="rotate(${rotation} ${center.x} ${center.y})"`;
+}
+
+function primitiveCenter(primitive: Primitive): { x: number; y: number } {
+  return {
+    x: primitive.x + estimatePrimitiveWidth(primitive) / 2,
+    y: primitive.y + estimatePrimitiveHeight(primitive) / 2,
+  };
 }
 
 function resizeHandle(index: number, handle: ResizeHandle, x: number, y: number): string {
@@ -438,37 +661,81 @@ function resizeHandle(index: number, handle: ResizeHandle, x: number, y: number)
 
 function estimatePrimitiveWidth(primitive: Primitive): number {
   if (primitive.type === "text") {
-    return Math.max(12, Math.round(renderTemplate(primitive.text ?? "").length * Math.max(1, primitive.fontSize ?? 1) * 5.5));
+    const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
+    return Math.max(12, Math.round(text.length * Math.max(1, primitive.fontSize ?? 1) * fontWidthFactor(primitive.font)));
   }
   return primitive.width ?? 1;
 }
 
 function estimatePrimitiveHeight(primitive: Primitive): number {
   if (primitive.type === "text") {
-    return Math.max(8, Math.max(1, primitive.fontSize ?? 1) * 10);
+    return Math.max(8, textPixelSize(primitive));
   }
   return primitive.height ?? 1;
 }
 
+function textPixelSize(primitive: Primitive): number {
+  const size = Math.max(1, primitive.fontSize ?? 1);
+  const font = fontOptionFor(primitive.font);
+  if (font.value === 2) {
+    return size * 10;
+  }
+  return size * 8;
+}
+
 function renderTemplate(text: string): string {
   return text.replace(/\{([a-zA-Z]+)\}/g, (_, key: string) => {
-    const values: Record<string, string> = {
-      label: frame.label,
-      providerLabel: frame.label,
-      provider: frame.provider,
-      session: String(frame.session),
-      sessionPercent: String(frame.session),
-      weekly: String(frame.weekly),
-      weeklyPercent: String(frame.weekly),
-      reset: frame.reset,
-      resetCountdown: frame.reset,
-      usageMode: frame.usageMode,
-      sessionTokens: String(frame.sessionTokens),
-      weekTokens: String(frame.weekTokens),
-      totalTokens: String(frame.totalTokens),
-    };
-    return values[key] ?? "";
+    return bindingValue(key);
   });
+}
+
+function bindingValue(key: string): string {
+  const values: Record<string, string> = {
+    label: frame.label,
+    providerLabel: frame.label,
+    provider: frame.provider,
+    session: String(frame.session),
+    sessionPercent: String(frame.session),
+    weekly: String(frame.weekly),
+    weeklyPercent: String(frame.weekly),
+    reset: frame.reset,
+    resetCountdown: frame.reset,
+    usageMode: frame.usageMode,
+    sessionTokens: String(frame.sessionTokens),
+    weekTokens: String(frame.weekTokens),
+    totalTokens: String(frame.totalTokens),
+  };
+  return values[key] ?? "";
+}
+
+function builtInGifPreviewUrl(assetPath: string): string | undefined {
+  if (assetPath === "/themes/mini/mini.gif") {
+    return assetPath;
+  }
+  return undefined;
+}
+
+function fontOptionFor(value: number | undefined) {
+  return fontOptions.find((font) => font.value === value) ?? fallbackFont;
+}
+
+function fontSelectOptions(value: number | undefined): string {
+  const selectedValue = fontOptionFor(value).value;
+  return fontOptions.map((font) => `<option value="${font.value}" ${font.value === selectedValue ? "selected" : ""}>${font.label}</option>`).join("");
+}
+
+function fontWidthFactor(value: number | undefined): number {
+  const font = fontOptionFor(value);
+  if (font.value === 3) {
+    return 5.1;
+  }
+  if (font.value === 4) {
+    return 5.9;
+  }
+  if (font.value === 2) {
+    return 5.8;
+  }
+  return 6;
 }
 
 function messageList(): string {
@@ -477,7 +744,7 @@ function messageList(): string {
   const warnings = state.warnings.map((msg) => `<li class="warning">${escapeHtml(msg)}</li>`);
   const items = [...notices, ...errors, ...warnings];
   if (items.length === 0) {
-    return `<ul class="messages"><li class="ok-message">Ready for CLI validation.</li></ul>`;
+    return `<ul class="messages"><li class="ok-message">Ready to send to Vibe TV.</li></ul>`;
   }
   return `<ul class="messages">${items.join("")}</ul>`;
 }
@@ -486,6 +753,7 @@ function bindEvents() {
   app.querySelectorAll<HTMLElement>("[data-select]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedIndex = Number(button.dataset.select);
+      state.editingTextIndex = null;
       state.notice = "";
       render();
     });
@@ -505,9 +773,65 @@ function bindEvents() {
   app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-primitive-field]").forEach((input) => {
     input.addEventListener("input", () => {
       updateSelectedPrimitive(input.dataset.primitiveField ?? "", input.value);
+      if (isColorInput(input)) {
+        syncStateWithoutRender();
+        return;
+      }
       syncJsonFromSpec();
       render();
     });
+    input.addEventListener("change", () => {
+      if (!isColorInput(input)) {
+        return;
+      }
+      updateSelectedPrimitive(input.dataset.primitiveField ?? "", input.value);
+      syncJsonFromSpec();
+      render();
+    });
+  });
+
+  app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-canvas-field]").forEach((input) => {
+    input.addEventListener("pointerdown", (event) => event.stopPropagation());
+    input.addEventListener("input", (event) => {
+      event.stopPropagation();
+      updateSelectedPrimitive(input.dataset.canvasField ?? "", input.value);
+      if (isColorInput(input)) {
+        syncStateWithoutRender();
+        return;
+      }
+      syncJsonFromSpec();
+      render();
+    });
+    input.addEventListener("change", (event) => {
+      event.stopPropagation();
+      if (!isColorInput(input)) {
+        return;
+      }
+      updateSelectedPrimitive(input.dataset.canvasField ?? "", input.value);
+      syncJsonFromSpec();
+      render();
+    });
+  });
+
+  app.querySelectorAll<HTMLInputElement>("[data-inline-text]").forEach((input) => {
+    input.addEventListener("pointerdown", (event) => event.stopPropagation());
+    input.addEventListener("input", () => {
+      const index = Number(input.dataset.inlineText);
+      const primitive = state.spec.primitives[index];
+      if (primitive?.type === "text") {
+        primitive.text = input.value;
+        normalizeMiniThemeSpec();
+        state.jsonText = prettyJson(state.spec);
+        state.jsonDirty = false;
+        validateCurrentSpec();
+      }
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === "Escape") {
+        finishInlineTextEdit();
+      }
+    });
+    input.addEventListener("blur", finishInlineTextEdit);
   });
 
   app.querySelector<HTMLTextAreaElement>("[data-role='json-editor']")?.addEventListener("input", (event) => {
@@ -515,15 +839,69 @@ function bindEvents() {
     state.jsonDirty = true;
   });
 
+  app.querySelector<HTMLInputElement>("[data-role='gif-input']")?.addEventListener("change", (event) => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (file) {
+      addGifPrimitive(file);
+    }
+    (event.target as HTMLInputElement).value = "";
+  });
+
   app.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((button) => {
-    button.addEventListener("click", () => handleAction(button.dataset.action ?? ""));
+    button.addEventListener("click", () => {
+      void handleAction(button.dataset.action ?? "");
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-insert-token]").forEach((button) => {
+    button.addEventListener("click", () => {
+      insertToken(button.dataset.insertToken ?? "");
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-rotate-delta]").forEach((button) => {
+    button.addEventListener("pointerdown", (event) => event.stopPropagation());
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      rotateSelectedPrimitive(toInt(button.dataset.rotateDelta ?? "0", 0));
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-font-size-delta]").forEach((button) => {
+    button.addEventListener("pointerdown", (event) => event.stopPropagation());
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      adjustSelectedTextSize(toInt(button.dataset.fontSizeDelta ?? "0", 0));
+    });
   });
 
   app.querySelectorAll<SVGElement>("[data-drag]").forEach((element) => {
+    element.addEventListener("mouseenter", () => {
+      state.hoveredIndex = Number(element.dataset.drag);
+      render();
+    });
+    element.addEventListener("mouseleave", () => {
+      const index = Number(element.dataset.drag);
+      if (state.hoveredIndex === index) {
+        state.hoveredIndex = null;
+        render();
+      }
+    });
     element.addEventListener("click", () => {
-      state.selectedIndex = Number(element.dataset.drag);
+      const index = Number(element.dataset.drag);
+      state.selectedIndex = index;
+      state.editingTextIndex = state.spec.primitives[index]?.type === "text" ? index : null;
       state.notice = "";
       render();
+    });
+    element.addEventListener("dblclick", () => {
+      const index = Number(element.dataset.drag);
+      if (state.spec.primitives[index]?.type === "text") {
+        state.selectedIndex = index;
+        state.editingTextIndex = index;
+        state.notice = "";
+        render();
+      }
     });
     element.addEventListener("pointerdown", startDrag);
   });
@@ -536,9 +914,217 @@ function bindEvents() {
   });
 }
 
+function focusInlineTextEditor() {
+  if (state.editingTextIndex === null) {
+    return;
+  }
+  window.requestAnimationFrame(() => {
+    const input = app.querySelector<HTMLInputElement>(`[data-inline-text="${state.editingTextIndex}"]`);
+    input?.focus();
+    input?.select();
+  });
+}
+
+function syncStateWithoutRender() {
+  normalizeMiniThemeSpec();
+  state.jsonText = prettyJson(state.spec);
+  state.jsonDirty = false;
+  validateCurrentSpec();
+}
+
+function isColorInput(input: Element): input is HTMLInputElement {
+  return input instanceof HTMLInputElement && input.type === "color";
+}
+
+function finishInlineTextEdit() {
+  if (state.editingTextIndex === null) {
+    return;
+  }
+  state.editingTextIndex = null;
+  syncJsonFromSpec();
+  render();
+}
+
+function insertToken(token: string) {
+  if (!token) {
+    return;
+  }
+  const primitive = state.spec.primitives[state.selectedIndex];
+  if (primitive?.type === "text") {
+    primitive.text = `${primitive.text ?? ""}${token}`;
+    state.editingTextIndex = state.selectedIndex;
+  } else {
+    state.spec.primitives.push({ type: "text", x: 24, y: 24, text: token, fontSize: 2, color: "#FFFFFF", bgColor: "#000000" });
+    state.selectedIndex = state.spec.primitives.length - 1;
+    state.editingTextIndex = state.selectedIndex;
+  }
+  state.notice = "Variable inserted.";
+  syncJsonFromSpec();
+  render();
+}
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  const key = event.key.toLowerCase();
+  const usesCommandKey = event.metaKey || event.ctrlKey;
+  const typing = isTypingTarget(event.target);
+
+  if (key === "escape" && state.editingTextIndex !== null) {
+    event.preventDefault();
+    finishInlineTextEdit();
+    return;
+  }
+
+  if (usesCommandKey && key === "d") {
+    event.preventDefault();
+    duplicateSelectedPrimitive();
+    return;
+  }
+
+  if (typing) {
+    return;
+  }
+
+  if (usesCommandKey && key === "c") {
+    event.preventDefault();
+    copySelectedPrimitive();
+    return;
+  }
+
+  if (usesCommandKey && key === "v") {
+    event.preventDefault();
+    pasteCopiedPrimitive();
+    return;
+  }
+
+  if (key === "backspace" || key === "delete") {
+    event.preventDefault();
+    deleteSelectedPrimitive();
+    return;
+  }
+
+  const moveBy = event.shiftKey ? 10 : 1;
+  if (key === "arrowleft") {
+    event.preventDefault();
+    moveSelectedPrimitive(-moveBy, 0);
+  } else if (key === "arrowright") {
+    event.preventDefault();
+    moveSelectedPrimitive(moveBy, 0);
+  } else if (key === "arrowup") {
+    event.preventDefault();
+    moveSelectedPrimitive(0, -moveBy);
+  } else if (key === "arrowdown") {
+    event.preventDefault();
+    moveSelectedPrimitive(0, moveBy);
+  }
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return target.matches("input, textarea, select, [contenteditable='true']");
+}
+
+function selectedPrimitive(): Primitive | null {
+  return state.spec.primitives[state.selectedIndex] ?? null;
+}
+
+function clonePrimitive(primitive: Primitive): Primitive {
+  return JSON.parse(JSON.stringify(primitive)) as Primitive;
+}
+
+function copySelectedPrimitive() {
+  const primitive = selectedPrimitive();
+  if (!primitive) {
+    return;
+  }
+  state.copiedPrimitive = clonePrimitive(primitive);
+  state.notice = "Element copied.";
+  render();
+}
+
+function pasteCopiedPrimitive() {
+  if (!state.copiedPrimitive) {
+    state.notice = "No copied element.";
+    render();
+    return;
+  }
+  addPrimitive(copyWithOffset(state.copiedPrimitive), "Element pasted.");
+}
+
+function duplicateSelectedPrimitive() {
+  const primitive = selectedPrimitive();
+  if (!primitive) {
+    return;
+  }
+  state.copiedPrimitive = clonePrimitive(primitive);
+  addPrimitive(copyWithOffset(primitive), "Element duplicated.");
+}
+
+function copyWithOffset(primitive: Primitive): Primitive {
+  const copy = clonePrimitive(primitive);
+  const width = estimatePrimitiveWidth(copy);
+  const height = estimatePrimitiveHeight(copy);
+  copy.x = clamp(copy.x + 8, 0, Math.max(0, DISPLAY_SIZE - width));
+  copy.y = clamp(copy.y + 8, 0, Math.max(0, DISPLAY_SIZE - height));
+  return copy;
+}
+
+function deleteSelectedPrimitive() {
+  if (!selectedPrimitive()) {
+    return;
+  }
+  state.spec.primitives.splice(state.selectedIndex, 1);
+  state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.spec.primitives.length - 1));
+  state.editingTextIndex = null;
+  state.notice = "Element deleted.";
+  syncJsonFromSpec();
+  render();
+}
+
+function moveSelectedPrimitive(deltaX: number, deltaY: number) {
+  const primitive = selectedPrimitive();
+  if (!primitive) {
+    return;
+  }
+  const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
+  const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
+  primitive.x = clamp(primitive.x + deltaX, 0, maxX);
+  primitive.y = clamp(primitive.y + deltaY, 0, maxY);
+  state.editingTextIndex = null;
+  syncJsonFromSpec();
+  render();
+}
+
+function rotateSelectedPrimitive(delta: number) {
+  const primitive = selectedPrimitive();
+  if (!primitive) {
+    return;
+  }
+  primitive.rotation = normalizeRotation((primitive.rotation ?? 0) + delta);
+  state.editingTextIndex = null;
+  syncJsonFromSpec();
+  render();
+}
+
+function adjustSelectedTextSize(delta: number) {
+  const primitive = selectedPrimitive();
+  if (!primitive || primitive.type !== "text") {
+    return;
+  }
+  primitive.fontSize = clamp((primitive.fontSize ?? 1) + delta, 1, 12);
+  state.editingTextIndex = null;
+  syncJsonFromSpec();
+  render();
+}
+
 function updateSelectedPrimitive(key: string, value: string) {
   const primitive = state.spec.primitives[state.selectedIndex];
   if (!primitive) {
+    return;
+  }
+  if (key === "rotation") {
+    primitive.rotation = normalizeRotation(toInt(value, 0));
     return;
   }
   if (["x", "y", "width", "height", "font", "fontSize"].includes(key)) {
@@ -553,15 +1139,20 @@ function updateSelectedPrimitive(key: string, value: string) {
     primitive.binding = value as BindingKey;
     return;
   }
+  if (key === "assetPath") {
+    primitive.assetPath = value.trim();
+    return;
+  }
   if (key === "text") {
     primitive.text = value;
   }
 }
 
-function handleAction(action: string) {
+async function handleAction(action: string) {
   if (action === "reset") {
     state.spec = cloneSpec(initialSpec);
-    state.selectedIndex = 1;
+    state.selectedIndex = -1;
+    state.editingTextIndex = null;
     state.notice = "Sample restored.";
     syncJsonFromSpec();
     render();
@@ -576,33 +1167,56 @@ function handleAction(action: string) {
   if (action === "add-progress") {
     addPrimitive({ type: "progress", x: 24, y: 190, width: 160, height: 16, binding: "session", color: "#C7FF68", bgColor: "#202632", borderColor: "#667084" });
   }
+  if (action === "add-gif") {
+    app.querySelector<HTMLInputElement>("[data-role='gif-input']")?.click();
+  }
   if (action === "delete-selected") {
-    state.spec.primitives.splice(state.selectedIndex, 1);
-    state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.spec.primitives.length - 1));
-    state.notice = "Element deleted.";
-    syncJsonFromSpec();
-    render();
+    deleteSelectedPrimitive();
   }
   if (action === "apply-json") {
     applyJson();
   }
   if (action === "copy-json") {
-    copyText(prettyJson(state.spec), "JSON copied.");
+    await copyText(prettyJson(state.spec), "JSON copied.");
   }
   if (action === "download-json") {
     downloadTheme();
   }
-  if (action === "copy-validate") {
-    copyText(`codexbar-display theme-validate --transport wifi --target http://vibetv.local --spec ${state.spec.themeId}.json`, "Validate command copied.");
+  if (action === "send-theme") {
+    await sendThemeToVibeTV();
   }
 }
 
-function addPrimitive(primitive: Primitive) {
+function addPrimitive(primitive: Primitive, notice = "Element added.") {
   state.spec.primitives.push(primitive);
   state.selectedIndex = state.spec.primitives.length - 1;
-  state.notice = "Element added.";
+  state.editingTextIndex = primitive.type === "text" ? state.selectedIndex : null;
+  state.notice = notice;
   syncJsonFromSpec();
   render();
+}
+
+function addGifPrimitive(file: File) {
+  if (file.type && file.type !== "image/gif") {
+    state.notice = "Please choose a GIF file.";
+    render();
+    return;
+  }
+  const assetPath = `/themes/${state.spec.themeId}/${safeAssetName(file.name)}`;
+  const existing = state.gifAssets[assetPath];
+  if (existing) {
+    URL.revokeObjectURL(existing.previewUrl);
+  }
+  state.gifAssets[assetPath] = {
+    file,
+    previewUrl: URL.createObjectURL(file),
+  };
+  addPrimitive({ type: "gif", x: 24, y: 24, width: 64, height: 64, assetPath }, "GIF placed.");
+}
+
+function safeAssetName(name: string): string {
+  const cleaned = name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return cleaned.endsWith(".gif") ? cleaned : `${cleaned || "asset"}.gif`;
 }
 
 function applyJson() {
@@ -611,6 +1225,7 @@ function applyJson() {
     state.spec = parsed;
     normalizeMiniThemeSpec();
     state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.spec.primitives.length - 1));
+    state.editingTextIndex = null;
     state.notice = "JSON applied.";
     syncJsonFromSpec();
   } catch (error) {
@@ -729,6 +1344,107 @@ function downloadTheme() {
   render();
 }
 
+async function sendThemeToVibeTV() {
+  validateCurrentSpec();
+  if (state.errors.length > 0) {
+    state.notice = "Theme is invalid. Fix the errors before sending.";
+    render();
+    return;
+  }
+
+  try {
+    const canReadDeviceResponse = window.location.origin === DEFAULT_TARGET_ORIGIN;
+    await uploadThemeAssets(canReadDeviceResponse);
+    const response = await fetch(`${DEFAULT_TARGET_ORIGIN}/frame`, {
+      method: "POST",
+      headers: { "Content-Type": canReadDeviceResponse ? "application/json" : "text/plain;charset=utf-8" },
+      body: JSON.stringify(buildFramePayload()),
+      mode: canReadDeviceResponse ? "cors" : "no-cors",
+    });
+
+    if (response.type === "opaque") {
+      state.notice = "Theme sent to Vibe TV. Local dev mode cannot read the device confirmation.";
+      render();
+      return;
+    }
+
+    if (!response.ok) {
+      state.notice = `Vibe TV rejected the theme (${response.status}).`;
+      render();
+      return;
+    }
+
+    state.notice = "Theme sent to Vibe TV.";
+  } catch (error) {
+    state.notice = error instanceof Error ? error.message : `Could not reach Vibe TV at ${DEFAULT_TARGET_ORIGIN}. Check Wi-Fi/mDNS, then try again.`;
+  }
+  render();
+}
+
+async function uploadThemeAssets(canReadDeviceResponse: boolean) {
+  const paths = uniqueGifAssetPaths();
+  for (const path of paths) {
+    const asset = state.gifAssets[path] ?? await builtInGifAsset(path);
+    if (!asset) {
+      continue;
+    }
+    const body = new FormData();
+    body.append("asset", asset.file, asset.file.name);
+    const response = await fetch(`${DEFAULT_TARGET_ORIGIN}/assets?path=${encodeURIComponent(path)}`, {
+      method: "POST",
+      body,
+      mode: canReadDeviceResponse ? "cors" : "no-cors",
+    });
+    if (response.type !== "opaque" && !response.ok) {
+      throw new Error(`GIF upload failed (${response.status}).`);
+    }
+  }
+}
+
+function uniqueGifAssetPaths(): string[] {
+  const paths = new Set<string>();
+  for (const primitive of state.spec.primitives) {
+    if (primitive.type === "gif" && primitive.assetPath) {
+      paths.add(primitive.assetPath);
+    }
+  }
+  return Array.from(paths);
+}
+
+async function builtInGifAsset(path: string): Promise<{ file: File; previewUrl: string } | null> {
+  const previewUrl = builtInGifPreviewUrl(path);
+  if (!previewUrl) {
+    return null;
+  }
+  const response = await fetch(previewUrl);
+  if (!response.ok) {
+    throw new Error(`Built-in GIF missing (${response.status}).`);
+  }
+  const blob = await response.blob();
+  return {
+    file: new File([blob], path.split("/").pop() || "theme.gif", { type: "image/gif" }),
+    previewUrl,
+  };
+}
+
+function buildFramePayload() {
+  return {
+    v: 2,
+    provider: frame.provider,
+    label: frame.label,
+    session: frame.session,
+    weekly: frame.weekly,
+    reset: frame.reset,
+    resetSecs: frame.resetSecs,
+    usageMode: frame.usageMode,
+    sessionTokens: frame.sessionTokens,
+    weekTokens: frame.weekTokens,
+    totalTokens: frame.totalTokens,
+    theme: FIXED_FALLBACK_THEME,
+    themeSpec: state.spec,
+  };
+}
+
 async function copyText(text: string, notice: string) {
   await navigator.clipboard.writeText(text);
   state.notice = notice;
@@ -742,6 +1458,11 @@ function toInt(value: string, fallback: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeRotation(value: number): number {
+  const rotation = Math.round(value) % 360;
+  return rotation < 0 ? rotation + 360 : rotation;
 }
 
 function escapeHtml(value: string): string {

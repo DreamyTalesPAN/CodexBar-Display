@@ -7,7 +7,17 @@ The MVP targets the Mini theme only. ThemeSpec metadata is kept fixed where poss
 ../../scripts/theme-studio.sh
 ```
 
-Open the Vite URL, edit or drag primitives on the 240x240 preview, then copy or download the generated ThemeSpec JSON.
+Open the Vite URL, edit or drag primitives on the 240x240 preview, then select `Send to Vibe TV`.
+The Studio sends a full `/frame` payload with the current ThemeSpec to `http://vibetv.local`.
+From local Vite dev mode, the browser cannot read the device response because the firmware does not expose CORS yet; the request is still sent.
+Use `Save Theme` to keep a JSON file locally, or `Copy JSON` for debugging.
+
+Keyboard controls:
+- `Cmd/Ctrl+C`: copy selected element
+- `Cmd/Ctrl+V`: paste copied element
+- `Cmd/Ctrl+D`: duplicate selected element
+- `Delete`/`Backspace`: delete selected element
+- Arrow keys: move selected element by 1px, or 10px with `Shift`
 
 Manual development commands:
 
@@ -16,7 +26,7 @@ npm install
 npm run dev
 ```
 
-Apply through the companion CLI:
+Advanced fallback through the companion CLI:
 
 ```bash
 cd ../../companion

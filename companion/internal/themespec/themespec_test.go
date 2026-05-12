@@ -16,11 +16,28 @@ func TestValidateAcceptsMinimalV1Spec(t *testing.T) {
 		Primitives: []Primitive{
 			{Type: "rect", X: 0, Y: 0, Width: 120, Height: 80, Color: "#001122"},
 			{Type: "text", X: 8, Y: 20, Text: "Codex", FontSize: 2, Color: "#FFFFFF"},
+			{Type: "text", X: 8, Y: 48, Binding: "label", FontSize: 2, Color: "#FFFFFF"},
+			{Type: "gif", X: 80, Y: 96, Width: 64, Height: 64, AssetPath: "/themes/mini/mini.gif"},
 		},
 	}
 
 	if err := Validate(spec); err != nil {
 		t.Fatalf("expected valid spec, got %v", err)
+	}
+}
+
+func TestValidateRejectsUnsafeGifAssetPath(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "mini-transport",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{Type: "gif", X: 0, Y: 0, Width: 10, Height: 10, AssetPath: "/../mini.gif"},
+		},
+	}
+
+	if err := Validate(spec); err == nil {
+		t.Fatalf("expected validation error")
 	}
 }
 

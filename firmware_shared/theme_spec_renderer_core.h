@@ -51,6 +51,14 @@ struct ProgressCommand {
   uint16_t bgColor = 0x0000;
 };
 
+struct GifCommand {
+  const char* assetPath = "";
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+};
+
 class Sink {
  public:
   virtual ~Sink() = default;
@@ -59,6 +67,7 @@ class Sink {
   virtual void FillRect(const RectCommand& cmd) = 0;
   virtual void DrawText(const TextCommand& cmd) = 0;
   virtual void DrawProgress(const ProgressCommand& cmd) = 0;
+  virtual void DrawGif(const GifCommand& cmd) = 0;
 };
 
 inline int ClampPct(int value) {
@@ -284,6 +293,20 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     return true;
   }
 
+  if (std::strcmp(type, "gif") == 0) {
+    GifCommand cmd;
+    cmd.x = x;
+    cmd.y = y;
+    cmd.width = primitive["width"] | 0;
+    cmd.height = primitive["height"] | 0;
+    cmd.assetPath = JsonStringOrNull(primitive["assetPath"]);
+    if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0' || cmd.width <= 0 || cmd.height <= 0) {
+      return false;
+    }
+    sink.DrawGif(cmd);
+    return true;
+  }
+
   return false;
 }
 
@@ -308,6 +331,28 @@ inline bool RenderThemeSpec(const char* themeSpecRaw, const FrameData& frame, Si
     (void)DrawPrimitive(primitive, frame, sink);
   }
   return true;
+}
+
+inline bool RenderThemeSpecAnimatedPrimitives(const char* themeSpecRaw, const FrameData& frame, Sink& sink) {
+  if (themeSpecRaw == nullptr || themeSpecRaw[0] == '\0') {
+    return false;
+  }
+
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, themeSpecRaw);
+  if (err || !doc["primitives"].is<JsonArrayConst>()) {
+    return false;
+  }
+
+  bool rendered = false;
+  JsonArrayConst primitives = doc["primitives"].as<JsonArrayConst>();
+  for (JsonObjectConst primitive : primitives) {
+    const char* type = primitive["type"] | "";
+    if (std::strcmp(type, "gif") == 0) {
+      rendered = DrawPrimitive(primitive, frame, sink) || rendered;
+    }
+  }
+  return rendered;
 }
 
 }  // namespace themespec

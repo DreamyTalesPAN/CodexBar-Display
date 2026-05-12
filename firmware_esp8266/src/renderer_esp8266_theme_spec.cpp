@@ -18,6 +18,8 @@ namespace {
 
 class ThemeSpecSink final : public themespec::Sink {
  public:
+  explicit ThemeSpecSink(bool forceGifFrame) : forceGifFrame_(forceGifFrame) {}
+
   void FillScreen(uint16_t color) override {
     PrimitiveFillScreen(color);
   }
@@ -42,6 +44,21 @@ class ThemeSpecSink final : public themespec::Sink {
     progress.bgColor = cmd.bgColor;
     PrimitiveLayer().DrawProgress(progress);
   }
+
+  void DrawGif(const themespec::GifCommand& cmd) override {
+    GifPlaybackRequest request;
+    request.assetPath = cmd.assetPath;
+    request.layoutMode = GifLayoutMode::Explicit;
+    request.failureSlot = GifFailureSlot::Reserved1;
+    request.x = cmd.x;
+    request.y = cmd.y;
+    request.width = cmd.width;
+    request.height = cmd.height;
+    (void)GifCore().Tick(Tft(), request, forceGifFrame_);
+  }
+
+ private:
+  bool forceGifFrame_ = false;
 };
 
 const char* usageModeText() {
@@ -72,16 +89,24 @@ bool DrawThemeSpecUsage() {
     return false;
   }
 
-  ThemeSpecSink sink;
+  ThemeSpecSink sink(true);
   if (!themespec::RenderThemeSpec(CurrentFrame().themeSpecRaw.c_str(), currentThemeSpecFrameData(), sink)) {
     return false;
   }
 
-  StopMiniGifPlayback();
   const int64_t remain = CurrentRemainingSecs();
   LastRenderedSecs() = remain;
   LastRenderedMinuteBucket() = remain / 60;
   return true;
+}
+
+bool TickThemeSpecGifs() {
+  if (!CurrentFrame().hasThemeSpec || CurrentFrame().themeSpecRaw.length() == 0) {
+    return false;
+  }
+
+  ThemeSpecSink sink(false);
+  return themespec::RenderThemeSpecAnimatedPrimitives(CurrentFrame().themeSpecRaw.c_str(), currentThemeSpecFrameData(), sink);
 }
 
 }  // namespace display
@@ -95,6 +120,10 @@ namespace esp8266 {
 namespace display {
 
 bool DrawThemeSpecUsage() {
+  return false;
+}
+
+bool TickThemeSpecGifs() {
   return false;
 }
 

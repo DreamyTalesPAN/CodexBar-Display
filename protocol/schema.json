@@ -78,7 +78,7 @@
             "properties": {
               "type": {
                 "type": "string",
-                "enum": ["text", "rect", "progress"]
+                "enum": ["text", "rect", "progress", "gif"]
               },
               "x": {
                 "type": "integer",
@@ -99,6 +99,9 @@
               "text": {
                 "type": "string"
               },
+              "binding": {
+                "type": "string"
+              },
               "fontSize": {
                 "type": "integer",
                 "minimum": 0
@@ -110,6 +113,10 @@
               "bgColor": {
                 "type": "string",
                 "pattern": "^#[A-Fa-f0-9]{6}$"
+              },
+              "assetPath": {
+                "type": "string",
+                "pattern": "^/themes/[^\\\\.].*"
               }
             },
             "additionalProperties": true

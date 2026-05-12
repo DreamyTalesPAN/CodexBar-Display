@@ -57,7 +57,8 @@ Example:
 
 Design constraints:
 - No user code execution on device.
-- Primitives are declarative (`text`, `rect`, `progress`) and validated by companion before send.
+- Primitives are declarative (`text`, `rect`, `progress`, `gif`) and validated by companion before send.
+- `gif` primitives reference uploaded display assets with `assetPath` under `/themes/<theme-id>/...`.
 - Compatibility is checked against device capability limits (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`).
 
 ## Error Frame
