@@ -28,6 +28,7 @@ struct Frame {
   String usageMode;
   bool hasTheme = false;
   String theme;
+  bool clearThemeSpec = false;
   bool hasThemeSpec = false;
   String themeSpecId;
   int themeSpecRev = 0;
@@ -188,11 +189,15 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   }
 
   bool hasThemeSpec = false;
+  bool clearThemeSpec = false;
   String themeSpecId;
   int themeSpecRev = 0;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   String themeSpecRaw;
 #endif
+  if (std::strstr(line, "\"themeSpec\"") != nullptr && doc["themeSpec"].isNull()) {
+    clearThemeSpec = true;
+  }
   if (doc["themeSpec"].is<JsonObjectConst>()) {
     JsonObjectConst spec = doc["themeSpec"].as<JsonObjectConst>();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -252,6 +257,7 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     out.usageMode = usageMode;
     out.hasTheme = hasTheme;
     out.theme = themeName;
+    out.clearThemeSpec = clearThemeSpec;
     out.hasThemeSpec = hasThemeSpec;
     out.themeSpecId = themeSpecId;
     out.themeSpecRev = themeSpecRev;
@@ -281,6 +287,7 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   out.usageMode = usageMode;
   out.hasTheme = hasTheme;
   out.theme = themeName;
+  out.clearThemeSpec = clearThemeSpec;
   out.hasThemeSpec = hasThemeSpec;
   out.themeSpecId = themeSpecId;
   out.themeSpecRev = themeSpecRev;
@@ -313,6 +320,7 @@ inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
          previous.totalTokens != next.totalTokens ||
          previous.hasUsageMode != next.hasUsageMode ||
          previous.usageMode != next.usageMode ||
+         previous.clearThemeSpec != next.clearThemeSpec ||
          previous.hasThemeSpec != next.hasThemeSpec ||
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
          previous.themeSpecRaw != next.themeSpecRaw ||
@@ -336,6 +344,20 @@ inline bool FrameThemeChanged(const Frame& previous, const Frame& next) {
 
 inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previous, Frame& next, SerialConsumeEvent& outEvent) {
   if (next.hasError) {
+    return;
+  }
+
+  if (next.clearThemeSpec) {
+    runtimeState.cachedThemeId = "";
+    runtimeState.cachedThemeRev = 0;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    runtimeState.cachedThemeSpecRaw = "";
+    next.themeSpecRaw = "";
+#endif
+    next.hasThemeSpec = false;
+    next.themeSpecId = "";
+    next.themeSpecRev = 0;
+    outEvent.themeSpecChanged = true;
     return;
   }
 

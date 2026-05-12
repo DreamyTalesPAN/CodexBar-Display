@@ -6,6 +6,7 @@
 #include <ESP8266WiFi.h>
 #include <LittleFS.h>
 #include <Updater.h>
+#include <bearssl/bearssl_hash.h>
 
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
@@ -730,7 +731,15 @@ void handleResetWifi() {
   ESP.restart();
 }
 
+void addCorsHeaders() {
+  webServer.sendHeader("Access-Control-Allow-Origin", "*");
+  webServer.sendHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  webServer.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  webServer.sendHeader("Access-Control-Max-Age", "86400");
+}
+
 void handleHello() {
+  addCorsHeaders();
   webServer.send(200, "application/json", codexbar_display::app::BuildDeviceHelloJSON(makeTransportConfig("wifi")));
 }
 
@@ -849,6 +858,43 @@ void appendFirmwareUpdateJSON(String& out) {
   out += "}";
 }
 
+void appendHexByte(String& out, uint8_t value) {
+  constexpr char kHex[] = "0123456789abcdef";
+  out += kHex[(value >> 4) & 0x0F];
+  out += kHex[value & 0x0F];
+}
+
+String fileSHA256Hex(const String& path) {
+  File file = LittleFS.open(path, "r");
+  if (!file) {
+    return "";
+  }
+
+  br_sha256_context ctx;
+  br_sha256_init(&ctx);
+
+  uint8_t buffer[256];
+  while (file.available()) {
+    const size_t readLen = file.read(buffer, sizeof(buffer));
+    if (readLen == 0) {
+      break;
+    }
+    br_sha256_update(&ctx, buffer, readLen);
+    yield();
+  }
+  file.close();
+
+  uint8_t digest[32];
+  br_sha256_out(&ctx, digest);
+
+  String hex;
+  hex.reserve(64);
+  for (uint8_t value : digest) {
+    appendHexByte(hex, value);
+  }
+  return hex;
+}
+
 void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uint8_t depth) {
   if (depth > 4) {
     return;
@@ -871,6 +917,9 @@ void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uin
     out += jsonEscape(path);
     out += "\",\"sizeBytes\":";
     out += String(dir.fileSize());
+    out += ",\"sha256\":\"";
+    out += fileSHA256Hex(path);
+    out += "\"";
     out += "}";
   }
 }
@@ -915,6 +964,7 @@ void handleHealth() {
   out += "}}";
 
   Serial.printf("health_requested ip=%s fs_mounted=%d\n", webServer.client().remoteIP().toString().c_str(), filesystemMounted ? 1 : 0);
+  addCorsHeaders();
   webServer.send(200, "application/json", out);
 }
 
@@ -926,6 +976,7 @@ void handleAssetsList() {
   out += ",";
   appendAssetListJSON(out);
   out += "}";
+  addCorsHeaders();
   webServer.send(200, "application/json", out);
 }
 
@@ -1015,6 +1066,7 @@ void handleAssetUpload() {
 void handleAssetUploadResult() {
   if (!assetUploadSucceeded || assetUploadError.length() > 0) {
     const String error = assetUploadError.length() > 0 ? assetUploadError : "upload failed";
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", error);
     return;
   }
@@ -1024,6 +1076,7 @@ void handleAssetUploadResult() {
   out += "{\"ok\":true,\"path\":\"";
   out += jsonEscape(assetUploadPath);
   out += "\"}";
+  addCorsHeaders();
   webServer.send(200, "application/json", out);
 }
 
@@ -1031,23 +1084,28 @@ void handleAssetDelete() {
   String path = webServer.arg("path");
   path.trim();
   if (!isSafeAssetPath(path)) {
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "invalid asset path");
     return;
   }
   if (!LittleFS.begin()) {
+    addCorsHeaders();
     webServer.send(500, "text/plain; charset=utf-8", "filesystem mount failed");
     return;
   }
   if (!LittleFS.exists(path)) {
+    addCorsHeaders();
     webServer.send(404, "text/plain; charset=utf-8", "asset not found");
     return;
   }
   renderer.ResetGifStateForAssetUpdate();
   if (!LittleFS.remove(path)) {
+    addCorsHeaders();
     webServer.send(500, "text/plain; charset=utf-8", "asset delete failed");
     return;
   }
   Serial.printf("asset_deleted path=%s\n", path.c_str());
+  addCorsHeaders();
   webServer.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -1166,20 +1224,24 @@ void handleOtaResult(const char* target) {
 void handleFrame() {
   String rawBody = webServer.arg("plain");
   if (rawBody.length() == 0) {
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "empty frame body");
     return;
   }
   if (rawBody.length() > kMaxFrameBytes) {
+    addCorsHeaders();
     webServer.send(413, "text/plain; charset=utf-8", "frame body too large");
     return;
   }
   String body = rawBody;
   body.trim();
   if (body.length() == 0) {
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "empty frame body");
     return;
   }
   if (body.indexOf('\n') >= 0 || body.indexOf('\r') >= 0) {
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "expected one newline-delimited JSON frame");
     return;
   }
@@ -1187,11 +1249,13 @@ void handleFrame() {
   codexbar_display::core::SerialConsumeEvent event;
   if (!codexbar_display::core::ConsumeFrameLine(runtimeCtx.runtime, body.c_str(), millis(), true, event) ||
       !event.frameAccepted) {
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "frame was not accepted");
     return;
   }
 
   markFrameAccepted(event, "wifi");
+  addCorsHeaders();
   webServer.send(200, "text/plain; charset=utf-8", "ok");
 }
 
@@ -1238,6 +1302,11 @@ void startHttpServer() {
         handleOtaUpload(U_FS, "filesystem");
       });
   webServer.onNotFound([]() {
+    if (webServer.method() == HTTP_OPTIONS) {
+      addCorsHeaders();
+      webServer.send(204, "text/plain", "");
+      return;
+    }
     if (setupMode) {
       handleCaptivePortalProbe();
       return;

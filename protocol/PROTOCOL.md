@@ -60,6 +60,7 @@ Design constraints:
 - Primitives are declarative (`text`, `rect`, `progress`, `gif`) and validated by companion before send.
 - `gif` primitives reference uploaded display assets with `assetPath` under `/themes/<theme-id>/...`.
 - Compatibility is checked against device capability limits (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`).
+- A frame with `"themeSpec": null` clears the cached declarative layout and falls back to the builtin `theme`.
 
 ## Error Frame
 

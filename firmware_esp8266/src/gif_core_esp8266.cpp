@@ -171,10 +171,13 @@ void GifCoreESP8266::ConfigureDrawRect(TFT_eSPI& tft, const GifPlaybackRequest& 
   drawHeight_ = gifHeight_;
 
   if (request.layoutMode == GifLayoutMode::Explicit) {
-    drawX_ = request.x;
-    drawY_ = request.y;
-    drawWidth_ = request.width > 0 ? request.width : gifWidth_;
-    drawHeight_ = request.height > 0 ? request.height : gifHeight_;
+    const int boxWidth = request.width > 0 ? request.width : gifWidth_;
+    const int boxHeight = request.height > 0 ? request.height : gifHeight_;
+    const GifDrawRect rect = GifCorePolicy::FitContain(request.x, request.y, boxWidth, boxHeight, gifWidth_, gifHeight_);
+    drawX_ = rect.x;
+    drawY_ = rect.y;
+    drawWidth_ = rect.width;
+    drawHeight_ = rect.height;
   } else if (request.layoutMode == GifLayoutMode::BottomRightMini) {
     drawX_ = tft.width() - gifWidth_ - kLayoutMargin;
     drawY_ = tft.height() - gifHeight_ - kLayoutMargin;

@@ -115,6 +115,32 @@ bool testRequestSwitching() {
   return true;
 }
 
+bool testFitContainPreservesAspectRatio() {
+  const auto wideBox = GifCorePolicy::FitContain(10, 20, 160, 80, 80, 80);
+  if (!expect(wideBox.x == 50, "square gif in wide box should be horizontally centered")) {
+    return false;
+  }
+  if (!expect(wideBox.y == 20, "square gif in wide box should keep top edge")) {
+    return false;
+  }
+  if (!expect(wideBox.width == 80 && wideBox.height == 80, "square gif in wide box should stay square")) {
+    return false;
+  }
+
+  const auto tallBox = GifCorePolicy::FitContain(5, 7, 80, 160, 80, 40);
+  if (!expect(tallBox.x == 5, "wide gif in tall box should keep left edge")) {
+    return false;
+  }
+  if (!expect(tallBox.y == 67, "wide gif in tall box should be vertically centered")) {
+    return false;
+  }
+  if (!expect(tallBox.width == 80 && tallBox.height == 40, "wide gif should keep aspect ratio")) {
+    return false;
+  }
+
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -125,6 +151,9 @@ int main() {
     return 1;
   }
   if (!testRequestSwitching()) {
+    return 1;
+  }
+  if (!testFitContainPreservesAspectRatio()) {
     return 1;
   }
 

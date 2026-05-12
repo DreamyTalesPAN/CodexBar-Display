@@ -9,6 +9,8 @@ const THEME_ID_RE = /^[a-z0-9][a-z0-9\-_]{2,63}$/;
 const FIXED_THEME_REV = 1;
 const FIXED_FALLBACK_THEME = "mini";
 const DEFAULT_TARGET_ORIGIN = "http://vibetv.local";
+const TARGET_STORAGE_KEY = "codexbar.themeStudio.targetOrigin";
+const DEFAULT_GIF_SIZE = 80;
 
 type PrimitiveType = "rect" | "text" | "progress" | "gif";
 type ResizeHandle = "e" | "s" | "se";
@@ -76,6 +78,7 @@ interface AppState {
   errors: string[];
   warnings: string[];
   notice: string;
+  targetOrigin: string;
 }
 
 const frame: FrameData = {
@@ -147,6 +150,7 @@ const state: AppState = {
   errors: [],
   warnings: [],
   notice: "",
+  targetOrigin: storedTargetOrigin(),
 };
 syncJsonFromSpec();
 render();
@@ -162,6 +166,28 @@ function minifiedJson(spec: ThemeSpec): string {
 
 function prettyJson(spec: ThemeSpec): string {
   return JSON.stringify(spec, null, 2);
+}
+
+function storedTargetOrigin(): string {
+  try {
+    return normalizeTargetOrigin(window.localStorage.getItem(TARGET_STORAGE_KEY) ?? DEFAULT_TARGET_ORIGIN);
+  } catch {
+    return DEFAULT_TARGET_ORIGIN;
+  }
+}
+
+function persistTargetOrigin() {
+  try {
+    window.localStorage.setItem(TARGET_STORAGE_KEY, state.targetOrigin);
+  } catch {
+    // Local storage is optional; sending still works without it.
+  }
+}
+
+function normalizeTargetOrigin(value: string): string {
+  const raw = value.trim() || DEFAULT_TARGET_ORIGIN;
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+  return withProtocol.replace(/\/+$/, "");
 }
 
 function syncJsonFromSpec() {
@@ -288,6 +314,9 @@ function render() {
             <h2>Theme</h2>
             <input class="theme-name-input" data-field="themeId" aria-label="Theme name" value="${escapeAttr(state.spec.themeId)}" />
           </div>
+          <label>Vibe TV
+            <input data-field="targetOrigin" aria-label="Vibe TV URL" value="${escapeAttr(state.targetOrigin)}" />
+          </label>
           <div class="divider"></div>
           ${addElementPalette()}
           <div class="divider"></div>
@@ -455,8 +484,8 @@ function inspectorFields(primitive: Primitive): string {
       ${common}
       <label>Asset<input data-primitive-field="assetPath" value="${escapeAttr(primitive.assetPath ?? "")}" /></label>
       <div class="field-grid">
-        <label>Width<input type="number" min="1" step="1" data-primitive-field="width" value="${primitive.width ?? 64}" /></label>
-        <label>Height<input type="number" min="1" step="1" data-primitive-field="height" value="${primitive.height ?? 64}" /></label>
+        <label>Width<input type="number" min="1" step="1" data-primitive-field="width" value="${primitive.width ?? DEFAULT_GIF_SIZE}" /></label>
+        <label>Height<input type="number" min="1" step="1" data-primitive-field="height" value="${primitive.height ?? DEFAULT_GIF_SIZE}" /></label>
       </div>
     `;
   }
@@ -771,6 +800,10 @@ function bindEvents() {
       const key = input.dataset.field;
       if (key === "themeId") {
         state.spec.themeId = input.value.trim().toLowerCase();
+      }
+      if (key === "targetOrigin") {
+        state.targetOrigin = input.value.trim();
+        persistTargetOrigin();
       }
       syncJsonFromSpec();
       render();
@@ -1134,6 +1167,10 @@ function updateSelectedPrimitive(key: string, value: string) {
     primitive.rotation = normalizeRotation(toInt(value, 0));
     return;
   }
+  if ((key === "width" || key === "height") && primitive.type === "gif") {
+    resizeGifPrimitive(primitive, key, toInt(value, DEFAULT_GIF_SIZE));
+    return;
+  }
   if (["x", "y", "width", "height", "font", "fontSize"].includes(key)) {
     primitive[key as "x"] = Math.max(key === "x" || key === "y" ? 0 : 1, toInt(value, key === "x" || key === "y" ? 0 : 1));
     return;
@@ -1218,7 +1255,7 @@ function addGifPrimitive(file: File) {
     file,
     previewUrl: URL.createObjectURL(file),
   };
-  addPrimitive({ type: "gif", x: 24, y: 24, width: 64, height: 64, assetPath }, "GIF placed.");
+  addPrimitive({ type: "gif", x: 24, y: 24, width: DEFAULT_GIF_SIZE, height: DEFAULT_GIF_SIZE, assetPath }, "GIF placed.");
 }
 
 function safeAssetName(name: string): string {
@@ -1308,6 +1345,8 @@ function startResize(event: PointerEvent) {
     if (primitive.type === "text") {
       const nextSize = clamp(Math.round(originFontSize + deltaY / 10), 1, 12);
       primitive.fontSize = nextSize;
+    } else if (primitive.type === "gif") {
+      resizeGifFromPointer(primitive, handle, originWidth, originHeight, deltaX, deltaY);
     } else {
       if (handle === "e" || handle === "se") {
         primitive.width = clamp(Math.round(originWidth + deltaX), 1, DISPLAY_SIZE - primitive.x);
@@ -1326,6 +1365,82 @@ function startResize(event: PointerEvent) {
   };
   window.addEventListener("pointermove", onMove);
   window.addEventListener("pointerup", onUp);
+}
+
+function resizeGifPrimitive(primitive: Primitive, key: "width" | "height", rawValue: number) {
+  const ratio = gifAspectRatio(primitive);
+  if (key === "width") {
+    applyGifWidth(primitive, ratio, rawValue);
+    return;
+  }
+
+  applyGifHeight(primitive, ratio, rawValue);
+}
+
+function resizeGifFromPointer(
+    primitive: Primitive,
+    handle: ResizeHandle,
+    originWidth: number,
+    originHeight: number,
+    deltaX: number,
+    deltaY: number) {
+  const ratio = gifAspectRatio(primitive);
+  if (handle === "s") {
+    applyGifHeight(primitive, ratio, Math.round(originHeight + deltaY));
+    return;
+  }
+
+  if (handle === "e") {
+    applyGifWidth(primitive, ratio, Math.round(originWidth + deltaX));
+    return;
+  }
+
+  const widthFromPointer = Math.round(originWidth + deltaX);
+  const heightFromPointer = Math.round(originHeight + deltaY);
+  if (Math.abs(deltaY) > Math.abs(deltaX)) {
+    applyGifHeight(primitive, ratio, heightFromPointer);
+    return;
+  }
+
+  applyGifWidth(primitive, ratio, widthFromPointer);
+}
+
+function applyGifWidth(primitive: Primitive, ratio: number, rawWidth: number) {
+  const maxWidth = Math.max(1, DISPLAY_SIZE - primitive.x);
+  const maxHeight = Math.max(1, DISPLAY_SIZE - primitive.y);
+  let width = clamp(rawWidth, 1, maxWidth);
+  let height = Math.max(1, Math.round(width / ratio));
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = clamp(Math.round(height * ratio), 1, maxWidth);
+  }
+  primitive.width = width;
+  primitive.height = height;
+}
+
+function applyGifHeight(primitive: Primitive, ratio: number, rawHeight: number) {
+  const maxWidth = Math.max(1, DISPLAY_SIZE - primitive.x);
+  const maxHeight = Math.max(1, DISPLAY_SIZE - primitive.y);
+  let height = clamp(rawHeight, 1, maxHeight);
+  let width = Math.max(1, Math.round(height * ratio));
+  if (width > maxWidth) {
+    width = maxWidth;
+    height = clamp(Math.round(width / ratio), 1, maxHeight);
+  }
+  primitive.width = width;
+  primitive.height = height;
+}
+
+function gifAspectRatio(primitive: Primitive): number {
+  if (primitive.assetPath === "/themes/mini/mini.gif") {
+    return 1;
+  }
+  const width = primitive.width ?? DEFAULT_GIF_SIZE;
+  const height = primitive.height ?? DEFAULT_GIF_SIZE;
+  if (width <= 0 || height <= 0) {
+    return 1;
+  }
+  return width / height;
 }
 
 function pointerPosition(svg: SVGSVGElement, event: PointerEvent): { x: number; y: number } {
@@ -1360,14 +1475,12 @@ async function sendThemeToVibeTV() {
   }
 
   try {
-    const canReadDeviceResponse = window.location.origin === DEFAULT_TARGET_ORIGIN;
-    await uploadThemeAssets(canReadDeviceResponse);
-    const response = await fetch(`${DEFAULT_TARGET_ORIGIN}/frame`, {
-      method: "POST",
-      headers: { "Content-Type": canReadDeviceResponse ? "application/json" : "text/plain;charset=utf-8" },
-      body: JSON.stringify(buildFramePayload()),
-      mode: canReadDeviceResponse ? "cors" : "no-cors",
-    });
+    const targetOrigin = normalizeTargetOrigin(state.targetOrigin);
+    state.targetOrigin = targetOrigin;
+    persistTargetOrigin();
+    await clearDeviceThemeSpec(targetOrigin);
+    await uploadThemeAssets(targetOrigin);
+    const response = await postFramePayload(targetOrigin, buildFramePayload());
 
     if (response.type === "opaque") {
       state.notice = "Theme sent to Vibe TV. Local dev mode cannot read the device confirmation.";
@@ -1383,12 +1496,27 @@ async function sendThemeToVibeTV() {
 
     state.notice = "Theme sent to Vibe TV.";
   } catch (error) {
-    state.notice = error instanceof Error ? error.message : `Could not reach Vibe TV at ${DEFAULT_TARGET_ORIGIN}. Check Wi-Fi/mDNS, then try again.`;
+    state.notice = error instanceof Error ? error.message : `Could not reach Vibe TV at ${normalizeTargetOrigin(state.targetOrigin)}. Check Wi-Fi/mDNS, then try again.`;
   }
   render();
 }
 
-async function uploadThemeAssets(canReadDeviceResponse: boolean) {
+async function clearDeviceThemeSpec(targetOrigin: string) {
+  const response = await postFramePayload(targetOrigin, buildThemeSpecClearPayload());
+  if (response.type !== "opaque" && !response.ok) {
+    throw new Error(`Theme clear failed (${response.status}).`);
+  }
+}
+
+async function postFramePayload(targetOrigin: string, payload: Record<string, unknown>): Promise<Response> {
+  return fetchWithCorsFallback(`${targetOrigin}/frame`, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+}
+
+async function uploadThemeAssets(targetOrigin: string) {
   const paths = uniqueGifAssetPaths();
   for (const path of paths) {
     const asset = state.gifAssets[path] ?? await builtInGifAsset(path);
@@ -1397,14 +1525,21 @@ async function uploadThemeAssets(canReadDeviceResponse: boolean) {
     }
     const body = new FormData();
     body.append("asset", asset.file, asset.file.name);
-    const response = await fetch(`${DEFAULT_TARGET_ORIGIN}/assets?path=${encodeURIComponent(path)}`, {
+    const response = await fetchWithCorsFallback(`${targetOrigin}/assets?path=${encodeURIComponent(path)}`, {
       method: "POST",
       body,
-      mode: canReadDeviceResponse ? "cors" : "no-cors",
     });
     if (response.type !== "opaque" && !response.ok) {
       throw new Error(`GIF upload failed (${response.status}).`);
     }
+  }
+}
+
+async function fetchWithCorsFallback(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, mode: "cors" });
+  } catch {
+    return fetch(url, { ...init, mode: "no-cors" });
   }
 }
 
@@ -1456,6 +1591,20 @@ function buildFramePayload() {
     payload.totalTokens = frame.totalTokens;
   }
   return payload;
+}
+
+function buildThemeSpecClearPayload(): Record<string, unknown> {
+  return {
+    v: 2,
+    provider: frame.provider,
+    label: frame.label,
+    session: frame.session,
+    weekly: frame.weekly,
+    resetSecs: frame.resetSecs,
+    usageMode: frame.usageMode,
+    theme: FIXED_FALLBACK_THEME,
+    themeSpec: null,
+  };
 }
 
 function usedThemeBindings(): Set<string> {

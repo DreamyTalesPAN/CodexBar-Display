@@ -51,7 +51,7 @@
       "enum": ["classic", "crt", "mini"]
     },
     "themeSpec": {
-      "type": "object",
+      "type": ["object", "null"],
       "required": ["themeSpecVersion", "themeId", "themeRev", "primitives"],
       "properties": {
         "themeSpecVersion": {

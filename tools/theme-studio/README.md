@@ -8,8 +8,8 @@ The MVP targets the Mini theme only. ThemeSpec metadata is kept fixed where poss
 ```
 
 Open the Vite URL, edit or drag primitives on the 240x240 preview, then select `Send to Vibe TV`.
-The Studio sends a full `/frame` payload with the current ThemeSpec to `http://vibetv.local`.
-From local Vite dev mode, the browser cannot read the device response because the firmware does not expose CORS yet; the request is still sent.
+Set the Vibe TV field to the device URL, for example `http://192.168.178.163` or `http://vibetv.local`.
+The Studio clears any cached ThemeSpec, uploads referenced GIF assets, then sends the full `/frame` payload.
 Use `Save Theme` to keep a JSON file locally, or `Copy JSON` for debugging.
 
 Keyboard controls:
@@ -35,9 +35,10 @@ go run ./cmd/codexbar-display theme-apply --transport wifi --target http://vibet
 ```
 
 Current MVP scope:
-- `rect`, `text`, `progress` primitives
+- `rect`, `text`, `progress`, `gif` primitives
 - 240x240 preview
 - drag-to-position
 - property inspector
+- WiFi send flow with asset upload
 - JSON editor
 - byte and primitive limit checks for the ESP8266 ThemeSpec MVP
