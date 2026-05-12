@@ -566,15 +566,16 @@ function mountKonvaPreview() {
 
   const stageSize = previewStageSize(container);
   const previewScale = stageSize / DISPLAY_SIZE;
-  stage = new Konva.Stage({
+  const konvaStage = new Konva.Stage({
     container,
     width: stageSize,
     height: stageSize,
   });
+  stage = konvaStage;
 
   const layer = new Konva.Layer();
   layer.scale({ x: previewScale, y: previewScale });
-  stage.add(layer);
+  konvaStage.add(layer);
   layer.add(new Konva.Rect({
     x: 0,
     y: 0,
@@ -620,13 +621,61 @@ function mountKonvaPreview() {
     layer.add(transformer);
   }
 
-  stage.on("pointerdown", (event) => {
-    if (event.target !== stage) {
+  let fallbackDrag: { index: number; startX: number; startY: number; originX: number; originY: number } | null = null;
+
+  konvaStage.on("pointerdown", (event) => {
+    if (event.target !== konvaStage) {
+      return;
+    }
+    const pointer = logicalStagePointer(konvaStage, previewScale);
+    if (!pointer) {
+      return;
+    }
+    const hitIndex = primitiveIndexAtPoint(pointer.x, pointer.y);
+    if (hitIndex >= 0) {
+      const primitive = state.spec.primitives[hitIndex];
+      fallbackDrag = {
+        index: hitIndex,
+        startX: pointer.x,
+        startY: pointer.y,
+        originX: primitive.x,
+        originY: primitive.y,
+      };
+      state.selectedIndex = hitIndex;
+      state.editingTextIndex = null;
+      state.notice = "";
       return;
     }
     state.selectedIndex = -1;
     state.editingTextIndex = null;
     state.notice = "";
+    render();
+  });
+
+  konvaStage.on("pointermove", () => {
+    if (!fallbackDrag) {
+      return;
+    }
+    const primitive = state.spec.primitives[fallbackDrag.index];
+    const node = nodes[fallbackDrag.index];
+    const pointer = logicalStagePointer(konvaStage, previewScale);
+    if (!primitive || !node || !pointer) {
+      return;
+    }
+    const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
+    const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
+    primitive.x = clamp(Math.round(fallbackDrag.originX + pointer.x - fallbackDrag.startX), 0, maxX);
+    primitive.y = clamp(Math.round(fallbackDrag.originY + pointer.y - fallbackDrag.startY), 0, maxY);
+    node.position({ x: primitive.x, y: primitive.y });
+    layer.batchDraw();
+  });
+
+  konvaStage.on("pointerup pointercancel", () => {
+    if (!fallbackDrag) {
+      return;
+    }
+    fallbackDrag = null;
+    syncJsonFromSpec();
     render();
   });
 
@@ -641,6 +690,46 @@ function previewStageSize(container: HTMLDivElement): number {
   const rect = container.getBoundingClientRect();
   const measured = Math.round(Math.min(rect.width, rect.height));
   return measured > 0 ? measured : DISPLAY_SIZE;
+}
+
+function logicalStagePointer(konvaStage: Konva.Stage, previewScale: number): { x: number; y: number } | null {
+  const pointer = konvaStage.getPointerPosition();
+  if (!pointer || previewScale <= 0) {
+    return null;
+  }
+  return {
+    x: pointer.x / previewScale,
+    y: pointer.y / previewScale,
+  };
+}
+
+function primitiveIndexAtPoint(x: number, y: number): number {
+  for (let index = state.spec.primitives.length - 1; index >= 0; index -= 1) {
+    if (pointInPrimitive(state.spec.primitives[index], x, y)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function pointInPrimitive(primitive: Primitive, x: number, y: number): boolean {
+  const width = estimatePrimitiveWidth(primitive);
+  const height = estimatePrimitiveHeight(primitive);
+  if (width <= 0 || height <= 0) {
+    return false;
+  }
+  const rotation = normalizeRotation(primitive.rotation ?? 0);
+  if (rotation === 0) {
+    return x >= primitive.x && x <= primitive.x + width && y >= primitive.y && y <= primitive.y + height;
+  }
+  const radians = (-rotation * Math.PI) / 180;
+  const centerX = primitive.x + width / 2;
+  const centerY = primitive.y + height / 2;
+  const dx = x - centerX;
+  const dy = y - centerY;
+  const localX = Math.cos(radians) * dx - Math.sin(radians) * dy + width / 2;
+  const localY = Math.sin(radians) * dx + Math.cos(radians) * dy + height / 2;
+  return localX >= 0 && localX <= width && localY >= 0 && localY <= height;
 }
 
 function konvaNodeForPrimitive(primitive: Primitive, index: number): { node: EditableKonvaNode; animated: boolean } | null {
@@ -735,6 +824,13 @@ function textKonvaGroup(primitive: Primitive, index: number): Konva.Group {
     textNode.scaleX(width / measuredWidth);
   }
   const previewCanvas = textPreviewCanvas(primitive, text, width, height, fontSize, textNode.fontFamily(), textNode.fontStyle());
+  group.add(new Konva.Rect({
+    x: 0,
+    y: 0,
+    width,
+    height,
+    fill: primitive.bgColor ?? "#000000",
+  }));
   group.add(new Konva.Image({
     x: 0,
     y: 0,
