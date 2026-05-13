@@ -740,13 +740,14 @@ void handleResetWifi() {
     return;
   }
 
-  clearWifiCredentials();
-  clearSdkWifiCredentials();
-  clearBootRecoveryCounter();
   webServer.send(200, "text/html; charset=utf-8", "<!doctype html><p>WiFi settings cleared. Vibe TV is restarting setup.</p>");
   drawWifiResetStatus("Restarting");
   waitStatusRendered = true;
   delay(500);
+  clearWifiCredentials();
+  clearSdkWifiCredentials();
+  clearBootRecoveryCounter();
+  delay(250);
   ESP.restart();
 }
 
