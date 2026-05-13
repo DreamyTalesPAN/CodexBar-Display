@@ -89,6 +89,7 @@ jobs:
           import os
 
           version = os.environ["VERSION"]
+          repo = os.environ.get("GITHUB_REPOSITORY", "DreamyTalesPAN/CodexBar-Display")
           targets = [
               ("esp8266_smalltv_st7789", "esp8266-smalltv-st7789"),
               ("lilygo_t_display_s3", "esp32-lilygo-t-display-s3"),
@@ -103,6 +104,7 @@ jobs:
 
           for env_name, board in targets:
               path = f"dist/firmware/codexbar-display-firmware-{env_name}-v{version}.bin"
+              asset = os.path.basename(path)
               with open(path, "rb") as f:
                   sha = hashlib.sha256(f.read()).hexdigest()
 
@@ -111,15 +113,21 @@ jobs:
                       "firmwareEnv": env_name,
                       "board": board,
                       "firmwareVersion": version,
-                      "asset": os.path.basename(path),
+                      "asset": asset,
                       "sha256": sha,
+                      "severity": "recommended",
+                      "message": "Firmware update available. Open vibetv.local.",
+                      "firmwareUrl": f"https://github.com/{repo}/releases/download/v{version}/{asset}",
                   }
               )
 
-          out_path = f"dist/firmware/firmware-manifest-v{version}.json"
-          with open(out_path, "w", encoding="utf-8") as f:
-              json.dump(manifest, f, indent=2)
-              f.write("\n")
+          for out_path in (
+              f"dist/firmware/firmware-manifest-v{version}.json",
+              "dist/firmware/firmware-manifest.json",
+          ):
+              with open(out_path, "w", encoding="utf-8") as f:
+                  json.dump(manifest, f, indent=2)
+                  f.write("\n")
           PY
 
           (
@@ -135,5 +143,6 @@ jobs:
             dist/install.sh
             dist/companion/*
             dist/firmware/*.bin
+            dist/firmware/firmware-manifest.json
             dist/firmware/firmware-manifest-*.json
             dist/checksums-*.txt

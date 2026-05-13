@@ -48,7 +48,7 @@ const (
 	collectorOrderEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
 	providerMaxAgeEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
 	firmwareManifestEnvVar  = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
-	firmwareManifestURL     = "https://vibetv.shop/cdn/shop/t/1/assets/firmware-manifest.json"
+	firmwareManifestURL     = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 	firmwareUpdateCheckGap  = 6 * time.Hour
 	firmwareManifestTimeout = 5 * time.Second
 )
