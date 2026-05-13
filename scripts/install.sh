@@ -7,6 +7,8 @@ GITHUB_DOWNLOAD_BASE="https://github.com"
 INSTALL_NAME="codexbar-display"
 INSTALL_ROOT="${HOME}/Library/Application Support/codexbar-display"
 INSTALL_PATH="${INSTALL_ROOT}/bin/${INSTALL_NAME}"
+GLOBAL_BIN_DIR="${CODEXBAR_DISPLAY_GLOBAL_BIN_DIR:-/usr/local/bin}"
+GLOBAL_BIN_PATH="${GLOBAL_BIN_DIR}/${INSTALL_NAME}"
 CODEXBAR_CONFIG_DIR="${HOME}/.codexbar"
 CODEXBAR_CONFIG_PATH="${CODEXBAR_CONFIG_DIR}/config.json"
 
@@ -31,6 +33,7 @@ What it does:
   - downloads the matching codexbar-display release binary from GitHub Releases
   - verifies the SHA-256 checksum from the release checksum file
   - runs `codexbar-display setup --yes --skip-flash [setup args...]`
+  - makes `codexbar-display` available in Terminal
   - optionally runs `codexbar-display upgrade` to flash release firmware when --flash-firmware is passed
   - warms up CodexBar on fresh installs so providers are usable
   - runs a health check after setup
@@ -134,6 +137,43 @@ build_firmware_upgrade_args() {
     esac
     i=$((i + 1))
   done
+}
+
+run_privileged() {
+  if "$@"; then
+    return 0
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    return 1
+  fi
+  log "vibetv: macOS may ask for your password to make '${INSTALL_NAME}' available in Terminal."
+  sudo "$@"
+}
+
+install_global_command() {
+  mkdir -p "$INSTALL_ROOT"
+
+  if [[ ! -d "$GLOBAL_BIN_DIR" ]]; then
+    run_privileged mkdir -p "$GLOBAL_BIN_DIR" ||
+      die "could not create ${GLOBAL_BIN_DIR}"
+  fi
+
+  if [[ -L "$GLOBAL_BIN_PATH" || ! -e "$GLOBAL_BIN_PATH" ]]; then
+    run_privileged ln -sfn "$INSTALL_PATH" "$GLOBAL_BIN_PATH" ||
+      die "could not link ${GLOBAL_BIN_PATH} to ${INSTALL_PATH}"
+  else
+    run_privileged ln -sfn "$INSTALL_PATH" "$GLOBAL_BIN_PATH" ||
+      die "${GLOBAL_BIN_PATH} exists and could not be replaced"
+  fi
+
+  hash -r 2>/dev/null || true
+  if ! command -v "$INSTALL_NAME" >/dev/null 2>&1; then
+    die "${INSTALL_NAME} was installed, but Terminal cannot find it. Expected ${GLOBAL_BIN_DIR} to be in PATH."
+  fi
+  if ! "$INSTALL_NAME" version --short >/dev/null 2>&1; then
+    die "${INSTALL_NAME} is in PATH, but it did not run correctly"
+  fi
+  log "vibetv: Terminal command ready: ${INSTALL_NAME}"
 }
 
 seed_codexbar_config_if_missing() {
@@ -323,6 +363,8 @@ main() {
   if [[ ! -x "$INSTALL_PATH" ]]; then
     die "setup finished but expected installed binary is missing: ${INSTALL_PATH}"
   fi
+
+  install_global_command
 
   seed_codexbar_config_if_missing
   if ! wait_for_codexbar_ready; then
