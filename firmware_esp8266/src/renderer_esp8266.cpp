@@ -41,6 +41,11 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
   RendererDebugSnapshot snapshot;
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   snapshot.activeTheme = themeName(display::ActiveTheme());
+  snapshot.themeSpecActive = display::HasFrame() && display::CurrentFrame().hasThemeSpec;
+  if (snapshot.themeSpecActive) {
+    snapshot.themeSpecId = display::CurrentFrame().themeSpecId;
+    snapshot.themeSpecRev = display::CurrentFrame().themeSpecRev;
+  }
   const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
   snapshot.gifActivePath = gif.activePath;
   snapshot.gifFilePresent = gif.filePresent;

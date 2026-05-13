@@ -16,6 +16,8 @@ struct FrameData {
   int weekly = 0;
   int64_t resetSecs = 0;
   const char* usageMode = "";
+  const char* time = "";
+  const char* date = "";
   int64_t sessionTokens = 0;
   int64_t weekTokens = 0;
   int64_t totalTokens = 0;
@@ -60,6 +62,12 @@ struct GifCommand {
   int height = 0;
 };
 
+struct SpriteCommand {
+  const char* assetPath = "";
+  int x = 0;
+  int y = 0;
+};
+
 struct PixelsCommand {
   const char* data = "";
   int x = 0;
@@ -78,6 +86,7 @@ class Sink {
   virtual void DrawText(const TextCommand& cmd) = 0;
   virtual void DrawProgress(const ProgressCommand& cmd) = 0;
   virtual void DrawGif(const GifCommand& cmd) = 0;
+  virtual void DrawSprite(const SpriteCommand& cmd) = 0;
   virtual void DrawPixels(const PixelsCommand& cmd) = 0;
 };
 
@@ -330,6 +339,14 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     std::snprintf(out, outSize, "%s", SafeText(frame.usageMode));
     return;
   }
+  if (std::strcmp(key, "time") == 0 || std::strcmp(key, "tm") == 0) {
+    std::snprintf(out, outSize, "%s", SafeText(frame.time));
+    return;
+  }
+  if (std::strcmp(key, "date") == 0 || std::strcmp(key, "dt") == 0) {
+    std::snprintf(out, outSize, "%s", SafeText(frame.date));
+    return;
+  }
   if (std::strcmp(key, "sessionTokens") == 0 || std::strcmp(key, "st") == 0) {
     std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.sessionTokens));
     return;
@@ -415,7 +432,7 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     TextCommand cmd;
     cmd.x = x;
     cmd.y = y;
-    cmd.font = 1;
+    cmd.font = JsonIntFor(primitive, "font", "f", 1);
     cmd.size = JsonIntFor(primitive, "fontSize", "s", 1);
     if (cmd.size <= 0) {
       return false;
@@ -465,6 +482,18 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
       return false;
     }
     sink.DrawGif(cmd);
+    return true;
+  }
+
+  if (PrimitiveTypeIs(primitive, "sprite", "sp") || PrimitiveTypeIs(primitive, "image", "img")) {
+    SpriteCommand cmd;
+    cmd.x = x;
+    cmd.y = y;
+    cmd.assetPath = JsonStringFor(primitive, "assetPath", "a");
+    if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0') {
+      return false;
+    }
+    sink.DrawSprite(cmd);
     return true;
   }
 

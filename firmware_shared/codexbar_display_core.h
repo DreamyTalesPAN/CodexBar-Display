@@ -26,6 +26,8 @@ struct Frame {
   int64_t totalTokens = 0;
   bool hasUsageMode = false;
   String usageMode;
+  String timeText;
+  String dateText;
   bool hasTheme = false;
   String theme;
   bool clearThemeSpec = false;
@@ -267,6 +269,8 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     out = {};
     out.hasUsageMode = hasUsageMode;
     out.usageMode = usageMode;
+    out.timeText = String(doc["time"] | "");
+    out.dateText = String(doc["date"] | "");
     out.hasTheme = hasTheme;
     out.theme = themeName;
     out.clearThemeSpec = clearThemeSpec;
@@ -292,6 +296,8 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   out.session = ClampPct(doc["session"] | 0);
   out.weekly = ClampPct(doc["weekly"] | 0);
   out.resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(doc["resetSecs"] | 0));
+  out.timeText = String(doc["time"] | "");
+  out.dateText = String(doc["date"] | "");
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | 0));
   out.weekTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["weekTokens"] | 0));
   out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | 0));
@@ -332,6 +338,8 @@ inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
          previous.totalTokens != next.totalTokens ||
          previous.hasUsageMode != next.hasUsageMode ||
          previous.usageMode != next.usageMode ||
+         previous.timeText != next.timeText ||
+         previous.dateText != next.dateText ||
          previous.clearThemeSpec != next.clearThemeSpec ||
          previous.hasThemeSpec != next.hasThemeSpec ||
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER

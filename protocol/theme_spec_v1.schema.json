@@ -63,6 +63,8 @@
               "rect",
               "progress",
               "gif",
+              "sprite",
+              "image",
               "pixels"
             ]
           },
@@ -73,6 +75,8 @@
               "r",
               "p",
               "g",
+              "sp",
+              "img",
               "px"
             ]
           },
@@ -119,6 +123,14 @@
           "s": {
             "type": "integer",
             "minimum": 0
+          },
+          "font": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "f": {
+            "type": "integer",
+            "minimum": 1
           },
           "color": {
             "type": "string",
@@ -258,6 +270,8 @@
               "rect",
               "progress",
               "gif",
+              "sprite",
+              "image",
               "pixels"
             ]
           },
@@ -268,6 +282,8 @@
               "r",
               "p",
               "g",
+              "sp",
+              "img",
               "px"
             ]
           },
@@ -314,6 +330,14 @@
           "s": {
             "type": "integer",
             "minimum": 0
+          },
+          "font": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "f": {
+            "type": "integer",
+            "minimum": 1
           },
           "color": {
             "type": "string",

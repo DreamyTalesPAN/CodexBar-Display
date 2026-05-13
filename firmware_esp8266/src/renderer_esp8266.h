@@ -9,6 +9,9 @@ namespace esp8266 {
 
 struct RendererDebugSnapshot {
   String activeTheme;
+  bool themeSpecActive = false;
+  String themeSpecId;
+  int themeSpecRev = 0;
   String gifActivePath;
   bool gifFilePresent = false;
   bool gifFileOpen = false;

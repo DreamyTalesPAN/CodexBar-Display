@@ -808,7 +808,13 @@ void appendRendererDebugJSON(String& out) {
   const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
   out += "\"display\":{\"activeTheme\":\"";
   out += jsonEscape(snapshot.activeTheme);
-  out += "\",\"gif\":{\"activePath\":\"";
+  out += "\",\"themeSpec\":{\"active\":";
+  out += snapshot.themeSpecActive ? "true" : "false";
+  out += ",\"id\":";
+  appendJSONNullableString(out, snapshot.themeSpecId);
+  out += ",\"rev\":";
+  out += String(snapshot.themeSpecRev);
+  out += "},\"gif\":{\"activePath\":\"";
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";
   out += snapshot.gifFilePresent ? "true" : "false";
@@ -857,20 +863,35 @@ void appendFirmwareUpdateJSON(String& out) {
   out += "}";
 }
 
-void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uint8_t depth) {
+String normalizedAssetListPath(const String& dirPath, const String& fileName) {
+  if (fileName.startsWith("/")) {
+    if (dirPath.length() > 1 && !fileName.startsWith(dirPath + "/")) {
+      return dirPath + fileName;
+    }
+    return fileName;
+  }
+  if (dirPath.length() > 1) {
+    return dirPath + "/" + fileName;
+  }
+  return "/" + fileName;
+}
+
+void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, String& seen, uint8_t depth) {
   if (depth > 4) {
     return;
   }
   Dir dir = LittleFS.openDir(dirPath);
   while (dir.next()) {
-    String path = dir.fileName();
-    if (!path.startsWith("/")) {
-      path = "/" + path;
-    }
+    const String path = normalizedAssetListPath(dirPath, dir.fileName());
     if (dir.isDirectory()) {
-      appendAssetEntriesJSON(out, path, first, depth + 1);
+      appendAssetEntriesJSON(out, path, first, seen, depth + 1);
       continue;
     }
+    const String seenToken = "|" + path + "|";
+    if (seen.indexOf(seenToken) >= 0) {
+      continue;
+    }
+    seen += seenToken;
     if (!first) {
       out += ",";
     }
@@ -887,7 +908,11 @@ void appendAssetListJSON(String& out) {
   out += "\"assets\":[";
   bool first = true;
   if (LittleFS.begin()) {
-    appendAssetEntriesJSON(out, "/", first, 0);
+    String seen;
+    appendAssetEntriesJSON(out, "/", first, seen, 0);
+    appendAssetEntriesJSON(out, "/themes", first, seen, 0);
+    appendAssetEntriesJSON(out, "/themes/u", first, seen, 0);
+    appendAssetEntriesJSON(out, "/themes/mini", first, seen, 0);
   }
   out += "]";
 }

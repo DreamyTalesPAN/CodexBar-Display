@@ -16,6 +16,7 @@ using codexbar_display::themespec::RectCommand;
 using codexbar_display::themespec::RenderThemeSpecAnimatedPrimitives;
 using codexbar_display::themespec::RenderThemeSpec;
 using codexbar_display::themespec::Sink;
+using codexbar_display::themespec::SpriteCommand;
 using codexbar_display::themespec::TextCommand;
 using codexbar_display::core::ConsumeFrameLine;
 using codexbar_display::core::RuntimeState;
@@ -27,6 +28,7 @@ enum class CommandType {
   Text,
   Progress,
   Gif,
+  Sprite,
   Pixels,
 };
 
@@ -108,6 +110,15 @@ class RecordingSink final : public Sink {
     commands.push_back(cmd);
   }
 
+  void DrawSprite(const SpriteCommand& sprite) override {
+    RecordedCommand cmd;
+    cmd.type = CommandType::Sprite;
+    cmd.x = sprite.x;
+    cmd.y = sprite.y;
+    cmd.assetPath = sprite.assetPath == nullptr ? "" : sprite.assetPath;
+    commands.push_back(cmd);
+  }
+
   void DrawPixels(const PixelsCommand& pixels) override {
     RecordedCommand cmd;
     cmd.type = CommandType::Pixels;
@@ -131,6 +142,8 @@ FrameData testFrame() {
   frame.weekly = 71;
   frame.resetSecs = 89 * 60 + 54;
   frame.usageMode = "remaining";
+  frame.time = "21:25";
+  frame.date = "7/5/2026";
   frame.sessionTokens = 1234;
   frame.weekTokens = 5678;
   frame.totalTokens = 9012;
@@ -154,18 +167,19 @@ void testRendersCommandsAndBindings() {
     "bgColor": "#123456",
     "primitives": [
       {"type":"rect","x":1,"y":2,"width":3,"height":4,"color":"#FFFFFF"},
-      {"type":"text","x":5,"y":6,"font":2,"fontSize":3,"color":"#CCFF00","bgColor":"#000000","text":"{label} {provider} {session}/{weekly} {reset} {usageMode} {sessionTokens} {weekTokens} {totalTokens}"},
+      {"type":"text","x":5,"y":6,"font":2,"fontSize":3,"color":"#CCFF00","bgColor":"#000000","text":"{label} {provider} {session}/{weekly} {reset} {usageMode} {time} {date} {sessionTokens} {weekTokens} {totalTokens}"},
       {"type":"text","x":7,"y":8,"fontSize":1,"binding":"weeklyPercent"},
       {"type":"progress","x":9,"y":10,"width":111,"height":12,"color":"#00FF00","bgColor":"#101010","borderColor":"#FFFFFF"},
       {"type":"progress","x":13,"y":14,"width":99,"height":15,"binding":"weekly","color":"#0000FF"},
       {"type":"gif","x":15,"y":16,"width":80,"height":64,"assetPath":"/themes/mini/mini.gif"},
+      {"type":"sprite","x":17,"y":18,"assetPath":"/themes/u/cloud.cbi"},
       {"type":"pixels","x":2,"y":3,"width":4,"height":2,"color":"#FFFFFF","data":"A5"}
     ]
   })JSON";
 
   RecordingSink sink;
   TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
-  TEST_ASSERT_EQUAL_UINT32(8, sink.commands.size());
+  TEST_ASSERT_EQUAL_UINT32(9, sink.commands.size());
 
   const RecordedCommand& clear = sink.commands[0];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(clear.type));
@@ -181,10 +195,10 @@ void testRendersCommandsAndBindings() {
 
   const RecordedCommand& text = sink.commands[2];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(text.type));
-  TEST_ASSERT_EQUAL_STRING("Codex codex 97/71 1h 29m remaining 1234 5678 9012", text.text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Codex codex 97/71 1h 29m remaining 21:25 7/5/2026 1234 5678 9012", text.text.c_str());
   TEST_ASSERT_EQUAL_INT(5, text.x);
   TEST_ASSERT_EQUAL_INT(6, text.y);
-  TEST_ASSERT_EQUAL_INT(1, text.font);
+  TEST_ASSERT_EQUAL_INT(2, text.font);
   TEST_ASSERT_EQUAL_INT(3, text.size);
   TEST_ASSERT_EQUAL_HEX16(0xCFE0, text.fg);
   TEST_ASSERT_EQUAL_HEX16(0x0000, text.bg);
@@ -213,7 +227,13 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_INT(64, gif.height);
   TEST_ASSERT_EQUAL_STRING("/themes/mini/mini.gif", gif.assetPath.c_str());
 
-  const RecordedCommand& pixels = sink.commands[7];
+  const RecordedCommand& sprite = sink.commands[7];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(sprite.type));
+  TEST_ASSERT_EQUAL_INT(17, sprite.x);
+  TEST_ASSERT_EQUAL_INT(18, sprite.y);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/cloud.cbi", sprite.assetPath.c_str());
+
+  const RecordedCommand& pixels = sink.commands[8];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Pixels), static_cast<int>(pixels.type));
   TEST_ASSERT_EQUAL_INT(2, pixels.x);
   TEST_ASSERT_EQUAL_INT(3, pixels.y);

@@ -15,6 +15,8 @@ type Frame struct {
 	Weekly        int             `json:"weekly,omitempty"`
 	ResetSec      int64           `json:"resetSecs,omitempty"`
 	UsageMode     string          `json:"usageMode,omitempty"`
+	Time          string          `json:"time,omitempty"`
+	Date          string          `json:"date,omitempty"`
 	SessionTokens int64           `json:"sessionTokens,omitempty"`
 	WeekTokens    int64           `json:"weekTokens,omitempty"`
 	TotalTokens   int64           `json:"totalTokens,omitempty"`
@@ -68,6 +70,8 @@ func (f Frame) Normalize() Frame {
 	default:
 		f.UsageMode = ""
 	}
+	f.Time = strings.TrimSpace(f.Time)
+	f.Date = strings.TrimSpace(f.Date)
 	f.Theme = theme.Normalize(f.Theme)
 	if len(f.ThemeSpec) > 0 && !json.Valid(f.ThemeSpec) {
 		f.ThemeSpec = nil
