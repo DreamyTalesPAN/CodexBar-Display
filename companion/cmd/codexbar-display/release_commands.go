@@ -35,7 +35,7 @@ const (
 	defaultReleaseRepo        = "DreamyTalesPAN/CodexBar-Display"
 	githubAPIBaseURL          = "https://api.github.com"
 	githubDownloadBaseURL     = "https://github.com"
-	vibeTVFirmwareManifestURL = "https://vibetv.shop/cdn/shop/t/1/assets/firmware-manifest.json"
+	vibeTVFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 )
 
 var (

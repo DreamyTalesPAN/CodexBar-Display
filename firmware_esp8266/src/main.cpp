@@ -55,7 +55,7 @@ const char kSetupApSsid[] = "VibeTV-Setup";
 const char kSetupHost[] = "vibetv.local";
 const char kMdnsName[] = "vibetv";
 const char kMdnsHost[] = "vibetv.local";
-const char kFirmwareManifestUrl[] = "https://vibetv.shop/cdn/shop/t/1/assets/firmware-manifest.json";
+const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
 const char* const kFirmwareUpdateNoticeTexts[] = {
     "Update Available:",
     "vibetv.local",
