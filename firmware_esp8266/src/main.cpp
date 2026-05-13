@@ -490,6 +490,15 @@ void clearWifiCredentials() {
   Serial.println("wifi_credentials_cleared");
 }
 
+void clearSdkWifiCredentials() {
+  WiFi.persistent(true);
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true);
+  delay(150);
+  WiFi.persistent(false);
+  Serial.println("wifi_sdk_credentials_cleared");
+}
+
 uint8_t readBootRecoveryCounter() {
   EEPROM.begin(kEepromBytes);
   uint32_t magic = 0;
@@ -527,6 +536,7 @@ bool consumeBootRecoveryTrigger() {
 
   if (counter >= kBootRecoveryThreshold) {
     clearWifiCredentials();
+    clearSdkWifiCredentials();
     clearBootRecoveryCounter();
     Serial.println("boot_recovery_triggered action=wifi_setup");
     drawWifiResetStatus("Starting setup");
@@ -731,6 +741,7 @@ void handleResetWifi() {
   }
 
   clearWifiCredentials();
+  clearSdkWifiCredentials();
   clearBootRecoveryCounter();
   webServer.send(200, "text/html; charset=utf-8", "<!doctype html><p>WiFi settings cleared. Vibe TV is restarting setup.</p>");
   drawWifiResetStatus("Restarting");
