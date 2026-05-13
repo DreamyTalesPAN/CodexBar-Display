@@ -71,7 +71,13 @@ If support asks you to update the Mac Companion, rerun:
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
 ```
 
-Firmware updates are handled by support over the Vibe TV web updater. USB flashing is not part of the customer flow.
+If support asks you to update firmware, open `http://vibetv.local/update` and copy the update command. It looks like this:
+
+```bash
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --target http://vibetv.local && codexbar-display install-update --confirm-live-update --target http://vibetv.local
+```
+
+That command refreshes the Mac Companion first, then installs firmware if a newer release exists. USB flashing is not part of the customer flow.
 
 ## What the Installer Does
 

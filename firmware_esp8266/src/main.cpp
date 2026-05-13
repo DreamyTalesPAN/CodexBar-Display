@@ -394,8 +394,24 @@ String htmlEscape(const String& raw) {
   return escaped;
 }
 
+String macInstallerCommand() {
+  return F("curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash");
+}
+
+String updateTargetURL() {
+  return String("http://") + kMdnsHost;
+}
+
 String updateInstallCommand() {
-  return String("codexbar-display install-update --confirm-live-update --target http://") + kMdnsHost;
+  const String target = updateTargetURL();
+  String command;
+  command.reserve(260);
+  command += macInstallerCommand();
+  command += F(" -s -- --target ");
+  command += target;
+  command += F(" && codexbar-display install-update --confirm-live-update --target ");
+  command += target;
+  return command;
 }
 
 String updateStatusHTML(bool compact) {
@@ -421,11 +437,6 @@ String updateStatusHTML(bool compact) {
     html += F("<section><h2>Firmware status</h2><p class='muted'>Installed: <code>");
     html += htmlEscape(String(CODEXBAR_DISPLAY_FW_VERSION));
     html += F("</code>");
-    if (firmwareUpdate.latestVersion.length() > 0) {
-      html += F("<br>Latest known: <code>");
-      html += htmlEscape(firmwareUpdate.latestVersion);
-      html += F("</code>");
-    }
     html += F("<br>Status: <code>");
     html += htmlEscape(firmwareUpdate.lastStatus);
     html += F("</code>");
@@ -635,9 +646,7 @@ String setupPageHTML() {
 String connectedPageHTML() {
   const String ip = WiFi.localIP().toString();
   const bool hasFrame = codexbar_display::app::HasFrame(runtimeCtx);
-  String setupCommand;
-  setupCommand.reserve(120);
-  setupCommand += "curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash";
+  const String setupCommand = macInstallerCommand();
 
   String html;
   html.reserve(3600);
@@ -1102,14 +1111,15 @@ String updatePageHTML() {
   html += F(":root{color-scheme:dark}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:#0b0c0d;color:#f6f4ed}main{max-width:620px;margin:auto;padding:24px 18px}a,summary{color:#c7ff00;font-weight:800}h1{margin:16px 0}.muted{color:#a9adb3}.update,input,button,pre{border-radius:8px}.update{border:1px solid #6f8f00;padding:10px}.update-link{display:none}input,button{width:100%;font:inherit;padding:12px;margin-top:10px}button{background:#c7ff00;color:#111;border:0;font-weight:900}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;padding:12px}</style></head><body><main>");
   html += F("<h1>VibeTV Update</h1>");
   html += updateStatusHTML(false);
-  html += F("<h2>Install with Mac</h2><pre>");
+  html += F("<h2>Check with Mac</h2><p class='muted'>Copy this command into Terminal. It refreshes the Mac helper first, then installs firmware if needed.</p><pre id='cmd'>");
   html += htmlEscape(installCommand);
-  html += F("</pre><details><summary>Manual upload</summary>");
+  html += F("</pre><textarea id='cmdFallback' readonly style='position:absolute;left:-9999px'></textarea><button type='button' onclick='copyCmd()' id='copyBtn'>Copy update command</button><details><summary>Manual upload</summary>");
   html += F("<form method='post' action='/update/firmware' enctype='multipart/form-data'>");
   html += F("<input type='file' name='firmware' accept='.bin,application/octet-stream' required>");
   html += F("<button type='submit'>Upload firmware</button></form>");
   html += F("</details>");
-  html += F("<p class='muted'><a href='/'>Setup</a> | <a href='/health'>Status</a> | <a href='/assets'>Files</a></p></main></body></html>");
+  html += F("<p class='muted'><a href='/'>Setup</a> | <a href='/health'>Status</a> | <a href='/assets'>Files</a></p>");
+  html += F("<script>function copied(){document.getElementById('copyBtn').textContent='Copied';}function fallbackCopy(t){var a=document.getElementById('cmdFallback');a.value=t;a.focus();a.select();try{document.execCommand('copy');copied();}catch(e){window.prompt('Copy this command',t);}}function copyCmd(){var t=document.getElementById('cmd').textContent.trim();if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(copied,function(){fallbackCopy(t);});}else{fallbackCopy(t);}}</script></main></body></html>");
   return html;
 }
 
