@@ -129,6 +129,8 @@
                       "rect",
                       "progress",
                       "gif",
+                      "sprite",
+                      "image",
                       "pixels"
                     ]
                   },
@@ -139,6 +141,8 @@
                       "r",
                       "p",
                       "g",
+                      "sp",
+                      "img",
                       "px"
                     ]
                   },
@@ -324,6 +328,8 @@
                       "rect",
                       "progress",
                       "gif",
+                      "sprite",
+                      "image",
                       "pixels"
                     ]
                   },
@@ -334,6 +340,8 @@
                       "r",
                       "p",
                       "g",
+                      "sp",
+                      "img",
                       "px"
                     ]
                   },

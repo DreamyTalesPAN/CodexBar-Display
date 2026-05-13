@@ -208,6 +208,20 @@ void GifCoreESP8266::ConfigureDrawRect(TFT_eSPI& tft, const GifPlaybackRequest& 
   }
 }
 
+void GifCoreESP8266::ClearDrawRect(TFT_eSPI& tft) {
+  if (!hasBackgroundColor_ || drawWidth_ <= 0 || drawHeight_ <= 0) {
+    return;
+  }
+  const int x = max(0, drawX_);
+  const int y = max(0, drawY_);
+  const int right = min(static_cast<int>(tft.width()), drawX_ + drawWidth_);
+  const int bottom = min(static_cast<int>(tft.height()), drawY_ + drawHeight_);
+  if (right <= x || bottom <= y) {
+    return;
+  }
+  tft.fillRect(x, y, right - x, bottom - y, backgroundColor_);
+}
+
 bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& request) {
   if (request.assetPath == nullptr || request.assetPath[0] == '\0') {
     Stop();
@@ -282,6 +296,7 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
 
   decoderOpen_ = true;
   nextFrameAtMs_ = 0;
+  ClearDrawRect(tft);
   return true;
 }
 
@@ -301,6 +316,7 @@ bool GifCoreESP8266::PlayFrame(TFT_eSPI& tft, bool forceFrame) {
 
   if (!played) {
     decoder_.reset();
+    ClearDrawRect(tft);
     tft.startWrite();
     played = decoder_.playFrame(false, &delayMs, nullptr);
     tft.endWrite();

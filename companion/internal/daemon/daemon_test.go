@@ -126,6 +126,39 @@ func TestRunCycleWithDepsLogsUsageSourceFreshModeAndTransport(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithDepsAttachesClockFields(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 34, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	var sentLine []byte
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 12, 30, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Time != "12:34" || frame.Date != "23.02.2026" {
+		t.Fatalf("expected clock fields from daemon time, got time=%q date=%q", frame.Time, frame.Date)
+	}
+}
+
 func TestRunCycleWithDepsSkipsThemeWhenDeviceDoesNotSupportIt(t *testing.T) {
 	prepareFastTestEnv(t)
 	t.Setenv(themeEnvVar, "crt")
@@ -1095,12 +1128,14 @@ func TestRunWithDepsResetsRetryBackoffAfterSleepWakeGap(t *testing.T) {
 	defer cancel()
 
 	start := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	beforeGap := start.Add(2 * time.Second)
+	afterGap := start.Add(2*time.Minute + 5*time.Second)
+	afterGapNext := start.Add(2*time.Minute + 7*time.Second)
 	nowValues := []time.Time{
-		start,
-		start.Add(2 * time.Second),
-		start.Add(4 * time.Second),
-		start.Add(2*time.Minute + 5*time.Second), // sleep/wake-sized wall clock gap
-		start.Add(2*time.Minute + 7*time.Second),
+		start, start,
+		beforeGap, beforeGap,
+		afterGap, afterGap, // sleep/wake-sized wall clock gap
+		afterGapNext, afterGapNext,
 	}
 	nowIdx := 0
 

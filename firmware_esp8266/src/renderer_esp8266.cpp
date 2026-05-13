@@ -46,6 +46,9 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
     snapshot.themeSpecId = display::CurrentFrame().themeSpecId;
     snapshot.themeSpecRev = display::CurrentFrame().themeSpecRev;
   }
+  snapshot.themeSpecRenderOk = !snapshot.themeSpecActive || display::ThemeSpecRenderOk();
+  snapshot.themeSpecRenderError = snapshot.themeSpecActive ? display::ThemeSpecRenderError() : "";
+  snapshot.themeSpecRenderFailures = display::ThemeSpecRenderFailures();
   const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
   snapshot.gifActivePath = gif.activePath;
   snapshot.gifFilePresent = gif.filePresent;
@@ -356,6 +359,10 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
   if (display::DrawThemeSpecUsage()) {
     return;
   }
+  if (display::CurrentFrame().hasThemeSpec) {
+    display::DrawErrorMini("theme/render-failed");
+    return;
+  }
   display::DrawUsageMini();
 #else
   probe::Render(ctx);
@@ -379,6 +386,10 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec && display::DrawThemeSpecUsage()) {
+    return;
+  }
+  if (display::CurrentFrame().hasThemeSpec) {
+    display::DrawErrorMini("theme/render-failed");
     return;
   }
   display::DrawResetMini(remainSecs);

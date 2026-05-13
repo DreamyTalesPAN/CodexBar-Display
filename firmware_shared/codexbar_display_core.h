@@ -13,7 +13,7 @@
 namespace codexbar_display {
 namespace core {
 
-constexpr size_t kFrameLineBufferBytes = 1024;
+constexpr size_t kFrameLineBufferBytes = 2048;
 
 struct Frame {
   String provider;

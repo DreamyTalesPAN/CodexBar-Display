@@ -12,6 +12,9 @@ struct RendererDebugSnapshot {
   bool themeSpecActive = false;
   String themeSpecId;
   int themeSpecRev = 0;
+  bool themeSpecRenderOk = true;
+  String themeSpecRenderError;
+  unsigned long themeSpecRenderFailures = 0;
   String gifActivePath;
   bool gifFilePresent = false;
   bool gifFileOpen = false;

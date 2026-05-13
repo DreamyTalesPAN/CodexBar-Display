@@ -95,6 +95,7 @@ class GifCoreESP8266 {
   bool ReadGifDimensions(const char* path, int& width, int& height);
   bool EnsureStorage(const char* path);
   void ConfigureDrawRect(TFT_eSPI& tft, const GifPlaybackRequest& request);
+  void ClearDrawRect(TFT_eSPI& tft);
   bool EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& request);
   bool PlayFrame(TFT_eSPI& tft, bool forceFrame);
   void DrawScaledCallbackImpl(GIFDRAW* draw);

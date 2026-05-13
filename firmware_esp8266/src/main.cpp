@@ -32,7 +32,7 @@ codexbar_display::esp8266::RendererESP8266 renderer;
 ESP8266WebServer webServer(80);
 DNSServer dnsServer;
 
-constexpr int kMaxFrameBytes = 1024;
+constexpr int kMaxFrameBytes = 2048;
 constexpr uint16_t kDnsPort = 53;
 constexpr uint32_t kWifiCredsMagic = 0x56544231UL;  // VTB1
 constexpr uint32_t kBootRecoveryMagic = 0x56544252UL;  // VTBR
@@ -51,6 +51,7 @@ constexpr unsigned long kFrameStaleWarningMs = 150000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr uint8_t kBootRecoveryThreshold = 3;
 constexpr size_t kMaxAssetPathBytes = 32;
+constexpr size_t kMaxStoredThemeSpecBytes = 4096;
 const char kSetupApSsid[] = "VibeTV-Setup";
 const char kSetupHost[] = "vibetv.local";
 const char kMdnsName[] = "vibetv";
@@ -89,6 +90,8 @@ String otaUploadError;
 bool assetUploadSucceeded = false;
 String assetUploadError;
 String assetUploadPath;
+String activeThemeSpecPath;
+String activeThemeSpecHash;
 String setupWifiOptionsHTML;
 bool rebootPending = false;
 unsigned long rebootAtMs = 0;
@@ -131,6 +134,23 @@ String jsonEscape(const String& raw) {
     }
   }
   return escaped;
+}
+
+uint32_t fnv1a32(const String& raw) {
+  uint32_t hash = 2166136261UL;
+  for (size_t i = 0; i < raw.length(); ++i) {
+    hash ^= static_cast<uint8_t>(raw[i]);
+    hash *= 16777619UL;
+  }
+  return hash;
+}
+
+String hashHex8(const String& raw) {
+  String out = String(fnv1a32(raw), HEX);
+  while (out.length() < 8) {
+    out = "0" + out;
+  }
+  return out;
 }
 
 void appendJSONNullableString(String& out, const String& value) {
@@ -183,7 +203,8 @@ void maintainFirmwareUpdateNotice() {
       setupMode ||
       frameStaleStatusRendered ||
       !codexbar_display::app::HasFrame(runtimeCtx) ||
-      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec) {
     clearFirmwareUpdateNotice();
     return;
   }
@@ -230,6 +251,10 @@ void applyFrameUpdateState() {
   firmwareUpdate.lastStatus = nextStatus;
 
   if (!firmwareUpdate.available) {
+    clearFirmwareUpdateNotice();
+    return;
+  }
+  if (frame.hasThemeSpec) {
     clearFirmwareUpdateNotice();
     return;
   }
@@ -312,6 +337,18 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
   frameStaleStatusRendered = false;
   lastFrameAcceptedAtMs = millis();
   applyFrameUpdateState();
+  if (event.themeSpecChanged) {
+    if (codexbar_display::app::HasFrame(runtimeCtx) &&
+        codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec) {
+      const String& raw = codexbar_display::app::CurrentFrame(runtimeCtx).themeSpecRaw;
+      if (raw.length() > 0) {
+        activeThemeSpecHash = hashHex8(raw);
+      }
+    } else {
+      activeThemeSpecPath = "";
+      activeThemeSpecHash = "";
+    }
+  }
   renderer.OnFrameAccepted(runtimeCtx, event);
   if (redrawAfterStaleStatus) {
     runtimeCtx.screenDirty = true;
@@ -334,7 +371,7 @@ const char* transportCapabilitiesJSON(const char* activeTransport) {
   if (isUsb) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-           "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32},"
+           "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":32,\"supportsStoredThemes\":true,\"maxStoredThemeSpecBytes\":4096},"
            "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
 #else
     return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
@@ -344,7 +381,7 @@ const char* transportCapabilitiesJSON(const char* activeTransport) {
   }
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-         "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32},"
+         "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":32,\"supportsStoredThemes\":true,\"maxStoredThemeSpecBytes\":4096},"
          "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
 #else
   return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
@@ -835,6 +872,16 @@ void appendRendererDebugJSON(String& out) {
   appendJSONNullableString(out, snapshot.themeSpecId);
   out += ",\"rev\":";
   out += String(snapshot.themeSpecRev);
+  out += ",\"path\":";
+  appendJSONNullableString(out, activeThemeSpecPath);
+  out += ",\"hash\":";
+  appendJSONNullableString(out, activeThemeSpecHash);
+  out += ",\"renderOk\":";
+  out += snapshot.themeSpecRenderOk ? "true" : "false";
+  out += ",\"renderError\":";
+  appendJSONNullableString(out, snapshot.themeSpecRenderError);
+  out += ",\"renderFailures\":";
+  out += String(snapshot.themeSpecRenderFailures);
   out += "},\"gif\":{\"activePath\":\"";
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";
@@ -948,7 +995,12 @@ void handleHealth() {
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"board\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_BOARD_ID);
-  out += "\",\"wifi\":{\"mode\":\"";
+  out += "\",\"system\":{\"freeHeap\":";
+  out += String(ESP.getFreeHeap());
+  out += ",\"resetReason\":\"";
+  out += jsonEscape(ESP.getResetReason());
+  out += "\"";
+  out += "},\"wifi\":{\"mode\":\"";
   out += wifiModeName();
   out += "\",\"connected\":";
   out += wifiConnected ? "true" : "false";
@@ -1103,6 +1155,11 @@ void handleAssetDelete() {
     webServer.send(404, "text/plain; charset=utf-8", "asset not found");
     return;
   }
+  if (path == activeThemeSpecPath) {
+    addCorsHeaders();
+    webServer.send(409, "text/plain; charset=utf-8", "asset is active");
+    return;
+  }
   renderer.ResetGifStateForAssetUpdate();
   if (!LittleFS.remove(path)) {
     addCorsHeaders();
@@ -1112,6 +1169,194 @@ void handleAssetDelete() {
   Serial.printf("asset_deleted path=%s\n", path.c_str());
   addCorsHeaders();
   webServer.send(200, "application/json", "{\"ok\":true}");
+}
+
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+bool readStoredThemeSpec(const String& path, String& raw, String& error) {
+  if (!isSafeAssetPath(path) || !path.startsWith("/themes/")) {
+    error = "invalid theme path";
+    return false;
+  }
+  if (!LittleFS.begin()) {
+    error = "filesystem mount failed";
+    return false;
+  }
+  if (!LittleFS.exists(path)) {
+    error = "theme file not found";
+    return false;
+  }
+
+  File file = LittleFS.open(path, "r");
+  if (!file) {
+    error = "open theme file failed";
+    return false;
+  }
+  const size_t size = file.size();
+  if (size == 0 || size > kMaxStoredThemeSpecBytes) {
+    file.close();
+    error = "theme file too large";
+    return false;
+  }
+  raw = file.readString();
+  file.close();
+  raw.trim();
+  if (raw.length() == 0 || raw.length() > kMaxStoredThemeSpecBytes) {
+    error = "theme file too large";
+    return false;
+  }
+  return true;
+}
+
+bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String& fallbackTheme, String& error) {
+  JsonDocument filter;
+  filter["themeId"] = true;
+  filter["id"] = true;
+  filter["themeRev"] = true;
+  filter["rev"] = true;
+  filter["fallbackTheme"] = true;
+  filter["fb"] = true;
+
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, raw, DeserializationOption::Filter(filter));
+  if (err) {
+    error = String("bad theme json: ") + err.c_str();
+    return false;
+  }
+  JsonObjectConst spec = doc.as<JsonObjectConst>();
+  if (spec.isNull()) {
+    error = "theme json must be an object";
+    return false;
+  }
+
+  const char* id = nullptr;
+  if (spec["themeId"].is<const char*>()) {
+    id = spec["themeId"].as<const char*>();
+  } else if (spec["id"].is<const char*>()) {
+    id = spec["id"].as<const char*>();
+  }
+  if (id != nullptr) {
+    themeId = String(id);
+    themeId.trim();
+  }
+  themeRev = static_cast<int>(spec["themeRev"] | spec["rev"] | 0);
+  if (themeId.length() == 0 || themeRev <= 0) {
+    error = "theme id/rev missing";
+    return false;
+  }
+
+  const char* fallback = nullptr;
+  if (spec["fallbackTheme"].is<const char*>()) {
+    fallback = spec["fallbackTheme"].as<const char*>();
+  } else if (spec["fb"].is<const char*>()) {
+    fallback = spec["fb"].as<const char*>();
+  }
+  if (fallback != nullptr) {
+    String normalized;
+    if (codexbar_display::theme::NormalizeThemeName(String(fallback), normalized)) {
+      fallbackTheme = normalized;
+    }
+  }
+  return true;
+}
+
+void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev, const String& fallbackTheme) {
+  const bool hadFrame = codexbar_display::app::HasFrame(runtimeCtx);
+  const codexbar_display::core::Frame previous = runtimeCtx.runtime.current;
+  codexbar_display::core::Frame next = hadFrame ? previous : codexbar_display::core::Frame{};
+
+  if (!hadFrame) {
+    next.provider = "codex";
+    next.label = "Codex";
+  }
+  next.hasError = false;
+  next.error = "";
+  next.clearThemeSpec = false;
+  next.hasThemeSpec = true;
+  next.themeSpecId = themeId;
+  next.themeSpecRev = themeRev;
+  next.themeSpecRaw = raw;
+  if (fallbackTheme.length() > 0) {
+    next.hasTheme = true;
+    next.theme = fallbackTheme;
+  }
+
+  runtimeCtx.runtime.cachedThemeId = themeId;
+  runtimeCtx.runtime.cachedThemeRev = themeRev;
+  runtimeCtx.runtime.cachedThemeSpecRaw = raw;
+  runtimeCtx.runtime.current = next;
+  runtimeCtx.runtime.hasFrame = true;
+  runtimeCtx.runtime.resetBaseSecs = next.resetSecs;
+  runtimeCtx.runtime.resetBaseMillis = millis();
+  activeThemeSpecPath = path;
+  activeThemeSpecHash = hashHex8(raw);
+
+  codexbar_display::core::SerialConsumeEvent event;
+  event.frameAccepted = true;
+  event.hadFrame = hadFrame;
+  event.themeSpecChanged = true;
+  event.visualChanged = !hadFrame || codexbar_display::core::FrameVisualChanged(previous, next) || event.themeSpecChanged;
+  event.themeChanged = hadFrame && codexbar_display::core::FrameThemeChanged(previous, next);
+  markFrameAccepted(event, "theme");
+}
+#endif
+
+void handleThemeActive() {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  String body = webServer.arg("plain");
+  body.trim();
+  if (body.length() == 0 || body.length() > 160) {
+    addCorsHeaders();
+    webServer.send(400, "text/plain; charset=utf-8", "invalid theme activation body");
+    return;
+  }
+
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    addCorsHeaders();
+    webServer.send(400, "text/plain; charset=utf-8", "bad theme activation json");
+    return;
+  }
+  String path = String(doc["path"] | "");
+  path.trim();
+
+  String raw;
+  String error;
+  if (!readStoredThemeSpec(path, raw, error)) {
+    addCorsHeaders();
+    webServer.send(error == "theme file not found" ? 404 : 400, "text/plain; charset=utf-8", error);
+    return;
+  }
+
+  String themeId;
+  int themeRev = 0;
+  String fallbackTheme;
+  if (!themeSpecMetadata(raw, themeId, themeRev, fallbackTheme, error)) {
+    addCorsHeaders();
+    webServer.send(400, "text/plain; charset=utf-8", error);
+    return;
+  }
+
+  activateStoredThemeSpec(path, raw, themeId, themeRev, fallbackTheme);
+
+  String out;
+  out.reserve(160);
+  out += "{\"ok\":true,\"path\":\"";
+  out += jsonEscape(path);
+  out += "\",\"id\":\"";
+  out += jsonEscape(themeId);
+  out += "\",\"rev\":";
+  out += String(themeRev);
+  out += ",\"hash\":\"";
+  out += jsonEscape(activeThemeSpecHash);
+  out += "\"";
+  out += "}";
+  addCorsHeaders();
+  webServer.send(200, "application/json", out);
+#else
+  addCorsHeaders();
+  webServer.send(501, "text/plain; charset=utf-8", "theme spec renderer disabled");
+#endif
 }
 
 String updatePageHTML() {
@@ -1287,6 +1532,7 @@ void startHttpServer() {
       handleAssetUploadResult,
       handleAssetUpload);
   webServer.on("/assets", HTTP_DELETE, handleAssetDelete);
+  webServer.on("/theme/active", HTTP_POST, handleThemeActive);
   webServer.on("/frame", HTTP_POST, handleFrame);
   webServer.on("/update", HTTP_GET, handleUpdatePage);
   webServer.on(

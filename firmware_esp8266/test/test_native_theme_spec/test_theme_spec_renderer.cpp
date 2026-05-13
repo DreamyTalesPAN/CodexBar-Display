@@ -115,6 +115,8 @@ class RecordingSink final : public Sink {
     cmd.type = CommandType::Sprite;
     cmd.x = sprite.x;
     cmd.y = sprite.y;
+    cmd.width = sprite.width;
+    cmd.height = sprite.height;
     cmd.assetPath = sprite.assetPath == nullptr ? "" : sprite.assetPath;
     commands.push_back(cmd);
   }
@@ -172,7 +174,7 @@ void testRendersCommandsAndBindings() {
       {"type":"progress","x":9,"y":10,"width":111,"height":12,"color":"#00FF00","bgColor":"#101010","borderColor":"#FFFFFF"},
       {"type":"progress","x":13,"y":14,"width":99,"height":15,"binding":"weekly","color":"#0000FF"},
       {"type":"gif","x":15,"y":16,"width":80,"height":64,"assetPath":"/themes/mini/mini.gif"},
-      {"type":"sprite","x":17,"y":18,"assetPath":"/themes/u/cloud.cbi"},
+      {"type":"sprite","x":17,"y":18,"width":24,"height":14,"assetPath":"/themes/u/cloud.cbi"},
       {"type":"pixels","x":2,"y":3,"width":4,"height":2,"color":"#FFFFFF","data":"A5"}
     ]
   })JSON";
@@ -231,6 +233,8 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(sprite.type));
   TEST_ASSERT_EQUAL_INT(17, sprite.x);
   TEST_ASSERT_EQUAL_INT(18, sprite.y);
+  TEST_ASSERT_EQUAL_INT(24, sprite.width);
+  TEST_ASSERT_EQUAL_INT(14, sprite.height);
   TEST_ASSERT_EQUAL_STRING("/themes/u/cloud.cbi", sprite.assetPath.c_str());
 
   const RecordedCommand& pixels = sink.commands[8];
@@ -250,23 +254,26 @@ void testRendersCompactCommandsAndBindings() {
     "rev": 1,
     "bg": "#123456",
     "p": [
-      {"t":"tx","x":5,"y":6,"s":3,"c":"#CCFF00","bg":"#000000","v":"{l} {s}/{w} {r} {u}"},
+      {"t":"tx","x":5,"y":6,"f":2,"s":3,"c":"#FF00FF","bg":"#000000","v":"{l} {s}/{w} {r} {u} {dt}"},
       {"t":"p","x":9,"y":10,"w":111,"h":12,"b":"w","c":"#00FF00","bg":"#101010","bc":"#FFFFFF"},
       {"t":"g","x":15,"y":16,"w":80,"h":64,"a":"/themes/mini/mini.gif"},
+      {"t":"sp","x":17,"y":18,"w":24,"h":14,"a":"/themes/u/cloud.cbi"},
       {"t":"px","x":2,"y":3,"w":4,"h":2,"c":"#FFFFFF","d":"A5"}
     ]
   })JSON";
 
   RecordingSink sink;
   TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
-  TEST_ASSERT_EQUAL_UINT32(5, sink.commands.size());
+  TEST_ASSERT_EQUAL_UINT32(6, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
   TEST_ASSERT_EQUAL_HEX16(0x11AA, sink.commands[0].color);
 
   const RecordedCommand& text = sink.commands[1];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(text.type));
-  TEST_ASSERT_EQUAL_STRING("Codex 97/71 1h 29m remaining", text.text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Codex 97/71 1h 29m remaining 7/5/2026", text.text.c_str());
+  TEST_ASSERT_EQUAL_INT(2, text.font);
   TEST_ASSERT_EQUAL_INT(3, text.size);
+  TEST_ASSERT_EQUAL_HEX16(0xF81F, text.fg);
 
   const RecordedCommand& progress = sink.commands[2];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(progress.type));
@@ -277,7 +284,13 @@ void testRendersCompactCommandsAndBindings() {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Gif), static_cast<int>(gif.type));
   TEST_ASSERT_EQUAL_STRING("/themes/mini/mini.gif", gif.assetPath.c_str());
 
-  const RecordedCommand& pixels = sink.commands[4];
+  const RecordedCommand& sprite = sink.commands[4];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(sprite.type));
+  TEST_ASSERT_EQUAL_STRING("/themes/u/cloud.cbi", sprite.assetPath.c_str());
+  TEST_ASSERT_EQUAL_INT(24, sprite.width);
+  TEST_ASSERT_EQUAL_INT(14, sprite.height);
+
+  const RecordedCommand& pixels = sink.commands[5];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Pixels), static_cast<int>(pixels.type));
   TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
 }
@@ -383,7 +396,7 @@ void testColorFallbacks() {
   TEST_ASSERT_TRUE(sink.commands[2].hasBg);
 }
 
-void testAnimatedPrimitivePassRendersOnlyGifsWithoutClear() {
+void testAnimatedPrimitivePassRendersGifsAndSpritesWithoutClear() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
     "themeId": "codex-test",
@@ -391,15 +404,20 @@ void testAnimatedPrimitivePassRendersOnlyGifsWithoutClear() {
     "primitives": [
       {"type":"rect","x":1,"y":2,"width":3,"height":4,"color":"#FFFFFF"},
       {"type":"gif","x":20,"y":21,"width":22,"height":23,"assetPath":"/themes/demo/loop.gif"},
+      {"type":"sprite","x":30,"y":31,"width":32,"height":33,"assetPath":"/themes/demo/hero.cba"},
       {"type":"text","x":5,"y":6,"fontSize":1,"text":"ok"}
     ]
   })JSON";
 
   RecordingSink sink;
   TEST_ASSERT_TRUE(RenderThemeSpecAnimatedPrimitives(spec, testFrame(), sink));
-  TEST_ASSERT_EQUAL_UINT32(1, sink.commands.size());
+  TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Gif), static_cast<int>(sink.commands[0].type));
   TEST_ASSERT_EQUAL_STRING("/themes/demo/loop.gif", sink.commands[0].assetPath.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_INT(32, sink.commands[1].width);
+  TEST_ASSERT_EQUAL_INT(33, sink.commands[1].height);
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/hero.cba", sink.commands[1].assetPath.c_str());
 }
 
 void testThemeSpecCacheCarriesLayoutAcrossLiveFrames() {
@@ -486,7 +504,7 @@ int main() {
   RUN_TEST(testInvalidMulticolorRlePixelsAreSkippedWithoutPartialDraw);
   RUN_TEST(testInvalidPrimitivesAreSkipped);
   RUN_TEST(testColorFallbacks);
-  RUN_TEST(testAnimatedPrimitivePassRendersOnlyGifsWithoutClear);
+  RUN_TEST(testAnimatedPrimitivePassRendersGifsAndSpritesWithoutClear);
   RUN_TEST(testThemeSpecCacheCarriesLayoutAcrossLiveFrames);
   RUN_TEST(testCompactThemeSpecFrameIsCached);
   RUN_TEST(testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent);

@@ -60,12 +60,18 @@ struct GifCommand {
   int y = 0;
   int width = 0;
   int height = 0;
+  uint16_t bg = 0x0000;
+  bool hasBg = false;
 };
 
 struct SpriteCommand {
   const char* assetPath = "";
   int x = 0;
   int y = 0;
+  int width = 0;
+  int height = 0;
+  uint16_t bg = 0x0000;
+  bool hasBg = false;
 };
 
 struct PixelsCommand {
@@ -81,6 +87,7 @@ class Sink {
  public:
   virtual ~Sink() = default;
 
+  virtual void PrimeBackground(uint16_t color) { (void)color; }
   virtual void FillScreen(uint16_t color) = 0;
   virtual void FillRect(const RectCommand& cmd) = 0;
   virtual void DrawText(const TextCommand& cmd) = 0;
@@ -481,6 +488,9 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0' || cmd.width <= 0 || cmd.height <= 0) {
       return false;
     }
+    const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
+    cmd.hasBg = bgColor != nullptr;
+    cmd.bg = ParseColor(bgColor, 0x0000);
     sink.DrawGif(cmd);
     return true;
   }
@@ -489,10 +499,15 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     SpriteCommand cmd;
     cmd.x = x;
     cmd.y = y;
+    cmd.width = JsonIntFor(primitive, "width", "w", 0);
+    cmd.height = JsonIntFor(primitive, "height", "h", 0);
     cmd.assetPath = JsonStringFor(primitive, "assetPath", "a");
     if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0') {
       return false;
     }
+    const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
+    cmd.hasBg = bgColor != nullptr;
+    cmd.bg = ParseColor(bgColor, 0x0000);
     sink.DrawSprite(cmd);
     return true;
   }
@@ -569,8 +584,11 @@ inline bool RenderThemeSpecAnimatedPrimitives(const char* themeSpecRaw, const Fr
   if (primitives.isNull()) {
     return false;
   }
+  sink.PrimeBackground(ParseColor(JsonStringFor(doc.as<JsonObjectConst>(), "bgColor", "bg"), 0x0000));
   for (JsonObjectConst primitive : primitives) {
-    if (PrimitiveTypeIs(primitive, "gif", "g")) {
+    if (PrimitiveTypeIs(primitive, "gif", "g") ||
+        PrimitiveTypeIs(primitive, "sprite", "sp") ||
+        PrimitiveTypeIs(primitive, "image", "img")) {
       rendered = DrawPrimitive(primitive, frame, sink) || rendered;
     }
   }

@@ -225,6 +225,8 @@ func expandPrimitiveType(value string) string {
 		return "progress"
 	case "g":
 		return "gif"
+	case "sp", "img":
+		return "sprite"
 	case "px":
 		return "pixels"
 	default:
@@ -273,6 +275,13 @@ func validatePrimitive(p Primitive) error {
 		}
 		if !isSafeThemeAssetPath(p.AssetPath) {
 			return errors.New("gif primitive requires assetPath under /themes/")
+		}
+	case "sprite", "image":
+		if !isSafeThemeAssetPath(p.AssetPath) {
+			return errors.New("sprite primitive requires assetPath under /themes/")
+		}
+		if p.Width < 0 || p.Height < 0 {
+			return errors.New("sprite primitive width/height must be >= 0")
 		}
 	case "pixels":
 		if p.Width <= 0 || p.Height <= 0 {

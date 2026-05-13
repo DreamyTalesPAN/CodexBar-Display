@@ -18,6 +18,7 @@ func TestValidateAcceptsMinimalV1Spec(t *testing.T) {
 			{Type: "text", X: 8, Y: 20, Text: "Codex", FontSize: 2, Color: "#FFFFFF"},
 			{Type: "text", X: 8, Y: 48, Binding: "label", FontSize: 2, Color: "#FFFFFF"},
 			{Type: "gif", X: 80, Y: 96, Width: 64, Height: 64, AssetPath: "/themes/mini/mini.gif"},
+			{Type: "sprite", X: 24, Y: 116, Width: 32, Height: 32, AssetPath: "/themes/u/hero.cba"},
 			{Type: "pixels", X: 4, Y: 4, Width: 8, Height: 2, Color: "#FFFFFF", Data: "A5F0"},
 		},
 	}
@@ -37,6 +38,7 @@ func TestValidateAcceptsCompactV1Spec(t *testing.T) {
 			{"t":"tx","x":8,"y":20,"v":"Codex","s":2,"c":"#FFFFFF"},
 			{"t":"tx","x":8,"y":48,"b":"l","s":2,"c":"#FFFFFF"},
 			{"t":"g","x":80,"y":96,"w":64,"h":64,"a":"/themes/mini/mini.gif"},
+			{"t":"sp","x":24,"y":116,"w":32,"h":32,"a":"/themes/u/hero.cba"},
 			{"t":"px","x":4,"y":4,"w":8,"h":2,"c":"#FFFFFF","d":"A5F0"}
 		]
 	}`)
@@ -168,6 +170,21 @@ func TestValidateRejectsUnsafeGifAssetPath(t *testing.T) {
 		ThemeRev:         1,
 		Primitives: []Primitive{
 			{Type: "gif", X: 0, Y: 0, Width: 10, Height: 10, AssetPath: "/../mini.gif"},
+		},
+	}
+
+	if err := Validate(spec); err == nil {
+		t.Fatalf("expected validation error")
+	}
+}
+
+func TestValidateRejectsUnsafeSpriteAssetPath(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "mini-transport",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{Type: "sprite", X: 0, Y: 0, AssetPath: "/themes/../hero.cba"},
 		},
 	}
 

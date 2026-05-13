@@ -696,7 +696,7 @@ func finalizeCycleResult(state *runtimeState, result cycleResult) cycleResult {
 func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
-	frame = attachClockFields(frame, time.Now())
+	frame = attachClockFields(frame, deps.now())
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
 		var applied bool
@@ -729,8 +729,8 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 		}
 	}
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds error=%q reason=%s detail=%q\n",
-		port, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Error, result.selectionReason, result.selectionDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds time=%q date=%q error=%q reason=%s detail=%q\n",
+		port, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -752,7 +752,7 @@ func attachClockFields(frame protocol.Frame, now time.Time) protocol.Frame {
 		now = time.Now()
 	}
 	frame.Time = now.Format("15:04")
-	frame.Date = now.Format("2/1/2006")
+	frame.Date = now.Format("02.01.2006")
 	return frame
 }
 

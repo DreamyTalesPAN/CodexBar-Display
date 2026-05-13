@@ -3,8 +3,8 @@ import "gifler";
 import "./styles.css";
 
 const DISPLAY_SIZE = 240;
-const MAX_SPEC_BYTES = 1024;
-const MAX_FRAME_BYTES = 1024;
+const MAX_SPEC_BYTES = 4096;
+const MAX_FRAME_BYTES = 2048;
 const MAX_PRIMITIVES = 32;
 const COLOR_RE = /^#[A-Fa-f0-9]{6}$/;
 const THEME_ID_RE = /^[a-z0-9][a-z0-9\-_]{2,63}$/;
@@ -13,8 +13,17 @@ const FIXED_FALLBACK_THEME = "mini";
 const DEFAULT_TARGET_ORIGIN = "http://vibetv.local";
 const TARGET_STORAGE_KEY = "codexbar.themeStudio.targetOrigin";
 const DEFAULT_GIF_SIZE = 80;
+const DEFAULT_SPRITE_FPS = 8;
+const MAX_SPRITE_FRAME_WIDTH = 64;
+const MAX_SPRITE_FRAME_HEIGHT = 64;
+const MAX_SPRITE_FRAMES = 32;
+const MAX_SPRITE_TOTAL_PIXELS = 32768;
+const MAX_ANIMATED_REPAINT_PIXELS_PER_SECOND = 18000;
+const MAX_INITIAL_RENDER_PIXELS = 120000;
+const WARN_INITIAL_RENDER_PIXELS = 90000;
 const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 const THEME_ASSET_PATH_PREFIX = "/themes/";
+const USER_THEME_ASSET_PATH_PREFIX = "/themes/u/";
 const SUPPORTED_PRIMITIVE_TYPES = ["rect", "text", "progress", "gif", "sprite", "pixels"] as const;
 
 type PrimitiveType = typeof SUPPORTED_PRIMITIVE_TYPES[number];
@@ -38,6 +47,23 @@ type GifPreview = {
   loading: boolean;
   animator: GiflerAnimator | null;
   playing: boolean;
+};
+type SpriteSource = {
+  file: File;
+  previewUrl: string;
+  bitmap: ImageBitmap;
+  sheetWidth: number;
+  sheetHeight: number;
+  frameWidth: number;
+  frameHeight: number;
+};
+type SpriteAsset = {
+  width: number;
+  height: number;
+  frameCount: number;
+  fps: number;
+  palette: string[];
+  frames: string[][];
 };
 type UploadableAsset = {
   file: File;
@@ -74,6 +100,9 @@ interface Primitive {
   borderColor?: string;
   rotation?: number;
   assetPath?: string;
+  frameCount?: number;
+  fps?: number;
+  sheetColumns?: number;
   data?: string;
   p?: string[];
   r?: string[];
@@ -110,6 +139,7 @@ interface AppState {
   editingTextIndex: number | null;
   copiedPrimitive: Primitive | null;
   gifAssets: Record<string, { file: File; previewUrl: string }>;
+  spriteAssets: Record<string, { file: File; rawText: string; sprite: SpriteAsset; source?: SpriteSource }>;
   jsonText: string;
   jsonDirty: boolean;
   errors: string[];
@@ -121,17 +151,36 @@ interface AppState {
 }
 
 interface DeviceHealth {
+  system?: {
+    freeHeap?: number;
+    resetReason?: string;
+  };
   display?: {
     themeSpec?: {
       active?: boolean;
       id?: string | null;
       rev?: number;
+      path?: string | null;
+      hash?: string | null;
+      renderOk?: boolean;
+      renderError?: string | null;
+      renderFailures?: number;
     };
     gif?: {
       activePath?: string;
       lastError?: unknown;
     };
   };
+}
+
+interface DeviceAssets {
+  filesystem?: {
+    mounted?: boolean;
+  };
+  assets?: Array<{
+    path?: string;
+    sizeBytes?: number;
+  }>;
 }
 
 const frame: FrameData = {
@@ -142,12 +191,20 @@ const frame: FrameData = {
   reset: "89h 54m",
   resetSecs: 323640,
   usageMode: "remaining",
-  time: "21:25",
-  date: "7/5/2026",
+  time: previewTime(new Date()),
+  date: previewDate(new Date()),
   sessionTokens: 12840,
   weekTokens: 68120,
   totalTokens: 190420,
 };
+
+function previewTime(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function previewDate(date: Date): string {
+  return `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}.${date.getFullYear()}`;
+}
 
 const variableTokens = [
   { label: "Name", token: "{label}", preview: frame.label },
@@ -167,6 +224,12 @@ const PREVIEW_FONT_WEIGHT = 800;
 const DEFAULT_PIXELS_WIDTH = 16;
 const DEFAULT_PIXELS_HEIGHT = 10;
 const DEFAULT_CLOUD_SPRITE_PATH = "/themes/u/cloud.cbi";
+const COZY_BACKGROUND_SPRITE_PATH = "/themes/u/meadow.cbi";
+const COZY_SUN_SPRITE_PATH = "/themes/u/sun.cbi";
+const COZY_TREE_SPRITE_PATH = "/themes/u/tree.cbi";
+const COZY_FLOWERS_SPRITE_PATH = "/themes/u/flowers.cbi";
+const COZY_BIRDS_SPRITE_PATH = "/themes/u/birds.cba";
+const COZY_BUTTERFLY_SPRITE_PATH = "/themes/u/butter.cba";
 const DEFAULT_CLOUD_SPRITE = `CBI1
 24 14
 3
@@ -188,6 +251,206 @@ const DEFAULT_CLOUD_SPRITE = `CBI1
 9.6c9.
 24.
 `;
+const COZY_SUN_SPRITE = `CBI1
+22 22
+3
+#FFF7A8
+#FFD35A
+#F59E2E
+22.
+10.b11.
+7.b.3a.b8.
+5.b2.5a2.b6.
+4.b2.7a2.b5.
+3.b2.3a3c3a2.b4.
+2.b2.4a3c4a2.b3.
+3.5a3c5a6.
+2.6a3c6a5.
+2.6a4c6a4.
+b.6a4c6a3.b
+2.6a4c6a4.
+2.6a3c6a5.
+3.5a3c5a6.
+2.b2.4a3c4a2.b3.
+3.b2.3a3c3a2.b4.
+4.b2.7a2.b5.
+5.b2.5a2.b6.
+7.b.3a.b8.
+10.b11.
+22.
+22.
+`;
+const COZY_TREE_SPRITE = `CBI1
+28 38
+5
+#2E7D43
+#4EA65A
+#1F5E35
+#8B5A2B
+#5C351A
+28.
+11.3b14.
+9.7b12.
+7.11b10.
+6.5b3a5b9.
+5.7b4a6b6.
+4.7c2b5a5b5.
+3.8c3b4a6b4.
+2.9c5b3a6b3.
+2.8c8b7c3.
+3.6c9b7c3.
+4.5c6b2a6c5.
+5.4c5b4a5c5.
+6.4c4b5a4c5.
+4.7c3b5a5c4.
+3.8c2b6a6c3.
+2.9c2b7a6c2.
+3.8c3b6a5c3.
+5.6c4b5a4c4.
+7.5c3b4a4c5.
+9.4c2b3a4c6.
+12.2d2e12.
+12.2d2e12.
+11.3d2e12.
+11.3d2e12.
+10.4d2e12.
+10.4d2e12.
+9.5d2e12.
+9.5d2e12.
+8.6d2e12.
+7.7d2e12.
+6.8d2e12.
+5.9d2e12.
+4.10d2e12.
+3.11d2e12.
+2.13d13.
+28.
+28.
+`;
+const COZY_FLOWERS_SPRITE = `CBI1
+36 12
+6
+#2E7D43
+#DFF7C2
+#FFE36E
+#FF8DB3
+#B388FF
+#FFFFFF
+36.
+4.a6.a5.a4.a7.a5.
+4.a6.a5.a4.a7.a5.
+3.2a5.2a4.2a3.2a6.2a5.
+2.2ad4.2ac3.2ae2.2ab5.2af5.
+2.3a4.3a3.3a2.3a5.3a5.
+1.4a3.4a2.4a1.4a4.4a5.
+36a
+2.5a4.7a4.8a1.5a
+36.
+36.
+36.
+`;
+const COZY_BIRDS_SPRITE = `CBA1
+16 10 4 6
+2
+#243326
+#FFE0A3
+16.
+16.
+7.a8.
+5.3a8.
+3.3a.3a6.
+2.4a2b4a4.
+5.6a5.
+7.2a7.
+16.
+16.
+16.
+6.a9.
+4.2a2.2a6.
+3.3a4.3a3.
+2.5a2b5a2.
+5.6a5.
+7.2a7.
+16.
+16.
+16.
+16.
+7.a8.
+5.3a8.
+4.4a2b4a2.
+3.3a4.3a3.
+5.6a5.
+7.2a7.
+16.
+16.
+16.
+6.a9.
+4.2a2.2a6.
+3.3a4.3a3.
+2.5a2b5a2.
+5.6a5.
+7.2a7.
+16.
+16.
+16.
+16.
+`;
+const COZY_BUTTERFLY_SPRITE = `CBA1
+14 12 4 7
+4
+#271A18
+#FFD34D
+#FF7FB7
+#9DE7F7
+14.
+3.b2.2a2.c3.
+2.3b.2a.3c2.
+1.4b2a4c3.
+2.3b2a3c4.
+4.baac6.
+5.2a7.
+4.caab6.
+2.3c2a3b4.
+1.4c2a4b3.
+2.3c.2a.3b2.
+14.
+14.
+4.b.2a.c4.
+3.2b2a2c5.
+2.3b2a3c4.
+1.4b2a4c3.
+4.baac6.
+5.2a7.
+4.caab6.
+1.4c2a4b3.
+2.3c2a3b4.
+3.2c2a2b5.
+14.
+14.
+5.b2c6.
+4.2b2c6.
+3.3b2c6.
+2.4b2c6.
+4.baac6.
+5.2a7.
+4.caab6.
+2.4c2b6.
+3.3c2b6.
+4.2c2b6.
+14.
+14.
+4.b.2a.c4.
+3.2b2a2c5.
+2.3b2a3c4.
+1.4b2a4c3.
+4.baac6.
+5.2a7.
+4.caab6.
+1.4c2a4b3.
+2.3c2a3b4.
+3.2c2a2b5.
+14.
+`;
 const DEFAULT_CLOUD_PIXEL_PALETTE = ["#FFFFFF", "#9DE7F7", "#C7FF68"];
 const DEFAULT_CLOUD_PIXEL_ROWS = [
   "5.4a7.",
@@ -201,6 +464,125 @@ const DEFAULT_CLOUD_PIXEL_ROWS = [
   "5.4a7.",
   "16.",
 ];
+
+function cozyBackgroundSpriteText(): string {
+  const width = 120;
+  const height = 120;
+  const palette = [
+    "#9DE7F7",
+    "#FFFFFF",
+    "#D7F7C8",
+    "#B8DF7A",
+    "#7FCA69",
+    "#54A85E",
+    "#3D884E",
+    "#FFECA8",
+    "#77C7D9",
+    "#70431E",
+    "#2F7444",
+    "#FFE36E",
+    "#FF8DB3",
+  ];
+  const rows = Array.from({ length: height }, (_, y) => cozyBackgroundRow(width, y));
+  return `CBI1\n${width} ${height}\n${palette.length}\n${palette.join("\n")}\n${rows.join("\n")}\n`;
+}
+
+function cozyBackgroundRow(width: number, y: number): string {
+  const tokens: string[] = [];
+  let current = "";
+  let runLength = 0;
+  for (let x = 0; x < width; x += 1) {
+    const token = cozyBackgroundToken(x, y);
+    if (token === current) {
+      runLength += 1;
+      continue;
+    }
+    if (current) {
+      tokens.push(`${runLength === 1 ? "" : runLength}${current}`);
+    }
+    current = token;
+    runLength = 1;
+  }
+  if (current) {
+    tokens.push(`${runLength === 1 ? "" : runLength}${current}`);
+  }
+  return tokens.join("");
+}
+
+function cozyBackgroundToken(x: number, y: number): string {
+  const cloudA = ((x - 18) * (x - 18)) / 170 + ((y - 14) * (y - 14)) / 22 < 1;
+  const cloudB = ((x - 96) * (x - 96)) / 210 + ((y - 19) * (y - 19)) / 26 < 1;
+  if (y < 46 && (cloudA || cloudB)) {
+    return y % 3 === 0 ? "c" : "b";
+  }
+
+  const farHill = 42 + Math.floor(x / 18) + Math.floor(Math.sin(x / 9) * 4);
+  const nearHill = 58 + Math.floor(Math.sin((x + 12) / 11) * 5);
+  if (y < farHill) {
+    return "a";
+  }
+  if (y < nearHill) {
+    return y % 5 === 0 ? "e" : "d";
+  }
+
+  for (const tree of [9, 22, 101, 113]) {
+    const crown = Math.abs(x - tree) + Math.max(0, y - 48);
+    if (y >= 43 && y < 68 && crown < 16) {
+      return crown % 5 === 0 ? "e" : "k";
+    }
+    if (x >= tree - 1 && x <= tree + 1 && y >= 61 && y < 75) {
+      return "j";
+    }
+  }
+
+  if (y > 74) {
+    const center = 62 + Math.floor((y - 74) * 0.28) + Math.floor(Math.sin(y / 8) * 3);
+    const half = 4 + Math.floor((y - 74) / 8);
+    if (Math.abs(x - center) <= half) {
+      return y % 4 === 0 ? "h" : "i";
+    }
+  }
+
+  if (y > 83 && (x * 17 + y * 31) % 47 === 0) {
+    return "l";
+  }
+  if (y > 90 && (x * 13 + y * 19) % 59 === 0) {
+    return "m";
+  }
+  if (y > 70 && (x + y) % 17 === 0) {
+    return "k";
+  }
+
+  if (y < 76) {
+    return y % 7 === 0 ? "g" : "e";
+  }
+  if (y < 96) {
+    return y % 6 === 0 ? "g" : "f";
+  }
+  return y % 5 === 0 ? "f" : "g";
+}
+
+const COZY_MEADOW_SPEC: ThemeSpec = {
+  themeSpecVersion: 1,
+  themeId: "cozy-meadow",
+  themeRev: FIXED_THEME_REV,
+  fallbackTheme: FIXED_FALLBACK_THEME,
+  bgColor: "#9DE7F7",
+  primitives: [
+    { type: "sprite", x: 0, y: 0, width: 240, height: 240, assetPath: COZY_BACKGROUND_SPRITE_PATH },
+    { type: "sprite", x: 86, y: 7, width: 30, height: 30, bgColor: "#9DE7F7", assetPath: COZY_SUN_SPRITE_PATH },
+    { type: "sprite", x: 184, y: 57, width: 20, height: 13, bgColor: "#9DE7F7", assetPath: COZY_BIRDS_SPRITE_PATH },
+    { type: "sprite", x: 38, y: 165, width: 18, height: 15, bgColor: "#54A85E", assetPath: COZY_BUTTERFLY_SPRITE_PATH },
+    { type: "gif", x: 202, y: 146, width: 24, height: 24, bgColor: "#54A85E", assetPath: "/themes/mini/mini.gif" },
+    { type: "sprite", x: 18, y: 188, width: 45, height: 15, bgColor: "#3D884E", assetPath: COZY_FLOWERS_SPRITE_PATH },
+    { type: "text", x: 43, y: 64, text: "{date}", fontSize: 3, color: "#FFFFFF" },
+    { type: "text", x: 11, y: 147, text: "Session", fontSize: 2, color: "#123522" },
+    { type: "text", x: 11, y: 169, text: "{session}%", fontSize: 5, color: "#FFF4B8" },
+    { type: "text", x: 154, y: 173, text: "left", fontSize: 2, color: "#E8FFD9" },
+    { type: "progress", x: 13, y: 205, width: 154, height: 13, binding: "session", color: "#FFF4B8", bgColor: "#2F7444", borderColor: "#123522" },
+    { type: "text", x: 13, y: 222, text: "Reset {reset}", fontSize: 1, color: "#E8FFD9" },
+  ],
+};
 const GLCD_FONT_FIRST_CHAR = 32;
 const GLCD_FONT_LAST_CHAR = 126;
 const GLCD_FONT_COLUMNS = 5;
@@ -294,6 +676,7 @@ const state: AppState = {
   editingTextIndex: null,
   copiedPrimitive: null,
   gifAssets: {},
+  spriteAssets: {},
   jsonText: "",
   jsonDirty: false,
   errors: [],
@@ -375,6 +758,11 @@ function normalizeMiniThemeSpec(spec: ThemeSpec) {
         delete primitive.p;
         delete primitive.r;
       }
+    }
+    if (primitive.type === "sprite") {
+      primitive.frameCount = clamp(Math.round(primitive.frameCount ?? 1), 1, MAX_SPRITE_FRAMES);
+      primitive.fps = clamp(Math.round(primitive.fps ?? DEFAULT_SPRITE_FPS), 0, 30);
+      primitive.sheetColumns = Math.max(1, Math.round(primitive.sheetColumns ?? primitive.frameCount ?? 1));
     }
   });
 }
@@ -458,6 +846,25 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
     }
     if (primitive.type === "sprite") {
       validateThemeAssetPath(primitive, prefix, errors);
+      if (primitive.width !== undefined && (!isPositiveInteger(primitive.width) || primitive.width > DISPLAY_SIZE)) {
+        errors.push(`${prefix}: Sprite width muss 1-${DISPLAY_SIZE} sein.`);
+      }
+      if (primitive.height !== undefined && (!isPositiveInteger(primitive.height) || primitive.height > DISPLAY_SIZE)) {
+        errors.push(`${prefix}: Sprite height muss 1-${DISPLAY_SIZE} sein.`);
+      }
+      if (!isPositiveInteger(primitive.frameCount ?? 1) || (primitive.frameCount ?? 1) > MAX_SPRITE_FRAMES) {
+        errors.push(`${prefix}: Sprite frames müssen 1-${MAX_SPRITE_FRAMES} sein.`);
+      }
+      if (!Number.isInteger(primitive.fps ?? DEFAULT_SPRITE_FPS) || (primitive.fps ?? DEFAULT_SPRITE_FPS) < 0 || (primitive.fps ?? DEFAULT_SPRITE_FPS) > 30) {
+        errors.push(`${prefix}: Sprite FPS muss 0-30 sein.`);
+      }
+      const source = spriteAssetFor(primitive.assetPath);
+      const width = source?.width ?? primitive.width ?? estimatePrimitiveWidth(primitive);
+      const height = source?.height ?? primitive.height ?? estimatePrimitiveHeight(primitive);
+      const frames = primitive.frameCount ?? 1;
+      if (width * height * frames > MAX_SPRITE_TOTAL_PIXELS) {
+        errors.push(`${prefix}: Sprite ist zu groß (${width * height * frames}/${MAX_SPRITE_TOTAL_PIXELS} Pixel über alle Frames).`);
+      }
     }
     if (primitive.type === "pixels") {
       if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
@@ -485,12 +892,59 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
   if (bytes > MAX_SPEC_BYTES) {
     errors.push(`ThemeSpec ist zu groß: ${bytes}/${MAX_SPEC_BYTES} Bytes.`);
   }
-  const frameBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload(spec))).length;
+  const frameBytes = new TextEncoder().encode(JSON.stringify(buildLiveFramePayload(spec))).length;
   if (frameBytes > MAX_FRAME_BYTES) {
     errors.push(`Payload ist zu groß für Vibe TV: ${frameBytes}/${MAX_FRAME_BYTES} Bytes.`);
   }
 
+  const renderBudget = estimateRenderBudget(spec);
+  if (renderBudget.animatedPixelsPerSecond > MAX_ANIMATED_REPAINT_PIXELS_PER_SECOND) {
+    errors.push(`Animation ist zu schwer für ESP8266: ${renderBudget.animatedPixelsPerSecond}/${MAX_ANIMATED_REPAINT_PIXELS_PER_SECOND} Pixel pro Sekunde.`);
+  }
+  if (renderBudget.initialPixels > MAX_INITIAL_RENDER_PIXELS) {
+    errors.push(`Initiales Zeichnen ist zu schwer für ESP8266: ca. ${renderBudget.initialPixels}/${MAX_INITIAL_RENDER_PIXELS} Pixel.`);
+  }
+  if (renderBudget.initialPixels > WARN_INITIAL_RENDER_PIXELS) {
+    warnings.push(`Initiales Zeichnen ist schwer: ca. ${renderBudget.initialPixels} Pixel. Besser Details in wenige Sprites bündeln.`);
+  }
+  renderBudget.spriteWarnings.forEach((warning) => warnings.push(warning));
+
   return { errors, warnings };
+}
+
+function estimateRenderBudget(spec: ThemeSpec): { initialPixels: number; animatedPixelsPerSecond: number; spriteWarnings: string[] } {
+  let initialPixels = DISPLAY_SIZE * DISPLAY_SIZE;
+  let animatedPixelsPerSecond = 0;
+  const spriteWarnings: string[] = [];
+
+  spec.primitives.forEach((primitive, index) => {
+    const width = Math.min(DISPLAY_SIZE, Math.max(0, primitive.width ?? estimatePrimitiveWidth(primitive)));
+    const height = Math.min(DISPLAY_SIZE, Math.max(0, primitive.height ?? estimatePrimitiveHeight(primitive)));
+    const area = width * height;
+    if (["rect", "progress", "gif", "sprite", "pixels"].includes(primitive.type)) {
+      initialPixels += area;
+    }
+    if (primitive.type === "sprite") {
+      const source = spriteAssetFor(primitive.assetPath);
+      const frameCount = source?.frameCount ?? primitive.frameCount ?? 1;
+      const fps = source?.fps ?? primitive.fps ?? DEFAULT_SPRITE_FPS;
+      if (frameCount > 1 && fps > 0) {
+        animatedPixelsPerSecond += area * fps;
+        if (!primitive.bgColor) {
+          spriteWarnings.push(`Primitive ${index + 1}: animiertes Sprite hat keine Clear-Farbe; das kann Spuren oder Flackern machen.`);
+        }
+      }
+    }
+    if (primitive.type === "gif") {
+      animatedPixelsPerSecond += area * 10;
+    }
+  });
+
+  return {
+    initialPixels: Math.round(initialPixels),
+    animatedPixelsPerSecond: Math.round(animatedPixelsPerSecond),
+    spriteWarnings,
+  };
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -579,15 +1033,15 @@ function render() {
   validateCurrentSpec();
   const selected = state.spec.primitives[state.selectedIndex];
   const bytes = new TextEncoder().encode(JSON.stringify(buildDeviceThemeSpec(state.spec))).length;
-  const frameBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload())).length;
+  const frameBytes = new TextEncoder().encode(JSON.stringify(buildLiveFramePayload())).length;
 
   app.innerHTML = `
     <section class="studio-shell">
       <header class="appbar">
         <h1>Theme Studio</h1>
         <div class="status-strip">
-          ${metric("Bytes", bytes, MAX_SPEC_BYTES)}
-          ${metric("Payload", frameBytes, MAX_FRAME_BYTES)}
+          ${metric("Theme", bytes, MAX_SPEC_BYTES)}
+          ${metric("Live", frameBytes, MAX_FRAME_BYTES)}
           ${metric("Primitives", state.spec.primitives.length, MAX_PRIMITIVES)}
           <span class="health ${state.errors.length ? "bad" : "ok"}">${state.errors.length ? "Invalid" : "Valid"}</span>
         </div>
@@ -608,6 +1062,7 @@ function render() {
               <input data-field="bgColor" value="${escapeAttr(state.spec.bgColor ?? "#000000")}" />
             </span>
           </label>
+          <button class="full-width preset-button" data-action="load-cozy-meadow">Cozy Meadow</button>
           <div class="divider"></div>
           ${addElementPalette()}
           <div class="divider"></div>
@@ -618,6 +1073,7 @@ function render() {
             ${state.spec.primitives.map((primitive, index) => primitiveRow(primitive, index)).join("")}
           </div>
           <input class="hidden-file-input" data-role="gif-input" type="file" accept="image/gif,.gif" />
+          <input class="hidden-file-input" data-role="sprite-input" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" />
         </aside>
 
         <section class="preview-column">
@@ -804,6 +1260,16 @@ function inspectorFields(primitive: Primitive): string {
     return `
       ${common}
       <label>Asset<input data-primitive-field="assetPath" value="${escapeAttr(primitive.assetPath ?? "")}" /></label>
+      <div class="field-grid">
+        <label>Width<input type="number" min="1" max="${MAX_SPRITE_FRAME_WIDTH}" step="1" data-primitive-field="width" value="${primitive.width ?? estimatePrimitiveWidth(primitive)}" /></label>
+        <label>Height<input type="number" min="1" max="${MAX_SPRITE_FRAME_HEIGHT}" step="1" data-primitive-field="height" value="${primitive.height ?? estimatePrimitiveHeight(primitive)}" /></label>
+      </div>
+      <div class="field-grid">
+        <label>Frames<input type="number" min="1" max="${MAX_SPRITE_FRAMES}" step="1" data-primitive-field="frameCount" value="${primitive.frameCount ?? spriteAssetFor(primitive.assetPath)?.frameCount ?? 1}" /></label>
+        <label>FPS<input type="number" min="0" max="30" step="1" data-primitive-field="fps" value="${primitive.fps ?? spriteAssetFor(primitive.assetPath)?.fps ?? DEFAULT_SPRITE_FPS}" /></label>
+      </div>
+      ${optionalColorField("Clear", "bgColor", primitive.bgColor)}
+      <label>Columns<input type="number" min="1" max="${MAX_SPRITE_FRAMES}" step="1" data-primitive-field="sheetColumns" value="${primitive.sheetColumns ?? inferredSpriteColumns(primitive)}" /></label>
     `;
   }
 
@@ -954,7 +1420,7 @@ function mountKonvaPreview() {
     return;
   }
 
-  const hasAnimatedGif = renderDeviceCanvas(deviceCanvas);
+  const hasAnimated = renderDeviceCanvas(deviceCanvas);
   const stageSize = previewStageSize(container);
   const previewScale = stageSize / DISPLAY_SIZE;
   const konvaStage = new Konva.Stage({
@@ -1072,7 +1538,7 @@ function mountKonvaPreview() {
   });
 
   layer.draw();
-  if (hasAnimatedGif) {
+  if (hasAnimated) {
     gifRedrawAnimation = new Konva.Animation(() => {
       renderDeviceCanvas(deviceCanvas);
     }, layer);
@@ -1091,7 +1557,7 @@ function renderDeviceCanvas(canvas: HTMLCanvasElement): boolean {
   context.fillStyle = state.spec.bgColor ?? "#000000";
   context.fillRect(0, 0, DISPLAY_SIZE, DISPLAY_SIZE);
 
-  let hasAnimatedGif = false;
+  let hasAnimated = false;
   for (const primitive of state.spec.primitives) {
     if (primitive.type === "rect") {
       context.fillStyle = primitive.color ?? "#000000";
@@ -1104,24 +1570,31 @@ function renderDeviceCanvas(canvas: HTMLCanvasElement): boolean {
       const height = estimatePrimitiveHeight(primitive);
       context.drawImage(textPreviewCanvas(primitive, text, width, height), primitive.x, primitive.y);
     } else if (primitive.type === "gif") {
-      hasAnimatedGif = drawDeviceGif(context, primitive) || hasAnimatedGif;
+      hasAnimated = drawDeviceGif(context, primitive) || hasAnimated;
     } else if (primitive.type === "sprite") {
-      drawDeviceSprite(context, primitive);
+      hasAnimated = drawDeviceSprite(context, primitive) || hasAnimated;
     } else if (primitive.type === "pixels") {
       drawDevicePixels(context, primitive);
     }
   }
-  return hasAnimatedGif;
+  return hasAnimated;
 }
 
-function drawDeviceSprite(context: CanvasRenderingContext2D, primitive: Primitive) {
-  const sprite = parseCbiSprite(builtInSpriteText(primitive.assetPath));
+function drawDeviceSprite(context: CanvasRenderingContext2D, primitive: Primitive): boolean {
+  const sprite = spriteAssetFor(primitive.assetPath);
+  const width = primitive.width ?? sprite?.width ?? 24;
+  const height = primitive.height ?? sprite?.height ?? 14;
   if (!sprite) {
     context.fillStyle = "#141922";
-    context.fillRect(primitive.x, primitive.y, 24, 14);
-    return;
+    context.fillRect(primitive.x, primitive.y, width, height);
+    return false;
   }
-  drawCbiSprite(context, sprite, primitive.x, primitive.y);
+  if (primitive.bgColor) {
+    context.fillStyle = primitive.bgColor;
+    context.fillRect(primitive.x, primitive.y, width, height);
+  }
+  drawSpriteFrame(context, sprite, currentSpriteFrameIndex(sprite), primitive.x, primitive.y, width, height);
+  return sprite.frameCount > 1 && sprite.fps > 0;
 }
 
 function drawDeviceProgress(context: CanvasRenderingContext2D, primitive: Primitive) {
@@ -1592,17 +2065,22 @@ function renderPrimitive(primitive: Primitive, index: number): string {
     `;
   }
   if (primitive.type === "sprite") {
-    const sprite = parseCbiSprite(builtInSpriteText(primitive.assetPath));
-    const width = sprite?.width ?? 24;
-    const height = sprite?.height ?? 14;
-    const pixels = sprite ? sprite.rows.map((row, rowIndex) => {
+    const sprite = spriteAssetFor(primitive.assetPath);
+    const width = primitive.width ?? sprite?.width ?? 24;
+    const height = primitive.height ?? sprite?.height ?? 14;
+    const frame = sprite?.frames[currentSpriteFrameIndex(sprite)];
+    const pixels = sprite && frame ? frame.map((row, rowIndex) => {
       const rects: string[] = [];
       parseRleRow(row, sprite.width, (col, count, token) => {
         if (token === ".") {
           return;
         }
         const color = sprite.palette[token.charCodeAt(0) - 97] ?? "#FFFFFF";
-        rects.push(`<rect x="${primitive.x + col}" y="${primitive.y + rowIndex}" width="${count}" height="1" fill="${escapeAttr(color)}"></rect>`);
+        const x1 = primitive.x + Math.floor((col * width) / sprite.width);
+        const x2 = primitive.x + Math.ceil(((col + count) * width) / sprite.width);
+        const y1 = primitive.y + Math.floor((rowIndex * height) / sprite.height);
+        const y2 = primitive.y + Math.ceil(((rowIndex + 1) * height) / sprite.height);
+        rects.push(`<rect x="${x1}" y="${y1}" width="${Math.max(1, x2 - x1)}" height="${Math.max(1, y2 - y1)}" fill="${escapeAttr(color)}"></rect>`);
       });
       return rects.join("");
     }).join("") : `
@@ -1750,7 +2228,7 @@ function estimatePrimitiveWidth(primitive: Primitive): number {
     return Math.max(1, firmwareTextWidth(text, primitive.font, primitive.fontSize));
   }
   if (primitive.type === "sprite") {
-    return builtInSpriteDimensions(primitive.assetPath).width;
+    return primitive.width ?? spriteDimensions(primitive.assetPath).width;
   }
   return primitive.width ?? 1;
 }
@@ -1760,7 +2238,7 @@ function estimatePrimitiveHeight(primitive: Primitive): number {
     return Math.max(8, textPixelSize(primitive));
   }
   if (primitive.type === "sprite") {
-    return builtInSpriteDimensions(primitive.assetPath).height;
+    return primitive.height ?? spriteDimensions(primitive.assetPath).height;
   }
   return primitive.height ?? 1;
 }
@@ -2160,47 +2638,111 @@ function builtInGifPreviewUrl(assetPath: string): string | undefined {
   return undefined;
 }
 
-interface CbiSprite {
-  width: number;
-  height: number;
-  palette: string[];
-  rows: string[];
-}
-
 function builtInSpriteText(assetPath: string | undefined): string | undefined {
-  return assetPath === DEFAULT_CLOUD_SPRITE_PATH ? DEFAULT_CLOUD_SPRITE : undefined;
+  if (assetPath === DEFAULT_CLOUD_SPRITE_PATH) {
+    return DEFAULT_CLOUD_SPRITE;
+  }
+  if (assetPath === COZY_BACKGROUND_SPRITE_PATH) {
+    return cozyBackgroundSpriteText();
+  }
+  if (assetPath === COZY_SUN_SPRITE_PATH) {
+    return COZY_SUN_SPRITE;
+  }
+  if (assetPath === COZY_TREE_SPRITE_PATH) {
+    return COZY_TREE_SPRITE;
+  }
+  if (assetPath === COZY_FLOWERS_SPRITE_PATH) {
+    return COZY_FLOWERS_SPRITE;
+  }
+  if (assetPath === COZY_BIRDS_SPRITE_PATH) {
+    return COZY_BIRDS_SPRITE;
+  }
+  if (assetPath === COZY_BUTTERFLY_SPRITE_PATH) {
+    return COZY_BUTTERFLY_SPRITE;
+  }
+  return undefined;
 }
 
-function builtInSpriteDimensions(assetPath: string | undefined): { width: number; height: number } {
-  const sprite = parseCbiSprite(builtInSpriteText(assetPath));
+function spriteAssetFor(assetPath: string | undefined): SpriteAsset | null {
+  if (!assetPath) {
+    return null;
+  }
+  return state.spriteAssets[assetPath]?.sprite ?? parseSpriteAsset(builtInSpriteText(assetPath));
+}
+
+function spriteDimensions(assetPath: string | undefined): { width: number; height: number } {
+  const sprite = spriteAssetFor(assetPath);
   return sprite ? { width: sprite.width, height: sprite.height } : { width: 24, height: 14 };
 }
 
-function parseCbiSprite(raw: string | undefined): CbiSprite | null {
+function parseSpriteAsset(raw: string | undefined): SpriteAsset | null {
   if (!raw) {
     return null;
   }
   const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (lines[0] !== "CBI1") {
+  if (lines[0] === "CBI1") {
+    const [widthRaw, heightRaw] = (lines[1] ?? "").split(/\s+/);
+    const width = Number(widthRaw);
+    const height = Number(heightRaw);
+    const paletteSize = Number(lines[2]);
+    if (!validSpriteHeader(width, height, 1, 0, paletteSize)) {
+      return null;
+    }
+    const palette = lines.slice(3, 3 + paletteSize);
+    const rows = lines.slice(3 + paletteSize, 3 + paletteSize + height);
+    if (palette.length !== paletteSize || rows.length !== height) {
+      return null;
+    }
+    return { width, height, frameCount: 1, fps: 0, palette, frames: [rows] };
+  }
+  if (lines[0] !== "CBA1") {
     return null;
   }
-  const [widthRaw, heightRaw] = (lines[1] ?? "").split(/\s+/);
+  const [widthRaw, heightRaw, frameCountRaw, fpsRaw] = (lines[1] ?? "").split(/\s+/);
   const width = Number(widthRaw);
   const height = Number(heightRaw);
+  const frameCount = Number(frameCountRaw);
+  const fps = Number(fpsRaw);
   const paletteSize = Number(lines[2]);
-  if (!Number.isInteger(width) || !Number.isInteger(height) || !Number.isInteger(paletteSize) || width <= 0 || height <= 0 || paletteSize <= 0) {
+  if (!validSpriteHeader(width, height, frameCount, fps, paletteSize)) {
     return null;
   }
   const palette = lines.slice(3, 3 + paletteSize);
-  const rows = lines.slice(3 + paletteSize, 3 + paletteSize + height);
-  if (palette.length !== paletteSize || rows.length !== height) {
+  const rowStart = 3 + paletteSize;
+  const frameRows = lines.slice(rowStart, rowStart + frameCount * height);
+  if (palette.length !== paletteSize || frameRows.length !== frameCount * height) {
     return null;
   }
-  return { width, height, palette, rows };
+  const frames: string[][] = [];
+  for (let index = 0; index < frameCount; index += 1) {
+    frames.push(frameRows.slice(index * height, (index + 1) * height));
+  }
+  return { width, height, frameCount, fps, palette, frames };
 }
 
-function drawCbiSprite(context: CanvasRenderingContext2D, sprite: CbiSprite, x: number, y: number) {
-  sprite.rows.forEach((row, rowIndex) => {
+function validSpriteHeader(width: number, height: number, frameCount: number, fps: number, paletteSize: number): boolean {
+  return Number.isInteger(width) &&
+    Number.isInteger(height) &&
+    Number.isInteger(frameCount) &&
+    Number.isInteger(fps) &&
+    Number.isInteger(paletteSize) &&
+    width > 0 &&
+    height > 0 &&
+    frameCount > 0 &&
+    paletteSize > 0 &&
+    paletteSize <= 26;
+}
+
+function currentSpriteFrameIndex(sprite: SpriteAsset): number {
+  if (sprite.frameCount <= 1 || sprite.fps <= 0) {
+    return 0;
+  }
+  return Math.floor((Date.now() / 1000) * sprite.fps) % sprite.frameCount;
+}
+
+function drawSpriteFrame(context: CanvasRenderingContext2D, sprite: SpriteAsset, frameIndex: number, x: number, y: number, targetWidth = sprite.width, targetHeight = sprite.height) {
+  const rows = sprite.frames[frameIndex] ?? sprite.frames[0] ?? [];
+  rows.forEach((row, rowIndex) => {
     parseRleRow(row, sprite.width, (col, count, token) => {
       if (token === ".") {
         return;
@@ -2209,10 +2751,162 @@ function drawCbiSprite(context: CanvasRenderingContext2D, sprite: CbiSprite, x: 
       if (!color) {
         return;
       }
+      const x1 = x + Math.floor((col * targetWidth) / sprite.width);
+      const x2 = x + Math.ceil(((col + count) * targetWidth) / sprite.width);
+      const y1 = y + Math.floor((rowIndex * targetHeight) / sprite.height);
+      const y2 = y + Math.ceil(((rowIndex + 1) * targetHeight) / sprite.height);
       context.fillStyle = color;
-      context.fillRect(x + col, y + rowIndex, count, 1);
+      context.fillRect(x1, y1, Math.max(1, x2 - x1), Math.max(1, y2 - y1));
     });
   });
+}
+
+function inferredSpriteColumns(primitive: Primitive): number {
+  const source = primitive.assetPath ? state.spriteAssets[primitive.assetPath]?.source : undefined;
+  const width = primitive.width ?? estimatePrimitiveWidth(primitive);
+  if (!source || width <= 0) {
+    return Math.max(1, primitive.sheetColumns ?? primitive.frameCount ?? 1);
+  }
+  return Math.max(1, Math.floor(source.sheetWidth / width));
+}
+
+function encodeSpriteAsset(sprite: SpriteAsset): string {
+  if (sprite.frameCount <= 1) {
+    return [
+      "CBI1",
+      `${sprite.width} ${sprite.height}`,
+      String(sprite.palette.length),
+      ...sprite.palette,
+      ...(sprite.frames[0] ?? []),
+      "",
+    ].join("\n");
+  }
+  return [
+    "CBA1",
+    `${sprite.width} ${sprite.height} ${sprite.frameCount} ${sprite.fps}`,
+    String(sprite.palette.length),
+    ...sprite.palette,
+    ...sprite.frames.flat(),
+    "",
+  ].join("\n");
+}
+
+function rebuildSpriteAssetForPrimitive(primitive: Primitive) {
+  if (primitive.type !== "sprite" || !primitive.assetPath) {
+    return;
+  }
+  const entry = state.spriteAssets[primitive.assetPath];
+  if (!entry?.source) {
+    return;
+  }
+  const sprite = spriteFromSource(entry.source, primitive);
+  const rawText = encodeSpriteAsset(sprite);
+  entry.rawText = rawText;
+  entry.sprite = sprite;
+  entry.file = builtInAssetFile(primitive.assetPath, rawText, "text/plain", "sprite.cba");
+}
+
+function spriteFromSource(source: SpriteSource, primitive: Primitive): SpriteAsset {
+  const width = clamp(Math.round(source.frameWidth), 1, Math.min(MAX_SPRITE_FRAME_WIDTH, source.sheetWidth));
+  const height = clamp(Math.round(source.frameHeight), 1, Math.min(MAX_SPRITE_FRAME_HEIGHT, source.sheetHeight));
+  const columns = clamp(Math.round(primitive.sheetColumns ?? Math.max(1, Math.floor(source.sheetWidth / width))), 1, MAX_SPRITE_FRAMES);
+  const rows = Math.max(1, Math.floor(source.sheetHeight / height));
+  const availableFrames = Math.max(1, Math.min(MAX_SPRITE_FRAMES, columns * rows));
+  const requestedFrames = clamp(Math.round(primitive.frameCount ?? availableFrames), 1, availableFrames);
+  const maxByTotalPixels = Math.max(1, Math.floor(MAX_SPRITE_TOTAL_PIXELS / Math.max(1, width * height)));
+  const frameCount = Math.min(requestedFrames, maxByTotalPixels);
+  const fps = clamp(Math.round(primitive.fps ?? DEFAULT_SPRITE_FPS), 0, 30);
+  primitive.sheetColumns = columns;
+  primitive.fps = fps;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    return { width, height, frameCount: 1, fps: 0, palette: ["#FFFFFF"], frames: [Array.from({ length: height }, () => `${width}.`)] };
+  }
+
+  const rawFrames: Array<Array<string | null>> = [];
+  const colorCounts = new Map<string, number>();
+  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+    const sx = (frameIndex % columns) * width;
+    const sy = Math.floor(frameIndex / columns) * height;
+    context.clearRect(0, 0, width, height);
+    context.drawImage(source.bitmap, sx, sy, width, height, 0, 0, width, height);
+    const image = context.getImageData(0, 0, width, height).data;
+    const pixels: Array<string | null> = [];
+    for (let offset = 0; offset < image.length; offset += 4) {
+      const alpha = image[offset + 3];
+      if (alpha < 128) {
+        pixels.push(null);
+        continue;
+      }
+      const color = quantizedHexColor(image[offset], image[offset + 1], image[offset + 2]);
+      colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
+      pixels.push(color);
+    }
+    rawFrames.push(pixels);
+  }
+
+  const nonEmptyFrames = rawFrames.filter((pixels) => pixels.some((color) => color !== null));
+  const framesToEncode = nonEmptyFrames.length > 0 ? nonEmptyFrames : rawFrames.slice(0, 1);
+  primitive.frameCount = framesToEncode.length;
+
+  const palette = Array.from(colorCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 26)
+    .map(([color]) => color);
+  if (palette.length === 0) {
+    palette.push("#FFFFFF");
+  }
+  const frames = framesToEncode.map((pixels) => {
+    const rows: string[] = [];
+    for (let row = 0; row < height; row += 1) {
+      const tokens: string[] = [];
+      for (let col = 0; col < width; col += 1) {
+        const color = pixels[row * width + col];
+        tokens.push(color ? paletteTokenForColor(color, palette) : ".");
+      }
+      rows.push(encodeRleTokenRow(tokens));
+    }
+    return rows;
+  });
+  return { width, height, frameCount: frames.length, fps, palette, frames };
+}
+
+function quantizedHexColor(r: number, g: number, b: number): string {
+  const q = (value: number) => clamp(Math.round(value / 17) * 17, 0, 255);
+  return `#${[q(r), q(g), q(b)].map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+function paletteTokenForColor(color: string, palette: string[]): string {
+  const exact = palette.indexOf(color);
+  const index = exact >= 0 ? exact : nearestPaletteIndex(color, palette);
+  return String.fromCharCode(97 + clamp(index, 0, palette.length - 1));
+}
+
+function nearestPaletteIndex(color: string, palette: string[]): number {
+  const [r, g, b] = rgbFromHex(color);
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  palette.forEach((candidate, index) => {
+    const [cr, cg, cb] = rgbFromHex(candidate);
+    const distance = ((r - cr) ** 2) + ((g - cg) ** 2) + ((b - cb) ** 2);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+function rgbFromHex(color: string): [number, number, number] {
+  return [
+    Number.parseInt(color.slice(1, 3), 16),
+    Number.parseInt(color.slice(3, 5), 16),
+    Number.parseInt(color.slice(5, 7), 16),
+  ];
 }
 
 function messageList(): string {
@@ -2398,6 +3092,14 @@ function bindEvents() {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (file) {
       addGifPrimitive(file);
+    }
+    (event.target as HTMLInputElement).value = "";
+  });
+
+  app.querySelector<HTMLInputElement>("[data-role='sprite-input']")?.addEventListener("change", (event) => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (file) {
+      void addSpritePrimitive(file);
     }
     (event.target as HTMLInputElement).value = "";
   });
@@ -2682,6 +3384,17 @@ function updateSelectedPrimitive(key: string, value: string) {
     resizeGifPrimitive(primitive, key, toInt(value, DEFAULT_GIF_SIZE));
     return;
   }
+  if (primitive.type === "sprite" && ["width", "height"].includes(key)) {
+    const fallback = key === "fps" ? DEFAULT_SPRITE_FPS : 1;
+    primitive[key as "width"] = Math.max(key === "fps" ? 0 : 1, toInt(value, fallback));
+    return;
+  }
+  if (primitive.type === "sprite" && ["frameCount", "fps", "sheetColumns"].includes(key)) {
+    const fallback = key === "fps" ? DEFAULT_SPRITE_FPS : 1;
+    primitive[key as "frameCount"] = Math.max(key === "fps" ? 0 : 1, toInt(value, fallback));
+    rebuildSpriteAssetForPrimitive(primitive);
+    return;
+  }
   if (["x", "y", "width", "height", "fontSize", "font"].includes(key)) {
     primitive[key as "x"] = Math.max(key === "x" || key === "y" ? 0 : 1, toInt(value, key === "x" || key === "y" ? 0 : 1));
     return;
@@ -2701,6 +3414,15 @@ function updateSelectedPrimitive(key: string, value: string) {
   }
   if (key === "assetPath") {
     primitive.assetPath = value.trim();
+    if (primitive.type === "sprite") {
+      const sprite = spriteAssetFor(primitive.assetPath);
+      if (sprite) {
+        primitive.width = sprite.width;
+        primitive.height = sprite.height;
+        primitive.frameCount = sprite.frameCount;
+        primitive.fps = sprite.fps;
+      }
+    }
     return;
   }
   if (key === "data") {
@@ -2746,6 +3468,15 @@ async function handleAction(action: string) {
     render();
     return;
   }
+  if (action === "load-cozy-meadow") {
+    state.spec = cloneSpec(COZY_MEADOW_SPEC);
+    state.selectedIndex = state.spec.primitives.findIndex((primitive) => primitive.type === "sprite");
+    state.editingTextIndex = null;
+    state.notice = "Cozy Meadow loaded.";
+    syncJsonFromSpec();
+    render();
+    return;
+  }
   if (action === "add-rect") {
     addPrimitive({ type: "rect", x: 24, y: 24, width: 64, height: 38, color: "#1E2738" });
   }
@@ -2762,7 +3493,7 @@ async function handleAction(action: string) {
     app.querySelector<HTMLInputElement>("[data-role='gif-input']")?.click();
   }
   if (action === "add-sprite") {
-    addPrimitive({ type: "sprite", x: 176, y: 26, assetPath: DEFAULT_CLOUD_SPRITE_PATH }, "Sprite placed.");
+    app.querySelector<HTMLInputElement>("[data-role='sprite-input']")?.click();
   }
   if (action === "add-pixels") {
     state.pixelTool = "paint";
@@ -2844,18 +3575,106 @@ function addGifPrimitive(file: File) {
   addPrimitive({ type: "gif", x: 24, y: 24, width: DEFAULT_GIF_SIZE, height: DEFAULT_GIF_SIZE, assetPath }, "GIF placed.");
 }
 
-function themeAssetPathForFile(name: string): string {
-  return `/themes/u/${safeAssetName(name)}`;
+async function addSpritePrimitive(file: File) {
+  if (file.type && !file.type.startsWith("image/")) {
+    state.notice = "Please choose a PNG, JPEG, or WebP sprite sheet.";
+    render();
+    return;
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const frame = inferSpriteSheetFrame(bitmap.width, bitmap.height);
+    const assetPath = spriteAssetPathForFile(file.name);
+    const existing = state.spriteAssets[assetPath]?.source;
+    if (existing) {
+      URL.revokeObjectURL(existing.previewUrl);
+    }
+    const source: SpriteSource = {
+      file,
+      previewUrl: URL.createObjectURL(file),
+      bitmap,
+      sheetWidth: bitmap.width,
+      sheetHeight: bitmap.height,
+      frameWidth: frame.width,
+      frameHeight: frame.height,
+    };
+    const primitive: Primitive = {
+      type: "sprite",
+      x: 176,
+      y: 26,
+      width: frame.width,
+      height: frame.height,
+      frameCount: frame.frameCount,
+      fps: DEFAULT_SPRITE_FPS,
+      sheetColumns: frame.columns,
+      assetPath,
+    };
+    const sprite = spriteFromSource(source, primitive);
+    const rawText = encodeSpriteAsset(sprite);
+    state.spriteAssets[assetPath] = {
+      file: builtInAssetFile(assetPath, rawText, "text/plain", "sprite.cba"),
+      rawText,
+      sprite,
+      source,
+    };
+    addPrimitive(primitive, "Sprite sheet placed.");
+  } catch (error) {
+    state.notice = error instanceof Error ? error.message : "Could not read sprite sheet.";
+    render();
+  }
 }
 
-function safeAssetName(name: string): string {
+function inferSpriteSheetFrame(width: number, height: number): { width: number; height: number; columns: number; frameCount: number } {
+  let frameWidth = width;
+  let frameHeight = height;
+  if (width !== height || width > MAX_SPRITE_FRAME_WIDTH || height > MAX_SPRITE_FRAME_HEIGHT) {
+    const commonSizes = [64, 48, 32, 24, 16, 8];
+    const squareCell = commonSizes.find((size) => {
+      const frames = (width / size) * (height / size);
+      return width % size === 0 &&
+        height % size === 0 &&
+        frames >= 2 &&
+        frames <= MAX_SPRITE_FRAMES &&
+        size <= MAX_SPRITE_FRAME_WIDTH &&
+        size <= MAX_SPRITE_FRAME_HEIGHT;
+    });
+    if (squareCell) {
+      frameWidth = squareCell;
+      frameHeight = squareCell;
+    } else if (height <= MAX_SPRITE_FRAME_HEIGHT && width % height === 0) {
+      frameWidth = height;
+      frameHeight = height;
+    } else {
+      frameWidth = Math.min(width, MAX_SPRITE_FRAME_WIDTH);
+      frameHeight = Math.min(height, MAX_SPRITE_FRAME_HEIGHT);
+    }
+  }
+  frameWidth = clamp(frameWidth, 1, Math.min(MAX_SPRITE_FRAME_WIDTH, width));
+  frameHeight = clamp(frameHeight, 1, Math.min(MAX_SPRITE_FRAME_HEIGHT, height));
+  const columns = Math.max(1, Math.floor(width / frameWidth));
+  const rows = Math.max(1, Math.floor(height / frameHeight));
+  const frameCount = Math.min(MAX_SPRITE_FRAMES, columns * rows, Math.max(1, Math.floor(MAX_SPRITE_TOTAL_PIXELS / (frameWidth * frameHeight))));
+  return { width: frameWidth, height: frameHeight, columns, frameCount };
+}
+
+function themeAssetPathForFile(name: string): string {
+  return `/themes/u/${safeAssetName(name, ".gif")}`;
+}
+
+function spriteAssetPathForFile(name: string): string {
+  return `/themes/u/${safeAssetName(name, ".cba")}`;
+}
+
+function safeAssetName(name: string, extension: ".gif" | ".cba"): string {
   const cleaned = name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-  const withExtension = cleaned.endsWith(".gif") ? cleaned : `${cleaned || "asset"}.gif`;
+  const withoutExtension = cleaned.replace(/\.[a-z0-9]+$/i, "");
+  const withExtension = cleaned.endsWith(extension) ? cleaned : `${withoutExtension || "asset"}${extension}`;
   if (withExtension.length <= 21) {
     return withExtension;
   }
-  const base = withExtension.replace(/\.gif$/i, "");
-  return `${base.slice(0, 17).replace(/[._-]+$/g, "") || "asset"}.gif`;
+  const base = withExtension.slice(0, -extension.length);
+  const maxBase = 21 - extension.length;
+  return `${base.slice(0, maxBase).replace(/[._-]+$/g, "") || "asset"}${extension}`;
 }
 
 function applyJson() {
@@ -2935,6 +3754,18 @@ function importPrimitive(value: unknown): Primitive {
   primitive.bgColor = stringValue(value.bgColor) ?? stringValue(value.bg);
   primitive.borderColor = stringValue(value.borderColor) ?? stringValue(value.bc);
   primitive.assetPath = stringValue(value.assetPath) ?? stringValue(value.a);
+  const frameCount = numberValue(value.frameCount);
+  if (frameCount !== undefined) {
+    primitive.frameCount = frameCount;
+  }
+  const fps = numberValue(value.fps);
+  if (fps !== undefined) {
+    primitive.fps = fps;
+  }
+  const sheetColumns = numberValue(value.sheetColumns);
+  if (sheetColumns !== undefined) {
+    primitive.sheetColumns = sheetColumns;
+  }
   primitive.data = stringValue(value.data) ?? stringValue(value.d);
   const palette = stringArrayValue(value.p);
   if (palette) {
@@ -3195,9 +4026,18 @@ async function sendThemeToVibeTV() {
     const targetOrigin = normalizeTargetOrigin(state.targetOrigin);
     state.targetOrigin = targetOrigin;
     persistTargetOrigin();
-    await clearDeviceThemeSpec(targetOrigin);
+    state.notice = "Sending theme to Vibe TV.";
+    render();
     await uploadThemeAssets(targetOrigin);
-    const response = await postFramePayload(targetOrigin, buildFramePayload());
+    const themePath = themeSpecAssetPath(state.spec);
+    await uploadThemeAsset(targetOrigin, themePath, themeSpecUploadAsset(state.spec), "ThemeSpec");
+    const response = await activateStoredTheme(targetOrigin, themePath);
+
+    if (response.type !== "opaque" && (response.status === 404 || response.status === 405 || response.status === 501)) {
+      await sendLegacyInlineTheme(targetOrigin);
+      render();
+      return;
+    }
 
     if (response.type === "opaque") {
       state.notice = "Theme sent to Vibe TV. Local dev mode cannot read the device confirmation.";
@@ -3211,12 +4051,34 @@ async function sendThemeToVibeTV() {
       return;
     }
 
+    const liveFrame = await postFramePayload(targetOrigin, buildLiveFramePayload());
+    if (liveFrame.type !== "opaque" && !liveFrame.ok) {
+      state.notice = `Theme activated, but Vibe TV rejected the live frame (${liveFrame.status}).`;
+      render();
+      return;
+    }
+
     const confirmation = await confirmThemeApplied(targetOrigin, state.spec);
-    state.notice = confirmation ?? "Theme sent to Vibe TV.";
+    const cleaned = await cleanupStoredThemeVersions(targetOrigin, state.spec);
+    state.notice = `${confirmation ?? "Theme sent to Vibe TV."}${cleanupNotice(cleaned)}`;
   } catch (error) {
     state.notice = error instanceof Error ? error.message : `Could not reach Vibe TV at ${normalizeTargetOrigin(state.targetOrigin)}. Check Wi-Fi/mDNS, then try again.`;
   }
   render();
+}
+
+async function sendLegacyInlineTheme(targetOrigin: string) {
+  const inlineBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload())).length;
+  if (inlineBytes > MAX_FRAME_BYTES) {
+    throw new Error("This Vibe TV firmware does not support stored themes yet. Update the firmware, then send this larger theme again.");
+  }
+
+  const response = await postFramePayload(targetOrigin, buildFramePayload());
+  if (response.type !== "opaque" && !response.ok) {
+    throw new Error(`Vibe TV rejected the theme (${response.status}).`);
+  }
+  const confirmation = await confirmThemeApplied(targetOrigin, state.spec);
+  state.notice = confirmation ?? "Theme sent to Vibe TV.";
 }
 
 async function clearDeviceThemeSpec(targetOrigin: string) {
@@ -3234,12 +4096,20 @@ async function postFramePayload(targetOrigin: string, payload: Record<string, un
   });
 }
 
+async function activateStoredTheme(targetOrigin: string, path: string): Promise<Response> {
+  return fetchWithCorsFallback(`${targetOrigin}/theme/active`, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ path }),
+  });
+}
+
 async function uploadThemeAssets(targetOrigin: string) {
   for (const path of uniqueAssetPaths("gif")) {
     await uploadThemeAsset(targetOrigin, path, state.gifAssets[path] ?? await builtInGifAsset(path), "GIF");
   }
   for (const path of uniqueAssetPaths("sprite")) {
-    await uploadThemeAsset(targetOrigin, path, builtInSpriteAsset(path), "Sprite");
+    await uploadThemeAsset(targetOrigin, path, state.spriteAssets[path] ?? builtInSpriteAsset(path), "Sprite");
   }
 }
 
@@ -3259,8 +4129,62 @@ async function uploadThemeAsset(targetOrigin: string, path: string, asset: Uploa
   }
 }
 
+async function cleanupStoredThemeVersions(targetOrigin: string, spec: ThemeSpec): Promise<number> {
+  const activePath = themeSpecAssetPath(spec);
+  const stalePaths = await staleStoredThemePaths(targetOrigin, spec, activePath);
+  let deleted = 0;
+  for (const path of stalePaths) {
+    const response = await deleteThemeAsset(targetOrigin, path);
+    if (response.type === "opaque" || response.ok || response.status === 404) {
+      deleted += 1;
+    }
+  }
+  return deleted;
+}
+
+async function staleStoredThemePaths(targetOrigin: string, spec: ThemeSpec, activePath: string): Promise<string[]> {
+  const assets = await fetchDeviceAssets(targetOrigin);
+  if (!assets?.assets) {
+    return [];
+  }
+  const hashedPrefix = themeSpecAssetHashPrefix(spec);
+  const legacyPath = legacyThemeSpecAssetPath(spec);
+  return assets.assets
+    .map((asset) => asset.path ?? "")
+    .filter((path) => path.length > 0)
+    .filter((path) => path !== activePath)
+    .filter((path) => path === legacyPath || (path.startsWith(hashedPrefix) && path.endsWith(".json")));
+}
+
+async function fetchDeviceAssets(targetOrigin: string): Promise<DeviceAssets | null> {
+  const response = await fetchWithCorsFallback(`${targetOrigin}/assets`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  if (response.type === "opaque") {
+    return null;
+  }
+  if (!response.ok) {
+    return null;
+  }
+  return await response.json() as DeviceAssets;
+}
+
+async function deleteThemeAsset(targetOrigin: string, path: string): Promise<Response> {
+  return fetchWithCorsFallback(`${targetOrigin}/assets?path=${encodeURIComponent(path)}`, {
+    method: "DELETE",
+  });
+}
+
+function cleanupNotice(count: number): string {
+  if (count <= 0) {
+    return "";
+  }
+  return ` Cleaned ${count} old theme ${count === 1 ? "file" : "files"}.`;
+}
+
 async function confirmThemeApplied(targetOrigin: string, spec: ThemeSpec): Promise<string | null> {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
     const health = await fetchDeviceHealth(targetOrigin);
     if (!health) {
       return "Theme sent to Vibe TV. Local dev mode cannot read the device confirmation.";
@@ -3269,8 +4193,8 @@ async function confirmThemeApplied(targetOrigin: string, spec: ThemeSpec): Promi
     if (confirmed.ok) {
       return confirmed.message;
     }
-    if (attempt < 3) {
-      await delay(300);
+    if (attempt < 9) {
+      await delay(750);
     }
   }
   throw new Error("Theme was sent, but Vibe TV health still reports the fallback theme.");
@@ -3292,10 +4216,19 @@ async function fetchDeviceHealth(targetOrigin: string): Promise<DeviceHealth | n
 
 function themeAppliedFromHealth(health: DeviceHealth, spec: ThemeSpec): { ok: boolean; message: string } {
   const themeSpec = health.display?.themeSpec;
+  if (themeSpec?.renderOk === false) {
+    return { ok: false, message: `Vibe TV could not render the theme (${themeSpec.renderError ?? "render_failed"}).` };
+  }
   if (themeSpec?.active) {
     const sameId = !themeSpec.id || themeSpec.id === spec.themeId;
     const sameRev = !themeSpec.rev || themeSpec.rev === spec.themeRev;
-    if (sameId && sameRev) {
+    const expectedHash = themeSpecHash(spec);
+    const sameHash = !themeSpec.hash || themeSpec.hash === expectedHash;
+    const samePath = !themeSpec.path || themeSpec.path === themeSpecAssetPath(spec);
+    if (sameId && sameRev && sameHash && samePath) {
+      if (typeof health.system?.freeHeap === "number" && health.system.freeHeap < 6000) {
+        return { ok: true, message: `Theme sent to Vibe TV and confirmed active. Warning: device heap is low (${health.system.freeHeap} bytes).` };
+      }
       return { ok: true, message: "Theme sent to Vibe TV and confirmed active." };
     }
   }
@@ -3319,9 +4252,19 @@ function delay(ms: number): Promise<void> {
 
 async function fetchWithCorsFallback(url: string, init: RequestInit): Promise<Response> {
   try {
-    return await fetch(url, { ...init, mode: "cors" });
+    return await fetchWithTimeout(url, { ...init, mode: "cors" });
   } catch {
-    return fetch(url, { ...init, mode: "no-cors" });
+    return fetchWithTimeout(url, { ...init, mode: "no-cors" });
+  }
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 
@@ -3341,6 +4284,63 @@ function uniqueGifAssetPaths(): string[] {
 
 function builtInAssetFile(path: string, content: BlobPart, type: string, fallbackName: string): File {
   return new File([content], path.split("/").pop() || fallbackName, { type });
+}
+
+function themeSpecUploadAsset(spec: ThemeSpec): UploadableAsset {
+  const path = themeSpecAssetPath(spec);
+  return {
+    file: builtInAssetFile(path, deviceThemeSpecJson(spec), "application/json", "theme.json"),
+  };
+}
+
+function themeSpecAssetPath(spec: ThemeSpec): string {
+  const prefix = USER_THEME_ASSET_PATH_PREFIX;
+  const extension = ".json";
+  const maxSegmentLength = Math.max(1, MAX_ESP8266_LITTLEFS_PATH_CHARS - prefix.length - extension.length);
+  const revSuffix = `-${spec.themeRev || 1}-${themeSpecHash(spec).slice(0, 6)}`;
+  const maxBaseLength = Math.max(1, maxSegmentLength - revSuffix.length);
+  const cleaned = spec.themeId
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "theme";
+  const base = `${cleaned.slice(0, maxBaseLength)}${revSuffix}`.slice(0, maxSegmentLength);
+  return `${prefix}${base}${extension}`;
+}
+
+function themeSpecAssetHashPrefix(spec: ThemeSpec): string {
+  const activePath = themeSpecAssetPath(spec);
+  return activePath.replace(/[0-9a-f]{6}\.json$/i, "");
+}
+
+function legacyThemeSpecAssetPath(spec: ThemeSpec): string {
+  const prefix = USER_THEME_ASSET_PATH_PREFIX;
+  const extension = ".json";
+  const maxSegmentLength = Math.max(1, MAX_ESP8266_LITTLEFS_PATH_CHARS - prefix.length - extension.length);
+  const revSuffix = `-${spec.themeRev || 1}`;
+  const maxBaseLength = Math.max(1, maxSegmentLength - revSuffix.length);
+  const cleaned = spec.themeId
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "theme";
+  const base = `${cleaned.slice(0, maxBaseLength)}${revSuffix}`.slice(0, maxSegmentLength);
+  return `${prefix}${base}${extension}`;
+}
+
+function deviceThemeSpecJson(spec: ThemeSpec): string {
+  return JSON.stringify(buildDeviceThemeSpec(spec));
+}
+
+function themeSpecHash(spec: ThemeSpec): string {
+  return fnv1aHex8(deviceThemeSpecJson(spec));
+}
+
+function fnv1aHex8(value: string): string {
+  let hash = 0x811c9dc5;
+  for (const byte of new TextEncoder().encode(value)) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
 }
 
 function builtInSpriteAsset(path: string): UploadableAsset | null {
@@ -3369,7 +4369,7 @@ async function builtInGifAsset(path: string): Promise<UploadableAsset | null> {
   };
 }
 
-function buildFramePayload(spec: ThemeSpec = state.spec) {
+function buildLiveFramePayload(spec: ThemeSpec = state.spec) {
   const payload: Record<string, unknown> = {
     v: 2,
     provider: frame.provider,
@@ -3380,7 +4380,6 @@ function buildFramePayload(spec: ThemeSpec = state.spec) {
     usageMode: frame.usageMode,
     time: frame.time,
     date: frame.date,
-    themeSpec: buildDeviceThemeSpec(spec),
   };
   const bindings = usedThemeBindings(spec);
   if (bindings.has("sessionTokens")) {
@@ -3393,6 +4392,13 @@ function buildFramePayload(spec: ThemeSpec = state.spec) {
     payload.totalTokens = frame.totalTokens;
   }
   return payload;
+}
+
+function buildFramePayload(spec: ThemeSpec = state.spec) {
+  return {
+    ...buildLiveFramePayload(spec),
+    themeSpec: buildDeviceThemeSpec(spec),
+  };
 }
 
 function buildDeviceThemeSpec(spec: ThemeSpec): Record<string, unknown> {

@@ -131,6 +131,9 @@ void DrawResetCRT(int64_t remainSecs);
 
 bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
+bool ThemeSpecRenderOk();
+const char* ThemeSpecRenderError();
+unsigned long ThemeSpecRenderFailures();
 
 const char* MiniGifAssetPath();
 void ResetMiniGifFrameSchedule();

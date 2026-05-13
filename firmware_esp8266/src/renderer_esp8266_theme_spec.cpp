@@ -20,6 +20,23 @@ namespace display {
 
 namespace {
 
+constexpr unsigned long kThemeSpecAnimatedTickMs = 125UL;
+unsigned long nextThemeSpecAnimatedTickAtMs = 0;
+bool lastThemeSpecRenderOk = true;
+const char* lastThemeSpecRenderError = "";
+unsigned long themeSpecRenderFailures = 0;
+
+void markThemeSpecRenderOk() {
+  lastThemeSpecRenderOk = true;
+  lastThemeSpecRenderError = "";
+}
+
+void markThemeSpecRenderFailed(const char* error) {
+  lastThemeSpecRenderOk = false;
+  lastThemeSpecRenderError = error == nullptr ? "render_failed" : error;
+  themeSpecRenderFailures += 1;
+}
+
 bool readSpriteLine(File& file, String& line) {
   if (!file.available()) {
     return false;
@@ -35,13 +52,43 @@ bool parseSpriteHeader(const String& line, int& width, int& height) {
   return std::sscanf(line.c_str(), "%d %d", &width, &height) == 2 && width > 0 && height > 0;
 }
 
+bool parseAnimatedSpriteHeader(const String& line, int& width, int& height, int& frameCount, int& fps) {
+  width = 0;
+  height = 0;
+  frameCount = 0;
+  fps = 0;
+  return std::sscanf(line.c_str(), "%d %d %d %d", &width, &height, &frameCount, &fps) == 4 &&
+         width > 0 &&
+         height > 0 &&
+         frameCount > 0 &&
+         frameCount <= 64 &&
+         fps >= 0 &&
+         fps <= 30;
+}
+
 bool parseSpritePaletteSize(const String& line, int& paletteSize) {
   paletteSize = line.toInt();
   return paletteSize > 0 && paletteSize <= 26;
 }
 
-bool drawSpriteRleRow(const String& row, const uint16_t* palette, int paletteSize, int x, int y, int width) {
+bool drawSpriteRleRow(
+    const String& row,
+    const uint16_t* palette,
+    int paletteSize,
+    int x,
+    int y,
+    int sourceWidth,
+    int sourceRow,
+    int sourceHeight,
+    int targetWidth,
+    int targetHeight,
+    bool drawTransparentRuns,
+    uint16_t transparentColor) {
   int offset = 0;
+  const int drawWidth = targetWidth > 0 ? targetWidth : sourceWidth;
+  const int drawHeight = targetHeight > 0 ? targetHeight : sourceHeight;
+  const int drawY1 = y + ((sourceRow * drawHeight) / sourceHeight);
+  const int drawY2 = y + (((sourceRow + 1) * drawHeight + sourceHeight - 1) / sourceHeight);
   for (size_t i = 0; i < row.length();) {
     int runLength = 0;
     bool hasRunLength = false;
@@ -53,12 +100,17 @@ bool drawSpriteRleRow(const String& row, const uint16_t* palette, int paletteSiz
     if (!hasRunLength) {
       runLength = 1;
     }
-    if (runLength <= 0 || i >= row.length() || offset + runLength > width) {
+    if (runLength <= 0 || i >= row.length() || offset + runLength > sourceWidth) {
       return false;
     }
 
     const char token = row[i++];
+    const int drawX1 = x + ((offset * drawWidth) / sourceWidth);
+    const int drawX2 = x + (((offset + runLength) * drawWidth + sourceWidth - 1) / sourceWidth);
     if (token == '.') {
+      if (drawTransparentRuns) {
+        PrimitiveFillRect(drawX1, drawY1, max(1, drawX2 - drawX1), max(1, drawY2 - drawY1), transparentColor);
+      }
       offset += runLength;
       continue;
     }
@@ -69,13 +121,105 @@ bool drawSpriteRleRow(const String& row, const uint16_t* palette, int paletteSiz
     if (colorIndex >= paletteSize) {
       return false;
     }
-    PrimitiveFillRect(x + offset, y, runLength, 1, palette[colorIndex]);
+    PrimitiveFillRect(drawX1, drawY1, max(1, drawX2 - drawX1), max(1, drawY2 - drawY1), palette[colorIndex]);
     offset += runLength;
   }
-  return offset == width;
+  return offset == sourceWidth;
 }
 
-void drawSpriteAsset(const char* assetPath, int x, int y) {
+bool readSpritePalette(File& file, uint16_t* palette, int& paletteSize) {
+  String line;
+  if (!readSpriteLine(file, line) || !parseSpritePaletteSize(line, paletteSize)) {
+    return false;
+  }
+  for (int i = 0; i < paletteSize; ++i) {
+    if (!readSpriteLine(file, line) || !themespec::IsHexColor(line.c_str())) {
+      return false;
+    }
+    palette[i] = themespec::ParseColor(line.c_str(), 0x0000);
+  }
+  return true;
+}
+
+int spriteFrameIndex(int frameCount, int fps) {
+  if (frameCount <= 1 || fps <= 0) {
+    return 0;
+  }
+  const unsigned long frameMs = static_cast<unsigned long>(1000 / fps);
+  if (frameMs == 0) {
+    return 0;
+  }
+  return static_cast<int>((millis() / frameMs) % static_cast<unsigned long>(frameCount));
+}
+
+bool skipSpriteRows(File& file, int rowCount) {
+  String line;
+  for (int row = 0; row < rowCount; ++row) {
+    if (!readSpriteLine(file, line)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void drawStaticSpriteAsset(File& file, int x, int y, int targetWidth, int targetHeight, bool hasClearColor, uint16_t clearColor) {
+  String line;
+  int width = 0;
+  int height = 0;
+  if (!readSpriteLine(file, line) || !parseSpriteHeader(line, width, height)) {
+    return;
+  }
+
+  uint16_t palette[26] = {0};
+  int paletteSize = 0;
+  if (!readSpritePalette(file, palette, paletteSize)) {
+    return;
+  }
+
+  for (int row = 0; row < height; ++row) {
+    if (!readSpriteLine(file, line) ||
+        !drawSpriteRleRow(line, palette, paletteSize, x, y, width, row, height, targetWidth, targetHeight, hasClearColor, clearColor)) {
+      return;
+    }
+    if ((row & 0x07) == 0x07) {
+      yield();
+    }
+  }
+}
+
+void drawAnimatedSpriteAsset(File& file, int x, int y, int targetWidth, int targetHeight, bool hasClearColor, uint16_t clearColor) {
+  String line;
+  int width = 0;
+  int height = 0;
+  int frameCount = 0;
+  int fps = 0;
+  if (!readSpriteLine(file, line) || !parseAnimatedSpriteHeader(line, width, height, frameCount, fps)) {
+    return;
+  }
+
+  uint16_t palette[26] = {0};
+  int paletteSize = 0;
+  if (!readSpritePalette(file, palette, paletteSize)) {
+    return;
+  }
+
+  const int selectedFrame = spriteFrameIndex(frameCount, fps);
+  if (!skipSpriteRows(file, selectedFrame * height)) {
+    return;
+  }
+
+  for (int row = 0; row < height; ++row) {
+    if (!readSpriteLine(file, line) ||
+        !drawSpriteRleRow(line, palette, paletteSize, x, y, width, row, height, targetWidth, targetHeight, hasClearColor, clearColor)) {
+      return;
+    }
+    if ((row & 0x07) == 0x07) {
+      yield();
+    }
+  }
+}
+
+void drawSpriteAsset(const char* assetPath, int x, int y, int targetWidth, int targetHeight, bool animatedOnly, bool hasClearColor, uint16_t clearColor) {
   if (assetPath == nullptr || assetPath[0] == '\0') {
     return;
   }
@@ -88,37 +232,13 @@ void drawSpriteAsset(const char* assetPath, int x, int y) {
   }
 
   String line;
-  if (!readSpriteLine(file, line) || line != "CBI1") {
-    file.close();
-    return;
-  }
-
-  int width = 0;
-  int height = 0;
-  if (!readSpriteLine(file, line) || !parseSpriteHeader(line, width, height)) {
-    file.close();
-    return;
-  }
-
-  int paletteSize = 0;
-  if (!readSpriteLine(file, line) || !parseSpritePaletteSize(line, paletteSize)) {
-    file.close();
-    return;
-  }
-
-  uint16_t palette[26] = {0};
-  for (int i = 0; i < paletteSize; ++i) {
-    if (!readSpriteLine(file, line) || !themespec::IsHexColor(line.c_str())) {
-      file.close();
-      return;
-    }
-    palette[i] = themespec::ParseColor(line.c_str(), 0x0000);
-  }
-
-  for (int row = 0; row < height; ++row) {
-    if (!readSpriteLine(file, line) || !drawSpriteRleRow(line, palette, paletteSize, x, y + row, width)) {
-      file.close();
-      return;
+  if (readSpriteLine(file, line)) {
+    if (line == "CBI1") {
+      if (!animatedOnly) {
+        drawStaticSpriteAsset(file, x, y, targetWidth, targetHeight, hasClearColor, clearColor);
+      }
+    } else if (line == "CBA1") {
+      drawAnimatedSpriteAsset(file, x, y, targetWidth, targetHeight, hasClearColor, clearColor);
     }
   }
 
@@ -128,6 +248,11 @@ void drawSpriteAsset(const char* assetPath, int x, int y) {
 class ThemeSpecSink final : public themespec::Sink {
  public:
   explicit ThemeSpecSink(bool forceGifFrame) : forceGifFrame_(forceGifFrame) {}
+
+  void PrimeBackground(uint16_t color) override {
+    backgroundColor_ = color;
+    hasBackgroundColor_ = true;
+  }
 
   void FillScreen(uint16_t color) override {
     backgroundColor_ = color;
@@ -175,13 +300,21 @@ class ThemeSpecSink final : public themespec::Sink {
     request.y = cmd.y;
     request.width = cmd.width;
     request.height = cmd.height;
-    request.hasBackgroundColor = hasBackgroundColor_;
-    request.backgroundColor = backgroundColor_;
+    request.hasBackgroundColor = cmd.hasBg || hasBackgroundColor_;
+    request.backgroundColor = cmd.hasBg ? cmd.bg : backgroundColor_;
     (void)GifCore().Tick(Tft(), request, forceGifFrame_);
   }
 
   void DrawSprite(const themespec::SpriteCommand& cmd) override {
-    drawSpriteAsset(cmd.assetPath, cmd.x, cmd.y);
+    drawSpriteAsset(
+        cmd.assetPath,
+        cmd.x,
+        cmd.y,
+        cmd.width,
+        cmd.height,
+        !forceGifFrame_,
+        !forceGifFrame_ && (cmd.hasBg || hasBackgroundColor_),
+        cmd.hasBg ? cmd.bg : backgroundColor_);
   }
 
   void DrawPixels(const themespec::PixelsCommand& cmd) override {
@@ -232,15 +365,22 @@ themespec::FrameData currentThemeSpecFrameData() {
 }  // namespace
 
 bool DrawThemeSpecUsage() {
-  if (!CurrentFrame().hasThemeSpec || CurrentFrame().themeSpecRaw.length() == 0) {
+  if (!CurrentFrame().hasThemeSpec) {
+    return false;
+  }
+  if (CurrentFrame().themeSpecRaw.length() == 0) {
+    markThemeSpecRenderFailed("missing_theme_spec");
     return false;
   }
 
   ThemeSpecSink sink(true);
   if (!themespec::RenderThemeSpec(CurrentFrame().themeSpecRaw.c_str(), currentThemeSpecFrameData(), sink)) {
+    markThemeSpecRenderFailed("full_render_failed");
     return false;
   }
 
+  markThemeSpecRenderOk();
+  nextThemeSpecAnimatedTickAtMs = millis() + kThemeSpecAnimatedTickMs;
   const int64_t remain = CurrentRemainingSecs();
   LastRenderedSecs() = remain;
   LastRenderedMinuteBucket() = remain / 60;
@@ -251,9 +391,33 @@ bool TickThemeSpecGifs() {
   if (!CurrentFrame().hasThemeSpec || CurrentFrame().themeSpecRaw.length() == 0) {
     return false;
   }
+  const unsigned long now = millis();
+  if (nextThemeSpecAnimatedTickAtMs == 0) {
+    return true;
+  }
+  if (static_cast<long>(now - nextThemeSpecAnimatedTickAtMs) < 0) {
+    return true;
+  }
+  nextThemeSpecAnimatedTickAtMs = now + kThemeSpecAnimatedTickMs;
 
   ThemeSpecSink sink(false);
-  return themespec::RenderThemeSpecAnimatedPrimitives(CurrentFrame().themeSpecRaw.c_str(), currentThemeSpecFrameData(), sink);
+  const bool ok = themespec::RenderThemeSpecAnimatedPrimitives(CurrentFrame().themeSpecRaw.c_str(), currentThemeSpecFrameData(), sink);
+  if (!ok) {
+    markThemeSpecRenderFailed("animated_render_failed");
+  }
+  return ok;
+}
+
+bool ThemeSpecRenderOk() {
+  return lastThemeSpecRenderOk;
+}
+
+const char* ThemeSpecRenderError() {
+  return lastThemeSpecRenderError;
+}
+
+unsigned long ThemeSpecRenderFailures() {
+  return themeSpecRenderFailures;
 }
 
 }  // namespace display
@@ -272,6 +436,18 @@ bool DrawThemeSpecUsage() {
 
 bool TickThemeSpecGifs() {
   return false;
+}
+
+bool ThemeSpecRenderOk() {
+  return true;
+}
+
+const char* ThemeSpecRenderError() {
+  return "";
+}
+
+unsigned long ThemeSpecRenderFailures() {
+  return 0;
 }
 
 }  // namespace display
