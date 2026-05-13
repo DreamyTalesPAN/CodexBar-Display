@@ -24,26 +24,49 @@ var (
 	errUnknownCapability = errors.New("device capabilities unavailable; connect device and retry")
 	themeIDPattern       = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{2,63}$`)
 	colorPattern         = regexp.MustCompile(`^#[A-Fa-f0-9]{6}$`)
+	hexPattern           = regexp.MustCompile(`^[A-Fa-f0-9]+$`)
 )
 
 type Primitive struct {
-	Type     string `json:"type"`
-	X        int    `json:"x,omitempty"`
-	Y        int    `json:"y,omitempty"`
-	Width    int    `json:"width,omitempty"`
-	Height   int    `json:"height,omitempty"`
-	Text     string `json:"text,omitempty"`
-	FontSize int    `json:"fontSize,omitempty"`
-	Color    string `json:"color,omitempty"`
-	BgColor  string `json:"bgColor,omitempty"`
+	Type         string   `json:"type"`
+	ShortType    string   `json:"t,omitempty"`
+	X            int      `json:"x,omitempty"`
+	Y            int      `json:"y,omitempty"`
+	Width        int      `json:"width,omitempty"`
+	ShortWidth   int      `json:"w,omitempty"`
+	Height       int      `json:"height,omitempty"`
+	ShortHeight  int      `json:"h,omitempty"`
+	Text         string   `json:"text,omitempty"`
+	ShortText    string   `json:"v,omitempty"`
+	Binding      string   `json:"binding,omitempty"`
+	ShortBinding string   `json:"b,omitempty"`
+	FontSize     int      `json:"fontSize,omitempty"`
+	ShortSize    int      `json:"s,omitempty"`
+	Color        string   `json:"color,omitempty"`
+	ShortColor   string   `json:"c,omitempty"`
+	BgColor      string   `json:"bgColor,omitempty"`
+	ShortBg      string   `json:"bg,omitempty"`
+	BorderColor  string   `json:"borderColor,omitempty"`
+	ShortBorder  string   `json:"bc,omitempty"`
+	AssetPath    string   `json:"assetPath,omitempty"`
+	ShortAsset   string   `json:"a,omitempty"`
+	Data         string   `json:"data,omitempty"`
+	ShortData    string   `json:"d,omitempty"`
+	Palette      []string `json:"p,omitempty"`
+	Rows         []string `json:"r,omitempty"`
 }
 
 type Spec struct {
 	ThemeSpecVersion int         `json:"themeSpecVersion"`
+	ShortVersion     int         `json:"v,omitempty"`
 	ThemeID          string      `json:"themeId"`
+	ShortThemeID     string      `json:"id,omitempty"`
 	ThemeRev         int         `json:"themeRev"`
+	ShortThemeRev    int         `json:"rev,omitempty"`
 	FallbackTheme    string      `json:"fallbackTheme,omitempty"`
+	ShortFallback    string      `json:"fb,omitempty"`
 	Primitives       []Primitive `json:"primitives"`
+	ShortPrimitives  []Primitive `json:"p,omitempty"`
 }
 
 func Load(path string) (Spec, json.RawMessage, error) {
@@ -61,6 +84,7 @@ func Load(path string) (Spec, json.RawMessage, error) {
 }
 
 func Validate(spec Spec) error {
+	spec = normalizeSpec(spec)
 	if spec.ThemeSpecVersion != VersionV1 {
 		return fmt.Errorf("themeSpecVersion=%d unsupported (expected %d)", spec.ThemeSpecVersion, VersionV1)
 	}
@@ -118,25 +142,155 @@ func ValidateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 }
 
 func normalizeSpec(spec Spec) Spec {
+	if spec.ThemeSpecVersion == 0 {
+		spec.ThemeSpecVersion = spec.ShortVersion
+	}
+	if spec.ThemeID == "" {
+		spec.ThemeID = spec.ShortThemeID
+	}
+	if spec.ThemeRev == 0 {
+		spec.ThemeRev = spec.ShortThemeRev
+	}
+	if spec.FallbackTheme == "" {
+		spec.FallbackTheme = spec.ShortFallback
+	}
+	if len(spec.Primitives) == 0 && len(spec.ShortPrimitives) > 0 {
+		spec.Primitives = spec.ShortPrimitives
+	}
 	spec.ThemeID = strings.TrimSpace(strings.ToLower(spec.ThemeID))
 	spec.FallbackTheme = strings.TrimSpace(strings.ToLower(spec.FallbackTheme))
 	for i := range spec.Primitives {
+		spec.Primitives[i] = normalizePrimitive(spec.Primitives[i])
 		spec.Primitives[i].Type = strings.TrimSpace(strings.ToLower(spec.Primitives[i].Type))
+		spec.Primitives[i].Binding = strings.TrimSpace(spec.Primitives[i].Binding)
 		spec.Primitives[i].Color = strings.TrimSpace(spec.Primitives[i].Color)
 		spec.Primitives[i].BgColor = strings.TrimSpace(spec.Primitives[i].BgColor)
+		spec.Primitives[i].BorderColor = strings.TrimSpace(spec.Primitives[i].BorderColor)
+		spec.Primitives[i].AssetPath = strings.TrimSpace(spec.Primitives[i].AssetPath)
+		spec.Primitives[i].Data = strings.TrimSpace(spec.Primitives[i].Data)
+		for j := range spec.Primitives[i].Palette {
+			spec.Primitives[i].Palette[j] = strings.TrimSpace(spec.Primitives[i].Palette[j])
+		}
+		for j := range spec.Primitives[i].Rows {
+			spec.Primitives[i].Rows[j] = strings.TrimSpace(spec.Primitives[i].Rows[j])
+		}
 	}
 	return spec
+}
+
+func normalizePrimitive(p Primitive) Primitive {
+	if p.Type == "" {
+		p.Type = expandPrimitiveType(p.ShortType)
+	}
+	if p.Width == 0 {
+		p.Width = p.ShortWidth
+	}
+	if p.Height == 0 {
+		p.Height = p.ShortHeight
+	}
+	if p.Text == "" {
+		p.Text = p.ShortText
+	}
+	if p.Binding == "" {
+		p.Binding = expandBinding(p.ShortBinding)
+	}
+	if p.FontSize == 0 {
+		p.FontSize = p.ShortSize
+	}
+	if p.Color == "" {
+		p.Color = p.ShortColor
+	}
+	if p.BgColor == "" {
+		p.BgColor = p.ShortBg
+	}
+	if p.BorderColor == "" {
+		p.BorderColor = p.ShortBorder
+	}
+	if p.AssetPath == "" {
+		p.AssetPath = p.ShortAsset
+	}
+	if p.Data == "" {
+		p.Data = p.ShortData
+	}
+	return p
+}
+
+func expandPrimitiveType(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "tx":
+		return "text"
+	case "r":
+		return "rect"
+	case "p":
+		return "progress"
+	case "g":
+		return "gif"
+	case "px":
+		return "pixels"
+	default:
+		return value
+	}
+}
+
+func expandBinding(value string) string {
+	switch strings.TrimSpace(value) {
+	case "l":
+		return "label"
+	case "pr":
+		return "provider"
+	case "s":
+		return "session"
+	case "w":
+		return "weekly"
+	case "r":
+		return "reset"
+	case "u":
+		return "usageMode"
+	case "st":
+		return "sessionTokens"
+	case "wt":
+		return "weekTokens"
+	case "tt":
+		return "totalTokens"
+	default:
+		return value
+	}
 }
 
 func validatePrimitive(p Primitive) error {
 	switch p.Type {
 	case "text":
-		if strings.TrimSpace(p.Text) == "" {
-			return errors.New("text primitive requires non-empty text")
+		if strings.TrimSpace(p.Text) == "" && strings.TrimSpace(p.Binding) == "" {
+			return errors.New("text primitive requires non-empty text or binding")
 		}
 	case "rect", "progress":
 		if p.Width <= 0 || p.Height <= 0 {
 			return errors.New("rect/progress primitive requires width/height > 0")
+		}
+	case "gif":
+		if p.Width <= 0 || p.Height <= 0 {
+			return errors.New("gif primitive requires width/height > 0")
+		}
+		if !isSafeThemeAssetPath(p.AssetPath) {
+			return errors.New("gif primitive requires assetPath under /themes/")
+		}
+	case "pixels":
+		if p.Width <= 0 || p.Height <= 0 {
+			return errors.New("pixels primitive requires width/height > 0")
+		}
+		if p.Width*p.Height > 1024 {
+			return errors.New("pixels primitive must be <= 1024 pixels")
+		}
+		hasBitmapData := p.Data != ""
+		hasRLEData := len(p.Palette) > 0 || len(p.Rows) > 0
+		if !hasBitmapData && !hasRLEData {
+			return errors.New("pixels primitive requires hex data or palette/RLE rows")
+		}
+		if hasBitmapData && !isValidBitmapData(p.Data, p.Width, p.Height) {
+			return errors.New("pixels primitive requires hex data sized for width/height")
+		}
+		if hasRLEData && !isValidPaletteRows(p.Palette, p.Rows, p.Width, p.Height) {
+			return errors.New("pixels primitive requires palette colors and RLE rows sized for width/height")
 		}
 	default:
 		return fmt.Errorf("%w: %s", errUnknownPrimitive, p.Type)
@@ -154,7 +308,88 @@ func validatePrimitive(p Primitive) error {
 	if p.BgColor != "" && !colorPattern.MatchString(p.BgColor) {
 		return errUnsupportedColor
 	}
+	if p.BorderColor != "" && !colorPattern.MatchString(p.BorderColor) {
+		return errUnsupportedColor
+	}
 	return nil
+}
+
+func isValidBitmapData(data string, width, height int) bool {
+	if width <= 0 || height <= 0 {
+		return false
+	}
+	expected := ((width*height + 7) / 8) * 2
+	return len(data) == expected && hexPattern.MatchString(data)
+}
+
+func isValidPaletteRows(palette, rows []string, width, height int) bool {
+	if width <= 0 || height <= 0 || len(palette) == 0 || len(palette) > 26 || len(rows) != height {
+		return false
+	}
+	for _, color := range palette {
+		if !colorPattern.MatchString(color) {
+			return false
+		}
+	}
+	for _, row := range rows {
+		if !isValidPaletteRow(row, width, len(palette)) {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidPaletteRow(row string, width, paletteSize int) bool {
+	x := 0
+	for i := 0; i < len(row); {
+		runLength := 0
+		hasRunLength := false
+		if row[i] == '0' {
+			return false
+		}
+		for i < len(row) && row[i] >= '0' && row[i] <= '9' {
+			hasRunLength = true
+			runLength = runLength*10 + int(row[i]-'0')
+			if runLength > width {
+				return false
+			}
+			i++
+		}
+		if i >= len(row) {
+			return false
+		}
+		token := row[i]
+		i++
+		if !isValidPaletteToken(token, paletteSize) {
+			return false
+		}
+		if !hasRunLength {
+			runLength = 1
+		}
+		if runLength <= 0 {
+			return false
+		}
+		x += runLength
+		if x > width {
+			return false
+		}
+	}
+	return x == width
+}
+
+func isValidPaletteToken(token byte, paletteSize int) bool {
+	if token == '.' {
+		return true
+	}
+	return token >= 'a' && token < byte('a'+paletteSize)
+}
+
+func isSafeThemeAssetPath(path string) bool {
+	path = strings.TrimSpace(path)
+	return strings.HasPrefix(path, "/themes/") &&
+		!strings.Contains(path, "..") &&
+		!strings.Contains(path, "\\") &&
+		!strings.HasSuffix(path, "/")
 }
 
 func containsString(values []string, candidate string) bool {

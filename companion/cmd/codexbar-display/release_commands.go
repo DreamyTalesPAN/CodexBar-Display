@@ -905,16 +905,6 @@ func normalizeHTTPBaseURL(raw string) (string, error) {
 	return parsed.String(), nil
 }
 
-func flagWasSet(fs *flag.FlagSet, name string) bool {
-	wasSet := false
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == name {
-			wasSet = true
-		}
-	})
-	return wasSet
-}
-
 func fetchDeviceHelloHTTP(ctx context.Context, base string) (protocol.DeviceHello, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/hello", nil)
 	if err != nil {

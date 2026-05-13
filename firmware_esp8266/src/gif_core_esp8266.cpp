@@ -45,6 +45,10 @@ void GifCoreESP8266::Stop() {
   nextFrameAtMs_ = 0;
   gifWidth_ = 0;
   gifHeight_ = 0;
+  drawWidth_ = 0;
+  drawHeight_ = 0;
+  hasBackgroundColor_ = false;
+  backgroundColor_ = 0x0000;
 }
 
 void GifCoreESP8266::ResetFrameSchedule() {
@@ -164,6 +168,46 @@ bool GifCoreESP8266::EnsureStorage(const char* path) {
   return fsMounted_;
 }
 
+void GifCoreESP8266::ConfigureDrawRect(TFT_eSPI& tft, const GifPlaybackRequest& request) {
+  drawWidth_ = gifWidth_;
+  drawHeight_ = gifHeight_;
+
+  if (request.layoutMode == GifLayoutMode::Explicit) {
+    const int boxWidth = request.width > 0 ? request.width : gifWidth_;
+    const int boxHeight = request.height > 0 ? request.height : gifHeight_;
+    const GifDrawRect rect = GifCorePolicy::FitContain(request.x, request.y, boxWidth, boxHeight, gifWidth_, gifHeight_);
+    drawX_ = rect.x;
+    drawY_ = rect.y;
+    drawWidth_ = rect.width;
+    drawHeight_ = rect.height;
+  } else if (request.layoutMode == GifLayoutMode::BottomRightMini) {
+    drawX_ = tft.width() - gifWidth_ - kLayoutMargin;
+    drawY_ = tft.height() - gifHeight_ - kLayoutMargin;
+  } else if (request.layoutMode == GifLayoutMode::FullscreenCenter) {
+    drawX_ = (tft.width() - gifWidth_) / 2;
+    drawY_ = (tft.height() - gifHeight_) / 2;
+  } else if (request.layoutMode == GifLayoutMode::FullscreenCenterLower) {
+    drawX_ = (tft.width() - gifWidth_) / 2;
+    drawY_ = ((tft.height() - gifHeight_) / 2) + kLayoutLowerOffset;
+  } else {
+    drawX_ = tft.width() - gifWidth_ - kLayoutMargin;
+    drawY_ = kLayoutMargin;
+  }
+
+  if (drawX_ < 0) {
+    drawX_ = 0;
+  }
+  if (drawY_ < 0) {
+    drawY_ = 0;
+  }
+  if (drawWidth_ <= 0) {
+    drawWidth_ = gifWidth_;
+  }
+  if (drawHeight_ <= 0) {
+    drawHeight_ = gifHeight_;
+  }
+}
+
 bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& request) {
   if (request.assetPath == nullptr || request.assetPath[0] == '\0') {
     Stop();
@@ -176,6 +220,8 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
   }
 
   tft_ = &tft;
+  hasBackgroundColor_ = request.hasBackgroundColor;
+  backgroundColor_ = request.backgroundColor;
 
   const String requestPath(request.assetPath);
   if (GifCorePolicy::RequestChanged(
@@ -204,6 +250,7 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
   }
 
   if (decoderOpen_) {
+    ConfigureDrawRect(tft, request);
     return true;
   }
 
@@ -215,31 +262,11 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
     return false;
   }
 
+  Stop();
   gifWidth_ = width;
   gifHeight_ = height;
+  ConfigureDrawRect(tft, request);
 
-  if (request.layoutMode == GifLayoutMode::BottomRightMini) {
-    drawX_ = tft.width() - gifWidth_ - kLayoutMargin;
-    drawY_ = tft.height() - gifHeight_ - kLayoutMargin;
-  } else if (request.layoutMode == GifLayoutMode::FullscreenCenter) {
-    drawX_ = (tft.width() - gifWidth_) / 2;
-    drawY_ = (tft.height() - gifHeight_) / 2;
-  } else if (request.layoutMode == GifLayoutMode::FullscreenCenterLower) {
-    drawX_ = (tft.width() - gifWidth_) / 2;
-    drawY_ = ((tft.height() - gifHeight_) / 2) + kLayoutLowerOffset;
-  } else {
-    drawX_ = tft.width() - gifWidth_ - kLayoutMargin;
-    drawY_ = kLayoutMargin;
-  }
-
-  if (drawX_ < 0) {
-    drawX_ = 0;
-  }
-  if (drawY_ < 0) {
-    drawY_ = 0;
-  }
-
-  Stop();
   decoder_.begin(BIG_ENDIAN_PIXELS);
   if (!decoder_.open(
           request.assetPath,
@@ -420,6 +447,11 @@ void GifCoreESP8266::DrawCallbackImpl(GIFDRAW* draw) {
   if (draw == nullptr || suppressDraw_ || tft_ == nullptr) {
     return;
   }
+  if (drawWidth_ > 0 && drawHeight_ > 0 && gifWidth_ > 0 && gifHeight_ > 0 &&
+      (drawWidth_ != gifWidth_ || drawHeight_ != gifHeight_)) {
+    DrawScaledCallbackImpl(draw);
+    return;
+  }
 
   int lineWidth = draw->iWidth;
   if (lineWidth <= 0) {
@@ -458,13 +490,17 @@ void GifCoreESP8266::DrawCallbackImpl(GIFDRAW* draw) {
     return;
   }
 
-  if (draw->ucDisposalMethod == 2) {
+  const bool restoreTransparentToBackground =
+      draw->ucHasTransparency && draw->ucDisposalMethod == 2 && hasBackgroundColor_;
+
+  if (restoreTransparentToBackground) {
+    const uint8_t transparent = draw->ucTransparent;
     for (int i = 0; i < lineWidth; ++i) {
-      if (src[i] == draw->ucTransparent) {
-        src[i] = draw->ucBackground;
-      }
+      lineBuffer_[i] = src[i] == transparent ? backgroundColor_ : palette[src[i]];
     }
-    draw->ucHasTransparency = 0;
+    tft_->setAddrWindow(outX, outY, lineWidth, 1);
+    tft_->pushPixels(lineBuffer_, lineWidth);
+    return;
   }
 
   if (draw->ucHasTransparency) {
@@ -505,6 +541,78 @@ void GifCoreESP8266::DrawCallbackImpl(GIFDRAW* draw) {
   }
   tft_->setAddrWindow(outX, outY, lineWidth, 1);
   tft_->pushPixels(lineBuffer_, lineWidth);
+}
+
+void GifCoreESP8266::DrawScaledCallbackImpl(GIFDRAW* draw) {
+  int sourceWidth = draw->iWidth;
+  if (sourceWidth <= 0 || drawWidth_ <= 0 || drawHeight_ <= 0 || gifWidth_ <= 0 || gifHeight_ <= 0) {
+    return;
+  }
+  if (sourceWidth > kMaxLinePixels) {
+    sourceWidth = kMaxLinePixels;
+  }
+
+  uint8_t* src = draw->pPixels;
+  uint16_t* palette = draw->pPalette;
+  if (src == nullptr || palette == nullptr) {
+    return;
+  }
+
+  const int sourceY = draw->iY + draw->y;
+  int outYStart = drawY_ + ((sourceY * drawHeight_) / gifHeight_);
+  int outYEnd = drawY_ + (((sourceY + 1) * drawHeight_ + gifHeight_ - 1) / gifHeight_);
+  if (outYEnd <= outYStart) {
+    outYEnd = outYStart + 1;
+  }
+
+  const bool transparent = draw->ucHasTransparency != 0;
+  const uint8_t transparentIndex = draw->ucTransparent;
+  const bool restoreTransparentToBackground = transparent && draw->ucDisposalMethod == 2 && hasBackgroundColor_;
+
+  for (int outY = outYStart; outY < outYEnd; ++outY) {
+    if (outY < 0 || outY >= tft_->height()) {
+      continue;
+    }
+
+    int runStartX = 0;
+    int runLength = 0;
+    for (int outRelX = 0; outRelX < drawWidth_; ++outRelX) {
+      const int outX = drawX_ + outRelX;
+      const int sourceX = (outRelX * gifWidth_) / drawWidth_;
+      const int sourceOffset = sourceX - draw->iX;
+      const bool sourceInside = sourceOffset >= 0 && sourceOffset < sourceWidth;
+      const bool sourceTransparent = sourceInside && transparent && src[sourceOffset] == transparentIndex;
+      const bool visible =
+          outX >= 0 &&
+          outX < tft_->width() &&
+          sourceInside &&
+          (!sourceTransparent || restoreTransparentToBackground);
+
+      if (!visible) {
+        if (runLength > 0) {
+          tft_->setAddrWindow(runStartX, outY, runLength, 1);
+          tft_->pushPixels(lineBuffer_, runLength);
+          runLength = 0;
+        }
+        continue;
+      }
+
+      if (runLength == 0) {
+        runStartX = outX;
+      }
+      lineBuffer_[runLength++] = sourceTransparent ? backgroundColor_ : palette[src[sourceOffset]];
+      if (runLength == kMaxLinePixels) {
+        tft_->setAddrWindow(runStartX, outY, runLength, 1);
+        tft_->pushPixels(lineBuffer_, runLength);
+        runLength = 0;
+      }
+    }
+
+    if (runLength > 0) {
+      tft_->setAddrWindow(runStartX, outY, runLength, 1);
+      tft_->pushPixels(lineBuffer_, runLength);
+    }
+  }
 }
 
 }  // namespace esp8266

@@ -50,7 +50,7 @@ constexpr unsigned long kBootRecoveryStableMs = 30000UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr uint8_t kBootRecoveryThreshold = 3;
-constexpr size_t kMaxAssetPathBytes = 96;
+constexpr size_t kMaxAssetPathBytes = 32;
 const char kSetupApSsid[] = "VibeTV-Setup";
 const char kSetupHost[] = "vibetv.local";
 const char kMdnsName[] = "vibetv";
@@ -320,38 +320,35 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
 }
 
 const char* transportCapabilitiesJSON(const char* activeTransport) {
+  const bool isUsb = activeTransport != nullptr && strcmp(activeTransport, "usb") == 0;
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
-  if (activeTransport != nullptr && String(activeTransport) == "usb") {
+  if (isUsb) {
     return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,\"builtinThemes\":[]},"
+           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
            "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
   }
   return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,\"builtinThemes\":[]},"
+         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
          "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
 #else
-  if (activeTransport != nullptr && String(activeTransport) == "usb") {
+  if (isUsb) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-           "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32,"
-           "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
+           "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32},"
            "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
 #else
     return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,"
-           "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
+           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
            "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
 #endif
   }
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-         "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32,"
-         "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
+         "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32},"
          "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
 #else
   return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,"
-         "\"builtinThemes\":[\"classic\",\"crt\",\"mini\"]},"
+         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
          "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
 #endif
 #endif
@@ -733,7 +730,15 @@ void handleResetWifi() {
   ESP.restart();
 }
 
+void addCorsHeaders() {
+  webServer.sendHeader("Access-Control-Allow-Origin", "*");
+  webServer.sendHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  webServer.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  webServer.sendHeader("Access-Control-Max-Age", "86400");
+}
+
 void handleHello() {
+  addCorsHeaders();
   webServer.send(200, "application/json", codexbar_display::app::BuildDeviceHelloJSON(makeTransportConfig("wifi")));
 }
 
@@ -803,7 +808,13 @@ void appendRendererDebugJSON(String& out) {
   const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
   out += "\"display\":{\"activeTheme\":\"";
   out += jsonEscape(snapshot.activeTheme);
-  out += "\",\"gif\":{\"activePath\":\"";
+  out += "\",\"themeSpec\":{\"active\":";
+  out += snapshot.themeSpecActive ? "true" : "false";
+  out += ",\"id\":";
+  appendJSONNullableString(out, snapshot.themeSpecId);
+  out += ",\"rev\":";
+  out += String(snapshot.themeSpecRev);
+  out += "},\"gif\":{\"activePath\":\"";
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";
   out += snapshot.gifFilePresent ? "true" : "false";
@@ -849,33 +860,38 @@ void appendFirmwareUpdateJSON(String& out) {
   out += jsonEscape(firmwareUpdate.lastStatus);
   out += "\",\"lastError\":";
   appendJSONNullableString(out, firmwareUpdate.lastError);
-  out += ",\"severity\":";
-  out += "null";
-  out += ",\"message\":";
-  out += "null";
-  out += ",\"firmwareUrl\":";
-  out += "null";
-  out += ",\"filesystemUrl\":";
-  out += "null";
-  out += ",\"sha256\":";
-  out += "null";
   out += "}";
 }
 
-void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, uint8_t depth) {
+String normalizedAssetListPath(const String& dirPath, const String& fileName) {
+  if (fileName.startsWith("/")) {
+    if (dirPath.length() > 1 && !fileName.startsWith(dirPath + "/")) {
+      return dirPath + fileName;
+    }
+    return fileName;
+  }
+  if (dirPath.length() > 1) {
+    return dirPath + "/" + fileName;
+  }
+  return "/" + fileName;
+}
+
+void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, String& seen, uint8_t depth) {
   if (depth > 4) {
     return;
   }
   Dir dir = LittleFS.openDir(dirPath);
   while (dir.next()) {
-    String path = dir.fileName();
-    if (!path.startsWith("/")) {
-      path = "/" + path;
-    }
+    const String path = normalizedAssetListPath(dirPath, dir.fileName());
     if (dir.isDirectory()) {
-      appendAssetEntriesJSON(out, path, first, depth + 1);
+      appendAssetEntriesJSON(out, path, first, seen, depth + 1);
       continue;
     }
+    const String seenToken = "|" + path + "|";
+    if (seen.indexOf(seenToken) >= 0) {
+      continue;
+    }
+    seen += seenToken;
     if (!first) {
       out += ",";
     }
@@ -892,7 +908,11 @@ void appendAssetListJSON(String& out) {
   out += "\"assets\":[";
   bool first = true;
   if (LittleFS.begin()) {
-    appendAssetEntriesJSON(out, "/", first, 0);
+    String seen;
+    appendAssetEntriesJSON(out, "/", first, seen, 0);
+    appendAssetEntriesJSON(out, "/themes", first, seen, 0);
+    appendAssetEntriesJSON(out, "/themes/u", first, seen, 0);
+    appendAssetEntriesJSON(out, "/themes/mini", first, seen, 0);
   }
   out += "]";
 }
@@ -928,6 +948,7 @@ void handleHealth() {
   out += "}}";
 
   Serial.printf("health_requested ip=%s fs_mounted=%d\n", webServer.client().remoteIP().toString().c_str(), filesystemMounted ? 1 : 0);
+  addCorsHeaders();
   webServer.send(200, "application/json", out);
 }
 
@@ -939,6 +960,7 @@ void handleAssetsList() {
   out += ",";
   appendAssetListJSON(out);
   out += "}";
+  addCorsHeaders();
   webServer.send(200, "application/json", out);
 }
 
@@ -1028,6 +1050,7 @@ void handleAssetUpload() {
 void handleAssetUploadResult() {
   if (!assetUploadSucceeded || assetUploadError.length() > 0) {
     const String error = assetUploadError.length() > 0 ? assetUploadError : "upload failed";
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", error);
     return;
   }
@@ -1037,6 +1060,7 @@ void handleAssetUploadResult() {
   out += "{\"ok\":true,\"path\":\"";
   out += jsonEscape(assetUploadPath);
   out += "\"}";
+  addCorsHeaders();
   webServer.send(200, "application/json", out);
 }
 
@@ -1044,44 +1068,48 @@ void handleAssetDelete() {
   String path = webServer.arg("path");
   path.trim();
   if (!isSafeAssetPath(path)) {
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "invalid asset path");
     return;
   }
   if (!LittleFS.begin()) {
+    addCorsHeaders();
     webServer.send(500, "text/plain; charset=utf-8", "filesystem mount failed");
     return;
   }
   if (!LittleFS.exists(path)) {
+    addCorsHeaders();
     webServer.send(404, "text/plain; charset=utf-8", "asset not found");
     return;
   }
   renderer.ResetGifStateForAssetUpdate();
   if (!LittleFS.remove(path)) {
+    addCorsHeaders();
     webServer.send(500, "text/plain; charset=utf-8", "asset delete failed");
     return;
   }
   Serial.printf("asset_deleted path=%s\n", path.c_str());
+  addCorsHeaders();
   webServer.send(200, "application/json", "{\"ok\":true}");
 }
 
 String updatePageHTML() {
   const String installCommand = updateInstallCommand();
   String html;
-  html.reserve(3000);
+  html.reserve(1600);
   html += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
   html += F("<title>VibeTV Update</title><style>");
-  html += F(":root{color-scheme:dark;--bg:#0b0c0d;--line:#2b2f35;--text:#f6f4ed;--muted:#a9adb3;--signal:#c7ff00}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:var(--bg);color:var(--text)}main{max-width:620px;margin:0 auto;padding:28px 20px 34px}.brand,summary{font-weight:900;color:var(--signal)}h1{font-size:36px;line-height:1.05;margin:22px 0 10px}.lead,.muted{color:var(--muted);line-height:1.45}section{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}.update{border:1px solid #6f8f00;background:#1b2400;border-radius:8px;padding:12px;color:#f1ffd0}.update-link{display:none}input,button{width:100%;font:inherit;padding:12px;border-radius:8px;border:1px solid #3a3f47;background:#101214;color:#fff;margin-top:10px}button{background:var(--signal);color:#111;border:0;font-weight:900}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;border-radius:8px;padding:14px}</style></head><body><main>");
-  html += F("<div class='brand'>Vibe TV</div><h1>Firmware update.</h1><p class='lead'>Use the Mac app to download, verify, upload, and restart Vibe TV.</p>");
+  html += F(":root{color-scheme:dark}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:#0b0c0d;color:#f6f4ed}main{max-width:620px;margin:auto;padding:24px 18px}a,summary{color:#c7ff00;font-weight:800}h1{margin:16px 0}.muted{color:#a9adb3}.update,input,button,pre{border-radius:8px}.update{border:1px solid #6f8f00;padding:10px}.update-link{display:none}input,button{width:100%;font:inherit;padding:12px;margin-top:10px}button{background:#c7ff00;color:#111;border:0;font-weight:900}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;padding:12px}</style></head><body><main>");
+  html += F("<h1>VibeTV Update</h1>");
   html += updateStatusHTML(false);
-  html += F("<section><h2>Install with Mac</h2><p class='muted'>Run this on the connected Mac. Companion downloads firmware, checks SHA256, uploads it, and waits for restart.</p><pre>");
+  html += F("<h2>Install with Mac</h2><pre>");
   html += htmlEscape(installCommand);
-  html += F("</pre></section>");
-  html += F("<details><summary>Manual upload tools</summary><section><h2>Firmware</h2><p class='muted'>Upload <code>firmware.bin</code> only when support asks for it.</p>");
+  html += F("</pre><details><summary>Manual upload</summary>");
   html += F("<form method='post' action='/update/firmware' enctype='multipart/form-data'>");
   html += F("<input type='file' name='firmware' accept='.bin,application/octet-stream' required>");
-  html += F("<button type='submit'>Upload firmware</button></form></section>");
+  html += F("<button type='submit'>Upload firmware</button></form>");
   html += F("</details>");
-  html += F("<p class='muted'><a href='/'>Back to setup</a> | <a href='/health'>Device status</a> | <a href='/assets'>File list</a></p></main></body></html>");
+  html += F("<p class='muted'><a href='/'>Setup</a> | <a href='/health'>Status</a> | <a href='/assets'>Files</a></p></main></body></html>");
   return html;
 }
 
@@ -1180,20 +1208,24 @@ void handleOtaResult(const char* target) {
 void handleFrame() {
   String rawBody = webServer.arg("plain");
   if (rawBody.length() == 0) {
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "empty frame body");
     return;
   }
   if (rawBody.length() > kMaxFrameBytes) {
+    addCorsHeaders();
     webServer.send(413, "text/plain; charset=utf-8", "frame body too large");
     return;
   }
   String body = rawBody;
   body.trim();
   if (body.length() == 0) {
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "empty frame body");
     return;
   }
   if (body.indexOf('\n') >= 0 || body.indexOf('\r') >= 0) {
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "expected one newline-delimited JSON frame");
     return;
   }
@@ -1201,11 +1233,13 @@ void handleFrame() {
   codexbar_display::core::SerialConsumeEvent event;
   if (!codexbar_display::core::ConsumeFrameLine(runtimeCtx.runtime, body.c_str(), millis(), true, event) ||
       !event.frameAccepted) {
+    addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "frame was not accepted");
     return;
   }
 
   markFrameAccepted(event, "wifi");
+  addCorsHeaders();
   webServer.send(200, "text/plain; charset=utf-8", "ok");
 }
 
@@ -1252,6 +1286,11 @@ void startHttpServer() {
         handleOtaUpload(U_FS, "filesystem");
       });
   webServer.onNotFound([]() {
+    if (webServer.method() == HTTP_OPTIONS) {
+      addCorsHeaders();
+      webServer.send(204, "text/plain", "");
+      return;
+    }
     if (setupMode) {
       handleCaptivePortalProbe();
       return;

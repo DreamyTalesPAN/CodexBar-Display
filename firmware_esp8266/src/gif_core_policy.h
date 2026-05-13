@@ -11,6 +11,13 @@ struct GifFailureGuardState {
   unsigned long backoffUntilMs = 0;
 };
 
+struct GifDrawRect {
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+};
+
 class GifCorePolicy {
  public:
   static constexpr unsigned long kFailureBackoffMs = 30000UL;
@@ -54,6 +61,42 @@ class GifCorePolicy {
     }
 
     return true;
+  }
+
+  static GifDrawRect FitContain(
+      int boxX,
+      int boxY,
+      int boxWidth,
+      int boxHeight,
+      int sourceWidth,
+      int sourceHeight) {
+    GifDrawRect rect;
+    rect.x = boxX;
+    rect.y = boxY;
+    rect.width = sourceWidth;
+    rect.height = sourceHeight;
+
+    if (boxWidth <= 0 || boxHeight <= 0 || sourceWidth <= 0 || sourceHeight <= 0) {
+      return rect;
+    }
+
+    rect.width = boxWidth;
+    rect.height = (sourceHeight * boxWidth) / sourceWidth;
+    if (rect.height <= 0) {
+      rect.height = 1;
+    }
+
+    if (rect.height > boxHeight) {
+      rect.height = boxHeight;
+      rect.width = (sourceWidth * boxHeight) / sourceHeight;
+      if (rect.width <= 0) {
+        rect.width = 1;
+      }
+    }
+
+    rect.x = boxX + ((boxWidth - rect.width) / 2);
+    rect.y = boxY + ((boxHeight - rect.height) / 2);
+    return rect;
   }
 
   static bool RequestChanged(

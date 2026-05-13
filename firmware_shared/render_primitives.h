@@ -13,6 +13,7 @@ struct TextCommand {
   int size = 1;
   uint16_t fg = 0xFFFF;
   uint16_t bg = 0x0000;
+  bool hasBg = false;
   bool wrap = false;
 };
 

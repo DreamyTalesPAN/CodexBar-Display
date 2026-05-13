@@ -3,12 +3,18 @@
   "$id": "https://codexbar-display.dev/schema/theme-spec-v1.json",
   "title": "codexbar-display ThemeSpec v1",
   "type": "object",
-  "required": ["themeSpecVersion", "themeId", "themeRev", "primitives"],
   "properties": {
     "themeSpecVersion": {
       "const": 1
     },
+    "v": {
+      "const": 1
+    },
     "themeId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9\\-_]{2,63}$"
+    },
+    "id": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9\\-_]{2,63}$"
     },
@@ -16,20 +22,63 @@
       "type": "integer",
       "minimum": 1
     },
+    "rev": {
+      "type": "integer",
+      "minimum": 1
+    },
     "fallbackTheme": {
       "type": "string",
-      "enum": ["classic", "crt", "mini"]
+      "enum": [
+        "classic",
+        "crt",
+        "mini"
+      ]
+    },
+    "fb": {
+      "type": "string",
+      "enum": [
+        "classic",
+        "crt",
+        "mini"
+      ]
+    },
+    "bgColor": {
+      "type": "string",
+      "pattern": "^#[A-Fa-f0-9]{6}$"
+    },
+    "bg": {
+      "type": "string",
+      "pattern": "^#[A-Fa-f0-9]{6}$"
     },
     "primitives": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["type"],
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["text", "rect", "progress"]
+            "enum": [
+              "text",
+              "rect",
+              "progress",
+              "gif",
+              "sprite",
+              "image",
+              "pixels"
+            ]
+          },
+          "t": {
+            "type": "string",
+            "enum": [
+              "tx",
+              "r",
+              "p",
+              "g",
+              "sp",
+              "img",
+              "px"
+            ]
           },
           "x": {
             "type": "integer",
@@ -43,29 +92,436 @@
             "type": "integer",
             "minimum": 1
           },
+          "w": {
+            "type": "integer",
+            "minimum": 1
+          },
           "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "h": {
             "type": "integer",
             "minimum": 1
           },
           "text": {
             "type": "string"
           },
+          "v": {
+            "type": "string"
+          },
+          "binding": {
+            "type": "string"
+          },
+          "b": {
+            "type": "string"
+          },
           "fontSize": {
             "type": "integer",
             "minimum": 0
           },
+          "s": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "font": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "f": {
+            "type": "integer",
+            "minimum": 1
+          },
           "color": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "c": {
             "type": "string",
             "pattern": "^#[A-Fa-f0-9]{6}$"
           },
           "bgColor": {
             "type": "string",
             "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "bg": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "borderColor": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "bc": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "assetPath": {
+            "type": "string",
+            "maxLength": 31,
+            "pattern": "^/themes/[^\\\\.].*"
+          },
+          "a": {
+            "type": "string",
+            "maxLength": 31,
+            "pattern": "^/themes/[^\\\\.].*"
+          },
+          "data": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]+$"
+          },
+          "d": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]+$"
+          },
+          "p": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 26,
+            "items": {
+              "type": "string",
+              "pattern": "^#[A-Fa-f0-9]{6}$"
+            }
+          },
+          "r": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^(([1-9][0-9]*)?(\\.|[a-z]))+$"
+            }
           }
         },
-        "additionalProperties": true
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "type"
+                ]
+              },
+              {
+                "required": [
+                  "t"
+                ]
+              }
+            ]
+          },
+          {
+            "if": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "pixels"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                },
+                {
+                  "properties": {
+                    "t": {
+                      "const": "px"
+                    }
+                  },
+                  "required": [
+                    "t"
+                  ]
+                }
+              ]
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "required": [
+                    "data"
+                  ]
+                },
+                {
+                  "required": [
+                    "d"
+                  ]
+                },
+                {
+                  "required": [
+                    "p",
+                    "r"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "p": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "rect",
+              "progress",
+              "gif",
+              "sprite",
+              "image",
+              "pixels"
+            ]
+          },
+          "t": {
+            "type": "string",
+            "enum": [
+              "tx",
+              "r",
+              "p",
+              "g",
+              "sp",
+              "img",
+              "px"
+            ]
+          },
+          "x": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "y": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "w": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "h": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string"
+          },
+          "v": {
+            "type": "string"
+          },
+          "binding": {
+            "type": "string"
+          },
+          "b": {
+            "type": "string"
+          },
+          "fontSize": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "s": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "font": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "f": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "c": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "bgColor": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "bg": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "borderColor": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "bc": {
+            "type": "string",
+            "pattern": "^#[A-Fa-f0-9]{6}$"
+          },
+          "assetPath": {
+            "type": "string",
+            "maxLength": 31,
+            "pattern": "^/themes/[^\\\\.].*"
+          },
+          "a": {
+            "type": "string",
+            "maxLength": 31,
+            "pattern": "^/themes/[^\\\\.].*"
+          },
+          "data": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]+$"
+          },
+          "d": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]+$"
+          },
+          "p": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 26,
+            "items": {
+              "type": "string",
+              "pattern": "^#[A-Fa-f0-9]{6}$"
+            }
+          },
+          "r": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^(([1-9][0-9]*)?(\\.|[a-z]))+$"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "type"
+                ]
+              },
+              {
+                "required": [
+                  "t"
+                ]
+              }
+            ]
+          },
+          {
+            "if": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "pixels"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                },
+                {
+                  "properties": {
+                    "t": {
+                      "const": "px"
+                    }
+                  },
+                  "required": [
+                    "t"
+                  ]
+                }
+              ]
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "required": [
+                    "data"
+                  ]
+                },
+                {
+                  "required": [
+                    "d"
+                  ]
+                },
+                {
+                  "required": [
+                    "p",
+                    "r"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
       }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "required": [
+            "themeSpecVersion"
+          ]
+        },
+        {
+          "required": [
+            "v"
+          ]
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "required": [
+            "themeId"
+          ]
+        },
+        {
+          "required": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "required": [
+            "themeRev"
+          ]
+        },
+        {
+          "required": [
+            "rev"
+          ]
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "required": [
+            "primitives"
+          ]
+        },
+        {
+          "required": [
+            "p"
+          ]
+        }
+      ]
+    }
+  ]
 }

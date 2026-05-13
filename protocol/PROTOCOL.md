@@ -57,8 +57,16 @@ Example:
 
 Design constraints:
 - No user code execution on device.
-- Primitives are declarative (`text`, `rect`, `progress`) and validated by companion before send.
+- Primitives are declarative (`text`, `rect`, `progress`, `gif`, `pixels`) and validated by companion before send.
+- Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/c/bg/bc/a/d`, and type aliases `tx/r/p/g/px`.
+- Optional top-level `bgColor` fills the whole 240x240 screen before primitives are drawn.
+- Text primitives use the single firmware-loaded TFT GLCD font; scale with `fontSize`.
+- Text primitive `bgColor` is optional; when omitted, text is drawn transparent over the theme background.
+- `gif` primitives reference uploaded display assets with `assetPath` under `/themes/...`; ESP8266 LittleFS paths are capped at 31 characters.
+- `pixels` primitives support the existing transparent 1-bit row-major bitmap in hex `data`; set bits are drawn with `color`.
+- `pixels` primitives may also use multicolor RLE with palette `p` and rows `r`, for example `{"type":"pixels","width":16,"height":1,"p":["#FF0000"],"r":["5.4a7."]}`. `.` is transparent, `a` maps to `p[0]`, `b` maps to `p[1]`, and an optional decimal run length before the token repeats it. Every expanded row must equal `width`, and row count must equal `height`.
 - Compatibility is checked against device capability limits (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`).
+- A frame with `"themeSpec": null` clears the cached declarative layout and falls back to the builtin `theme`.
 
 ## Error Frame
 
@@ -75,8 +83,8 @@ When the ESP8266 is connected to WiFi, it serves:
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This only updates the cached display/diagnostic update state; the ESP8266 firmware must not fetch public HTTPS manifests directly.
 - `POST /reset-wifi`: clears saved WiFi credentials and restarts the device into setup mode.
 - `GET /assets`: returns mounted filesystem status and a generic list of stored asset paths/sizes.
-- `POST /assets?path=/themes/<theme-id>/<asset>`: uploads one theme asset using multipart field `asset`.
-- `DELETE /assets?path=/themes/<theme-id>/<asset>`: deletes one stored asset.
+- `POST /assets?path=/themes/<short-id>/<asset>`: uploads one theme asset using multipart field `asset`.
+- `DELETE /assets?path=/themes/<short-id>/<asset>`: deletes one stored asset.
 
 HTTP responses:
 - `200 OK`: frame accepted.

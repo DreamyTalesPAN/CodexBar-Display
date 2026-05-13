@@ -696,6 +696,7 @@ func finalizeCycleResult(state *runtimeState, result cycleResult) cycleResult {
 func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
+	frame = attachClockFields(frame, time.Now())
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
 		var applied bool
@@ -744,6 +745,15 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 	}
 
 	return nil
+}
+
+func attachClockFields(frame protocol.Frame, now time.Time) protocol.Frame {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	frame.Time = now.Format("15:04")
+	frame.Date = now.Format("2/1/2006")
+	return frame
 }
 
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
@@ -1458,6 +1468,19 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		}
 		if len(line) <= maxBytes {
 			return line, noTokens, nil
+		}
+	}
+
+	if frame.Time != "" || frame.Date != "" {
+		noClock := frame
+		noClock.Time = ""
+		noClock.Date = ""
+		line, err = noClock.MarshalLine()
+		if err != nil {
+			return nil, protocol.Frame{}, err
+		}
+		if len(line) <= maxBytes {
+			return line, noClock, nil
 		}
 	}
 

@@ -46,13 +46,13 @@ Companion negotiation:
 - If a connected device loses WiFi, it retries in station mode first. After a persistent outage it starts `VibeTV-Setup` again so the user can choose a different network.
 - If the device is not reachable on WiFi, three interrupted early boots clear saved WiFi credentials and return the device to `VibeTV-Setup`.
 - Generic theme assets can be managed over WiFi with `GET /assets`, `POST /assets?path=...`, and `DELETE /assets?path=...`.
-- `GET /assets` returns `filesystem.mounted` plus an `assets` array. Every asset entry includes `path`, `sizeBytes`, and `sha256` so provisioning can verify content integrity instead of only checking that a filename exists.
+- `GET /assets` returns `filesystem.mounted` plus an `assets` array. Every asset entry includes `path` and `sizeBytes`; `sha256` is optional so small ESP8266 builds do not need to carry hashing code.
 - `GET /health` returns `display.activeTheme` and `display.gif` so provisioning can see the active GIF path, file/decoder open state, backoff state, and the last GIF open/decode error.
 
 ## Theme Contract
 - Built-in runtime themes: `classic`, `crt`, `mini`.
 - Theme assets are stored as data files in LittleFS and are not hardcoded into the transport protocol.
-- OTA package manifests list required theme assets separately from theme packs. Provisioning compares device `/assets` metadata against that manifest and rejects missing, empty, wrong-size, or wrong-hash required assets.
+- OTA package manifests list required theme assets separately from theme packs. Provisioning compares device `/assets` metadata against that manifest and rejects missing, empty, wrong-size, or wrong-hash required assets when the device exposes hashes.
 - Capability-aware behavior:
   - known + unsupported `theme` => host omits `theme`
   - unknown hello => optimistic `theme` send remains allowed
@@ -83,6 +83,7 @@ Common display assumptions:
 - ST7789 driver
 - `240x240`
 - filesystem: LittleFS
+- asset paths: 31 characters max on ESP8266 LittleFS
 
 ## Operator Verification
 - `codexbar-display doctor`:

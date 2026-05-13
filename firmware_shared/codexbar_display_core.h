@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <cstring>
 
 #include "theme_registry.h"
 
@@ -25,8 +26,11 @@ struct Frame {
   int64_t totalTokens = 0;
   bool hasUsageMode = false;
   String usageMode;
+  String timeText;
+  String dateText;
   bool hasTheme = false;
   String theme;
+  bool clearThemeSpec = false;
   bool hasThemeSpec = false;
   String themeSpecId;
   int themeSpecRev = 0;
@@ -49,6 +53,9 @@ struct RuntimeState {
   int64_t resetBaseSecs = 0;
   String cachedThemeId;
   int cachedThemeRev = 0;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  String cachedThemeSpecRaw;
+#endif
 };
 
 struct LineReaderState {
@@ -96,6 +103,68 @@ inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long now
   return remain;
 }
 
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+inline bool ExtractJsonObjectRaw(const char* json, const char* key, String& out) {
+  out = "";
+  if (json == nullptr || key == nullptr) {
+    return false;
+  }
+
+  const char* keyPos = std::strstr(json, key);
+  if (keyPos == nullptr) {
+    return false;
+  }
+  const char* cursor = keyPos + std::strlen(key);
+  while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+    ++cursor;
+  }
+  if (*cursor != ':') {
+    return false;
+  }
+  ++cursor;
+  while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+    ++cursor;
+  }
+  if (*cursor != '{') {
+    return false;
+  }
+
+  const char* start = cursor;
+  int depth = 0;
+  bool inString = false;
+  bool escaped = false;
+  for (; *cursor != '\0'; ++cursor) {
+    const char c = *cursor;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (c == '\\') {
+        escaped = true;
+      } else if (c == '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (c == '"') {
+      inString = true;
+    } else if (c == '{') {
+      ++depth;
+    } else if (c == '}') {
+      --depth;
+      if (depth == 0) {
+        for (const char* p = start; p <= cursor; ++p) {
+          out += *p;
+        }
+        return true;
+      }
+    }
+  }
+  out = "";
+  return false;
+}
+#endif
+
 inline String FormatDuration(int64_t secs) {
   const int64_t hours = secs / 3600;
   const int64_t minutes = (secs % 3600) / 60;
@@ -122,26 +191,42 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   }
 
   bool hasThemeSpec = false;
+  bool clearThemeSpec = false;
   String themeSpecId;
   int themeSpecRev = 0;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   String themeSpecRaw;
 #endif
+  if (std::strstr(line, "\"themeSpec\"") != nullptr && doc["themeSpec"].isNull()) {
+    clearThemeSpec = true;
+  }
   if (doc["themeSpec"].is<JsonObjectConst>()) {
     JsonObjectConst spec = doc["themeSpec"].as<JsonObjectConst>();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    serializeJson(spec, themeSpecRaw);
+    (void)ExtractJsonObjectRaw(line, "\"themeSpec\"", themeSpecRaw);
 #endif
+    const char* themeId = nullptr;
     if (spec["themeId"].is<const char*>()) {
-      themeSpecId = String(spec["themeId"].as<const char*>());
+      themeId = spec["themeId"].as<const char*>();
+    } else if (spec["id"].is<const char*>()) {
+      themeId = spec["id"].as<const char*>();
+    }
+    if (themeId != nullptr) {
+      themeSpecId = String(themeId);
       themeSpecId.trim();
     }
-    themeSpecRev = static_cast<int>(spec["themeRev"] | 0);
+    themeSpecRev = static_cast<int>(spec["themeRev"] | spec["rev"] | 0);
     hasThemeSpec = (themeSpecId.length() > 0 && themeSpecRev > 0);
 
-    if (allowTheme && !hasTheme && spec["fallbackTheme"].is<const char*>()) {
+    const char* fallback = nullptr;
+    if (spec["fallbackTheme"].is<const char*>()) {
+      fallback = spec["fallbackTheme"].as<const char*>();
+    } else if (spec["fb"].is<const char*>()) {
+      fallback = spec["fb"].as<const char*>();
+    }
+    if (allowTheme && !hasTheme && fallback != nullptr) {
       String fallbackTheme;
-      if (theme::NormalizeThemeName(String(spec["fallbackTheme"].as<const char*>()), fallbackTheme)) {
+      if (theme::NormalizeThemeName(String(fallback), fallbackTheme)) {
         hasTheme = true;
         themeName = fallbackTheme;
       }
@@ -184,8 +269,11 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     out = {};
     out.hasUsageMode = hasUsageMode;
     out.usageMode = usageMode;
+    out.timeText = String(doc["time"] | "");
+    out.dateText = String(doc["date"] | "");
     out.hasTheme = hasTheme;
     out.theme = themeName;
+    out.clearThemeSpec = clearThemeSpec;
     out.hasThemeSpec = hasThemeSpec;
     out.themeSpecId = themeSpecId;
     out.themeSpecRev = themeSpecRev;
@@ -208,6 +296,8 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   out.session = ClampPct(doc["session"] | 0);
   out.weekly = ClampPct(doc["weekly"] | 0);
   out.resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(doc["resetSecs"] | 0));
+  out.timeText = String(doc["time"] | "");
+  out.dateText = String(doc["date"] | "");
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | 0));
   out.weekTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["weekTokens"] | 0));
   out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | 0));
@@ -215,6 +305,7 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   out.usageMode = usageMode;
   out.hasTheme = hasTheme;
   out.theme = themeName;
+  out.clearThemeSpec = clearThemeSpec;
   out.hasThemeSpec = hasThemeSpec;
   out.themeSpecId = themeSpecId;
   out.themeSpecRev = themeSpecRev;
@@ -247,6 +338,9 @@ inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
          previous.totalTokens != next.totalTokens ||
          previous.hasUsageMode != next.hasUsageMode ||
          previous.usageMode != next.usageMode ||
+         previous.timeText != next.timeText ||
+         previous.dateText != next.dateText ||
+         previous.clearThemeSpec != next.clearThemeSpec ||
          previous.hasThemeSpec != next.hasThemeSpec ||
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
          previous.themeSpecRaw != next.themeSpecRaw ||
@@ -268,6 +362,67 @@ inline bool FrameThemeChanged(const Frame& previous, const Frame& next) {
   return previous.theme != next.theme;
 }
 
+inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previous, Frame& next, SerialConsumeEvent& outEvent) {
+  if (next.hasError) {
+    return;
+  }
+
+  if (next.clearThemeSpec) {
+    runtimeState.cachedThemeId = "";
+    runtimeState.cachedThemeRev = 0;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    runtimeState.cachedThemeSpecRaw = "";
+    next.themeSpecRaw = "";
+#endif
+    next.hasThemeSpec = false;
+    next.themeSpecId = "";
+    next.themeSpecRev = 0;
+    outEvent.themeSpecChanged = true;
+    return;
+  }
+
+  if (next.hasThemeSpec) {
+    const bool sameCachedTheme = runtimeState.cachedThemeRev > 0 &&
+                                 runtimeState.cachedThemeId == next.themeSpecId &&
+                                 runtimeState.cachedThemeRev == next.themeSpecRev;
+    if (sameCachedTheme) {
+      outEvent.themeSpecCacheHit = true;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+      if (next.themeSpecRaw.length() == 0) {
+        if (runtimeState.cachedThemeSpecRaw.length() > 0) {
+          next.themeSpecRaw = runtimeState.cachedThemeSpecRaw;
+        } else {
+          next.themeSpecRaw = previous.themeSpecRaw;
+        }
+      }
+#endif
+    } else {
+      runtimeState.cachedThemeId = next.themeSpecId;
+      runtimeState.cachedThemeRev = next.themeSpecRev;
+      outEvent.themeSpecChanged = true;
+    }
+
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    if (next.themeSpecRaw.length() > 0) {
+      runtimeState.cachedThemeId = next.themeSpecId;
+      runtimeState.cachedThemeRev = next.themeSpecRev;
+      runtimeState.cachedThemeSpecRaw = next.themeSpecRaw;
+    }
+#endif
+    return;
+  }
+
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (runtimeState.cachedThemeRev > 0 && runtimeState.cachedThemeSpecRaw.length() > 0) {
+    next.hasThemeSpec = true;
+    next.themeSpecId = runtimeState.cachedThemeId;
+    next.themeSpecRev = runtimeState.cachedThemeRev;
+    next.themeSpecRaw = runtimeState.cachedThemeSpecRaw;
+    outEvent.themeSpecCacheHit = true;
+  }
+#endif
+}
+
 inline bool ConsumeFrameLine(
     RuntimeState& runtimeState,
     const char* line,
@@ -285,27 +440,11 @@ inline bool ConsumeFrameLine(
   }
 
   const Frame previous = runtimeState.current;
-  outEvent.hadFrame = runtimeState.hasFrame;
-  outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChanged(previous, next);
-  outEvent.themeChanged = outEvent.hadFrame && FrameThemeChanged(previous, next);
+  ApplyThemeSpecCache(runtimeState, previous, next, outEvent);
 
-  if (next.hasThemeSpec) {
-    if (runtimeState.cachedThemeRev > 0 &&
-        runtimeState.cachedThemeId == next.themeSpecId &&
-        runtimeState.cachedThemeRev == next.themeSpecRev) {
-      outEvent.themeSpecCacheHit = true;
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-      if (next.themeSpecRaw.length() == 0) {
-        next.themeSpecRaw = previous.themeSpecRaw;
-      }
-#endif
-    } else {
-      runtimeState.cachedThemeId = next.themeSpecId;
-      runtimeState.cachedThemeRev = next.themeSpecRev;
-      outEvent.themeSpecChanged = true;
-      outEvent.visualChanged = true;
-    }
-  }
+  outEvent.hadFrame = runtimeState.hasFrame;
+  outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChanged(previous, next) || outEvent.themeSpecChanged;
+  outEvent.themeChanged = outEvent.hadFrame && FrameThemeChanged(previous, next);
 
   runtimeState.current = next;
   runtimeState.hasFrame = true;
