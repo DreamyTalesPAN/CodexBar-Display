@@ -24,9 +24,11 @@ Asset uploads use short `/themes/u/...` paths because ESP8266 LittleFS rejects p
 For ESP8266 themes, treat the 4096-byte stored ThemeSpec limit as a transport/storage ceiling, not a design target. Large JSON trees also need RAM while parsed, so detailed themes should keep the ThemeSpec small and move visual detail into uploaded `CBI1`/`CBA1`/GIF assets. The Cozy Meadow sample currently uses 12 primitives, a 921-byte stored ThemeSpec, and separate assets including a 2819-byte meadow background plus a small GIF.
 The Studio also estimates render cost before sending. Expensive initial scenes show a warning, themes over the conservative initial render budget are blocked, and themes with too much animated repaint work are blocked because those can flicker or reset the ESP8266 watchdog.
 Use `Save Theme` to keep a JSON file locally, or `Copy JSON` for debugging.
+Use `Save Local` to keep the current ThemeSpec in this browser and reopen it from `Local Themes`.
 Use `Advanced JSON` -> `Apply JSON` to import a readable ThemeSpec or the compact device form into the preview. Invalid JSON or invalid ThemeSpec content is rejected without changing the current canvas.
 
 Keyboard controls:
+- `Cmd/Ctrl+Z`: undo, `Cmd/Ctrl+Shift+Z`: redo
 - `Cmd/Ctrl+C`: copy selected element
 - `Cmd/Ctrl+V`: paste copied element
 - `Cmd/Ctrl+D`: duplicate selected element

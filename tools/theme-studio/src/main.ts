@@ -25,6 +25,8 @@ const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 const THEME_ASSET_PATH_PREFIX = "/themes/";
 const USER_THEME_ASSET_PATH_PREFIX = "/themes/u/";
 const SUPPORTED_PRIMITIVE_TYPES = ["rect", "text", "progress", "gif", "sprite", "pixels"] as const;
+const HISTORY_LIMIT = 60;
+const SAVED_THEMES_STORAGE_KEY = "codexbar.themeStudio.savedThemes.v1";
 
 type PrimitiveType = typeof SUPPORTED_PRIMITIVE_TYPES[number];
 type ResizeHandle = "e" | "s" | "se";
@@ -117,6 +119,18 @@ interface ThemeSpec {
   primitives: Primitive[];
 }
 
+interface ThemeSnapshot {
+  spec: ThemeSpec;
+  selectedIndex: number;
+}
+
+interface SavedTheme {
+  id: string;
+  name: string;
+  savedAt: string;
+  spec: ThemeSpec;
+}
+
 interface FrameData {
   provider: string;
   label: string;
@@ -148,6 +162,9 @@ interface AppState {
   targetOrigin: string;
   pixelTool: PixelTool;
   pixelBrushToken: string;
+  undoStack: ThemeSnapshot[];
+  redoStack: ThemeSnapshot[];
+  savedThemes: SavedTheme[];
 }
 
 interface DeviceHealth {
@@ -685,6 +702,9 @@ const state: AppState = {
   targetOrigin: storedTargetOrigin(),
   pixelTool: "move",
   pixelBrushToken: "a",
+  undoStack: [],
+  redoStack: [],
+  savedThemes: loadSavedThemes(),
 };
 syncJsonFromSpec();
 render();
@@ -723,6 +743,142 @@ function persistTargetOrigin() {
   } catch {
     // Local storage is optional; sending still works without it.
   }
+}
+
+function loadSavedThemes(): SavedTheme[] {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SAVED_THEMES_STORAGE_KEY) ?? "[]") as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter(isSavedTheme)
+      .map((theme) => ({ ...theme, spec: cloneSpec(theme.spec) }))
+      .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+  } catch {
+    return [];
+  }
+}
+
+function isSavedTheme(value: unknown): value is SavedTheme {
+  return isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.savedAt === "string" &&
+    isRecord(value.spec) &&
+    Array.isArray(value.spec.primitives);
+}
+
+function persistSavedThemes() {
+  try {
+    window.localStorage.setItem(SAVED_THEMES_STORAGE_KEY, JSON.stringify(state.savedThemes));
+  } catch {
+    state.notice = "Local theme save failed. Browser storage may be full or blocked.";
+  }
+}
+
+function snapshotState(): ThemeSnapshot {
+  return {
+    spec: cloneSpec(state.spec),
+    selectedIndex: state.selectedIndex,
+  };
+}
+
+function snapshotsEqual(a: ThemeSnapshot, b: ThemeSnapshot): boolean {
+  return a.selectedIndex === b.selectedIndex && minifiedJson(a.spec) === minifiedJson(b.spec);
+}
+
+function pushHistory() {
+  const snapshot = snapshotState();
+  const last = state.undoStack[state.undoStack.length - 1];
+  if (last && snapshotsEqual(last, snapshot)) {
+    return;
+  }
+  state.undoStack.push(snapshot);
+  if (state.undoStack.length > HISTORY_LIMIT) {
+    state.undoStack.shift();
+  }
+  state.redoStack = [];
+}
+
+function restoreSnapshot(snapshot: ThemeSnapshot, notice: string) {
+  state.spec = cloneSpec(snapshot.spec);
+  state.selectedIndex = Math.max(-1, Math.min(snapshot.selectedIndex, state.spec.primitives.length - 1));
+  state.editingTextIndex = null;
+  state.notice = notice;
+  syncJsonFromSpec();
+  render();
+}
+
+function undoThemeEdit() {
+  const snapshot = state.undoStack.pop();
+  if (!snapshot) {
+    state.notice = "Nothing to undo.";
+    render();
+    return;
+  }
+  state.redoStack.push(snapshotState());
+  restoreSnapshot(snapshot, "Undone.");
+}
+
+function redoThemeEdit() {
+  const snapshot = state.redoStack.pop();
+  if (!snapshot) {
+    state.notice = "Nothing to redo.";
+    render();
+    return;
+  }
+  state.undoStack.push(snapshotState());
+  restoreSnapshot(snapshot, "Redone.");
+}
+
+function saveThemeLocally() {
+  const now = new Date().toISOString();
+  const cleanedId = state.spec.themeId.trim() || "theme";
+  const existingIndex = state.savedThemes.findIndex((theme) => theme.name === cleanedId);
+  const saved: SavedTheme = {
+    id: existingIndex >= 0 ? state.savedThemes[existingIndex].id : `${cleanedId}-${Date.now().toString(36)}`,
+    name: cleanedId,
+    savedAt: now,
+    spec: cloneSpec(state.spec),
+  };
+  if (existingIndex >= 0) {
+    state.savedThemes.splice(existingIndex, 1, saved);
+  } else {
+    state.savedThemes.unshift(saved);
+  }
+  state.savedThemes.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+  persistSavedThemes();
+  state.notice = `Saved "${saved.name}" locally.`;
+  render();
+}
+
+function loadSavedTheme(id: string) {
+  const saved = state.savedThemes.find((theme) => theme.id === id);
+  if (!saved) {
+    state.notice = "Saved theme not found.";
+    render();
+    return;
+  }
+  pushHistory();
+  state.spec = cloneSpec(saved.spec);
+  state.selectedIndex = state.spec.primitives.length > 0 ? 0 : -1;
+  state.editingTextIndex = null;
+  state.notice = `Loaded "${saved.name}".`;
+  syncJsonFromSpec();
+  render();
+}
+
+function deleteSavedTheme(id: string) {
+  const before = state.savedThemes.length;
+  state.savedThemes = state.savedThemes.filter((theme) => theme.id !== id);
+  if (state.savedThemes.length === before) {
+    state.notice = "Saved theme not found.";
+  } else {
+    persistSavedThemes();
+    state.notice = "Saved theme deleted.";
+  }
+  render();
 }
 
 function normalizeTargetOrigin(value: string): string {
@@ -1062,6 +1218,12 @@ function render() {
               <input data-field="bgColor" value="${escapeAttr(state.spec.bgColor ?? "#000000")}" />
             </span>
           </label>
+          <div class="history-actions">
+            <button data-action="undo" ${state.undoStack.length === 0 ? "disabled" : ""}>Undo</button>
+            <button data-action="redo" ${state.redoStack.length === 0 ? "disabled" : ""}>Redo</button>
+          </div>
+          <button class="full-width" data-action="save-local">Save Local</button>
+          ${savedThemeList()}
           <button class="full-width preset-button" data-action="load-cozy-meadow">Cozy Meadow</button>
           <div class="divider"></div>
           ${addElementPalette()}
@@ -1110,6 +1272,36 @@ function render() {
   mountKonvaPreview();
   focusInlineTextEditor();
   restoreFocusSnapshot(focusSnapshot);
+}
+
+function savedThemeList(): string {
+  if (state.savedThemes.length === 0) {
+    return `<div class="saved-themes"><h2>Local Themes</h2><p class="empty compact-empty">No saved themes.</p></div>`;
+  }
+  return `
+    <div class="saved-themes">
+      <h2>Local Themes</h2>
+      <div class="saved-theme-list">
+        ${state.savedThemes.slice(0, 6).map((theme) => `
+          <div class="saved-theme-row">
+            <button class="saved-theme-load" data-load-saved-theme="${escapeAttr(theme.id)}">
+              <strong>${escapeHtml(theme.name)}</strong>
+              <span>${escapeHtml(formatSavedAt(theme.savedAt))}</span>
+            </button>
+            <button class="small-button" data-delete-saved-theme="${escapeAttr(theme.id)}" aria-label="Delete ${escapeAttr(theme.name)}">Delete</button>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function formatSavedAt(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Saved locally";
+  }
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function metric(label: string, value: number, max: number): string {
@@ -1487,6 +1679,7 @@ function mountKonvaPreview() {
     const hitIndex = primitiveIndexAtPoint(pointer.x, pointer.y);
     if (hitIndex >= 0) {
       const primitive = state.spec.primitives[hitIndex];
+      pushHistory();
       fallbackDrag = {
         index: hitIndex,
         startX: pointer.x,
@@ -1986,6 +2179,7 @@ function commitKonvaTransform(node: Konva.Node, index: number) {
   if (!primitive) {
     return;
   }
+  pushHistory();
 
   const scaleX = node.scaleX();
   const scaleY = node.scaleY();
@@ -2421,6 +2615,7 @@ function paintSelectedPixelCell(index: number) {
   if (!primitive || primitive.type !== "pixels") {
     return;
   }
+  pushHistory();
   if (!setRlePixelToken(primitive, index)) {
     return;
   }
@@ -2449,6 +2644,7 @@ function paintPixelsAtPointer(index: number, konvaStage: Konva.Stage, previewSca
   }
   const col = Math.floor(pointer.x - primitive.x);
   const row = Math.floor(pointer.y - primitive.y);
+  pushHistory();
   setRlePixelToken(primitive, row * (primitive.width ?? 0) + col);
   return true;
 }
@@ -2934,6 +3130,7 @@ function bindEvents() {
     input.addEventListener("input", () => {
       const key = input.dataset.field;
       if (key === "themeId") {
+        pushHistory();
         state.spec.themeId = input.value.trim().toLowerCase();
       }
       if (key === "targetOrigin") {
@@ -2941,6 +3138,7 @@ function bindEvents() {
         persistTargetOrigin();
       }
       if (key === "bgColor") {
+        pushHistory();
         state.spec.bgColor = input.value.trim();
       }
       syncJsonFromSpec();
@@ -2950,6 +3148,7 @@ function bindEvents() {
 
   app.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("[data-primitive-field]").forEach((input) => {
     input.addEventListener("input", () => {
+      pushHistory();
       updateSelectedPrimitive(input.dataset.primitiveField ?? "", input.value);
       if (isColorInput(input)) {
         syncStateWithoutRender();
@@ -2962,6 +3161,7 @@ function bindEvents() {
       if (!isColorInput(input)) {
         return;
       }
+      pushHistory();
       updateSelectedPrimitive(input.dataset.primitiveField ?? "", input.value);
       syncJsonFromSpec();
       render();
@@ -2970,6 +3170,7 @@ function bindEvents() {
 
   app.querySelectorAll<HTMLButtonElement>("[data-clear-primitive-field]").forEach((button) => {
     button.addEventListener("click", () => {
+      pushHistory();
       clearSelectedPrimitiveField(button.dataset.clearPrimitiveField ?? "");
       syncJsonFromSpec();
       render();
@@ -2982,6 +3183,7 @@ function bindEvents() {
       if (!primitive || primitive.type !== "pixels") {
         return;
       }
+      pushHistory();
       const index = toInt(button.dataset.pixelToggle ?? "0", 0);
       primitive.data = toggleBitmapBit(primitive.data ?? "", primitive.width ?? 0, primitive.height ?? 0, index);
       syncJsonFromSpec();
@@ -3010,6 +3212,7 @@ function bindEvents() {
       if (!primitive || primitive.type !== "pixels") {
         return;
       }
+      pushHistory();
       const index = toInt(input.dataset.pixelPaletteColor ?? "0", 0);
       ensureRlePixelPrimitive(primitive);
       const palette = primitive.p ?? [];
@@ -3043,6 +3246,7 @@ function bindEvents() {
     input.addEventListener("pointerdown", (event) => event.stopPropagation());
     input.addEventListener("input", (event) => {
       event.stopPropagation();
+      pushHistory();
       updateSelectedPrimitive(input.dataset.canvasField ?? "", input.value);
       if (isColorInput(input)) {
         syncStateWithoutRender();
@@ -3056,6 +3260,7 @@ function bindEvents() {
       if (!isColorInput(input)) {
         return;
       }
+      pushHistory();
       updateSelectedPrimitive(input.dataset.canvasField ?? "", input.value);
       syncJsonFromSpec();
       render();
@@ -3068,6 +3273,7 @@ function bindEvents() {
       const index = Number(input.dataset.inlineText);
       const primitive = state.spec.primitives[index];
       if (primitive?.type === "text") {
+        pushHistory();
         primitive.text = input.value;
         normalizeMiniThemeSpec(state.spec);
         state.jsonText = prettyJson(state.spec);
@@ -3110,6 +3316,18 @@ function bindEvents() {
     });
   });
 
+  app.querySelectorAll<HTMLButtonElement>("[data-load-saved-theme]").forEach((button) => {
+    button.addEventListener("click", () => {
+      loadSavedTheme(button.dataset.loadSavedTheme ?? "");
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-delete-saved-theme]").forEach((button) => {
+    button.addEventListener("click", () => {
+      deleteSavedTheme(button.dataset.deleteSavedTheme ?? "");
+    });
+  });
+
   app.querySelectorAll<HTMLButtonElement>("[data-insert-token]").forEach((button) => {
     button.addEventListener("click", () => {
       insertToken(button.dataset.insertToken ?? "");
@@ -3120,6 +3338,7 @@ function bindEvents() {
     button.addEventListener("pointerdown", (event) => event.stopPropagation());
     button.addEventListener("click", (event) => {
       event.stopPropagation();
+      pushHistory();
       rotateSelectedPrimitive(toInt(button.dataset.rotateDelta ?? "0", 0));
     });
   });
@@ -3128,6 +3347,7 @@ function bindEvents() {
     button.addEventListener("pointerdown", (event) => event.stopPropagation());
     button.addEventListener("click", (event) => {
       event.stopPropagation();
+      pushHistory();
       adjustSelectedTextSize(toInt(button.dataset.fontSizeDelta ?? "0", 0));
     });
   });
@@ -3206,6 +3426,7 @@ function insertToken(token: string) {
   if (!token) {
     return;
   }
+  pushHistory();
   const primitive = state.spec.primitives[state.selectedIndex];
   if (primitive?.type === "text") {
     primitive.text = `${primitive.text ?? ""}${token}`;
@@ -3224,6 +3445,16 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   const key = event.key.toLowerCase();
   const usesCommandKey = event.metaKey || event.ctrlKey;
   const typing = isTypingTarget(event.target);
+
+  if (usesCommandKey && key === "z" && !typing) {
+    event.preventDefault();
+    if (event.shiftKey) {
+      redoThemeEdit();
+    } else {
+      undoThemeEdit();
+    }
+    return;
+  }
 
   if (key === "escape" && state.editingTextIndex !== null) {
     event.preventDefault();
@@ -3331,6 +3562,7 @@ function deleteSelectedPrimitive() {
   if (!selectedPrimitive()) {
     return;
   }
+  pushHistory();
   state.spec.primitives.splice(state.selectedIndex, 1);
   state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.spec.primitives.length - 1));
   state.editingTextIndex = null;
@@ -3344,6 +3576,7 @@ function moveSelectedPrimitive(deltaX: number, deltaY: number) {
   if (!primitive) {
     return;
   }
+  pushHistory();
   const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
   const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
   primitive.x = clamp(primitive.x + deltaX, 0, maxX);
@@ -3459,7 +3692,20 @@ function clearSelectedPrimitiveField(key: string) {
 }
 
 async function handleAction(action: string) {
+  if (action === "undo") {
+    undoThemeEdit();
+    return;
+  }
+  if (action === "redo") {
+    redoThemeEdit();
+    return;
+  }
+  if (action === "save-local") {
+    saveThemeLocally();
+    return;
+  }
   if (action === "reset") {
+    pushHistory();
     state.spec = cloneSpec(initialSpec);
     state.selectedIndex = -1;
     state.editingTextIndex = null;
@@ -3469,6 +3715,7 @@ async function handleAction(action: string) {
     return;
   }
   if (action === "load-cozy-meadow") {
+    pushHistory();
     state.spec = cloneSpec(COZY_MEADOW_SPEC);
     state.selectedIndex = state.spec.primitives.findIndex((primitive) => primitive.type === "sprite");
     state.editingTextIndex = null;
@@ -3549,6 +3796,7 @@ async function handleAction(action: string) {
 }
 
 function addPrimitive(primitive: Primitive, notice = "Element added.") {
+  pushHistory();
   state.spec.primitives.push(primitive);
   state.selectedIndex = state.spec.primitives.length - 1;
   state.editingTextIndex = primitive.type === "text" ? state.selectedIndex : null;
@@ -3687,6 +3935,7 @@ function applyJson() {
       render();
       return;
     }
+    pushHistory();
     state.spec = imported;
     state.selectedIndex = imported.primitives.length > 0 ? Math.max(0, Math.min(state.selectedIndex, imported.primitives.length - 1)) : -1;
     state.editingTextIndex = null;
@@ -3833,6 +4082,7 @@ function startDrag(event: PointerEvent) {
     return;
   }
   state.selectedIndex = index;
+  pushHistory();
   const svg = (event.currentTarget as SVGElement).closest("svg");
   if (!svg) {
     return;
@@ -3873,6 +4123,7 @@ function startResize(event: PointerEvent) {
   }
 
   state.selectedIndex = index;
+  pushHistory();
   const svg = target.closest("svg");
   if (!svg) {
     return;
@@ -4046,14 +4297,14 @@ async function sendThemeToVibeTV() {
     }
 
     if (!response.ok) {
-      state.notice = `Vibe TV rejected the theme (${response.status}).`;
+      state.notice = await responseFailureMessage(response, "Vibe TV rejected the theme");
       render();
       return;
     }
 
     const liveFrame = await postFramePayload(targetOrigin, buildLiveFramePayload());
     if (liveFrame.type !== "opaque" && !liveFrame.ok) {
-      state.notice = `Theme activated, but Vibe TV rejected the live frame (${liveFrame.status}).`;
+      state.notice = await responseFailureMessage(liveFrame, "Theme activated, but Vibe TV rejected the live frame");
       render();
       return;
     }
@@ -4075,7 +4326,7 @@ async function sendLegacyInlineTheme(targetOrigin: string) {
 
   const response = await postFramePayload(targetOrigin, buildFramePayload());
   if (response.type !== "opaque" && !response.ok) {
-    throw new Error(`Vibe TV rejected the theme (${response.status}).`);
+    throw new Error(await responseFailureMessage(response, "Vibe TV rejected the theme"));
   }
   const confirmation = await confirmThemeApplied(targetOrigin, state.spec);
   state.notice = confirmation ?? "Theme sent to Vibe TV.";
@@ -4084,7 +4335,7 @@ async function sendLegacyInlineTheme(targetOrigin: string) {
 async function clearDeviceThemeSpec(targetOrigin: string) {
   const response = await postFramePayload(targetOrigin, buildThemeSpecClearPayload());
   if (response.type !== "opaque" && !response.ok) {
-    throw new Error(`Theme clear failed (${response.status}).`);
+    throw new Error(await responseFailureMessage(response, "Theme clear failed"));
   }
 }
 
@@ -4124,8 +4375,7 @@ async function uploadThemeAsset(targetOrigin: string, path: string, asset: Uploa
     body,
   });
   if (response.type !== "opaque" && !response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`${label} upload failed (${response.status})${detail ? `: ${detail}` : ""}.`);
+    throw new Error(await responseFailureMessage(response, `${label} upload failed`));
   }
 }
 
@@ -4209,9 +4459,31 @@ async function fetchDeviceHealth(targetOrigin: string): Promise<DeviceHealth | n
     return null;
   }
   if (!response.ok) {
-    throw new Error(`Theme was sent, but Vibe TV health check failed (${response.status}).`);
+    throw new Error(await responseFailureMessage(response, "Theme was sent, but Vibe TV health check failed"));
   }
   return await response.json() as DeviceHealth;
+}
+
+async function responseFailureMessage(response: Response, fallback: string): Promise<string> {
+  const detail = await response.text().catch(() => "");
+  const cleanDetail = detail.trim().replace(/\s+/g, " ");
+  const suffix = cleanDetail ? `: ${cleanDetail}` : "";
+  if (response.status === 0) {
+    return `${fallback}. Browser could not read the device response.`;
+  }
+  if (response.status === 401 || response.status === 403) {
+    return `${fallback} (${response.status})${suffix}. Pairing or device permission may be missing.`;
+  }
+  if (response.status === 404) {
+    return `${fallback} (${response.status})${suffix}. The firmware may be too old or the file path is missing.`;
+  }
+  if (response.status === 413) {
+    return `${fallback} (${response.status})${suffix}. The theme is too large for this firmware.`;
+  }
+  if (response.status >= 500) {
+    return `${fallback} (${response.status})${suffix}. Check device health and free storage.`;
+  }
+  return `${fallback} (${response.status})${suffix}.`;
 }
 
 function themeAppliedFromHealth(health: DeviceHealth, spec: ThemeSpec): { ok: boolean; message: string } {
@@ -4527,8 +4799,12 @@ function usedThemeBindings(spec: ThemeSpec = state.spec): Set<string> {
 }
 
 async function copyText(text: string, notice: string) {
-  await navigator.clipboard.writeText(text);
-  state.notice = notice;
+  try {
+    await navigator.clipboard.writeText(text);
+    state.notice = notice;
+  } catch {
+    state.notice = "Clipboard copy failed. Use Save Theme or select the JSON manually.";
+  }
   render();
 }
 
