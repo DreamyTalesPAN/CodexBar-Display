@@ -701,6 +701,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		collectedAt = now
 	}
 	updateLastGoodState(state, result.frame, collectedAt, deps)
+	result.frame = applySelectionActivity(result.frame, result.selectionReason)
 	return result
 }
 
@@ -732,6 +733,17 @@ func finalizeCycleResult(state *runtimeState, result cycleResult) cycleResult {
 	result.usageSource = source
 	result.usageFresh = false
 	return result
+}
+
+func applySelectionActivity(frame protocol.Frame, selectionReason string) protocol.Frame {
+	if strings.TrimSpace(frame.Activity) != "" {
+		return frame
+	}
+	switch strings.TrimSpace(selectionReason) {
+	case string(codexbar.SelectionReasonLocalActivity), string(codexbar.SelectionReasonUsageDelta):
+		frame.Activity = "coding"
+	}
+	return frame
 }
 
 func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
@@ -770,8 +782,8 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 		}
 	}
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds time=%q date=%q error=%q reason=%s detail=%q\n",
-		port, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q\n",
+		port, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {

@@ -536,6 +536,27 @@ func TestRunWithDepsBootstrapsStickyProviderFromPersistedLastGood(t *testing.T) 
 	}
 }
 
+func TestApplySelectionActivityMarksCodingSignals(t *testing.T) {
+	for _, reason := range []string{
+		string(codexbar.SelectionReasonLocalActivity),
+		string(codexbar.SelectionReasonUsageDelta),
+	} {
+		t.Run(reason, func(t *testing.T) {
+			frame := applySelectionActivity(protocol.Frame{Provider: "codex"}, reason)
+			if frame.Activity != "coding" {
+				t.Fatalf("expected coding activity for %s, got %q", reason, frame.Activity)
+			}
+		})
+	}
+}
+
+func TestApplySelectionActivityKeepsExplicitActivity(t *testing.T) {
+	frame := applySelectionActivity(protocol.Frame{Provider: "codex", Activity: "idle"}, string(codexbar.SelectionReasonLocalActivity))
+	if frame.Activity != "idle" {
+		t.Fatalf("expected explicit activity to be preserved, got %q", frame.Activity)
+	}
+}
+
 func TestRunCycleWithDepsAppliesThemeWhenDeviceSupportsIt(t *testing.T) {
 	prepareFastTestEnv(t)
 

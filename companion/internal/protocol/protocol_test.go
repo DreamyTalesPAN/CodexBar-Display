@@ -78,6 +78,32 @@ func TestFrameNormalizeKeepsNegotiatedV2(t *testing.T) {
 	}
 }
 
+func TestFrameNormalizeKeepsSafeActivity(t *testing.T) {
+	frame := Frame{
+		Provider: "codex",
+		Label:    "Codex",
+		Activity: " Coding ",
+	}
+
+	normalized := frame.Normalize()
+	if normalized.Activity != "coding" {
+		t.Fatalf("expected normalized activity coding, got %q", normalized.Activity)
+	}
+}
+
+func TestFrameNormalizeDropsUnsafeActivity(t *testing.T) {
+	frame := Frame{
+		Provider: "codex",
+		Label:    "Codex",
+		Activity: "coding!",
+	}
+
+	normalized := frame.Normalize()
+	if normalized.Activity != "" {
+		t.Fatalf("expected unsafe activity to be dropped, got %q", normalized.Activity)
+	}
+}
+
 func TestFrameNormalizeTrimsUpdateState(t *testing.T) {
 	frame := Frame{
 		Update: &UpdateState{

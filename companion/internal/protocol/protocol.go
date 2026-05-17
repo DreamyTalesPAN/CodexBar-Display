@@ -20,6 +20,7 @@ type Frame struct {
 	SessionTokens int64           `json:"sessionTokens,omitempty"`
 	WeekTokens    int64           `json:"weekTokens,omitempty"`
 	TotalTokens   int64           `json:"totalTokens,omitempty"`
+	Activity      string          `json:"activity,omitempty"`
 	Theme         string          `json:"theme,omitempty"`
 	ThemeSpec     json.RawMessage `json:"themeSpec,omitempty"`
 	Update        *UpdateState    `json:"update,omitempty"`
@@ -72,6 +73,7 @@ func (f Frame) Normalize() Frame {
 	}
 	f.Time = strings.TrimSpace(f.Time)
 	f.Date = strings.TrimSpace(f.Date)
+	f.Activity = normalizeActivity(f.Activity)
 	f.Theme = theme.Normalize(f.Theme)
 	if len(f.ThemeSpec) > 0 && !json.Valid(f.ThemeSpec) {
 		f.ThemeSpec = nil
@@ -96,6 +98,20 @@ func (f Frame) MarshalLine() ([]byte, error) {
 		return nil, err
 	}
 	return append(b, '\n'), nil
+}
+
+func normalizeActivity(raw string) string {
+	activity := strings.TrimSpace(strings.ToLower(raw))
+	if activity == "" || len(activity) > 31 {
+		return ""
+	}
+	for _, r := range activity {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return ""
+	}
+	return activity
 }
 
 func ErrorFrame(msg string) Frame {
