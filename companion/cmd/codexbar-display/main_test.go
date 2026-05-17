@@ -192,6 +192,61 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 	}
 }
 
+func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
+	packZip := buildTestThemePackZip(t)
+	downloadedCatalog := false
+	downloadedPack := false
+	uploaded := map[string]bool{}
+	activated := false
+	sentFrame := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/catalog.json":
+			downloadedCatalog = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"themes":[{"id":"cozy-meadow","title":"Cozy Meadow","themeRev":1,"downloadAsset":"cozy-meadow.zip"}]}`))
+		case "/cozy-meadow.zip":
+			downloadedPack = true
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(packZip)
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
+		case "/assets":
+			uploaded[r.URL.Query().Get("path")] = true
+			w.WriteHeader(http.StatusOK)
+		case "/theme/active":
+			activated = true
+			w.WriteHeader(http.StatusOK)
+		case "/frame":
+			sentFrame = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	err := runThemePackInstall([]string{
+		"--catalog", server.URL + "/catalog.json",
+		"--theme", "cozy-meadow",
+		"--target", server.URL,
+	})
+	if err != nil {
+		t.Fatalf("runThemePackInstall returned error: %v", err)
+	}
+	if !downloadedCatalog || !downloadedPack {
+		t.Fatalf("expected catalog and pack downloads, catalog=%t pack=%t", downloadedCatalog, downloadedPack)
+	}
+	if !uploaded["/themes/u/cm.cbi"] || !uploaded["/themes/u/cm.json"] {
+		t.Fatalf("expected asset and theme spec uploads, got %#v", uploaded)
+	}
+	if !activated || !sentFrame {
+		t.Fatalf("expected activation and frame, activated=%t sentFrame=%t", activated, sentFrame)
+	}
+}
+
 func writeTestThemeSpec(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "theme.json")

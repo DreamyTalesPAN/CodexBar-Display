@@ -26,6 +26,8 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
+const defaultThemeCatalogURL = "https://vibetv.shop/cdn/shop/t/1/assets/vibetv-theme-packs.json"
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -91,8 +93,9 @@ func printUsage() {
 	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
+	fmt.Println("  codexbar-display theme-pack catalog [--catalog https://vibetv.shop/cdn/shop/t/1/assets/vibetv-theme-packs.json]")
 	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip-or-url")
-	fmt.Println("  codexbar-display theme-pack install --pack path/to/theme-pack-dir-or.zip-or-url [--target http://vibetv.local] [--allow-unknown-capabilities]")
+	fmt.Println("  codexbar-display theme-pack install (--pack path/to/theme-pack-dir-or.zip-or-url | --catalog url --theme theme-id) [--target http://vibetv.local] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
@@ -489,13 +492,46 @@ func runThemePack(args []string) error {
 		return errors.New("theme-pack subcommand required: validate or install")
 	}
 	switch args[0] {
+	case "catalog":
+		return runThemePackCatalog(args[1:])
 	case "validate":
 		return runThemePackValidate(args[1:])
 	case "install":
 		return runThemePackInstall(args[1:])
 	default:
-		return fmt.Errorf("unknown theme-pack subcommand %q: expected validate or install", args[0])
+		return fmt.Errorf("unknown theme-pack subcommand %q: expected catalog, validate, or install", args[0])
 	}
+}
+
+func runThemePackCatalog(args []string) error {
+	fs := flag.NewFlagSet("theme-pack catalog", flag.ContinueOnError)
+	catalogRef := fs.String("catalog", defaultThemeCatalogURL, "path or HTTP(S) URL to VibeTV theme catalog JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	catalog, err := themepack.LoadCatalog(strings.TrimSpace(*catalogRef))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("theme catalog: themes=%d source=%s\n", len(catalog.Themes), strings.TrimSpace(*catalogRef))
+	for _, theme := range catalog.Themes {
+		title := strings.TrimSpace(theme.Title)
+		if title == "" {
+			title = theme.ID
+		}
+		fmt.Printf("- %s: %s", theme.ID, title)
+		if theme.ThemeRev > 0 {
+			fmt.Printf(" rev=%d", theme.ThemeRev)
+		}
+		if theme.Bytes > 0 {
+			fmt.Printf(" bytes=%d", theme.Bytes)
+		}
+		fmt.Println()
+		if description := strings.TrimSpace(theme.Description); description != "" {
+			fmt.Printf("  %s\n", description)
+		}
+	}
+	return nil
 }
 
 func runThemePackValidate(args []string) error {
@@ -523,6 +559,8 @@ func runThemePackValidate(args []string) error {
 func runThemePackInstall(args []string) error {
 	fs := flag.NewFlagSet("theme-pack install", flag.ContinueOnError)
 	packPath := fs.String("pack", "", "path or HTTP(S) URL to VibeTV theme pack directory or zip")
+	catalogRef := fs.String("catalog", "", "path or HTTP(S) URL to VibeTV theme catalog JSON")
+	themeID := fs.String("theme", "", "theme id from catalog")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
 	allowUnknown := fs.Bool(
 		"allow-unknown-capabilities",
@@ -532,7 +570,11 @@ func runThemePackInstall(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	pack, err := themepack.Load(strings.TrimSpace(*packPath))
+	resolvedPack, err := resolveThemePackInstallSource(strings.TrimSpace(*packPath), strings.TrimSpace(*catalogRef), strings.TrimSpace(*themeID))
+	if err != nil {
+		return err
+	}
+	pack, err := themepack.Load(resolvedPack)
 	if err != nil {
 		return err
 	}
@@ -614,6 +656,30 @@ func runThemePackInstall(args []string) error {
 		pack.ThemeSpecFile.Entry.Path,
 	)
 	return nil
+}
+
+func resolveThemePackInstallSource(packPath, catalogRef, themeID string) (string, error) {
+	if packPath != "" {
+		if catalogRef != "" || themeID != "" {
+			return "", errors.New("use either --pack or --catalog/--theme, not both")
+		}
+		return packPath, nil
+	}
+	if catalogRef == "" && themeID == "" {
+		return "", errors.New("missing theme pack source: pass --pack or --catalog and --theme")
+	}
+	if catalogRef == "" {
+		catalogRef = defaultThemeCatalogURL
+	}
+	catalog, err := themepack.LoadCatalog(catalogRef)
+	if err != nil {
+		return "", err
+	}
+	theme, err := catalog.FindTheme(themeID)
+	if err != nil {
+		return "", err
+	}
+	return themepack.ResolveThemeDownload(catalogRef, theme)
 }
 
 func resolveThemeSpecTransport(transportName, target, port string) (transportlayer.DeviceTransport, string, error) {

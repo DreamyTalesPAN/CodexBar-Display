@@ -77,6 +77,34 @@ func TestLoadHTTPZipRejectsBadStatus(t *testing.T) {
 	}
 }
 
+func TestLoadCatalogResolvesRelativeDownloadAsset(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/assets/vibetv-theme-packs.json" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"schemaVersion":1,"themes":[{"id":"cozy-meadow","title":"Cozy Meadow","themeRev":1,"downloadAsset":"vibetv-theme-cozy-meadow.zip","bytes":905}]}`))
+	}))
+	defer server.Close()
+
+	catalogURL := server.URL + "/assets/vibetv-theme-packs.json"
+	catalog, err := LoadCatalog(catalogURL)
+	if err != nil {
+		t.Fatalf("LoadCatalog returned error: %v", err)
+	}
+	theme, err := catalog.FindTheme("cozy-meadow")
+	if err != nil {
+		t.Fatalf("FindTheme returned error: %v", err)
+	}
+	downloadURL, err := ResolveThemeDownload(catalogURL, theme)
+	if err != nil {
+		t.Fatalf("ResolveThemeDownload returned error: %v", err)
+	}
+	if want := server.URL + "/assets/vibetv-theme-cozy-meadow.zip"; downloadURL != want {
+		t.Fatalf("unexpected download URL %q, want %q", downloadURL, want)
+	}
+}
+
 func TestLoadRejectsMissingReferencedAsset(t *testing.T) {
 	dir := writeThemePack(t, `"assets":[]`)
 
