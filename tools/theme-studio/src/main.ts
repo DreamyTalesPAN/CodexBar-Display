@@ -1,4 +1,5 @@
 import Konva from "konva";
+import { strToU8, zipSync } from "fflate";
 import "gifler";
 import "./styles.css";
 
@@ -1244,6 +1245,7 @@ function render() {
           </div>
           <div class="preview-actions">
             <button class="primary-action" data-action="send-theme" ${state.errors.length ? "disabled" : ""}>Send to Vibe TV</button>
+            <button data-action="download-pack" ${state.errors.length ? "disabled" : ""}>Download Pack</button>
             <button data-action="download-json">Save Theme</button>
             <button data-action="copy-json">Copy JSON</button>
           </div>
@@ -3790,6 +3792,9 @@ async function handleAction(action: string) {
   if (action === "download-json") {
     downloadTheme();
   }
+  if (action === "download-pack") {
+    await downloadThemePack();
+  }
   if (action === "send-theme") {
     await sendThemeToVibeTV();
   }
@@ -4263,6 +4268,149 @@ function downloadTheme() {
   URL.revokeObjectURL(href);
   state.notice = "Download prepared.";
   render();
+}
+
+type ThemePackManifest = {
+  kind: "vibetv-theme-pack";
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  version: string;
+  minFirmware: string;
+  themeSpec: ThemePackFileEntry;
+  assets: ThemePackFileEntry[];
+};
+
+type ThemePackFileEntry = {
+  path: string;
+  file: string;
+  bytes: number;
+  sha256: string;
+  contentType?: string;
+};
+
+async function downloadThemePack() {
+  validateCurrentSpec();
+  if (state.errors.length > 0) {
+    state.notice = "Theme is invalid. Fix the errors before downloading a pack.";
+    render();
+    return;
+  }
+
+  try {
+    const files: Record<string, Uint8Array> = {};
+    const assets: ThemePackFileEntry[] = [];
+    const usedPackFiles = new Set<string>(["manifest.json", "theme.json"]);
+
+    const themeSpecPath = themeSpecAssetPath(state.spec);
+    const themeSpecData = strToU8(deviceThemeSpecJson(state.spec));
+    const themeSpecEntry: ThemePackFileEntry = {
+      path: themeSpecPath,
+      file: "theme.json",
+      bytes: themeSpecData.byteLength,
+      sha256: await sha256Hex(themeSpecData),
+      contentType: "application/json",
+    };
+    files[themeSpecEntry.file] = themeSpecData;
+
+    for (const assetPath of uniqueAssetPaths("gif")) {
+      const asset = state.gifAssets[assetPath] ?? await builtInGifAsset(assetPath);
+      if (!asset) {
+        throw new Error(`Missing GIF asset for ${assetPath}.`);
+      }
+      const data = new Uint8Array(await asset.file.arrayBuffer());
+      const packFile = uniquePackAssetFile(assetPath, usedPackFiles);
+      files[packFile] = data;
+      assets.push({
+        path: assetPath,
+        file: packFile,
+        bytes: data.byteLength,
+        sha256: await sha256Hex(data),
+        contentType: asset.file.type || "image/gif",
+      });
+    }
+
+    for (const assetPath of uniqueAssetPaths("sprite")) {
+      const asset = state.spriteAssets[assetPath] ?? builtInSpriteAsset(assetPath);
+      if (!asset) {
+        throw new Error(`Missing sprite asset for ${assetPath}.`);
+      }
+      const data = new Uint8Array(await asset.file.arrayBuffer());
+      const packFile = uniquePackAssetFile(assetPath, usedPackFiles);
+      files[packFile] = data;
+      assets.push({
+        path: assetPath,
+        file: packFile,
+        bytes: data.byteLength,
+        sha256: await sha256Hex(data),
+        contentType: asset.file.type || "text/plain",
+      });
+    }
+
+    const manifest: ThemePackManifest = {
+      kind: "vibetv-theme-pack",
+      schemaVersion: 1,
+      id: state.spec.themeId,
+      name: displayThemeName(state.spec.themeId),
+      version: `${state.spec.themeRev}.0.0`,
+      minFirmware: "1.0.0",
+      themeSpec: themeSpecEntry,
+      assets,
+    };
+    files["manifest.json"] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`);
+
+    const zip = zipSync(files, { level: 0 });
+    const blob = new Blob([arrayBufferFor(zip)], { type: "application/zip" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = `${state.spec.themeId}.zip`;
+    link.click();
+    URL.revokeObjectURL(href);
+    state.notice = "Theme pack prepared.";
+  } catch (error) {
+    state.notice = error instanceof Error ? error.message : "Theme pack download failed.";
+  }
+  render();
+}
+
+function uniquePackAssetFile(devicePath: string, used: Set<string>): string {
+  const fallback = `asset-${used.size}`;
+  const fileName = (devicePath.split("/").pop() || fallback)
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || fallback;
+  const dot = fileName.lastIndexOf(".");
+  const base = dot > 0 ? fileName.slice(0, dot) : fileName;
+  const ext = dot > 0 ? fileName.slice(dot) : "";
+  let candidate = `assets/${fileName}`;
+  let counter = 2;
+  while (used.has(candidate)) {
+    candidate = `assets/${base}-${counter}${ext}`;
+    counter += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function displayThemeName(themeId: string): string {
+  return themeId
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ") || "VibeTV Theme";
+}
+
+async function sha256Hex(data: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", arrayBufferFor(data));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function arrayBufferFor(data: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(data.byteLength);
+  copy.set(data);
+  return copy.buffer;
 }
 
 async function sendThemeToVibeTV() {
