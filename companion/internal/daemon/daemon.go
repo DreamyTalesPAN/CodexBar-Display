@@ -498,6 +498,11 @@ func resolveCycleDevice(requestedPort string, deps runtimeDeps) (string, protoco
 		}
 		deps.logf("runtime event=device-caps-read-failed target=%s transport=%s err=%v\n", port, deps.transportName, capsErr)
 		caps = protocol.UnknownDeviceCapabilities()
+	} else if !caps.Known {
+		unknownErr := errors.New("device capabilities unknown")
+		if recoveredPort, recoveredCaps, recovered := recoverStaleWiFiTarget(port, unknownErr, deps); recovered {
+			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
+		}
 	}
 
 	return port, caps, maxFrameBytesForCaps(caps), nil

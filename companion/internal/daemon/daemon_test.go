@@ -1093,6 +1093,52 @@ func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithDepsRecoversUnknownWiFiTargetViaLocalTarget(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	const staleTarget = "http://192.168.178.163"
+	const recoveredTarget = "http://vibetv.local"
+	var sentPort string
+
+	err := runCycleWithDeps(context.Background(), staleTarget, state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		resolvePort: func(target string) (string, error) {
+			return target, nil
+		},
+		deviceCaps: func(target string) (protocol.DeviceCapabilities, error) {
+			if target == staleTarget {
+				return protocol.UnknownDeviceCapabilities(), nil
+			}
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				Board:                     "esp8266-smalltv-st7789",
+				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+				MaxFrameBytes:             2048,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+		},
+		sendLine: func(port string, line []byte) error {
+			sentPort = port
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("runCycleWithDeps returned error: %v", err)
+	}
+	if sentPort != recoveredTarget {
+		t.Fatalf("expected frame sent to recovered target, got %q", sentPort)
+	}
+}
+
 func TestRunWithDepsRetriesAndRecoversAfterReconnect(t *testing.T) {
 	prepareFastTestEnv(t)
 
