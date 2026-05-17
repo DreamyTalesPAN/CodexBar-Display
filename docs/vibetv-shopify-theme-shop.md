@@ -74,7 +74,7 @@ Shopify docs say TOML-defined app-owned metaobjects are version-controlled and d
 4. Companion installs it:
 
 ```bash
-codexbar-display theme-pack install --pack ~/Downloads/cozy-meadow.zip --target http://vibetv.local
+codexbar-display theme-pack install --pack https://vibetv.shop/cdn/shop/t/1/assets/vibetv-theme-cozy-meadow.zip --target http://vibetv.local
 ```
 
 5. Companion uploads assets to `/assets`, activates the stored ThemeSpec via `/theme/active`, then sends one live frame.

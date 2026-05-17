@@ -2,17 +2,21 @@ package themepack
 
 import (
 	"archive/zip"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themespec"
 )
@@ -22,6 +26,7 @@ const (
 	SchemaVersion = 1
 
 	maxDevicePathChars = 31
+	maxRemotePackBytes = 32 << 20
 )
 
 var packIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{2,63}$`)
@@ -63,6 +68,9 @@ func Load(packPath string) (*Pack, error) {
 	if packPath == "" {
 		return nil, errors.New("missing theme pack path")
 	}
+	if isHTTPURL(packPath) {
+		return loadRemoteZip(packPath)
+	}
 	info, err := os.Stat(packPath)
 	if err != nil {
 		return nil, err
@@ -75,15 +83,55 @@ func Load(packPath string) (*Pack, error) {
 	return loadZip(packPath)
 }
 
+func isHTTPURL(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")
+}
+
+func loadRemoteZip(packURL string) (*Pack, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(packURL)
+	if err != nil {
+		return nil, fmt.Errorf("download theme pack zip: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("download theme pack zip: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxRemotePackBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read theme pack zip: %w", err)
+	}
+	if len(data) > maxRemotePackBytes {
+		return nil, fmt.Errorf("theme pack zip too large: got>%d limit=%d", maxRemotePackBytes, maxRemotePackBytes)
+	}
+	return loadZipBytes(packURL, data)
+}
+
 func loadZip(packPath string) (*Pack, error) {
 	reader, err := zip.OpenReader(packPath)
 	if err != nil {
 		return nil, fmt.Errorf("open theme pack zip: %w", err)
 	}
 	defer reader.Close()
+	return loadZipFiles(reader.File)
+}
 
-	files := make(map[string]*zip.File, len(reader.File))
-	for _, file := range reader.File {
+func loadZipBytes(source string, data []byte) (*Pack, error) {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, fmt.Errorf("open theme pack zip %s: %w", source, err)
+	}
+	return loadZipFiles(reader.File)
+}
+
+func loadZipFiles(zipFiles []*zip.File) (*Pack, error) {
+	files := make(map[string]*zip.File, len(zipFiles))
+	for _, file := range zipFiles {
 		clean, err := cleanPackFile(file.Name)
 		if err != nil || file.FileInfo().IsDir() {
 			continue

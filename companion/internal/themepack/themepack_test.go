@@ -2,6 +2,8 @@ package themepack
 
 import (
 	"archive/zip"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,6 +36,44 @@ func TestLoadZipThemePack(t *testing.T) {
 	}
 	if pack.ThemeSpecFile.Entry.Path != "/themes/u/cm.json" {
 		t.Fatalf("unexpected theme spec path %s", pack.ThemeSpecFile.Entry.Path)
+	}
+}
+
+func TestLoadHTTPZipThemePack(t *testing.T) {
+	dir := writeThemePack(t, "")
+	zipPath := filepath.Join(t.TempDir(), "cozy-meadow.zip")
+	writeZipFromDir(t, zipPath, dir)
+	zipData, err := os.ReadFile(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cozy-meadow.zip" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(zipData)
+	}))
+	defer server.Close()
+
+	pack, err := Load(server.URL + "/cozy-meadow.zip")
+	if err != nil {
+		t.Fatalf("Load http zip returned error: %v", err)
+	}
+	if pack.Manifest.ID != "cozy-meadow" || pack.ThemeSpecFile.Entry.Path != "/themes/u/cm.json" {
+		t.Fatalf("unexpected pack: %+v", pack.Manifest)
+	}
+}
+
+func TestLoadHTTPZipRejectsBadStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	_, err := Load(server.URL + "/missing.zip")
+	if err == nil || !strings.Contains(err.Error(), "status=404") {
+		t.Fatalf("expected http status error, got %v", err)
 	}
 }
 

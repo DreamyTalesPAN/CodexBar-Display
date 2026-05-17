@@ -38,6 +38,7 @@ const (
 	defaultCycleTimeout     = 180 * time.Second
 	startupFastPollWindow   = 2 * time.Minute
 	startupFastPollInterval = 30 * time.Second
+	defaultWiFiTarget       = "http://vibetv.local"
 	lastGoodPersistInterval = 1 * time.Minute
 	directProviderProbeMax  = 3
 	themeEnvVar             = "CODEXBAR_DISPLAY_THEME"
@@ -492,15 +493,50 @@ func resolveCycleDevice(requestedPort string, deps runtimeDeps) (string, protoco
 
 	caps, capsErr := deps.deviceCaps(port)
 	if capsErr != nil {
+		if recoveredPort, recoveredCaps, recovered := recoverStaleWiFiTarget(port, capsErr, deps); recovered {
+			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
+		}
 		deps.logf("runtime event=device-caps-read-failed target=%s transport=%s err=%v\n", port, deps.transportName, capsErr)
 		caps = protocol.UnknownDeviceCapabilities()
 	}
-	maxFrameBytes := protocol.DefaultMaxFrameBytes
-	if caps.MaxFrameBytes > 0 {
-		maxFrameBytes = caps.MaxFrameBytes
-	}
 
-	return port, caps, maxFrameBytes, nil
+	return port, caps, maxFrameBytesForCaps(caps), nil
+}
+
+func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) (string, protocol.DeviceCapabilities, bool) {
+	if deps.transportName != "wifi" || isDefaultWiFiTarget(stalePort) {
+		return "", protocol.DeviceCapabilities{}, false
+	}
+	fallbackPort, resolveErr := deps.resolvePort(defaultWiFiTarget)
+	if resolveErr != nil || isSameTarget(stalePort, fallbackPort) {
+		return "", protocol.DeviceCapabilities{}, false
+	}
+	caps, capsErr := deps.deviceCaps(fallbackPort)
+	if capsErr != nil || !caps.Known {
+		return "", protocol.DeviceCapabilities{}, false
+	}
+	deps.logf(
+		"runtime event=wifi-target-recovered from=%s to=%s staleErr=%v\n",
+		stalePort,
+		fallbackPort,
+		staleErr,
+	)
+	return fallbackPort, caps, true
+}
+
+func isDefaultWiFiTarget(target string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(target)), "vibetv.local")
+}
+
+func isSameTarget(left, right string) bool {
+	return strings.EqualFold(strings.TrimRight(strings.TrimSpace(left), "/"), strings.TrimRight(strings.TrimSpace(right), "/"))
+}
+
+func maxFrameBytesForCaps(caps protocol.DeviceCapabilities) int {
+	if caps.MaxFrameBytes > 0 {
+		return caps.MaxFrameBytes
+	}
+	return protocol.DefaultMaxFrameBytes
 }
 
 func attachFirmwareUpdateState(ctx context.Context, state *runtimeState, deps runtimeDeps, caps protocol.DeviceCapabilities, result *cycleResult) {

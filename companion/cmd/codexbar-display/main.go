@@ -91,8 +91,8 @@ func printUsage() {
 	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
-	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip")
-	fmt.Println("  codexbar-display theme-pack install --pack path/to/theme-pack-dir-or.zip [--target http://vibetv.local] [--allow-unknown-capabilities]")
+	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip-or-url")
+	fmt.Println("  codexbar-display theme-pack install --pack path/to/theme-pack-dir-or.zip-or-url [--target http://vibetv.local] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
@@ -500,7 +500,7 @@ func runThemePack(args []string) error {
 
 func runThemePackValidate(args []string) error {
 	fs := flag.NewFlagSet("theme-pack validate", flag.ContinueOnError)
-	packPath := fs.String("pack", "", "path to VibeTV theme pack directory or zip")
+	packPath := fs.String("pack", "", "path or HTTP(S) URL to VibeTV theme pack directory or zip")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -522,7 +522,7 @@ func runThemePackValidate(args []string) error {
 
 func runThemePackInstall(args []string) error {
 	fs := flag.NewFlagSet("theme-pack install", flag.ContinueOnError)
-	packPath := fs.String("pack", "", "path to VibeTV theme pack directory or zip")
+	packPath := fs.String("pack", "", "path or HTTP(S) URL to VibeTV theme pack directory or zip")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
 	allowUnknown := fs.Bool(
 		"allow-unknown-capabilities",

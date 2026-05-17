@@ -1,6 +1,6 @@
 # VibeTV Theme Packs
 
-A theme pack is the downloadable unit for customer themes. Shopify can host it later as a file download; the VibeTV companion installs it over WiFi.
+A theme pack is the downloadable unit for customer themes. Shopify can host it as a file download; the VibeTV companion installs it over WiFi from a local file, local directory, or direct HTTP(S) ZIP URL.
 
 ## Format
 
@@ -48,6 +48,12 @@ Install it on a connected VibeTV:
 
 ```bash
 go run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/cozy-meadow --target http://vibetv.local
+```
+
+Install a ZIP directly from the VibeTV shop:
+
+```bash
+go run ./cmd/codexbar-display theme-pack install --pack https://vibetv.shop/cdn/shop/t/1/assets/vibetv-theme-cozy-meadow.zip --target http://vibetv.local
 ```
 
 Install uploads assets, uploads the stored ThemeSpec, activates it via `/theme/active`, then sends a live frame so the theme is visible immediately.
