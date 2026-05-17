@@ -193,6 +193,128 @@ func TestValidateRejectsUnsafeSpriteAssetPath(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsStateAssetsForSpriteAndGif(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "mini-transport",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{
+				Type:   "sprite",
+				X:      0,
+				Y:      0,
+				Width:  24,
+				Height: 24,
+				StateAssets: map[string]string{
+					"idle":   "/themes/u/idle.cbi",
+					"coding": "/themes/u/coding.cbi",
+				},
+			},
+			{
+				Type:   "gif",
+				X:      0,
+				Y:      24,
+				Width:  24,
+				Height: 24,
+				StateAssets: map[string]string{
+					"idle": "/themes/u/idle.gif",
+				},
+			},
+		},
+	}
+
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected stateAssets spec to validate, got %v", err)
+	}
+}
+
+func TestValidateAcceptsCompactStateAssets(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"mini-transport",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":24,"h":24,"sa":{"idle":"/themes/u/idle.cbi","coding":"/themes/u/coding.cbi"}}
+		]
+	}`)
+
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse compact stateAssets spec: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected compact stateAssets spec to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].StateAssets["coding"]; got != "/themes/u/coding.cbi" {
+		t.Fatalf("compact stateAssets did not normalize, got %q", got)
+	}
+}
+
+func TestValidateAcceptsCompactActivityBinding(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"mini-transport",
+		"rev":1,
+		"p":[
+			{"t":"tx","x":0,"y":0,"s":1,"b":"act"}
+		]
+	}`)
+
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse compact activity binding: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected compact activity binding to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].Binding; got != "activity" {
+		t.Fatalf("compact activity binding did not expand, got %q", got)
+	}
+}
+
+func TestValidateRejectsInvalidStateAssets(t *testing.T) {
+	tests := []struct {
+		name        string
+		stateAssets map[string]string
+	}{
+		{
+			name: "uppercase state",
+			stateAssets: map[string]string{
+				"Idle": "/themes/u/idle.cbi",
+			},
+		},
+		{
+			name: "unsafe path",
+			stateAssets: map[string]string{
+				"idle": "/themes/../idle.cbi",
+			},
+		},
+		{
+			name: "empty path",
+			stateAssets: map[string]string{
+				"idle": "",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := Spec{
+				ThemeSpecVersion: 1,
+				ThemeID:          "mini-transport",
+				ThemeRev:         1,
+				Primitives: []Primitive{
+					{Type: "sprite", X: 0, Y: 0, Width: 24, Height: 24, StateAssets: tt.stateAssets},
+				},
+			}
+
+			if err := Validate(spec); err == nil {
+				t.Fatalf("expected validation error")
+			}
+		})
+	}
+}
+
 func TestValidateRejectsUnknownPrimitiveType(t *testing.T) {
 	spec := Spec{
 		ThemeSpecVersion: 1,

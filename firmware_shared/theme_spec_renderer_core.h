@@ -16,6 +16,7 @@ struct FrameData {
   int weekly = 0;
   int64_t resetSecs = 0;
   const char* usageMode = "";
+  const char* activity = "idle";
   const char* time = "";
   const char* date = "";
   int64_t sessionTokens = 0;
@@ -159,6 +160,29 @@ inline const char* JsonStringFor(JsonObjectConst object, const char* longKey, co
     return longValue;
   }
   return JsonStringOrNull(object[shortKey]);
+}
+
+inline JsonObjectConst JsonObjectFor(JsonObjectConst object, const char* longKey, const char* shortKey) {
+  if (object[longKey].is<JsonObjectConst>()) {
+    return object[longKey].as<JsonObjectConst>();
+  }
+  return object[shortKey].as<JsonObjectConst>();
+}
+
+inline const char* StateAssetPathFor(JsonObjectConst primitive, const FrameData& frame) {
+  JsonObjectConst stateAssets = JsonObjectFor(primitive, "stateAssets", "sa");
+  if (!stateAssets.isNull()) {
+    const char* activity = frame.activity == nullptr ? "" : frame.activity;
+    const char* activeAsset = JsonStringOrNull(stateAssets[activity]);
+    if (activeAsset != nullptr && activeAsset[0] != '\0') {
+      return activeAsset;
+    }
+    const char* idleAsset = JsonStringOrNull(stateAssets["idle"]);
+    if (idleAsset != nullptr && idleAsset[0] != '\0') {
+      return idleAsset;
+    }
+  }
+  return JsonStringFor(primitive, "assetPath", "a");
 }
 
 inline int JsonIntFor(JsonObjectConst object, const char* longKey, const char* shortKey, int fallback) {
@@ -346,6 +370,10 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     std::snprintf(out, outSize, "%s", SafeText(frame.usageMode));
     return;
   }
+  if (std::strcmp(key, "activity") == 0 || std::strcmp(key, "act") == 0) {
+    std::snprintf(out, outSize, "%s", SafeText(frame.activity));
+    return;
+  }
   if (std::strcmp(key, "time") == 0 || std::strcmp(key, "tm") == 0) {
     std::snprintf(out, outSize, "%s", SafeText(frame.time));
     return;
@@ -484,7 +512,7 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     cmd.y = y;
     cmd.width = JsonIntFor(primitive, "width", "w", 0);
     cmd.height = JsonIntFor(primitive, "height", "h", 0);
-    cmd.assetPath = JsonStringFor(primitive, "assetPath", "a");
+    cmd.assetPath = StateAssetPathFor(primitive, frame);
     if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0' || cmd.width <= 0 || cmd.height <= 0) {
       return false;
     }
@@ -501,7 +529,7 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     cmd.y = y;
     cmd.width = JsonIntFor(primitive, "width", "w", 0);
     cmd.height = JsonIntFor(primitive, "height", "h", 0);
-    cmd.assetPath = JsonStringFor(primitive, "assetPath", "a");
+    cmd.assetPath = StateAssetPathFor(primitive, frame);
     if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0') {
       return false;
     }

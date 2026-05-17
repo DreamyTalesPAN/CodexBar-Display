@@ -114,6 +114,34 @@ func TestLoadRejectsMissingReferencedAsset(t *testing.T) {
 	}
 }
 
+func TestLoadDirectoryThemePackWithStateAssets(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":24,"h":24,"sa":{"idle":"/themes/u/idle.cbi","coding":"/themes/u/code.cbi"}}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/idle.cbi", file: "assets/idle.cbi", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
+		{path: "/themes/u/code.cbi", file: "assets/code.cbi", data: "CBI1\n1 1\n1\n#000000\na\n"},
+	})
+
+	pack, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if got := pack.ThemeSpec.Primitives[0].StateAssets["coding"]; got != "/themes/u/code.cbi" {
+		t.Fatalf("stateAssets were not loaded: %q", got)
+	}
+}
+
+func TestLoadRejectsMissingStateAsset(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":24,"h":24,"sa":{"idle":"/themes/u/idle.cbi","coding":"/themes/u/code.cbi"}}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/idle.cbi", file: "assets/idle.cbi", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
+	})
+
+	_, err := Load(dir)
+	if err == nil || !strings.Contains(err.Error(), "stateAssets[coding]") {
+		t.Fatalf("expected missing state asset error, got %v", err)
+	}
+}
+
 func TestLoadRejectsUnsafePackFile(t *testing.T) {
 	dir := writeThemePack(t, `"themeSpec":{"path":"/themes/u/cm.json","file":"../theme.json"}`)
 
@@ -157,6 +185,39 @@ func writeThemePack(t *testing.T, override string) string {
 		}
 	}
 	manifest := `{"kind":"vibetv-theme-pack","schemaVersion":1,"id":"cozy-meadow","name":"Cozy Meadow",` + themeSpec + `,` + assets + `}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+type themePackTestAsset struct {
+	path string
+	file string
+	data string
+}
+
+func writeThemePackWithSpec(t *testing.T, spec string, assets []themePackTestAsset) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "theme.json"), []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	assetEntries := make([]string, 0, len(assets))
+	for _, asset := range assets {
+		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(asset.file)), []byte(asset.data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		assetEntries = append(assetEntries, `{"path":"`+asset.path+`","file":"`+asset.file+`"}`)
+	}
+
+	manifest := `{"kind":"vibetv-theme-pack","schemaVersion":1,"id":"cozy-meadow","name":"Cozy Meadow",` +
+		`"themeSpec":{"path":"/themes/u/cm.json","file":"theme.json"},` +
+		`"assets":[` + strings.Join(assetEntries, ",") + `]}`
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}

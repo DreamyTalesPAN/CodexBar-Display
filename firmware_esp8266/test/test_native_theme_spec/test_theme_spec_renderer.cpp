@@ -420,6 +420,49 @@ void testAnimatedPrimitivePassRendersGifsAndSpritesWithoutClear() {
   TEST_ASSERT_EQUAL_STRING("/themes/demo/hero.cba", sink.commands[1].assetPath.c_str());
 }
 
+void testStateAssetsUseActivityWithIdleFallback() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "primitives": [
+      {"type":"gif","x":1,"y":2,"width":3,"height":4,"stateAssets":{"idle":"/themes/demo/idle.gif","coding":"/themes/demo/coding.gif"}},
+      {"type":"sprite","x":5,"y":6,"width":7,"height":8,"sa":{"idle":"/themes/demo/idle.cba","coding":"/themes/demo/coding.cba"}}
+    ]
+  })JSON";
+
+  FrameData codingFrame = testFrame();
+  codingFrame.activity = "coding";
+  RecordingSink codingSink;
+  TEST_ASSERT_TRUE(RenderThemeSpec(spec, codingFrame, codingSink));
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.gif", codingSink.commands[1].assetPath.c_str());
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.cba", codingSink.commands[2].assetPath.c_str());
+
+  FrameData waitingFrame = testFrame();
+  waitingFrame.activity = "waiting";
+  RecordingSink waitingSink;
+  TEST_ASSERT_TRUE(RenderThemeSpec(spec, waitingFrame, waitingSink));
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/idle.gif", waitingSink.commands[1].assetPath.c_str());
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/idle.cba", waitingSink.commands[2].assetPath.c_str());
+}
+
+void testFrameActivityDefaultsToCodingWhenUsageChanges() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+
+  const char* idleFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleFrame, 2000, true, event));
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+
+  const char* codingFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":120,"weekTokens":220,"totalTokens":340})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codingFrame, 3000, true, event));
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+}
+
 void testThemeSpecCacheCarriesLayoutAcrossLiveFrames() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -505,6 +548,8 @@ int main() {
   RUN_TEST(testInvalidPrimitivesAreSkipped);
   RUN_TEST(testColorFallbacks);
   RUN_TEST(testAnimatedPrimitivePassRendersGifsAndSpritesWithoutClear);
+  RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
+  RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
   RUN_TEST(testThemeSpecCacheCarriesLayoutAcrossLiveFrames);
   RUN_TEST(testCompactThemeSpecFrameIsCached);
   RUN_TEST(testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent);

@@ -289,14 +289,18 @@ func validateReferencedAssets(spec themespec.Spec, assets []File) error {
 		available[asset.Entry.Path] = struct{}{}
 	}
 	for index, primitive := range spec.Primitives {
-		if primitive.AssetPath == "" {
-			continue
-		}
 		if primitive.Type != "gif" && primitive.Type != "sprite" && primitive.Type != "image" {
 			continue
 		}
-		if _, ok := available[primitive.AssetPath]; !ok {
-			return fmt.Errorf("primitives[%d] references %s, but manifest assets do not include it", index, primitive.AssetPath)
+		if primitive.AssetPath != "" {
+			if _, ok := available[primitive.AssetPath]; !ok {
+				return fmt.Errorf("primitives[%d] references %s, but manifest assets do not include it", index, primitive.AssetPath)
+			}
+		}
+		for state, assetPath := range primitive.StateAssets {
+			if _, ok := available[assetPath]; !ok {
+				return fmt.Errorf("primitives[%d].stateAssets[%s] references %s, but manifest assets do not include it", index, state, assetPath)
+			}
 		}
 	}
 	return nil

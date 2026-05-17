@@ -25,6 +25,7 @@ const WARN_INITIAL_RENDER_PIXELS = 90000;
 const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 const THEME_ASSET_PATH_PREFIX = "/themes/";
 const USER_THEME_ASSET_PATH_PREFIX = "/themes/u/";
+const STATE_NAME_RE = /^[a-z0-9][a-z0-9\-_]{0,30}$/;
 const SUPPORTED_PRIMITIVE_TYPES = ["rect", "text", "progress", "gif", "sprite", "pixels"] as const;
 const HISTORY_LIMIT = 60;
 const SAVED_THEMES_STORAGE_KEY = "codexbar.themeStudio.savedThemes.v1";
@@ -82,6 +83,7 @@ type BindingKey =
   | "reset"
   | "resetCountdown"
   | "usageMode"
+  | "activity"
   | "time"
   | "date"
   | "sessionTokens"
@@ -103,6 +105,7 @@ interface Primitive {
   borderColor?: string;
   rotation?: number;
   assetPath?: string;
+  stateAssets?: Record<string, string>;
   frameCount?: number;
   fps?: number;
   sheetColumns?: number;
@@ -140,6 +143,7 @@ interface FrameData {
   reset: string;
   resetSecs: number;
   usageMode: string;
+  activity: string;
   time: string;
   date: string;
   sessionTokens: number;
@@ -209,6 +213,7 @@ const frame: FrameData = {
   reset: "89h 54m",
   resetSecs: 323640,
   usageMode: "remaining",
+  activity: "idle",
   time: previewTime(new Date()),
   date: previewDate(new Date()),
   sessionTokens: 12840,
@@ -230,6 +235,7 @@ const variableTokens = [
   { label: "Weekly", token: "{weekly}%", preview: `${frame.weekly}%` },
   { label: "Reset", token: "{reset}", preview: frame.reset },
   { label: "Mode", token: "{usageMode}", preview: frame.usageMode },
+  { label: "Activity", token: "{activity}", preview: frame.activity },
   { label: "Time", token: "{time}", preview: frame.time },
   { label: "Date", token: "{date}", preview: frame.date },
   { label: "Session tokens", token: "{sessionTokens}", preview: String(frame.sessionTokens) },
@@ -248,6 +254,8 @@ const COZY_TREE_SPRITE_PATH = "/themes/u/tree.cbi";
 const COZY_FLOWERS_SPRITE_PATH = "/themes/u/flowers.cbi";
 const COZY_BIRDS_SPRITE_PATH = "/themes/u/birds.cba";
 const COZY_BUTTERFLY_SPRITE_PATH = "/themes/u/butter.cba";
+const CLAUDE_IDLE_SPRITE_PATH = "/themes/u/cld-i.cba";
+const CLAUDE_CODING_SPRITE_PATH = "/themes/u/cld-c.cba";
 const DEFAULT_CLOUD_SPRITE = `CBI1
 24 14
 3
@@ -469,6 +477,214 @@ const COZY_BUTTERFLY_SPRITE = `CBA1
 3.2c2a2b5.
 14.
 `;
+const CLAUDE_IDLE_SPRITE = `CBA1
+24 24 4 4
+4
+#FF8F6F
+#D45F4C
+#FFD1C2
+#070504
+24.
+24.
+24.
+24.
+12.b11.
+11.2a11.
+10.a2.a10.
+7.10a7.
+7.a8ba7.
+6.b10ab6.
+6.12a6.
+4.5ad5ad4a4.
+4.16a4.
+4.16a4.
+4.8a2b6a4.
+4.16a4.
+4.16a4.
+7.10a7.
+7.10a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+24.
+24.
+24.
+24.
+24.
+12.b11.
+11.2a11.
+10.a2.a10.
+7.10a7.
+7.a8ba7.
+6.b10ab6.
+6.12a6.
+4.5ad5ad4a4.
+4.16a4.
+4.16a4.
+4.8a2b6a4.
+4.16a4.
+4.16a4.
+7.10a7.
+7.10a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+24.
+24.
+24.
+24.
+24.
+24.
+24.
+12.b11.
+11.2a11.
+10.a2.a10.
+7.10a7.
+7.a8ba7.
+6.b10ab6.
+6.12a6.
+4.5ab5ab4a4.
+4.16a4.
+4.16a4.
+4.8a2b6a4.
+4.16a4.
+4.16a4.
+7.10a7.
+7.10a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+24.
+24.
+24.
+24.
+24.
+24.
+24.
+12.b11.
+11.2a11.
+10.a2.a10.
+7.10a7.
+7.a8ba7.
+6.b10ab6.
+6.12a6.
+4.5ad5ad4a4.
+4.16a4.
+4.16a4.
+4.8a2b6a4.
+4.16a4.
+4.16a4.
+7.10a7.
+7.10a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+24.
+`;
+const CLAUDE_CODING_SPRITE = `CBA1
+24 24 4 4
+4
+#FF8F6F
+#D45F4C
+#FFD1C2
+#070504
+24.
+24.
+24.
+24.
+12.b11.
+11.2a11.
+10.a2.a6.c3.
+3.c3.10a4.c2.
+7.a8ba7.
+3.a2.b10ab6.
+4.14a6.
+4.5ad5ad2a6.
+4.16a4.
+4.16a4.
+4.8a2b6a4.
+6.14a4.
+6.14a4.
+7.10a3.a3.
+7.10a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+24.
+24.
+24.
+24.
+24.
+24.
+12.b11.
+11.2a7.c3.
+10.a2.a10.
+7.10a7.
+2.c4.a8ba4.c2.
+6.b10ab2.a3.
+6.14a4.
+6.3ad5ad4a4.
+4.16a4.
+4.16a4.
+4.8a2b6a4.
+4.14a6.
+4.14a6.
+3.a3.10a7.
+7.10a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+24.
+24.
+24.
+24.
+24.
+12.b11.
+11.2a11.
+3.c6.a2.a8.c.
+7.10a3.c3.
+7.a8ba7.
+3.a2.b10ab6.
+4.14a6.
+4.5ad5ad2a6.
+4.16a4.
+4.16a4.
+4.8a2b6a4.
+6.14a4.
+6.14a4.
+7.10a3.a3.
+7.10a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+24.
+24.
+24.
+24.
+24.
+24.
+24.
+12.b11.
+11.2a8.c2.
+10.a2.a10.
+2.c4.10a7.
+7.a8ba7.
+3.c2.b10ab2.a3.
+6.14a4.
+6.3ab5ab4a4.
+4.16a4.
+4.16a4.
+4.8a2b6a4.
+4.14a6.
+4.14a6.
+3.a3.10a7.
+7.10a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+7.2a2.2a2.2a7.
+24.
+24.
+`;
 const DEFAULT_CLOUD_PIXEL_PALETTE = ["#FFFFFF", "#9DE7F7", "#C7FF68"];
 const DEFAULT_CLOUD_PIXEL_ROWS = [
   "5.4a7.",
@@ -599,6 +815,41 @@ const COZY_MEADOW_SPEC: ThemeSpec = {
     { type: "text", x: 154, y: 173, text: "left", fontSize: 2, color: "#E8FFD9" },
     { type: "progress", x: 13, y: 205, width: 154, height: 13, binding: "session", color: "#FFF4B8", bgColor: "#2F7444", borderColor: "#123522" },
     { type: "text", x: 13, y: 222, text: "Reset {reset}", fontSize: 1, color: "#E8FFD9" },
+  ],
+};
+const CLAUDE_CREATURE_SPEC: ThemeSpec = {
+  themeSpecVersion: 1,
+  themeId: "claude-creature",
+  themeRev: FIXED_THEME_REV,
+  fallbackTheme: FIXED_FALLBACK_THEME,
+  bgColor: "#050403",
+  primitives: [
+    { type: "text", x: 9, y: 8, text: "Claude Usage", fontSize: 2, color: "#FF9B7B" },
+    { type: "text", x: 207, y: 8, text: "AI", fontSize: 2, color: "#FF9B7B" },
+    { type: "text", x: 9, y: 34, text: "Session", fontSize: 2, color: "#FFB19B" },
+    { type: "text", x: 9, y: 56, text: "{session}%", fontSize: 5, color: "#FF8F6F" },
+    { type: "text", x: 10, y: 95, text: "remaining", fontSize: 1, color: "#FFB19B" },
+    { type: "text", x: 134, y: 34, text: "Weekly", fontSize: 2, color: "#FFB19B" },
+    { type: "text", x: 132, y: 56, text: "{weekly}%", fontSize: 5, color: "#FF8F6F" },
+    { type: "text", x: 136, y: 95, text: "remaining", fontSize: 1, color: "#FFB19B" },
+    {
+      type: "sprite",
+      x: 88,
+      y: 128,
+      width: 64,
+      height: 64,
+      bgColor: "#050403",
+      assetPath: CLAUDE_IDLE_SPRITE_PATH,
+      frameCount: 4,
+      fps: 4,
+      sheetColumns: 4,
+      stateAssets: {
+        idle: CLAUDE_IDLE_SPRITE_PATH,
+        coding: CLAUDE_CODING_SPRITE_PATH,
+      },
+    },
+    { type: "rect", x: 10, y: 218, width: 220, height: 1, color: "#B95D4F" },
+    { type: "text", x: 26, y: 224, text: "* Resets in {reset}", fontSize: 1, color: "#FF9B7B" },
   ],
 };
 const GLCD_FONT_FIRST_CHAR = 32;
@@ -939,6 +1190,23 @@ function validateThemeAssetPath(primitive: Primitive, prefix: string, errors: st
   }
 }
 
+function validateThemeAssetPaths(primitive: Primitive, prefix: string, errors: string[]) {
+  const paths = stateAssetPathsForPrimitive(primitive);
+  if (paths.length === 0) {
+    errors.push(`${prefix}: assetPath oder stateAssets ist erforderlich.`);
+    return;
+  }
+  for (const [stateName, assetPath] of Object.entries(primitive.stateAssets ?? {})) {
+    if (!STATE_NAME_RE.test(stateName)) {
+      errors.push(`${prefix}: stateAssets.${stateName} muss klein geschrieben sein und darf nur a-z, 0-9, _ oder - enthalten.`);
+    }
+    validateThemeAssetPath({ ...primitive, assetPath }, `${prefix} ${stateName}`, errors);
+  }
+  if (primitive.assetPath) {
+    validateThemeAssetPath(primitive, prefix, errors);
+  }
+}
+
 function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -999,10 +1267,10 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
       if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
         errors.push(`${prefix}: width/height müssen größer als 0 sein.`);
       }
-      validateThemeAssetPath(primitive, prefix, errors);
+      validateThemeAssetPaths(primitive, prefix, errors);
     }
     if (primitive.type === "sprite") {
-      validateThemeAssetPath(primitive, prefix, errors);
+      validateThemeAssetPaths(primitive, prefix, errors);
       if (primitive.width !== undefined && (!isPositiveInteger(primitive.width) || primitive.width > DISPLAY_SIZE)) {
         errors.push(`${prefix}: Sprite width muss 1-${DISPLAY_SIZE} sein.`);
       }
@@ -1015,7 +1283,7 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
       if (!Number.isInteger(primitive.fps ?? DEFAULT_SPRITE_FPS) || (primitive.fps ?? DEFAULT_SPRITE_FPS) < 0 || (primitive.fps ?? DEFAULT_SPRITE_FPS) > 30) {
         errors.push(`${prefix}: Sprite FPS muss 0-30 sein.`);
       }
-      const source = spriteAssetFor(primitive.assetPath);
+      const source = spriteAssetFor(resolveStateAssetPath(primitive));
       const width = source?.width ?? primitive.width ?? estimatePrimitiveWidth(primitive);
       const height = source?.height ?? primitive.height ?? estimatePrimitiveHeight(primitive);
       const frames = primitive.frameCount ?? 1;
@@ -1082,7 +1350,7 @@ function estimateRenderBudget(spec: ThemeSpec): { initialPixels: number; animate
       initialPixels += area;
     }
     if (primitive.type === "sprite") {
-      const source = spriteAssetFor(primitive.assetPath);
+      const source = spriteAssetFor(resolveStateAssetPath(primitive));
       const frameCount = source?.frameCount ?? primitive.frameCount ?? 1;
       const fps = source?.fps ?? primitive.fps ?? DEFAULT_SPRITE_FPS;
       if (frameCount > 1 && fps > 0) {
@@ -1172,7 +1440,7 @@ function canSelectText(element: HTMLInputElement | HTMLTextAreaElement | HTMLSel
 }
 
 function focusSelectorFor(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string | null {
-  for (const attribute of ["data-primitive-field", "data-canvas-field", "data-field", "data-role", "data-inline-text"]) {
+  for (const attribute of ["data-primitive-field", "data-primitive-state", "data-canvas-field", "data-field", "data-role", "data-inline-text"]) {
     const value = element.getAttribute(attribute);
     if (value !== null) {
       return `[${attribute}="${escapeCssAttribute(value)}"]`;
@@ -1223,8 +1491,9 @@ function render() {
             <button data-action="undo" ${state.undoStack.length === 0 ? "disabled" : ""}>Undo</button>
             <button data-action="redo" ${state.redoStack.length === 0 ? "disabled" : ""}>Redo</button>
           </div>
-          <button class="full-width" data-action="save-local">Save Local</button>
+      <button class="full-width" data-action="save-local">Save Local</button>
           ${savedThemeList()}
+          <button class="full-width preset-button" data-action="load-claude-creature">Claude Creature</button>
           <button class="full-width preset-button" data-action="load-cozy-meadow">Cozy Meadow</button>
           <div class="divider"></div>
           ${addElementPalette()}
@@ -1451,16 +1720,22 @@ function inspectorFields(primitive: Primitive): string {
   }
 
   if (primitive.type === "sprite") {
+    const activeSprite = spriteAssetFor(resolveStateAssetPath(primitive));
+    const stateAssetRows = primitive.stateAssets ? `
+      <label>Idle asset<input data-primitive-state="idle" value="${escapeAttr(primitive.stateAssets.idle ?? "")}" /></label>
+      <label>Coding asset<input data-primitive-state="coding" value="${escapeAttr(primitive.stateAssets.coding ?? "")}" /></label>
+    ` : "";
     return `
       ${common}
       <label>Asset<input data-primitive-field="assetPath" value="${escapeAttr(primitive.assetPath ?? "")}" /></label>
+      ${stateAssetRows}
       <div class="field-grid">
         <label>Width<input type="number" min="1" max="${MAX_SPRITE_FRAME_WIDTH}" step="1" data-primitive-field="width" value="${primitive.width ?? estimatePrimitiveWidth(primitive)}" /></label>
         <label>Height<input type="number" min="1" max="${MAX_SPRITE_FRAME_HEIGHT}" step="1" data-primitive-field="height" value="${primitive.height ?? estimatePrimitiveHeight(primitive)}" /></label>
       </div>
       <div class="field-grid">
-        <label>Frames<input type="number" min="1" max="${MAX_SPRITE_FRAMES}" step="1" data-primitive-field="frameCount" value="${primitive.frameCount ?? spriteAssetFor(primitive.assetPath)?.frameCount ?? 1}" /></label>
-        <label>FPS<input type="number" min="0" max="30" step="1" data-primitive-field="fps" value="${primitive.fps ?? spriteAssetFor(primitive.assetPath)?.fps ?? DEFAULT_SPRITE_FPS}" /></label>
+        <label>Frames<input type="number" min="1" max="${MAX_SPRITE_FRAMES}" step="1" data-primitive-field="frameCount" value="${primitive.frameCount ?? activeSprite?.frameCount ?? 1}" /></label>
+        <label>FPS<input type="number" min="0" max="30" step="1" data-primitive-field="fps" value="${primitive.fps ?? activeSprite?.fps ?? DEFAULT_SPRITE_FPS}" /></label>
       </div>
       ${optionalColorField("Clear", "bgColor", primitive.bgColor)}
       <label>Columns<input type="number" min="1" max="${MAX_SPRITE_FRAMES}" step="1" data-primitive-field="sheetColumns" value="${primitive.sheetColumns ?? inferredSpriteColumns(primitive)}" /></label>
@@ -1597,6 +1872,12 @@ function renderPreview(): string {
       <canvas class="device-canvas" data-role="device-canvas" width="${DISPLAY_SIZE}" height="${DISPLAY_SIZE}"></canvas>
       <div class="konva-overlay" data-role="konva-stage"></div>
     </div>
+    ${themeUsesStateAssets() ? `
+      <div class="activity-toggle" role="group" aria-label="Activity preview">
+        <button class="${frame.activity === "idle" ? "active" : ""}" data-preview-activity="idle">Idle</button>
+        <button class="${frame.activity === "coding" ? "active" : ""}" data-preview-activity="coding">Coding</button>
+      </div>
+    ` : ""}
   `;
 }
 
@@ -1776,7 +2057,7 @@ function renderDeviceCanvas(canvas: HTMLCanvasElement): boolean {
 }
 
 function drawDeviceSprite(context: CanvasRenderingContext2D, primitive: Primitive): boolean {
-  const sprite = spriteAssetFor(primitive.assetPath);
+  const sprite = spriteAssetFor(resolveStateAssetPath(primitive));
   const width = primitive.width ?? sprite?.width ?? 24;
   const height = primitive.height ?? sprite?.height ?? 14;
   if (!sprite) {
@@ -1811,7 +2092,8 @@ function drawDeviceProgress(context: CanvasRenderingContext2D, primitive: Primit
 function drawDeviceGif(context: CanvasRenderingContext2D, primitive: Primitive): boolean {
   const width = primitive.width ?? DEFAULT_GIF_SIZE;
   const height = primitive.height ?? DEFAULT_GIF_SIZE;
-  const preview = primitive.assetPath ? gifPreviewFor(primitive.assetPath, gifPreviewGeneration) : null;
+  const assetPath = resolveStateAssetPath(primitive);
+  const preview = assetPath ? gifPreviewFor(assetPath, gifPreviewGeneration) : null;
   if (!preview) {
     context.fillStyle = "#141922";
     context.fillRect(primitive.x, primitive.y, width, height);
@@ -2009,7 +2291,8 @@ function gifKonvaGroup(primitive: Primitive, index: number): { node: Konva.Group
     width,
     height,
   });
-  const preview = primitive.assetPath ? gifPreviewFor(primitive.assetPath, gifPreviewGeneration) : null;
+  const assetPath = resolveStateAssetPath(primitive);
+  const preview = assetPath ? gifPreviewFor(assetPath, gifPreviewGeneration) : null;
   if (preview) {
     const rect = fitContainRect(0, 0, width, height, gifAspectRatio(primitive));
     group.add(new Konva.Rect({
@@ -2247,7 +2530,8 @@ function renderPrimitive(primitive: Primitive, index: number): string {
   if (primitive.type === "gif") {
     const width = primitive.width ?? 64;
     const height = primitive.height ?? 64;
-    const previewUrl = primitive.assetPath ? state.gifAssets[primitive.assetPath]?.previewUrl ?? builtInGifPreviewUrl(primitive.assetPath) : undefined;
+    const assetPath = resolveStateAssetPath(primitive);
+    const previewUrl = assetPath ? state.gifAssets[assetPath]?.previewUrl ?? builtInGifPreviewUrl(assetPath) : undefined;
     const placeholder = `
       <rect x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}" fill="#141922" stroke="#c7ff68" stroke-width="1" stroke-dasharray="4 3"></rect>
       <text x="${primitive.x + width / 2}" y="${primitive.y + height / 2 + 4}" text-anchor="middle" font-size="12" fill="#c7ff68" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-weight="800">GIF</text>
@@ -2261,7 +2545,7 @@ function renderPrimitive(primitive: Primitive, index: number): string {
     `;
   }
   if (primitive.type === "sprite") {
-    const sprite = spriteAssetFor(primitive.assetPath);
+    const sprite = spriteAssetFor(resolveStateAssetPath(primitive));
     const width = primitive.width ?? sprite?.width ?? 24;
     const height = primitive.height ?? sprite?.height ?? 14;
     const frame = sprite?.frames[currentSpriteFrameIndex(sprite)];
@@ -2424,7 +2708,7 @@ function estimatePrimitiveWidth(primitive: Primitive): number {
     return Math.max(1, firmwareTextWidth(text, primitive.font, primitive.fontSize));
   }
   if (primitive.type === "sprite") {
-    return primitive.width ?? spriteDimensions(primitive.assetPath).width;
+    return primitive.width ?? spriteDimensions(resolveStateAssetPath(primitive)).width;
   }
   return primitive.width ?? 1;
 }
@@ -2434,7 +2718,7 @@ function estimatePrimitiveHeight(primitive: Primitive): number {
     return Math.max(8, textPixelSize(primitive));
   }
   if (primitive.type === "sprite") {
-    return primitive.height ?? spriteDimensions(primitive.assetPath).height;
+    return primitive.height ?? spriteDimensions(resolveStateAssetPath(primitive)).height;
   }
   return primitive.height ?? 1;
 }
@@ -2810,6 +3094,7 @@ function bindingValue(key: string): string {
     reset: frame.reset,
     resetCountdown: frame.reset,
     usageMode: frame.usageMode,
+    activity: frame.activity,
     time: frame.time,
     date: frame.date,
     sessionTokens: String(frame.sessionTokens),
@@ -2858,7 +3143,34 @@ function builtInSpriteText(assetPath: string | undefined): string | undefined {
   if (assetPath === COZY_BUTTERFLY_SPRITE_PATH) {
     return COZY_BUTTERFLY_SPRITE;
   }
+  if (assetPath === CLAUDE_IDLE_SPRITE_PATH) {
+    return CLAUDE_IDLE_SPRITE;
+  }
+  if (assetPath === CLAUDE_CODING_SPRITE_PATH) {
+    return CLAUDE_CODING_SPRITE;
+  }
   return undefined;
+}
+
+function stateAssetPathsForPrimitive(primitive: Primitive): string[] {
+  const paths = new Set<string>();
+  if (primitive.assetPath) {
+    paths.add(primitive.assetPath);
+  }
+  for (const assetPath of Object.values(primitive.stateAssets ?? {})) {
+    if (assetPath) {
+      paths.add(assetPath);
+    }
+  }
+  return Array.from(paths);
+}
+
+function resolveStateAssetPath(primitive: Primitive, activity: string = frame.activity): string | undefined {
+  const stateAssets = primitive.stateAssets;
+  if (stateAssets) {
+    return stateAssets[activity] ?? stateAssets.idle ?? primitive.assetPath;
+  }
+  return primitive.assetPath;
 }
 
 function spriteAssetFor(assetPath: string | undefined): SpriteAsset | null {
@@ -2960,7 +3272,8 @@ function drawSpriteFrame(context: CanvasRenderingContext2D, sprite: SpriteAsset,
 }
 
 function inferredSpriteColumns(primitive: Primitive): number {
-  const source = primitive.assetPath ? state.spriteAssets[primitive.assetPath]?.source : undefined;
+  const assetPath = resolveStateAssetPath(primitive);
+  const source = assetPath ? state.spriteAssets[assetPath]?.source : undefined;
   const width = primitive.width ?? estimatePrimitiveWidth(primitive);
   if (!source || width <= 0) {
     return Math.max(1, primitive.sheetColumns ?? primitive.frameCount ?? 1);
@@ -3128,6 +3441,13 @@ function bindEvents() {
     });
   });
 
+  app.querySelectorAll<HTMLButtonElement>("[data-preview-activity]").forEach((button) => {
+    button.addEventListener("click", () => {
+      frame.activity = button.dataset.previewActivity ?? "idle";
+      render();
+    });
+  });
+
   app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-field]").forEach((input) => {
     input.addEventListener("input", () => {
       const key = input.dataset.field;
@@ -3165,6 +3485,29 @@ function bindEvents() {
       }
       pushHistory();
       updateSelectedPrimitive(input.dataset.primitiveField ?? "", input.value);
+      syncJsonFromSpec();
+      render();
+    });
+  });
+
+  app.querySelectorAll<HTMLInputElement>("[data-primitive-state]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const primitive = selectedPrimitive();
+      if (!primitive) {
+        return;
+      }
+      pushHistory();
+      const stateName = input.dataset.primitiveState ?? "";
+      primitive.stateAssets = primitive.stateAssets ?? {};
+      const value = input.value.trim();
+      if (value) {
+        primitive.stateAssets[stateName] = value;
+      } else {
+        delete primitive.stateAssets[stateName];
+      }
+      if (Object.keys(primitive.stateAssets).length === 0) {
+        delete primitive.stateAssets;
+      }
       syncJsonFromSpec();
       render();
     });
@@ -3650,7 +3993,7 @@ function updateSelectedPrimitive(key: string, value: string) {
   if (key === "assetPath") {
     primitive.assetPath = value.trim();
     if (primitive.type === "sprite") {
-      const sprite = spriteAssetFor(primitive.assetPath);
+      const sprite = spriteAssetFor(resolveStateAssetPath(primitive));
       if (sprite) {
         primitive.width = sprite.width;
         primitive.height = sprite.height;
@@ -3722,6 +4065,16 @@ async function handleAction(action: string) {
     state.selectedIndex = state.spec.primitives.findIndex((primitive) => primitive.type === "sprite");
     state.editingTextIndex = null;
     state.notice = "Cozy Meadow loaded.";
+    syncJsonFromSpec();
+    render();
+    return;
+  }
+  if (action === "load-claude-creature") {
+    pushHistory();
+    state.spec = cloneSpec(CLAUDE_CREATURE_SPEC);
+    state.selectedIndex = state.spec.primitives.findIndex((primitive) => primitive.type === "sprite");
+    state.editingTextIndex = null;
+    state.notice = "Claude Creature loaded.";
     syncJsonFromSpec();
     render();
     return;
@@ -4008,6 +4361,10 @@ function importPrimitive(value: unknown): Primitive {
   primitive.bgColor = stringValue(value.bgColor) ?? stringValue(value.bg);
   primitive.borderColor = stringValue(value.borderColor) ?? stringValue(value.bc);
   primitive.assetPath = stringValue(value.assetPath) ?? stringValue(value.a);
+  const stateAssets = stateAssetsValue(value.stateAssets) ?? stateAssetsValue(value.sa);
+  if (stateAssets) {
+    primitive.stateAssets = stateAssets;
+  }
   const frameCount = numberValue(value.frameCount);
   if (frameCount !== undefined) {
     primitive.frameCount = frameCount;
@@ -4053,6 +4410,7 @@ function expandBinding(value: string): BindingKey | string {
     w: "weekly",
     r: "reset",
     u: "usageMode",
+    act: "activity",
     st: "sessionTokens",
     wt: "weekTokens",
     tt: "totalTokens",
@@ -4078,6 +4436,19 @@ function arrayValue(value: unknown): unknown[] | undefined {
 
 function stringArrayValue(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined;
+}
+
+function stateAssetsValue(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const result: Record<string, string> = {};
+  for (const [stateName, assetPath] of Object.entries(value)) {
+    if (typeof assetPath === "string") {
+      result[stateName] = assetPath;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function startDrag(event: PointerEvent) {
@@ -4691,8 +5062,10 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 1500
 function uniqueAssetPaths(type: "gif" | "sprite", spec: ThemeSpec = state.spec): string[] {
   const paths = new Set<string>();
   for (const primitive of spec.primitives) {
-    if (primitive.type === type && primitive.assetPath) {
-      paths.add(primitive.assetPath);
+    if (primitive.type === type) {
+      for (const assetPath of stateAssetPathsForPrimitive(primitive)) {
+        paths.add(assetPath);
+      }
     }
   }
   return Array.from(paths);
@@ -4700,6 +5073,10 @@ function uniqueAssetPaths(type: "gif" | "sprite", spec: ThemeSpec = state.spec):
 
 function uniqueGifAssetPaths(): string[] {
   return uniqueAssetPaths("gif");
+}
+
+function themeUsesStateAssets(spec: ThemeSpec = state.spec): boolean {
+  return spec.primitives.some((primitive) => primitive.stateAssets && Object.keys(primitive.stateAssets).length > 0);
 }
 
 function builtInAssetFile(path: string, content: BlobPart, type: string, fallbackName: string): File {
@@ -4802,13 +5179,16 @@ function buildLiveFramePayload(spec: ThemeSpec = state.spec) {
     date: frame.date,
   };
   const bindings = usedThemeBindings(spec);
-  if (bindings.has("sessionTokens")) {
+  if (themeUsesStateAssets(spec)) {
+    payload.activity = frame.activity;
+  }
+  if (bindings.has("sessionTokens") || themeUsesStateAssets(spec)) {
     payload.sessionTokens = frame.sessionTokens;
   }
-  if (bindings.has("weekTokens")) {
+  if (bindings.has("weekTokens") || themeUsesStateAssets(spec)) {
     payload.weekTokens = frame.weekTokens;
   }
-  if (bindings.has("totalTokens")) {
+  if (bindings.has("totalTokens") || themeUsesStateAssets(spec)) {
     payload.totalTokens = frame.totalTokens;
   }
   return payload;
@@ -4873,6 +5253,9 @@ function buildDevicePrimitive(primitive: Primitive): Record<string, unknown> {
   if (primitive.assetPath !== undefined) {
     compact.a = primitive.assetPath;
   }
+  if (primitive.stateAssets !== undefined) {
+    compact.sa = primitive.stateAssets;
+  }
   if (primitive.data !== undefined) {
     compact.d = primitive.data;
   }
@@ -4908,6 +5291,7 @@ function compactBinding(binding: BindingKey): string {
     reset: "r",
     resetCountdown: "r",
     usageMode: "u",
+    activity: "act",
     time: "tm",
     date: "dt",
     sessionTokens: "st",

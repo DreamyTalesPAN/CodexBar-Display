@@ -26,6 +26,7 @@ struct Frame {
   int64_t totalTokens = 0;
   bool hasUsageMode = false;
   String usageMode;
+  String activity;
   String timeText;
   String dateText;
   bool hasTheme = false;
@@ -101,6 +102,32 @@ inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long now
     return 0;
   }
   return remain;
+}
+
+inline bool IsSafeActivityName(const String& value) {
+  const size_t len = value.length();
+  if (len == 0 || len > 31) {
+    return false;
+  }
+  for (size_t i = 0; i < len; ++i) {
+    const char c = value[i];
+    const bool valid = (c >= 'a' && c <= 'z') ||
+                       (c >= '0' && c <= '9') ||
+                       c == '_' ||
+                       c == '-';
+    if (!valid) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline bool UsageProgressChanged(const Frame& previous, const Frame& next) {
+  return previous.session != next.session ||
+         previous.weekly != next.weekly ||
+         previous.sessionTokens != next.sessionTokens ||
+         previous.weekTokens != next.weekTokens ||
+         previous.totalTokens != next.totalTokens;
 }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -246,6 +273,16 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     }
   }
 
+  String activity;
+  if (doc["activity"].is<const char*>()) {
+    activity = String(doc["activity"].as<const char*>());
+    activity.trim();
+    activity.toLowerCase();
+    if (!IsSafeActivityName(activity)) {
+      activity = "";
+    }
+  }
+
   bool hasUpdateAvailable = false;
   bool updateAvailable = false;
   String updateLatestVersion;
@@ -269,6 +306,7 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     out = {};
     out.hasUsageMode = hasUsageMode;
     out.usageMode = usageMode;
+    out.activity = activity;
     out.timeText = String(doc["time"] | "");
     out.dateText = String(doc["date"] | "");
     out.hasTheme = hasTheme;
@@ -303,6 +341,7 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | 0));
   out.hasUsageMode = hasUsageMode;
   out.usageMode = usageMode;
+  out.activity = activity;
   out.hasTheme = hasTheme;
   out.theme = themeName;
   out.clearThemeSpec = clearThemeSpec;
@@ -338,6 +377,7 @@ inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
          previous.totalTokens != next.totalTokens ||
          previous.hasUsageMode != next.hasUsageMode ||
          previous.usageMode != next.usageMode ||
+         previous.activity != next.activity ||
          previous.timeText != next.timeText ||
          previous.dateText != next.dateText ||
          previous.clearThemeSpec != next.clearThemeSpec ||
@@ -441,6 +481,9 @@ inline bool ConsumeFrameLine(
 
   const Frame previous = runtimeState.current;
   ApplyThemeSpecCache(runtimeState, previous, next, outEvent);
+  if (!next.hasError && next.activity.length() == 0) {
+    next.activity = runtimeState.hasFrame && UsageProgressChanged(previous, next) ? "coding" : "idle";
+  }
 
   outEvent.hadFrame = runtimeState.hasFrame;
   outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChanged(previous, next) || outEvent.themeSpecChanged;

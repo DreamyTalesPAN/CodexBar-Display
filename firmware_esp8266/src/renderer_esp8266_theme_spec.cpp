@@ -354,6 +354,7 @@ themespec::FrameData currentThemeSpecFrameData() {
   frame.weekly = CurrentFrame().weekly;
   frame.resetSecs = CurrentRemainingSecs();
   frame.usageMode = usageModeText();
+  frame.activity = CurrentFrame().activity.c_str();
   frame.time = CurrentFrame().timeText.c_str();
   frame.date = CurrentFrame().dateText.c_str();
   frame.sessionTokens = CurrentFrame().sessionTokens;
