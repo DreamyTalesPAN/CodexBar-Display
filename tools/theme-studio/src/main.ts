@@ -479,7 +479,7 @@ const COZY_BUTTERFLY_SPRITE = `CBA1
 `;
 // Adapted from Clawd Tank MIT-licensed sprite animations; see THIRD_PARTY_NOTICES.md.
 const CLAUDE_IDLE_SPRITE = `CBA1
-52 52 12 4
+52 52 12 3
 25
 #D68263
 #D68273
@@ -1131,7 +1131,7 @@ x6b4.31b4.6b
 52.
 52.`;
 const CLAUDE_CODING_SPRITE = `CBA1
-52 52 12 4
+52 52 12 3
 25
 #D68263
 #739294
@@ -1919,34 +1919,33 @@ const CLAUDE_CREATURE_SPEC: ThemeSpec = {
   themeId: "claude-creature",
   themeRev: FIXED_THEME_REV,
   fallbackTheme: FIXED_FALLBACK_THEME,
-  bgColor: "#050403",
+  bgColor: "#000000",
   primitives: [
-    { type: "text", x: 9, y: 8, text: "Claude Usage", fontSize: 2, color: "#FF9B7B" },
-    { type: "text", x: 207, y: 8, text: "AI", fontSize: 2, color: "#FF9B7B" },
-    { type: "text", x: 9, y: 34, text: "Session", fontSize: 2, color: "#FFB19B" },
-    { type: "text", x: 9, y: 56, text: "{session}%", fontSize: 5, color: "#FF8F6F" },
-    { type: "text", x: 10, y: 95, text: "remaining", fontSize: 1, color: "#FFB19B" },
-    { type: "text", x: 134, y: 34, text: "Weekly", fontSize: 2, color: "#FFB19B" },
-    { type: "text", x: 132, y: 56, text: "{weekly}%", fontSize: 5, color: "#FF8F6F" },
-    { type: "text", x: 136, y: 95, text: "remaining", fontSize: 1, color: "#FFB19B" },
+    { type: "text", x: 9, y: 8, text: "{label} Usage", font: 2, fontSize: 1, color: "#FF9B7B" },
+    { type: "text", x: 9, y: 42, text: "Session", font: 2, fontSize: 1, color: "#FFB19B" },
+    { type: "text", x: 9, y: 62, text: "{session}%", font: 2, fontSize: 3, color: "#FF8F6F" },
+    { type: "text", x: 10, y: 105, text: "remaining", font: 2, fontSize: 1, color: "#FFB19B" },
+    { type: "text", x: 134, y: 42, text: "Weekly", font: 2, fontSize: 1, color: "#FFB19B" },
+    { type: "text", x: 132, y: 62, text: "{weekly}%", font: 2, fontSize: 3, color: "#FF8F6F" },
+    { type: "text", x: 136, y: 105, text: "remaining", font: 2, fontSize: 1, color: "#FFB19B" },
     {
       type: "sprite",
-      x: 88,
-      y: 128,
-      width: 64,
-      height: 64,
-      bgColor: "#050403",
+      x: 82,
+      y: 126,
+      width: 77,
+      height: 77,
+      bgColor: "#000000",
       assetPath: CLAUDE_IDLE_SPRITE_PATH,
       frameCount: 12,
-      fps: 4,
+      fps: 3,
       sheetColumns: 4,
       stateAssets: {
         idle: CLAUDE_IDLE_SPRITE_PATH,
         coding: CLAUDE_CODING_SPRITE_PATH,
       },
     },
-    { type: "rect", x: 10, y: 218, width: 220, height: 1, color: "#B95D4F" },
-    { type: "text", x: 26, y: 224, text: "* Resets in {reset}", fontSize: 1, color: "#FF9B7B" },
+    { type: "rect", x: 10, y: 216, width: 220, height: 1, color: "#B95D4F" },
+    { type: "text", x: 34, y: 221, text: "* Resets in {reset}", font: 2, fontSize: 1, color: "#FF9B7B" },
   ],
 };
 const GLCD_FONT_FIRST_CHAR = 32;
@@ -3840,10 +3839,10 @@ function firmwareTextWidth(text: string, fontValue: number | undefined, fontSize
   const size = Math.max(1, fontSizeValue ?? 1);
   const font = fontValue ?? 1;
   if (font === 2) {
-    return text.length * 8 * size;
+    return text.length * 10 * size;
   }
   if (font === 4) {
-    return text.length * 15 * size;
+    return text.length * 18 * size;
   }
   return text.length * GLCD_FONT_ADVANCE * size;
 }
