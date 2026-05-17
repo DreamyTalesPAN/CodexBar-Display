@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -75,6 +77,68 @@ func (t WiFiTransport) SendLine(target string, line []byte) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("post frame: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []byte) error {
+	base, err := normalizeWiFiTarget(target)
+	if err != nil {
+		return err
+	}
+	devicePath = strings.TrimSpace(devicePath)
+	if devicePath == "" {
+		return fmt.Errorf("asset path required")
+	}
+	if strings.TrimSpace(filename) == "" {
+		filename = filepath.Base(devicePath)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("asset", filename)
+	if err != nil {
+		return fmt.Errorf("create asset multipart form: %w", err)
+	}
+	if _, err := part.Write(data); err != nil {
+		return fmt.Errorf("write asset multipart form: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("close asset multipart form: %w", err)
+	}
+
+	endpoint := base + "/assets?path=" + url.QueryEscape(devicePath)
+	resp, err := t.client.Post(endpoint, writer.FormDataContentType(), &body)
+	if err != nil {
+		return fmt.Errorf("post asset %s: %w", devicePath, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("post asset %s: status=%d body=%q", devicePath, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func (t WiFiTransport) ActivateStoredTheme(target, devicePath string) error {
+	base, err := normalizeWiFiTarget(target)
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(struct {
+		Path string `json:"path"`
+	}{Path: strings.TrimSpace(devicePath)})
+	if err != nil {
+		return fmt.Errorf("marshal theme activation: %w", err)
+	}
+	resp, err := t.client.Post(base+"/theme/active", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("post theme activation: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("post theme activation: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themespec"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -55,6 +56,8 @@ func main() {
 		err = runThemeValidate(os.Args[2:])
 	case "theme-apply":
 		err = runThemeApply(os.Args[2:])
+	case "theme-pack":
+		err = runThemePack(os.Args[2:])
 	case "setup":
 		err = runSetup(os.Args[2:])
 	default:
@@ -88,6 +91,8 @@ func printUsage() {
 	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
+	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip")
+	fmt.Println("  codexbar-display theme-pack install --pack path/to/theme-pack-dir-or.zip [--target http://vibetv.local] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
@@ -475,6 +480,138 @@ func runThemeApply(args []string) error {
 		frame.V,
 		caps.Board,
 		resolvedTarget,
+	)
+	return nil
+}
+
+func runThemePack(args []string) error {
+	if len(args) == 0 {
+		return errors.New("theme-pack subcommand required: validate or install")
+	}
+	switch args[0] {
+	case "validate":
+		return runThemePackValidate(args[1:])
+	case "install":
+		return runThemePackInstall(args[1:])
+	default:
+		return fmt.Errorf("unknown theme-pack subcommand %q: expected validate or install", args[0])
+	}
+}
+
+func runThemePackValidate(args []string) error {
+	fs := flag.NewFlagSet("theme-pack validate", flag.ContinueOnError)
+	packPath := fs.String("pack", "", "path to VibeTV theme pack directory or zip")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	pack, err := themepack.Load(strings.TrimSpace(*packPath))
+	if err != nil {
+		return err
+	}
+	fmt.Printf(
+		"theme-pack valid: id=%s name=%q themeId=%s rev=%d assets=%d themeSpecBytes=%d\n",
+		pack.Manifest.ID,
+		pack.Manifest.Name,
+		pack.ThemeSpec.ThemeID,
+		pack.ThemeSpec.ThemeRev,
+		len(pack.Assets),
+		len(pack.ThemeSpecRaw),
+	)
+	return nil
+}
+
+func runThemePackInstall(args []string) error {
+	fs := flag.NewFlagSet("theme-pack install", flag.ContinueOnError)
+	packPath := fs.String("pack", "", "path to VibeTV theme pack directory or zip")
+	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
+	allowUnknown := fs.Bool(
+		"allow-unknown-capabilities",
+		false,
+		"allow local fallback profile when device capabilities are unavailable",
+	)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	pack, err := themepack.Load(strings.TrimSpace(*packPath))
+	if err != nil {
+		return err
+	}
+
+	wifi := transportlayer.NewWiFiTransportWithClient(nil)
+	resolvedTarget, err := wifi.ResolvePort(strings.TrimSpace(*target))
+	if err != nil {
+		return err
+	}
+	caps, err := wifi.DeviceCapabilities(resolvedTarget)
+	if err != nil {
+		if !*allowUnknown {
+			return err
+		}
+		caps = fallbackThemeSpecCapabilities()
+		caps.ActiveTransport = "wifi"
+		fmt.Printf("warning: device hello unavailable; using local fallback capabilities for validation on %s\n", resolvedTarget)
+	}
+	if *allowUnknown && !caps.Known {
+		caps = fallbackThemeSpecCapabilities()
+		caps.ActiveTransport = "wifi"
+		fmt.Printf("warning: capabilities unknown; using local fallback profile on %s\n", resolvedTarget)
+	}
+	if !*allowUnknown && !caps.Known {
+		return &commandError{
+			Op:   "theme-pack/capabilities",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err:  errors.New("device capabilities unavailable; connect device and retry"),
+		}
+	}
+	if err := themespec.ValidateAgainstCapabilities(pack.ThemeSpec, pack.ThemeSpecRaw, caps); err != nil {
+		return &commandError{
+			Op:   "theme-pack/capabilities",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err:  err,
+		}
+	}
+
+	for _, asset := range pack.Assets {
+		if err := wifi.UploadAsset(resolvedTarget, asset.Entry.Path, filepath.Base(asset.Entry.File), asset.Data); err != nil {
+			return err
+		}
+		fmt.Printf("uploaded asset: %s bytes=%d\n", asset.Entry.Path, len(asset.Data))
+	}
+	if err := wifi.UploadAsset(resolvedTarget, pack.ThemeSpecFile.Entry.Path, filepath.Base(pack.ThemeSpecFile.Entry.File), pack.ThemeSpecRaw); err != nil {
+		return err
+	}
+	fmt.Printf("uploaded theme spec: %s bytes=%d\n", pack.ThemeSpecFile.Entry.Path, len(pack.ThemeSpecRaw))
+
+	if err := wifi.ActivateStoredTheme(resolvedTarget, pack.ThemeSpecFile.Entry.Path); err != nil {
+		return err
+	}
+
+	frame := protocol.Frame{
+		V:         protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion),
+		Provider:  "vibetv",
+		Label:     "VibeTV",
+		Session:   50,
+		Weekly:    50,
+		ResetSec:  3600,
+		UsageMode: "remaining",
+		Time:      time.Now().Format("15:04"),
+		Date:      time.Now().Format("02.01.2006"),
+	}
+	line, err := frame.MarshalLine()
+	if err != nil {
+		return err
+	}
+	if err := wifi.SendLine(resolvedTarget, line); err != nil {
+		return err
+	}
+
+	fmt.Printf(
+		"theme-pack installed: id=%s themeId=%s rev=%d target=%s activePath=%s\n",
+		pack.Manifest.ID,
+		pack.ThemeSpec.ThemeID,
+		pack.ThemeSpec.ThemeRev,
+		resolvedTarget,
+		pack.ThemeSpecFile.Entry.Path,
 	)
 	return nil
 }

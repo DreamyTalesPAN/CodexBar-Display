@@ -74,7 +74,10 @@ func Load(path string) (Spec, json.RawMessage, error) {
 	if err != nil {
 		return Spec{}, nil, err
 	}
+	return Parse(raw)
+}
 
+func Parse(raw []byte) (Spec, json.RawMessage, error) {
 	var spec Spec
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		return Spec{}, nil, fmt.Errorf("parse theme spec: %w", err)

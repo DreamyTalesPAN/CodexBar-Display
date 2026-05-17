@@ -1,0 +1,20 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "cozy-meadow",
+  "name": "Cozy Meadow",
+  "version": "0.1.0",
+  "minFirmware": "1.0.0",
+  "themeSpec": {
+    "path": "/themes/u/cm.json",
+    "file": "theme.json",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/u/cm.cbi",
+      "file": "assets/cm.cbi",
+      "contentType": "text/plain"
+    }
+  ]
+}

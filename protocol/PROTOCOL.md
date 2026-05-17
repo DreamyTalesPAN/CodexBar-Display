@@ -91,6 +91,8 @@ When the ESP8266 is connected to WiFi, it serves:
 - `DELETE /assets?path=/themes/<short-id>/<asset>`: deletes one stored asset. Firmware rejects deletion of the currently active stored ThemeSpec.
 - `POST /theme/active`: activates a stored ThemeSpec JSON file uploaded via `/assets`. Body: `{"path":"/themes/u/<short-id>.json"}`. This loads the spec into the firmware cache, so future `/frame` requests can stay small and only include live usage values. The response and `/health` diagnostics include a content `hash` for firmware that supports stored-theme verification.
 
+Installable customer themes use VibeTV Theme Packs: a directory or `.zip` with `manifest.json`, one ThemeSpec JSON file, and optional asset files. See `docs/theme-packs.md`.
+
 HTTP responses:
 - `200 OK`: frame accepted.
 - `400 Bad Request`: empty body or invalid request shape.
