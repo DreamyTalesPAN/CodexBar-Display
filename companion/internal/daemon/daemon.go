@@ -48,7 +48,6 @@ const (
 	collectorIntervalEnvVar = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
 	activityPollEnvVar      = "CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS"
 	activityHoldEnvVar      = "CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS"
-	activityRestartEnvVar   = "CODEXBAR_DISPLAY_ACTIVITY_RESTART_CONFIRM_SECS"
 	collectorTimeoutEnvVar  = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
 	collectorOrderEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
 	providerMaxAgeEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
@@ -201,8 +200,6 @@ type runtimeState struct {
 	updateCheckedAt   time.Time
 	lastActivityAt    time.Time
 	lastCodingAt      time.Time
-	pendingCodingAt   time.Time
-	pendingCodingFor  string
 	lastActivity      string
 	lastActivityCause string
 }
@@ -785,23 +782,13 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	signalReason := decision.ActivitySignalReason
 	switch signalReason {
 	case codexbar.SelectionReasonUsageDelta:
-		if codingRestartConfirmed(state, frame.Provider, now) {
-			activity = "coding"
-			state.lastCodingAt = now
-			state.pendingCodingAt = time.Time{}
-			state.pendingCodingFor = ""
-		} else {
-			signalReason = codexbar.SelectionReason("coding-pending")
-			signalDetail = fmt.Sprintf("provider=%s window=%s detail=%s", normalizeActivityProvider(frame.Provider), activityRestartConfirmWindow(), signalDetail)
-		}
+		activity = "coding"
+		state.lastCodingAt = now
 	default:
 		if state.lastActivity == "coding" && codingHoldActive(state.lastCodingAt, now) {
 			activity = "coding"
 			signalReason = "coding-hold"
 			signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration())
-		} else if pendingCodingExpired(state, now) {
-			state.pendingCodingAt = time.Time{}
-			state.pendingCodingFor = ""
 		}
 	}
 
@@ -831,44 +818,6 @@ func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
 		return true
 	}
 	return now.Sub(lastCodingAt) <= activityHoldDuration()
-}
-
-func codingRestartConfirmed(state *runtimeState, provider string, now time.Time) bool {
-	if state == nil {
-		return false
-	}
-	if state.lastActivity == "coding" && codingHoldActive(state.lastCodingAt, now) {
-		return true
-	}
-
-	provider = normalizeActivityProvider(provider)
-	if provider == "" {
-		provider = "unknown"
-	}
-	if !state.pendingCodingAt.IsZero() &&
-		state.pendingCodingFor == provider &&
-		!now.Before(state.pendingCodingAt) &&
-		now.Sub(state.pendingCodingAt) <= activityRestartConfirmWindow() {
-		return true
-	}
-
-	state.pendingCodingAt = now
-	state.pendingCodingFor = provider
-	return false
-}
-
-func pendingCodingExpired(state *runtimeState, now time.Time) bool {
-	if state == nil || state.pendingCodingAt.IsZero() {
-		return false
-	}
-	if now.Before(state.pendingCodingAt) {
-		return false
-	}
-	return now.Sub(state.pendingCodingAt) > activityRestartConfirmWindow()
-}
-
-func normalizeActivityProvider(provider string) string {
-	return strings.TrimSpace(strings.ToLower(provider))
 }
 
 func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
@@ -1275,29 +1224,12 @@ func activityPollInterval() time.Duration {
 
 func activityHoldDuration() time.Duration {
 	const (
-		def = 30 * time.Second
+		def = 15 * time.Second
 		min = 5 * time.Second
-		max = 120 * time.Second
+		max = 60 * time.Second
 	)
 
 	override := parseSecondsEnv(activityHoldEnvVar, int(def.Seconds()))
-	if override < min {
-		return min
-	}
-	if override > max {
-		return max
-	}
-	return override
-}
-
-func activityRestartConfirmWindow() time.Duration {
-	const (
-		def = 10 * time.Second
-		min = 2 * time.Second
-		max = 30 * time.Second
-	)
-
-	override := parseSecondsEnv(activityRestartEnvVar, int(def.Seconds()))
 	if override < min {
 		return min
 	}

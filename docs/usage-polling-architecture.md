@@ -52,7 +52,7 @@ Absolute token stats are fetched separately from the percentage collector:
 
 Notes:
 
-- Token deltas switch to `coding` immediately while coding is already active. After an idle period, the first token delta is treated as pending and a second delta within a short window is required before showing `coding`; this filters delayed CodexBar cost bursts.
+- Token deltas switch to `coding` immediately. The state returns to `idle` after a short hold window if no newer token delta arrives.
 - The percentage/quota display remains authoritative for session/weekly bars and reset countdowns.
 - Frame size enforcement drops `theme` first, then token stats, before falling back to a runtime error frame.
 
@@ -74,8 +74,7 @@ Provider selection in render cycles uses CodexBar token/usage deltas + sticky/cu
 | Cycle watchdog timeout | `CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS` | `180s` | clamped `5..600s` |
 | Collector interval | `CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS` | `60s` | clamped `30..60s` |
 | Activity poll interval | `CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS` | `2s` | clamped `1..10s` |
-| Activity hold after token delta | `CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS` | `30s` | clamped `5..120s` |
-| Activity restart confirmation | `CODEXBAR_DISPLAY_ACTIVITY_RESTART_CONFIRM_SECS` | `10s` | clamped `2..30s` |
+| Activity hold after token delta | `CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS` | `15s` | clamped `5..60s` |
 | Cold-start fetch timeout (sync path) | `CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS` | `2s` | only when no last-good frame exists |
 | Last-good frame max age | `CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE` | `10m` | stale frame serving window |
 | Provider snapshot max age | `CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE` | inherits last-good max age | snapshot freshness gate |

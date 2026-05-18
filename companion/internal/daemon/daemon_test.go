@@ -547,25 +547,14 @@ func TestApplySelectionActivityHoldsCodingUntilNextUsageFrame(t *testing.T) {
 		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
 		ActivityDetail:       "source=usage-delta",
 	}, state, now)
-	if frame.Activity != "idle" {
-		t.Fatalf("expected first idle restart delta to stay pending, got %q detail=%q", frame.Activity, detail)
-	}
-
-	now = now.Add(2 * time.Second)
-	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected:             codexbar.ParsedFrame{CollectedAt: now},
-		Reason:               codexbar.SelectionReasonUsageDelta,
-		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
-		ActivityDetail:       "source=usage-delta",
-	}, state, now)
 	if frame.Activity != "coding" {
-		t.Fatalf("expected second restart delta to confirm coding activity, got %q detail=%q", frame.Activity, detail)
+		t.Fatalf("expected first usage delta to show coding activity, got %q detail=%q", frame.Activity, detail)
 	}
 
 	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
 		Selected: codexbar.ParsedFrame{CollectedAt: now},
 		Reason:   codexbar.SelectionReasonStickyCurrent,
-	}, state, now.Add(30*time.Second))
+	}, state, now.Add(10*time.Second))
 	if frame.Activity != "coding" {
 		t.Fatalf("expected coding to hold until next usage frame, got %q detail=%q", frame.Activity, detail)
 	}
@@ -584,24 +573,6 @@ func TestApplySelectionActivityHoldsCodingUntilNextUsageFrame(t *testing.T) {
 	}, state, now.Add(time.Minute))
 	if frame.Activity != "idle" {
 		t.Fatalf("expected idle on next usage frame without delta, got %q detail=%q", frame.Activity, detail)
-	}
-}
-
-func TestApplySelectionActivityIgnoresSingleLateDeltaAfterIdle(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	state := &runtimeState{
-		lastActivity: "idle",
-	}
-	frame, detail := applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
-		Selected:             codexbar.ParsedFrame{CollectedAt: now},
-		Reason:               codexbar.SelectionReasonUsageDelta,
-		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
-		ActivityDetail:       "source=usage-delta",
-	}, state, now)
-	if frame.Activity != "idle" {
-		t.Fatalf("expected single late delta after idle to stay idle, got %q detail=%q", frame.Activity, detail)
 	}
 }
 
@@ -669,19 +640,11 @@ func TestRunCycleActivityFollowsEachUsageSnapshot(t *testing.T) {
 	collectedAt = now
 	session = 11
 	run(t)
-	if frames[len(frames)-1].Activity != "idle" {
-		t.Fatalf("expected first usage delta after idle to stay pending, got %q", frames[len(frames)-1].Activity)
-	}
-
-	now = base.Add(4 * time.Second)
-	collectedAt = now
-	session = 12
-	run(t)
 	if frames[len(frames)-1].Activity != "coding" {
-		t.Fatalf("expected second usage delta to mark coding, got %q", frames[len(frames)-1].Activity)
+		t.Fatalf("expected first usage delta to mark coding, got %q", frames[len(frames)-1].Activity)
 	}
 
-	now = base.Add(30 * time.Second)
+	now = base.Add(10 * time.Second)
 	collectedAt = now
 	run(t)
 	if frames[len(frames)-1].Activity != "coding" {
