@@ -69,6 +69,10 @@ bool currentThemeSpecRenderedSuccessfully() {
          lastSuccessfulThemeSpecId == CurrentFrame().themeSpecId;
 }
 
+bool themeSpecRawHasAnimatedAssets(const String& raw) {
+  return raw.indexOf(".cba") >= 0 || raw.indexOf(".gif") >= 0;
+}
+
 bool readSpriteLine(File& file, String& line) {
   if (!file.available()) {
     return false;
@@ -410,6 +414,25 @@ class ThemeSpecSink final : public themespec::Sink {
     text.bg = cmd.bg;
     text.hasBg = cmd.hasBg;
     text.wrap = cmd.wrap;
+    if (cmd.maxWidth > 0) {
+      TFT_eSPI& tft = Tft();
+      int size = cmd.size;
+      tft.setTextFont(cmd.font);
+      tft.setTextSize(size);
+      if (cmd.fitShrink) {
+        while (size > 1 && tft.textWidth(cmd.text == nullptr ? "" : cmd.text) > cmd.maxWidth) {
+          --size;
+          tft.setTextSize(size);
+        }
+        text.size = size;
+      }
+      const int width = tft.textWidth(cmd.text == nullptr ? "" : cmd.text);
+      if (cmd.align == 1) {
+        text.x = cmd.x + max(0, (cmd.maxWidth - width) / 2);
+      } else if (cmd.align == 2) {
+        text.x = cmd.x + max(0, cmd.maxWidth - width);
+      }
+    }
     PrimitiveLayer().DrawText(text);
   }
 
@@ -420,6 +443,9 @@ class ThemeSpecSink final : public themespec::Sink {
     progress.width = cmd.width;
     progress.height = cmd.height;
     progress.percent = cmd.percent;
+    progress.style = cmd.style;
+    progress.segments = cmd.segments;
+    progress.segmentGap = cmd.segmentGap;
     progress.fillColor = cmd.fillColor;
     progress.borderColor = cmd.borderColor;
     progress.bgColor = cmd.bgColor;
@@ -516,7 +542,9 @@ bool DrawThemeSpecUsage() {
   }
 
   markCurrentThemeSpecRendered();
-  nextThemeSpecAnimatedTickAtMs = millis() + kThemeSpecAnimatedTickMs;
+  nextThemeSpecAnimatedTickAtMs = themeSpecRawHasAnimatedAssets(CurrentFrame().themeSpecRaw)
+                                      ? millis() + kThemeSpecAnimatedTickMs
+                                      : 0;
   const int64_t remain = CurrentRemainingSecs();
   LastRenderedSecs() = remain;
   LastRenderedMinuteBucket() = remain / 60;

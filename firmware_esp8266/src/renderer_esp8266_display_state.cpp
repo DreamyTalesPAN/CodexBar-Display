@@ -40,6 +40,27 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
 
   void DrawProgress(const primitive::ProgressCommand& cmd) override {
     const int p = codexbar_display::core::ClampPct(cmd.percent);
+
+    TFT_eSPI& tft = Tft();
+    tft.drawRect(cmd.x, cmd.y, cmd.width, cmd.height, cmd.borderColor);
+    tft.fillRect(cmd.x + 1, cmd.y + 1, cmd.width - 2, cmd.height - 2, cmd.bgColor);
+    if (cmd.style == 1) {
+      const int segments = cmd.segments > 0 ? cmd.segments : 10;
+      const int gap = cmd.segmentGap < 0 ? 0 : cmd.segmentGap;
+      const int innerW = cmd.width - 2;
+      const int innerH = cmd.height - 2;
+      const int filledSegments = (segments * p + 99) / 100;
+      for (int i = 0; i < segments; ++i) {
+        const int segX1 = cmd.x + 1 + ((i * innerW) / segments);
+        const int segX2 = cmd.x + 1 + (((i + 1) * innerW) / segments);
+        const int segW = max(0, segX2 - segX1 - gap);
+        if (segW > 0 && i < filledSegments) {
+          tft.fillRect(segX1, cmd.y + 1, segW, innerH, cmd.fillColor);
+        }
+      }
+      return;
+    }
+
     int filled = (cmd.width * p) / 100;
     if (filled > (cmd.width - 2)) {
       filled = cmd.width - 2;
@@ -47,10 +68,6 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
     if (filled < 0) {
       filled = 0;
     }
-
-    TFT_eSPI& tft = Tft();
-    tft.drawRect(cmd.x, cmd.y, cmd.width, cmd.height, cmd.borderColor);
-    tft.fillRect(cmd.x + 1, cmd.y + 1, cmd.width - 2, cmd.height - 2, cmd.bgColor);
     if (filled > 0) {
       tft.fillRect(cmd.x + 1, cmd.y + 1, filled, cmd.height - 2, cmd.fillColor);
     }

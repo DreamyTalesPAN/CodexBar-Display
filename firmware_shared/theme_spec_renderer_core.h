@@ -9,6 +9,12 @@
 namespace codexbar_display {
 namespace themespec {
 
+inline void RenderYield() {
+#if defined(ARDUINO)
+  yield();
+#endif
+}
+
 struct FrameData {
   const char* provider = "";
   const char* label = "";
@@ -38,9 +44,12 @@ struct TextCommand {
   int y = 0;
   int font = 1;
   int size = 1;
+  int maxWidth = 0;
   uint16_t fg = 0xFFFF;
   uint16_t bg = 0x0000;
   bool hasBg = false;
+  bool fitShrink = false;
+  int align = 0;
   bool wrap = false;
 };
 
@@ -50,6 +59,9 @@ struct ProgressCommand {
   int width = 0;
   int height = 0;
   int percent = 0;
+  int style = 0;
+  int segments = 0;
+  int segmentGap = 1;
   uint16_t fillColor = 0xFFFF;
   uint16_t borderColor = 0x7BEF;
   uint16_t bgColor = 0x0000;
@@ -472,6 +484,15 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
     if (cmd.size <= 0) {
       return false;
     }
+    cmd.maxWidth = JsonIntFor(primitive, "maxWidth", "mw", 0);
+    const char* fit = JsonStringFor(primitive, "fit", "ft");
+    cmd.fitShrink = fit != nullptr && std::strcmp(fit, "shrink") == 0;
+    const char* align = JsonStringFor(primitive, "align", "al");
+    if (align != nullptr && std::strcmp(align, "center") == 0) {
+      cmd.align = 1;
+    } else if (align != nullptr && std::strcmp(align, "right") == 0) {
+      cmd.align = 2;
+    }
     char text[128] = {0};
     const char* binding = JsonStringFor(primitive, "binding", "b");
     if (binding != nullptr) {
@@ -499,6 +520,12 @@ inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sin
       return false;
     }
     cmd.percent = ProgressPercentFor(primitive, frame);
+    const char* progressStyle = JsonStringFor(primitive, "progressStyle", "ps");
+    if (progressStyle != nullptr && (std::strcmp(progressStyle, "segments") == 0 || std::strcmp(progressStyle, "segmented") == 0)) {
+      cmd.style = 1;
+    }
+    cmd.segments = JsonIntFor(primitive, "segments", "sg", 0);
+    cmd.segmentGap = JsonIntFor(primitive, "segmentGap", "gg", 1);
     cmd.fillColor = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     cmd.bgColor = ParseColor(JsonStringFor(primitive, "bgColor", "bg"), 0x0000);
     cmd.borderColor = ParseColor(JsonStringFor(primitive, "borderColor", "bc"), 0x7BEF);
@@ -592,6 +619,7 @@ inline bool RenderThemeSpec(const char* themeSpecRaw, const FrameData& frame, Si
   sink.FillScreen(ParseColor(JsonStringFor(doc.as<JsonObjectConst>(), "bgColor", "bg"), 0x0000));
   for (JsonObjectConst primitive : primitives) {
     (void)DrawPrimitive(primitive, frame, sink);
+    RenderYield();
   }
   return true;
 }

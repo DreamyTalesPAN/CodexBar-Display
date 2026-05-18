@@ -2,6 +2,16 @@ import Konva from "konva";
 import { strToU8, zipSync } from "fflate";
 import "gifler";
 import "./styles.css";
+import {
+  TFT_FONT_FIRST_CHAR,
+  TFT_FONT_LAST_CHAR,
+  TFT_FONT2_GLYPHS,
+  TFT_FONT2_HEIGHT,
+  TFT_FONT2_WIDTHS,
+  TFT_FONT4_HEIGHT,
+  TFT_FONT4_RLE_GLYPHS,
+  TFT_FONT4_WIDTHS,
+} from "./tft-fonts";
 
 const DISPLAY_SIZE = 240;
 const MAX_SPEC_BYTES = 4096;
@@ -29,11 +39,14 @@ const STATE_NAME_RE = /^[a-z0-9][a-z0-9\-_]{0,30}$/;
 const SUPPORTED_PRIMITIVE_TYPES = ["rect", "text", "progress", "gif", "sprite", "pixels"] as const;
 const HISTORY_LIMIT = 60;
 const SAVED_THEMES_STORAGE_KEY = "codexbar.themeStudio.savedThemes.v1";
+const CURRENT_THEME_STORAGE_KEY = "codexbar.themeStudio.currentTheme.v1";
+const SNAP_GUIDE_THRESHOLD = 3;
 
 type PrimitiveType = typeof SUPPORTED_PRIMITIVE_TYPES[number];
 type ResizeHandle = "e" | "s" | "se";
 type PixelTool = "move" | "paint" | "erase";
 type EditableKonvaNode = Konva.Group | Konva.Shape;
+type SnapAxis = "x" | "y";
 type GiflerAnimator = {
   width: number;
   height: number;
@@ -99,6 +112,12 @@ interface Primitive {
   text?: string;
   font?: number;
   fontSize?: number;
+  maxWidth?: number;
+  fit?: "none" | "shrink";
+  align?: "left" | "center" | "right";
+  progressStyle?: "solid" | "segments";
+  segments?: number;
+  segmentGap?: number;
   binding?: BindingKey;
   color?: string;
   bgColor?: string;
@@ -126,6 +145,11 @@ interface ThemeSpec {
 interface ThemeSnapshot {
   spec: ThemeSpec;
   selectedIndex: number;
+  selectedIndices: number[];
+}
+
+interface CurrentThemeDraft extends ThemeSnapshot {
+  savedAt: string;
 }
 
 interface SavedTheme {
@@ -154,6 +178,7 @@ interface FrameData {
 interface AppState {
   spec: ThemeSpec;
   selectedIndex: number;
+  selectedIndices: number[];
   hoveredIndex: number | null;
   editingTextIndex: number | null;
   copiedPrimitive: Primitive | null;
@@ -167,6 +192,8 @@ interface AppState {
   targetOrigin: string;
   pixelTool: PixelTool;
   pixelBrushToken: string;
+  snapEnabled: boolean;
+  snapGridSize: number;
   undoStack: ThemeSnapshot[];
   redoStack: ThemeSnapshot[];
   savedThemes: SavedTheme[];
@@ -208,10 +235,10 @@ interface DeviceAssets {
 const frame: FrameData = {
   provider: "codex",
   label: "Codex",
-  session: 94,
-  weekly: 87,
-  reset: "89h 54m",
-  resetSecs: 323640,
+  session: 36,
+  weekly: 79,
+  reset: "136h 9m",
+  resetSecs: 490140,
   usageMode: "remaining",
   activity: "idle",
   time: previewTime(new Date()),
@@ -256,6 +283,10 @@ const COZY_BIRDS_SPRITE_PATH = "/themes/u/birds.cba";
 const COZY_BUTTERFLY_SPRITE_PATH = "/themes/u/butter.cba";
 const CLAUDE_IDLE_SPRITE_PATH = "/themes/u/cld-i.cba";
 const CLAUDE_CODING_SPRITE_PATH = "/themes/u/cld-c.cba";
+const SYNTHWAVE_TOP_SPRITE_PATH = "/themes/u/syn-top.cbi";
+const SYNTHWAVE_UI_SPRITE_PATH = "/themes/u/syn-ui.cbi";
+let synthwaveTopSpriteCache = "";
+let synthwaveUiSpriteCache = "";
 const DEFAULT_CLOUD_SPRITE = `CBI1
 24 14
 3
@@ -1948,6 +1979,44 @@ const CLAUDE_CREATURE_SPEC: ThemeSpec = {
     { type: "text", x: 34, y: 221, text: "* Resets in {reset}", font: 2, fontSize: 1, color: "#FF9B7B" },
   ],
 };
+
+const SYNTHWAVE_SPEC: ThemeSpec = {
+  themeSpecVersion: 1,
+  themeId: "synthwave",
+  themeRev: FIXED_THEME_REV,
+  fallbackTheme: FIXED_FALLBACK_THEME,
+  bgColor: "#050014",
+  primitives: [
+    { type: "sprite", x: 0, y: 0, width: 240, height: 128, assetPath: SYNTHWAVE_TOP_SPRITE_PATH },
+    { type: "sprite", x: 0, y: 128, width: 240, height: 95, assetPath: SYNTHWAVE_UI_SPRITE_PATH },
+    { type: "text", x: 35, y: 18, binding: "label", font: 4, fontSize: 1, maxWidth: 170, align: "center", fit: "shrink", color: "#FF4FA3" },
+    { type: "text", x: 67, y: 48, text: "USAGE", font: 4, fontSize: 1, color: "#FF4FA3" },
+    {
+      type: "progress",
+      x: 18,
+      y: 157,
+      width: 153,
+      height: 20,
+      binding: "session",
+      color: "#FF4FA3",
+      bgColor: "#1D073B",
+      borderColor: "#FF4FA3",
+    },
+    { type: "text", x: 181, y: 147, text: "{session}%", font: 4, fontSize: 1, color: "#FF4FA3" },
+    {
+      type: "progress",
+      x: 18,
+      y: 212,
+      width: 153,
+      height: 20,
+      binding: "weekly",
+      color: "#35C9FF",
+      bgColor: "#101145",
+      borderColor: "#4D8CFF",
+    },
+    { type: "text", x: 181, y: 202, text: "{weekly}%", font: 4, fontSize: 1, color: "#35C9FF" },
+  ],
+};
 const GLCD_FONT_FIRST_CHAR = 32;
 const GLCD_FONT_LAST_CHAR = 126;
 const GLCD_FONT_COLUMNS = 5;
@@ -2033,10 +2102,12 @@ let stage: Konva.Stage | null = null;
 let gifRedrawAnimation: Konva.Animation | null = null;
 let gifPreviewGeneration = 0;
 const gifPreviewCache = new Map<string, GifPreview>();
+const restoredDraft = loadCurrentThemeDraft();
 
 const state: AppState = {
-  spec: cloneSpec(initialSpec),
-  selectedIndex: -1,
+  spec: restoredDraft ? cloneSpec(restoredDraft.spec) : cloneSpec(initialSpec),
+  selectedIndex: restoredDraft ? restoredDraft.selectedIndex : -1,
+  selectedIndices: restoredDraft ? normalizeSelectedIndices(restoredDraft.selectedIndices, restoredDraft.selectedIndex, restoredDraft.spec.primitives.length) : [],
   hoveredIndex: null,
   editingTextIndex: null,
   copiedPrimitive: null,
@@ -2046,10 +2117,12 @@ const state: AppState = {
   jsonDirty: false,
   errors: [],
   warnings: [],
-  notice: "",
+  notice: restoredDraft ? `Last draft restored from ${formatSavedAt(restoredDraft.savedAt)}.` : "",
   targetOrigin: storedTargetOrigin(),
   pixelTool: "move",
   pixelBrushToken: "a",
+  snapEnabled: true,
+  snapGridSize: 4,
   undoStack: [],
   redoStack: [],
   savedThemes: loadSavedThemes(),
@@ -2125,15 +2198,60 @@ function persistSavedThemes() {
   }
 }
 
+function loadCurrentThemeDraft(): CurrentThemeDraft | null {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CURRENT_THEME_STORAGE_KEY) ?? "null") as unknown;
+    if (!isCurrentThemeDraft(parsed)) {
+      return null;
+    }
+    const spec = cloneSpec(parsed.spec);
+    normalizeMiniThemeSpec(spec);
+    return {
+      spec,
+      selectedIndex: Math.max(-1, Math.min(parsed.selectedIndex, spec.primitives.length - 1)),
+      selectedIndices: normalizeSelectedIndices(parsed.selectedIndices, parsed.selectedIndex, spec.primitives.length),
+      savedAt: parsed.savedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isCurrentThemeDraft(value: unknown): value is CurrentThemeDraft {
+  return isRecord(value) &&
+    typeof value.savedAt === "string" &&
+    Number.isInteger(value.selectedIndex) &&
+    (value.selectedIndices === undefined || Array.isArray(value.selectedIndices)) &&
+    isRecord(value.spec) &&
+    Array.isArray(value.spec.primitives);
+}
+
+function persistCurrentThemeDraft() {
+  try {
+    const draft: CurrentThemeDraft = {
+      spec: cloneSpec(state.spec),
+      selectedIndex: state.selectedIndex,
+      selectedIndices: selectedPrimitiveIndices(),
+      savedAt: new Date().toISOString(),
+    };
+    window.localStorage.setItem(CURRENT_THEME_STORAGE_KEY, JSON.stringify(draft));
+  } catch {
+    state.notice = "Draft save failed. Browser storage may be full or blocked.";
+  }
+}
+
 function snapshotState(): ThemeSnapshot {
   return {
     spec: cloneSpec(state.spec),
     selectedIndex: state.selectedIndex,
+    selectedIndices: selectedPrimitiveIndices(),
   };
 }
 
 function snapshotsEqual(a: ThemeSnapshot, b: ThemeSnapshot): boolean {
-  return a.selectedIndex === b.selectedIndex && minifiedJson(a.spec) === minifiedJson(b.spec);
+  return a.selectedIndex === b.selectedIndex &&
+    a.selectedIndices.join(",") === b.selectedIndices.join(",") &&
+    minifiedJson(a.spec) === minifiedJson(b.spec);
 }
 
 function pushHistory() {
@@ -2151,7 +2269,7 @@ function pushHistory() {
 
 function restoreSnapshot(snapshot: ThemeSnapshot, notice: string) {
   state.spec = cloneSpec(snapshot.spec);
-  state.selectedIndex = Math.max(-1, Math.min(snapshot.selectedIndex, state.spec.primitives.length - 1));
+  setSelection(normalizeSelectedIndices(snapshot.selectedIndices, snapshot.selectedIndex, state.spec.primitives.length));
   state.editingTextIndex = null;
   state.notice = notice;
   syncJsonFromSpec();
@@ -2210,7 +2328,7 @@ function loadSavedTheme(id: string) {
   }
   pushHistory();
   state.spec = cloneSpec(saved.spec);
-  state.selectedIndex = state.spec.primitives.length > 0 ? 0 : -1;
+  setSingleSelection(state.spec.primitives.length > 0 ? 0 : -1);
   state.editingTextIndex = null;
   state.notice = `Loaded "${saved.name}".`;
   syncJsonFromSpec();
@@ -2240,6 +2358,7 @@ function syncJsonFromSpec() {
   state.jsonText = prettyJson(state.spec);
   state.jsonDirty = false;
   validateCurrentSpec();
+  persistCurrentThemeDraft();
 }
 
 function normalizeMiniThemeSpec(spec: ThemeSpec) {
@@ -2353,10 +2472,30 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
       if (primitive.font !== undefined && (!Number.isInteger(primitive.font) || primitive.font < 1)) {
         errors.push(`${prefix}: font sollte mindestens 1 sein.`);
       }
+      if (primitive.maxWidth !== undefined && (!Number.isInteger(primitive.maxWidth) || primitive.maxWidth < 1 || primitive.maxWidth > DISPLAY_SIZE)) {
+        errors.push(`${prefix}: maxWidth muss 1-${DISPLAY_SIZE} sein.`);
+      }
+      if (primitive.fit !== undefined && !["none", "shrink"].includes(primitive.fit)) {
+        errors.push(`${prefix}: fit muss none oder shrink sein.`);
+      }
+      if (primitive.align !== undefined && !["left", "center", "right"].includes(primitive.align)) {
+        errors.push(`${prefix}: align muss left, center oder right sein.`);
+      }
     }
     if (primitive.type === "rect" || primitive.type === "progress") {
       if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
         errors.push(`${prefix}: width/height müssen größer als 0 sein.`);
+      }
+      if (primitive.type === "progress") {
+        if (primitive.progressStyle !== undefined && !["solid", "segments"].includes(primitive.progressStyle)) {
+          errors.push(`${prefix}: progressStyle muss solid oder segments sein.`);
+        }
+        if (primitive.segments !== undefined && (!Number.isInteger(primitive.segments) || primitive.segments < 1 || primitive.segments > 32)) {
+          errors.push(`${prefix}: segments muss 1-32 sein.`);
+        }
+        if (primitive.segmentGap !== undefined && (!Number.isInteger(primitive.segmentGap) || primitive.segmentGap < 0 || primitive.segmentGap > 8)) {
+          errors.push(`${prefix}: segmentGap muss 0-8 sein.`);
+        }
       }
     }
     if (primitive.type === "gif") {
@@ -2426,7 +2565,7 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
     errors.push(`Initiales Zeichnen ist zu schwer für ESP8266: ca. ${renderBudget.initialPixels}/${MAX_INITIAL_RENDER_PIXELS} Pixel.`);
   }
   if (renderBudget.initialPixels > WARN_INITIAL_RENDER_PIXELS) {
-    warnings.push(`Initiales Zeichnen ist schwer: ca. ${renderBudget.initialPixels} Pixel. Besser Details in wenige Sprites bündeln.`);
+    warnings.push(`Initiales Zeichnen ist schwer: ca. ${renderBudget.initialPixels} Pixel. Das kann beim ersten Zeichnen kurz dauern; für RAM zählt vor allem, dass JSON klein bleibt und Details in Sprites liegen.`);
   }
   renderBudget.spriteWarnings.forEach((warning) => warnings.push(warning));
 
@@ -2553,6 +2692,7 @@ function render() {
   const focusSnapshot = captureFocusSnapshot();
   validateCurrentSpec();
   const selected = state.spec.primitives[state.selectedIndex];
+  const selectedCount = selectedPrimitiveIndices().length;
   const bytes = new TextEncoder().encode(JSON.stringify(buildDeviceThemeSpec(state.spec))).length;
   const frameBytes = new TextEncoder().encode(JSON.stringify(buildLiveFramePayload())).length;
 
@@ -2560,11 +2700,14 @@ function render() {
     <section class="studio-shell">
       <header class="appbar">
         <h1>Theme Studio</h1>
-        <div class="status-strip">
-          ${metric("Theme", bytes, MAX_SPEC_BYTES)}
-          ${metric("Live", frameBytes, MAX_FRAME_BYTES)}
-          ${metric("Primitives", state.spec.primitives.length, MAX_PRIMITIVES)}
-          <span class="health ${state.errors.length ? "bad" : "ok"}">${state.errors.length ? "Invalid" : "Valid"}</span>
+        <div class="appbar-actions">
+          <button class="draft-save-button" data-action="save-draft">Save Draft</button>
+          <div class="status-strip">
+            ${metric("Theme", bytes, MAX_SPEC_BYTES)}
+            ${metric("Live", frameBytes, MAX_FRAME_BYTES)}
+            ${metric("Primitives", state.spec.primitives.length, MAX_PRIMITIVES)}
+            <span class="health ${state.errors.length ? "bad" : "ok"}">${state.errors.length ? "Invalid" : "Valid"}</span>
+          </div>
         </div>
       </header>
 
@@ -2587,8 +2730,9 @@ function render() {
             <button data-action="undo" ${state.undoStack.length === 0 ? "disabled" : ""}>Undo</button>
             <button data-action="redo" ${state.redoStack.length === 0 ? "disabled" : ""}>Redo</button>
           </div>
-      <button class="full-width" data-action="save-local">Save Local</button>
+          <button class="full-width" data-action="save-local">Save Named Theme</button>
           ${savedThemeList()}
+          <button class="full-width preset-button" data-action="load-synthwave">Synthwave</button>
           <button class="full-width preset-button" data-action="load-claude-creature">Claude Creature</button>
           <button class="full-width preset-button" data-action="load-cozy-meadow">Cozy Meadow</button>
           <div class="divider"></div>
@@ -2619,8 +2763,10 @@ function render() {
 
         <aside class="panel right-panel">
           <details class="inspector-panel" open>
-            <summary>${selected ? `${selected.type} ${state.selectedIndex + 1}` : "Inspector"}</summary>
-            ${selected ? `<button class="danger-button full-width" data-action="delete-selected">Delete</button>${inspectorFields(selected)}` : `<p class="empty">Select an element.</p>`}
+            <summary>${selectedCount > 1 ? `${selectedCount} elements` : selected ? `${selected.type} ${state.selectedIndex + 1}` : "Inspector"}</summary>
+            ${selectedCount > 1
+              ? `<button class="danger-button full-width" data-action="delete-selected">Delete selected</button><p class="empty">Drag or use arrow keys to move the selected elements together.</p>`
+              : selected ? `<button class="danger-button full-width" data-action="delete-selected">Delete</button>${inspectorFields(selected)}` : `<p class="empty">Select an element.</p>`}
           </details>
           <details class="advanced-panel">
             <summary>Advanced JSON</summary>
@@ -2734,7 +2880,7 @@ function variableGuide(): string {
 function primitiveRow(primitive: Primitive, index: number): string {
   const title = primitiveTitle(primitive);
   return `
-    <button class="primitive-row ${index === state.selectedIndex ? "selected" : ""}" data-select="${index}">
+    <button class="primitive-row ${isPrimitiveSelected(index) ? "selected" : ""}" data-select="${index}">
       <span>${index + 1}</span>
       <strong>${primitive.type}</strong>
       <em>${escapeHtml(title)}</em>
@@ -2781,6 +2927,19 @@ function inspectorFields(primitive: Primitive): string {
         </label>
         <label>Size<input type="number" min="1" step="1" data-primitive-field="fontSize" value="${primitive.fontSize ?? 1}" /></label>
       </div>
+      <div class="field-grid">
+        <label>Max width<input type="number" min="1" max="${DISPLAY_SIZE}" step="1" data-primitive-field="maxWidth" value="${primitive.maxWidth ?? ""}" placeholder="auto" /></label>
+        <label>Fit
+          <select data-primitive-field="fit">
+            ${["none", "shrink"].map((value) => `<option value="${value}" ${(primitive.fit ?? "none") === value ? "selected" : ""}>${value}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <label>Align
+        <select data-primitive-field="align">
+          ${["left", "center", "right"].map((value) => `<option value="${value}" ${(primitive.align ?? "left") === value ? "selected" : ""}>${value}</option>`).join("")}
+        </select>
+      </label>
       ${colorField("Color", "color", primitive.color ?? "#FFFFFF")}
       ${optionalColorField("Background", "bgColor", primitive.bgColor)}
     `;
@@ -2798,6 +2957,15 @@ function inspectorFields(primitive: Primitive): string {
           ${["session", "weekly"].map((value) => `<option value="${value}" ${primitive.binding === value ? "selected" : ""}>${value}</option>`).join("")}
         </select>
       </label>
+      <label>Style
+        <select data-primitive-field="progressStyle">
+          ${["solid", "segments"].map((value) => `<option value="${value}" ${(primitive.progressStyle ?? "solid") === value ? "selected" : ""}>${value}</option>`).join("")}
+        </select>
+      </label>
+      <div class="field-grid">
+        <label>Segments<input type="number" min="1" max="32" step="1" data-primitive-field="segments" value="${primitive.segments ?? 10}" /></label>
+        <label>Gap<input type="number" min="0" max="8" step="1" data-primitive-field="segmentGap" value="${primitive.segmentGap ?? 1}" /></label>
+      </div>
       ${colorField("Fill", "color", primitive.color ?? "#FFFFFF")}
       ${colorField("Track", "bgColor", primitive.bgColor ?? "#000000")}
       ${colorField("Border", "borderColor", primitive.borderColor ?? "#7B7B7B")}
@@ -2964,9 +3132,17 @@ function optionalColorField(label: string, key: keyof Primitive, value: string |
 
 function renderPreview(): string {
   return `
-    <div class="display preview-stack" aria-label="Theme preview">
+    <div class="display preview-stack ${state.snapEnabled ? "snap-grid" : ""}" aria-label="Theme preview" style="--snap-grid-size:${(state.snapGridSize / DISPLAY_SIZE) * 100}%">
       <canvas class="device-canvas" data-role="device-canvas" width="${DISPLAY_SIZE}" height="${DISPLAY_SIZE}"></canvas>
       <div class="konva-overlay" data-role="konva-stage"></div>
+    </div>
+    <div class="snap-controls" role="group" aria-label="Snap controls">
+      <button class="${state.snapEnabled ? "active" : ""}" data-snap-toggle="grid">Snap</button>
+      <label>Grid
+        <select data-snap-grid>
+          ${[2, 4, 8, 12].map((value) => `<option value="${value}" ${state.snapGridSize === value ? "selected" : ""}>${value}px</option>`).join("")}
+        </select>
+      </label>
     </div>
     ${themeUsesStateAssets() ? `
       <div class="activity-toggle" role="group" aria-label="Activity preview">
@@ -3007,7 +3183,7 @@ function mountKonvaPreview() {
 
   const nodes: EditableKonvaNode[] = [];
   state.spec.primitives.forEach((primitive, index) => {
-    const result = konvaNodeForPrimitive(primitive, index, konvaStage, previewScale);
+    const result = konvaNodeForPrimitive(primitive, index, konvaStage, previewScale, nodes, layer);
     if (!result) {
       return;
     }
@@ -3015,8 +3191,9 @@ function mountKonvaPreview() {
     nodes[index] = result.node;
   });
 
-  const selected = state.spec.primitives[state.selectedIndex];
-  const selectedNode = nodes[state.selectedIndex];
+  const selectedIndices = selectedPrimitiveIndices();
+  const selected = selectedIndices.length === 1 ? state.spec.primitives[selectedIndices[0]] : null;
+  const selectedNode = selectedIndices.length === 1 ? nodes[selectedIndices[0]] : null;
   if (selected && selectedNode) {
     const transformer = new Konva.Transformer({
       nodes: [selectedNode],
@@ -3039,6 +3216,7 @@ function mountKonvaPreview() {
   }
 
   let fallbackDrag: { index: number; startX: number; startY: number; originX: number; originY: number } | null = null;
+  let marquee: { startX: number; startY: number; currentX: number; currentY: number; rect: Konva.Rect } | null = null;
 
   konvaStage.on("pointerdown", (event) => {
     if (paintSelectedPixelsAtPointer(konvaStage, previewScale)) {
@@ -3066,21 +3244,50 @@ function mountKonvaPreview() {
         originX: primitive.x,
         originY: primitive.y,
       };
-      state.selectedIndex = hitIndex;
+      setSingleSelection(hitIndex);
       state.editingTextIndex = null;
       state.notice = "";
       return;
     }
-    state.selectedIndex = -1;
+    marquee = {
+      startX: pointer.x,
+      startY: pointer.y,
+      currentX: pointer.x,
+      currentY: pointer.y,
+      rect: new Konva.Rect({
+        x: pointer.x,
+        y: pointer.y,
+        width: 0,
+        height: 0,
+        fill: "rgba(199,255,104,0.12)",
+        stroke: "#c7ff68",
+        strokeWidth: 1,
+        dash: [4, 3],
+        listening: false,
+      }),
+    };
+    layer.add(marquee.rect);
     state.editingTextIndex = null;
     state.notice = "";
-    render();
+    layer.batchDraw();
   });
 
   konvaStage.on("pointermove", () => {
     if (pixelCanvasPaintActive && paintSelectedPixelsAtPointer(konvaStage, previewScale)) {
       syncJsonFromSpec();
       render();
+      return;
+    }
+    if (marquee) {
+      const pointer = logicalStagePointer(konvaStage, previewScale);
+      if (!pointer) {
+        return;
+      }
+      marquee.currentX = pointer.x;
+      marquee.currentY = pointer.y;
+      const bounds = rectFromPoints(marquee.startX, marquee.startY, marquee.currentX, marquee.currentY);
+      marquee.rect.setAttrs(bounds);
+      layer.batchDraw();
       return;
     }
     if (!fallbackDrag) {
@@ -3094,13 +3301,28 @@ function mountKonvaPreview() {
     }
     const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
     const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
-    primitive.x = clamp(Math.round(fallbackDrag.originX + pointer.x - fallbackDrag.startX), 0, maxX);
-    primitive.y = clamp(Math.round(fallbackDrag.originY + pointer.y - fallbackDrag.startY), 0, maxY);
+    const snapped = snapPrimitivePosition(fallbackDrag.index, fallbackDrag.originX + pointer.x - fallbackDrag.startX, fallbackDrag.originY + pointer.y - fallbackDrag.startY);
+    primitive.x = clamp(snapped.x, 0, maxX);
+    primitive.y = clamp(snapped.y, 0, maxY);
     node.position({ x: primitive.x, y: primitive.y });
     layer.batchDraw();
   });
 
   konvaStage.on("pointerup pointercancel", () => {
+    if (marquee) {
+      const bounds = rectFromPoints(marquee.startX, marquee.startY, marquee.currentX, marquee.currentY);
+      const moved = Math.max(bounds.width, bounds.height) > 2;
+      const indices = moved
+        ? state.spec.primitives.flatMap((primitive, index) => primitiveIntersectsRect(primitive, bounds) ? [index] : [])
+        : [];
+      marquee.rect.destroy();
+      marquee = null;
+      setSelection(indices);
+      state.editingTextIndex = null;
+      syncJsonFromSpec();
+      render();
+      return;
+    }
     if (!fallbackDrag) {
       return;
     }
@@ -3173,12 +3395,31 @@ function drawDeviceProgress(context: CanvasRenderingContext2D, primitive: Primit
   const width = primitive.width ?? 1;
   const height = primitive.height ?? 1;
   const pct = primitive.binding === "weekly" || primitive.binding === "weeklyPercent" ? frame.weekly : frame.session;
-  const fillWidth = clamp(Math.floor((width * pct) / 100), 0, Math.max(0, width - 2));
 
   context.fillStyle = primitive.borderColor ?? "#7B7B7B";
   context.fillRect(primitive.x, primitive.y, width, height);
   context.fillStyle = primitive.bgColor ?? "#000000";
   context.fillRect(primitive.x + 1, primitive.y + 1, Math.max(0, width - 2), Math.max(0, height - 2));
+  if (primitive.progressStyle === "segments") {
+    const segments = clamp(primitive.segments ?? 10, 1, 32);
+    const gap = clamp(primitive.segmentGap ?? 1, 0, 8);
+    const innerWidth = Math.max(0, width - 2);
+    const filledSegments = Math.ceil((segments * clamp(pct, 0, 100)) / 100);
+    context.fillStyle = primitive.color ?? "#FFFFFF";
+    for (let index = 0; index < segments; index += 1) {
+      if (index >= filledSegments) {
+        continue;
+      }
+      const x1 = primitive.x + 1 + Math.floor((index * innerWidth) / segments);
+      const x2 = primitive.x + 1 + Math.floor(((index + 1) * innerWidth) / segments);
+      const segmentWidth = Math.max(0, x2 - x1 - gap);
+      if (segmentWidth > 0) {
+        context.fillRect(x1, primitive.y + 1, segmentWidth, Math.max(0, height - 2));
+      }
+    }
+    return;
+  }
+  const fillWidth = clamp(Math.floor((width * pct) / 100), 0, Math.max(0, width - 2));
   if (fillWidth > 0) {
     context.fillStyle = primitive.color ?? "#FFFFFF";
     context.fillRect(primitive.x + 1, primitive.y + 1, fillWidth, Math.max(0, height - 2));
@@ -3293,9 +3534,97 @@ function pointInPrimitive(primitive: Primitive, x: number, y: number): boolean {
   return localX >= 0 && localX <= width && localY >= 0 && localY <= height;
 }
 
-function konvaNodeForPrimitive(primitive: Primitive, index: number, konvaStage: Konva.Stage, previewScale: number): { node: EditableKonvaNode; animated: boolean } | null {
+function rectFromPoints(startX: number, startY: number, endX: number, endY: number): { x: number; y: number; width: number; height: number } {
+  return {
+    x: Math.min(startX, endX),
+    y: Math.min(startY, endY),
+    width: Math.abs(endX - startX),
+    height: Math.abs(endY - startY),
+  };
+}
+
+function primitiveBounds(primitive: Primitive): { x: number; y: number; width: number; height: number } {
+  return {
+    x: primitive.x,
+    y: primitive.y,
+    width: estimatePrimitiveWidth(primitive),
+    height: estimatePrimitiveHeight(primitive),
+  };
+}
+
+function primitiveIntersectsRect(primitive: Primitive, rect: { x: number; y: number; width: number; height: number }): boolean {
+  const bounds = primitiveBounds(primitive);
+  return bounds.x < rect.x + rect.width &&
+    bounds.x + bounds.width > rect.x &&
+    bounds.y < rect.y + rect.height &&
+    bounds.y + bounds.height > rect.y;
+}
+
+function snapPrimitivePosition(index: number, rawX: number, rawY: number): { x: number; y: number } {
+  const primitive = state.spec.primitives[index];
+  if (!primitive) {
+    return { x: Math.round(rawX), y: Math.round(rawY) };
+  }
+  const width = estimatePrimitiveWidth(primitive);
+  const height = estimatePrimitiveHeight(primitive);
+  const maxX = Math.max(0, DISPLAY_SIZE - width);
+  const maxY = Math.max(0, DISPLAY_SIZE - height);
+  if (!state.snapEnabled) {
+    return {
+      x: clamp(Math.round(rawX), 0, maxX),
+      y: clamp(Math.round(rawY), 0, maxY),
+    };
+  }
+  return {
+    x: clamp(snapAxis(index, rawX, width, "x"), 0, maxX),
+    y: clamp(snapAxis(index, rawY, height, "y"), 0, maxY),
+  };
+}
+
+function snapDetachedPosition(rawX: number, rawY: number, width: number, height: number): { x: number; y: number } {
+  const grid = Math.max(1, state.snapGridSize || 1);
+  const x = state.snapEnabled ? Math.round(rawX / grid) * grid : Math.round(rawX);
+  const y = state.snapEnabled ? Math.round(rawY / grid) * grid : Math.round(rawY);
+  return {
+    x: clamp(x, 0, Math.max(0, DISPLAY_SIZE - width)),
+    y: clamp(y, 0, Math.max(0, DISPLAY_SIZE - height)),
+  };
+}
+
+function snapAxis(index: number, rawStart: number, size: number, axis: SnapAxis): number {
+  const grid = Math.max(1, state.snapGridSize || 1);
+  const ownPoints = [rawStart, rawStart + size / 2, rawStart + size];
+  let bestDelta: number | null = null;
+  for (const guide of snapGuidesForAxis(index, axis)) {
+    for (const point of ownPoints) {
+      const delta = guide - point;
+      if (Math.abs(delta) <= SNAP_GUIDE_THRESHOLD && (bestDelta === null || Math.abs(delta) < Math.abs(bestDelta))) {
+        bestDelta = delta;
+      }
+    }
+  }
+  if (bestDelta !== null) {
+    return Math.round(rawStart + bestDelta);
+  }
+  return Math.round(rawStart / grid) * grid;
+}
+
+function snapGuidesForAxis(skipIndex: number, axis: SnapAxis): number[] {
+  const guides = [0, DISPLAY_SIZE / 2, DISPLAY_SIZE];
+  state.spec.primitives.forEach((primitive, index) => {
+    if (index === skipIndex) {
+      return;
+    }
+    const start = axis === "x" ? primitive.x : primitive.y;
+    const size = axis === "x" ? estimatePrimitiveWidth(primitive) : estimatePrimitiveHeight(primitive);
+    guides.push(start, start + size / 2, start + size);
+  });
+  return guides;
+}
+
+function konvaNodeForPrimitive(primitive: Primitive, index: number, konvaStage: Konva.Stage, previewScale: number, nodes: EditableKonvaNode[], layer: Konva.Layer): { node: EditableKonvaNode; animated: boolean } | null {
   const node = overlayKonvaRect(primitive, index);
-  bindKonvaNodeEvents(node, index, konvaStage, previewScale);
+  bindKonvaNodeEvents(node, index, konvaStage, previewScale, nodes, layer);
   return { node, animated: false };
 }
 
@@ -3303,7 +3632,7 @@ function commonKonvaProps(primitive: Primitive, index: number) {
   return {
     x: primitive.x,
     y: primitive.y,
-    draggable: !(primitive.type === "pixels" && index === state.selectedIndex && state.pixelTool !== "move"),
+    draggable: !(primitive.type === "pixels" && isPrimitiveSelected(index) && state.pixelTool !== "move"),
     id: `primitive-${index}`,
     name: "primitive",
     primitiveIndex: index,
@@ -3311,13 +3640,14 @@ function commonKonvaProps(primitive: Primitive, index: number) {
 }
 
 function overlayKonvaRect(primitive: Primitive, index: number): Konva.Rect {
+  const selected = isPrimitiveSelected(index);
   return new Konva.Rect({
     ...commonKonvaProps(primitive, index),
     width: estimatePrimitiveWidth(primitive),
     height: estimatePrimitiveHeight(primitive),
     fill: "rgba(199,255,104,0.001)",
-    stroke: index === state.selectedIndex ? "#c7ff68" : "rgba(0,0,0,0)",
-    strokeWidth: index === state.selectedIndex ? 1 : 0,
+    stroke: selected ? "#c7ff68" : "rgba(0,0,0,0)",
+    strokeWidth: selected ? 1 : 0,
   });
 }
 
@@ -3325,7 +3655,6 @@ function progressKonvaGroup(primitive: Primitive, index: number): Konva.Group {
   const width = primitive.width ?? 1;
   const height = primitive.height ?? 1;
   const pct = primitive.binding === "weekly" || primitive.binding === "weeklyPercent" ? frame.weekly : frame.session;
-  const fillWidth = Math.max(0, Math.min(width - 2, Math.floor((width * pct) / 100)));
   const group = new Konva.Group({
     ...commonKonvaProps(primitive, index),
     width,
@@ -3340,13 +3669,26 @@ function progressKonvaGroup(primitive: Primitive, index: number): Konva.Group {
     stroke: primitive.borderColor ?? "#7B7B7B",
     strokeWidth: 1,
   }));
-  group.add(new Konva.Rect({
-    x: 1,
-    y: 1,
-    width: fillWidth,
-    height: Math.max(0, height - 2),
-    fill: primitive.color ?? "#FFFFFF",
-  }));
+  if (primitive.progressStyle === "segments") {
+    const segments = clamp(primitive.segments ?? 10, 1, 32);
+    const gap = clamp(primitive.segmentGap ?? 1, 0, 8);
+    const innerWidth = Math.max(0, width - 2);
+    const filledSegments = Math.ceil((segments * clamp(pct, 0, 100)) / 100);
+    for (let segment = 0; segment < filledSegments; segment += 1) {
+      const x1 = 1 + Math.floor((segment * innerWidth) / segments);
+      const x2 = 1 + Math.floor(((segment + 1) * innerWidth) / segments);
+      group.add(new Konva.Rect({
+        x: x1,
+        y: 1,
+        width: Math.max(0, x2 - x1 - gap),
+        height: Math.max(0, height - 2),
+        fill: primitive.color ?? "#FFFFFF",
+      }));
+    }
+    return group;
+  }
+  const fillWidth = Math.max(0, Math.min(width - 2, Math.floor((width * pct) / 100)));
+  group.add(new Konva.Rect({ x: 1, y: 1, width: fillWidth, height: Math.max(0, height - 2), fill: primitive.color ?? "#FFFFFF" }));
   return group;
 }
 
@@ -3519,21 +3861,44 @@ function stopGifPreviewAnimations() {
   });
 }
 
-function bindKonvaNodeEvents(node: Konva.Node, index: number, konvaStage: Konva.Stage, previewScale: number) {
+function bindKonvaNodeEvents(node: Konva.Node, index: number, konvaStage: Konva.Stage, previewScale: number, nodes: EditableKonvaNode[], layer: Konva.Layer) {
+  let groupDrag: {
+    anchorIndex: number;
+    anchorStartX: number;
+    anchorStartY: number;
+    origins: Array<{ index: number; x: number; y: number }>;
+  } | null = null;
+
   node.on("pointerdown", (event) => {
-    if (index === state.selectedIndex && paintPixelsAtPointer(index, konvaStage, previewScale)) {
+    if (isPrimitiveSelected(index) && paintPixelsAtPointer(index, konvaStage, previewScale)) {
       pixelCanvasPaintActive = true;
       event.cancelBubble = true;
       syncJsonFromSpec();
       render();
       return;
     }
-    state.selectedIndex = index;
+    if (event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey) {
+      const selected = new Set(selectedPrimitiveIndices());
+      if (selected.has(index)) {
+        selected.delete(index);
+      } else {
+        selected.add(index);
+      }
+      setSelection(Array.from(selected));
+    } else if (!isPrimitiveSelected(index)) {
+      setSingleSelection(index);
+    } else {
+      state.selectedIndex = index;
+    }
     state.editingTextIndex = null;
     state.notice = "";
   });
   node.on("click tap", () => {
-    state.selectedIndex = index;
+    if (!isPrimitiveSelected(index)) {
+      setSingleSelection(index);
+    } else {
+      state.selectedIndex = index;
+    }
     state.editingTextIndex = null;
     state.notice = "";
     render();
@@ -3541,13 +3906,68 @@ function bindKonvaNodeEvents(node: Konva.Node, index: number, konvaStage: Konva.
   node.on("dblclick dbltap", () => {
     const primitive = state.spec.primitives[index];
     if (primitive?.type === "text") {
-      state.selectedIndex = index;
+      setSingleSelection(index);
       state.editingTextIndex = index;
       state.notice = "";
       render();
     }
   });
+  node.on("dragstart", () => {
+    const indices = selectedPrimitiveIndices();
+    if (indices.length <= 1 || !indices.includes(index)) {
+      groupDrag = null;
+      return;
+    }
+    pushHistory();
+    const anchor = state.spec.primitives[index];
+    groupDrag = {
+      anchorIndex: index,
+      anchorStartX: anchor?.x ?? node.x(),
+      anchorStartY: anchor?.y ?? node.y(),
+      origins: indices.flatMap((selectedIndex) => {
+        const primitive = state.spec.primitives[selectedIndex];
+        return primitive ? [{ index: selectedIndex, x: primitive.x, y: primitive.y }] : [];
+      }),
+    };
+  });
+  node.on("dragmove", () => {
+    if (groupDrag) {
+      const anchorOrigin = groupDrag.origins.find((origin) => origin.index === groupDrag?.anchorIndex);
+      if (!anchorOrigin) {
+        return;
+      }
+      const snapped = snapPrimitivePosition(index, anchorOrigin.x + node.x() - groupDrag.anchorStartX, anchorOrigin.y + node.y() - groupDrag.anchorStartY);
+      const deltaX = snapped.x - anchorOrigin.x;
+      const deltaY = snapped.y - anchorOrigin.y;
+      groupDrag.origins.forEach((origin) => {
+        const primitive = state.spec.primitives[origin.index];
+        const selectedNode = nodes[origin.index];
+        if (!primitive || !selectedNode) {
+          return;
+        }
+        const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
+        const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
+        primitive.x = clamp(origin.x + deltaX, 0, maxX);
+        primitive.y = clamp(origin.y + deltaY, 0, maxY);
+        selectedNode.position({ x: primitive.x, y: primitive.y });
+      });
+      layer.batchDraw();
+      return;
+    }
+    if (!state.snapEnabled) {
+      return;
+    }
+    const snapped = snapPrimitivePosition(index, node.x(), node.y());
+    node.position(snapped);
+  });
   node.on("dragend", () => {
+    if (groupDrag) {
+      groupDrag = null;
+      state.editingTextIndex = null;
+      syncJsonFromSpec();
+      render();
+      return;
+    }
     commitKonvaTransform(node, index);
   });
   node.on("transformend", () => {
@@ -3569,8 +3989,9 @@ function commitKonvaTransform(node: Konva.Node, index: number) {
   const nextWidth = Math.max(1, Math.round(baseWidth * Math.abs(scaleX || 1)));
   const nextHeight = Math.max(1, Math.round(baseHeight * Math.abs(scaleY || 1)));
 
-  primitive.x = clamp(Math.round(node.x()), 0, DISPLAY_SIZE - 1);
-  primitive.y = clamp(Math.round(node.y()), 0, DISPLAY_SIZE - 1);
+  const snapped = snapPrimitivePosition(index, node.x(), node.y());
+  primitive.x = clamp(snapped.x, 0, DISPLAY_SIZE - 1);
+  primitive.y = clamp(snapped.y, 0, DISPLAY_SIZE - 1);
 
   if (primitive.type === "text") {
     const nextSize = Math.max(Math.abs(scaleX || 1), Math.abs(scaleY || 1));
@@ -3588,7 +4009,7 @@ function commitKonvaTransform(node: Konva.Node, index: number) {
   }
 
   node.scale({ x: 1, y: 1 });
-  state.selectedIndex = index;
+  setSingleSelection(index);
   state.editingTextIndex = null;
   syncJsonFromSpec();
   render();
@@ -3801,7 +4222,7 @@ function resizeHandle(index: number, handle: ResizeHandle, x: number, y: number)
 function estimatePrimitiveWidth(primitive: Primitive): number {
   if (primitive.type === "text") {
     const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
-    return Math.max(1, firmwareTextWidth(text, primitive.font, primitive.fontSize));
+    return Math.max(1, primitive.maxWidth ?? firmwareTextWidth(text, primitive.font, primitive.fontSize));
   }
   if (primitive.type === "sprite") {
     return primitive.width ?? spriteDimensions(resolveStateAssetPath(primitive)).width;
@@ -3811,7 +4232,8 @@ function estimatePrimitiveWidth(primitive: Primitive): number {
 
 function estimatePrimitiveHeight(primitive: Primitive): number {
   if (primitive.type === "text") {
-    return Math.max(8, textPixelSize(primitive));
+    const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
+    return Math.max(8, firmwareFontHeight(primitive.font, effectiveTextFontSize(primitive, text)));
   }
   if (primitive.type === "sprite") {
     return primitive.height ?? spriteDimensions(resolveStateAssetPath(primitive)).height;
@@ -3820,31 +4242,74 @@ function estimatePrimitiveHeight(primitive: Primitive): number {
 }
 
 function textPixelSize(primitive: Primitive): number {
-  return firmwareFontHeight(primitive.font, primitive.fontSize);
+  const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
+  return firmwareFontHeight(primitive.font, effectiveTextFontSize(primitive, text));
 }
 
 function firmwareFontHeight(fontValue: number | undefined, fontSizeValue: number | undefined): number {
   const size = Math.max(1, fontSizeValue ?? 1);
   const font = fontValue ?? 1;
   if (font === 2) {
-    return size * 16;
+    return size * TFT_FONT2_HEIGHT;
   }
   if (font === 4) {
-    return size * 26;
+    return size * TFT_FONT4_HEIGHT;
   }
   return size * GLCD_FONT_HEIGHT;
 }
 
 function firmwareTextWidth(text: string, fontValue: number | undefined, fontSizeValue: number | undefined): number {
+  return firmwareTextWidthAtSize(text, fontValue, fontSizeValue);
+}
+
+function firmwareTextWidthAtSize(text: string, fontValue: number | undefined, fontSizeValue: number | undefined): number {
   const size = Math.max(1, fontSizeValue ?? 1);
   const font = fontValue ?? 1;
   if (font === 2) {
-    return text.length * 10 * size;
+    return textWidthFromTable(text, TFT_FONT2_WIDTHS) * size;
   }
   if (font === 4) {
-    return text.length * 18 * size;
+    return textWidthFromTable(text, TFT_FONT4_WIDTHS) * size;
   }
   return text.length * GLCD_FONT_ADVANCE * size;
+}
+
+function effectiveTextFontSize(primitive: Primitive, text: string): number {
+  let size = Math.max(1, primitive.fontSize ?? 1);
+  if (primitive.fit !== "shrink" || !primitive.maxWidth) {
+    return size;
+  }
+  while (size > 1 && firmwareTextWidthAtSize(text, primitive.font, size) > primitive.maxWidth) {
+    size -= 1;
+  }
+  return size;
+}
+
+function alignedTextOffset(primitive: Primitive, text: string, size: number): number {
+  if (!primitive.maxWidth || primitive.align === undefined || primitive.align === "left") {
+    return 0;
+  }
+  const slack = Math.max(0, primitive.maxWidth - firmwareTextWidthAtSize(text, primitive.font, size));
+  if (primitive.align === "center") {
+    return Math.floor(slack / 2);
+  }
+  if (primitive.align === "right") {
+    return slack;
+  }
+  return 0;
+}
+
+function textWidthFromTable(text: string, widths: readonly number[]): number {
+  let width = 0;
+  for (const char of text) {
+    const code = char.charCodeAt(0);
+    if (code >= TFT_FONT_FIRST_CHAR && code <= TFT_FONT_LAST_CHAR) {
+      width += widths[code - TFT_FONT_FIRST_CHAR] ?? widths[0] ?? 0;
+    } else {
+      width += widths[0] ?? 0;
+    }
+  }
+  return width;
 }
 
 function textPreviewCanvas(
@@ -3868,18 +4333,19 @@ function textPreviewCanvas(
     context.clearRect(0, 0, canvas.width, canvas.height);
   }
   context.fillStyle = primitive.color ?? "#FFFFFF";
-  const size = Math.max(1, primitive.fontSize ?? 1);
+  const size = effectiveTextFontSize(primitive, text);
+  const textX = alignedTextOffset(primitive, text, size);
   const font = primitive.font ?? 1;
-  if (font !== 1) {
-    const px = firmwareFontHeight(font, size);
-    context.imageSmoothingEnabled = true;
-    context.font = `700 ${px}px Arial, sans-serif`;
-    context.textBaseline = "top";
-    context.fillText(text, 0, 0);
+  if (font === 2) {
+    drawTftFont2Text(context, text, size, textX);
+    return canvas;
+  }
+  if (font === 4) {
+    drawTftFont4Text(context, text, size, textX);
     return canvas;
   }
   for (let charIndex = 0; charIndex < text.length; charIndex += 1) {
-    const charX = charIndex * GLCD_FONT_ADVANCE * size;
+    const charX = textX + charIndex * GLCD_FONT_ADVANCE * size;
     const code = text.charCodeAt(charIndex);
     for (let column = 0; column < GLCD_FONT_ADVANCE; column += 1) {
       let bits = column < GLCD_FONT_COLUMNS ? glcdGlyphColumn(code, column) : 0;
@@ -3892,6 +4358,66 @@ function textPreviewCanvas(
     }
   }
   return canvas;
+}
+
+function drawTftFont2Text(context: CanvasRenderingContext2D, text: string, size: number, x = 0) {
+  let cursorX = x;
+  for (const char of text) {
+    const code = normalizeTftFontCode(char.charCodeAt(0));
+    const width = TFT_FONT2_WIDTHS[code - TFT_FONT_FIRST_CHAR] ?? TFT_FONT2_WIDTHS[0];
+    const glyph = TFT_FONT2_GLYPHS[code - TFT_FONT_FIRST_CHAR] ?? TFT_FONT2_GLYPHS[0];
+    const bytesPerRow = Math.floor((width + 6) / 8);
+    for (let row = 0; row < TFT_FONT2_HEIGHT; row += 1) {
+      for (let byteIndex = 0; byteIndex < bytesPerRow; byteIndex += 1) {
+        const line = glyph[row * bytesPerRow + byteIndex] ?? 0;
+        for (let bit = 0; bit < 8; bit += 1) {
+          const col = byteIndex * 8 + bit;
+          if (col >= width) {
+            break;
+          }
+          if ((line & (0x80 >> bit)) !== 0) {
+            context.fillRect(cursorX + col * size, row * size, size, size);
+          }
+        }
+      }
+    }
+    cursorX += width * size;
+  }
+}
+
+function drawTftFont4Text(context: CanvasRenderingContext2D, text: string, size: number, x = 0) {
+  let cursorX = x;
+  for (const char of text) {
+    const code = normalizeTftFontCode(char.charCodeAt(0));
+    const width = TFT_FONT4_WIDTHS[code - TFT_FONT_FIRST_CHAR] ?? TFT_FONT4_WIDTHS[0];
+    const glyph = TFT_FONT4_RLE_GLYPHS[code - TFT_FONT_FIRST_CHAR] ?? TFT_FONT4_RLE_GLYPHS[0];
+    let pixel = 0;
+    const totalPixels = width * TFT_FONT4_HEIGHT;
+    for (const rawRun of glyph) {
+      const paint = (rawRun & 0x80) !== 0;
+      const runLength = (rawRun & 0x7F) + 1;
+      if (paint) {
+        for (let offset = 0; offset < runLength && pixel + offset < totalPixels; offset += 1) {
+          const nextPixel = pixel + offset;
+          const x = nextPixel % width;
+          const y = Math.floor(nextPixel / width);
+          context.fillRect(cursorX + x * size, y * size, size, size);
+        }
+      }
+      pixel += runLength;
+      if (pixel >= totalPixels) {
+        break;
+      }
+    }
+    cursorX += width * size;
+  }
+}
+
+function normalizeTftFontCode(code: number): number {
+  if (code >= TFT_FONT_FIRST_CHAR && code <= TFT_FONT_LAST_CHAR) {
+    return code;
+  }
+  return TFT_FONT_FIRST_CHAR;
 }
 
 function glcdGlyphColumn(code: number, column: number): number {
@@ -4245,8 +4771,180 @@ function builtInSpriteText(assetPath: string | undefined): string | undefined {
   if (assetPath === CLAUDE_CODING_SPRITE_PATH) {
     return CLAUDE_CODING_SPRITE;
   }
+  if (assetPath === SYNTHWAVE_TOP_SPRITE_PATH) {
+    return synthwaveTopSpriteText();
+  }
+  if (assetPath === SYNTHWAVE_UI_SPRITE_PATH) {
+    return synthwaveUiSpriteText();
+  }
   return undefined;
 }
+
+function synthwaveTopSpriteText(): string {
+  if (synthwaveTopSpriteCache) {
+    return synthwaveTopSpriteCache;
+  }
+
+  const width = DISPLAY_SIZE;
+  const height = 128;
+  const rows = Array.from({ length: height }, () => Array.from({ length: width }, () => "."));
+  const setPixel = (x: number, y: number, token: string) => {
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+      rows[y][x] = token;
+    }
+  };
+  const fillRect = (x: number, y: number, w: number, h: number, token: string) => {
+    for (let yy = y; yy < y + h; yy += 1) {
+      for (let xx = x; xx < x + w; xx += 1) {
+        setPixel(xx, yy, token);
+      }
+    }
+  };
+  const drawLine = (x0: number, y0: number, x1: number, y1: number, token: string) => {
+    const dx = Math.abs(x1 - x0);
+    const sx = x0 < x1 ? 1 : -1;
+    const dy = -Math.abs(y1 - y0);
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    for (;;) {
+      setPixel(x0, y0, token);
+      if (x0 === x1 && y0 === y1) {
+        break;
+      }
+      const twice = err * 2;
+      if (twice >= dy) {
+        err += dy;
+        x0 += sx;
+      }
+      if (twice <= dx) {
+        err += dx;
+        y0 += sy;
+      }
+    }
+  };
+
+  const centerX = 120;
+  const centerY = 98;
+  const radius = 30;
+  for (let y = centerY - radius; y <= centerY; y += 1) {
+    for (let x = centerX - radius; x <= centerX + radius; x += 1) {
+      const dx = x - centerX;
+      const dy = y - centerY;
+      if ((dx * dx) + (dy * dy) <= radius * radius) {
+        setPixel(x, y, y < 83 ? "e" : y < 92 ? "d" : "c");
+      }
+    }
+  }
+  for (const y of [82, 89, 96, 102]) {
+    fillRect(82, y, 76, 3, ".");
+    fillRect(84, y + 2, 72, 1, "c");
+  }
+
+  for (const [x, y] of [[28, 38], [52, 54], [207, 34], [214, 72], [189, 93], [36, 93]]) {
+    fillRect(x, y, 2, 2, "d");
+  }
+  for (const [x, y] of [[24, 61], [208, 91]]) {
+    fillRect(x, y, 5, 2, "g");
+    fillRect(x + 1, y - 2, 2, 6, "g");
+  }
+
+  fillRect(6, 107, 228, 2, "j");
+  fillRect(18, 115, 204, 1, "b");
+  fillRect(0, 126, 240, 1, "a");
+  for (const x of [72, 104, 120, 136, 168]) {
+    drawLine(120, 108, x, 127, "j");
+  }
+  for (const x of [16, 53, 86, 154, 187, 224]) {
+    drawLine(x, 116, x - 30, 127, "a");
+  }
+
+  synthwaveTopSpriteCache = [
+    "CBI1",
+    `${width} ${height}`,
+    "10",
+    "#9E35FF",
+    "#2B0A62",
+    "#FF4FA3",
+    "#FF76B7",
+    "#FF7A5C",
+    "#35C9FF",
+    "#12052D",
+    "#FF6AB5",
+    "#4D8CFF",
+    "#5611A3",
+    ...rows.map(encodeRleTokenRow),
+  ].join("\n");
+  return synthwaveTopSpriteCache;
+}
+
+function synthwaveUiSpriteText(): string {
+  if (synthwaveUiSpriteCache) {
+    return synthwaveUiSpriteCache;
+  }
+
+  const width = DISPLAY_SIZE;
+  const height = 95;
+  const rows = Array.from({ length: height }, () => Array.from({ length: width }, () => "."));
+  const setPixel = (x: number, y: number, token: string) => {
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+      rows[y][x] = token;
+    }
+  };
+  const fillRect = (x: number, y: number, w: number, h: number, token: string) => {
+    for (let yy = y; yy < y + h; yy += 1) {
+      for (let xx = x; xx < x + w; xx += 1) {
+        setPixel(xx, yy, token);
+      }
+    }
+  };
+
+  fillRect(14, 55, 212, 2, "j");
+  fillRect(18, 28, 153, 20, "b");
+  fillRect(18, 83, 153, 12, "i");
+  drawSpriteText(rows, "SESSION", 18, 7, "a", 2, 1);
+  drawSpriteText(rows, "REMAIN", 182, 49, "a", 1, 1);
+  drawSpriteText(rows, "WEEKLY", 18, 62, "h", 2, 1);
+  drawSpriteText(rows, "REMAIN", 182, 86, "h", 1, 1);
+
+  synthwaveUiSpriteCache = [
+    "CBI1",
+    `${width} ${height}`,
+    "9",
+    "#9E35FF",
+    "#5611A3",
+    "#1D073B",
+    "#FF4FA3",
+    "#101145",
+    "#4D8CFF",
+    "#A245FF",
+    "#35C9FF",
+    "#050014",
+    ...rows.map(encodeRleTokenRow),
+  ].join("\n");
+  return synthwaveUiSpriteCache;
+}
+
+function drawSpriteText(rows: string[][], text: string, x: number, y: number, token: string, font = 1, size = 1) {
+  const width = firmwareTextWidthAtSize(text, font, size);
+  const height = firmwareFontHeight(font, size);
+  const canvas = textPreviewCanvas({ type: "text", x: 0, y: 0, text, font, fontSize: size, color: "#FFFFFF" }, text, width, height);
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let yy = 0; yy < canvas.height; yy += 1) {
+    for (let xx = 0; xx < canvas.width; xx += 1) {
+      const alpha = image.data[((yy * canvas.width + xx) * 4) + 3] ?? 0;
+      const targetY = y + yy;
+      const targetX = x + xx;
+      if (alpha > 0 && rows[targetY]?.[targetX] !== undefined) {
+        rows[targetY][targetX] = token;
+      }
+    }
+  }
+}
+
 
 function stateAssetPathsForPrimitive(primitive: Primitive): string[] {
   const paths = new Set<string>();
@@ -4530,7 +5228,7 @@ function messageList(): string {
 function bindEvents() {
   app.querySelectorAll<HTMLElement>("[data-select]").forEach((button) => {
     button.addEventListener("click", () => {
-      state.selectedIndex = Number(button.dataset.select);
+      setSingleSelection(Number(button.dataset.select));
       state.editingTextIndex = null;
       state.notice = "";
       render();
@@ -4542,6 +5240,17 @@ function bindEvents() {
       frame.activity = button.dataset.previewActivity ?? "idle";
       render();
     });
+  });
+
+  app.querySelector<HTMLButtonElement>("[data-snap-toggle]")?.addEventListener("click", () => {
+    state.snapEnabled = !state.snapEnabled;
+    render();
+  });
+
+  app.querySelector<HTMLSelectElement>("[data-snap-grid]")?.addEventListener("change", (event) => {
+    state.snapGridSize = clamp(toInt((event.target as HTMLSelectElement).value, 4), 1, 24);
+    state.snapEnabled = true;
+    render();
   });
 
   app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-field]").forEach((input) => {
@@ -4807,7 +5516,7 @@ function bindEvents() {
     });
     element.addEventListener("click", () => {
       const index = Number(element.dataset.drag);
-      state.selectedIndex = index;
+      setSingleSelection(index);
       state.editingTextIndex = state.spec.primitives[index]?.type === "text" ? index : null;
       state.notice = "";
       render();
@@ -4815,7 +5524,7 @@ function bindEvents() {
     element.addEventListener("dblclick", () => {
       const index = Number(element.dataset.drag);
       if (state.spec.primitives[index]?.type === "text") {
-        state.selectedIndex = index;
+        setSingleSelection(index);
         state.editingTextIndex = index;
         state.notice = "";
         render();
@@ -4848,6 +5557,7 @@ function syncStateWithoutRender() {
   state.jsonText = prettyJson(state.spec);
   state.jsonDirty = false;
   validateCurrentSpec();
+  persistCurrentThemeDraft();
 }
 
 function isColorInput(input: Element): input is HTMLInputElement {
@@ -4874,7 +5584,7 @@ function insertToken(token: string) {
     state.editingTextIndex = state.selectedIndex;
   } else {
     state.spec.primitives.push({ type: "text", x: 24, y: 24, text: token, fontSize: 2, color: "#FFFFFF" });
-    state.selectedIndex = state.spec.primitives.length - 1;
+    setSingleSelection(state.spec.primitives.length - 1);
     state.editingTextIndex = state.selectedIndex;
   }
   state.notice = "Variable inserted.";
@@ -4958,6 +5668,39 @@ function selectedPrimitive(): Primitive | null {
   return state.spec.primitives[state.selectedIndex] ?? null;
 }
 
+function selectedPrimitiveIndices(): number[] {
+  return normalizeSelectedIndices(state.selectedIndices, state.selectedIndex, state.spec.primitives.length);
+}
+
+function isPrimitiveSelected(index: number): boolean {
+  return selectedPrimitiveIndices().includes(index);
+}
+
+function setSingleSelection(index: number) {
+  setSelection(index >= 0 ? [index] : []);
+}
+
+function setSelection(indices: number[]) {
+  const normalized = normalizeSelectedIndices(indices, indices[0] ?? -1, state.spec.primitives.length);
+  state.selectedIndices = normalized;
+  state.selectedIndex = normalized[0] ?? -1;
+}
+
+function normalizeSelectedIndices(indices: unknown, primaryIndex: number, total: number): number[] {
+  const valid = (value: number) => Number.isInteger(value) && value >= 0 && value < total;
+  const source = Array.isArray(indices) ? indices : [];
+  const unique = new Set<number>();
+  if (valid(primaryIndex)) {
+    unique.add(primaryIndex);
+  }
+  source.forEach((value) => {
+    if (typeof value === "number" && valid(value)) {
+      unique.add(value);
+    }
+  });
+  return Array.from(unique).sort((a, b) => a - b);
+}
+
 function clonePrimitive(primitive: Primitive): Primitive {
   return JSON.parse(JSON.stringify(primitive)) as Primitive;
 }
@@ -4994,34 +5737,48 @@ function copyWithOffset(primitive: Primitive): Primitive {
   const copy = clonePrimitive(primitive);
   const width = estimatePrimitiveWidth(copy);
   const height = estimatePrimitiveHeight(copy);
-  copy.x = clamp(copy.x + 8, 0, Math.max(0, DISPLAY_SIZE - width));
-  copy.y = clamp(copy.y + 8, 0, Math.max(0, DISPLAY_SIZE - height));
+  const snapped = snapDetachedPosition(copy.x + 8, copy.y + 8, width, height);
+  copy.x = clamp(snapped.x, 0, Math.max(0, DISPLAY_SIZE - width));
+  copy.y = clamp(snapped.y, 0, Math.max(0, DISPLAY_SIZE - height));
   return copy;
 }
 
 function deleteSelectedPrimitive() {
-  if (!selectedPrimitive()) {
+  const indices = selectedPrimitiveIndices();
+  if (indices.length === 0) {
     return;
   }
   pushHistory();
-  state.spec.primitives.splice(state.selectedIndex, 1);
-  state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.spec.primitives.length - 1));
+  indices.slice().sort((a, b) => b - a).forEach((index) => {
+    state.spec.primitives.splice(index, 1);
+  });
+  setSingleSelection(state.spec.primitives.length > 0 ? Math.min(indices[0], state.spec.primitives.length - 1) : -1);
   state.editingTextIndex = null;
-  state.notice = "Element deleted.";
+  state.notice = indices.length === 1 ? "Element deleted." : `${indices.length} elements deleted.`;
   syncJsonFromSpec();
   render();
 }
 
 function moveSelectedPrimitive(deltaX: number, deltaY: number) {
-  const primitive = selectedPrimitive();
-  if (!primitive) {
+  const indices = selectedPrimitiveIndices();
+  const anchor = state.spec.primitives[indices[0]];
+  if (!anchor) {
     return;
   }
   pushHistory();
-  const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
-  const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
-  primitive.x = clamp(primitive.x + deltaX, 0, maxX);
-  primitive.y = clamp(primitive.y + deltaY, 0, maxY);
+  const snapped = snapPrimitivePosition(indices[0], anchor.x + deltaX, anchor.y + deltaY);
+  const appliedDeltaX = snapped.x - anchor.x;
+  const appliedDeltaY = snapped.y - anchor.y;
+  indices.forEach((index) => {
+    const primitive = state.spec.primitives[index];
+    if (!primitive) {
+      return;
+    }
+    const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
+    const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
+    primitive.x = clamp(primitive.x + appliedDeltaX, 0, maxX);
+    primitive.y = clamp(primitive.y + appliedDeltaY, 0, maxY);
+  });
   state.editingTextIndex = null;
   syncJsonFromSpec();
   render();
@@ -5069,8 +5826,13 @@ function updateSelectedPrimitive(key: string, value: string) {
     rebuildSpriteAssetForPrimitive(primitive);
     return;
   }
-  if (["x", "y", "width", "height", "fontSize", "font"].includes(key)) {
-    primitive[key as "x"] = Math.max(key === "x" || key === "y" ? 0 : 1, toInt(value, key === "x" || key === "y" ? 0 : 1));
+  if (["x", "y", "width", "height", "fontSize", "font", "maxWidth", "segments", "segmentGap"].includes(key)) {
+    if (key === "maxWidth" && value.trim() === "") {
+      delete primitive.maxWidth;
+      return;
+    }
+    const min = key === "x" || key === "y" || key === "segmentGap" ? 0 : 1;
+    primitive[key as "x"] = Math.max(min, toInt(value, min));
     return;
   }
   if (["color", "bgColor", "borderColor"].includes(key)) {
@@ -5084,6 +5846,27 @@ function updateSelectedPrimitive(key: string, value: string) {
   }
   if (key === "binding") {
     primitive.binding = value as BindingKey;
+    return;
+  }
+  if (key === "fit") {
+    primitive.fit = value === "shrink" ? "shrink" : "none";
+    if (primitive.fit === "none") {
+      delete primitive.fit;
+    }
+    return;
+  }
+  if (key === "align") {
+    primitive.align = ["center", "right"].includes(value) ? value as "center" | "right" : "left";
+    if (primitive.align === "left") {
+      delete primitive.align;
+    }
+    return;
+  }
+  if (key === "progressStyle") {
+    primitive.progressStyle = value === "segments" ? "segments" : "solid";
+    if (primitive.progressStyle === "solid") {
+      delete primitive.progressStyle;
+    }
     return;
   }
   if (key === "assetPath") {
@@ -5145,10 +5928,16 @@ async function handleAction(action: string) {
     saveThemeLocally();
     return;
   }
+  if (action === "save-draft") {
+    persistCurrentThemeDraft();
+    state.notice = "Draft saved. It will reopen automatically next time.";
+    render();
+    return;
+  }
   if (action === "reset") {
     pushHistory();
     state.spec = cloneSpec(initialSpec);
-    state.selectedIndex = -1;
+    setSingleSelection(-1);
     state.editingTextIndex = null;
     state.notice = "Sample restored.";
     syncJsonFromSpec();
@@ -5158,9 +5947,19 @@ async function handleAction(action: string) {
   if (action === "load-cozy-meadow") {
     pushHistory();
     state.spec = cloneSpec(COZY_MEADOW_SPEC);
-    state.selectedIndex = state.spec.primitives.findIndex((primitive) => primitive.type === "sprite");
+    setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "sprite"));
     state.editingTextIndex = null;
     state.notice = "Cozy Meadow loaded.";
+    syncJsonFromSpec();
+    render();
+    return;
+  }
+  if (action === "load-synthwave") {
+    pushHistory();
+    state.spec = cloneSpec(SYNTHWAVE_SPEC);
+    setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "progress"));
+    state.editingTextIndex = null;
+    state.notice = "Synthwave loaded.";
     syncJsonFromSpec();
     render();
     return;
@@ -5168,7 +5967,7 @@ async function handleAction(action: string) {
   if (action === "load-claude-creature") {
     pushHistory();
     state.spec = cloneSpec(CLAUDE_CREATURE_SPEC);
-    state.selectedIndex = state.spec.primitives.findIndex((primitive) => primitive.type === "sprite");
+    setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "sprite"));
     state.editingTextIndex = null;
     state.notice = "Claude Creature loaded.";
     syncJsonFromSpec();
@@ -5252,7 +6051,7 @@ async function handleAction(action: string) {
 function addPrimitive(primitive: Primitive, notice = "Element added.") {
   pushHistory();
   state.spec.primitives.push(primitive);
-  state.selectedIndex = state.spec.primitives.length - 1;
+  setSingleSelection(state.spec.primitives.length - 1);
   state.editingTextIndex = primitive.type === "text" ? state.selectedIndex : null;
   state.notice = notice;
   syncJsonFromSpec();
@@ -5391,7 +6190,7 @@ function applyJson() {
     }
     pushHistory();
     state.spec = imported;
-    state.selectedIndex = imported.primitives.length > 0 ? Math.max(0, Math.min(state.selectedIndex, imported.primitives.length - 1)) : -1;
+    setSingleSelection(imported.primitives.length > 0 ? Math.max(0, Math.min(state.selectedIndex, imported.primitives.length - 1)) : -1);
     state.editingTextIndex = null;
     state.notice = "JSON applied.";
     syncJsonFromSpec();
@@ -5452,6 +6251,30 @@ function importPrimitive(value: unknown): Primitive {
   const font = numberValue(value.font) ?? numberValue(value.f);
   if (font !== undefined) {
     primitive.font = font;
+  }
+  const maxWidth = numberValue(value.maxWidth) ?? numberValue(value.mw);
+  if (maxWidth !== undefined) {
+    primitive.maxWidth = maxWidth;
+  }
+  const fit = stringValue(value.fit) ?? stringValue(value.ft);
+  if (fit === "shrink") {
+    primitive.fit = "shrink";
+  }
+  const align = stringValue(value.align) ?? stringValue(value.al);
+  if (align === "center" || align === "right") {
+    primitive.align = align;
+  }
+  const progressStyle = stringValue(value.progressStyle) ?? stringValue(value.ps);
+  if (progressStyle === "segments" || progressStyle === "segmented") {
+    primitive.progressStyle = "segments";
+  }
+  const segments = numberValue(value.segments) ?? numberValue(value.sg);
+  if (segments !== undefined) {
+    primitive.segments = segments;
+  }
+  const segmentGap = numberValue(value.segmentGap) ?? numberValue(value.gg);
+  if (segmentGap !== undefined) {
+    primitive.segmentGap = segmentGap;
   }
   primitive.color = stringValue(value.color) ?? stringValue(value.c);
   primitive.bgColor = stringValue(value.bgColor) ?? stringValue(value.bg);
@@ -5553,7 +6376,7 @@ function startDrag(event: PointerEvent) {
   if (!primitive) {
     return;
   }
-  state.selectedIndex = index;
+  setSingleSelection(index);
   pushHistory();
   const svg = (event.currentTarget as SVGElement).closest("svg");
   if (!svg) {
@@ -5569,8 +6392,9 @@ function startDrag(event: PointerEvent) {
     const point = pointerPosition(liveSvg, moveEvent);
     const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
     const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
-    primitive.x = clamp(Math.round(originX + point.x - start.x), 0, maxX);
-    primitive.y = clamp(Math.round(originY + point.y - start.y), 0, maxY);
+    const snapped = snapPrimitivePosition(index, originX + point.x - start.x, originY + point.y - start.y);
+    primitive.x = clamp(snapped.x, 0, maxX);
+    primitive.y = clamp(snapped.y, 0, maxY);
     syncJsonFromSpec();
     render();
   };
@@ -5594,7 +6418,7 @@ function startResize(event: PointerEvent) {
     return;
   }
 
-  state.selectedIndex = index;
+  setSingleSelection(index);
   pushHistory();
   const svg = target.closest("svg");
   if (!svg) {
@@ -6336,6 +7160,24 @@ function buildDevicePrimitive(primitive: Primitive): Record<string, unknown> {
   }
   if (primitive.font !== undefined) {
     compact.f = primitive.font;
+  }
+  if (primitive.maxWidth !== undefined) {
+    compact.mw = primitive.maxWidth;
+  }
+  if (primitive.fit === "shrink") {
+    compact.ft = primitive.fit;
+  }
+  if (primitive.align !== undefined && primitive.align !== "left") {
+    compact.al = primitive.align;
+  }
+  if (primitive.progressStyle === "segments") {
+    compact.ps = primitive.progressStyle;
+  }
+  if (primitive.segments !== undefined) {
+    compact.sg = primitive.segments;
+  }
+  if (primitive.segmentGap !== undefined) {
+    compact.gg = primitive.segmentGap;
   }
   if (primitive.color !== undefined) {
     compact.c = primitive.color;
