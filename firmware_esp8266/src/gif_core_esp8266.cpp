@@ -2,6 +2,8 @@
 
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 
+#include "renderer_esp8266_display_state.h"
+
 #include <cstdio>
 #include <cstring>
 
@@ -219,6 +221,7 @@ void GifCoreESP8266::ClearDrawRect(TFT_eSPI& tft) {
   if (right <= x || bottom <= y) {
     return;
   }
+  display::DisplayTransaction transaction;
   tft.fillRect(x, y, right - x, bottom - y, backgroundColor_);
 }
 
@@ -310,16 +313,19 @@ bool GifCoreESP8266::PlayFrame(TFT_eSPI& tft, bool forceFrame) {
   const unsigned long frameStartMs = now;
   int delayMs = 0;
 
-  tft.startWrite();
-  bool played = decoder_.playFrame(false, &delayMs, nullptr);
-  tft.endWrite();
+  bool played = false;
+  {
+    display::DisplayTransaction transaction;
+    played = decoder_.playFrame(false, &delayMs, nullptr);
+  }
 
   if (!played) {
     decoder_.reset();
     ClearDrawRect(tft);
-    tft.startWrite();
-    played = decoder_.playFrame(false, &delayMs, nullptr);
-    tft.endWrite();
+    {
+      display::DisplayTransaction transaction;
+      played = decoder_.playFrame(false, &delayMs, nullptr);
+    }
     if (!played) {
       NoteFailure(failureSlot_, assetPath_.c_str(), "frame_decode");
       Stop();

@@ -28,6 +28,10 @@ const char* lastThemeSpecRenderError = "";
 unsigned long themeSpecRenderFailures = 0;
 String lastSuccessfulThemeSpecId = "";
 int lastSuccessfulThemeSpecRev = 0;
+uint32_t lastSuccessfulThemeSpecRawHash = 0;
+JsonDocument cachedThemeSpecDoc;
+uint32_t cachedThemeSpecDocHash = 0;
+themespec::CompiledThemeSpec cachedThemeSpecScene;
 
 struct AnimatedSpriteCache {
   bool valid = false;
@@ -57,20 +61,59 @@ void markThemeSpecRenderFailed(const char* error) {
   themeSpecRenderFailures += 1;
 }
 
+uint32_t themeSpecRawHash(const String& raw) {
+  uint32_t hash = 2166136261UL;
+  for (size_t i = 0; i < raw.length(); ++i) {
+    hash ^= static_cast<uint8_t>(raw[i]);
+    hash *= 16777619UL;
+  }
+  return hash == 0 ? 1 : hash;
+}
+
+const String& currentThemeSpecRaw();
+
 void markCurrentThemeSpecRendered() {
   markThemeSpecRenderOk();
   lastSuccessfulThemeSpecId = CurrentFrame().themeSpecId;
   lastSuccessfulThemeSpecRev = CurrentFrame().themeSpecRev;
+  lastSuccessfulThemeSpecRawHash = themeSpecRawHash(currentThemeSpecRaw());
 }
 
 bool currentThemeSpecRenderedSuccessfully() {
   return CurrentFrame().hasThemeSpec &&
          lastSuccessfulThemeSpecRev == CurrentFrame().themeSpecRev &&
-         lastSuccessfulThemeSpecId == CurrentFrame().themeSpecId;
+         lastSuccessfulThemeSpecId == CurrentFrame().themeSpecId &&
+         lastSuccessfulThemeSpecRawHash != 0 &&
+         lastSuccessfulThemeSpecRawHash == themeSpecRawHash(currentThemeSpecRaw());
 }
 
-bool themeSpecRawHasAnimatedAssets(const String& raw) {
-  return raw.indexOf(".cba") >= 0 || raw.indexOf(".gif") >= 0;
+const String& currentThemeSpecRaw() {
+  return codexbar_display::core::ThemeSpecRawForFrame(RuntimeState(), CurrentFrame());
+}
+
+bool ensureThemeSpecSceneCached(const String& raw) {
+  const uint32_t rawHash = themeSpecRawHash(raw);
+  if (cachedThemeSpecDocHash == rawHash && cachedThemeSpecScene.primitiveCount > 0) {
+    return true;
+  }
+  cachedThemeSpecDoc.clear();
+  cachedThemeSpecScene = themespec::CompiledThemeSpec{};
+  const DeserializationError err = deserializeJson(cachedThemeSpecDoc, raw.c_str());
+  if (err) {
+    cachedThemeSpecDocHash = 0;
+    return false;
+  }
+  if (!themespec::CompileThemeSpecObject(cachedThemeSpecDoc.as<JsonObjectConst>(), cachedThemeSpecScene)) {
+    cachedThemeSpecDocHash = 0;
+    cachedThemeSpecDoc.clear();
+    cachedThemeSpecScene = themespec::CompiledThemeSpec{};
+    return false;
+  }
+  if (!cachedThemeSpecScene.requiresJsonDocument) {
+    cachedThemeSpecDoc.clear();
+  }
+  cachedThemeSpecDocHash = rawHash;
+  return true;
 }
 
 bool readSpriteLine(File& file, String& line) {
@@ -177,7 +220,8 @@ bool readSpritePalette(File& file, uint16_t* palette, int& paletteSize) {
   return true;
 }
 
-int cachedSpriteFrameIndex(AnimatedSpriteCache& cache) {
+int cachedSpriteFrameIndex(AnimatedSpriteCache& cache, bool forceFrame, bool& shouldDraw) {
+  shouldDraw = forceFrame;
   if (cache.frameCount <= 1 || cache.fps <= 0) {
     cache.frameIndex = 0;
     cache.nextFrameAtMs = 0;
@@ -194,6 +238,7 @@ int cachedSpriteFrameIndex(AnimatedSpriteCache& cache) {
   if (static_cast<long>(now - cache.nextFrameAtMs) >= 0) {
     cache.frameIndex = (cache.frameIndex + 1) % cache.frameCount;
     cache.nextFrameAtMs = now + frameMs;
+    shouldDraw = true;
   }
   return cache.frameIndex;
 }
@@ -311,6 +356,7 @@ void drawAnimatedSpriteAsset(
     int y,
     int targetWidth,
     int targetHeight,
+    bool forceFrame,
     bool hasClearColor,
     uint16_t clearColor) {
   AnimatedSpriteCache* cache = animatedSpriteCacheForPath(assetPath);
@@ -321,7 +367,11 @@ void drawAnimatedSpriteAsset(
     return;
   }
 
-  const int selectedFrame = cachedSpriteFrameIndex(*cache);
+  bool shouldDraw = false;
+  const int selectedFrame = cachedSpriteFrameIndex(*cache, forceFrame, shouldDraw);
+  if (!shouldDraw) {
+    return;
+  }
   if (selectedFrame < 0 || selectedFrame >= cache->frameCount || !file.seek(cache->frameOffsets[selectedFrame], SeekSet)) {
     return;
   }
@@ -351,7 +401,16 @@ void drawAnimatedSpriteAsset(
   }
 }
 
-void drawSpriteAsset(const char* assetPath, int x, int y, int targetWidth, int targetHeight, bool animatedOnly, bool hasClearColor, uint16_t clearColor) {
+void drawSpriteAsset(
+    const char* assetPath,
+    int x,
+    int y,
+    int targetWidth,
+    int targetHeight,
+    bool animatedOnly,
+    bool forceAnimatedFrame,
+    bool hasClearColor,
+    uint16_t clearColor) {
   if (assetPath == nullptr || assetPath[0] == '\0') {
     return;
   }
@@ -370,7 +429,7 @@ void drawSpriteAsset(const char* assetPath, int x, int y, int targetWidth, int t
         drawStaticSpriteAsset(file, x, y, targetWidth, targetHeight, hasClearColor, clearColor);
       }
     } else if (line == "CBA1") {
-      drawAnimatedSpriteAsset(assetPath, file, x, y, targetWidth, targetHeight, hasClearColor, clearColor);
+      drawAnimatedSpriteAsset(assetPath, file, x, y, targetWidth, targetHeight, forceAnimatedFrame, hasClearColor, clearColor);
     }
   }
 
@@ -386,11 +445,29 @@ void resetAnimatedSpriteCaches() {
 
 class ThemeSpecSink final : public themespec::Sink {
  public:
-  explicit ThemeSpecSink(bool forceGifFrame) : forceGifFrame_(forceGifFrame) {}
+  explicit ThemeSpecSink(bool forceGifFrame, bool clearSpriteTransparent = false)
+      : forceGifFrame_(forceGifFrame),
+        clearSpriteTransparent_(clearSpriteTransparent) {}
 
   void PrimeBackground(uint16_t color) override {
     backgroundColor_ = color;
     hasBackgroundColor_ = true;
+  }
+
+  void BeginClip(int x, int y, int width, int height) override {
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+    clipActive_ = true;
+    Tft().setViewport(x, y, width, height, false);
+  }
+
+  void EndClip() override {
+    if (!clipActive_) {
+      return;
+    }
+    Tft().resetViewport();
+    clipActive_ = false;
   }
 
   void FillScreen(uint16_t color) override {
@@ -474,7 +551,8 @@ class ThemeSpecSink final : public themespec::Sink {
         cmd.width,
         cmd.height,
         !forceGifFrame_,
-        !forceGifFrame_ && (cmd.hasBg || hasBackgroundColor_),
+        forceGifFrame_,
+        clearSpriteTransparent_ && (cmd.hasBg || hasBackgroundColor_),
         cmd.hasBg ? cmd.bg : backgroundColor_);
   }
 
@@ -496,6 +574,8 @@ class ThemeSpecSink final : public themespec::Sink {
 
  private:
   bool forceGifFrame_ = false;
+  bool clearSpriteTransparent_ = false;
+  bool clipActive_ = false;
   bool hasBackgroundColor_ = false;
   uint16_t backgroundColor_ = 0x0000;
 };
@@ -530,19 +610,25 @@ bool DrawThemeSpecUsage() {
   if (!CurrentFrame().hasThemeSpec) {
     return false;
   }
-  if (CurrentFrame().themeSpecRaw.length() == 0) {
+  const String& raw = currentThemeSpecRaw();
+  if (!codexbar_display::core::ThemeSpecRawLooksRenderable(raw)) {
     markThemeSpecRenderFailed("missing_theme_spec");
     return false;
   }
 
+  if (!ensureThemeSpecSceneCached(raw)) {
+    markThemeSpecRenderFailed("theme_spec_parse_failed");
+    return false;
+  }
+
   ThemeSpecSink sink(true);
-  if (!themespec::RenderThemeSpec(CurrentFrame().themeSpecRaw.c_str(), currentThemeSpecFrameData(), sink)) {
+  if (!themespec::RenderCompiledThemeSpec(cachedThemeSpecScene, currentThemeSpecFrameData(), sink)) {
     markThemeSpecRenderFailed("full_render_failed");
     return false;
   }
 
   markCurrentThemeSpecRendered();
-  nextThemeSpecAnimatedTickAtMs = themeSpecRawHasAnimatedAssets(CurrentFrame().themeSpecRaw)
+  nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
                                       : 0;
   const int64_t remain = CurrentRemainingSecs();
@@ -552,7 +638,8 @@ bool DrawThemeSpecUsage() {
 }
 
 bool TickThemeSpecGifs() {
-  if (!CurrentFrame().hasThemeSpec || CurrentFrame().themeSpecRaw.length() == 0) {
+  const String& raw = currentThemeSpecRaw();
+  if (!CurrentFrame().hasThemeSpec || !codexbar_display::core::ThemeSpecRawLooksRenderable(raw)) {
     return false;
   }
   const unsigned long now = millis();
@@ -564,15 +651,50 @@ bool TickThemeSpecGifs() {
   }
   nextThemeSpecAnimatedTickAtMs = now + kThemeSpecAnimatedTickMs;
 
-  ThemeSpecSink sink(false);
-  const bool ok = themespec::RenderThemeSpecAnimatedPrimitives(CurrentFrame().themeSpecRaw.c_str(), currentThemeSpecFrameData(), sink);
+  if (!ensureThemeSpecSceneCached(raw)) {
+    return false;
+  }
+
+  ThemeSpecSink sink(false, true);
+  const bool ok = themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, currentThemeSpecFrameData(), sink);
   return ok;
+}
+
+bool RenderThemeSpecPartial(uint32_t changedFields) {
+  const String& raw = currentThemeSpecRaw();
+  if (!CurrentFrame().hasThemeSpec || !codexbar_display::core::ThemeSpecRawLooksRenderable(raw) || changedFields == 0) {
+    return false;
+  }
+
+  if (!ensureThemeSpecSceneCached(raw)) {
+    markThemeSpecRenderFailed("theme_spec_parse_failed");
+    return false;
+  }
+
+  ThemeSpecSink sink(true, true);
+  if (!themespec::RenderCompiledThemeSpecChangedPrimitives(cachedThemeSpecScene, currentThemeSpecFrameData(), changedFields, sink)) {
+    markThemeSpecRenderFailed("partial_render_failed");
+    return false;
+  }
+
+  markThemeSpecRenderOk();
+  nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
+                                      ? millis() + kThemeSpecAnimatedTickMs
+                                      : 0;
+  const int64_t remain = CurrentRemainingSecs();
+  LastRenderedSecs() = remain;
+  LastRenderedMinuteBucket() = remain / 60;
+  return true;
 }
 
 void ResetThemeSpecSpriteCaches() {
   resetAnimatedSpriteCaches();
   lastSuccessfulThemeSpecId = "";
   lastSuccessfulThemeSpecRev = 0;
+  lastSuccessfulThemeSpecRawHash = 0;
+  cachedThemeSpecDoc.clear();
+  cachedThemeSpecDocHash = 0;
+  cachedThemeSpecScene = themespec::CompiledThemeSpec{};
 }
 
 bool CurrentThemeSpecRenderedSuccessfully() {
@@ -606,6 +728,11 @@ bool DrawThemeSpecUsage() {
 }
 
 bool TickThemeSpecGifs() {
+  return false;
+}
+
+bool RenderThemeSpecPartial(uint32_t changedFields) {
+  (void)changedFields;
   return false;
 }
 

@@ -2,6 +2,7 @@ import Konva from "konva";
 import { strToU8, zipSync } from "fflate";
 import "gifler";
 import "./styles.css";
+import { CLIPPY_CODING_SPRITE, CLIPPY_IDLE_SPRITE } from "./clippy-sprites";
 import {
   TFT_FONT_FIRST_CHAR,
   TFT_FONT_LAST_CHAR,
@@ -30,8 +31,8 @@ const MAX_SPRITE_FRAME_HEIGHT = 64;
 const MAX_SPRITE_FRAMES = 32;
 const MAX_SPRITE_TOTAL_PIXELS = 32768;
 const MAX_ANIMATED_REPAINT_PIXELS_PER_SECOND = 18000;
-const MAX_INITIAL_RENDER_PIXELS = 120000;
-const WARN_INITIAL_RENDER_PIXELS = 90000;
+const MAX_INITIAL_RENDER_PIXELS = 140000;
+const WARN_INITIAL_RENDER_PIXELS = 120000;
 const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 const THEME_ASSET_PATH_PREFIX = "/themes/";
 const USER_THEME_ASSET_PATH_PREFIX = "/themes/u/";
@@ -112,8 +113,6 @@ interface Primitive {
   text?: string;
   font?: number;
   fontSize?: number;
-  maxWidth?: number;
-  fit?: "none" | "shrink";
   align?: "left" | "center" | "right";
   progressStyle?: "solid" | "segments";
   segments?: number;
@@ -283,6 +282,9 @@ const COZY_BIRDS_SPRITE_PATH = "/themes/u/birds.cba";
 const COZY_BUTTERFLY_SPRITE_PATH = "/themes/u/butter.cba";
 const CLAUDE_IDLE_SPRITE_PATH = "/themes/u/cld-i.cba";
 const CLAUDE_CODING_SPRITE_PATH = "/themes/u/cld-c.cba";
+const CLIPPY_BACKGROUND_SPRITE_PATH = "/themes/u/cp-bg.cbi";
+const CLIPPY_IDLE_SPRITE_PATH = "/themes/u/cp-i.cba";
+const CLIPPY_CODING_SPRITE_PATH = "/themes/u/cp-c.cba";
 const SYNTHWAVE_TOP_SPRITE_PATH = "/themes/u/syn-top.cbi";
 const SYNTHWAVE_UI_SPRITE_PATH = "/themes/u/syn-ui.cbi";
 let synthwaveTopSpriteCache = "";
@@ -1924,6 +1926,76 @@ function cozyBackgroundToken(x: number, y: number): string {
   return y % 5 === 0 ? "f" : "g";
 }
 
+function clippyBackgroundSpriteText(): string {
+  const width = 106;
+  const height = 105;
+  const palette = [
+    "#C6C3BD",
+    "#FFFFFF",
+    "#808080",
+    "#404040",
+    "#000080",
+    "#DAD7D0",
+    "#111111",
+    "#A5A19A",
+    "#EDEAE4",
+    "#B8B4AE",
+  ];
+  const rows = Array.from({ length: height }, () => Array.from({ length: width }, () => "a"));
+  const setPixel = (x: number, y: number, token: string) => {
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+      rows[y][x] = token;
+    }
+  };
+  const fillRect = (x: number, y: number, w: number, h: number, token: string) => {
+    for (let yy = y; yy < y + h; yy += 1) {
+      for (let xx = x; xx < x + w; xx += 1) {
+        setPixel(xx, yy, token);
+      }
+    }
+  };
+  const line = (x: number, y: number, w: number, token: string) => fillRect(x, y, w, 1, token);
+  const bevelRect = (x: number, y: number, w: number, h: number, fill: string) => {
+    fillRect(x, y, w, h, fill);
+    line(x, y, w, "b");
+    fillRect(x, y, 1, h, "b");
+    line(x, y + h - 1, w, "d");
+    fillRect(x + w - 1, y, 1, h, "d");
+    line(x + 1, y + h - 2, w - 2, "c");
+    fillRect(x + w - 2, y + 1, 1, h - 2, "c");
+  };
+
+  fillRect(0, 0, width, height, "a");
+  line(0, 0, width, "b");
+  fillRect(0, 0, 1, height, "b");
+  line(1, 1, width - 2, "i");
+  fillRect(1, 1, 1, height - 2, "i");
+  line(0, height - 1, width, "d");
+  fillRect(width - 1, 1, 1, height - 1, "d");
+  fillRect(2, 3, width - 4, 11, "e");
+
+  [78, 87, 96].forEach((x) => bevelRect(x, 4, 8, 8, "f"));
+  fillRect(80, 10, 4, 1, "g");
+  fillRect(90, 6, 4, 4, "g");
+  fillRect(91, 7, 2, 2, "f");
+  for (let i = 0; i < 5; i += 1) {
+    setPixel(98 + i, 6 + i, "g");
+    setPixel(102 - i, 6 + i, "g");
+  }
+
+  fillRect(14, 56, 78, 1, "c");
+  line(14, 57, 78, "b");
+  fillRect(14, 84, 78, 1, "c");
+  line(14, 85, 78, "b");
+  return [
+    "CBI1",
+    `${width} ${height}`,
+    String(palette.length),
+    ...palette,
+    ...rows.map(encodeRleTokenRow),
+  ].join("\n");
+}
+
 const COZY_MEADOW_SPEC: ThemeSpec = {
   themeSpecVersion: 1,
   themeId: "cozy-meadow",
@@ -1980,6 +2052,66 @@ const CLAUDE_CREATURE_SPEC: ThemeSpec = {
   ],
 };
 
+const CLIPPY_SPEC: ThemeSpec = {
+  themeSpecVersion: 1,
+  themeId: "clippy",
+  themeRev: FIXED_THEME_REV,
+  fallbackTheme: FIXED_FALLBACK_THEME,
+  bgColor: "#000000",
+  primitives: [
+    { type: "sprite", x: 0, y: 0, width: 240, height: 240, assetPath: CLIPPY_BACKGROUND_SPRITE_PATH },
+    { type: "text", x: 26, y: 28, text: "{label} Usage", font: 2, fontSize: 2, color: "#FFFFFF" },
+    {
+      type: "sprite",
+      x: 83,
+      y: 54,
+      width: 74,
+      height: 74,
+      bgColor: "#C6C3BD",
+      assetPath: CLIPPY_IDLE_SPRITE_PATH,
+      frameCount: 8,
+      fps: 3,
+      sheetColumns: 8,
+      stateAssets: {
+        idle: CLIPPY_IDLE_SPRITE_PATH,
+        coding: CLIPPY_CODING_SPRITE_PATH,
+      },
+    },
+    {
+      type: "progress",
+      x: 27,
+      y: 166,
+      width: 146,
+      height: 14,
+      binding: "session",
+      progressStyle: "segments",
+      segments: 28,
+      segmentGap: 1,
+      color: "#0FA514",
+      bgColor: "#DAD7D0",
+      borderColor: "#FFFFFF",
+    },
+    { type: "text", x: 181, y: 158, text: "{session}%", font: 2, fontSize: 2, color: "#111111" },
+    { type: "text", x: 172, y: 178, text: "remaining", font: 2, fontSize: 1, color: "#111111" },
+    {
+      type: "progress",
+      x: 27,
+      y: 212,
+      width: 146,
+      height: 14,
+      binding: "weekly",
+      progressStyle: "segments",
+      segments: 28,
+      segmentGap: 1,
+      color: "#0FA514",
+      bgColor: "#DAD7D0",
+      borderColor: "#FFFFFF",
+    },
+    { type: "text", x: 181, y: 204, text: "{weekly}%", font: 2, fontSize: 2, color: "#111111" },
+    { type: "text", x: 172, y: 224, text: "remaining", font: 2, fontSize: 1, color: "#111111" },
+  ],
+};
+
 const SYNTHWAVE_SPEC: ThemeSpec = {
   themeSpecVersion: 1,
   themeId: "synthwave",
@@ -1989,7 +2121,7 @@ const SYNTHWAVE_SPEC: ThemeSpec = {
   primitives: [
     { type: "sprite", x: 0, y: 0, width: 240, height: 128, assetPath: SYNTHWAVE_TOP_SPRITE_PATH },
     { type: "sprite", x: 0, y: 128, width: 240, height: 95, assetPath: SYNTHWAVE_UI_SPRITE_PATH },
-    { type: "text", x: 35, y: 18, binding: "label", font: 4, fontSize: 1, maxWidth: 170, align: "center", fit: "shrink", color: "#FF4FA3" },
+    { type: "text", x: 35, y: 18, binding: "label", font: 4, fontSize: 1, align: "center", color: "#FF4FA3" },
     { type: "text", x: 67, y: 48, text: "USAGE", font: 4, fontSize: 1, color: "#FF4FA3" },
     {
       type: "progress",
@@ -2174,7 +2306,11 @@ function loadSavedThemes(): SavedTheme[] {
     }
     return parsed
       .filter(isSavedTheme)
-      .map((theme) => ({ ...theme, spec: cloneSpec(theme.spec) }))
+      .map((theme) => {
+        const spec = cloneSpec(theme.spec);
+        normalizeMiniThemeSpec(spec);
+        return { ...theme, spec };
+      })
       .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
   } catch {
     return [];
@@ -2240,6 +2376,14 @@ function persistCurrentThemeDraft() {
   }
 }
 
+function savedThemeForThemeId(themeId: string): SavedTheme | undefined {
+  return state.savedThemes.find((theme) => theme.spec.themeId === themeId || theme.name === themeId);
+}
+
+function specForPreset(defaultSpec: ThemeSpec): ThemeSpec {
+  return cloneSpec(savedThemeForThemeId(defaultSpec.themeId)?.spec ?? defaultSpec);
+}
+
 function snapshotState(): ThemeSnapshot {
   return {
     spec: cloneSpec(state.spec),
@@ -2301,7 +2445,7 @@ function redoThemeEdit() {
 function saveThemeLocally() {
   const now = new Date().toISOString();
   const cleanedId = state.spec.themeId.trim() || "theme";
-  const existingIndex = state.savedThemes.findIndex((theme) => theme.name === cleanedId);
+  const existingIndex = state.savedThemes.findIndex((theme) => theme.spec.themeId === cleanedId || theme.name === cleanedId);
   const saved: SavedTheme = {
     id: existingIndex >= 0 ? state.savedThemes[existingIndex].id : `${cleanedId}-${Date.now().toString(36)}`,
     name: cleanedId,
@@ -2315,6 +2459,7 @@ function saveThemeLocally() {
   }
   state.savedThemes.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
   persistSavedThemes();
+  persistCurrentThemeDraft();
   state.notice = `Saved "${saved.name}" locally.`;
   render();
 }
@@ -2387,6 +2532,8 @@ function normalizeMiniThemeSpec(spec: ThemeSpec) {
       primitive.fps = clamp(Math.round(primitive.fps ?? DEFAULT_SPRITE_FPS), 0, 30);
       primitive.sheetColumns = Math.max(1, Math.round(primitive.sheetColumns ?? primitive.frameCount ?? 1));
     }
+    delete (primitive as unknown as Record<string, unknown>)["maxWidth"];
+    delete (primitive as { fit?: string }).fit;
   });
 }
 
@@ -2471,12 +2618,6 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
       }
       if (primitive.font !== undefined && (!Number.isInteger(primitive.font) || primitive.font < 1)) {
         errors.push(`${prefix}: font sollte mindestens 1 sein.`);
-      }
-      if (primitive.maxWidth !== undefined && (!Number.isInteger(primitive.maxWidth) || primitive.maxWidth < 1 || primitive.maxWidth > DISPLAY_SIZE)) {
-        errors.push(`${prefix}: maxWidth muss 1-${DISPLAY_SIZE} sein.`);
-      }
-      if (primitive.fit !== undefined && !["none", "shrink"].includes(primitive.fit)) {
-        errors.push(`${prefix}: fit muss none oder shrink sein.`);
       }
       if (primitive.align !== undefined && !["left", "center", "right"].includes(primitive.align)) {
         errors.push(`${prefix}: align muss left, center oder right sein.`);
@@ -2734,6 +2875,7 @@ function render() {
           ${savedThemeList()}
           <button class="full-width preset-button" data-action="load-synthwave">Synthwave</button>
           <button class="full-width preset-button" data-action="load-claude-creature">Claude Creature</button>
+          <button class="full-width preset-button" data-action="load-clippy">Clippy</button>
           <button class="full-width preset-button" data-action="load-cozy-meadow">Cozy Meadow</button>
           <div class="divider"></div>
           ${addElementPalette()}
@@ -2926,14 +3068,6 @@ function inspectorFields(primitive: Primitive): string {
           </select>
         </label>
         <label>Size<input type="number" min="1" step="1" data-primitive-field="fontSize" value="${primitive.fontSize ?? 1}" /></label>
-      </div>
-      <div class="field-grid">
-        <label>Max width<input type="number" min="1" max="${DISPLAY_SIZE}" step="1" data-primitive-field="maxWidth" value="${primitive.maxWidth ?? ""}" placeholder="auto" /></label>
-        <label>Fit
-          <select data-primitive-field="fit">
-            ${["none", "shrink"].map((value) => `<option value="${value}" ${(primitive.fit ?? "none") === value ? "selected" : ""}>${value}</option>`).join("")}
-          </select>
-        </label>
       </div>
       <label>Align
         <select data-primitive-field="align">
@@ -4222,7 +4356,7 @@ function resizeHandle(index: number, handle: ResizeHandle, x: number, y: number)
 function estimatePrimitiveWidth(primitive: Primitive): number {
   if (primitive.type === "text") {
     const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
-    return Math.max(1, primitive.maxWidth ?? firmwareTextWidth(text, primitive.font, primitive.fontSize));
+    return Math.max(1, firmwareTextWidth(text, primitive.font, primitive.fontSize));
   }
   if (primitive.type === "sprite") {
     return primitive.width ?? spriteDimensions(resolveStateAssetPath(primitive)).width;
@@ -4232,8 +4366,7 @@ function estimatePrimitiveWidth(primitive: Primitive): number {
 
 function estimatePrimitiveHeight(primitive: Primitive): number {
   if (primitive.type === "text") {
-    const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
-    return Math.max(8, firmwareFontHeight(primitive.font, effectiveTextFontSize(primitive, text)));
+    return Math.max(8, firmwareFontHeight(primitive.font, primitive.fontSize));
   }
   if (primitive.type === "sprite") {
     return primitive.height ?? spriteDimensions(resolveStateAssetPath(primitive)).height;
@@ -4242,8 +4375,7 @@ function estimatePrimitiveHeight(primitive: Primitive): number {
 }
 
 function textPixelSize(primitive: Primitive): number {
-  const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
-  return firmwareFontHeight(primitive.font, effectiveTextFontSize(primitive, text));
+  return firmwareFontHeight(primitive.font, primitive.fontSize);
 }
 
 function firmwareFontHeight(fontValue: number | undefined, fontSizeValue: number | undefined): number {
@@ -4272,31 +4404,6 @@ function firmwareTextWidthAtSize(text: string, fontValue: number | undefined, fo
     return textWidthFromTable(text, TFT_FONT4_WIDTHS) * size;
   }
   return text.length * GLCD_FONT_ADVANCE * size;
-}
-
-function effectiveTextFontSize(primitive: Primitive, text: string): number {
-  let size = Math.max(1, primitive.fontSize ?? 1);
-  if (primitive.fit !== "shrink" || !primitive.maxWidth) {
-    return size;
-  }
-  while (size > 1 && firmwareTextWidthAtSize(text, primitive.font, size) > primitive.maxWidth) {
-    size -= 1;
-  }
-  return size;
-}
-
-function alignedTextOffset(primitive: Primitive, text: string, size: number): number {
-  if (!primitive.maxWidth || primitive.align === undefined || primitive.align === "left") {
-    return 0;
-  }
-  const slack = Math.max(0, primitive.maxWidth - firmwareTextWidthAtSize(text, primitive.font, size));
-  if (primitive.align === "center") {
-    return Math.floor(slack / 2);
-  }
-  if (primitive.align === "right") {
-    return slack;
-  }
-  return 0;
 }
 
 function textWidthFromTable(text: string, widths: readonly number[]): number {
@@ -4333,8 +4440,8 @@ function textPreviewCanvas(
     context.clearRect(0, 0, canvas.width, canvas.height);
   }
   context.fillStyle = primitive.color ?? "#FFFFFF";
-  const size = effectiveTextFontSize(primitive, text);
-  const textX = alignedTextOffset(primitive, text, size);
+  const size = Math.max(1, primitive.fontSize ?? 1);
+  const textX = 0;
   const font = primitive.font ?? 1;
   if (font === 2) {
     drawTftFont2Text(context, text, size, textX);
@@ -4770,6 +4877,15 @@ function builtInSpriteText(assetPath: string | undefined): string | undefined {
   }
   if (assetPath === CLAUDE_CODING_SPRITE_PATH) {
     return CLAUDE_CODING_SPRITE;
+  }
+  if (assetPath === CLIPPY_BACKGROUND_SPRITE_PATH) {
+    return clippyBackgroundSpriteText();
+  }
+  if (assetPath === CLIPPY_IDLE_SPRITE_PATH) {
+    return CLIPPY_IDLE_SPRITE;
+  }
+  if (assetPath === CLIPPY_CODING_SPRITE_PATH) {
+    return CLIPPY_CODING_SPRITE;
   }
   if (assetPath === SYNTHWAVE_TOP_SPRITE_PATH) {
     return synthwaveTopSpriteText();
@@ -5832,11 +5948,7 @@ function updateSelectedPrimitive(key: string, value: string) {
     rebuildSpriteAssetForPrimitive(primitive);
     return;
   }
-  if (["x", "y", "width", "height", "fontSize", "font", "maxWidth", "segments", "segmentGap"].includes(key)) {
-    if (key === "maxWidth" && value.trim() === "") {
-      delete primitive.maxWidth;
-      return;
-    }
+  if (["x", "y", "width", "height", "fontSize", "font", "segments", "segmentGap"].includes(key)) {
     const min = key === "x" || key === "y" || key === "segmentGap" ? 0 : 1;
     updateNumericPrimitiveField(primitive, key, Math.max(min, toInt(value, min)));
     return;
@@ -5852,13 +5964,6 @@ function updateSelectedPrimitive(key: string, value: string) {
   }
   if (key === "binding") {
     primitive.binding = value as BindingKey;
-    return;
-  }
-  if (key === "fit") {
-    primitive.fit = value === "shrink" ? "shrink" : "none";
-    if (primitive.fit === "none") {
-      delete primitive.fit;
-    }
     return;
   }
   if (key === "align") {
@@ -5942,8 +6047,6 @@ function updateNumericPrimitiveField(primitive: Primitive, key: string, value: n
     primitive.fontSize = value;
   } else if (key === "font") {
     primitive.font = value;
-  } else if (key === "maxWidth") {
-    primitive.maxWidth = value;
   } else if (key === "segments") {
     primitive.segments = value;
   } else if (key === "segmentGap") {
@@ -6002,7 +6105,7 @@ async function handleAction(action: string) {
   }
   if (action === "load-cozy-meadow") {
     pushHistory();
-    state.spec = cloneSpec(COZY_MEADOW_SPEC);
+    state.spec = specForPreset(COZY_MEADOW_SPEC);
     setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "sprite"));
     state.editingTextIndex = null;
     state.notice = "Cozy Meadow loaded.";
@@ -6012,7 +6115,7 @@ async function handleAction(action: string) {
   }
   if (action === "load-synthwave") {
     pushHistory();
-    state.spec = cloneSpec(SYNTHWAVE_SPEC);
+    state.spec = specForPreset(SYNTHWAVE_SPEC);
     setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "progress"));
     state.editingTextIndex = null;
     state.notice = "Synthwave loaded.";
@@ -6022,10 +6125,20 @@ async function handleAction(action: string) {
   }
   if (action === "load-claude-creature") {
     pushHistory();
-    state.spec = cloneSpec(CLAUDE_CREATURE_SPEC);
+    state.spec = specForPreset(CLAUDE_CREATURE_SPEC);
     setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "sprite"));
     state.editingTextIndex = null;
     state.notice = "Claude Creature loaded.";
+    syncJsonFromSpec();
+    render();
+    return;
+  }
+  if (action === "load-clippy") {
+    pushHistory();
+    state.spec = specForPreset(CLIPPY_SPEC);
+    setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "sprite" && primitive.stateAssets));
+    state.editingTextIndex = null;
+    state.notice = "Clippy loaded.";
     syncJsonFromSpec();
     render();
     return;
@@ -6308,14 +6421,6 @@ function importPrimitive(value: unknown): Primitive {
   if (font !== undefined) {
     primitive.font = font;
   }
-  const maxWidth = numberValue(value.maxWidth) ?? numberValue(value.mw);
-  if (maxWidth !== undefined) {
-    primitive.maxWidth = maxWidth;
-  }
-  const fit = stringValue(value.fit) ?? stringValue(value.ft);
-  if (fit === "shrink") {
-    primitive.fit = "shrink";
-  }
   const align = stringValue(value.align) ?? stringValue(value.al);
   if (align === "center" || align === "right") {
     primitive.align = align;
@@ -6557,25 +6662,25 @@ function resizeGifFromPointer(
 }
 
 function applyGifWidth(primitive: Primitive, ratio: number, rawWidth: number) {
-  const maxWidth = Math.max(1, DISPLAY_SIZE - primitive.x);
+  const maxAvailableWidth = Math.max(1, DISPLAY_SIZE - primitive.x);
   const maxHeight = Math.max(1, DISPLAY_SIZE - primitive.y);
-  let width = clamp(rawWidth, 1, maxWidth);
+  let width = clamp(rawWidth, 1, maxAvailableWidth);
   let height = Math.max(1, Math.round(width / ratio));
   if (height > maxHeight) {
     height = maxHeight;
-    width = clamp(Math.round(height * ratio), 1, maxWidth);
+    width = clamp(Math.round(height * ratio), 1, maxAvailableWidth);
   }
   primitive.width = width;
   primitive.height = height;
 }
 
 function applyGifHeight(primitive: Primitive, ratio: number, rawHeight: number) {
-  const maxWidth = Math.max(1, DISPLAY_SIZE - primitive.x);
+  const maxAvailableWidth = Math.max(1, DISPLAY_SIZE - primitive.x);
   const maxHeight = Math.max(1, DISPLAY_SIZE - primitive.y);
   let height = clamp(rawHeight, 1, maxHeight);
   let width = Math.max(1, Math.round(height * ratio));
-  if (width > maxWidth) {
-    width = maxWidth;
+  if (width > maxAvailableWidth) {
+    width = maxAvailableWidth;
     height = clamp(Math.round(width / ratio), 1, maxHeight);
   }
   primitive.width = width;
@@ -7216,12 +7321,6 @@ function buildDevicePrimitive(primitive: Primitive): Record<string, unknown> {
   }
   if (primitive.font !== undefined) {
     compact.f = primitive.font;
-  }
-  if (primitive.maxWidth !== undefined) {
-    compact.mw = primitive.maxWidth;
-  }
-  if (primitive.fit === "shrink") {
-    compact.ft = primitive.fit;
   }
   if (primitive.align !== undefined && primitive.align !== "left") {
     compact.al = primitive.align;

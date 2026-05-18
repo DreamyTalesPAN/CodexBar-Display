@@ -4,6 +4,7 @@
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
+#include <WiFiUdp.h>
 #include <LittleFS.h>
 #include <Updater.h>
 
@@ -81,6 +82,32 @@ struct FirmwareUpdateState {
   unsigned long noticeLastToggleAtMs = 0;
 };
 
+struct OtaUploadDiagnostics {
+  const char* target = "none";
+  const char* status = "idle";
+  String filename;
+  String lastError;
+  int command = -1;
+  size_t contentLength = 0;
+  size_t totalSize = 0;
+  size_t maxSize = 0;
+  size_t freeSketchSpace = 0;
+  uint8_t updateError = UPDATE_ERROR_OK;
+  unsigned long startedAtMs = 0;
+  unsigned long endedAtMs = 0;
+  unsigned long successCount = 0;
+  unsigned long failureCount = 0;
+};
+
+struct RuntimeRenderDiagnostics {
+  unsigned long fullCount = 0;
+  unsigned long partialCount = 0;
+  unsigned long animatedTickAttempts = 0;
+  const char* lastKind = "none";
+  unsigned long lastDurationUs = 0;
+  unsigned long lastAtMs = 0;
+};
+
 bool httpServerStarted = false;
 bool setupMode = false;
 bool waitStatusRendered = false;
@@ -106,6 +133,26 @@ unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
 FirmwareUpdateState firmwareUpdate;
 bool firmwareUpdateTopLineDirty = false;
+OtaUploadDiagnostics otaDiagnostics;
+RuntimeRenderDiagnostics renderDiagnostics;
+
+void recordRenderFull(const char* kind, unsigned long durationUs) {
+  renderDiagnostics.fullCount++;
+  renderDiagnostics.lastKind = kind;
+  renderDiagnostics.lastDurationUs = durationUs;
+  renderDiagnostics.lastAtMs = millis();
+}
+
+void recordRenderPartial(const char* kind, unsigned long durationUs) {
+  renderDiagnostics.partialCount++;
+  renderDiagnostics.lastKind = kind;
+  renderDiagnostics.lastDurationUs = durationUs;
+  renderDiagnostics.lastAtMs = millis();
+}
+
+void recordAnimatedTickAttempt() {
+  renderDiagnostics.animatedTickAttempts++;
+}
 
 String jsonEscape(const String& raw) {
   String escaped;
@@ -268,20 +315,28 @@ void applyFrameUpdateState() {
 }
 
 void drawWaitingForCompanionStatus() {
+  const unsigned long renderStartUs = micros();
   renderer.DrawConnectedSetupInstructions(runtimeCtx, kMdnsHost, WiFi.localIP().toString());
+  recordRenderFull("connected_setup", micros() - renderStartUs);
   waitStatusRendered = true;
 }
 
 void drawWifiConnectingStatus(const String& ssid) {
+  const unsigned long renderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Connecting WiFi", ssid);
+  recordRenderFull("status", micros() - renderStartUs);
 }
 
 void drawWifiResetStatus(const String& line2) {
+  const unsigned long renderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV RESET", "WiFi reset", line2);
+  recordRenderFull("status", micros() - renderStartUs);
 }
 
 void drawUpdateStatus(const String& line2) {
+  const unsigned long renderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV UPDATE", "Update running", line2);
+  recordRenderFull("update_status", micros() - renderStartUs);
 }
 
 bool statusScreenLocked() {
@@ -864,8 +919,12 @@ bool filesystemInfoJSON(String& out) {
 
 void appendRendererDebugJSON(String& out) {
   const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
+  String activeTheme = snapshot.activeTheme;
+  if (snapshot.themeSpecActive && snapshot.themeSpecId.length() > 0) {
+    activeTheme = snapshot.themeSpecId;
+  }
   out += "\"display\":{\"activeTheme\":\"";
-  out += jsonEscape(snapshot.activeTheme);
+  out += jsonEscape(activeTheme);
   out += "\",\"themeSpec\":{\"active\":";
   out += snapshot.themeSpecActive ? "true" : "false";
   out += ",\"id\":";
@@ -928,6 +987,51 @@ void appendFirmwareUpdateJSON(String& out) {
   out += jsonEscape(firmwareUpdate.lastStatus);
   out += "\",\"lastError\":";
   appendJSONNullableString(out, firmwareUpdate.lastError);
+  out += ",\"upload\":{\"target\":\"";
+  out += otaDiagnostics.target;
+  out += "\",\"status\":\"";
+  out += otaDiagnostics.status;
+  out += "\",\"filename\":";
+  appendJSONNullableString(out, otaDiagnostics.filename);
+  out += ",\"command\":";
+  out += String(otaDiagnostics.command);
+  out += ",\"contentLength\":";
+  out += String(otaDiagnostics.contentLength);
+  out += ",\"totalSize\":";
+  out += String(otaDiagnostics.totalSize);
+  out += ",\"maxSize\":";
+  out += String(otaDiagnostics.maxSize);
+  out += ",\"freeSketchSpace\":";
+  out += String(otaDiagnostics.freeSketchSpace);
+  out += ",\"updateError\":";
+  out += String(otaDiagnostics.updateError);
+  out += ",\"lastError\":";
+  appendJSONNullableString(out, otaDiagnostics.lastError);
+  out += ",\"startedAtMs\":";
+  out += String(otaDiagnostics.startedAtMs);
+  out += ",\"endedAtMs\":";
+  out += String(otaDiagnostics.endedAtMs);
+  out += ",\"successCount\":";
+  out += String(otaDiagnostics.successCount);
+  out += ",\"failureCount\":";
+  out += String(otaDiagnostics.failureCount);
+  out += "}";
+  out += "}";
+}
+
+void appendRenderDiagnosticsJSON(String& out) {
+  out += "\"render\":{\"fullCount\":";
+  out += String(renderDiagnostics.fullCount);
+  out += ",\"partialCount\":";
+  out += String(renderDiagnostics.partialCount);
+  out += ",\"animatedTickAttempts\":";
+  out += String(renderDiagnostics.animatedTickAttempts);
+  out += ",\"lastKind\":\"";
+  out += renderDiagnostics.lastKind;
+  out += "\",\"lastDurationUs\":";
+  out += String(renderDiagnostics.lastDurationUs);
+  out += ",\"lastAtMs\":";
+  out += String(renderDiagnostics.lastAtMs);
   out += "}";
 }
 
@@ -989,7 +1093,7 @@ void handleHealth() {
   const bool wifiConnected = WiFi.status() == WL_CONNECTED;
 
   String out;
-  out.reserve(900);
+  out.reserve(1500);
   out += "{\"ok\":true";
   out += ",\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
@@ -997,6 +1101,20 @@ void handleHealth() {
   out += jsonEscape(CODEXBAR_DISPLAY_BOARD_ID);
   out += "\",\"system\":{\"freeHeap\":";
   out += String(ESP.getFreeHeap());
+  out += ",\"maxFreeBlock\":";
+  out += String(ESP.getMaxFreeBlockSize());
+  out += ",\"heapFragmentationPct\":";
+  out += String(ESP.getHeapFragmentation());
+  out += ",\"sketchSize\":";
+  out += String(ESP.getSketchSize());
+  out += ",\"freeSketchSpace\":";
+  out += String(ESP.getFreeSketchSpace());
+  out += ",\"sketchMD5\":\"";
+  out += jsonEscape(ESP.getSketchMD5());
+  out += "\",\"flashChipSize\":";
+  out += String(ESP.getFlashChipSize());
+  out += ",\"flashChipRealSize\":";
+  out += String(ESP.getFlashChipRealSize());
   out += ",\"resetReason\":\"";
   out += jsonEscape(ESP.getResetReason());
   out += "\"";
@@ -1014,6 +1132,8 @@ void handleHealth() {
   const bool filesystemMounted = filesystemInfoJSON(out);
   out += ",";
   appendRendererDebugJSON(out);
+  out += ",";
+  appendRenderDiagnosticsJSON(out);
   out += ",";
   appendFirmwareUpdateJSON(out);
   out += ",\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"],\"httpPort\":80,\"maxFrameBytes\":";
@@ -1274,7 +1394,7 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
   next.hasThemeSpec = true;
   next.themeSpecId = themeId;
   next.themeSpecRev = themeRev;
-  next.themeSpecRaw = raw;
+  next.themeSpecRaw = "";
   if (fallbackTheme.length() > 0) {
     next.hasTheme = true;
     next.theme = fallbackTheme;
@@ -1386,6 +1506,10 @@ void handleUpdatePage() {
 
 void setOtaError(const String& message) {
   otaUploadError = message;
+  otaDiagnostics.status = "failed";
+  otaDiagnostics.lastError = message;
+  otaDiagnostics.updateError = Update.getError();
+  otaDiagnostics.endedAtMs = millis();
   Serial.printf("ota_error message=%s\n", otaUploadError.c_str());
   if (Update.hasError()) {
     Update.printError(Serial);
@@ -1407,30 +1531,52 @@ void handleOtaUpload(int command, const char* target) {
     otaUploadInProgress = true;
     otaUploadError = "";
     const size_t maxSize = otaMaxSizeForCommand(command);
+    otaDiagnostics.target = target;
+    otaDiagnostics.status = "starting";
+    otaDiagnostics.filename = upload.filename;
+    otaDiagnostics.lastError = "";
+    otaDiagnostics.command = command;
+    otaDiagnostics.contentLength = upload.contentLength;
+    otaDiagnostics.totalSize = 0;
+    otaDiagnostics.maxSize = maxSize;
+    otaDiagnostics.freeSketchSpace = ESP.getFreeSketchSpace();
+    otaDiagnostics.updateError = UPDATE_ERROR_OK;
+    otaDiagnostics.startedAtMs = millis();
+    otaDiagnostics.endedAtMs = 0;
     Serial.printf(
-        "ota_upload_start target=%s filename=%s content_length=%zu max_size=%zu\n",
+        "ota_upload_start target=%s filename=%s content_length=%zu max_size=%zu free_sketch_space=%zu\n",
         target,
         upload.filename.c_str(),
         upload.contentLength,
-        maxSize);
+        maxSize,
+        otaDiagnostics.freeSketchSpace);
     const String targetLabel = command == U_FS ? "Loading display" : "Loading firmware";
     drawUpdateStatus(targetLabel);
     waitStatusRendered = true;
 
+    WiFiUDP::stopAll();
     if (command == U_FS) {
       renderer.ResetGifStateForAssetUpdate();
       close_all_fs();
     }
     if (!Update.begin(maxSize, command)) {
       setOtaError(Update.getErrorString());
+    } else {
+      otaDiagnostics.status = "writing";
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
+    otaDiagnostics.totalSize = upload.totalSize + upload.currentSize;
     if (otaUploadError.length() == 0 && Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setOtaError(Update.getErrorString());
     }
   } else if (upload.status == UPLOAD_FILE_END) {
+    otaDiagnostics.totalSize = upload.totalSize;
     if (otaUploadError.length() == 0 && Update.end(true)) {
       otaUploadSucceeded = true;
+      otaDiagnostics.status = "succeeded";
+      otaDiagnostics.updateError = UPDATE_ERROR_OK;
+      otaDiagnostics.endedAtMs = millis();
+      otaDiagnostics.successCount++;
       Serial.printf("ota_upload_success target=%s bytes=%zu\n", target, upload.totalSize);
     } else if (otaUploadError.length() == 0) {
       setOtaError(Update.getErrorString());
@@ -1438,6 +1584,7 @@ void handleOtaUpload(int command, const char* target) {
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
     Update.end();
     setOtaError("upload aborted");
+    otaDiagnostics.totalSize = upload.totalSize;
     Serial.printf("ota_upload_aborted target=%s bytes=%zu\n", target, upload.totalSize);
   }
   yield();
@@ -1453,6 +1600,11 @@ void handleOtaResult(const char* target) {
   if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
     otaUploadInProgress = false;
     const String error = otaUploadError.length() > 0 ? otaUploadError : Update.getErrorString();
+    otaDiagnostics.status = "failed";
+    otaDiagnostics.lastError = error;
+    otaDiagnostics.updateError = Update.getError();
+    otaDiagnostics.endedAtMs = millis();
+    otaDiagnostics.failureCount++;
     Serial.printf("ota_upload_failed target=%s error=%s\n", target, error.c_str());
     webServer.send(500, "text/plain; charset=utf-8", "Update failed: " + error);
     return;
@@ -1468,6 +1620,7 @@ void handleOtaResult(const char* target) {
   webServer.send(200, "text/html; charset=utf-8", html);
   drawUpdateStatus("Restarting");
   waitStatusRendered = true;
+  otaDiagnostics.status = "reboot_scheduled";
   scheduleReboot(target);
   otaUploadInProgress = false;
 }
@@ -1580,7 +1733,9 @@ void startSetupAccessPoint() {
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
   captiveDnsStarted = true;
   Serial.printf("captive_dns_started port=%u host=%s ip=%s\n", kDnsPort, kSetupHost, WiFi.softAPIP().toString().c_str());
+  const unsigned long renderStartUs = micros();
   renderer.DrawSetupInstructions(runtimeCtx, kSetupApSsid, WiFi.softAPIP().toString());
+  recordRenderFull("setup", micros() - renderStartUs);
   waitStatusRendered = true;
   startHttpServer();
   startMdnsResponder(WiFi.softAPIP());
@@ -1609,7 +1764,9 @@ void maintainWifiConnection() {
   }
 
   if (!wifiReconnectStatusRendered) {
+    const unsigned long renderStartUs = micros();
     renderer.DrawStatus(runtimeCtx, "VIBE TV", "Reconnecting WiFi", "Please wait");
+    recordRenderFull("status", micros() - renderStartUs);
     wifiReconnectStatusRendered = true;
   }
 
@@ -1623,7 +1780,9 @@ void maintainWifiConnection() {
 
   if ((nowMs - wifiDisconnectedAtMs) >= kWifiReconnectFallbackMs) {
     Serial.println("wifi_reconnect_failed action=setup_ap");
+    const unsigned long renderStartUs = micros();
     renderer.DrawStatus(runtimeCtx, "VIBE TV SETUP", "WiFi unavailable", "Starting setup");
+    recordRenderFull("status", micros() - renderStartUs);
     delay(750);
     startSetupAccessPoint();
   }
@@ -1681,7 +1840,9 @@ void setup() {
   delay(200);
 
   renderer.Setup(runtimeCtx);
+  const unsigned long startupRenderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Starting", "Please wait");
+  recordRenderFull("status", micros() - startupRenderStartUs);
   const bool forceSetupMode = consumeBootRecoveryTrigger();
 
   codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
@@ -1729,6 +1890,7 @@ void loop() {
     if (renderer.DrawTopLine(runtimeCtx)) {
       rendered = true;
       renderDurationUs = micros() - renderStartUs;
+      recordRenderPartial("top_line", renderDurationUs);
       firmwareUpdateTopLineDirty = false;
     } else {
       firmwareUpdateTopLineDirty = false;
@@ -1742,6 +1904,7 @@ void loop() {
       !runtimeCtx.screenDirty &&
       !frameStaleStatusRendered) {
     renderer.TickActive(runtimeCtx);
+    recordAnimatedTickAttempt();
     const int64_t remain = codexbar_display::app::CurrentRemainingSecs(runtimeCtx, millis());
     if (remain != runtimeCtx.lastRenderedSecs) {
       const int64_t minuteBucket = remain / 60;
@@ -1749,7 +1912,9 @@ void loop() {
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
         runtimeCtx.screenDirty = true;
 #else
+        const unsigned long renderStartUs = micros();
         renderer.DrawReset(runtimeCtx, remain);
+        recordRenderPartial("reset", micros() - renderStartUs);
 #endif
       } else {
         runtimeCtx.lastRenderedSecs = remain;
@@ -1765,7 +1930,9 @@ void loop() {
       !frameStaleStatusRendered &&
       lastFrameAcceptedAtMs > 0 &&
       (millis() - lastFrameAcceptedAtMs) > kFrameStaleWarningMs) {
+    const unsigned long renderStartUs = micros();
     renderer.DrawStatus(runtimeCtx, "VIBE TV", "Check Mac App", "No fresh data");
+    recordRenderFull("status", micros() - renderStartUs);
     frameStaleStatusRendered = true;
   }
 
@@ -1792,6 +1959,7 @@ void loop() {
 #endif
     rendered = true;
     renderDurationUs = micros() - renderStartUs;
+    recordRenderFull("full", renderDurationUs);
     runtimeCtx.screenDirty = false;
     firmwareUpdateTopLineDirty = false;
   }

@@ -13,6 +13,7 @@ namespace {
 class ESP8266PrimitiveSink final : public primitive::Sink {
  public:
   void FillScreen(uint16_t color) override {
+    DisplayTransaction transaction;
     Tft().fillScreen(color);
   }
 
@@ -20,10 +21,12 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
     if (cmd.width <= 0 || cmd.height <= 0) {
       return;
     }
+    DisplayTransaction transaction;
     Tft().fillRect(cmd.x, cmd.y, cmd.width, cmd.height, cmd.color);
   }
 
   void DrawText(const primitive::TextCommand& cmd) override {
+    DisplayTransaction transaction;
     TFT_eSPI& tft = Tft();
     tft.setTextWrap(cmd.wrap);
     tft.setTextFont(cmd.font);
@@ -41,6 +44,7 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
   void DrawProgress(const primitive::ProgressCommand& cmd) override {
     const int p = codexbar_display::core::ClampPct(cmd.percent);
 
+    DisplayTransaction transaction;
     TFT_eSPI& tft = Tft();
     tft.drawRect(cmd.x, cmd.y, cmd.width, cmd.height, cmd.borderColor);
     tft.fillRect(cmd.x + 1, cmd.y + 1, cmd.width - 2, cmd.height - 2, cmd.bgColor);
@@ -83,6 +87,37 @@ SharedState& State() {
 
 void AttachContext(app::RuntimeContext& ctx) {
   State().ctx = &ctx;
+}
+
+bool BeginDisplayTransaction() {
+  SharedState& state = State();
+  if (state.displayTransactionDepth == UINT16_MAX) {
+    return false;
+  }
+  if (state.displayTransactionDepth == 0) {
+    Tft().startWrite();
+  }
+  ++state.displayTransactionDepth;
+  return true;
+}
+
+void EndDisplayTransaction() {
+  SharedState& state = State();
+  if (state.displayTransactionDepth == 0) {
+    return;
+  }
+  --state.displayTransactionDepth;
+  if (state.displayTransactionDepth == 0) {
+    Tft().endWrite();
+  }
+}
+
+DisplayTransaction::DisplayTransaction() : active_(BeginDisplayTransaction()) {}
+
+DisplayTransaction::~DisplayTransaction() {
+  if (active_) {
+    EndDisplayTransaction();
+  }
 }
 
 primitive::Sink& PrimitiveLayer() {

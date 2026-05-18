@@ -13,16 +13,27 @@ using codexbar_display::themespec::GifCommand;
 using codexbar_display::themespec::PixelsCommand;
 using codexbar_display::themespec::ProgressCommand;
 using codexbar_display::themespec::RectCommand;
+using codexbar_display::themespec::CompileThemeSpec;
+using codexbar_display::themespec::CompiledThemeSpec;
+using codexbar_display::themespec::RenderCompiledThemeSpec;
+using codexbar_display::themespec::RenderCompiledThemeSpecAnimatedPrimitives;
+using codexbar_display::themespec::RenderCompiledThemeSpecChangedPrimitives;
+using codexbar_display::themespec::RenderThemeSpecChangedPrimitives;
 using codexbar_display::themespec::RenderThemeSpecAnimatedPrimitives;
 using codexbar_display::themespec::RenderThemeSpec;
 using codexbar_display::themespec::Sink;
 using codexbar_display::themespec::SpriteCommand;
 using codexbar_display::themespec::TextCommand;
+using codexbar_display::themespec::kThemeSpecFieldActivity;
+using codexbar_display::themespec::kThemeSpecFieldSession;
+using codexbar_display::themespec::kThemeSpecFieldWeekly;
 using codexbar_display::core::ConsumeFrameLine;
 using codexbar_display::core::RuntimeState;
 using codexbar_display::core::SerialConsumeEvent;
 
 enum class CommandType {
+  BeginClip,
+  EndClip,
   FillScreen,
   FillRect,
   Text,
@@ -59,6 +70,22 @@ struct RecordedCommand {
 
 class RecordingSink final : public Sink {
  public:
+  void BeginClip(int x, int y, int width, int height) override {
+    RecordedCommand cmd;
+    cmd.type = CommandType::BeginClip;
+    cmd.x = x;
+    cmd.y = y;
+    cmd.width = width;
+    cmd.height = height;
+    commands.push_back(cmd);
+  }
+
+  void EndClip() override {
+    RecordedCommand cmd;
+    cmd.type = CommandType::EndClip;
+    commands.push_back(cmd);
+  }
+
   void FillScreen(uint16_t color) override {
     RecordedCommand cmd;
     cmd.type = CommandType::FillScreen;
@@ -441,6 +468,174 @@ void testAnimatedPrimitivePassRendersGifsAndSpritesWithoutClear() {
   TEST_ASSERT_EQUAL_STRING("/themes/demo/hero.cba", sink.commands[1].assetPath.c_str());
 }
 
+void testChangedPrimitivePassReplaysDirtyRegion() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "bgColor": "#000000",
+    "primitives": [
+      {"type":"rect","x":1,"y":2,"width":3,"height":4,"color":"#FFFFFF"},
+      {"type":"gif","x":10,"y":11,"width":12,"height":13,"stateAssets":{"idle":"/themes/demo/idle.gif","coding":"/themes/demo/coding.gif"}},
+      {"type":"sprite","x":20,"y":21,"width":22,"height":23,"sa":{"idle":"/themes/demo/idle.cba","coding":"/themes/demo/coding.cba"}},
+      {"type":"text","x":30,"y":31,"fontSize":1,"maxWidth":80,"text":"{activity}"},
+      {"type":"text","x":40,"y":41,"fontSize":1,"maxWidth":80,"binding":"session"},
+      {"type":"progress","x":50,"y":51,"width":52,"height":10}
+    ]
+  })JSON";
+
+  FrameData codingFrame = testFrame();
+  codingFrame.activity = "coding";
+  RecordingSink activitySink;
+  TEST_ASSERT_TRUE(RenderThemeSpecChangedPrimitives(spec, codingFrame, kThemeSpecFieldActivity, activitySink));
+  TEST_ASSERT_EQUAL_UINT32(7, activitySink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(activitySink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(10, activitySink.commands[0].x);
+  TEST_ASSERT_EQUAL_INT(11, activitySink.commands[0].y);
+  TEST_ASSERT_EQUAL_INT(100, activitySink.commands[0].width);
+  TEST_ASSERT_EQUAL_INT(33, activitySink.commands[0].height);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(activitySink.commands[1].type));
+  TEST_ASSERT_EQUAL_HEX16(0x0000, activitySink.commands[1].color);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Gif), static_cast<int>(activitySink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.gif", activitySink.commands[2].assetPath.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(activitySink.commands[3].type));
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.cba", activitySink.commands[3].assetPath.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(activitySink.commands[4].type));
+  TEST_ASSERT_EQUAL_STRING("coding", activitySink.commands[4].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(activitySink.commands[5].type));
+  TEST_ASSERT_EQUAL_STRING("97", activitySink.commands[5].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(activitySink.commands[6].type));
+
+  RecordingSink sessionSink;
+  TEST_ASSERT_TRUE(RenderThemeSpecChangedPrimitives(spec, codingFrame, kThemeSpecFieldSession, sessionSink));
+  TEST_ASSERT_EQUAL_UINT32(6, sessionSink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sessionSink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(40, sessionSink.commands[0].x);
+  TEST_ASSERT_EQUAL_INT(41, sessionSink.commands[0].y);
+  TEST_ASSERT_EQUAL_INT(80, sessionSink.commands[0].width);
+  TEST_ASSERT_EQUAL_INT(20, sessionSink.commands[0].height);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(sessionSink.commands[1].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(sessionSink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.cba", sessionSink.commands[2].assetPath.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sessionSink.commands[3].type));
+  TEST_ASSERT_EQUAL_STRING("97", sessionSink.commands[3].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(sessionSink.commands[4].type));
+  TEST_ASSERT_EQUAL_INT(97, sessionSink.commands[4].percent);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sessionSink.commands[5].type));
+}
+
+void testChangedPrimitivePassUsesThemeBackgroundAndOverlaps() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "bgColor": "#FFFFFF",
+    "primitives": [
+      {"type":"sprite","x":0,"y":0,"width":96,"height":48,"assetPath":"/themes/demo/bright-bg.cbi"},
+      {"type":"text","x":10,"y":8,"fontSize":1,"maxWidth":36,"binding":"session","color":"#000000"},
+      {"type":"progress","x":8,"y":18,"width":52,"height":10,"binding":"session","color":"#00FF00","bgColor":"#FFFFFF"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(RenderThemeSpecChangedPrimitives(spec, testFrame(), kThemeSpecFieldSession, sink));
+  TEST_ASSERT_EQUAL_UINT32(6, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(8, sink.commands[0].x);
+  TEST_ASSERT_EQUAL_INT(8, sink.commands[0].y);
+  TEST_ASSERT_EQUAL_INT(52, sink.commands[0].width);
+  TEST_ASSERT_EQUAL_INT(20, sink.commands[0].height);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_HEX16(0xFFFF, sink.commands[1].color);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(sink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/bright-bg.cbi", sink.commands[2].assetPath.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[3].type));
+  TEST_ASSERT_EQUAL_STRING("97", sink.commands[3].text.c_str());
+  TEST_ASSERT_FALSE(sink.commands[3].hasBg);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(sink.commands[4].type));
+  TEST_ASSERT_EQUAL_INT(97, sink.commands[4].percent);
+  TEST_ASSERT_EQUAL_HEX16(0xFFFF, sink.commands[4].bg);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands[5].type));
+}
+
+void testChangedPrimitivePassHandlesCompactClippySpec() {
+  const char* spec = R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"tx","x":26,"y":28,"v":"{label} Usage","s":2,"f":2,"c":"#FFFFFF"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"bg":"#C6C3BD","a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s","ps":"segments","sg":28,"gg":1,"c":"#0FA514","bg":"#DAD7D0","bc":"#FFFFFF"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2,"f":2,"c":"#111111"},{"t":"tx","x":172,"y":178,"v":"remaining","s":1,"f":2,"c":"#111111"},{"t":"p","x":27,"y":212,"w":146,"h":14,"b":"w","ps":"segments","sg":28,"gg":1,"c":"#0FA514","bg":"#DAD7D0","bc":"#FFFFFF"},{"t":"tx","x":181,"y":204,"v":"{weekly}%","s":2,"f":2,"c":"#111111"},{"t":"tx","x":172,"y":224,"v":"remaining","s":1,"f":2,"c":"#111111"}],"fb":"mini","bg":"#000000"})JSON";
+
+  FrameData frame = testFrame();
+  frame.activity = "coding";
+  frame.session = 61;
+  frame.weekly = 76;
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(RenderThemeSpecChangedPrimitives(
+      spec,
+      frame,
+      kThemeSpecFieldActivity | kThemeSpecFieldSession | kThemeSpecFieldWeekly,
+      sink));
+  TEST_ASSERT_TRUE(sink.commands.size() > 4);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sink.commands.front().type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands.back().type));
+}
+
+void testCompiledThemeSpecFullPartialAndAnimatedPasses() {
+  const char* spec = R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"tx","x":26,"y":28,"v":"{label} Usage","s":2,"f":2,"c":"#FFFFFF"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"bg":"#C6C3BD","a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s","ps":"segments","sg":28,"gg":1,"c":"#0FA514","bg":"#DAD7D0","bc":"#FFFFFF"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2,"f":2,"c":"#111111"},{"t":"tx","x":172,"y":178,"v":"remaining","s":1,"f":2,"c":"#111111"},{"t":"p","x":27,"y":212,"w":146,"h":14,"b":"w","ps":"segments","sg":28,"gg":1,"c":"#0FA514","bg":"#DAD7D0","bc":"#FFFFFF"},{"t":"tx","x":181,"y":204,"v":"{weekly}%","s":2,"f":2,"c":"#111111"},{"t":"tx","x":172,"y":224,"v":"remaining","s":1,"f":2,"c":"#111111"}],"fb":"mini","bg":"#000000"})JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  TEST_ASSERT_EQUAL_UINT32(9, scene.primitiveCount);
+  TEST_ASSERT_TRUE(scene.hasAnimatedAssets);
+  TEST_ASSERT_FALSE(scene.requiresJsonDocument);
+
+  FrameData frame = testFrame();
+  frame.activity = "coding";
+  frame.session = 61;
+  frame.weekly = 76;
+
+  RecordingSink fullSink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpec(scene, frame, fullSink));
+  TEST_ASSERT_EQUAL_UINT32(10, fullSink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(fullSink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(fullSink.commands[1].type));
+  TEST_ASSERT_EQUAL_STRING("/themes/u/cp-bg.cbi", fullSink.commands[1].assetPath.c_str());
+  TEST_ASSERT_EQUAL_STRING("/themes/u/cp-c.cba", fullSink.commands[3].assetPath.c_str());
+
+  RecordingSink animatedSink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpecAnimatedPrimitives(scene, frame, animatedSink));
+  TEST_ASSERT_EQUAL_UINT32(2, animatedSink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("/themes/u/cp-bg.cbi", animatedSink.commands[0].assetPath.c_str());
+  TEST_ASSERT_EQUAL_STRING("/themes/u/cp-c.cba", animatedSink.commands[1].assetPath.c_str());
+
+  RecordingSink partialSink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpecChangedPrimitives(
+      scene,
+      frame,
+      kThemeSpecFieldActivity | kThemeSpecFieldSession | kThemeSpecFieldWeekly,
+      partialSink));
+  TEST_ASSERT_TRUE(partialSink.commands.size() > 4);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(partialSink.commands.front().type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(partialSink.commands.back().type));
+}
+
+void testChangedPrimitivePassHandlesTextWithoutMaxWidth() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "primitives": [
+      {"type":"text","x":1,"y":2,"fontSize":1,"text":"{session}%"},
+      {"type":"progress","x":5,"y":6,"width":20,"height":8}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(RenderThemeSpecChangedPrimitives(spec, testFrame(), kThemeSpecFieldSession, sink));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sink.commands.front().type));
+  TEST_ASSERT_EQUAL_INT(1, sink.commands.front().x);
+  TEST_ASSERT_EQUAL_INT(239, sink.commands.front().width);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands.back().type));
+}
+
 void testStateAssetsUseActivityWithIdleFallback() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -484,6 +679,52 @@ void testFrameActivityDefaultsToCodingWhenUsageChanges() {
   TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
 }
 
+void testThemeSpecActivityChangeUsesPartialRenderEvent() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"themeSpec":{"themeSpecVersion":1,"themeId":"codex-state-assets","themeRev":1,"primitives":[{"type":"sprite","x":1,"y":2,"width":3,"height":4,"stateAssets":{"idle":"/themes/demo/idle.cba","coding":"/themes/demo/coding.cba"}}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+
+  const char* codingFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"activity":"coding"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codingFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_UINT32(kThemeSpecFieldActivity, event.themeSpecChangedFields);
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+}
+
+void testStoredThemeActivationLiveFrameUsesPartialRenderEvent() {
+  RuntimeState state;
+  state.cachedThemeId = "clippy";
+  state.cachedThemeRev = 1;
+  state.cachedThemeSpecRaw = R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2}],"fb":"mini","bg":"#000000"})JSON";
+  state.current.provider = "codex";
+  state.current.label = "Codex";
+  state.current.session = 10;
+  state.current.weekly = 20;
+  state.current.resetSecs = 3600;
+  state.current.activity = "idle";
+  state.current.hasTheme = true;
+  state.current.theme = "mini";
+  state.current.hasThemeSpec = true;
+  state.current.themeSpecId = "clippy";
+  state.current.themeSpecRev = 1;
+  state.current.themeSpecRaw = "";
+  state.hasFrame = true;
+
+  SerialConsumeEvent event;
+  const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":3600,"usageMode":"remaining","activity":"coding"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+}
+
 void testThemeSpecCacheCarriesLayoutAcrossLiveFrames() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -501,7 +742,8 @@ void testThemeSpecCacheCarriesLayoutAcrossLiveFrames() {
   TEST_ASSERT_EQUAL_INT(96, state.current.session);
   TEST_ASSERT_EQUAL_INT(99, state.current.weekly);
   TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
-  TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("{session}%") >= 0);
+  TEST_ASSERT_EQUAL_INT(0, state.current.themeSpecRaw.length());
+  TEST_ASSERT_TRUE(ThemeSpecRawForFrame(state, state.current).indexOf("{session}%") >= 0);
 }
 
 void testCompactThemeSpecFrameIsCached() {
@@ -530,8 +772,45 @@ void testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent() {
 
   const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":12,"weekly":22,"resetSecs":32})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 3000, true, event));
-  TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("edited") >= 0);
-  TEST_ASSERT_FALSE(state.current.themeSpecRaw.indexOf("first") >= 0);
+  TEST_ASSERT_EQUAL_INT(0, state.current.themeSpecRaw.length());
+  TEST_ASSERT_TRUE(ThemeSpecRawForFrame(state, state.current).indexOf("edited") >= 0);
+  TEST_ASSERT_FALSE(ThemeSpecRawForFrame(state, state.current).indexOf("first") >= 0);
+}
+
+void testThemeSpecMetadataOnlyFrameKeepsPreviousRenderableRaw() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"cached"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("cached") >= 0);
+
+  state.cachedThemeId = "";
+  state.cachedThemeRev = 0;
+  state.cachedThemeSpecRaw = "";
+
+  const char* metadataOnlyFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, metadataOnlyFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_EQUAL_INT(0, state.current.themeSpecRaw.length());
+  TEST_ASSERT_TRUE(ThemeSpecRawForFrame(state, state.current).indexOf("cached") >= 0);
+}
+
+void testUnknownMetadataOnlyThemeSpecDoesNotBlankPreviousRenderableRaw() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"clippy","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"cached"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("cached") >= 0);
+
+  const char* metadataOnlyFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"clippy","themeRev":2}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, metadataOnlyFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_EQUAL_STRING("clippy", state.current.themeSpecId.c_str());
+  TEST_ASSERT_EQUAL_INT(1, state.current.themeSpecRev);
+  TEST_ASSERT_EQUAL_INT(0, state.current.themeSpecRaw.length());
+  TEST_ASSERT_TRUE(ThemeSpecRawForFrame(state, state.current).indexOf("cached") >= 0);
 }
 
 void testUnconfirmedThemeSpecNullKeepsCachedLayout() {
@@ -549,7 +828,8 @@ void testUnconfirmedThemeSpecNullKeepsCachedLayout() {
   TEST_ASSERT_TRUE(event.themeSpecCacheHit);
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
-  TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("cached") >= 0);
+  TEST_ASSERT_EQUAL_INT(0, state.current.themeSpecRaw.length());
+  TEST_ASSERT_TRUE(ThemeSpecRawForFrame(state, state.current).indexOf("cached") >= 0);
 }
 
 void testConfirmedThemeSpecNullClearsCachedLayout() {
@@ -587,11 +867,20 @@ int main() {
   RUN_TEST(testInvalidPrimitivesAreSkipped);
   RUN_TEST(testColorFallbacks);
   RUN_TEST(testAnimatedPrimitivePassRendersGifsAndSpritesWithoutClear);
+  RUN_TEST(testChangedPrimitivePassReplaysDirtyRegion);
+  RUN_TEST(testChangedPrimitivePassUsesThemeBackgroundAndOverlaps);
+  RUN_TEST(testChangedPrimitivePassHandlesCompactClippySpec);
+  RUN_TEST(testCompiledThemeSpecFullPartialAndAnimatedPasses);
+  RUN_TEST(testChangedPrimitivePassHandlesTextWithoutMaxWidth);
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
+  RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
+  RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
   RUN_TEST(testThemeSpecCacheCarriesLayoutAcrossLiveFrames);
   RUN_TEST(testCompactThemeSpecFrameIsCached);
   RUN_TEST(testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent);
+  RUN_TEST(testThemeSpecMetadataOnlyFrameKeepsPreviousRenderableRaw);
+  RUN_TEST(testUnknownMetadataOnlyThemeSpecDoesNotBlankPreviousRenderableRaw);
   RUN_TEST(testUnconfirmedThemeSpecNullKeepsCachedLayout);
   RUN_TEST(testConfirmedThemeSpecNullClearsCachedLayout);
   return UNITY_END();

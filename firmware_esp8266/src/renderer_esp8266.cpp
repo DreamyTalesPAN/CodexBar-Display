@@ -40,11 +40,13 @@ void RendererESP8266::Setup(app::RuntimeContext& ctx) {
 RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
   RendererDebugSnapshot snapshot;
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
-  snapshot.activeTheme = themeName(display::ActiveTheme());
   snapshot.themeSpecActive = display::HasFrame() && display::CurrentFrame().hasThemeSpec;
   if (snapshot.themeSpecActive) {
     snapshot.themeSpecId = display::CurrentFrame().themeSpecId;
     snapshot.themeSpecRev = display::CurrentFrame().themeSpecRev;
+    snapshot.activeTheme = snapshot.themeSpecId.length() > 0 ? snapshot.themeSpecId : "theme-spec";
+  } else {
+    snapshot.activeTheme = themeName(display::ActiveTheme());
   }
   snapshot.themeSpecRenderOk = !snapshot.themeSpecActive || display::ThemeSpecRenderOk();
   snapshot.themeSpecRenderError = snapshot.themeSpecActive ? display::ThemeSpecRenderError() : "";
@@ -102,6 +104,14 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
   }
 
   if (event.visualChanged) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    if (!display::ScreenDirty() && event.themeSpecPartialRender && display::CurrentFrame().hasThemeSpec) {
+      display::DisplayTransaction transaction;
+      if (display::RenderThemeSpecPartial(event.themeSpecChangedFields)) {
+        return;
+      }
+    }
+#endif
     display::ScreenDirty() = true;
   }
 #else
@@ -115,6 +125,7 @@ void RendererESP8266::DrawSplash(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   display::StopMiniGifPlayback();
+  display::DisplayTransaction transaction;
   display::DrawSplashMini();
 #else
   probe::DrawSplash(ctx);
@@ -124,6 +135,7 @@ void RendererESP8266::DrawSplash(app::RuntimeContext& ctx) {
 void RendererESP8266::TickSplash(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
+  display::DisplayTransaction transaction;
   display::TickSplashMini();
 #else
   (void)ctx;
@@ -140,6 +152,7 @@ void RendererESP8266::DrawStatus(
   display::StopMiniGifPlayback();
 
   TFT_eSPI& tft = display::Tft();
+  display::DisplayTransaction transaction;
   display::PrimitiveFillScreen(TFT_BLACK);
   tft.setTextWrap(false);
   tft.setTextFont(1);
@@ -188,6 +201,7 @@ void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const Stri
   display::StopMiniGifPlayback();
 
   TFT_eSPI& tft = display::Tft();
+  display::DisplayTransaction transaction;
   display::PrimitiveFillScreen(TFT_BLACK);
   tft.setTextWrap(false);
   tft.setTextFont(1);
@@ -259,6 +273,7 @@ void RendererESP8266::DrawConnectedSetupInstructions(
   display::StopMiniGifPlayback();
 
   TFT_eSPI& tft = display::Tft();
+  display::DisplayTransaction transaction;
   display::PrimitiveFillScreen(TFT_BLACK);
   tft.setTextWrap(false);
   tft.setTextFont(1);
@@ -334,6 +349,7 @@ void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
+    display::DisplayTransaction transaction;
     (void)display::TickThemeSpecGifs();
     return;
   }
@@ -347,6 +363,7 @@ void RendererESP8266::DrawError(app::RuntimeContext& ctx, const String& message)
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   display::StopMiniGifPlayback();
+  display::DisplayTransaction transaction;
   display::DrawErrorMini(message);
 #else
   (void)message;
@@ -357,15 +374,17 @@ void RendererESP8266::DrawError(app::RuntimeContext& ctx, const String& message)
 void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-  if (display::DrawThemeSpecUsage()) {
-    return;
-  }
   if (display::CurrentFrame().hasThemeSpec) {
+    display::DisplayTransaction transaction;
+    if (display::DrawThemeSpecUsage()) {
+      return;
+    }
     // ThemeSpec rendering can fail transiently on ESP8266 under low heap while
     // changing state. Keep the last good visual instead of flashing the mini
     // error screen for one frame.
     return;
   }
+  display::DisplayTransaction transaction;
   display::DrawUsageMini();
 #else
   probe::Render(ctx);
@@ -376,6 +395,7 @@ bool RendererESP8266::DrawTopLine(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   if (display::ActiveTheme() == Theme::Mini && !display::CurrentFrame().hasThemeSpec) {
+    display::DisplayTransaction transaction;
     return display::DrawMiniProviderLineOnly();
   }
   return false;
@@ -388,15 +408,23 @@ bool RendererESP8266::DrawTopLine(app::RuntimeContext& ctx) {
 void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-  if (display::CurrentFrame().hasThemeSpec && display::DrawThemeSpecUsage()) {
-    return;
-  }
   if (display::CurrentFrame().hasThemeSpec) {
+    display::DisplayTransaction transaction;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    if (display::CurrentThemeSpecRenderedSuccessfully() &&
+        display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldReset)) {
+      return;
+    }
+#endif
+    if (display::DrawThemeSpecUsage()) {
+      return;
+    }
     // ThemeSpec rendering can fail transiently on ESP8266 under low heap while
     // changing state. Keep the last good visual instead of flashing the mini
     // error screen for one frame.
     return;
   }
+  display::DisplayTransaction transaction;
   display::DrawResetMini(remainSecs);
 #else
   (void)remainSecs;
