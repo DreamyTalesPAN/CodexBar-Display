@@ -140,7 +140,7 @@ inline bool ThemeSpecUsesBinding(const String& raw, const char* fullName, const 
   String compactNeedle = "\"";
   compactNeedle += compactName;
   compactNeedle += "\"";
-  return raw.indexOf(compactNeedle) >= 0;
+  return raw.indexOf(compactNeedle.c_str()) >= 0;
 }
 
 inline bool ThemeSpecUsesActivity(const String& raw) {

@@ -1236,34 +1236,6 @@ func (s *ProviderSelector) selectByUsageDelta(all []ParsedFrame) (ParsedFrame, a
 	return all[bestIdx], bestScore, true
 }
 
-func readLocalProviderActivity() (map[string]providerActivitySignal, error) {
-	detectors := defaultActivityDetectors()
-	nowFn := time.Now
-	maxAge := activityMaxAge()
-	ttl := activityCacheTTL()
-	if ttl <= 0 {
-		return readLocalProviderActivityWithDetectors(detectors, nowFn, maxAge)
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = ""
-	}
-	cacheKey := fmt.Sprintf("%s|maxAge=%s|detectors=%d", strings.TrimSpace(home), maxAge, len(detectors))
-	now := nowFn()
-
-	if cached, ok := providerActivityCache.get(cacheKey, now); ok {
-		return cached, nil
-	}
-
-	signals, err := readLocalProviderActivityWithDetectors(detectors, nowFn, maxAge)
-	if err != nil {
-		return nil, err
-	}
-	providerActivityCache.put(cacheKey, signals, now.Add(ttl))
-	return copyProviderSignals(signals), nil
-}
-
 func readLocalProviderActivityWithDetectors(detectors []ProviderActivityDetector, nowFn func() time.Time, maxAge time.Duration) (map[string]providerActivitySignal, error) {
 	result := make(map[string]providerActivitySignal)
 
@@ -1336,10 +1308,6 @@ func formatActivityScore(score activityScore) string {
 
 func activityConflictWindow() time.Duration {
 	return parsePositiveDurationEnv("CODEXBAR_DISPLAY_ACTIVITY_CONFLICT_WINDOW", defaultActivityConflictWindow)
-}
-
-func activityMaxAge() time.Duration {
-	return parsePositiveDurationEnv("CODEXBAR_DISPLAY_ACTIVITY_MAX_AGE", defaultActivityMaxAge)
 }
 
 func parsePositiveDurationEnv(key string, def time.Duration) time.Duration {

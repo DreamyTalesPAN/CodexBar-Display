@@ -383,13 +383,6 @@ func TestProviderSelectorLocalActivitySelectionReportsUsageDeltaForAnimation(t *
 	}
 }
 
-func TestActivityCacheTTLDefaultSupportsFastActivityFrames(t *testing.T) {
-	t.Setenv("CODEXBAR_DISPLAY_ACTIVITY_CACHE_TTL", "")
-	if got := activityCacheTTL(); got > 5*time.Second {
-		t.Fatalf("expected short activity cache ttl for fast display updates, got %s", got)
-	}
-}
-
 func TestProviderSelectorFallsBackToUsageDeltaWhenNoLocalActivity(t *testing.T) {
 	selector := NewProviderSelectorWithActivityReader(func() (map[string]providerActivitySignal, error) {
 		return map[string]providerActivitySignal{}, nil
