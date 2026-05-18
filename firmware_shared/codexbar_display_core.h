@@ -130,6 +130,67 @@ inline bool UsageProgressChanged(const Frame& previous, const Frame& next) {
          previous.totalTokens != next.totalTokens;
 }
 
+inline bool ThemeSpecUsesBinding(const String& raw, const char* fullName, const char* compactName) {
+  if (fullName != nullptr && raw.indexOf(fullName) >= 0) {
+    return true;
+  }
+  if (compactName == nullptr) {
+    return false;
+  }
+  String compactNeedle = "\"";
+  compactNeedle += compactName;
+  compactNeedle += "\"";
+  return raw.indexOf(compactNeedle) >= 0;
+}
+
+inline bool ThemeSpecUsesActivity(const String& raw) {
+  return ThemeSpecUsesBinding(raw, "activity", "act") ||
+         raw.indexOf("stateAssets") >= 0 ||
+         raw.indexOf("\"sa\"") >= 0;
+}
+
+inline bool ThemeSpecUsesTokenFields(const String& raw) {
+  return ThemeSpecUsesBinding(raw, "sessionTokens", "st") ||
+         ThemeSpecUsesBinding(raw, "weekTokens", "wt") ||
+         ThemeSpecUsesBinding(raw, "totalTokens", "tt");
+}
+
+inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& next) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (!next.hasThemeSpec || !ThemeSpecUsesTokenFields(next.themeSpecRaw)) {
+    return false;
+  }
+  return previous.sessionTokens != next.sessionTokens ||
+         previous.weekTokens != next.weekTokens ||
+         previous.totalTokens != next.totalTokens;
+#else
+  (void)previous;
+  (void)next;
+  return false;
+#endif
+}
+
+inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& next) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  const String& raw = next.themeSpecRaw;
+  return (ThemeSpecUsesBinding(raw, "provider", "pr") && previous.provider != next.provider) ||
+         (ThemeSpecUsesBinding(raw, "label", "l") && previous.label != next.label) ||
+         (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
+         (ThemeSpecUsesBinding(raw, "weekly", "w") && previous.weekly != next.weekly) ||
+         (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
+         (ThemeSpecUsesBinding(raw, "usageMode", "u") &&
+          (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode)) ||
+         (ThemeSpecUsesActivity(raw) && previous.activity != next.activity) ||
+         (ThemeSpecUsesBinding(raw, "time", "tm") && previous.timeText != next.timeText) ||
+         (ThemeSpecUsesBinding(raw, "date", "dt") && previous.dateText != next.dateText) ||
+         FrameTokenStatsVisualChanged(previous, next);
+#else
+  (void)previous;
+  (void)next;
+  return false;
+#endif
+}
+
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 inline bool ExtractJsonObjectRaw(const char* json, const char* key, String& out) {
   out = "";
@@ -368,18 +429,21 @@ inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
   if (next.hasError) {
     return previous.error != next.error;
   }
-  return previous.provider != next.provider ||
-         previous.label != next.label ||
-         previous.session != next.session ||
-         previous.weekly != next.weekly ||
-         previous.sessionTokens != next.sessionTokens ||
-         previous.weekTokens != next.weekTokens ||
-         previous.totalTokens != next.totalTokens ||
-         previous.hasUsageMode != next.hasUsageMode ||
-         previous.usageMode != next.usageMode ||
-         previous.activity != next.activity ||
-         previous.timeText != next.timeText ||
-         previous.dateText != next.dateText ||
+  const bool dataChanged = next.hasThemeSpec
+                               ? FrameThemeSpecDataVisualChanged(previous, next)
+                               : previous.provider != next.provider ||
+                                     previous.label != next.label ||
+                                     previous.session != next.session ||
+                                     previous.weekly != next.weekly ||
+                                     previous.sessionTokens != next.sessionTokens ||
+                                     previous.weekTokens != next.weekTokens ||
+                                     previous.totalTokens != next.totalTokens ||
+                                     previous.hasUsageMode != next.hasUsageMode ||
+                                     previous.usageMode != next.usageMode ||
+                                     previous.activity != next.activity ||
+                                     previous.timeText != next.timeText ||
+                                     previous.dateText != next.dateText;
+  return dataChanged ||
          previous.clearThemeSpec != next.clearThemeSpec ||
          previous.hasThemeSpec != next.hasThemeSpec ||
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER

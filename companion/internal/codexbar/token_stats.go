@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	tokenStatsRefreshInterval = 60 * time.Second
+	tokenStatsRefreshInterval = 1500 * time.Millisecond
 	tokenStatsStaleMaxAge     = 15 * time.Minute
 	tokenStatsCommandTimeout  = 12 * time.Second
 )
@@ -36,6 +36,17 @@ type providerTokenStatsCache struct {
 }
 
 var tokenStatsCache providerTokenStatsCache
+
+func FetchProviderTokenStats(ctx context.Context) (map[string]ProviderTokenStats, bool) {
+	bin, err := FindBinary()
+	if err != nil {
+		return nil, false
+	}
+	if err := CheckMinimumVersion(ctx, bin); err != nil {
+		return nil, false
+	}
+	return fetchProviderTokenStats(ctx, bin)
+}
 
 func mergeTokenStats(ctx context.Context, parsed []ParsedFrame, bin string) []ParsedFrame {
 	statsByProvider, ok := fetchProviderTokenStats(ctx, bin)

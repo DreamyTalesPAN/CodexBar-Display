@@ -82,7 +82,7 @@ func main() {
 
 func printUsage() {
 	fmt.Println("codexbar-display commands:")
-	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 60s] [--once] [--theme classic|crt|mini]")
+	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 2s] [--once] [--theme classic|crt|mini]")
 	fmt.Println("  codexbar-display doctor")
 	fmt.Println("  codexbar-display health")
 	fmt.Println("  codexbar-display service <start|stop|status>")

@@ -753,9 +753,11 @@ const (
 )
 
 type SelectionDecision struct {
-	Selected ParsedFrame
-	Reason   SelectionReason
-	Detail   string
+	Selected             ParsedFrame
+	Reason               SelectionReason
+	Detail               string
+	ActivitySignalReason SelectionReason
+	ActivityDetail       string
 }
 
 type providerActivitySignal struct {
@@ -773,7 +775,7 @@ type ProviderActivityDetector interface {
 type providerActivityReader func() (map[string]providerActivitySignal, error)
 
 // ProviderSelector applies deterministic provider selection rules:
-// local activity -> usage delta -> sticky current -> CodexBar provider order.
+// usage delta -> sticky current -> CodexBar provider order.
 type ProviderSelector struct {
 	currentKey     string
 	snapshots      map[string]providerSnapshot
@@ -782,15 +784,19 @@ type ProviderSelector struct {
 }
 
 type providerSnapshot struct {
-	session int
-	weekly  int
-	reset   int64
+	session       int
+	weekly        int
+	sessionTokens int64
+	weekTokens    int64
+	totalTokens   int64
 }
 
 type activityScore struct {
-	sessionDelta int
-	weeklyDelta  int
-	resetGain    int64
+	sessionDelta       int
+	weeklyDelta        int
+	sessionTokensDelta int64
+	weekTokensDelta    int64
+	totalTokensDelta   int64
 }
 
 type localActivityCandidate struct {
@@ -987,7 +993,7 @@ func defaultActivityDetectors() []ProviderActivityDetector {
 }
 
 func NewProviderSelector() *ProviderSelector {
-	return NewProviderSelectorWithConfig(readLocalProviderActivity, activityConflictWindow())
+	return NewProviderSelectorWithConfig(noLocalProviderActivity, activityConflictWindow())
 }
 
 func NewProviderSelectorWithActivityReader(reader providerActivityReader) *ProviderSelector {
@@ -996,7 +1002,7 @@ func NewProviderSelectorWithActivityReader(reader providerActivityReader) *Provi
 
 func NewProviderSelectorWithConfig(reader providerActivityReader, conflictWindow time.Duration) *ProviderSelector {
 	if reader == nil {
-		reader = readLocalProviderActivity
+		reader = noLocalProviderActivity
 	}
 	if conflictWindow <= 0 {
 		conflictWindow = defaultActivityConflictWindow
@@ -1006,6 +1012,10 @@ func NewProviderSelectorWithConfig(reader providerActivityReader, conflictWindow
 		activityReader: reader,
 		conflictWindow: conflictWindow,
 	}
+}
+
+func noLocalProviderActivity() (map[string]providerActivitySignal, error) {
+	return map[string]providerActivitySignal{}, nil
 }
 
 func (s *ProviderSelector) SetCurrentProvider(provider string) {
@@ -1056,21 +1066,32 @@ func (s *ProviderSelector) SelectWithDecision(all []ParsedFrame) (SelectionDecis
 		}
 	}
 
+	resultSignalReason := SelectionReason("")
+	resultActivityDetail := ""
+	if score, ok := s.activityScoreForSelected(selected); ok {
+		resultSignalReason = SelectionReasonUsageDelta
+		resultActivityDetail = fmt.Sprintf("source=usage-delta score=%s", formatActivityScore(score))
+	}
+
 	s.currentKey = providerKey(selected)
 	next := make(map[string]providerSnapshot, len(all))
 	for _, p := range all {
 		next[providerKey(p)] = providerSnapshot{
-			session: p.Frame.Session,
-			weekly:  p.Frame.Weekly,
-			reset:   p.Frame.ResetSec,
+			session:       p.Frame.Session,
+			weekly:        p.Frame.Weekly,
+			sessionTokens: p.Frame.SessionTokens,
+			weekTokens:    p.Frame.WeekTokens,
+			totalTokens:   p.Frame.TotalTokens,
 		}
 	}
 	s.snapshots = next
 
 	return SelectionDecision{
-		Selected: selected,
-		Reason:   reason,
-		Detail:   detail,
+		Selected:             selected,
+		Reason:               reason,
+		Detail:               detail,
+		ActivitySignalReason: resultSignalReason,
+		ActivityDetail:       resultActivityDetail,
 	}, true
 }
 
@@ -1145,6 +1166,22 @@ func (s *ProviderSelector) selectByRecentLocalActivity(all []ParsedFrame) (Parse
 	// Preserve CodexBar provider order for deterministic behavior when no other tie-break applies.
 	chosen := conflictSet[0]
 	return all[chosen.idx], fmt.Sprintf("conflict resolved-by=codexbar-order provider=%s candidates=%s", chosen.key, formatActivityCandidates(conflictSet)), true
+}
+
+func (s *ProviderSelector) activityScoreForSelected(selected ParsedFrame) (activityScore, bool) {
+	if s == nil || s.snapshots == nil {
+		return activityScore{}, false
+	}
+	key := providerKey(selected)
+	prev, ok := s.snapshots[key]
+	if !ok {
+		return activityScore{}, false
+	}
+	score := computeActivityScore(prev, selected.Frame)
+	if !score.hasSignal() {
+		return activityScore{}, false
+	}
+	return score, true
 }
 
 func (s *ProviderSelector) selectBestDeltaFromCandidates(all []ParsedFrame, conflictSet []localActivityCandidate) (int, activityScore, bool) {
@@ -1294,7 +1331,7 @@ func formatActivityCandidates(conflictSet []localActivityCandidate) string {
 }
 
 func formatActivityScore(score activityScore) string {
-	return fmt.Sprintf("session+%d weekly+%d reset+%d", score.sessionDelta, score.weeklyDelta, score.resetGain)
+	return fmt.Sprintf("session+%d weekly+%d sessionTokens+%d weekTokens+%d totalTokens+%d", score.sessionDelta, score.weeklyDelta, score.sessionTokensDelta, score.weekTokensDelta, score.totalTokensDelta)
 }
 
 func activityConflictWindow() time.Duration {
@@ -1738,39 +1775,66 @@ func newerTime(a, b time.Time) time.Time {
 
 func computeActivityScore(prev providerSnapshot, cur protocol.Frame) activityScore {
 	score := activityScore{}
+	tokenScore := activityScore{
+		sessionTokensDelta: positiveInt64Delta(prev.sessionTokens, cur.SessionTokens),
+		weekTokensDelta:    positiveInt64Delta(prev.weekTokens, cur.WeekTokens),
+		totalTokensDelta:   positiveInt64Delta(prev.totalTokens, cur.TotalTokens),
+	}
+	if tokenScore.hasSignal() {
+		return tokenScore
+	}
+
+	if comparableTokenStats(prev, cur) {
+		return score
+	}
+
 	if d := cur.Session - prev.session; d > 0 {
 		score.sessionDelta = d
 	}
 	if d := cur.Weekly - prev.weekly; d > 0 {
 		score.weeklyDelta = d
 	}
-
-	// resetSecs normally counts down. A jump upwards suggests a fresh activity
-	// window or state repair from a previously missing reset.
-	if prev.reset == 0 && cur.ResetSec > 0 {
-		score.resetGain = cur.ResetSec
-	} else if jump := cur.ResetSec - prev.reset; jump > 120 {
-		score.resetGain = jump
-	}
-
 	return score
 }
 
 func (s activityScore) hasSignal() bool {
-	return s.sessionDelta > 0 || s.weeklyDelta > 0 || s.resetGain > 0
+	return s.sessionDelta > 0 ||
+		s.weeklyDelta > 0 ||
+		s.sessionTokensDelta > 0 ||
+		s.weekTokensDelta > 0 ||
+		s.totalTokensDelta > 0
 }
 
 func (s activityScore) betterThan(other activityScore) bool {
+	if s.totalTokensDelta != other.totalTokensDelta {
+		return s.totalTokensDelta > other.totalTokensDelta
+	}
+	if s.sessionTokensDelta != other.sessionTokensDelta {
+		return s.sessionTokensDelta > other.sessionTokensDelta
+	}
+	if s.weekTokensDelta != other.weekTokensDelta {
+		return s.weekTokensDelta > other.weekTokensDelta
+	}
 	if s.sessionDelta != other.sessionDelta {
 		return s.sessionDelta > other.sessionDelta
 	}
 	if s.weeklyDelta != other.weeklyDelta {
 		return s.weeklyDelta > other.weeklyDelta
 	}
-	if s.resetGain != other.resetGain {
-		return s.resetGain > other.resetGain
-	}
 	return false
+}
+
+func positiveInt64Delta(prev, cur int64) int64 {
+	if prev <= 0 || cur <= prev {
+		return 0
+	}
+	return cur - prev
+}
+
+func comparableTokenStats(prev providerSnapshot, cur protocol.Frame) bool {
+	return (prev.sessionTokens > 0 && cur.SessionTokens > 0) ||
+		(prev.weekTokens > 0 && cur.WeekTokens > 0) ||
+		(prev.totalTokens > 0 && cur.TotalTokens > 0)
 }
 
 func providerKey(p ParsedFrame) string {

@@ -70,6 +70,7 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
 void RendererESP8266::ResetGifStateForAssetUpdate() {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::GifCore().ResetForAssetUpdate();
+  display::ResetThemeSpecSpriteCaches();
 #endif
 }
 
@@ -360,7 +361,9 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
     return;
   }
   if (display::CurrentFrame().hasThemeSpec) {
-    display::DrawErrorMini("theme/render-failed");
+    // ThemeSpec rendering can fail transiently on ESP8266 under low heap while
+    // changing state. Keep the last good visual instead of flashing the mini
+    // error screen for one frame.
     return;
   }
   display::DrawUsageMini();
@@ -389,7 +392,9 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
     return;
   }
   if (display::CurrentFrame().hasThemeSpec) {
-    display::DrawErrorMini("theme/render-failed");
+    // ThemeSpec rendering can fail transiently on ESP8266 under low heap while
+    // changing state. Keep the last good visual instead of flashing the mini
+    // error screen for one frame.
     return;
   }
   display::DrawResetMini(remainSecs);

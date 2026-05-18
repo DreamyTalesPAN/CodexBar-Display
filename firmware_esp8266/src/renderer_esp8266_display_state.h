@@ -131,6 +131,8 @@ void DrawResetCRT(int64_t remainSecs);
 
 bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
+void ResetThemeSpecSpriteCaches();
+bool CurrentThemeSpecRenderedSuccessfully();
 bool ThemeSpecRenderOk();
 const char* ThemeSpecRenderError();
 unsigned long ThemeSpecRenderFailures();

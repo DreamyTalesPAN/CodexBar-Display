@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const defaultActivityCacheTTL = 30 * time.Second
+const defaultActivityCacheTTL = 2 * time.Second
 
 type localActivityCache struct {
 	mu      sync.Mutex

@@ -25,16 +25,17 @@ import (
 )
 
 type Options struct {
-	Port      string
-	Transport string
-	Target    string
-	Interval  time.Duration
-	Once      bool
-	Theme     string
+	Port                   string
+	Transport              string
+	Target                 string
+	Interval               time.Duration
+	Once                   bool
+	Theme                  string
+	DisableStartupFastPoll bool
 }
 
 const (
-	defaultInterval         = 60 * time.Second
+	defaultInterval         = 2 * time.Second
 	defaultCycleTimeout     = 180 * time.Second
 	startupFastPollWindow   = 2 * time.Minute
 	startupFastPollInterval = 30 * time.Second
@@ -45,6 +46,9 @@ const (
 	coldStartTimeoutEnvVar  = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
 	cycleTimeoutEnvVar      = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
 	collectorIntervalEnvVar = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
+	activityPollEnvVar      = "CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS"
+	activityHoldEnvVar      = "CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS"
+	activityRestartEnvVar   = "CODEXBAR_DISPLAY_ACTIVITY_RESTART_CONFIRM_SECS"
 	collectorTimeoutEnvVar  = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
 	collectorOrderEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
 	providerMaxAgeEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
@@ -121,6 +125,7 @@ type runtimeDeps struct {
 	deviceCaps        func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders    func(context.Context) ([]codexbar.ParsedFrame, error)
 	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
+	fetchTokenStats   func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	usageBarsShowUsed func() bool
 	sendLine          func(string, []byte) error
 	fetchUpdateState  func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
@@ -153,6 +158,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchProvider == nil {
 		d.fetchProvider = codexbar.FetchProvider
+	}
+	if d.fetchTokenStats == nil {
+		d.fetchTokenStats = codexbar.FetchProviderTokenStats
 	}
 	if d.usageBarsShowUsed == nil {
 		d.usageBarsShowUsed = func() bool { return true }
@@ -191,6 +199,12 @@ type runtimeState struct {
 	firmwareUpdate    protocol.UpdateState
 	hasFirmwareUpdate bool
 	updateCheckedAt   time.Time
+	lastActivityAt    time.Time
+	lastCodingAt      time.Time
+	pendingCodingAt   time.Time
+	pendingCodingFor  string
+	lastActivity      string
+	lastActivityCause string
 }
 
 type cycleResult struct {
@@ -204,6 +218,7 @@ type cycleResult struct {
 	errorSource     string
 	usageSource     string
 	usageFresh      bool
+	activityDetail  string
 }
 
 type persistedLastGood struct {
@@ -248,6 +263,9 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	collector, collectorCancel := startProviderCollector(ctx, opts, deps, syncCycleMode)
 	if collectorCancel != nil {
 		defer collectorCancel()
+	}
+	if collector != nil {
+		opts.DisableStartupFastPoll = true
 	}
 
 	runCycle := func(cycleCtx context.Context) error {
@@ -371,7 +389,9 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		} else {
 			backoff.Reset()
 			uptime := cycleStart.Sub(startedAt)
-			waitFor = startupInterval(waitFor, uptime)
+			if !opts.DisableStartupFastPoll {
+				waitFor = startupInterval(waitFor, uptime)
+			}
 		}
 
 		select {
@@ -699,9 +719,10 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	collectedAt := decision.Selected.CollectedAt
 	if collectedAt.IsZero() {
 		collectedAt = now
+		decision.Selected.CollectedAt = collectedAt
 	}
 	updateLastGoodState(state, result.frame, collectedAt, deps)
-	result.frame = applySelectionActivity(result.frame, result.selectionReason)
+	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
 }
 
@@ -735,15 +756,119 @@ func finalizeCycleResult(state *runtimeState, result cycleResult) cycleResult {
 	return result
 }
 
-func applySelectionActivity(frame protocol.Frame, selectionReason string) protocol.Frame {
+func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDecision, state *runtimeState, now time.Time) (protocol.Frame, string) {
 	if strings.TrimSpace(frame.Activity) != "" {
-		return frame
+		return frame, fmt.Sprintf("activity=explicit value=%s", frame.Activity)
 	}
-	switch strings.TrimSpace(selectionReason) {
-	case string(codexbar.SelectionReasonLocalActivity), string(codexbar.SelectionReasonUsageDelta):
-		frame.Activity = "coding"
+	if now.IsZero() {
+		now = time.Now()
 	}
-	return frame
+	if state == nil {
+		state = &runtimeState{}
+	}
+
+	collectedAt := decision.Selected.CollectedAt
+	if collectedAt.IsZero() {
+		collectedAt = now
+	}
+	if !collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" {
+		if state.lastActivity == "coding" && !codingHoldActive(state.lastCodingAt, now) {
+			state.lastActivity = "idle"
+			state.lastActivityCause = "coding-hold-expired"
+		}
+		frame.Activity = state.lastActivity
+		return frame, fmt.Sprintf("activity=%s reason=unchanged-usage-frame detail=%s", frame.Activity, state.lastActivityCause)
+	}
+
+	activity := "idle"
+	signalDetail := strings.TrimSpace(decision.ActivityDetail)
+	signalReason := decision.ActivitySignalReason
+	switch signalReason {
+	case codexbar.SelectionReasonUsageDelta:
+		if codingRestartConfirmed(state, frame.Provider, now) {
+			activity = "coding"
+			state.lastCodingAt = now
+			state.pendingCodingAt = time.Time{}
+			state.pendingCodingFor = ""
+		} else {
+			signalReason = codexbar.SelectionReason("coding-pending")
+			signalDetail = fmt.Sprintf("provider=%s window=%s detail=%s", normalizeActivityProvider(frame.Provider), activityRestartConfirmWindow(), signalDetail)
+		}
+	default:
+		if state.lastActivity == "coding" && codingHoldActive(state.lastCodingAt, now) {
+			activity = "coding"
+			signalReason = "coding-hold"
+			signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration())
+		} else if pendingCodingExpired(state, now) {
+			state.pendingCodingAt = time.Time{}
+			state.pendingCodingFor = ""
+		}
+	}
+
+	if signalDetail == "" {
+		signalDetail = string(signalReason)
+	}
+	if signalDetail == "" {
+		signalDetail = "no-usage-delta"
+	}
+	reason := string(signalReason)
+	if reason == "" {
+		reason = "no-usage-delta"
+	}
+
+	state.lastActivityAt = collectedAt
+	state.lastActivity = activity
+	state.lastActivityCause = signalDetail
+	frame.Activity = activity
+	return frame, fmt.Sprintf("activity=%s reason=%s detail=%s", activity, reason, signalDetail)
+}
+
+func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
+	if lastCodingAt.IsZero() {
+		return false
+	}
+	if now.Before(lastCodingAt) {
+		return true
+	}
+	return now.Sub(lastCodingAt) <= activityHoldDuration()
+}
+
+func codingRestartConfirmed(state *runtimeState, provider string, now time.Time) bool {
+	if state == nil {
+		return false
+	}
+	if state.lastActivity == "coding" && codingHoldActive(state.lastCodingAt, now) {
+		return true
+	}
+
+	provider = normalizeActivityProvider(provider)
+	if provider == "" {
+		provider = "unknown"
+	}
+	if !state.pendingCodingAt.IsZero() &&
+		state.pendingCodingFor == provider &&
+		!now.Before(state.pendingCodingAt) &&
+		now.Sub(state.pendingCodingAt) <= activityRestartConfirmWindow() {
+		return true
+	}
+
+	state.pendingCodingAt = now
+	state.pendingCodingFor = provider
+	return false
+}
+
+func pendingCodingExpired(state *runtimeState, now time.Time) bool {
+	if state == nil || state.pendingCodingAt.IsZero() {
+		return false
+	}
+	if now.Before(state.pendingCodingAt) {
+		return false
+	}
+	return now.Sub(state.pendingCodingAt) > activityRestartConfirmWindow()
+}
+
+func normalizeActivityProvider(provider string) string {
+	return strings.TrimSpace(strings.ToLower(provider))
 }
 
 func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
@@ -782,8 +907,8 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 		}
 	}
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q\n",
-		port, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		port, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -1129,6 +1254,57 @@ func collectorInterval(renderInterval time.Duration) time.Duration {
 		return max
 	}
 	return renderInterval
+}
+
+func activityPollInterval() time.Duration {
+	const (
+		def = 2 * time.Second
+		min = 1 * time.Second
+		max = 10 * time.Second
+	)
+
+	override := parseSecondsEnv(activityPollEnvVar, int(def.Seconds()))
+	if override < min {
+		return min
+	}
+	if override > max {
+		return max
+	}
+	return override
+}
+
+func activityHoldDuration() time.Duration {
+	const (
+		def = 30 * time.Second
+		min = 5 * time.Second
+		max = 120 * time.Second
+	)
+
+	override := parseSecondsEnv(activityHoldEnvVar, int(def.Seconds()))
+	if override < min {
+		return min
+	}
+	if override > max {
+		return max
+	}
+	return override
+}
+
+func activityRestartConfirmWindow() time.Duration {
+	const (
+		def = 10 * time.Second
+		min = 2 * time.Second
+		max = 30 * time.Second
+	)
+
+	override := parseSecondsEnv(activityRestartEnvVar, int(def.Seconds()))
+	if override < min {
+		return min
+	}
+	if override > max {
+		return max
+	}
+	return override
 }
 
 func cycleRunTimeout() time.Duration {

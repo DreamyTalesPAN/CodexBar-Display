@@ -25,7 +25,7 @@ import (
 
 const (
 	launchAgentLabel      = "com.codexbar-display.daemon"
-	defaultDaemonInterval = "60s"
+	defaultDaemonInterval = "2s"
 	defaultLastGoodMaxAge = "168h"
 	defaultTransport      = "wifi"
 	defaultWiFiTarget     = "http://vibetv.local"

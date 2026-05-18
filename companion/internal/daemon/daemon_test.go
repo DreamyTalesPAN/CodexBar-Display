@@ -536,24 +536,215 @@ func TestRunWithDepsBootstrapsStickyProviderFromPersistedLastGood(t *testing.T) 
 	}
 }
 
-func TestApplySelectionActivityMarksCodingSignals(t *testing.T) {
-	for _, reason := range []string{
-		string(codexbar.SelectionReasonLocalActivity),
-		string(codexbar.SelectionReasonUsageDelta),
-	} {
-		t.Run(reason, func(t *testing.T) {
-			frame := applySelectionActivity(protocol.Frame{Provider: "codex"}, reason)
-			if frame.Activity != "coding" {
-				t.Fatalf("expected coding activity for %s, got %q", reason, frame.Activity)
-			}
-		})
+func TestApplySelectionActivityHoldsCodingUntilNextUsageFrame(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{}
+	frame, detail := applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected:             codexbar.ParsedFrame{CollectedAt: now},
+		Reason:               codexbar.SelectionReasonUsageDelta,
+		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
+		ActivityDetail:       "source=usage-delta",
+	}, state, now)
+	if frame.Activity != "idle" {
+		t.Fatalf("expected first idle restart delta to stay pending, got %q detail=%q", frame.Activity, detail)
+	}
+
+	now = now.Add(2 * time.Second)
+	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected:             codexbar.ParsedFrame{CollectedAt: now},
+		Reason:               codexbar.SelectionReasonUsageDelta,
+		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
+		ActivityDetail:       "source=usage-delta",
+	}, state, now)
+	if frame.Activity != "coding" {
+		t.Fatalf("expected second restart delta to confirm coding activity, got %q detail=%q", frame.Activity, detail)
+	}
+
+	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected: codexbar.ParsedFrame{CollectedAt: now},
+		Reason:   codexbar.SelectionReasonStickyCurrent,
+	}, state, now.Add(30*time.Second))
+	if frame.Activity != "coding" {
+		t.Fatalf("expected coding to hold until next usage frame, got %q detail=%q", frame.Activity, detail)
+	}
+
+	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected: codexbar.ParsedFrame{CollectedAt: now.Add(10 * time.Second)},
+		Reason:   codexbar.SelectionReasonStickyCurrent,
+	}, state, now.Add(10*time.Second))
+	if frame.Activity != "coding" {
+		t.Fatalf("expected coding hold for unchanged fast cost frame, got %q detail=%q", frame.Activity, detail)
+	}
+
+	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected: codexbar.ParsedFrame{CollectedAt: now.Add(time.Minute)},
+		Reason:   codexbar.SelectionReasonStickyCurrent,
+	}, state, now.Add(time.Minute))
+	if frame.Activity != "idle" {
+		t.Fatalf("expected idle on next usage frame without delta, got %q detail=%q", frame.Activity, detail)
+	}
+}
+
+func TestApplySelectionActivityIgnoresSingleLateDeltaAfterIdle(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		lastActivity: "idle",
+	}
+	frame, detail := applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected:             codexbar.ParsedFrame{CollectedAt: now},
+		Reason:               codexbar.SelectionReasonUsageDelta,
+		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
+		ActivityDetail:       "source=usage-delta",
+	}, state, now)
+	if frame.Activity != "idle" {
+		t.Fatalf("expected single late delta after idle to stay idle, got %q detail=%q", frame.Activity, detail)
 	}
 }
 
 func TestApplySelectionActivityKeepsExplicitActivity(t *testing.T) {
-	frame := applySelectionActivity(protocol.Frame{Provider: "codex", Activity: "idle"}, string(codexbar.SelectionReasonLocalActivity))
+	frame, _ := applySelectionActivity(protocol.Frame{Provider: "codex", Activity: "idle"}, codexbar.SelectionDecision{
+		Reason: codexbar.SelectionReasonLocalActivity,
+	}, &runtimeState{}, time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC))
 	if frame.Activity != "idle" {
 		t.Fatalf("expected explicit activity to be preserved, got %q", frame.Activity)
+	}
+}
+
+func TestApplySelectionActivityTreatsStaleLocalSignalAsIdle(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	frame, detail := applySelectionActivity(protocol.Frame{Provider: "claude"}, codexbar.SelectionDecision{
+		Reason: codexbar.SelectionReasonLocalActivity,
+		Detail: "provider=claude confidence=high at=2026-02-23T11:00:00Z evidence=test",
+	}, &runtimeState{}, now)
+	if frame.Activity != "idle" {
+		t.Fatalf("expected stale local activity to render idle, got %q detail=%q", frame.Activity, detail)
+	}
+}
+
+func TestRunCycleActivityFollowsEachUsageSnapshot(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	base := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	now := base
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+	session := 10
+	collectedAt := base
+	var frames []protocol.Frame
+
+	run := func(t *testing.T) {
+		t.Helper()
+		err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+			now:         func() time.Time { return now },
+			resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+			fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+				frame := testParsedFrame("codex", session, 20, 3600)
+				frame.CollectedAt = collectedAt
+				return []codexbar.ParsedFrame{frame}, nil
+			},
+			logf: func(string, ...any) {},
+			sendLine: func(_ string, line []byte) error {
+				frames = append(frames, decodeFrameLine(t, line))
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatalf("expected cycle success, got %v", err)
+		}
+	}
+
+	run(t)
+	if frames[len(frames)-1].Activity != "idle" {
+		t.Fatalf("expected initial frame idle, got %q", frames[len(frames)-1].Activity)
+	}
+
+	now = base.Add(2 * time.Second)
+	collectedAt = now
+	session = 11
+	run(t)
+	if frames[len(frames)-1].Activity != "idle" {
+		t.Fatalf("expected first usage delta after idle to stay pending, got %q", frames[len(frames)-1].Activity)
+	}
+
+	now = base.Add(4 * time.Second)
+	collectedAt = now
+	session = 12
+	run(t)
+	if frames[len(frames)-1].Activity != "coding" {
+		t.Fatalf("expected second usage delta to mark coding, got %q", frames[len(frames)-1].Activity)
+	}
+
+	now = base.Add(30 * time.Second)
+	collectedAt = now
+	run(t)
+	if frames[len(frames)-1].Activity != "coding" {
+		t.Fatalf("expected coding to hold for unchanged fast cost snapshot, got %q", frames[len(frames)-1].Activity)
+	}
+
+	now = base.Add(time.Minute)
+	collectedAt = now
+	run(t)
+	if frames[len(frames)-1].Activity != "idle" {
+		t.Fatalf("expected idle on next usage snapshot without delta, got %q", frames[len(frames)-1].Activity)
+	}
+}
+
+func TestRunCycleSendsIdleAfterFailedCodingSendWhenUsageStopsChanging(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	base := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	now := base
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+	session := 10
+	sendShouldFail := false
+	var sent []protocol.Frame
+
+	run := func(t *testing.T) error {
+		t.Helper()
+		return runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+			now:         func() time.Time { return now },
+			resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+			fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+				return []codexbar.ParsedFrame{testParsedFrame("codex", session, 20, 3600)}, nil
+			},
+			logf: func(string, ...any) {},
+			sendLine: func(_ string, line []byte) error {
+				if sendShouldFail {
+					return errors.New("write failed")
+				}
+				sent = append(sent, decodeFrameLine(t, line))
+				return nil
+			},
+		})
+	}
+
+	if err := run(t); err != nil {
+		t.Fatalf("expected baseline cycle success, got %v", err)
+	}
+
+	now = base.Add(2 * time.Second)
+	session = 11
+	sendShouldFail = true
+	if err := run(t); err == nil {
+		t.Fatalf("expected coding send failure")
+	}
+
+	now = base.Add(time.Minute)
+	sendShouldFail = false
+	if err := run(t); err != nil {
+		t.Fatalf("expected recovery cycle success, got %v", err)
+	}
+	if got := sent[len(sent)-1].Activity; got != "idle" {
+		t.Fatalf("expected recovery frame to send explicit idle, got %q", got)
 	}
 }
 
