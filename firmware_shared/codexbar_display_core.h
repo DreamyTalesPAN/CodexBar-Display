@@ -280,12 +280,16 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
 
   bool hasThemeSpec = false;
   bool clearThemeSpec = false;
+  const bool confirmClearThemeSpec = doc["confirmClearThemeSpec"].is<bool>() &&
+                                     doc["confirmClearThemeSpec"].as<bool>();
   String themeSpecId;
   int themeSpecRev = 0;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   String themeSpecRaw;
 #endif
-  if (std::strstr(line, "\"themeSpec\"") != nullptr && doc["themeSpec"].isNull()) {
+  if (confirmClearThemeSpec &&
+      std::strstr(line, "\"themeSpec\"") != nullptr &&
+      doc["themeSpec"].isNull()) {
     clearThemeSpec = true;
   }
   if (doc["themeSpec"].is<JsonObjectConst>()) {

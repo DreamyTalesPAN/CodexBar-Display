@@ -11,10 +11,11 @@ import (
 )
 
 type providerSnapshot struct {
-	Provider  string         `json:"provider"`
-	Frame     protocol.Frame `json:"frame"`
-	Source    string         `json:"source,omitempty"`
-	Collected time.Time      `json:"collectedAt"`
+	Provider           string         `json:"provider"`
+	Frame              protocol.Frame `json:"frame"`
+	Source             string         `json:"source,omitempty"`
+	Collected          time.Time      `json:"collectedAt"`
+	ActivityObservedAt time.Time      `json:"activityObservedAt,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -162,10 +163,11 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 
 		frame.Provider = key
 		snapshot := providerSnapshot{
-			Provider:  key,
-			Frame:     frame,
-			Source:    strings.TrimSpace(parsed.Source),
-			Collected: now.UTC(),
+			Provider:           key,
+			Frame:              frame,
+			Source:             strings.TrimSpace(parsed.Source),
+			Collected:          now.UTC(),
+			ActivityObservedAt: parsed.ActivityObservedAt,
 		}
 		c.providers[key] = snapshot
 		successes++
@@ -233,11 +235,17 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			source = "codexbar-cost"
 		}
 
+		activityObservedAt := snapshot.ActivityObservedAt
+		if !stats.UpdatedAt.IsZero() {
+			activityObservedAt = stats.UpdatedAt.UTC()
+		}
+
 		c.providers[key] = providerSnapshot{
-			Provider:  key,
-			Frame:     frame,
-			Source:    source,
-			Collected: now,
+			Provider:           key,
+			Frame:              frame,
+			Source:             source,
+			Collected:          now,
+			ActivityObservedAt: activityObservedAt,
 		}
 		if exists {
 			updated++
@@ -280,11 +288,12 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			frame.Provider = key
 		}
 		frames = append(frames, codexbar.ParsedFrame{
-			Frame:       frame,
-			Provider:    key,
-			Source:      snapshot.Source,
-			CollectedAt: snapshot.Collected,
-			Stale:       !c.snapshotIsFresh(snapshot, now),
+			Frame:              frame,
+			Provider:           key,
+			Source:             snapshot.Source,
+			CollectedAt:        snapshot.Collected,
+			ActivityObservedAt: snapshot.ActivityObservedAt,
+			Stale:              !c.snapshotIsFresh(snapshot, now),
 		})
 	}
 	return frames

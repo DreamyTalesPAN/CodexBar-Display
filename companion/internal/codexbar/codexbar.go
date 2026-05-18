@@ -344,12 +344,13 @@ func parseBoolPreference(raw []byte) (bool, bool) {
 }
 
 type ParsedFrame struct {
-	Frame        protocol.Frame
-	Provider     string
-	Source       string
-	AccountEmail string
-	CollectedAt  time.Time
-	Stale        bool
+	Frame              protocol.Frame
+	Provider           string
+	Source             string
+	AccountEmail       string
+	CollectedAt        time.Time
+	ActivityObservedAt time.Time
+	Stale              bool
 }
 
 type looseVersion struct {
@@ -601,6 +602,12 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		"usage.identity.accountEmail",
 		"accountEmail",
 	)
+	activityObservedAt := firstRFC3339AtPaths(payload,
+		"usage.updatedAt",
+		"openaiDashboard.updatedAt",
+		"credits.updatedAt",
+		"updatedAt",
+	)
 
 	if provider == "" && label == "" {
 		return ParsedFrame{}, errors.New("provider identity missing in codexbar output")
@@ -618,9 +625,10 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 			Weekly:   weekly,
 			ResetSec: resetSecs,
 		},
-		Provider:     provider,
-		Source:       source,
-		AccountEmail: accountEmail,
+		Provider:           provider,
+		Source:             source,
+		AccountEmail:       accountEmail,
+		ActivityObservedAt: activityObservedAt,
 	}, nil
 }
 
@@ -2125,6 +2133,18 @@ func firstStringAtPaths(m map[string]any, paths ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstRFC3339AtPaths(m map[string]any, paths ...string) time.Time {
+	raw := firstStringAtPaths(m, paths...)
+	if raw == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed.UTC()
 }
 
 func percentAtPaths(m map[string]any, paths ...string) int {

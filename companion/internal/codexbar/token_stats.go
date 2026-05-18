@@ -66,6 +66,9 @@ func mergeTokenStats(ctx context.Context, parsed []ParsedFrame, bin string) []Pa
 			continue
 		}
 		applyTokenStatsToFrame(&out[i].Frame, stats)
+		if !stats.UpdatedAt.IsZero() {
+			out[i].ActivityObservedAt = stats.UpdatedAt.UTC()
+		}
 	}
 	return out
 }
@@ -86,6 +89,9 @@ func mergeProviderTokenStats(ctx context.Context, parsed ParsedFrame, bin string
 	}
 
 	applyTokenStatsToFrame(&parsed.Frame, stats)
+	if !stats.UpdatedAt.IsZero() {
+		parsed.ActivityObservedAt = stats.UpdatedAt.UTC()
+	}
 	return parsed
 }
 

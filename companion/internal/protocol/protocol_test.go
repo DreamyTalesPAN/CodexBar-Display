@@ -1,6 +1,10 @@
 package protocol
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestFrameNormalizeDropsUnsupportedTheme(t *testing.T) {
 	frame := Frame{
@@ -101,6 +105,40 @@ func TestFrameNormalizeDropsUnsafeActivity(t *testing.T) {
 	normalized := frame.Normalize()
 	if normalized.Activity != "" {
 		t.Fatalf("expected unsafe activity to be dropped, got %q", normalized.Activity)
+	}
+}
+
+func TestFrameNormalizeDropsUnconfirmedThemeSpecClear(t *testing.T) {
+	frame := Frame{
+		Provider:  "codex",
+		Label:     "Codex",
+		ThemeSpec: json.RawMessage("null"),
+	}
+
+	line, err := frame.MarshalLine()
+	if err != nil {
+		t.Fatalf("MarshalLine returned error: %v", err)
+	}
+	if strings.Contains(string(line), "themeSpec") {
+		t.Fatalf("expected unconfirmed themeSpec null to be omitted, got %s", string(line))
+	}
+}
+
+func TestFrameNormalizeKeepsConfirmedThemeSpecClear(t *testing.T) {
+	frame := Frame{
+		Provider:              "codex",
+		Label:                 "Codex",
+		ThemeSpec:             json.RawMessage("null"),
+		ConfirmClearThemeSpec: true,
+	}
+
+	line, err := frame.MarshalLine()
+	if err != nil {
+		t.Fatalf("MarshalLine returned error: %v", err)
+	}
+	if !strings.Contains(string(line), `"themeSpec":null`) ||
+		!strings.Contains(string(line), `"confirmClearThemeSpec":true`) {
+		t.Fatalf("expected confirmed theme clear fields, got %s", string(line))
 	}
 }
 

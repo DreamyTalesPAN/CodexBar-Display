@@ -32,6 +32,7 @@ Fields:
 - `totalTokens` (number, optional): lifetime token total when available.
 - `theme` (string, optional): requested built-in UI theme (`classic`, `crt`, `mini`).
 - `themeSpec` (object, optional): inline ThemeSpec v1 payload (see schema below). Once a ThemeSpec is cached or activated from storage, later live frames may omit this field and only send usage data.
+- `confirmClearThemeSpec` (boolean, optional): must be `true` when intentionally sending `themeSpec:null` to clear the active cached ThemeSpec.
 - `error` (string, optional): if present, firmware should render error screen.
 
 Example with additive token stats + theme:
@@ -70,7 +71,7 @@ Design constraints:
 - Compatibility is checked against device capability limits (`maxThemeSpecBytes` for inline frames, `maxStoredThemeSpecBytes` for stored WiFi themes, `maxThemePrimitives`, `builtinThemes`).
 - ESP8266 firmware advertises a 4096-byte stored ThemeSpec limit, but JSON parsing also consumes RAM. Theme authors should prefer small specs plus external `CBI1`/`CBA1` visual assets for detailed scenes instead of pushing a ThemeSpec close to the byte ceiling.
 - Hosts should budget animated repaint separately from stored bytes. Static background sprites are safe when drawn once, but repeated animation ticks should redraw only animated GIF/`CBA1` regions and should stay within a conservative per-second pixel budget for ESP8266.
-- A frame with `"themeSpec": null` clears the cached declarative layout and falls back to the builtin `theme`.
+- A frame with `"themeSpec": null` clears the cached declarative layout only when the same frame also sets `"confirmClearThemeSpec": true`; unconfirmed null values are ignored so live theme state is not accidentally removed.
 
 ## Error Frame
 

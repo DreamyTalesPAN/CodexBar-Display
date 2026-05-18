@@ -35,26 +35,27 @@ type Options struct {
 }
 
 const (
-	defaultInterval         = 2 * time.Second
-	defaultCycleTimeout     = 180 * time.Second
-	startupFastPollWindow   = 2 * time.Minute
-	startupFastPollInterval = 30 * time.Second
-	defaultWiFiTarget       = "http://vibetv.local"
-	lastGoodPersistInterval = 1 * time.Minute
-	directProviderProbeMax  = 3
-	themeEnvVar             = "CODEXBAR_DISPLAY_THEME"
-	coldStartTimeoutEnvVar  = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
-	cycleTimeoutEnvVar      = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
-	collectorIntervalEnvVar = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
-	activityPollEnvVar      = "CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS"
-	activityHoldEnvVar      = "CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS"
-	collectorTimeoutEnvVar  = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
-	collectorOrderEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
-	providerMaxAgeEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
-	firmwareManifestEnvVar  = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
-	firmwareManifestURL     = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
-	firmwareUpdateCheckGap  = 6 * time.Hour
-	firmwareManifestTimeout = 5 * time.Second
+	defaultInterval            = 2 * time.Second
+	defaultCycleTimeout        = 180 * time.Second
+	startupFastPollWindow      = 2 * time.Minute
+	startupFastPollInterval    = 30 * time.Second
+	defaultWiFiTarget          = "http://vibetv.local"
+	lastGoodPersistInterval    = 1 * time.Minute
+	directProviderProbeMax     = 3
+	themeEnvVar                = "CODEXBAR_DISPLAY_THEME"
+	coldStartTimeoutEnvVar     = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
+	cycleTimeoutEnvVar         = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
+	collectorIntervalEnvVar    = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
+	activityPollEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS"
+	activityHoldEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS"
+	activityIdleEvidenceEnvVar = "CODEXBAR_DISPLAY_ACTIVITY_IDLE_EVIDENCE"
+	collectorTimeoutEnvVar     = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
+	collectorOrderEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
+	providerMaxAgeEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
+	firmwareManifestEnvVar     = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareManifestURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
+	firmwareUpdateCheckGap     = 6 * time.Hour
+	firmwareManifestTimeout    = 5 * time.Second
 )
 
 var errMarshalFrameTooLarge = errors.New("frame exceeds max bytes")
@@ -187,21 +188,24 @@ func defaultRuntimeLogf(format string, args ...any) {
 }
 
 type runtimeState struct {
-	selector          *codexbar.ProviderSelector
-	lastGood          protocol.Frame
-	lastGoodAt        time.Time
-	hasLastGood       bool
-	lastPersistedGood protocol.Frame
-	lastPersistedAt   time.Time
-	hasPersistedGood  bool
-	cliTheme          string
-	firmwareUpdate    protocol.UpdateState
-	hasFirmwareUpdate bool
-	updateCheckedAt   time.Time
-	lastActivityAt    time.Time
-	lastCodingAt      time.Time
-	lastActivity      string
-	lastActivityCause string
+	selector               *codexbar.ProviderSelector
+	lastGood               protocol.Frame
+	lastGoodAt             time.Time
+	hasLastGood            bool
+	lastPersistedGood      protocol.Frame
+	lastPersistedAt        time.Time
+	hasPersistedGood       bool
+	cliTheme               string
+	firmwareUpdate         protocol.UpdateState
+	hasFirmwareUpdate      bool
+	updateCheckedAt        time.Time
+	lastActivityAt         time.Time
+	lastActivityObservedAt time.Time
+	lastIdleEvidenceAt     time.Time
+	idleEvidenceCount      int
+	lastCodingAt           time.Time
+	lastActivity           string
+	lastActivityCause      string
 }
 
 type cycleResult struct {
@@ -768,11 +772,19 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	if collectedAt.IsZero() {
 		collectedAt = now
 	}
+	activityObservedAt := decision.Selected.ActivityObservedAt
+	if activityObservedAt.IsZero() {
+		activityObservedAt = collectedAt
+	}
+	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
+		!activityObservedAt.IsZero() &&
+		activityObservedAt.Equal(state.lastActivityObservedAt) &&
+		state.lastActivity != "" {
+		state.lastActivityAt = collectedAt
+		frame.Activity = state.lastActivity
+		return frame, fmt.Sprintf("activity=%s reason=unchanged-codexbar-activity detail=%s observedAt=%s", frame.Activity, state.lastActivityCause, activityObservedAt.Format(time.RFC3339))
+	}
 	if !collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" {
-		if state.lastActivity == "coding" && !codingHoldActive(state.lastCodingAt, now) {
-			state.lastActivity = "idle"
-			state.lastActivityCause = "coding-hold-expired"
-		}
 		frame.Activity = state.lastActivity
 		return frame, fmt.Sprintf("activity=%s reason=unchanged-usage-frame detail=%s", frame.Activity, state.lastActivityCause)
 	}
@@ -784,11 +796,22 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	case codexbar.SelectionReasonUsageDelta:
 		activity = "coding"
 		state.lastCodingAt = now
+		state.lastIdleEvidenceAt = time.Time{}
+		state.idleEvidenceCount = 0
 	default:
-		if state.lastActivity == "coding" && codingHoldActive(state.lastCodingAt, now) {
-			activity = "coding"
-			signalReason = "coding-hold"
-			signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration())
+		if state.lastActivity == "coding" {
+			if !activityObservedAt.IsZero() && activityObservedAt.After(state.lastActivityObservedAt) && !activityObservedAt.Equal(state.lastIdleEvidenceAt) {
+				state.lastIdleEvidenceAt = activityObservedAt
+				state.idleEvidenceCount++
+			}
+			if codingHoldActive(state.lastCodingAt, now) || state.idleEvidenceCount < activityIdleEvidenceRequired() {
+				activity = "coding"
+				signalReason = "coding-waiting-for-idle-evidence"
+				signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s idle_evidence=%d/%d observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), state.idleEvidenceCount, activityIdleEvidenceRequired(), activityObservedAt.Format(time.RFC3339))
+			} else {
+				state.lastIdleEvidenceAt = time.Time{}
+				state.idleEvidenceCount = 0
+			}
 		}
 	}
 
@@ -804,6 +827,7 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	}
 
 	state.lastActivityAt = collectedAt
+	state.lastActivityObservedAt = activityObservedAt
 	state.lastActivity = activity
 	state.lastActivityCause = signalDetail
 	frame.Activity = activity
@@ -1224,9 +1248,9 @@ func activityPollInterval() time.Duration {
 
 func activityHoldDuration() time.Duration {
 	const (
-		def = 15 * time.Second
+		def = 180 * time.Second
 		min = 5 * time.Second
-		max = 60 * time.Second
+		max = 600 * time.Second
 	)
 
 	override := parseSecondsEnv(activityHoldEnvVar, int(def.Seconds()))
@@ -1237,6 +1261,30 @@ func activityHoldDuration() time.Duration {
 		return max
 	}
 	return override
+}
+
+func activityIdleEvidenceRequired() int {
+	const (
+		def = 2
+		min = 1
+		max = 10
+	)
+
+	raw := strings.TrimSpace(os.Getenv(activityIdleEvidenceEnvVar))
+	if raw == "" {
+		return def
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	if parsed < min {
+		return min
+	}
+	if parsed > max {
+		return max
+	}
+	return parsed
 }
 
 func cycleRunTimeout() time.Duration {

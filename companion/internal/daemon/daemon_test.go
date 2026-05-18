@@ -571,8 +571,94 @@ func TestApplySelectionActivityHoldsCodingUntilNextUsageFrame(t *testing.T) {
 		Selected: codexbar.ParsedFrame{CollectedAt: now.Add(time.Minute)},
 		Reason:   codexbar.SelectionReasonStickyCurrent,
 	}, state, now.Add(time.Minute))
+	if frame.Activity != "coding" {
+		t.Fatalf("expected coding until explicit idle evidence arrives, got %q detail=%q", frame.Activity, detail)
+	}
+}
+
+func TestApplySelectionActivityTreatsCachedCodexBarSnapshotAsNotFreshIdleEvidence(t *testing.T) {
+	prepareFastTestEnv(t)
+	t.Setenv(activityHoldEnvVar, "20")
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	observedAt := now.Add(-5 * time.Second)
+	state := &runtimeState{}
+
+	frame, detail := applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected: codexbar.ParsedFrame{
+			CollectedAt:        now,
+			ActivityObservedAt: observedAt,
+		},
+		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
+		ActivityDetail:       "source=usage-delta",
+	}, state, now)
+	if frame.Activity != "coding" {
+		t.Fatalf("expected token delta to show coding, got %q detail=%q", frame.Activity, detail)
+	}
+
+	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected: codexbar.ParsedFrame{
+			CollectedAt:        now.Add(30 * time.Second),
+			ActivityObservedAt: observedAt,
+		},
+		Reason: codexbar.SelectionReasonStickyCurrent,
+	}, state, now.Add(30*time.Second))
+	if frame.Activity != "coding" {
+		t.Fatalf("expected cached CodexBar snapshot to keep short coding hold, got %q detail=%q", frame.Activity, detail)
+	}
+
+	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected: codexbar.ParsedFrame{
+			CollectedAt:        now.Add(50 * time.Second),
+			ActivityObservedAt: observedAt,
+		},
+		Reason: codexbar.SelectionReasonStickyCurrent,
+	}, state, now.Add(50*time.Second))
+	if frame.Activity != "coding" {
+		t.Fatalf("expected cached CodexBar snapshot not to count as idle evidence, got %q detail=%q", frame.Activity, detail)
+	}
+}
+
+func TestApplySelectionActivityRequiresFreshNoDeltaEvidenceBeforeIdle(t *testing.T) {
+	prepareFastTestEnv(t)
+	t.Setenv(activityHoldEnvVar, "20")
+	t.Setenv(activityIdleEvidenceEnvVar, "2")
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{}
+
+	frame, detail := applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected: codexbar.ParsedFrame{
+			CollectedAt:        now,
+			ActivityObservedAt: now,
+		},
+		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
+		ActivityDetail:       "source=usage-delta",
+	}, state, now)
+	if frame.Activity != "coding" {
+		t.Fatalf("expected token delta to show coding, got %q detail=%q", frame.Activity, detail)
+	}
+
+	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected: codexbar.ParsedFrame{
+			CollectedAt:        now.Add(30 * time.Second),
+			ActivityObservedAt: now.Add(30 * time.Second),
+		},
+		Reason: codexbar.SelectionReasonStickyCurrent,
+	}, state, now.Add(30*time.Second))
+	if frame.Activity != "coding" {
+		t.Fatalf("expected first fresh no-delta CodexBar snapshot to keep coding, got %q detail=%q", frame.Activity, detail)
+	}
+
+	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected: codexbar.ParsedFrame{
+			CollectedAt:        now.Add(60 * time.Second),
+			ActivityObservedAt: now.Add(60 * time.Second),
+		},
+		Reason: codexbar.SelectionReasonStickyCurrent,
+	}, state, now.Add(60*time.Second))
 	if frame.Activity != "idle" {
-		t.Fatalf("expected idle on next usage frame without delta, got %q detail=%q", frame.Activity, detail)
+		t.Fatalf("expected second fresh no-delta CodexBar snapshot to confirm idle, got %q detail=%q", frame.Activity, detail)
 	}
 }
 
@@ -600,6 +686,7 @@ func TestApplySelectionActivityTreatsStaleLocalSignalAsIdle(t *testing.T) {
 
 func TestRunCycleActivityFollowsEachUsageSnapshot(t *testing.T) {
 	prepareFastTestEnv(t)
+	t.Setenv(activityHoldEnvVar, "60")
 
 	base := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
 	now := base
@@ -654,13 +741,21 @@ func TestRunCycleActivityFollowsEachUsageSnapshot(t *testing.T) {
 	now = base.Add(time.Minute)
 	collectedAt = now
 	run(t)
+	if frames[len(frames)-1].Activity != "coding" {
+		t.Fatalf("expected first no-delta snapshot to keep coding, got %q", frames[len(frames)-1].Activity)
+	}
+
+	now = base.Add(2 * time.Minute)
+	collectedAt = now
+	run(t)
 	if frames[len(frames)-1].Activity != "idle" {
-		t.Fatalf("expected idle on next usage snapshot without delta, got %q", frames[len(frames)-1].Activity)
+		t.Fatalf("expected second no-delta snapshot to confirm idle, got %q", frames[len(frames)-1].Activity)
 	}
 }
 
 func TestRunCycleSendsIdleAfterFailedCodingSendWhenUsageStopsChanging(t *testing.T) {
 	prepareFastTestEnv(t)
+	t.Setenv(activityHoldEnvVar, "60")
 
 	base := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
 	now := base
@@ -706,8 +801,16 @@ func TestRunCycleSendsIdleAfterFailedCodingSendWhenUsageStopsChanging(t *testing
 	if err := run(t); err != nil {
 		t.Fatalf("expected recovery cycle success, got %v", err)
 	}
+	if got := sent[len(sent)-1].Activity; got != "coding" {
+		t.Fatalf("expected first recovery no-delta frame to keep coding, got %q", got)
+	}
+
+	now = base.Add(2 * time.Minute)
+	if err := run(t); err != nil {
+		t.Fatalf("expected second recovery cycle success, got %v", err)
+	}
 	if got := sent[len(sent)-1].Activity; got != "idle" {
-		t.Fatalf("expected recovery frame to send explicit idle, got %q", got)
+		t.Fatalf("expected second recovery frame to confirm idle, got %q", got)
 	}
 }
 

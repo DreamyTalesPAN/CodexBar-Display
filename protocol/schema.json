@@ -577,6 +577,10 @@
         }
       ]
     },
+    "confirmClearThemeSpec": {
+      "type": "boolean",
+      "description": "Required and true when intentionally sending themeSpec:null to clear the cached declarative theme."
+    },
     "error": {
       "type": "string",
       "minLength": 1
