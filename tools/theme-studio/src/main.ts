@@ -4898,7 +4898,7 @@ function synthwaveUiSpriteText(): string {
     }
   };
 
-  fillRect(14, 55, 212, 2, "j");
+  fillRect(14, 55, 212, 2, "b");
   fillRect(18, 28, 153, 20, "b");
   fillRect(18, 83, 153, 12, "i");
   drawSpriteText(rows, "SESSION", 18, 7, "a", 2, 1);
@@ -4994,7 +4994,7 @@ function parseSpriteAsset(raw: string | undefined): SpriteAsset | null {
     }
     const palette = lines.slice(3, 3 + paletteSize);
     const rows = lines.slice(3 + paletteSize, 3 + paletteSize + height);
-    if (palette.length !== paletteSize || rows.length !== height) {
+    if (palette.length !== paletteSize || rows.length !== height || !spriteRowsValid(rows, width, paletteSize)) {
       return null;
     }
     return { width, height, frameCount: 1, fps: 0, palette, frames: [rows] };
@@ -5014,7 +5014,7 @@ function parseSpriteAsset(raw: string | undefined): SpriteAsset | null {
   const palette = lines.slice(3, 3 + paletteSize);
   const rowStart = 3 + paletteSize;
   const frameRows = lines.slice(rowStart, rowStart + frameCount * height);
-  if (palette.length !== paletteSize || frameRows.length !== frameCount * height) {
+  if (palette.length !== paletteSize || frameRows.length !== frameCount * height || !spriteRowsValid(frameRows, width, paletteSize)) {
     return null;
   }
   const frames: string[][] = [];
@@ -5022,6 +5022,13 @@ function parseSpriteAsset(raw: string | undefined): SpriteAsset | null {
     frames.push(frameRows.slice(index * height, (index + 1) * height));
   }
   return { width, height, frameCount, fps, palette, frames };
+}
+
+function spriteRowsValid(rows: string[], width: number, paletteSize: number): boolean {
+  return rows.every((row) => {
+    const result = parseRleRow(row, width);
+    return result.ok && result.maxPaletteIndex < paletteSize;
+  });
 }
 
 function validSpriteHeader(width: number, height: number, frameCount: number, fps: number, paletteSize: number): boolean {
@@ -5816,13 +5823,12 @@ function updateSelectedPrimitive(key: string, value: string) {
     return;
   }
   if (primitive.type === "sprite" && ["width", "height"].includes(key)) {
-    const fallback = key === "fps" ? DEFAULT_SPRITE_FPS : 1;
-    primitive[key as "width"] = Math.max(key === "fps" ? 0 : 1, toInt(value, fallback));
+    updateSpriteSizeField(primitive, key, Math.max(1, toInt(value, 1)));
     return;
   }
   if (primitive.type === "sprite" && ["frameCount", "fps", "sheetColumns"].includes(key)) {
     const fallback = key === "fps" ? DEFAULT_SPRITE_FPS : 1;
-    primitive[key as "frameCount"] = Math.max(key === "fps" ? 0 : 1, toInt(value, fallback));
+    updateSpriteAnimationField(primitive, key, Math.max(key === "fps" ? 0 : 1, toInt(value, fallback)));
     rebuildSpriteAssetForPrimitive(primitive);
     return;
   }
@@ -5832,7 +5838,7 @@ function updateSelectedPrimitive(key: string, value: string) {
       return;
     }
     const min = key === "x" || key === "y" || key === "segmentGap" ? 0 : 1;
-    primitive[key as "x"] = Math.max(min, toInt(value, min));
+    updateNumericPrimitiveField(primitive, key, Math.max(min, toInt(value, min)));
     return;
   }
   if (["color", "bgColor", "borderColor"].includes(key)) {
@@ -5841,7 +5847,7 @@ function updateSelectedPrimitive(key: string, value: string) {
       delete primitive.bgColor;
       return;
     }
-    primitive[key as "color"] = trimmed;
+    updateColorPrimitiveField(primitive, key, trimmed);
     return;
   }
   if (key === "binding") {
@@ -5902,6 +5908,56 @@ function updateSelectedPrimitive(key: string, value: string) {
   }
   if (key === "text") {
     primitive.text = value;
+  }
+}
+
+function updateSpriteSizeField(primitive: Primitive, key: string, value: number) {
+  if (key === "width") {
+    primitive.width = value;
+  } else if (key === "height") {
+    primitive.height = value;
+  }
+}
+
+function updateSpriteAnimationField(primitive: Primitive, key: string, value: number) {
+  if (key === "frameCount") {
+    primitive.frameCount = value;
+  } else if (key === "fps") {
+    primitive.fps = value;
+  } else if (key === "sheetColumns") {
+    primitive.sheetColumns = value;
+  }
+}
+
+function updateNumericPrimitiveField(primitive: Primitive, key: string, value: number) {
+  if (key === "x") {
+    primitive.x = value;
+  } else if (key === "y") {
+    primitive.y = value;
+  } else if (key === "width") {
+    primitive.width = value;
+  } else if (key === "height") {
+    primitive.height = value;
+  } else if (key === "fontSize") {
+    primitive.fontSize = value;
+  } else if (key === "font") {
+    primitive.font = value;
+  } else if (key === "maxWidth") {
+    primitive.maxWidth = value;
+  } else if (key === "segments") {
+    primitive.segments = value;
+  } else if (key === "segmentGap") {
+    primitive.segmentGap = value;
+  }
+}
+
+function updateColorPrimitiveField(primitive: Primitive, key: string, value: string) {
+  if (key === "color") {
+    primitive.color = value;
+  } else if (key === "bgColor") {
+    primitive.bgColor = value;
+  } else if (key === "borderColor") {
+    primitive.borderColor = value;
   }
 }
 
