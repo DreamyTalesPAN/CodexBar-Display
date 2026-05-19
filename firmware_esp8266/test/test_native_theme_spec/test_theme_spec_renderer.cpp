@@ -19,9 +19,6 @@ using codexbar_display::themespec::RenderCompiledThemeSpec;
 using codexbar_display::themespec::RenderCompiledThemeSpecAnimatedPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecChangedPrimitives;
 using codexbar_display::themespec::ReleaseCompiledThemeSpec;
-using codexbar_display::themespec::RenderThemeSpecChangedPrimitives;
-using codexbar_display::themespec::RenderThemeSpecAnimatedPrimitives;
-using codexbar_display::themespec::RenderThemeSpec;
 using codexbar_display::themespec::Sink;
 using codexbar_display::themespec::SpriteCommand;
 using codexbar_display::themespec::TextCommand;
@@ -192,12 +189,45 @@ FrameData testFrame() {
   return frame;
 }
 
+bool renderSpec(const char* spec, const FrameData& frame, RecordingSink& sink) {
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  if (!CompileThemeSpec(spec, doc, scene)) {
+    return false;
+  }
+  const bool ok = RenderCompiledThemeSpec(scene, frame, sink);
+  ReleaseCompiledThemeSpec(scene);
+  return ok;
+}
+
+bool renderAnimatedSpec(const char* spec, const FrameData& frame, RecordingSink& sink) {
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  if (!CompileThemeSpec(spec, doc, scene)) {
+    return false;
+  }
+  const bool ok = RenderCompiledThemeSpecAnimatedPrimitives(scene, frame, sink);
+  ReleaseCompiledThemeSpec(scene);
+  return ok;
+}
+
+bool renderChangedSpec(const char* spec, const FrameData& frame, uint32_t changedFields, RecordingSink& sink) {
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  if (!CompileThemeSpec(spec, doc, scene)) {
+    return false;
+  }
+  const bool ok = RenderCompiledThemeSpecChangedPrimitives(scene, frame, changedFields, sink);
+  ReleaseCompiledThemeSpec(scene);
+  return ok;
+}
+
 void testInvalidSpecsReturnFalse() {
   RecordingSink sink;
 
-  TEST_ASSERT_FALSE(RenderThemeSpec("", testFrame(), sink));
-  TEST_ASSERT_FALSE(RenderThemeSpec("{bad", testFrame(), sink));
-  TEST_ASSERT_FALSE(RenderThemeSpec("{\"themeId\":\"x\"}", testFrame(), sink));
+  TEST_ASSERT_FALSE(renderSpec("", testFrame(), sink));
+  TEST_ASSERT_FALSE(renderSpec("{bad", testFrame(), sink));
+  TEST_ASSERT_FALSE(renderSpec("{\"themeId\":\"x\"}", testFrame(), sink));
   TEST_ASSERT_TRUE(sink.commands.empty());
 }
 
@@ -220,7 +250,7 @@ void testRendersCommandsAndBindings() {
   })JSON";
 
   RecordingSink sink;
-  TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
   TEST_ASSERT_EQUAL_UINT32(9, sink.commands.size());
 
   const RecordedCommand& clear = sink.commands[0];
@@ -306,7 +336,7 @@ void testRendersCompactCommandsAndBindings() {
   })JSON";
 
   RecordingSink sink;
-  TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
   TEST_ASSERT_EQUAL_UINT32(6, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
   TEST_ASSERT_EQUAL_HEX16(0x11AA, sink.commands[0].color);
@@ -355,7 +385,7 @@ void testRendersMulticolorRlePixelsAsFillRects() {
   })JSON";
 
   RecordingSink sink;
-  TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
   TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
 
@@ -397,7 +427,7 @@ void testInvalidMulticolorRlePixelsAreSkippedWithoutPartialDraw() {
   })JSON";
 
   RecordingSink sink;
-  TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
   TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[1].type));
@@ -420,7 +450,7 @@ void testInvalidPrimitivesAreSkipped() {
   })JSON";
 
   RecordingSink sink;
-  TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
   TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[1].type));
   TEST_ASSERT_EQUAL_STRING("ok", sink.commands[1].text.c_str());
@@ -438,7 +468,7 @@ void testColorFallbacks() {
   })JSON";
 
   RecordingSink sink;
-  TEST_ASSERT_TRUE(RenderThemeSpec(spec, testFrame(), sink));
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
   TEST_ASSERT_EQUAL_HEX16(0x0000, sink.commands[1].color);
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, sink.commands[2].fg);
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, sink.commands[2].bg);
@@ -459,7 +489,7 @@ void testAnimatedPrimitivePassRendersGifsAndSpritesWithoutClear() {
   })JSON";
 
   RecordingSink sink;
-  TEST_ASSERT_TRUE(RenderThemeSpecAnimatedPrimitives(spec, testFrame(), sink));
+  TEST_ASSERT_TRUE(renderAnimatedSpec(spec, testFrame(), sink));
   TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Gif), static_cast<int>(sink.commands[0].type));
   TEST_ASSERT_EQUAL_STRING("/themes/demo/loop.gif", sink.commands[0].assetPath.c_str());
@@ -488,7 +518,7 @@ void testChangedPrimitivePassReplaysDirtyRegion() {
   FrameData codingFrame = testFrame();
   codingFrame.activity = "coding";
   RecordingSink activitySink;
-  TEST_ASSERT_TRUE(RenderThemeSpecChangedPrimitives(spec, codingFrame, kThemeSpecFieldActivity, activitySink));
+  TEST_ASSERT_TRUE(renderChangedSpec(spec, codingFrame, kThemeSpecFieldActivity, activitySink));
   TEST_ASSERT_EQUAL_UINT32(7, activitySink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(activitySink.commands[0].type));
   TEST_ASSERT_EQUAL_INT(10, activitySink.commands[0].x);
@@ -508,7 +538,7 @@ void testChangedPrimitivePassReplaysDirtyRegion() {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(activitySink.commands[6].type));
 
   RecordingSink sessionSink;
-  TEST_ASSERT_TRUE(RenderThemeSpecChangedPrimitives(spec, codingFrame, kThemeSpecFieldSession, sessionSink));
+  TEST_ASSERT_TRUE(renderChangedSpec(spec, codingFrame, kThemeSpecFieldSession, sessionSink));
   TEST_ASSERT_EQUAL_UINT32(6, sessionSink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sessionSink.commands[0].type));
   TEST_ASSERT_EQUAL_INT(40, sessionSink.commands[0].x);
@@ -539,7 +569,7 @@ void testChangedPrimitivePassUsesThemeBackgroundAndOverlaps() {
   })JSON";
 
   RecordingSink sink;
-  TEST_ASSERT_TRUE(RenderThemeSpecChangedPrimitives(spec, testFrame(), kThemeSpecFieldSession, sink));
+  TEST_ASSERT_TRUE(renderChangedSpec(spec, testFrame(), kThemeSpecFieldSession, sink));
   TEST_ASSERT_EQUAL_UINT32(6, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sink.commands[0].type));
   TEST_ASSERT_EQUAL_INT(8, sink.commands[0].x);
@@ -568,7 +598,7 @@ void testChangedPrimitivePassHandlesCompactClippySpec() {
   frame.weekly = 76;
 
   RecordingSink sink;
-  TEST_ASSERT_TRUE(RenderThemeSpecChangedPrimitives(
+  TEST_ASSERT_TRUE(renderChangedSpec(
       spec,
       frame,
       kThemeSpecFieldActivity | kThemeSpecFieldSession | kThemeSpecFieldWeekly,
@@ -631,7 +661,7 @@ void testChangedPrimitivePassHandlesTextWithoutMaxWidth() {
   })JSON";
 
   RecordingSink sink;
-  TEST_ASSERT_TRUE(RenderThemeSpecChangedPrimitives(spec, testFrame(), kThemeSpecFieldSession, sink));
+  TEST_ASSERT_TRUE(renderChangedSpec(spec, testFrame(), kThemeSpecFieldSession, sink));
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sink.commands.front().type));
   TEST_ASSERT_EQUAL_INT(1, sink.commands.front().x);
   TEST_ASSERT_EQUAL_INT(239, sink.commands.front().width);
@@ -652,14 +682,14 @@ void testStateAssetsUseActivityWithIdleFallback() {
   FrameData codingFrame = testFrame();
   codingFrame.activity = "coding";
   RecordingSink codingSink;
-  TEST_ASSERT_TRUE(RenderThemeSpec(spec, codingFrame, codingSink));
+  TEST_ASSERT_TRUE(renderSpec(spec, codingFrame, codingSink));
   TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.gif", codingSink.commands[1].assetPath.c_str());
   TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.cba", codingSink.commands[2].assetPath.c_str());
 
   FrameData waitingFrame = testFrame();
   waitingFrame.activity = "waiting";
   RecordingSink waitingSink;
-  TEST_ASSERT_TRUE(RenderThemeSpec(spec, waitingFrame, waitingSink));
+  TEST_ASSERT_TRUE(renderSpec(spec, waitingFrame, waitingSink));
   TEST_ASSERT_EQUAL_STRING("/themes/demo/idle.gif", waitingSink.commands[1].assetPath.c_str());
   TEST_ASSERT_EQUAL_STRING("/themes/demo/idle.cba", waitingSink.commands[2].assetPath.c_str());
 }

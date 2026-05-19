@@ -113,7 +113,6 @@ struct PixelsCommand {
 
 constexpr size_t kMaxCompiledThemeSpecPrimitives = 32;
 constexpr size_t kMaxCompiledThemeSpecStringBytes = 1024;
-constexpr size_t kMaxCompiledStateAssets = 16;
 
 enum class PrimitiveKind : uint8_t {
   Unknown = 0,
@@ -123,11 +122,6 @@ enum class PrimitiveKind : uint8_t {
   Gif,
   Sprite,
   Pixels,
-};
-
-struct CompiledStateAsset {
-  const char* state = nullptr;
-  const char* path = nullptr;
 };
 
 struct CompiledPrimitive {
@@ -152,9 +146,9 @@ struct CompiledPrimitive {
   const char* text = "";
   const char* binding = nullptr;
   const char* assetPath = "";
+  const char* idleAssetPath = nullptr;
+  const char* codingAssetPath = nullptr;
   const char* data = "";
-  const CompiledStateAsset* stateAssets = nullptr;
-  size_t stateAssetCount = 0;
   JsonArrayConst palette;
   JsonArrayConst rows;
 };
@@ -164,9 +158,6 @@ struct CompiledThemeSpec {
   CompiledPrimitive* primitives = nullptr;
   size_t primitiveCapacity = 0;
   size_t primitiveCount = 0;
-  CompiledStateAsset* stateAssets = nullptr;
-  size_t stateAssetCapacity = 0;
-  size_t stateAssetCount = 0;
   bool hasAnimatedAssets = false;
   bool requiresJsonDocument = false;
   bool ownsMemory = false;
@@ -177,7 +168,6 @@ struct CompiledThemeSpec {
 
 struct CompiledThemeSpecStoragePlan {
   size_t primitiveCapacity = 0;
-  size_t stateAssetCapacity = 0;
   size_t stringPoolCapacity = 0;
 };
 
@@ -273,21 +263,6 @@ inline JsonObjectConst JsonObjectFor(JsonObjectConst object, const char* longKey
   return object[shortKey].as<JsonObjectConst>();
 }
 
-inline const char* StateAssetPathFor(JsonObjectConst primitive, const FrameData& frame) {
-  JsonObjectConst stateAssets = JsonObjectFor(primitive, "stateAssets", "sa");
-  if (!stateAssets.isNull()) {
-    const char* activity = frame.activity == nullptr ? "" : frame.activity;
-    const char* activeAsset = JsonStringOrNull(stateAssets[activity]);
-    if (activeAsset != nullptr && activeAsset[0] != '\0') {
-      return activeAsset;
-    }
-    const char* idleAsset = JsonStringOrNull(stateAssets["idle"]);
-    if (idleAsset != nullptr && idleAsset[0] != '\0') {
-      return idleAsset;
-    }
-  }
-  return JsonStringFor(primitive, "assetPath", "a");
-}
 
 inline int JsonIntFor(JsonObjectConst object, const char* longKey, const char* shortKey, int fallback) {
   if (object[longKey].is<int>()) {
@@ -540,14 +515,6 @@ inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* ou
   }
 }
 
-inline int ProgressPercentFor(JsonObjectConst primitive, const FrameData& frame) {
-  const char* binding = JsonStringFor(primitive, "binding", "b");
-  if (binding != nullptr &&
-      (std::strcmp(binding, "weekly") == 0 || std::strcmp(binding, "weeklyPercent") == 0 || std::strcmp(binding, "w") == 0)) {
-    return ClampPct(frame.weekly);
-  }
-  return ClampPct(frame.session);
-}
 
 inline bool StringEqualsAny(const char* value, const char* a, const char* b, const char* c = nullptr) {
   value = SafeText(value);
@@ -634,33 +601,6 @@ inline bool TextTemplateUsesField(const char* raw, uint32_t fields) {
          ((fields & kThemeSpecFieldTotalTokens) != 0 && TemplateUsesField(raw, "totalTokens", "tt"));
 }
 
-inline bool PrimitiveUsesChangedFields(JsonObjectConst primitive, uint32_t fields) {
-  if (fields == 0) {
-    return false;
-  }
-  if (PrimitiveTypeIs(primitive, "text", "tx")) {
-    const char* binding = JsonStringFor(primitive, "binding", "b");
-    if (binding != nullptr) {
-      return BindingUsesField(binding, fields);
-    }
-    return TextTemplateUsesField(JsonStringFor(primitive, "text", "v"), fields);
-  }
-  if (PrimitiveTypeIs(primitive, "progress", "p")) {
-    const char* binding = JsonStringFor(primitive, "binding", "b");
-    if (binding != nullptr &&
-        (std::strcmp(binding, "weekly") == 0 || std::strcmp(binding, "weeklyPercent") == 0 || std::strcmp(binding, "w") == 0)) {
-      return (fields & kThemeSpecFieldWeekly) != 0;
-    }
-    return (fields & kThemeSpecFieldSession) != 0;
-  }
-  if (PrimitiveTypeIs(primitive, "gif", "g") ||
-      PrimitiveTypeIs(primitive, "sprite", "sp") ||
-      PrimitiveTypeIs(primitive, "image", "img")) {
-    return (fields & kThemeSpecFieldActivity) != 0 &&
-           !JsonObjectFor(primitive, "stateAssets", "sa").isNull();
-  }
-  return false;
-}
 
 inline uint32_t BindingFieldMask(const char* binding) {
   if (StringEqualsAny(binding, "provider", "pr")) {
@@ -753,22 +693,9 @@ inline bool AssetPathLooksAnimated(const char* path) {
           (std::strcmp(path + len - 4, ".gif") == 0));
 }
 
-inline bool StateAssetsLookAnimated(JsonObjectConst stateAssets) {
-  if (stateAssets.isNull()) {
-    return false;
-  }
-  for (JsonPairConst entry : stateAssets) {
-    if (AssetPathLooksAnimated(JsonStringOrNull(entry.value()))) {
-      return true;
-    }
-  }
-  return false;
-}
-
 inline void ReleaseCompiledThemeSpec(CompiledThemeSpec& scene) {
   if (scene.ownsMemory) {
     delete[] scene.primitives;
-    delete[] scene.stateAssets;
     delete[] scene.stringPool;
   }
   scene = CompiledThemeSpec{};
@@ -779,16 +706,13 @@ inline bool AllocateCompiledThemeSpecStorage(
     const CompiledThemeSpecStoragePlan& plan) {
   ReleaseCompiledThemeSpec(scene);
   if (plan.primitiveCapacity == 0 || plan.primitiveCapacity > kMaxCompiledThemeSpecPrimitives ||
-      plan.stateAssetCapacity > kMaxCompiledStateAssets ||
       plan.stringPoolCapacity > kMaxCompiledThemeSpecStringBytes) {
     return false;
   }
 
   scene.primitives = new (std::nothrow) CompiledPrimitive[plan.primitiveCapacity];
-  scene.stateAssets = plan.stateAssetCapacity == 0 ? nullptr : new (std::nothrow) CompiledStateAsset[plan.stateAssetCapacity];
   scene.stringPool = plan.stringPoolCapacity == 0 ? nullptr : new (std::nothrow) char[plan.stringPoolCapacity];
   if (scene.primitives == nullptr ||
-      (plan.stateAssetCapacity > 0 && scene.stateAssets == nullptr) ||
       (plan.stringPoolCapacity > 0 && scene.stringPool == nullptr)) {
     ReleaseCompiledThemeSpec(scene);
     return false;
@@ -796,7 +720,6 @@ inline bool AllocateCompiledThemeSpecStorage(
 
   scene.ownsMemory = true;
   scene.primitiveCapacity = plan.primitiveCapacity;
-  scene.stateAssetCapacity = plan.stateAssetCapacity;
   scene.stringPoolCapacity = plan.stringPoolCapacity;
   return true;
 }
@@ -838,42 +761,25 @@ inline bool CountCompiledThemeSpecStorage(
                PrimitiveTypeIs(primitive, "image", "img")) {
       AddCompiledStringStorage(JsonStringFor(primitive, "assetPath", "a"), plan.stringPoolCapacity);
       JsonObjectConst stateAssets = JsonObjectFor(primitive, "stateAssets", "sa");
-      for (JsonPairConst entry : stateAssets) {
-        const char* path = JsonStringOrNull(entry.value());
-        if (path == nullptr || path[0] == '\0') {
-          continue;
-        }
-        plan.stateAssetCapacity += 1;
-        AddCompiledStringStorage(entry.key().c_str(), plan.stringPoolCapacity);
-        AddCompiledStringStorage(path, plan.stringPoolCapacity);
-      }
+      AddCompiledStringStorage(JsonStringOrNull(stateAssets["idle"]), plan.stringPoolCapacity);
+      AddCompiledStringStorage(JsonStringOrNull(stateAssets["coding"]), plan.stringPoolCapacity);
     } else if (PrimitiveTypeIs(primitive, "pixels", "px")) {
       AddCompiledStringStorage(JsonStringFor(primitive, "data", "d"), plan.stringPoolCapacity);
     }
   }
 
-  return plan.stateAssetCapacity <= kMaxCompiledStateAssets &&
-         plan.stringPoolCapacity <= kMaxCompiledThemeSpecStringBytes;
+  return plan.stringPoolCapacity <= kMaxCompiledThemeSpecStringBytes;
 }
 
 inline const char* CompiledStateAssetPathFor(const CompiledPrimitive& primitive, const FrameData& frame) {
   const char* activity = frame.activity == nullptr ? "" : frame.activity;
-  const char* idleAsset = nullptr;
-  for (size_t i = 0; i < primitive.stateAssetCount; ++i) {
-    const char* state = primitive.stateAssets == nullptr ? nullptr : primitive.stateAssets[i].state;
-    const char* path = primitive.stateAssets == nullptr ? nullptr : primitive.stateAssets[i].path;
-    if (state == nullptr || path == nullptr || path[0] == '\0') {
-      continue;
-    }
-    if (std::strcmp(state, activity) == 0) {
-      return path;
-    }
-    if (std::strcmp(state, "idle") == 0) {
-      idleAsset = path;
-    }
+  if (std::strcmp(activity, "coding") == 0 &&
+      primitive.codingAssetPath != nullptr &&
+      primitive.codingAssetPath[0] != '\0') {
+    return primitive.codingAssetPath;
   }
-  if (idleAsset != nullptr) {
-    return idleAsset;
+  if (primitive.idleAssetPath != nullptr && primitive.idleAssetPath[0] != '\0') {
+    return primitive.idleAssetPath;
   }
   return primitive.assetPath;
 }
@@ -899,27 +805,19 @@ inline bool CompileStateAssets(CompiledThemeSpec& scene, JsonObjectConst stateAs
   if (stateAssets.isNull()) {
     return true;
   }
-  out.stateAssets = scene.stateAssets == nullptr ? nullptr : scene.stateAssets + scene.stateAssetCount;
-  for (JsonPairConst entry : stateAssets) {
-    if (scene.stateAssetCount >= scene.stateAssetCapacity) {
+  const char* idlePath = JsonStringOrNull(stateAssets["idle"]);
+  const char* codingPath = JsonStringOrNull(stateAssets["coding"]);
+  if (idlePath != nullptr && idlePath[0] != '\0') {
+    out.idleAssetPath = CopyCompiledString(scene, idlePath);
+    if (out.idleAssetPath == nullptr) {
       return false;
     }
-    const char* path = JsonStringOrNull(entry.value());
-    if (path == nullptr || path[0] == '\0') {
-      continue;
-    }
-    const char* state = CopyCompiledString(scene, entry.key().c_str());
-    const char* copiedPath = CopyCompiledString(scene, path);
-    if (state == nullptr || copiedPath == nullptr) {
-      return false;
-    }
-    scene.stateAssets[scene.stateAssetCount].state = state;
-    scene.stateAssets[scene.stateAssetCount].path = copiedPath;
-    scene.stateAssetCount += 1;
-    out.stateAssetCount += 1;
   }
-  if (out.stateAssetCount == 0) {
-    out.stateAssets = nullptr;
+  if (codingPath != nullptr && codingPath[0] != '\0') {
+    out.codingAssetPath = CopyCompiledString(scene, codingPath);
+    if (out.codingAssetPath == nullptr) {
+      return false;
+    }
   }
   return true;
 }
@@ -995,7 +893,7 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
-    out.liveFields = out.stateAssetCount == 0 ? 0 : kThemeSpecFieldActivity;
+    out.liveFields = (out.idleAssetPath == nullptr && out.codingAssetPath == nullptr) ? 0 : kThemeSpecFieldActivity;
     hasAnimatedAssets = true;
     return out.width > 0 && out.height > 0 && CompiledStateAssetPathFor(out, FrameData{}) != nullptr;
   }
@@ -1015,8 +913,11 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
-    out.liveFields = out.stateAssetCount == 0 ? 0 : kThemeSpecFieldActivity;
-    hasAnimatedAssets = hasAnimatedAssets || AssetPathLooksAnimated(out.assetPath) || StateAssetsLookAnimated(stateAssets);
+    out.liveFields = (out.idleAssetPath == nullptr && out.codingAssetPath == nullptr) ? 0 : kThemeSpecFieldActivity;
+    hasAnimatedAssets = hasAnimatedAssets ||
+                        AssetPathLooksAnimated(out.assetPath) ||
+                        AssetPathLooksAnimated(out.idleAssetPath) ||
+                        AssetPathLooksAnimated(out.codingAssetPath);
     return CompiledStateAssetPathFor(out, FrameData{}) != nullptr;
   }
 
@@ -1125,210 +1026,6 @@ inline int ApproxTextWidth(const char* text, int size) {
     return 0;
   }
   return static_cast<int>(std::strlen(text)) * 6 * size;
-}
-
-inline BoundsResult PrimitiveBounds(JsonObjectConst primitive, const FrameData& frame, bool requireStableTextBounds, Bounds& bounds) {
-  bounds = Bounds{};
-  const int x = primitive["x"] | 0;
-  const int y = primitive["y"] | 0;
-
-  if (PrimitiveTypeIs(primitive, "rect", "r") || PrimitiveTypeIs(primitive, "progress", "p") ||
-      PrimitiveTypeIs(primitive, "gif", "g") || PrimitiveTypeIs(primitive, "pixels", "px")) {
-    bounds.x = x;
-    bounds.y = y;
-    bounds.width = JsonIntFor(primitive, "width", "w", 0);
-    bounds.height = JsonIntFor(primitive, "height", "h", 0);
-    if (bounds.width <= 0 || bounds.height <= 0) {
-      return BoundsResult{false, false};
-    }
-    return BoundsResult{true, false};
-  }
-
-  if (PrimitiveTypeIs(primitive, "sprite", "sp") || PrimitiveTypeIs(primitive, "image", "img")) {
-    if (StateAssetPathFor(primitive, frame) == nullptr || StateAssetPathFor(primitive, frame)[0] == '\0') {
-      return BoundsResult{false, false};
-    }
-    bounds.x = x;
-    bounds.y = y;
-    bounds.width = JsonIntFor(primitive, "width", "w", 0);
-    bounds.height = JsonIntFor(primitive, "height", "h", 0);
-    if (bounds.width <= 0 || bounds.height <= 0) {
-      return BoundsResult{false, true};
-    }
-    return BoundsResult{true, false};
-  }
-
-  if (PrimitiveTypeIs(primitive, "text", "tx")) {
-    const int size = JsonIntFor(primitive, "fontSize", "s", 1);
-    if (size <= 0) {
-      return BoundsResult{false, false};
-    }
-    bounds.x = x;
-    bounds.y = y;
-    bounds.height = 8 * size;
-    bounds.width = JsonIntFor(primitive, "maxWidth", "mw", 0);
-    if (bounds.width <= 0) {
-      if (requireStableTextBounds) {
-        bounds.width = kThemeSpecCanvasSize - x;
-      }
-      if (bounds.width <= 0) {
-        char text[128] = {0};
-        const char* binding = JsonStringFor(primitive, "binding", "b");
-        if (binding != nullptr) {
-          BoundValue(binding, frame, text, sizeof(text));
-        } else {
-          RenderTextTemplate(JsonStringFor(primitive, "text", "v"), frame, text, sizeof(text));
-        }
-        bounds.width = ApproxTextWidth(text, size);
-      }
-    }
-    if (bounds.width <= 0) {
-      return BoundsResult{false, false};
-    }
-    return BoundsResult{true, false};
-  }
-
-  return BoundsResult{false, false};
-}
-
-inline bool DrawPrimitive(JsonObjectConst primitive, const FrameData& frame, Sink& sink) {
-  const int x = primitive["x"] | 0;
-  const int y = primitive["y"] | 0;
-
-  if (PrimitiveTypeIs(primitive, "rect", "r")) {
-    RectCommand cmd;
-    cmd.x = x;
-    cmd.y = y;
-    cmd.width = JsonIntFor(primitive, "width", "w", 0);
-    cmd.height = JsonIntFor(primitive, "height", "h", 0);
-    if (cmd.width <= 0 || cmd.height <= 0) {
-      return false;
-    }
-    cmd.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0x0000);
-    sink.FillRect(cmd);
-    return true;
-  }
-
-  if (PrimitiveTypeIs(primitive, "text", "tx")) {
-    TextCommand cmd;
-    cmd.x = x;
-    cmd.y = y;
-    cmd.font = JsonIntFor(primitive, "font", "f", 1);
-    cmd.size = JsonIntFor(primitive, "fontSize", "s", 1);
-    if (cmd.size <= 0) {
-      return false;
-    }
-    cmd.maxWidth = JsonIntFor(primitive, "maxWidth", "mw", 0);
-    const char* fit = JsonStringFor(primitive, "fit", "ft");
-    cmd.fitShrink = fit != nullptr && std::strcmp(fit, "shrink") == 0;
-    const char* align = JsonStringFor(primitive, "align", "al");
-    if (align != nullptr && std::strcmp(align, "center") == 0) {
-      cmd.align = 1;
-    } else if (align != nullptr && std::strcmp(align, "right") == 0) {
-      cmd.align = 2;
-    }
-    char text[128] = {0};
-    const char* binding = JsonStringFor(primitive, "binding", "b");
-    if (binding != nullptr) {
-      BoundValue(binding, frame, text, sizeof(text));
-    } else {
-      const char* rawText = JsonStringFor(primitive, "text", "v");
-      RenderTextTemplate(rawText == nullptr ? "" : rawText, frame, text, sizeof(text));
-    }
-    cmd.text = text;
-    cmd.fg = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
-    const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
-    cmd.hasBg = bgColor != nullptr;
-    cmd.bg = ParseColor(bgColor, 0x0000);
-    sink.DrawText(cmd);
-    return true;
-  }
-
-  if (PrimitiveTypeIs(primitive, "progress", "p")) {
-    ProgressCommand cmd;
-    cmd.x = x;
-    cmd.y = y;
-    cmd.width = JsonIntFor(primitive, "width", "w", 0);
-    cmd.height = JsonIntFor(primitive, "height", "h", 0);
-    if (cmd.width <= 0 || cmd.height <= 0) {
-      return false;
-    }
-    cmd.percent = ProgressPercentFor(primitive, frame);
-    const char* progressStyle = JsonStringFor(primitive, "progressStyle", "ps");
-    if (progressStyle != nullptr && (std::strcmp(progressStyle, "segments") == 0 || std::strcmp(progressStyle, "segmented") == 0)) {
-      cmd.style = 1;
-    }
-    cmd.segments = JsonIntFor(primitive, "segments", "sg", 0);
-    cmd.segmentGap = JsonIntFor(primitive, "segmentGap", "gg", 1);
-    cmd.fillColor = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
-    cmd.bgColor = ParseColor(JsonStringFor(primitive, "bgColor", "bg"), 0x0000);
-    cmd.borderColor = ParseColor(JsonStringFor(primitive, "borderColor", "bc"), 0x7BEF);
-    sink.DrawProgress(cmd);
-    return true;
-  }
-
-  if (PrimitiveTypeIs(primitive, "gif", "g")) {
-    GifCommand cmd;
-    cmd.x = x;
-    cmd.y = y;
-    cmd.width = JsonIntFor(primitive, "width", "w", 0);
-    cmd.height = JsonIntFor(primitive, "height", "h", 0);
-    cmd.assetPath = StateAssetPathFor(primitive, frame);
-    if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0' || cmd.width <= 0 || cmd.height <= 0) {
-      return false;
-    }
-    const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
-    cmd.hasBg = bgColor != nullptr;
-    cmd.bg = ParseColor(bgColor, 0x0000);
-    sink.DrawGif(cmd);
-    return true;
-  }
-
-  if (PrimitiveTypeIs(primitive, "sprite", "sp") || PrimitiveTypeIs(primitive, "image", "img")) {
-    SpriteCommand cmd;
-    cmd.x = x;
-    cmd.y = y;
-    cmd.width = JsonIntFor(primitive, "width", "w", 0);
-    cmd.height = JsonIntFor(primitive, "height", "h", 0);
-    cmd.assetPath = StateAssetPathFor(primitive, frame);
-    if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0') {
-      return false;
-    }
-    const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
-    cmd.hasBg = bgColor != nullptr;
-    cmd.bg = ParseColor(bgColor, 0x0000);
-    sink.DrawSprite(cmd);
-    return true;
-  }
-
-  if (PrimitiveTypeIs(primitive, "pixels", "px")) {
-    PixelsCommand cmd;
-    cmd.x = x;
-    cmd.y = y;
-    cmd.width = JsonIntFor(primitive, "width", "w", 0);
-    cmd.height = JsonIntFor(primitive, "height", "h", 0);
-    if (primitive["p"].is<JsonArrayConst>() || primitive["r"].is<JsonArrayConst>()) {
-      JsonArrayConst rawPalette = primitive["p"].as<JsonArrayConst>();
-      JsonArrayConst rows = primitive["r"].as<JsonArrayConst>();
-      uint16_t palette[26] = {0};
-      int paletteSize = 0;
-      if (!ParseColorPalette(rawPalette, palette, paletteSize) ||
-          !RenderRlePixelRows(rows, palette, paletteSize, cmd.x, cmd.y, cmd.width, cmd.height, nullptr)) {
-        return false;
-      }
-      return RenderRlePixelRows(rows, palette, paletteSize, cmd.x, cmd.y, cmd.width, cmd.height, &sink);
-    }
-
-    cmd.data = JsonStringFor(primitive, "data", "d");
-    if (!HasHexBitmapBits(cmd.data, cmd.width, cmd.height)) {
-      return false;
-    }
-    cmd.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
-    sink.DrawPixels(cmd);
-    return true;
-  }
-
-  return false;
 }
 
 inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const FrameData& frame) {
@@ -1585,142 +1282,6 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
   }
   sink.EndClip();
   return rendered;
-}
-
-inline bool RenderThemeSpecObject(JsonObjectConst spec, const FrameData& frame, Sink& sink) {
-  JsonArrayConst primitives = JsonArrayFor(spec, "primitives", "p");
-  if (primitives.isNull()) {
-    return false;
-  }
-  if (primitives.size() == 0) {
-    return false;
-  }
-
-  sink.FillScreen(ParseColor(JsonStringFor(spec, "bgColor", "bg"), 0x0000));
-  for (JsonObjectConst primitive : primitives) {
-    (void)DrawPrimitive(primitive, frame, sink);
-    RenderYield();
-  }
-  return true;
-}
-
-inline bool RenderThemeSpec(const char* themeSpecRaw, const FrameData& frame, Sink& sink) {
-  if (themeSpecRaw == nullptr || themeSpecRaw[0] == '\0') {
-    return false;
-  }
-
-  JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, themeSpecRaw);
-  if (err) {
-    return false;
-  }
-
-  return RenderThemeSpecObject(doc.as<JsonObjectConst>(), frame, sink);
-}
-
-inline bool RenderThemeSpecAnimatedPrimitivesObject(JsonObjectConst spec, const FrameData& frame, Sink& sink) {
-  bool rendered = false;
-  JsonArrayConst primitives = JsonArrayFor(spec, "primitives", "p");
-  if (primitives.isNull()) {
-    return false;
-  }
-  sink.PrimeBackground(ParseColor(JsonStringFor(spec, "bgColor", "bg"), 0x0000));
-  for (JsonObjectConst primitive : primitives) {
-    if (PrimitiveTypeIs(primitive, "gif", "g") ||
-        PrimitiveTypeIs(primitive, "sprite", "sp") ||
-        PrimitiveTypeIs(primitive, "image", "img")) {
-      rendered = DrawPrimitive(primitive, frame, sink) || rendered;
-    }
-  }
-  return rendered;
-}
-
-inline bool RenderThemeSpecAnimatedPrimitives(const char* themeSpecRaw, const FrameData& frame, Sink& sink) {
-  if (themeSpecRaw == nullptr || themeSpecRaw[0] == '\0') {
-    return false;
-  }
-
-  JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, themeSpecRaw);
-  if (err) {
-    return false;
-  }
-
-  return RenderThemeSpecAnimatedPrimitivesObject(doc.as<JsonObjectConst>(), frame, sink);
-}
-
-inline bool RenderThemeSpecChangedPrimitivesObject(JsonObjectConst spec, const FrameData& frame, uint32_t changedFields, Sink& sink) {
-  if (changedFields == 0) {
-    return false;
-  }
-
-  JsonArrayConst primitives = JsonArrayFor(spec, "primitives", "p");
-  if (primitives.isNull()) {
-    return false;
-  }
-
-  bool hasAffectedPrimitive = false;
-  Bounds dirty;
-  for (JsonObjectConst primitive : primitives) {
-    if (!PrimitiveUsesChangedFields(primitive, changedFields)) {
-      continue;
-    }
-    hasAffectedPrimitive = true;
-    Bounds primitiveBounds;
-    const BoundsResult bounds = PrimitiveBounds(primitive, frame, true, primitiveBounds);
-    if (!bounds.valid) {
-      return false;
-    }
-    ExpandBounds(dirty, primitiveBounds);
-  }
-  if (!hasAffectedPrimitive || dirty.width <= 0 || dirty.height <= 0) {
-    return false;
-  }
-
-  for (JsonObjectConst primitive : primitives) {
-    Bounds primitiveBounds;
-    const BoundsResult bounds = PrimitiveBounds(primitive, frame, false, primitiveBounds);
-    if (bounds.unknown) {
-      return false;
-    }
-  }
-
-  const uint16_t bgColor = ParseColor(JsonStringFor(spec, "bgColor", "bg"), 0x0000);
-  sink.PrimeBackground(bgColor);
-  sink.BeginClip(dirty.x, dirty.y, dirty.width, dirty.height);
-  RectCommand background;
-  background.x = dirty.x;
-  background.y = dirty.y;
-  background.width = dirty.width;
-  background.height = dirty.height;
-  background.color = bgColor;
-  sink.FillRect(background);
-
-  bool rendered = false;
-  for (JsonObjectConst primitive : primitives) {
-    Bounds primitiveBounds;
-    const BoundsResult bounds = PrimitiveBounds(primitive, frame, false, primitiveBounds);
-    if (bounds.valid && BoundsOverlap(dirty, primitiveBounds)) {
-      rendered = DrawPrimitive(primitive, frame, sink) || rendered;
-      RenderYield();
-    }
-  }
-  sink.EndClip();
-  return rendered;
-}
-
-inline bool RenderThemeSpecChangedPrimitives(const char* themeSpecRaw, const FrameData& frame, uint32_t changedFields, Sink& sink) {
-  if (themeSpecRaw == nullptr || themeSpecRaw[0] == '\0' || changedFields == 0) {
-    return false;
-  }
-
-  JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, themeSpecRaw);
-  if (err) {
-    return false;
-  }
-
-  return RenderThemeSpecChangedPrimitivesObject(doc.as<JsonObjectConst>(), frame, changedFields, sink);
 }
 
 }  // namespace themespec

@@ -290,6 +290,12 @@ func TestValidateRejectsInvalidStateAssets(t *testing.T) {
 			},
 		},
 		{
+			name: "unsupported state",
+			stateAssets: map[string]string{
+				"thinking": "/themes/u/thinking.cbi",
+			},
+		},
+		{
 			name: "empty path",
 			stateAssets: map[string]string{
 				"idle": "",

@@ -18,8 +18,6 @@ struct RendererDebugSnapshot {
   bool themeSpecCompiled = false;
   uint16_t themeSpecPrimitiveCount = 0;
   uint16_t themeSpecPrimitiveCapacity = 0;
-  uint16_t themeSpecStateAssetCount = 0;
-  uint16_t themeSpecStateAssetCapacity = 0;
   uint16_t themeSpecStringBytes = 0;
   uint16_t themeSpecStringCapacity = 0;
   bool themeSpecKeepsJsonDocument = false;

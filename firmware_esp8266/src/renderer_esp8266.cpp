@@ -55,8 +55,6 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
   snapshot.themeSpecCompiled = themeSpecStats.compiled;
   snapshot.themeSpecPrimitiveCount = themeSpecStats.primitiveCount;
   snapshot.themeSpecPrimitiveCapacity = themeSpecStats.primitiveCapacity;
-  snapshot.themeSpecStateAssetCount = themeSpecStats.stateAssetCount;
-  snapshot.themeSpecStateAssetCapacity = themeSpecStats.stateAssetCapacity;
   snapshot.themeSpecStringBytes = themeSpecStats.stringBytes;
   snapshot.themeSpecStringCapacity = themeSpecStats.stringCapacity;
   snapshot.themeSpecKeepsJsonDocument = themeSpecStats.keepsJsonDocument;

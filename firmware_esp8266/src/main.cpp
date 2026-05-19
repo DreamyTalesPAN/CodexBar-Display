@@ -940,10 +940,6 @@ void appendThemeSpecDebugJSON(String& out, const codexbar_display::esp8266::Rend
   out += String(snapshot.themeSpecPrimitiveCount);
   out += ",\"primitiveCapacity\":";
   out += String(snapshot.themeSpecPrimitiveCapacity);
-  out += ",\"stateAssetCount\":";
-  out += String(snapshot.themeSpecStateAssetCount);
-  out += ",\"stateAssetCapacity\":";
-  out += String(snapshot.themeSpecStateAssetCapacity);
   out += ",\"stringBytes\":";
   out += String(snapshot.themeSpecStringBytes);
   out += ",\"stringCapacity\":";

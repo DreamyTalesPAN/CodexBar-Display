@@ -364,6 +364,9 @@ func validateSpriteAssetReferences(p Primitive) error {
 		if !stateNamePattern.MatchString(state) {
 			return fmt.Errorf("stateAssets state %q must match [a-z0-9][a-z0-9_-]{0,31}", state)
 		}
+		if state != "idle" && state != "coding" {
+			return fmt.Errorf("stateAssets state %q is unsupported; use idle or coding", state)
+		}
 		if !isSafeThemeAssetPath(assetPath) {
 			return fmt.Errorf("stateAssets[%s] must be under /themes/", state)
 		}

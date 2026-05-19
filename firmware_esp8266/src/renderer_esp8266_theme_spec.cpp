@@ -718,8 +718,6 @@ ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot() {
   stats.compiled = cachedThemeSpecScene.primitiveCount > 0;
   stats.primitiveCount = static_cast<uint16_t>(cachedThemeSpecScene.primitiveCount);
   stats.primitiveCapacity = static_cast<uint16_t>(cachedThemeSpecScene.primitiveCapacity);
-  stats.stateAssetCount = static_cast<uint16_t>(cachedThemeSpecScene.stateAssetCount);
-  stats.stateAssetCapacity = static_cast<uint16_t>(cachedThemeSpecScene.stateAssetCapacity);
   stats.stringBytes = static_cast<uint16_t>(cachedThemeSpecScene.stringPoolUsed);
   stats.stringCapacity = static_cast<uint16_t>(cachedThemeSpecScene.stringPoolCapacity);
   stats.keepsJsonDocument = cachedThemeSpecScene.requiresJsonDocument;

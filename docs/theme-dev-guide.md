@@ -10,7 +10,7 @@ ThemeSpec JSON costs RAM because the firmware parses the whole JSON into an Ardu
 
 The firmware now compiles a stored ThemeSpec into a runtime scene once per active theme. Full render, partial render, and animation ticks should run from that compiled scene instead of repeatedly walking JSON. This is the scalable path for rich themes: every theme gets the same render behavior, and Clippy-style state animation is not a one-off special case.
 
-The compiled scene copies normal strings and `stateAssets` paths into a small fixed pool. That is intentional: predictable memory is better than a theme that works until heap fragmentation changes. Themes that rely on JSON-backed RLE `pixels` can still render, but they keep more JSON memory alive and are not the preferred launch pattern.
+The compiled scene copies normal strings and `idle`/`coding` `stateAssets` paths into a small fixed pool. That is intentional: predictable memory is better than a theme that works until heap fragmentation changes. Themes that rely on JSON-backed RLE `pixels` can still render, but they keep more JSON memory alive and are not the preferred launch pattern.
 
 ## Do
 
@@ -23,7 +23,7 @@ The compiled scene copies normal strings and `stateAssets` paths into a small fi
 - Combine static text labels into a sprite when they do not need to change.
 - Prefer one detailed streamed sprite over many tiny JSON primitives.
 - Keep asset paths short, for example `/themes/u/syn-top.cbi`, because ESP8266 LittleFS paths are short.
-- Use `stateAssets` for semantic states such as `idle` and `coding`; do not duplicate the whole theme just to change one character sprite.
+- Use `stateAssets` for `idle` and `coding`; do not duplicate the whole theme just to change one character sprite.
 - Keep state names and paths short. Prefer a small state set (`idle`, `coding`) over many rarely used states.
 - Test every launch theme on real hardware for at least 10-20 minutes.
 - Check `/health` after sending a theme. A customer-ready theme should have `renderOk: true` and stable `renderFailures`.

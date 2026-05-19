@@ -157,8 +157,6 @@ struct ThemeSpecRuntimeStats {
   bool compiled = false;
   uint16_t primitiveCount = 0;
   uint16_t primitiveCapacity = 0;
-  uint16_t stateAssetCount = 0;
-  uint16_t stateAssetCapacity = 0;
   uint16_t stringBytes = 0;
   uint16_t stringCapacity = 0;
   bool keepsJsonDocument = false;

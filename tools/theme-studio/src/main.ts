@@ -2562,6 +2562,9 @@ function validateThemeAssetPaths(primitive: Primitive, prefix: string, errors: s
     if (!STATE_NAME_RE.test(stateName)) {
       errors.push(`${prefix}: stateAssets.${stateName} muss klein geschrieben sein und darf nur a-z, 0-9, _ oder - enthalten.`);
     }
+    if (stateName !== "idle" && stateName !== "coding") {
+      errors.push(`${prefix}: stateAssets.${stateName} wird vom Gerät nicht unterstützt. Nutze idle oder coding.`);
+    }
     validateThemeAssetPath({ ...primitive, assetPath }, `${prefix} ${stateName}`, errors);
   }
   if (primitive.assetPath) {
