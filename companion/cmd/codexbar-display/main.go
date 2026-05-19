@@ -95,7 +95,7 @@ func printUsage() {
 	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display theme-pack catalog [--catalog https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json]")
 	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip-or-url")
-	fmt.Println("  codexbar-display theme-pack install (--pack path/to/theme-pack-dir-or.zip-or-url | --catalog url --theme theme-id) [--target http://vibetv.local] [--allow-unknown-capabilities]")
+	fmt.Println("  codexbar-display theme-pack install (--pack path/to/theme-pack-dir-or.zip-or-url | --catalog url --theme theme-id) [--target http://vibetv.local] [--firmware-manifest-url url] [--skip-firmware-update] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
@@ -562,6 +562,8 @@ func runThemePackInstall(args []string) error {
 	catalogRef := fs.String("catalog", "", "path or HTTP(S) URL to VibeTV theme catalog JSON")
 	themeID := fs.String("theme", "", "theme id from catalog")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
+	firmwareManifestURL := fs.String("firmware-manifest-url", vibeTVFirmwareManifestURL, "firmware manifest URL checked before installing the theme pack")
+	skipFirmwareUpdate := fs.Bool("skip-firmware-update", false, "skip the firmware update preflight before installing the theme pack")
 	allowUnknown := fs.Bool(
 		"allow-unknown-capabilities",
 		false,
@@ -583,6 +585,11 @@ func runThemePackInstall(args []string) error {
 	resolvedTarget, err := wifi.ResolvePort(strings.TrimSpace(*target))
 	if err != nil {
 		return err
+	}
+	if !*skipFirmwareUpdate {
+		if err := themePackInstallFirmwareUpdateFn(resolvedTarget, strings.TrimSpace(*firmwareManifestURL)); err != nil {
+			return fmt.Errorf("firmware update before theme install: %w", err)
+		}
 	}
 	caps, err := wifi.DeviceCapabilities(resolvedTarget)
 	if err != nil {
@@ -680,6 +687,16 @@ func resolveThemePackInstallSource(packPath, catalogRef, themeID string) (string
 		return "", err
 	}
 	return themepack.ResolveThemeDownload(catalogRef, theme)
+}
+
+var themePackInstallFirmwareUpdateFn = runThemePackInstallFirmwareUpdate
+
+func runThemePackInstallFirmwareUpdate(target, manifestURL string) error {
+	args := []string{"--target", target, "--confirm-live-update"}
+	if strings.TrimSpace(manifestURL) != "" {
+		args = append(args, "--manifest-url", strings.TrimSpace(manifestURL))
+	}
+	return runInstallUpdate(args)
 }
 
 func resolveThemeSpecTransport(transportName, target, port string) (transportlayer.DeviceTransport, string, error) {

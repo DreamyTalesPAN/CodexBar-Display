@@ -78,13 +78,13 @@ Validate a downloaded pack:
 go run ./cmd/codexbar-display theme-pack validate --pack ../theme-packs/cozy-meadow
 ```
 
-Install it on a connected VibeTV:
+Install it on a connected VibeTV. The Companion checks and installs firmware updates before uploading the theme:
 
 ```bash
 go run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/cozy-meadow --target http://vibetv.local
 ```
 
-Install a ZIP directly from the VibeTV shop:
+Install a ZIP directly from GitHub:
 
 ```bash
 go run ./cmd/codexbar-display theme-pack install --pack https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-cozy-meadow.zip --target http://vibetv.local
@@ -96,4 +96,4 @@ Install by catalog theme ID:
 go run ./cmd/codexbar-display theme-pack install --theme clippy --target http://vibetv.local
 ```
 
-Install uploads assets, uploads the stored ThemeSpec, activates it via `/theme/active`, then sends a live frame so the theme is visible immediately.
+Install first runs the WiFi firmware update flow for the same `--target`. If the device is already current, it continues without flashing. Then it uploads assets, uploads the stored ThemeSpec, activates it via `/theme/active`, and sends a live frame so the theme is visible immediately.

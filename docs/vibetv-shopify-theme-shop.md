@@ -108,7 +108,8 @@ Shopify does not host the ZIPs. Shopify only provides the `theme_id` for the cop
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme clippy --target http://vibetv.local
 ```
 
-5. Companion reads the GitHub VibeTV catalog, resolves the Theme Pack ZIP from the `theme_id`, uploads assets to `/assets`, activates the stored ThemeSpec via `/theme/active`, then sends one live frame.
+5. Companion checks firmware for that VibeTV first. If an update is available, it installs the firmware update and waits for the device to come back.
+6. Companion reads the GitHub VibeTV catalog, resolves the Theme Pack ZIP from the `theme_id`, uploads assets to `/assets`, activates the stored ThemeSpec via `/theme/active`, then sends one live frame.
 
 ## Why This Stays Small On The Device
 

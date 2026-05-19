@@ -129,9 +129,18 @@ func TestThemeValidateSupportsWiFiTransport(t *testing.T) {
 func TestThemePackInstallSupportsPackURL(t *testing.T) {
 	packZip := buildTestThemePackZip(t)
 	downloadedPack := false
+	firmwareUpdated := false
 	uploaded := map[string]bool{}
 	activated := false
 	sentFrame := false
+	previousFirmwareUpdate := themePackInstallFirmwareUpdateFn
+	t.Cleanup(func() {
+		themePackInstallFirmwareUpdateFn = previousFirmwareUpdate
+	})
+	themePackInstallFirmwareUpdateFn = func(target, manifestURL string) error {
+		firmwareUpdated = true
+		return nil
+	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -143,6 +152,9 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
 		case "/assets":
+			if !firmwareUpdated {
+				t.Fatalf("expected firmware update before theme asset upload")
+			}
 			if r.Method != http.MethodPost {
 				t.Fatalf("expected POST /assets, got %s", r.Method)
 			}
@@ -181,6 +193,9 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 	if !downloadedPack {
 		t.Fatalf("expected theme pack URL to be downloaded")
 	}
+	if !firmwareUpdated {
+		t.Fatalf("expected firmware update before theme pack install")
+	}
 	if !uploaded["/themes/u/cm.cbi"] || !uploaded["/themes/u/cm.json"] {
 		t.Fatalf("expected asset and theme spec uploads, got %#v", uploaded)
 	}
@@ -196,9 +211,18 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 	packZip := buildTestThemePackZip(t)
 	downloadedCatalog := false
 	downloadedPack := false
+	firmwareUpdated := false
 	uploaded := map[string]bool{}
 	activated := false
 	sentFrame := false
+	previousFirmwareUpdate := themePackInstallFirmwareUpdateFn
+	t.Cleanup(func() {
+		themePackInstallFirmwareUpdateFn = previousFirmwareUpdate
+	})
+	themePackInstallFirmwareUpdateFn = func(target, manifestURL string) error {
+		firmwareUpdated = true
+		return nil
+	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -214,6 +238,9 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
 		case "/assets":
+			if !firmwareUpdated {
+				t.Fatalf("expected firmware update before theme asset upload")
+			}
 			uploaded[r.URL.Query().Get("path")] = true
 			w.WriteHeader(http.StatusOK)
 		case "/theme/active":
@@ -238,6 +265,9 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 	}
 	if !downloadedCatalog || !downloadedPack {
 		t.Fatalf("expected catalog and pack downloads, catalog=%t pack=%t", downloadedCatalog, downloadedPack)
+	}
+	if !firmwareUpdated {
+		t.Fatalf("expected firmware update before theme pack install")
 	}
 	if !uploaded["/themes/u/cm.cbi"] || !uploaded["/themes/u/cm.json"] {
 		t.Fatalf("expected asset and theme spec uploads, got %#v", uploaded)
