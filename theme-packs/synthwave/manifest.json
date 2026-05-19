@@ -4,7 +4,7 @@
   "id": "synthwave",
   "name": "Synthwave",
   "version": "1.0.0",
-  "minFirmware": "1.0.24",
+  "minFirmware": "1.0.18",
   "themeSpec": {
     "path": "/themes/u/synthwa-1-0a355b.json",
     "file": "theme.json",

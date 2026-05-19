@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,7 @@ import (
 )
 
 const defaultThemeCatalogURL = "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json"
+const themePackWiFiTimeout = 60 * time.Second
 
 func main() {
 	if len(os.Args) < 2 {
@@ -581,7 +583,7 @@ func runThemePackInstall(args []string) error {
 		return err
 	}
 
-	wifi := transportlayer.NewWiFiTransportWithClient(nil)
+	wifi := transportlayer.NewWiFiTransportWithClient(&http.Client{Timeout: themePackWiFiTimeout})
 	resolvedTarget, err := wifi.ResolvePort(strings.TrimSpace(*target))
 	if err != nil {
 		return err
