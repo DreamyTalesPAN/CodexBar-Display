@@ -557,7 +557,7 @@ func (r *rateLimitedReader) Read(p []byte) (int, error) {
 	if n > 0 {
 		r.sent += int64(n)
 		expectedElapsed := time.Duration(r.sent) * time.Second / time.Duration(r.bytesPerSecond)
-		if sleep := r.started.Add(expectedElapsed).Sub(time.Now()); sleep > 0 {
+		if sleep := time.Until(r.started.Add(expectedElapsed)); sleep > 0 {
 			time.Sleep(sleep)
 		}
 	}
