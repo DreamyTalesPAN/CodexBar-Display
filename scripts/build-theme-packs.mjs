@@ -10,6 +10,7 @@ const sourceRoot = path.join(repoRoot, "theme-packs");
 const distRoot = path.join(repoRoot, "dist/theme-packs");
 const companionRoot = path.join(repoRoot, "companion");
 
+await rm(distRoot, { recursive: true, force: true });
 await mkdir(distRoot, { recursive: true });
 
 const themeDirs = [];
@@ -65,7 +66,7 @@ for (const theme of themeDirs) {
 }
 
 await writeCatalog(catalog);
-console.log(`built dist/theme-packs/vibetv-theme-packs.json (${catalog.themes.length} themes)`);
+console.log(`built GitHub theme catalog dist/theme-packs/vibetv-theme-packs.json (${catalog.themes.length} themes)`);
 
 function validatePack(packRef) {
   const result = spawnSync("go", ["run", "./cmd/codexbar-display", "theme-pack", "validate", "--pack", packRef], {

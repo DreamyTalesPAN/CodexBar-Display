@@ -4,7 +4,7 @@ This is the target architecture for `vibetv.shop`. Do not mix this with any othe
 
 ## Decision
 
-Use **Shopify theme assets/files + app-owned Metaobjects** for the free theme catalog.
+Use **GitHub-hosted theme packs + app-owned Shopify Metaobjects** for the free theme catalog.
 
 Do not model free themes as normal Shopify products for the MVP. Products make sense later if themes become paid, need checkout, or need order history. For a free download catalog they add too much checkout/cart behavior.
 
@@ -61,9 +61,9 @@ type = "number_integer"
 
 Shopify docs say TOML-defined app-owned metaobjects are version-controlled and deployed with `shopify app deploy`. They also support `access.storefront = "public_read"`, so the storefront can list the themes.
 
-`theme_id` is the key field. It must exactly match the ID in `dist/theme-packs/vibetv-theme-packs.json`, for example `synthwave`, `clippy`, or `claude-creature`.
+`theme_id` is the key field. It must exactly match the ID in GitHub's `dist/theme-packs/vibetv-theme-packs.json`, for example `synthwave`, `clippy`, or `claude-creature`.
 
-## Repo Build Flow
+## GitHub Build Flow
 
 Theme source files live in this repo:
 
@@ -73,13 +73,13 @@ theme-packs/<theme-id>/theme.json
 theme-packs/<theme-id>/assets/*
 ```
 
-Build Shopify upload artifacts from the repo root:
+Build the GitHub-hosted install artifacts from the repo root:
 
 ```bash
 node scripts/build-theme-packs.mjs
 ```
 
-Upload these generated files to Shopify:
+Commit these generated files to GitHub:
 
 ```text
 dist/theme-packs/vibetv-theme-packs.json
@@ -88,6 +88,14 @@ dist/theme-packs/vibetv-theme-clippy.zip
 dist/theme-packs/vibetv-theme-claude-creature.zip
 dist/theme-packs/vibetv-theme-cozy-meadow.zip
 ```
+
+The Companion default catalog URL is:
+
+```text
+https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json
+```
+
+Shopify does not host the ZIPs. Shopify only provides the `theme_id` for the copyable install command.
 
 ## Customer Flow
 
@@ -100,7 +108,7 @@ dist/theme-packs/vibetv-theme-cozy-meadow.zip
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme clippy --target http://vibetv.local
 ```
 
-5. Companion reads the VibeTV catalog, resolves the Theme Pack ZIP from the `theme_id`, uploads assets to `/assets`, activates the stored ThemeSpec via `/theme/active`, then sends one live frame.
+5. Companion reads the GitHub VibeTV catalog, resolves the Theme Pack ZIP from the `theme_id`, uploads assets to `/assets`, activates the stored ThemeSpec via `/theme/active`, then sends one live frame.
 
 ## Why This Stays Small On The Device
 
@@ -111,7 +119,7 @@ curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/do
 - activation endpoint `/theme/active`
 - optional link to the external theme shop
 
-The catalog, previews, and downloads live on Shopify.
+The storefront metadata and previews live on Shopify. The install catalog and ZIP downloads live on GitHub.
 
 ## Sources
 

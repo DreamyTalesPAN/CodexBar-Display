@@ -6963,7 +6963,7 @@ async function publishThemePack() {
     } else if (!state.publishedThemeIds.includes(pack.manifest.id)) {
       state.publishedThemeIds = [...state.publishedThemeIds, pack.manifest.id];
     }
-    state.notice = `${updating ? "Theme pack updated" : "Theme pack published"}. Upload dist/theme-packs to Shopify so customers get this version.`;
+    state.notice = `${updating ? "Theme pack updated" : "Theme pack published"}. Commit and push the generated dist/theme-packs files to GitHub so customers get this version.`;
   } catch (error) {
     state.notice = error instanceof Error ? error.message : "Theme pack publish failed.";
   }

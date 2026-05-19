@@ -11,7 +11,10 @@ logs/
 
 # Node
 node_modules/
-dist/
+/dist/*
+!/dist/theme-packs/
+!/dist/theme-packs/**
+tools/theme-studio/dist/
 coverage/
 
 # Go

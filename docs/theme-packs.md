@@ -1,8 +1,8 @@
 # VibeTV Theme Packs
 
-A theme pack is the downloadable unit for customer themes. Shopify can host it as a file download; the VibeTV companion installs it over WiFi from a local file, local directory, or direct HTTP(S) ZIP URL.
+A theme pack is the downloadable unit for customer themes. GitHub hosts the published catalog and ZIPs; the VibeTV companion installs them over WiFi from a local file, local directory, or direct HTTP(S) ZIP URL.
 
-The source of truth lives in `theme-packs/<theme-id>/` as plain files. The ZIPs and Shopify catalog are build output under `dist/theme-packs/` and should not be committed.
+The source of truth lives in `theme-packs/<theme-id>/` as plain files. The customer-facing GitHub artifacts live in `dist/theme-packs/` and are committed so the default install command can resolve packs from GitHub.
 
 ## Format
 
@@ -47,23 +47,23 @@ Sync the built-in Theme Studio presets into versioned pack sources:
 node scripts/sync-theme-studio-packs.mjs
 ```
 
-Build all pack ZIPs and the Shopify catalog:
+Build all pack ZIPs and the GitHub catalog:
 
 ```bash
 node scripts/build-theme-packs.mjs
 ```
 
-The build validates every source directory and every generated ZIP with the Companion CLI. Output:
+The build validates every source directory and every generated ZIP with the Companion CLI. Committed output:
 
 ```text
 dist/theme-packs/vibetv-theme-packs.json
 dist/theme-packs/vibetv-theme-<theme-id>.zip
 ```
 
-Upload those files to Shopify theme assets/files so the catalog URL remains:
+After these files are committed and merged to `main`, the default catalog URL is:
 
 ```text
-https://vibetv.shop/cdn/shop/t/1/assets/vibetv-theme-packs.json
+https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json
 ```
 
 List the published VibeTV theme catalog:
@@ -87,7 +87,7 @@ go run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/cozy-mead
 Install a ZIP directly from the VibeTV shop:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack install --pack https://vibetv.shop/cdn/shop/t/1/assets/vibetv-theme-cozy-meadow.zip --target http://vibetv.local
+go run ./cmd/codexbar-display theme-pack install --pack https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-cozy-meadow.zip --target http://vibetv.local
 ```
 
 Install by catalog theme ID:
