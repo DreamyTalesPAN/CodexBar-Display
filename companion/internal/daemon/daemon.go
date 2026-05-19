@@ -1643,6 +1643,18 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 	}
 
 	if frame.Update != nil {
+		compactUpdate := frame
+		compactUpdate.Update = compactFrameUpdate(frame.Update)
+		for _, candidate := range compactUpdateCandidates(compactUpdate) {
+			line, err = candidate.MarshalLine()
+			if err != nil {
+				return nil, protocol.Frame{}, err
+			}
+			if len(line) <= maxBytes {
+				return line, candidate, nil
+			}
+		}
+
 		noUpdate := frame
 		noUpdate.Update = nil
 		line, err = noUpdate.MarshalLine()
@@ -1703,4 +1715,37 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 	}
 
 	return nil, protocol.Frame{}, fmt.Errorf("%w: maxFrameBytes=%d and fallback frame does not fit", errMarshalFrameTooLarge, maxBytes)
+}
+
+func compactFrameUpdate(update *protocol.UpdateState) *protocol.UpdateState {
+	if update == nil {
+		return nil
+	}
+	return &protocol.UpdateState{
+		Available:     update.Available,
+		LatestVersion: update.LatestVersion,
+		Status:        update.Status,
+		LastError:     update.LastError,
+	}
+}
+
+func compactUpdateCandidates(frame protocol.Frame) []protocol.Frame {
+	candidates := []protocol.Frame{frame}
+
+	withoutTokens := frame
+	withoutTokens.SessionTokens = 0
+	withoutTokens.WeekTokens = 0
+	withoutTokens.TotalTokens = 0
+	candidates = append(candidates, withoutTokens)
+
+	withoutClock := withoutTokens
+	withoutClock.Time = ""
+	withoutClock.Date = ""
+	candidates = append(candidates, withoutClock)
+
+	withoutTheme := withoutClock
+	withoutTheme.Theme = ""
+	candidates = append(candidates, withoutTheme)
+
+	return candidates
 }

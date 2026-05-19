@@ -957,6 +957,92 @@ func TestMarshalFrameWithinLimitDropsUpdateBeforeFallback(t *testing.T) {
 	}
 }
 
+func TestMarshalFrameWithinLimitCompactsUpdateBeforeDropping(t *testing.T) {
+	base := protocol.Frame{
+		Provider: "codex",
+		Label:    "Codex",
+		Session:  12,
+		Weekly:   30,
+		ResetSec: 3600,
+	}
+	withUpdate := base
+	withUpdate.Update = &protocol.UpdateState{
+		Available:     true,
+		LatestVersion: "1.0.19",
+		Status:        "update_available",
+		Message:       strings.Repeat("Firmware update available. ", 20),
+		FirmwareURL:   "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.19/" + strings.Repeat("firmware-", 30) + ".bin.gz",
+		SHA256:        strings.Repeat("a", 64),
+	}
+	compact := withUpdate
+	compact.Update = compactFrameUpdate(withUpdate.Update)
+	compactLine, err := compact.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal compact frame: %v", err)
+	}
+
+	line, marshaled, err := marshalFrameWithinLimit(withUpdate, len(compactLine))
+	if err != nil {
+		t.Fatalf("marshal within limit: %v", err)
+	}
+	if len(line) > len(compactLine) {
+		t.Fatalf("expected compact update to fit limit %d, got %d", len(compactLine), len(line))
+	}
+	if marshaled.Update == nil || !marshaled.Update.Available {
+		t.Fatalf("expected compact update state, got %+v", marshaled.Update)
+	}
+	if marshaled.Update.LatestVersion != "1.0.19" || marshaled.Update.Status != "update_available" {
+		t.Fatalf("unexpected compact update state: %+v", marshaled.Update)
+	}
+	if marshaled.Update.Message != "" || marshaled.Update.FirmwareURL != "" || marshaled.Update.SHA256 != "" {
+		t.Fatalf("expected verbose update fields to be dropped, got %+v", marshaled.Update)
+	}
+}
+
+func TestMarshalFrameWithinLimitKeepsCompactUpdateBeforeTokens(t *testing.T) {
+	frame := protocol.Frame{
+		Provider:      "codex",
+		Label:         "Codex",
+		Session:       12,
+		Weekly:        30,
+		ResetSec:      3600,
+		SessionTokens: 999999999999,
+		WeekTokens:    888888888888,
+		TotalTokens:   777777777777,
+		Update: &protocol.UpdateState{
+			Available:     true,
+			LatestVersion: "1.0.19",
+			Status:        "update_available",
+			Message:       strings.Repeat("Firmware update available. ", 20),
+			FirmwareURL:   "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.19/" + strings.Repeat("firmware-", 30) + ".bin.gz",
+			SHA256:        strings.Repeat("a", 64),
+		},
+	}
+	withoutTokens := frame
+	withoutTokens.SessionTokens = 0
+	withoutTokens.WeekTokens = 0
+	withoutTokens.TotalTokens = 0
+	withoutTokens.Update = compactFrameUpdate(frame.Update)
+	withoutTokensLine, err := withoutTokens.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal compact frame without tokens: %v", err)
+	}
+
+	line, marshaled, err := marshalFrameWithinLimit(frame, len(withoutTokensLine))
+	if err != nil {
+		t.Fatalf("marshal within limit: %v", err)
+	}
+	if len(line) > len(withoutTokensLine) {
+		t.Fatalf("expected compact update without tokens to fit limit %d, got %d", len(withoutTokensLine), len(line))
+	}
+	if marshaled.Update == nil || !marshaled.Update.Available {
+		t.Fatalf("expected update to be preserved, got %+v", marshaled.Update)
+	}
+	if marshaled.SessionTokens != 0 || marshaled.WeekTokens != 0 || marshaled.TotalTokens != 0 {
+		t.Fatalf("expected token counts to be dropped before update, got %+v", marshaled)
+	}
+}
+
 func TestMarshalFrameWithinLimitFallsBackToErrorFrame(t *testing.T) {
 	frame := protocol.Frame{
 		Provider: "codex",
