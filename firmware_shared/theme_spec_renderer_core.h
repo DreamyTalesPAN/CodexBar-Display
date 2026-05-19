@@ -175,6 +175,12 @@ struct CompiledThemeSpec {
   size_t stringPoolUsed = 0;
 };
 
+struct CompiledThemeSpecStoragePlan {
+  size_t primitiveCapacity = 0;
+  size_t stateAssetCapacity = 0;
+  size_t stringPoolCapacity = 0;
+};
+
 class Sink {
  public:
   virtual ~Sink() = default;
@@ -770,30 +776,28 @@ inline void ReleaseCompiledThemeSpec(CompiledThemeSpec& scene) {
 
 inline bool AllocateCompiledThemeSpecStorage(
     CompiledThemeSpec& scene,
-    size_t primitiveCapacity,
-    size_t stateAssetCapacity,
-    size_t stringPoolCapacity) {
+    const CompiledThemeSpecStoragePlan& plan) {
   ReleaseCompiledThemeSpec(scene);
-  if (primitiveCapacity == 0 || primitiveCapacity > kMaxCompiledThemeSpecPrimitives ||
-      stateAssetCapacity > kMaxCompiledStateAssets ||
-      stringPoolCapacity > kMaxCompiledThemeSpecStringBytes) {
+  if (plan.primitiveCapacity == 0 || plan.primitiveCapacity > kMaxCompiledThemeSpecPrimitives ||
+      plan.stateAssetCapacity > kMaxCompiledStateAssets ||
+      plan.stringPoolCapacity > kMaxCompiledThemeSpecStringBytes) {
     return false;
   }
 
-  scene.primitives = new (std::nothrow) CompiledPrimitive[primitiveCapacity];
-  scene.stateAssets = stateAssetCapacity == 0 ? nullptr : new (std::nothrow) CompiledStateAsset[stateAssetCapacity];
-  scene.stringPool = stringPoolCapacity == 0 ? nullptr : new (std::nothrow) char[stringPoolCapacity];
+  scene.primitives = new (std::nothrow) CompiledPrimitive[plan.primitiveCapacity];
+  scene.stateAssets = plan.stateAssetCapacity == 0 ? nullptr : new (std::nothrow) CompiledStateAsset[plan.stateAssetCapacity];
+  scene.stringPool = plan.stringPoolCapacity == 0 ? nullptr : new (std::nothrow) char[plan.stringPoolCapacity];
   if (scene.primitives == nullptr ||
-      (stateAssetCapacity > 0 && scene.stateAssets == nullptr) ||
-      (stringPoolCapacity > 0 && scene.stringPool == nullptr)) {
+      (plan.stateAssetCapacity > 0 && scene.stateAssets == nullptr) ||
+      (plan.stringPoolCapacity > 0 && scene.stringPool == nullptr)) {
     ReleaseCompiledThemeSpec(scene);
     return false;
   }
 
   scene.ownsMemory = true;
-  scene.primitiveCapacity = primitiveCapacity;
-  scene.stateAssetCapacity = stateAssetCapacity;
-  scene.stringPoolCapacity = stringPoolCapacity;
+  scene.primitiveCapacity = plan.primitiveCapacity;
+  scene.stateAssetCapacity = plan.stateAssetCapacity;
+  scene.stringPoolCapacity = plan.stringPoolCapacity;
   return true;
 }
 
@@ -815,45 +819,41 @@ inline void AddCompiledStringStorage(const char* value, size_t& stringBytes) {
 
 inline bool CountCompiledThemeSpecStorage(
     JsonObjectConst spec,
-    size_t& primitiveCapacity,
-    size_t& stateAssetCapacity,
-    size_t& stringPoolCapacity) {
-  primitiveCapacity = 0;
-  stateAssetCapacity = 0;
-  stringPoolCapacity = 0;
+    CompiledThemeSpecStoragePlan& plan) {
+  plan = CompiledThemeSpecStoragePlan{};
   JsonArrayConst primitives = JsonArrayFor(spec, "primitives", "p");
   if (primitives.isNull() || primitives.size() == 0 || primitives.size() > kMaxCompiledThemeSpecPrimitives) {
     return false;
   }
 
-  primitiveCapacity = primitives.size();
+  plan.primitiveCapacity = primitives.size();
   for (JsonObjectConst primitive : primitives) {
     if (PrimitiveTypeIs(primitive, "text", "tx")) {
-      AddCompiledStringStorage(JsonStringFor(primitive, "binding", "b"), stringPoolCapacity);
-      AddCompiledStringStorage(JsonStringFor(primitive, "text", "v"), stringPoolCapacity);
+      AddCompiledStringStorage(JsonStringFor(primitive, "binding", "b"), plan.stringPoolCapacity);
+      AddCompiledStringStorage(JsonStringFor(primitive, "text", "v"), plan.stringPoolCapacity);
     } else if (PrimitiveTypeIs(primitive, "progress", "p")) {
-      AddCompiledStringStorage(JsonStringFor(primitive, "binding", "b"), stringPoolCapacity);
+      AddCompiledStringStorage(JsonStringFor(primitive, "binding", "b"), plan.stringPoolCapacity);
     } else if (PrimitiveTypeIs(primitive, "gif", "g") ||
                PrimitiveTypeIs(primitive, "sprite", "sp") ||
                PrimitiveTypeIs(primitive, "image", "img")) {
-      AddCompiledStringStorage(JsonStringFor(primitive, "assetPath", "a"), stringPoolCapacity);
+      AddCompiledStringStorage(JsonStringFor(primitive, "assetPath", "a"), plan.stringPoolCapacity);
       JsonObjectConst stateAssets = JsonObjectFor(primitive, "stateAssets", "sa");
       for (JsonPairConst entry : stateAssets) {
         const char* path = JsonStringOrNull(entry.value());
         if (path == nullptr || path[0] == '\0') {
           continue;
         }
-        stateAssetCapacity += 1;
-        AddCompiledStringStorage(entry.key().c_str(), stringPoolCapacity);
-        AddCompiledStringStorage(path, stringPoolCapacity);
+        plan.stateAssetCapacity += 1;
+        AddCompiledStringStorage(entry.key().c_str(), plan.stringPoolCapacity);
+        AddCompiledStringStorage(path, plan.stringPoolCapacity);
       }
     } else if (PrimitiveTypeIs(primitive, "pixels", "px")) {
-      AddCompiledStringStorage(JsonStringFor(primitive, "data", "d"), stringPoolCapacity);
+      AddCompiledStringStorage(JsonStringFor(primitive, "data", "d"), plan.stringPoolCapacity);
     }
   }
 
-  return stateAssetCapacity <= kMaxCompiledStateAssets &&
-         stringPoolCapacity <= kMaxCompiledThemeSpecStringBytes;
+  return plan.stateAssetCapacity <= kMaxCompiledStateAssets &&
+         plan.stringPoolCapacity <= kMaxCompiledThemeSpecStringBytes;
 }
 
 inline const char* CompiledStateAssetPathFor(const CompiledPrimitive& primitive, const FrameData& frame) {
@@ -1043,11 +1043,9 @@ inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scen
   if (primitives.isNull() || primitives.size() == 0 || primitives.size() > kMaxCompiledThemeSpecPrimitives) {
     return false;
   }
-  size_t primitiveCapacity = 0;
-  size_t stateAssetCapacity = 0;
-  size_t stringPoolCapacity = 0;
-  if (!CountCompiledThemeSpecStorage(spec, primitiveCapacity, stateAssetCapacity, stringPoolCapacity) ||
-      !AllocateCompiledThemeSpecStorage(scene, primitiveCapacity, stateAssetCapacity, stringPoolCapacity)) {
+  CompiledThemeSpecStoragePlan storagePlan;
+  if (!CountCompiledThemeSpecStorage(spec, storagePlan) ||
+      !AllocateCompiledThemeSpecStorage(scene, storagePlan)) {
     return false;
   }
 

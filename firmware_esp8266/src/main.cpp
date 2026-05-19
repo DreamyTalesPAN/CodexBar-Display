@@ -917,15 +917,8 @@ bool filesystemInfoJSON(String& out) {
   return mounted;
 }
 
-void appendRendererDebugJSON(String& out) {
-  const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
-  String activeTheme = snapshot.activeTheme;
-  if (snapshot.themeSpecActive && snapshot.themeSpecId.length() > 0) {
-    activeTheme = snapshot.themeSpecId;
-  }
-  out += "\"display\":{\"activeTheme\":\"";
-  out += jsonEscape(activeTheme);
-  out += "\",\"themeSpec\":{\"active\":";
+void appendThemeSpecDebugJSON(String& out, const codexbar_display::esp8266::RendererDebugSnapshot& snapshot) {
+  out += "\"themeSpec\":{\"active\":";
   out += snapshot.themeSpecActive ? "true" : "false";
   out += ",\"id\":";
   appendJSONNullableString(out, snapshot.themeSpecId);
@@ -959,7 +952,11 @@ void appendRendererDebugJSON(String& out) {
   out += snapshot.themeSpecKeepsJsonDocument ? "true" : "false";
   out += ",\"hasAnimatedAssets\":";
   out += snapshot.themeSpecHasAnimatedAssets ? "true" : "false";
-  out += "},\"gif\":{\"activePath\":\"";
+  out += "}";
+}
+
+void appendGifDebugJSON(String& out, const codexbar_display::esp8266::RendererDebugSnapshot& snapshot) {
+  out += "\"gif\":{\"activePath\":\"";
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";
   out += snapshot.gifFilePresent ? "true" : "false";
@@ -987,7 +984,22 @@ void appendRendererDebugJSON(String& out) {
     out += String(snapshot.gifLastErrorAgeMs);
     out += "}";
   }
-  out += "}}";
+  out += "}";
+}
+
+void appendRendererDebugJSON(String& out) {
+  const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
+  String activeTheme = snapshot.activeTheme;
+  if (snapshot.themeSpecActive && snapshot.themeSpecId.length() > 0) {
+    activeTheme = snapshot.themeSpecId;
+  }
+  out += "\"display\":{\"activeTheme\":\"";
+  out += jsonEscape(activeTheme);
+  out += "\",";
+  appendThemeSpecDebugJSON(out, snapshot);
+  out += ",";
+  appendGifDebugJSON(out, snapshot);
+  out += "}";
 }
 
 void appendFirmwareUpdateJSON(String& out) {
