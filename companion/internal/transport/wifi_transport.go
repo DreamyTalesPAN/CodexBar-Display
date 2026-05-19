@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,7 +17,13 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
-const defaultWiFiTimeout = 5 * time.Second
+const (
+	defaultWiFiTimeout      = 5 * time.Second
+	assetUploadAttempts     = 3
+	assetUploadRetryMaxBody = 512
+)
+
+var assetUploadRetryDelay = 1500 * time.Millisecond
 
 type WiFiTransport struct {
 	client *http.Client
@@ -108,16 +116,65 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 	}
 
 	endpoint := base + "/assets?path=" + url.QueryEscape(devicePath)
-	resp, err := t.client.Post(endpoint, writer.FormDataContentType(), &body)
-	if err != nil {
-		return fmt.Errorf("post asset %s: %w", devicePath, err)
+	contentType := writer.FormDataContentType()
+	var lastErr error
+	for attempt := 1; attempt <= assetUploadAttempts; attempt++ {
+		resp, err := t.client.Post(endpoint, contentType, bytes.NewReader(body.Bytes()))
+		if err != nil {
+			lastErr = fmt.Errorf("post asset %s: %w", devicePath, err)
+			if shouldRetryAssetUpload(err) && attempt < assetUploadAttempts {
+				time.Sleep(assetUploadRetryDelay)
+				continue
+			}
+			return lastErr
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			_ = resp.Body.Close()
+			return nil
+		}
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, assetUploadRetryMaxBody))
+		_ = resp.Body.Close()
+		lastErr = fmt.Errorf("post asset %s: status=%d body=%q", devicePath, resp.StatusCode, strings.TrimSpace(string(respBody)))
+		if !retryableAssetStatus(resp.StatusCode) || attempt >= assetUploadAttempts {
+			return lastErr
+		}
+		time.Sleep(assetUploadRetryDelay)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("post asset %s: status=%d body=%q", devicePath, resp.StatusCode, strings.TrimSpace(string(body)))
+	return lastErr
+}
+
+func shouldRetryAssetUpload(err error) bool {
+	if err == nil {
+		return false
 	}
-	return nil
+	if errorsIsTimeout(err) {
+		return true
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "connection reset by peer") ||
+		strings.Contains(text, "broken pipe") ||
+		strings.Contains(text, "eof") ||
+		strings.Contains(text, "server closed idle connection")
+}
+
+func errorsIsTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return true
+	}
+	if os.IsTimeout(err) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "client.timeout exceeded") ||
+		strings.Contains(strings.ToLower(err.Error()), "context deadline exceeded")
+}
+
+func retryableAssetStatus(statusCode int) bool {
+	return statusCode == http.StatusRequestTimeout ||
+		statusCode == http.StatusTooManyRequests ||
+		(statusCode >= 500 && statusCode <= 599)
 }
 
 func (t WiFiTransport) ActivateStoredTheme(target, devicePath string) error {
