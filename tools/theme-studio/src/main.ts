@@ -22,6 +22,7 @@ const COLOR_RE = /^#[A-Fa-f0-9]{6}$/;
 const THEME_ID_RE = /^[a-z0-9][a-z0-9\-_]{2,63}$/;
 const FIXED_THEME_REV = 1;
 const FIXED_FALLBACK_THEME = "mini";
+const THEME_PACK_MIN_FIRMWARE = "1.0.24";
 const DEFAULT_TARGET_ORIGIN = "http://vibetv.local";
 const TARGET_STORAGE_KEY = "codexbar.themeStudio.targetOrigin";
 const DEFAULT_GIF_SIZE = 80;
@@ -203,6 +204,7 @@ interface AppState {
   redoStack: ThemeSnapshot[];
   savedThemes: SavedTheme[];
   activeThemeId: string;
+  publishedThemeIds: string[];
 }
 
 interface DeviceHealth {
@@ -2266,9 +2268,11 @@ const state: AppState = {
   redoStack: [],
   savedThemes: loadSavedThemes(),
   activeThemeId: restoredDraft?.activeThemeId ?? themeLibraryIdForSpec(restoredDraft?.spec ?? initialSpec),
+  publishedThemeIds: [SYNTHWAVE_SPEC.themeId, CLAUDE_CREATURE_SPEC.themeId, CLIPPY_SPEC.themeId, COZY_MEADOW_SPEC.themeId],
 };
 syncJsonFromSpec();
 render();
+void refreshPublishedThemeIds();
 window.addEventListener("keydown", handleGlobalKeydown);
 window.addEventListener("pointerup", () => {
   pixelCanvasPaintActive = false;
@@ -2408,6 +2412,31 @@ function themeLibraryLabel(themeId: string): string {
     [COZY_MEADOW_SPEC.themeId]: "Cozy Meadow",
   };
   return labels[themeId] ?? themeId;
+}
+
+async function refreshPublishedThemeIds() {
+  try {
+    const response = await fetch("/api/theme-packs", { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      return;
+    }
+    const body = await response.json() as { themeIds?: unknown };
+    if (!Array.isArray(body.themeIds)) {
+      return;
+    }
+    state.publishedThemeIds = body.themeIds.filter((id): id is string => typeof id === "string");
+    render();
+  } catch {
+    // The static build has no local publish API. The editor still works.
+  }
+}
+
+function currentThemePackExists(): boolean {
+  return state.publishedThemeIds.includes(state.spec.themeId);
+}
+
+function publishButtonLabel(): string {
+  return currentThemePackExists() ? "Update" : "Publish";
 }
 
 function snapshotState(): ThemeSnapshot {
@@ -2911,9 +2940,7 @@ function render() {
           </div>
           <div class="preview-actions">
             <button class="primary-action" data-action="send-theme" ${state.errors.length ? "disabled" : ""}>Send to Vibe TV</button>
-            <button data-action="download-pack" ${state.errors.length ? "disabled" : ""}>Download Pack</button>
-            <button data-action="download-json">Download JSON</button>
-            <button data-action="copy-json">Copy JSON</button>
+            <button class="publish-action" data-action="publish-pack" ${state.errors.length ? "disabled" : ""}>${publishButtonLabel()}</button>
           </div>
           ${messageList()}
         </section>
@@ -6249,6 +6276,13 @@ async function handleAction(action: string) {
     await downloadThemePack();
     return;
   }
+  if (action === "publish-pack") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
+    await publishThemePack();
+    return;
+  }
   if (action === "send-theme") {
     if (!applyPendingJsonEdit()) {
       return;
@@ -6799,6 +6833,11 @@ type ThemePackFileEntry = {
   contentType?: string;
 };
 
+type ThemePackBuild = {
+  files: Record<string, Uint8Array>;
+  manifest: ThemePackManifest;
+};
+
 async function downloadThemePack() {
   validateCurrentSpec();
   if (state.errors.length > 0) {
@@ -6808,67 +6847,7 @@ async function downloadThemePack() {
   }
 
   try {
-    const files: Record<string, Uint8Array> = {};
-    const assets: ThemePackFileEntry[] = [];
-    const usedPackFiles = new Set<string>(["manifest.json", "theme.json"]);
-
-    const themeSpecPath = themeSpecAssetPath(state.spec);
-    const themeSpecData = strToU8(deviceThemeSpecJson(state.spec));
-    const themeSpecEntry: ThemePackFileEntry = {
-      path: themeSpecPath,
-      file: "theme.json",
-      bytes: themeSpecData.byteLength,
-      sha256: await sha256Hex(themeSpecData),
-      contentType: "application/json",
-    };
-    files[themeSpecEntry.file] = themeSpecData;
-
-    for (const assetPath of uniqueAssetPaths("gif")) {
-      const asset = state.gifAssets[assetPath] ?? await builtInGifAsset(assetPath);
-      if (!asset) {
-        throw new Error(`Missing GIF asset for ${assetPath}.`);
-      }
-      const data = new Uint8Array(await asset.file.arrayBuffer());
-      const packFile = uniquePackAssetFile(assetPath, usedPackFiles);
-      files[packFile] = data;
-      assets.push({
-        path: assetPath,
-        file: packFile,
-        bytes: data.byteLength,
-        sha256: await sha256Hex(data),
-        contentType: asset.file.type || "image/gif",
-      });
-    }
-
-    for (const assetPath of uniqueAssetPaths("sprite")) {
-      const asset = state.spriteAssets[assetPath] ?? builtInSpriteAsset(assetPath);
-      if (!asset) {
-        throw new Error(`Missing sprite asset for ${assetPath}.`);
-      }
-      const data = new Uint8Array(await asset.file.arrayBuffer());
-      const packFile = uniquePackAssetFile(assetPath, usedPackFiles);
-      files[packFile] = data;
-      assets.push({
-        path: assetPath,
-        file: packFile,
-        bytes: data.byteLength,
-        sha256: await sha256Hex(data),
-        contentType: asset.file.type || "text/plain",
-      });
-    }
-
-    const manifest: ThemePackManifest = {
-      kind: "vibetv-theme-pack",
-      schemaVersion: 1,
-      id: state.spec.themeId,
-      name: displayThemeName(state.spec.themeId),
-      version: `${state.spec.themeRev}.0.0`,
-      minFirmware: "1.0.0",
-      themeSpec: themeSpecEntry,
-      assets,
-    };
-    files["manifest.json"] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`);
-
+    const { files } = await buildThemePack();
     const zip = zipSync(files, { level: 0 });
     const blob = new Blob([arrayBufferFor(zip)], { type: "application/zip" });
     const href = URL.createObjectURL(blob);
@@ -6882,6 +6861,132 @@ async function downloadThemePack() {
     state.notice = error instanceof Error ? error.message : "Theme pack download failed.";
   }
   render();
+}
+
+async function buildThemePack(): Promise<ThemePackBuild> {
+  const files: Record<string, Uint8Array> = {};
+  const assets: ThemePackFileEntry[] = [];
+  const usedPackFiles = new Set<string>(["manifest.json", "theme.json"]);
+
+  const themeSpecPath = themeSpecAssetPath(state.spec);
+  const themeSpecData = strToU8(`${deviceThemeSpecJson(state.spec)}\n`);
+  const themeSpecEntry: ThemePackFileEntry = {
+    path: themeSpecPath,
+    file: "theme.json",
+    bytes: themeSpecData.byteLength,
+    sha256: await sha256Hex(themeSpecData),
+    contentType: "application/json",
+  };
+  files[themeSpecEntry.file] = themeSpecData;
+
+  for (const assetPath of uniqueAssetPaths("gif")) {
+    const asset = state.gifAssets[assetPath] ?? await builtInGifAsset(assetPath);
+    if (!asset) {
+      throw new Error(`Missing GIF asset for ${assetPath}.`);
+    }
+    const data = new Uint8Array(await asset.file.arrayBuffer());
+    const packFile = uniquePackAssetFile(assetPath, usedPackFiles);
+    files[packFile] = data;
+    assets.push({
+      path: assetPath,
+      file: packFile,
+      bytes: data.byteLength,
+      sha256: await sha256Hex(data),
+      contentType: asset.file.type || "image/gif",
+    });
+  }
+
+  for (const assetPath of uniqueAssetPaths("sprite")) {
+    const asset = state.spriteAssets[assetPath] ?? builtInSpriteAsset(assetPath);
+    if (!asset) {
+      throw new Error(`Missing sprite asset for ${assetPath}.`);
+    }
+    const data = withTrailingNewline(new Uint8Array(await asset.file.arrayBuffer()));
+    const packFile = uniquePackAssetFile(assetPath, usedPackFiles);
+    files[packFile] = data;
+    assets.push({
+      path: assetPath,
+      file: packFile,
+      bytes: data.byteLength,
+      sha256: await sha256Hex(data),
+      contentType: asset.file.type || "text/plain",
+    });
+  }
+
+  const manifest: ThemePackManifest = {
+    kind: "vibetv-theme-pack",
+    schemaVersion: 1,
+    id: state.spec.themeId,
+    name: displayThemeName(state.spec.themeId),
+    version: `${state.spec.themeRev}.0.0`,
+    minFirmware: THEME_PACK_MIN_FIRMWARE,
+    themeSpec: themeSpecEntry,
+    assets,
+  };
+  files["manifest.json"] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`);
+  return { files, manifest };
+}
+
+async function publishThemePack() {
+  validateCurrentSpec();
+  if (state.errors.length > 0) {
+    state.notice = "Theme is invalid. Fix the errors before publishing.";
+    render();
+    return;
+  }
+
+  const updating = currentThemePackExists();
+  try {
+    state.notice = `${updating ? "Updating" : "Publishing"} theme pack.`;
+    render();
+
+    const pack = await buildThemePack();
+    const response = await fetch("/api/theme-packs/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        themeId: pack.manifest.id,
+        files: Object.entries(pack.files).map(([file, data]) => ({
+          file,
+          dataBase64: uint8ToBase64(data),
+        })),
+      }),
+    });
+
+    const body = await response.json().catch(() => ({})) as { error?: string; themeIds?: string[] };
+    if (!response.ok) {
+      throw new Error(body.error || `Publish failed (${response.status}).`);
+    }
+
+    if (Array.isArray(body.themeIds)) {
+      state.publishedThemeIds = body.themeIds;
+    } else if (!state.publishedThemeIds.includes(pack.manifest.id)) {
+      state.publishedThemeIds = [...state.publishedThemeIds, pack.manifest.id];
+    }
+    state.notice = `${updating ? "Theme pack updated" : "Theme pack published"}. Upload dist/theme-packs to Shopify so customers get this version.`;
+  } catch (error) {
+    state.notice = error instanceof Error ? error.message : "Theme pack publish failed.";
+  }
+  render();
+}
+
+function uint8ToBase64(data: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < data.length; offset += chunkSize) {
+    binary += String.fromCharCode(...data.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function withTrailingNewline(data: Uint8Array): Uint8Array {
+  if (data.length === 0 || data[data.length - 1] === 10) {
+    return data;
+  }
+  const next = new Uint8Array(data.length + 1);
+  next.set(data);
+  next[data.length] = 10;
+  return next;
 }
 
 function uniquePackAssetFile(devicePath: string, used: Set<string>): string {

@@ -1,0 +1,38 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "clippy",
+  "name": "Clippy",
+  "version": "1.0.0",
+  "minFirmware": "1.0.24",
+  "themeSpec": {
+    "path": "/themes/u/clippy-1-bb9192.json",
+    "file": "theme.json",
+    "bytes": 866,
+    "sha256": "7221b0a192aaa84d040d5cf164c871fb1311000714284fbfa460831a6074ea2c",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/u/cp-bg.cbi",
+      "file": "assets/cp-bg.cbi",
+      "bytes": 1093,
+      "sha256": "3f8554a3de25f25a5cdea3082f33b70d9e3f80e9802c73fb6a55b004956447e1",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/cp-i.cba",
+      "file": "assets/cp-i.cba",
+      "bytes": 16675,
+      "sha256": "41f89d0c06137a2f4519bdce1d14eeb82526e39cc95004b32b2204e42bac4a22",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/cp-c.cba",
+      "file": "assets/cp-c.cba",
+      "bytes": 16361,
+      "sha256": "2b770c7c1270164fb15033a501a1f194a015235531da3293f9f61f944fe3c432",
+      "contentType": "text/plain"
+    }
+  ]
+}

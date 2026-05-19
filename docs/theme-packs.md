@@ -2,6 +2,8 @@
 
 A theme pack is the downloadable unit for customer themes. Shopify can host it as a file download; the VibeTV companion installs it over WiFi from a local file, local directory, or direct HTTP(S) ZIP URL.
 
+The source of truth lives in `theme-packs/<theme-id>/` as plain files. The ZIPs and Shopify catalog are build output under `dist/theme-packs/` and should not be committed.
+
 ## Format
 
 Each pack is either a directory or a `.zip` with `manifest.json` at the root.
@@ -39,6 +41,31 @@ Rules:
 
 ## CLI
 
+Sync the built-in Theme Studio presets into versioned pack sources:
+
+```bash
+node scripts/sync-theme-studio-packs.mjs
+```
+
+Build all pack ZIPs and the Shopify catalog:
+
+```bash
+node scripts/build-theme-packs.mjs
+```
+
+The build validates every source directory and every generated ZIP with the Companion CLI. Output:
+
+```text
+dist/theme-packs/vibetv-theme-packs.json
+dist/theme-packs/vibetv-theme-<theme-id>.zip
+```
+
+Upload those files to Shopify theme assets/files so the catalog URL remains:
+
+```text
+https://vibetv.shop/cdn/shop/t/1/assets/vibetv-theme-packs.json
+```
+
 List the published VibeTV theme catalog:
 
 ```bash
@@ -66,7 +93,7 @@ go run ./cmd/codexbar-display theme-pack install --pack https://vibetv.shop/cdn/
 Install by catalog theme ID:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack install --theme cozy-meadow --target http://vibetv.local
+go run ./cmd/codexbar-display theme-pack install --theme clippy --target http://vibetv.local
 ```
 
 Install uploads assets, uploads the stored ThemeSpec, activates it via `/theme/active`, then sends a live frame so the theme is visible immediately.

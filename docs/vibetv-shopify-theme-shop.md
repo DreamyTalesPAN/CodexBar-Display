@@ -4,7 +4,7 @@ This is the target architecture for `vibetv.shop`. Do not mix this with any othe
 
 ## Decision
 
-Use **Shopify Files + app-owned Metaobjects** for the free theme catalog.
+Use **Shopify theme assets/files + app-owned Metaobjects** for the free theme catalog.
 
 Do not model free themes as normal Shopify products for the MVP. Products make sense later if themes become paid, need checkout, or need order history. For a free download catalog they add too much checkout/cart behavior.
 
@@ -42,11 +42,6 @@ required = true
 name = "Preview Image"
 type = "file_reference"
 
-[metaobjects.app.vibetv_theme.fields.download_file]
-name = "Download File"
-type = "file_reference"
-required = true
-
 [metaobjects.app.vibetv_theme.fields.min_firmware_version]
 name = "Minimum Firmware Version"
 type = "single_line_text_field"
@@ -66,18 +61,46 @@ type = "number_integer"
 
 Shopify docs say TOML-defined app-owned metaobjects are version-controlled and deployed with `shopify app deploy`. They also support `access.storefront = "public_read"`, so the storefront can list the themes.
 
+`theme_id` is the key field. It must exactly match the ID in `dist/theme-packs/vibetv-theme-packs.json`, for example `synthwave`, `clippy`, or `claude-creature`.
+
+## Repo Build Flow
+
+Theme source files live in this repo:
+
+```text
+theme-packs/<theme-id>/manifest.json
+theme-packs/<theme-id>/theme.json
+theme-packs/<theme-id>/assets/*
+```
+
+Build Shopify upload artifacts from the repo root:
+
+```bash
+node scripts/build-theme-packs.mjs
+```
+
+Upload these generated files to Shopify:
+
+```text
+dist/theme-packs/vibetv-theme-packs.json
+dist/theme-packs/vibetv-theme-synthwave.zip
+dist/theme-packs/vibetv-theme-clippy.zip
+dist/theme-packs/vibetv-theme-claude-creature.zip
+dist/theme-packs/vibetv-theme-cozy-meadow.zip
+```
+
 ## Customer Flow
 
 1. Customer visits `vibetv.shop/themes`.
 2. Storefront lists `vibetv_theme` metaobjects.
-3. Customer downloads the Theme Pack `.zip`.
-4. Companion installs it:
+3. Each theme card uses its `theme_id` to render a copyable install command.
+4. Customer copies and runs the command:
 
 ```bash
-codexbar-display theme-pack install --theme cozy-meadow --target http://vibetv.local
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme clippy --target http://vibetv.local
 ```
 
-5. Companion reads the VibeTV catalog, resolves the Theme Pack ZIP, uploads assets to `/assets`, activates the stored ThemeSpec via `/theme/active`, then sends one live frame.
+5. Companion reads the VibeTV catalog, resolves the Theme Pack ZIP from the `theme_id`, uploads assets to `/assets`, activates the stored ThemeSpec via `/theme/active`, then sends one live frame.
 
 ## Why This Stays Small On The Device
 

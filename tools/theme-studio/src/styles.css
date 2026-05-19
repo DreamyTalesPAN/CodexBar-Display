@@ -863,7 +863,7 @@ textarea:focus {
 
 .preview-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -887,6 +887,18 @@ textarea:focus {
 .primary-action:hover {
   background: #d7ff8f;
   color: #101319;
+}
+
+.publish-action {
+  border-color: #35c9ff;
+  background: #08283a;
+  color: #9ee7ff;
+}
+
+.publish-action:hover {
+  border-color: #9ee7ff;
+  background: #0b344b;
+  box-shadow: 0 0 0 3px rgba(53, 201, 255, 0.18);
 }
 
 .messages {

@@ -1,0 +1,31 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "claude-creature",
+  "name": "Claude Creature",
+  "version": "1.0.0",
+  "minFirmware": "1.0.24",
+  "themeSpec": {
+    "path": "/themes/u/claude--1-cac214.json",
+    "file": "theme.json",
+    "bytes": 821,
+    "sha256": "d809531905a36739fd367794bc425e4f12afd11b3293ad86895445e99d5efcc8",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/u/cld-i.cba",
+      "file": "assets/cld-i.cba",
+      "bytes": 6287,
+      "sha256": "f13279795b2aa97d6b9705a60897b33c73235b8d732ccd7a168596376be9fdea",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/cld-c.cba",
+      "file": "assets/cld-c.cba",
+      "bytes": 6363,
+      "sha256": "383e35cfde545f12fa7ea48e89a05052bfe58766d89379379b9d0ee89f206587",
+      "contentType": "text/plain"
+    }
+  ]
+}

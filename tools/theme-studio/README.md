@@ -23,9 +23,8 @@ Older firmware without `/theme/active` still gets a legacy inline `/frame` when 
 Asset uploads use short `/themes/u/...` paths because ESP8266 LittleFS rejects paths longer than 31 characters.
 For ESP8266 themes, treat the 4096-byte stored ThemeSpec limit as a transport/storage ceiling, not a design target. Large JSON trees also need RAM while parsed, so detailed themes should keep the ThemeSpec small and move visual detail into uploaded `CBI1`/`CBA1`/GIF assets. See `../../docs/theme-dev-guide.md` for the required RAM-first theme rules.
 The Studio also estimates render cost before sending. Expensive initial scenes show a warning, themes over the conservative initial render budget are blocked, and themes with too much animated repaint work are blocked because those can flicker or reset the ESP8266 watchdog.
-Use `Download Pack` to export an installable `.zip` with `manifest.json`, ThemeSpec JSON, and referenced assets. This is the same package shape documented in `docs/theme-packs.md` for shop downloads.
-Use `Save Theme` to keep a JSON file locally, or `Copy JSON` for debugging.
-Use `Save Local` to keep the current ThemeSpec in this browser and reopen it from `Local Themes`.
+Use `Publish` to create a new repo theme pack under `theme-packs/<theme-id>/`, or `Update` when that pack already exists. The local dev server validates the pack, rebuilds `dist/theme-packs/vibetv-theme-packs.json`, and regenerates the ZIPs for Shopify upload.
+Use `Save Theme` to keep the current ThemeSpec in this browser and reuse it later.
 Use `Advanced JSON` -> `Apply JSON` to import a readable ThemeSpec or the compact device form into the preview. Invalid JSON or invalid ThemeSpec content is rejected without changing the current canvas.
 
 Keyboard controls:

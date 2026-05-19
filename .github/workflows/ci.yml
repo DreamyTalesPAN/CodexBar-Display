@@ -67,6 +67,25 @@ jobs:
         working-directory: tools/theme-studio
         run: npm run test:preview
 
+  theme-pack-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build Theme Packs
+        run: node scripts/build-theme-packs.mjs
+
   firmware-build-v0:
     runs-on: ubuntu-latest
     strategy:
