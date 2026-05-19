@@ -150,6 +150,7 @@ interface ThemeSnapshot {
   spec: ThemeSpec;
   selectedIndex: number;
   selectedIndices: number[];
+  activeThemeId: string;
 }
 
 interface CurrentThemeDraft extends ThemeSnapshot {
@@ -201,6 +202,7 @@ interface AppState {
   undoStack: ThemeSnapshot[];
   redoStack: ThemeSnapshot[];
   savedThemes: SavedTheme[];
+  activeThemeId: string;
 }
 
 interface DeviceHealth {
@@ -2263,6 +2265,7 @@ const state: AppState = {
   undoStack: [],
   redoStack: [],
   savedThemes: loadSavedThemes(),
+  activeThemeId: restoredDraft?.activeThemeId ?? themeLibraryIdForSpec(restoredDraft?.spec ?? initialSpec),
 };
 syncJsonFromSpec();
 render();
@@ -2351,6 +2354,7 @@ function loadCurrentThemeDraft(): CurrentThemeDraft | null {
       spec,
       selectedIndex: Math.max(-1, Math.min(parsed.selectedIndex, spec.primitives.length - 1)),
       selectedIndices: normalizeSelectedIndices(parsed.selectedIndices, parsed.selectedIndex, spec.primitives.length),
+      activeThemeId: typeof parsed.activeThemeId === "string" ? parsed.activeThemeId : themeLibraryIdForSpec(spec),
       savedAt: parsed.savedAt,
     };
   } catch {
@@ -2361,6 +2365,7 @@ function loadCurrentThemeDraft(): CurrentThemeDraft | null {
 function isCurrentThemeDraft(value: unknown): value is CurrentThemeDraft {
   return isRecord(value) &&
     typeof value.savedAt === "string" &&
+    (value.activeThemeId === undefined || typeof value.activeThemeId === "string") &&
     Number.isInteger(value.selectedIndex) &&
     (value.selectedIndices === undefined || Array.isArray(value.selectedIndices)) &&
     isRecord(value.spec) &&
@@ -2373,6 +2378,7 @@ function persistCurrentThemeDraft() {
       spec: cloneSpec(state.spec),
       selectedIndex: state.selectedIndex,
       selectedIndices: selectedPrimitiveIndices(),
+      activeThemeId: state.activeThemeId,
       savedAt: new Date().toISOString(),
     };
     window.localStorage.setItem(CURRENT_THEME_STORAGE_KEY, JSON.stringify(draft));
@@ -2382,11 +2388,26 @@ function persistCurrentThemeDraft() {
 }
 
 function savedThemeForThemeId(themeId: string): SavedTheme | undefined {
-  return state.savedThemes.find((theme) => theme.spec.themeId === themeId || theme.name === themeId);
+  return state.savedThemes.find((theme) => theme.name === themeId || theme.spec.themeId === themeId);
 }
 
 function specForPreset(defaultSpec: ThemeSpec): ThemeSpec {
   return cloneSpec(savedThemeForThemeId(defaultSpec.themeId)?.spec ?? defaultSpec);
+}
+
+function themeLibraryIdForSpec(spec: ThemeSpec, fallback = CLIPPY_SPEC.themeId): string {
+  const ids = [SYNTHWAVE_SPEC.themeId, CLAUDE_CREATURE_SPEC.themeId, CLIPPY_SPEC.themeId, COZY_MEADOW_SPEC.themeId];
+  return ids.includes(spec.themeId) ? spec.themeId : fallback;
+}
+
+function themeLibraryLabel(themeId: string): string {
+  const labels: Record<string, string> = {
+    [SYNTHWAVE_SPEC.themeId]: "Synthwave",
+    [CLAUDE_CREATURE_SPEC.themeId]: "Claude Creature",
+    [CLIPPY_SPEC.themeId]: "Clippy",
+    [COZY_MEADOW_SPEC.themeId]: "Cozy Meadow",
+  };
+  return labels[themeId] ?? themeId;
 }
 
 function snapshotState(): ThemeSnapshot {
@@ -2394,12 +2415,14 @@ function snapshotState(): ThemeSnapshot {
     spec: cloneSpec(state.spec),
     selectedIndex: state.selectedIndex,
     selectedIndices: selectedPrimitiveIndices(),
+    activeThemeId: state.activeThemeId,
   };
 }
 
 function snapshotsEqual(a: ThemeSnapshot, b: ThemeSnapshot): boolean {
   return a.selectedIndex === b.selectedIndex &&
     a.selectedIndices.join(",") === b.selectedIndices.join(",") &&
+    a.activeThemeId === b.activeThemeId &&
     minifiedJson(a.spec) === minifiedJson(b.spec);
 }
 
@@ -2418,6 +2441,7 @@ function pushHistory() {
 
 function restoreSnapshot(snapshot: ThemeSnapshot, notice: string) {
   state.spec = cloneSpec(snapshot.spec);
+  state.activeThemeId = snapshot.activeThemeId;
   setSelection(normalizeSelectedIndices(snapshot.selectedIndices, snapshot.selectedIndex, state.spec.primitives.length));
   state.editingTextIndex = null;
   state.notice = notice;
@@ -2449,11 +2473,12 @@ function redoThemeEdit() {
 
 function saveThemeLocally() {
   const now = new Date().toISOString();
-  const cleanedId = state.spec.themeId.trim() || "theme";
-  const existingIndex = state.savedThemes.findIndex((theme) => theme.spec.themeId === cleanedId || theme.name === cleanedId);
+  const slotId = themeLibraryIdForSpec(state.spec, state.activeThemeId);
+  state.activeThemeId = slotId;
+  const existingIndex = state.savedThemes.findIndex((theme) => theme.name === slotId || theme.spec.themeId === slotId);
   const saved: SavedTheme = {
-    id: existingIndex >= 0 ? state.savedThemes[existingIndex].id : `${cleanedId}-${Date.now().toString(36)}`,
-    name: cleanedId,
+    id: existingIndex >= 0 ? state.savedThemes[existingIndex].id : `${slotId}-${Date.now().toString(36)}`,
+    name: slotId,
     savedAt: now,
     spec: cloneSpec(state.spec),
   };
@@ -2465,35 +2490,7 @@ function saveThemeLocally() {
   state.savedThemes.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
   persistSavedThemes();
   persistCurrentThemeDraft();
-  state.notice = `Saved "${saved.name}" locally.`;
-  render();
-}
-
-function loadSavedTheme(id: string) {
-  const saved = state.savedThemes.find((theme) => theme.id === id);
-  if (!saved) {
-    state.notice = "Saved theme not found.";
-    render();
-    return;
-  }
-  pushHistory();
-  state.spec = cloneSpec(saved.spec);
-  setSingleSelection(state.spec.primitives.length > 0 ? 0 : -1);
-  state.editingTextIndex = null;
-  state.notice = `Loaded "${saved.name}".`;
-  syncJsonFromSpec();
-  render();
-}
-
-function deleteSavedTheme(id: string) {
-  const before = state.savedThemes.length;
-  state.savedThemes = state.savedThemes.filter((theme) => theme.id !== id);
-  if (state.savedThemes.length === before) {
-    state.notice = "Saved theme not found.";
-  } else {
-    persistSavedThemes();
-    state.notice = "Saved theme deleted.";
-  }
+  state.notice = `${themeLibraryLabel(slotId)} saved.`;
   render();
 }
 
@@ -2865,7 +2862,6 @@ function render() {
       <header class="appbar">
         <h1>Theme Studio</h1>
         <div class="appbar-actions">
-          <button class="draft-save-button" data-action="save-draft">Save Draft</button>
           <div class="status-strip">
             ${metric("Theme", bytes, MAX_SPEC_BYTES)}
             ${metric("Live", frameBytes, MAX_FRAME_BYTES)}
@@ -2894,12 +2890,8 @@ function render() {
             <button data-action="undo" ${state.undoStack.length === 0 ? "disabled" : ""}>Undo</button>
             <button data-action="redo" ${state.redoStack.length === 0 ? "disabled" : ""}>Redo</button>
           </div>
-          <button class="full-width" data-action="save-local">Save Named Theme</button>
-          ${savedThemeList()}
-          <button class="full-width preset-button" data-action="load-synthwave">Synthwave</button>
-          <button class="full-width preset-button" data-action="load-claude-creature">Claude Creature</button>
-          <button class="full-width preset-button" data-action="load-clippy">Clippy</button>
-          <button class="full-width preset-button" data-action="load-cozy-meadow">Cozy Meadow</button>
+          <button class="full-width" data-action="save-local">Save Theme</button>
+          ${themeLibrary()}
           <div class="divider"></div>
           ${addElementPalette()}
           <div class="divider"></div>
@@ -2920,7 +2912,7 @@ function render() {
           <div class="preview-actions">
             <button class="primary-action" data-action="send-theme" ${state.errors.length ? "disabled" : ""}>Send to Vibe TV</button>
             <button data-action="download-pack" ${state.errors.length ? "disabled" : ""}>Download Pack</button>
-            <button data-action="download-json">Save Theme</button>
+            <button data-action="download-json">Download JSON</button>
             <button data-action="copy-json">Copy JSON</button>
           </div>
           ${messageList()}
@@ -2952,24 +2944,34 @@ function render() {
   restoreFocusSnapshot(focusSnapshot);
 }
 
-function savedThemeList(): string {
-  if (state.savedThemes.length === 0) {
-    return `<div class="saved-themes"><h2>Local Themes</h2><p class="empty compact-empty">No saved themes.</p></div>`;
-  }
+function themeLibrary(): string {
+  const presets = [
+    { themeId: SYNTHWAVE_SPEC.themeId, label: "Synthwave", action: "load-synthwave" },
+    { themeId: CLAUDE_CREATURE_SPEC.themeId, label: "Claude Creature", action: "load-claude-creature" },
+    { themeId: CLIPPY_SPEC.themeId, label: "Clippy", action: "load-clippy" },
+    { themeId: COZY_MEADOW_SPEC.themeId, label: "Cozy Meadow", action: "load-cozy-meadow" },
+  ];
+
   return `
     <div class="saved-themes">
-      <h2>Local Themes</h2>
+      <h2>Themes</h2>
       <div class="saved-theme-list">
-        ${state.savedThemes.slice(0, 6).map((theme) => `
-          <div class="saved-theme-row">
-            <button class="saved-theme-load" data-load-saved-theme="${escapeAttr(theme.id)}">
-              <strong>${escapeHtml(theme.name)}</strong>
-              <span>${escapeHtml(formatSavedAt(theme.savedAt))}</span>
-            </button>
-            <button class="small-button" data-delete-saved-theme="${escapeAttr(theme.id)}" aria-label="Delete ${escapeAttr(theme.name)}">Delete</button>
-          </div>
-        `).join("")}
+        ${presets.map((preset) => themeLibraryRow({
+          label: preset.label,
+          action: preset.action,
+          active: state.activeThemeId === preset.themeId,
+        })).join("")}
       </div>
+    </div>
+  `;
+}
+
+function themeLibraryRow(options: { label: string; action: string; active: boolean }): string {
+  return `
+    <div class="saved-theme-row">
+      <button class="saved-theme-load ${options.active ? "active" : ""}" data-action="${escapeAttr(options.action)}">
+        <strong>${escapeHtml(options.label)}</strong>
+      </button>
     </div>
   `;
 }
@@ -5612,18 +5614,6 @@ function bindEvents() {
     });
   });
 
-  app.querySelectorAll<HTMLButtonElement>("[data-load-saved-theme]").forEach((button) => {
-    button.addEventListener("click", () => {
-      loadSavedTheme(button.dataset.loadSavedTheme ?? "");
-    });
-  });
-
-  app.querySelectorAll<HTMLButtonElement>("[data-delete-saved-theme]").forEach((button) => {
-    button.addEventListener("click", () => {
-      deleteSavedTheme(button.dataset.deleteSavedTheme ?? "");
-    });
-  });
-
   app.querySelectorAll<HTMLButtonElement>("[data-insert-token]").forEach((button) => {
     button.addEventListener("click", () => {
       insertToken(button.dataset.insertToken ?? "");
@@ -6107,10 +6097,16 @@ async function handleAction(action: string) {
     return;
   }
   if (action === "save-local") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
     saveThemeLocally();
     return;
   }
   if (action === "save-draft") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
     persistCurrentThemeDraft();
     state.notice = "Draft saved. It will reopen automatically next time.";
     render();
@@ -6119,6 +6115,7 @@ async function handleAction(action: string) {
   if (action === "reset") {
     pushHistory();
     state.spec = cloneSpec(initialSpec);
+    state.activeThemeId = themeLibraryIdForSpec(initialSpec);
     setSingleSelection(-1);
     state.editingTextIndex = null;
     state.notice = "Sample restored.";
@@ -6129,6 +6126,7 @@ async function handleAction(action: string) {
   if (action === "load-cozy-meadow") {
     pushHistory();
     state.spec = specForPreset(COZY_MEADOW_SPEC);
+    state.activeThemeId = COZY_MEADOW_SPEC.themeId;
     setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "sprite"));
     state.editingTextIndex = null;
     state.notice = "Cozy Meadow loaded.";
@@ -6139,6 +6137,7 @@ async function handleAction(action: string) {
   if (action === "load-synthwave") {
     pushHistory();
     state.spec = specForPreset(SYNTHWAVE_SPEC);
+    state.activeThemeId = SYNTHWAVE_SPEC.themeId;
     setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "progress"));
     state.editingTextIndex = null;
     state.notice = "Synthwave loaded.";
@@ -6149,6 +6148,7 @@ async function handleAction(action: string) {
   if (action === "load-claude-creature") {
     pushHistory();
     state.spec = specForPreset(CLAUDE_CREATURE_SPEC);
+    state.activeThemeId = CLAUDE_CREATURE_SPEC.themeId;
     setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "sprite"));
     state.editingTextIndex = null;
     state.notice = "Claude Creature loaded.";
@@ -6159,6 +6159,7 @@ async function handleAction(action: string) {
   if (action === "load-clippy") {
     pushHistory();
     state.spec = specForPreset(CLIPPY_SPEC);
+    state.activeThemeId = CLIPPY_SPEC.themeId;
     setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "sprite" && primitive.stateAssets));
     state.editingTextIndex = null;
     state.notice = "Clippy loaded.";
@@ -6225,18 +6226,35 @@ async function handleAction(action: string) {
   }
   if (action === "apply-json") {
     applyJson();
+    return;
   }
   if (action === "copy-json") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
     await copyText(prettyJson(state.spec), "JSON copied.");
+    return;
   }
   if (action === "download-json") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
     downloadTheme();
+    return;
   }
   if (action === "download-pack") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
     await downloadThemePack();
+    return;
   }
   if (action === "send-theme") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
     await sendThemeToVibeTV();
+    return;
   }
 }
 
@@ -6375,7 +6393,10 @@ function safeAssetName(name: string, extension: ".gif" | ".cba"): string {
   return `${base.slice(0, maxBase).replace(/[._-]+$/g, "") || "asset"}${extension}`;
 }
 
-function applyJson() {
+function applyPendingJsonEdit(successNotice?: string): boolean {
+  if (!state.jsonDirty) {
+    return true;
+  }
   try {
     const imported = importThemeSpec(JSON.parse(state.jsonText));
     normalizeMiniThemeSpec(imported);
@@ -6383,17 +6404,26 @@ function applyJson() {
     if (result.errors.length > 0) {
       state.notice = `JSON not applied: ${result.errors.slice(0, 3).join(" ")}`;
       render();
-      return;
+      return false;
     }
     pushHistory();
     state.spec = imported;
     setSingleSelection(imported.primitives.length > 0 ? Math.max(0, Math.min(state.selectedIndex, imported.primitives.length - 1)) : -1);
     state.editingTextIndex = null;
-    state.notice = "JSON applied.";
+    if (successNotice !== undefined) {
+      state.notice = successNotice;
+    }
     syncJsonFromSpec();
   } catch (error) {
     state.notice = error instanceof Error ? error.message : "Invalid JSON.";
+    render();
+    return false;
   }
+  return true;
+}
+
+function applyJson() {
+  applyPendingJsonEdit("JSON applied.");
   render();
 }
 

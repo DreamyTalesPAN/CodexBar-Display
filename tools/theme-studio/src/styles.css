@@ -959,20 +959,23 @@ textarea:focus {
 
 .saved-theme-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
 }
 
 .saved-theme-load {
-  display: grid;
-  gap: 2px;
   min-height: 40px;
   padding: 7px 8px;
   text-align: left;
 }
 
-.saved-theme-load strong,
-.saved-theme-load span {
+.saved-theme-load.active {
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.saved-theme-load strong {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -981,11 +984,6 @@ textarea:focus {
 
 .saved-theme-load strong {
   font-size: 12px;
-}
-
-.saved-theme-load span {
-  color: var(--muted);
-  font-size: 11px;
 }
 
 .compact-empty {
