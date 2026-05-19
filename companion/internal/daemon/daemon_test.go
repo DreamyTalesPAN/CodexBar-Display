@@ -1108,6 +1108,72 @@ func TestRunCycleWithDepsAttachesFirmwareUpdateState(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithDepsPreservesFirmwareUpdateNoticeForLegacyDevice(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 5, 19, 14, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	var sentLine []byte
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "http://vibetv.local", nil },
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				Board:                     "esp8266-smalltv-st7789",
+				Firmware:                  "1.0.17",
+				NegotiatedProtocolVersion: 2,
+				MaxFrameBytes:             1024,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("codex", 33, 48, 397557)
+			frame.Frame.Label = "Codex"
+			frame.Frame.UsageMode = "remaining"
+			frame.Frame.SessionTokens = 999999999999
+			frame.Frame.WeekTokens = 888888888888
+			frame.Frame.TotalTokens = 777777777777
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+		fetchUpdateState: func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error) {
+			return protocol.UpdateState{
+				Available:     true,
+				LatestVersion: "1.0.20",
+				Status:        "update_available",
+				Severity:      "recommended",
+				Message:       strings.Repeat("Firmware update available. Open vibetv.local. ", 20),
+				FirmwareURL:   "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.20/" + strings.Repeat("codexbar-display-firmware-esp8266-smalltv-st7789-", 10) + "v1.0.20.bin.gz",
+				SHA256:        strings.Repeat("a", 128),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+	if len(sentLine) > 1024 {
+		t.Fatalf("expected frame to fit legacy 1024-byte device limit, got %d bytes", len(sentLine))
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Update == nil || !frame.Update.Available {
+		t.Fatalf("expected firmware update notice to reach legacy device, got %+v", frame.Update)
+	}
+	if frame.Update.LatestVersion != "1.0.20" || frame.Update.Status != "update_available" {
+		t.Fatalf("unexpected firmware update notice: %+v", frame.Update)
+	}
+	if frame.Update.FirmwareURL != "" || frame.Update.SHA256 != "" || frame.Update.Message != "" {
+		t.Fatalf("expected verbose update fields to be compacted for legacy device, got %+v", frame.Update)
+	}
+}
+
 func TestSelectFirmwareUpdateComparesBoardRelease(t *testing.T) {
 	update, err := selectFirmwareUpdate(protocol.DeviceCapabilities{
 		Board:    "esp8266-smalltv-st7789",
