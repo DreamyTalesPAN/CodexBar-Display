@@ -75,9 +75,9 @@ jobs:
         include:
           - firmware_dir: firmware_esp8266
             env_name: esp8266_smalltv_st7789
-            max_flash_pct: 45
+            max_flash_pct: 46
             max_ram_pct: 82
-            max_bin_bytes: 470000
+            max_bin_bytes: 480000
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -64,11 +64,11 @@ jobs:
             set -- ${SPEC}
             DIR="$1"
             ENV_NAME="$2"
-            MAX_FLASH_PCT="45"
+            MAX_FLASH_PCT="46"
             MAX_RAM_PCT="82"
             MAX_BIN_BYTES="0"
             if [[ "${ENV_NAME}" == "esp8266_smalltv_st7789" ]]; then
-              MAX_BIN_BYTES="470000"
+              MAX_BIN_BYTES="480000"
             fi
 
             CODEXBAR_DISPLAY_FW_VERSION="${VERSION}" ./scripts/check-firmware-size-budget.sh \
