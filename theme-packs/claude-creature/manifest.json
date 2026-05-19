@@ -4,7 +4,7 @@
   "id": "claude-creature",
   "name": "Claude Creature",
   "version": "1.0.0",
-  "minFirmware": "1.0.24",
+  "minFirmware": "1.0.18",
   "themeSpec": {
     "path": "/themes/u/claude--1-cac214.json",
     "file": "theme.json",

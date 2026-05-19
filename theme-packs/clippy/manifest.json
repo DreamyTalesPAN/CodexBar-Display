@@ -4,7 +4,7 @@
   "id": "clippy",
   "name": "Clippy",
   "version": "1.0.0",
-  "minFirmware": "1.0.24",
+  "minFirmware": "1.0.18",
   "themeSpec": {
     "path": "/themes/u/clippy-1-bb9192.json",
     "file": "theme.json",

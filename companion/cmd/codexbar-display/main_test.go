@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseDaemonOptionsWiFiTarget(t *testing.T) {
@@ -157,6 +158,9 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 			}
 			if r.Method != http.MethodPost {
 				t.Fatalf("expected POST /assets, got %s", r.Method)
+			}
+			if len(uploaded) == 0 {
+				time.Sleep(6 * time.Second)
 			}
 			devicePath := r.URL.Query().Get("path")
 			if devicePath == "" {
