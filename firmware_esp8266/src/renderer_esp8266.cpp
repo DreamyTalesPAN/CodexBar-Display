@@ -51,6 +51,16 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
   snapshot.themeSpecRenderOk = !snapshot.themeSpecActive || display::ThemeSpecRenderOk();
   snapshot.themeSpecRenderError = snapshot.themeSpecActive ? display::ThemeSpecRenderError() : "";
   snapshot.themeSpecRenderFailures = display::ThemeSpecRenderFailures();
+  const display::ThemeSpecRuntimeStats themeSpecStats = display::ThemeSpecRuntimeStatsSnapshot();
+  snapshot.themeSpecCompiled = themeSpecStats.compiled;
+  snapshot.themeSpecPrimitiveCount = themeSpecStats.primitiveCount;
+  snapshot.themeSpecPrimitiveCapacity = themeSpecStats.primitiveCapacity;
+  snapshot.themeSpecStateAssetCount = themeSpecStats.stateAssetCount;
+  snapshot.themeSpecStateAssetCapacity = themeSpecStats.stateAssetCapacity;
+  snapshot.themeSpecStringBytes = themeSpecStats.stringBytes;
+  snapshot.themeSpecStringCapacity = themeSpecStats.stringCapacity;
+  snapshot.themeSpecKeepsJsonDocument = themeSpecStats.keepsJsonDocument;
+  snapshot.themeSpecHasAnimatedAssets = themeSpecStats.hasAnimatedAssets;
   const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
   snapshot.gifActivePath = gif.activePath;
   snapshot.gifFilePresent = gif.filePresent;

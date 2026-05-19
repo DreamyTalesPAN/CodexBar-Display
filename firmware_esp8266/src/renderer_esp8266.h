@@ -15,6 +15,15 @@ struct RendererDebugSnapshot {
   bool themeSpecRenderOk = true;
   String themeSpecRenderError;
   unsigned long themeSpecRenderFailures = 0;
+  bool themeSpecCompiled = false;
+  uint16_t themeSpecPrimitiveCount = 0;
+  uint16_t themeSpecPrimitiveCapacity = 0;
+  uint16_t themeSpecStateAssetCount = 0;
+  uint16_t themeSpecStateAssetCapacity = 0;
+  uint16_t themeSpecStringBytes = 0;
+  uint16_t themeSpecStringCapacity = 0;
+  bool themeSpecKeepsJsonDocument = false;
+  bool themeSpecHasAnimatedAssets = false;
   String gifActivePath;
   bool gifFilePresent = false;
   bool gifFileOpen = false;

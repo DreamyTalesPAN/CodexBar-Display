@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <new>
 
 namespace codexbar_display {
 namespace themespec {
@@ -160,13 +161,17 @@ struct CompiledPrimitive {
 
 struct CompiledThemeSpec {
   uint16_t bgColor = 0x0000;
-  CompiledPrimitive primitives[kMaxCompiledThemeSpecPrimitives];
+  CompiledPrimitive* primitives = nullptr;
+  size_t primitiveCapacity = 0;
   size_t primitiveCount = 0;
-  CompiledStateAsset stateAssets[kMaxCompiledStateAssets];
+  CompiledStateAsset* stateAssets = nullptr;
+  size_t stateAssetCapacity = 0;
   size_t stateAssetCount = 0;
   bool hasAnimatedAssets = false;
   bool requiresJsonDocument = false;
-  char stringPool[kMaxCompiledThemeSpecStringBytes] = {0};
+  bool ownsMemory = false;
+  char* stringPool = nullptr;
+  size_t stringPoolCapacity = 0;
   size_t stringPoolUsed = 0;
 };
 
@@ -754,6 +759,103 @@ inline bool StateAssetsLookAnimated(JsonObjectConst stateAssets) {
   return false;
 }
 
+inline void ReleaseCompiledThemeSpec(CompiledThemeSpec& scene) {
+  if (scene.ownsMemory) {
+    delete[] scene.primitives;
+    delete[] scene.stateAssets;
+    delete[] scene.stringPool;
+  }
+  scene = CompiledThemeSpec{};
+}
+
+inline bool AllocateCompiledThemeSpecStorage(
+    CompiledThemeSpec& scene,
+    size_t primitiveCapacity,
+    size_t stateAssetCapacity,
+    size_t stringPoolCapacity) {
+  ReleaseCompiledThemeSpec(scene);
+  if (primitiveCapacity == 0 || primitiveCapacity > kMaxCompiledThemeSpecPrimitives ||
+      stateAssetCapacity > kMaxCompiledStateAssets ||
+      stringPoolCapacity > kMaxCompiledThemeSpecStringBytes) {
+    return false;
+  }
+
+  scene.primitives = new (std::nothrow) CompiledPrimitive[primitiveCapacity];
+  scene.stateAssets = stateAssetCapacity == 0 ? nullptr : new (std::nothrow) CompiledStateAsset[stateAssetCapacity];
+  scene.stringPool = stringPoolCapacity == 0 ? nullptr : new (std::nothrow) char[stringPoolCapacity];
+  if (scene.primitives == nullptr ||
+      (stateAssetCapacity > 0 && scene.stateAssets == nullptr) ||
+      (stringPoolCapacity > 0 && scene.stringPool == nullptr)) {
+    ReleaseCompiledThemeSpec(scene);
+    return false;
+  }
+
+  scene.ownsMemory = true;
+  scene.primitiveCapacity = primitiveCapacity;
+  scene.stateAssetCapacity = stateAssetCapacity;
+  scene.stringPoolCapacity = stringPoolCapacity;
+  return true;
+}
+
+inline void MoveCompiledThemeSpec(CompiledThemeSpec& target, CompiledThemeSpec& source) {
+  if (&target == &source) {
+    return;
+  }
+  ReleaseCompiledThemeSpec(target);
+  target = source;
+  source = CompiledThemeSpec{};
+}
+
+inline void AddCompiledStringStorage(const char* value, size_t& stringBytes) {
+  if (value == nullptr || value[0] == '\0') {
+    return;
+  }
+  stringBytes += std::strlen(value) + 1;
+}
+
+inline bool CountCompiledThemeSpecStorage(
+    JsonObjectConst spec,
+    size_t& primitiveCapacity,
+    size_t& stateAssetCapacity,
+    size_t& stringPoolCapacity) {
+  primitiveCapacity = 0;
+  stateAssetCapacity = 0;
+  stringPoolCapacity = 0;
+  JsonArrayConst primitives = JsonArrayFor(spec, "primitives", "p");
+  if (primitives.isNull() || primitives.size() == 0 || primitives.size() > kMaxCompiledThemeSpecPrimitives) {
+    return false;
+  }
+
+  primitiveCapacity = primitives.size();
+  for (JsonObjectConst primitive : primitives) {
+    if (PrimitiveTypeIs(primitive, "text", "tx")) {
+      AddCompiledStringStorage(JsonStringFor(primitive, "binding", "b"), stringPoolCapacity);
+      AddCompiledStringStorage(JsonStringFor(primitive, "text", "v"), stringPoolCapacity);
+    } else if (PrimitiveTypeIs(primitive, "progress", "p")) {
+      AddCompiledStringStorage(JsonStringFor(primitive, "binding", "b"), stringPoolCapacity);
+    } else if (PrimitiveTypeIs(primitive, "gif", "g") ||
+               PrimitiveTypeIs(primitive, "sprite", "sp") ||
+               PrimitiveTypeIs(primitive, "image", "img")) {
+      AddCompiledStringStorage(JsonStringFor(primitive, "assetPath", "a"), stringPoolCapacity);
+      JsonObjectConst stateAssets = JsonObjectFor(primitive, "stateAssets", "sa");
+      for (JsonPairConst entry : stateAssets) {
+        const char* path = JsonStringOrNull(entry.value());
+        if (path == nullptr || path[0] == '\0') {
+          continue;
+        }
+        stateAssetCapacity += 1;
+        AddCompiledStringStorage(entry.key().c_str(), stringPoolCapacity);
+        AddCompiledStringStorage(path, stringPoolCapacity);
+      }
+    } else if (PrimitiveTypeIs(primitive, "pixels", "px")) {
+      AddCompiledStringStorage(JsonStringFor(primitive, "data", "d"), stringPoolCapacity);
+    }
+  }
+
+  return stateAssetCapacity <= kMaxCompiledStateAssets &&
+         stringPoolCapacity <= kMaxCompiledThemeSpecStringBytes;
+}
+
 inline const char* CompiledStateAssetPathFor(const CompiledPrimitive& primitive, const FrameData& frame) {
   const char* activity = frame.activity == nullptr ? "" : frame.activity;
   const char* idleAsset = nullptr;
@@ -784,7 +886,7 @@ inline const char* CopyCompiledString(CompiledThemeSpec& scene, const char* valu
   if (len == 0) {
     return "";
   }
-  if (scene.stringPoolUsed + len + 1 > kMaxCompiledThemeSpecStringBytes) {
+  if (scene.stringPool == nullptr || scene.stringPoolUsed + len + 1 > scene.stringPoolCapacity) {
     return nullptr;
   }
   char* dest = scene.stringPool + scene.stringPoolUsed;
@@ -797,9 +899,9 @@ inline bool CompileStateAssets(CompiledThemeSpec& scene, JsonObjectConst stateAs
   if (stateAssets.isNull()) {
     return true;
   }
-  out.stateAssets = scene.stateAssets + scene.stateAssetCount;
+  out.stateAssets = scene.stateAssets == nullptr ? nullptr : scene.stateAssets + scene.stateAssetCount;
   for (JsonPairConst entry : stateAssets) {
-    if (scene.stateAssetCount >= kMaxCompiledStateAssets) {
+    if (scene.stateAssetCount >= scene.stateAssetCapacity) {
       return false;
     }
     const char* path = JsonStringOrNull(entry.value());
@@ -936,21 +1038,37 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
 }
 
 inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scene) {
-  scene = CompiledThemeSpec{};
+  ReleaseCompiledThemeSpec(scene);
   JsonArrayConst primitives = JsonArrayFor(spec, "primitives", "p");
   if (primitives.isNull() || primitives.size() == 0 || primitives.size() > kMaxCompiledThemeSpecPrimitives) {
     return false;
   }
+  size_t primitiveCapacity = 0;
+  size_t stateAssetCapacity = 0;
+  size_t stringPoolCapacity = 0;
+  if (!CountCompiledThemeSpecStorage(spec, primitiveCapacity, stateAssetCapacity, stringPoolCapacity) ||
+      !AllocateCompiledThemeSpecStorage(scene, primitiveCapacity, stateAssetCapacity, stringPoolCapacity)) {
+    return false;
+  }
+
   scene.bgColor = ParseColor(JsonStringFor(spec, "bgColor", "bg"), 0x0000);
   for (JsonObjectConst primitive : primitives) {
     CompiledPrimitive compiled;
     bool primitiveHasAnimatedAssets = false;
     if (CompilePrimitive(scene, primitive, compiled, primitiveHasAnimatedAssets)) {
+      if (scene.primitiveCount >= scene.primitiveCapacity) {
+        ReleaseCompiledThemeSpec(scene);
+        return false;
+      }
       scene.primitives[scene.primitiveCount++] = compiled;
       scene.hasAnimatedAssets = scene.hasAnimatedAssets || primitiveHasAnimatedAssets;
     }
   }
-  return scene.primitiveCount > 0;
+  if (scene.primitiveCount == 0) {
+    ReleaseCompiledThemeSpec(scene);
+    return false;
+  }
+  return true;
 }
 
 inline bool CompileThemeSpec(const char* themeSpecRaw, JsonDocument& doc, CompiledThemeSpec& scene) {

@@ -104,4 +104,5 @@ Before a theme is published:
 - `renderFailures` does not increase while the theme is running.
 - The Mac Companion can keep sending live frames without clearing or destabilizing the theme.
 - `/health.display.themeSpec.active` stays `true` after normal live frames that do not contain `themeSpec`.
+- `/health.display.themeSpec.compiled` is `true` after the first successful render. `stringBytes` should be comfortably below `stringCapacity`, and `keepsJsonDocument` should usually be `false` for launch themes.
 - `/health.render.partialCount` should rise for normal usage/activity updates. `/health.render.fullCount` should stay stable during steady updates unless the theme is explicitly reactivated or recovered.

@@ -97,18 +97,18 @@ bool ensureThemeSpecSceneCached(const String& raw) {
     return true;
   }
   cachedThemeSpecDoc.clear();
-  cachedThemeSpecScene = themespec::CompiledThemeSpec{};
   const DeserializationError err = deserializeJson(cachedThemeSpecDoc, raw.c_str());
   if (err) {
     cachedThemeSpecDocHash = 0;
     return false;
   }
-  if (!themespec::CompileThemeSpecObject(cachedThemeSpecDoc.as<JsonObjectConst>(), cachedThemeSpecScene)) {
+  themespec::CompiledThemeSpec nextScene;
+  if (!themespec::CompileThemeSpecObject(cachedThemeSpecDoc.as<JsonObjectConst>(), nextScene)) {
     cachedThemeSpecDocHash = 0;
     cachedThemeSpecDoc.clear();
-    cachedThemeSpecScene = themespec::CompiledThemeSpec{};
     return false;
   }
+  themespec::MoveCompiledThemeSpec(cachedThemeSpecScene, nextScene);
   if (!cachedThemeSpecScene.requiresJsonDocument) {
     cachedThemeSpecDoc.clear();
   }
@@ -694,7 +694,7 @@ void ResetThemeSpecSpriteCaches() {
   lastSuccessfulThemeSpecRawHash = 0;
   cachedThemeSpecDoc.clear();
   cachedThemeSpecDocHash = 0;
-  cachedThemeSpecScene = themespec::CompiledThemeSpec{};
+  themespec::ReleaseCompiledThemeSpec(cachedThemeSpecScene);
 }
 
 bool CurrentThemeSpecRenderedSuccessfully() {
@@ -711,6 +711,20 @@ const char* ThemeSpecRenderError() {
 
 unsigned long ThemeSpecRenderFailures() {
   return themeSpecRenderFailures;
+}
+
+ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot() {
+  ThemeSpecRuntimeStats stats;
+  stats.compiled = cachedThemeSpecScene.primitiveCount > 0;
+  stats.primitiveCount = static_cast<uint16_t>(cachedThemeSpecScene.primitiveCount);
+  stats.primitiveCapacity = static_cast<uint16_t>(cachedThemeSpecScene.primitiveCapacity);
+  stats.stateAssetCount = static_cast<uint16_t>(cachedThemeSpecScene.stateAssetCount);
+  stats.stateAssetCapacity = static_cast<uint16_t>(cachedThemeSpecScene.stateAssetCapacity);
+  stats.stringBytes = static_cast<uint16_t>(cachedThemeSpecScene.stringPoolUsed);
+  stats.stringCapacity = static_cast<uint16_t>(cachedThemeSpecScene.stringPoolCapacity);
+  stats.keepsJsonDocument = cachedThemeSpecScene.requiresJsonDocument;
+  stats.hasAnimatedAssets = cachedThemeSpecScene.hasAnimatedAssets;
+  return stats;
 }
 
 }  // namespace display
@@ -752,6 +766,10 @@ const char* ThemeSpecRenderError() {
 
 unsigned long ThemeSpecRenderFailures() {
   return 0;
+}
+
+ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot() {
+  return ThemeSpecRuntimeStats{};
 }
 
 }  // namespace display

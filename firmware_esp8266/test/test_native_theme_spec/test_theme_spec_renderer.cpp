@@ -18,6 +18,7 @@ using codexbar_display::themespec::CompiledThemeSpec;
 using codexbar_display::themespec::RenderCompiledThemeSpec;
 using codexbar_display::themespec::RenderCompiledThemeSpecAnimatedPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecChangedPrimitives;
+using codexbar_display::themespec::ReleaseCompiledThemeSpec;
 using codexbar_display::themespec::RenderThemeSpecChangedPrimitives;
 using codexbar_display::themespec::RenderThemeSpecAnimatedPrimitives;
 using codexbar_display::themespec::RenderThemeSpec;
@@ -615,6 +616,7 @@ void testCompiledThemeSpecFullPartialAndAnimatedPasses() {
   TEST_ASSERT_TRUE(partialSink.commands.size() > 4);
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(partialSink.commands.front().type));
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(partialSink.commands.back().type));
+  ReleaseCompiledThemeSpec(scene);
 }
 
 void testChangedPrimitivePassHandlesTextWithoutMaxWidth() {
