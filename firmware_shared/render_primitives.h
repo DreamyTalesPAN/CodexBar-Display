@@ -31,6 +31,9 @@ struct ProgressCommand {
   int width = 0;
   int height = 0;
   int percent = 0;
+  int style = 0;
+  int segments = 0;
+  int segmentGap = 1;
   uint16_t fillColor = 0xFFFF;
   uint16_t borderColor = 0x7BEF;
   uint16_t bgColor = 0x0000;

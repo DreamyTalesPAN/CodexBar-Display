@@ -20,10 +20,13 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themespec"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
+
+const defaultThemeCatalogURL = "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -55,6 +58,8 @@ func main() {
 		err = runThemeValidate(os.Args[2:])
 	case "theme-apply":
 		err = runThemeApply(os.Args[2:])
+	case "theme-pack":
+		err = runThemePack(os.Args[2:])
 	case "setup":
 		err = runSetup(os.Args[2:])
 	default:
@@ -77,7 +82,7 @@ func main() {
 
 func printUsage() {
 	fmt.Println("codexbar-display commands:")
-	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 60s] [--once] [--theme classic|crt|mini]")
+	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 2s] [--once] [--theme classic|crt|mini]")
 	fmt.Println("  codexbar-display doctor")
 	fmt.Println("  codexbar-display health")
 	fmt.Println("  codexbar-display service <start|stop|status>")
@@ -88,6 +93,9 @@ func printUsage() {
 	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
+	fmt.Println("  codexbar-display theme-pack catalog [--catalog https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json]")
+	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip-or-url")
+	fmt.Println("  codexbar-display theme-pack install (--pack path/to/theme-pack-dir-or.zip-or-url | --catalog url --theme theme-id) [--target http://vibetv.local] [--firmware-manifest-url url] [--skip-firmware-update] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
@@ -477,6 +485,218 @@ func runThemeApply(args []string) error {
 		resolvedTarget,
 	)
 	return nil
+}
+
+func runThemePack(args []string) error {
+	if len(args) == 0 {
+		return errors.New("theme-pack subcommand required: validate or install")
+	}
+	switch args[0] {
+	case "catalog":
+		return runThemePackCatalog(args[1:])
+	case "validate":
+		return runThemePackValidate(args[1:])
+	case "install":
+		return runThemePackInstall(args[1:])
+	default:
+		return fmt.Errorf("unknown theme-pack subcommand %q: expected catalog, validate, or install", args[0])
+	}
+}
+
+func runThemePackCatalog(args []string) error {
+	fs := flag.NewFlagSet("theme-pack catalog", flag.ContinueOnError)
+	catalogRef := fs.String("catalog", defaultThemeCatalogURL, "path or HTTP(S) URL to VibeTV theme catalog JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	catalog, err := themepack.LoadCatalog(strings.TrimSpace(*catalogRef))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("theme catalog: themes=%d source=%s\n", len(catalog.Themes), strings.TrimSpace(*catalogRef))
+	for _, theme := range catalog.Themes {
+		title := strings.TrimSpace(theme.Title)
+		if title == "" {
+			title = theme.ID
+		}
+		fmt.Printf("- %s: %s", theme.ID, title)
+		if theme.ThemeRev > 0 {
+			fmt.Printf(" rev=%d", theme.ThemeRev)
+		}
+		if theme.Bytes > 0 {
+			fmt.Printf(" bytes=%d", theme.Bytes)
+		}
+		fmt.Println()
+		if description := strings.TrimSpace(theme.Description); description != "" {
+			fmt.Printf("  %s\n", description)
+		}
+	}
+	return nil
+}
+
+func runThemePackValidate(args []string) error {
+	fs := flag.NewFlagSet("theme-pack validate", flag.ContinueOnError)
+	packPath := fs.String("pack", "", "path or HTTP(S) URL to VibeTV theme pack directory or zip")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	pack, err := themepack.Load(strings.TrimSpace(*packPath))
+	if err != nil {
+		return err
+	}
+	fmt.Printf(
+		"theme-pack valid: id=%s name=%q themeId=%s rev=%d assets=%d themeSpecBytes=%d\n",
+		pack.Manifest.ID,
+		pack.Manifest.Name,
+		pack.ThemeSpec.ThemeID,
+		pack.ThemeSpec.ThemeRev,
+		len(pack.Assets),
+		len(pack.ThemeSpecRaw),
+	)
+	return nil
+}
+
+func runThemePackInstall(args []string) error {
+	fs := flag.NewFlagSet("theme-pack install", flag.ContinueOnError)
+	packPath := fs.String("pack", "", "path or HTTP(S) URL to VibeTV theme pack directory or zip")
+	catalogRef := fs.String("catalog", "", "path or HTTP(S) URL to VibeTV theme catalog JSON")
+	themeID := fs.String("theme", "", "theme id from catalog")
+	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
+	firmwareManifestURL := fs.String("firmware-manifest-url", vibeTVFirmwareManifestURL, "firmware manifest URL checked before installing the theme pack")
+	skipFirmwareUpdate := fs.Bool("skip-firmware-update", false, "skip the firmware update preflight before installing the theme pack")
+	allowUnknown := fs.Bool(
+		"allow-unknown-capabilities",
+		false,
+		"allow local fallback profile when device capabilities are unavailable",
+	)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	resolvedPack, err := resolveThemePackInstallSource(strings.TrimSpace(*packPath), strings.TrimSpace(*catalogRef), strings.TrimSpace(*themeID))
+	if err != nil {
+		return err
+	}
+	pack, err := themepack.Load(resolvedPack)
+	if err != nil {
+		return err
+	}
+
+	wifi := transportlayer.NewWiFiTransportWithClient(nil)
+	resolvedTarget, err := wifi.ResolvePort(strings.TrimSpace(*target))
+	if err != nil {
+		return err
+	}
+	if !*skipFirmwareUpdate {
+		if err := themePackInstallFirmwareUpdateFn(resolvedTarget, strings.TrimSpace(*firmwareManifestURL)); err != nil {
+			return fmt.Errorf("firmware update before theme install: %w", err)
+		}
+	}
+	caps, err := wifi.DeviceCapabilities(resolvedTarget)
+	if err != nil {
+		if !*allowUnknown {
+			return err
+		}
+		caps = fallbackThemeSpecCapabilities()
+		caps.ActiveTransport = "wifi"
+		fmt.Printf("warning: device hello unavailable; using local fallback capabilities for validation on %s\n", resolvedTarget)
+	}
+	if *allowUnknown && !caps.Known {
+		caps = fallbackThemeSpecCapabilities()
+		caps.ActiveTransport = "wifi"
+		fmt.Printf("warning: capabilities unknown; using local fallback profile on %s\n", resolvedTarget)
+	}
+	if !*allowUnknown && !caps.Known {
+		return &commandError{
+			Op:   "theme-pack/capabilities",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err:  errors.New("device capabilities unavailable; connect device and retry"),
+		}
+	}
+	if err := themespec.ValidateAgainstCapabilities(pack.ThemeSpec, pack.ThemeSpecRaw, caps); err != nil {
+		return &commandError{
+			Op:   "theme-pack/capabilities",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err:  err,
+		}
+	}
+
+	for _, asset := range pack.Assets {
+		if err := wifi.UploadAsset(resolvedTarget, asset.Entry.Path, filepath.Base(asset.Entry.File), asset.Data); err != nil {
+			return err
+		}
+		fmt.Printf("uploaded asset: %s bytes=%d\n", asset.Entry.Path, len(asset.Data))
+	}
+	if err := wifi.UploadAsset(resolvedTarget, pack.ThemeSpecFile.Entry.Path, filepath.Base(pack.ThemeSpecFile.Entry.File), pack.ThemeSpecRaw); err != nil {
+		return err
+	}
+	fmt.Printf("uploaded theme spec: %s bytes=%d\n", pack.ThemeSpecFile.Entry.Path, len(pack.ThemeSpecRaw))
+
+	if err := wifi.ActivateStoredTheme(resolvedTarget, pack.ThemeSpecFile.Entry.Path); err != nil {
+		return err
+	}
+
+	frame := protocol.Frame{
+		V:         protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion),
+		Provider:  "vibetv",
+		Label:     "VibeTV",
+		Session:   50,
+		Weekly:    50,
+		ResetSec:  3600,
+		UsageMode: "remaining",
+		Time:      time.Now().Format("15:04"),
+		Date:      time.Now().Format("02.01.2006"),
+	}
+	line, err := frame.MarshalLine()
+	if err != nil {
+		return err
+	}
+	if err := wifi.SendLine(resolvedTarget, line); err != nil {
+		return err
+	}
+
+	fmt.Printf(
+		"theme-pack installed: id=%s themeId=%s rev=%d target=%s activePath=%s\n",
+		pack.Manifest.ID,
+		pack.ThemeSpec.ThemeID,
+		pack.ThemeSpec.ThemeRev,
+		resolvedTarget,
+		pack.ThemeSpecFile.Entry.Path,
+	)
+	return nil
+}
+
+func resolveThemePackInstallSource(packPath, catalogRef, themeID string) (string, error) {
+	if packPath != "" {
+		if catalogRef != "" || themeID != "" {
+			return "", errors.New("use either --pack or --catalog/--theme, not both")
+		}
+		return packPath, nil
+	}
+	if catalogRef == "" && themeID == "" {
+		return "", errors.New("missing theme pack source: pass --pack or --catalog and --theme")
+	}
+	if catalogRef == "" {
+		catalogRef = defaultThemeCatalogURL
+	}
+	catalog, err := themepack.LoadCatalog(catalogRef)
+	if err != nil {
+		return "", err
+	}
+	theme, err := catalog.FindTheme(themeID)
+	if err != nil {
+		return "", err
+	}
+	return themepack.ResolveThemeDownload(catalogRef, theme)
+}
+
+var themePackInstallFirmwareUpdateFn = runThemePackInstallFirmwareUpdate
+
+func runThemePackInstallFirmwareUpdate(target, manifestURL string) error {
+	args := []string{"--target", target, "--confirm-live-update"}
+	if strings.TrimSpace(manifestURL) != "" {
+		args = append(args, "--manifest-url", strings.TrimSpace(manifestURL))
+	}
+	return runInstallUpdate(args)
 }
 
 func resolveThemeSpecTransport(transportName, target, port string) (transportlayer.DeviceTransport, string, error) {

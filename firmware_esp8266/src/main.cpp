@@ -4,11 +4,13 @@
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
+#include <WiFiUdp.h>
 #include <LittleFS.h>
 #include <Updater.h>
 
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
+#include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "renderer_esp8266.h"
 
 #ifndef CODEXBAR_DISPLAY_BOARD_ID
@@ -30,9 +32,10 @@ namespace {
 codexbar_display::app::RuntimeContext runtimeCtx;
 codexbar_display::esp8266::RendererESP8266 renderer;
 ESP8266WebServer webServer(80);
+WiFiServer rawOtaServer(8081);
 DNSServer dnsServer;
 
-constexpr int kMaxFrameBytes = 1024;
+constexpr int kMaxFrameBytes = 2048;
 constexpr uint16_t kDnsPort = 53;
 constexpr uint32_t kWifiCredsMagic = 0x56544231UL;  // VTB1
 constexpr uint32_t kBootRecoveryMagic = 0x56544252UL;  // VTBR
@@ -51,6 +54,8 @@ constexpr unsigned long kFrameStaleWarningMs = 150000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr uint8_t kBootRecoveryThreshold = 3;
 constexpr size_t kMaxAssetPathBytes = 32;
+constexpr size_t kMaxStoredThemeSpecBytes = 4096;
+constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxThemeSpecGifAssetBytes;
 const char kSetupApSsid[] = "VibeTV-Setup";
 const char kSetupHost[] = "vibetv.local";
 const char kMdnsName[] = "vibetv";
@@ -62,6 +67,30 @@ const char* const kFirmwareUpdateNoticeTexts[] = {
 };
 constexpr uint8_t kFirmwareUpdateNoticeTextCount =
     sizeof(kFirmwareUpdateNoticeTexts) / sizeof(kFirmwareUpdateNoticeTexts[0]);
+
+String themeCapabilitiesJSON(bool enabled) {
+  String out;
+  out.reserve(260);
+  if (!enabled) {
+    return "{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
+  }
+  out += "{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
+  out += String(codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives);
+  out += ",\"supportsStoredThemes\":true,\"maxStoredThemeSpecBytes\":";
+  out += String(kMaxStoredThemeSpecBytes);
+  out += ",\"maxThemeGifAssets\":";
+  out += String(codexbar_display::themespec::kMaxThemeSpecGifAssets);
+  out += ",\"maxThemeGifBytes\":";
+  out += String(codexbar_display::themespec::kMaxThemeSpecGifAssetBytes);
+  out += ",\"maxThemeGifWidth\":";
+  out += String(codexbar_display::themespec::kMaxThemeSpecGifWidth);
+  out += ",\"maxThemeGifHeight\":";
+  out += String(codexbar_display::themespec::kMaxThemeSpecGifHeight);
+  out += ",\"maxThemeGifPixels\":";
+  out += String(codexbar_display::themespec::kMaxThemeSpecGifPixels);
+  out += "}";
+  return out;
+}
 
 struct WifiCredentials {
   char ssid[kWifiSsidBytes] = {0};
@@ -80,7 +109,36 @@ struct FirmwareUpdateState {
   unsigned long noticeLastToggleAtMs = 0;
 };
 
+struct OtaUploadDiagnostics {
+  const char* target = "none";
+  const char* status = "idle";
+  String filename;
+  String lastError;
+  int command = -1;
+  size_t contentLength = 0;
+  size_t totalSize = 0;
+  size_t maxSize = 0;
+  size_t freeSketchSpace = 0;
+  uint8_t updateError = UPDATE_ERROR_OK;
+  unsigned long startedAtMs = 0;
+  unsigned long endedAtMs = 0;
+  unsigned long successCount = 0;
+  unsigned long failureCount = 0;
+};
+
+struct RuntimeRenderDiagnostics {
+  unsigned long fullCount = 0;
+  unsigned long partialCount = 0;
+  unsigned long animatedTickAttempts = 0;
+  const char* lastKind = "none";
+  const char* lastFullKind = "none";
+  const char* lastPartialKind = "none";
+  unsigned long lastDurationUs = 0;
+  unsigned long lastAtMs = 0;
+};
+
 bool httpServerStarted = false;
+bool rawOtaServerStarted = false;
 bool setupMode = false;
 bool waitStatusRendered = false;
 bool otaUploadSucceeded = false;
@@ -89,6 +147,9 @@ String otaUploadError;
 bool assetUploadSucceeded = false;
 String assetUploadError;
 String assetUploadPath;
+size_t assetUploadBytesSeen = 0;
+String activeThemeSpecPath;
+String activeThemeSpecHash;
 String setupWifiOptionsHTML;
 bool rebootPending = false;
 unsigned long rebootAtMs = 0;
@@ -103,6 +164,28 @@ unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
 FirmwareUpdateState firmwareUpdate;
 bool firmwareUpdateTopLineDirty = false;
+OtaUploadDiagnostics otaDiagnostics;
+RuntimeRenderDiagnostics renderDiagnostics;
+
+void recordRenderFull(const char* kind, unsigned long durationUs) {
+  renderDiagnostics.fullCount++;
+  renderDiagnostics.lastKind = kind;
+  renderDiagnostics.lastFullKind = kind;
+  renderDiagnostics.lastDurationUs = durationUs;
+  renderDiagnostics.lastAtMs = millis();
+}
+
+void recordRenderPartial(const char* kind, unsigned long durationUs) {
+  renderDiagnostics.partialCount++;
+  renderDiagnostics.lastKind = kind;
+  renderDiagnostics.lastPartialKind = kind;
+  renderDiagnostics.lastDurationUs = durationUs;
+  renderDiagnostics.lastAtMs = millis();
+}
+
+void recordAnimatedTickAttempt() {
+  renderDiagnostics.animatedTickAttempts++;
+}
 
 String jsonEscape(const String& raw) {
   String escaped;
@@ -131,6 +214,23 @@ String jsonEscape(const String& raw) {
     }
   }
   return escaped;
+}
+
+uint32_t fnv1a32(const String& raw) {
+  uint32_t hash = 2166136261UL;
+  for (size_t i = 0; i < raw.length(); ++i) {
+    hash ^= static_cast<uint8_t>(raw[i]);
+    hash *= 16777619UL;
+  }
+  return hash;
+}
+
+String hashHex8(const String& raw) {
+  String out = String(fnv1a32(raw), HEX);
+  while (out.length() < 8) {
+    out = "0" + out;
+  }
+  return out;
 }
 
 void appendJSONNullableString(String& out, const String& value) {
@@ -183,7 +283,8 @@ void maintainFirmwareUpdateNotice() {
       setupMode ||
       frameStaleStatusRendered ||
       !codexbar_display::app::HasFrame(runtimeCtx) ||
-      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec) {
     clearFirmwareUpdateNotice();
     return;
   }
@@ -233,6 +334,10 @@ void applyFrameUpdateState() {
     clearFirmwareUpdateNotice();
     return;
   }
+  if (frame.hasThemeSpec) {
+    clearFirmwareUpdateNotice();
+    return;
+  }
   if (changed) {
     firmwareUpdate.noticeVisible = true;
     firmwareUpdate.noticePhase = 1;
@@ -243,20 +348,28 @@ void applyFrameUpdateState() {
 }
 
 void drawWaitingForCompanionStatus() {
+  const unsigned long renderStartUs = micros();
   renderer.DrawConnectedSetupInstructions(runtimeCtx, kMdnsHost, WiFi.localIP().toString());
+  recordRenderFull("connected_setup", micros() - renderStartUs);
   waitStatusRendered = true;
 }
 
 void drawWifiConnectingStatus(const String& ssid) {
+  const unsigned long renderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Connecting WiFi", ssid);
+  recordRenderFull("status", micros() - renderStartUs);
 }
 
 void drawWifiResetStatus(const String& line2) {
+  const unsigned long renderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV RESET", "WiFi reset", line2);
+  recordRenderFull("status", micros() - renderStartUs);
 }
 
 void drawUpdateStatus(const String& line2) {
+  const unsigned long renderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV UPDATE", "Update running", line2);
+  recordRenderFull("update_status", micros() - renderStartUs);
 }
 
 bool statusScreenLocked() {
@@ -312,7 +425,34 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
   frameStaleStatusRendered = false;
   lastFrameAcceptedAtMs = millis();
   applyFrameUpdateState();
+  if (event.themeSpecChanged) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    if (codexbar_display::app::HasFrame(runtimeCtx) &&
+        codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec) {
+      const String& raw = codexbar_display::app::CurrentFrame(runtimeCtx).themeSpecRaw;
+      if (raw.length() > 0) {
+        activeThemeSpecHash = hashHex8(raw);
+      }
+    } else {
+      activeThemeSpecPath = "";
+      activeThemeSpecHash = "";
+    }
+#else
+    activeThemeSpecPath = "";
+    activeThemeSpecHash = "";
+#endif
+  }
+  const bool maybeThemeSpecPartial = event.themeSpecPartialRender && !runtimeCtx.screenDirty;
+  const unsigned long partialStartUs = maybeThemeSpecPartial ? micros() : 0;
+  const unsigned long partialSuccessesBefore =
+      maybeThemeSpecPartial ? renderer.DebugSnapshot().themeSpecPartialSuccesses : 0;
   renderer.OnFrameAccepted(runtimeCtx, event);
+  if (maybeThemeSpecPartial) {
+    const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
+    if (snapshot.themeSpecPartialSuccesses > partialSuccessesBefore && !runtimeCtx.screenDirty) {
+      recordRenderPartial("theme_spec_frame", micros() - partialStartUs);
+    }
+  }
   if (redrawAfterStaleStatus) {
     runtimeCtx.screenDirty = true;
   }
@@ -321,37 +461,21 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
 
 const char* transportCapabilitiesJSON(const char* activeTransport) {
   const bool isUsb = activeTransport != nullptr && strcmp(activeTransport, "usb") == 0;
+  static String json;
+  json = "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},\"theme\":";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
-  if (isUsb) {
-    return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
-           "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
-  }
-  return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
-         "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
+  json += themeCapabilitiesJSON(false);
 #else
-  if (isUsb) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-           "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32},"
-           "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
+  json += themeCapabilitiesJSON(true);
 #else
-    return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-           "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
-           "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\",\"wifi\"]}}";
-#endif
-  }
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-         "\"theme\":{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":1024,\"maxThemePrimitives\":32},"
-         "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
-#else
-  return "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},"
-         "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0},"
-         "\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"]}}";
+  json += themeCapabilitiesJSON(false);
 #endif
 #endif
+  json += ",\"transport\":{\"active\":\"";
+  json += isUsb ? "usb" : "wifi";
+  json += "\",\"supported\":[\"usb\",\"wifi\"]}}";
+  return json.c_str();
 }
 
 codexbar_display::app::TransportConfig makeTransportConfig(const char* activeTransport) {
@@ -825,17 +949,52 @@ bool filesystemInfoJSON(String& out) {
   return mounted;
 }
 
-void appendRendererDebugJSON(String& out) {
-  const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
-  out += "\"display\":{\"activeTheme\":\"";
-  out += jsonEscape(snapshot.activeTheme);
-  out += "\",\"themeSpec\":{\"active\":";
+void appendThemeSpecDebugJSON(String& out, const codexbar_display::esp8266::RendererDebugSnapshot& snapshot) {
+  out += "\"themeSpec\":{\"active\":";
   out += snapshot.themeSpecActive ? "true" : "false";
   out += ",\"id\":";
   appendJSONNullableString(out, snapshot.themeSpecId);
   out += ",\"rev\":";
   out += String(snapshot.themeSpecRev);
-  out += "},\"gif\":{\"activePath\":\"";
+  out += ",\"path\":";
+  appendJSONNullableString(out, activeThemeSpecPath);
+  out += ",\"hash\":";
+  appendJSONNullableString(out, activeThemeSpecHash);
+  out += ",\"renderOk\":";
+  out += snapshot.themeSpecRenderOk ? "true" : "false";
+  out += ",\"renderError\":";
+  appendJSONNullableString(out, snapshot.themeSpecRenderError);
+  out += ",\"renderFailures\":";
+  out += String(snapshot.themeSpecRenderFailures);
+  out += ",\"partialSuccesses\":";
+  out += String(snapshot.themeSpecPartialSuccesses);
+  out += ",\"partialFailures\":";
+  out += String(snapshot.themeSpecPartialFailures);
+  out += ",\"lastPartialChangedFields\":";
+  out += String(snapshot.themeSpecLastPartialChangedFields);
+  out += ",\"lastPartialChangedFieldsHex\":\"0x";
+  out += String(snapshot.themeSpecLastPartialChangedFields, HEX);
+  out += "\",\"lastPartialError\":";
+  appendJSONNullableString(out, snapshot.themeSpecLastPartialError);
+  out += ",\"compiled\":";
+  out += snapshot.themeSpecCompiled ? "true" : "false";
+  out += ",\"primitiveCount\":";
+  out += String(snapshot.themeSpecPrimitiveCount);
+  out += ",\"primitiveCapacity\":";
+  out += String(snapshot.themeSpecPrimitiveCapacity);
+  out += ",\"stringBytes\":";
+  out += String(snapshot.themeSpecStringBytes);
+  out += ",\"stringCapacity\":";
+  out += String(snapshot.themeSpecStringCapacity);
+  out += ",\"keepsJsonDocument\":";
+  out += snapshot.themeSpecKeepsJsonDocument ? "true" : "false";
+  out += ",\"hasAnimatedAssets\":";
+  out += snapshot.themeSpecHasAnimatedAssets ? "true" : "false";
+  out += "}";
+}
+
+void appendGifDebugJSON(String& out, const codexbar_display::esp8266::RendererDebugSnapshot& snapshot) {
+  out += "\"gif\":{\"activePath\":\"";
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";
   out += snapshot.gifFilePresent ? "true" : "false";
@@ -863,7 +1022,22 @@ void appendRendererDebugJSON(String& out) {
     out += String(snapshot.gifLastErrorAgeMs);
     out += "}";
   }
-  out += "}}";
+  out += "}";
+}
+
+void appendRendererDebugJSON(String& out) {
+  const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
+  String activeTheme = snapshot.activeTheme;
+  if (snapshot.themeSpecActive && snapshot.themeSpecId.length() > 0) {
+    activeTheme = snapshot.themeSpecId;
+  }
+  out += "\"display\":{\"activeTheme\":\"";
+  out += jsonEscape(activeTheme);
+  out += "\",";
+  appendThemeSpecDebugJSON(out, snapshot);
+  out += ",";
+  appendGifDebugJSON(out, snapshot);
+  out += "}";
 }
 
 void appendFirmwareUpdateJSON(String& out) {
@@ -873,6 +1047,9 @@ void appendFirmwareUpdateJSON(String& out) {
   appendJSONNullableString(out, firmwareUpdate.latestVersion);
   out += ",\"manifestUrl\":\"";
   out += jsonEscape(kFirmwareManifestUrl);
+  out += "\",\"rawFirmwareUrl\":\"http://";
+  out += WiFi.localIP().toString();
+  out += ":8081/update/firmware.raw";
   out += "\",\"lastCheckedAtMs\":";
   out += String(firmwareUpdate.lastCheckedAtMs);
   out += ",\"nextCheckAtMs\":";
@@ -881,6 +1058,55 @@ void appendFirmwareUpdateJSON(String& out) {
   out += jsonEscape(firmwareUpdate.lastStatus);
   out += "\",\"lastError\":";
   appendJSONNullableString(out, firmwareUpdate.lastError);
+  out += ",\"upload\":{\"target\":\"";
+  out += otaDiagnostics.target;
+  out += "\",\"status\":\"";
+  out += otaDiagnostics.status;
+  out += "\",\"filename\":";
+  appendJSONNullableString(out, otaDiagnostics.filename);
+  out += ",\"command\":";
+  out += String(otaDiagnostics.command);
+  out += ",\"contentLength\":";
+  out += String(otaDiagnostics.contentLength);
+  out += ",\"totalSize\":";
+  out += String(otaDiagnostics.totalSize);
+  out += ",\"maxSize\":";
+  out += String(otaDiagnostics.maxSize);
+  out += ",\"freeSketchSpace\":";
+  out += String(otaDiagnostics.freeSketchSpace);
+  out += ",\"updateError\":";
+  out += String(otaDiagnostics.updateError);
+  out += ",\"lastError\":";
+  appendJSONNullableString(out, otaDiagnostics.lastError);
+  out += ",\"startedAtMs\":";
+  out += String(otaDiagnostics.startedAtMs);
+  out += ",\"endedAtMs\":";
+  out += String(otaDiagnostics.endedAtMs);
+  out += ",\"successCount\":";
+  out += String(otaDiagnostics.successCount);
+  out += ",\"failureCount\":";
+  out += String(otaDiagnostics.failureCount);
+  out += "}";
+  out += "}";
+}
+
+void appendRenderDiagnosticsJSON(String& out) {
+  out += "\"render\":{\"fullCount\":";
+  out += String(renderDiagnostics.fullCount);
+  out += ",\"partialCount\":";
+  out += String(renderDiagnostics.partialCount);
+  out += ",\"animatedTickAttempts\":";
+  out += String(renderDiagnostics.animatedTickAttempts);
+  out += ",\"lastKind\":\"";
+  out += renderDiagnostics.lastKind;
+  out += "\",\"lastFullKind\":\"";
+  out += renderDiagnostics.lastFullKind;
+  out += "\",\"lastPartialKind\":\"";
+  out += renderDiagnostics.lastPartialKind;
+  out += "\",\"lastDurationUs\":";
+  out += String(renderDiagnostics.lastDurationUs);
+  out += ",\"lastAtMs\":";
+  out += String(renderDiagnostics.lastAtMs);
   out += "}";
 }
 
@@ -942,13 +1168,32 @@ void handleHealth() {
   const bool wifiConnected = WiFi.status() == WL_CONNECTED;
 
   String out;
-  out.reserve(900);
+  out.reserve(1500);
   out += "{\"ok\":true";
   out += ",\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"board\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_BOARD_ID);
-  out += "\",\"wifi\":{\"mode\":\"";
+  out += "\",\"system\":{\"freeHeap\":";
+  out += String(ESP.getFreeHeap());
+  out += ",\"maxFreeBlock\":";
+  out += String(ESP.getMaxFreeBlockSize());
+  out += ",\"heapFragmentationPct\":";
+  out += String(ESP.getHeapFragmentation());
+  out += ",\"sketchSize\":";
+  out += String(ESP.getSketchSize());
+  out += ",\"freeSketchSpace\":";
+  out += String(ESP.getFreeSketchSpace());
+  out += ",\"sketchMD5\":\"";
+  out += jsonEscape(ESP.getSketchMD5());
+  out += "\",\"flashChipSize\":";
+  out += String(ESP.getFlashChipSize());
+  out += ",\"flashChipRealSize\":";
+  out += String(ESP.getFlashChipRealSize());
+  out += ",\"resetReason\":\"";
+  out += jsonEscape(ESP.getResetReason());
+  out += "\"";
+  out += "},\"wifi\":{\"mode\":\"";
   out += wifiModeName();
   out += "\",\"connected\":";
   out += wifiConnected ? "true" : "false";
@@ -962,6 +1207,8 @@ void handleHealth() {
   const bool filesystemMounted = filesystemInfoJSON(out);
   out += ",";
   appendRendererDebugJSON(out);
+  out += ",";
+  appendRenderDiagnosticsJSON(out);
   out += ",";
   appendFirmwareUpdateJSON(out);
   out += ",\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"],\"httpPort\":80,\"maxFrameBytes\":";
@@ -1011,6 +1258,26 @@ String requestedAssetPath() {
   return path;
 }
 
+bool assetPathLooksGif(const String& path) {
+  String lower = path;
+  lower.toLowerCase();
+  return lower.endsWith(".gif");
+}
+
+bool assetUploadContentLengthWouldExceedLimits(const HTTPUpload& upload) {
+  if (!assetPathLooksGif(assetUploadPath)) {
+    return false;
+  }
+  return upload.contentLength > 0 && upload.contentLength > kMaxThemeGifAssetBytes;
+}
+
+bool assetUploadBytesWouldExceedLimits(size_t nextChunkSize) {
+  if (!assetPathLooksGif(assetUploadPath)) {
+    return false;
+  }
+  return assetUploadBytesSeen + nextChunkSize > kMaxThemeGifAssetBytes;
+}
+
 void handleAssetUpload() {
   HTTPUpload& upload = webServer.upload();
 
@@ -1018,6 +1285,7 @@ void handleAssetUpload() {
     assetUploadSucceeded = false;
     assetUploadError = "";
     assetUploadPath = requestedAssetPath();
+    assetUploadBytesSeen = 0;
     Serial.printf("asset_upload_start path=%s filename=%s content_length=%zu\n", assetUploadPath.c_str(), upload.filename.c_str(), upload.contentLength);
     drawUpdateStatus("Loading display");
     renderer.ResetGifStateForAssetUpdate();
@@ -1025,6 +1293,10 @@ void handleAssetUpload() {
 
     if (!isSafeAssetPath(assetUploadPath)) {
       setAssetUploadError("invalid asset path");
+      return;
+    }
+    if (assetUploadContentLengthWouldExceedLimits(upload)) {
+      setAssetUploadError("gif asset too large");
       return;
     }
     if (!LittleFS.begin()) {
@@ -1048,6 +1320,11 @@ void handleAssetUpload() {
     if (assetUploadError.length() > 0) {
       return;
     }
+    if (assetUploadBytesWouldExceedLimits(upload.currentSize)) {
+      setAssetUploadError("gif asset too large");
+      yield();
+      return;
+    }
     File file = LittleFS.open(assetUploadPath, "a");
     if (!file) {
       setAssetUploadError("append asset failed");
@@ -1056,6 +1333,7 @@ void handleAssetUpload() {
     if (file.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setAssetUploadError("write asset failed");
     }
+    assetUploadBytesSeen += upload.currentSize;
     file.close();
   } else if (upload.status == UPLOAD_FILE_END) {
     if (assetUploadError.length() == 0) {
@@ -1103,6 +1381,11 @@ void handleAssetDelete() {
     webServer.send(404, "text/plain; charset=utf-8", "asset not found");
     return;
   }
+  if (path == activeThemeSpecPath) {
+    addCorsHeaders();
+    webServer.send(409, "text/plain; charset=utf-8", "asset is active");
+    return;
+  }
   renderer.ResetGifStateForAssetUpdate();
   if (!LittleFS.remove(path)) {
     addCorsHeaders();
@@ -1112,6 +1395,194 @@ void handleAssetDelete() {
   Serial.printf("asset_deleted path=%s\n", path.c_str());
   addCorsHeaders();
   webServer.send(200, "application/json", "{\"ok\":true}");
+}
+
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+bool readStoredThemeSpec(const String& path, String& raw, String& error) {
+  if (!isSafeAssetPath(path) || !path.startsWith("/themes/")) {
+    error = "invalid theme path";
+    return false;
+  }
+  if (!LittleFS.begin()) {
+    error = "filesystem mount failed";
+    return false;
+  }
+  if (!LittleFS.exists(path)) {
+    error = "theme file not found";
+    return false;
+  }
+
+  File file = LittleFS.open(path, "r");
+  if (!file) {
+    error = "open theme file failed";
+    return false;
+  }
+  const size_t size = file.size();
+  if (size == 0 || size > kMaxStoredThemeSpecBytes) {
+    file.close();
+    error = "theme file too large";
+    return false;
+  }
+  raw = file.readString();
+  file.close();
+  raw.trim();
+  if (raw.length() == 0 || raw.length() > kMaxStoredThemeSpecBytes) {
+    error = "theme file too large";
+    return false;
+  }
+  return true;
+}
+
+bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String& fallbackTheme, String& error) {
+  JsonDocument filter;
+  filter["themeId"] = true;
+  filter["id"] = true;
+  filter["themeRev"] = true;
+  filter["rev"] = true;
+  filter["fallbackTheme"] = true;
+  filter["fb"] = true;
+
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, raw, DeserializationOption::Filter(filter));
+  if (err) {
+    error = String("bad theme json: ") + err.c_str();
+    return false;
+  }
+  JsonObjectConst spec = doc.as<JsonObjectConst>();
+  if (spec.isNull()) {
+    error = "theme json must be an object";
+    return false;
+  }
+
+  const char* id = nullptr;
+  if (spec["themeId"].is<const char*>()) {
+    id = spec["themeId"].as<const char*>();
+  } else if (spec["id"].is<const char*>()) {
+    id = spec["id"].as<const char*>();
+  }
+  if (id != nullptr) {
+    themeId = String(id);
+    themeId.trim();
+  }
+  themeRev = static_cast<int>(spec["themeRev"] | spec["rev"] | 0);
+  if (themeId.length() == 0 || themeRev <= 0) {
+    error = "theme id/rev missing";
+    return false;
+  }
+
+  const char* fallback = nullptr;
+  if (spec["fallbackTheme"].is<const char*>()) {
+    fallback = spec["fallbackTheme"].as<const char*>();
+  } else if (spec["fb"].is<const char*>()) {
+    fallback = spec["fb"].as<const char*>();
+  }
+  if (fallback != nullptr) {
+    String normalized;
+    if (codexbar_display::theme::NormalizeThemeName(String(fallback), normalized)) {
+      fallbackTheme = normalized;
+    }
+  }
+  return true;
+}
+
+void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev, const String& fallbackTheme) {
+  const bool hadFrame = codexbar_display::app::HasFrame(runtimeCtx);
+  const codexbar_display::core::Frame previous = runtimeCtx.runtime.current;
+  codexbar_display::core::Frame next = hadFrame ? previous : codexbar_display::core::Frame{};
+
+  if (!hadFrame) {
+    next.provider = "codex";
+    next.label = "Codex";
+  }
+  next.hasError = false;
+  next.error = "";
+  next.clearThemeSpec = false;
+  next.hasThemeSpec = true;
+  next.themeSpecId = themeId;
+  next.themeSpecRev = themeRev;
+  next.themeSpecRaw = "";
+  if (fallbackTheme.length() > 0) {
+    next.hasTheme = true;
+    next.theme = fallbackTheme;
+  }
+
+  runtimeCtx.runtime.cachedThemeId = themeId;
+  runtimeCtx.runtime.cachedThemeRev = themeRev;
+  runtimeCtx.runtime.cachedThemeSpecRaw = raw;
+  runtimeCtx.runtime.current = next;
+  runtimeCtx.runtime.hasFrame = true;
+  runtimeCtx.runtime.resetBaseSecs = next.resetSecs;
+  runtimeCtx.runtime.resetBaseMillis = millis();
+  activeThemeSpecPath = path;
+  activeThemeSpecHash = hashHex8(raw);
+
+  codexbar_display::core::SerialConsumeEvent event;
+  event.frameAccepted = true;
+  event.hadFrame = hadFrame;
+  event.themeSpecChanged = true;
+  event.visualChanged = !hadFrame || codexbar_display::core::FrameVisualChanged(previous, next) || event.themeSpecChanged;
+  event.themeChanged = hadFrame && codexbar_display::core::FrameThemeChanged(previous, next);
+  markFrameAccepted(event, "theme");
+}
+#endif
+
+void handleThemeActive() {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  String body = webServer.arg("plain");
+  body.trim();
+  if (body.length() == 0 || body.length() > 160) {
+    addCorsHeaders();
+    webServer.send(400, "text/plain; charset=utf-8", "invalid theme activation body");
+    return;
+  }
+
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    addCorsHeaders();
+    webServer.send(400, "text/plain; charset=utf-8", "bad theme activation json");
+    return;
+  }
+  String path = String(doc["path"] | "");
+  path.trim();
+
+  String raw;
+  String error;
+  if (!readStoredThemeSpec(path, raw, error)) {
+    addCorsHeaders();
+    webServer.send(error == "theme file not found" ? 404 : 400, "text/plain; charset=utf-8", error);
+    return;
+  }
+
+  String themeId;
+  int themeRev = 0;
+  String fallbackTheme;
+  if (!themeSpecMetadata(raw, themeId, themeRev, fallbackTheme, error)) {
+    addCorsHeaders();
+    webServer.send(400, "text/plain; charset=utf-8", error);
+    return;
+  }
+
+  activateStoredThemeSpec(path, raw, themeId, themeRev, fallbackTheme);
+
+  String out;
+  out.reserve(160);
+  out += "{\"ok\":true,\"path\":\"";
+  out += jsonEscape(path);
+  out += "\",\"id\":\"";
+  out += jsonEscape(themeId);
+  out += "\",\"rev\":";
+  out += String(themeRev);
+  out += ",\"hash\":\"";
+  out += jsonEscape(activeThemeSpecHash);
+  out += "\"";
+  out += "}";
+  addCorsHeaders();
+  webServer.send(200, "application/json", out);
+#else
+  addCorsHeaders();
+  webServer.send(501, "text/plain; charset=utf-8", "theme spec renderer disabled");
+#endif
 }
 
 String updatePageHTML() {
@@ -1141,6 +1612,10 @@ void handleUpdatePage() {
 
 void setOtaError(const String& message) {
   otaUploadError = message;
+  otaDiagnostics.status = "failed";
+  otaDiagnostics.lastError = message;
+  otaDiagnostics.updateError = Update.getError();
+  otaDiagnostics.endedAtMs = millis();
   Serial.printf("ota_error message=%s\n", otaUploadError.c_str());
   if (Update.hasError()) {
     Update.printError(Serial);
@@ -1154,6 +1629,17 @@ size_t otaMaxSizeForCommand(int command) {
   return static_cast<size_t>((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000);
 }
 
+void enterOtaSafeMode(int command) {
+  (void)command;
+  firmwareUpdateTopLineDirty = false;
+  frameStaleStatusRendered = false;
+  renderer.ResetGifStateForAssetUpdate();
+  close_all_fs();
+  WiFiUDP::stopAll();
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);
+  ESP.wdtFeed();
+}
+
 void handleOtaUpload(int command, const char* target) {
   HTTPUpload& upload = webServer.upload();
 
@@ -1162,30 +1648,48 @@ void handleOtaUpload(int command, const char* target) {
     otaUploadInProgress = true;
     otaUploadError = "";
     const size_t maxSize = otaMaxSizeForCommand(command);
+    otaDiagnostics.target = target;
+    otaDiagnostics.status = "starting";
+    otaDiagnostics.filename = upload.filename;
+    otaDiagnostics.lastError = "";
+    otaDiagnostics.command = command;
+    otaDiagnostics.contentLength = upload.contentLength;
+    otaDiagnostics.totalSize = 0;
+    otaDiagnostics.maxSize = maxSize;
+    otaDiagnostics.freeSketchSpace = ESP.getFreeSketchSpace();
+    otaDiagnostics.updateError = UPDATE_ERROR_OK;
+    otaDiagnostics.startedAtMs = millis();
+    otaDiagnostics.endedAtMs = 0;
     Serial.printf(
-        "ota_upload_start target=%s filename=%s content_length=%zu max_size=%zu\n",
+        "ota_upload_start target=%s filename=%s content_length=%zu max_size=%zu free_sketch_space=%zu\n",
         target,
         upload.filename.c_str(),
         upload.contentLength,
-        maxSize);
+        maxSize,
+        otaDiagnostics.freeSketchSpace);
     const String targetLabel = command == U_FS ? "Loading display" : "Loading firmware";
     drawUpdateStatus(targetLabel);
     waitStatusRendered = true;
-
-    if (command == U_FS) {
-      renderer.ResetGifStateForAssetUpdate();
-      close_all_fs();
-    }
+    enterOtaSafeMode(command);
     if (!Update.begin(maxSize, command)) {
       setOtaError(Update.getErrorString());
+    } else {
+      otaDiagnostics.status = "writing";
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
+    otaDiagnostics.totalSize = upload.totalSize + upload.currentSize;
     if (otaUploadError.length() == 0 && Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setOtaError(Update.getErrorString());
     }
+    ESP.wdtFeed();
   } else if (upload.status == UPLOAD_FILE_END) {
+    otaDiagnostics.totalSize = upload.totalSize;
     if (otaUploadError.length() == 0 && Update.end(true)) {
       otaUploadSucceeded = true;
+      otaDiagnostics.status = "succeeded";
+      otaDiagnostics.updateError = UPDATE_ERROR_OK;
+      otaDiagnostics.endedAtMs = millis();
+      otaDiagnostics.successCount++;
       Serial.printf("ota_upload_success target=%s bytes=%zu\n", target, upload.totalSize);
     } else if (otaUploadError.length() == 0) {
       setOtaError(Update.getErrorString());
@@ -1193,6 +1697,7 @@ void handleOtaUpload(int command, const char* target) {
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
     Update.end();
     setOtaError("upload aborted");
+    otaDiagnostics.totalSize = upload.totalSize;
     Serial.printf("ota_upload_aborted target=%s bytes=%zu\n", target, upload.totalSize);
   }
   yield();
@@ -1208,6 +1713,11 @@ void handleOtaResult(const char* target) {
   if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
     otaUploadInProgress = false;
     const String error = otaUploadError.length() > 0 ? otaUploadError : Update.getErrorString();
+    otaDiagnostics.status = "failed";
+    otaDiagnostics.lastError = error;
+    otaDiagnostics.updateError = Update.getError();
+    otaDiagnostics.endedAtMs = millis();
+    otaDiagnostics.failureCount++;
     Serial.printf("ota_upload_failed target=%s error=%s\n", target, error.c_str());
     webServer.send(500, "text/plain; charset=utf-8", "Update failed: " + error);
     return;
@@ -1223,8 +1733,140 @@ void handleOtaResult(const char* target) {
   webServer.send(200, "text/html; charset=utf-8", html);
   drawUpdateStatus("Restarting");
   waitStatusRendered = true;
+  otaDiagnostics.status = "reboot_scheduled";
   scheduleReboot(target);
   otaUploadInProgress = false;
+}
+
+void sendRawOtaResponse(WiFiClient& client, int status, const char* statusText, const String& body) {
+  client.print("HTTP/1.1 ");
+  client.print(status);
+  client.print(" ");
+  client.print(statusText);
+  client.print("\r\nConnection: close\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: ");
+  client.print(body.length());
+  client.print("\r\n\r\n");
+  client.print(body);
+}
+
+bool rawRequestLineIsFirmwarePost(const String& line) {
+  return line.startsWith("POST /update/firmware.raw ") ||
+         line.startsWith("PUT /update/firmware.raw ");
+}
+
+void handleRawOtaClient() {
+  if (!rawOtaServerStarted || otaUploadInProgress || rebootPending) {
+    return;
+  }
+
+  WiFiClient client = rawOtaServer.accept();
+  if (!client) {
+    return;
+  }
+  client.setTimeout(5000);
+
+  String requestLine = client.readStringUntil('\n');
+  requestLine.trim();
+  if (!rawRequestLineIsFirmwarePost(requestLine)) {
+    sendRawOtaResponse(client, 404, "Not Found", "not found");
+    client.stop();
+    return;
+  }
+
+  size_t contentLength = 0;
+  while (client.connected()) {
+    String header = client.readStringUntil('\n');
+    header.trim();
+    if (header.length() == 0) {
+      break;
+    }
+    String lower = header;
+    lower.toLowerCase();
+    if (lower.startsWith("content-length:")) {
+      String value = header.substring(header.indexOf(':') + 1);
+      value.trim();
+      contentLength = static_cast<size_t>(value.toInt());
+    }
+  }
+
+  if (contentLength == 0) {
+    sendRawOtaResponse(client, 411, "Length Required", "content-length required");
+    client.stop();
+    return;
+  }
+
+  otaUploadSucceeded = false;
+  otaUploadInProgress = true;
+  otaUploadError = "";
+  const size_t maxSize = otaMaxSizeForCommand(U_FLASH);
+  otaDiagnostics.target = "firmware_raw";
+  otaDiagnostics.status = "starting";
+  otaDiagnostics.filename = "raw";
+  otaDiagnostics.lastError = "";
+  otaDiagnostics.command = U_FLASH;
+  otaDiagnostics.contentLength = contentLength;
+  otaDiagnostics.totalSize = 0;
+  otaDiagnostics.maxSize = maxSize;
+  otaDiagnostics.freeSketchSpace = ESP.getFreeSketchSpace();
+  otaDiagnostics.updateError = UPDATE_ERROR_OK;
+  otaDiagnostics.startedAtMs = millis();
+  otaDiagnostics.endedAtMs = 0;
+
+  drawUpdateStatus("Loading firmware");
+  waitStatusRendered = true;
+  enterOtaSafeMode(U_FLASH);
+
+  if (!Update.begin(maxSize, U_FLASH)) {
+    setOtaError(Update.getErrorString());
+  } else {
+    otaDiagnostics.status = "writing";
+  }
+
+  uint8_t buffer[1024];
+  size_t remaining = contentLength;
+  unsigned long lastProgressMs = millis();
+  while (remaining > 0 && otaUploadError.length() == 0) {
+    const size_t want = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
+    const size_t got = client.readBytes(buffer, want);
+    if (got == 0) {
+      if (millis() - lastProgressMs > 10000UL) {
+        setOtaError("raw upload timeout");
+        break;
+      }
+      delay(1);
+      continue;
+    }
+    lastProgressMs = millis();
+    remaining -= got;
+    otaDiagnostics.totalSize += got;
+    if (Update.write(buffer, got) != got) {
+      setOtaError(Update.getErrorString());
+      break;
+    }
+    ESP.wdtFeed();
+    delay(0);
+  }
+
+  if (otaUploadError.length() == 0 && Update.end(true)) {
+    otaUploadSucceeded = true;
+    otaDiagnostics.status = "succeeded";
+    otaDiagnostics.updateError = UPDATE_ERROR_OK;
+    otaDiagnostics.endedAtMs = millis();
+    otaDiagnostics.successCount++;
+    sendRawOtaResponse(client, 200, "OK", "ok");
+    drawUpdateStatus("Restarting");
+    waitStatusRendered = true;
+    otaDiagnostics.status = "reboot_scheduled";
+    scheduleReboot("firmware_raw");
+  } else {
+    if (otaUploadError.length() == 0) {
+      setOtaError(Update.getErrorString());
+    }
+    otaDiagnostics.failureCount++;
+    sendRawOtaResponse(client, 500, "Internal Server Error", "Update failed: " + otaUploadError);
+  }
+  otaUploadInProgress = false;
+  client.stop();
 }
 
 void handleFrame() {
@@ -1287,6 +1929,7 @@ void startHttpServer() {
       handleAssetUploadResult,
       handleAssetUpload);
   webServer.on("/assets", HTTP_DELETE, handleAssetDelete);
+  webServer.on("/theme/active", HTTP_POST, handleThemeActive);
   webServer.on("/frame", HTTP_POST, handleFrame);
   webServer.on("/update", HTTP_GET, handleUpdatePage);
   webServer.on(
@@ -1321,7 +1964,11 @@ void startHttpServer() {
   });
   webServer.begin();
   httpServerStarted = true;
+  rawOtaServer.begin();
+  rawOtaServer.setNoDelay(true);
+  rawOtaServerStarted = true;
   Serial.println("http_server_started port=80");
+  Serial.println("raw_ota_server_started port=8081 path=/update/firmware.raw");
 }
 
 void startSetupAccessPoint() {
@@ -1334,7 +1981,9 @@ void startSetupAccessPoint() {
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
   captiveDnsStarted = true;
   Serial.printf("captive_dns_started port=%u host=%s ip=%s\n", kDnsPort, kSetupHost, WiFi.softAPIP().toString().c_str());
+  const unsigned long renderStartUs = micros();
   renderer.DrawSetupInstructions(runtimeCtx, kSetupApSsid, WiFi.softAPIP().toString());
+  recordRenderFull("setup", micros() - renderStartUs);
   waitStatusRendered = true;
   startHttpServer();
   startMdnsResponder(WiFi.softAPIP());
@@ -1363,7 +2012,9 @@ void maintainWifiConnection() {
   }
 
   if (!wifiReconnectStatusRendered) {
+    const unsigned long renderStartUs = micros();
     renderer.DrawStatus(runtimeCtx, "VIBE TV", "Reconnecting WiFi", "Please wait");
+    recordRenderFull("status", micros() - renderStartUs);
     wifiReconnectStatusRendered = true;
   }
 
@@ -1377,7 +2028,9 @@ void maintainWifiConnection() {
 
   if ((nowMs - wifiDisconnectedAtMs) >= kWifiReconnectFallbackMs) {
     Serial.println("wifi_reconnect_failed action=setup_ap");
+    const unsigned long renderStartUs = micros();
     renderer.DrawStatus(runtimeCtx, "VIBE TV SETUP", "WiFi unavailable", "Starting setup");
+    recordRenderFull("status", micros() - renderStartUs);
     delay(750);
     startSetupAccessPoint();
   }
@@ -1435,7 +2088,9 @@ void setup() {
   delay(200);
 
   renderer.Setup(runtimeCtx);
+  const unsigned long startupRenderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Starting", "Please wait");
+  recordRenderFull("status", micros() - startupRenderStartUs);
   const bool forceSetupMode = consumeBootRecoveryTrigger();
 
   codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
@@ -1471,7 +2126,20 @@ void loop() {
   }
 
   maintainWifiConnection();
-  maintainFirmwareUpdateNotice();
+  if (!otaUploadInProgress) {
+    maintainFirmwareUpdateNotice();
+  }
+
+  if (otaUploadInProgress) {
+    if (httpServerStarted) {
+      webServer.handleClient();
+    }
+    if (mdnsStarted) {
+      MDNS.update();
+    }
+    delay(1);
+    return;
+  }
 
   if (firmwareUpdateTopLineDirty &&
       !waitStatusRendered &&
@@ -1483,6 +2151,7 @@ void loop() {
     if (renderer.DrawTopLine(runtimeCtx)) {
       rendered = true;
       renderDurationUs = micros() - renderStartUs;
+      recordRenderPartial("top_line", renderDurationUs);
       firmwareUpdateTopLineDirty = false;
     } else {
       firmwareUpdateTopLineDirty = false;
@@ -1496,6 +2165,7 @@ void loop() {
       !runtimeCtx.screenDirty &&
       !frameStaleStatusRendered) {
     renderer.TickActive(runtimeCtx);
+    recordAnimatedTickAttempt();
     const int64_t remain = codexbar_display::app::CurrentRemainingSecs(runtimeCtx, millis());
     if (remain != runtimeCtx.lastRenderedSecs) {
       const int64_t minuteBucket = remain / 60;
@@ -1503,7 +2173,9 @@ void loop() {
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
         runtimeCtx.screenDirty = true;
 #else
+        const unsigned long renderStartUs = micros();
         renderer.DrawReset(runtimeCtx, remain);
+        recordRenderPartial("reset", micros() - renderStartUs);
 #endif
       } else {
         runtimeCtx.lastRenderedSecs = remain;
@@ -1515,11 +2187,14 @@ void loop() {
       !waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+      !codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec &&
       !runtimeCtx.screenDirty &&
       !frameStaleStatusRendered &&
       lastFrameAcceptedAtMs > 0 &&
       (millis() - lastFrameAcceptedAtMs) > kFrameStaleWarningMs) {
+    const unsigned long renderStartUs = micros();
     renderer.DrawStatus(runtimeCtx, "VIBE TV", "Check Mac App", "No fresh data");
+    recordRenderFull("status", micros() - renderStartUs);
     frameStaleStatusRendered = true;
   }
 
@@ -1529,23 +2204,28 @@ void loop() {
 
   if (runtimeCtx.screenDirty && !waitStatusRendered) {
     const unsigned long renderStartUs = micros();
+    const char* fullKind = "usage";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
     renderer.DrawUsage(runtimeCtx);
 #else
     if (!codexbar_display::app::HasFrame(runtimeCtx)) {
+      fullKind = "splash";
       renderer.DrawSplash(runtimeCtx);
     } else if (codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+      fullKind = "error";
       renderer.DrawStatus(
           runtimeCtx,
           "VIBE TV",
           displayErrorMessage(codexbar_display::app::CurrentFrame(runtimeCtx).error),
           "On your Mac");
     } else {
+      fullKind = codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec ? "theme_spec_usage" : "usage";
       renderer.DrawUsage(runtimeCtx);
     }
 #endif
     rendered = true;
     renderDurationUs = micros() - renderStartUs;
+    recordRenderFull(fullKind, renderDurationUs);
     runtimeCtx.screenDirty = false;
     firmwareUpdateTopLineDirty = false;
   }
@@ -1561,6 +2241,7 @@ void loop() {
   if (httpServerStarted) {
     webServer.handleClient();
   }
+  handleRawOtaClient();
   if (captiveDnsStarted) {
     dnsServer.processNextRequest();
   }

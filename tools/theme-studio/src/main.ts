@@ -1,26 +1,59 @@
 import Konva from "konva";
+import { strToU8, zipSync } from "fflate";
 import "gifler";
 import "./styles.css";
+import { CLIPPY_CODING_SPRITE, CLIPPY_IDLE_SPRITE } from "./clippy-sprites";
+import {
+  TFT_FONT_FIRST_CHAR,
+  TFT_FONT_LAST_CHAR,
+  TFT_FONT2_GLYPHS,
+  TFT_FONT2_HEIGHT,
+  TFT_FONT2_WIDTHS,
+  TFT_FONT4_HEIGHT,
+  TFT_FONT4_RLE_GLYPHS,
+  TFT_FONT4_WIDTHS,
+} from "./tft-fonts";
 
 const DISPLAY_SIZE = 240;
-const MAX_SPEC_BYTES = 1024;
-const MAX_FRAME_BYTES = 1024;
+const MAX_SPEC_BYTES = 4096;
+const MAX_FRAME_BYTES = 2048;
 const MAX_PRIMITIVES = 32;
 const COLOR_RE = /^#[A-Fa-f0-9]{6}$/;
 const THEME_ID_RE = /^[a-z0-9][a-z0-9\-_]{2,63}$/;
 const FIXED_THEME_REV = 1;
 const FIXED_FALLBACK_THEME = "mini";
+const THEME_PACK_MIN_FIRMWARE = "1.0.24";
 const DEFAULT_TARGET_ORIGIN = "http://vibetv.local";
 const TARGET_STORAGE_KEY = "codexbar.themeStudio.targetOrigin";
 const DEFAULT_GIF_SIZE = 80;
+const MAX_GIF_ASSETS = 1;
+const MAX_GIF_BYTES = 24 * 1024;
+const MAX_GIF_WIDTH = 80;
+const MAX_GIF_HEIGHT = 80;
+const MAX_GIF_PIXELS = MAX_GIF_WIDTH * MAX_GIF_HEIGHT;
+const DEFAULT_SPRITE_FPS = 8;
+const MAX_SPRITE_FRAME_WIDTH = 64;
+const MAX_SPRITE_FRAME_HEIGHT = 64;
+const MAX_SPRITE_FRAMES = 32;
+const MAX_SPRITE_TOTAL_PIXELS = 32768;
+const MAX_ANIMATED_REPAINT_PIXELS_PER_SECOND = 18000;
+const MAX_INITIAL_RENDER_PIXELS = 140000;
+const WARN_INITIAL_RENDER_PIXELS = 120000;
 const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 const THEME_ASSET_PATH_PREFIX = "/themes/";
+const USER_THEME_ASSET_PATH_PREFIX = "/themes/u/";
+const STATE_NAME_RE = /^[a-z0-9][a-z0-9\-_]{0,30}$/;
 const SUPPORTED_PRIMITIVE_TYPES = ["rect", "text", "progress", "gif", "sprite", "pixels"] as const;
+const HISTORY_LIMIT = 60;
+const SAVED_THEMES_STORAGE_KEY = "codexbar.themeStudio.savedThemes.v1";
+const CURRENT_THEME_STORAGE_KEY = "codexbar.themeStudio.currentTheme.v1";
+const SNAP_GUIDE_THRESHOLD = 3;
 
 type PrimitiveType = typeof SUPPORTED_PRIMITIVE_TYPES[number];
 type ResizeHandle = "e" | "s" | "se";
 type PixelTool = "move" | "paint" | "erase";
 type EditableKonvaNode = Konva.Group | Konva.Shape;
+type SnapAxis = "x" | "y";
 type GiflerAnimator = {
   width: number;
   height: number;
@@ -39,6 +72,23 @@ type GifPreview = {
   animator: GiflerAnimator | null;
   playing: boolean;
 };
+type SpriteSource = {
+  file: File;
+  previewUrl: string;
+  bitmap: ImageBitmap;
+  sheetWidth: number;
+  sheetHeight: number;
+  frameWidth: number;
+  frameHeight: number;
+};
+type SpriteAsset = {
+  width: number;
+  height: number;
+  frameCount: number;
+  fps: number;
+  palette: string[];
+  frames: string[][];
+};
 type UploadableAsset = {
   file: File;
   previewUrl?: string;
@@ -53,6 +103,7 @@ type BindingKey =
   | "reset"
   | "resetCountdown"
   | "usageMode"
+  | "activity"
   | "time"
   | "date"
   | "sessionTokens"
@@ -68,12 +119,20 @@ interface Primitive {
   text?: string;
   font?: number;
   fontSize?: number;
+  align?: "left" | "center" | "right";
+  progressStyle?: "solid" | "segments";
+  segments?: number;
+  segmentGap?: number;
   binding?: BindingKey;
   color?: string;
   bgColor?: string;
   borderColor?: string;
   rotation?: number;
   assetPath?: string;
+  stateAssets?: Record<string, string>;
+  frameCount?: number;
+  fps?: number;
+  sheetColumns?: number;
   data?: string;
   p?: string[];
   r?: string[];
@@ -88,6 +147,24 @@ interface ThemeSpec {
   primitives: Primitive[];
 }
 
+interface ThemeSnapshot {
+  spec: ThemeSpec;
+  selectedIndex: number;
+  selectedIndices: number[];
+  activeThemeId: string;
+}
+
+interface CurrentThemeDraft extends ThemeSnapshot {
+  savedAt: string;
+}
+
+interface SavedTheme {
+  id: string;
+  name: string;
+  savedAt: string;
+  spec: ThemeSpec;
+}
+
 interface FrameData {
   provider: string;
   label: string;
@@ -96,6 +173,7 @@ interface FrameData {
   reset: string;
   resetSecs: number;
   usageMode: string;
+  activity: string;
   time: string;
   date: string;
   sessionTokens: number;
@@ -106,10 +184,12 @@ interface FrameData {
 interface AppState {
   spec: ThemeSpec;
   selectedIndex: number;
+  selectedIndices: number[];
   hoveredIndex: number | null;
   editingTextIndex: number | null;
   copiedPrimitive: Primitive | null;
   gifAssets: Record<string, { file: File; previewUrl: string }>;
+  spriteAssets: Record<string, { file: File; rawText: string; sprite: SpriteAsset; source?: SpriteSource }>;
   jsonText: string;
   jsonDirty: boolean;
   errors: string[];
@@ -118,14 +198,30 @@ interface AppState {
   targetOrigin: string;
   pixelTool: PixelTool;
   pixelBrushToken: string;
+  snapEnabled: boolean;
+  snapGridSize: number;
+  undoStack: ThemeSnapshot[];
+  redoStack: ThemeSnapshot[];
+  savedThemes: SavedTheme[];
+  activeThemeId: string;
+  publishedThemeIds: string[];
 }
 
 interface DeviceHealth {
+  system?: {
+    freeHeap?: number;
+    resetReason?: string;
+  };
   display?: {
     themeSpec?: {
       active?: boolean;
       id?: string | null;
       rev?: number;
+      path?: string | null;
+      hash?: string | null;
+      renderOk?: boolean;
+      renderError?: string | null;
+      renderFailures?: number;
     };
     gif?: {
       activePath?: string;
@@ -134,20 +230,39 @@ interface DeviceHealth {
   };
 }
 
+interface DeviceAssets {
+  filesystem?: {
+    mounted?: boolean;
+  };
+  assets?: Array<{
+    path?: string;
+    sizeBytes?: number;
+  }>;
+}
+
 const frame: FrameData = {
   provider: "codex",
   label: "Codex",
-  session: 94,
-  weekly: 87,
-  reset: "89h 54m",
-  resetSecs: 323640,
+  session: 36,
+  weekly: 79,
+  reset: "136h 9m",
+  resetSecs: 490140,
   usageMode: "remaining",
-  time: "21:25",
-  date: "7/5/2026",
+  activity: "idle",
+  time: previewTime(new Date()),
+  date: previewDate(new Date()),
   sessionTokens: 12840,
   weekTokens: 68120,
   totalTokens: 190420,
 };
+
+function previewTime(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function previewDate(date: Date): string {
+  return `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}.${date.getFullYear()}`;
+}
 
 const variableTokens = [
   { label: "Name", token: "{label}", preview: frame.label },
@@ -155,6 +270,7 @@ const variableTokens = [
   { label: "Weekly", token: "{weekly}%", preview: `${frame.weekly}%` },
   { label: "Reset", token: "{reset}", preview: frame.reset },
   { label: "Mode", token: "{usageMode}", preview: frame.usageMode },
+  { label: "Activity", token: "{activity}", preview: frame.activity },
   { label: "Time", token: "{time}", preview: frame.time },
   { label: "Date", token: "{date}", preview: frame.date },
   { label: "Session tokens", token: "{sessionTokens}", preview: String(frame.sessionTokens) },
@@ -167,6 +283,21 @@ const PREVIEW_FONT_WEIGHT = 800;
 const DEFAULT_PIXELS_WIDTH = 16;
 const DEFAULT_PIXELS_HEIGHT = 10;
 const DEFAULT_CLOUD_SPRITE_PATH = "/themes/u/cloud.cbi";
+const COZY_BACKGROUND_SPRITE_PATH = "/themes/u/meadow.cbi";
+const COZY_SUN_SPRITE_PATH = "/themes/u/sun.cbi";
+const COZY_TREE_SPRITE_PATH = "/themes/u/tree.cbi";
+const COZY_FLOWERS_SPRITE_PATH = "/themes/u/flowers.cbi";
+const COZY_BIRDS_SPRITE_PATH = "/themes/u/birds.cba";
+const COZY_BUTTERFLY_SPRITE_PATH = "/themes/u/butter.cba";
+const CLAUDE_IDLE_SPRITE_PATH = "/themes/u/cld-i.cba";
+const CLAUDE_CODING_SPRITE_PATH = "/themes/u/cld-c.cba";
+const CLIPPY_BACKGROUND_SPRITE_PATH = "/themes/u/cp-bg.cbi";
+const CLIPPY_IDLE_SPRITE_PATH = "/themes/u/cp-i.cba";
+const CLIPPY_CODING_SPRITE_PATH = "/themes/u/cp-c.cba";
+const SYNTHWAVE_TOP_SPRITE_PATH = "/themes/u/syn-top.cbi";
+const SYNTHWAVE_UI_SPRITE_PATH = "/themes/u/syn-ui.cbi";
+let synthwaveTopSpriteCache = "";
+let synthwaveUiSpriteCache = "";
 const DEFAULT_CLOUD_SPRITE = `CBI1
 24 14
 3
@@ -188,6 +319,1511 @@ const DEFAULT_CLOUD_SPRITE = `CBI1
 9.6c9.
 24.
 `;
+const COZY_SUN_SPRITE = `CBI1
+22 22
+3
+#FFF7A8
+#FFD35A
+#F59E2E
+22.
+10.b11.
+7.b.3a.b8.
+5.b2.5a2.b6.
+4.b2.7a2.b5.
+3.b2.3a3c3a2.b4.
+2.b2.4a3c4a2.b3.
+3.5a3c5a6.
+2.6a3c6a5.
+2.6a4c6a4.
+b.6a4c6a3.b
+2.6a4c6a4.
+2.6a3c6a5.
+3.5a3c5a6.
+2.b2.4a3c4a2.b3.
+3.b2.3a3c3a2.b4.
+4.b2.7a2.b5.
+5.b2.5a2.b6.
+7.b.3a.b8.
+10.b11.
+22.
+22.
+`;
+const COZY_TREE_SPRITE = `CBI1
+28 38
+5
+#2E7D43
+#4EA65A
+#1F5E35
+#8B5A2B
+#5C351A
+28.
+11.3b14.
+9.7b12.
+7.11b10.
+6.5b3a5b9.
+5.7b4a6b6.
+4.7c2b5a5b5.
+3.8c3b4a6b4.
+2.9c5b3a6b3.
+2.8c8b7c3.
+3.6c9b7c3.
+4.5c6b2a6c5.
+5.4c5b4a5c5.
+6.4c4b5a4c5.
+4.7c3b5a5c4.
+3.8c2b6a6c3.
+2.9c2b7a6c2.
+3.8c3b6a5c3.
+5.6c4b5a4c4.
+7.5c3b4a4c5.
+9.4c2b3a4c6.
+12.2d2e12.
+12.2d2e12.
+11.3d2e12.
+11.3d2e12.
+10.4d2e12.
+10.4d2e12.
+9.5d2e12.
+9.5d2e12.
+8.6d2e12.
+7.7d2e12.
+6.8d2e12.
+5.9d2e12.
+4.10d2e12.
+3.11d2e12.
+2.13d13.
+28.
+28.
+`;
+const COZY_FLOWERS_SPRITE = `CBI1
+36 12
+6
+#2E7D43
+#DFF7C2
+#FFE36E
+#FF8DB3
+#B388FF
+#FFFFFF
+36.
+4.a6.a5.a4.a7.a5.
+4.a6.a5.a4.a7.a5.
+3.2a5.2a4.2a3.2a6.2a5.
+2.2ad4.2ac3.2ae2.2ab5.2af5.
+2.3a4.3a3.3a2.3a5.3a5.
+1.4a3.4a2.4a1.4a4.4a5.
+36a
+2.5a4.7a4.8a1.5a
+36.
+36.
+36.
+`;
+const COZY_BIRDS_SPRITE = `CBA1
+16 10 4 6
+2
+#243326
+#FFE0A3
+16.
+16.
+7.a8.
+5.3a8.
+3.3a.3a6.
+2.4a2b4a4.
+5.6a5.
+7.2a7.
+16.
+16.
+16.
+6.a9.
+4.2a2.2a6.
+3.3a4.3a3.
+2.5a2b5a2.
+5.6a5.
+7.2a7.
+16.
+16.
+16.
+16.
+7.a8.
+5.3a8.
+4.4a2b4a2.
+3.3a4.3a3.
+5.6a5.
+7.2a7.
+16.
+16.
+16.
+6.a9.
+4.2a2.2a6.
+3.3a4.3a3.
+2.5a2b5a2.
+5.6a5.
+7.2a7.
+16.
+16.
+16.
+16.
+`;
+const COZY_BUTTERFLY_SPRITE = `CBA1
+14 12 4 7
+4
+#271A18
+#FFD34D
+#FF7FB7
+#9DE7F7
+14.
+3.b2.2a2.c3.
+2.3b.2a.3c2.
+1.4b2a4c3.
+2.3b2a3c4.
+4.baac6.
+5.2a7.
+4.caab6.
+2.3c2a3b4.
+1.4c2a4b3.
+2.3c.2a.3b2.
+14.
+14.
+4.b.2a.c4.
+3.2b2a2c5.
+2.3b2a3c4.
+1.4b2a4c3.
+4.baac6.
+5.2a7.
+4.caab6.
+1.4c2a4b3.
+2.3c2a3b4.
+3.2c2a2b5.
+14.
+14.
+5.b2c6.
+4.2b2c6.
+3.3b2c6.
+2.4b2c6.
+4.baac6.
+5.2a7.
+4.caab6.
+2.4c2b6.
+3.3c2b6.
+4.2c2b6.
+14.
+14.
+4.b.2a.c4.
+3.2b2a2c5.
+2.3b2a3c4.
+1.4b2a4c3.
+4.baac6.
+5.2a7.
+4.caab6.
+1.4c2a4b3.
+2.3c2a3b4.
+3.2c2a2b5.
+14.
+`;
+// Adapted from Clawd Tank MIT-licensed sprite animations; see THIRD_PARTY_NOTICES.md.
+const CLAUDE_IDLE_SPRITE = `CBA1
+52 52 12 3
+25
+#D68263
+#D68273
+#080C10
+#000000
+#080C18
+#5A3C42
+#AD695A
+#4A3439
+#523021
+#945D52
+#734D4A
+#634142
+#312010
+#84514A
+#B56D5A
+#A5655A
+#5A4142
+#B57152
+#A56152
+#9C6152
+#6B494A
+#C67163
+#945142
+#7B514A
+#312831
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+11.31a10.
+11.31a10.
+11.31a10.
+11.31a10.
+11.31a10.
+11.31a10.
+11.5a3d15a3d5a10.
+11.5a3d15a3d5a10.
+5.11a3d15a3d11a4.
+5.11a3d15a3d11a4.
+5.11a3d15a3d11a4.
+5.43a4.
+5.43a4.
+5.43a4.
+11.31a10.
+11.31a10.
+11.31a10.
+11.31a10.
+11.31a10.
+11.31a10.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.26c13.
+13.26c13.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+10.f31af9.
+10.l31al9.
+10.l31al9.
+10.l31al9.
+10.l31al9.
+10.l31al9.
+10.l5a3d14ar2dm5al9.
+10.l5a3d14ar2dm5al9.
+5.5yl5a3d14ar2dm5al5y4.
+4.x5ao5a3d14ar2dm5ao5ax3.
+4.x5ao5a3d14ar2dm5ao5ax3.
+4.x5ao5a3d14av2dm5ao5ax3.
+4.x5ao31ao5ax3.
+4.x5ao31ao5ax3.
+4.l5gt31at5gl3.
+10.l31al9.
+10.l31al9.
+10.l31al9.
+10.l31al9.
+10.l31al9.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.26c13.
+13.26c13.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+13.32af6.
+13.32af6.
+13.32af6.
+13.32af6.
+13.32af6.
+13.15a3r14ah2e4.
+13.15a3d14a3d4.
+13.15a3d14a3d4.
+7.y5h15a3d14a3d3hy
+7.k20a3d14a3d3ak
+7.k20a3d14a3d3ak
+7.k20a3c14a3c3ak
+7.k37ao5ak
+7.k37ao5ak
+7.f5t32aj5tf
+13.32af6.
+13.32af6.
+13.32af6.
+13.32af6.
+13.32af6.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+16.26c10.
+16.26c10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+8.20a3d14a3d3a.
+8.43a.
+8.43a.
+8.43a.
+8.43a.
+8.43a.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+16.26c10.
+16.26c10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+11.31ap9.
+11.32a9.
+11.32a9.
+11.32a9.
+11.32a9.
+11.32a9.
+11.5am2ds14a3d6a9.
+11.5am2ds14a3d6a9.
+11.5am2ds14a3d6a9.
+5.11am2ds14a3d12a3.
+5.11am2ds14a3d12a3.
+5.11am2ds14a3d12a3.
+5.44a3.
+5.44a3.
+5.44a3.
+11.32a9.
+11.32a9.
+11.32a9.
+11.32a9.
+11.32a9.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.e25ce12.
+13.e25ce12.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+8.u35af7.
+8.j35af7.
+8.36af7.
+8.36af7.
+8.36af7.
+9.hk7a2sr14a2sr6af7.
+11.f5ar2dm13ar2dm6af7.
+11.f5ar2dm13ar2dm6af7.
+11.f5ar2dm13ar2dm6ak5f2.
+11.f5ar2dm13ar2dm6ao5a2.
+11.f5ar2dm13ar2dm6ao5a2.
+11.f5ar2mi13ar2mi6ao5a2.
+11.f32ao5a2.
+11.f32ao5a2.
+11.f32aj5n2.
+11.f32af7.
+11.f32af7.
+11.f32af7.
+11.f32af7.
+11.f32af7.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+15.26c11.
+15.26c11.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+8.32a12.
+8.32a12.
+8.32a12.
+8.32a12.
+8.32a12.
+8.32a12.
+8.3d14a3d12a12.
+8.3d14a3d12a12.
+3.5a3d14a3d18a6.
+3.5a3d14a3d18a6.
+3.5a3d14a3d18a6.
+3.43a6.
+3.43a6.
+3.43a6.
+8.32a12.
+8.32a12.
+8.32a12.
+8.32a12.
+8.32a12.
+8.32a12.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+11.26c15.
+11.26c15.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+7.f31af12.
+7.q31aq12.
+7.q31aq12.
+7.q31aq12.
+7.q31aq12.
+7.q31aq12.
+4.e2dm13aw2df14aq12.
+4.e2dm13aw2di14aq12.
+.3ym2dm13aw2di14au6y6.
+.k2an2di13aw2di14ao5ak6.
+.k2an2di13aw2di14ao5ak6.
+.k3a2v15a2v15ao5ak6.
+.k5ao31ao5ak6.
+.k5ao31ao5ak6.
+.f5pj31aj5pf6.
+7.q31aq12.
+7.q31aq12.
+7.q31aq12.
+7.q31aq12.
+7.q31aq12.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+11.26c15.
+11.26c15.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+10.p31a10.
+10.p31a10.
+10.p31a10.
+10.p31a10.
+10.p31a10.
+10.p5a3w14ar2wr5a10.
+10.p5a3d14af2dn5a10.
+10.p5a3d14af2dn5a10.
+4.f5ug5a3d14af2dn5a6u4.
+4.12a3d14af2dn11a4.
+4.12a3d14af2dn11a4.
+4.12a3i14aw2is11a4.
+4.44a4.
+4.44a4.
+4.l5kg31a6k4.
+10.p31a10.
+10.p31a10.
+10.p31a10.
+10.p31a10.
+10.p31a10.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.26c13.
+13.26c13.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+11.31a10.
+11.31a10.
+11.31a10.
+5.yl4.31a4.ly4.
+5.gax3.31a3.xag4.
+4.k3a3.5as2dm13as2dm5a3.3au3.
+3.7ay5as2dm13as2dm5ay7a2.
+3.7ay5as2dm13as2dm5ay7a2.
+3.p4at2.31a2.t4ap2.
+4.j3ay2.31a2.y3aj3.
+5.x2a3.31a3.2ax4.
+6.h4.31a4.h5.
+11.31a10.
+11.31a10.
+11.13a5v13a10.
+11.13a5d13a10.
+11.13a5s13a10.
+11.31a10.
+11.31a10.
+11.31a10.
+11.31a10.
+11.u29nu10.
+52.
+52.
+52.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+13.3a3.3a9.3a3.2a13.
+14.25e13.
+14.25e13.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+11.x29jx10.
+11.31b10.
+5.x5.31b5.x4.
+3.3b5.31b5.3b2.
+.f4bx4.31b4.x4bf
+x6b4.31b4.6b
+.g6b3.5bv2is13ba2il5b3.6bg
+.h6b3.6b2a15b3a5b3.6bh
+2.h3b5.31b5.3bh.
+3.bgy5.31b5.ygb2.
+3.l7.31b7.l2.
+11.31b10.
+11.11bw7iw11b10.
+11.5b3p3bi7di11b10.
+11.5b3p3bi7di11b10.
+11.5b3p3bi7di11b10.
+11.11bi7di11b10.
+11.11bi7di11b10.
+11.11bi7di11b10.
+11.11bs7ws11b10.
+11.31b10.
+11.t29bt10.
+52.
+52.
+52.
+13.3b3.3b9.3b3.2b13.
+13.3b3.3b9.3b3.2b13.
+13.3b3.3b9.3b3.2b13.
+13.3b3.3b9.3b3.2b13.
+13.3b3.3b9.3b3.2b13.
+13.3b3.3b9.3b3.2b13.
+14.25e13.
+14.25e13.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+10.33h9.
+10.g31bg9.
+10.g31bg9.
+10.g31bg9.
+10.g5b3d15b3d5bg9.
+10.g5b3d15b3d5bg9.
+10.g5b3d15b3d5bg9.
+10.g5b3d15b3d5bg9.
+10.g5b3l15b3l5bg9.
+6.yh2lg31bg2lhy5.
+3.f6bg31bg6bf2.
+3.h6bg31bg6bh2.
+4.45b3.
+4.45b3.
+4.p21ba21bp3.
+4.jbpjkqo31bolkjgbj3.
+10.g31bg9.
+10.g31bg9.
+10.g31bg9.
+10.j31bj9.
+13.3by2.3b9.3b3.2b13.
+13.3by2.3b9.3b3.2b13.
+13.3by2.3b9.3b3.2b13.
+13.3b3.3b9.3b3.2b13.
+13.26ce12.
+13.26ce12.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.`;
+const CLAUDE_CODING_SPRITE = `CBA1
+52 52 12 6
+25
+#D68263
+#739294
+#526173
+#080C10
+#000000
+#42C3F7
+#63A2C6
+#52A2C6
+#6B4542
+#52A2D6
+#63B2D6
+#52B2E7
+#42B2E7
+#42B2F7
+#8C5952
+#423039
+#312831
+#295D84
+#AD695A
+#A5C3D6
+#F7F3F7
+#214563
+#29597B
+#296D94
+#3186B5
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+10.i35asiq3.
+8.o39ap3.
+8.5a3e14a3e15a4.
+8.o4a3e14a3e14ao4.
+8.q4a3e14a3e14ao4.
+9.i6a26b5aq4.
+10.aoq3a26b3api5.
+13.3a11b3g12b3a7.
+13.3a10b6g10b3a7.
+13.3a9b7g10b3a7.
+13.3a8b3g3t3g9b3a7.
+13.3a8b3g3t3g9b3a7.
+13.3a8b3g3t3g9b3a7.
+13.3a9b7g10b3a7.
+13.3a9b7g10b3a7.
+16.11b3g12b10.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+13.32p7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+10.pip32aq6.
+10.o36aoq3.
+10.s2a3e14a3e15a4.
+10.s2a3e14a3e14as4.
+.3r6.3a3e14a3e14ao4.
+.3x6.6a26b5ap4.
+.3x6.2os3a26b5aq4.
+13.3a11b3g12b3a7.
+13.3a10b6g10b3a7.
+13.3a9b7g10b3a7.
+13.3a8b3g3t3g9b3a7.
+13.3a8b3g3t3g9b3a7.
+13.3a8b3g3t3g9b3a7.
+13.3a9b7g10b3a7.
+13.3a9b7g10b3a7.
+16.11b3g12b10.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+13.32a7.
+13.32a7.
+13.32a7.
+.3r9.32a7.
+.3y9.32a7.
+.3y6.qip32a7.
+10.i36ao4.
+10.o5a3e14a3e11ao4.
+10.o5a3e14a3e11ai4.
+10.6a26b5ap4.
+10.6a26b5aq4.
+13.3a11b3h12b3a.q5.
+13.3a10b6h10b3a7.
+13.3a9b7h10b3a7.
+13.3a8b3h3t3h9b3a7.
+13.3a8b3h3t3h9b3a7.
+13.3a8b3h3t3h9b3a7.
+13.3a9b7h10b3a7.
+13.3a9b7h10b3a7.
+13.3a11b3h12b3a7.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+.4y25.3y19.
+.4y8.17i3g12i7.
+.4y8.32a7.
+.4w8.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+11.pi32a2i5.
+8.q10a2o15a3o8a5.
+9.10a2e15a3e8a5.
+9.s9a2e15a3e8a5.
+9.i6a26b5a5.
+9.p6a26b5a5.
+10.p2.3a11b3h12b3a7.
+13.3a10b6h10b3a7.
+13.3a9b7h10b3a7.
+13.3a8b3h3t3h9b3a7.
+13.3a8b3h3t3h9b3a7.
+13.3a8b3h3t3h9b3a7.
+13.3a9b7h10b3a7.
+13.3a9b7h10b3a7.
+13.3o11b3h12b3o7.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+.4x25.4y18.
+.4x25.4y18.
+.4x25.4y18.
+.4r47.
+52.
+13.32s7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+11.36a5.
+11.36a5.
+11.8a2e15a3e8a5.
+10.p8a2e15a3e8a5.
+10.o8a2e15a3e8a5.
+8.vrc5a26b5a5.
+8.v2r.q3a26b3apq5.
+13.3a11b3j12b3a7.
+13.3a10b6j10b3a7.
+13.3a9b7j10b3a7.
+13.3a8b3j3t3j9b3a7.
+13.3a8b3j3t3j9b3a7.
+13.3a8b3j3t3j9b3a7.
+13.3a9b7j10b3a7.
+13.3a9b7j10b3a7.
+16.11b3j12b10.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+30.4v18.
+.5w24.4x18.
+.5w24.4x18.
+.5w24.4x18.
+.5w46.
+.5w46.
+52.
+52.
+52.
+52.
+52.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+8.v2wv.32a7.
+8.v2h36a5.
+8.v2h36a5.
+10.p10a3e15a3e5a5.
+10.i10a3e15a3e5a5.
+10.o10a3e15a3e5a5.
+10.o5a26b4as5.
+12.q3a26b3a7.
+13.3a11b3k12b3a7.
+13.3a10b6k10b3a7.
+13.3a9b7k10b3a7.
+13.3a8b3k3t3k9b3a7.
+13.3a8b3k3t3k9b3a7.
+13.3a8b3k3t3k9b3a7.
+13.3a9b7k10b3a7.
+13.3a9b7k10b3a7.
+16.11b3k12b10.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+.5v24.4w18.
+.5v46.
+.5v46.
+52.
+52.
+52.
+52.
+52.
+21.4v27.
+21.4x27.
+21.4x27.
+21.4x27.
+21.4r27.
+9.3y40.
+9.3y.32o7.
+9.3y.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a.q5.
+11.o34ao5.
+8.16a3i15a3i2a5.
+8.16a3e15a3e2a5.
+8.s15a3e15a3e2a5.
+9.7a26b3i2a5.
+9.o6a26b5a5.
+10.o2.3a11b3l12b3a7.
+13.3a10b6l10b3a7.
+13.3a9b7l10b3a7.
+13.3a8b3l3u3l9b3a5.2v
+13.3a8b3l3u3l9b3a5.2v
+13.3a8b3l3u3l9b3a7.
+13.3a9b7l10b3a7.
+13.3a9b7l10b3a7.
+13.3i11b3l12b3i7.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+21.4r27.
+21.4r27.
+21.4r27.
+21.4r27.
+9.4v39.
+9.w3x39.
+9.w3x39.
+9.w3x39.
+52.
+52.
+52.
+52.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+10.2q.32api5.
+10.o36a5.
+10.s13a3e15a3e2a5.
+10.s13a3e15a3e2a3.2w
+10.6a26b3e2a3.2y
+10.6a26b5a3.2y
+13.3a11b3m12b3a7.
+13.3a10b6m10b3a7.
+13.3a9b7m10b3a7.
+13.3a8b3m3u3m9b3a7.
+13.3a8b3m3u3m9b3a7.
+13.3a8b3m3u3m9b3a7.
+13.3a9b7m10b3a7.
+13.3a9b7m10b3a7.
+13.3a11b3m12b3a7.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+21.5v26.
+21.5v26.
+9.q3rv38.
+9.q3rv38.
+9.q3rv38.
+9.q3rv38.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a5.2y
+11.q.32aqp3.2y
+10.p36a3.2y
+10.o13a3e15a3e2a5.
+10.o13a3e15a3e2a5.
+10.s13a3e15a3e2a5.
+10.6a26b5a5.
+10.s5a26b5a5.
+13.3a11b3f12b3a7.
+13.3a10b6f10b3a7.
+13.3a9b7f10b3a7.
+13.3a8b3f3u3f9b3a7.
+13.3a8b3f3u3f9b3a7.
+13.3a8b3f3u3f9b3a7.
+13.3a9b7f10b3a7.
+13.3a9b7f10b3a7.
+16.11b3f12b10.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+10.4v38.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+42.3v7.
+42.3x7.
+42.3x5.2v
+13.32a5.2x
+13.32a5.2x
+13.32a5.2x
+13.32a7.
+13.32a7.
+13.32a7.
+8.qio35asi4.
+8.p38ao4.
+9.4a3e14a3e14ai4.
+9.o3a3e14a3e14ap4.
+.3r5.o3a3e14a3e14ap4.
+.3x5.q6a26b5a5.
+.3x6.opq3a26b3a2q5.
+13.3a11b3n12b3a7.
+13.3a10b6n10b3a7.
+13.3a9b7n10b3a7.
+13.3a8b3n3u3n9b3a7.
+13.3a8b3n3u3n9b3a7.
+13.3a8b3n3u3n9b3a7.
+13.3a9b7n10b3a7.
+13.3a9b7n10b3a7.
+16.11b3n12b10.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+42.4q6.
+42.4w6.
+42.4w4.2r
+42.4w4.2r
+42.4v4.2r
+50.2r
+52.
+52.
+13.32i7.
+13.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+.3r9.32a7.
+.3y7.ao32ap6.
+.3y7.36aop3.
+11.2a3e14a3e15ap3.
+10.q2a3e14a3e15aq3.
+10.i2a3e14a3e15a4.
+10.s5a26b5ai4.
+11.po3a26b5aq4.
+13.3a11b3f12b3a7.
+13.3a10b6f10b3a7.
+13.3a9b7f10b3a7.
+13.3a8b3f3u3f9b3a7.
+13.3a8b3f3u3f9b3a7.
+13.3a8b3f3u3f9b3a7.
+13.3a9b7f10b3a7.
+13.3a9b7f10b3a7.
+16.11b3f12b10.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+42.4v6.
+42.4v4.2v
+42.4v4.2w
+42.4v4.2w
+42.4v4.2w
+50.2w
+52.
+52.
+52.
+52.
+52.
+52.
+52.
+.4y25.3y19.
+.4y8.17q3h12q7.
+.4y8.32a7.
+.4w8.32a7.
+13.32a7.
+13.32a7.
+13.32a7.
+11.oi32aq6.
+11.37asq2.
+10.q4ai2ei13ai2ei13a3.
+10.p4ai2ei13ai2ei12ao3.
+10.o4ai26b6a4.
+10.6a26b5ao4.
+13.3a11b3f12b3apo5.
+13.3a10b6f10b3a7.
+13.3a9b7f10b3a7.
+13.3a8b3f3u3f9b3a7.
+13.3a8b3f3u3f9b3a7.
+13.3a8b3f3u3f9b3a7.
+13.3a9b7f10b3a7.
+13.3a9b7f10b3a7.
+13.3a11b3f12b3a7.
+16.26b10.
+16.26b10.
+16.26b10.
+15.c26bc9.
+14.29c9.
+14.28c10.
+16.26d10.
+52.
+52.
+52.
+52.
+52.`;
 const DEFAULT_CLOUD_PIXEL_PALETTE = ["#FFFFFF", "#9DE7F7", "#C7FF68"];
 const DEFAULT_CLOUD_PIXEL_ROWS = [
   "5.4a7.",
@@ -201,6 +1837,327 @@ const DEFAULT_CLOUD_PIXEL_ROWS = [
   "5.4a7.",
   "16.",
 ];
+
+function cozyBackgroundSpriteText(): string {
+  const width = 120;
+  const height = 120;
+  const palette = [
+    "#9DE7F7",
+    "#FFFFFF",
+    "#D7F7C8",
+    "#B8DF7A",
+    "#7FCA69",
+    "#54A85E",
+    "#3D884E",
+    "#FFECA8",
+    "#77C7D9",
+    "#70431E",
+    "#2F7444",
+    "#FFE36E",
+    "#FF8DB3",
+  ];
+  const rows = Array.from({ length: height }, (_, y) => cozyBackgroundRow(width, y));
+  return `CBI1\n${width} ${height}\n${palette.length}\n${palette.join("\n")}\n${rows.join("\n")}\n`;
+}
+
+function cozyBackgroundRow(width: number, y: number): string {
+  const tokens: string[] = [];
+  let current = "";
+  let runLength = 0;
+  for (let x = 0; x < width; x += 1) {
+    const token = cozyBackgroundToken(x, y);
+    if (token === current) {
+      runLength += 1;
+      continue;
+    }
+    if (current) {
+      tokens.push(`${runLength === 1 ? "" : runLength}${current}`);
+    }
+    current = token;
+    runLength = 1;
+  }
+  if (current) {
+    tokens.push(`${runLength === 1 ? "" : runLength}${current}`);
+  }
+  return tokens.join("");
+}
+
+function cozyBackgroundToken(x: number, y: number): string {
+  const cloudA = ((x - 18) * (x - 18)) / 170 + ((y - 14) * (y - 14)) / 22 < 1;
+  const cloudB = ((x - 96) * (x - 96)) / 210 + ((y - 19) * (y - 19)) / 26 < 1;
+  if (y < 46 && (cloudA || cloudB)) {
+    return y % 3 === 0 ? "c" : "b";
+  }
+
+  const farHill = 42 + Math.floor(x / 18) + Math.floor(Math.sin(x / 9) * 4);
+  const nearHill = 58 + Math.floor(Math.sin((x + 12) / 11) * 5);
+  if (y < farHill) {
+    return "a";
+  }
+  if (y < nearHill) {
+    return y % 5 === 0 ? "e" : "d";
+  }
+
+  for (const tree of [9, 22, 101, 113]) {
+    const crown = Math.abs(x - tree) + Math.max(0, y - 48);
+    if (y >= 43 && y < 68 && crown < 16) {
+      return crown % 5 === 0 ? "e" : "k";
+    }
+    if (x >= tree - 1 && x <= tree + 1 && y >= 61 && y < 75) {
+      return "j";
+    }
+  }
+
+  if (y > 74) {
+    const center = 62 + Math.floor((y - 74) * 0.28) + Math.floor(Math.sin(y / 8) * 3);
+    const half = 4 + Math.floor((y - 74) / 8);
+    if (Math.abs(x - center) <= half) {
+      return y % 4 === 0 ? "h" : "i";
+    }
+  }
+
+  if (y > 83 && (x * 17 + y * 31) % 47 === 0) {
+    return "l";
+  }
+  if (y > 90 && (x * 13 + y * 19) % 59 === 0) {
+    return "m";
+  }
+  if (y > 70 && (x + y) % 17 === 0) {
+    return "k";
+  }
+
+  if (y < 76) {
+    return y % 7 === 0 ? "g" : "e";
+  }
+  if (y < 96) {
+    return y % 6 === 0 ? "g" : "f";
+  }
+  return y % 5 === 0 ? "f" : "g";
+}
+
+function clippyBackgroundSpriteText(): string {
+  const width = 106;
+  const height = 105;
+  const palette = [
+    "#C6C3BD",
+    "#FFFFFF",
+    "#808080",
+    "#404040",
+    "#000080",
+    "#DAD7D0",
+    "#111111",
+    "#A5A19A",
+    "#EDEAE4",
+    "#B8B4AE",
+  ];
+  const rows = Array.from({ length: height }, () => Array.from({ length: width }, () => "a"));
+  const setPixel = (x: number, y: number, token: string) => {
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+      rows[y][x] = token;
+    }
+  };
+  const fillRect = (x: number, y: number, w: number, h: number, token: string) => {
+    for (let yy = y; yy < y + h; yy += 1) {
+      for (let xx = x; xx < x + w; xx += 1) {
+        setPixel(xx, yy, token);
+      }
+    }
+  };
+  const line = (x: number, y: number, w: number, token: string) => fillRect(x, y, w, 1, token);
+  const bevelRect = (x: number, y: number, w: number, h: number, fill: string) => {
+    fillRect(x, y, w, h, fill);
+    line(x, y, w, "b");
+    fillRect(x, y, 1, h, "b");
+    line(x, y + h - 1, w, "d");
+    fillRect(x + w - 1, y, 1, h, "d");
+    line(x + 1, y + h - 2, w - 2, "c");
+    fillRect(x + w - 2, y + 1, 1, h - 2, "c");
+  };
+
+  fillRect(0, 0, width, height, "a");
+  line(0, 0, width, "b");
+  fillRect(0, 0, 1, height, "b");
+  line(1, 1, width - 2, "i");
+  fillRect(1, 1, 1, height - 2, "i");
+  line(0, height - 1, width, "d");
+  fillRect(width - 1, 1, 1, height - 1, "d");
+  fillRect(2, 3, width - 4, 11, "e");
+
+  [78, 87, 96].forEach((x) => bevelRect(x, 4, 8, 8, "f"));
+  fillRect(80, 10, 4, 1, "g");
+  fillRect(90, 6, 4, 4, "g");
+  fillRect(91, 7, 2, 2, "f");
+  for (let i = 0; i < 5; i += 1) {
+    setPixel(98 + i, 6 + i, "g");
+    setPixel(102 - i, 6 + i, "g");
+  }
+
+  fillRect(14, 56, 78, 1, "c");
+  line(14, 57, 78, "b");
+  fillRect(14, 84, 78, 1, "c");
+  line(14, 85, 78, "b");
+  return [
+    "CBI1",
+    `${width} ${height}`,
+    String(palette.length),
+    ...palette,
+    ...rows.map(encodeRleTokenRow),
+  ].join("\n");
+}
+
+const COZY_MEADOW_SPEC: ThemeSpec = {
+  themeSpecVersion: 1,
+  themeId: "cozy-meadow",
+  themeRev: FIXED_THEME_REV,
+  fallbackTheme: FIXED_FALLBACK_THEME,
+  bgColor: "#9DE7F7",
+  primitives: [
+    { type: "sprite", x: 0, y: 0, width: 240, height: 240, assetPath: COZY_BACKGROUND_SPRITE_PATH },
+    { type: "sprite", x: 86, y: 7, width: 30, height: 30, bgColor: "#9DE7F7", assetPath: COZY_SUN_SPRITE_PATH },
+    { type: "sprite", x: 184, y: 57, width: 20, height: 13, bgColor: "#9DE7F7", assetPath: COZY_BIRDS_SPRITE_PATH },
+    { type: "sprite", x: 38, y: 165, width: 18, height: 15, bgColor: "#54A85E", assetPath: COZY_BUTTERFLY_SPRITE_PATH },
+    { type: "gif", x: 202, y: 146, width: 24, height: 24, bgColor: "#54A85E", assetPath: "/themes/mini/mini.gif" },
+    { type: "sprite", x: 18, y: 188, width: 45, height: 15, bgColor: "#3D884E", assetPath: COZY_FLOWERS_SPRITE_PATH },
+    { type: "text", x: 43, y: 64, text: "{date}", fontSize: 3, color: "#FFFFFF" },
+    { type: "text", x: 11, y: 147, text: "Session", fontSize: 2, color: "#123522" },
+    { type: "text", x: 11, y: 169, text: "{session}%", fontSize: 5, color: "#FFF4B8" },
+    { type: "text", x: 154, y: 173, text: "left", fontSize: 2, color: "#E8FFD9" },
+    { type: "progress", x: 13, y: 205, width: 154, height: 13, binding: "session", color: "#FFF4B8", bgColor: "#2F7444", borderColor: "#123522" },
+    { type: "text", x: 13, y: 222, text: "Reset {reset}", fontSize: 1, color: "#E8FFD9" },
+  ],
+};
+const CLAUDE_CREATURE_SPEC: ThemeSpec = {
+  themeSpecVersion: 1,
+  themeId: "claude-creature",
+  themeRev: FIXED_THEME_REV,
+  fallbackTheme: FIXED_FALLBACK_THEME,
+  bgColor: "#000000",
+  primitives: [
+    { type: "text", x: 9, y: 8, text: "{label} Usage", font: 2, fontSize: 1, color: "#FF9B7B" },
+    { type: "text", x: 9, y: 42, text: "Session", font: 2, fontSize: 1, color: "#FFB19B" },
+    { type: "text", x: 9, y: 62, text: "{session}%", font: 2, fontSize: 3, color: "#FF8F6F" },
+    { type: "text", x: 10, y: 105, text: "remaining", font: 2, fontSize: 1, color: "#FFB19B" },
+    { type: "text", x: 134, y: 42, text: "Weekly", font: 2, fontSize: 1, color: "#FFB19B" },
+    { type: "text", x: 132, y: 62, text: "{weekly}%", font: 2, fontSize: 3, color: "#FF8F6F" },
+    { type: "text", x: 136, y: 105, text: "remaining", font: 2, fontSize: 1, color: "#FFB19B" },
+    {
+      type: "sprite",
+      x: 82,
+      y: 126,
+      width: 77,
+      height: 77,
+      bgColor: "#000000",
+      assetPath: CLAUDE_IDLE_SPRITE_PATH,
+      frameCount: 12,
+      fps: 3,
+      sheetColumns: 4,
+      stateAssets: {
+        idle: CLAUDE_IDLE_SPRITE_PATH,
+        coding: CLAUDE_CODING_SPRITE_PATH,
+      },
+    },
+    { type: "rect", x: 10, y: 216, width: 220, height: 1, color: "#B95D4F" },
+    { type: "text", x: 34, y: 221, text: "* Resets in {reset}", font: 2, fontSize: 1, color: "#FF9B7B" },
+  ],
+};
+
+const CLIPPY_SPEC: ThemeSpec = {
+  themeSpecVersion: 1,
+  themeId: "clippy",
+  themeRev: FIXED_THEME_REV,
+  fallbackTheme: FIXED_FALLBACK_THEME,
+  bgColor: "#000000",
+  primitives: [
+    { type: "sprite", x: 0, y: 0, width: 240, height: 240, assetPath: CLIPPY_BACKGROUND_SPRITE_PATH },
+    { type: "text", x: 26, y: 28, text: "{label} Usage", font: 2, fontSize: 2, color: "#FFFFFF" },
+    {
+      type: "sprite",
+      x: 83,
+      y: 54,
+      width: 74,
+      height: 74,
+      bgColor: "#C6C3BD",
+      assetPath: CLIPPY_IDLE_SPRITE_PATH,
+      frameCount: 8,
+      fps: 3,
+      sheetColumns: 8,
+      stateAssets: {
+        idle: CLIPPY_IDLE_SPRITE_PATH,
+        coding: CLIPPY_CODING_SPRITE_PATH,
+      },
+    },
+    {
+      type: "progress",
+      x: 27,
+      y: 166,
+      width: 146,
+      height: 14,
+      binding: "session",
+      progressStyle: "segments",
+      segments: 28,
+      segmentGap: 1,
+      color: "#0FA514",
+      bgColor: "#DAD7D0",
+      borderColor: "#FFFFFF",
+    },
+    { type: "text", x: 181, y: 158, text: "{session}%", font: 2, fontSize: 2, color: "#111111" },
+    { type: "text", x: 172, y: 178, text: "remaining", font: 2, fontSize: 1, color: "#111111" },
+    {
+      type: "progress",
+      x: 27,
+      y: 212,
+      width: 146,
+      height: 14,
+      binding: "weekly",
+      progressStyle: "segments",
+      segments: 28,
+      segmentGap: 1,
+      color: "#0FA514",
+      bgColor: "#DAD7D0",
+      borderColor: "#FFFFFF",
+    },
+    { type: "text", x: 181, y: 204, text: "{weekly}%", font: 2, fontSize: 2, color: "#111111" },
+    { type: "text", x: 172, y: 224, text: "remaining", font: 2, fontSize: 1, color: "#111111" },
+  ],
+};
+
+const SYNTHWAVE_SPEC: ThemeSpec = {
+  themeSpecVersion: 1,
+  themeId: "synthwave",
+  themeRev: FIXED_THEME_REV,
+  fallbackTheme: FIXED_FALLBACK_THEME,
+  bgColor: "#050014",
+  primitives: [
+    { type: "sprite", x: 0, y: 0, width: 240, height: 128, assetPath: SYNTHWAVE_TOP_SPRITE_PATH },
+    { type: "sprite", x: 0, y: 128, width: 240, height: 95, assetPath: SYNTHWAVE_UI_SPRITE_PATH },
+    { type: "text", x: 35, y: 18, binding: "label", font: 4, fontSize: 1, align: "center", color: "#FF4FA3" },
+    { type: "text", x: 67, y: 48, text: "USAGE", font: 4, fontSize: 1, color: "#FF4FA3" },
+    {
+      type: "progress",
+      x: 18,
+      y: 157,
+      width: 153,
+      height: 20,
+      binding: "session",
+      color: "#FF4FA3",
+      bgColor: "#1D073B",
+      borderColor: "#FF4FA3",
+    },
+    { type: "text", x: 181, y: 147, text: "{session}%", font: 4, fontSize: 1, color: "#FF4FA3" },
+    {
+      type: "progress",
+      x: 18,
+      y: 212,
+      width: 153,
+      height: 20,
+      binding: "weekly",
+      color: "#35C9FF",
+      bgColor: "#101145",
+      borderColor: "#4D8CFF",
+    },
+    { type: "text", x: 181, y: 202, text: "{weekly}%", font: 4, fontSize: 1, color: "#35C9FF" },
+  ],
+};
 const GLCD_FONT_FIRST_CHAR = 32;
 const GLCD_FONT_LAST_CHAR = 126;
 const GLCD_FONT_COLUMNS = 5;
@@ -286,25 +2243,36 @@ let stage: Konva.Stage | null = null;
 let gifRedrawAnimation: Konva.Animation | null = null;
 let gifPreviewGeneration = 0;
 const gifPreviewCache = new Map<string, GifPreview>();
+const restoredDraft = loadCurrentThemeDraft();
 
 const state: AppState = {
-  spec: cloneSpec(initialSpec),
-  selectedIndex: -1,
+  spec: restoredDraft ? cloneSpec(restoredDraft.spec) : cloneSpec(initialSpec),
+  selectedIndex: restoredDraft ? restoredDraft.selectedIndex : -1,
+  selectedIndices: restoredDraft ? normalizeSelectedIndices(restoredDraft.selectedIndices, restoredDraft.selectedIndex, restoredDraft.spec.primitives.length) : [],
   hoveredIndex: null,
   editingTextIndex: null,
   copiedPrimitive: null,
   gifAssets: {},
+  spriteAssets: {},
   jsonText: "",
   jsonDirty: false,
   errors: [],
   warnings: [],
-  notice: "",
+  notice: restoredDraft ? `Last draft restored from ${formatSavedAt(restoredDraft.savedAt)}.` : "",
   targetOrigin: storedTargetOrigin(),
   pixelTool: "move",
   pixelBrushToken: "a",
+  snapEnabled: true,
+  snapGridSize: 4,
+  undoStack: [],
+  redoStack: [],
+  savedThemes: loadSavedThemes(),
+  activeThemeId: restoredDraft?.activeThemeId ?? themeLibraryIdForSpec(restoredDraft?.spec ?? initialSpec),
+  publishedThemeIds: [SYNTHWAVE_SPEC.themeId, CLAUDE_CREATURE_SPEC.themeId, CLIPPY_SPEC.themeId, COZY_MEADOW_SPEC.themeId],
 };
 syncJsonFromSpec();
 render();
+void refreshPublishedThemeIds();
 window.addEventListener("keydown", handleGlobalKeydown);
 window.addEventListener("pointerup", () => {
   pixelCanvasPaintActive = false;
@@ -342,6 +2310,219 @@ function persistTargetOrigin() {
   }
 }
 
+function loadSavedThemes(): SavedTheme[] {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SAVED_THEMES_STORAGE_KEY) ?? "[]") as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter(isSavedTheme)
+      .map((theme) => {
+        const spec = cloneSpec(theme.spec);
+        normalizeMiniThemeSpec(spec);
+        return { ...theme, spec };
+      })
+      .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+  } catch {
+    return [];
+  }
+}
+
+function isSavedTheme(value: unknown): value is SavedTheme {
+  return isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.savedAt === "string" &&
+    isRecord(value.spec) &&
+    Array.isArray(value.spec.primitives);
+}
+
+function persistSavedThemes() {
+  try {
+    window.localStorage.setItem(SAVED_THEMES_STORAGE_KEY, JSON.stringify(state.savedThemes));
+  } catch {
+    state.notice = "Local theme save failed. Browser storage may be full or blocked.";
+  }
+}
+
+function loadCurrentThemeDraft(): CurrentThemeDraft | null {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CURRENT_THEME_STORAGE_KEY) ?? "null") as unknown;
+    if (!isCurrentThemeDraft(parsed)) {
+      return null;
+    }
+    const spec = cloneSpec(parsed.spec);
+    normalizeMiniThemeSpec(spec);
+    return {
+      spec,
+      selectedIndex: Math.max(-1, Math.min(parsed.selectedIndex, spec.primitives.length - 1)),
+      selectedIndices: normalizeSelectedIndices(parsed.selectedIndices, parsed.selectedIndex, spec.primitives.length),
+      activeThemeId: typeof parsed.activeThemeId === "string" ? parsed.activeThemeId : themeLibraryIdForSpec(spec),
+      savedAt: parsed.savedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isCurrentThemeDraft(value: unknown): value is CurrentThemeDraft {
+  return isRecord(value) &&
+    typeof value.savedAt === "string" &&
+    (value.activeThemeId === undefined || typeof value.activeThemeId === "string") &&
+    Number.isInteger(value.selectedIndex) &&
+    (value.selectedIndices === undefined || Array.isArray(value.selectedIndices)) &&
+    isRecord(value.spec) &&
+    Array.isArray(value.spec.primitives);
+}
+
+function persistCurrentThemeDraft() {
+  try {
+    const draft: CurrentThemeDraft = {
+      spec: cloneSpec(state.spec),
+      selectedIndex: state.selectedIndex,
+      selectedIndices: selectedPrimitiveIndices(),
+      activeThemeId: state.activeThemeId,
+      savedAt: new Date().toISOString(),
+    };
+    window.localStorage.setItem(CURRENT_THEME_STORAGE_KEY, JSON.stringify(draft));
+  } catch {
+    state.notice = "Draft save failed. Browser storage may be full or blocked.";
+  }
+}
+
+function savedThemeForThemeId(themeId: string): SavedTheme | undefined {
+  return state.savedThemes.find((theme) => theme.name === themeId || theme.spec.themeId === themeId);
+}
+
+function specForPreset(defaultSpec: ThemeSpec): ThemeSpec {
+  return cloneSpec(savedThemeForThemeId(defaultSpec.themeId)?.spec ?? defaultSpec);
+}
+
+function themeLibraryIdForSpec(spec: ThemeSpec, fallback = CLIPPY_SPEC.themeId): string {
+  const ids = [SYNTHWAVE_SPEC.themeId, CLAUDE_CREATURE_SPEC.themeId, CLIPPY_SPEC.themeId, COZY_MEADOW_SPEC.themeId];
+  return ids.includes(spec.themeId) ? spec.themeId : fallback;
+}
+
+function themeLibraryLabel(themeId: string): string {
+  const labels: Record<string, string> = {
+    [SYNTHWAVE_SPEC.themeId]: "Synthwave",
+    [CLAUDE_CREATURE_SPEC.themeId]: "Claude Creature",
+    [CLIPPY_SPEC.themeId]: "Clippy",
+    [COZY_MEADOW_SPEC.themeId]: "Cozy Meadow",
+  };
+  return labels[themeId] ?? themeId;
+}
+
+async function refreshPublishedThemeIds() {
+  try {
+    const response = await fetch("/api/theme-packs", { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      return;
+    }
+    const body = await response.json() as { themeIds?: unknown };
+    if (!Array.isArray(body.themeIds)) {
+      return;
+    }
+    state.publishedThemeIds = body.themeIds.filter((id): id is string => typeof id === "string");
+    render();
+  } catch {
+    // The static build has no local publish API. The editor still works.
+  }
+}
+
+function currentThemePackExists(): boolean {
+  return state.publishedThemeIds.includes(state.spec.themeId);
+}
+
+function publishButtonLabel(): string {
+  return currentThemePackExists() ? "Update" : "Publish";
+}
+
+function snapshotState(): ThemeSnapshot {
+  return {
+    spec: cloneSpec(state.spec),
+    selectedIndex: state.selectedIndex,
+    selectedIndices: selectedPrimitiveIndices(),
+    activeThemeId: state.activeThemeId,
+  };
+}
+
+function snapshotsEqual(a: ThemeSnapshot, b: ThemeSnapshot): boolean {
+  return a.selectedIndex === b.selectedIndex &&
+    a.selectedIndices.join(",") === b.selectedIndices.join(",") &&
+    a.activeThemeId === b.activeThemeId &&
+    minifiedJson(a.spec) === minifiedJson(b.spec);
+}
+
+function pushHistory() {
+  const snapshot = snapshotState();
+  const last = state.undoStack[state.undoStack.length - 1];
+  if (last && snapshotsEqual(last, snapshot)) {
+    return;
+  }
+  state.undoStack.push(snapshot);
+  if (state.undoStack.length > HISTORY_LIMIT) {
+    state.undoStack.shift();
+  }
+  state.redoStack = [];
+}
+
+function restoreSnapshot(snapshot: ThemeSnapshot, notice: string) {
+  state.spec = cloneSpec(snapshot.spec);
+  state.activeThemeId = snapshot.activeThemeId;
+  setSelection(normalizeSelectedIndices(snapshot.selectedIndices, snapshot.selectedIndex, state.spec.primitives.length));
+  state.editingTextIndex = null;
+  state.notice = notice;
+  syncJsonFromSpec();
+  render();
+}
+
+function undoThemeEdit() {
+  const snapshot = state.undoStack.pop();
+  if (!snapshot) {
+    state.notice = "Nothing to undo.";
+    render();
+    return;
+  }
+  state.redoStack.push(snapshotState());
+  restoreSnapshot(snapshot, "Undone.");
+}
+
+function redoThemeEdit() {
+  const snapshot = state.redoStack.pop();
+  if (!snapshot) {
+    state.notice = "Nothing to redo.";
+    render();
+    return;
+  }
+  state.undoStack.push(snapshotState());
+  restoreSnapshot(snapshot, "Redone.");
+}
+
+function saveThemeLocally() {
+  const now = new Date().toISOString();
+  const slotId = themeLibraryIdForSpec(state.spec, state.activeThemeId);
+  state.activeThemeId = slotId;
+  const existingIndex = state.savedThemes.findIndex((theme) => theme.name === slotId || theme.spec.themeId === slotId);
+  const saved: SavedTheme = {
+    id: existingIndex >= 0 ? state.savedThemes[existingIndex].id : `${slotId}-${Date.now().toString(36)}`,
+    name: slotId,
+    savedAt: now,
+    spec: cloneSpec(state.spec),
+  };
+  if (existingIndex >= 0) {
+    state.savedThemes.splice(existingIndex, 1, saved);
+  } else {
+    state.savedThemes.unshift(saved);
+  }
+  state.savedThemes.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+  persistSavedThemes();
+  persistCurrentThemeDraft();
+  state.notice = `${themeLibraryLabel(slotId)} saved.`;
+  render();
+}
+
 function normalizeTargetOrigin(value: string): string {
   const raw = value.trim() || DEFAULT_TARGET_ORIGIN;
   const withProtocol = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
@@ -353,6 +2534,7 @@ function syncJsonFromSpec() {
   state.jsonText = prettyJson(state.spec);
   state.jsonDirty = false;
   validateCurrentSpec();
+  persistCurrentThemeDraft();
 }
 
 function normalizeMiniThemeSpec(spec: ThemeSpec) {
@@ -376,6 +2558,13 @@ function normalizeMiniThemeSpec(spec: ThemeSpec) {
         delete primitive.r;
       }
     }
+    if (primitive.type === "sprite") {
+      primitive.frameCount = clamp(Math.round(primitive.frameCount ?? 1), 1, MAX_SPRITE_FRAMES);
+      primitive.fps = clamp(Math.round(primitive.fps ?? DEFAULT_SPRITE_FPS), 0, 30);
+      primitive.sheetColumns = Math.max(1, Math.round(primitive.sheetColumns ?? primitive.frameCount ?? 1));
+    }
+    delete (primitive as unknown as Record<string, unknown>)["maxWidth"];
+    delete (primitive as { fit?: string }).fit;
   });
 }
 
@@ -391,6 +2580,26 @@ function validateThemeAssetPath(primitive: Primitive, prefix: string, errors: st
   }
   if (primitive.assetPath && primitive.assetPath.length > MAX_ESP8266_LITTLEFS_PATH_CHARS) {
     errors.push(`${prefix}: assetPath ist zu lang für ESP8266 LittleFS (${primitive.assetPath.length}/${MAX_ESP8266_LITTLEFS_PATH_CHARS}).`);
+  }
+}
+
+function validateThemeAssetPaths(primitive: Primitive, prefix: string, errors: string[]) {
+  const paths = stateAssetPathsForPrimitive(primitive);
+  if (paths.length === 0) {
+    errors.push(`${prefix}: assetPath oder stateAssets ist erforderlich.`);
+    return;
+  }
+  for (const [stateName, assetPath] of Object.entries(primitive.stateAssets ?? {})) {
+    if (!STATE_NAME_RE.test(stateName)) {
+      errors.push(`${prefix}: stateAssets.${stateName} muss klein geschrieben sein und darf nur a-z, 0-9, _ oder - enthalten.`);
+    }
+    if (stateName !== "idle" && stateName !== "coding") {
+      errors.push(`${prefix}: stateAssets.${stateName} wird vom Gerät nicht unterstützt. Nutze idle oder coding.`);
+    }
+    validateThemeAssetPath({ ...primitive, assetPath }, `${prefix} ${stateName}`, errors);
+  }
+  if (primitive.assetPath) {
+    validateThemeAssetPath(primitive, prefix, errors);
   }
 }
 
@@ -444,20 +2653,57 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
       if (primitive.font !== undefined && (!Number.isInteger(primitive.font) || primitive.font < 1)) {
         errors.push(`${prefix}: font sollte mindestens 1 sein.`);
       }
+      if (primitive.align !== undefined && !["left", "center", "right"].includes(primitive.align)) {
+        errors.push(`${prefix}: align muss left, center oder right sein.`);
+      }
     }
     if (primitive.type === "rect" || primitive.type === "progress") {
       if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
         errors.push(`${prefix}: width/height müssen größer als 0 sein.`);
       }
+      if (primitive.type === "progress") {
+        if (primitive.progressStyle !== undefined && !["solid", "segments"].includes(primitive.progressStyle)) {
+          errors.push(`${prefix}: progressStyle muss solid oder segments sein.`);
+        }
+        if (primitive.segments !== undefined && (!Number.isInteger(primitive.segments) || primitive.segments < 1 || primitive.segments > 32)) {
+          errors.push(`${prefix}: segments muss 1-32 sein.`);
+        }
+        if (primitive.segmentGap !== undefined && (!Number.isInteger(primitive.segmentGap) || primitive.segmentGap < 0 || primitive.segmentGap > 8)) {
+          errors.push(`${prefix}: segmentGap muss 0-8 sein.`);
+        }
+      }
     }
     if (primitive.type === "gif") {
       if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
         errors.push(`${prefix}: width/height müssen größer als 0 sein.`);
+      } else {
+        if (primitive.width > MAX_GIF_WIDTH || primitive.height > MAX_GIF_HEIGHT || primitive.width * primitive.height > MAX_GIF_PIXELS) {
+          errors.push(`${prefix}: GIF ist zu groß. Limit ist ${MAX_GIF_WIDTH}x${MAX_GIF_HEIGHT} wie mini.gif.`);
+        }
       }
-      validateThemeAssetPath(primitive, prefix, errors);
+      validateThemeAssetPaths(primitive, prefix, errors);
     }
     if (primitive.type === "sprite") {
-      validateThemeAssetPath(primitive, prefix, errors);
+      validateThemeAssetPaths(primitive, prefix, errors);
+      if (primitive.width !== undefined && (!isPositiveInteger(primitive.width) || primitive.width > DISPLAY_SIZE)) {
+        errors.push(`${prefix}: Sprite width muss 1-${DISPLAY_SIZE} sein.`);
+      }
+      if (primitive.height !== undefined && (!isPositiveInteger(primitive.height) || primitive.height > DISPLAY_SIZE)) {
+        errors.push(`${prefix}: Sprite height muss 1-${DISPLAY_SIZE} sein.`);
+      }
+      if (!isPositiveInteger(primitive.frameCount ?? 1) || (primitive.frameCount ?? 1) > MAX_SPRITE_FRAMES) {
+        errors.push(`${prefix}: Sprite frames müssen 1-${MAX_SPRITE_FRAMES} sein.`);
+      }
+      if (!Number.isInteger(primitive.fps ?? DEFAULT_SPRITE_FPS) || (primitive.fps ?? DEFAULT_SPRITE_FPS) < 0 || (primitive.fps ?? DEFAULT_SPRITE_FPS) > 30) {
+        errors.push(`${prefix}: Sprite FPS muss 0-30 sein.`);
+      }
+      const source = spriteAssetFor(resolveStateAssetPath(primitive));
+      const width = source?.width ?? primitive.width ?? estimatePrimitiveWidth(primitive);
+      const height = source?.height ?? primitive.height ?? estimatePrimitiveHeight(primitive);
+      const frames = primitive.frameCount ?? 1;
+      if (width * height * frames > MAX_SPRITE_TOTAL_PIXELS) {
+        errors.push(`${prefix}: Sprite ist zu groß (${width * height * frames}/${MAX_SPRITE_TOTAL_PIXELS} Pixel über alle Frames).`);
+      }
     }
     if (primitive.type === "pixels") {
       if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
@@ -485,12 +2731,70 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
   if (bytes > MAX_SPEC_BYTES) {
     errors.push(`ThemeSpec ist zu groß: ${bytes}/${MAX_SPEC_BYTES} Bytes.`);
   }
-  const frameBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload(spec))).length;
+  const frameBytes = new TextEncoder().encode(JSON.stringify(buildLiveFramePayload(spec))).length;
   if (frameBytes > MAX_FRAME_BYTES) {
     errors.push(`Payload ist zu groß für Vibe TV: ${frameBytes}/${MAX_FRAME_BYTES} Bytes.`);
   }
 
+  const gifPaths = uniqueAssetPaths("gif", spec);
+  if (gifPaths.length > MAX_GIF_ASSETS) {
+    errors.push(`Zu viele GIFs: ${gifPaths.length}/${MAX_GIF_ASSETS}. VibeTV ESP8266 unterstützt ein mini.gif-großes GIF pro Theme.`);
+  }
+  for (const path of gifPaths) {
+    const file = state.gifAssets[path]?.file;
+    if (file && file.size > MAX_GIF_BYTES) {
+      errors.push(`GIF ${path} ist zu groß: ${file.size}/${MAX_GIF_BYTES} Bytes. Orientiere dich an mini.gif.`);
+    }
+  }
+
+  const renderBudget = estimateRenderBudget(spec);
+  if (renderBudget.animatedPixelsPerSecond > MAX_ANIMATED_REPAINT_PIXELS_PER_SECOND) {
+    errors.push(`Animation ist zu schwer für ESP8266: ${renderBudget.animatedPixelsPerSecond}/${MAX_ANIMATED_REPAINT_PIXELS_PER_SECOND} Pixel pro Sekunde.`);
+  }
+  if (renderBudget.initialPixels > MAX_INITIAL_RENDER_PIXELS) {
+    errors.push(`Initiales Zeichnen ist zu schwer für ESP8266: ca. ${renderBudget.initialPixels}/${MAX_INITIAL_RENDER_PIXELS} Pixel.`);
+  }
+  if (renderBudget.initialPixels > WARN_INITIAL_RENDER_PIXELS) {
+    warnings.push(`Initiales Zeichnen ist schwer: ca. ${renderBudget.initialPixels} Pixel. Das kann beim ersten Zeichnen kurz dauern; für RAM zählt vor allem, dass JSON klein bleibt und Details in Sprites liegen.`);
+  }
+  renderBudget.spriteWarnings.forEach((warning) => warnings.push(warning));
+
   return { errors, warnings };
+}
+
+function estimateRenderBudget(spec: ThemeSpec): { initialPixels: number; animatedPixelsPerSecond: number; spriteWarnings: string[] } {
+  let initialPixels = DISPLAY_SIZE * DISPLAY_SIZE;
+  let animatedPixelsPerSecond = 0;
+  const spriteWarnings: string[] = [];
+
+  spec.primitives.forEach((primitive, index) => {
+    const width = Math.min(DISPLAY_SIZE, Math.max(0, primitive.width ?? estimatePrimitiveWidth(primitive)));
+    const height = Math.min(DISPLAY_SIZE, Math.max(0, primitive.height ?? estimatePrimitiveHeight(primitive)));
+    const area = width * height;
+    if (["rect", "progress", "gif", "sprite", "pixels"].includes(primitive.type)) {
+      initialPixels += area;
+    }
+    if (primitive.type === "sprite") {
+      const source = spriteAssetFor(resolveStateAssetPath(primitive));
+      const frameCount = source?.frameCount ?? primitive.frameCount ?? 1;
+      const fps = source?.fps ?? primitive.fps ?? DEFAULT_SPRITE_FPS;
+      if (frameCount > 1 && fps > 0) {
+        animatedPixelsPerSecond += area * fps;
+        if (!primitive.bgColor) {
+          spriteWarnings.push(`Primitive ${index + 1}: animiertes Sprite hat keine Clear-Farbe; das kann Spuren oder Flackern machen.`);
+        }
+      }
+    }
+    if (primitive.type === "gif") {
+      animatedPixelsPerSecond += area * 10;
+    }
+  });
+
+  return {
+    initialPixels: Math.round(initialPixels),
+    animatedPixelsPerSecond: Math.round(animatedPixelsPerSecond),
+    spriteWarnings,
+  };
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -561,7 +2865,7 @@ function canSelectText(element: HTMLInputElement | HTMLTextAreaElement | HTMLSel
 }
 
 function focusSelectorFor(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string | null {
-  for (const attribute of ["data-primitive-field", "data-canvas-field", "data-field", "data-role", "data-inline-text"]) {
+  for (const attribute of ["data-primitive-field", "data-primitive-state", "data-canvas-field", "data-field", "data-role", "data-inline-text"]) {
     const value = element.getAttribute(attribute);
     if (value !== null) {
       return `[${attribute}="${escapeCssAttribute(value)}"]`;
@@ -578,18 +2882,21 @@ function render() {
   const focusSnapshot = captureFocusSnapshot();
   validateCurrentSpec();
   const selected = state.spec.primitives[state.selectedIndex];
+  const selectedCount = selectedPrimitiveIndices().length;
   const bytes = new TextEncoder().encode(JSON.stringify(buildDeviceThemeSpec(state.spec))).length;
-  const frameBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload())).length;
+  const frameBytes = new TextEncoder().encode(JSON.stringify(buildLiveFramePayload())).length;
 
   app.innerHTML = `
     <section class="studio-shell">
       <header class="appbar">
         <h1>Theme Studio</h1>
-        <div class="status-strip">
-          ${metric("Bytes", bytes, MAX_SPEC_BYTES)}
-          ${metric("Payload", frameBytes, MAX_FRAME_BYTES)}
-          ${metric("Primitives", state.spec.primitives.length, MAX_PRIMITIVES)}
-          <span class="health ${state.errors.length ? "bad" : "ok"}">${state.errors.length ? "Invalid" : "Valid"}</span>
+        <div class="appbar-actions">
+          <div class="status-strip">
+            ${metric("Theme", bytes, MAX_SPEC_BYTES)}
+            ${metric("Live", frameBytes, MAX_FRAME_BYTES)}
+            ${metric("Primitives", state.spec.primitives.length, MAX_PRIMITIVES)}
+            <span class="health ${state.errors.length ? "bad" : "ok"}">${state.errors.length ? "Invalid" : "Valid"}</span>
+          </div>
         </div>
       </header>
 
@@ -608,6 +2915,12 @@ function render() {
               <input data-field="bgColor" value="${escapeAttr(state.spec.bgColor ?? "#000000")}" />
             </span>
           </label>
+          <div class="history-actions">
+            <button data-action="undo" ${state.undoStack.length === 0 ? "disabled" : ""}>Undo</button>
+            <button data-action="redo" ${state.redoStack.length === 0 ? "disabled" : ""}>Redo</button>
+          </div>
+          <button class="full-width" data-action="save-local">Save Theme</button>
+          ${themeLibrary()}
           <div class="divider"></div>
           ${addElementPalette()}
           <div class="divider"></div>
@@ -618,6 +2931,7 @@ function render() {
             ${state.spec.primitives.map((primitive, index) => primitiveRow(primitive, index)).join("")}
           </div>
           <input class="hidden-file-input" data-role="gif-input" type="file" accept="image/gif,.gif" />
+          <input class="hidden-file-input" data-role="sprite-input" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" />
         </aside>
 
         <section class="preview-column">
@@ -626,16 +2940,17 @@ function render() {
           </div>
           <div class="preview-actions">
             <button class="primary-action" data-action="send-theme" ${state.errors.length ? "disabled" : ""}>Send to Vibe TV</button>
-            <button data-action="download-json">Save Theme</button>
-            <button data-action="copy-json">Copy JSON</button>
+            <button class="publish-action" data-action="publish-pack" ${state.errors.length ? "disabled" : ""}>${publishButtonLabel()}</button>
           </div>
           ${messageList()}
         </section>
 
         <aside class="panel right-panel">
           <details class="inspector-panel" open>
-            <summary>${selected ? `${selected.type} ${state.selectedIndex + 1}` : "Inspector"}</summary>
-            ${selected ? `<button class="danger-button full-width" data-action="delete-selected">Delete</button>${inspectorFields(selected)}` : `<p class="empty">Select an element.</p>`}
+            <summary>${selectedCount > 1 ? `${selectedCount} elements` : selected ? `${selected.type} ${state.selectedIndex + 1}` : "Inspector"}</summary>
+            ${selectedCount > 1
+              ? `<button class="danger-button full-width" data-action="delete-selected">Delete selected</button><p class="empty">Drag or use arrow keys to move the selected elements together.</p>`
+              : selected ? `<button class="danger-button full-width" data-action="delete-selected">Delete</button>${inspectorFields(selected)}` : `<p class="empty">Select an element.</p>`}
           </details>
           <details class="advanced-panel">
             <summary>Advanced JSON</summary>
@@ -654,6 +2969,46 @@ function render() {
   mountKonvaPreview();
   focusInlineTextEditor();
   restoreFocusSnapshot(focusSnapshot);
+}
+
+function themeLibrary(): string {
+  const presets = [
+    { themeId: SYNTHWAVE_SPEC.themeId, label: "Synthwave", action: "load-synthwave" },
+    { themeId: CLAUDE_CREATURE_SPEC.themeId, label: "Claude Creature", action: "load-claude-creature" },
+    { themeId: CLIPPY_SPEC.themeId, label: "Clippy", action: "load-clippy" },
+    { themeId: COZY_MEADOW_SPEC.themeId, label: "Cozy Meadow", action: "load-cozy-meadow" },
+  ];
+
+  return `
+    <div class="saved-themes">
+      <h2>Themes</h2>
+      <div class="saved-theme-list">
+        ${presets.map((preset) => themeLibraryRow({
+          label: preset.label,
+          action: preset.action,
+          active: state.activeThemeId === preset.themeId,
+        })).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function themeLibraryRow(options: { label: string; action: string; active: boolean }): string {
+  return `
+    <div class="saved-theme-row">
+      <button class="saved-theme-load ${options.active ? "active" : ""}" data-action="${escapeAttr(options.action)}">
+        <strong>${escapeHtml(options.label)}</strong>
+      </button>
+    </div>
+  `;
+}
+
+function formatSavedAt(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Saved locally";
+  }
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function metric(label: string, value: number, max: number): string {
@@ -719,7 +3074,7 @@ function variableGuide(): string {
 function primitiveRow(primitive: Primitive, index: number): string {
   const title = primitiveTitle(primitive);
   return `
-    <button class="primitive-row ${index === state.selectedIndex ? "selected" : ""}" data-select="${index}">
+    <button class="primitive-row ${isPrimitiveSelected(index) ? "selected" : ""}" data-select="${index}">
       <span>${index + 1}</span>
       <strong>${primitive.type}</strong>
       <em>${escapeHtml(title)}</em>
@@ -766,6 +3121,11 @@ function inspectorFields(primitive: Primitive): string {
         </label>
         <label>Size<input type="number" min="1" step="1" data-primitive-field="fontSize" value="${primitive.fontSize ?? 1}" /></label>
       </div>
+      <label>Align
+        <select data-primitive-field="align">
+          ${["left", "center", "right"].map((value) => `<option value="${value}" ${(primitive.align ?? "left") === value ? "selected" : ""}>${value}</option>`).join("")}
+        </select>
+      </label>
       ${colorField("Color", "color", primitive.color ?? "#FFFFFF")}
       ${optionalColorField("Background", "bgColor", primitive.bgColor)}
     `;
@@ -783,6 +3143,15 @@ function inspectorFields(primitive: Primitive): string {
           ${["session", "weekly"].map((value) => `<option value="${value}" ${primitive.binding === value ? "selected" : ""}>${value}</option>`).join("")}
         </select>
       </label>
+      <label>Style
+        <select data-primitive-field="progressStyle">
+          ${["solid", "segments"].map((value) => `<option value="${value}" ${(primitive.progressStyle ?? "solid") === value ? "selected" : ""}>${value}</option>`).join("")}
+        </select>
+      </label>
+      <div class="field-grid">
+        <label>Segments<input type="number" min="1" max="32" step="1" data-primitive-field="segments" value="${primitive.segments ?? 10}" /></label>
+        <label>Gap<input type="number" min="0" max="8" step="1" data-primitive-field="segmentGap" value="${primitive.segmentGap ?? 1}" /></label>
+      </div>
       ${colorField("Fill", "color", primitive.color ?? "#FFFFFF")}
       ${colorField("Track", "bgColor", primitive.bgColor ?? "#000000")}
       ${colorField("Border", "borderColor", primitive.borderColor ?? "#7B7B7B")}
@@ -801,9 +3170,25 @@ function inspectorFields(primitive: Primitive): string {
   }
 
   if (primitive.type === "sprite") {
+    const activeSprite = spriteAssetFor(resolveStateAssetPath(primitive));
+    const stateAssetRows = primitive.stateAssets ? `
+      <label>Idle asset<input data-primitive-state="idle" value="${escapeAttr(primitive.stateAssets.idle ?? "")}" /></label>
+      <label>Coding asset<input data-primitive-state="coding" value="${escapeAttr(primitive.stateAssets.coding ?? "")}" /></label>
+    ` : "";
     return `
       ${common}
       <label>Asset<input data-primitive-field="assetPath" value="${escapeAttr(primitive.assetPath ?? "")}" /></label>
+      ${stateAssetRows}
+      <div class="field-grid">
+        <label>Width<input type="number" min="1" max="${MAX_SPRITE_FRAME_WIDTH}" step="1" data-primitive-field="width" value="${primitive.width ?? estimatePrimitiveWidth(primitive)}" /></label>
+        <label>Height<input type="number" min="1" max="${MAX_SPRITE_FRAME_HEIGHT}" step="1" data-primitive-field="height" value="${primitive.height ?? estimatePrimitiveHeight(primitive)}" /></label>
+      </div>
+      <div class="field-grid">
+        <label>Frames<input type="number" min="1" max="${MAX_SPRITE_FRAMES}" step="1" data-primitive-field="frameCount" value="${primitive.frameCount ?? activeSprite?.frameCount ?? 1}" /></label>
+        <label>FPS<input type="number" min="0" max="30" step="1" data-primitive-field="fps" value="${primitive.fps ?? activeSprite?.fps ?? DEFAULT_SPRITE_FPS}" /></label>
+      </div>
+      ${optionalColorField("Clear", "bgColor", primitive.bgColor)}
+      <label>Columns<input type="number" min="1" max="${MAX_SPRITE_FRAMES}" step="1" data-primitive-field="sheetColumns" value="${primitive.sheetColumns ?? inferredSpriteColumns(primitive)}" /></label>
     `;
   }
 
@@ -933,10 +3318,24 @@ function optionalColorField(label: string, key: keyof Primitive, value: string |
 
 function renderPreview(): string {
   return `
-    <div class="display preview-stack" aria-label="Theme preview">
+    <div class="display preview-stack ${state.snapEnabled ? "snap-grid" : ""}" aria-label="Theme preview" style="--snap-grid-size:${(state.snapGridSize / DISPLAY_SIZE) * 100}%">
       <canvas class="device-canvas" data-role="device-canvas" width="${DISPLAY_SIZE}" height="${DISPLAY_SIZE}"></canvas>
       <div class="konva-overlay" data-role="konva-stage"></div>
     </div>
+    <div class="snap-controls" role="group" aria-label="Snap controls">
+      <button class="${state.snapEnabled ? "active" : ""}" data-snap-toggle="grid">Snap</button>
+      <label>Grid
+        <select data-snap-grid>
+          ${[2, 4, 8, 12].map((value) => `<option value="${value}" ${state.snapGridSize === value ? "selected" : ""}>${value}px</option>`).join("")}
+        </select>
+      </label>
+    </div>
+    ${themeUsesStateAssets() ? `
+      <div class="activity-toggle" role="group" aria-label="Activity preview">
+        <button class="${frame.activity === "idle" ? "active" : ""}" data-preview-activity="idle">Idle</button>
+        <button class="${frame.activity === "coding" ? "active" : ""}" data-preview-activity="coding">Coding</button>
+      </div>
+    ` : ""}
   `;
 }
 
@@ -954,7 +3353,7 @@ function mountKonvaPreview() {
     return;
   }
 
-  const hasAnimatedGif = renderDeviceCanvas(deviceCanvas);
+  const hasAnimated = renderDeviceCanvas(deviceCanvas);
   const stageSize = previewStageSize(container);
   const previewScale = stageSize / DISPLAY_SIZE;
   const konvaStage = new Konva.Stage({
@@ -970,7 +3369,7 @@ function mountKonvaPreview() {
 
   const nodes: EditableKonvaNode[] = [];
   state.spec.primitives.forEach((primitive, index) => {
-    const result = konvaNodeForPrimitive(primitive, index, konvaStage, previewScale);
+    const result = konvaNodeForPrimitive(primitive, index, konvaStage, previewScale, nodes, layer);
     if (!result) {
       return;
     }
@@ -978,8 +3377,9 @@ function mountKonvaPreview() {
     nodes[index] = result.node;
   });
 
-  const selected = state.spec.primitives[state.selectedIndex];
-  const selectedNode = nodes[state.selectedIndex];
+  const selectedIndices = selectedPrimitiveIndices();
+  const selected = selectedIndices.length === 1 ? state.spec.primitives[selectedIndices[0]] : null;
+  const selectedNode = selectedIndices.length === 1 ? nodes[selectedIndices[0]] : null;
   if (selected && selectedNode) {
     const transformer = new Konva.Transformer({
       nodes: [selectedNode],
@@ -1002,6 +3402,7 @@ function mountKonvaPreview() {
   }
 
   let fallbackDrag: { index: number; startX: number; startY: number; originX: number; originY: number } | null = null;
+  let marquee: { startX: number; startY: number; currentX: number; currentY: number; rect: Konva.Rect } | null = null;
 
   konvaStage.on("pointerdown", (event) => {
     if (paintSelectedPixelsAtPointer(konvaStage, previewScale)) {
@@ -1021,6 +3422,7 @@ function mountKonvaPreview() {
     const hitIndex = primitiveIndexAtPoint(pointer.x, pointer.y);
     if (hitIndex >= 0) {
       const primitive = state.spec.primitives[hitIndex];
+      pushHistory();
       fallbackDrag = {
         index: hitIndex,
         startX: pointer.x,
@@ -1028,21 +3430,50 @@ function mountKonvaPreview() {
         originX: primitive.x,
         originY: primitive.y,
       };
-      state.selectedIndex = hitIndex;
+      setSingleSelection(hitIndex);
       state.editingTextIndex = null;
       state.notice = "";
       return;
     }
-    state.selectedIndex = -1;
+    marquee = {
+      startX: pointer.x,
+      startY: pointer.y,
+      currentX: pointer.x,
+      currentY: pointer.y,
+      rect: new Konva.Rect({
+        x: pointer.x,
+        y: pointer.y,
+        width: 0,
+        height: 0,
+        fill: "rgba(199,255,104,0.12)",
+        stroke: "#c7ff68",
+        strokeWidth: 1,
+        dash: [4, 3],
+        listening: false,
+      }),
+    };
+    layer.add(marquee.rect);
     state.editingTextIndex = null;
     state.notice = "";
-    render();
+    layer.batchDraw();
   });
 
   konvaStage.on("pointermove", () => {
     if (pixelCanvasPaintActive && paintSelectedPixelsAtPointer(konvaStage, previewScale)) {
       syncJsonFromSpec();
       render();
+      return;
+    }
+    if (marquee) {
+      const pointer = logicalStagePointer(konvaStage, previewScale);
+      if (!pointer) {
+        return;
+      }
+      marquee.currentX = pointer.x;
+      marquee.currentY = pointer.y;
+      const bounds = rectFromPoints(marquee.startX, marquee.startY, marquee.currentX, marquee.currentY);
+      marquee.rect.setAttrs(bounds);
+      layer.batchDraw();
       return;
     }
     if (!fallbackDrag) {
@@ -1056,13 +3487,28 @@ function mountKonvaPreview() {
     }
     const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
     const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
-    primitive.x = clamp(Math.round(fallbackDrag.originX + pointer.x - fallbackDrag.startX), 0, maxX);
-    primitive.y = clamp(Math.round(fallbackDrag.originY + pointer.y - fallbackDrag.startY), 0, maxY);
+    const snapped = snapPrimitivePosition(fallbackDrag.index, fallbackDrag.originX + pointer.x - fallbackDrag.startX, fallbackDrag.originY + pointer.y - fallbackDrag.startY);
+    primitive.x = clamp(snapped.x, 0, maxX);
+    primitive.y = clamp(snapped.y, 0, maxY);
     node.position({ x: primitive.x, y: primitive.y });
     layer.batchDraw();
   });
 
   konvaStage.on("pointerup pointercancel", () => {
+    if (marquee) {
+      const bounds = rectFromPoints(marquee.startX, marquee.startY, marquee.currentX, marquee.currentY);
+      const moved = Math.max(bounds.width, bounds.height) > 2;
+      const indices = moved
+        ? state.spec.primitives.flatMap((primitive, index) => primitiveIntersectsRect(primitive, bounds) ? [index] : [])
+        : [];
+      marquee.rect.destroy();
+      marquee = null;
+      setSelection(indices);
+      state.editingTextIndex = null;
+      syncJsonFromSpec();
+      render();
+      return;
+    }
     if (!fallbackDrag) {
       return;
     }
@@ -1072,7 +3518,7 @@ function mountKonvaPreview() {
   });
 
   layer.draw();
-  if (hasAnimatedGif) {
+  if (hasAnimated) {
     gifRedrawAnimation = new Konva.Animation(() => {
       renderDeviceCanvas(deviceCanvas);
     }, layer);
@@ -1091,7 +3537,7 @@ function renderDeviceCanvas(canvas: HTMLCanvasElement): boolean {
   context.fillStyle = state.spec.bgColor ?? "#000000";
   context.fillRect(0, 0, DISPLAY_SIZE, DISPLAY_SIZE);
 
-  let hasAnimatedGif = false;
+  let hasAnimated = false;
   for (const primitive of state.spec.primitives) {
     if (primitive.type === "rect") {
       context.fillStyle = primitive.color ?? "#000000";
@@ -1104,36 +3550,62 @@ function renderDeviceCanvas(canvas: HTMLCanvasElement): boolean {
       const height = estimatePrimitiveHeight(primitive);
       context.drawImage(textPreviewCanvas(primitive, text, width, height), primitive.x, primitive.y);
     } else if (primitive.type === "gif") {
-      hasAnimatedGif = drawDeviceGif(context, primitive) || hasAnimatedGif;
+      hasAnimated = drawDeviceGif(context, primitive) || hasAnimated;
     } else if (primitive.type === "sprite") {
-      drawDeviceSprite(context, primitive);
+      hasAnimated = drawDeviceSprite(context, primitive) || hasAnimated;
     } else if (primitive.type === "pixels") {
       drawDevicePixels(context, primitive);
     }
   }
-  return hasAnimatedGif;
+  return hasAnimated;
 }
 
-function drawDeviceSprite(context: CanvasRenderingContext2D, primitive: Primitive) {
-  const sprite = parseCbiSprite(builtInSpriteText(primitive.assetPath));
+function drawDeviceSprite(context: CanvasRenderingContext2D, primitive: Primitive): boolean {
+  const sprite = spriteAssetFor(resolveStateAssetPath(primitive));
+  const width = primitive.width ?? sprite?.width ?? 24;
+  const height = primitive.height ?? sprite?.height ?? 14;
   if (!sprite) {
     context.fillStyle = "#141922";
-    context.fillRect(primitive.x, primitive.y, 24, 14);
-    return;
+    context.fillRect(primitive.x, primitive.y, width, height);
+    return false;
   }
-  drawCbiSprite(context, sprite, primitive.x, primitive.y);
+  if (primitive.bgColor) {
+    context.fillStyle = primitive.bgColor;
+    context.fillRect(primitive.x, primitive.y, width, height);
+  }
+  drawSpriteFrame(context, sprite, currentSpriteFrameIndex(sprite), primitive.x, primitive.y, width, height);
+  return sprite.frameCount > 1 && sprite.fps > 0;
 }
 
 function drawDeviceProgress(context: CanvasRenderingContext2D, primitive: Primitive) {
   const width = primitive.width ?? 1;
   const height = primitive.height ?? 1;
   const pct = primitive.binding === "weekly" || primitive.binding === "weeklyPercent" ? frame.weekly : frame.session;
-  const fillWidth = clamp(Math.floor((width * pct) / 100), 0, Math.max(0, width - 2));
 
   context.fillStyle = primitive.borderColor ?? "#7B7B7B";
   context.fillRect(primitive.x, primitive.y, width, height);
   context.fillStyle = primitive.bgColor ?? "#000000";
   context.fillRect(primitive.x + 1, primitive.y + 1, Math.max(0, width - 2), Math.max(0, height - 2));
+  if (primitive.progressStyle === "segments") {
+    const segments = clamp(primitive.segments ?? 10, 1, 32);
+    const gap = clamp(primitive.segmentGap ?? 1, 0, 8);
+    const innerWidth = Math.max(0, width - 2);
+    const filledSegments = Math.ceil((segments * clamp(pct, 0, 100)) / 100);
+    context.fillStyle = primitive.color ?? "#FFFFFF";
+    for (let index = 0; index < segments; index += 1) {
+      if (index >= filledSegments) {
+        continue;
+      }
+      const x1 = primitive.x + 1 + Math.floor((index * innerWidth) / segments);
+      const x2 = primitive.x + 1 + Math.floor(((index + 1) * innerWidth) / segments);
+      const segmentWidth = Math.max(0, x2 - x1 - gap);
+      if (segmentWidth > 0) {
+        context.fillRect(x1, primitive.y + 1, segmentWidth, Math.max(0, height - 2));
+      }
+    }
+    return;
+  }
+  const fillWidth = clamp(Math.floor((width * pct) / 100), 0, Math.max(0, width - 2));
   if (fillWidth > 0) {
     context.fillStyle = primitive.color ?? "#FFFFFF";
     context.fillRect(primitive.x + 1, primitive.y + 1, fillWidth, Math.max(0, height - 2));
@@ -1143,7 +3615,8 @@ function drawDeviceProgress(context: CanvasRenderingContext2D, primitive: Primit
 function drawDeviceGif(context: CanvasRenderingContext2D, primitive: Primitive): boolean {
   const width = primitive.width ?? DEFAULT_GIF_SIZE;
   const height = primitive.height ?? DEFAULT_GIF_SIZE;
-  const preview = primitive.assetPath ? gifPreviewFor(primitive.assetPath, gifPreviewGeneration) : null;
+  const assetPath = resolveStateAssetPath(primitive);
+  const preview = assetPath ? gifPreviewFor(assetPath, gifPreviewGeneration) : null;
   if (!preview) {
     context.fillStyle = "#141922";
     context.fillRect(primitive.x, primitive.y, width, height);
@@ -1247,9 +3720,97 @@ function pointInPrimitive(primitive: Primitive, x: number, y: number): boolean {
   return localX >= 0 && localX <= width && localY >= 0 && localY <= height;
 }
 
-function konvaNodeForPrimitive(primitive: Primitive, index: number, konvaStage: Konva.Stage, previewScale: number): { node: EditableKonvaNode; animated: boolean } | null {
+function rectFromPoints(startX: number, startY: number, endX: number, endY: number): { x: number; y: number; width: number; height: number } {
+  return {
+    x: Math.min(startX, endX),
+    y: Math.min(startY, endY),
+    width: Math.abs(endX - startX),
+    height: Math.abs(endY - startY),
+  };
+}
+
+function primitiveBounds(primitive: Primitive): { x: number; y: number; width: number; height: number } {
+  return {
+    x: primitive.x,
+    y: primitive.y,
+    width: estimatePrimitiveWidth(primitive),
+    height: estimatePrimitiveHeight(primitive),
+  };
+}
+
+function primitiveIntersectsRect(primitive: Primitive, rect: { x: number; y: number; width: number; height: number }): boolean {
+  const bounds = primitiveBounds(primitive);
+  return bounds.x < rect.x + rect.width &&
+    bounds.x + bounds.width > rect.x &&
+    bounds.y < rect.y + rect.height &&
+    bounds.y + bounds.height > rect.y;
+}
+
+function snapPrimitivePosition(index: number, rawX: number, rawY: number): { x: number; y: number } {
+  const primitive = state.spec.primitives[index];
+  if (!primitive) {
+    return { x: Math.round(rawX), y: Math.round(rawY) };
+  }
+  const width = estimatePrimitiveWidth(primitive);
+  const height = estimatePrimitiveHeight(primitive);
+  const maxX = Math.max(0, DISPLAY_SIZE - width);
+  const maxY = Math.max(0, DISPLAY_SIZE - height);
+  if (!state.snapEnabled) {
+    return {
+      x: clamp(Math.round(rawX), 0, maxX),
+      y: clamp(Math.round(rawY), 0, maxY),
+    };
+  }
+  return {
+    x: clamp(snapAxis(index, rawX, width, "x"), 0, maxX),
+    y: clamp(snapAxis(index, rawY, height, "y"), 0, maxY),
+  };
+}
+
+function snapDetachedPosition(rawX: number, rawY: number, width: number, height: number): { x: number; y: number } {
+  const grid = Math.max(1, state.snapGridSize || 1);
+  const x = state.snapEnabled ? Math.round(rawX / grid) * grid : Math.round(rawX);
+  const y = state.snapEnabled ? Math.round(rawY / grid) * grid : Math.round(rawY);
+  return {
+    x: clamp(x, 0, Math.max(0, DISPLAY_SIZE - width)),
+    y: clamp(y, 0, Math.max(0, DISPLAY_SIZE - height)),
+  };
+}
+
+function snapAxis(index: number, rawStart: number, size: number, axis: SnapAxis): number {
+  const grid = Math.max(1, state.snapGridSize || 1);
+  const ownPoints = [rawStart, rawStart + size / 2, rawStart + size];
+  let bestDelta: number | null = null;
+  for (const guide of snapGuidesForAxis(index, axis)) {
+    for (const point of ownPoints) {
+      const delta = guide - point;
+      if (Math.abs(delta) <= SNAP_GUIDE_THRESHOLD && (bestDelta === null || Math.abs(delta) < Math.abs(bestDelta))) {
+        bestDelta = delta;
+      }
+    }
+  }
+  if (bestDelta !== null) {
+    return Math.round(rawStart + bestDelta);
+  }
+  return Math.round(rawStart / grid) * grid;
+}
+
+function snapGuidesForAxis(skipIndex: number, axis: SnapAxis): number[] {
+  const guides = [0, DISPLAY_SIZE / 2, DISPLAY_SIZE];
+  state.spec.primitives.forEach((primitive, index) => {
+    if (index === skipIndex) {
+      return;
+    }
+    const start = axis === "x" ? primitive.x : primitive.y;
+    const size = axis === "x" ? estimatePrimitiveWidth(primitive) : estimatePrimitiveHeight(primitive);
+    guides.push(start, start + size / 2, start + size);
+  });
+  return guides;
+}
+
+function konvaNodeForPrimitive(primitive: Primitive, index: number, konvaStage: Konva.Stage, previewScale: number, nodes: EditableKonvaNode[], layer: Konva.Layer): { node: EditableKonvaNode; animated: boolean } | null {
   const node = overlayKonvaRect(primitive, index);
-  bindKonvaNodeEvents(node, index, konvaStage, previewScale);
+  bindKonvaNodeEvents(node, index, konvaStage, previewScale, nodes, layer);
   return { node, animated: false };
 }
 
@@ -1257,7 +3818,7 @@ function commonKonvaProps(primitive: Primitive, index: number) {
   return {
     x: primitive.x,
     y: primitive.y,
-    draggable: !(primitive.type === "pixels" && index === state.selectedIndex && state.pixelTool !== "move"),
+    draggable: !(primitive.type === "pixels" && isPrimitiveSelected(index) && state.pixelTool !== "move"),
     id: `primitive-${index}`,
     name: "primitive",
     primitiveIndex: index,
@@ -1265,13 +3826,14 @@ function commonKonvaProps(primitive: Primitive, index: number) {
 }
 
 function overlayKonvaRect(primitive: Primitive, index: number): Konva.Rect {
+  const selected = isPrimitiveSelected(index);
   return new Konva.Rect({
     ...commonKonvaProps(primitive, index),
     width: estimatePrimitiveWidth(primitive),
     height: estimatePrimitiveHeight(primitive),
     fill: "rgba(199,255,104,0.001)",
-    stroke: index === state.selectedIndex ? "#c7ff68" : "rgba(0,0,0,0)",
-    strokeWidth: index === state.selectedIndex ? 1 : 0,
+    stroke: selected ? "#c7ff68" : "rgba(0,0,0,0)",
+    strokeWidth: selected ? 1 : 0,
   });
 }
 
@@ -1279,7 +3841,6 @@ function progressKonvaGroup(primitive: Primitive, index: number): Konva.Group {
   const width = primitive.width ?? 1;
   const height = primitive.height ?? 1;
   const pct = primitive.binding === "weekly" || primitive.binding === "weeklyPercent" ? frame.weekly : frame.session;
-  const fillWidth = Math.max(0, Math.min(width - 2, Math.floor((width * pct) / 100)));
   const group = new Konva.Group({
     ...commonKonvaProps(primitive, index),
     width,
@@ -1294,13 +3855,26 @@ function progressKonvaGroup(primitive: Primitive, index: number): Konva.Group {
     stroke: primitive.borderColor ?? "#7B7B7B",
     strokeWidth: 1,
   }));
-  group.add(new Konva.Rect({
-    x: 1,
-    y: 1,
-    width: fillWidth,
-    height: Math.max(0, height - 2),
-    fill: primitive.color ?? "#FFFFFF",
-  }));
+  if (primitive.progressStyle === "segments") {
+    const segments = clamp(primitive.segments ?? 10, 1, 32);
+    const gap = clamp(primitive.segmentGap ?? 1, 0, 8);
+    const innerWidth = Math.max(0, width - 2);
+    const filledSegments = Math.ceil((segments * clamp(pct, 0, 100)) / 100);
+    for (let segment = 0; segment < filledSegments; segment += 1) {
+      const x1 = 1 + Math.floor((segment * innerWidth) / segments);
+      const x2 = 1 + Math.floor(((segment + 1) * innerWidth) / segments);
+      group.add(new Konva.Rect({
+        x: x1,
+        y: 1,
+        width: Math.max(0, x2 - x1 - gap),
+        height: Math.max(0, height - 2),
+        fill: primitive.color ?? "#FFFFFF",
+      }));
+    }
+    return group;
+  }
+  const fillWidth = Math.max(0, Math.min(width - 2, Math.floor((width * pct) / 100)));
+  group.add(new Konva.Rect({ x: 1, y: 1, width: fillWidth, height: Math.max(0, height - 2), fill: primitive.color ?? "#FFFFFF" }));
   return group;
 }
 
@@ -1341,7 +3915,8 @@ function gifKonvaGroup(primitive: Primitive, index: number): { node: Konva.Group
     width,
     height,
   });
-  const preview = primitive.assetPath ? gifPreviewFor(primitive.assetPath, gifPreviewGeneration) : null;
+  const assetPath = resolveStateAssetPath(primitive);
+  const preview = assetPath ? gifPreviewFor(assetPath, gifPreviewGeneration) : null;
   if (preview) {
     const rect = fitContainRect(0, 0, width, height, gifAspectRatio(primitive));
     group.add(new Konva.Rect({
@@ -1472,21 +4047,44 @@ function stopGifPreviewAnimations() {
   });
 }
 
-function bindKonvaNodeEvents(node: Konva.Node, index: number, konvaStage: Konva.Stage, previewScale: number) {
+function bindKonvaNodeEvents(node: Konva.Node, index: number, konvaStage: Konva.Stage, previewScale: number, nodes: EditableKonvaNode[], layer: Konva.Layer) {
+  let groupDrag: {
+    anchorIndex: number;
+    anchorStartX: number;
+    anchorStartY: number;
+    origins: Array<{ index: number; x: number; y: number }>;
+  } | null = null;
+
   node.on("pointerdown", (event) => {
-    if (index === state.selectedIndex && paintPixelsAtPointer(index, konvaStage, previewScale)) {
+    if (isPrimitiveSelected(index) && paintPixelsAtPointer(index, konvaStage, previewScale)) {
       pixelCanvasPaintActive = true;
       event.cancelBubble = true;
       syncJsonFromSpec();
       render();
       return;
     }
-    state.selectedIndex = index;
+    if (event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey) {
+      const selected = new Set(selectedPrimitiveIndices());
+      if (selected.has(index)) {
+        selected.delete(index);
+      } else {
+        selected.add(index);
+      }
+      setSelection(Array.from(selected));
+    } else if (!isPrimitiveSelected(index)) {
+      setSingleSelection(index);
+    } else {
+      state.selectedIndex = index;
+    }
     state.editingTextIndex = null;
     state.notice = "";
   });
   node.on("click tap", () => {
-    state.selectedIndex = index;
+    if (!isPrimitiveSelected(index)) {
+      setSingleSelection(index);
+    } else {
+      state.selectedIndex = index;
+    }
     state.editingTextIndex = null;
     state.notice = "";
     render();
@@ -1494,13 +4092,68 @@ function bindKonvaNodeEvents(node: Konva.Node, index: number, konvaStage: Konva.
   node.on("dblclick dbltap", () => {
     const primitive = state.spec.primitives[index];
     if (primitive?.type === "text") {
-      state.selectedIndex = index;
+      setSingleSelection(index);
       state.editingTextIndex = index;
       state.notice = "";
       render();
     }
   });
+  node.on("dragstart", () => {
+    const indices = selectedPrimitiveIndices();
+    if (indices.length <= 1 || !indices.includes(index)) {
+      groupDrag = null;
+      return;
+    }
+    pushHistory();
+    const anchor = state.spec.primitives[index];
+    groupDrag = {
+      anchorIndex: index,
+      anchorStartX: anchor?.x ?? node.x(),
+      anchorStartY: anchor?.y ?? node.y(),
+      origins: indices.flatMap((selectedIndex) => {
+        const primitive = state.spec.primitives[selectedIndex];
+        return primitive ? [{ index: selectedIndex, x: primitive.x, y: primitive.y }] : [];
+      }),
+    };
+  });
+  node.on("dragmove", () => {
+    if (groupDrag) {
+      const anchorOrigin = groupDrag.origins.find((origin) => origin.index === groupDrag?.anchorIndex);
+      if (!anchorOrigin) {
+        return;
+      }
+      const snapped = snapPrimitivePosition(index, anchorOrigin.x + node.x() - groupDrag.anchorStartX, anchorOrigin.y + node.y() - groupDrag.anchorStartY);
+      const deltaX = snapped.x - anchorOrigin.x;
+      const deltaY = snapped.y - anchorOrigin.y;
+      groupDrag.origins.forEach((origin) => {
+        const primitive = state.spec.primitives[origin.index];
+        const selectedNode = nodes[origin.index];
+        if (!primitive || !selectedNode) {
+          return;
+        }
+        const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
+        const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
+        primitive.x = clamp(origin.x + deltaX, 0, maxX);
+        primitive.y = clamp(origin.y + deltaY, 0, maxY);
+        selectedNode.position({ x: primitive.x, y: primitive.y });
+      });
+      layer.batchDraw();
+      return;
+    }
+    if (!state.snapEnabled) {
+      return;
+    }
+    const snapped = snapPrimitivePosition(index, node.x(), node.y());
+    node.position(snapped);
+  });
   node.on("dragend", () => {
+    if (groupDrag) {
+      groupDrag = null;
+      state.editingTextIndex = null;
+      syncJsonFromSpec();
+      render();
+      return;
+    }
     commitKonvaTransform(node, index);
   });
   node.on("transformend", () => {
@@ -1513,6 +4166,7 @@ function commitKonvaTransform(node: Konva.Node, index: number) {
   if (!primitive) {
     return;
   }
+  pushHistory();
 
   const scaleX = node.scaleX();
   const scaleY = node.scaleY();
@@ -1521,8 +4175,9 @@ function commitKonvaTransform(node: Konva.Node, index: number) {
   const nextWidth = Math.max(1, Math.round(baseWidth * Math.abs(scaleX || 1)));
   const nextHeight = Math.max(1, Math.round(baseHeight * Math.abs(scaleY || 1)));
 
-  primitive.x = clamp(Math.round(node.x()), 0, DISPLAY_SIZE - 1);
-  primitive.y = clamp(Math.round(node.y()), 0, DISPLAY_SIZE - 1);
+  const snapped = snapPrimitivePosition(index, node.x(), node.y());
+  primitive.x = clamp(snapped.x, 0, DISPLAY_SIZE - 1);
+  primitive.y = clamp(snapped.y, 0, DISPLAY_SIZE - 1);
 
   if (primitive.type === "text") {
     const nextSize = Math.max(Math.abs(scaleX || 1), Math.abs(scaleY || 1));
@@ -1540,7 +4195,7 @@ function commitKonvaTransform(node: Konva.Node, index: number) {
   }
 
   node.scale({ x: 1, y: 1 });
-  state.selectedIndex = index;
+  setSingleSelection(index);
   state.editingTextIndex = null;
   syncJsonFromSpec();
   render();
@@ -1578,7 +4233,8 @@ function renderPrimitive(primitive: Primitive, index: number): string {
   if (primitive.type === "gif") {
     const width = primitive.width ?? 64;
     const height = primitive.height ?? 64;
-    const previewUrl = primitive.assetPath ? state.gifAssets[primitive.assetPath]?.previewUrl ?? builtInGifPreviewUrl(primitive.assetPath) : undefined;
+    const assetPath = resolveStateAssetPath(primitive);
+    const previewUrl = assetPath ? state.gifAssets[assetPath]?.previewUrl ?? builtInGifPreviewUrl(assetPath) : undefined;
     const placeholder = `
       <rect x="${primitive.x}" y="${primitive.y}" width="${width}" height="${height}" fill="#141922" stroke="#c7ff68" stroke-width="1" stroke-dasharray="4 3"></rect>
       <text x="${primitive.x + width / 2}" y="${primitive.y + height / 2 + 4}" text-anchor="middle" font-size="12" fill="#c7ff68" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-weight="800">GIF</text>
@@ -1592,17 +4248,22 @@ function renderPrimitive(primitive: Primitive, index: number): string {
     `;
   }
   if (primitive.type === "sprite") {
-    const sprite = parseCbiSprite(builtInSpriteText(primitive.assetPath));
-    const width = sprite?.width ?? 24;
-    const height = sprite?.height ?? 14;
-    const pixels = sprite ? sprite.rows.map((row, rowIndex) => {
+    const sprite = spriteAssetFor(resolveStateAssetPath(primitive));
+    const width = primitive.width ?? sprite?.width ?? 24;
+    const height = primitive.height ?? sprite?.height ?? 14;
+    const frame = sprite?.frames[currentSpriteFrameIndex(sprite)];
+    const pixels = sprite && frame ? frame.map((row, rowIndex) => {
       const rects: string[] = [];
       parseRleRow(row, sprite.width, (col, count, token) => {
         if (token === ".") {
           return;
         }
         const color = sprite.palette[token.charCodeAt(0) - 97] ?? "#FFFFFF";
-        rects.push(`<rect x="${primitive.x + col}" y="${primitive.y + rowIndex}" width="${count}" height="1" fill="${escapeAttr(color)}"></rect>`);
+        const x1 = primitive.x + Math.floor((col * width) / sprite.width);
+        const x2 = primitive.x + Math.ceil(((col + count) * width) / sprite.width);
+        const y1 = primitive.y + Math.floor((rowIndex * height) / sprite.height);
+        const y2 = primitive.y + Math.ceil(((rowIndex + 1) * height) / sprite.height);
+        rects.push(`<rect x="${x1}" y="${y1}" width="${Math.max(1, x2 - x1)}" height="${Math.max(1, y2 - y1)}" fill="${escapeAttr(color)}"></rect>`);
       });
       return rects.join("");
     }).join("") : `
@@ -1750,17 +4411,17 @@ function estimatePrimitiveWidth(primitive: Primitive): number {
     return Math.max(1, firmwareTextWidth(text, primitive.font, primitive.fontSize));
   }
   if (primitive.type === "sprite") {
-    return builtInSpriteDimensions(primitive.assetPath).width;
+    return primitive.width ?? spriteDimensions(resolveStateAssetPath(primitive)).width;
   }
   return primitive.width ?? 1;
 }
 
 function estimatePrimitiveHeight(primitive: Primitive): number {
   if (primitive.type === "text") {
-    return Math.max(8, textPixelSize(primitive));
+    return Math.max(8, firmwareFontHeight(primitive.font, primitive.fontSize));
   }
   if (primitive.type === "sprite") {
-    return builtInSpriteDimensions(primitive.assetPath).height;
+    return primitive.height ?? spriteDimensions(resolveStateAssetPath(primitive)).height;
   }
   return primitive.height ?? 1;
 }
@@ -1773,24 +4434,41 @@ function firmwareFontHeight(fontValue: number | undefined, fontSizeValue: number
   const size = Math.max(1, fontSizeValue ?? 1);
   const font = fontValue ?? 1;
   if (font === 2) {
-    return size * 16;
+    return size * TFT_FONT2_HEIGHT;
   }
   if (font === 4) {
-    return size * 26;
+    return size * TFT_FONT4_HEIGHT;
   }
   return size * GLCD_FONT_HEIGHT;
 }
 
 function firmwareTextWidth(text: string, fontValue: number | undefined, fontSizeValue: number | undefined): number {
+  return firmwareTextWidthAtSize(text, fontValue, fontSizeValue);
+}
+
+function firmwareTextWidthAtSize(text: string, fontValue: number | undefined, fontSizeValue: number | undefined): number {
   const size = Math.max(1, fontSizeValue ?? 1);
   const font = fontValue ?? 1;
   if (font === 2) {
-    return text.length * 8 * size;
+    return textWidthFromTable(text, TFT_FONT2_WIDTHS) * size;
   }
   if (font === 4) {
-    return text.length * 15 * size;
+    return textWidthFromTable(text, TFT_FONT4_WIDTHS) * size;
   }
   return text.length * GLCD_FONT_ADVANCE * size;
+}
+
+function textWidthFromTable(text: string, widths: readonly number[]): number {
+  let width = 0;
+  for (const char of text) {
+    const code = char.charCodeAt(0);
+    if (code >= TFT_FONT_FIRST_CHAR && code <= TFT_FONT_LAST_CHAR) {
+      width += widths[code - TFT_FONT_FIRST_CHAR] ?? widths[0] ?? 0;
+    } else {
+      width += widths[0] ?? 0;
+    }
+  }
+  return width;
 }
 
 function textPreviewCanvas(
@@ -1815,17 +4493,18 @@ function textPreviewCanvas(
   }
   context.fillStyle = primitive.color ?? "#FFFFFF";
   const size = Math.max(1, primitive.fontSize ?? 1);
+  const textX = 0;
   const font = primitive.font ?? 1;
-  if (font !== 1) {
-    const px = firmwareFontHeight(font, size);
-    context.imageSmoothingEnabled = true;
-    context.font = `700 ${px}px Arial, sans-serif`;
-    context.textBaseline = "top";
-    context.fillText(text, 0, 0);
+  if (font === 2) {
+    drawTftFont2Text(context, text, size, textX);
+    return canvas;
+  }
+  if (font === 4) {
+    drawTftFont4Text(context, text, size, textX);
     return canvas;
   }
   for (let charIndex = 0; charIndex < text.length; charIndex += 1) {
-    const charX = charIndex * GLCD_FONT_ADVANCE * size;
+    const charX = textX + charIndex * GLCD_FONT_ADVANCE * size;
     const code = text.charCodeAt(charIndex);
     for (let column = 0; column < GLCD_FONT_ADVANCE; column += 1) {
       let bits = column < GLCD_FONT_COLUMNS ? glcdGlyphColumn(code, column) : 0;
@@ -1838,6 +4517,66 @@ function textPreviewCanvas(
     }
   }
   return canvas;
+}
+
+function drawTftFont2Text(context: CanvasRenderingContext2D, text: string, size: number, x = 0) {
+  let cursorX = x;
+  for (const char of text) {
+    const code = normalizeTftFontCode(char.charCodeAt(0));
+    const width = TFT_FONT2_WIDTHS[code - TFT_FONT_FIRST_CHAR] ?? TFT_FONT2_WIDTHS[0];
+    const glyph = TFT_FONT2_GLYPHS[code - TFT_FONT_FIRST_CHAR] ?? TFT_FONT2_GLYPHS[0];
+    const bytesPerRow = Math.floor((width + 6) / 8);
+    for (let row = 0; row < TFT_FONT2_HEIGHT; row += 1) {
+      for (let byteIndex = 0; byteIndex < bytesPerRow; byteIndex += 1) {
+        const line = glyph[row * bytesPerRow + byteIndex] ?? 0;
+        for (let bit = 0; bit < 8; bit += 1) {
+          const col = byteIndex * 8 + bit;
+          if (col >= width) {
+            break;
+          }
+          if ((line & (0x80 >> bit)) !== 0) {
+            context.fillRect(cursorX + col * size, row * size, size, size);
+          }
+        }
+      }
+    }
+    cursorX += width * size;
+  }
+}
+
+function drawTftFont4Text(context: CanvasRenderingContext2D, text: string, size: number, x = 0) {
+  let cursorX = x;
+  for (const char of text) {
+    const code = normalizeTftFontCode(char.charCodeAt(0));
+    const width = TFT_FONT4_WIDTHS[code - TFT_FONT_FIRST_CHAR] ?? TFT_FONT4_WIDTHS[0];
+    const glyph = TFT_FONT4_RLE_GLYPHS[code - TFT_FONT_FIRST_CHAR] ?? TFT_FONT4_RLE_GLYPHS[0];
+    let pixel = 0;
+    const totalPixels = width * TFT_FONT4_HEIGHT;
+    for (const rawRun of glyph) {
+      const paint = (rawRun & 0x80) !== 0;
+      const runLength = (rawRun & 0x7F) + 1;
+      if (paint) {
+        for (let offset = 0; offset < runLength && pixel + offset < totalPixels; offset += 1) {
+          const nextPixel = pixel + offset;
+          const x = nextPixel % width;
+          const y = Math.floor(nextPixel / width);
+          context.fillRect(cursorX + x * size, y * size, size, size);
+        }
+      }
+      pixel += runLength;
+      if (pixel >= totalPixels) {
+        break;
+      }
+    }
+    cursorX += width * size;
+  }
+}
+
+function normalizeTftFontCode(code: number): number {
+  if (code >= TFT_FONT_FIRST_CHAR && code <= TFT_FONT_LAST_CHAR) {
+    return code;
+  }
+  return TFT_FONT_FIRST_CHAR;
 }
 
 function glcdGlyphColumn(code: number, column: number): number {
@@ -1943,6 +4682,7 @@ function paintSelectedPixelCell(index: number) {
   if (!primitive || primitive.type !== "pixels") {
     return;
   }
+  pushHistory();
   if (!setRlePixelToken(primitive, index)) {
     return;
   }
@@ -1971,6 +4711,7 @@ function paintPixelsAtPointer(index: number, konvaStage: Konva.Stage, previewSca
   }
   const col = Math.floor(pointer.x - primitive.x);
   const row = Math.floor(pointer.y - primitive.y);
+  pushHistory();
   setRlePixelToken(primitive, row * (primitive.width ?? 0) + col);
   return true;
 }
@@ -2134,6 +4875,7 @@ function bindingValue(key: string): string {
     reset: frame.reset,
     resetCountdown: frame.reset,
     usageMode: frame.usageMode,
+    activity: frame.activity,
     time: frame.time,
     date: frame.date,
     sessionTokens: String(frame.sessionTokens),
@@ -2160,47 +4902,326 @@ function builtInGifPreviewUrl(assetPath: string): string | undefined {
   return undefined;
 }
 
-interface CbiSprite {
-  width: number;
-  height: number;
-  palette: string[];
-  rows: string[];
-}
-
 function builtInSpriteText(assetPath: string | undefined): string | undefined {
-  return assetPath === DEFAULT_CLOUD_SPRITE_PATH ? DEFAULT_CLOUD_SPRITE : undefined;
+  if (assetPath === DEFAULT_CLOUD_SPRITE_PATH) {
+    return DEFAULT_CLOUD_SPRITE;
+  }
+  if (assetPath === COZY_BACKGROUND_SPRITE_PATH) {
+    return cozyBackgroundSpriteText();
+  }
+  if (assetPath === COZY_SUN_SPRITE_PATH) {
+    return COZY_SUN_SPRITE;
+  }
+  if (assetPath === COZY_TREE_SPRITE_PATH) {
+    return COZY_TREE_SPRITE;
+  }
+  if (assetPath === COZY_FLOWERS_SPRITE_PATH) {
+    return COZY_FLOWERS_SPRITE;
+  }
+  if (assetPath === COZY_BIRDS_SPRITE_PATH) {
+    return COZY_BIRDS_SPRITE;
+  }
+  if (assetPath === COZY_BUTTERFLY_SPRITE_PATH) {
+    return COZY_BUTTERFLY_SPRITE;
+  }
+  if (assetPath === CLAUDE_IDLE_SPRITE_PATH) {
+    return CLAUDE_IDLE_SPRITE;
+  }
+  if (assetPath === CLAUDE_CODING_SPRITE_PATH) {
+    return CLAUDE_CODING_SPRITE;
+  }
+  if (assetPath === CLIPPY_BACKGROUND_SPRITE_PATH) {
+    return clippyBackgroundSpriteText();
+  }
+  if (assetPath === CLIPPY_IDLE_SPRITE_PATH) {
+    return CLIPPY_IDLE_SPRITE;
+  }
+  if (assetPath === CLIPPY_CODING_SPRITE_PATH) {
+    return CLIPPY_CODING_SPRITE;
+  }
+  if (assetPath === SYNTHWAVE_TOP_SPRITE_PATH) {
+    return synthwaveTopSpriteText();
+  }
+  if (assetPath === SYNTHWAVE_UI_SPRITE_PATH) {
+    return synthwaveUiSpriteText();
+  }
+  return undefined;
 }
 
-function builtInSpriteDimensions(assetPath: string | undefined): { width: number; height: number } {
-  const sprite = parseCbiSprite(builtInSpriteText(assetPath));
+function synthwaveTopSpriteText(): string {
+  if (synthwaveTopSpriteCache) {
+    return synthwaveTopSpriteCache;
+  }
+
+  const width = DISPLAY_SIZE;
+  const height = 128;
+  const rows = Array.from({ length: height }, () => Array.from({ length: width }, () => "."));
+  const setPixel = (x: number, y: number, token: string) => {
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+      rows[y][x] = token;
+    }
+  };
+  const fillRect = (x: number, y: number, w: number, h: number, token: string) => {
+    for (let yy = y; yy < y + h; yy += 1) {
+      for (let xx = x; xx < x + w; xx += 1) {
+        setPixel(xx, yy, token);
+      }
+    }
+  };
+  const drawLine = (x0: number, y0: number, x1: number, y1: number, token: string) => {
+    const dx = Math.abs(x1 - x0);
+    const sx = x0 < x1 ? 1 : -1;
+    const dy = -Math.abs(y1 - y0);
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    for (;;) {
+      setPixel(x0, y0, token);
+      if (x0 === x1 && y0 === y1) {
+        break;
+      }
+      const twice = err * 2;
+      if (twice >= dy) {
+        err += dy;
+        x0 += sx;
+      }
+      if (twice <= dx) {
+        err += dx;
+        y0 += sy;
+      }
+    }
+  };
+
+  const centerX = 120;
+  const centerY = 98;
+  const radius = 30;
+  for (let y = centerY - radius; y <= centerY; y += 1) {
+    for (let x = centerX - radius; x <= centerX + radius; x += 1) {
+      const dx = x - centerX;
+      const dy = y - centerY;
+      if ((dx * dx) + (dy * dy) <= radius * radius) {
+        setPixel(x, y, y < 83 ? "e" : y < 92 ? "d" : "c");
+      }
+    }
+  }
+  for (const y of [82, 89, 96, 102]) {
+    fillRect(82, y, 76, 3, ".");
+    fillRect(84, y + 2, 72, 1, "c");
+  }
+
+  for (const [x, y] of [[28, 38], [52, 54], [207, 34], [214, 72], [189, 93], [36, 93]]) {
+    fillRect(x, y, 2, 2, "d");
+  }
+  for (const [x, y] of [[24, 61], [208, 91]]) {
+    fillRect(x, y, 5, 2, "g");
+    fillRect(x + 1, y - 2, 2, 6, "g");
+  }
+
+  fillRect(6, 107, 228, 2, "j");
+  fillRect(18, 115, 204, 1, "b");
+  fillRect(0, 126, 240, 1, "a");
+  for (const x of [72, 104, 120, 136, 168]) {
+    drawLine(120, 108, x, 127, "j");
+  }
+  for (const x of [16, 53, 86, 154, 187, 224]) {
+    drawLine(x, 116, x - 30, 127, "a");
+  }
+
+  synthwaveTopSpriteCache = [
+    "CBI1",
+    `${width} ${height}`,
+    "10",
+    "#9E35FF",
+    "#2B0A62",
+    "#FF4FA3",
+    "#FF76B7",
+    "#FF7A5C",
+    "#35C9FF",
+    "#12052D",
+    "#FF6AB5",
+    "#4D8CFF",
+    "#5611A3",
+    ...rows.map(encodeRleTokenRow),
+  ].join("\n");
+  return synthwaveTopSpriteCache;
+}
+
+function synthwaveUiSpriteText(): string {
+  if (synthwaveUiSpriteCache) {
+    return synthwaveUiSpriteCache;
+  }
+
+  const width = DISPLAY_SIZE;
+  const height = 95;
+  const rows = Array.from({ length: height }, () => Array.from({ length: width }, () => "."));
+  const setPixel = (x: number, y: number, token: string) => {
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+      rows[y][x] = token;
+    }
+  };
+  const fillRect = (x: number, y: number, w: number, h: number, token: string) => {
+    for (let yy = y; yy < y + h; yy += 1) {
+      for (let xx = x; xx < x + w; xx += 1) {
+        setPixel(xx, yy, token);
+      }
+    }
+  };
+
+  fillRect(14, 55, 212, 2, "b");
+  fillRect(18, 28, 153, 20, "b");
+  fillRect(18, 83, 153, 12, "i");
+  drawSpriteText(rows, "SESSION", 18, 7, "a", 2, 1);
+  drawSpriteText(rows, "REMAIN", 182, 49, "a", 1, 1);
+  drawSpriteText(rows, "WEEKLY", 18, 62, "h", 2, 1);
+  drawSpriteText(rows, "REMAIN", 182, 86, "h", 1, 1);
+
+  synthwaveUiSpriteCache = [
+    "CBI1",
+    `${width} ${height}`,
+    "9",
+    "#9E35FF",
+    "#5611A3",
+    "#1D073B",
+    "#FF4FA3",
+    "#101145",
+    "#4D8CFF",
+    "#A245FF",
+    "#35C9FF",
+    "#050014",
+    ...rows.map(encodeRleTokenRow),
+  ].join("\n");
+  return synthwaveUiSpriteCache;
+}
+
+function drawSpriteText(rows: string[][], text: string, x: number, y: number, token: string, font = 1, size = 1) {
+  const width = firmwareTextWidthAtSize(text, font, size);
+  const height = firmwareFontHeight(font, size);
+  const canvas = textPreviewCanvas({ type: "text", x: 0, y: 0, text, font, fontSize: size, color: "#FFFFFF" }, text, width, height);
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let yy = 0; yy < canvas.height; yy += 1) {
+    for (let xx = 0; xx < canvas.width; xx += 1) {
+      const alpha = image.data[((yy * canvas.width + xx) * 4) + 3] ?? 0;
+      const targetY = y + yy;
+      const targetX = x + xx;
+      if (alpha > 0 && rows[targetY]?.[targetX] !== undefined) {
+        rows[targetY][targetX] = token;
+      }
+    }
+  }
+}
+
+
+function stateAssetPathsForPrimitive(primitive: Primitive): string[] {
+  const paths = new Set<string>();
+  if (primitive.assetPath) {
+    paths.add(primitive.assetPath);
+  }
+  for (const assetPath of Object.values(primitive.stateAssets ?? {})) {
+    if (assetPath) {
+      paths.add(assetPath);
+    }
+  }
+  return Array.from(paths);
+}
+
+function resolveStateAssetPath(primitive: Primitive, activity: string = frame.activity): string | undefined {
+  const stateAssets = primitive.stateAssets;
+  if (stateAssets) {
+    return stateAssets[activity] ?? stateAssets.idle ?? primitive.assetPath;
+  }
+  return primitive.assetPath;
+}
+
+function spriteAssetFor(assetPath: string | undefined): SpriteAsset | null {
+  if (!assetPath) {
+    return null;
+  }
+  return state.spriteAssets[assetPath]?.sprite ?? parseSpriteAsset(builtInSpriteText(assetPath));
+}
+
+function spriteDimensions(assetPath: string | undefined): { width: number; height: number } {
+  const sprite = spriteAssetFor(assetPath);
   return sprite ? { width: sprite.width, height: sprite.height } : { width: 24, height: 14 };
 }
 
-function parseCbiSprite(raw: string | undefined): CbiSprite | null {
+function parseSpriteAsset(raw: string | undefined): SpriteAsset | null {
   if (!raw) {
     return null;
   }
   const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (lines[0] !== "CBI1") {
+  if (lines[0] === "CBI1") {
+    const [widthRaw, heightRaw] = (lines[1] ?? "").split(/\s+/);
+    const width = Number(widthRaw);
+    const height = Number(heightRaw);
+    const paletteSize = Number(lines[2]);
+    if (!validSpriteHeader(width, height, 1, 0, paletteSize)) {
+      return null;
+    }
+    const palette = lines.slice(3, 3 + paletteSize);
+    const rows = lines.slice(3 + paletteSize, 3 + paletteSize + height);
+    if (palette.length !== paletteSize || rows.length !== height || !spriteRowsValid(rows, width, paletteSize)) {
+      return null;
+    }
+    return { width, height, frameCount: 1, fps: 0, palette, frames: [rows] };
+  }
+  if (lines[0] !== "CBA1") {
     return null;
   }
-  const [widthRaw, heightRaw] = (lines[1] ?? "").split(/\s+/);
+  const [widthRaw, heightRaw, frameCountRaw, fpsRaw] = (lines[1] ?? "").split(/\s+/);
   const width = Number(widthRaw);
   const height = Number(heightRaw);
+  const frameCount = Number(frameCountRaw);
+  const fps = Number(fpsRaw);
   const paletteSize = Number(lines[2]);
-  if (!Number.isInteger(width) || !Number.isInteger(height) || !Number.isInteger(paletteSize) || width <= 0 || height <= 0 || paletteSize <= 0) {
+  if (!validSpriteHeader(width, height, frameCount, fps, paletteSize)) {
     return null;
   }
   const palette = lines.slice(3, 3 + paletteSize);
-  const rows = lines.slice(3 + paletteSize, 3 + paletteSize + height);
-  if (palette.length !== paletteSize || rows.length !== height) {
+  const rowStart = 3 + paletteSize;
+  const frameRows = lines.slice(rowStart, rowStart + frameCount * height);
+  if (palette.length !== paletteSize || frameRows.length !== frameCount * height || !spriteRowsValid(frameRows, width, paletteSize)) {
     return null;
   }
-  return { width, height, palette, rows };
+  const frames: string[][] = [];
+  for (let index = 0; index < frameCount; index += 1) {
+    frames.push(frameRows.slice(index * height, (index + 1) * height));
+  }
+  return { width, height, frameCount, fps, palette, frames };
 }
 
-function drawCbiSprite(context: CanvasRenderingContext2D, sprite: CbiSprite, x: number, y: number) {
-  sprite.rows.forEach((row, rowIndex) => {
+function spriteRowsValid(rows: string[], width: number, paletteSize: number): boolean {
+  return rows.every((row) => {
+    const result = parseRleRow(row, width);
+    return result.ok && result.maxPaletteIndex < paletteSize;
+  });
+}
+
+function validSpriteHeader(width: number, height: number, frameCount: number, fps: number, paletteSize: number): boolean {
+  return Number.isInteger(width) &&
+    Number.isInteger(height) &&
+    Number.isInteger(frameCount) &&
+    Number.isInteger(fps) &&
+    Number.isInteger(paletteSize) &&
+    width > 0 &&
+    height > 0 &&
+    frameCount > 0 &&
+    paletteSize > 0 &&
+    paletteSize <= 26;
+}
+
+function currentSpriteFrameIndex(sprite: SpriteAsset): number {
+  if (sprite.frameCount <= 1 || sprite.fps <= 0) {
+    return 0;
+  }
+  return Math.floor((Date.now() / 1000) * sprite.fps) % sprite.frameCount;
+}
+
+function drawSpriteFrame(context: CanvasRenderingContext2D, sprite: SpriteAsset, frameIndex: number, x: number, y: number, targetWidth = sprite.width, targetHeight = sprite.height) {
+  const rows = sprite.frames[frameIndex] ?? sprite.frames[0] ?? [];
+  rows.forEach((row, rowIndex) => {
     parseRleRow(row, sprite.width, (col, count, token) => {
       if (token === ".") {
         return;
@@ -2209,10 +5230,163 @@ function drawCbiSprite(context: CanvasRenderingContext2D, sprite: CbiSprite, x: 
       if (!color) {
         return;
       }
+      const x1 = x + Math.floor((col * targetWidth) / sprite.width);
+      const x2 = x + Math.ceil(((col + count) * targetWidth) / sprite.width);
+      const y1 = y + Math.floor((rowIndex * targetHeight) / sprite.height);
+      const y2 = y + Math.ceil(((rowIndex + 1) * targetHeight) / sprite.height);
       context.fillStyle = color;
-      context.fillRect(x + col, y + rowIndex, count, 1);
+      context.fillRect(x1, y1, Math.max(1, x2 - x1), Math.max(1, y2 - y1));
     });
   });
+}
+
+function inferredSpriteColumns(primitive: Primitive): number {
+  const assetPath = resolveStateAssetPath(primitive);
+  const source = assetPath ? state.spriteAssets[assetPath]?.source : undefined;
+  const width = primitive.width ?? estimatePrimitiveWidth(primitive);
+  if (!source || width <= 0) {
+    return Math.max(1, primitive.sheetColumns ?? primitive.frameCount ?? 1);
+  }
+  return Math.max(1, Math.floor(source.sheetWidth / width));
+}
+
+function encodeSpriteAsset(sprite: SpriteAsset): string {
+  if (sprite.frameCount <= 1) {
+    return [
+      "CBI1",
+      `${sprite.width} ${sprite.height}`,
+      String(sprite.palette.length),
+      ...sprite.palette,
+      ...(sprite.frames[0] ?? []),
+      "",
+    ].join("\n");
+  }
+  return [
+    "CBA1",
+    `${sprite.width} ${sprite.height} ${sprite.frameCount} ${sprite.fps}`,
+    String(sprite.palette.length),
+    ...sprite.palette,
+    ...sprite.frames.flat(),
+    "",
+  ].join("\n");
+}
+
+function rebuildSpriteAssetForPrimitive(primitive: Primitive) {
+  if (primitive.type !== "sprite" || !primitive.assetPath) {
+    return;
+  }
+  const entry = state.spriteAssets[primitive.assetPath];
+  if (!entry?.source) {
+    return;
+  }
+  const sprite = spriteFromSource(entry.source, primitive);
+  const rawText = encodeSpriteAsset(sprite);
+  entry.rawText = rawText;
+  entry.sprite = sprite;
+  entry.file = builtInAssetFile(primitive.assetPath, rawText, "text/plain", "sprite.cba");
+}
+
+function spriteFromSource(source: SpriteSource, primitive: Primitive): SpriteAsset {
+  const width = clamp(Math.round(source.frameWidth), 1, Math.min(MAX_SPRITE_FRAME_WIDTH, source.sheetWidth));
+  const height = clamp(Math.round(source.frameHeight), 1, Math.min(MAX_SPRITE_FRAME_HEIGHT, source.sheetHeight));
+  const columns = clamp(Math.round(primitive.sheetColumns ?? Math.max(1, Math.floor(source.sheetWidth / width))), 1, MAX_SPRITE_FRAMES);
+  const rows = Math.max(1, Math.floor(source.sheetHeight / height));
+  const availableFrames = Math.max(1, Math.min(MAX_SPRITE_FRAMES, columns * rows));
+  const requestedFrames = clamp(Math.round(primitive.frameCount ?? availableFrames), 1, availableFrames);
+  const maxByTotalPixels = Math.max(1, Math.floor(MAX_SPRITE_TOTAL_PIXELS / Math.max(1, width * height)));
+  const frameCount = Math.min(requestedFrames, maxByTotalPixels);
+  const fps = clamp(Math.round(primitive.fps ?? DEFAULT_SPRITE_FPS), 0, 30);
+  primitive.sheetColumns = columns;
+  primitive.fps = fps;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    return { width, height, frameCount: 1, fps: 0, palette: ["#FFFFFF"], frames: [Array.from({ length: height }, () => `${width}.`)] };
+  }
+
+  const rawFrames: Array<Array<string | null>> = [];
+  const colorCounts = new Map<string, number>();
+  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+    const sx = (frameIndex % columns) * width;
+    const sy = Math.floor(frameIndex / columns) * height;
+    context.clearRect(0, 0, width, height);
+    context.drawImage(source.bitmap, sx, sy, width, height, 0, 0, width, height);
+    const image = context.getImageData(0, 0, width, height).data;
+    const pixels: Array<string | null> = [];
+    for (let offset = 0; offset < image.length; offset += 4) {
+      const alpha = image[offset + 3];
+      if (alpha < 128) {
+        pixels.push(null);
+        continue;
+      }
+      const color = quantizedHexColor(image[offset], image[offset + 1], image[offset + 2]);
+      colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
+      pixels.push(color);
+    }
+    rawFrames.push(pixels);
+  }
+
+  const nonEmptyFrames = rawFrames.filter((pixels) => pixels.some((color) => color !== null));
+  const framesToEncode = nonEmptyFrames.length > 0 ? nonEmptyFrames : rawFrames.slice(0, 1);
+  primitive.frameCount = framesToEncode.length;
+
+  const palette = Array.from(colorCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 26)
+    .map(([color]) => color);
+  if (palette.length === 0) {
+    palette.push("#FFFFFF");
+  }
+  const frames = framesToEncode.map((pixels) => {
+    const rows: string[] = [];
+    for (let row = 0; row < height; row += 1) {
+      const tokens: string[] = [];
+      for (let col = 0; col < width; col += 1) {
+        const color = pixels[row * width + col];
+        tokens.push(color ? paletteTokenForColor(color, palette) : ".");
+      }
+      rows.push(encodeRleTokenRow(tokens));
+    }
+    return rows;
+  });
+  return { width, height, frameCount: frames.length, fps, palette, frames };
+}
+
+function quantizedHexColor(r: number, g: number, b: number): string {
+  const q = (value: number) => clamp(Math.round(value / 17) * 17, 0, 255);
+  return `#${[q(r), q(g), q(b)].map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+function paletteTokenForColor(color: string, palette: string[]): string {
+  const exact = palette.indexOf(color);
+  const index = exact >= 0 ? exact : nearestPaletteIndex(color, palette);
+  return String.fromCharCode(97 + clamp(index, 0, palette.length - 1));
+}
+
+function nearestPaletteIndex(color: string, palette: string[]): number {
+  const [r, g, b] = rgbFromHex(color);
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  palette.forEach((candidate, index) => {
+    const [cr, cg, cb] = rgbFromHex(candidate);
+    const distance = ((r - cr) ** 2) + ((g - cg) ** 2) + ((b - cb) ** 2);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+function rgbFromHex(color: string): [number, number, number] {
+  return [
+    Number.parseInt(color.slice(1, 3), 16),
+    Number.parseInt(color.slice(3, 5), 16),
+    Number.parseInt(color.slice(5, 7), 16),
+  ];
 }
 
 function messageList(): string {
@@ -2229,17 +5403,36 @@ function messageList(): string {
 function bindEvents() {
   app.querySelectorAll<HTMLElement>("[data-select]").forEach((button) => {
     button.addEventListener("click", () => {
-      state.selectedIndex = Number(button.dataset.select);
+      setSingleSelection(Number(button.dataset.select));
       state.editingTextIndex = null;
       state.notice = "";
       render();
     });
   });
 
+  app.querySelectorAll<HTMLButtonElement>("[data-preview-activity]").forEach((button) => {
+    button.addEventListener("click", () => {
+      frame.activity = button.dataset.previewActivity ?? "idle";
+      render();
+    });
+  });
+
+  app.querySelector<HTMLButtonElement>("[data-snap-toggle]")?.addEventListener("click", () => {
+    state.snapEnabled = !state.snapEnabled;
+    render();
+  });
+
+  app.querySelector<HTMLSelectElement>("[data-snap-grid]")?.addEventListener("change", (event) => {
+    state.snapGridSize = clamp(toInt((event.target as HTMLSelectElement).value, 4), 1, 24);
+    state.snapEnabled = true;
+    render();
+  });
+
   app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-field]").forEach((input) => {
     input.addEventListener("input", () => {
       const key = input.dataset.field;
       if (key === "themeId") {
+        pushHistory();
         state.spec.themeId = input.value.trim().toLowerCase();
       }
       if (key === "targetOrigin") {
@@ -2247,6 +5440,7 @@ function bindEvents() {
         persistTargetOrigin();
       }
       if (key === "bgColor") {
+        pushHistory();
         state.spec.bgColor = input.value.trim();
       }
       syncJsonFromSpec();
@@ -2256,6 +5450,7 @@ function bindEvents() {
 
   app.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("[data-primitive-field]").forEach((input) => {
     input.addEventListener("input", () => {
+      pushHistory();
       updateSelectedPrimitive(input.dataset.primitiveField ?? "", input.value);
       if (isColorInput(input)) {
         syncStateWithoutRender();
@@ -2268,7 +5463,31 @@ function bindEvents() {
       if (!isColorInput(input)) {
         return;
       }
+      pushHistory();
       updateSelectedPrimitive(input.dataset.primitiveField ?? "", input.value);
+      syncJsonFromSpec();
+      render();
+    });
+  });
+
+  app.querySelectorAll<HTMLInputElement>("[data-primitive-state]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const primitive = selectedPrimitive();
+      if (!primitive) {
+        return;
+      }
+      pushHistory();
+      const stateName = input.dataset.primitiveState ?? "";
+      primitive.stateAssets = primitive.stateAssets ?? {};
+      const value = input.value.trim();
+      if (value) {
+        primitive.stateAssets[stateName] = value;
+      } else {
+        delete primitive.stateAssets[stateName];
+      }
+      if (Object.keys(primitive.stateAssets).length === 0) {
+        delete primitive.stateAssets;
+      }
       syncJsonFromSpec();
       render();
     });
@@ -2276,6 +5495,7 @@ function bindEvents() {
 
   app.querySelectorAll<HTMLButtonElement>("[data-clear-primitive-field]").forEach((button) => {
     button.addEventListener("click", () => {
+      pushHistory();
       clearSelectedPrimitiveField(button.dataset.clearPrimitiveField ?? "");
       syncJsonFromSpec();
       render();
@@ -2288,6 +5508,7 @@ function bindEvents() {
       if (!primitive || primitive.type !== "pixels") {
         return;
       }
+      pushHistory();
       const index = toInt(button.dataset.pixelToggle ?? "0", 0);
       primitive.data = toggleBitmapBit(primitive.data ?? "", primitive.width ?? 0, primitive.height ?? 0, index);
       syncJsonFromSpec();
@@ -2316,6 +5537,7 @@ function bindEvents() {
       if (!primitive || primitive.type !== "pixels") {
         return;
       }
+      pushHistory();
       const index = toInt(input.dataset.pixelPaletteColor ?? "0", 0);
       ensureRlePixelPrimitive(primitive);
       const palette = primitive.p ?? [];
@@ -2349,6 +5571,7 @@ function bindEvents() {
     input.addEventListener("pointerdown", (event) => event.stopPropagation());
     input.addEventListener("input", (event) => {
       event.stopPropagation();
+      pushHistory();
       updateSelectedPrimitive(input.dataset.canvasField ?? "", input.value);
       if (isColorInput(input)) {
         syncStateWithoutRender();
@@ -2362,6 +5585,7 @@ function bindEvents() {
       if (!isColorInput(input)) {
         return;
       }
+      pushHistory();
       updateSelectedPrimitive(input.dataset.canvasField ?? "", input.value);
       syncJsonFromSpec();
       render();
@@ -2374,6 +5598,7 @@ function bindEvents() {
       const index = Number(input.dataset.inlineText);
       const primitive = state.spec.primitives[index];
       if (primitive?.type === "text") {
+        pushHistory();
         primitive.text = input.value;
         normalizeMiniThemeSpec(state.spec);
         state.jsonText = prettyJson(state.spec);
@@ -2402,6 +5627,14 @@ function bindEvents() {
     (event.target as HTMLInputElement).value = "";
   });
 
+  app.querySelector<HTMLInputElement>("[data-role='sprite-input']")?.addEventListener("change", (event) => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (file) {
+      void addSpritePrimitive(file);
+    }
+    (event.target as HTMLInputElement).value = "";
+  });
+
   app.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((button) => {
     button.addEventListener("click", () => {
       void handleAction(button.dataset.action ?? "");
@@ -2418,6 +5651,7 @@ function bindEvents() {
     button.addEventListener("pointerdown", (event) => event.stopPropagation());
     button.addEventListener("click", (event) => {
       event.stopPropagation();
+      pushHistory();
       rotateSelectedPrimitive(toInt(button.dataset.rotateDelta ?? "0", 0));
     });
   });
@@ -2426,6 +5660,7 @@ function bindEvents() {
     button.addEventListener("pointerdown", (event) => event.stopPropagation());
     button.addEventListener("click", (event) => {
       event.stopPropagation();
+      pushHistory();
       adjustSelectedTextSize(toInt(button.dataset.fontSizeDelta ?? "0", 0));
     });
   });
@@ -2444,7 +5679,7 @@ function bindEvents() {
     });
     element.addEventListener("click", () => {
       const index = Number(element.dataset.drag);
-      state.selectedIndex = index;
+      setSingleSelection(index);
       state.editingTextIndex = state.spec.primitives[index]?.type === "text" ? index : null;
       state.notice = "";
       render();
@@ -2452,7 +5687,7 @@ function bindEvents() {
     element.addEventListener("dblclick", () => {
       const index = Number(element.dataset.drag);
       if (state.spec.primitives[index]?.type === "text") {
-        state.selectedIndex = index;
+        setSingleSelection(index);
         state.editingTextIndex = index;
         state.notice = "";
         render();
@@ -2485,6 +5720,7 @@ function syncStateWithoutRender() {
   state.jsonText = prettyJson(state.spec);
   state.jsonDirty = false;
   validateCurrentSpec();
+  persistCurrentThemeDraft();
 }
 
 function isColorInput(input: Element): input is HTMLInputElement {
@@ -2504,13 +5740,14 @@ function insertToken(token: string) {
   if (!token) {
     return;
   }
+  pushHistory();
   const primitive = state.spec.primitives[state.selectedIndex];
   if (primitive?.type === "text") {
     primitive.text = `${primitive.text ?? ""}${token}`;
     state.editingTextIndex = state.selectedIndex;
   } else {
     state.spec.primitives.push({ type: "text", x: 24, y: 24, text: token, fontSize: 2, color: "#FFFFFF" });
-    state.selectedIndex = state.spec.primitives.length - 1;
+    setSingleSelection(state.spec.primitives.length - 1);
     state.editingTextIndex = state.selectedIndex;
   }
   state.notice = "Variable inserted.";
@@ -2522,6 +5759,16 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   const key = event.key.toLowerCase();
   const usesCommandKey = event.metaKey || event.ctrlKey;
   const typing = isTypingTarget(event.target);
+
+  if (usesCommandKey && key === "z" && !typing) {
+    event.preventDefault();
+    if (event.shiftKey) {
+      redoThemeEdit();
+    } else {
+      undoThemeEdit();
+    }
+    return;
+  }
 
   if (key === "escape" && state.editingTextIndex !== null) {
     event.preventDefault();
@@ -2584,6 +5831,39 @@ function selectedPrimitive(): Primitive | null {
   return state.spec.primitives[state.selectedIndex] ?? null;
 }
 
+function selectedPrimitiveIndices(): number[] {
+  return normalizeSelectedIndices(state.selectedIndices, state.selectedIndex, state.spec.primitives.length);
+}
+
+function isPrimitiveSelected(index: number): boolean {
+  return selectedPrimitiveIndices().includes(index);
+}
+
+function setSingleSelection(index: number) {
+  setSelection(index >= 0 ? [index] : []);
+}
+
+function setSelection(indices: number[]) {
+  const normalized = normalizeSelectedIndices(indices, indices[0] ?? -1, state.spec.primitives.length);
+  state.selectedIndices = normalized;
+  state.selectedIndex = normalized[0] ?? -1;
+}
+
+function normalizeSelectedIndices(indices: unknown, primaryIndex: number, total: number): number[] {
+  const valid = (value: number) => Number.isInteger(value) && value >= 0 && value < total;
+  const source = Array.isArray(indices) ? indices : [];
+  const unique = new Set<number>();
+  if (valid(primaryIndex)) {
+    unique.add(primaryIndex);
+  }
+  source.forEach((value) => {
+    if (typeof value === "number" && valid(value)) {
+      unique.add(value);
+    }
+  });
+  return Array.from(unique).sort((a, b) => a - b);
+}
+
 function clonePrimitive(primitive: Primitive): Primitive {
   return JSON.parse(JSON.stringify(primitive)) as Primitive;
 }
@@ -2620,32 +5900,48 @@ function copyWithOffset(primitive: Primitive): Primitive {
   const copy = clonePrimitive(primitive);
   const width = estimatePrimitiveWidth(copy);
   const height = estimatePrimitiveHeight(copy);
-  copy.x = clamp(copy.x + 8, 0, Math.max(0, DISPLAY_SIZE - width));
-  copy.y = clamp(copy.y + 8, 0, Math.max(0, DISPLAY_SIZE - height));
+  const snapped = snapDetachedPosition(copy.x + 8, copy.y + 8, width, height);
+  copy.x = clamp(snapped.x, 0, Math.max(0, DISPLAY_SIZE - width));
+  copy.y = clamp(snapped.y, 0, Math.max(0, DISPLAY_SIZE - height));
   return copy;
 }
 
 function deleteSelectedPrimitive() {
-  if (!selectedPrimitive()) {
+  const indices = selectedPrimitiveIndices();
+  if (indices.length === 0) {
     return;
   }
-  state.spec.primitives.splice(state.selectedIndex, 1);
-  state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.spec.primitives.length - 1));
+  pushHistory();
+  indices.slice().sort((a, b) => b - a).forEach((index) => {
+    state.spec.primitives.splice(index, 1);
+  });
+  setSingleSelection(state.spec.primitives.length > 0 ? Math.min(indices[0], state.spec.primitives.length - 1) : -1);
   state.editingTextIndex = null;
-  state.notice = "Element deleted.";
+  state.notice = indices.length === 1 ? "Element deleted." : `${indices.length} elements deleted.`;
   syncJsonFromSpec();
   render();
 }
 
 function moveSelectedPrimitive(deltaX: number, deltaY: number) {
-  const primitive = selectedPrimitive();
-  if (!primitive) {
+  const indices = selectedPrimitiveIndices();
+  const anchor = state.spec.primitives[indices[0]];
+  if (!anchor) {
     return;
   }
-  const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
-  const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
-  primitive.x = clamp(primitive.x + deltaX, 0, maxX);
-  primitive.y = clamp(primitive.y + deltaY, 0, maxY);
+  pushHistory();
+  const snapped = snapPrimitivePosition(indices[0], anchor.x + deltaX, anchor.y + deltaY);
+  const appliedDeltaX = snapped.x - anchor.x;
+  const appliedDeltaY = snapped.y - anchor.y;
+  indices.forEach((index) => {
+    const primitive = state.spec.primitives[index];
+    if (!primitive) {
+      return;
+    }
+    const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
+    const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
+    primitive.x = clamp(primitive.x + appliedDeltaX, 0, maxX);
+    primitive.y = clamp(primitive.y + appliedDeltaY, 0, maxY);
+  });
   state.editingTextIndex = null;
   syncJsonFromSpec();
   render();
@@ -2682,8 +5978,19 @@ function updateSelectedPrimitive(key: string, value: string) {
     resizeGifPrimitive(primitive, key, toInt(value, DEFAULT_GIF_SIZE));
     return;
   }
-  if (["x", "y", "width", "height", "fontSize", "font"].includes(key)) {
-    primitive[key as "x"] = Math.max(key === "x" || key === "y" ? 0 : 1, toInt(value, key === "x" || key === "y" ? 0 : 1));
+  if (primitive.type === "sprite" && ["width", "height"].includes(key)) {
+    updateSpriteSizeField(primitive, key, Math.max(1, toInt(value, 1)));
+    return;
+  }
+  if (primitive.type === "sprite" && ["frameCount", "fps", "sheetColumns"].includes(key)) {
+    const fallback = key === "fps" ? DEFAULT_SPRITE_FPS : 1;
+    updateSpriteAnimationField(primitive, key, Math.max(key === "fps" ? 0 : 1, toInt(value, fallback)));
+    rebuildSpriteAssetForPrimitive(primitive);
+    return;
+  }
+  if (["x", "y", "width", "height", "fontSize", "font", "segments", "segmentGap"].includes(key)) {
+    const min = key === "x" || key === "y" || key === "segmentGap" ? 0 : 1;
+    updateNumericPrimitiveField(primitive, key, Math.max(min, toInt(value, min)));
     return;
   }
   if (["color", "bgColor", "borderColor"].includes(key)) {
@@ -2692,15 +5999,38 @@ function updateSelectedPrimitive(key: string, value: string) {
       delete primitive.bgColor;
       return;
     }
-    primitive[key as "color"] = trimmed;
+    updateColorPrimitiveField(primitive, key, trimmed);
     return;
   }
   if (key === "binding") {
     primitive.binding = value as BindingKey;
     return;
   }
+  if (key === "align") {
+    primitive.align = ["center", "right"].includes(value) ? value as "center" | "right" : "left";
+    if (primitive.align === "left") {
+      delete primitive.align;
+    }
+    return;
+  }
+  if (key === "progressStyle") {
+    primitive.progressStyle = value === "segments" ? "segments" : "solid";
+    if (primitive.progressStyle === "solid") {
+      delete primitive.progressStyle;
+    }
+    return;
+  }
   if (key === "assetPath") {
     primitive.assetPath = value.trim();
+    if (primitive.type === "sprite") {
+      const sprite = spriteAssetFor(resolveStateAssetPath(primitive));
+      if (sprite) {
+        primitive.width = sprite.width;
+        primitive.height = sprite.height;
+        primitive.frameCount = sprite.frameCount;
+        primitive.fps = sprite.fps;
+      }
+    }
     return;
   }
   if (key === "data") {
@@ -2726,6 +6056,54 @@ function updateSelectedPrimitive(key: string, value: string) {
   }
 }
 
+function updateSpriteSizeField(primitive: Primitive, key: string, value: number) {
+  if (key === "width") {
+    primitive.width = value;
+  } else if (key === "height") {
+    primitive.height = value;
+  }
+}
+
+function updateSpriteAnimationField(primitive: Primitive, key: string, value: number) {
+  if (key === "frameCount") {
+    primitive.frameCount = value;
+  } else if (key === "fps") {
+    primitive.fps = value;
+  } else if (key === "sheetColumns") {
+    primitive.sheetColumns = value;
+  }
+}
+
+function updateNumericPrimitiveField(primitive: Primitive, key: string, value: number) {
+  if (key === "x") {
+    primitive.x = value;
+  } else if (key === "y") {
+    primitive.y = value;
+  } else if (key === "width") {
+    primitive.width = value;
+  } else if (key === "height") {
+    primitive.height = value;
+  } else if (key === "fontSize") {
+    primitive.fontSize = value;
+  } else if (key === "font") {
+    primitive.font = value;
+  } else if (key === "segments") {
+    primitive.segments = value;
+  } else if (key === "segmentGap") {
+    primitive.segmentGap = value;
+  }
+}
+
+function updateColorPrimitiveField(primitive: Primitive, key: string, value: string) {
+  if (key === "color") {
+    primitive.color = value;
+  } else if (key === "bgColor") {
+    primitive.bgColor = value;
+  } else if (key === "borderColor") {
+    primitive.borderColor = value;
+  }
+}
+
 function clearSelectedPrimitiveField(key: string) {
   const primitive = state.spec.primitives[state.selectedIndex];
   if (!primitive) {
@@ -2737,11 +6115,81 @@ function clearSelectedPrimitiveField(key: string) {
 }
 
 async function handleAction(action: string) {
+  if (action === "undo") {
+    undoThemeEdit();
+    return;
+  }
+  if (action === "redo") {
+    redoThemeEdit();
+    return;
+  }
+  if (action === "save-local") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
+    saveThemeLocally();
+    return;
+  }
+  if (action === "save-draft") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
+    persistCurrentThemeDraft();
+    state.notice = "Draft saved. It will reopen automatically next time.";
+    render();
+    return;
+  }
   if (action === "reset") {
+    pushHistory();
     state.spec = cloneSpec(initialSpec);
-    state.selectedIndex = -1;
+    state.activeThemeId = themeLibraryIdForSpec(initialSpec);
+    setSingleSelection(-1);
     state.editingTextIndex = null;
     state.notice = "Sample restored.";
+    syncJsonFromSpec();
+    render();
+    return;
+  }
+  if (action === "load-cozy-meadow") {
+    pushHistory();
+    state.spec = specForPreset(COZY_MEADOW_SPEC);
+    state.activeThemeId = COZY_MEADOW_SPEC.themeId;
+    setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "sprite"));
+    state.editingTextIndex = null;
+    state.notice = "Cozy Meadow loaded.";
+    syncJsonFromSpec();
+    render();
+    return;
+  }
+  if (action === "load-synthwave") {
+    pushHistory();
+    state.spec = specForPreset(SYNTHWAVE_SPEC);
+    state.activeThemeId = SYNTHWAVE_SPEC.themeId;
+    setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "progress"));
+    state.editingTextIndex = null;
+    state.notice = "Synthwave loaded.";
+    syncJsonFromSpec();
+    render();
+    return;
+  }
+  if (action === "load-claude-creature") {
+    pushHistory();
+    state.spec = specForPreset(CLAUDE_CREATURE_SPEC);
+    state.activeThemeId = CLAUDE_CREATURE_SPEC.themeId;
+    setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "sprite"));
+    state.editingTextIndex = null;
+    state.notice = "Claude Creature loaded.";
+    syncJsonFromSpec();
+    render();
+    return;
+  }
+  if (action === "load-clippy") {
+    pushHistory();
+    state.spec = specForPreset(CLIPPY_SPEC);
+    state.activeThemeId = CLIPPY_SPEC.themeId;
+    setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "sprite" && primitive.stateAssets));
+    state.editingTextIndex = null;
+    state.notice = "Clippy loaded.";
     syncJsonFromSpec();
     render();
     return;
@@ -2762,7 +6210,7 @@ async function handleAction(action: string) {
     app.querySelector<HTMLInputElement>("[data-role='gif-input']")?.click();
   }
   if (action === "add-sprite") {
-    addPrimitive({ type: "sprite", x: 176, y: 26, assetPath: DEFAULT_CLOUD_SPRITE_PATH }, "Sprite placed.");
+    app.querySelector<HTMLInputElement>("[data-role='sprite-input']")?.click();
   }
   if (action === "add-pixels") {
     state.pixelTool = "paint";
@@ -2805,21 +6253,49 @@ async function handleAction(action: string) {
   }
   if (action === "apply-json") {
     applyJson();
+    return;
   }
   if (action === "copy-json") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
     await copyText(prettyJson(state.spec), "JSON copied.");
+    return;
   }
   if (action === "download-json") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
     downloadTheme();
+    return;
+  }
+  if (action === "download-pack") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
+    await downloadThemePack();
+    return;
+  }
+  if (action === "publish-pack") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
+    await publishThemePack();
+    return;
   }
   if (action === "send-theme") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
     await sendThemeToVibeTV();
+    return;
   }
 }
 
 function addPrimitive(primitive: Primitive, notice = "Element added.") {
+  pushHistory();
   state.spec.primitives.push(primitive);
-  state.selectedIndex = state.spec.primitives.length - 1;
+  setSingleSelection(state.spec.primitives.length - 1);
   state.editingTextIndex = primitive.type === "text" ? state.selectedIndex : null;
   state.notice = notice;
   syncJsonFromSpec();
@@ -2829,6 +6305,11 @@ function addPrimitive(primitive: Primitive, notice = "Element added.") {
 function addGifPrimitive(file: File) {
   if (file.type && file.type !== "image/gif") {
     state.notice = "Please choose a GIF file.";
+    render();
+    return;
+  }
+  if (file.size > MAX_GIF_BYTES) {
+    state.notice = `GIF is too large (${file.size}/${MAX_GIF_BYTES} bytes). Use a mini.gif-sized asset.`;
     render();
     return;
   }
@@ -2844,21 +6325,112 @@ function addGifPrimitive(file: File) {
   addPrimitive({ type: "gif", x: 24, y: 24, width: DEFAULT_GIF_SIZE, height: DEFAULT_GIF_SIZE, assetPath }, "GIF placed.");
 }
 
-function themeAssetPathForFile(name: string): string {
-  return `/themes/u/${safeAssetName(name)}`;
+async function addSpritePrimitive(file: File) {
+  if (file.type && !file.type.startsWith("image/")) {
+    state.notice = "Please choose a PNG, JPEG, or WebP sprite sheet.";
+    render();
+    return;
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const frame = inferSpriteSheetFrame(bitmap.width, bitmap.height);
+    const assetPath = spriteAssetPathForFile(file.name);
+    const existing = state.spriteAssets[assetPath]?.source;
+    if (existing) {
+      URL.revokeObjectURL(existing.previewUrl);
+    }
+    const source: SpriteSource = {
+      file,
+      previewUrl: URL.createObjectURL(file),
+      bitmap,
+      sheetWidth: bitmap.width,
+      sheetHeight: bitmap.height,
+      frameWidth: frame.width,
+      frameHeight: frame.height,
+    };
+    const primitive: Primitive = {
+      type: "sprite",
+      x: 176,
+      y: 26,
+      width: frame.width,
+      height: frame.height,
+      frameCount: frame.frameCount,
+      fps: DEFAULT_SPRITE_FPS,
+      sheetColumns: frame.columns,
+      assetPath,
+    };
+    const sprite = spriteFromSource(source, primitive);
+    const rawText = encodeSpriteAsset(sprite);
+    state.spriteAssets[assetPath] = {
+      file: builtInAssetFile(assetPath, rawText, "text/plain", "sprite.cba"),
+      rawText,
+      sprite,
+      source,
+    };
+    addPrimitive(primitive, "Sprite sheet placed.");
+  } catch (error) {
+    state.notice = error instanceof Error ? error.message : "Could not read sprite sheet.";
+    render();
+  }
 }
 
-function safeAssetName(name: string): string {
+function inferSpriteSheetFrame(width: number, height: number): { width: number; height: number; columns: number; frameCount: number } {
+  let frameWidth = width;
+  let frameHeight = height;
+  if (width !== height || width > MAX_SPRITE_FRAME_WIDTH || height > MAX_SPRITE_FRAME_HEIGHT) {
+    const commonSizes = [64, 48, 32, 24, 16, 8];
+    const squareCell = commonSizes.find((size) => {
+      const frames = (width / size) * (height / size);
+      return width % size === 0 &&
+        height % size === 0 &&
+        frames >= 2 &&
+        frames <= MAX_SPRITE_FRAMES &&
+        size <= MAX_SPRITE_FRAME_WIDTH &&
+        size <= MAX_SPRITE_FRAME_HEIGHT;
+    });
+    if (squareCell) {
+      frameWidth = squareCell;
+      frameHeight = squareCell;
+    } else if (height <= MAX_SPRITE_FRAME_HEIGHT && width % height === 0) {
+      frameWidth = height;
+      frameHeight = height;
+    } else {
+      frameWidth = Math.min(width, MAX_SPRITE_FRAME_WIDTH);
+      frameHeight = Math.min(height, MAX_SPRITE_FRAME_HEIGHT);
+    }
+  }
+  frameWidth = clamp(frameWidth, 1, Math.min(MAX_SPRITE_FRAME_WIDTH, width));
+  frameHeight = clamp(frameHeight, 1, Math.min(MAX_SPRITE_FRAME_HEIGHT, height));
+  const columns = Math.max(1, Math.floor(width / frameWidth));
+  const rows = Math.max(1, Math.floor(height / frameHeight));
+  const frameCount = Math.min(MAX_SPRITE_FRAMES, columns * rows, Math.max(1, Math.floor(MAX_SPRITE_TOTAL_PIXELS / (frameWidth * frameHeight))));
+  return { width: frameWidth, height: frameHeight, columns, frameCount };
+}
+
+function themeAssetPathForFile(name: string): string {
+  return `/themes/u/${safeAssetName(name, ".gif")}`;
+}
+
+function spriteAssetPathForFile(name: string): string {
+  return `/themes/u/${safeAssetName(name, ".cba")}`;
+}
+
+function safeAssetName(name: string, extension: ".gif" | ".cba"): string {
   const cleaned = name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-  const withExtension = cleaned.endsWith(".gif") ? cleaned : `${cleaned || "asset"}.gif`;
+  const withoutExtension = cleaned.replace(/\.[a-z0-9]+$/i, "");
+  const withExtension = cleaned.endsWith(extension) ? cleaned : `${withoutExtension || "asset"}${extension}`;
   if (withExtension.length <= 21) {
     return withExtension;
   }
-  const base = withExtension.replace(/\.gif$/i, "");
-  return `${base.slice(0, 17).replace(/[._-]+$/g, "") || "asset"}.gif`;
+  const base = withExtension.slice(0, -extension.length);
+  const maxBase = 21 - extension.length;
+  return `${base.slice(0, maxBase).replace(/[._-]+$/g, "") || "asset"}${extension}`;
 }
 
-function applyJson() {
+function applyPendingJsonEdit(successNotice?: string): boolean {
+  if (!state.jsonDirty) {
+    return true;
+  }
   try {
     const imported = importThemeSpec(JSON.parse(state.jsonText));
     normalizeMiniThemeSpec(imported);
@@ -2866,16 +6438,26 @@ function applyJson() {
     if (result.errors.length > 0) {
       state.notice = `JSON not applied: ${result.errors.slice(0, 3).join(" ")}`;
       render();
-      return;
+      return false;
     }
+    pushHistory();
     state.spec = imported;
-    state.selectedIndex = imported.primitives.length > 0 ? Math.max(0, Math.min(state.selectedIndex, imported.primitives.length - 1)) : -1;
+    setSingleSelection(imported.primitives.length > 0 ? Math.max(0, Math.min(state.selectedIndex, imported.primitives.length - 1)) : -1);
     state.editingTextIndex = null;
-    state.notice = "JSON applied.";
+    if (successNotice !== undefined) {
+      state.notice = successNotice;
+    }
     syncJsonFromSpec();
   } catch (error) {
     state.notice = error instanceof Error ? error.message : "Invalid JSON.";
+    render();
+    return false;
   }
+  return true;
+}
+
+function applyJson() {
+  applyPendingJsonEdit("JSON applied.");
   render();
 }
 
@@ -2931,10 +6513,42 @@ function importPrimitive(value: unknown): Primitive {
   if (font !== undefined) {
     primitive.font = font;
   }
+  const align = stringValue(value.align) ?? stringValue(value.al);
+  if (align === "center" || align === "right") {
+    primitive.align = align;
+  }
+  const progressStyle = stringValue(value.progressStyle) ?? stringValue(value.ps);
+  if (progressStyle === "segments" || progressStyle === "segmented") {
+    primitive.progressStyle = "segments";
+  }
+  const segments = numberValue(value.segments) ?? numberValue(value.sg);
+  if (segments !== undefined) {
+    primitive.segments = segments;
+  }
+  const segmentGap = numberValue(value.segmentGap) ?? numberValue(value.gg);
+  if (segmentGap !== undefined) {
+    primitive.segmentGap = segmentGap;
+  }
   primitive.color = stringValue(value.color) ?? stringValue(value.c);
   primitive.bgColor = stringValue(value.bgColor) ?? stringValue(value.bg);
   primitive.borderColor = stringValue(value.borderColor) ?? stringValue(value.bc);
   primitive.assetPath = stringValue(value.assetPath) ?? stringValue(value.a);
+  const stateAssets = stateAssetsValue(value.stateAssets) ?? stateAssetsValue(value.sa);
+  if (stateAssets) {
+    primitive.stateAssets = stateAssets;
+  }
+  const frameCount = numberValue(value.frameCount);
+  if (frameCount !== undefined) {
+    primitive.frameCount = frameCount;
+  }
+  const fps = numberValue(value.fps);
+  if (fps !== undefined) {
+    primitive.fps = fps;
+  }
+  const sheetColumns = numberValue(value.sheetColumns);
+  if (sheetColumns !== undefined) {
+    primitive.sheetColumns = sheetColumns;
+  }
   primitive.data = stringValue(value.data) ?? stringValue(value.d);
   const palette = stringArrayValue(value.p);
   if (palette) {
@@ -2968,6 +6582,7 @@ function expandBinding(value: string): BindingKey | string {
     w: "weekly",
     r: "reset",
     u: "usageMode",
+    act: "activity",
     st: "sessionTokens",
     wt: "weekTokens",
     tt: "totalTokens",
@@ -2995,13 +6610,27 @@ function stringArrayValue(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined;
 }
 
+function stateAssetsValue(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const result: Record<string, string> = {};
+  for (const [stateName, assetPath] of Object.entries(value)) {
+    if (typeof assetPath === "string") {
+      result[stateName] = assetPath;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function startDrag(event: PointerEvent) {
   const index = Number((event.currentTarget as SVGElement).dataset.drag);
   const primitive = state.spec.primitives[index];
   if (!primitive) {
     return;
   }
-  state.selectedIndex = index;
+  setSingleSelection(index);
+  pushHistory();
   const svg = (event.currentTarget as SVGElement).closest("svg");
   if (!svg) {
     return;
@@ -3016,8 +6645,9 @@ function startDrag(event: PointerEvent) {
     const point = pointerPosition(liveSvg, moveEvent);
     const maxX = Math.max(0, DISPLAY_SIZE - estimatePrimitiveWidth(primitive));
     const maxY = Math.max(0, DISPLAY_SIZE - estimatePrimitiveHeight(primitive));
-    primitive.x = clamp(Math.round(originX + point.x - start.x), 0, maxX);
-    primitive.y = clamp(Math.round(originY + point.y - start.y), 0, maxY);
+    const snapped = snapPrimitivePosition(index, originX + point.x - start.x, originY + point.y - start.y);
+    primitive.x = clamp(snapped.x, 0, maxX);
+    primitive.y = clamp(snapped.y, 0, maxY);
     syncJsonFromSpec();
     render();
   };
@@ -3041,7 +6671,8 @@ function startResize(event: PointerEvent) {
     return;
   }
 
-  state.selectedIndex = index;
+  setSingleSelection(index);
+  pushHistory();
   const svg = target.closest("svg");
   if (!svg) {
     return;
@@ -3123,25 +6754,25 @@ function resizeGifFromPointer(
 }
 
 function applyGifWidth(primitive: Primitive, ratio: number, rawWidth: number) {
-  const maxWidth = Math.max(1, DISPLAY_SIZE - primitive.x);
+  const maxAvailableWidth = Math.max(1, DISPLAY_SIZE - primitive.x);
   const maxHeight = Math.max(1, DISPLAY_SIZE - primitive.y);
-  let width = clamp(rawWidth, 1, maxWidth);
+  let width = clamp(rawWidth, 1, maxAvailableWidth);
   let height = Math.max(1, Math.round(width / ratio));
   if (height > maxHeight) {
     height = maxHeight;
-    width = clamp(Math.round(height * ratio), 1, maxWidth);
+    width = clamp(Math.round(height * ratio), 1, maxAvailableWidth);
   }
   primitive.width = width;
   primitive.height = height;
 }
 
 function applyGifHeight(primitive: Primitive, ratio: number, rawHeight: number) {
-  const maxWidth = Math.max(1, DISPLAY_SIZE - primitive.x);
+  const maxAvailableWidth = Math.max(1, DISPLAY_SIZE - primitive.x);
   const maxHeight = Math.max(1, DISPLAY_SIZE - primitive.y);
   let height = clamp(rawHeight, 1, maxHeight);
   let width = Math.max(1, Math.round(height * ratio));
-  if (width > maxWidth) {
-    width = maxWidth;
+  if (width > maxAvailableWidth) {
+    width = maxAvailableWidth;
     height = clamp(Math.round(width / ratio), 1, maxHeight);
   }
   primitive.width = width;
@@ -3183,6 +6814,220 @@ function downloadTheme() {
   render();
 }
 
+type ThemePackManifest = {
+  kind: "vibetv-theme-pack";
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  version: string;
+  minFirmware: string;
+  themeSpec: ThemePackFileEntry;
+  assets: ThemePackFileEntry[];
+};
+
+type ThemePackFileEntry = {
+  path: string;
+  file: string;
+  bytes: number;
+  sha256: string;
+  contentType?: string;
+};
+
+type ThemePackBuild = {
+  files: Record<string, Uint8Array>;
+  manifest: ThemePackManifest;
+};
+
+async function downloadThemePack() {
+  validateCurrentSpec();
+  if (state.errors.length > 0) {
+    state.notice = "Theme is invalid. Fix the errors before downloading a pack.";
+    render();
+    return;
+  }
+
+  try {
+    const { files } = await buildThemePack();
+    const zip = zipSync(files, { level: 0 });
+    const blob = new Blob([arrayBufferFor(zip)], { type: "application/zip" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = `${state.spec.themeId}.zip`;
+    link.click();
+    URL.revokeObjectURL(href);
+    state.notice = "Theme pack prepared.";
+  } catch (error) {
+    state.notice = error instanceof Error ? error.message : "Theme pack download failed.";
+  }
+  render();
+}
+
+async function buildThemePack(): Promise<ThemePackBuild> {
+  const files: Record<string, Uint8Array> = {};
+  const assets: ThemePackFileEntry[] = [];
+  const usedPackFiles = new Set<string>(["manifest.json", "theme.json"]);
+
+  const themeSpecPath = themeSpecAssetPath(state.spec);
+  const themeSpecData = strToU8(`${deviceThemeSpecJson(state.spec)}\n`);
+  const themeSpecEntry: ThemePackFileEntry = {
+    path: themeSpecPath,
+    file: "theme.json",
+    bytes: themeSpecData.byteLength,
+    sha256: await sha256Hex(themeSpecData),
+    contentType: "application/json",
+  };
+  files[themeSpecEntry.file] = themeSpecData;
+
+  for (const assetPath of uniqueAssetPaths("gif")) {
+    const asset = state.gifAssets[assetPath] ?? await builtInGifAsset(assetPath);
+    if (!asset) {
+      throw new Error(`Missing GIF asset for ${assetPath}.`);
+    }
+    const data = new Uint8Array(await asset.file.arrayBuffer());
+    const packFile = uniquePackAssetFile(assetPath, usedPackFiles);
+    files[packFile] = data;
+    assets.push({
+      path: assetPath,
+      file: packFile,
+      bytes: data.byteLength,
+      sha256: await sha256Hex(data),
+      contentType: asset.file.type || "image/gif",
+    });
+  }
+
+  for (const assetPath of uniqueAssetPaths("sprite")) {
+    const asset = state.spriteAssets[assetPath] ?? builtInSpriteAsset(assetPath);
+    if (!asset) {
+      throw new Error(`Missing sprite asset for ${assetPath}.`);
+    }
+    const data = withTrailingNewline(new Uint8Array(await asset.file.arrayBuffer()));
+    const packFile = uniquePackAssetFile(assetPath, usedPackFiles);
+    files[packFile] = data;
+    assets.push({
+      path: assetPath,
+      file: packFile,
+      bytes: data.byteLength,
+      sha256: await sha256Hex(data),
+      contentType: asset.file.type || "text/plain",
+    });
+  }
+
+  const manifest: ThemePackManifest = {
+    kind: "vibetv-theme-pack",
+    schemaVersion: 1,
+    id: state.spec.themeId,
+    name: displayThemeName(state.spec.themeId),
+    version: `${state.spec.themeRev}.0.0`,
+    minFirmware: THEME_PACK_MIN_FIRMWARE,
+    themeSpec: themeSpecEntry,
+    assets,
+  };
+  files["manifest.json"] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`);
+  return { files, manifest };
+}
+
+async function publishThemePack() {
+  validateCurrentSpec();
+  if (state.errors.length > 0) {
+    state.notice = "Theme is invalid. Fix the errors before publishing.";
+    render();
+    return;
+  }
+
+  const updating = currentThemePackExists();
+  try {
+    state.notice = `${updating ? "Updating" : "Publishing"} theme pack.`;
+    render();
+
+    const pack = await buildThemePack();
+    const response = await fetch("/api/theme-packs/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        themeId: pack.manifest.id,
+        files: Object.entries(pack.files).map(([file, data]) => ({
+          file,
+          dataBase64: uint8ToBase64(data),
+        })),
+      }),
+    });
+
+    const body = await response.json().catch(() => ({})) as { error?: string; themeIds?: string[] };
+    if (!response.ok) {
+      throw new Error(body.error || `Publish failed (${response.status}).`);
+    }
+
+    if (Array.isArray(body.themeIds)) {
+      state.publishedThemeIds = body.themeIds;
+    } else if (!state.publishedThemeIds.includes(pack.manifest.id)) {
+      state.publishedThemeIds = [...state.publishedThemeIds, pack.manifest.id];
+    }
+    state.notice = `${updating ? "Theme pack updated" : "Theme pack published"}. Commit and push the generated dist/theme-packs files to GitHub so customers get this version.`;
+  } catch (error) {
+    state.notice = error instanceof Error ? error.message : "Theme pack publish failed.";
+  }
+  render();
+}
+
+function uint8ToBase64(data: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < data.length; offset += chunkSize) {
+    binary += String.fromCharCode(...data.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function withTrailingNewline(data: Uint8Array): Uint8Array {
+  if (data.length === 0 || data[data.length - 1] === 10) {
+    return data;
+  }
+  const next = new Uint8Array(data.length + 1);
+  next.set(data);
+  next[data.length] = 10;
+  return next;
+}
+
+function uniquePackAssetFile(devicePath: string, used: Set<string>): string {
+  const fallback = `asset-${used.size}`;
+  const fileName = (devicePath.split("/").pop() || fallback)
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || fallback;
+  const dot = fileName.lastIndexOf(".");
+  const base = dot > 0 ? fileName.slice(0, dot) : fileName;
+  const ext = dot > 0 ? fileName.slice(dot) : "";
+  let candidate = `assets/${fileName}`;
+  let counter = 2;
+  while (used.has(candidate)) {
+    candidate = `assets/${base}-${counter}${ext}`;
+    counter += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function displayThemeName(themeId: string): string {
+  return themeId
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ") || "VibeTV Theme";
+}
+
+async function sha256Hex(data: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", arrayBufferFor(data));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function arrayBufferFor(data: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(data.byteLength);
+  copy.set(data);
+  return copy.buffer;
+}
+
 async function sendThemeToVibeTV() {
   validateCurrentSpec();
   if (state.errors.length > 0) {
@@ -3195,9 +7040,18 @@ async function sendThemeToVibeTV() {
     const targetOrigin = normalizeTargetOrigin(state.targetOrigin);
     state.targetOrigin = targetOrigin;
     persistTargetOrigin();
-    await clearDeviceThemeSpec(targetOrigin);
+    state.notice = "Sending theme to Vibe TV.";
+    render();
     await uploadThemeAssets(targetOrigin);
-    const response = await postFramePayload(targetOrigin, buildFramePayload());
+    const themePath = themeSpecAssetPath(state.spec);
+    await uploadThemeAsset(targetOrigin, themePath, themeSpecUploadAsset(state.spec), "ThemeSpec");
+    const response = await activateStoredTheme(targetOrigin, themePath);
+
+    if (response.type !== "opaque" && (response.status === 404 || response.status === 405 || response.status === 501)) {
+      await sendLegacyInlineTheme(targetOrigin);
+      render();
+      return;
+    }
 
     if (response.type === "opaque") {
       state.notice = "Theme sent to Vibe TV. Local dev mode cannot read the device confirmation.";
@@ -3206,23 +7060,45 @@ async function sendThemeToVibeTV() {
     }
 
     if (!response.ok) {
-      state.notice = `Vibe TV rejected the theme (${response.status}).`;
+      state.notice = await responseFailureMessage(response, "Vibe TV rejected the theme");
+      render();
+      return;
+    }
+
+    const liveFrame = await postFramePayload(targetOrigin, buildLiveFramePayload());
+    if (liveFrame.type !== "opaque" && !liveFrame.ok) {
+      state.notice = await responseFailureMessage(liveFrame, "Theme activated, but Vibe TV rejected the live frame");
       render();
       return;
     }
 
     const confirmation = await confirmThemeApplied(targetOrigin, state.spec);
-    state.notice = confirmation ?? "Theme sent to Vibe TV.";
+    const cleaned = await cleanupStoredThemeVersions(targetOrigin, state.spec);
+    state.notice = `${confirmation ?? "Theme sent to Vibe TV."}${cleanupNotice(cleaned)}`;
   } catch (error) {
     state.notice = error instanceof Error ? error.message : `Could not reach Vibe TV at ${normalizeTargetOrigin(state.targetOrigin)}. Check Wi-Fi/mDNS, then try again.`;
   }
   render();
 }
 
+async function sendLegacyInlineTheme(targetOrigin: string) {
+  const inlineBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload())).length;
+  if (inlineBytes > MAX_FRAME_BYTES) {
+    throw new Error("This Vibe TV firmware does not support stored themes yet. Update the firmware, then send this larger theme again.");
+  }
+
+  const response = await postFramePayload(targetOrigin, buildFramePayload());
+  if (response.type !== "opaque" && !response.ok) {
+    throw new Error(await responseFailureMessage(response, "Vibe TV rejected the theme"));
+  }
+  const confirmation = await confirmThemeApplied(targetOrigin, state.spec);
+  state.notice = confirmation ?? "Theme sent to Vibe TV.";
+}
+
 async function clearDeviceThemeSpec(targetOrigin: string) {
   const response = await postFramePayload(targetOrigin, buildThemeSpecClearPayload());
   if (response.type !== "opaque" && !response.ok) {
-    throw new Error(`Theme clear failed (${response.status}).`);
+    throw new Error(await responseFailureMessage(response, "Theme clear failed"));
   }
 }
 
@@ -3234,12 +7110,20 @@ async function postFramePayload(targetOrigin: string, payload: Record<string, un
   });
 }
 
+async function activateStoredTheme(targetOrigin: string, path: string): Promise<Response> {
+  return fetchWithCorsFallback(`${targetOrigin}/theme/active`, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ path }),
+  });
+}
+
 async function uploadThemeAssets(targetOrigin: string) {
   for (const path of uniqueAssetPaths("gif")) {
     await uploadThemeAsset(targetOrigin, path, state.gifAssets[path] ?? await builtInGifAsset(path), "GIF");
   }
   for (const path of uniqueAssetPaths("sprite")) {
-    await uploadThemeAsset(targetOrigin, path, builtInSpriteAsset(path), "Sprite");
+    await uploadThemeAsset(targetOrigin, path, state.spriteAssets[path] ?? builtInSpriteAsset(path), "Sprite");
   }
 }
 
@@ -3254,13 +7138,66 @@ async function uploadThemeAsset(targetOrigin: string, path: string, asset: Uploa
     body,
   });
   if (response.type !== "opaque" && !response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`${label} upload failed (${response.status})${detail ? `: ${detail}` : ""}.`);
+    throw new Error(await responseFailureMessage(response, `${label} upload failed`));
   }
 }
 
+async function cleanupStoredThemeVersions(targetOrigin: string, spec: ThemeSpec): Promise<number> {
+  const activePath = themeSpecAssetPath(spec);
+  const stalePaths = await staleStoredThemePaths(targetOrigin, spec, activePath);
+  let deleted = 0;
+  for (const path of stalePaths) {
+    const response = await deleteThemeAsset(targetOrigin, path);
+    if (response.type === "opaque" || response.ok || response.status === 404) {
+      deleted += 1;
+    }
+  }
+  return deleted;
+}
+
+async function staleStoredThemePaths(targetOrigin: string, spec: ThemeSpec, activePath: string): Promise<string[]> {
+  const assets = await fetchDeviceAssets(targetOrigin);
+  if (!assets?.assets) {
+    return [];
+  }
+  const hashedPrefix = themeSpecAssetHashPrefix(spec);
+  const legacyPath = legacyThemeSpecAssetPath(spec);
+  return assets.assets
+    .map((asset) => asset.path ?? "")
+    .filter((path) => path.length > 0)
+    .filter((path) => path !== activePath)
+    .filter((path) => path === legacyPath || (path.startsWith(hashedPrefix) && path.endsWith(".json")));
+}
+
+async function fetchDeviceAssets(targetOrigin: string): Promise<DeviceAssets | null> {
+  const response = await fetchWithCorsFallback(`${targetOrigin}/assets`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  if (response.type === "opaque") {
+    return null;
+  }
+  if (!response.ok) {
+    return null;
+  }
+  return await response.json() as DeviceAssets;
+}
+
+async function deleteThemeAsset(targetOrigin: string, path: string): Promise<Response> {
+  return fetchWithCorsFallback(`${targetOrigin}/assets?path=${encodeURIComponent(path)}`, {
+    method: "DELETE",
+  });
+}
+
+function cleanupNotice(count: number): string {
+  if (count <= 0) {
+    return "";
+  }
+  return ` Cleaned ${count} old theme ${count === 1 ? "file" : "files"}.`;
+}
+
 async function confirmThemeApplied(targetOrigin: string, spec: ThemeSpec): Promise<string | null> {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
     const health = await fetchDeviceHealth(targetOrigin);
     if (!health) {
       return "Theme sent to Vibe TV. Local dev mode cannot read the device confirmation.";
@@ -3269,8 +7206,8 @@ async function confirmThemeApplied(targetOrigin: string, spec: ThemeSpec): Promi
     if (confirmed.ok) {
       return confirmed.message;
     }
-    if (attempt < 3) {
-      await delay(300);
+    if (attempt < 9) {
+      await delay(750);
     }
   }
   throw new Error("Theme was sent, but Vibe TV health still reports the fallback theme.");
@@ -3285,17 +7222,48 @@ async function fetchDeviceHealth(targetOrigin: string): Promise<DeviceHealth | n
     return null;
   }
   if (!response.ok) {
-    throw new Error(`Theme was sent, but Vibe TV health check failed (${response.status}).`);
+    throw new Error(await responseFailureMessage(response, "Theme was sent, but Vibe TV health check failed"));
   }
   return await response.json() as DeviceHealth;
 }
 
+async function responseFailureMessage(response: Response, fallback: string): Promise<string> {
+  const detail = await response.text().catch(() => "");
+  const cleanDetail = detail.trim().replace(/\s+/g, " ");
+  const suffix = cleanDetail ? `: ${cleanDetail}` : "";
+  if (response.status === 0) {
+    return `${fallback}. Browser could not read the device response.`;
+  }
+  if (response.status === 401 || response.status === 403) {
+    return `${fallback} (${response.status})${suffix}. Pairing or device permission may be missing.`;
+  }
+  if (response.status === 404) {
+    return `${fallback} (${response.status})${suffix}. The firmware may be too old or the file path is missing.`;
+  }
+  if (response.status === 413) {
+    return `${fallback} (${response.status})${suffix}. The theme is too large for this firmware.`;
+  }
+  if (response.status >= 500) {
+    return `${fallback} (${response.status})${suffix}. Check device health and free storage.`;
+  }
+  return `${fallback} (${response.status})${suffix}.`;
+}
+
 function themeAppliedFromHealth(health: DeviceHealth, spec: ThemeSpec): { ok: boolean; message: string } {
   const themeSpec = health.display?.themeSpec;
+  if (themeSpec?.renderOk === false) {
+    return { ok: false, message: `Vibe TV could not render the theme (${themeSpec.renderError ?? "render_failed"}).` };
+  }
   if (themeSpec?.active) {
     const sameId = !themeSpec.id || themeSpec.id === spec.themeId;
     const sameRev = !themeSpec.rev || themeSpec.rev === spec.themeRev;
-    if (sameId && sameRev) {
+    const expectedHash = themeSpecHash(spec);
+    const sameHash = !themeSpec.hash || themeSpec.hash === expectedHash;
+    const samePath = !themeSpec.path || themeSpec.path === themeSpecAssetPath(spec);
+    if (sameId && sameRev && sameHash && samePath) {
+      if (typeof health.system?.freeHeap === "number" && health.system.freeHeap < 6000) {
+        return { ok: true, message: `Theme sent to Vibe TV and confirmed active. Warning: device heap is low (${health.system.freeHeap} bytes).` };
+      }
       return { ok: true, message: "Theme sent to Vibe TV and confirmed active." };
     }
   }
@@ -3319,17 +7287,29 @@ function delay(ms: number): Promise<void> {
 
 async function fetchWithCorsFallback(url: string, init: RequestInit): Promise<Response> {
   try {
-    return await fetch(url, { ...init, mode: "cors" });
+    return await fetchWithTimeout(url, { ...init, mode: "cors" });
   } catch {
-    return fetch(url, { ...init, mode: "no-cors" });
+    return fetchWithTimeout(url, { ...init, mode: "no-cors" });
+  }
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 
 function uniqueAssetPaths(type: "gif" | "sprite", spec: ThemeSpec = state.spec): string[] {
   const paths = new Set<string>();
   for (const primitive of spec.primitives) {
-    if (primitive.type === type && primitive.assetPath) {
-      paths.add(primitive.assetPath);
+    if (primitive.type === type) {
+      for (const assetPath of stateAssetPathsForPrimitive(primitive)) {
+        paths.add(assetPath);
+      }
     }
   }
   return Array.from(paths);
@@ -3339,8 +7319,69 @@ function uniqueGifAssetPaths(): string[] {
   return uniqueAssetPaths("gif");
 }
 
+function themeUsesStateAssets(spec: ThemeSpec = state.spec): boolean {
+  return spec.primitives.some((primitive) => primitive.stateAssets && Object.keys(primitive.stateAssets).length > 0);
+}
+
 function builtInAssetFile(path: string, content: BlobPart, type: string, fallbackName: string): File {
   return new File([content], path.split("/").pop() || fallbackName, { type });
+}
+
+function themeSpecUploadAsset(spec: ThemeSpec): UploadableAsset {
+  const path = themeSpecAssetPath(spec);
+  return {
+    file: builtInAssetFile(path, deviceThemeSpecJson(spec), "application/json", "theme.json"),
+  };
+}
+
+function themeSpecAssetPath(spec: ThemeSpec): string {
+  const prefix = USER_THEME_ASSET_PATH_PREFIX;
+  const extension = ".json";
+  const maxSegmentLength = Math.max(1, MAX_ESP8266_LITTLEFS_PATH_CHARS - prefix.length - extension.length);
+  const revSuffix = `-${spec.themeRev || 1}-${themeSpecHash(spec).slice(0, 6)}`;
+  const maxBaseLength = Math.max(1, maxSegmentLength - revSuffix.length);
+  const cleaned = spec.themeId
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "theme";
+  const base = `${cleaned.slice(0, maxBaseLength)}${revSuffix}`.slice(0, maxSegmentLength);
+  return `${prefix}${base}${extension}`;
+}
+
+function themeSpecAssetHashPrefix(spec: ThemeSpec): string {
+  const activePath = themeSpecAssetPath(spec);
+  return activePath.replace(/[0-9a-f]{6}\.json$/i, "");
+}
+
+function legacyThemeSpecAssetPath(spec: ThemeSpec): string {
+  const prefix = USER_THEME_ASSET_PATH_PREFIX;
+  const extension = ".json";
+  const maxSegmentLength = Math.max(1, MAX_ESP8266_LITTLEFS_PATH_CHARS - prefix.length - extension.length);
+  const revSuffix = `-${spec.themeRev || 1}`;
+  const maxBaseLength = Math.max(1, maxSegmentLength - revSuffix.length);
+  const cleaned = spec.themeId
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "theme";
+  const base = `${cleaned.slice(0, maxBaseLength)}${revSuffix}`.slice(0, maxSegmentLength);
+  return `${prefix}${base}${extension}`;
+}
+
+function deviceThemeSpecJson(spec: ThemeSpec): string {
+  return JSON.stringify(buildDeviceThemeSpec(spec));
+}
+
+function themeSpecHash(spec: ThemeSpec): string {
+  return fnv1aHex8(deviceThemeSpecJson(spec));
+}
+
+function fnv1aHex8(value: string): string {
+  let hash = 0x811c9dc5;
+  for (const byte of new TextEncoder().encode(value)) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
 }
 
 function builtInSpriteAsset(path: string): UploadableAsset | null {
@@ -3369,7 +7410,7 @@ async function builtInGifAsset(path: string): Promise<UploadableAsset | null> {
   };
 }
 
-function buildFramePayload(spec: ThemeSpec = state.spec) {
+function buildLiveFramePayload(spec: ThemeSpec = state.spec) {
   const payload: Record<string, unknown> = {
     v: 2,
     provider: frame.provider,
@@ -3380,19 +7421,28 @@ function buildFramePayload(spec: ThemeSpec = state.spec) {
     usageMode: frame.usageMode,
     time: frame.time,
     date: frame.date,
-    themeSpec: buildDeviceThemeSpec(spec),
   };
   const bindings = usedThemeBindings(spec);
-  if (bindings.has("sessionTokens")) {
+  if (themeUsesStateAssets(spec)) {
+    payload.activity = frame.activity;
+  }
+  if (bindings.has("sessionTokens") || themeUsesStateAssets(spec)) {
     payload.sessionTokens = frame.sessionTokens;
   }
-  if (bindings.has("weekTokens")) {
+  if (bindings.has("weekTokens") || themeUsesStateAssets(spec)) {
     payload.weekTokens = frame.weekTokens;
   }
-  if (bindings.has("totalTokens")) {
+  if (bindings.has("totalTokens") || themeUsesStateAssets(spec)) {
     payload.totalTokens = frame.totalTokens;
   }
   return payload;
+}
+
+function buildFramePayload(spec: ThemeSpec = state.spec) {
+  return {
+    ...buildLiveFramePayload(spec),
+    themeSpec: buildDeviceThemeSpec(spec),
+  };
 }
 
 function buildDeviceThemeSpec(spec: ThemeSpec): Record<string, unknown> {
@@ -3435,6 +7485,18 @@ function buildDevicePrimitive(primitive: Primitive): Record<string, unknown> {
   if (primitive.font !== undefined) {
     compact.f = primitive.font;
   }
+  if (primitive.align !== undefined && primitive.align !== "left") {
+    compact.al = primitive.align;
+  }
+  if (primitive.progressStyle === "segments") {
+    compact.ps = primitive.progressStyle;
+  }
+  if (primitive.segments !== undefined) {
+    compact.sg = primitive.segments;
+  }
+  if (primitive.segmentGap !== undefined) {
+    compact.gg = primitive.segmentGap;
+  }
   if (primitive.color !== undefined) {
     compact.c = primitive.color;
   }
@@ -3446,6 +7508,9 @@ function buildDevicePrimitive(primitive: Primitive): Record<string, unknown> {
   }
   if (primitive.assetPath !== undefined) {
     compact.a = primitive.assetPath;
+  }
+  if (primitive.stateAssets !== undefined) {
+    compact.sa = primitive.stateAssets;
   }
   if (primitive.data !== undefined) {
     compact.d = primitive.data;
@@ -3482,6 +7547,7 @@ function compactBinding(binding: BindingKey): string {
     reset: "r",
     resetCountdown: "r",
     usageMode: "u",
+    activity: "act",
     time: "tm",
     date: "dt",
     sessionTokens: "st",
@@ -3521,8 +7587,12 @@ function usedThemeBindings(spec: ThemeSpec = state.spec): Set<string> {
 }
 
 async function copyText(text: string, notice: string) {
-  await navigator.clipboard.writeText(text);
-  state.notice = notice;
+  try {
+    await navigator.clipboard.writeText(text);
+    state.notice = notice;
+  } catch {
+    state.notice = "Clipboard copy failed. Use Save Theme or select the JSON manually.";
+  }
   render();
 }
 

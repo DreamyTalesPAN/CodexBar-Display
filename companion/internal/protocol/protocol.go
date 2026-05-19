@@ -8,22 +8,24 @@ import (
 )
 
 type Frame struct {
-	V             int             `json:"v"`
-	Provider      string          `json:"provider,omitempty"`
-	Label         string          `json:"label,omitempty"`
-	Session       int             `json:"session,omitempty"`
-	Weekly        int             `json:"weekly,omitempty"`
-	ResetSec      int64           `json:"resetSecs,omitempty"`
-	UsageMode     string          `json:"usageMode,omitempty"`
-	Time          string          `json:"time,omitempty"`
-	Date          string          `json:"date,omitempty"`
-	SessionTokens int64           `json:"sessionTokens,omitempty"`
-	WeekTokens    int64           `json:"weekTokens,omitempty"`
-	TotalTokens   int64           `json:"totalTokens,omitempty"`
-	Theme         string          `json:"theme,omitempty"`
-	ThemeSpec     json.RawMessage `json:"themeSpec,omitempty"`
-	Update        *UpdateState    `json:"update,omitempty"`
-	Error         string          `json:"error,omitempty"`
+	V                     int             `json:"v"`
+	Provider              string          `json:"provider,omitempty"`
+	Label                 string          `json:"label,omitempty"`
+	Session               int             `json:"session,omitempty"`
+	Weekly                int             `json:"weekly,omitempty"`
+	ResetSec              int64           `json:"resetSecs,omitempty"`
+	UsageMode             string          `json:"usageMode,omitempty"`
+	Time                  string          `json:"time,omitempty"`
+	Date                  string          `json:"date,omitempty"`
+	SessionTokens         int64           `json:"sessionTokens,omitempty"`
+	WeekTokens            int64           `json:"weekTokens,omitempty"`
+	TotalTokens           int64           `json:"totalTokens,omitempty"`
+	Activity              string          `json:"activity,omitempty"`
+	Theme                 string          `json:"theme,omitempty"`
+	ThemeSpec             json.RawMessage `json:"themeSpec,omitempty"`
+	ConfirmClearThemeSpec bool            `json:"confirmClearThemeSpec,omitempty"`
+	Update                *UpdateState    `json:"update,omitempty"`
+	Error                 string          `json:"error,omitempty"`
 }
 
 type UpdateState struct {
@@ -72,9 +74,16 @@ func (f Frame) Normalize() Frame {
 	}
 	f.Time = strings.TrimSpace(f.Time)
 	f.Date = strings.TrimSpace(f.Date)
+	f.Activity = normalizeActivity(f.Activity)
 	f.Theme = theme.Normalize(f.Theme)
 	if len(f.ThemeSpec) > 0 && !json.Valid(f.ThemeSpec) {
 		f.ThemeSpec = nil
+	}
+	if len(f.ThemeSpec) > 0 && strings.TrimSpace(string(f.ThemeSpec)) == "null" && !f.ConfirmClearThemeSpec {
+		f.ThemeSpec = nil
+	}
+	if len(f.ThemeSpec) == 0 {
+		f.ConfirmClearThemeSpec = false
 	}
 	if f.Update != nil {
 		f.Update.LatestVersion = strings.TrimSpace(f.Update.LatestVersion)
@@ -96,6 +105,20 @@ func (f Frame) MarshalLine() ([]byte, error) {
 		return nil, err
 	}
 	return append(b, '\n'), nil
+}
+
+func normalizeActivity(raw string) string {
+	activity := strings.TrimSpace(strings.ToLower(raw))
+	if activity == "" || len(activity) > 31 {
+		return ""
+	}
+	for _, r := range activity {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return ""
+	}
+	return activity
 }
 
 func ErrorFrame(msg string) Frame {

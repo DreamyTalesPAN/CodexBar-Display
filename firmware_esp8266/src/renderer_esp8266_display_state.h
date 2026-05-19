@@ -20,6 +20,7 @@ struct SharedState {
   TFT_eSPI tft = TFT_eSPI();
   Theme activeTheme = defaultTheme();
   GifCoreESP8266 gifCore;
+  uint16_t displayTransactionDepth = 0;
   uint8_t splashWaitingDots = 0;
   unsigned long splashDotsLastTick = 0;
   unsigned long splashStartedAt = 0;
@@ -68,6 +69,21 @@ inline Theme& ActiveTheme() {
 inline GifCoreESP8266& GifCore() {
   return State().gifCore;
 }
+
+bool BeginDisplayTransaction();
+void EndDisplayTransaction();
+
+class DisplayTransaction {
+ public:
+  DisplayTransaction();
+  ~DisplayTransaction();
+
+  DisplayTransaction(const DisplayTransaction&) = delete;
+  DisplayTransaction& operator=(const DisplayTransaction&) = delete;
+
+ private:
+  bool active_ = false;
+};
 
 inline uint8_t& SplashWaitingDots() {
   return State().splashWaitingDots;
@@ -131,6 +147,26 @@ void DrawResetCRT(int64_t remainSecs);
 
 bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
+bool RenderThemeSpecPartial(uint32_t changedFields);
+void ResetThemeSpecSpriteCaches();
+bool CurrentThemeSpecRenderedSuccessfully();
+bool ThemeSpecRenderOk();
+const char* ThemeSpecRenderError();
+unsigned long ThemeSpecRenderFailures();
+struct ThemeSpecRuntimeStats {
+  bool compiled = false;
+  uint16_t primitiveCount = 0;
+  uint16_t primitiveCapacity = 0;
+  uint16_t stringBytes = 0;
+  uint16_t stringCapacity = 0;
+  bool keepsJsonDocument = false;
+  bool hasAnimatedAssets = false;
+  unsigned long partialSuccesses = 0;
+  unsigned long partialFailures = 0;
+  uint32_t lastPartialChangedFields = 0;
+  const char* lastPartialError = "";
+};
+ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot();
 
 const char* MiniGifAssetPath();
 void ResetMiniGifFrameSchedule();

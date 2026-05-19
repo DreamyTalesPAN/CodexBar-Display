@@ -19,6 +19,8 @@ Rules:
 - Companion->device frame `v` is negotiated (prefer v2, fallback v1).
 - ThemeSpec is declarative data only. Never execute scripts on device.
 - `themeId/themeRev` cache keys are required to detect unchanged ThemeSpec payloads.
+- Live theme removal is destructive. Firmware must ignore `themeSpec:null` unless the same frame also sets `confirmClearThemeSpec:true`.
+- Companion code must not emit `themeSpec:null` unless the caller explicitly marks that clear as confirmed. Normal recovery paths should reactivate a stored ThemeSpec or repair assets instead of clearing the live theme.
 
 ## Split Thresholds (mandatory refactor trigger)
 - Any single `.cpp`/`.h` file > 800 LOC and touching > 3 responsibilities:
@@ -32,4 +34,5 @@ Rules:
 - [ ] Updated protocol docs if hello/frame shape changed.
 - [ ] Confirmed no direct JSON parsing outside `firmware_shared/codexbar_display_core.h`.
 - [ ] Confirmed renderer changes do not alter transport/handshake behavior.
+- [ ] Confirmed live ThemeSpec clearing still requires explicit confirmation on both host and firmware paths.
 - [ ] Added/updated tests or smoke notes for changed behavior.

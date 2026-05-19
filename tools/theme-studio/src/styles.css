@@ -132,6 +132,22 @@ h2 {
   gap: 8px;
 }
 
+.appbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.draft-save-button {
+  min-width: 104px;
+  border-color: rgba(199, 255, 104, 0.52);
+  background: #172211;
+  color: var(--accent);
+  font-weight: 850;
+}
+
 .metric,
 .health {
   display: inline-flex;
@@ -566,6 +582,8 @@ textarea:focus {
 .device-frame {
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 12px;
   min-height: min(68vh, 680px);
   padding: 24px;
   border: 1px solid var(--line);
@@ -576,6 +594,66 @@ textarea:focus {
     linear-gradient(180deg, #12151a, #0b0d10);
   background-size: 24px 24px, 24px 24px, auto;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.activity-toggle {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(84px, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0a0d11;
+}
+
+.activity-toggle button {
+  min-height: 32px;
+  padding: 7px 10px;
+  border-color: transparent;
+  border-radius: 5px;
+}
+
+.activity-toggle button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.snap-controls {
+  display: inline-grid;
+  grid-template-columns: auto minmax(86px, 112px);
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0a0d11;
+}
+
+.snap-controls button {
+  min-height: 32px;
+  padding: 7px 10px;
+  border-color: transparent;
+  border-radius: 5px;
+}
+
+.snap-controls button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.snap-controls label {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.snap-controls select {
+  min-height: 32px;
+  padding: 4px 7px;
 }
 
 .display {
@@ -598,6 +676,24 @@ textarea:focus {
   isolation: isolate;
 }
 
+.preview-stack.snap-grid::before {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(199, 255, 104, 0.13) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(199, 255, 104, 0.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.19) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.19) 1px, transparent 1px);
+  background-size:
+    var(--snap-grid-size, 1.6667%) var(--snap-grid-size, 1.6667%),
+    var(--snap-grid-size, 1.6667%) var(--snap-grid-size, 1.6667%),
+    50% 50%,
+    50% 50%;
+  content: "";
+}
+
 .device-canvas,
 .konva-overlay,
 .konva-overlay .konvajs-content,
@@ -618,7 +714,7 @@ textarea:focus {
 }
 
 .konva-overlay {
-  z-index: 1;
+  z-index: 2;
 }
 
 .primitive-hit {
@@ -767,7 +863,7 @@ textarea:focus {
 
 .preview-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -791,6 +887,18 @@ textarea:focus {
 .primary-action:hover {
   background: #d7ff8f;
   color: #101319;
+}
+
+.publish-action {
+  border-color: #35c9ff;
+  background: #08283a;
+  color: #9ee7ff;
+}
+
+.publish-action:hover {
+  border-color: #9ee7ff;
+  background: #0b344b;
+  box-shadow: 0 0 0 3px rgba(53, 201, 255, 0.18);
 }
 
 .messages {
@@ -841,6 +949,58 @@ textarea:focus {
 .full-width {
   width: 100%;
   margin-bottom: 8px;
+}
+
+.history-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.saved-themes {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0 10px;
+}
+
+.saved-theme-list {
+  display: grid;
+  gap: 6px;
+}
+
+.saved-theme-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.saved-theme-load {
+  min-height: 40px;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.saved-theme-load.active {
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.saved-theme-load strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-theme-load strong {
+  font-size: 12px;
+}
+
+.compact-empty {
+  padding: 8px;
+  font-size: 12px;
 }
 
 .color-row {

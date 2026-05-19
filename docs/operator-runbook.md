@@ -233,7 +233,7 @@ For an ad-hoc run:
 
 ```bash
 cd companion
-CODEXBAR_DISPLAY_THEME=mini ../codexbar-display daemon --interval 60s
+CODEXBAR_DISPLAY_THEME=mini ../codexbar-display daemon --interval 2s
 ```
 
 Preferred persistent config:

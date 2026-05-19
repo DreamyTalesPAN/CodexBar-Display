@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -124,6 +126,157 @@ func TestThemeValidateSupportsWiFiTransport(t *testing.T) {
 	}
 }
 
+func TestThemePackInstallSupportsPackURL(t *testing.T) {
+	packZip := buildTestThemePackZip(t)
+	downloadedPack := false
+	firmwareUpdated := false
+	uploaded := map[string]bool{}
+	activated := false
+	sentFrame := false
+	previousFirmwareUpdate := themePackInstallFirmwareUpdateFn
+	t.Cleanup(func() {
+		themePackInstallFirmwareUpdateFn = previousFirmwareUpdate
+	})
+	themePackInstallFirmwareUpdateFn = func(target, manifestURL string) error {
+		firmwareUpdated = true
+		return nil
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cozy-meadow.zip":
+			downloadedPack = true
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(packZip)
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
+		case "/assets":
+			if !firmwareUpdated {
+				t.Fatalf("expected firmware update before theme asset upload")
+			}
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST /assets, got %s", r.Method)
+			}
+			devicePath := r.URL.Query().Get("path")
+			if devicePath == "" {
+				t.Fatalf("missing asset path query")
+			}
+			uploaded[devicePath] = true
+			w.WriteHeader(http.StatusOK)
+		case "/theme/active":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read activation body: %v", err)
+			}
+			if !strings.Contains(string(body), `"/themes/u/cm.json"`) {
+				t.Fatalf("unexpected activation body %s", string(body))
+			}
+			activated = true
+			w.WriteHeader(http.StatusOK)
+		case "/frame":
+			sentFrame = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	err := runThemePackInstall([]string{
+		"--pack", server.URL + "/cozy-meadow.zip",
+		"--target", server.URL,
+	})
+	if err != nil {
+		t.Fatalf("runThemePackInstall returned error: %v", err)
+	}
+	if !downloadedPack {
+		t.Fatalf("expected theme pack URL to be downloaded")
+	}
+	if !firmwareUpdated {
+		t.Fatalf("expected firmware update before theme pack install")
+	}
+	if !uploaded["/themes/u/cm.cbi"] || !uploaded["/themes/u/cm.json"] {
+		t.Fatalf("expected asset and theme spec uploads, got %#v", uploaded)
+	}
+	if !activated {
+		t.Fatalf("expected stored theme activation")
+	}
+	if !sentFrame {
+		t.Fatalf("expected live frame after activation")
+	}
+}
+
+func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
+	packZip := buildTestThemePackZip(t)
+	downloadedCatalog := false
+	downloadedPack := false
+	firmwareUpdated := false
+	uploaded := map[string]bool{}
+	activated := false
+	sentFrame := false
+	previousFirmwareUpdate := themePackInstallFirmwareUpdateFn
+	t.Cleanup(func() {
+		themePackInstallFirmwareUpdateFn = previousFirmwareUpdate
+	})
+	themePackInstallFirmwareUpdateFn = func(target, manifestURL string) error {
+		firmwareUpdated = true
+		return nil
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/catalog.json":
+			downloadedCatalog = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"themes":[{"id":"cozy-meadow","title":"Cozy Meadow","themeRev":1,"downloadAsset":"cozy-meadow.zip"}]}`))
+		case "/cozy-meadow.zip":
+			downloadedPack = true
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(packZip)
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
+		case "/assets":
+			if !firmwareUpdated {
+				t.Fatalf("expected firmware update before theme asset upload")
+			}
+			uploaded[r.URL.Query().Get("path")] = true
+			w.WriteHeader(http.StatusOK)
+		case "/theme/active":
+			activated = true
+			w.WriteHeader(http.StatusOK)
+		case "/frame":
+			sentFrame = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	err := runThemePackInstall([]string{
+		"--catalog", server.URL + "/catalog.json",
+		"--theme", "cozy-meadow",
+		"--target", server.URL,
+	})
+	if err != nil {
+		t.Fatalf("runThemePackInstall returned error: %v", err)
+	}
+	if !downloadedCatalog || !downloadedPack {
+		t.Fatalf("expected catalog and pack downloads, catalog=%t pack=%t", downloadedCatalog, downloadedPack)
+	}
+	if !firmwareUpdated {
+		t.Fatalf("expected firmware update before theme pack install")
+	}
+	if !uploaded["/themes/u/cm.cbi"] || !uploaded["/themes/u/cm.json"] {
+		t.Fatalf("expected asset and theme spec uploads, got %#v", uploaded)
+	}
+	if !activated || !sentFrame {
+		t.Fatalf("expected activation and frame, activated=%t sentFrame=%t", activated, sentFrame)
+	}
+}
+
 func writeTestThemeSpec(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "theme.json")
@@ -141,4 +294,34 @@ func writeTestThemeSpec(t *testing.T) string {
 		t.Fatalf("write test theme spec: %v", err)
 	}
 	return path
+}
+
+func buildTestThemePackZip(t *testing.T) []byte {
+	t.Helper()
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":24,"h":24,"a":"/themes/u/cm.cbi"}]}`
+	asset := "CBI1\n1 1\n1\n#FFFFFF\na\n"
+	manifest := `{"kind":"vibetv-theme-pack","schemaVersion":1,"id":"cozy-meadow","name":"Cozy Meadow","themeSpec":{"path":"/themes/u/cm.json","file":"theme.json"},"assets":[{"path":"/themes/u/cm.cbi","file":"assets/cm.cbi"}]}`
+
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for _, file := range []struct {
+		name string
+		data string
+	}{
+		{name: "manifest.json", data: manifest},
+		{name: "theme.json", data: spec},
+		{name: "assets/cm.cbi", data: asset},
+	} {
+		part, err := writer.Create(file.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte(file.data)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }

@@ -25,32 +25,37 @@ import (
 )
 
 type Options struct {
-	Port      string
-	Transport string
-	Target    string
-	Interval  time.Duration
-	Once      bool
-	Theme     string
+	Port                   string
+	Transport              string
+	Target                 string
+	Interval               time.Duration
+	Once                   bool
+	Theme                  string
+	DisableStartupFastPoll bool
 }
 
 const (
-	defaultInterval         = 60 * time.Second
-	defaultCycleTimeout     = 180 * time.Second
-	startupFastPollWindow   = 2 * time.Minute
-	startupFastPollInterval = 30 * time.Second
-	lastGoodPersistInterval = 1 * time.Minute
-	directProviderProbeMax  = 3
-	themeEnvVar             = "CODEXBAR_DISPLAY_THEME"
-	coldStartTimeoutEnvVar  = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
-	cycleTimeoutEnvVar      = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
-	collectorIntervalEnvVar = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
-	collectorTimeoutEnvVar  = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
-	collectorOrderEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
-	providerMaxAgeEnvVar    = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
-	firmwareManifestEnvVar  = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
-	firmwareManifestURL     = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
-	firmwareUpdateCheckGap  = 6 * time.Hour
-	firmwareManifestTimeout = 5 * time.Second
+	defaultInterval            = 2 * time.Second
+	defaultCycleTimeout        = 180 * time.Second
+	startupFastPollWindow      = 2 * time.Minute
+	startupFastPollInterval    = 30 * time.Second
+	defaultWiFiTarget          = "http://vibetv.local"
+	lastGoodPersistInterval    = 1 * time.Minute
+	directProviderProbeMax     = 3
+	themeEnvVar                = "CODEXBAR_DISPLAY_THEME"
+	coldStartTimeoutEnvVar     = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
+	cycleTimeoutEnvVar         = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
+	collectorIntervalEnvVar    = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
+	activityPollEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS"
+	activityHoldEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS"
+	activityIdleEvidenceEnvVar = "CODEXBAR_DISPLAY_ACTIVITY_IDLE_EVIDENCE"
+	collectorTimeoutEnvVar     = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
+	collectorOrderEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
+	providerMaxAgeEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
+	firmwareManifestEnvVar     = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareManifestURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
+	firmwareUpdateCheckGap     = 6 * time.Hour
+	firmwareManifestTimeout    = 5 * time.Second
 )
 
 var errMarshalFrameTooLarge = errors.New("frame exceeds max bytes")
@@ -120,6 +125,7 @@ type runtimeDeps struct {
 	deviceCaps        func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders    func(context.Context) ([]codexbar.ParsedFrame, error)
 	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
+	fetchTokenStats   func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	usageBarsShowUsed func() bool
 	sendLine          func(string, []byte) error
 	fetchUpdateState  func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
@@ -153,6 +159,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	if d.fetchProvider == nil {
 		d.fetchProvider = codexbar.FetchProvider
 	}
+	if d.fetchTokenStats == nil {
+		d.fetchTokenStats = codexbar.FetchProviderTokenStats
+	}
 	if d.usageBarsShowUsed == nil {
 		d.usageBarsShowUsed = func() bool { return true }
 	}
@@ -179,17 +188,24 @@ func defaultRuntimeLogf(format string, args ...any) {
 }
 
 type runtimeState struct {
-	selector          *codexbar.ProviderSelector
-	lastGood          protocol.Frame
-	lastGoodAt        time.Time
-	hasLastGood       bool
-	lastPersistedGood protocol.Frame
-	lastPersistedAt   time.Time
-	hasPersistedGood  bool
-	cliTheme          string
-	firmwareUpdate    protocol.UpdateState
-	hasFirmwareUpdate bool
-	updateCheckedAt   time.Time
+	selector               *codexbar.ProviderSelector
+	lastGood               protocol.Frame
+	lastGoodAt             time.Time
+	hasLastGood            bool
+	lastPersistedGood      protocol.Frame
+	lastPersistedAt        time.Time
+	hasPersistedGood       bool
+	cliTheme               string
+	firmwareUpdate         protocol.UpdateState
+	hasFirmwareUpdate      bool
+	updateCheckedAt        time.Time
+	lastActivityAt         time.Time
+	lastActivityObservedAt time.Time
+	lastIdleEvidenceAt     time.Time
+	idleEvidenceCount      int
+	lastCodingAt           time.Time
+	lastActivity           string
+	lastActivityCause      string
 }
 
 type cycleResult struct {
@@ -203,6 +219,7 @@ type cycleResult struct {
 	errorSource     string
 	usageSource     string
 	usageFresh      bool
+	activityDetail  string
 }
 
 type persistedLastGood struct {
@@ -247,6 +264,9 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	collector, collectorCancel := startProviderCollector(ctx, opts, deps, syncCycleMode)
 	if collectorCancel != nil {
 		defer collectorCancel()
+	}
+	if collector != nil {
+		opts.DisableStartupFastPoll = true
 	}
 
 	runCycle := func(cycleCtx context.Context) error {
@@ -370,7 +390,9 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		} else {
 			backoff.Reset()
 			uptime := cycleStart.Sub(startedAt)
-			waitFor = startupInterval(waitFor, uptime)
+			if !opts.DisableStartupFastPoll {
+				waitFor = startupInterval(waitFor, uptime)
+			}
 		}
 
 		select {
@@ -492,15 +514,55 @@ func resolveCycleDevice(requestedPort string, deps runtimeDeps) (string, protoco
 
 	caps, capsErr := deps.deviceCaps(port)
 	if capsErr != nil {
+		if recoveredPort, recoveredCaps, recovered := recoverStaleWiFiTarget(port, capsErr, deps); recovered {
+			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
+		}
 		deps.logf("runtime event=device-caps-read-failed target=%s transport=%s err=%v\n", port, deps.transportName, capsErr)
 		caps = protocol.UnknownDeviceCapabilities()
-	}
-	maxFrameBytes := protocol.DefaultMaxFrameBytes
-	if caps.MaxFrameBytes > 0 {
-		maxFrameBytes = caps.MaxFrameBytes
+	} else if !caps.Known {
+		unknownErr := errors.New("device capabilities unknown")
+		if recoveredPort, recoveredCaps, recovered := recoverStaleWiFiTarget(port, unknownErr, deps); recovered {
+			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
+		}
 	}
 
-	return port, caps, maxFrameBytes, nil
+	return port, caps, maxFrameBytesForCaps(caps), nil
+}
+
+func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) (string, protocol.DeviceCapabilities, bool) {
+	if deps.transportName != "wifi" || isDefaultWiFiTarget(stalePort) {
+		return "", protocol.DeviceCapabilities{}, false
+	}
+	fallbackPort, resolveErr := deps.resolvePort(defaultWiFiTarget)
+	if resolveErr != nil || isSameTarget(stalePort, fallbackPort) {
+		return "", protocol.DeviceCapabilities{}, false
+	}
+	caps, capsErr := deps.deviceCaps(fallbackPort)
+	if capsErr != nil || !caps.Known {
+		return "", protocol.DeviceCapabilities{}, false
+	}
+	deps.logf(
+		"runtime event=wifi-target-recovered from=%s to=%s staleErr=%v\n",
+		stalePort,
+		fallbackPort,
+		staleErr,
+	)
+	return fallbackPort, caps, true
+}
+
+func isDefaultWiFiTarget(target string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(target)), "vibetv.local")
+}
+
+func isSameTarget(left, right string) bool {
+	return strings.EqualFold(strings.TrimRight(strings.TrimSpace(left), "/"), strings.TrimRight(strings.TrimSpace(right), "/"))
+}
+
+func maxFrameBytesForCaps(caps protocol.DeviceCapabilities) int {
+	if caps.MaxFrameBytes > 0 {
+		return caps.MaxFrameBytes
+	}
+	return protocol.DefaultMaxFrameBytes
 }
 
 func attachFirmwareUpdateState(ctx context.Context, state *runtimeState, deps runtimeDeps, caps protocol.DeviceCapabilities, result *cycleResult) {
@@ -658,8 +720,10 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	collectedAt := decision.Selected.CollectedAt
 	if collectedAt.IsZero() {
 		collectedAt = now
+		decision.Selected.CollectedAt = collectedAt
 	}
 	updateLastGoodState(state, result.frame, collectedAt, deps)
+	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
 }
 
@@ -693,10 +757,97 @@ func finalizeCycleResult(state *runtimeState, result cycleResult) cycleResult {
 	return result
 }
 
+func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDecision, state *runtimeState, now time.Time) (protocol.Frame, string) {
+	if strings.TrimSpace(frame.Activity) != "" {
+		return frame, fmt.Sprintf("activity=explicit value=%s", frame.Activity)
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if state == nil {
+		state = &runtimeState{}
+	}
+
+	collectedAt := decision.Selected.CollectedAt
+	if collectedAt.IsZero() {
+		collectedAt = now
+	}
+	activityObservedAt := decision.Selected.ActivityObservedAt
+	if activityObservedAt.IsZero() {
+		activityObservedAt = collectedAt
+	}
+	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
+		!activityObservedAt.IsZero() &&
+		activityObservedAt.Equal(state.lastActivityObservedAt) &&
+		state.lastActivity != "" {
+		state.lastActivityAt = collectedAt
+		frame.Activity = state.lastActivity
+		return frame, fmt.Sprintf("activity=%s reason=unchanged-codexbar-activity detail=%s observedAt=%s", frame.Activity, state.lastActivityCause, activityObservedAt.Format(time.RFC3339))
+	}
+	if !collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" {
+		frame.Activity = state.lastActivity
+		return frame, fmt.Sprintf("activity=%s reason=unchanged-usage-frame detail=%s", frame.Activity, state.lastActivityCause)
+	}
+
+	activity := "idle"
+	signalDetail := strings.TrimSpace(decision.ActivityDetail)
+	signalReason := decision.ActivitySignalReason
+	switch signalReason {
+	case codexbar.SelectionReasonUsageDelta:
+		activity = "coding"
+		state.lastCodingAt = now
+		state.lastIdleEvidenceAt = time.Time{}
+		state.idleEvidenceCount = 0
+	default:
+		if state.lastActivity == "coding" {
+			if !activityObservedAt.IsZero() && activityObservedAt.After(state.lastActivityObservedAt) && !activityObservedAt.Equal(state.lastIdleEvidenceAt) {
+				state.lastIdleEvidenceAt = activityObservedAt
+				state.idleEvidenceCount++
+			}
+			if codingHoldActive(state.lastCodingAt, now) || state.idleEvidenceCount < activityIdleEvidenceRequired() {
+				activity = "coding"
+				signalReason = "coding-waiting-for-idle-evidence"
+				signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s idle_evidence=%d/%d observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), state.idleEvidenceCount, activityIdleEvidenceRequired(), activityObservedAt.Format(time.RFC3339))
+			} else {
+				state.lastIdleEvidenceAt = time.Time{}
+				state.idleEvidenceCount = 0
+			}
+		}
+	}
+
+	if signalDetail == "" {
+		signalDetail = string(signalReason)
+	}
+	if signalDetail == "" {
+		signalDetail = "no-usage-delta"
+	}
+	reason := string(signalReason)
+	if reason == "" {
+		reason = "no-usage-delta"
+	}
+
+	state.lastActivityAt = collectedAt
+	state.lastActivityObservedAt = activityObservedAt
+	state.lastActivity = activity
+	state.lastActivityCause = signalDetail
+	frame.Activity = activity
+	return frame, fmt.Sprintf("activity=%s reason=%s detail=%s", activity, reason, signalDetail)
+}
+
+func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
+	if lastCodingAt.IsZero() {
+		return false
+	}
+	if now.Before(lastCodingAt) {
+		return true
+	}
+	return now.Sub(lastCodingAt) <= activityHoldDuration()
+}
+
 func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
-	frame = attachClockFields(frame, time.Now())
+	frame = attachClockFields(frame, deps.now())
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
 		var applied bool
@@ -729,8 +880,8 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 		}
 	}
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds error=%q reason=%s detail=%q\n",
-		port, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Error, result.selectionReason, result.selectionDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		port, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -752,7 +903,7 @@ func attachClockFields(frame protocol.Frame, now time.Time) protocol.Frame {
 		now = time.Now()
 	}
 	frame.Time = now.Format("15:04")
-	frame.Date = now.Format("2/1/2006")
+	frame.Date = now.Format("02.01.2006")
 	return frame
 }
 
@@ -1076,6 +1227,64 @@ func collectorInterval(renderInterval time.Duration) time.Duration {
 		return max
 	}
 	return renderInterval
+}
+
+func activityPollInterval() time.Duration {
+	const (
+		def = 2 * time.Second
+		min = 1 * time.Second
+		max = 10 * time.Second
+	)
+
+	override := parseSecondsEnv(activityPollEnvVar, int(def.Seconds()))
+	if override < min {
+		return min
+	}
+	if override > max {
+		return max
+	}
+	return override
+}
+
+func activityHoldDuration() time.Duration {
+	const (
+		def = 180 * time.Second
+		min = 5 * time.Second
+		max = 600 * time.Second
+	)
+
+	override := parseSecondsEnv(activityHoldEnvVar, int(def.Seconds()))
+	if override < min {
+		return min
+	}
+	if override > max {
+		return max
+	}
+	return override
+}
+
+func activityIdleEvidenceRequired() int {
+	const (
+		def = 2
+		min = 1
+		max = 10
+	)
+
+	raw := strings.TrimSpace(os.Getenv(activityIdleEvidenceEnvVar))
+	if raw == "" {
+		return def
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	if parsed < min {
+		return min
+	}
+	if parsed > max {
+		return max
+	}
+	return parsed
 }
 
 func cycleRunTimeout() time.Duration {

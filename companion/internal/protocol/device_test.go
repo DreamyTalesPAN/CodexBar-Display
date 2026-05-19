@@ -22,6 +22,11 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 				SupportsThemeSpecV1: true,
 				MaxThemeSpecBytes:   1024,
 				MaxThemePrimitives:  32,
+				MaxThemeGifAssets:   1,
+				MaxThemeGifBytes:    24576,
+				MaxThemeGifWidth:    80,
+				MaxThemeGifHeight:   80,
+				MaxThemeGifPixels:   6400,
 				BuiltinThemes:       []string{"classic", "crt", "mini"},
 				CachedThemeID:       "mini-transport",
 				CachedThemeRev:      3,
@@ -53,6 +58,9 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	}
 	if caps.MaxThemeSpecBytes != 1024 || caps.MaxThemePrimitives != 32 {
 		t.Fatalf("unexpected theme limits: bytes=%d primitives=%d", caps.MaxThemeSpecBytes, caps.MaxThemePrimitives)
+	}
+	if caps.MaxThemeGifAssets != 1 || caps.MaxThemeGifBytes != 24576 || caps.MaxThemeGifWidth != 80 || caps.MaxThemeGifHeight != 80 || caps.MaxThemeGifPixels != 6400 {
+		t.Fatalf("unexpected GIF limits: %+v", caps)
 	}
 	if caps.ActiveTransport != "usb" {
 		t.Fatalf("unexpected transport: %q", caps.ActiveTransport)

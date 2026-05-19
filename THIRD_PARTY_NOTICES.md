@@ -1,0 +1,47 @@
+# Third-Party Notices
+
+## TFT_eSPI Font Data
+
+`tools/theme-studio/src/tft-fonts.ts` contains generated preview data derived
+from TFT_eSPI `Fonts/Font16.c` and `Fonts/Font32rle.c`, so the Theme Studio can
+match the firmware's built-in text rendering.
+
+Source: https://github.com/Bodmer/TFT_eSPI
+
+TFT_eSPI is based on MIT-licensed Adafruit_ILI9341 code and includes font and
+graphics portions under the applicable upstream notices in the TFT_eSPI
+distribution.
+
+## Clawd Tank Sprite Assets
+
+Portions of the Claude Creature theme sprite animation are adapted from Clawd Tank by Marcio Granzotto Rodrigues.
+
+Source: https://github.com/marciogranzotto/clawd-tank
+
+MIT License
+
+Copyright (c) 2026 Marcio Granzotto Rodrigues
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+## Clippit/Clippy Sprite Asset
+
+Portions of the Clippy theme sprite animation are adapted from the Microsoft Office XP Clippit/Clippy sprite sheet archived by The Spriters Resource.
+
+Source: https://www.spriters-resource.com/pc_computer/microsoftofficexp/asset/104487/

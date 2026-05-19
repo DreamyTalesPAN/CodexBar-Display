@@ -107,6 +107,9 @@ func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
 	if merged[0].Frame.TotalTokens != 1078397605 {
 		t.Fatalf("expected codex total tokens, got %d", merged[0].Frame.TotalTokens)
 	}
+	if merged[0].ActivityObservedAt.IsZero() || !merged[0].ActivityObservedAt.Equal(time.Date(2026, 3, 7, 15, 53, 3, 0, time.UTC)) {
+		t.Fatalf("expected codex activity observed timestamp from cost updatedAt, got %s", merged[0].ActivityObservedAt)
+	}
 	if merged[1].Frame.SessionTokens != 0 || merged[1].Frame.WeekTokens != 0 || merged[1].Frame.TotalTokens != 0 {
 		t.Fatalf("expected unmatched provider to remain unchanged, got %+v", merged[1].Frame)
 	}

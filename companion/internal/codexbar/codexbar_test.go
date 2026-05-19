@@ -257,11 +257,54 @@ func TestProviderSelectorSwitchesBackWhenOtherProviderMoves(t *testing.T) {
 	}
 }
 
-func TestComputeActivityScoreTreatsResetJumpAsSignal(t *testing.T) {
-	prev := providerSnapshot{session: 0, weekly: 0, reset: 0}
+func TestComputeActivityScoreIgnoresResetJumpWithoutUsageDelta(t *testing.T) {
+	prev := providerSnapshot{session: 0, weekly: 0}
 	score := computeActivityScore(prev, protocol.Frame{Session: 0, Weekly: 0, ResetSec: 9000})
+	if score.hasSignal() {
+		t.Fatalf("expected reset jump to stay idle without usage delta, got %s", formatActivityScore(score))
+	}
+}
+
+func TestComputeActivityScoreUsesTokenDelta(t *testing.T) {
+	prev := providerSnapshot{
+		session:       98,
+		weekly:        88,
+		sessionTokens: 1200,
+		weekTokens:    4200,
+		totalTokens:   9000,
+	}
+	score := computeActivityScore(prev, protocol.Frame{
+		Session:       98,
+		Weekly:        88,
+		SessionTokens: 1250,
+		WeekTokens:    4250,
+		TotalTokens:   9050,
+	})
 	if !score.hasSignal() {
-		t.Fatalf("expected reset jump to count as activity signal")
+		t.Fatalf("expected token delta to count as activity signal")
+	}
+	if score.sessionTokensDelta != 50 || score.weekTokensDelta != 50 || score.totalTokensDelta != 50 {
+		t.Fatalf("unexpected token deltas: %s", formatActivityScore(score))
+	}
+}
+
+func TestComputeActivityScorePrefersComparableTokensOverPercentFallback(t *testing.T) {
+	prev := providerSnapshot{
+		session:       98,
+		weekly:        88,
+		sessionTokens: 1200,
+		weekTokens:    4200,
+		totalTokens:   9000,
+	}
+	score := computeActivityScore(prev, protocol.Frame{
+		Session:       99,
+		Weekly:        89,
+		SessionTokens: 1200,
+		WeekTokens:    4200,
+		TotalTokens:   9000,
+	})
+	if score.hasSignal() {
+		t.Fatalf("expected unchanged comparable tokens to stay idle, got %s", formatActivityScore(score))
 	}
 }
 
@@ -283,6 +326,60 @@ func TestProviderSelectorPrefersRecentLocalActivity(t *testing.T) {
 	}
 	if selected.Provider != "claude" {
 		t.Fatalf("expected claude from local activity, got %q", selected.Provider)
+	}
+}
+
+func TestProviderSelectorLocalActivityDoesNotCreateActivitySignal(t *testing.T) {
+	now := time.Now().UTC()
+	selector := NewProviderSelectorWithActivityReader(func() (map[string]providerActivitySignal, error) {
+		return map[string]providerActivitySignal{
+			"claude": testSignal(now, activityConfidenceHigh, "test"),
+		}, nil
+	})
+
+	decision, ok := selector.SelectWithDecision([]ParsedFrame{
+		testParsedFrame("codex", 4, 2, 9000),
+		testParsedFrame("claude", 47, 21, 10000),
+	})
+	if !ok {
+		t.Fatalf("expected a selected provider")
+	}
+	if decision.Selected.Provider != "claude" {
+		t.Fatalf("expected local activity to select claude, got %q", decision.Selected.Provider)
+	}
+	if decision.ActivitySignalReason != "" || decision.ActivityDetail != "" {
+		t.Fatalf("expected no animation activity signal from local activity, got reason=%q detail=%q", decision.ActivitySignalReason, decision.ActivityDetail)
+	}
+}
+
+func TestProviderSelectorLocalActivitySelectionReportsUsageDeltaForAnimation(t *testing.T) {
+	now := time.Now().UTC()
+	selector := NewProviderSelectorWithActivityReader(func() (map[string]providerActivitySignal, error) {
+		return map[string]providerActivitySignal{
+			"claude": testSignal(now, activityConfidenceHigh, "test"),
+		}, nil
+	})
+
+	_, _ = selector.SelectWithDecision([]ParsedFrame{
+		testParsedFrame("codex", 4, 2, 9000),
+		testParsedFrame("claude", 47, 21, 10000),
+	})
+
+	decision, ok := selector.SelectWithDecision([]ParsedFrame{
+		testParsedFrame("codex", 4, 2, 8940),
+		testParsedFrame("claude", 48, 21, 9940),
+	})
+	if !ok {
+		t.Fatalf("expected a selected provider")
+	}
+	if decision.Reason != SelectionReasonLocalActivity {
+		t.Fatalf("expected provider selection from local activity, got %q", decision.Reason)
+	}
+	if decision.ActivitySignalReason != SelectionReasonUsageDelta {
+		t.Fatalf("expected animation signal from usage delta, got %q", decision.ActivitySignalReason)
+	}
+	if !strings.Contains(decision.ActivityDetail, "source=usage-delta") {
+		t.Fatalf("expected usage delta detail, got %q", decision.ActivityDetail)
 	}
 }
 

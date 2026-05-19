@@ -11,10 +11,11 @@ import (
 )
 
 type providerSnapshot struct {
-	Provider  string         `json:"provider"`
-	Frame     protocol.Frame `json:"frame"`
-	Source    string         `json:"source,omitempty"`
-	Collected time.Time      `json:"collectedAt"`
+	Provider           string         `json:"provider"`
+	Frame              protocol.Frame `json:"frame"`
+	Source             string         `json:"source,omitempty"`
+	Collected          time.Time      `json:"collectedAt"`
+	ActivityObservedAt time.Time      `json:"activityObservedAt,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -32,11 +33,13 @@ type providerCollector struct {
 	now             func() time.Time
 	logf            func(string, ...any)
 	fetchProviders  func(context.Context) ([]codexbar.ParsedFrame, error)
+	fetchTokenStats func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	resolvePort     func(string) (string, error)
 	requestedPort   string
 	transportName   string
 	order           []string
 	interval        time.Duration
+	activityPoll    time.Duration
 	timeout         time.Duration
 	snapshotMaxAge  time.Duration
 	persistInterval time.Duration
@@ -61,11 +64,13 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		now:             nowFn,
 		logf:            logFn,
 		fetchProviders:  deps.fetchProviders,
+		fetchTokenStats: deps.fetchTokenStats,
 		resolvePort:     deps.resolvePort,
 		requestedPort:   requestedDeviceTarget(opts),
 		transportName:   usageSourceOrDefault(deps.transportName, "usb"),
 		order:           collectorProviderOrder(),
 		interval:        collectorInterval(opts.Interval),
+		activityPoll:    activityPollInterval(),
 		timeout:         collectorProviderTimeout(),
 		snapshotMaxAge:  providerSnapshotMaxAge(),
 		persistInterval: 1 * time.Minute,
@@ -95,14 +100,18 @@ func (c *providerCollector) run(ctx context.Context) {
 	}
 	c.collectOnce(ctx)
 
-	ticker := time.NewTicker(c.interval)
-	defer ticker.Stop()
+	usageTicker := time.NewTicker(c.interval)
+	defer usageTicker.Stop()
+	activityTicker := time.NewTicker(c.activityPoll)
+	defer activityTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-usageTicker.C:
 			c.collectOnce(ctx)
+		case <-activityTicker.C:
+			c.collectTokenStatsOnce(ctx)
 		}
 	}
 }
@@ -154,10 +163,11 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 
 		frame.Provider = key
 		snapshot := providerSnapshot{
-			Provider:  key,
-			Frame:     frame,
-			Source:    strings.TrimSpace(parsed.Source),
-			Collected: now.UTC(),
+			Provider:           key,
+			Frame:              frame,
+			Source:             strings.TrimSpace(parsed.Source),
+			Collected:          now.UTC(),
+			ActivityObservedAt: parsed.ActivityObservedAt,
 		}
 		c.providers[key] = snapshot
 		successes++
@@ -169,6 +179,85 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		c.persistIfNeeded(now)
 	}
 	c.logf("collector complete transport=%s source=codexbar fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), len(allProviders), successes, c.timeout)
+}
+
+func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
+	if c == nil || c.fetchTokenStats == nil {
+		return
+	}
+	if c.resolvePort != nil {
+		if _, err := c.resolvePort(c.requestedPort); err != nil {
+			return
+		}
+	}
+
+	ctx := parent
+	cancel := func() {}
+	if _, ok := parent.Deadline(); !ok {
+		var timeoutCancel context.CancelFunc
+		ctx, timeoutCancel = context.WithTimeout(parent, 10*time.Second)
+		cancel = timeoutCancel
+	}
+	defer cancel()
+
+	statsByProvider, ok := c.fetchTokenStats(ctx)
+	if !ok || len(statsByProvider) == 0 {
+		return
+	}
+
+	now := c.now().UTC()
+	updated := 0
+
+	c.mu.Lock()
+	for rawKey, stats := range statsByProvider {
+		key := normalizeProviderKey(rawKey)
+		if key == "" || !stats.HasAny() {
+			continue
+		}
+
+		snapshot, exists := c.providers[key]
+		frame := snapshot.Frame.Normalize()
+		if strings.TrimSpace(frame.Provider) == "" {
+			frame.Provider = key
+		}
+		if strings.TrimSpace(frame.Label) == "" {
+			frame.Label = key
+		}
+		frame.SessionTokens = stats.SessionTokens
+		frame.WeekTokens = stats.WeekTokens
+		frame.TotalTokens = stats.TotalTokens
+
+		source := strings.TrimSpace(snapshot.Source)
+		if source == "" {
+			source = strings.TrimSpace(stats.Source)
+		}
+		if source == "" {
+			source = "codexbar-cost"
+		}
+
+		activityObservedAt := snapshot.ActivityObservedAt
+		if !stats.UpdatedAt.IsZero() {
+			activityObservedAt = stats.UpdatedAt.UTC()
+		}
+
+		c.providers[key] = providerSnapshot{
+			Provider:           key,
+			Frame:              frame,
+			Source:             source,
+			Collected:          now,
+			ActivityObservedAt: activityObservedAt,
+		}
+		if exists {
+			updated++
+		} else {
+			updated++
+		}
+	}
+	c.mu.Unlock()
+
+	if updated > 0 {
+		c.persistIfNeeded(now)
+	}
 }
 
 func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame {
@@ -199,11 +288,12 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			frame.Provider = key
 		}
 		frames = append(frames, codexbar.ParsedFrame{
-			Frame:       frame,
-			Provider:    key,
-			Source:      snapshot.Source,
-			CollectedAt: snapshot.Collected,
-			Stale:       !c.snapshotIsFresh(snapshot, now),
+			Frame:              frame,
+			Provider:           key,
+			Source:             snapshot.Source,
+			CollectedAt:        snapshot.Collected,
+			ActivityObservedAt: snapshot.ActivityObservedAt,
+			Stale:              !c.snapshotIsFresh(snapshot, now),
 		})
 	}
 	return frames

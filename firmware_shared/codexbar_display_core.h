@@ -10,10 +10,14 @@
 #define CODEXBAR_DISPLAY_THEME_SPEC_RENDERER 0
 #endif
 
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+#include "theme_spec_renderer_core.h"
+#endif
+
 namespace codexbar_display {
 namespace core {
 
-constexpr size_t kFrameLineBufferBytes = 1024;
+constexpr size_t kFrameLineBufferBytes = 2048;
 
 struct Frame {
   String provider;
@@ -26,6 +30,7 @@ struct Frame {
   int64_t totalTokens = 0;
   bool hasUsageMode = false;
   String usageMode;
+  String activity;
   String timeText;
   String dateText;
   bool hasTheme = false;
@@ -71,7 +76,24 @@ struct SerialConsumeEvent {
   bool themeChanged = false;
   bool themeSpecChanged = false;
   bool themeSpecCacheHit = false;
+  bool themeSpecPartialRender = false;
+  uint32_t themeSpecChangedFields = 0;
 };
+
+inline bool KeepLastThemeSpecFrameAfterPartialRenderFailure(const Frame& current, const SerialConsumeEvent& event) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  return event.visualChanged &&
+         event.themeSpecPartialRender &&
+         current.hasThemeSpec &&
+         !current.hasError &&
+         !event.themeChanged &&
+         !event.themeSpecChanged;
+#else
+  (void)current;
+  (void)event;
+  return false;
+#endif
+}
 
 inline int ClampPct(int value) {
   if (value < 0) {
@@ -101,6 +123,209 @@ inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long now
     return 0;
   }
   return remain;
+}
+
+inline bool IsSafeActivityName(const String& value) {
+  const size_t len = value.length();
+  if (len == 0 || len > 31) {
+    return false;
+  }
+  for (size_t i = 0; i < len; ++i) {
+    const char c = value[i];
+    const bool valid = (c >= 'a' && c <= 'z') ||
+                       (c >= '0' && c <= '9') ||
+                       c == '_' ||
+                       c == '-';
+    if (!valid) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline bool UsageProgressChanged(const Frame& previous, const Frame& next) {
+  return previous.session != next.session ||
+         previous.weekly != next.weekly ||
+         previous.sessionTokens != next.sessionTokens ||
+         previous.weekTokens != next.weekTokens ||
+         previous.totalTokens != next.totalTokens;
+}
+
+inline bool ThemeSpecUsesBinding(const String& raw, const char* fullName, const char* compactName) {
+  if (fullName != nullptr && raw.indexOf(fullName) >= 0) {
+    return true;
+  }
+  if (compactName == nullptr) {
+    return false;
+  }
+  String compactNeedle = "\"";
+  compactNeedle += compactName;
+  compactNeedle += "\"";
+  return raw.indexOf(compactNeedle.c_str()) >= 0;
+}
+
+inline bool ThemeSpecUsesActivity(const String& raw) {
+  return ThemeSpecUsesBinding(raw, "activity", "act") ||
+         raw.indexOf("stateAssets") >= 0 ||
+         raw.indexOf("\"sa\"") >= 0;
+}
+
+inline bool ThemeSpecUsesTokenFields(const String& raw) {
+  return ThemeSpecUsesBinding(raw, "sessionTokens", "st") ||
+         ThemeSpecUsesBinding(raw, "weekTokens", "wt") ||
+         ThemeSpecUsesBinding(raw, "totalTokens", "tt");
+}
+
+inline bool ThemeSpecRawLooksRenderable(const String& raw) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  return raw.indexOf("primitives") >= 0 || raw.indexOf("\"p\"") >= 0;
+#else
+  (void)raw;
+  return false;
+#endif
+}
+
+inline const String& EmptyThemeSpecRaw() {
+  static const String empty;
+  return empty;
+}
+
+inline const String& ThemeSpecRawForFrame(const RuntimeState& runtimeState, const Frame& frame) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (ThemeSpecRawLooksRenderable(frame.themeSpecRaw)) {
+    return frame.themeSpecRaw;
+  }
+  if (frame.hasThemeSpec &&
+      runtimeState.cachedThemeRev > 0 &&
+      runtimeState.cachedThemeId == frame.themeSpecId &&
+      runtimeState.cachedThemeRev == frame.themeSpecRev &&
+      ThemeSpecRawLooksRenderable(runtimeState.cachedThemeSpecRaw)) {
+    return runtimeState.cachedThemeSpecRaw;
+  }
+#else
+  (void)runtimeState;
+  (void)frame;
+#endif
+  return EmptyThemeSpecRaw();
+}
+
+inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& next, const String& raw) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (!next.hasThemeSpec || !ThemeSpecUsesTokenFields(raw)) {
+    return false;
+  }
+  return previous.sessionTokens != next.sessionTokens ||
+         previous.weekTokens != next.weekTokens ||
+         previous.totalTokens != next.totalTokens;
+#else
+  (void)previous;
+  (void)next;
+  return false;
+#endif
+}
+
+inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& next, const String& raw) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  return (ThemeSpecUsesBinding(raw, "provider", "pr") && previous.provider != next.provider) ||
+         (ThemeSpecUsesBinding(raw, "label", "l") && previous.label != next.label) ||
+         (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
+         (ThemeSpecUsesBinding(raw, "weekly", "w") && previous.weekly != next.weekly) ||
+         (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
+         (ThemeSpecUsesBinding(raw, "usageMode", "u") &&
+          (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode)) ||
+         (ThemeSpecUsesActivity(raw) && previous.activity != next.activity) ||
+         (ThemeSpecUsesBinding(raw, "time", "tm") && previous.timeText != next.timeText) ||
+         (ThemeSpecUsesBinding(raw, "date", "dt") && previous.dateText != next.dateText) ||
+         FrameTokenStatsVisualChanged(previous, next, raw);
+#else
+  (void)previous;
+  (void)next;
+  (void)raw;
+  return false;
+#endif
+}
+
+inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& next) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  uint32_t fields = 0;
+  if (previous.provider != next.provider) {
+    fields |= themespec::kThemeSpecFieldProvider;
+  }
+  if (previous.label != next.label) {
+    fields |= themespec::kThemeSpecFieldLabel;
+  }
+  if (previous.session != next.session) {
+    fields |= themespec::kThemeSpecFieldSession;
+  }
+  if (previous.weekly != next.weekly) {
+    fields |= themespec::kThemeSpecFieldWeekly;
+  }
+  if (previous.resetSecs != next.resetSecs) {
+    fields |= themespec::kThemeSpecFieldReset;
+  }
+  if (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode) {
+    fields |= themespec::kThemeSpecFieldUsageMode;
+  }
+  if (previous.activity != next.activity) {
+    fields |= themespec::kThemeSpecFieldActivity;
+  }
+  if (previous.timeText != next.timeText) {
+    fields |= themespec::kThemeSpecFieldTime;
+  }
+  if (previous.dateText != next.dateText) {
+    fields |= themespec::kThemeSpecFieldDate;
+  }
+  if (previous.sessionTokens != next.sessionTokens) {
+    fields |= themespec::kThemeSpecFieldSessionTokens;
+  }
+  if (previous.weekTokens != next.weekTokens) {
+    fields |= themespec::kThemeSpecFieldWeekTokens;
+  }
+  if (previous.totalTokens != next.totalTokens) {
+    fields |= themespec::kThemeSpecFieldTotalTokens;
+  }
+  return fields;
+#else
+  (void)previous;
+  (void)next;
+  return 0;
+#endif
+}
+
+inline bool ThemeSpecCanUsePartialRender(
+    const Frame& previous,
+    const Frame& next,
+    const String& themeSpecRaw,
+    bool hadFrame,
+    bool visualChanged,
+    bool themeChanged,
+    bool themeSpecChanged) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (!hadFrame || !visualChanged || themeChanged || themeSpecChanged || previous.hasError || next.hasError) {
+    return false;
+  }
+  if (!previous.hasThemeSpec || !next.hasThemeSpec || next.clearThemeSpec) {
+    return false;
+  }
+  if (previous.themeSpecId != next.themeSpecId ||
+      previous.themeSpecRev != next.themeSpecRev ||
+      !ThemeSpecRawLooksRenderable(themeSpecRaw)) {
+    return false;
+  }
+  if (previous.clearThemeSpec != next.clearThemeSpec) {
+    return false;
+  }
+  return ThemeSpecLiveChangedFields(previous, next) != 0;
+#else
+  (void)previous;
+  (void)next;
+  (void)themeSpecRaw;
+  (void)hadFrame;
+  (void)visualChanged;
+  (void)themeChanged;
+  (void)themeSpecChanged;
+  return false;
+#endif
 }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -192,12 +417,16 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
 
   bool hasThemeSpec = false;
   bool clearThemeSpec = false;
+  const bool confirmClearThemeSpec = doc["confirmClearThemeSpec"].is<bool>() &&
+                                     doc["confirmClearThemeSpec"].as<bool>();
   String themeSpecId;
   int themeSpecRev = 0;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   String themeSpecRaw;
 #endif
-  if (std::strstr(line, "\"themeSpec\"") != nullptr && doc["themeSpec"].isNull()) {
+  if (confirmClearThemeSpec &&
+      std::strstr(line, "\"themeSpec\"") != nullptr &&
+      doc["themeSpec"].isNull()) {
     clearThemeSpec = true;
   }
   if (doc["themeSpec"].is<JsonObjectConst>()) {
@@ -246,6 +475,16 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     }
   }
 
+  String activity;
+  if (doc["activity"].is<const char*>()) {
+    activity = String(doc["activity"].as<const char*>());
+    activity.trim();
+    activity.toLowerCase();
+    if (!IsSafeActivityName(activity)) {
+      activity = "";
+    }
+  }
+
   bool hasUpdateAvailable = false;
   bool updateAvailable = false;
   String updateLatestVersion;
@@ -269,6 +508,7 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     out = {};
     out.hasUsageMode = hasUsageMode;
     out.usageMode = usageMode;
+    out.activity = activity;
     out.timeText = String(doc["time"] | "");
     out.dateText = String(doc["date"] | "");
     out.hasTheme = hasTheme;
@@ -303,6 +543,7 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | 0));
   out.hasUsageMode = hasUsageMode;
   out.usageMode = usageMode;
+  out.activity = activity;
   out.hasTheme = hasTheme;
   out.theme = themeName;
   out.clearThemeSpec = clearThemeSpec;
@@ -322,34 +563,53 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   return true;
 }
 
-inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
+inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Frame& next, const String& themeSpecRaw) {
   if (previous.hasError != next.hasError) {
     return true;
   }
   if (next.hasError) {
     return previous.error != next.error;
   }
-  return previous.provider != next.provider ||
-         previous.label != next.label ||
-         previous.session != next.session ||
-         previous.weekly != next.weekly ||
-         previous.sessionTokens != next.sessionTokens ||
-         previous.weekTokens != next.weekTokens ||
-         previous.totalTokens != next.totalTokens ||
-         previous.hasUsageMode != next.hasUsageMode ||
-         previous.usageMode != next.usageMode ||
-         previous.timeText != next.timeText ||
-         previous.dateText != next.dateText ||
+  const bool dataChanged = next.hasThemeSpec
+                               ? FrameThemeSpecDataVisualChanged(previous, next, themeSpecRaw)
+                               : previous.provider != next.provider ||
+                                     previous.label != next.label ||
+                                     previous.session != next.session ||
+                                     previous.weekly != next.weekly ||
+                                     previous.sessionTokens != next.sessionTokens ||
+                                     previous.weekTokens != next.weekTokens ||
+                                     previous.totalTokens != next.totalTokens ||
+                                     previous.hasUsageMode != next.hasUsageMode ||
+                                     previous.usageMode != next.usageMode ||
+                                     previous.activity != next.activity ||
+                                     previous.timeText != next.timeText ||
+                                     previous.dateText != next.dateText;
+  const bool themeIdentityChanged =
          previous.clearThemeSpec != next.clearThemeSpec ||
          previous.hasThemeSpec != next.hasThemeSpec ||
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-         previous.themeSpecRaw != next.themeSpecRaw ||
+         previous.themeSpecId != next.themeSpecId ||
+         previous.themeSpecRev != next.themeSpecRev ||
 #endif
+         false;
+  if (next.hasThemeSpec) {
+    return dataChanged || themeIdentityChanged;
+  }
+  return dataChanged ||
+         themeIdentityChanged ||
          previous.hasUpdateAvailable != next.hasUpdateAvailable ||
          previous.updateAvailable != next.updateAvailable ||
          previous.updateLatestVersion != next.updateLatestVersion ||
          previous.updateStatus != next.updateStatus ||
          previous.updateLastError != next.updateLastError;
+}
+
+inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  return FrameVisualChangedWithThemeSpecRaw(previous, next, next.themeSpecRaw);
+#else
+  return FrameVisualChangedWithThemeSpecRaw(previous, next, EmptyThemeSpecRaw());
+#endif
 }
 
 inline bool FrameThemeChanged(const Frame& previous, const Frame& next) {
@@ -382,42 +642,81 @@ inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previou
   }
 
   if (next.hasThemeSpec) {
+    const bool samePreviousTheme = previous.hasThemeSpec &&
+                                   previous.themeSpecId == next.themeSpecId &&
+                                   previous.themeSpecRev == next.themeSpecRev;
     const bool sameCachedTheme = runtimeState.cachedThemeRev > 0 &&
                                  runtimeState.cachedThemeId == next.themeSpecId &&
                                  runtimeState.cachedThemeRev == next.themeSpecRev;
-    if (sameCachedTheme) {
-      outEvent.themeSpecCacheHit = true;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-      if (next.themeSpecRaw.length() == 0) {
-        if (runtimeState.cachedThemeSpecRaw.length() > 0) {
-          next.themeSpecRaw = runtimeState.cachedThemeSpecRaw;
-        } else {
-          next.themeSpecRaw = previous.themeSpecRaw;
-        }
+    const bool nextHasRenderableRaw = ThemeSpecRawLooksRenderable(next.themeSpecRaw);
+    if (nextHasRenderableRaw) {
+      runtimeState.cachedThemeId = next.themeSpecId;
+      runtimeState.cachedThemeRev = next.themeSpecRev;
+      runtimeState.cachedThemeSpecRaw = next.themeSpecRaw;
+      return;
+    }
+
+    if (sameCachedTheme && ThemeSpecRawLooksRenderable(runtimeState.cachedThemeSpecRaw)) {
+      next.themeSpecRaw = "";
+      outEvent.themeSpecCacheHit = true;
+      return;
+    }
+
+    if (samePreviousTheme) {
+      if (ThemeSpecRawLooksRenderable(previous.themeSpecRaw)) {
+        runtimeState.cachedThemeId = previous.themeSpecId;
+        runtimeState.cachedThemeRev = previous.themeSpecRev;
+        runtimeState.cachedThemeSpecRaw = previous.themeSpecRaw;
       }
-#endif
+      next.themeSpecRaw = "";
+      outEvent.themeSpecCacheHit = true;
+      return;
+    }
+
+    if (runtimeState.cachedThemeRev > 0 && ThemeSpecRawLooksRenderable(runtimeState.cachedThemeSpecRaw)) {
+      next.hasThemeSpec = true;
+      next.themeSpecId = runtimeState.cachedThemeId;
+      next.themeSpecRev = runtimeState.cachedThemeRev;
+      next.themeSpecRaw = "";
+      outEvent.themeSpecCacheHit = true;
+      return;
+    }
+
+    if (previous.hasThemeSpec && ThemeSpecRawLooksRenderable(previous.themeSpecRaw)) {
+        next.hasThemeSpec = true;
+        next.themeSpecId = previous.themeSpecId;
+        next.themeSpecRev = previous.themeSpecRev;
+        runtimeState.cachedThemeId = previous.themeSpecId;
+        runtimeState.cachedThemeRev = previous.themeSpecRev;
+        runtimeState.cachedThemeSpecRaw = previous.themeSpecRaw;
+        next.themeSpecRaw = "";
+        outEvent.themeSpecCacheHit = true;
+      return;
+    }
+
+    next.hasThemeSpec = false;
+    next.themeSpecId = "";
+    next.themeSpecRev = 0;
+    next.themeSpecRaw = "";
+#else
+    if (sameCachedTheme || samePreviousTheme) {
+      outEvent.themeSpecCacheHit = true;
     } else {
       runtimeState.cachedThemeId = next.themeSpecId;
       runtimeState.cachedThemeRev = next.themeSpecRev;
       outEvent.themeSpecChanged = true;
-    }
-
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    if (next.themeSpecRaw.length() > 0) {
-      runtimeState.cachedThemeId = next.themeSpecId;
-      runtimeState.cachedThemeRev = next.themeSpecRev;
-      runtimeState.cachedThemeSpecRaw = next.themeSpecRaw;
     }
 #endif
     return;
   }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  if (runtimeState.cachedThemeRev > 0 && runtimeState.cachedThemeSpecRaw.length() > 0) {
+  if (runtimeState.cachedThemeRev > 0 && ThemeSpecRawLooksRenderable(runtimeState.cachedThemeSpecRaw)) {
     next.hasThemeSpec = true;
     next.themeSpecId = runtimeState.cachedThemeId;
     next.themeSpecRev = runtimeState.cachedThemeRev;
-    next.themeSpecRaw = runtimeState.cachedThemeSpecRaw;
+    next.themeSpecRaw = "";
     outEvent.themeSpecCacheHit = true;
   }
 #endif
@@ -441,10 +740,25 @@ inline bool ConsumeFrameLine(
 
   const Frame previous = runtimeState.current;
   ApplyThemeSpecCache(runtimeState, previous, next, outEvent);
+  if (!next.hasError && next.activity.length() == 0) {
+    next.activity = runtimeState.hasFrame && UsageProgressChanged(previous, next) ? "coding" : "idle";
+  }
 
   outEvent.hadFrame = runtimeState.hasFrame;
-  outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChanged(previous, next) || outEvent.themeSpecChanged;
+  const String& themeSpecRaw = ThemeSpecRawForFrame(runtimeState, next);
+  outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChangedWithThemeSpecRaw(previous, next, themeSpecRaw) || outEvent.themeSpecChanged;
   outEvent.themeChanged = outEvent.hadFrame && FrameThemeChanged(previous, next);
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  outEvent.themeSpecChangedFields = ThemeSpecLiveChangedFields(previous, next);
+  outEvent.themeSpecPartialRender = ThemeSpecCanUsePartialRender(
+      previous,
+      next,
+      themeSpecRaw,
+      outEvent.hadFrame,
+      outEvent.visualChanged,
+      outEvent.themeChanged,
+      outEvent.themeSpecChanged);
+#endif
 
   runtimeState.current = next;
   runtimeState.hasFrame = true;

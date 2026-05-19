@@ -1,0 +1,31 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "synthwave",
+  "name": "Synthwave",
+  "version": "1.0.0",
+  "minFirmware": "1.0.24",
+  "themeSpec": {
+    "path": "/themes/u/synthwa-1-0a355b.json",
+    "file": "theme.json",
+    "bytes": 659,
+    "sha256": "f721a28c2122bee229d308422adf66b9d5d28b1a1ab5dc336f53bfae1e012463",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/u/syn-top.cbi",
+      "file": "assets/syn-top.cbi",
+      "bytes": 1649,
+      "sha256": "ff9ac84d3d72a69cea200961d8819d44627dbb2563bf46042d4701149a0f5dc7",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/syn-ui.cbi",
+      "file": "assets/syn-ui.cbi",
+      "bytes": 813,
+      "sha256": "c471f9cb3efc752b112c15a31143644651e542e9a1ed2ae95451b1791376f5fa",
+      "contentType": "text/plain"
+    }
+  ]
+}

@@ -31,7 +31,8 @@ Fields:
 - `weekTokens` (number, optional): rolling 7-day token total when available.
 - `totalTokens` (number, optional): lifetime token total when available.
 - `theme` (string, optional): requested built-in UI theme (`classic`, `crt`, `mini`).
-- `themeSpec` (object, optional): ThemeSpec v1 payload (see schema below).
+- `themeSpec` (object, optional): inline ThemeSpec v1 payload (see schema below). Once a ThemeSpec is cached or activated from storage, later live frames may omit this field and only send usage data.
+- `confirmClearThemeSpec` (boolean, optional): must be `true` when intentionally sending `themeSpec:null` to clear the active cached ThemeSpec.
 - `error` (string, optional): if present, firmware should render error screen.
 
 Example with additive token stats + theme:
@@ -57,16 +58,20 @@ Example:
 
 Design constraints:
 - No user code execution on device.
-- Primitives are declarative (`text`, `rect`, `progress`, `gif`, `pixels`) and validated by companion before send.
-- Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/c/bg/bc/a/d`, and type aliases `tx/r/p/g/px`.
+- Primitives are declarative (`text`, `rect`, `progress`, `gif`, `sprite`, `pixels`) and validated by companion before send.
+- Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/c/bg/bc/a/d`, and type aliases `tx/r/p/g/sp/px`.
 - Optional top-level `bgColor` fills the whole 240x240 screen before primitives are drawn.
 - Text primitives use the single firmware-loaded TFT GLCD font; scale with `fontSize`.
 - Text primitive `bgColor` is optional; when omitted, text is drawn transparent over the theme background.
-- `gif` primitives reference uploaded display assets with `assetPath` under `/themes/...`; ESP8266 LittleFS paths are capped at 31 characters.
+- `gif` and `sprite` primitives reference uploaded display assets with `assetPath` under `/themes/...`; ESP8266 LittleFS paths are capped at 31 characters.
+- Animated state assets use `stateAssets` (compact key `sa`) with `idle` and `coding` states. The renderer selects `coding` for coding activity and otherwise falls back to `idle`, then `assetPath`.
+- `sprite` primitives reference uploaded `CBI1` static sprites or `CBA1` animated sprites under `/themes/...`. `CBA1` stores `width height frameCount fps`, one shared palette of up to 26 colors, then RLE rows for each frame. The browser should convert source sprite sheets into this format before upload. Animated sprites may set `bgColor`/`bg` as the local clear color used between frames.
 - `pixels` primitives support the existing transparent 1-bit row-major bitmap in hex `data`; set bits are drawn with `color`.
 - `pixels` primitives may also use multicolor RLE with palette `p` and rows `r`, for example `{"type":"pixels","width":16,"height":1,"p":["#FF0000"],"r":["5.4a7."]}`. `.` is transparent, `a` maps to `p[0]`, `b` maps to `p[1]`, and an optional decimal run length before the token repeats it. Every expanded row must equal `width`, and row count must equal `height`.
-- Compatibility is checked against device capability limits (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`).
-- A frame with `"themeSpec": null` clears the cached declarative layout and falls back to the builtin `theme`.
+- Compatibility is checked against device capability limits (`maxThemeSpecBytes` for inline frames, `maxStoredThemeSpecBytes` for stored WiFi themes, `maxThemePrimitives`, `builtinThemes`).
+- ESP8266 firmware advertises a 4096-byte stored ThemeSpec limit, but JSON parsing also consumes RAM. Theme authors should prefer small specs plus external `CBI1`/`CBA1` visual assets for detailed scenes instead of pushing a ThemeSpec close to the byte ceiling.
+- Hosts should budget animated repaint separately from stored bytes. Static background sprites are safe when drawn once, but repeated animation ticks should redraw only animated GIF/`CBA1` regions and should stay within a conservative per-second pixel budget for ESP8266.
+- A frame with `"themeSpec": null` clears the cached declarative layout only when the same frame also sets `"confirmClearThemeSpec": true`; unconfirmed null values are ignored so live theme state is not accidentally removed.
 
 ## Error Frame
 
@@ -79,22 +84,30 @@ Design constraints:
 When the ESP8266 is connected to WiFi, it serves:
 
 - `GET /hello`: returns the same Device Hello JSON shape as USB Serial. For WiFi, `capabilities.transport.active` is `wifi` and `supported` includes both `usb` and `wifi`.
+- `GET /health`: returns current WiFi/filesystem/display diagnostics plus `system.freeHeap`, `system.resetReason`, and ThemeSpec render status fields (`renderOk`, `renderError`, `renderFailures`), which help detect watchdog resets or render failures after heavy themes.
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This only updates the cached display/diagnostic update state; the ESP8266 firmware must not fetch public HTTPS manifests directly.
 - `POST /reset-wifi`: clears saved WiFi credentials and restarts the device into setup mode.
 - `GET /assets`: returns mounted filesystem status and a generic list of stored asset paths/sizes.
 - `POST /assets?path=/themes/<short-id>/<asset>`: uploads one theme asset using multipart field `asset`.
-- `DELETE /assets?path=/themes/<short-id>/<asset>`: deletes one stored asset.
+- `DELETE /assets?path=/themes/<short-id>/<asset>`: deletes one stored asset. Firmware rejects deletion of the currently active stored ThemeSpec.
+- `POST /theme/active`: activates a stored ThemeSpec JSON file uploaded via `/assets`. Body: `{"path":"/themes/u/<short-id>.json"}`. This loads the spec into the firmware cache, so future `/frame` requests can stay small and only include live usage values. The response and `/health` diagnostics include a content `hash` for firmware that supports stored-theme verification.
+
+Installable customer themes use VibeTV Theme Packs: a directory or `.zip` with `manifest.json`, one ThemeSpec JSON file, and optional asset files. See `docs/theme-packs.md`.
 
 HTTP responses:
 - `200 OK`: frame accepted.
 - `400 Bad Request`: empty body or invalid request shape.
+- `404 Not Found`: stored theme file does not exist.
 - `413 Payload Too Large`: body exceeds `maxFrameBytes`.
 
 Example:
 
 ```bash
 curl http://192.168.178.123/hello
+curl -X POST -F asset=@theme.json 'http://192.168.178.123/assets?path=/themes/u/cozy-1-a1b2c3.json'
+curl -X POST -H 'Content-Type: text/plain' --data '{"path":"/themes/u/cozy-1-a1b2c3.json"}' \
+  http://192.168.178.123/theme/active
 printf '{"v":2,"provider":"codex","label":"Codex","session":17,"weekly":42,"resetSecs":15480}\n' \
   | curl -X POST --data-binary @- http://192.168.178.123/frame
 ```
@@ -112,13 +125,15 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
   "board": "esp8266-smalltv-st7789",
   "firmware": "1.0.0",
   "features": ["theme", "theme-spec-v1"],
-  "maxFrameBytes": 1024,
+  "maxFrameBytes": 2048,
   "capabilities": {
     "display": {"widthPx": 240, "heightPx": 240, "colorDepthBits": 16},
     "theme": {
       "supportsThemeSpecV1": true,
-      "maxThemeSpecBytes": 1024,
+      "maxThemeSpecBytes": 2048,
       "maxThemePrimitives": 32,
+      "supportsStoredThemes": true,
+      "maxStoredThemeSpecBytes": 4096,
       "builtinThemes": ["classic", "crt", "mini"]
     },
     "transport": {"active": "wifi", "supported": ["usb", "wifi"]}

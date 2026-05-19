@@ -1,6 +1,8 @@
 #include "gif_core_esp8266.h"
 
-#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+#if !defined(CODEXBAR_DISPLAY_PROBE_ONLY) && CODEXBAR_DISPLAY_GIF_CORE
+
+#include "renderer_esp8266_display_state.h"
 
 #include <cstdio>
 #include <cstring>
@@ -34,13 +36,14 @@ void GifCoreESP8266::Setup(const char* preloadAssetPath) {
 }
 
 void GifCoreESP8266::Stop() {
-  if (decoderOpen_) {
-    decoder_.close();
+  if (decoderOpen_ && decoder_ != nullptr) {
+    decoder_->close();
   }
   if (file_) {
     file_.close();
   }
   decoderOpen_ = false;
+  ReleaseDecoder();
   suppressDraw_ = false;
   nextFrameAtMs_ = 0;
   gifWidth_ = 0;
@@ -49,6 +52,22 @@ void GifCoreESP8266::Stop() {
   drawHeight_ = 0;
   hasBackgroundColor_ = false;
   backgroundColor_ = 0x0000;
+}
+
+bool GifCoreESP8266::EnsureDecoder() {
+  if (decoder_ != nullptr) {
+    return true;
+  }
+  decoder_ = new (std::nothrow) AnimatedGIF();
+  return decoder_ != nullptr;
+}
+
+void GifCoreESP8266::ReleaseDecoder() {
+  if (decoder_ == nullptr) {
+    return;
+  }
+  delete decoder_;
+  decoder_ = nullptr;
 }
 
 void GifCoreESP8266::ResetFrameSchedule() {
@@ -208,6 +227,21 @@ void GifCoreESP8266::ConfigureDrawRect(TFT_eSPI& tft, const GifPlaybackRequest& 
   }
 }
 
+void GifCoreESP8266::ClearDrawRect(TFT_eSPI& tft) {
+  if (!hasBackgroundColor_ || drawWidth_ <= 0 || drawHeight_ <= 0) {
+    return;
+  }
+  const int x = max(0, drawX_);
+  const int y = max(0, drawY_);
+  const int right = min(static_cast<int>(tft.width()), drawX_ + drawWidth_);
+  const int bottom = min(static_cast<int>(tft.height()), drawY_ + drawHeight_);
+  if (right <= x || bottom <= y) {
+    return;
+  }
+  display::DisplayTransaction transaction;
+  tft.fillRect(x, y, right - x, bottom - y, backgroundColor_);
+}
+
 bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& request) {
   if (request.assetPath == nullptr || request.assetPath[0] == '\0') {
     Stop();
@@ -267,8 +301,14 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
   gifHeight_ = height;
   ConfigureDrawRect(tft, request);
 
-  decoder_.begin(BIG_ENDIAN_PIXELS);
-  if (!decoder_.open(
+  if (!EnsureDecoder()) {
+    NoteFailure(request.failureSlot, request.assetPath, "decoder_alloc");
+    Stop();
+    return false;
+  }
+
+  decoder_->begin(BIG_ENDIAN_PIXELS);
+  if (!decoder_->open(
           request.assetPath,
           OpenCallback,
           CloseCallback,
@@ -282,6 +322,7 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
 
   decoderOpen_ = true;
   nextFrameAtMs_ = 0;
+  ClearDrawRect(tft);
   return true;
 }
 
@@ -295,15 +336,24 @@ bool GifCoreESP8266::PlayFrame(TFT_eSPI& tft, bool forceFrame) {
   const unsigned long frameStartMs = now;
   int delayMs = 0;
 
-  tft.startWrite();
-  bool played = decoder_.playFrame(false, &delayMs, nullptr);
-  tft.endWrite();
+  bool played = false;
+  {
+    display::DisplayTransaction transaction;
+    played = decoder_ != nullptr && decoder_->playFrame(false, &delayMs, nullptr);
+  }
 
   if (!played) {
-    decoder_.reset();
-    tft.startWrite();
-    played = decoder_.playFrame(false, &delayMs, nullptr);
-    tft.endWrite();
+    if (decoder_ == nullptr) {
+      NoteFailure(failureSlot_, assetPath_.c_str(), "decoder_missing");
+      Stop();
+      return false;
+    }
+    decoder_->reset();
+    ClearDrawRect(tft);
+    {
+      display::DisplayTransaction transaction;
+      played = decoder_->playFrame(false, &delayMs, nullptr);
+    }
     if (!played) {
       NoteFailure(failureSlot_, assetPath_.c_str(), "frame_decode");
       Stop();

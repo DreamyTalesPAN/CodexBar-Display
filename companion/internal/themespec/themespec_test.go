@@ -18,6 +18,7 @@ func TestValidateAcceptsMinimalV1Spec(t *testing.T) {
 			{Type: "text", X: 8, Y: 20, Text: "Codex", FontSize: 2, Color: "#FFFFFF"},
 			{Type: "text", X: 8, Y: 48, Binding: "label", FontSize: 2, Color: "#FFFFFF"},
 			{Type: "gif", X: 80, Y: 96, Width: 64, Height: 64, AssetPath: "/themes/mini/mini.gif"},
+			{Type: "sprite", X: 24, Y: 116, Width: 32, Height: 32, AssetPath: "/themes/u/hero.cba"},
 			{Type: "pixels", X: 4, Y: 4, Width: 8, Height: 2, Color: "#FFFFFF", Data: "A5F0"},
 		},
 	}
@@ -37,6 +38,7 @@ func TestValidateAcceptsCompactV1Spec(t *testing.T) {
 			{"t":"tx","x":8,"y":20,"v":"Codex","s":2,"c":"#FFFFFF"},
 			{"t":"tx","x":8,"y":48,"b":"l","s":2,"c":"#FFFFFF"},
 			{"t":"g","x":80,"y":96,"w":64,"h":64,"a":"/themes/mini/mini.gif"},
+			{"t":"sp","x":24,"y":116,"w":32,"h":32,"a":"/themes/u/hero.cba"},
 			{"t":"px","x":4,"y":4,"w":8,"h":2,"c":"#FFFFFF","d":"A5F0"}
 		]
 	}`)
@@ -176,6 +178,149 @@ func TestValidateRejectsUnsafeGifAssetPath(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsUnsafeSpriteAssetPath(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "mini-transport",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{Type: "sprite", X: 0, Y: 0, AssetPath: "/themes/../hero.cba"},
+		},
+	}
+
+	if err := Validate(spec); err == nil {
+		t.Fatalf("expected validation error")
+	}
+}
+
+func TestValidateAcceptsStateAssetsForSpriteAndGif(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "mini-transport",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{
+				Type:   "sprite",
+				X:      0,
+				Y:      0,
+				Width:  24,
+				Height: 24,
+				StateAssets: map[string]string{
+					"idle":   "/themes/u/idle.cbi",
+					"coding": "/themes/u/coding.cbi",
+				},
+			},
+			{
+				Type:   "gif",
+				X:      0,
+				Y:      24,
+				Width:  24,
+				Height: 24,
+				StateAssets: map[string]string{
+					"idle": "/themes/u/idle.gif",
+				},
+			},
+		},
+	}
+
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected stateAssets spec to validate, got %v", err)
+	}
+}
+
+func TestValidateAcceptsCompactStateAssets(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"mini-transport",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":24,"h":24,"sa":{"idle":"/themes/u/idle.cbi","coding":"/themes/u/coding.cbi"}}
+		]
+	}`)
+
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse compact stateAssets spec: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected compact stateAssets spec to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].StateAssets["coding"]; got != "/themes/u/coding.cbi" {
+		t.Fatalf("compact stateAssets did not normalize, got %q", got)
+	}
+}
+
+func TestValidateAcceptsCompactActivityBinding(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"mini-transport",
+		"rev":1,
+		"p":[
+			{"t":"tx","x":0,"y":0,"s":1,"b":"act"}
+		]
+	}`)
+
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse compact activity binding: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected compact activity binding to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].Binding; got != "activity" {
+		t.Fatalf("compact activity binding did not expand, got %q", got)
+	}
+}
+
+func TestValidateRejectsInvalidStateAssets(t *testing.T) {
+	tests := []struct {
+		name        string
+		stateAssets map[string]string
+	}{
+		{
+			name: "uppercase state",
+			stateAssets: map[string]string{
+				"Idle": "/themes/u/idle.cbi",
+			},
+		},
+		{
+			name: "unsafe path",
+			stateAssets: map[string]string{
+				"idle": "/themes/../idle.cbi",
+			},
+		},
+		{
+			name: "unsupported state",
+			stateAssets: map[string]string{
+				"thinking": "/themes/u/thinking.cbi",
+			},
+		},
+		{
+			name: "empty path",
+			stateAssets: map[string]string{
+				"idle": "",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := Spec{
+				ThemeSpecVersion: 1,
+				ThemeID:          "mini-transport",
+				ThemeRev:         1,
+				Primitives: []Primitive{
+					{Type: "sprite", X: 0, Y: 0, Width: 24, Height: 24, StateAssets: tt.stateAssets},
+				},
+			}
+
+			if err := Validate(spec); err == nil {
+				t.Fatalf("expected validation error")
+			}
+		})
+	}
+}
+
 func TestValidateRejectsUnknownPrimitiveType(t *testing.T) {
 	spec := Spec{
 		ThemeSpecVersion: 1,
@@ -216,6 +361,37 @@ func TestValidateAgainstCapabilitiesChecksLimits(t *testing.T) {
 	}
 	if err := ValidateAgainstCapabilities(spec, raw, caps); err == nil {
 		t.Fatalf("expected capability mismatch")
+	}
+}
+
+func TestValidateAgainstCapabilitiesChecksGifLimits(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "mini-transport",
+		ThemeRev:         1,
+		FallbackTheme:    "mini",
+		Primitives: []Primitive{
+			{Type: "gif", X: 0, Y: 0, Width: 96, Height: 80, AssetPath: "/themes/u/too-big.gif"},
+		},
+	}
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal raw: %v", err)
+	}
+
+	caps := protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+		MaxThemeSpecBytes:   len(raw) + 10,
+		MaxThemePrimitives:  8,
+		MaxThemeGifAssets:   1,
+		MaxThemeGifWidth:    80,
+		MaxThemeGifHeight:   80,
+		MaxThemeGifPixels:   6400,
+		BuiltinThemes:       []string{"mini"},
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, caps); err == nil {
+		t.Fatalf("expected GIF capability mismatch")
 	}
 }
 

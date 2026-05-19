@@ -23,37 +23,40 @@ var (
 	errMissingPrimitive  = errors.New("at least one primitive is required")
 	errUnknownCapability = errors.New("device capabilities unavailable; connect device and retry")
 	themeIDPattern       = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{2,63}$`)
+	stateNamePattern     = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{0,31}$`)
 	colorPattern         = regexp.MustCompile(`^#[A-Fa-f0-9]{6}$`)
 	hexPattern           = regexp.MustCompile(`^[A-Fa-f0-9]+$`)
 )
 
 type Primitive struct {
-	Type         string   `json:"type"`
-	ShortType    string   `json:"t,omitempty"`
-	X            int      `json:"x,omitempty"`
-	Y            int      `json:"y,omitempty"`
-	Width        int      `json:"width,omitempty"`
-	ShortWidth   int      `json:"w,omitempty"`
-	Height       int      `json:"height,omitempty"`
-	ShortHeight  int      `json:"h,omitempty"`
-	Text         string   `json:"text,omitempty"`
-	ShortText    string   `json:"v,omitempty"`
-	Binding      string   `json:"binding,omitempty"`
-	ShortBinding string   `json:"b,omitempty"`
-	FontSize     int      `json:"fontSize,omitempty"`
-	ShortSize    int      `json:"s,omitempty"`
-	Color        string   `json:"color,omitempty"`
-	ShortColor   string   `json:"c,omitempty"`
-	BgColor      string   `json:"bgColor,omitempty"`
-	ShortBg      string   `json:"bg,omitempty"`
-	BorderColor  string   `json:"borderColor,omitempty"`
-	ShortBorder  string   `json:"bc,omitempty"`
-	AssetPath    string   `json:"assetPath,omitempty"`
-	ShortAsset   string   `json:"a,omitempty"`
-	Data         string   `json:"data,omitempty"`
-	ShortData    string   `json:"d,omitempty"`
-	Palette      []string `json:"p,omitempty"`
-	Rows         []string `json:"r,omitempty"`
+	Type             string            `json:"type"`
+	ShortType        string            `json:"t,omitempty"`
+	X                int               `json:"x,omitempty"`
+	Y                int               `json:"y,omitempty"`
+	Width            int               `json:"width,omitempty"`
+	ShortWidth       int               `json:"w,omitempty"`
+	Height           int               `json:"height,omitempty"`
+	ShortHeight      int               `json:"h,omitempty"`
+	Text             string            `json:"text,omitempty"`
+	ShortText        string            `json:"v,omitempty"`
+	Binding          string            `json:"binding,omitempty"`
+	ShortBinding     string            `json:"b,omitempty"`
+	FontSize         int               `json:"fontSize,omitempty"`
+	ShortSize        int               `json:"s,omitempty"`
+	Color            string            `json:"color,omitempty"`
+	ShortColor       string            `json:"c,omitempty"`
+	BgColor          string            `json:"bgColor,omitempty"`
+	ShortBg          string            `json:"bg,omitempty"`
+	BorderColor      string            `json:"borderColor,omitempty"`
+	ShortBorder      string            `json:"bc,omitempty"`
+	AssetPath        string            `json:"assetPath,omitempty"`
+	ShortAsset       string            `json:"a,omitempty"`
+	StateAssets      map[string]string `json:"stateAssets,omitempty"`
+	ShortStateAssets map[string]string `json:"sa,omitempty"`
+	Data             string            `json:"data,omitempty"`
+	ShortData        string            `json:"d,omitempty"`
+	Palette          []string          `json:"p,omitempty"`
+	Rows             []string          `json:"r,omitempty"`
 }
 
 type Spec struct {
@@ -74,7 +77,10 @@ func Load(path string) (Spec, json.RawMessage, error) {
 	if err != nil {
 		return Spec{}, nil, err
 	}
+	return Parse(raw)
+}
 
+func Parse(raw []byte) (Spec, json.RawMessage, error) {
 	var spec Spec
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		return Spec{}, nil, fmt.Errorf("parse theme spec: %w", err)
@@ -113,6 +119,7 @@ func Validate(spec Spec) error {
 }
 
 func ValidateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.DeviceCapabilities) error {
+	spec = normalizeSpec(spec)
 	if !caps.Known {
 		return errUnknownCapability
 	}
@@ -128,6 +135,24 @@ func ValidateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 			len(spec.Primitives),
 			caps.MaxThemePrimitives,
 		)
+	}
+	gifAssets := uniqueGIFAssetPaths(spec)
+	if caps.MaxThemeGifAssets > 0 && len(gifAssets) > caps.MaxThemeGifAssets {
+		return fmt.Errorf("theme spec GIF asset count exceeds device limit: count=%d limit=%d", len(gifAssets), caps.MaxThemeGifAssets)
+	}
+	for i, primitive := range spec.Primitives {
+		if primitive.Type != "gif" {
+			continue
+		}
+		if caps.MaxThemeGifWidth > 0 && primitive.Width > caps.MaxThemeGifWidth {
+			return fmt.Errorf("primitives[%d] GIF width exceeds device limit: width=%d limit=%d", i, primitive.Width, caps.MaxThemeGifWidth)
+		}
+		if caps.MaxThemeGifHeight > 0 && primitive.Height > caps.MaxThemeGifHeight {
+			return fmt.Errorf("primitives[%d] GIF height exceeds device limit: height=%d limit=%d", i, primitive.Height, caps.MaxThemeGifHeight)
+		}
+		if caps.MaxThemeGifPixels > 0 && primitive.Width*primitive.Height > caps.MaxThemeGifPixels {
+			return fmt.Errorf("primitives[%d] GIF area exceeds device limit: pixels=%d limit=%d", i, primitive.Width*primitive.Height, caps.MaxThemeGifPixels)
+		}
 	}
 	if spec.FallbackTheme != "" && len(caps.BuiltinThemes) > 0 {
 		fallback := theme.Normalize(spec.FallbackTheme)
@@ -167,6 +192,7 @@ func normalizeSpec(spec Spec) Spec {
 		spec.Primitives[i].BgColor = strings.TrimSpace(spec.Primitives[i].BgColor)
 		spec.Primitives[i].BorderColor = strings.TrimSpace(spec.Primitives[i].BorderColor)
 		spec.Primitives[i].AssetPath = strings.TrimSpace(spec.Primitives[i].AssetPath)
+		spec.Primitives[i].StateAssets = normalizeStateAssets(spec.Primitives[i].StateAssets)
 		spec.Primitives[i].Data = strings.TrimSpace(spec.Primitives[i].Data)
 		for j := range spec.Primitives[i].Palette {
 			spec.Primitives[i].Palette[j] = strings.TrimSpace(spec.Primitives[i].Palette[j])
@@ -209,10 +235,24 @@ func normalizePrimitive(p Primitive) Primitive {
 	if p.AssetPath == "" {
 		p.AssetPath = p.ShortAsset
 	}
+	if len(p.StateAssets) == 0 && len(p.ShortStateAssets) > 0 {
+		p.StateAssets = p.ShortStateAssets
+	}
 	if p.Data == "" {
 		p.Data = p.ShortData
 	}
 	return p
+}
+
+func normalizeStateAssets(stateAssets map[string]string) map[string]string {
+	if len(stateAssets) == 0 {
+		return nil
+	}
+	normalized := make(map[string]string, len(stateAssets))
+	for state, assetPath := range stateAssets {
+		normalized[strings.TrimSpace(state)] = strings.TrimSpace(assetPath)
+	}
+	return normalized
 }
 
 func expandPrimitiveType(value string) string {
@@ -225,6 +265,8 @@ func expandPrimitiveType(value string) string {
 		return "progress"
 	case "g":
 		return "gif"
+	case "sp", "img":
+		return "sprite"
 	case "px":
 		return "pixels"
 	default:
@@ -246,6 +288,8 @@ func expandBinding(value string) string {
 		return "reset"
 	case "u":
 		return "usageMode"
+	case "act":
+		return "activity"
 	case "st":
 		return "sessionTokens"
 	case "wt":
@@ -271,8 +315,24 @@ func validatePrimitive(p Primitive) error {
 		if p.Width <= 0 || p.Height <= 0 {
 			return errors.New("gif primitive requires width/height > 0")
 		}
-		if !isSafeThemeAssetPath(p.AssetPath) {
-			return errors.New("gif primitive requires assetPath under /themes/")
+		if !hasSpriteAssetReference(p) {
+			return errors.New("gif primitive requires assetPath or stateAssets under /themes/")
+		}
+		if err := validateSpriteAssetReferences(p); err != nil {
+			return err
+		}
+		if !gifAssetReferencesHaveGifExtension(p) {
+			return errors.New("gif primitive assetPath/stateAssets must reference .gif files")
+		}
+	case "sprite", "image":
+		if !hasSpriteAssetReference(p) {
+			return errors.New("sprite primitive requires assetPath or stateAssets under /themes/")
+		}
+		if err := validateSpriteAssetReferences(p); err != nil {
+			return err
+		}
+		if p.Width < 0 || p.Height < 0 {
+			return errors.New("sprite primitive width/height must be >= 0")
 		}
 	case "pixels":
 		if p.Width <= 0 || p.Height <= 0 {
@@ -310,6 +370,60 @@ func validatePrimitive(p Primitive) error {
 	}
 	if p.BorderColor != "" && !colorPattern.MatchString(p.BorderColor) {
 		return errUnsupportedColor
+	}
+	return nil
+}
+
+func uniqueGIFAssetPaths(spec Spec) []string {
+	seen := map[string]struct{}{}
+	for _, primitive := range spec.Primitives {
+		if primitive.Type != "gif" {
+			continue
+		}
+		if primitive.AssetPath != "" {
+			seen[primitive.AssetPath] = struct{}{}
+		}
+		for _, assetPath := range primitive.StateAssets {
+			seen[assetPath] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for assetPath := range seen {
+		out = append(out, assetPath)
+	}
+	return out
+}
+
+func gifAssetReferencesHaveGifExtension(p Primitive) bool {
+	if p.AssetPath != "" && !strings.HasSuffix(strings.ToLower(p.AssetPath), ".gif") {
+		return false
+	}
+	for _, assetPath := range p.StateAssets {
+		if !strings.HasSuffix(strings.ToLower(assetPath), ".gif") {
+			return false
+		}
+	}
+	return true
+}
+
+func hasSpriteAssetReference(p Primitive) bool {
+	return strings.TrimSpace(p.AssetPath) != "" || len(p.StateAssets) > 0
+}
+
+func validateSpriteAssetReferences(p Primitive) error {
+	if strings.TrimSpace(p.AssetPath) != "" && !isSafeThemeAssetPath(p.AssetPath) {
+		return errors.New("assetPath must be under /themes/")
+	}
+	for state, assetPath := range p.StateAssets {
+		if !stateNamePattern.MatchString(state) {
+			return fmt.Errorf("stateAssets state %q must match [a-z0-9][a-z0-9_-]{0,31}", state)
+		}
+		if state != "idle" && state != "coding" {
+			return fmt.Errorf("stateAssets state %q is unsupported; use idle or coding", state)
+		}
+		if !isSafeThemeAssetPath(assetPath) {
+			return fmt.Errorf("stateAssets[%s] must be under /themes/", state)
+		}
 	}
 	return nil
 }
@@ -389,6 +503,7 @@ func isSafeThemeAssetPath(path string) bool {
 	return strings.HasPrefix(path, "/themes/") &&
 		!strings.Contains(path, "..") &&
 		!strings.Contains(path, "\\") &&
+		!strings.Contains(path, "//") &&
 		!strings.HasSuffix(path, "/")
 }
 

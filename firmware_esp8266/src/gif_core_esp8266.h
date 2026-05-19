@@ -2,10 +2,17 @@
 
 #include <Arduino.h>
 
+#ifndef CODEXBAR_DISPLAY_GIF_CORE
+#define CODEXBAR_DISPLAY_GIF_CORE 1
+#endif
+
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+#if CODEXBAR_DISPLAY_GIF_CORE
 #include <AnimatedGIF.h>
+#endif
 #include <LittleFS.h>
 #include <TFT_eSPI.h>
+#include <new>
 #endif
 
 #include "gif_core_policy.h"
@@ -59,6 +66,42 @@ struct GifCoreStatusSnapshot {
 
 class GifCoreESP8266 {
  public:
+#if !CODEXBAR_DISPLAY_GIF_CORE
+  void Setup(const char* preloadAssetPath = nullptr) { (void)preloadAssetPath; }
+  void Stop() {}
+  void ResetFrameSchedule() {}
+  void ResetForAssetUpdate() {}
+
+  bool EnsureReady(TFT_eSPI& tft, const GifPlaybackRequest& request) {
+    (void)tft;
+    (void)request;
+    return false;
+  }
+
+  bool Tick(TFT_eSPI& tft, const GifPlaybackRequest& request, bool forceFrame) {
+    (void)tft;
+    (void)request;
+    (void)forceFrame;
+    return false;
+  }
+
+  int ReservedWidthFor(const char* assetPath, int fallbackWidth) const {
+    (void)assetPath;
+    return fallbackWidth;
+  }
+
+  bool IsCurrentAssetPresent(const char* assetPath) const {
+    (void)assetPath;
+    return false;
+  }
+
+  GifCoreStatusSnapshot StatusSnapshot() const {
+    GifCoreStatusSnapshot snapshot;
+    snapshot.blocked = true;
+    snapshot.lastErrorStage = "gif_core_disabled";
+    return snapshot;
+  }
+#else
   void Setup(const char* preloadAssetPath = nullptr);
   void Stop();
   void ResetFrameSchedule();
@@ -95,11 +138,14 @@ class GifCoreESP8266 {
   bool ReadGifDimensions(const char* path, int& width, int& height);
   bool EnsureStorage(const char* path);
   void ConfigureDrawRect(TFT_eSPI& tft, const GifPlaybackRequest& request);
+  void ClearDrawRect(TFT_eSPI& tft);
   bool EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& request);
   bool PlayFrame(TFT_eSPI& tft, bool forceFrame);
   void DrawScaledCallbackImpl(GIFDRAW* draw);
+  bool EnsureDecoder();
+  void ReleaseDecoder();
 
-  AnimatedGIF decoder_;
+  AnimatedGIF* decoder_ = nullptr;
   File file_;
   bool fsMounted_ = false;
   bool filePresent_ = false;
@@ -124,6 +170,7 @@ class GifCoreESP8266 {
   GifFailureGuard guards_[kFailureGuardSlots];
   TFT_eSPI* tft_ = nullptr;
   uint16_t lineBuffer_[kMaxLinePixels];
+#endif
 };
 
 #endif

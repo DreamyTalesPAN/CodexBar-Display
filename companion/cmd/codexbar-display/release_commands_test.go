@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -356,6 +358,60 @@ func TestDownloadReleaseFirmwareVerifiesManifestAndChecksum(t *testing.T) {
 	}
 	if data, err := os.ReadFile(manifestPath); err != nil || !strings.Contains(string(data), `"release": "v1.0.3"`) {
 		t.Fatalf("unexpected manifest data data=%q err=%v", string(data), err)
+	}
+}
+
+func TestDownloadReleaseFirmwareDecompressesGzipForSerialFlash(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	home := t.TempDir()
+	imageBody := "firmware image"
+	gzBody := gzipString(t, imageBody)
+	imageSHA := sha256String(gzBody)
+	manifestBody := `{
+  "schemaVersion": 1,
+  "release": "v1.0.3",
+  "protocolVersion": 1,
+  "artifacts": [
+    {
+      "firmwareEnv": "esp8266_smalltv_st7789",
+      "board": "esp8266-smalltv-st7789",
+      "firmwareVersion": "1.0.3",
+      "asset": "codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.3.bin.gz",
+      "sha256": "` + imageSHA + `"
+    }
+  ]
+}`
+
+	releaseHTTPClient = fakeReleaseHTTPClient{
+		responses: map[string]string{
+			"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.3/firmware-manifest-v1.0.3.json":                                  manifestBody,
+			"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.3/codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.3.bin.gz": gzBody,
+		},
+	}
+
+	imagePath, _, artifact, err := downloadReleaseFirmware(
+		context.Background(),
+		home,
+		"DreamyTalesPAN/CodexBar-Display",
+		"v1.0.3",
+		"1.0.3",
+		"esp8266_smalltv_st7789",
+	)
+	if err != nil {
+		t.Fatalf("download release firmware: %v", err)
+	}
+	if artifact.Asset != "codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.3.bin.gz" {
+		t.Fatalf("unexpected artifact asset %q", artifact.Asset)
+	}
+	if strings.HasSuffix(imagePath, ".gz") {
+		t.Fatalf("expected decompressed image path, got %s", imagePath)
+	}
+	if data, err := os.ReadFile(imagePath); err != nil || string(data) != imageBody {
+		t.Fatalf("unexpected image data data=%q err=%v", string(data), err)
 	}
 }
 
@@ -850,4 +906,17 @@ func (f fakeReleaseHTTPClient) Do(req *http.Request) (*http.Response, error) {
 func sha256String(text string) string {
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
+}
+
+func gzipString(t *testing.T, text string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write([]byte(text)); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	return buf.String()
 }

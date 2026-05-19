@@ -22,7 +22,7 @@ Primary commands used by companion:
 
 ### 1) Daemon cadence
 
-- LaunchAgent runs `codexbar-display daemon --interval 60s`.
+- LaunchAgent runs `codexbar-display daemon --interval 2s`.
 - Daemon starts a background collector (`mode=fetch-all`).
 - Render cycle reads collector snapshots and sends one serial frame to device.
 
@@ -46,19 +46,20 @@ Absolute token stats are fetched separately from the percentage collector:
 
 1. Read provider usage/quota percentages from `codexbar usage --json`.
 2. Read local token totals from `codexbar cost --json`.
-3. Cache token stats for 60 seconds to avoid repeated local log scans on every render cycle.
+3. Poll local token totals every 2 seconds with `codexbar cost --json` and a short cache.
 4. On token-stats refresh failure, reuse cached values for up to 15 minutes instead of failing the main percentage pipeline.
 5. Merge token stats into provider frames only when reliable values are available.
 
 Notes:
 
-- Token stats do not affect provider selection logic.
+- Token deltas switch to `coding` immediately.
+- `coding` only returns to `idle` after the minimum hold window and enough fresh CodexBar snapshots with no newer token delta. Repeated cached `cost` snapshots with the same `updatedAt` do not count as idle evidence.
 - The percentage/quota display remains authoritative for session/weekly bars and reset countdowns.
 - Frame size enforcement drops `theme` first, then token stats, before falling back to a runtime error frame.
 
 ### 3) Selection and staleness
 
-Provider selection in render cycles uses local activity + usage deltas + sticky/current behavior. If collector fetch fails temporarily:
+Provider selection in render cycles uses CodexBar token/usage deltas + sticky/current behavior. If collector fetch fails temporarily:
 
 - previous provider snapshots can still be used,
 - then persisted last-good frame fallback is used within max-age window.
@@ -69,10 +70,13 @@ Provider selection in render cycles uses local activity + usage deltas + sticky/
 |---|---|---:|---|
 | Collector fetch timeout | `CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS` | `600s` | clamped `60..900s` |
 | CodexBar command timeout | `CODEXBAR_DISPLAY_TIMEOUT_SECS` | `300s` | used by usage command calls |
-| Token stats refresh interval | built-in | `60s` | cache TTL for `codexbar cost --json` |
+| Token stats refresh interval | built-in | `1.5s` | cache TTL for `codexbar cost --json` |
 | Token stats stale max age | built-in | `15m` | stale cache fallback when cost refresh fails |
 | Cycle watchdog timeout | `CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS` | `180s` | clamped `5..600s` |
 | Collector interval | `CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS` | `60s` | clamped `30..60s` |
+| Activity poll interval | `CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS` | `2s` | clamped `1..10s` |
+| Minimum coding hold after token delta | `CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS` | `180s` | clamped `5..600s`; does not switch to idle by itself |
+| Fresh no-delta snapshots required before idle | `CODEXBAR_DISPLAY_ACTIVITY_IDLE_EVIDENCE` | `2` | clamped `1..10`; cached repeated snapshots do not count |
 | Cold-start fetch timeout (sync path) | `CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS` | `2s` | only when no last-good frame exists |
 | Last-good frame max age | `CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE` | `10m` | stale frame serving window |
 | Provider snapshot max age | `CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE` | inherits last-good max age | snapshot freshness gate |
