@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
 func TestLoadDirectoryThemePack(t *testing.T) {
@@ -127,6 +129,33 @@ func TestLoadDirectoryThemePackWithStateAssets(t *testing.T) {
 	}
 	if got := pack.ThemeSpec.Primitives[0].StateAssets["coding"]; got != "/themes/u/code.cbi" {
 		t.Fatalf("stateAssets were not loaded: %q", got)
+	}
+}
+
+func TestValidateAgainstCapabilitiesRejectsOversizedGIFAsset(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"g","x":0,"y":0,"w":80,"h":80,"a":"/themes/u/cm.gif"}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/cm.gif", file: "assets/cm.gif", data: strings.Repeat("x", 9)},
+	})
+
+	pack, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	err = pack.ValidateAgainstCapabilities(protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+		MaxThemeSpecBytes:   4096,
+		MaxThemePrimitives:  32,
+		MaxThemeGifAssets:   1,
+		MaxThemeGifBytes:    8,
+		MaxThemeGifWidth:    80,
+		MaxThemeGifHeight:   80,
+		MaxThemeGifPixels:   6400,
+		BuiltinThemes:       []string{"mini"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "GIF asset") {
+		t.Fatalf("expected GIF asset limit error, got %v", err)
 	}
 }
 

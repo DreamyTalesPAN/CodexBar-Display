@@ -34,6 +34,7 @@ Rules:
 - Device paths must start with `/themes/`.
 - Device paths must be 31 characters or shorter because ESP8266 LittleFS paths are short.
 - ThemeSpec `gif` and `sprite` primitives must reference files listed in `assets`.
+- ESP8266 GIF assets are intentionally small: one `.gif` per ThemeSpec, max 24 KiB, max 80x80 draw box.
 - Optional `bytes` and `sha256` fields pin downloaded files when packs are published.
 
 ## CLI

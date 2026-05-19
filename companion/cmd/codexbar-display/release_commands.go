@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -36,6 +37,7 @@ const (
 	githubAPIBaseURL          = "https://api.github.com"
 	githubDownloadBaseURL     = "https://github.com"
 	vibeTVFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
+	otaUploadBytesPerSecond   = 32 * 1024
 )
 
 var (
@@ -529,6 +531,39 @@ type releaseHTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
+type rateLimitedReader struct {
+	r              io.Reader
+	bytesPerSecond int64
+	started        time.Time
+	sent           int64
+}
+
+func newRateLimitedReader(r io.Reader, bytesPerSecond int64) io.Reader {
+	if bytesPerSecond <= 0 {
+		return r
+	}
+	return &rateLimitedReader{
+		r:              r,
+		bytesPerSecond: bytesPerSecond,
+		started:        time.Now(),
+	}
+}
+
+func (r *rateLimitedReader) Read(p []byte) (int, error) {
+	if len(p) > 4096 {
+		p = p[:4096]
+	}
+	n, err := r.r.Read(p)
+	if n > 0 {
+		r.sent += int64(n)
+		expectedElapsed := time.Duration(r.sent) * time.Second / time.Duration(r.bytesPerSecond)
+		if sleep := r.started.Add(expectedElapsed).Sub(time.Now()); sleep > 0 {
+			time.Sleep(sleep)
+		}
+	}
+	return n, err
+}
+
 type releaseFirmwareManifest struct {
 	SchemaVersion   int                       `json:"schemaVersion"`
 	Release         string                    `json:"release"`
@@ -655,6 +690,13 @@ func downloadReleaseFirmware(ctx context.Context, home, repo, releaseTag, versio
 	}
 	if actualSHA != expectedSHA {
 		return "", "", releaseFirmwareArtifact{}, fmt.Errorf("sha256 mismatch for %s: expected %s actual %s", artifact.Asset, expectedSHA, actualSHA)
+	}
+	if strings.HasSuffix(strings.ToLower(imagePath), ".gz") {
+		rawImagePath := strings.TrimSuffix(imagePath, filepath.Ext(imagePath))
+		if err := gunzipFile(imagePath, rawImagePath, 0o644); err != nil {
+			return "", "", releaseFirmwareArtifact{}, fmt.Errorf("decompress firmware image: %w", err)
+		}
+		imagePath = rawImagePath
 	}
 
 	return imagePath, manifestPath, artifact, nil
@@ -867,6 +909,52 @@ func downloadURLToFile(ctx context.Context, endpoint, path string, mode os.FileM
 	return nil
 }
 
+func gunzipFile(srcPath, dstPath string, mode os.FileMode) error {
+	in, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	gz, err := gzip.NewReader(in)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+		return err
+	}
+	tmpPath := fmt.Sprintf("%s.tmp-%d", dstPath, time.Now().UnixNano())
+	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := io.Copy(out, gz); err != nil {
+		_ = out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, mode); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, dstPath); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}
+
 func sha256File(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -928,6 +1016,12 @@ func fetchDeviceHelloHTTP(ctx context.Context, base string) (protocol.DeviceHell
 }
 
 func uploadFirmwareOTA(ctx context.Context, base, imagePath string) error {
+	if err := uploadFirmwareOTARaw(ctx, base, imagePath); err == nil {
+		return nil
+	} else if !rawFirmwareUploadUnavailable(err) {
+		return err
+	}
+
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	part, err := writer.CreateFormFile("firmware", filepath.Base(imagePath))
@@ -949,12 +1043,14 @@ func uploadFirmwareOTA(ctx context.Context, base, imagePath string) error {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/update/firmware", &body)
+	reqBody := newRateLimitedReader(bytes.NewReader(body.Bytes()), otaUploadBytesPerSecond)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/update/firmware", reqBody)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("User-Agent", "codexbar-display-update")
+	req.ContentLength = int64(body.Len())
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
 		return err
@@ -965,6 +1061,67 @@ func uploadFirmwareOTA(ctx context.Context, base, imagePath string) error {
 		return fmt.Errorf("POST /update/firmware returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+func uploadFirmwareOTARaw(ctx context.Context, base, imagePath string) error {
+	endpoint, err := rawFirmwareEndpoint(base)
+	if err != nil {
+		return err
+	}
+	file, err := os.Open(imagePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, newRateLimitedReader(file, otaUploadBytesPerSecond))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("User-Agent", "codexbar-display-update")
+	req.ContentLength = info.Size()
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("POST /update/firmware.raw returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func rawFirmwareEndpoint(base string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(base))
+	if err != nil {
+		return "", err
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("target host is required")
+	}
+	parsed.Host = host + ":8081"
+	parsed.Path = "/update/firmware.raw"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func rawFirmwareUploadUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "no route to host") ||
+		strings.Contains(msg, "operation timed out") ||
+		strings.Contains(msg, "404")
 }
 
 func waitForHTTPFirmwareVersion(ctx context.Context, base, version string, timeout time.Duration) error {

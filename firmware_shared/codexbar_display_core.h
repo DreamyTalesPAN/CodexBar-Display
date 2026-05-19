@@ -80,6 +80,21 @@ struct SerialConsumeEvent {
   uint32_t themeSpecChangedFields = 0;
 };
 
+inline bool KeepLastThemeSpecFrameAfterPartialRenderFailure(const Frame& current, const SerialConsumeEvent& event) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  return event.visualChanged &&
+         event.themeSpecPartialRender &&
+         current.hasThemeSpec &&
+         !current.hasError &&
+         !event.themeChanged &&
+         !event.themeSpecChanged;
+#else
+  (void)current;
+  (void)event;
+  return false;
+#endif
+}
+
 inline int ClampPct(int value) {
   if (value < 0) {
     return 0;
@@ -297,12 +312,7 @@ inline bool ThemeSpecCanUsePartialRender(
       !ThemeSpecRawLooksRenderable(themeSpecRaw)) {
     return false;
   }
-  if (previous.clearThemeSpec != next.clearThemeSpec ||
-      previous.hasUpdateAvailable != next.hasUpdateAvailable ||
-      previous.updateAvailable != next.updateAvailable ||
-      previous.updateLatestVersion != next.updateLatestVersion ||
-      previous.updateStatus != next.updateStatus ||
-      previous.updateLastError != next.updateLastError) {
+  if (previous.clearThemeSpec != next.clearThemeSpec) {
     return false;
   }
   return ThemeSpecLiveChangedFields(previous, next) != 0;
@@ -574,13 +584,19 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
                                      previous.activity != next.activity ||
                                      previous.timeText != next.timeText ||
                                      previous.dateText != next.dateText;
-  return dataChanged ||
+  const bool themeIdentityChanged =
          previous.clearThemeSpec != next.clearThemeSpec ||
          previous.hasThemeSpec != next.hasThemeSpec ||
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
          previous.themeSpecId != next.themeSpecId ||
          previous.themeSpecRev != next.themeSpecRev ||
 #endif
+         false;
+  if (next.hasThemeSpec) {
+    return dataChanged || themeIdentityChanged;
+  }
+  return dataChanged ||
+         themeIdentityChanged ||
          previous.hasUpdateAvailable != next.hasUpdateAvailable ||
          previous.updateAvailable != next.updateAvailable ||
          previous.updateLatestVersion != next.updateLatestVersion ||

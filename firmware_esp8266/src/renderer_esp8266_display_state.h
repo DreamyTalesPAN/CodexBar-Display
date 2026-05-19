@@ -161,6 +161,10 @@ struct ThemeSpecRuntimeStats {
   uint16_t stringCapacity = 0;
   bool keepsJsonDocument = false;
   bool hasAnimatedAssets = false;
+  unsigned long partialSuccesses = 0;
+  unsigned long partialFailures = 0;
+  uint32_t lastPartialChangedFields = 0;
+  const char* lastPartialError = "";
 };
 ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot();
 

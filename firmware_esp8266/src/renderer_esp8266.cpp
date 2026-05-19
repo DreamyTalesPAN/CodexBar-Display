@@ -59,6 +59,10 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
   snapshot.themeSpecStringCapacity = themeSpecStats.stringCapacity;
   snapshot.themeSpecKeepsJsonDocument = themeSpecStats.keepsJsonDocument;
   snapshot.themeSpecHasAnimatedAssets = themeSpecStats.hasAnimatedAssets;
+  snapshot.themeSpecPartialSuccesses = themeSpecStats.partialSuccesses;
+  snapshot.themeSpecPartialFailures = themeSpecStats.partialFailures;
+  snapshot.themeSpecLastPartialChangedFields = themeSpecStats.lastPartialChangedFields;
+  snapshot.themeSpecLastPartialError = themeSpecStats.lastPartialError;
   const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
   snapshot.gifActivePath = gif.activePath;
   snapshot.gifFilePresent = gif.filePresent;
@@ -113,9 +117,15 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
 
   if (event.visualChanged) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    if (!display::ScreenDirty() && event.themeSpecPartialRender && display::CurrentFrame().hasThemeSpec) {
+    if (!display::ScreenDirty() &&
+        event.themeSpecPartialRender &&
+        display::CurrentFrame().hasThemeSpec &&
+        display::CurrentThemeSpecRenderedSuccessfully()) {
       display::DisplayTransaction transaction;
       if (display::RenderThemeSpecPartial(event.themeSpecChangedFields)) {
+        return;
+      }
+      if (core::KeepLastThemeSpecFrameAfterPartialRenderFailure(display::CurrentFrame(), event)) {
         return;
       }
     }
@@ -419,17 +429,16 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   if (display::CurrentFrame().hasThemeSpec) {
     display::DisplayTransaction transaction;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    const String& themeSpecRaw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
+        core::ThemeSpecUsesBinding(themeSpecRaw, "reset", "r") &&
         display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldReset)) {
       return;
     }
 #endif
-    if (display::DrawThemeSpecUsage()) {
-      return;
-    }
-    // ThemeSpec rendering can fail transiently on ESP8266 under low heap while
-    // changing state. Keep the last good visual instead of flashing the mini
-    // error screen for one frame.
+    const int64_t remain = display::CurrentRemainingSecs();
+    display::LastRenderedSecs() = remain;
+    display::LastRenderedMinuteBucket() = remain / 60;
     return;
   }
   display::DisplayTransaction transaction;

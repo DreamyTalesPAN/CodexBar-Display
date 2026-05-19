@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themespec"
 )
 
@@ -61,6 +62,28 @@ type Pack struct {
 	ThemeSpecRaw  []byte
 	ThemeSpecFile File
 	Assets        []File
+}
+
+func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) error {
+	if p == nil {
+		return errors.New("theme pack is nil")
+	}
+	if err := themespec.ValidateAgainstCapabilities(p.ThemeSpec, p.ThemeSpecRaw, caps); err != nil {
+		return err
+	}
+	if caps.MaxThemeGifBytes <= 0 {
+		return nil
+	}
+	gifRefs := referencedGIFAssets(p.ThemeSpec)
+	for _, asset := range p.Assets {
+		if _, ok := gifRefs[asset.Entry.Path]; !ok {
+			continue
+		}
+		if len(asset.Data) > caps.MaxThemeGifBytes {
+			return fmt.Errorf("GIF asset %s exceeds device limit: size=%d limit=%d", asset.Entry.Path, len(asset.Data), caps.MaxThemeGifBytes)
+		}
+	}
+	return nil
 }
 
 func Load(packPath string) (*Pack, error) {
@@ -304,4 +327,20 @@ func validateReferencedAssets(spec themespec.Spec, assets []File) error {
 		}
 	}
 	return nil
+}
+
+func referencedGIFAssets(spec themespec.Spec) map[string]struct{} {
+	refs := map[string]struct{}{}
+	for _, primitive := range spec.Primitives {
+		if primitive.Type != "gif" {
+			continue
+		}
+		if primitive.AssetPath != "" {
+			refs[primitive.AssetPath] = struct{}{}
+		}
+		for _, assetPath := range primitive.StateAssets {
+			refs[assetPath] = struct{}{}
+		}
+	}
+	return refs
 }

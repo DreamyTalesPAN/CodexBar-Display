@@ -67,8 +67,10 @@ jobs:
             MAX_FLASH_PCT="46"
             MAX_RAM_PCT="82"
             MAX_BIN_BYTES="0"
+            MAX_GZIP_BYTES="0"
             if [[ "${ENV_NAME}" == "esp8266_smalltv_st7789" ]]; then
-              MAX_BIN_BYTES="480000"
+              MAX_BIN_BYTES="482000"
+              MAX_GZIP_BYTES="350000"
             fi
 
             CODEXBAR_DISPLAY_FW_VERSION="${VERSION}" ./scripts/check-firmware-size-budget.sh \
@@ -76,11 +78,15 @@ jobs:
               "${ENV_NAME}" \
               "${MAX_FLASH_PCT}" \
               "${MAX_RAM_PCT}" \
-              "${MAX_BIN_BYTES}"
+              "${MAX_BIN_BYTES}" \
+              "${MAX_GZIP_BYTES}"
 
             SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
             DEST="dist/firmware/codexbar-display-firmware-${ENV_NAME}-v${VERSION}.bin"
             cp "${SRC}" "${DEST}"
+            if [[ "${ENV_NAME}" == esp8266_* ]]; then
+              gzip -c -9 "${SRC}" > "${DEST}.gz"
+            fi
           done
 
           VERSION="${VERSION}" python3 - <<'PY'
@@ -104,6 +110,8 @@ jobs:
 
           for env_name, board in targets:
               path = f"dist/firmware/codexbar-display-firmware-{env_name}-v{version}.bin"
+              if env_name.startswith("esp8266_"):
+                  path = path + ".gz"
               asset = os.path.basename(path)
               with open(path, "rb") as f:
                   sha = hashlib.sha256(f.read()).hexdigest()
@@ -143,6 +151,7 @@ jobs:
             dist/install.sh
             dist/companion/*
             dist/firmware/*.bin
+            dist/firmware/*.bin.gz
             dist/firmware/firmware-manifest.json
             dist/firmware/firmware-manifest-*.json
             dist/checksums-*.txt

@@ -364,6 +364,37 @@ func TestValidateAgainstCapabilitiesChecksLimits(t *testing.T) {
 	}
 }
 
+func TestValidateAgainstCapabilitiesChecksGifLimits(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "mini-transport",
+		ThemeRev:         1,
+		FallbackTheme:    "mini",
+		Primitives: []Primitive{
+			{Type: "gif", X: 0, Y: 0, Width: 96, Height: 80, AssetPath: "/themes/u/too-big.gif"},
+		},
+	}
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal raw: %v", err)
+	}
+
+	caps := protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+		MaxThemeSpecBytes:   len(raw) + 10,
+		MaxThemePrimitives:  8,
+		MaxThemeGifAssets:   1,
+		MaxThemeGifWidth:    80,
+		MaxThemeGifHeight:   80,
+		MaxThemeGifPixels:   6400,
+		BuiltinThemes:       []string{"mini"},
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, caps); err == nil {
+		t.Fatalf("expected GIF capability mismatch")
+	}
+}
+
 func TestValidateAgainstCapabilitiesAcceptsCompatibleSpec(t *testing.T) {
 	spec := Spec{
 		ThemeSpecVersion: 1,

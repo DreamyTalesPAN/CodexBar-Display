@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -lt 4 ] || [ "$#" -gt 5 ]; then
-  echo "usage: $0 <firmware_dir> <env_name> <max_flash_pct> <max_ram_pct> [max_bin_bytes]" >&2
+if [ "$#" -lt 4 ] || [ "$#" -gt 6 ]; then
+  echo "usage: $0 <firmware_dir> <env_name> <max_flash_pct> <max_ram_pct> [max_bin_bytes] [max_gzip_bytes]" >&2
   exit 2
 fi
 
@@ -11,6 +11,7 @@ env_name="$2"
 max_flash_pct="$3"
 max_ram_pct="$4"
 max_bin_bytes="${5:-0}"
+max_gzip_bytes="${6:-0}"
 
 if [ ! -d "$firmware_dir" ]; then
   echo "firmware dir not found: $firmware_dir" >&2
@@ -35,6 +36,7 @@ echo "budget env=$env_name ram=${ram_pct}%/${max_ram_pct}% flash=${flash_pct}%/$
 
 bin_path="${firmware_dir}/.pio/build/${env_name}/firmware.bin"
 bin_ok="1"
+gzip_ok="1"
 if [ "$max_bin_bytes" != "0" ]; then
   if [ ! -f "$bin_path" ]; then
     echo "firmware binary not found: $bin_path" >&2
@@ -44,8 +46,19 @@ if [ "$max_bin_bytes" != "0" ]; then
   bin_ok="$(awk -v used="$bin_bytes" -v max="$max_bin_bytes" 'BEGIN{if (used <= max) print "1"; else print "0"}')"
   echo "budget env=$env_name bin=${bin_bytes}/${max_bin_bytes} bytes"
 fi
+if [ -f "$bin_path" ]; then
+  gzip_path="${bin_path}.gz"
+  gzip -c -9 "$bin_path" > "$gzip_path"
+  gzip_bytes="$(wc -c <"$gzip_path" | tr -d ' ')"
+  if [ "$max_gzip_bytes" != "0" ]; then
+    gzip_ok="$(awk -v used="$gzip_bytes" -v max="$max_gzip_bytes" 'BEGIN{if (used <= max) print "1"; else print "0"}')"
+    echo "budget env=$env_name gzip=${gzip_bytes}/${max_gzip_bytes} bytes"
+  else
+    echo "budget env=$env_name gzip=${gzip_bytes} bytes"
+  fi
+fi
 
-if [ "$ram_ok" != "1" ] || [ "$flash_ok" != "1" ] || [ "$bin_ok" != "1" ]; then
+if [ "$ram_ok" != "1" ] || [ "$flash_ok" != "1" ] || [ "$bin_ok" != "1" ] || [ "$gzip_ok" != "1" ]; then
   echo "firmware size budget exceeded for env=$env_name" >&2
   exit 1
 fi

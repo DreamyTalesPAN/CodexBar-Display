@@ -1,6 +1,6 @@
 #include "gif_core_esp8266.h"
 
-#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+#if !defined(CODEXBAR_DISPLAY_PROBE_ONLY) && CODEXBAR_DISPLAY_GIF_CORE
 
 #include "renderer_esp8266_display_state.h"
 
@@ -36,13 +36,14 @@ void GifCoreESP8266::Setup(const char* preloadAssetPath) {
 }
 
 void GifCoreESP8266::Stop() {
-  if (decoderOpen_) {
-    decoder_.close();
+  if (decoderOpen_ && decoder_ != nullptr) {
+    decoder_->close();
   }
   if (file_) {
     file_.close();
   }
   decoderOpen_ = false;
+  ReleaseDecoder();
   suppressDraw_ = false;
   nextFrameAtMs_ = 0;
   gifWidth_ = 0;
@@ -51,6 +52,22 @@ void GifCoreESP8266::Stop() {
   drawHeight_ = 0;
   hasBackgroundColor_ = false;
   backgroundColor_ = 0x0000;
+}
+
+bool GifCoreESP8266::EnsureDecoder() {
+  if (decoder_ != nullptr) {
+    return true;
+  }
+  decoder_ = new (std::nothrow) AnimatedGIF();
+  return decoder_ != nullptr;
+}
+
+void GifCoreESP8266::ReleaseDecoder() {
+  if (decoder_ == nullptr) {
+    return;
+  }
+  delete decoder_;
+  decoder_ = nullptr;
 }
 
 void GifCoreESP8266::ResetFrameSchedule() {
@@ -284,8 +301,14 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
   gifHeight_ = height;
   ConfigureDrawRect(tft, request);
 
-  decoder_.begin(BIG_ENDIAN_PIXELS);
-  if (!decoder_.open(
+  if (!EnsureDecoder()) {
+    NoteFailure(request.failureSlot, request.assetPath, "decoder_alloc");
+    Stop();
+    return false;
+  }
+
+  decoder_->begin(BIG_ENDIAN_PIXELS);
+  if (!decoder_->open(
           request.assetPath,
           OpenCallback,
           CloseCallback,
@@ -316,15 +339,20 @@ bool GifCoreESP8266::PlayFrame(TFT_eSPI& tft, bool forceFrame) {
   bool played = false;
   {
     display::DisplayTransaction transaction;
-    played = decoder_.playFrame(false, &delayMs, nullptr);
+    played = decoder_ != nullptr && decoder_->playFrame(false, &delayMs, nullptr);
   }
 
   if (!played) {
-    decoder_.reset();
+    if (decoder_ == nullptr) {
+      NoteFailure(failureSlot_, assetPath_.c_str(), "decoder_missing");
+      Stop();
+      return false;
+    }
+    decoder_->reset();
     ClearDrawRect(tft);
     {
       display::DisplayTransaction transaction;
-      played = decoder_.playFrame(false, &delayMs, nullptr);
+      played = decoder_->playFrame(false, &delayMs, nullptr);
     }
     if (!played) {
       NoteFailure(failureSlot_, assetPath_.c_str(), "frame_decode");

@@ -22,6 +22,10 @@ struct RendererDebugSnapshot {
   uint16_t themeSpecStringCapacity = 0;
   bool themeSpecKeepsJsonDocument = false;
   bool themeSpecHasAnimatedAssets = false;
+  unsigned long themeSpecPartialSuccesses = 0;
+  unsigned long themeSpecPartialFailures = 0;
+  uint32_t themeSpecLastPartialChangedFields = 0;
+  String themeSpecLastPartialError;
   String gifActivePath;
   bool gifFilePresent = false;
   bool gifFileOpen = false;

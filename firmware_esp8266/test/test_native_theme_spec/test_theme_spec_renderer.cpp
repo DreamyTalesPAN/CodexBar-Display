@@ -23,9 +23,11 @@ using codexbar_display::themespec::Sink;
 using codexbar_display::themespec::SpriteCommand;
 using codexbar_display::themespec::TextCommand;
 using codexbar_display::themespec::kThemeSpecFieldActivity;
+using codexbar_display::themespec::kThemeSpecFieldReset;
 using codexbar_display::themespec::kThemeSpecFieldSession;
 using codexbar_display::themespec::kThemeSpecFieldWeekly;
 using codexbar_display::core::ConsumeFrameLine;
+using codexbar_display::core::KeepLastThemeSpecFrameAfterPartialRenderFailure;
 using codexbar_display::core::RuntimeState;
 using codexbar_display::core::SerialConsumeEvent;
 
@@ -222,6 +224,24 @@ bool renderChangedSpec(const char* spec, const FrameData& frame, uint32_t change
   return ok;
 }
 
+bool renderChangedSpecWithError(
+    const char* spec,
+    const FrameData& frame,
+    uint32_t changedFields,
+    RecordingSink& sink,
+    const char*& error) {
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  error = "";
+  if (!CompileThemeSpec(spec, doc, scene)) {
+    error = "compile_failed";
+    return false;
+  }
+  const bool ok = RenderCompiledThemeSpecChangedPrimitives(scene, frame, changedFields, sink, &error);
+  ReleaseCompiledThemeSpec(scene);
+  return ok;
+}
+
 void testInvalidSpecsReturnFalse() {
   RecordingSink sink;
 
@@ -229,6 +249,19 @@ void testInvalidSpecsReturnFalse() {
   TEST_ASSERT_FALSE(renderSpec("{bad", testFrame(), sink));
   TEST_ASSERT_FALSE(renderSpec("{\"themeId\":\"x\"}", testFrame(), sink));
   TEST_ASSERT_TRUE(sink.commands.empty());
+}
+
+void testGifLimitsRejectOversizedOrMultipleGifs() {
+  RecordingSink sink;
+
+  const char* oversized = R"JSON({"v":1,"id":"mini-transport","rev":1,"p":[{"t":"g","x":0,"y":0,"w":81,"h":80,"a":"/themes/u/a.gif"}]})JSON";
+  TEST_ASSERT_FALSE(renderSpec(oversized, testFrame(), sink));
+
+  const char* multiple = R"JSON({"v":1,"id":"mini-transport","rev":1,"p":[{"t":"g","x":0,"y":0,"w":40,"h":40,"a":"/themes/u/a.gif"},{"t":"g","x":50,"y":0,"w":40,"h":40,"a":"/themes/u/b.gif"}]})JSON";
+  TEST_ASSERT_FALSE(renderSpec(multiple, testFrame(), sink));
+
+  const char* miniSized = R"JSON({"v":1,"id":"mini-transport","rev":1,"p":[{"t":"g","x":80,"y":115,"w":80,"h":80,"a":"/themes/mini/mini.gif"}]})JSON";
+  TEST_ASSERT_TRUE(renderSpec(miniSized, testFrame(), sink));
 }
 
 void testRendersCommandsAndBindings() {
@@ -649,6 +682,16 @@ void testCompiledThemeSpecFullPartialAndAnimatedPasses() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+void testChangedPrimitivePassReportsNoAffectedPrimitiveForUnusedReset() {
+  const char* spec = R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"bg":"#C6C3BD","a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2},{"t":"p","x":27,"y":212,"w":146,"h":14,"b":"w"},{"t":"tx","x":181,"y":204,"v":"{weekly}%","s":2}],"fb":"mini","bg":"#000000"})JSON";
+
+  RecordingSink sink;
+  const char* error = "";
+  TEST_ASSERT_FALSE(renderChangedSpecWithError(spec, testFrame(), kThemeSpecFieldReset, sink, error));
+  TEST_ASSERT_EQUAL_STRING("no_affected_primitive", error);
+  TEST_ASSERT_EQUAL_UINT32(0, sink.commands.size());
+}
+
 void testChangedPrimitivePassHandlesTextWithoutMaxWidth() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -755,6 +798,86 @@ void testStoredThemeActivationLiveFrameUsesPartialRenderEvent() {
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(event.themeSpecCacheHit);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+}
+
+void testThemeSpecPartialFailurePolicyKeepsLastFrameClean() {
+  RuntimeState state;
+  state.cachedThemeId = "clippy";
+  state.cachedThemeRev = 1;
+  state.cachedThemeSpecRaw = R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2}],"fb":"mini","bg":"#000000"})JSON";
+  state.current.provider = "codex";
+  state.current.label = "Codex";
+  state.current.session = 10;
+  state.current.weekly = 20;
+  state.current.resetSecs = 3600;
+  state.current.activity = "idle";
+  state.current.hasTheme = true;
+  state.current.theme = "mini";
+  state.current.hasThemeSpec = true;
+  state.current.themeSpecId = "clippy";
+  state.current.themeSpecRev = 1;
+  state.current.themeSpecRaw = "";
+  state.hasFrame = true;
+
+  SerialConsumeEvent event;
+  const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":3600,"usageMode":"remaining","activity":"coding"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+
+  bool screenDirty = false;
+  const bool partialRenderFailed = true;
+  if (event.visualChanged && partialRenderFailed &&
+      !KeepLastThemeSpecFrameAfterPartialRenderFailure(state.current, event)) {
+    screenDirty = true;
+  }
+  TEST_ASSERT_FALSE(screenDirty);
+}
+
+void testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":3600,"activity":"idle","usageMode":"remaining","themeSpec":{"v":1,"id":"clippy-like","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2},{"t":"p","x":27,"y":212,"w":146,"h":14,"b":"w"},{"t":"tx","x":181,"y":204,"v":"{weekly}%","s":2},{"t":"tx","x":27,"y":230,"v":"{reset}","s":1}],"fb":"mini","bg":"#000000"}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+
+  const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":21,"resetSecs":3540,"activity":"coding","usageMode":"remaining"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_UINT32(
+      kThemeSpecFieldActivity | kThemeSpecFieldSession | kThemeSpecFieldWeekly | kThemeSpecFieldReset,
+      event.themeSpecChangedFields);
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderChangedSpec(
+      state.cachedThemeSpecRaw.c_str(),
+      testFrame(),
+      event.themeSpecChangedFields,
+      sink));
+}
+
+void testThemeSpecIgnoresUpdateMetadataForVisualDirty() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300,"update":{"available":false,"status":"current","latestVersion":"1.0.17"},"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"progress","x":0,"y":0,"width":80,"height":8,"binding":"session"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+
+  const char* updateOnlyFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300,"update":{"available":false,"status":"current","latestVersion":"1.0.18"}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, updateOnlyFrame, 2000, true, event));
+  TEST_ASSERT_FALSE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+
+  const char* liveAndUpdateFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":300,"update":{"available":false,"status":"current","latestVersion":"1.0.19"}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveAndUpdateFrame, 3000, true, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE(event.themeSpecChangedFields & kThemeSpecFieldSession);
 }
 
 void testThemeSpecCacheCarriesLayoutAcrossLiveFrames() {
@@ -892,6 +1015,7 @@ void testConfirmedThemeSpecNullClearsCachedLayout() {
 int main() {
   UNITY_BEGIN();
   RUN_TEST(testInvalidSpecsReturnFalse);
+  RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testRendersCompactCommandsAndBindings);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
@@ -903,11 +1027,15 @@ int main() {
   RUN_TEST(testChangedPrimitivePassUsesThemeBackgroundAndOverlaps);
   RUN_TEST(testChangedPrimitivePassHandlesCompactClippySpec);
   RUN_TEST(testCompiledThemeSpecFullPartialAndAnimatedPasses);
+  RUN_TEST(testChangedPrimitivePassReportsNoAffectedPrimitiveForUnusedReset);
   RUN_TEST(testChangedPrimitivePassHandlesTextWithoutMaxWidth);
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
+  RUN_TEST(testThemeSpecPartialFailurePolicyKeepsLastFrameClean);
+  RUN_TEST(testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset);
+  RUN_TEST(testThemeSpecIgnoresUpdateMetadataForVisualDirty);
   RUN_TEST(testThemeSpecCacheCarriesLayoutAcrossLiveFrames);
   RUN_TEST(testCompactThemeSpecFrameIsCached);
   RUN_TEST(testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent);

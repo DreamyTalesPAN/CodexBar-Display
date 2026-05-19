@@ -25,6 +25,11 @@ const FIXED_FALLBACK_THEME = "mini";
 const DEFAULT_TARGET_ORIGIN = "http://vibetv.local";
 const TARGET_STORAGE_KEY = "codexbar.themeStudio.targetOrigin";
 const DEFAULT_GIF_SIZE = 80;
+const MAX_GIF_ASSETS = 1;
+const MAX_GIF_BYTES = 24 * 1024;
+const MAX_GIF_WIDTH = 80;
+const MAX_GIF_HEIGHT = 80;
+const MAX_GIF_PIXELS = MAX_GIF_WIDTH * MAX_GIF_HEIGHT;
 const DEFAULT_SPRITE_FPS = 8;
 const MAX_SPRITE_FRAME_WIDTH = 64;
 const MAX_SPRITE_FRAME_HEIGHT = 64;
@@ -2645,6 +2650,10 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
     if (primitive.type === "gif") {
       if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
         errors.push(`${prefix}: width/height müssen größer als 0 sein.`);
+      } else {
+        if (primitive.width > MAX_GIF_WIDTH || primitive.height > MAX_GIF_HEIGHT || primitive.width * primitive.height > MAX_GIF_PIXELS) {
+          errors.push(`${prefix}: GIF ist zu groß. Limit ist ${MAX_GIF_WIDTH}x${MAX_GIF_HEIGHT} wie mini.gif.`);
+        }
       }
       validateThemeAssetPaths(primitive, prefix, errors);
     }
@@ -2699,6 +2708,17 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
   const frameBytes = new TextEncoder().encode(JSON.stringify(buildLiveFramePayload(spec))).length;
   if (frameBytes > MAX_FRAME_BYTES) {
     errors.push(`Payload ist zu groß für Vibe TV: ${frameBytes}/${MAX_FRAME_BYTES} Bytes.`);
+  }
+
+  const gifPaths = uniqueAssetPaths("gif", spec);
+  if (gifPaths.length > MAX_GIF_ASSETS) {
+    errors.push(`Zu viele GIFs: ${gifPaths.length}/${MAX_GIF_ASSETS}. VibeTV ESP8266 unterstützt ein mini.gif-großes GIF pro Theme.`);
+  }
+  for (const path of gifPaths) {
+    const file = state.gifAssets[path]?.file;
+    if (file && file.size > MAX_GIF_BYTES) {
+      errors.push(`GIF ${path} ist zu groß: ${file.size}/${MAX_GIF_BYTES} Bytes. Orientiere dich an mini.gif.`);
+    }
   }
 
   const renderBudget = estimateRenderBudget(spec);
@@ -6233,6 +6253,11 @@ function addPrimitive(primitive: Primitive, notice = "Element added.") {
 function addGifPrimitive(file: File) {
   if (file.type && file.type !== "image/gif") {
     state.notice = "Please choose a GIF file.";
+    render();
+    return;
+  }
+  if (file.size > MAX_GIF_BYTES) {
+    state.notice = `GIF is too large (${file.size}/${MAX_GIF_BYTES} bytes). Use a mini.gif-sized asset.`;
     render();
     return;
   }

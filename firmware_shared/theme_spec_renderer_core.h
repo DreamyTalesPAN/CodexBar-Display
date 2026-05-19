@@ -23,6 +23,11 @@ constexpr uint32_t kThemeSpecFieldSessionTokens = 1UL << 9;
 constexpr uint32_t kThemeSpecFieldWeekTokens = 1UL << 10;
 constexpr uint32_t kThemeSpecFieldTotalTokens = 1UL << 11;
 constexpr int kThemeSpecCanvasSize = 240;
+constexpr size_t kMaxThemeSpecGifAssets = 1;
+constexpr size_t kMaxThemeSpecGifAssetBytes = 24 * 1024;
+constexpr int kMaxThemeSpecGifWidth = 80;
+constexpr int kMaxThemeSpecGifHeight = 80;
+constexpr int kMaxThemeSpecGifPixels = kMaxThemeSpecGifWidth * kMaxThemeSpecGifHeight;
 
 inline void RenderYield() {
 #if defined(ARDUINO)
@@ -693,6 +698,14 @@ inline bool AssetPathLooksAnimated(const char* path) {
           (std::strcmp(path + len - 4, ".gif") == 0));
 }
 
+inline bool AssetPathLooksGif(const char* path) {
+  if (path == nullptr) {
+    return false;
+  }
+  const size_t len = std::strlen(path);
+  return len >= 4 && std::strcmp(path + len - 4, ".gif") == 0;
+}
+
 inline void ReleaseCompiledThemeSpec(CompiledThemeSpec& scene) {
   if (scene.ownsMemory) {
     delete[] scene.primitives;
@@ -895,7 +908,17 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     out.bg = ParseColor(bgColor, 0x0000);
     out.liveFields = (out.idleAssetPath == nullptr && out.codingAssetPath == nullptr) ? 0 : kThemeSpecFieldActivity;
     hasAnimatedAssets = true;
-    return out.width > 0 && out.height > 0 && CompiledStateAssetPathFor(out, FrameData{}) != nullptr;
+    if (out.width <= 0 || out.height <= 0 ||
+        out.width > kMaxThemeSpecGifWidth ||
+        out.height > kMaxThemeSpecGifHeight ||
+        out.width * out.height > kMaxThemeSpecGifPixels) {
+      return false;
+    }
+    const char* initialPath = CompiledStateAssetPathFor(out, FrameData{});
+    return initialPath != nullptr &&
+           AssetPathLooksGif(initialPath) &&
+           (out.idleAssetPath == nullptr || AssetPathLooksGif(out.idleAssetPath)) &&
+           (out.codingAssetPath == nullptr || AssetPathLooksGif(out.codingAssetPath));
   }
 
   if (PrimitiveTypeIs(primitive, "sprite", "sp") || PrimitiveTypeIs(primitive, "image", "img")) {
@@ -951,10 +974,15 @@ inline bool CompileThemeSpecObject(JsonObjectConst spec, CompiledThemeSpec& scen
   }
 
   scene.bgColor = ParseColor(JsonStringFor(spec, "bgColor", "bg"), 0x0000);
+  size_t gifPrimitiveCount = 0;
   for (JsonObjectConst primitive : primitives) {
     CompiledPrimitive compiled;
     bool primitiveHasAnimatedAssets = false;
     if (CompilePrimitive(scene, primitive, compiled, primitiveHasAnimatedAssets)) {
+      if (compiled.kind == PrimitiveKind::Gif && ++gifPrimitiveCount > kMaxThemeSpecGifAssets) {
+        ReleaseCompiledThemeSpec(scene);
+        return false;
+      }
       if (scene.primitiveCount >= scene.primitiveCapacity) {
         ReleaseCompiledThemeSpec(scene);
         return false;
@@ -1238,8 +1266,21 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     const CompiledThemeSpec& scene,
     const FrameData& frame,
     uint32_t changedFields,
-    Sink& sink) {
-  if (changedFields == 0 || scene.primitiveCount == 0) {
+    Sink& sink,
+    const char** error = nullptr) {
+  if (error != nullptr) {
+    *error = "";
+  }
+  if (changedFields == 0) {
+    if (error != nullptr) {
+      *error = "no_changed_fields";
+    }
+    return false;
+  }
+  if (scene.primitiveCount == 0) {
+    if (error != nullptr) {
+      *error = "empty_scene";
+    }
     return false;
   }
 
@@ -1253,11 +1294,23 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     hasAffectedPrimitive = true;
     Bounds primitiveBounds;
     if (!CompiledPrimitiveBounds(primitive, frame, true, primitiveBounds)) {
+      if (error != nullptr) {
+        *error = "unstable_dirty_bounds";
+      }
       return false;
     }
     ExpandBounds(dirty, primitiveBounds);
   }
-  if (!hasAffectedPrimitive || dirty.width <= 0 || dirty.height <= 0) {
+  if (!hasAffectedPrimitive) {
+    if (error != nullptr) {
+      *error = "no_affected_primitive";
+    }
+    return false;
+  }
+  if (dirty.width <= 0 || dirty.height <= 0) {
+    if (error != nullptr) {
+      *error = "empty_dirty_bounds";
+    }
     return false;
   }
 
@@ -1281,6 +1334,9 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     }
   }
   sink.EndClip();
+  if (!rendered && error != nullptr) {
+    *error = "no_overlap_rendered";
+  }
   return rendered;
 }
 

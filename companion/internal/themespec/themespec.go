@@ -119,6 +119,7 @@ func Validate(spec Spec) error {
 }
 
 func ValidateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.DeviceCapabilities) error {
+	spec = normalizeSpec(spec)
 	if !caps.Known {
 		return errUnknownCapability
 	}
@@ -134,6 +135,24 @@ func ValidateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 			len(spec.Primitives),
 			caps.MaxThemePrimitives,
 		)
+	}
+	gifAssets := uniqueGIFAssetPaths(spec)
+	if caps.MaxThemeGifAssets > 0 && len(gifAssets) > caps.MaxThemeGifAssets {
+		return fmt.Errorf("theme spec GIF asset count exceeds device limit: count=%d limit=%d", len(gifAssets), caps.MaxThemeGifAssets)
+	}
+	for i, primitive := range spec.Primitives {
+		if primitive.Type != "gif" {
+			continue
+		}
+		if caps.MaxThemeGifWidth > 0 && primitive.Width > caps.MaxThemeGifWidth {
+			return fmt.Errorf("primitives[%d] GIF width exceeds device limit: width=%d limit=%d", i, primitive.Width, caps.MaxThemeGifWidth)
+		}
+		if caps.MaxThemeGifHeight > 0 && primitive.Height > caps.MaxThemeGifHeight {
+			return fmt.Errorf("primitives[%d] GIF height exceeds device limit: height=%d limit=%d", i, primitive.Height, caps.MaxThemeGifHeight)
+		}
+		if caps.MaxThemeGifPixels > 0 && primitive.Width*primitive.Height > caps.MaxThemeGifPixels {
+			return fmt.Errorf("primitives[%d] GIF area exceeds device limit: pixels=%d limit=%d", i, primitive.Width*primitive.Height, caps.MaxThemeGifPixels)
+		}
 	}
 	if spec.FallbackTheme != "" && len(caps.BuiltinThemes) > 0 {
 		fallback := theme.Normalize(spec.FallbackTheme)
@@ -302,6 +321,9 @@ func validatePrimitive(p Primitive) error {
 		if err := validateSpriteAssetReferences(p); err != nil {
 			return err
 		}
+		if !gifAssetReferencesHaveGifExtension(p) {
+			return errors.New("gif primitive assetPath/stateAssets must reference .gif files")
+		}
 	case "sprite", "image":
 		if !hasSpriteAssetReference(p) {
 			return errors.New("sprite primitive requires assetPath or stateAssets under /themes/")
@@ -350,6 +372,38 @@ func validatePrimitive(p Primitive) error {
 		return errUnsupportedColor
 	}
 	return nil
+}
+
+func uniqueGIFAssetPaths(spec Spec) []string {
+	seen := map[string]struct{}{}
+	for _, primitive := range spec.Primitives {
+		if primitive.Type != "gif" {
+			continue
+		}
+		if primitive.AssetPath != "" {
+			seen[primitive.AssetPath] = struct{}{}
+		}
+		for _, assetPath := range primitive.StateAssets {
+			seen[assetPath] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for assetPath := range seen {
+		out = append(out, assetPath)
+	}
+	return out
+}
+
+func gifAssetReferencesHaveGifExtension(p Primitive) bool {
+	if p.AssetPath != "" && !strings.HasSuffix(strings.ToLower(p.AssetPath), ".gif") {
+		return false
+	}
+	for _, assetPath := range p.StateAssets {
+		if !strings.HasSuffix(strings.ToLower(assetPath), ".gif") {
+			return false
+		}
+	}
+	return true
 }
 
 func hasSpriteAssetReference(p Primitive) bool {

@@ -48,6 +48,7 @@ These are not hard limits, but good launch targets for ESP8266 themes:
 - Primitive count: preferably below 16 for static themes, below 20 for animated themes.
 - Static visual detail: pushed into `CBI1` sprites.
 - Animated characters: pushed into `CBA1` sprites.
+- GIFs: at most one GIF per ESP8266 theme, max 24 KiB and 80x80 draw box. Use `mini.gif` as the reference size.
 - Dynamic primitives: only what must update from usage data.
 - Device health after activation: `renderOk: true`; no rising `renderFailures`; heap should not be critically low.
 - Normal idle/coding and usage updates should use partial render after the first full render.
