@@ -52,6 +52,7 @@ const SNAP_GUIDE_THRESHOLD = 3;
 type PrimitiveType = typeof SUPPORTED_PRIMITIVE_TYPES[number];
 type ResizeHandle = "e" | "s" | "se";
 type PixelTool = "move" | "paint" | "erase";
+type LabelPreviewState = "provider" | "update";
 type EditableKonvaNode = Konva.Group | Konva.Shape;
 type SnapAxis = "x" | "y";
 type GiflerAnimator = {
@@ -200,6 +201,8 @@ interface AppState {
   pixelBrushToken: string;
   snapEnabled: boolean;
   snapGridSize: number;
+  labelPreviewState: LabelPreviewState;
+  labelPreviewStartedAtMs: number;
   undoStack: ThemeSnapshot[];
   redoStack: ThemeSnapshot[];
   savedThemes: SavedTheme[];
@@ -255,6 +258,8 @@ const frame: FrameData = {
   weekTokens: 68120,
   totalTokens: 190420,
 };
+const UPDATE_LABEL_PREVIEW_TOGGLE_MS = 1500;
+const UPDATE_LABEL_PREVIEW_TEXTS = ["Update Available:", "vibetv.local"] as const;
 
 function previewTime(date: Date): string {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -2264,6 +2269,8 @@ const state: AppState = {
   pixelBrushToken: "a",
   snapEnabled: true,
   snapGridSize: 4,
+  labelPreviewState: "provider",
+  labelPreviewStartedAtMs: Date.now(),
   undoStack: [],
   redoStack: [],
   savedThemes: loadSavedThemes(),
@@ -3063,7 +3070,7 @@ function variableGuide(): string {
           <button class="token-chip" data-insert-token="${escapeAttr(item.token)}" title="Insert ${escapeAttr(item.token)}">
             <strong>${escapeHtml(item.label)}</strong>
             <code>${escapeHtml(item.token)}</code>
-            <span>${escapeHtml(item.preview)}</span>
+            <span>${escapeHtml(tokenPreviewValue(item.token, item.preview))}</span>
           </button>
         `).join("")}
       </div>
@@ -3330,6 +3337,11 @@ function renderPreview(): string {
         </select>
       </label>
     </div>
+    <div class="label-state-toggle" role="group" aria-label="Label preview state">
+      <span>Label</span>
+      <button class="${state.labelPreviewState === "provider" ? "active" : ""}" data-preview-label-state="provider">Provider</button>
+      <button class="${state.labelPreviewState === "update" ? "active" : ""}" data-preview-label-state="update">Update</button>
+    </div>
     ${themeUsesStateAssets() ? `
       <div class="activity-toggle" role="group" aria-label="Activity preview">
         <button class="${frame.activity === "idle" ? "active" : ""}" data-preview-activity="idle">Idle</button>
@@ -3557,7 +3569,7 @@ function renderDeviceCanvas(canvas: HTMLCanvasElement): boolean {
       drawDevicePixels(context, primitive);
     }
   }
-  return hasAnimated;
+  return hasAnimated || labelPreviewAnimating();
 }
 
 function drawDeviceSprite(context: CanvasRenderingContext2D, primitive: Primitive): boolean {
@@ -4863,10 +4875,28 @@ function renderTemplate(text: string): string {
   });
 }
 
+function labelPreviewValue(): string {
+  if (state.labelPreviewState !== "update") {
+    return frame.label;
+  }
+  const elapsed = Math.max(0, Date.now() - state.labelPreviewStartedAtMs);
+  const phase = Math.floor(elapsed / UPDATE_LABEL_PREVIEW_TOGGLE_MS) % UPDATE_LABEL_PREVIEW_TEXTS.length;
+  return UPDATE_LABEL_PREVIEW_TEXTS[phase];
+}
+
+function labelPreviewAnimating(): boolean {
+  return state.labelPreviewState === "update" && usedThemeBindings().has("label");
+}
+
+function tokenPreviewValue(token: string, fallback: string): string {
+  const match = token.match(/^\{([a-zA-Z]+)\}%?$/);
+  return match ? bindingValue(match[1]) + (token.endsWith("%") ? "%" : "") : fallback;
+}
+
 function bindingValue(key: string): string {
   const values: Record<string, string> = {
-    label: frame.label,
-    providerLabel: frame.label,
+    label: labelPreviewValue(),
+    providerLabel: labelPreviewValue(),
     provider: frame.provider,
     session: String(frame.session),
     sessionPercent: String(frame.session),
@@ -5413,6 +5443,17 @@ function bindEvents() {
   app.querySelectorAll<HTMLButtonElement>("[data-preview-activity]").forEach((button) => {
     button.addEventListener("click", () => {
       frame.activity = button.dataset.previewActivity ?? "idle";
+      render();
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-preview-label-state]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextState = (button.dataset.previewLabelState ?? "provider") as LabelPreviewState;
+      if (state.labelPreviewState !== nextState) {
+        state.labelPreviewStartedAtMs = Date.now();
+      }
+      state.labelPreviewState = nextState;
       render();
     });
   });

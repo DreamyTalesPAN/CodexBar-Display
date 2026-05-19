@@ -363,6 +363,16 @@ void RendererESP8266::DrawConnectedSetupInstructions(
 #endif
 }
 
+void RendererESP8266::DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const String& text) {
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  display::AttachContext(ctx);
+  display::DrawFirmwareUpdateNoticeOverlay(text);
+#else
+  (void)ctx;
+  Serial.printf("probe_update_notice text=%s\n", text.c_str());
+#endif
+}
+
 void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);

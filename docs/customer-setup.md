@@ -109,6 +109,7 @@ The small display uses short English status messages:
 | `Open Setup` | WiFi works; Vibe TV is waiting for the Mac Companion setup. | Open the shown browser address or run the Mac setup command. |
 | `Check Mac App` | Vibe TV had data before, but no fresh data arrived. | Check that the Mac is on, CodexBar is running, and the Mac is on the same WiFi. |
 | `Update Mac App` | The Mac app reached Vibe TV, but the app is too old or sent an old format. | Rerun the installer. |
+| `Update Available:` / `vibetv.local` | A firmware update is available while any theme is active. | Open `http://vibetv.local/update`. |
 | `Update running` | Firmware or display assets are being updated. | Do not unplug power. |
 | `WiFi reset` | Saved WiFi settings are being cleared. | Wait for `VibeTV-Setup` to appear again. |
 

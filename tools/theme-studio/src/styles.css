@@ -596,7 +596,8 @@ textarea:focus {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
-.activity-toggle {
+.activity-toggle,
+.label-state-toggle {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(84px, 1fr));
   gap: 4px;
@@ -606,14 +607,28 @@ textarea:focus {
   background: #0a0d11;
 }
 
-.activity-toggle button {
+.label-state-toggle {
+  grid-template-columns: auto repeat(2, minmax(84px, 1fr));
+  align-items: center;
+}
+
+.label-state-toggle span {
+  padding: 0 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.activity-toggle button,
+.label-state-toggle button {
   min-height: 32px;
   padding: 7px 10px;
   border-color: transparent;
   border-radius: 5px;
 }
 
-.activity-toggle button.active {
+.activity-toggle button.active,
+.label-state-toggle button.active {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
