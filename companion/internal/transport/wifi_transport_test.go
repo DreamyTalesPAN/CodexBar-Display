@@ -1,10 +1,13 @@
 package transport
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestWiFiTransportDeviceCapabilitiesReadsHello(t *testing.T) {
@@ -105,6 +108,52 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 	}
 }
 
+func TestWiFiTransportUploadAssetRetriesConnectionReset(t *testing.T) {
+	previousDelay := assetUploadRetryDelay
+	assetUploadRetryDelay = time.Millisecond
+	t.Cleanup(func() {
+		assetUploadRetryDelay = previousDelay
+	})
+
+	var attempts int
+	var gotPath string
+	transport := NewWiFiTransportWithClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts == 1 {
+				return nil, errors.New("read tcp 192.168.178.172:55149->192.168.178.163:80: read: connection reset by peer")
+			}
+			if req.URL.Path != "/assets" {
+				t.Fatalf("unexpected path %s", req.URL.Path)
+			}
+			gotPath = req.URL.Query().Get("path")
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("read request body: %v", err)
+			}
+			if !strings.Contains(string(body), "CBI1") {
+				t.Fatalf("expected retry body to contain asset data, got %q", string(body))
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		}),
+	})
+
+	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
+		t.Fatalf("UploadAsset returned error: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected one retry, got attempts=%d", attempts)
+	}
+	if gotPath != "/themes/u/cm.cbi" {
+		t.Fatalf("unexpected path %q", gotPath)
+	}
+}
+
 func TestWiFiTransportActivateStoredThemePostsPath(t *testing.T) {
 	var gotBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -127,4 +176,10 @@ func TestWiFiTransportActivateStoredThemePostsPath(t *testing.T) {
 	if gotBody != `{"path":"/themes/u/cm.json"}` {
 		t.Fatalf("unexpected body %q", gotBody)
 	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }
