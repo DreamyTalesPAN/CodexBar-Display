@@ -7868,6 +7868,7 @@ function buildThemeSpecClearPayload(): Record<string, unknown> {
     resetSecs: frame.resetSecs,
     usageMode: frame.usageMode,
     theme: FIXED_FALLBACK_THEME,
+    confirmClearThemeSpec: true,
     themeSpec: null,
   };
 }
