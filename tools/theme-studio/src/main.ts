@@ -73,6 +73,19 @@ type GifPreview = {
   animator: GiflerAnimator | null;
   playing: boolean;
 };
+type GifMetadata = {
+  width: number;
+  height: number;
+  frameCount: number;
+  durationMs: number;
+  frameAreaTotal: number;
+};
+type GifMetadataCacheEntry = {
+  key: string;
+  status: "loading" | "ready" | "error";
+  metadata?: GifMetadata;
+  error?: string;
+};
 type SpriteSource = {
   file: File;
   previewUrl: string;
@@ -190,6 +203,7 @@ interface AppState {
   editingTextIndex: number | null;
   copiedPrimitive: Primitive | null;
   gifAssets: Record<string, { file: File; previewUrl: string }>;
+  gifMetadata: Record<string, GifMetadataCacheEntry>;
   spriteAssets: Record<string, { file: File; rawText: string; sprite: SpriteAsset; source?: SpriteSource }>;
   jsonText: string;
   jsonDirty: boolean;
@@ -2258,6 +2272,7 @@ const state: AppState = {
   editingTextIndex: null,
   copiedPrimitive: null,
   gifAssets: {},
+  gifMetadata: {},
   spriteAssets: {},
   jsonText: "",
   jsonDirty: false,
@@ -2583,9 +2598,165 @@ function normalizeMiniThemeSpec(spec: ThemeSpec) {
 }
 
 function validateCurrentSpec() {
+  ensureGifMetadataForSpec(state.spec);
   const result = validateSpec(state.spec);
   state.errors = result.errors;
   state.warnings = result.warnings;
+}
+
+function ensureGifMetadataForSpec(spec: ThemeSpec) {
+  uniqueAssetPaths("gif", spec).forEach(ensureGifMetadata);
+}
+
+function ensureGifMetadata(assetPath: string) {
+  const uploaded = state.gifAssets[assetPath];
+  const builtInUrl = uploaded ? undefined : builtInGifPreviewUrl(assetPath);
+  const key = uploaded ? `${uploaded.file.name}|${uploaded.file.size}|${uploaded.file.lastModified}|${uploaded.previewUrl}` : `builtin|${builtInUrl ?? ""}`;
+  if (!uploaded && !builtInUrl) {
+    return;
+  }
+  const cached = state.gifMetadata[assetPath];
+  if (cached?.key === key) {
+    return;
+  }
+
+  state.gifMetadata[assetPath] = { key, status: "loading" };
+  const readBytes = uploaded
+    ? uploaded.file.arrayBuffer()
+    : fetch(builtInUrl ?? "").then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.arrayBuffer();
+      });
+
+  readBytes
+    .then((buffer) => {
+      const metadata = parseGifMetadata(new Uint8Array(buffer));
+      state.gifMetadata[assetPath] = { key, status: "ready", metadata };
+    })
+    .catch((error: unknown) => {
+      state.gifMetadata[assetPath] = {
+        key,
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    })
+    .finally(() => {
+      if (uniqueAssetPaths("gif").includes(assetPath)) {
+        render();
+      }
+    });
+}
+
+function parseGifMetadata(bytes: Uint8Array): GifMetadata {
+  if (bytes.length < 13 || !isGifHeader(bytes)) {
+    throw new Error("not a GIF");
+  }
+
+  let pos = 6;
+  const width = readGifUint16(bytes, pos);
+  const height = readGifUint16(bytes, pos + 2);
+  const packed = bytes[pos + 4];
+  pos += 7;
+  if ((packed & 0x80) !== 0) {
+    pos += gifColorTableBytes(packed);
+  }
+
+  let frameCount = 0;
+  let durationMs = 0;
+  let frameAreaTotal = 0;
+  let pendingDelayMs = 0;
+
+  while (pos < bytes.length) {
+    const block = bytes[pos];
+    pos += 1;
+    if (block === 0x3B) {
+      break;
+    }
+    if (block === 0x21) {
+      const label = bytes[pos];
+      pos += 1;
+      if (label === 0xF9) {
+        const blockSize = bytes[pos];
+        pos += 1;
+        if (blockSize !== 4 || pos + 4 > bytes.length) {
+          throw new Error("invalid GIF graphics control extension");
+        }
+        pendingDelayMs = readGifUint16(bytes, pos + 1) * 10;
+        pos += 4;
+        if (bytes[pos] !== 0) {
+          throw new Error("invalid GIF graphics control terminator");
+        }
+        pos += 1;
+      } else {
+        pos = skipGifSubBlocks(bytes, pos);
+      }
+      continue;
+    }
+    if (block === 0x2C) {
+      if (pos + 9 > bytes.length) {
+        throw new Error("invalid GIF image descriptor");
+      }
+      const frameWidth = readGifUint16(bytes, pos + 4);
+      const frameHeight = readGifUint16(bytes, pos + 6);
+      const imagePacked = bytes[pos + 8];
+      pos += 9;
+      if ((imagePacked & 0x80) !== 0) {
+        pos += gifColorTableBytes(imagePacked);
+      }
+      pos += 1; // LZW minimum code size.
+      pos = skipGifSubBlocks(bytes, pos);
+      frameCount += 1;
+      durationMs += pendingDelayMs;
+      frameAreaTotal += frameWidth * frameHeight;
+      pendingDelayMs = 0;
+      continue;
+    }
+    throw new Error(`unknown GIF block 0x${block.toString(16)}`);
+  }
+
+  if (frameCount === 0 || width <= 0 || height <= 0) {
+    throw new Error("GIF has no frames");
+  }
+
+  return {
+    width,
+    height,
+    frameCount,
+    durationMs,
+    frameAreaTotal,
+  };
+}
+
+function isGifHeader(bytes: Uint8Array): boolean {
+  return String.fromCharCode(...bytes.slice(0, 6)) === "GIF87a" || String.fromCharCode(...bytes.slice(0, 6)) === "GIF89a";
+}
+
+function readGifUint16(bytes: Uint8Array, pos: number): number {
+  if (pos + 1 >= bytes.length) {
+    throw new Error("unexpected GIF end");
+  }
+  return bytes[pos] | (bytes[pos + 1] << 8);
+}
+
+function gifColorTableBytes(packed: number): number {
+  return 3 * (2 ** ((packed & 0x07) + 1));
+}
+
+function skipGifSubBlocks(bytes: Uint8Array, pos: number): number {
+  while (pos < bytes.length) {
+    const size = bytes[pos];
+    pos += 1;
+    if (size === 0) {
+      return pos;
+    }
+    pos += size;
+    if (pos > bytes.length) {
+      throw new Error("unexpected GIF sub-block end");
+    }
+  }
+  throw new Error("unterminated GIF sub-blocks");
 }
 
 function validateThemeAssetPath(primitive: Primitive, prefix: string, errors: string[]) {
@@ -2800,7 +2971,7 @@ function estimateRenderBudget(spec: ThemeSpec): { initialPixels: number; animate
       }
     }
     if (primitive.type === "gif") {
-      animatedPixelsPerSecond += area * 10;
+      animatedPixelsPerSecond += gifAnimationPixelsPerSecond(primitive, width, height);
     }
   });
 
@@ -2809,6 +2980,20 @@ function estimateRenderBudget(spec: ThemeSpec): { initialPixels: number; animate
     animatedPixelsPerSecond: Math.round(animatedPixelsPerSecond),
     spriteWarnings,
   };
+}
+
+function gifAnimationPixelsPerSecond(primitive: Primitive, boxWidth: number, boxHeight: number): number {
+  if (!primitive.assetPath) {
+    return boxWidth * boxHeight * 10;
+  }
+  const metadata = state.gifMetadata[primitive.assetPath]?.metadata;
+  if (!metadata || metadata.width <= 0 || metadata.height <= 0 || metadata.durationMs <= 0) {
+    return boxWidth * boxHeight * 10;
+  }
+  const drawRect = fitContainRect(0, 0, boxWidth, boxHeight, metadata.width / metadata.height);
+  const scaleX = drawRect.width / metadata.width;
+  const scaleY = drawRect.height / metadata.height;
+  return (metadata.frameAreaTotal * scaleX * scaleY * 1000) / metadata.durationMs;
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
