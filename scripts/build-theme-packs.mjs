@@ -9,6 +9,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const sourceRoot = path.join(repoRoot, "theme-packs");
 const distRoot = path.join(repoRoot, "dist/theme-packs");
 const companionRoot = path.join(repoRoot, "companion");
+const deterministicZipTimestamp = "200001010000.00";
 
 await rm(distRoot, { recursive: true, force: true });
 await mkdir(distRoot, { recursive: true });
@@ -43,6 +44,7 @@ for (const theme of themeDirs) {
   await rm(zipPath, { force: true });
 
   const files = await listPackFiles(theme.dir);
+  normalizeZipFileTimestamps(theme.dir, files);
   const zipResult = spawnSync("zip", ["-X", "-q", zipPath, ...files], {
     cwd: theme.dir,
     encoding: "utf8",
@@ -75,6 +77,19 @@ function validatePack(packRef) {
   });
   if (result.status !== 0) {
     throw new Error(`theme-pack validation failed for ${packRef}:\n${result.stderr || result.stdout}`);
+  }
+}
+
+function normalizeZipFileTimestamps(root, files) {
+  if (files.length === 0) {
+    return;
+  }
+  const result = spawnSync("touch", ["-t", deterministicZipTimestamp, ...files], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    throw new Error(`touch failed for ${root}: ${result.stderr || result.stdout}`);
   }
 }
 

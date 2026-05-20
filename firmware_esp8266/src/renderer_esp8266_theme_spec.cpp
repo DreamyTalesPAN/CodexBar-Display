@@ -138,15 +138,6 @@ bool ensureThemeSpecSceneCached(const String& raw) {
   return true;
 }
 
-bool themeSpecSceneHasGifAssets() {
-  for (size_t i = 0; i < cachedThemeSpecScene.primitiveCount; ++i) {
-    if (cachedThemeSpecScene.primitives[i].kind == themespec::PrimitiveKind::Gif) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool readSpriteLine(File& file, String& line) {
   if (!file.available()) {
     return false;
@@ -665,7 +656,7 @@ bool DrawThemeSpecUsage() {
     return false;
   }
 
-  if (!themeSpecSceneHasGifAssets()) {
+  if (!themespec::CompiledThemeSpecHasGifAssets(cachedThemeSpecScene)) {
     GifCore().Stop();
   }
 

@@ -171,6 +171,15 @@ struct CompiledThemeSpec {
   size_t stringPoolUsed = 0;
 };
 
+inline bool CompiledThemeSpecHasGifAssets(const CompiledThemeSpec& scene) {
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    if (scene.primitives[i].kind == PrimitiveKind::Gif) {
+      return true;
+    }
+  }
+  return false;
+}
+
 struct CompiledThemeSpecStoragePlan {
   size_t primitiveCapacity = 0;
   size_t stringPoolCapacity = 0;
