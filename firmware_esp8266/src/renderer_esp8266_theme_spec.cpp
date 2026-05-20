@@ -167,6 +167,12 @@ bool parseAnimatedSpriteHeader(const String& line, int& width, int& height, int&
          fps <= 30;
 }
 
+enum class SpriteRenderMode {
+  All,
+  StaticOnly,
+  AnimatedOnly,
+};
+
 bool parseSpritePaletteSize(const String& line, int& paletteSize) {
   paletteSize = line.toInt();
   return paletteSize > 0 && paletteSize <= 26;
@@ -429,7 +435,7 @@ void drawSpriteAsset(
     int y,
     int targetWidth,
     int targetHeight,
-    bool animatedOnly,
+    SpriteRenderMode mode,
     bool forceAnimatedFrame,
     bool hasClearColor,
     uint16_t clearColor) {
@@ -447,11 +453,13 @@ void drawSpriteAsset(
   String line;
   if (readSpriteLine(file, line)) {
     if (line == "CBI1") {
-      if (!animatedOnly) {
+      if (mode != SpriteRenderMode::AnimatedOnly) {
         drawStaticSpriteAsset(file, x, y, targetWidth, targetHeight, hasClearColor, clearColor);
       }
     } else if (line == "CBA1") {
-      drawAnimatedSpriteAsset(assetPath, file, x, y, targetWidth, targetHeight, forceAnimatedFrame, hasClearColor, clearColor);
+      if (mode != SpriteRenderMode::StaticOnly) {
+        drawAnimatedSpriteAsset(assetPath, file, x, y, targetWidth, targetHeight, forceAnimatedFrame, hasClearColor, clearColor);
+      }
     }
   }
 
@@ -467,8 +475,12 @@ void resetAnimatedSpriteCaches() {
 
 class ThemeSpecSink final : public themespec::Sink {
  public:
-  explicit ThemeSpecSink(bool forceGifFrame, bool clearSpriteTransparent = false)
-      : forceGifFrame_(forceGifFrame),
+  explicit ThemeSpecSink(
+      bool forceAnimatedFrame,
+      SpriteRenderMode spriteRenderMode = SpriteRenderMode::All,
+      bool clearSpriteTransparent = false)
+      : forceAnimatedFrame_(forceAnimatedFrame),
+        spriteRenderMode_(spriteRenderMode),
         clearSpriteTransparent_(clearSpriteTransparent) {}
 
   void PrimeBackground(uint16_t color) override {
@@ -562,7 +574,7 @@ class ThemeSpecSink final : public themespec::Sink {
     request.height = cmd.height;
     request.hasBackgroundColor = cmd.hasBg || hasBackgroundColor_;
     request.backgroundColor = cmd.hasBg ? cmd.bg : backgroundColor_;
-    (void)GifCore().Tick(Tft(), request, forceGifFrame_);
+    (void)GifCore().Tick(Tft(), request, forceAnimatedFrame_);
   }
 
   void DrawSprite(const themespec::SpriteCommand& cmd) override {
@@ -572,8 +584,8 @@ class ThemeSpecSink final : public themespec::Sink {
         cmd.y,
         cmd.width,
         cmd.height,
-        !forceGifFrame_,
-        forceGifFrame_,
+        spriteRenderMode_,
+        forceAnimatedFrame_,
         clearSpriteTransparent_ && (cmd.hasBg || hasBackgroundColor_),
         cmd.hasBg ? cmd.bg : backgroundColor_);
   }
@@ -595,7 +607,8 @@ class ThemeSpecSink final : public themespec::Sink {
   }
 
  private:
-  bool forceGifFrame_ = false;
+  bool forceAnimatedFrame_ = false;
+  SpriteRenderMode spriteRenderMode_ = SpriteRenderMode::All;
   bool clearSpriteTransparent_ = false;
   bool clipActive_ = false;
   bool hasBackgroundColor_ = false;
@@ -644,13 +657,13 @@ bool DrawThemeSpecUsage() {
   }
 
   const auto frameData = currentThemeSpecFrameData();
-  ThemeSpecSink sink(false);
+  ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly);
   if (!themespec::RenderCompiledThemeSpecStaticPrimitives(cachedThemeSpecScene, frameData, sink)) {
     markThemeSpecRenderFailed("full_render_failed");
     return false;
   }
   if (cachedThemeSpecScene.hasAnimatedAssets) {
-    ThemeSpecSink animatedSink(false, true);
+    ThemeSpecSink animatedSink(true, SpriteRenderMode::AnimatedOnly, true);
     (void)themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, frameData, animatedSink);
   }
 
@@ -682,7 +695,7 @@ bool TickThemeSpecGifs() {
     return false;
   }
 
-  ThemeSpecSink sink(false, true);
+  ThemeSpecSink sink(false, SpriteRenderMode::AnimatedOnly, true);
   const bool ok = themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, currentThemeSpecFrameData(), sink);
   return ok;
 }
@@ -701,7 +714,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields) {
   }
 
   const auto frameData = currentThemeSpecFrameData();
-  ThemeSpecSink sink(false, true);
+  ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly, true);
   const char* partialError = nullptr;
   bool skippedAnimatedOverlap = false;
   if (!themespec::RenderCompiledThemeSpecChangedPrimitives(
@@ -715,7 +728,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields) {
     return false;
   }
   if (cachedThemeSpecScene.hasAnimatedAssets) {
-    ThemeSpecSink animatedSink(skippedAnimatedOverlap, true);
+    ThemeSpecSink animatedSink(skippedAnimatedOverlap, SpriteRenderMode::AnimatedOnly, true);
     (void)themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, frameData, animatedSink);
   }
 

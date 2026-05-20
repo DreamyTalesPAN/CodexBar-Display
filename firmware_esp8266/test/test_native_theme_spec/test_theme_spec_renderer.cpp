@@ -616,6 +616,22 @@ void testStaticPrimitivePassSkipsAnimatedAssets() {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[3].type));
 }
 
+void testStaticPrimitivePassKeepsFullScreenSpriteBehindCenteredLabel() {
+  const char* spec = R"JSON({"v":1,"id":"synthwave","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":128,"a":"/themes/u/syn-top.cbi"},{"t":"tx","x":21,"y":12,"w":198,"b":"l","s":1,"f":4,"al":"center","c":"#FF4FA3"}],"fb":"mini","bg":"#050014"})JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderStaticSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_UINT32(3, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_STRING("/themes/u/syn-top.cbi", sink.commands[1].assetPath.c_str());
+  TEST_ASSERT_EQUAL_INT(240, sink.commands[1].width);
+  TEST_ASSERT_EQUAL_INT(128, sink.commands[1].height);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
+  TEST_ASSERT_EQUAL_INT(198, sink.commands[2].maxWidth);
+  TEST_ASSERT_EQUAL_INT(1, sink.commands[2].align);
+}
+
 void testChangedPrimitivePassReplaysDirtyRegion() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -1165,6 +1181,7 @@ int main() {
   RUN_TEST(testColorFallbacks);
   RUN_TEST(testAnimatedPrimitivePassRendersOnlyGifsAndAnimatedSpritesWithoutClear);
   RUN_TEST(testStaticPrimitivePassSkipsAnimatedAssets);
+  RUN_TEST(testStaticPrimitivePassKeepsFullScreenSpriteBehindCenteredLabel);
   RUN_TEST(testChangedPrimitivePassReplaysDirtyRegion);
   RUN_TEST(testChangedPrimitivePassReportsSkippedAnimatedOverlap);
   RUN_TEST(testChangedPrimitivePassUsesThemeBackgroundAndOverlaps);
