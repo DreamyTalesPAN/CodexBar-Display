@@ -1063,6 +1063,16 @@ inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const 
   return ClampPct(frame.session);
 }
 
+inline bool CompiledPrimitiveIsAnimated(const CompiledPrimitive& primitive, const FrameData& frame) {
+  if (primitive.kind == PrimitiveKind::Gif) {
+    return true;
+  }
+  if (primitive.kind == PrimitiveKind::Sprite) {
+    return AssetPathLooksAnimated(CompiledStateAssetPathFor(primitive, frame));
+  }
+  return false;
+}
+
 inline bool CompiledPrimitiveBounds(
     const CompiledPrimitive& primitive,
     const FrameData& frame,
@@ -1250,12 +1260,25 @@ inline bool RenderCompiledThemeSpec(const CompiledThemeSpec& scene, const FrameD
   return true;
 }
 
+inline bool RenderCompiledThemeSpecStaticPrimitives(const CompiledThemeSpec& scene, const FrameData& frame, Sink& sink) {
+  if (scene.primitiveCount == 0) {
+    return false;
+  }
+  sink.FillScreen(scene.bgColor);
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    if (!CompiledPrimitiveIsAnimated(scene.primitives[i], frame)) {
+      (void)DrawCompiledPrimitive(scene.primitives[i], frame, sink);
+      RenderYield();
+    }
+  }
+  return true;
+}
+
 inline bool RenderCompiledThemeSpecAnimatedPrimitives(const CompiledThemeSpec& scene, const FrameData& frame, Sink& sink) {
   bool rendered = false;
   sink.PrimeBackground(scene.bgColor);
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
-    const PrimitiveKind kind = scene.primitives[i].kind;
-    if (kind == PrimitiveKind::Gif || kind == PrimitiveKind::Sprite) {
+    if (CompiledPrimitiveIsAnimated(scene.primitives[i], frame)) {
       rendered = DrawCompiledPrimitive(scene.primitives[i], frame, sink) || rendered;
     }
   }
@@ -1267,9 +1290,13 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     const FrameData& frame,
     uint32_t changedFields,
     Sink& sink,
-    const char** error = nullptr) {
+    const char** error = nullptr,
+    bool* skippedAnimatedOverlap = nullptr) {
   if (error != nullptr) {
     *error = "";
+  }
+  if (skippedAnimatedOverlap != nullptr) {
+    *skippedAnimatedOverlap = false;
   }
   if (changedFields == 0) {
     if (error != nullptr) {
@@ -1327,9 +1354,17 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
   bool rendered = false;
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     Bounds primitiveBounds;
-    if (CompiledPrimitiveBounds(scene.primitives[i], frame, false, primitiveBounds) &&
+    const CompiledPrimitive& primitive = scene.primitives[i];
+    if (CompiledPrimitiveBounds(primitive, frame, false, primitiveBounds) &&
         BoundsOverlap(dirty, primitiveBounds)) {
-      rendered = DrawCompiledPrimitive(scene.primitives[i], frame, sink) || rendered;
+      if (CompiledPrimitiveIsAnimated(primitive, frame)) {
+        if (skippedAnimatedOverlap != nullptr) {
+          *skippedAnimatedOverlap = true;
+        }
+        rendered = true;
+        continue;
+      }
+      rendered = DrawCompiledPrimitive(primitive, frame, sink) || rendered;
       RenderYield();
     }
   }

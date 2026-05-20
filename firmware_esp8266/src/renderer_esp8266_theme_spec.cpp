@@ -20,7 +20,7 @@ namespace display {
 
 namespace {
 
-constexpr unsigned long kThemeSpecAnimatedTickMs = 125UL;
+constexpr unsigned long kThemeSpecAnimatedTickMs = 20UL;
 constexpr int kAnimatedSpriteCacheSlots = 2;
 unsigned long nextThemeSpecAnimatedTickAtMs = 0;
 bool lastThemeSpecRenderOk = true;
@@ -643,10 +643,15 @@ bool DrawThemeSpecUsage() {
     return false;
   }
 
-  ThemeSpecSink sink(true);
-  if (!themespec::RenderCompiledThemeSpec(cachedThemeSpecScene, currentThemeSpecFrameData(), sink)) {
+  const auto frameData = currentThemeSpecFrameData();
+  ThemeSpecSink sink(false);
+  if (!themespec::RenderCompiledThemeSpecStaticPrimitives(cachedThemeSpecScene, frameData, sink)) {
     markThemeSpecRenderFailed("full_render_failed");
     return false;
+  }
+  if (cachedThemeSpecScene.hasAnimatedAssets) {
+    ThemeSpecSink animatedSink(false, true);
+    (void)themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, frameData, animatedSink);
   }
 
   markCurrentThemeSpecRendered();
@@ -695,16 +700,23 @@ bool RenderThemeSpecPartial(uint32_t changedFields) {
     return false;
   }
 
-  ThemeSpecSink sink(true, true);
+  const auto frameData = currentThemeSpecFrameData();
+  ThemeSpecSink sink(false, true);
   const char* partialError = nullptr;
+  bool skippedAnimatedOverlap = false;
   if (!themespec::RenderCompiledThemeSpecChangedPrimitives(
           cachedThemeSpecScene,
-          currentThemeSpecFrameData(),
+          frameData,
           changedFields,
           sink,
-          &partialError)) {
+          &partialError,
+          &skippedAnimatedOverlap)) {
     markThemeSpecPartialFailed(changedFields, partialError);
     return false;
+  }
+  if (cachedThemeSpecScene.hasAnimatedAssets) {
+    ThemeSpecSink animatedSink(skippedAnimatedOverlap, true);
+    (void)themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, frameData, animatedSink);
   }
 
   markThemeSpecPartialOk(changedFields);

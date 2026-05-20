@@ -624,6 +624,24 @@ inline bool FrameThemeChanged(const Frame& previous, const Frame& next) {
 
 inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previous, Frame& next, SerialConsumeEvent& outEvent) {
   if (next.hasError) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    if (previous.hasThemeSpec) {
+      next = previous;
+      next.themeSpecRaw = "";
+      outEvent.themeSpecCacheHit = true;
+    } else if (runtimeState.cachedThemeRev > 0 &&
+               ThemeSpecRawLooksRenderable(runtimeState.cachedThemeSpecRaw)) {
+      next = previous;
+      next.hasError = false;
+      next.error = "";
+      next.clearThemeSpec = false;
+      next.hasThemeSpec = true;
+      next.themeSpecId = runtimeState.cachedThemeId;
+      next.themeSpecRev = runtimeState.cachedThemeRev;
+      next.themeSpecRaw = "";
+      outEvent.themeSpecCacheHit = true;
+    }
+#endif
     return;
   }
 
