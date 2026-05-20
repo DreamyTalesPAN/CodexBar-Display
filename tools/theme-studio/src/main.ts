@@ -2407,12 +2407,19 @@ function specForPreset(defaultSpec: ThemeSpec): ThemeSpec {
 }
 
 function themeLibraryIdForSpec(spec: ThemeSpec, fallback = CLIPPY_SPEC.themeId): string {
-  const ids = [SYNTHWAVE_SPEC.themeId, CLAUDE_CREATURE_SPEC.themeId, CLIPPY_SPEC.themeId, COZY_MEADOW_SPEC.themeId];
+  const ids = [
+    initialSpec.themeId,
+    SYNTHWAVE_SPEC.themeId,
+    CLAUDE_CREATURE_SPEC.themeId,
+    CLIPPY_SPEC.themeId,
+    COZY_MEADOW_SPEC.themeId,
+  ];
   return ids.includes(spec.themeId) ? spec.themeId : fallback;
 }
 
 function themeLibraryLabel(themeId: string): string {
   const labels: Record<string, string> = {
+    [initialSpec.themeId]: "Mini",
     [SYNTHWAVE_SPEC.themeId]: "Synthwave",
     [CLAUDE_CREATURE_SPEC.themeId]: "Claude Creature",
     [CLIPPY_SPEC.themeId]: "Clippy",
@@ -2980,6 +2987,7 @@ function render() {
 
 function themeLibrary(): string {
   const presets = [
+    { themeId: initialSpec.themeId, label: "Mini", action: "load-mini" },
     { themeId: SYNTHWAVE_SPEC.themeId, label: "Synthwave", action: "load-synthwave" },
     { themeId: CLAUDE_CREATURE_SPEC.themeId, label: "Claude Creature", action: "load-claude-creature" },
     { themeId: CLIPPY_SPEC.themeId, label: "Clippy", action: "load-clippy" },
@@ -3128,6 +3136,7 @@ function inspectorFields(primitive: Primitive): string {
         </label>
         <label>Size<input type="number" min="1" step="1" data-primitive-field="fontSize" value="${primitive.fontSize ?? 1}" /></label>
       </div>
+      <label>Width<input type="number" min="1" max="${DISPLAY_SIZE}" step="1" data-primitive-field="width" value="${primitive.width ?? estimatePrimitiveWidth(primitive)}" /></label>
       <label>Align
         <select data-primitive-field="align">
           ${["left", "center", "right"].map((value) => `<option value="${value}" ${(primitive.align ?? "left") === value ? "selected" : ""}>${value}</option>`).join("")}
@@ -4419,13 +4428,48 @@ function resizeHandle(index: number, handle: ResizeHandle, x: number, y: number)
 
 function estimatePrimitiveWidth(primitive: Primitive): number {
   if (primitive.type === "text") {
-    const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
-    return Math.max(1, firmwareTextWidth(text, primitive.font, primitive.fontSize));
+    if (primitive.width !== undefined) {
+      return primitive.width;
+    }
+    if (primitive.align && primitive.align !== "left") {
+      return Math.min(DISPLAY_SIZE, estimateTextStableWidth(primitive));
+    }
+    return Math.max(1, estimateTextWidth(primitive, renderedPrimitiveText(primitive)));
   }
   if (primitive.type === "sprite") {
     return primitive.width ?? spriteDimensions(resolveStateAssetPath(primitive)).width;
   }
   return primitive.width ?? 1;
+}
+
+function renderedPrimitiveText(primitive: Primitive): string {
+  return primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
+}
+
+function estimateTextStableWidth(primitive: Primitive): number {
+  return Math.max(...textPreviewCandidates(primitive).map((text) => estimateTextWidth(primitive, text)), 1);
+}
+
+function estimateTextWidth(primitive: Primitive, text: string): number {
+  return firmwareTextWidth(text, primitive.font, primitive.fontSize);
+}
+
+function textPreviewCandidates(primitive: Primitive): string[] {
+  const candidates = [renderedPrimitiveText(primitive)];
+  if (primitive.binding === "label") {
+    candidates.push(...UPDATE_LABEL_PREVIEW_TEXTS);
+  } else if (primitive.text && /\{(?:label|providerLabel)\}/.test(primitive.text)) {
+    UPDATE_LABEL_PREVIEW_TEXTS.forEach((labelText) => {
+      candidates.push(renderTemplateWithLabelValue(primitive.text ?? "", labelText));
+    });
+  }
+  return Array.from(new Set(candidates));
+}
+
+function renderTemplateWithLabelValue(text: string, labelText: string): string {
+  return text.replace(/\{([a-zA-Z]+)\}/g, (_, key: string) => {
+    return key === "label" || key === "providerLabel" ? labelText : bindingValue(key);
+  });
 }
 
 function estimatePrimitiveHeight(primitive: Primitive): number {
@@ -4505,7 +4549,13 @@ function textPreviewCanvas(
   }
   context.fillStyle = primitive.color ?? "#FFFFFF";
   const size = Math.max(1, primitive.fontSize ?? 1);
-  const textX = 0;
+  const textWidth = estimateTextWidth(primitive, text);
+  const align = primitive.align ?? "left";
+  const textX = align === "center"
+    ? Math.max(0, Math.floor((canvas.width - textWidth) / 2))
+    : align === "right"
+      ? Math.max(0, canvas.width - textWidth)
+      : 0;
   const font = primitive.font ?? 1;
   if (font === 2) {
     drawTftFont2Text(context, text, size, textX);
@@ -6048,9 +6098,20 @@ function updateSelectedPrimitive(key: string, value: string) {
     return;
   }
   if (key === "align") {
+    const currentWidth = estimatePrimitiveWidth(primitive);
+    const currentCenter = primitive.x + currentWidth / 2;
+    const currentRight = primitive.x + currentWidth;
     primitive.align = ["center", "right"].includes(value) ? value as "center" | "right" : "left";
     if (primitive.align === "left") {
       delete primitive.align;
+    } else if (primitive.type === "text") {
+      const nextWidth = clamp(Math.max(primitive.width ?? 0, estimateTextStableWidth(primitive)), 1, DISPLAY_SIZE);
+      primitive.width = nextWidth;
+      if (primitive.align === "center") {
+        primitive.x = clamp(Math.round(currentCenter - nextWidth / 2), 0, DISPLAY_SIZE - nextWidth);
+      } else {
+        primitive.x = clamp(Math.round(currentRight - nextWidth), 0, DISPLAY_SIZE - nextWidth);
+      }
     }
     return;
   }
@@ -6187,6 +6248,17 @@ async function handleAction(action: string) {
     setSingleSelection(-1);
     state.editingTextIndex = null;
     state.notice = "Sample restored.";
+    syncJsonFromSpec();
+    render();
+    return;
+  }
+  if (action === "load-mini") {
+    pushHistory();
+    state.spec = specForPreset(initialSpec);
+    state.activeThemeId = initialSpec.themeId;
+    setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "gif"));
+    state.editingTextIndex = null;
+    state.notice = "Mini loaded.";
     syncJsonFromSpec();
     render();
     return;
@@ -7508,8 +7580,11 @@ function buildDevicePrimitive(primitive: Primitive): Record<string, unknown> {
     x: primitive.x,
     y: primitive.y,
   };
-  if (primitive.width !== undefined) {
-    compact.w = primitive.width;
+  const exportedWidth = primitive.width ?? (primitive.type === "text" && primitive.align && primitive.align !== "left"
+    ? Math.min(DISPLAY_SIZE, estimateTextStableWidth(primitive))
+    : undefined);
+  if (exportedWidth !== undefined) {
+    compact.w = exportedWidth;
   }
   if (primitive.height !== undefined) {
     compact.h = primitive.height;
