@@ -83,8 +83,8 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Build Theme Packs
-        run: node scripts/build-theme-packs.mjs
+      - name: Check Theme Pack Dist
+        run: ./scripts/check-theme-pack-dist.sh
 
   firmware-build-v0:
     runs-on: ubuntu-latest

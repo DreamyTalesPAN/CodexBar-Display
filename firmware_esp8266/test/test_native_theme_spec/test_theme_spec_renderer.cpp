@@ -15,9 +15,11 @@ using codexbar_display::themespec::ProgressCommand;
 using codexbar_display::themespec::RectCommand;
 using codexbar_display::themespec::CompileThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpec;
+using codexbar_display::themespec::CompiledThemeSpecHasGifAssets;
 using codexbar_display::themespec::RenderCompiledThemeSpec;
 using codexbar_display::themespec::RenderCompiledThemeSpecAnimatedPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecChangedPrimitives;
+using codexbar_display::themespec::RenderCompiledThemeSpecStaticPrimitives;
 using codexbar_display::themespec::ReleaseCompiledThemeSpec;
 using codexbar_display::themespec::Sink;
 using codexbar_display::themespec::SpriteCommand;
@@ -213,6 +215,17 @@ bool renderAnimatedSpec(const char* spec, const FrameData& frame, RecordingSink&
   return ok;
 }
 
+bool renderStaticSpec(const char* spec, const FrameData& frame, RecordingSink& sink) {
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  if (!CompileThemeSpec(spec, doc, scene)) {
+    return false;
+  }
+  const bool ok = RenderCompiledThemeSpecStaticPrimitives(scene, frame, sink);
+  ReleaseCompiledThemeSpec(scene);
+  return ok;
+}
+
 bool renderChangedSpec(const char* spec, const FrameData& frame, uint32_t changedFields, RecordingSink& sink) {
   JsonDocument doc;
   CompiledThemeSpec scene;
@@ -238,6 +251,29 @@ bool renderChangedSpecWithError(
     return false;
   }
   const bool ok = RenderCompiledThemeSpecChangedPrimitives(scene, frame, changedFields, sink, &error);
+  ReleaseCompiledThemeSpec(scene);
+  return ok;
+}
+
+bool renderChangedSpecWithSkippedAnimated(
+    const char* spec,
+    const FrameData& frame,
+    uint32_t changedFields,
+    RecordingSink& sink,
+    bool& skippedAnimated) {
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  skippedAnimated = false;
+  if (!CompileThemeSpec(spec, doc, scene)) {
+    return false;
+  }
+  const bool ok = RenderCompiledThemeSpecChangedPrimitives(
+      scene,
+      frame,
+      changedFields,
+      sink,
+      nullptr,
+      &skippedAnimated);
   ReleaseCompiledThemeSpec(scene);
   return ok;
 }
@@ -407,6 +443,29 @@ void testRendersCompactCommandsAndBindings() {
   TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
 }
 
+void testCompactTextWidthMapsToMaxWidthForAlignment() {
+  const char* spec = R"JSON({
+    "v": 1,
+    "id": "codex-test",
+    "rev": 1,
+    "p": [
+      {"t":"tx","x":21,"y":12,"w":198,"b":"l","s":1,"f":4,"al":"center","c":"#FF4FA3"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
+
+  const RecordedCommand& text = sink.commands[1];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(text.type));
+  TEST_ASSERT_EQUAL_STRING("Codex", text.text.c_str());
+  TEST_ASSERT_EQUAL_INT(21, text.x);
+  TEST_ASSERT_EQUAL_INT(12, text.y);
+  TEST_ASSERT_EQUAL_INT(198, text.maxWidth);
+  TEST_ASSERT_EQUAL_INT(1, text.align);
+}
+
 void testRendersMulticolorRlePixelsAsFillRects() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -508,7 +567,7 @@ void testColorFallbacks() {
   TEST_ASSERT_TRUE(sink.commands[2].hasBg);
 }
 
-void testAnimatedPrimitivePassRendersGifsAndSpritesWithoutClear() {
+void testAnimatedPrimitivePassRendersOnlyGifsAndAnimatedSpritesWithoutClear() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
     "themeId": "codex-test",
@@ -517,6 +576,7 @@ void testAnimatedPrimitivePassRendersGifsAndSpritesWithoutClear() {
       {"type":"rect","x":1,"y":2,"width":3,"height":4,"color":"#FFFFFF"},
       {"type":"gif","x":20,"y":21,"width":22,"height":23,"assetPath":"/themes/demo/loop.gif"},
       {"type":"sprite","x":30,"y":31,"width":32,"height":33,"assetPath":"/themes/demo/hero.cba"},
+      {"type":"sprite","x":1,"y":1,"width":10,"height":10,"assetPath":"/themes/demo/static.cbi"},
       {"type":"text","x":5,"y":6,"fontSize":1,"text":"ok"}
     ]
   })JSON";
@@ -530,6 +590,101 @@ void testAnimatedPrimitivePassRendersGifsAndSpritesWithoutClear() {
   TEST_ASSERT_EQUAL_INT(32, sink.commands[1].width);
   TEST_ASSERT_EQUAL_INT(33, sink.commands[1].height);
   TEST_ASSERT_EQUAL_STRING("/themes/demo/hero.cba", sink.commands[1].assetPath.c_str());
+}
+
+void testStaticPrimitivePassSkipsAnimatedAssets() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "bgColor": "#000000",
+    "primitives": [
+      {"type":"rect","x":1,"y":2,"width":3,"height":4,"color":"#FFFFFF"},
+      {"type":"gif","x":20,"y":21,"width":22,"height":23,"assetPath":"/themes/demo/loop.gif"},
+      {"type":"sprite","x":30,"y":31,"width":32,"height":33,"assetPath":"/themes/demo/hero.cba"},
+      {"type":"sprite","x":40,"y":41,"width":42,"height":43,"assetPath":"/themes/demo/static.cbi"},
+      {"type":"text","x":5,"y":6,"fontSize":1,"text":"ok"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderStaticSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(sink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/static.cbi", sink.commands[2].assetPath.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[3].type));
+}
+
+void testStaticPrimitivePassKeepsFullScreenSpriteBehindCenteredLabel() {
+  const char* spec = R"JSON({"v":1,"id":"synthwave","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":128,"a":"/themes/u/syn-top.cbi"},{"t":"tx","x":21,"y":12,"w":198,"b":"l","s":1,"f":4,"al":"center","c":"#FF4FA3"}],"fb":"mini","bg":"#050014"})JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderStaticSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_UINT32(3, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(sink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_STRING("/themes/u/syn-top.cbi", sink.commands[1].assetPath.c_str());
+  TEST_ASSERT_EQUAL_INT(240, sink.commands[1].width);
+  TEST_ASSERT_EQUAL_INT(128, sink.commands[1].height);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
+  TEST_ASSERT_EQUAL_INT(198, sink.commands[2].maxWidth);
+  TEST_ASSERT_EQUAL_INT(1, sink.commands[2].align);
+}
+
+void testCompiledThemeSpecSeparatesGifAssetsFromAnimatedSprites() {
+  const char* gifSpec = R"JSON({
+    "v": 1,
+    "id": "mini-like",
+    "rev": 1,
+    "p": [
+      {"t":"tx","x":30,"y":10,"w":180,"v":"{label}","al":"center","s":2},
+      {"t":"g","x":80,"y":84,"w":80,"h":80,"a":"/themes/u/mini.gif"}
+    ]
+  })JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(gifSpec, doc, scene));
+  TEST_ASSERT_TRUE(scene.hasAnimatedAssets);
+  TEST_ASSERT_TRUE(CompiledThemeSpecHasGifAssets(scene));
+
+  RecordingSink gifStaticSink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpecStaticPrimitives(scene, testFrame(), gifStaticSink));
+  TEST_ASSERT_EQUAL_UINT32(2, gifStaticSink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(gifStaticSink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(gifStaticSink.commands[1].type));
+
+  RecordingSink gifAnimatedSink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpecAnimatedPrimitives(scene, testFrame(), gifAnimatedSink));
+  TEST_ASSERT_EQUAL_UINT32(1, gifAnimatedSink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Gif), static_cast<int>(gifAnimatedSink.commands[0].type));
+  TEST_ASSERT_EQUAL_STRING("/themes/u/mini.gif", gifAnimatedSink.commands[0].assetPath.c_str());
+  ReleaseCompiledThemeSpec(scene);
+
+  const char* spriteSpec = R"JSON({
+    "v": 1,
+    "id": "state-sprite-like",
+    "rev": 1,
+    "p": [
+      {"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/bg.cbi"},
+      {"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/idle.cba","sa":{"idle":"/themes/u/idle.cba","coding":"/themes/u/coding.cba"}}
+    ]
+  })JSON";
+
+  TEST_ASSERT_TRUE(CompileThemeSpec(spriteSpec, doc, scene));
+  TEST_ASSERT_TRUE(scene.hasAnimatedAssets);
+  TEST_ASSERT_FALSE(CompiledThemeSpecHasGifAssets(scene));
+
+  FrameData codingFrame = testFrame();
+  codingFrame.activity = "coding";
+  RecordingSink spriteAnimatedSink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpecAnimatedPrimitives(scene, codingFrame, spriteAnimatedSink));
+  TEST_ASSERT_EQUAL_UINT32(1, spriteAnimatedSink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(spriteAnimatedSink.commands[0].type));
+  TEST_ASSERT_EQUAL_STRING("/themes/u/coding.cba", spriteAnimatedSink.commands[0].assetPath.c_str());
+  ReleaseCompiledThemeSpec(scene);
 }
 
 void testChangedPrimitivePassReplaysDirtyRegion() {
@@ -552,7 +707,7 @@ void testChangedPrimitivePassReplaysDirtyRegion() {
   codingFrame.activity = "coding";
   RecordingSink activitySink;
   TEST_ASSERT_TRUE(renderChangedSpec(spec, codingFrame, kThemeSpecFieldActivity, activitySink));
-  TEST_ASSERT_EQUAL_UINT32(7, activitySink.commands.size());
+  TEST_ASSERT_EQUAL_UINT32(5, activitySink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(activitySink.commands[0].type));
   TEST_ASSERT_EQUAL_INT(10, activitySink.commands[0].x);
   TEST_ASSERT_EQUAL_INT(11, activitySink.commands[0].y);
@@ -560,32 +715,49 @@ void testChangedPrimitivePassReplaysDirtyRegion() {
   TEST_ASSERT_EQUAL_INT(33, activitySink.commands[0].height);
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(activitySink.commands[1].type));
   TEST_ASSERT_EQUAL_HEX16(0x0000, activitySink.commands[1].color);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Gif), static_cast<int>(activitySink.commands[2].type));
-  TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.gif", activitySink.commands[2].assetPath.c_str());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(activitySink.commands[3].type));
-  TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.cba", activitySink.commands[3].assetPath.c_str());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(activitySink.commands[4].type));
-  TEST_ASSERT_EQUAL_STRING("coding", activitySink.commands[4].text.c_str());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(activitySink.commands[5].type));
-  TEST_ASSERT_EQUAL_STRING("97", activitySink.commands[5].text.c_str());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(activitySink.commands[6].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(activitySink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("coding", activitySink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(activitySink.commands[3].type));
+  TEST_ASSERT_EQUAL_STRING("97", activitySink.commands[3].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(activitySink.commands[4].type));
 
   RecordingSink sessionSink;
   TEST_ASSERT_TRUE(renderChangedSpec(spec, codingFrame, kThemeSpecFieldSession, sessionSink));
-  TEST_ASSERT_EQUAL_UINT32(6, sessionSink.commands.size());
+  TEST_ASSERT_EQUAL_UINT32(5, sessionSink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sessionSink.commands[0].type));
   TEST_ASSERT_EQUAL_INT(40, sessionSink.commands[0].x);
   TEST_ASSERT_EQUAL_INT(41, sessionSink.commands[0].y);
   TEST_ASSERT_EQUAL_INT(80, sessionSink.commands[0].width);
   TEST_ASSERT_EQUAL_INT(20, sessionSink.commands[0].height);
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(sessionSink.commands[1].type));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Sprite), static_cast<int>(sessionSink.commands[2].type));
-  TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.cba", sessionSink.commands[2].assetPath.c_str());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sessionSink.commands[3].type));
-  TEST_ASSERT_EQUAL_STRING("97", sessionSink.commands[3].text.c_str());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(sessionSink.commands[4].type));
-  TEST_ASSERT_EQUAL_INT(97, sessionSink.commands[4].percent);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sessionSink.commands[5].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sessionSink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("97", sessionSink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(sessionSink.commands[3].type));
+  TEST_ASSERT_EQUAL_INT(97, sessionSink.commands[3].percent);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sessionSink.commands[4].type));
+}
+
+void testChangedPrimitivePassReportsSkippedAnimatedOverlap() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "bgColor": "#000000",
+    "primitives": [
+      {"type":"gif","x":10,"y":10,"width":40,"height":40,"assetPath":"/themes/demo/loop.gif"},
+      {"type":"text","x":0,"y":20,"fontSize":2,"maxWidth":80,"binding":"session"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  bool skippedAnimated = false;
+  TEST_ASSERT_TRUE(renderChangedSpecWithSkippedAnimated(spec, testFrame(), kThemeSpecFieldSession, sink, skippedAnimated));
+  TEST_ASSERT_TRUE(skippedAnimated);
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands[3].type));
 }
 
 void testChangedPrimitivePassUsesThemeBackgroundAndOverlaps() {
@@ -666,9 +838,8 @@ void testCompiledThemeSpecFullPartialAndAnimatedPasses() {
 
   RecordingSink animatedSink;
   TEST_ASSERT_TRUE(RenderCompiledThemeSpecAnimatedPrimitives(scene, frame, animatedSink));
-  TEST_ASSERT_EQUAL_UINT32(2, animatedSink.commands.size());
-  TEST_ASSERT_EQUAL_STRING("/themes/u/cp-bg.cbi", animatedSink.commands[0].assetPath.c_str());
-  TEST_ASSERT_EQUAL_STRING("/themes/u/cp-c.cba", animatedSink.commands[1].assetPath.c_str());
+  TEST_ASSERT_EQUAL_UINT32(1, animatedSink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("/themes/u/cp-c.cba", animatedSink.commands[0].assetPath.c_str());
 
   RecordingSink partialSink;
   TEST_ASSERT_TRUE(RenderCompiledThemeSpecChangedPrimitives(
@@ -735,6 +906,45 @@ void testStateAssetsUseActivityWithIdleFallback() {
   TEST_ASSERT_TRUE(renderSpec(spec, waitingFrame, waitingSink));
   TEST_ASSERT_EQUAL_STRING("/themes/demo/idle.gif", waitingSink.commands[1].assetPath.c_str());
   TEST_ASSERT_EQUAL_STRING("/themes/demo/idle.cba", waitingSink.commands[2].assetPath.c_str());
+}
+
+void testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-state-sprite",
+    "themeRev": 1,
+    "bgColor": "#000000",
+    "primitives": [
+      {"type":"sprite","x":0,"y":0,"width":240,"height":240,"assetPath":"/themes/demo/bg.cbi"},
+      {"type":"sprite","x":83,"y":54,"width":74,"height":74,"assetPath":"/themes/demo/idle.cba","stateAssets":{"idle":"/themes/demo/idle.cba","coding":"/themes/demo/coding.cba"}}
+    ]
+  })JSON";
+
+  FrameData idleFrame = testFrame();
+  idleFrame.activity = "idle";
+  RecordingSink idleAnimatedSink;
+  TEST_ASSERT_TRUE(renderAnimatedSpec(spec, idleFrame, idleAnimatedSink));
+  TEST_ASSERT_EQUAL_UINT32(1, idleAnimatedSink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/idle.cba", idleAnimatedSink.commands[0].assetPath.c_str());
+
+  FrameData codingFrame = testFrame();
+  codingFrame.activity = "coding";
+  RecordingSink changedSink;
+  bool skippedAnimated = false;
+  TEST_ASSERT_TRUE(renderChangedSpecWithSkippedAnimated(
+      spec,
+      codingFrame,
+      kThemeSpecFieldActivity,
+      changedSink,
+      skippedAnimated));
+  TEST_ASSERT_TRUE(skippedAnimated);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(changedSink.commands.front().type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(changedSink.commands.back().type));
+
+  RecordingSink codingAnimatedSink;
+  TEST_ASSERT_TRUE(renderAnimatedSpec(spec, codingFrame, codingAnimatedSink));
+  TEST_ASSERT_EQUAL_UINT32(1, codingAnimatedSink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("/themes/demo/coding.cba", codingAnimatedSink.commands[0].assetPath.c_str());
 }
 
 void testFrameActivityDefaultsToCodingWhenUsageChanges() {
@@ -832,6 +1042,46 @@ void testThemeSpecPartialFailurePolicyKeepsLastFrameClean() {
     screenDirty = true;
   }
   TEST_ASSERT_FALSE(screenDirty);
+}
+
+void testThemeSpecErrorFrameKeepsCachedThemeVisible() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"mini-transport","rev":1,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"cached"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(state.current.hasError);
+  TEST_ASSERT_TRUE(state.cachedThemeSpecRaw.indexOf("cached") >= 0);
+
+  const char* errorFrame = R"JSON({"v":2,"error":"runtime/cycle-timeout"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 2000, true, event));
+  TEST_ASSERT_FALSE(state.current.hasError);
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_FALSE(event.visualChanged);
+}
+
+void testThemeSpecErrorFrameRestoresCachedThemeAfterPlainFrame() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  state.cachedThemeId = "mini-transport";
+  state.cachedThemeRev = 1;
+  state.cachedThemeSpecRaw = R"JSON({"v":1,"id":"mini-transport","rev":1,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"cached"}]})JSON";
+  state.current.provider = "codex";
+  state.current.label = "Codex";
+  state.current.hasTheme = true;
+  state.current.theme = "mini";
+  state.hasFrame = true;
+
+  const char* errorFrame = R"JSON({"v":2,"error":"runtime/cycle-timeout"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 2000, true, event));
+  TEST_ASSERT_FALSE(state.current.hasError);
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.visualChanged);
 }
 
 void testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset() {
@@ -1018,22 +1268,30 @@ int main() {
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testRendersCompactCommandsAndBindings);
+  RUN_TEST(testCompactTextWidthMapsToMaxWidthForAlignment);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
   RUN_TEST(testInvalidMulticolorRlePixelsAreSkippedWithoutPartialDraw);
   RUN_TEST(testInvalidPrimitivesAreSkipped);
   RUN_TEST(testColorFallbacks);
-  RUN_TEST(testAnimatedPrimitivePassRendersGifsAndSpritesWithoutClear);
+  RUN_TEST(testAnimatedPrimitivePassRendersOnlyGifsAndAnimatedSpritesWithoutClear);
+  RUN_TEST(testStaticPrimitivePassSkipsAnimatedAssets);
+  RUN_TEST(testStaticPrimitivePassKeepsFullScreenSpriteBehindCenteredLabel);
+  RUN_TEST(testCompiledThemeSpecSeparatesGifAssetsFromAnimatedSprites);
   RUN_TEST(testChangedPrimitivePassReplaysDirtyRegion);
+  RUN_TEST(testChangedPrimitivePassReportsSkippedAnimatedOverlap);
   RUN_TEST(testChangedPrimitivePassUsesThemeBackgroundAndOverlaps);
   RUN_TEST(testChangedPrimitivePassHandlesCompactClippySpec);
   RUN_TEST(testCompiledThemeSpecFullPartialAndAnimatedPasses);
   RUN_TEST(testChangedPrimitivePassReportsNoAffectedPrimitiveForUnusedReset);
   RUN_TEST(testChangedPrimitivePassHandlesTextWithoutMaxWidth);
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
+  RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
   RUN_TEST(testThemeSpecPartialFailurePolicyKeepsLastFrameClean);
+  RUN_TEST(testThemeSpecErrorFrameKeepsCachedThemeVisible);
+  RUN_TEST(testThemeSpecErrorFrameRestoresCachedThemeAfterPlainFrame);
   RUN_TEST(testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset);
   RUN_TEST(testThemeSpecIgnoresUpdateMetadataForVisualDirty);
   RUN_TEST(testThemeSpecCacheCarriesLayoutAcrossLiveFrames);

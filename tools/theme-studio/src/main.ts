@@ -177,6 +177,7 @@ interface SavedTheme {
   name: string;
   savedAt: string;
   spec: ThemeSpec;
+  source?: "browser" | "workspace";
 }
 
 interface FrameData {
@@ -2294,6 +2295,7 @@ const state: AppState = {
 };
 syncJsonFromSpec();
 render();
+void refreshWorkspaceThemes();
 void refreshPublishedThemeIds();
 window.addEventListener("keydown", handleGlobalKeydown);
 window.addEventListener("pointerup", () => {
@@ -2414,7 +2416,8 @@ function persistCurrentThemeDraft() {
 }
 
 function savedThemeForThemeId(themeId: string): SavedTheme | undefined {
-  return state.savedThemes.find((theme) => theme.name === themeId || theme.spec.themeId === themeId);
+  const matches = state.savedThemes.filter((theme) => theme.name === themeId || theme.spec.themeId === themeId);
+  return matches.find((theme) => theme.source === "workspace") ?? matches[0];
 }
 
 function specForPreset(defaultSpec: ThemeSpec): ThemeSpec {
@@ -2458,6 +2461,88 @@ async function refreshPublishedThemeIds() {
   } catch {
     // The static build has no local publish API. The editor still works.
   }
+}
+
+async function refreshWorkspaceThemes() {
+  try {
+    const response = await fetch("/api/theme-packs/sources", { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      return;
+    }
+    const body = await response.json() as { themes?: unknown };
+    if (!Array.isArray(body.themes)) {
+      return;
+    }
+
+    const workspaceThemes: SavedTheme[] = [];
+    for (const entry of body.themes) {
+      if (!isRecord(entry) || !isRecord(entry.spec)) {
+        continue;
+      }
+      const spec = importThemeSpec(entry.spec);
+      normalizeMiniThemeSpec(spec);
+      const result = validateSpec(spec);
+      if (result.errors.length > 0) {
+        continue;
+      }
+      await importWorkspaceAssets(Array.isArray(entry.assets) ? entry.assets : []);
+      workspaceThemes.push({
+        id: `workspace-${spec.themeId}`,
+        name: spec.themeId,
+        savedAt: typeof entry.savedAt === "string" ? entry.savedAt : new Date(0).toISOString(),
+        spec,
+        source: "workspace",
+      });
+    }
+
+    const browserThemes = state.savedThemes.filter((theme) => theme.source !== "workspace");
+    state.savedThemes = [...workspaceThemes, ...browserThemes];
+    const workspaceActive = workspaceThemes.find((theme) => theme.spec.themeId === state.activeThemeId);
+    if (workspaceActive && (!restoredDraft || workspaceActive.savedAt > restoredDraft.savedAt)) {
+      state.spec = cloneSpec(workspaceActive.spec);
+      state.activeThemeId = workspaceActive.spec.themeId;
+      setSingleSelection(Math.min(state.selectedIndex, state.spec.primitives.length - 1));
+      syncJsonFromSpec();
+    }
+    render();
+  } catch {
+    // Static builds and older dev servers do not expose the workspace source API.
+  }
+}
+
+async function importWorkspaceAssets(assets: unknown[]) {
+  for (const entry of assets) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const assetPath = typeof entry.path === "string" ? entry.path : "";
+    const dataBase64 = typeof entry.dataBase64 === "string" ? entry.dataBase64 : "";
+    if (!assetPath || !dataBase64) {
+      continue;
+    }
+    const contentType = typeof entry.contentType === "string" ? entry.contentType : "";
+    const data = base64ToUint8(dataBase64);
+    const file = new File([arrayBufferFor(data)], assetPath.split("/").pop() || "asset", { type: contentType || contentTypeForAssetPath(assetPath) });
+    if (assetPath.toLowerCase().endsWith(".gif")) {
+      state.gifAssets[assetPath] = {
+        file,
+        previewUrl: URL.createObjectURL(file),
+      };
+    } else if (assetPath.toLowerCase().endsWith(".cbi") || assetPath.toLowerCase().endsWith(".cba")) {
+      const rawText = new TextDecoder().decode(data);
+      const sprite = parseSpriteAsset(rawText);
+      if (sprite) {
+        state.spriteAssets[assetPath] = { file, rawText, sprite };
+      }
+    }
+  }
+}
+
+function contentTypeForAssetPath(assetPath: string): string {
+  if (assetPath.toLowerCase().endsWith(".gif")) {
+    return "image/gif";
+  }
+  return "text/plain";
 }
 
 function currentThemePackExists(): boolean {
@@ -2529,7 +2614,7 @@ function redoThemeEdit() {
   restoreSnapshot(snapshot, "Redone.");
 }
 
-function saveThemeLocally() {
+async function saveThemeLocally() {
   const now = new Date().toISOString();
   const slotId = themeLibraryIdForSpec(state.spec, state.activeThemeId);
   state.activeThemeId = slotId;
@@ -2539,6 +2624,7 @@ function saveThemeLocally() {
     name: slotId,
     savedAt: now,
     spec: cloneSpec(state.spec),
+    source: "browser",
   };
   if (existingIndex >= 0) {
     state.savedThemes.splice(existingIndex, 1, saved);
@@ -2548,7 +2634,17 @@ function saveThemeLocally() {
   state.savedThemes.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
   persistSavedThemes();
   persistCurrentThemeDraft();
-  state.notice = `${themeLibraryLabel(slotId)} saved.`;
+  state.notice = `${themeLibraryLabel(slotId)} saved in browser. Saving to workspace.`;
+  render();
+  try {
+    await saveThemePackToWorkspace();
+    await refreshWorkspaceThemes();
+    state.notice = `${themeLibraryLabel(slotId)} saved to workspace.`;
+  } catch (error) {
+    state.notice = error instanceof Error
+      ? `Browser save worked, workspace save failed: ${error.message}`
+      : "Browser save worked, workspace save failed.";
+  }
   render();
 }
 
@@ -6414,7 +6510,7 @@ async function handleAction(action: string) {
     if (!applyPendingJsonEdit()) {
       return;
     }
-    saveThemeLocally();
+    await saveThemeLocally();
     return;
   }
   if (action === "save-draft") {
@@ -7136,6 +7232,20 @@ type ThemePackBuild = {
   manifest: ThemePackManifest;
 };
 
+type WorkspaceThemeAsset = {
+  path?: unknown;
+  file?: unknown;
+  contentType?: unknown;
+  dataBase64?: unknown;
+};
+
+type WorkspaceThemeSource = {
+  themeId?: unknown;
+  savedAt?: unknown;
+  spec?: unknown;
+  assets?: unknown;
+};
+
 async function downloadThemePack() {
   validateCurrentSpec();
   if (state.errors.length > 0) {
@@ -7268,6 +7378,32 @@ async function publishThemePack() {
   render();
 }
 
+async function saveThemePackToWorkspace() {
+  validateCurrentSpec();
+  if (state.errors.length > 0) {
+    throw new Error("Theme is invalid. Fix the errors before saving.");
+  }
+  const pack = await buildThemePack();
+  const response = await fetch("/api/theme-packs/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      themeId: pack.manifest.id,
+      files: Object.entries(pack.files).map(([file, data]) => ({
+        file,
+        dataBase64: uint8ToBase64(data),
+      })),
+    }),
+  });
+  const body = await response.json().catch(() => ({})) as { error?: string; themeIds?: string[] };
+  if (!response.ok) {
+    throw new Error(body.error || `Workspace save failed (${response.status}).`);
+  }
+  if (Array.isArray(body.themeIds)) {
+    state.publishedThemeIds = body.themeIds;
+  }
+}
+
 function uint8ToBase64(data: Uint8Array): string {
   let binary = "";
   const chunkSize = 0x8000;
@@ -7275,6 +7411,15 @@ function uint8ToBase64(data: Uint8Array): string {
     binary += String.fromCharCode(...data.subarray(offset, offset + chunkSize));
   }
   return btoa(binary);
+}
+
+function base64ToUint8(value: string): Uint8Array {
+  const binary = atob(value);
+  const data = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    data[i] = binary.charCodeAt(i);
+  }
+  return data;
 }
 
 function withTrailingNewline(data: Uint8Array): Uint8Array {
@@ -7868,6 +8013,7 @@ function buildThemeSpecClearPayload(): Record<string, unknown> {
     resetSecs: frame.resetSecs,
     usageMode: frame.usageMode,
     theme: FIXED_FALLBACK_THEME,
+    confirmClearThemeSpec: true,
     themeSpec: null,
   };
 }

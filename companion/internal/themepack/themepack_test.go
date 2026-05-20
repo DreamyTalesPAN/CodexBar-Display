@@ -171,6 +171,46 @@ func TestLoadRejectsMissingStateAsset(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsMalformedSpriteAsset(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":2,"h":1,"a":"/themes/u/bad.cbi"}]}`
+	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/bad.cbi", file: "assets/bad.cbi", data: "CBI1\n2 1\n1\n#FFFFFF\na\n"},
+	})
+
+	_, err := Load(dir)
+	if err == nil || !strings.Contains(err.Error(), "row 0 has width") {
+		t.Fatalf("expected malformed sprite asset error, got %v", err)
+	}
+}
+
+func TestRepositoryThemePacksLoadWithRenderableAssets(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "theme-packs")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, entry.Name())
+		if _, err := os.Stat(filepath.Join(dir, "manifest.json")); err != nil {
+			continue
+		}
+		t.Run(entry.Name(), func(t *testing.T) {
+			if _, err := Load(dir); err != nil {
+				t.Fatalf("theme pack should load with renderable assets: %v", err)
+			}
+		})
+		loaded++
+	}
+	if loaded == 0 {
+		t.Fatal("no repository theme packs were tested")
+	}
+}
+
 func TestLoadRejectsUnsafePackFile(t *testing.T) {
 	dir := writeThemePack(t, `"themeSpec":{"path":"/themes/u/cm.json","file":"../theme.json"}`)
 

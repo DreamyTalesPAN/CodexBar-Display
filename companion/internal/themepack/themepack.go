@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +32,7 @@ const (
 )
 
 var packIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{2,63}$`)
+var spriteColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 type Manifest struct {
 	Kind        string      `json:"kind"`
@@ -217,6 +219,9 @@ func loadFromReader(readFile func(string) ([]byte, error)) (*Pack, error) {
 	if err := validateReferencedAssets(spec, assets); err != nil {
 		return nil, err
 	}
+	if err := validateSpriteAssets(spec, assets); err != nil {
+		return nil, err
+	}
 
 	return &Pack{
 		Manifest:      manifest,
@@ -324,6 +329,200 @@ func validateReferencedAssets(spec themespec.Spec, assets []File) error {
 			if _, ok := available[assetPath]; !ok {
 				return fmt.Errorf("primitives[%d].stateAssets[%s] references %s, but manifest assets do not include it", index, state, assetPath)
 			}
+		}
+	}
+	return nil
+}
+
+func validateSpriteAssets(spec themespec.Spec, assets []File) error {
+	refs := referencedSpriteAssets(spec)
+	if len(refs) == 0 {
+		return nil
+	}
+	for _, asset := range assets {
+		if _, ok := refs[asset.Entry.Path]; !ok {
+			continue
+		}
+		if err := validateSpriteAsset(asset.Entry.Path, asset.Data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func referencedSpriteAssets(spec themespec.Spec) map[string]struct{} {
+	refs := map[string]struct{}{}
+	for _, primitive := range spec.Primitives {
+		if primitive.Type != "sprite" && primitive.Type != "image" {
+			continue
+		}
+		if primitive.AssetPath != "" {
+			refs[primitive.AssetPath] = struct{}{}
+		}
+		for _, assetPath := range primitive.StateAssets {
+			refs[assetPath] = struct{}{}
+		}
+	}
+	return refs
+}
+
+func validateSpriteAsset(devicePath string, data []byte) error {
+	lowerPath := strings.ToLower(devicePath)
+	if !strings.HasSuffix(lowerPath, ".cbi") && !strings.HasSuffix(lowerPath, ".cba") {
+		return fmt.Errorf("sprite asset %s must be .cbi or .cba", devicePath)
+	}
+	lines := spriteAssetLines(data)
+	if len(lines) == 0 {
+		return fmt.Errorf("sprite asset %s is empty", devicePath)
+	}
+	switch lines[0] {
+	case "CBI1":
+		return validateStaticSpriteAsset(devicePath, lines)
+	case "CBA1":
+		return validateAnimatedSpriteAsset(devicePath, lines)
+	default:
+		return fmt.Errorf("sprite asset %s has unsupported header %q", devicePath, lines[0])
+	}
+}
+
+func spriteAssetLines(data []byte) []string {
+	raw := strings.ReplaceAll(string(data), "\r\n", "\n")
+	raw = strings.ReplaceAll(raw, "\r", "\n")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, "\n")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
+}
+
+func validateStaticSpriteAsset(devicePath string, lines []string) error {
+	width, height, _, _, err := parseSpriteDimensions(lines[1:], false)
+	if err != nil {
+		return fmt.Errorf("sprite asset %s: %w", devicePath, err)
+	}
+	paletteSize, rowStart, err := parseSpritePalette(devicePath, lines, 3)
+	if err != nil {
+		return err
+	}
+	if got, want := len(lines)-rowStart, height; got != want {
+		return fmt.Errorf("sprite asset %s has %d rows, want %d", devicePath, got, want)
+	}
+	return validateSpriteRows(devicePath, lines[rowStart:], width, paletteSize)
+}
+
+func validateAnimatedSpriteAsset(devicePath string, lines []string) error {
+	width, height, frameCount, fps, err := parseSpriteDimensions(lines[1:], true)
+	if err != nil {
+		return fmt.Errorf("sprite asset %s: %w", devicePath, err)
+	}
+	if frameCount <= 0 || frameCount > 64 {
+		return fmt.Errorf("sprite asset %s frame count must be 1..64", devicePath)
+	}
+	if fps < 0 || fps > 30 {
+		return fmt.Errorf("sprite asset %s fps must be 0..30", devicePath)
+	}
+	paletteSize, rowStart, err := parseSpritePalette(devicePath, lines, 3)
+	if err != nil {
+		return err
+	}
+	if got, want := len(lines)-rowStart, height*frameCount; got != want {
+		return fmt.Errorf("sprite asset %s has %d frame rows, want %d", devicePath, got, want)
+	}
+	return validateSpriteRows(devicePath, lines[rowStart:], width, paletteSize)
+}
+
+func parseSpriteDimensions(lines []string, animated bool) (width, height, frameCount, fps int, err error) {
+	if len(lines) == 0 {
+		return 0, 0, 0, 0, errors.New("missing dimensions")
+	}
+	fields := strings.Fields(lines[0])
+	want := 2
+	if animated {
+		want = 4
+	}
+	if len(fields) != want {
+		return 0, 0, 0, 0, fmt.Errorf("dimensions must have %d fields", want)
+	}
+	width, err = strconv.Atoi(fields[0])
+	if err != nil {
+		return 0, 0, 0, 0, errors.New("width must be numeric")
+	}
+	height, err = strconv.Atoi(fields[1])
+	if err != nil {
+		return 0, 0, 0, 0, errors.New("height must be numeric")
+	}
+	if width <= 0 || height <= 0 {
+		return 0, 0, 0, 0, errors.New("width/height must be > 0")
+	}
+	if !animated {
+		return width, height, 1, 0, nil
+	}
+	frameCount, err = strconv.Atoi(fields[2])
+	if err != nil {
+		return 0, 0, 0, 0, errors.New("frame count must be numeric")
+	}
+	fps, err = strconv.Atoi(fields[3])
+	if err != nil {
+		return 0, 0, 0, 0, errors.New("fps must be numeric")
+	}
+	return width, height, frameCount, fps, nil
+}
+
+func parseSpritePalette(devicePath string, lines []string, index int) (paletteSize int, rowStart int, err error) {
+	if len(lines) <= index {
+		return 0, 0, fmt.Errorf("sprite asset %s missing palette size", devicePath)
+	}
+	paletteSize, err = strconv.Atoi(lines[index-1])
+	if err != nil || paletteSize <= 0 || paletteSize > 26 {
+		return 0, 0, fmt.Errorf("sprite asset %s palette size must be 1..26", devicePath)
+	}
+	rowStart = index + paletteSize
+	if len(lines) < rowStart {
+		return 0, 0, fmt.Errorf("sprite asset %s missing palette colors", devicePath)
+	}
+	for _, color := range lines[index:rowStart] {
+		if !spriteColorPattern.MatchString(color) {
+			return 0, 0, fmt.Errorf("sprite asset %s has invalid palette color %q", devicePath, color)
+		}
+	}
+	return paletteSize, rowStart, nil
+}
+
+func validateSpriteRows(devicePath string, rows []string, width int, paletteSize int) error {
+	for rowIndex, row := range rows {
+		offset := 0
+		for i := 0; i < len(row); {
+			runLength := 0
+			hasRunLength := false
+			for i < len(row) && row[i] >= '0' && row[i] <= '9' {
+				hasRunLength = true
+				runLength = (runLength * 10) + int(row[i]-'0')
+				i++
+			}
+			if !hasRunLength {
+				runLength = 1
+			}
+			if runLength <= 0 || i >= len(row) || offset+runLength > width {
+				return fmt.Errorf("sprite asset %s row %d has invalid RLE run", devicePath, rowIndex)
+			}
+			token := row[i]
+			i++
+			if token != '.' {
+				if token < 'a' || token > 'z' {
+					return fmt.Errorf("sprite asset %s row %d has invalid token %q", devicePath, rowIndex, token)
+				}
+				if int(token-'a') >= paletteSize {
+					return fmt.Errorf("sprite asset %s row %d uses token %q outside palette", devicePath, rowIndex, token)
+				}
+			}
+			offset += runLength
+		}
+		if offset != width {
+			return fmt.Errorf("sprite asset %s row %d has width %d, want %d", devicePath, rowIndex, offset, width)
 		}
 	}
 	return nil
