@@ -138,6 +138,15 @@ bool ensureThemeSpecSceneCached(const String& raw) {
   return true;
 }
 
+bool themeSpecSceneHasGifAssets() {
+  for (size_t i = 0; i < cachedThemeSpecScene.primitiveCount; ++i) {
+    if (cachedThemeSpecScene.primitives[i].kind == themespec::PrimitiveKind::Gif) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool readSpriteLine(File& file, String& line) {
   if (!file.available()) {
     return false;
@@ -654,6 +663,10 @@ bool DrawThemeSpecUsage() {
   if (!ensureThemeSpecSceneCached(raw)) {
     markThemeSpecRenderFailed("theme_spec_parse_failed");
     return false;
+  }
+
+  if (!themeSpecSceneHasGifAssets()) {
+    GifCore().Stop();
   }
 
   const auto frameData = currentThemeSpecFrameData();

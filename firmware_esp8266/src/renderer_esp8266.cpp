@@ -92,10 +92,6 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
 
-  if (display::CurrentFrame().hasThemeSpec) {
-    display::StopMiniGifPlayback();
-  }
-
   Theme previousTheme = display::ActiveTheme();
   if (display::CurrentFrame().hasTheme) {
     Theme frameTheme;
