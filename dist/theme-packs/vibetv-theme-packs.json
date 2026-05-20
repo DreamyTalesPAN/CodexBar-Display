@@ -26,6 +26,14 @@
       "bytes": 905
     },
     {
+      "id": "mini-classic",
+      "title": "Mini Classic",
+      "themeRev": 1,
+      "downloadAsset": "vibetv-theme-mini-classic.zip",
+      "sha256": "31acca9c523299d69151c064f7b46046a03b1144ddb5c7025765e9f2b8e07399",
+      "bytes": 18413
+    },
+    {
       "id": "synthwave",
       "title": "Synthwave",
       "themeRev": 1,

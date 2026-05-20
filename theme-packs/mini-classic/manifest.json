@@ -1,0 +1,24 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "mini-classic",
+  "name": "Mini Classic",
+  "version": "1.0.0",
+  "minFirmware": "1.0.24",
+  "themeSpec": {
+    "path": "/themes/u/mini-cl-1-410a37.json",
+    "file": "theme.json",
+    "bytes": 654,
+    "sha256": "7d5acba451894247148f4e828e013bfe7d4ef62b465174b7667717f3617a967a",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/mini/mini.gif",
+      "file": "assets/mini.gif",
+      "bytes": 20870,
+      "sha256": "146563e7d7ce76589f50ea80977c1f8cb32a15468a4a9f3da4152c4de1b37230",
+      "contentType": "image/gif"
+    }
+  ]
+}
