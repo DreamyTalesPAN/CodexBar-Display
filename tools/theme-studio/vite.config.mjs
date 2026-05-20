@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { Buffer } from "node:buffer";
-import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
@@ -25,6 +25,11 @@ function themePackPublishPlugin() {
             return;
           }
 
+          if (req.method === "GET" && req.url === "/api/theme-packs/sources") {
+            await sendJson(res, 200, { themes: await loadThemePackSources() });
+            return;
+          }
+
           if (req.method === "GET" && req.url?.startsWith("/api/theme-packs/")) {
             const themeId = decodeURIComponent(req.url.slice("/api/theme-packs/".length));
             if (!themeIdPattern.test(themeId)) {
@@ -36,52 +41,17 @@ function themePackPublishPlugin() {
             return;
           }
 
+          if (req.method === "POST" && req.url === "/api/theme-packs/save") {
+            const payload = await readJsonBody(req);
+            const result = await writeThemePackPayload(payload, { buildDist: false });
+            await sendJson(res, 200, result);
+            return;
+          }
+
           if (req.method === "POST" && req.url === "/api/theme-packs/publish") {
             const payload = await readJsonBody(req);
-            const themeId = typeof payload.themeId === "string" ? payload.themeId.trim() : "";
-            if (!themeIdPattern.test(themeId)) {
-              await sendJson(res, 400, { error: "Theme id must be lowercase and 3-64 characters." });
-              return;
-            }
-            if (!Array.isArray(payload.files) || payload.files.length === 0) {
-              await sendJson(res, 400, { error: "Theme pack payload has no files." });
-              return;
-            }
-
-            const tempDir = path.join(themePackRoot, `.publish-${themeId}-${Date.now()}`);
-            const targetDir = path.join(themePackRoot, themeId);
-            await rm(tempDir, { recursive: true, force: true });
-            await mkdir(tempDir, { recursive: true });
-
-            for (const fileEntry of payload.files) {
-              const file = safePackFile(fileEntry?.file);
-              const dataBase64 = typeof fileEntry?.dataBase64 === "string" ? fileEntry.dataBase64 : "";
-              if (!dataBase64) {
-                throw new Error(`Missing data for ${file}.`);
-              }
-              const absolutePath = path.join(tempDir, file);
-              await mkdir(path.dirname(absolutePath), { recursive: true });
-              await writeFile(absolutePath, Buffer.from(dataBase64, "base64"));
-            }
-
-            validateThemePack(tempDir);
-            await rm(targetDir, { recursive: true, force: true });
-            await rename(tempDir, targetDir);
-
-            const build = spawnSync(process.execPath, ["scripts/build-theme-packs.mjs"], {
-              cwd: repoRoot,
-              encoding: "utf8",
-            });
-            if (build.status !== 0) {
-              throw new Error(build.stderr || build.stdout || "Theme pack build failed.");
-            }
-
-            await sendJson(res, 200, {
-              ok: true,
-              themeId,
-              themeIds: await listThemePackIds(),
-              output: build.stdout.trim(),
-            });
+            const result = await writeThemePackPayload(payload, { buildDist: true });
+            await sendJson(res, 200, result);
             return;
           }
         } catch (error) {
@@ -102,6 +72,101 @@ async function listThemePackIds() {
     .map((entry) => entry.name)
     .filter((name) => themeIdPattern.test(name))
     .sort((a, b) => a.localeCompare(b));
+}
+
+async function loadThemePackSources() {
+  const themeIds = await listThemePackIds();
+  const themes = [];
+  for (const themeId of themeIds) {
+    const theme = await loadThemePackSource(themeId);
+    if (theme !== null) {
+      themes.push(theme);
+    }
+  }
+  return themes;
+}
+
+async function loadThemePackSource(themeId) {
+  const packDir = path.join(themePackRoot, themeId);
+  try {
+    const manifest = JSON.parse(await readFile(path.join(packDir, "manifest.json"), "utf8"));
+    const themeSpecFile = safePackFile(manifest?.themeSpec?.file || "theme.json");
+    const spec = JSON.parse(await readFile(path.join(packDir, themeSpecFile), "utf8"));
+    const assets = [];
+    for (const entry of Array.isArray(manifest?.assets) ? manifest.assets : []) {
+      const file = safePackFile(entry?.file);
+      const data = await readFile(path.join(packDir, file));
+      assets.push({
+        path: typeof entry?.path === "string" ? entry.path : "",
+        file,
+        contentType: typeof entry?.contentType === "string" ? entry.contentType : "",
+        dataBase64: data.toString("base64"),
+      });
+    }
+    const packStat = await stat(packDir);
+    return {
+      themeId,
+      savedAt: packStat.mtime.toISOString(),
+      spec,
+      assets,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function writeThemePackPayload(payload, options) {
+  const themeId = typeof payload.themeId === "string" ? payload.themeId.trim() : "";
+  if (!themeIdPattern.test(themeId)) {
+    throw new Error("Theme id must be lowercase and 3-64 characters.");
+  }
+  if (!Array.isArray(payload.files) || payload.files.length === 0) {
+    throw new Error("Theme pack payload has no files.");
+  }
+
+  const tempDir = path.join(themePackRoot, `.publish-${themeId}-${Date.now()}`);
+  const targetDir = path.join(themePackRoot, themeId);
+  await rm(tempDir, { recursive: true, force: true });
+  await mkdir(tempDir, { recursive: true });
+
+  try {
+    for (const fileEntry of payload.files) {
+      const file = safePackFile(fileEntry?.file);
+      const dataBase64 = typeof fileEntry?.dataBase64 === "string" ? fileEntry.dataBase64 : "";
+      if (!dataBase64) {
+        throw new Error(`Missing data for ${file}.`);
+      }
+      const absolutePath = path.join(tempDir, file);
+      await mkdir(path.dirname(absolutePath), { recursive: true });
+      await writeFile(absolutePath, Buffer.from(dataBase64, "base64"));
+    }
+
+    validateThemePack(tempDir);
+    await rm(targetDir, { recursive: true, force: true });
+    await rename(tempDir, targetDir);
+  } catch (error) {
+    await rm(tempDir, { recursive: true, force: true });
+    throw error;
+  }
+
+  let output = "";
+  if (options.buildDist) {
+    const build = spawnSync(process.execPath, ["scripts/build-theme-packs.mjs"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    if (build.status !== 0) {
+      throw new Error(build.stderr || build.stdout || "Theme pack build failed.");
+    }
+    output = build.stdout.trim();
+  }
+
+  return {
+    ok: true,
+    themeId,
+    themeIds: await listThemePackIds(),
+    output,
+  };
 }
 
 function safePackFile(value) {
