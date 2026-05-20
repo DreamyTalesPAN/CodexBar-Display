@@ -51,6 +51,7 @@ class RendererESP8266 : public app::Renderer {
   void DrawStatus(app::RuntimeContext& ctx, const String& title, const String& line1, const String& line2);
   void DrawSetupInstructions(app::RuntimeContext& ctx, const String& ssid, const String& address);
   void DrawConnectedSetupInstructions(app::RuntimeContext& ctx, const String& host, const String& fallbackIp);
+  void DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const String& text);
   void TickActive(app::RuntimeContext& ctx) override;
   void DrawError(app::RuntimeContext& ctx, const String& message) override;
   bool DrawTopLine(app::RuntimeContext& ctx);

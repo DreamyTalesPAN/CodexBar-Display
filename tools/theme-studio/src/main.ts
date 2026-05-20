@@ -52,6 +52,7 @@ const SNAP_GUIDE_THRESHOLD = 3;
 type PrimitiveType = typeof SUPPORTED_PRIMITIVE_TYPES[number];
 type ResizeHandle = "e" | "s" | "se";
 type PixelTool = "move" | "paint" | "erase";
+type LabelPreviewState = "provider" | "update";
 type EditableKonvaNode = Konva.Group | Konva.Shape;
 type SnapAxis = "x" | "y";
 type GiflerAnimator = {
@@ -71,6 +72,19 @@ type GifPreview = {
   loading: boolean;
   animator: GiflerAnimator | null;
   playing: boolean;
+};
+type GifMetadata = {
+  width: number;
+  height: number;
+  frameCount: number;
+  durationMs: number;
+  frameAreaTotal: number;
+};
+type GifMetadataCacheEntry = {
+  key: string;
+  status: "loading" | "ready" | "error";
+  metadata?: GifMetadata;
+  error?: string;
 };
 type SpriteSource = {
   file: File;
@@ -189,6 +203,7 @@ interface AppState {
   editingTextIndex: number | null;
   copiedPrimitive: Primitive | null;
   gifAssets: Record<string, { file: File; previewUrl: string }>;
+  gifMetadata: Record<string, GifMetadataCacheEntry>;
   spriteAssets: Record<string, { file: File; rawText: string; sprite: SpriteAsset; source?: SpriteSource }>;
   jsonText: string;
   jsonDirty: boolean;
@@ -200,6 +215,8 @@ interface AppState {
   pixelBrushToken: string;
   snapEnabled: boolean;
   snapGridSize: number;
+  labelPreviewState: LabelPreviewState;
+  labelPreviewStartedAtMs: number;
   undoStack: ThemeSnapshot[];
   redoStack: ThemeSnapshot[];
   savedThemes: SavedTheme[];
@@ -255,6 +272,8 @@ const frame: FrameData = {
   weekTokens: 68120,
   totalTokens: 190420,
 };
+const UPDATE_LABEL_PREVIEW_TOGGLE_MS = 1500;
+const UPDATE_LABEL_PREVIEW_TEXTS = ["Update Available:", "vibetv.local"] as const;
 
 function previewTime(date: Date): string {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -2253,6 +2272,7 @@ const state: AppState = {
   editingTextIndex: null,
   copiedPrimitive: null,
   gifAssets: {},
+  gifMetadata: {},
   spriteAssets: {},
   jsonText: "",
   jsonDirty: false,
@@ -2264,6 +2284,8 @@ const state: AppState = {
   pixelBrushToken: "a",
   snapEnabled: true,
   snapGridSize: 4,
+  labelPreviewState: "provider",
+  labelPreviewStartedAtMs: Date.now(),
   undoStack: [],
   redoStack: [],
   savedThemes: loadSavedThemes(),
@@ -2400,12 +2422,19 @@ function specForPreset(defaultSpec: ThemeSpec): ThemeSpec {
 }
 
 function themeLibraryIdForSpec(spec: ThemeSpec, fallback = CLIPPY_SPEC.themeId): string {
-  const ids = [SYNTHWAVE_SPEC.themeId, CLAUDE_CREATURE_SPEC.themeId, CLIPPY_SPEC.themeId, COZY_MEADOW_SPEC.themeId];
+  const ids = [
+    initialSpec.themeId,
+    SYNTHWAVE_SPEC.themeId,
+    CLAUDE_CREATURE_SPEC.themeId,
+    CLIPPY_SPEC.themeId,
+    COZY_MEADOW_SPEC.themeId,
+  ];
   return ids.includes(spec.themeId) ? spec.themeId : fallback;
 }
 
 function themeLibraryLabel(themeId: string): string {
   const labels: Record<string, string> = {
+    [initialSpec.themeId]: "Mini",
     [SYNTHWAVE_SPEC.themeId]: "Synthwave",
     [CLAUDE_CREATURE_SPEC.themeId]: "Claude Creature",
     [CLIPPY_SPEC.themeId]: "Clippy",
@@ -2569,9 +2598,165 @@ function normalizeMiniThemeSpec(spec: ThemeSpec) {
 }
 
 function validateCurrentSpec() {
+  ensureGifMetadataForSpec(state.spec);
   const result = validateSpec(state.spec);
   state.errors = result.errors;
   state.warnings = result.warnings;
+}
+
+function ensureGifMetadataForSpec(spec: ThemeSpec) {
+  uniqueAssetPaths("gif", spec).forEach(ensureGifMetadata);
+}
+
+function ensureGifMetadata(assetPath: string) {
+  const uploaded = state.gifAssets[assetPath];
+  const builtInUrl = uploaded ? undefined : builtInGifPreviewUrl(assetPath);
+  const key = uploaded ? `${uploaded.file.name}|${uploaded.file.size}|${uploaded.file.lastModified}|${uploaded.previewUrl}` : `builtin|${builtInUrl ?? ""}`;
+  if (!uploaded && !builtInUrl) {
+    return;
+  }
+  const cached = state.gifMetadata[assetPath];
+  if (cached?.key === key) {
+    return;
+  }
+
+  state.gifMetadata[assetPath] = { key, status: "loading" };
+  const readBytes = uploaded
+    ? uploaded.file.arrayBuffer()
+    : fetch(builtInUrl ?? "").then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.arrayBuffer();
+      });
+
+  readBytes
+    .then((buffer) => {
+      const metadata = parseGifMetadata(new Uint8Array(buffer));
+      state.gifMetadata[assetPath] = { key, status: "ready", metadata };
+    })
+    .catch((error: unknown) => {
+      state.gifMetadata[assetPath] = {
+        key,
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    })
+    .finally(() => {
+      if (uniqueAssetPaths("gif").includes(assetPath)) {
+        render();
+      }
+    });
+}
+
+function parseGifMetadata(bytes: Uint8Array): GifMetadata {
+  if (bytes.length < 13 || !isGifHeader(bytes)) {
+    throw new Error("not a GIF");
+  }
+
+  let pos = 6;
+  const width = readGifUint16(bytes, pos);
+  const height = readGifUint16(bytes, pos + 2);
+  const packed = bytes[pos + 4];
+  pos += 7;
+  if ((packed & 0x80) !== 0) {
+    pos += gifColorTableBytes(packed);
+  }
+
+  let frameCount = 0;
+  let durationMs = 0;
+  let frameAreaTotal = 0;
+  let pendingDelayMs = 0;
+
+  while (pos < bytes.length) {
+    const block = bytes[pos];
+    pos += 1;
+    if (block === 0x3B) {
+      break;
+    }
+    if (block === 0x21) {
+      const label = bytes[pos];
+      pos += 1;
+      if (label === 0xF9) {
+        const blockSize = bytes[pos];
+        pos += 1;
+        if (blockSize !== 4 || pos + 4 > bytes.length) {
+          throw new Error("invalid GIF graphics control extension");
+        }
+        pendingDelayMs = readGifUint16(bytes, pos + 1) * 10;
+        pos += 4;
+        if (bytes[pos] !== 0) {
+          throw new Error("invalid GIF graphics control terminator");
+        }
+        pos += 1;
+      } else {
+        pos = skipGifSubBlocks(bytes, pos);
+      }
+      continue;
+    }
+    if (block === 0x2C) {
+      if (pos + 9 > bytes.length) {
+        throw new Error("invalid GIF image descriptor");
+      }
+      const frameWidth = readGifUint16(bytes, pos + 4);
+      const frameHeight = readGifUint16(bytes, pos + 6);
+      const imagePacked = bytes[pos + 8];
+      pos += 9;
+      if ((imagePacked & 0x80) !== 0) {
+        pos += gifColorTableBytes(imagePacked);
+      }
+      pos += 1; // LZW minimum code size.
+      pos = skipGifSubBlocks(bytes, pos);
+      frameCount += 1;
+      durationMs += pendingDelayMs;
+      frameAreaTotal += frameWidth * frameHeight;
+      pendingDelayMs = 0;
+      continue;
+    }
+    throw new Error(`unknown GIF block 0x${block.toString(16)}`);
+  }
+
+  if (frameCount === 0 || width <= 0 || height <= 0) {
+    throw new Error("GIF has no frames");
+  }
+
+  return {
+    width,
+    height,
+    frameCount,
+    durationMs,
+    frameAreaTotal,
+  };
+}
+
+function isGifHeader(bytes: Uint8Array): boolean {
+  return String.fromCharCode(...bytes.slice(0, 6)) === "GIF87a" || String.fromCharCode(...bytes.slice(0, 6)) === "GIF89a";
+}
+
+function readGifUint16(bytes: Uint8Array, pos: number): number {
+  if (pos + 1 >= bytes.length) {
+    throw new Error("unexpected GIF end");
+  }
+  return bytes[pos] | (bytes[pos + 1] << 8);
+}
+
+function gifColorTableBytes(packed: number): number {
+  return 3 * (2 ** ((packed & 0x07) + 1));
+}
+
+function skipGifSubBlocks(bytes: Uint8Array, pos: number): number {
+  while (pos < bytes.length) {
+    const size = bytes[pos];
+    pos += 1;
+    if (size === 0) {
+      return pos;
+    }
+    pos += size;
+    if (pos > bytes.length) {
+      throw new Error("unexpected GIF sub-block end");
+    }
+  }
+  throw new Error("unterminated GIF sub-blocks");
 }
 
 function validateThemeAssetPath(primitive: Primitive, prefix: string, errors: string[]) {
@@ -2786,7 +2971,7 @@ function estimateRenderBudget(spec: ThemeSpec): { initialPixels: number; animate
       }
     }
     if (primitive.type === "gif") {
-      animatedPixelsPerSecond += area * 10;
+      animatedPixelsPerSecond += gifAnimationPixelsPerSecond(primitive, width, height);
     }
   });
 
@@ -2795,6 +2980,20 @@ function estimateRenderBudget(spec: ThemeSpec): { initialPixels: number; animate
     animatedPixelsPerSecond: Math.round(animatedPixelsPerSecond),
     spriteWarnings,
   };
+}
+
+function gifAnimationPixelsPerSecond(primitive: Primitive, boxWidth: number, boxHeight: number): number {
+  if (!primitive.assetPath) {
+    return boxWidth * boxHeight * 10;
+  }
+  const metadata = state.gifMetadata[primitive.assetPath]?.metadata;
+  if (!metadata || metadata.width <= 0 || metadata.height <= 0 || metadata.durationMs <= 0) {
+    return boxWidth * boxHeight * 10;
+  }
+  const drawRect = fitContainRect(0, 0, boxWidth, boxHeight, metadata.width / metadata.height);
+  const scaleX = drawRect.width / metadata.width;
+  const scaleY = drawRect.height / metadata.height;
+  return (metadata.frameAreaTotal * scaleX * scaleY * 1000) / metadata.durationMs;
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -2973,6 +3172,7 @@ function render() {
 
 function themeLibrary(): string {
   const presets = [
+    { themeId: initialSpec.themeId, label: "Mini", action: "load-mini" },
     { themeId: SYNTHWAVE_SPEC.themeId, label: "Synthwave", action: "load-synthwave" },
     { themeId: CLAUDE_CREATURE_SPEC.themeId, label: "Claude Creature", action: "load-claude-creature" },
     { themeId: CLIPPY_SPEC.themeId, label: "Clippy", action: "load-clippy" },
@@ -3063,7 +3263,7 @@ function variableGuide(): string {
           <button class="token-chip" data-insert-token="${escapeAttr(item.token)}" title="Insert ${escapeAttr(item.token)}">
             <strong>${escapeHtml(item.label)}</strong>
             <code>${escapeHtml(item.token)}</code>
-            <span>${escapeHtml(item.preview)}</span>
+            <span>${escapeHtml(tokenPreviewValue(item.token, item.preview))}</span>
           </button>
         `).join("")}
       </div>
@@ -3121,6 +3321,7 @@ function inspectorFields(primitive: Primitive): string {
         </label>
         <label>Size<input type="number" min="1" step="1" data-primitive-field="fontSize" value="${primitive.fontSize ?? 1}" /></label>
       </div>
+      <label>Width<input type="number" min="1" max="${DISPLAY_SIZE}" step="1" data-primitive-field="width" value="${primitive.width ?? estimatePrimitiveWidth(primitive)}" /></label>
       <label>Align
         <select data-primitive-field="align">
           ${["left", "center", "right"].map((value) => `<option value="${value}" ${(primitive.align ?? "left") === value ? "selected" : ""}>${value}</option>`).join("")}
@@ -3329,6 +3530,11 @@ function renderPreview(): string {
           ${[2, 4, 8, 12].map((value) => `<option value="${value}" ${state.snapGridSize === value ? "selected" : ""}>${value}px</option>`).join("")}
         </select>
       </label>
+    </div>
+    <div class="label-state-toggle" role="group" aria-label="Label preview state">
+      <span>Label</span>
+      <button class="${state.labelPreviewState === "provider" ? "active" : ""}" data-preview-label-state="provider">Provider</button>
+      <button class="${state.labelPreviewState === "update" ? "active" : ""}" data-preview-label-state="update">Update</button>
     </div>
     ${themeUsesStateAssets() ? `
       <div class="activity-toggle" role="group" aria-label="Activity preview">
@@ -3557,7 +3763,7 @@ function renderDeviceCanvas(canvas: HTMLCanvasElement): boolean {
       drawDevicePixels(context, primitive);
     }
   }
-  return hasAnimated;
+  return hasAnimated || labelPreviewAnimating();
 }
 
 function drawDeviceSprite(context: CanvasRenderingContext2D, primitive: Primitive): boolean {
@@ -4407,13 +4613,48 @@ function resizeHandle(index: number, handle: ResizeHandle, x: number, y: number)
 
 function estimatePrimitiveWidth(primitive: Primitive): number {
   if (primitive.type === "text") {
-    const text = primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
-    return Math.max(1, firmwareTextWidth(text, primitive.font, primitive.fontSize));
+    if (primitive.width !== undefined) {
+      return primitive.width;
+    }
+    if (primitive.align && primitive.align !== "left") {
+      return Math.min(DISPLAY_SIZE, estimateTextStableWidth(primitive));
+    }
+    return Math.max(1, estimateTextWidth(primitive, renderedPrimitiveText(primitive)));
   }
   if (primitive.type === "sprite") {
     return primitive.width ?? spriteDimensions(resolveStateAssetPath(primitive)).width;
   }
   return primitive.width ?? 1;
+}
+
+function renderedPrimitiveText(primitive: Primitive): string {
+  return primitive.binding ? bindingValue(primitive.binding) : renderTemplate(primitive.text ?? "");
+}
+
+function estimateTextStableWidth(primitive: Primitive): number {
+  return Math.max(...textPreviewCandidates(primitive).map((text) => estimateTextWidth(primitive, text)), 1);
+}
+
+function estimateTextWidth(primitive: Primitive, text: string): number {
+  return firmwareTextWidth(text, primitive.font, primitive.fontSize);
+}
+
+function textPreviewCandidates(primitive: Primitive): string[] {
+  const candidates = [renderedPrimitiveText(primitive)];
+  if (primitive.binding === "label") {
+    candidates.push(...UPDATE_LABEL_PREVIEW_TEXTS);
+  } else if (primitive.text && /\{(?:label|providerLabel)\}/.test(primitive.text)) {
+    UPDATE_LABEL_PREVIEW_TEXTS.forEach((labelText) => {
+      candidates.push(renderTemplateWithLabelValue(primitive.text ?? "", labelText));
+    });
+  }
+  return Array.from(new Set(candidates));
+}
+
+function renderTemplateWithLabelValue(text: string, labelText: string): string {
+  return text.replace(/\{([a-zA-Z]+)\}/g, (_, key: string) => {
+    return key === "label" || key === "providerLabel" ? labelText : bindingValue(key);
+  });
 }
 
 function estimatePrimitiveHeight(primitive: Primitive): number {
@@ -4493,7 +4734,13 @@ function textPreviewCanvas(
   }
   context.fillStyle = primitive.color ?? "#FFFFFF";
   const size = Math.max(1, primitive.fontSize ?? 1);
-  const textX = 0;
+  const textWidth = estimateTextWidth(primitive, text);
+  const align = primitive.align ?? "left";
+  const textX = align === "center"
+    ? Math.max(0, Math.floor((canvas.width - textWidth) / 2))
+    : align === "right"
+      ? Math.max(0, canvas.width - textWidth)
+      : 0;
   const font = primitive.font ?? 1;
   if (font === 2) {
     drawTftFont2Text(context, text, size, textX);
@@ -4863,10 +5110,28 @@ function renderTemplate(text: string): string {
   });
 }
 
+function labelPreviewValue(): string {
+  if (state.labelPreviewState !== "update") {
+    return frame.label;
+  }
+  const elapsed = Math.max(0, Date.now() - state.labelPreviewStartedAtMs);
+  const phase = Math.floor(elapsed / UPDATE_LABEL_PREVIEW_TOGGLE_MS) % UPDATE_LABEL_PREVIEW_TEXTS.length;
+  return UPDATE_LABEL_PREVIEW_TEXTS[phase];
+}
+
+function labelPreviewAnimating(): boolean {
+  return state.labelPreviewState === "update" && usedThemeBindings().has("label");
+}
+
+function tokenPreviewValue(token: string, fallback: string): string {
+  const match = token.match(/^\{([a-zA-Z]+)\}%?$/);
+  return match ? bindingValue(match[1]) + (token.endsWith("%") ? "%" : "") : fallback;
+}
+
 function bindingValue(key: string): string {
   const values: Record<string, string> = {
-    label: frame.label,
-    providerLabel: frame.label,
+    label: labelPreviewValue(),
+    providerLabel: labelPreviewValue(),
     provider: frame.provider,
     session: String(frame.session),
     sessionPercent: String(frame.session),
@@ -5413,6 +5678,17 @@ function bindEvents() {
   app.querySelectorAll<HTMLButtonElement>("[data-preview-activity]").forEach((button) => {
     button.addEventListener("click", () => {
       frame.activity = button.dataset.previewActivity ?? "idle";
+      render();
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-preview-label-state]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextState = (button.dataset.previewLabelState ?? "provider") as LabelPreviewState;
+      if (state.labelPreviewState !== nextState) {
+        state.labelPreviewStartedAtMs = Date.now();
+      }
+      state.labelPreviewState = nextState;
       render();
     });
   });
@@ -6007,9 +6283,20 @@ function updateSelectedPrimitive(key: string, value: string) {
     return;
   }
   if (key === "align") {
+    const currentWidth = estimatePrimitiveWidth(primitive);
+    const currentCenter = primitive.x + currentWidth / 2;
+    const currentRight = primitive.x + currentWidth;
     primitive.align = ["center", "right"].includes(value) ? value as "center" | "right" : "left";
     if (primitive.align === "left") {
       delete primitive.align;
+    } else if (primitive.type === "text") {
+      const nextWidth = clamp(Math.max(primitive.width ?? 0, estimateTextStableWidth(primitive)), 1, DISPLAY_SIZE);
+      primitive.width = nextWidth;
+      if (primitive.align === "center") {
+        primitive.x = clamp(Math.round(currentCenter - nextWidth / 2), 0, DISPLAY_SIZE - nextWidth);
+      } else {
+        primitive.x = clamp(Math.round(currentRight - nextWidth), 0, DISPLAY_SIZE - nextWidth);
+      }
     }
     return;
   }
@@ -6146,6 +6433,17 @@ async function handleAction(action: string) {
     setSingleSelection(-1);
     state.editingTextIndex = null;
     state.notice = "Sample restored.";
+    syncJsonFromSpec();
+    render();
+    return;
+  }
+  if (action === "load-mini") {
+    pushHistory();
+    state.spec = specForPreset(initialSpec);
+    state.activeThemeId = initialSpec.themeId;
+    setSingleSelection(state.spec.primitives.findIndex((primitive) => primitive.type === "gif"));
+    state.editingTextIndex = null;
+    state.notice = "Mini loaded.";
     syncJsonFromSpec();
     render();
     return;
@@ -7467,8 +7765,11 @@ function buildDevicePrimitive(primitive: Primitive): Record<string, unknown> {
     x: primitive.x,
     y: primitive.y,
   };
-  if (primitive.width !== undefined) {
-    compact.w = primitive.width;
+  const exportedWidth = primitive.width ?? (primitive.type === "text" && primitive.align && primitive.align !== "left"
+    ? Math.min(DISPLAY_SIZE, estimateTextStableWidth(primitive))
+    : undefined);
+  if (exportedWidth !== undefined) {
+    compact.w = exportedWidth;
   }
   if (primitive.height !== undefined) {
     compact.h = primitive.height;

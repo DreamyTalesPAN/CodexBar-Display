@@ -4,12 +4,12 @@
   "id": "clippy",
   "name": "Clippy",
   "version": "1.0.0",
-  "minFirmware": "1.0.18",
+  "minFirmware": "1.0.24",
   "themeSpec": {
-    "path": "/themes/u/clippy-1-bb9192.json",
+    "path": "/themes/u/clippy-1-5d86bb.json",
     "file": "theme.json",
-    "bytes": 866,
-    "sha256": "7221b0a192aaa84d040d5cf164c871fb1311000714284fbfa460831a6074ea2c",
+    "bytes": 981,
+    "sha256": "81ad086feb4ae191957f4f6b13cc50110cf0f22f5c2d4d2bdd8345502ae8e5db",
     "contentType": "application/json"
   },
   "assets": [

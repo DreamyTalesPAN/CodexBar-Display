@@ -163,7 +163,7 @@ unsigned long wifiDisconnectedAtMs = 0;
 unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
 FirmwareUpdateState firmwareUpdate;
-bool firmwareUpdateTopLineDirty = false;
+bool firmwareUpdateNoticeDirty = false;
 OtaUploadDiagnostics otaDiagnostics;
 RuntimeRenderDiagnostics renderDiagnostics;
 
@@ -249,33 +249,52 @@ void markFirmwareUpdateNoticeDirty() {
     return;
   }
   if (!runtimeCtx.screenDirty && !waitStatusRendered && !frameStaleStatusRendered) {
-    firmwareUpdateTopLineDirty = true;
+    firmwareUpdateNoticeDirty = true;
   } else {
     runtimeCtx.screenDirty = true;
   }
 }
 
-void applyFirmwareUpdateNoticePhase() {
-  if (firmwareUpdate.noticePhase == 0 ||
-      firmwareUpdate.noticePhase > kFirmwareUpdateNoticeTextCount) {
-    runtimeCtx.topLineOverride = "";
-    firmwareUpdate.noticeVisible = false;
+bool shouldShowFirmwareUpdateNotice() {
+  return firmwareUpdate.available &&
+         firmwareUpdate.noticeVisible &&
+         !setupMode &&
+         !waitStatusRendered &&
+         !frameStaleStatusRendered &&
+         codexbar_display::app::HasFrame(runtimeCtx) &&
+         !codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
+}
+
+const char* currentFirmwareUpdateNoticeText() {
+  if (firmwareUpdate.noticePhase >= kFirmwareUpdateNoticeTextCount) {
     firmwareUpdate.noticePhase = 0;
+  }
+  return kFirmwareUpdateNoticeTexts[firmwareUpdate.noticePhase];
+}
+
+void drawFirmwareUpdateNotice() {
+  if (!shouldShowFirmwareUpdateNotice()) {
+    firmwareUpdateNoticeDirty = false;
     return;
   }
-  runtimeCtx.topLineOverride = kFirmwareUpdateNoticeTexts[firmwareUpdate.noticePhase - 1];
-  firmwareUpdate.noticeVisible = true;
+  renderer.DrawFirmwareUpdateNotice(runtimeCtx, currentFirmwareUpdateNoticeText());
+  firmwareUpdateNoticeDirty = false;
 }
 
 void clearFirmwareUpdateNotice() {
-  if (runtimeCtx.topLineOverride.length() == 0 && !firmwareUpdate.noticeVisible) {
+  if (!firmwareUpdate.noticeVisible) {
     return;
   }
-  runtimeCtx.topLineOverride = "";
   firmwareUpdate.noticeVisible = false;
   firmwareUpdate.noticePhase = 0;
-  firmwareUpdate.noticeLastToggleAtMs = millis();
-  markFirmwareUpdateNoticeDirty();
+  firmwareUpdate.noticeLastToggleAtMs = 0;
+  firmwareUpdateNoticeDirty = false;
+  if (codexbar_display::app::HasFrame(runtimeCtx) &&
+      !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+      !waitStatusRendered &&
+      !frameStaleStatusRendered) {
+    runtimeCtx.screenDirty = true;
+  }
 }
 
 void maintainFirmwareUpdateNotice() {
@@ -283,26 +302,23 @@ void maintainFirmwareUpdateNotice() {
       setupMode ||
       frameStaleStatusRendered ||
       !codexbar_display::app::HasFrame(runtimeCtx) ||
-      codexbar_display::app::CurrentFrame(runtimeCtx).hasError ||
-      codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec) {
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
     clearFirmwareUpdateNotice();
     return;
   }
-
+  if (!firmwareUpdate.noticeVisible) {
+    return;
+  }
   const unsigned long nowMs = millis();
   if (firmwareUpdate.noticeLastToggleAtMs == 0) {
     firmwareUpdate.noticeLastToggleAtMs = nowMs;
     return;
   }
-  if ((nowMs - firmwareUpdate.noticeLastToggleAtMs) < kFirmwareUpdateNoticeToggleMs) {
-    return;
+  if ((nowMs - firmwareUpdate.noticeLastToggleAtMs) >= kFirmwareUpdateNoticeToggleMs) {
+    firmwareUpdate.noticeLastToggleAtMs = nowMs;
+    firmwareUpdate.noticePhase = (firmwareUpdate.noticePhase + 1) % kFirmwareUpdateNoticeTextCount;
+    markFirmwareUpdateNoticeDirty();
   }
-
-  firmwareUpdate.noticeLastToggleAtMs = nowMs;
-  firmwareUpdate.noticePhase =
-      (firmwareUpdate.noticePhase + 1) % (kFirmwareUpdateNoticeTextCount + 1);
-  applyFirmwareUpdateNoticePhase();
-  markFirmwareUpdateNoticeDirty();
 }
 
 void applyFrameUpdateState() {
@@ -334,16 +350,11 @@ void applyFrameUpdateState() {
     clearFirmwareUpdateNotice();
     return;
   }
-  if (frame.hasThemeSpec) {
-    clearFirmwareUpdateNotice();
-    return;
-  }
-  if (changed) {
+  if (!firmwareUpdate.noticeVisible || changed) {
     firmwareUpdate.noticeVisible = true;
-    firmwareUpdate.noticePhase = 1;
+    firmwareUpdate.noticePhase = 0;
     firmwareUpdate.noticeLastToggleAtMs = millis();
-    applyFirmwareUpdateNoticePhase();
-    runtimeCtx.screenDirty = true;
+    markFirmwareUpdateNoticeDirty();
   }
 }
 
@@ -1631,7 +1642,7 @@ size_t otaMaxSizeForCommand(int command) {
 
 void enterOtaSafeMode(int command) {
   (void)command;
-  firmwareUpdateTopLineDirty = false;
+  firmwareUpdateNoticeDirty = false;
   frameStaleStatusRendered = false;
   renderer.ResetGifStateForAssetUpdate();
   close_all_fs();
@@ -2141,22 +2152,17 @@ void loop() {
     return;
   }
 
-  if (firmwareUpdateTopLineDirty &&
+  if (firmwareUpdateNoticeDirty &&
       !waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
       !runtimeCtx.screenDirty &&
       !frameStaleStatusRendered) {
     const unsigned long renderStartUs = micros();
-    if (renderer.DrawTopLine(runtimeCtx)) {
-      rendered = true;
-      renderDurationUs = micros() - renderStartUs;
-      recordRenderPartial("top_line", renderDurationUs);
-      firmwareUpdateTopLineDirty = false;
-    } else {
-      firmwareUpdateTopLineDirty = false;
-      runtimeCtx.screenDirty = true;
-    }
+    drawFirmwareUpdateNotice();
+    rendered = true;
+    renderDurationUs = micros() - renderStartUs;
+    recordRenderPartial("update_notice", renderDurationUs);
   }
 
   if (!waitStatusRendered &&
@@ -2175,6 +2181,7 @@ void loop() {
 #else
         const unsigned long renderStartUs = micros();
         renderer.DrawReset(runtimeCtx, remain);
+        drawFirmwareUpdateNotice();
         recordRenderPartial("reset", micros() - renderStartUs);
 #endif
       } else {
@@ -2225,9 +2232,11 @@ void loop() {
 #endif
     rendered = true;
     renderDurationUs = micros() - renderStartUs;
+    drawFirmwareUpdateNotice();
+    renderDurationUs = micros() - renderStartUs;
     recordRenderFull(fullKind, renderDurationUs);
     runtimeCtx.screenDirty = false;
-    firmwareUpdateTopLineDirty = false;
+    firmwareUpdateNoticeDirty = false;
   }
 
 #ifdef CODEXBAR_DISPLAY_RUNTIME_BENCH

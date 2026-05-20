@@ -182,6 +182,7 @@ void TickSplashMini();
 void DrawErrorMini(const String& message);
 void DrawUsageMini();
 void DrawResetMini(int64_t remainSecs);
+void DrawFirmwareUpdateNoticeOverlay(const String& text);
 
 }  // namespace display
 }  // namespace esp8266

@@ -209,6 +209,30 @@ int CenteredTextX(const char* text, int textSize) {
   return x;
 }
 
+void DrawFirmwareUpdateNoticeOverlay(const String& text) {
+  TFT_eSPI& tft = Tft();
+  const char* notice = text.length() > 0 ? text.c_str() : "vibetv.local";
+  constexpr int kNoticeHeight = 40;
+  constexpr int kNoticePaddingX = 6;
+  const int noticeY = max(0, tft.height() - kNoticeHeight);
+  const int textW = tft.width() - (kNoticePaddingX * 2);
+  const int textSize = ChooseTextSizeToFit(notice, 3, 1, textW);
+  int y = noticeY + ((kNoticeHeight - TextPixelHeight(textSize)) / 2);
+  if (y < noticeY + 2) {
+    y = noticeY + 2;
+  }
+
+  DisplayTransaction transaction;
+  PrimitiveFillRect(0, noticeY, tft.width(), kNoticeHeight, TFT_BLACK);
+  PrimitiveFillRect(0, noticeY, tft.width(), 2, TFT_GREEN);
+  tft.setTextWrap(false);
+  tft.setTextFont(1);
+  tft.setTextSize(textSize);
+  tft.setTextColor(TFT_GREEN, TFT_BLACK);
+  tft.setCursor(CenteredTextX(notice, textSize), y);
+  tft.print(notice);
+}
+
 void SetClassicTextSize(int size) {
   Tft().setTextFont(1);
   Tft().setTextSize(size);
