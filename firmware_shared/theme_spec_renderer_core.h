@@ -852,7 +852,7 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     out.kind = PrimitiveKind::Text;
     out.font = JsonIntFor(primitive, "font", "f", 1);
     out.size = JsonIntFor(primitive, "fontSize", "s", 1);
-    out.maxWidth = JsonIntFor(primitive, "maxWidth", "mw", 0);
+    out.maxWidth = JsonIntFor(primitive, "maxWidth", "mw", JsonIntFor(primitive, "width", "w", 0));
     out.binding = CopyCompiledString(scene, JsonStringFor(primitive, "binding", "b"));
     out.text = CopyCompiledString(scene, JsonStringFor(primitive, "text", "v"));
     if (out.text == nullptr) {

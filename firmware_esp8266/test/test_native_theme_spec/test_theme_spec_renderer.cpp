@@ -407,6 +407,29 @@ void testRendersCompactCommandsAndBindings() {
   TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
 }
 
+void testCompactTextWidthMapsToMaxWidthForAlignment() {
+  const char* spec = R"JSON({
+    "v": 1,
+    "id": "codex-test",
+    "rev": 1,
+    "p": [
+      {"t":"tx","x":21,"y":12,"w":198,"b":"l","s":1,"f":4,"al":"center","c":"#FF4FA3"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
+
+  const RecordedCommand& text = sink.commands[1];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(text.type));
+  TEST_ASSERT_EQUAL_STRING("Codex", text.text.c_str());
+  TEST_ASSERT_EQUAL_INT(21, text.x);
+  TEST_ASSERT_EQUAL_INT(12, text.y);
+  TEST_ASSERT_EQUAL_INT(198, text.maxWidth);
+  TEST_ASSERT_EQUAL_INT(1, text.align);
+}
+
 void testRendersMulticolorRlePixelsAsFillRects() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -1018,6 +1041,7 @@ int main() {
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testRendersCompactCommandsAndBindings);
+  RUN_TEST(testCompactTextWidthMapsToMaxWidthForAlignment);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
   RUN_TEST(testInvalidMulticolorRlePixelsAreSkippedWithoutPartialDraw);
   RUN_TEST(testInvalidPrimitivesAreSkipped);
