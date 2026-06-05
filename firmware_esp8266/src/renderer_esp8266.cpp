@@ -13,6 +13,8 @@ namespace esp8266 {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 namespace {
 
+constexpr const char* kDefaultGifAssetPath = "/themes/mini/mini.gif";
+
 const char* themeName(Theme theme) {
   (void)theme;
   return "mini";
@@ -31,7 +33,7 @@ void RendererESP8266::Setup(app::RuntimeContext& ctx) {
 #endif
   display::Tft().init();
   display::Tft().setRotation(0);
-  display::GifCore().Setup(display::MiniGifAssetPath());
+  display::GifCore().Setup(kDefaultGifAssetPath);
 #else
   probe::Setup(ctx);
 #endif
@@ -92,23 +94,12 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
 
-  Theme previousTheme = display::ActiveTheme();
   if (display::CurrentFrame().hasTheme) {
     Theme frameTheme;
     if (themeFromName(display::CurrentFrame().theme, frameTheme) && frameTheme != display::ActiveTheme()) {
       display::ActiveTheme() = frameTheme;
       display::ScreenDirty() = true;
     }
-  }
-
-  if (previousTheme == Theme::Mini && display::ActiveTheme() != Theme::Mini) {
-    display::StopMiniGifPlayback();
-  } else if (display::ActiveTheme() == Theme::Mini && (event.visualChanged || event.themeChanged)) {
-    display::ResetMiniGifFrameSchedule();
-  }
-
-  if (!event.hadFrame) {
-    display::StopMiniGifPlayback();
   }
 
   if (event.visualChanged) {
@@ -138,9 +129,7 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
 void RendererESP8266::DrawSplash(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-  display::StopMiniGifPlayback();
-  display::DisplayTransaction transaction;
-  display::DrawSplashMini();
+  DrawStatus(ctx, "VIBE TV", "Starting", "Please wait");
 #else
   probe::DrawSplash(ctx);
 #endif
@@ -149,8 +138,7 @@ void RendererESP8266::DrawSplash(app::RuntimeContext& ctx) {
 void RendererESP8266::TickSplash(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-  display::DisplayTransaction transaction;
-  display::TickSplashMini();
+  (void)ctx;
 #else
   (void)ctx;
 #endif
@@ -163,7 +151,6 @@ void RendererESP8266::DrawStatus(
     const String& line2) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-  display::StopMiniGifPlayback();
 
   TFT_eSPI& tft = display::Tft();
   display::DisplayTransaction transaction;
@@ -212,7 +199,6 @@ void RendererESP8266::DrawStatus(
 void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const String& ssid, const String& address) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-  display::StopMiniGifPlayback();
 
   TFT_eSPI& tft = display::Tft();
   display::DisplayTransaction transaction;
@@ -284,7 +270,6 @@ void RendererESP8266::DrawConnectedSetupInstructions(
     const String& fallbackIp) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-  display::StopMiniGifPlayback();
 
   TFT_eSPI& tft = display::Tft();
   display::DisplayTransaction transaction;
@@ -377,7 +362,6 @@ void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
     (void)display::TickThemeSpecGifs();
     return;
   }
-  display::TickMiniGif(false);
 #else
   (void)ctx;
 #endif
@@ -386,9 +370,8 @@ void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
 void RendererESP8266::DrawError(app::RuntimeContext& ctx, const String& message) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-  display::StopMiniGifPlayback();
-  display::DisplayTransaction transaction;
-  display::DrawErrorMini(message);
+  (void)message;
+  DrawStatus(ctx, "VIBE TV", "Check Mac App", "On your Mac");
 #else
   (void)message;
   probe::Render(ctx);
@@ -408,8 +391,7 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
     // error screen for one frame.
     return;
   }
-  display::DisplayTransaction transaction;
-  display::DrawUsageMini();
+  DrawStatus(ctx, "VIBE TV", "Theme missing", "Update Mac App");
 #else
   probe::Render(ctx);
 #endif
@@ -418,10 +400,6 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
 bool RendererESP8266::DrawTopLine(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-  if (display::ActiveTheme() == Theme::Mini && !display::CurrentFrame().hasThemeSpec) {
-    display::DisplayTransaction transaction;
-    return display::DrawMiniProviderLineOnly();
-  }
   return false;
 #else
   (void)ctx;
@@ -447,8 +425,7 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
     display::LastRenderedMinuteBucket() = remain / 60;
     return;
   }
-  display::DisplayTransaction transaction;
-  display::DrawResetMini(remainSecs);
+  (void)remainSecs;
 #else
   (void)remainSecs;
   probe::DrawReset(ctx);

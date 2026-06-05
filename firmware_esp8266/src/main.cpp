@@ -167,6 +167,12 @@ bool firmwareUpdateNoticeDirty = false;
 OtaUploadDiagnostics otaDiagnostics;
 RuntimeRenderDiagnostics renderDiagnostics;
 
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
+constexpr const char* kDefaultThemeSpecId = "mini-classic";
+constexpr int kDefaultThemeSpecRev = 1;
+#endif
+
 void recordRenderFull(const char* kind, unsigned long durationUs) {
   renderDiagnostics.fullCount++;
   renderDiagnostics.lastKind = kind;
@@ -1596,6 +1602,18 @@ void handleThemeActive() {
 #endif
 }
 
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+void loadDefaultStoredThemeSpecCache() {
+  String error;
+  if (!readStoredThemeSpec(kDefaultThemeSpecPath, runtimeCtx.runtime.cachedThemeSpecRaw, error)) {
+    return;
+  }
+
+  runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
+  runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
+}
+#endif
+
 String updatePageHTML() {
   const String installCommand = updateInstallCommand();
   String html;
@@ -2099,6 +2117,9 @@ void setup() {
   delay(200);
 
   renderer.Setup(runtimeCtx);
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  loadDefaultStoredThemeSpecCache();
+#endif
   const unsigned long startupRenderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Starting", "Please wait");
   recordRenderFull("status", micros() - startupRenderStartUs);
