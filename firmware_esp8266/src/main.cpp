@@ -169,6 +169,8 @@ RuntimeRenderDiagnostics renderDiagnostics;
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
+constexpr const char* kDefaultThemeSpecId = "mini-classic";
+constexpr int kDefaultThemeSpecRev = 1;
 #endif
 
 void recordRenderFull(const char* kind, unsigned long durationUs) {
@@ -1605,29 +1607,14 @@ void loadDefaultStoredThemeSpecCache() {
   String raw;
   String error;
   if (!readStoredThemeSpec(kDefaultThemeSpecPath, raw, error)) {
-    Serial.printf("default_theme_spec_unavailable path=%s error=%s\n", kDefaultThemeSpecPath, error.c_str());
     return;
   }
 
-  String themeId;
-  int themeRev = 0;
-  String fallbackTheme;
-  if (!themeSpecMetadata(raw, themeId, themeRev, fallbackTheme, error)) {
-    Serial.printf("default_theme_spec_invalid path=%s error=%s\n", kDefaultThemeSpecPath, error.c_str());
-    return;
-  }
-
-  runtimeCtx.runtime.cachedThemeId = themeId;
-  runtimeCtx.runtime.cachedThemeRev = themeRev;
+  runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
+  runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
   runtimeCtx.runtime.cachedThemeSpecRaw = raw;
   activeThemeSpecPath = kDefaultThemeSpecPath;
   activeThemeSpecHash = hashHex8(raw);
-  Serial.printf(
-      "default_theme_spec_cached path=%s id=%s rev=%d hash=%s\n",
-      kDefaultThemeSpecPath,
-      themeId.c_str(),
-      themeRev,
-      activeThemeSpecHash.c_str());
 }
 #endif
 
