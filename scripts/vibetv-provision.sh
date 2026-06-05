@@ -35,7 +35,7 @@ poll_interval_secs=3
 curl_timeout_secs=30
 upload_timeout_secs=90
 filesystem_upload_timeout_secs=300
-required_assets=("/mini.gif")
+required_assets=("/themes/mini/mini.gif" "/themes/u/mini-cl-1-410a37.json")
 current_stage="startup"
 last_upload_result=""
 failure_reported=0
@@ -115,7 +115,8 @@ Flow toggles:
   --filesystem-upload-timeout SECS
                         Upload timeout for LittleFS OTA requests. Default: 300.
   --require-asset PATH  Require an asset path in /assets after flashing.
-                        Repeatable. Default: /mini.gif.
+                        Repeatable. Defaults: /themes/mini/mini.gif and
+                        /themes/u/mini-cl-1-410a37.json.
 
 Examples:
   ./scripts/vibetv-provision.sh build
@@ -304,7 +305,7 @@ build_package() {
     printf '  },\n'
     printf '  "themeAssets": %s,\n' "$theme_assets_json"
     printf '  "themePacks": [\n'
-    printf '    {"id": "mini", "requiredAssets": %s}\n' "$required_asset_paths_json"
+    printf '    {"id": "mini-classic", "requiredAssets": %s}\n' "$required_asset_paths_json"
     printf '  ]\n'
     printf '}\n'
   } >"$(artifact_path manifest.json)"
@@ -669,8 +670,8 @@ check_post_smoke_gif_state() {
   current_stage="post-smoke GIF state"
   for attempt in 1 2 3 4 5 6 7 8; do
     if curl_get "$health_url" >"$body_file"; then
-      if jq -e '.display.activeTheme == "mini" and .display.gif.activePath == "/mini.gif" and .display.gif.filePresent == true and .display.gif.decoderOpen == true and .display.gif.lastError == null' "$body_file" >/dev/null 2>&1; then
-        log "smoke: mini GIF decoder healthy"
+      if jq -e '.display.activeTheme == "mini-classic" and .display.themeSpec.active == true and .display.themeSpec.id == "mini-classic" and .display.themeSpec.renderOk == true and .display.gif.activePath == "/themes/mini/mini.gif" and .display.gif.filePresent == true and .display.gif.decoderOpen == true and .display.gif.lastError == null' "$body_file" >/dev/null 2>&1; then
+        log "smoke: mini-classic ThemeSpec GIF decoder healthy"
         rm -f "$body_file"
         return 0
       fi
@@ -693,7 +694,7 @@ check_post_smoke_gif_state() {
     sed 's/^/  /' "$body_file" >&2
   fi
   rm -f "$body_file"
-  die "mini GIF decoder did not report healthy state after smoke frame"
+  die "mini-classic ThemeSpec GIF decoder did not report healthy state after smoke frame"
 }
 
 flash_package() {

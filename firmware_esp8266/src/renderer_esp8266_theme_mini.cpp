@@ -14,7 +14,7 @@ constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
   return static_cast<uint16_t>(((r & 0xF8U) << 8) | ((g & 0xFCU) << 3) | (b >> 3));
 }
 
-constexpr const char* kMiniGifPath = "/mini.gif";
+constexpr const char* kMiniGifPath = "/themes/mini/mini.gif";
 constexpr int kMiniGifSpacing = 0;
 constexpr int kMiniFallbackGifSize = 64;
 constexpr int kMiniGifVerticalOffset = 35;
