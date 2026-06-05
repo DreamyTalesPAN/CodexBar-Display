@@ -1604,17 +1604,13 @@ void handleThemeActive() {
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 void loadDefaultStoredThemeSpecCache() {
-  String raw;
   String error;
-  if (!readStoredThemeSpec(kDefaultThemeSpecPath, raw, error)) {
+  if (!readStoredThemeSpec(kDefaultThemeSpecPath, runtimeCtx.runtime.cachedThemeSpecRaw, error)) {
     return;
   }
 
   runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
   runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
-  runtimeCtx.runtime.cachedThemeSpecRaw = raw;
-  activeThemeSpecPath = kDefaultThemeSpecPath;
-  activeThemeSpecHash = hashHex8(raw);
 }
 #endif
 
