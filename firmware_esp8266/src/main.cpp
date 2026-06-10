@@ -1026,7 +1026,7 @@ String connectedPageHTML() {
     html += htmlEscape(setupCommand);
     html += F("</pre></section>");
   }
-  html += F("<p><a href='/health'>Status</a> <a href='/update'>Update</a></p>");
+  html += F("<p><a href='/health'>Status</a> <a href='/update'>Update</a> <a href='/themes'>Themes</a></p>");
   const String tokenQuery = deviceAuthConfigured() ? String("?token=") + deviceAuthToken : String();
   if (renderer.SupportsBrightnessControl()) {
     html += F("<section><form method='post' action='/api/settings");
@@ -1711,6 +1711,76 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
   event.themeChanged = hadFrame && codexbar_display::core::FrameThemeChanged(previous, next);
   markFrameAccepted(event, "theme");
 }
+
+bool activateStoredThemePath(const String& path, String& themeId, int& themeRev, String& error) {
+  String raw;
+  if (!readStoredThemeSpec(path, raw, error)) {
+    return false;
+  }
+
+  String fallbackTheme;
+  if (!themeSpecMetadata(raw, themeId, themeRev, fallbackTheme, error)) {
+    return false;
+  }
+
+  activateStoredThemeSpec(path, raw, themeId, themeRev, fallbackTheme);
+  return true;
+}
+
+void sendThemeUseForm(const String& path, const String& tokenQuery) {
+  webServer.sendContent_P(PSTR("<form method='post' action='/theme/active"));
+  webServer.sendContent(tokenQuery);
+  webServer.sendContent_P(PSTR("'><input type='hidden' name='path' value='"));
+  webServer.sendContent(htmlEscape(path));
+  webServer.sendContent_P(PSTR("'><button>Use</button></form>"));
+}
+
+void sendThemeOptionHTML(const String& path, const String& tokenQuery) {
+  if (!path.startsWith("/themes/") || !path.endsWith(".json")) {
+    return;
+  }
+
+  webServer.sendContent_P(PSTR("<section><code>"));
+  if (path == kDefaultThemeSpecPath) {
+    webServer.sendContent_P(PSTR("Default Mini"));
+  } else {
+    webServer.sendContent(htmlEscape(path));
+  }
+  webServer.sendContent_P(PSTR("</code>"));
+  if (path == activeThemeSpecPath) {
+    webServer.sendContent_P(PSTR("<p>Active</p>"));
+  } else {
+    sendThemeUseForm(path, tokenQuery);
+  }
+  webServer.sendContent_P(PSTR("</section>"));
+}
+
+void sendThemeOptionsFromDirHTML(const String& dirPath, const String& tokenQuery, uint8_t depth) {
+  if (depth > 4 || !LittleFS.begin()) {
+    return;
+  }
+  Dir dir = LittleFS.openDir(dirPath);
+  while (dir.next()) {
+    const String path = normalizedAssetListPath(dirPath, dir.fileName());
+    if (dir.isDirectory()) {
+      sendThemeOptionsFromDirHTML(path, tokenQuery, depth + 1);
+      continue;
+    }
+    sendThemeOptionHTML(path, tokenQuery);
+  }
+}
+
+void handleThemesPage() {
+  const String tokenQuery = deviceAuthConfigured() ? String("?token=") + deviceAuthToken : String();
+  if (!webServer.chunkedResponseModeStart(200, "text/html; charset=utf-8")) {
+    webServer.send(505, "text/plain", "");
+    return;
+  }
+  webServer.sendContent_P(PSTR("<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><title>VibeTV Themes</title><h1>Themes</h1><p><a href='/'>Home</a> <a href='https://vibetv.shop/themes'>Shop</a></p>"));
+  sendThemeOptionsFromDirHTML("/themes/u", tokenQuery, 0);
+  webServer.chunkedResponseFinalize();
+}
+
 #endif
 
 void handleThemeActive() {
@@ -1718,42 +1788,42 @@ void handleThemeActive() {
   if (!requireWriteAuth()) {
     return;
   }
-  String body = webServer.arg("plain");
-  body.trim();
-  if (body.length() == 0 || body.length() > 160) {
-    addCorsHeaders();
-    webServer.send(400, "text/plain; charset=utf-8", "invalid theme activation body");
-    return;
-  }
+  const bool formMode = webServer.hasArg("path");
+  String path = webServer.arg("path");
+  if (!formMode) {
+    String body = webServer.arg("plain");
+    body.trim();
+    if (body.length() == 0 || body.length() > 160) {
+      addCorsHeaders();
+      webServer.send(400, "text/plain; charset=utf-8", "invalid theme activation body");
+      return;
+    }
 
-  JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, body);
-  if (err) {
-    addCorsHeaders();
-    webServer.send(400, "text/plain; charset=utf-8", "bad theme activation json");
-    return;
+    JsonDocument doc;
+    const DeserializationError err = deserializeJson(doc, body);
+    if (err) {
+      addCorsHeaders();
+      webServer.send(400, "text/plain; charset=utf-8", "bad theme activation json");
+      return;
+    }
+    path = String(doc["path"] | "");
   }
-  String path = String(doc["path"] | "");
   path.trim();
 
-  String raw;
+  String themeId;
+  int themeRev = 0;
   String error;
-  if (!readStoredThemeSpec(path, raw, error)) {
+  if (!activateStoredThemePath(path, themeId, themeRev, error)) {
     addCorsHeaders();
     webServer.send(error == "theme file not found" ? 404 : 400, "text/plain; charset=utf-8", error);
     return;
   }
 
-  String themeId;
-  int themeRev = 0;
-  String fallbackTheme;
-  if (!themeSpecMetadata(raw, themeId, themeRev, fallbackTheme, error)) {
-    addCorsHeaders();
-    webServer.send(400, "text/plain; charset=utf-8", error);
+  if (formMode) {
+    webServer.sendHeader("Location", "/themes");
+    webServer.send(303);
     return;
   }
-
-  activateStoredThemeSpec(path, raw, themeId, themeRev, fallbackTheme);
 
   String out;
   out.reserve(160);
@@ -2186,6 +2256,9 @@ void startHttpServer() {
       handleAssetUploadResult,
       handleAssetUpload);
   webServer.on("/assets", HTTP_DELETE, handleAssetDelete);
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  webServer.on("/themes", HTTP_GET, handleThemesPage);
+#endif
   webServer.on("/theme/active", HTTP_POST, handleThemeActive);
   webServer.on("/frame", HTTP_POST, handleFrame);
   webServer.on("/update", HTTP_GET, handleUpdatePage);
