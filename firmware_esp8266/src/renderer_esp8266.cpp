@@ -14,10 +14,21 @@ namespace esp8266 {
 namespace {
 
 constexpr const char* kDefaultGifAssetPath = "/themes/mini/mini.gif";
+constexpr uint16_t kBacklightPwmRange = 1023;
 
 const char* themeName(Theme theme) {
   (void)theme;
   return "mini";
+}
+
+uint8_t clampBrightnessPercent(uint8_t percent) {
+  if (percent < 1) {
+    return 1;
+  }
+  if (percent > 100) {
+    return 100;
+  }
+  return percent;
 }
 
 }  // namespace
@@ -29,7 +40,7 @@ void RendererESP8266::Setup(app::RuntimeContext& ctx) {
 
 #ifdef TFT_BL
   pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
+  ApplyBrightnessPercent(100);
 #endif
   display::Tft().init();
   display::Tft().setRotation(0);
@@ -81,6 +92,33 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
   snapshot.activeTheme = "probe";
 #endif
   return snapshot;
+}
+
+bool RendererESP8266::SupportsBrightnessControl() const {
+#ifdef TFT_BL
+  return true;
+#else
+  return false;
+#endif
+}
+
+void RendererESP8266::ApplyBrightnessPercent(uint8_t percent) {
+#ifdef TFT_BL
+  const uint8_t clamped = clampBrightnessPercent(percent);
+  if (clamped >= 100) {
+    digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
+    return;
+  }
+  analogWriteRange(kBacklightPwmRange);
+  const uint16_t scaled = (static_cast<uint16_t>(clamped) * kBacklightPwmRange) / 100;
+#if TFT_BACKLIGHT_ON == 0
+  analogWrite(TFT_BL, kBacklightPwmRange - scaled);
+#else
+  analogWrite(TFT_BL, scaled);
+#endif
+#else
+  (void)percent;
+#endif
 }
 
 void RendererESP8266::ResetGifStateForAssetUpdate() {
