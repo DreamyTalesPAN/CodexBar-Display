@@ -26,8 +26,19 @@ const (
 var assetUploadRetryDelay = 1500 * time.Millisecond
 
 type WiFiTransport struct {
-	client *http.Client
+	client                   *http.Client
+	assetUploadRetryObserver AssetUploadRetryObserver
 }
+
+type AssetUploadRetry struct {
+	DevicePath  string
+	Attempt     int
+	MaxAttempts int
+	Err         error
+	StatusCode  int
+}
+
+type AssetUploadRetryObserver func(AssetUploadRetry)
 
 func NewWiFiTransport() DeviceTransport {
 	return WiFiTransport{
@@ -40,6 +51,11 @@ func NewWiFiTransportWithClient(client *http.Client) WiFiTransport {
 		client = &http.Client{Timeout: defaultWiFiTimeout}
 	}
 	return WiFiTransport{client: client}
+}
+
+func (t WiFiTransport) WithAssetUploadRetryObserver(observer AssetUploadRetryObserver) WiFiTransport {
+	t.assetUploadRetryObserver = observer
+	return t
 }
 
 func (WiFiTransport) Name() string {
@@ -123,6 +139,12 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 		if err != nil {
 			lastErr = fmt.Errorf("post asset %s: %w", devicePath, err)
 			if shouldRetryAssetUpload(err) && attempt < assetUploadAttempts {
+				t.noteAssetUploadRetry(AssetUploadRetry{
+					DevicePath:  devicePath,
+					Attempt:     attempt,
+					MaxAttempts: assetUploadAttempts,
+					Err:         err,
+				})
 				time.Sleep(assetUploadRetryDelay)
 				continue
 			}
@@ -138,9 +160,21 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 		if !retryableAssetStatus(resp.StatusCode) || attempt >= assetUploadAttempts {
 			return lastErr
 		}
+		t.noteAssetUploadRetry(AssetUploadRetry{
+			DevicePath:  devicePath,
+			Attempt:     attempt,
+			MaxAttempts: assetUploadAttempts,
+			StatusCode:  resp.StatusCode,
+		})
 		time.Sleep(assetUploadRetryDelay)
 	}
 	return lastErr
+}
+
+func (t WiFiTransport) noteAssetUploadRetry(retry AssetUploadRetry) {
+	if t.assetUploadRetryObserver != nil {
+		t.assetUploadRetryObserver(retry)
+	}
 }
 
 func shouldRetryAssetUpload(err error) bool {

@@ -428,6 +428,7 @@ func runInstallUpdate(args []string) error {
 	manifestURL := fs.String("manifest-url", vibeTVFirmwareManifestURL, "firmware manifest URL")
 	force := fs.Bool("force", false, "install even when the device already reports the latest firmware")
 	confirmLiveUpdate := fs.Bool("confirm-live-update", false, "allow installing from the default live Shopify firmware manifest")
+	verbose := fs.Bool("verbose", false, "show manifest, asset, and local firmware file details")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -457,8 +458,10 @@ func runInstallUpdate(args []string) error {
 		}
 	}
 	caps := protocol.CapabilitiesFromHello(hello)
-	fmt.Printf("device: target=%s board=%s firmware=%s\n", base, caps.Board, caps.Firmware)
+	fmt.Println("Checking device...")
+	fmt.Printf("Device: %s firmware %s\n", caps.Board, caps.Firmware)
 
+	fmt.Println("Checking firmware...")
 	manifest, err := fetchReleaseFirmwareManifestURL(ctx, strings.TrimSpace(*manifestURL))
 	if err != nil {
 		return &commandError{Op: "fetch-firmware-manifest", Code: errcode.UpgradeFlashFirmware, Err: err}
@@ -478,17 +481,14 @@ func runInstallUpdate(args []string) error {
 		return &commandError{Op: "parse-target-firmware", Code: errcode.UpgradeVersionGuard, Err: nextErr}
 	}
 	if current.Compare(next) >= 0 && !*force {
-		fmt.Printf("firmware already current: installed=%s latest=%s\n", caps.Firmware, targetVersion)
+		fmt.Printf("Firmware: already current (%s)\n", caps.Firmware)
 		return nil
 	}
-	fmt.Printf(
-		"update plan: manifest=%s installed=%s target=%s board=%s asset=%s\n",
-		strings.TrimSpace(*manifestURL),
-		caps.Firmware,
-		targetVersion,
-		caps.Board,
-		strings.TrimSpace(artifact.Asset),
-	)
+	fmt.Printf("Updating firmware: %s -> %s\n", caps.Firmware, targetVersion)
+	if *verbose {
+		fmt.Printf("Firmware manifest: %s\n", strings.TrimSpace(*manifestURL))
+		fmt.Printf("Firmware asset: %s\n", strings.TrimSpace(artifact.Asset))
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -503,7 +503,9 @@ func runInstallUpdate(args []string) error {
 			Hint: "check network access and the manifest firmwareUrl/sha256 fields",
 		}
 	}
-	fmt.Printf("firmware downloaded: %s sha256=%s\n", imagePath, strings.TrimSpace(artifact.SHA256))
+	if *verbose {
+		fmt.Printf("Firmware downloaded: %s sha256=%s\n", imagePath, strings.TrimSpace(artifact.SHA256))
+	}
 
 	if err := uploadFirmwareOTAFn(ctx, base, imagePath); err != nil {
 		return &commandError{
@@ -513,7 +515,7 @@ func runInstallUpdate(args []string) error {
 			Hint: "keep VibeTV powered and on the same WiFi, then retry",
 		}
 	}
-	fmt.Println("firmware upload: ok; waiting for VibeTV to restart")
+	fmt.Println("Restarting VibeTV...")
 
 	if err := waitForHTTPFirmwareVersion(ctx, base, targetVersion, 90*time.Second); err != nil {
 		return &commandError{
@@ -523,7 +525,7 @@ func runInstallUpdate(args []string) error {
 			Hint: "wait one minute, then open http://vibetv.local/health",
 		}
 	}
-	fmt.Printf("update complete: firmware=%s\n", targetVersion)
+	fmt.Printf("Done: firmware %s installed\n", targetVersion)
 	return nil
 }
 

@@ -477,12 +477,31 @@ func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
 	serverURL = server.URL
 	releaseHTTPClient = server.Client()
 
-	err := runInstallUpdate([]string{"--target", server.URL, "--manifest-url", server.URL + "/manifest.json"})
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", server.URL, "--manifest-url", server.URL + "/manifest.json"})
+	})
 	if err != nil {
 		t.Fatalf("install update: %v", err)
 	}
 	if !uploaded {
 		t.Fatal("expected OTA upload")
+	}
+	for _, want := range []string{
+		"Checking device...",
+		"Device: esp8266-smalltv-st7789 firmware 1.0.0",
+		"Checking firmware...",
+		"Updating firmware: 1.0.0 -> 1.0.1",
+		"Restarting VibeTV...",
+		"Done: firmware 1.0.1 installed",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected output to contain %q, got:\n%s", want, output)
+		}
+	}
+	for _, noisy := range []string{"update plan:", "firmware downloaded:", "sha256="} {
+		if strings.Contains(output, noisy) {
+			t.Fatalf("expected quiet update output not to contain %q, got:\n%s", noisy, output)
+		}
 	}
 }
 
