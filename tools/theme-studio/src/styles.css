@@ -884,7 +884,7 @@ textarea:focus {
 
 .preview-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.85fr) minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -920,6 +920,63 @@ textarea:focus {
   border-color: #9ee7ff;
   background: #0b344b;
   box-shadow: 0 0 0 3px rgba(53, 201, 255, 0.18);
+}
+
+.stability-action {
+  border-color: rgba(255, 209, 102, 0.65);
+  background: rgba(255, 209, 102, 0.1);
+  color: #ffe3a1;
+}
+
+.stability-action:hover {
+  border-color: #ffe3a1;
+  background: rgba(255, 209, 102, 0.16);
+  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.14);
+}
+
+.stability-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(16, 18, 21, 0.94);
+  font-size: 12px;
+}
+
+.stability-status strong {
+  color: var(--muted-strong);
+}
+
+.stability-status span {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stability-status small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.stability-status.running {
+  border-color: rgba(53, 201, 255, 0.5);
+}
+
+.stability-status.stable {
+  border-color: rgba(199, 255, 104, 0.5);
+}
+
+.stability-status.warning {
+  border-color: rgba(255, 209, 102, 0.58);
+}
+
+.stability-status.failed {
+  border-color: rgba(255, 102, 122, 0.72);
 }
 
 .messages {
@@ -1135,6 +1192,10 @@ textarea:focus {
   .device-frame {
     min-height: auto;
     padding: 16px;
+  }
+
+  .preview-actions {
+    grid-template-columns: 1fr;
   }
 
   .display {

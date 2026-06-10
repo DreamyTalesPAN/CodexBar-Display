@@ -118,6 +118,12 @@ type DeviceHello = {
     };
   };
 };
+type StabilityStatus = "idle" | "running" | "stable" | "warning" | "failed";
+type StabilityCheckState = {
+  status: StabilityStatus;
+  message: string;
+  elapsedSec: number;
+};
 type SpriteSource = {
   file: File;
   previewUrl: string;
@@ -246,6 +252,7 @@ interface AppState {
   targetOrigin: string;
   deviceProfile: DeviceProfile;
   deviceBrightnessPercent: number | null;
+  stabilityCheck: StabilityCheckState;
   pixelTool: PixelTool;
   pixelBrushToken: string;
   snapEnabled: boolean;
@@ -263,6 +270,11 @@ interface DeviceHealth {
   system?: {
     freeHeap?: number;
     resetReason?: string;
+  };
+  render?: {
+    fullCount?: number;
+    partialCount?: number;
+    lastKind?: string;
   };
   display?: {
     themeSpec?: {
@@ -314,6 +326,9 @@ const frame: FrameData = {
 };
 const UPDATE_LABEL_PREVIEW_TOGGLE_MS = 1500;
 const UPDATE_LABEL_PREVIEW_TEXTS = ["Update Available:", "vibetv.local"] as const;
+const STABILITY_CHECK_MS = 60_000;
+const STABILITY_POLL_MS = 5_000;
+const LOW_HEAP_WARNING_BYTES = 6000;
 
 function defaultDeviceProfile(): DeviceProfile {
   return {
@@ -328,6 +343,14 @@ function defaultDeviceProfile(): DeviceProfile {
     maxThemeGifWidth: MAX_GIF_WIDTH,
     maxThemeGifHeight: MAX_GIF_HEIGHT,
     maxThemeGifPixels: MAX_GIF_PIXELS,
+  };
+}
+
+function defaultStabilityCheck(): StabilityCheckState {
+  return {
+    status: "idle",
+    message: "Run a 60s stability check after sending a theme.",
+    elapsedSec: 0,
   };
 }
 
@@ -2338,6 +2361,7 @@ const state: AppState = {
   targetOrigin: storedTargetOrigin(),
   deviceProfile: defaultDeviceProfile(),
   deviceBrightnessPercent: null,
+  stabilityCheck: defaultStabilityCheck(),
   pixelTool: "move",
   pixelBrushToken: "a",
   snapEnabled: true,
@@ -3388,8 +3412,10 @@ function render() {
           </div>
           <div class="preview-actions">
             <button class="primary-action" data-action="send-theme" ${state.errors.length ? "disabled" : ""}>Send to Vibe TV</button>
+            <button class="stability-action" data-action="stability-check" ${state.errors.length || state.stabilityCheck.status === "running" ? "disabled" : ""}>Watch 60s</button>
             <button class="publish-action" data-action="publish-pack" ${state.errors.length ? "disabled" : ""}>${publishButtonLabel()}</button>
           </div>
+          ${stabilityStatus()}
           ${messageList()}
         </section>
 
@@ -5914,6 +5940,35 @@ function messageList(): string {
   return `<ul class="messages">${items.join("")}</ul>`;
 }
 
+function stabilityStatus(): string {
+  const status = state.stabilityCheck;
+  if (status.status === "idle") {
+    return "";
+  }
+  return `
+    <div class="stability-status ${status.status}">
+      <strong>${statusLabel(status.status)}</strong>
+      <span>${escapeHtml(status.message)}</span>
+      ${status.status === "running" ? `<small>${status.elapsedSec}s / ${Math.round(STABILITY_CHECK_MS / 1000)}s</small>` : ""}
+    </div>
+  `;
+}
+
+function statusLabel(status: StabilityStatus): string {
+  switch (status) {
+    case "running":
+      return "Checking";
+    case "stable":
+      return "Stable";
+    case "warning":
+      return "Warning";
+    case "failed":
+      return "Failed";
+    default:
+      return "Idle";
+  }
+}
+
 function bindEvents() {
   app.querySelectorAll<HTMLElement>("[data-select]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -6677,6 +6732,13 @@ async function handleAction(action: string) {
   }
   if (action === "save-device-settings") {
     await saveDeviceSettings();
+    return;
+  }
+  if (action === "stability-check") {
+    if (!applyPendingJsonEdit()) {
+      return;
+    }
+    await runStabilityCheck();
     return;
   }
   if (action === "save-draft") {
@@ -7729,6 +7791,115 @@ async function saveDeviceSettings() {
     state.notice = `Brightness saved at ${state.deviceBrightnessPercent}%.`;
   } catch (error) {
     state.notice = error instanceof Error ? error.message : `Could not save settings at ${targetOrigin}.`;
+  }
+  render();
+}
+
+type StabilityBaseline = {
+  resetReason: string;
+  renderFailures: number;
+  fullCount: number;
+  partialCount: number;
+  themeSpecActive: boolean;
+};
+
+function stabilityBaseline(health: DeviceHealth): StabilityBaseline {
+  return {
+    resetReason: health.system?.resetReason ?? "",
+    renderFailures: health.display?.themeSpec?.renderFailures ?? 0,
+    fullCount: health.render?.fullCount ?? 0,
+    partialCount: health.render?.partialCount ?? 0,
+    themeSpecActive: health.display?.themeSpec?.active === true,
+  };
+}
+
+function stabilityFinding(health: DeviceHealth, spec: ThemeSpec, baseline: StabilityBaseline): { status: Exclude<StabilityStatus, "idle" | "running">; message: string } {
+  const applied = themeAppliedFromHealth(health, spec);
+  if (!applied.ok) {
+    return { status: "failed", message: "Device no longer reports the sent ThemeSpec as active." };
+  }
+  const themeSpec = health.display?.themeSpec;
+  if (themeSpec?.renderOk === false) {
+    return { status: "failed", message: `Renderer failed: ${themeSpec.renderError ?? "render_failed"}.` };
+  }
+  if ((themeSpec?.renderFailures ?? 0) > baseline.renderFailures) {
+    return { status: "failed", message: `Render failures increased to ${themeSpec?.renderFailures ?? 0}.` };
+  }
+  if (baseline.themeSpecActive && themeSpec?.active === false) {
+    return { status: "failed", message: "Device fell back from the stored ThemeSpec during the stability check." };
+  }
+  const gifError = health.display?.gif?.lastError;
+  if (gifError != null) {
+    return { status: "failed", message: `GIF decoder reported ${String(gifError)}.` };
+  }
+  const resetReason = health.system?.resetReason ?? "";
+  if (baseline.resetReason && resetReason && resetReason !== baseline.resetReason) {
+    return { status: "failed", message: `Device reset reason changed from ${baseline.resetReason} to ${resetReason}.` };
+  }
+  const heap = health.system?.freeHeap;
+  if (typeof heap === "number" && heap < LOW_HEAP_WARNING_BYTES) {
+    return { status: "warning", message: `Theme stayed active, but free heap is low (${heap} bytes).` };
+  }
+  return { status: "stable", message: "Theme stayed active with no render, GIF, or reset warnings." };
+}
+
+async function runStabilityCheck() {
+  validateCurrentSpec();
+  if (state.errors.length > 0) {
+    state.notice = "Theme is invalid. Fix the errors before running a stability check.";
+    render();
+    return;
+  }
+  const targetOrigin = normalizeTargetOrigin(state.targetOrigin);
+  state.targetOrigin = targetOrigin;
+  persistTargetOrigin();
+
+  try {
+    const initialHealth = await fetchDeviceHealth(targetOrigin);
+    if (!initialHealth) {
+      throw new Error("Browser could not read Vibe TV health.");
+    }
+    const baseline = stabilityBaseline(initialHealth);
+    state.stabilityCheck = {
+      status: "running",
+      message: "Watching device health after theme activation.",
+      elapsedSec: 0,
+    };
+    render();
+
+    const deadline = Date.now() + STABILITY_CHECK_MS;
+    let lastFinding = stabilityFinding(initialHealth, state.spec, baseline);
+    while (Date.now() < deadline) {
+      await delay(Math.min(STABILITY_POLL_MS, Math.max(0, deadline - Date.now())));
+      const health = await fetchDeviceHealth(targetOrigin);
+      if (!health) {
+        throw new Error("Browser could not read Vibe TV health during the stability check.");
+      }
+      lastFinding = stabilityFinding(health, state.spec, baseline);
+      const elapsedSec = Math.min(Math.round((STABILITY_CHECK_MS - Math.max(0, deadline - Date.now())) / 1000), Math.round(STABILITY_CHECK_MS / 1000));
+      state.stabilityCheck = {
+        status: "running",
+        message: lastFinding.message,
+        elapsedSec,
+      };
+      render();
+      if (lastFinding.status === "failed") {
+        state.stabilityCheck = { ...state.stabilityCheck, status: "failed" };
+        render();
+        return;
+      }
+    }
+    state.stabilityCheck = {
+      status: lastFinding.status,
+      message: lastFinding.message,
+      elapsedSec: Math.round(STABILITY_CHECK_MS / 1000),
+    };
+  } catch (error) {
+    state.stabilityCheck = {
+      status: "failed",
+      message: error instanceof Error ? error.message : "Stability check failed.",
+      elapsedSec: state.stabilityCheck.elapsedSec,
+    };
   }
   render();
 }
