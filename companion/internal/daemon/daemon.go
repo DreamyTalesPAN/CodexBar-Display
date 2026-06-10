@@ -199,6 +199,8 @@ type runtimeState struct {
 	firmwareUpdate         protocol.UpdateState
 	hasFirmwareUpdate      bool
 	updateCheckedAt        time.Time
+	updateCheckedBoard     string
+	updateCheckedFirmware  string
 	lastActivityAt         time.Time
 	lastActivityObservedAt time.Time
 	lastIdleEvidenceAt     time.Time
@@ -571,7 +573,13 @@ func attachFirmwareUpdateState(ctx context.Context, state *runtimeState, deps ru
 	}
 
 	now := deps.now()
-	if state.hasFirmwareUpdate && now.Sub(state.updateCheckedAt) >= 0 && now.Sub(state.updateCheckedAt) < firmwareUpdateCheckGap {
+	board := strings.TrimSpace(strings.ToLower(caps.Board))
+	firmware := strings.TrimSpace(caps.Firmware)
+	if state.hasFirmwareUpdate &&
+		state.updateCheckedBoard == board &&
+		state.updateCheckedFirmware == firmware &&
+		now.Sub(state.updateCheckedAt) >= 0 &&
+		now.Sub(state.updateCheckedAt) < firmwareUpdateCheckGap {
 		update := state.firmwareUpdate
 		result.frame.Update = &update
 		return
@@ -588,6 +596,8 @@ func attachFirmwareUpdateState(ctx context.Context, state *runtimeState, deps ru
 	state.firmwareUpdate = update
 	state.hasFirmwareUpdate = true
 	state.updateCheckedAt = now
+	state.updateCheckedBoard = board
+	state.updateCheckedFirmware = firmware
 	result.frame.Update = &update
 }
 
