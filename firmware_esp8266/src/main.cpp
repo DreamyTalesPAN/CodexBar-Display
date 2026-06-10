@@ -64,6 +64,8 @@ const char kSetupHost[] = "vibetv.local";
 const char kMdnsName[] = "vibetv";
 const char kMdnsHost[] = "vibetv.local";
 const char kDeviceSettingsPath[] = "/s";
+const char kDeviceAuthTokenPath[] = "/auth";
+const char kDeviceAuthHeader[] = "X-VibeTV-Token";
 const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
 const char* const kFirmwareUpdateNoticeTexts[] = {
     "Update Available:",
@@ -177,6 +179,9 @@ bool firmwareUpdateNoticeDirty = false;
 OtaUploadDiagnostics otaDiagnostics;
 RuntimeRenderDiagnostics renderDiagnostics;
 DeviceSettings deviceSettings;
+String deviceAuthToken;
+
+void addCorsHeaders();
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
@@ -309,6 +314,112 @@ bool saveDeviceSettings() {
   const size_t written = file.write(&deviceSettings.brightnessPercent, 1);
   file.close();
   return written > 0;
+}
+
+bool validAuthToken(const String& value) {
+  if (value.length() < 16 || value.length() > 64) {
+    return false;
+  }
+  for (size_t i = 0; i < value.length(); ++i) {
+    const char c = value.charAt(i);
+    const bool ok =
+        (c >= 'a' && c <= 'z') ||
+        (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') ||
+        c == '-' ||
+        c == '_';
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
+
+String generateAuthToken() {
+  uint32_t seed = ESP.getCycleCount() ^ micros() ^ (static_cast<uint32_t>(ESP.getChipId()) << 8);
+  randomSeed(seed);
+  String token;
+  token.reserve(32);
+  for (uint8_t i = 0; i < 4; ++i) {
+    uint32_t value = static_cast<uint32_t>(random(0x10000)) << 16;
+    value |= static_cast<uint32_t>(random(0x10000));
+    char chunk[9];
+    snprintf(chunk, sizeof(chunk), "%08lx", static_cast<unsigned long>(value));
+    token += chunk;
+  }
+  return token;
+}
+
+bool loadDeviceAuthToken() {
+  deviceAuthToken = "";
+  if (!LittleFS.begin() || !LittleFS.exists(kDeviceAuthTokenPath)) {
+    return false;
+  }
+  File file = LittleFS.open(kDeviceAuthTokenPath, "r");
+  if (!file) {
+    return false;
+  }
+  String token = file.readString();
+  file.close();
+  token.trim();
+  if (!validAuthToken(token)) {
+    return false;
+  }
+  deviceAuthToken = token;
+  return true;
+}
+
+bool saveDeviceAuthToken(const String& token) {
+  if (!validAuthToken(token) || !LittleFS.begin()) {
+    return false;
+  }
+  File file = LittleFS.open(kDeviceAuthTokenPath, "w");
+  if (!file) {
+    return false;
+  }
+  file.print(token);
+  file.close();
+  deviceAuthToken = token;
+  return true;
+}
+
+bool deviceAuthConfigured() {
+  return deviceAuthToken.length() > 0;
+}
+
+String requestAuthToken() {
+  String token = webServer.header(kDeviceAuthHeader);
+  token.trim();
+  if (token.length() == 0) {
+    token = webServer.arg("token");
+    token.trim();
+  }
+  return token;
+}
+
+bool requestHasValidAuth() {
+  if (!deviceAuthConfigured()) {
+    return true;
+  }
+  return requestAuthToken() == deviceAuthToken;
+}
+
+bool requireWriteAuth() {
+  if (requestHasValidAuth()) {
+    return true;
+  }
+  addCorsHeaders();
+  webServer.sendHeader("WWW-Authenticate", "VibeTV token");
+  webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
+  return false;
+}
+
+void appendAuthStatusJSON(String& out) {
+  out += "\"auth\":{\"paired\":";
+  out += deviceAuthConfigured() ? "true" : "false";
+  out += ",\"tokenHeader\":\"";
+  out += kDeviceAuthHeader;
+  out += "\"}";
 }
 
 void appendBrightnessCapabilityJSON(String& out) {
@@ -584,6 +695,8 @@ const char* transportCapabilitiesJSON(const char* activeTransport) {
   json += themeCapabilitiesJSON(false);
 #endif
 #endif
+  json += ",";
+  appendAuthStatusJSON(json);
   json += ",\"transport\":{\"active\":\"";
   json += isUsb ? "usb" : "wifi";
   json += "\",\"supported\":[\"usb\",\"wifi\"]}}";
@@ -914,11 +1027,25 @@ String connectedPageHTML() {
     html += F("</pre></section>");
   }
   html += F("<p><a href='/health'>Status</a> <a href='/update'>Update</a></p>");
+  const String tokenQuery = deviceAuthConfigured() ? String("?token=") + deviceAuthToken : String();
   if (renderer.SupportsBrightnessControl()) {
-    html += F("<section><form method='post' action='/api/settings'><label>Bright</label><input name='b' type='range' min='10' max='100' value='");
+    html += F("<section><form method='post' action='/api/settings");
+    html += tokenQuery;
+    html += F("'><label>Bright</label><input name='b' type='range' min='10' max='100' value='");
     html += String(deviceSettings.brightnessPercent);
     html += F("'><button>OK</button></form></section>");
   }
+  html += F("<section><h2>Pairing</h2>");
+  if (deviceAuthConfigured()) {
+    html += F("<p>Token</p><code>");
+    html += htmlEscape(deviceAuthToken);
+    html += F("</code><p class='muted'>Use this in Theme Studio or as CODEXBAR_DISPLAY_DEVICE_TOKEN for the Mac Companion.</p>");
+    html += F("<form method='post' action='/api/pair'><button>Rotate token</button></form>");
+  } else {
+    html += F("<p class='muted'>Create a token before exposing theme controls to other devices on your network.</p>");
+    html += F("<form method='post' action='/api/pair'><button>Create token</button></form>");
+  }
+  html += F("</section>");
   html += F("<form method='post' action='/reset-wifi' onsubmit=\"return confirm('Clear WiFi settings and restart setup?')\"><button>Reset WiFi</button></form>");
   return html;
 }
@@ -988,7 +1115,7 @@ void handleResetWifi() {
 void addCorsHeaders() {
   webServer.sendHeader("Access-Control-Allow-Origin", "*");
   webServer.sendHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
-  webServer.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  webServer.sendHeader("Access-Control-Allow-Headers", String("Content-Type,") + kDeviceAuthHeader);
 }
 
 void handleHello() {
@@ -1219,6 +1346,9 @@ bool persistDeviceSettings(const DeviceSettings& next) {
 
 void handleSettingsAPI() {
   addCorsHeaders();
+  if (!requireWriteAuth()) {
+    return;
+  }
   DeviceSettings next = deviceSettings;
   const bool apiResponse = webServer.hasArg("api");
   if (webServer.hasArg("b")) {
@@ -1242,6 +1372,26 @@ void handleSettingsAPI() {
   appendSettingsJSON(out);
   out += "}";
   webServer.send(200, "application/json", out);
+}
+
+void handlePairingAPI() {
+  addCorsHeaders();
+  const String token = generateAuthToken();
+  if (!saveDeviceAuthToken(token)) {
+    webServer.send(500, "text/plain; charset=utf-8", "pairing token save failed");
+    return;
+  }
+  if (webServer.hasArg("api")) {
+    String out;
+    out.reserve(100);
+    out += "{\"ok\":true,\"token\":\"";
+    out += jsonEscape(token);
+    out += "\"}";
+    webServer.send(200, "application/json", out);
+    return;
+  }
+  webServer.sendHeader("Location", "/");
+  webServer.send(303);
 }
 
 void handleAssetsList() {
@@ -1315,6 +1465,10 @@ void handleAssetUpload() {
     renderer.ResetGifStateForAssetUpdate();
     waitStatusRendered = true;
 
+    if (!requestHasValidAuth()) {
+      setAssetUploadError("unauthorized");
+      return;
+    }
     if (!isSafeAssetPath(assetUploadPath)) {
       setAssetUploadError("invalid asset path");
       return;
@@ -1371,6 +1525,12 @@ void handleAssetUpload() {
 }
 
 void handleAssetUploadResult() {
+  if (assetUploadError == "unauthorized") {
+    addCorsHeaders();
+    webServer.sendHeader("WWW-Authenticate", "VibeTV token");
+    webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
+    return;
+  }
   if (!assetUploadSucceeded || assetUploadError.length() > 0) {
     const String error = assetUploadError.length() > 0 ? assetUploadError : "upload failed";
     addCorsHeaders();
@@ -1388,6 +1548,9 @@ void handleAssetUploadResult() {
 }
 
 void handleAssetDelete() {
+  if (!requireWriteAuth()) {
+    return;
+  }
   String path = webServer.arg("path");
   path.trim();
   if (!isSafeAssetPath(path)) {
@@ -1552,6 +1715,9 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
 
 void handleThemeActive() {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (!requireWriteAuth()) {
+    return;
+  }
   String body = webServer.arg("plain");
   body.trim();
   if (body.length() == 0 || body.length() > 160) {
@@ -1623,6 +1789,7 @@ void loadDefaultStoredThemeSpecCache() {
 
 String updatePageHTML() {
   const String installCommand = updateInstallCommand();
+  const String tokenQuery = deviceAuthConfigured() ? String("?token=") + deviceAuthToken : String();
   String html;
   html.reserve(1600);
   html += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
@@ -1633,7 +1800,9 @@ String updatePageHTML() {
   html += F("<h2>Check with Mac</h2><p class='muted'>Copy this command into Terminal. It refreshes the Mac helper first, then installs firmware if needed.</p><pre id='cmd'>");
   html += htmlEscape(installCommand);
   html += F("</pre><textarea id='cmdFallback' readonly style='position:absolute;left:-9999px'></textarea><button type='button' onclick='copyCmd()' id='copyBtn'>Copy update command</button><details><summary>Manual upload</summary>");
-  html += F("<form method='post' action='/update/firmware' enctype='multipart/form-data'>");
+  html += F("<form method='post' action='/update/firmware");
+  html += tokenQuery;
+  html += F("' enctype='multipart/form-data'>");
   html += F("<input type='file' name='firmware' accept='.bin,application/octet-stream' required>");
   html += F("<button type='submit'>Upload firmware</button></form>");
   html += F("</details>");
@@ -1706,6 +1875,10 @@ void handleOtaUpload(int command, const char* target) {
     const String targetLabel = command == U_FS ? "Loading display" : "Loading firmware";
     drawUpdateStatus(targetLabel);
     waitStatusRendered = true;
+    if (!requestHasValidAuth()) {
+      setOtaError("unauthorized");
+      return;
+    }
     enterOtaSafeMode(command);
     if (!Update.begin(maxSize, command)) {
       setOtaError(Update.getErrorString());
@@ -1746,6 +1919,18 @@ void scheduleReboot(const char* reason) {
 }
 
 void handleOtaResult(const char* target) {
+  if (otaUploadError == "unauthorized") {
+    otaUploadInProgress = false;
+    otaDiagnostics.status = "failed";
+    otaDiagnostics.lastError = otaUploadError;
+    otaDiagnostics.updateError = Update.getError();
+    otaDiagnostics.endedAtMs = millis();
+    otaDiagnostics.failureCount++;
+    addCorsHeaders();
+    webServer.sendHeader("WWW-Authenticate", "VibeTV token");
+    webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
+    return;
+  }
   if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
     otaUploadInProgress = false;
     const String error = otaUploadError.length() > 0 ? otaUploadError : Update.getErrorString();
@@ -1787,7 +1972,28 @@ void sendRawOtaResponse(WiFiClient& client, int status, const char* statusText, 
 
 bool rawRequestLineIsFirmwarePost(const String& line) {
   return line.startsWith("POST /update/firmware.raw ") ||
-         line.startsWith("PUT /update/firmware.raw ");
+         line.startsWith("POST /update/firmware.raw?") ||
+         line.startsWith("PUT /update/firmware.raw ") ||
+         line.startsWith("PUT /update/firmware.raw?");
+}
+
+String rawRequestToken(const String& line) {
+  const int queryStart = line.indexOf("?token=");
+  if (queryStart < 0) {
+    return "";
+  }
+  int tokenStart = queryStart + 7;
+  int tokenEnd = line.indexOf(' ', tokenStart);
+  const int nextParam = line.indexOf('&', tokenStart);
+  if (nextParam >= 0 && (tokenEnd < 0 || nextParam < tokenEnd)) {
+    tokenEnd = nextParam;
+  }
+  if (tokenEnd < 0) {
+    tokenEnd = line.length();
+  }
+  String token = line.substring(tokenStart, tokenEnd);
+  token.trim();
+  return token;
 }
 
 void handleRawOtaClient() {
@@ -1809,6 +2015,7 @@ void handleRawOtaClient() {
     return;
   }
 
+  String rawToken = rawRequestToken(requestLine);
   size_t contentLength = 0;
   while (client.connected()) {
     String header = client.readStringUntil('\n');
@@ -1822,7 +2029,16 @@ void handleRawOtaClient() {
       String value = header.substring(header.indexOf(':') + 1);
       value.trim();
       contentLength = static_cast<size_t>(value.toInt());
+    } else if (lower.startsWith("x-vibetv-token:")) {
+      rawToken = header.substring(header.indexOf(':') + 1);
+      rawToken.trim();
     }
+  }
+
+  if (deviceAuthConfigured() && rawToken != deviceAuthToken) {
+    sendRawOtaResponse(client, 401, "Unauthorized", "pairing token required");
+    client.stop();
+    return;
   }
 
   if (contentLength == 0) {
@@ -1906,6 +2122,9 @@ void handleRawOtaClient() {
 }
 
 void handleFrame() {
+  if (!requireWriteAuth()) {
+    return;
+  }
   String rawBody = webServer.arg("plain");
   if (rawBody.length() == 0) {
     addCorsHeaders();
@@ -1959,6 +2178,7 @@ void startHttpServer() {
   webServer.on("/hello", HTTP_GET, handleHello);
   webServer.on("/health", HTTP_GET, handleHealth);
   webServer.on("/api/settings", HTTP_POST, handleSettingsAPI);
+  webServer.on("/api/pair", HTTP_POST, handlePairingAPI);
   webServer.on("/assets", HTTP_GET, handleAssetsList);
   webServer.on(
       "/assets",
@@ -1999,6 +2219,7 @@ void startHttpServer() {
     }
     webServer.send(404, "text/plain; charset=utf-8", "not found");
   });
+  webServer.collectHeaders(kDeviceAuthHeader);
   webServer.begin();
   httpServerStarted = true;
   rawOtaServer.begin();
@@ -2128,6 +2349,7 @@ void setup() {
 
   renderer.Setup(runtimeCtx);
   loadDeviceSettings();
+  loadDeviceAuthToken();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   loadDefaultStoredThemeSpecCache();
 #endif

@@ -79,6 +79,20 @@ curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/do
 
 That command refreshes the Mac Companion first, then installs firmware if a newer release exists. USB flashing is not part of the customer flow.
 
+## Theme Studio Pairing
+
+Theme Studio can change the Vibe TV layout and display settings over the local network.
+
+1. Open `http://vibetv.local`.
+2. In the Pairing section, create a token if one is not shown yet.
+3. Open Theme Studio.
+4. Set the Vibe TV field to `http://vibetv.local` or the IP shown on the display.
+5. Paste the token into the Pairing token field, or select `Pair Device` to let Theme Studio create a new token.
+
+After pairing, Vibe TV accepts layout, brightness, asset, and firmware write requests only when that token is included. Status pages such as `/health` still work without a token.
+
+If the token is lost, open `http://vibetv.local` again and create/rotate the token. Do not reset WiFi just to fix pairing.
+
 ## What the Installer Does
 
 The installer handles everything automatically:

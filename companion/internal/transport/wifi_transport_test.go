@@ -35,10 +35,12 @@ func TestWiFiTransportDeviceCapabilitiesReadsHello(t *testing.T) {
 
 func TestWiFiTransportSendLinePostsFrame(t *testing.T) {
 	var gotBody string
+	var gotToken string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/frame" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
+		gotToken = r.Header.Get(deviceAuthHeader)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("read request body: %v", err)
@@ -50,11 +52,14 @@ func TestWiFiTransportSendLinePostsFrame(t *testing.T) {
 
 	transport := NewWiFiTransportWithClient(server.Client())
 	line := []byte(`{"provider":"codex","session":12}` + "\n")
-	if err := transport.SendLine(server.URL+"/", line); err != nil {
+	if err := transport.SendLine(server.URL+"/?token=pair-token-123", line); err != nil {
 		t.Fatalf("SendLine returned error: %v", err)
 	}
 	if gotBody != string(line) {
 		t.Fatalf("unexpected body %q", gotBody)
+	}
+	if gotToken != "pair-token-123" {
+		t.Fatalf("unexpected auth token %q", gotToken)
 	}
 }
 
@@ -69,14 +74,27 @@ func TestWiFiTransportResolveTargetAddsHTTPDefault(t *testing.T) {
 	}
 }
 
+func TestWiFiTransportResolveTargetPreservesPairingToken(t *testing.T) {
+	transport := NewWiFiTransportWithClient(nil)
+	target, err := transport.ResolvePort("192.168.178.123?token=pair-token-123&debug=1")
+	if err != nil {
+		t.Fatalf("ResolvePort returned error: %v", err)
+	}
+	if target != "http://192.168.178.123?token=pair-token-123" {
+		t.Fatalf("unexpected target %q", target)
+	}
+}
+
 func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 	var gotPath string
 	var gotFilename string
 	var gotBody string
+	var gotToken string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/assets" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
+		gotToken = r.Header.Get(deviceAuthHeader)
 		gotPath = r.URL.Query().Get("path")
 		reader, err := r.MultipartReader()
 		if err != nil {
@@ -99,12 +117,16 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 	}))
 	defer server.Close()
 
+	t.Setenv(deviceAuthEnv, "env-token-456")
 	transport := NewWiFiTransportWithClient(server.Client())
 	if err := transport.UploadAsset(server.URL, "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
 		t.Fatalf("UploadAsset returned error: %v", err)
 	}
 	if gotPath != "/themes/u/cm.cbi" || gotFilename != "cm.cbi" || gotBody != "CBI1\n" {
 		t.Fatalf("unexpected upload path=%q filename=%q body=%q", gotPath, gotFilename, gotBody)
+	}
+	if gotToken != "env-token-456" {
+		t.Fatalf("unexpected auth token %q", gotToken)
 	}
 }
 
@@ -156,10 +178,12 @@ func TestWiFiTransportUploadAssetRetriesConnectionReset(t *testing.T) {
 
 func TestWiFiTransportActivateStoredThemePostsPath(t *testing.T) {
 	var gotBody string
+	var gotToken string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/theme/active" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
+		gotToken = r.Header.Get(deviceAuthHeader)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("read request body: %v", err)
@@ -170,11 +194,14 @@ func TestWiFiTransportActivateStoredThemePostsPath(t *testing.T) {
 	defer server.Close()
 
 	transport := NewWiFiTransportWithClient(server.Client())
-	if err := transport.ActivateStoredTheme(server.URL, "/themes/u/cm.json"); err != nil {
+	if err := transport.ActivateStoredTheme(server.URL+"?token=pair-token-789", "/themes/u/cm.json"); err != nil {
 		t.Fatalf("ActivateStoredTheme returned error: %v", err)
 	}
 	if gotBody != `{"path":"/themes/u/cm.json"}` {
 		t.Fatalf("unexpected body %q", gotBody)
+	}
+	if gotToken != "pair-token-789" {
+		t.Fatalf("unexpected auth token %q", gotToken)
 	}
 }
 

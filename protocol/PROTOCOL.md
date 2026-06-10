@@ -88,11 +88,19 @@ When the ESP8266 is connected to WiFi, it serves:
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This updates the cached display/diagnostic update state and, when `available=true`, renders a firmware-level notice above the active theme that alternates every 1.5 seconds between `Update Available:` and `vibetv.local`. The ESP8266 firmware must not fetch public HTTPS manifests directly.
 - `POST /reset-wifi`: clears saved WiFi credentials and restarts the device into setup mode.
+- `POST /api/pair`: creates or rotates the local LAN pairing token. Include `api=1` for a JSON/CORS response (`{"ok":true,"token":"..."}`); omit it for the built-in `vibetv.local` form redirect.
 - `POST /api/settings`: updates persisted device settings. Form field `b` sets display brightness percent. Include `api=1` for a JSON/CORS response; omit it for the built-in `vibetv.local` form redirect.
 - `GET /assets`: returns mounted filesystem status and a generic list of stored asset paths/sizes.
 - `POST /assets?path=/themes/<short-id>/<asset>`: uploads one theme asset using multipart field `asset`.
 - `DELETE /assets?path=/themes/<short-id>/<asset>`: deletes one stored asset. Firmware rejects deletion of the currently active stored ThemeSpec.
 - `POST /theme/active`: activates a stored ThemeSpec JSON file uploaded via `/assets`. Body: `{"path":"/themes/u/<short-id>.json"}`. This loads the spec into the firmware cache, so future `/frame` requests can stay small and only include live usage values. The response and `/health` diagnostics include a content `hash` for firmware that supports stored-theme verification.
+
+Pairing/auth:
+- Fresh unpaired devices keep write APIs open for backwards compatibility.
+- Once `/api/pair` has created a token, write APIs require `X-VibeTV-Token: <token>` or a `token=<token>` query parameter for built-in browser forms and raw OTA.
+- Protected write APIs are `POST /frame`, `POST /api/settings`, `POST /assets`, `DELETE /assets`, `POST /theme/active`, and firmware/filesystem OTA upload paths.
+- Read APIs such as `GET /hello`, `GET /health`, and `GET /assets` stay open for diagnostics.
+- This is a local-network pairing token, not a cloud security boundary. Anyone who can open `vibetv.local` can rotate the token locally.
 
 Installable customer themes use VibeTV Theme Packs: a directory or `.zip` with `manifest.json`, one ThemeSpec JSON file, and optional asset files. See `docs/theme-packs.md`.
 
@@ -106,11 +114,12 @@ Example:
 
 ```bash
 curl http://192.168.178.123/hello
-curl -X POST -F asset=@theme.json 'http://192.168.178.123/assets?path=/themes/u/cozy-1-a1b2c3.json'
-curl -X POST -H 'Content-Type: text/plain' --data '{"path":"/themes/u/cozy-1-a1b2c3.json"}' \
+TOKEN="$(curl -fsS -X POST -d api=1 http://192.168.178.123/api/pair | jq -r .token)"
+curl -X POST -H "X-VibeTV-Token: $TOKEN" -F asset=@theme.json 'http://192.168.178.123/assets?path=/themes/u/cozy-1-a1b2c3.json'
+curl -X POST -H "X-VibeTV-Token: $TOKEN" -H 'Content-Type: text/plain' --data '{"path":"/themes/u/cozy-1-a1b2c3.json"}' \
   http://192.168.178.123/theme/active
 printf '{"v":2,"provider":"codex","label":"Codex","session":17,"weekly":42,"resetSecs":15480}\n' \
-  | curl -X POST --data-binary @- http://192.168.178.123/frame
+  | curl -X POST -H "X-VibeTV-Token: $TOKEN" --data-binary @- http://192.168.178.123/frame
 ```
 
 ## Device Hello (Firmware -> Host)
@@ -148,6 +157,10 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
       "maxThemeGifPixels": 6400,
       "builtinThemes": ["classic", "crt", "mini"]
     },
+    "auth": {
+      "paired": false,
+      "tokenHeader": "X-VibeTV-Token"
+    },
     "transport": {"active": "wifi", "supported": ["usb", "wifi"]}
   }
 }
@@ -165,6 +178,8 @@ Fields:
   - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.
   - `theme.supportedPrimitiveTypes` lists the ThemeSpec primitive types this firmware can render.
   - `theme.maxThemeGifAssets`, `maxThemeGifBytes`, `maxThemeGifWidth`, `maxThemeGifHeight`, and `maxThemeGifPixels` describe GIF asset and draw-box limits.
+  - `auth.paired` tells hosts whether write APIs currently require a pairing token.
+  - `auth.tokenHeader` names the HTTP header hosts should use for write auth.
   - `transport.maxFrameBytes` or top-level `maxFrameBytes` is the live frame payload limit. Hosts should use the stricter known value when both are present.
 
 Firmware may emit plain readiness lines (`codexbar_display_ready*`) instead of JSON hello.

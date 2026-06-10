@@ -25,6 +25,8 @@ const FIXED_FALLBACK_THEME = "mini";
 const THEME_PACK_MIN_FIRMWARE = "1.0.24";
 const DEFAULT_TARGET_ORIGIN = "http://vibetv.local";
 const TARGET_STORAGE_KEY = "codexbar.themeStudio.targetOrigin";
+const DEVICE_TOKEN_STORAGE_KEY = "codexbar.themeStudio.deviceToken";
+const DEVICE_AUTH_HEADER = "X-VibeTV-Token";
 const DEFAULT_GIF_SIZE = 80;
 const MAX_GIF_ASSETS = 1;
 const MAX_GIF_BYTES = 24 * 1024;
@@ -250,6 +252,7 @@ interface AppState {
   warnings: string[];
   notice: string;
   targetOrigin: string;
+  deviceToken: string;
   deviceProfile: DeviceProfile;
   deviceBrightnessPercent: number | null;
   stabilityCheck: StabilityCheckState;
@@ -2359,6 +2362,7 @@ const state: AppState = {
   warnings: [],
   notice: restoredDraft ? `Last draft restored from ${formatSavedAt(restoredDraft.savedAt)}.` : "",
   targetOrigin: storedTargetOrigin(),
+  deviceToken: storedDeviceToken(),
   deviceProfile: defaultDeviceProfile(),
   deviceBrightnessPercent: null,
   stabilityCheck: defaultStabilityCheck(),
@@ -2412,6 +2416,26 @@ function persistTargetOrigin() {
     window.localStorage.setItem(TARGET_STORAGE_KEY, state.targetOrigin);
   } catch {
     // Local storage is optional; sending still works without it.
+  }
+}
+
+function storedDeviceToken(): string {
+  try {
+    return (window.localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function persistDeviceToken() {
+  try {
+    if (state.deviceToken.trim()) {
+      window.localStorage.setItem(DEVICE_TOKEN_STORAGE_KEY, state.deviceToken.trim());
+    } else {
+      window.localStorage.removeItem(DEVICE_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // Local storage is optional; pairing can still be entered for the current session.
   }
 }
 
@@ -3371,6 +3395,10 @@ function render() {
           <label>Vibe TV
             <input data-field="targetOrigin" aria-label="Vibe TV URL" value="${escapeAttr(state.targetOrigin)}" />
           </label>
+          <label>Pairing token
+            <input data-field="deviceToken" aria-label="Vibe TV pairing token" type="password" autocomplete="off" value="${escapeAttr(state.deviceToken)}" />
+          </label>
+          <button class="full-width small-button" data-action="pair-device">Pair Device</button>
           <button class="full-width small-button" data-action="read-device-profile">Read Device</button>
           <div class="device-controls">
             <label>Brightness
@@ -6019,6 +6047,10 @@ function bindEvents() {
         state.targetOrigin = input.value.trim();
         persistTargetOrigin();
       }
+      if (key === "deviceToken") {
+        state.deviceToken = input.value.trim();
+        persistDeviceToken();
+      }
       if (key === "bgColor") {
         pushHistory();
         state.spec.bgColor = input.value.trim();
@@ -6728,6 +6760,10 @@ async function handleAction(action: string) {
   }
   if (action === "read-device-profile") {
     await refreshDeviceProfile();
+    return;
+  }
+  if (action === "pair-device") {
+    await pairDevice();
     return;
   }
   if (action === "save-device-settings") {
@@ -7760,6 +7796,47 @@ async function sendThemeToVibeTV() {
   render();
 }
 
+function deviceAuthHeaders(): Record<string, string> {
+  const token = state.deviceToken.trim();
+  return token ? { [DEVICE_AUTH_HEADER]: token } : {};
+}
+
+async function pairDevice() {
+  const targetOrigin = normalizeTargetOrigin(state.targetOrigin);
+  state.targetOrigin = targetOrigin;
+  persistTargetOrigin();
+  state.notice = "Pairing with Vibe TV.";
+  render();
+  try {
+    const body = new URLSearchParams({ api: "1" });
+    const response = await fetchWithCorsFallback(`${targetOrigin}/api/pair`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        Accept: "application/json",
+      },
+      body,
+    });
+    if (response.type === "opaque") {
+      throw new Error("Pairing response was not readable. Open vibetv.local and copy the token manually.");
+    }
+    if (!response.ok) {
+      throw new Error(await responseFailureMessage(response, "Pairing failed"));
+    }
+    const result = await response.json() as { token?: string };
+    const token = typeof result.token === "string" ? result.token.trim() : "";
+    if (!token) {
+      throw new Error("Pairing did not return a token.");
+    }
+    state.deviceToken = token;
+    persistDeviceToken();
+    state.notice = "Vibe TV paired. Future changes will use this token.";
+  } catch (error) {
+    state.notice = error instanceof Error ? error.message : `Could not pair with Vibe TV at ${targetOrigin}.`;
+  }
+  render();
+}
+
 async function saveDeviceSettings() {
   if (state.deviceBrightnessPercent === null) {
     state.notice = "Read the device before saving settings.";
@@ -7779,6 +7856,7 @@ async function saveDeviceSettings() {
     const response = await fetchWithCorsFallback(`${targetOrigin}/api/settings`, {
       method: "POST",
       headers: {
+        ...deviceAuthHeaders(),
         "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
         Accept: "application/json",
       },
@@ -7928,7 +8006,7 @@ async function clearDeviceThemeSpec(targetOrigin: string) {
 async function postFramePayload(targetOrigin: string, payload: Record<string, unknown>): Promise<Response> {
   return fetchWithCorsFallback(`${targetOrigin}/frame`, {
     method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    headers: { ...deviceAuthHeaders(), "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(payload),
   });
 }
@@ -7936,7 +8014,7 @@ async function postFramePayload(targetOrigin: string, payload: Record<string, un
 async function activateStoredTheme(targetOrigin: string, path: string): Promise<Response> {
   return fetchWithCorsFallback(`${targetOrigin}/theme/active`, {
     method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    headers: { ...deviceAuthHeaders(), "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ path }),
   });
 }
@@ -7958,6 +8036,7 @@ async function uploadThemeAsset(targetOrigin: string, path: string, asset: Uploa
   body.append("asset", asset.file, asset.file.name);
   const response = await fetchWithCorsFallback(`${targetOrigin}/assets?path=${encodeURIComponent(path)}`, {
     method: "POST",
+    headers: deviceAuthHeaders(),
     body,
   });
   if (response.type !== "opaque" && !response.ok) {
@@ -8009,6 +8088,7 @@ async function fetchDeviceAssets(targetOrigin: string): Promise<DeviceAssets | n
 async function deleteThemeAsset(targetOrigin: string, path: string): Promise<Response> {
   return fetchWithCorsFallback(`${targetOrigin}/assets?path=${encodeURIComponent(path)}`, {
     method: "DELETE",
+    headers: deviceAuthHeaders(),
   });
 }
 

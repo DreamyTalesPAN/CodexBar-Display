@@ -44,6 +44,7 @@ Companion negotiation:
 - Connected devices expose `http://vibetv.local` with mDNS, show/log the fallback IP, serve a local setup hub with a copyable Mac setup command, and wait for the Mac Companion.
 - Connected devices expose customer-facing display settings directly on `http://vibetv.local`. The MVP setting is brightness on supported hardware.
 - `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response from browser tools such as Theme Studio; omit it for the built-in `vibetv.local` form redirect. `GET /health` is the readback and support-diagnostics path.
+- Connected devices expose `POST /api/pair` to create or rotate a local LAN pairing token. After pairing, write APIs require `X-VibeTV-Token` or the built-in form/raw-OTA `token` query parameter. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
 - Companion runtime defaults to WiFi with `http://vibetv.local`; explicit device IPs remain supported when `.local` does not resolve.
 - Saved WiFi credentials can be cleared from the local web UI with `POST /reset-wifi`.
 - If a connected device loses WiFi, it retries in station mode first. After a persistent outage it starts `VibeTV-Setup` again so the user can choose a different network.
