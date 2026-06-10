@@ -136,6 +136,13 @@ func ValidateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 			caps.MaxThemePrimitives,
 		)
 	}
+	if len(caps.SupportedPrimitiveTypes) > 0 {
+		for i, primitive := range spec.Primitives {
+			if !containsString(caps.SupportedPrimitiveTypes, primitive.Type) {
+				return fmt.Errorf("primitives[%d] type %q not advertised by device", i, primitive.Type)
+			}
+		}
+	}
 	gifAssets := uniqueGIFAssetPaths(spec)
 	if caps.MaxThemeGifAssets > 0 && len(gifAssets) > caps.MaxThemeGifAssets {
 		return fmt.Errorf("theme spec GIF asset count exceeds device limit: count=%d limit=%d", len(gifAssets), caps.MaxThemeGifAssets)

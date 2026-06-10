@@ -137,8 +137,14 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
       "supportsThemeSpecV1": true,
       "maxThemeSpecBytes": 2048,
       "maxThemePrimitives": 32,
+      "supportedPrimitiveTypes": ["text", "rect", "progress", "gif", "sprite", "pixels"],
       "supportsStoredThemes": true,
       "maxStoredThemeSpecBytes": 4096,
+      "maxThemeGifAssets": 1,
+      "maxThemeGifBytes": 24576,
+      "maxThemeGifWidth": 80,
+      "maxThemeGifHeight": 80,
+      "maxThemeGifPixels": 6400,
       "builtinThemes": ["classic", "crt", "mini"]
     },
     "transport": {"active": "wifi", "supported": ["usb", "wifi"]}
@@ -153,6 +159,12 @@ Fields:
 - `features` (array[string], optional): capabilities (for example `theme`, `theme-spec-v1`).
 - `capabilities` (object, optional): extended block for display/theme/transport limits.
   - `display.brightness.supported` describes browser-adjustable backlight support when the board exposes it. Hosts use 10-100 percent for the current ESP8266 implementation.
+  - `theme.maxThemeSpecBytes` is the inline `themeSpec` frame byte limit.
+  - `theme.maxStoredThemeSpecBytes` is the uploaded/stored ThemeSpec JSON byte limit for WiFi themes.
+  - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.
+  - `theme.supportedPrimitiveTypes` lists the ThemeSpec primitive types this firmware can render.
+  - `theme.maxThemeGifAssets`, `maxThemeGifBytes`, `maxThemeGifWidth`, `maxThemeGifHeight`, and `maxThemeGifPixels` describe GIF asset and draw-box limits.
+  - `transport.maxFrameBytes` or top-level `maxFrameBytes` is the live frame payload limit. Hosts should use the stricter known value when both are present.
 
 Firmware may emit plain readiness lines (`codexbar_display_ready*`) instead of JSON hello.
 Companion treats missing hello as unknown capabilities.

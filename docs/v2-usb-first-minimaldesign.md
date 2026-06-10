@@ -34,7 +34,7 @@ This document captures the transport-agnostic architecture baseline introduced f
 ## Firmware Runtime Notes
 - Core parser accepts optional `themeSpec` object in incoming frames.
 - Runtime caches `themeId/themeRev` and marks cache-hit for unchanged revisions.
-- Hello capability block advertises theme limits (`maxThemeSpecBytes`, `maxThemePrimitives`) and builtin theme list.
+- Hello capability block advertises theme limits (`maxThemeSpecBytes`, `maxStoredThemeSpecBytes`, `maxThemePrimitives`), supported primitive types, GIF limits, and builtin theme list.
 
 ## Renderer/HAL Baseline
 - Shared primitive contract introduced in `firmware_shared/render_primitives.h`.

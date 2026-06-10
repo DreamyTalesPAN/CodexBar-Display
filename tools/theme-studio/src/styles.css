@@ -183,6 +183,12 @@ h2 {
   color: var(--accent);
 }
 
+.health.warn {
+  border-color: rgba(255, 209, 102, 0.58);
+  background: rgba(255, 209, 102, 0.1);
+  color: #ffe3a1;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(270px, 310px) minmax(420px, 1fr) minmax(310px, 360px);
