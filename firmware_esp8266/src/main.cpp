@@ -1218,7 +1218,9 @@ bool persistDeviceSettings(const DeviceSettings& next) {
 }
 
 void handleSettingsAPI() {
+  addCorsHeaders();
   DeviceSettings next = deviceSettings;
+  const bool apiResponse = webServer.hasArg("api");
   if (webServer.hasArg("b")) {
     next.brightnessPercent = clampBrightnessPercent(webServer.arg("b").toInt());
   } else {
@@ -1229,12 +1231,17 @@ void handleSettingsAPI() {
     webServer.send(500, "text/plain; charset=utf-8", "save failed");
     return;
   }
-  if (webServer.hasArg("b")) {
+  if (!apiResponse && webServer.hasArg("b")) {
     webServer.sendHeader("Location", "/");
     webServer.send(303);
     return;
   }
-  webServer.send(204);
+  String out;
+  out.reserve(80);
+  out += "{\"ok\":true,";
+  appendSettingsJSON(out);
+  out += "}";
+  webServer.send(200, "application/json", out);
 }
 
 void handleAssetsList() {

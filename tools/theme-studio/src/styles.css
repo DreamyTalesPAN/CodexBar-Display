@@ -979,6 +979,36 @@ textarea:focus {
   margin-top: 10px;
 }
 
+.device-controls {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0a0d11;
+}
+
+.device-controls label {
+  margin: 0;
+}
+
+.device-control-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.device-control-row span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .saved-themes {
   display: grid;
   gap: 8px;
