@@ -147,10 +147,10 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 
 	negotiated := NegotiateProtocolVersion(supportedProtocols, h.PreferredProtocolVersion, h.ProtocolVersion)
 	supportsTheme := h.HasFeature(FeatureTheme)
-	if !supportsTheme {
-		supportsTheme = len(h.Capabilities.Theme.BuiltinThemes) > 0
-	}
 	supportsThemeSpecV1 := h.HasFeature(FeatureThemeSpecV1) || h.Capabilities.Theme.SupportsThemeSpecV1
+	if !supportsTheme {
+		supportsTheme = len(h.Capabilities.Theme.BuiltinThemes) > 0 || supportsThemeSpecV1
+	}
 
 	caps := DeviceCapabilities{
 		ProtocolVersion:            h.ProtocolVersion,

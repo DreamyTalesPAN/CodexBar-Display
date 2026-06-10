@@ -86,6 +86,47 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesFromCompactHelloTreatsThemeSpecAsThemeSupport(t *testing.T) {
+	caps := CapabilitiesFromHello(DeviceHello{
+		Kind:            "hello",
+		ProtocolVersion: 2,
+		Board:           "esp8266-smalltv-st7789",
+		Firmware:        "1.0.33",
+		MaxFrameBytes:   2048,
+		Capabilities: CapabilityBlock{
+			Display: DisplayCapabilities{
+				Brightness: DisplayBrightnessCapabilities{Supported: true},
+			},
+			Theme: ThemeCapabilities{
+				SupportsThemeSpecV1: true,
+				MaxThemeSpecBytes:   2048,
+				MaxThemePrimitives:  32,
+				MaxThemeGifBytes:    24576,
+			},
+			Transport: TransportCapabilities{Active: "wifi"},
+		},
+	})
+
+	if !caps.Known {
+		t.Fatalf("expected known capabilities")
+	}
+	if !caps.SupportsTheme {
+		t.Fatalf("expected ThemeSpec support to imply theme support")
+	}
+	if !caps.SupportsThemeSpecV1 {
+		t.Fatalf("expected theme spec support")
+	}
+	if caps.ActiveTransport != "wifi" {
+		t.Fatalf("unexpected transport: %q", caps.ActiveTransport)
+	}
+	if caps.MaxFrameBytes != 2048 || caps.MaxThemeSpecBytes != 2048 || caps.MaxThemePrimitives != 32 || caps.MaxThemeGifBytes != 24576 {
+		t.Fatalf("unexpected compact limits: %+v", caps)
+	}
+	if !caps.SupportsBrightness {
+		t.Fatalf("expected brightness support")
+	}
+}
+
 func TestCapabilitiesFromHelloUnknownWhenMissingSignal(t *testing.T) {
 	caps := CapabilitiesFromHello(DeviceHello{})
 	if caps.Known {
