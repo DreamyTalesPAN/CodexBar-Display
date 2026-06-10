@@ -6,12 +6,21 @@ const (
 	FeatureTheme         = "theme"
 	FeatureThemeSpecV1   = "theme-spec-v1"
 	DefaultMaxFrameBytes = 512
+	DefaultMinBrightness = 10
+	DefaultMaxBrightness = 100
 )
 
+type DisplayBrightnessCapabilities struct {
+	Supported  bool `json:"supported,omitempty"`
+	MinPercent int  `json:"minPercent,omitempty"`
+	MaxPercent int  `json:"maxPercent,omitempty"`
+}
+
 type DisplayCapabilities struct {
-	WidthPx        int `json:"widthPx,omitempty"`
-	HeightPx       int `json:"heightPx,omitempty"`
-	ColorDepthBits int `json:"colorDepthBits,omitempty"`
+	WidthPx        int                           `json:"widthPx,omitempty"`
+	HeightPx       int                           `json:"heightPx,omitempty"`
+	ColorDepthBits int                           `json:"colorDepthBits,omitempty"`
+	Brightness     DisplayBrightnessCapabilities `json:"brightness,omitempty"`
 }
 
 type ThemeCapabilities struct {
@@ -111,6 +120,9 @@ type DeviceCapabilities struct {
 	DisplayWidthPx             int
 	DisplayHeightPx            int
 	DisplayColorDepthBits      int
+	SupportsBrightness         bool
+	MinBrightnessPercent       int
+	MaxBrightnessPercent       int
 	ActiveTransport            string
 	SupportedTransportChannels []string
 }
@@ -159,8 +171,19 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		DisplayWidthPx:             h.Capabilities.Display.WidthPx,
 		DisplayHeightPx:            h.Capabilities.Display.HeightPx,
 		DisplayColorDepthBits:      h.Capabilities.Display.ColorDepthBits,
+		SupportsBrightness:         h.Capabilities.Display.Brightness.Supported,
+		MinBrightnessPercent:       h.Capabilities.Display.Brightness.MinPercent,
+		MaxBrightnessPercent:       h.Capabilities.Display.Brightness.MaxPercent,
 		ActiveTransport:            h.Capabilities.Transport.Active,
 		SupportedTransportChannels: append([]string(nil), h.Capabilities.Transport.Supported...),
+	}
+	if caps.SupportsBrightness {
+		if caps.MinBrightnessPercent == 0 {
+			caps.MinBrightnessPercent = DefaultMinBrightness
+		}
+		if caps.MaxBrightnessPercent == 0 {
+			caps.MaxBrightnessPercent = DefaultMaxBrightness
+		}
 	}
 	if h.Kind == "hello" && (h.Board != "" ||
 		h.ProtocolVersion > 0 ||

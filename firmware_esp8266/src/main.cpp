@@ -56,10 +56,14 @@ constexpr uint8_t kBootRecoveryThreshold = 3;
 constexpr size_t kMaxAssetPathBytes = 32;
 constexpr size_t kMaxStoredThemeSpecBytes = 4096;
 constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxThemeSpecGifAssetBytes;
+constexpr uint8_t kDefaultBrightnessPercent = 100;
+constexpr uint8_t kMinBrightnessPercent = 10;
+constexpr uint8_t kMaxBrightnessPercent = 100;
 const char kSetupApSsid[] = "VibeTV-Setup";
 const char kSetupHost[] = "vibetv.local";
 const char kMdnsName[] = "vibetv";
 const char kMdnsHost[] = "vibetv.local";
+const char kDeviceSettingsPath[] = "/s";
 const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
 const char* const kFirmwareUpdateNoticeTexts[] = {
     "Update Available:",
@@ -137,6 +141,10 @@ struct RuntimeRenderDiagnostics {
   unsigned long lastAtMs = 0;
 };
 
+struct DeviceSettings {
+  uint8_t brightnessPercent = kDefaultBrightnessPercent;
+};
+
 bool httpServerStarted = false;
 bool rawOtaServerStarted = false;
 bool setupMode = false;
@@ -167,6 +175,7 @@ FirmwareUpdateState firmwareUpdate;
 bool firmwareUpdateNoticeDirty = false;
 OtaUploadDiagnostics otaDiagnostics;
 RuntimeRenderDiagnostics renderDiagnostics;
+DeviceSettings deviceSettings;
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
@@ -248,6 +257,69 @@ void appendJSONNullableString(String& out, const String& value) {
   out += "\"";
   out += jsonEscape(value);
   out += "\"";
+}
+
+uint8_t clampBrightnessPercent(int value) {
+  if (value < kMinBrightnessPercent) {
+    return kMinBrightnessPercent;
+  }
+  if (value > kMaxBrightnessPercent) {
+    return kMaxBrightnessPercent;
+  }
+  return static_cast<uint8_t>(value);
+}
+
+void applyDeviceSettings() {
+  if (renderer.SupportsBrightnessControl()) {
+    renderer.ApplyBrightnessPercent(deviceSettings.brightnessPercent);
+  }
+}
+
+bool loadDeviceSettings() {
+  deviceSettings = DeviceSettings{};
+  if (!LittleFS.begin() || !LittleFS.exists(kDeviceSettingsPath)) {
+    applyDeviceSettings();
+    return false;
+  }
+  File file = LittleFS.open(kDeviceSettingsPath, "r");
+  if (!file) {
+    applyDeviceSettings();
+    return false;
+  }
+  const int brightness = file.read();
+  file.close();
+  if (brightness <= 0) {
+    applyDeviceSettings();
+    return false;
+  }
+  deviceSettings.brightnessPercent = clampBrightnessPercent(brightness);
+  applyDeviceSettings();
+  return true;
+}
+
+bool saveDeviceSettings() {
+  if (!LittleFS.begin()) {
+    return false;
+  }
+  File file = LittleFS.open(kDeviceSettingsPath, "w");
+  if (!file) {
+    return false;
+  }
+  const size_t written = file.write(&deviceSettings.brightnessPercent, 1);
+  file.close();
+  return written > 0;
+}
+
+void appendBrightnessCapabilityJSON(String& out) {
+  out += "{\"supported\":";
+  out += renderer.SupportsBrightnessControl() ? "true" : "false";
+  out += "}";
+}
+
+void appendSettingsJSON(String& out) {
+  out += "\"settings\":{\"display\":{\"brightnessPercent\":";
+  out += String(deviceSettings.brightnessPercent);
+  out += "}}";
 }
 
 void markFirmwareUpdateNoticeDirty() {
@@ -499,7 +571,9 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
 const char* transportCapabilitiesJSON(const char* activeTransport) {
   const bool isUsb = activeTransport != nullptr && strcmp(activeTransport, "usb") == 0;
   static String json;
-  json = "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16},\"theme\":";
+  json = "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16,\"brightness\":";
+  appendBrightnessCapabilityJSON(json);
+  json += "},\"theme\":";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
   json += themeCapabilitiesJSON(false);
 #else
@@ -817,36 +891,34 @@ String setupPageHTML() {
 String connectedPageHTML() {
   const String ip = WiFi.localIP().toString();
   const bool hasFrame = codexbar_display::app::HasFrame(runtimeCtx);
-  const String setupCommand = macInstallerCommand();
+  const String setupCommand = hasFrame ? String() : macInstallerCommand();
 
   String html;
-  html.reserve(3600);
-  html += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
-  html += F("<title>VibeTV Setup</title><style>");
-  html += F(":root{color-scheme:dark;--bg:#0b0c0d;--panel:#15171a;--line:#2b2f35;--text:#f6f4ed;--muted:#a9adb3;--signal:#c7ff00}");
-  html += F("*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:var(--bg);color:var(--text)}");
-  html += F("main{max-width:620px;margin:0 auto;padding:28px 20px 34px}.device,.step{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}");
-  html += F(".brand,.pill,.step-title{font-weight:900}.pill,.update strong,a{color:var(--signal)}h1{font-size:36px;line-height:1.05;margin:22px 0 10px}.lead,.muted,.step{color:var(--muted);line-height:1.45}");
-  html += F(".update{border:1px solid #6f8f00;background:#1b2400;border-radius:8px;padding:12px;margin-top:12px;color:#f1ffd0}.update-link{display:inline-block;margin-top:8px}");
-  html += F("code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;border-radius:8px;padding:14px;color:#fff}");
-  html += F("button{width:100%;min-height:46px;border:0;border-radius:8px;background:var(--signal);color:#111;font:inherit;font-weight:900}.tools{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}.reset{color:var(--muted);background:transparent;border:0;padding:0;text-decoration:underline;width:auto;min-height:0}</style></head><body><main>");
-  html += F("<div class='brand'>Vibe TV</div><section class='device'><div class='pill'>Connected</div><p class='muted'>Address: <code>http://");
+  html.reserve(1500);
+  html += F("<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><title>VibeTV</title><style>");
+  html += F("body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:24px;background:#0b0c0d;color:#f6f4ed}a{color:#c7ff00;font-weight:800}code,pre{background:#08090a;border:1px solid #30343a;padding:8px;display:block;white-space:pre-wrap;word-break:break-word}button,input{width:100%;font:inherit;margin-top:8px}button{padding:12px;background:#c7ff00;border:0;font-weight:900}section{border-top:1px solid #2b2f35;margin-top:16px;padding-top:12px}</style><h1>Vibe TV</h1>");
+  html += F("<p>Connected<br><code>http://");
   html += kMdnsHost;
-  html += F("</code><br>Fallback IP: <code>http://");
+  html += F("</code><code>http://");
   html += ip;
   html += F("</code></p>");
-  html += updateStatusHTML(true);
-  html += F("</section>");
-  if (hasFrame) {
-    html += F("<h1>Vibe TV is live.</h1><p class='lead'>Your Mac is sending workflow signals.</p>");
-  } else {
-    html += F("<h1>Finish Mac setup.</h1><p class='lead'>Copy the command, paste it in Terminal, then wait for live signals.</p><section><div class='step'><span class='step-title'>1. Copy command</span><pre id='cmd'>");
-    html += htmlEscape(setupCommand);
-    html += F("</pre><textarea id='cmdFallback' readonly style='position:absolute;left:-9999px'></textarea><button type='button' onclick='copyCmd()' id='copyBtn'>Copy setup command</button></div>");
-    html += F("<div class='step'><span class='step-title'>2. Paste in Terminal</span>Open Terminal, paste, press Enter.</div><div class='step'><span class='step-title'>3. Wait</span>This page changes when frames arrive.</div></section>");
+  if (firmwareUpdate.available) {
+    html += updateStatusHTML(true);
   }
-  html += F("<div class='tools'><a href='/health'>Device status</a><a href='/update'>Firmware update</a><form method='post' action='/reset-wifi' onsubmit=\"return confirm('Clear WiFi settings and restart setup?')\"><button class='reset' type='submit'>Reset WiFi</button></form></div>");
-  html += F("<script>function copied(){document.getElementById('copyBtn').textContent='Copied';}function fallbackCopy(t){var a=document.getElementById('cmdFallback');a.value=t;a.focus();a.select();try{document.execCommand('copy');copied();}catch(e){window.prompt('Copy this command',t);}}function copyCmd(){var t=document.getElementById('cmd').textContent.trim();if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(copied,function(){fallbackCopy(t);});}else{fallbackCopy(t);}}</script></body></html>");
+  if (hasFrame) {
+    html += F("<p>Live.</p>");
+  } else {
+    html += F("<section><h2>Mac setup</h2><pre>");
+    html += htmlEscape(setupCommand);
+    html += F("</pre></section>");
+  }
+  html += F("<p><a href='/health'>Status</a> <a href='/update'>Update</a></p>");
+  if (renderer.SupportsBrightnessControl()) {
+    html += F("<section><form method='post' action='/api/settings'><label>Bright</label><input name='b' type='range' min='10' max='100' value='");
+    html += String(deviceSettings.brightnessPercent);
+    html += F("'><button>OK</button></form></section>");
+  }
+  html += F("<form method='post' action='/reset-wifi' onsubmit=\"return confirm('Clear WiFi settings and restart setup?')\"><button>Reset WiFi</button></form>");
   return html;
 }
 
@@ -916,7 +988,6 @@ void addCorsHeaders() {
   webServer.sendHeader("Access-Control-Allow-Origin", "*");
   webServer.sendHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
   webServer.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-  webServer.sendHeader("Access-Control-Max-Age", "86400");
 }
 
 void handleHello() {
@@ -986,167 +1057,6 @@ bool filesystemInfoJSON(String& out) {
   return mounted;
 }
 
-void appendThemeSpecDebugJSON(String& out, const codexbar_display::esp8266::RendererDebugSnapshot& snapshot) {
-  out += "\"themeSpec\":{\"active\":";
-  out += snapshot.themeSpecActive ? "true" : "false";
-  out += ",\"id\":";
-  appendJSONNullableString(out, snapshot.themeSpecId);
-  out += ",\"rev\":";
-  out += String(snapshot.themeSpecRev);
-  out += ",\"path\":";
-  appendJSONNullableString(out, activeThemeSpecPath);
-  out += ",\"hash\":";
-  appendJSONNullableString(out, activeThemeSpecHash);
-  out += ",\"renderOk\":";
-  out += snapshot.themeSpecRenderOk ? "true" : "false";
-  out += ",\"renderError\":";
-  appendJSONNullableString(out, snapshot.themeSpecRenderError);
-  out += ",\"renderFailures\":";
-  out += String(snapshot.themeSpecRenderFailures);
-  out += ",\"partialSuccesses\":";
-  out += String(snapshot.themeSpecPartialSuccesses);
-  out += ",\"partialFailures\":";
-  out += String(snapshot.themeSpecPartialFailures);
-  out += ",\"lastPartialChangedFields\":";
-  out += String(snapshot.themeSpecLastPartialChangedFields);
-  out += ",\"lastPartialChangedFieldsHex\":\"0x";
-  out += String(snapshot.themeSpecLastPartialChangedFields, HEX);
-  out += "\",\"lastPartialError\":";
-  appendJSONNullableString(out, snapshot.themeSpecLastPartialError);
-  out += ",\"compiled\":";
-  out += snapshot.themeSpecCompiled ? "true" : "false";
-  out += ",\"primitiveCount\":";
-  out += String(snapshot.themeSpecPrimitiveCount);
-  out += ",\"primitiveCapacity\":";
-  out += String(snapshot.themeSpecPrimitiveCapacity);
-  out += ",\"stringBytes\":";
-  out += String(snapshot.themeSpecStringBytes);
-  out += ",\"stringCapacity\":";
-  out += String(snapshot.themeSpecStringCapacity);
-  out += ",\"keepsJsonDocument\":";
-  out += snapshot.themeSpecKeepsJsonDocument ? "true" : "false";
-  out += ",\"hasAnimatedAssets\":";
-  out += snapshot.themeSpecHasAnimatedAssets ? "true" : "false";
-  out += "}";
-}
-
-void appendGifDebugJSON(String& out, const codexbar_display::esp8266::RendererDebugSnapshot& snapshot) {
-  out += "\"gif\":{\"activePath\":\"";
-  out += jsonEscape(snapshot.gifActivePath);
-  out += "\",\"filePresent\":";
-  out += snapshot.gifFilePresent ? "true" : "false";
-  out += ",\"fileOpen\":";
-  out += snapshot.gifFileOpen ? "true" : "false";
-  out += ",\"decoderOpen\":";
-  out += snapshot.gifDecoderOpen ? "true" : "false";
-  out += ",\"blocked\":";
-  out += snapshot.gifBlocked ? "true" : "false";
-  out += ",\"consecutiveFailures\":";
-  out += String(snapshot.gifConsecutiveFailures);
-  out += ",\"backoffRemainingMs\":";
-  out += String(snapshot.gifBackoffRemainingMs);
-  out += ",\"lastError\":";
-  if (snapshot.gifLastErrorStage.length() == 0) {
-    out += "null";
-  } else {
-    out += "{\"path\":\"";
-    out += jsonEscape(snapshot.gifLastErrorPath);
-    out += "\",\"stage\":\"";
-    out += jsonEscape(snapshot.gifLastErrorStage);
-    out += "\",\"failures\":";
-    out += String(snapshot.gifLastErrorFailures);
-    out += ",\"ageMs\":";
-    out += String(snapshot.gifLastErrorAgeMs);
-    out += "}";
-  }
-  out += "}";
-}
-
-void appendRendererDebugJSON(String& out) {
-  const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
-  String activeTheme = snapshot.activeTheme;
-  if (snapshot.themeSpecActive && snapshot.themeSpecId.length() > 0) {
-    activeTheme = snapshot.themeSpecId;
-  }
-  out += "\"display\":{\"activeTheme\":\"";
-  out += jsonEscape(activeTheme);
-  out += "\",";
-  appendThemeSpecDebugJSON(out, snapshot);
-  out += ",";
-  appendGifDebugJSON(out, snapshot);
-  out += "}";
-}
-
-void appendFirmwareUpdateJSON(String& out) {
-  out += "\"update\":{\"available\":";
-  out += firmwareUpdate.available ? "true" : "false";
-  out += ",\"latestVersion\":";
-  appendJSONNullableString(out, firmwareUpdate.latestVersion);
-  out += ",\"manifestUrl\":\"";
-  out += jsonEscape(kFirmwareManifestUrl);
-  out += "\",\"rawFirmwareUrl\":\"http://";
-  out += WiFi.localIP().toString();
-  out += ":8081/update/firmware.raw";
-  out += "\",\"lastCheckedAtMs\":";
-  out += String(firmwareUpdate.lastCheckedAtMs);
-  out += ",\"nextCheckAtMs\":";
-  out += String(firmwareUpdate.nextCheckAtMs);
-  out += ",\"status\":\"";
-  out += jsonEscape(firmwareUpdate.lastStatus);
-  out += "\",\"lastError\":";
-  appendJSONNullableString(out, firmwareUpdate.lastError);
-  out += ",\"upload\":{\"target\":\"";
-  out += otaDiagnostics.target;
-  out += "\",\"status\":\"";
-  out += otaDiagnostics.status;
-  out += "\",\"filename\":";
-  appendJSONNullableString(out, otaDiagnostics.filename);
-  out += ",\"command\":";
-  out += String(otaDiagnostics.command);
-  out += ",\"contentLength\":";
-  out += String(otaDiagnostics.contentLength);
-  out += ",\"totalSize\":";
-  out += String(otaDiagnostics.totalSize);
-  out += ",\"maxSize\":";
-  out += String(otaDiagnostics.maxSize);
-  out += ",\"freeSketchSpace\":";
-  out += String(otaDiagnostics.freeSketchSpace);
-  out += ",\"updateError\":";
-  out += String(otaDiagnostics.updateError);
-  out += ",\"lastError\":";
-  appendJSONNullableString(out, otaDiagnostics.lastError);
-  out += ",\"startedAtMs\":";
-  out += String(otaDiagnostics.startedAtMs);
-  out += ",\"endedAtMs\":";
-  out += String(otaDiagnostics.endedAtMs);
-  out += ",\"successCount\":";
-  out += String(otaDiagnostics.successCount);
-  out += ",\"failureCount\":";
-  out += String(otaDiagnostics.failureCount);
-  out += "}";
-  out += "}";
-}
-
-void appendRenderDiagnosticsJSON(String& out) {
-  out += "\"render\":{\"fullCount\":";
-  out += String(renderDiagnostics.fullCount);
-  out += ",\"partialCount\":";
-  out += String(renderDiagnostics.partialCount);
-  out += ",\"animatedTickAttempts\":";
-  out += String(renderDiagnostics.animatedTickAttempts);
-  out += ",\"lastKind\":\"";
-  out += renderDiagnostics.lastKind;
-  out += "\",\"lastFullKind\":\"";
-  out += renderDiagnostics.lastFullKind;
-  out += "\",\"lastPartialKind\":\"";
-  out += renderDiagnostics.lastPartialKind;
-  out += "\",\"lastDurationUs\":";
-  out += String(renderDiagnostics.lastDurationUs);
-  out += ",\"lastAtMs\":";
-  out += String(renderDiagnostics.lastAtMs);
-  out += "}";
-}
-
 String normalizedAssetListPath(const String& dirPath, const String& fileName) {
   if (fileName.startsWith("/")) {
     if (dirPath.length() > 1 && !fileName.startsWith(dirPath + "/")) {
@@ -1203,9 +1113,10 @@ void appendAssetListJSON(String& out) {
 
 void handleHealth() {
   const bool wifiConnected = WiFi.status() == WL_CONNECTED;
+  const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
 
   String out;
-  out.reserve(1500);
+  out.reserve(1200);
   out += "{\"ok\":true";
   out += ",\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
@@ -1221,12 +1132,6 @@ void handleHealth() {
   out += String(ESP.getSketchSize());
   out += ",\"freeSketchSpace\":";
   out += String(ESP.getFreeSketchSpace());
-  out += ",\"sketchMD5\":\"";
-  out += jsonEscape(ESP.getSketchMD5());
-  out += "\",\"flashChipSize\":";
-  out += String(ESP.getFlashChipSize());
-  out += ",\"flashChipRealSize\":";
-  out += String(ESP.getFlashChipRealSize());
   out += ",\"resetReason\":\"";
   out += jsonEscape(ESP.getResetReason());
   out += "\"";
@@ -1243,11 +1148,53 @@ void handleHealth() {
   out += "},";
   const bool filesystemMounted = filesystemInfoJSON(out);
   out += ",";
-  appendRendererDebugJSON(out);
+  out += "\"display\":{\"activeTheme\":\"";
+  out += jsonEscape(snapshot.activeTheme);
+  out += "\",\"themeSpec\":{\"active\":";
+  out += snapshot.themeSpecActive ? "true" : "false";
+  out += ",\"renderOk\":";
+  out += snapshot.themeSpecRenderOk ? "true" : "false";
+  out += ",\"renderFailures\":";
+  out += String(snapshot.themeSpecRenderFailures);
+  out += ",\"compiled\":";
+  out += snapshot.themeSpecCompiled ? "true" : "false";
+  out += "},\"gif\":{\"activePath\":\"";
+  out += jsonEscape(snapshot.gifActivePath);
+  out += "\",\"filePresent\":";
+  out += snapshot.gifFilePresent ? "true" : "false";
+  out += ",\"decoderOpen\":";
+  out += snapshot.gifDecoderOpen ? "true" : "false";
+  out += ",\"blocked\":";
+  out += snapshot.gifBlocked ? "true" : "false";
+  out += ",\"lastError\":";
+  appendJSONNullableString(out, snapshot.gifLastErrorStage);
+  out += "}},\"render\":{\"fullCount\":";
+  out += String(renderDiagnostics.fullCount);
+  out += ",\"partialCount\":";
+  out += String(renderDiagnostics.partialCount);
+  out += ",\"lastKind\":\"";
+  out += renderDiagnostics.lastKind;
+  out += "\"}";
   out += ",";
-  appendRenderDiagnosticsJSON(out);
+  out += "\"update\":{\"available\":";
+  out += firmwareUpdate.available ? "true" : "false";
+  out += ",\"latestVersion\":";
+  appendJSONNullableString(out, firmwareUpdate.latestVersion);
+  out += ",\"status\":\"";
+  out += jsonEscape(firmwareUpdate.lastStatus);
+  out += "\",\"lastError\":";
+  appendJSONNullableString(out, firmwareUpdate.lastError);
+  out += ",\"rawFirmwareUrl\":\"http://";
+  out += WiFi.localIP().toString();
+  out += ":8081/update/firmware.raw\",\"upload\":{\"status\":\"";
+  out += otaDiagnostics.status;
+  out += "\",\"successCount\":";
+  out += String(otaDiagnostics.successCount);
+  out += ",\"failureCount\":";
+  out += String(otaDiagnostics.failureCount);
+  out += "}}";
   out += ",";
-  appendFirmwareUpdateJSON(out);
+  appendSettingsJSON(out);
   out += ",\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"],\"httpPort\":80,\"maxFrameBytes\":";
   out += String(kMaxFrameBytes);
   out += "}}";
@@ -1255,6 +1202,38 @@ void handleHealth() {
   Serial.printf("health_requested ip=%s fs_mounted=%d\n", webServer.client().remoteIP().toString().c_str(), filesystemMounted ? 1 : 0);
   addCorsHeaders();
   webServer.send(200, "application/json", out);
+}
+
+bool persistDeviceSettings(const DeviceSettings& next) {
+  const DeviceSettings previous = deviceSettings;
+  deviceSettings = next;
+  if (!saveDeviceSettings()) {
+    deviceSettings = previous;
+    applyDeviceSettings();
+    return false;
+  }
+  applyDeviceSettings();
+  return true;
+}
+
+void handleSettingsAPI() {
+  DeviceSettings next = deviceSettings;
+  if (webServer.hasArg("b")) {
+    next.brightnessPercent = clampBrightnessPercent(webServer.arg("b").toInt());
+  } else {
+    webServer.send(400, "text/plain; charset=utf-8", "bad");
+    return;
+  }
+  if (!persistDeviceSettings(next)) {
+    webServer.send(500, "text/plain; charset=utf-8", "save failed");
+    return;
+  }
+  if (webServer.hasArg("b")) {
+    webServer.sendHeader("Location", "/");
+    webServer.send(303);
+    return;
+  }
+  webServer.send(204);
 }
 
 void handleAssetsList() {
@@ -1971,6 +1950,7 @@ void startHttpServer() {
   webServer.on("/reset-wifi", HTTP_POST, handleResetWifi);
   webServer.on("/hello", HTTP_GET, handleHello);
   webServer.on("/health", HTTP_GET, handleHealth);
+  webServer.on("/api/settings", HTTP_POST, handleSettingsAPI);
   webServer.on("/assets", HTTP_GET, handleAssetsList);
   webServer.on(
       "/assets",
@@ -2139,6 +2119,7 @@ void setup() {
   delay(200);
 
   renderer.Setup(runtimeCtx);
+  loadDeviceSettings();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   loadDefaultStoredThemeSpecCache();
 #endif

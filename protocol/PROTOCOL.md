@@ -127,7 +127,12 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
   "features": ["theme", "theme-spec-v1"],
   "maxFrameBytes": 2048,
   "capabilities": {
-    "display": {"widthPx": 240, "heightPx": 240, "colorDepthBits": 16},
+    "display": {
+      "widthPx": 240,
+      "heightPx": 240,
+      "colorDepthBits": 16,
+      "brightness": {"supported": true}
+    },
     "theme": {
       "supportsThemeSpecV1": true,
       "maxThemeSpecBytes": 2048,
@@ -147,6 +152,7 @@ Fields:
 - `preferredProtocolVersion` (number): firmware preference.
 - `features` (array[string], optional): capabilities (for example `theme`, `theme-spec-v1`).
 - `capabilities` (object, optional): extended block for display/theme/transport limits.
+  - `display.brightness.supported` describes browser-adjustable backlight support when the board exposes it. Hosts use 10-100 percent for the current ESP8266 implementation.
 
 Firmware may emit plain readiness lines (`codexbar_display_ready*`) instead of JSON hello.
 Companion treats missing hello as unknown capabilities.

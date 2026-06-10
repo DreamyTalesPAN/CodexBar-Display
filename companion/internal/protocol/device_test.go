@@ -17,6 +17,9 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 				WidthPx:        240,
 				HeightPx:       240,
 				ColorDepthBits: 16,
+				Brightness: DisplayBrightnessCapabilities{
+					Supported: true,
+				},
 			},
 			Theme: ThemeCapabilities{
 				SupportsThemeSpecV1: true,
@@ -64,6 +67,9 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	}
 	if caps.ActiveTransport != "usb" {
 		t.Fatalf("unexpected transport: %q", caps.ActiveTransport)
+	}
+	if !caps.SupportsBrightness || caps.MinBrightnessPercent != 10 || caps.MaxBrightnessPercent != 100 {
+		t.Fatalf("unexpected brightness capabilities: supported=%t min=%d max=%d", caps.SupportsBrightness, caps.MinBrightnessPercent, caps.MaxBrightnessPercent)
 	}
 	if caps.CachedThemeID != "mini-transport" || caps.CachedThemeRev != 3 {
 		t.Fatalf("unexpected theme cache descriptor: id=%q rev=%d", caps.CachedThemeID, caps.CachedThemeRev)

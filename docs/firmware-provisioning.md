@@ -70,7 +70,7 @@ What this does:
 7. Compares the runtime theme asset metadata from `/assets` against the package `manifest.json`.
 8. Sends one `mini` frame to `/frame` and requires `ok`.
 
-`/health` reports generic filesystem status plus display debug state. `display.activeTheme` names the active built-in theme, and `display.gif` reports the active GIF path, file/decoder open state, backoff state, and `lastError` when GIF open or decode fails. `/assets` is the generic inspection path for future theme-pack tooling. Each asset entry must include `path` and `sizeBytes`; `sha256` is optional. Required assets must be present, non-empty, byte-exact, and hash-exact compared with the package manifest when the device exposes hashes.
+`/health` reports generic filesystem status plus compact display debug state. `display.activeTheme` names the active built-in theme, `display.themeSpec` reports render health, and `display.gif` reports the active GIF path, file presence, decoder state, blocked state, and `lastError` when GIF open or decode fails. `/assets` is the generic inspection path for future theme-pack tooling. Each asset entry must include `path` and `sizeBytes`; `sha256` is optional. Required assets must be present, non-empty, byte-exact, and hash-exact compared with the package manifest when the device exposes hashes.
 
 The filesystem upload timeout defaults to 300 seconds because slow ESP8266 LittleFS writes can outlive a normal short HTTP timeout. Firmware uploads default to 90 seconds.
 

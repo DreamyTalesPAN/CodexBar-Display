@@ -30,6 +30,7 @@ Companion setup enforces this mapping when a device hello is available.
   - `protocolVersion` (legacy single-value signal)
   - `board`, `firmware`, `features`, `maxFrameBytes`
   - `capabilities` block (`display`, `theme`, `transport`)
+  - `capabilities.display.brightness` when browser-adjustable backlight control is supported
 
 Companion negotiation:
 - prefers v2 when available.
@@ -41,13 +42,16 @@ Companion negotiation:
 - Setup UI is served at `http://vibetv.local`. In setup mode this is backed by AP mDNS plus captive DNS; `http://192.168.4.1` remains the fallback address.
 - The setup flow stores home WiFi credentials and restarts the device.
 - Connected devices expose `http://vibetv.local` with mDNS, show/log the fallback IP, serve a local setup hub with a copyable Mac setup command, and wait for the Mac Companion.
+- Connected devices expose customer-facing display settings directly on `http://vibetv.local`. The MVP setting is brightness on supported hardware.
+- `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. `GET /health` is the readback and support-diagnostics path.
 - Companion runtime defaults to WiFi with `http://vibetv.local`; explicit device IPs remain supported when `.local` does not resolve.
 - Saved WiFi credentials can be cleared from the local web UI with `POST /reset-wifi`.
 - If a connected device loses WiFi, it retries in station mode first. After a persistent outage it starts `VibeTV-Setup` again so the user can choose a different network.
 - If the device is not reachable on WiFi, three interrupted early boots clear saved WiFi credentials and return the device to `VibeTV-Setup`.
 - Generic theme assets can be managed over WiFi with `GET /assets`, `POST /assets?path=...`, and `DELETE /assets?path=...`.
 - `GET /assets` returns `filesystem.mounted` plus an `assets` array. Every asset entry includes `path` and `sizeBytes`; `sha256` is optional so small ESP8266 builds do not need to carry hashing code.
-- `GET /health` returns `display.activeTheme` and `display.gif` so provisioning can see the active GIF path, file/decoder open state, backoff state, and the last GIF open/decode error.
+- `GET /health` returns `display.activeTheme`, compact `display.themeSpec` render health, and `display.gif` so provisioning can see the active GIF path, file presence, decoder state, blocked state, and the last GIF open/decode error.
+- `GET /health` returns `settings.display.brightnessPercent` for support diagnostics.
 
 ## Theme Contract
 - Built-in runtime themes: `classic`, `crt`, `mini`.
@@ -78,6 +82,8 @@ cd companion
 - `TFT_DC=0`
 - `TFT_RST=2`
 - `TFT_BL=5`
+
+Current release-gated hardware treats `TFT_BL` as PWM-capable and active-low (`TFT_BACKLIGHT_ON=0`), so brightness percentages are inverted before writing PWM duty.
 
 Common display assumptions:
 - ST7789 driver
