@@ -245,6 +245,7 @@ interface AppState {
   notice: string;
   targetOrigin: string;
   deviceProfile: DeviceProfile;
+  deviceBrightnessPercent: number | null;
   pixelTool: PixelTool;
   pixelBrushToken: string;
   snapEnabled: boolean;
@@ -277,6 +278,11 @@ interface DeviceHealth {
     gif?: {
       activePath?: string;
       lastError?: unknown;
+    };
+  };
+  settings?: {
+    display?: {
+      brightnessPercent?: number;
     };
   };
 }
@@ -2331,6 +2337,7 @@ const state: AppState = {
   notice: restoredDraft ? `Last draft restored from ${formatSavedAt(restoredDraft.savedAt)}.` : "",
   targetOrigin: storedTargetOrigin(),
   deviceProfile: defaultDeviceProfile(),
+  deviceBrightnessPercent: null,
   pixelTool: "move",
   pixelBrushToken: "a",
   snapEnabled: true,
@@ -2738,6 +2745,11 @@ function deviceProfileFromHello(hello: DeviceHello): DeviceProfile {
   };
 }
 
+function brightnessFromHealth(health: DeviceHealth | null): number | null {
+  const value = health?.settings?.display?.brightnessPercent;
+  return typeof value === "number" && Number.isFinite(value) ? clamp(Math.round(value), 10, 100) : null;
+}
+
 async function readDeviceProfile(targetOrigin: string): Promise<DeviceProfile | null> {
   const response = await fetchWithCorsFallback(`${targetOrigin}/hello`, {
     method: "GET",
@@ -2767,6 +2779,7 @@ async function refreshDeviceProfile(): Promise<boolean> {
       return false;
     }
     state.deviceProfile = profile;
+    state.deviceBrightnessPercent = brightnessFromHealth(await fetchDeviceHealth(targetOrigin));
     validateCurrentSpec();
     state.notice = `Validating against ${state.deviceProfile.label}.`;
     render();
@@ -3334,7 +3347,16 @@ function render() {
           <label>Vibe TV
             <input data-field="targetOrigin" aria-label="Vibe TV URL" value="${escapeAttr(state.targetOrigin)}" />
           </label>
-          <button class="full-width small-button" data-action="read-device-profile">Read Device Profile</button>
+          <button class="full-width small-button" data-action="read-device-profile">Read Device</button>
+          <div class="device-controls">
+            <label>Brightness
+              <input type="range" min="10" max="100" data-device-brightness value="${state.deviceBrightnessPercent ?? 100}" ${state.deviceBrightnessPercent === null ? "disabled" : ""} />
+            </label>
+            <div class="device-control-row">
+              <span>${state.deviceBrightnessPercent === null ? "Read device first" : `${state.deviceBrightnessPercent}%`}</span>
+              <button class="small-button" data-action="save-device-settings" ${state.deviceBrightnessPercent === null ? "disabled" : ""}>Save</button>
+            </div>
+          </div>
           <label>Background
             <span class="color-row">
               <input type="color" data-field="bgColor" value="${escapeAttr(state.spec.bgColor ?? "#000000")}" />
@@ -5951,6 +5973,11 @@ function bindEvents() {
     });
   });
 
+  app.querySelector<HTMLInputElement>("[data-device-brightness]")?.addEventListener("input", (event) => {
+    state.deviceBrightnessPercent = clamp(toInt((event.target as HTMLInputElement).value, 100), 10, 100);
+    render();
+  });
+
   app.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("[data-primitive-field]").forEach((input) => {
     input.addEventListener("input", () => {
       pushHistory();
@@ -6646,6 +6673,10 @@ async function handleAction(action: string) {
   }
   if (action === "read-device-profile") {
     await refreshDeviceProfile();
+    return;
+  }
+  if (action === "save-device-settings") {
+    await saveDeviceSettings();
     return;
   }
   if (action === "save-draft") {
@@ -7663,6 +7694,41 @@ async function sendThemeToVibeTV() {
     state.notice = `${confirmation ?? "Theme sent to Vibe TV."}${cleanupNotice(cleaned)}`;
   } catch (error) {
     state.notice = error instanceof Error ? error.message : `Could not reach Vibe TV at ${normalizeTargetOrigin(state.targetOrigin)}. Check Wi-Fi/mDNS, then try again.`;
+  }
+  render();
+}
+
+async function saveDeviceSettings() {
+  if (state.deviceBrightnessPercent === null) {
+    state.notice = "Read the device before saving settings.";
+    render();
+    return;
+  }
+  const targetOrigin = normalizeTargetOrigin(state.targetOrigin);
+  state.targetOrigin = targetOrigin;
+  persistTargetOrigin();
+  state.notice = "Saving device settings.";
+  render();
+  try {
+    const body = new URLSearchParams({
+      api: "1",
+      b: String(clamp(state.deviceBrightnessPercent, 10, 100)),
+    });
+    const response = await fetchWithCorsFallback(`${targetOrigin}/api/settings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        Accept: "application/json",
+      },
+      body,
+    });
+    if (response.type !== "opaque" && !response.ok) {
+      throw new Error(await responseFailureMessage(response, "Device settings save failed"));
+    }
+    state.deviceBrightnessPercent = brightnessFromHealth(await fetchDeviceHealth(targetOrigin)) ?? state.deviceBrightnessPercent;
+    state.notice = `Brightness saved at ${state.deviceBrightnessPercent}%.`;
+  } catch (error) {
+    state.notice = error instanceof Error ? error.message : `Could not save settings at ${targetOrigin}.`;
   }
   render();
 }

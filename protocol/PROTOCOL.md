@@ -88,6 +88,7 @@ When the ESP8266 is connected to WiFi, it serves:
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This updates the cached display/diagnostic update state and, when `available=true`, renders a firmware-level notice above the active theme that alternates every 1.5 seconds between `Update Available:` and `vibetv.local`. The ESP8266 firmware must not fetch public HTTPS manifests directly.
 - `POST /reset-wifi`: clears saved WiFi credentials and restarts the device into setup mode.
+- `POST /api/settings`: updates persisted device settings. Form field `b` sets display brightness percent. Include `api=1` for a JSON/CORS response; omit it for the built-in `vibetv.local` form redirect.
 - `GET /assets`: returns mounted filesystem status and a generic list of stored asset paths/sizes.
 - `POST /assets?path=/themes/<short-id>/<asset>`: uploads one theme asset using multipart field `asset`.
 - `DELETE /assets?path=/themes/<short-id>/<asset>`: deletes one stored asset. Firmware rejects deletion of the currently active stored ThemeSpec.
