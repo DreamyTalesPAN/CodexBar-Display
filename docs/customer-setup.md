@@ -91,6 +91,20 @@ The installer handles everything automatically:
 6. It starts the background service that sends frames to the Vibe TV IP.
 7. It runs a health check at the end.
 
+## Setup Dependency Checks
+
+The installer checks required tools before setup changes anything important. If something is missing, it stops with the dependency name, why it is needed, and the next command or action.
+
+| Dependency | Why it is needed | What to do if missing |
+| --- | --- | --- |
+| `curl` | Downloads the VibeTV installer files from GitHub. | Use a standard macOS Terminal with `curl` available, then rerun the installer. |
+| `shasum`, `awk`, `sed`, `grep`, `uname`, `mktemp` | Verifies the release and detects the right Mac binary. | Install the macOS command line tools, then rerun the installer. |
+| `launchctl` | Starts the background service that sends frames to Vibe TV. | Run setup on macOS as your normal logged-in user, then rerun `codexbar-display setup`. |
+| CodexBar CLI | Provides the usage data shown on Vibe TV. | The setup tries Homebrew automatically. If that fails, run `brew install --cask steipete/tap/codexbar`, then rerun setup. |
+| `pio` | Only needed for manual USB firmware flashing. | Standard WiFi setup does not need this. For USB flashing, install PlatformIO with `python3 -m pip install --user platformio`, then rerun setup. |
+
+Setup is safe to rerun after fixing a missing dependency.
+
 ## What Success Looks Like
 
 - Terminal prints a successful setup message.
