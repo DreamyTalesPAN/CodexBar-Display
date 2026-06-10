@@ -1108,6 +1108,67 @@ func TestRunCycleWithDepsAttachesFirmwareUpdateState(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithDepsRefreshesFirmwareUpdateCacheWhenFirmwareChanges(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+	firmwareVersion := "1.0.0"
+	var fetchUpdateCalls int
+	var sentLine []byte
+	deps := runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "http://vibetv.local", nil },
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				Board:                     "esp8266-smalltv-st7789",
+				Firmware:                  firmwareVersion,
+				NegotiatedProtocolVersion: 2,
+				MaxFrameBytes:             1024,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+		},
+		fetchUpdateState: func(_ context.Context, caps protocol.DeviceCapabilities) (protocol.UpdateState, error) {
+			fetchUpdateCalls++
+			if caps.Firmware == "1.0.0" {
+				return protocol.UpdateState{Available: true, LatestVersion: "1.0.1", Status: "update_available"}, nil
+			}
+			return protocol.UpdateState{Available: false, LatestVersion: "1.0.1", Status: "current"}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+	}
+
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("first cycle: %v", err)
+	}
+	firstFrame := decodeFrameLine(t, sentLine)
+	if firstFrame.Update == nil || !firstFrame.Update.Available {
+		t.Fatalf("expected first cycle update available, got %+v", firstFrame.Update)
+	}
+
+	firmwareVersion = "1.0.1"
+	now = now.Add(time.Minute)
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("second cycle: %v", err)
+	}
+	secondFrame := decodeFrameLine(t, sentLine)
+	if secondFrame.Update == nil || secondFrame.Update.Available || secondFrame.Update.Status != "current" {
+		t.Fatalf("expected second cycle current update state, got %+v", secondFrame.Update)
+	}
+	if fetchUpdateCalls != 2 {
+		t.Fatalf("expected update state to refresh after firmware change, got %d calls", fetchUpdateCalls)
+	}
+}
+
 func TestRunCycleWithDepsPreservesFirmwareUpdateNoticeForLegacyDevice(t *testing.T) {
 	prepareFastTestEnv(t)
 

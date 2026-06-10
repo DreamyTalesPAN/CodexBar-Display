@@ -159,6 +159,7 @@ unsigned long lastFrameAcceptedAtMs = 0;
 bool frameStaleStatusRendered = false;
 bool captiveDnsStarted = false;
 bool mdnsStarted = false;
+IPAddress mdnsAddress;
 unsigned long wifiDisconnectedAtMs = 0;
 unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
@@ -400,8 +401,16 @@ void resetWifiReconnectState() {
 }
 
 void startMdnsResponder(const IPAddress& address) {
-  if (mdnsStarted) {
+  if (mdnsStarted && mdnsAddress == address) {
     return;
+  }
+  if (mdnsStarted) {
+    MDNS.close();
+    mdnsStarted = false;
+    Serial.printf("mdns_restarting host=%s old_ip=%s new_ip=%s\n",
+                  kMdnsHost,
+                  mdnsAddress.toString().c_str(),
+                  address.toString().c_str());
   }
   if (!MDNS.begin(kMdnsName, address)) {
     Serial.printf("mdns_start_failed host=%s ip=%s\n", kMdnsHost, address.toString().c_str());
@@ -409,7 +418,18 @@ void startMdnsResponder(const IPAddress& address) {
   }
   MDNS.addService("http", "tcp", 80);
   mdnsStarted = true;
+  mdnsAddress = address;
   Serial.printf("mdns_started host=%s ip=%s service=http\n", kMdnsHost, address.toString().c_str());
+}
+
+void stopMdnsResponder(const char* reason) {
+  if (!mdnsStarted) {
+    return;
+  }
+  MDNS.close();
+  mdnsStarted = false;
+  mdnsAddress = IPAddress();
+  Serial.printf("mdns_stopped host=%s reason=%s\n", kMdnsHost, reason == nullptr ? "unknown" : reason);
 }
 
 String displayErrorMessage(const String& message) {
@@ -2027,6 +2047,7 @@ void maintainWifiConnection() {
       Serial.printf("wifi_reconnected ip=%s\n", WiFi.localIP().toString().c_str());
       drawWaitingForCompanionStatus();
     }
+    startMdnsResponder(WiFi.localIP());
     resetWifiReconnectState();
     return;
   }
@@ -2038,6 +2059,7 @@ void maintainWifiConnection() {
     Serial.printf("wifi_disconnected status=%d fallback_ms=%lu\n",
                   static_cast<int>(WiFi.status()),
                   kWifiReconnectFallbackMs);
+    stopMdnsResponder("wifi_disconnected");
   }
 
   if (!wifiReconnectStatusRendered) {
