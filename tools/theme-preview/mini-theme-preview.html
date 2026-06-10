@@ -293,7 +293,7 @@
 
             <div class="slider-row">
               <div class="slider-head">
-                <label for="sessionPct">Session %</label>
+                <label for="sessionPct">5h %</label>
                 <span id="sessionPctVal" class="slider-value"></span>
               </div>
               <input id="sessionPct" type="range" min="0" max="100" value="97" />
@@ -301,7 +301,7 @@
 
             <div class="slider-row">
               <div class="slider-head">
-                <label for="weeklyPct">Weekly %</label>
+                <label for="weeklyPct">7d %</label>
                 <span id="weeklyPctVal" class="slider-value"></span>
               </div>
               <input id="weeklyPct" type="range" min="0" max="100" value="71" />
@@ -328,7 +328,7 @@
 
             <div class="slider-row">
               <div class="slider-head">
-                <label for="metaTextSize">Session/Weekly/used size</label>
+                <label for="metaTextSize">5h/7d/used size</label>
                 <span id="metaTextSizeVal" class="slider-value"></span>
               </div>
               <input id="metaTextSize" type="range" min="1" max="3" value="1" />
@@ -352,7 +352,7 @@
 
             <div class="slider-row">
               <div class="slider-head">
-                <label for="leftCenter">Session column center X</label>
+                <label for="leftCenter">5h column center X</label>
                 <span id="leftCenterVal" class="slider-value"></span>
               </div>
               <input id="leftCenter" type="range" min="0" max="120" value="36" />
@@ -447,8 +447,8 @@
             <div class="screen-shell">
               <div id="screen" class="screen">
                 <div id="providerText" class="text font1"></div>
-                <div id="sessionLabel" class="text font2">Session</div>
-                <div id="weeklyLabel" class="text font2">Weekly</div>
+                <div id="sessionLabel" class="text font2">5h</div>
+                <div id="weeklyLabel" class="text font2">7d</div>
                 <div id="sessionValue" class="text font1"></div>
                 <div id="weeklyValue" class="text font1"></div>
                 <div id="sessionMode" class="text font2"></div>
@@ -704,16 +704,16 @@
 
         setText(
           dom.sessionLabel,
-          "Session",
-          centerXForColumnPixels(font2Width("Session", layout.metaTextSize), layout.leftCenter),
+          "5h",
+          centerXForColumnPixels(font2Width("5h", layout.metaTextSize), layout.leftCenter),
           layout.labelY,
           layout.metaTextSize,
           kMiniMuted
         );
         setText(
           dom.weeklyLabel,
-          "Weekly",
-          centerXForColumnPixels(font2Width("Weekly", layout.metaTextSize), layout.rightCenter),
+          "7d",
+          centerXForColumnPixels(font2Width("7d", layout.metaTextSize), layout.rightCenter),
           layout.labelY,
           layout.metaTextSize,
           kMiniMuted

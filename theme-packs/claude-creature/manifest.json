@@ -8,8 +8,8 @@
   "themeSpec": {
     "path": "/themes/u/claude--1-defca1.json",
     "file": "theme.json",
-    "bytes": 861,
-    "sha256": "89866a37382f7754b7229eff8a83bc18a944bdd0f2f6703dbb21db648e9db713",
+    "bytes": 852,
+    "sha256": "841a878a332273a39b9a4d1053f7311c246332cb8a6946c571429d807f6b4d4a",
     "contentType": "application/json"
   },
   "assets": [

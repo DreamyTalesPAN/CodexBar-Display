@@ -37,6 +37,8 @@ constexpr uint16_t kMiniPanel = TFT_BLACK;
 constexpr int kMiniSplashActionY = 132;
 constexpr int kMiniSplashActionLineGap = 34;
 constexpr int kMiniSplashActionClearY = 124;
+constexpr const char* kSessionIntervalLabel = "5h";
+constexpr const char* kWeeklyIntervalLabel = "7d";
 
 struct MiniGifBox {
   int drawX = 0;
@@ -313,6 +315,8 @@ void DrawUsageMini() {
   const int labelY = kUsageLabelY;
   const int valueY = kUsageValueY;
   const int modeY = kUsageModeY;
+  const char* sessionLabel = kSessionIntervalLabel;
+  const char* weeklyLabel = kWeeklyIntervalLabel;
 
   char sessionPctBuf[8];
   char weeklyPctBuf[8];
@@ -321,13 +325,8 @@ void DrawUsageMini() {
 
   tft.setTextFont(2);
   tft.setTextSize(kUsageMetaTextSize);
-  const int sessionLabelW = tft.textWidth("Session");
-  const int weeklyLabelW = tft.textWidth("Weekly");
-
-  tft.setTextFont(1);
-  tft.setTextSize(kPercentTextSize);
-  const int sessionPctW = tft.textWidth(sessionPctBuf);
-  const int weeklyPctW = tft.textWidth(weeklyPctBuf);
+  const int sessionLabelW = tft.textWidth(sessionLabel);
+  const int weeklyLabelW = tft.textWidth(weeklyLabel);
 
   tft.setTextFont(2);
   tft.setTextSize(kUsageModeTextSize);
@@ -343,6 +342,44 @@ void DrawUsageMini() {
     }
     return maxVal;
   };
+
+  auto columnsFit = [leftCenter, rightCenter, &tft](int leftColW, int rightColW) {
+    int leftColX = centeredXForColumnPixels(leftColW, leftCenter);
+    if (leftColX < kUsageOuterPadding) {
+      leftColX = kUsageOuterPadding;
+    }
+
+    int rightColX = centeredXForColumnPixels(rightColW, rightCenter);
+    const int maxRightColRight = tft.width() - kUsageOuterPadding;
+    if ((rightColX + rightColW) > maxRightColRight) {
+      rightColX = maxRightColRight - rightColW;
+    }
+    if (rightColX < kUsageOuterPadding) {
+      rightColX = kUsageOuterPadding;
+    }
+
+    return (leftColX + leftColW + kUsageOuterPadding) <= rightColX;
+  };
+
+  int percentTextSize = kPercentTextSize;
+  for (int candidateTextSize = kPercentTextSize + 1; candidateTextSize > kPercentTextSize; --candidateTextSize) {
+    tft.setTextFont(1);
+    tft.setTextSize(candidateTextSize);
+    const int candidateSessionPctW = tft.textWidth(sessionPctBuf);
+    const int candidateWeeklyPctW = tft.textWidth(weeklyPctBuf);
+    const int candidateLeftColW = max3(sessionLabelW, candidateSessionPctW, usageModeW);
+    const int candidateRightColW = max3(weeklyLabelW, candidateWeeklyPctW, usageModeW);
+    if (columnsFit(candidateLeftColW, candidateRightColW)) {
+      percentTextSize = candidateTextSize;
+      break;
+    }
+  }
+
+  tft.setTextFont(1);
+  tft.setTextSize(percentTextSize);
+  const int sessionPctW = tft.textWidth(sessionPctBuf);
+  const int weeklyPctW = tft.textWidth(weeklyPctBuf);
+
   const int leftColW = max3(sessionLabelW, sessionPctW, usageModeW);
   const int rightColW = max3(weeklyLabelW, weeklyPctW, usageModeW);
   int leftColX = centeredXForColumnPixels(leftColW, leftCenter);
@@ -364,9 +401,9 @@ void DrawUsageMini() {
   tft.setTextSize(kUsageMetaTextSize);
   tft.setTextColor(kMiniMuted, kMiniBg);
   tft.setCursor(leftColX, labelY);
-  tft.print("Session");
+  tft.print(sessionLabel);
   tft.setTextFont(1);
-  tft.setTextSize(kPercentTextSize);
+  tft.setTextSize(percentTextSize);
   tft.setTextColor(kMiniPrimary, kMiniBg);
   tft.setCursor(leftColX, valueY);
   tft.print(sessionPctBuf);
@@ -380,9 +417,9 @@ void DrawUsageMini() {
   tft.setTextSize(kUsageMetaTextSize);
   tft.setTextColor(kMiniMuted, kMiniBg);
   tft.setCursor(rightColRight - weeklyLabelW, labelY);
-  tft.print("Weekly");
+  tft.print(weeklyLabel);
   tft.setTextFont(1);
-  tft.setTextSize(kPercentTextSize);
+  tft.setTextSize(percentTextSize);
   tft.setTextColor(kMiniPrimary, kMiniBg);
   tft.setCursor(rightColRight - weeklyPctW, valueY);
   tft.print(weeklyPctBuf);
