@@ -34,6 +34,7 @@ const (
 
 	SetupCodexbarValidate    Code = "setup/codexbar-validate"
 	SetupCodexbarInstall     Code = "setup/codexbar-install"
+	SetupDependencyPreflight Code = "setup/dependency-preflight"
 	SetupListPorts           Code = "setup/list-ports"
 	SetupSelectPort          Code = "setup/select-port"
 	SetupSerialProbe         Code = "setup/serial-probe"
@@ -141,6 +142,8 @@ func DefaultRecovery(code Code) string {
 		return "Install CodexBar CLI (`brew install --cask steipete/tap/codexbar`) and rerun setup."
 	case SetupCodexbarInstall:
 		return "Install CodexBar manually, then rerun setup."
+	case SetupDependencyPreflight:
+		return "Install the missing setup dependency shown above, then rerun setup."
 	case SetupListPorts, SetupSelectPort:
 		return "Reconnect the board and retry port selection."
 	case SetupSerialProbe:

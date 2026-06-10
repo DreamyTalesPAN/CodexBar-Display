@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
@@ -63,7 +64,7 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 		},
 		lookPath: func(file string) (string, error) {
 			switch file {
-			case "brew", "pio", "open":
+			case "brew", "pio", "open", "launchctl":
 				return "/usr/bin/" + file, nil
 			default:
 				return "", errors.New("not found")
@@ -577,6 +578,76 @@ func TestRunWithDepsContinuesWhenSkipFlashAndProbeFails(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsFailsPreflightWhenLaunchctlMissing(t *testing.T) {
+	err := runWithDeps(context.Background(), Options{SkipFlash: true, AssumeYes: true}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "", errors.New("not found")
+			}
+			return "/usr/bin/" + file, nil
+		},
+		findCodexbar: func() (string, error) {
+			t.Fatalf("preflight should fail before CodexBar detection")
+			return "", nil
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected setup preflight failure")
+	}
+	if got := errcode.Of(err); got != errcode.SetupDependencyPreflight {
+		t.Fatalf("expected dependency preflight code, got %s", got)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "missing dependency \"launchctl\"") {
+		t.Fatalf("expected launchctl dependency message, got %q", msg)
+	}
+	if !strings.Contains(msg, "starts and restarts the VibeTV background service") {
+		t.Fatalf("expected why-it-is-needed text, got %q", msg)
+	}
+	if !strings.Contains(msg, "rerun `codexbar-display setup`") {
+		t.Fatalf("expected concrete recovery action, got %q", msg)
+	}
+}
+
+func TestRunWithDepsFailsPreflightWhenPlatformIOMissingForUSBFlash(t *testing.T) {
+	err := runWithDeps(context.Background(), Options{Transport: "usb", AssumeYes: true}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		lookPath: func(file string) (string, error) {
+			switch file {
+			case "launchctl":
+				return "/bin/launchctl", nil
+			case "pio":
+				return "", errors.New("not found")
+			default:
+				return "/usr/bin/" + file, nil
+			}
+		},
+		findCodexbar: func() (string, error) {
+			t.Fatalf("preflight should fail before CodexBar detection")
+			return "", nil
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected setup preflight failure")
+	}
+	if got := errcode.Of(err); got != errcode.SetupDependencyPreflight {
+		t.Fatalf("expected dependency preflight code, got %s", got)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "missing dependency \"pio\"") {
+		t.Fatalf("expected pio dependency message, got %q", msg)
+	}
+	if !strings.Contains(msg, "USB flashing is requested") {
+		t.Fatalf("expected why-it-is-needed text, got %q", msg)
+	}
+	if !strings.Contains(msg, "python3 -m pip install --user platformio") {
+		t.Fatalf("expected PlatformIO install action, got %q", msg)
+	}
+}
+
 func TestRunWithDepsFailsWithRecoveryWhenCodexbarInstallNotPossible(t *testing.T) {
 	var calls []commandCall
 	err := runWithDeps(context.Background(), Options{SkipFlash: true, AssumeYes: true}, deps{
@@ -596,7 +667,7 @@ func TestRunWithDepsFailsWithRecoveryWhenCodexbarInstallNotPossible(t *testing.T
 			return "", errors.New("missing")
 		},
 		lookPath: func(file string) (string, error) {
-			if file == "open" {
+			if file == "launchctl" || file == "open" {
 				return "/usr/bin/open", nil
 			}
 			return "", errors.New("not found")
@@ -702,7 +773,7 @@ func TestRunWithDepsReportsFlashFailureWithConcreteHint(t *testing.T) {
 		},
 		lookPath: func(file string) (string, error) {
 			switch file {
-			case "pio", "brew", "open":
+			case "pio", "brew", "open", "launchctl":
 				return "/usr/bin/" + file, nil
 			default:
 				return "", errors.New("not found")
@@ -766,7 +837,7 @@ func TestRunWithDepsWaitsForLaunchAgentToBecomeRunning(t *testing.T) {
 		},
 		lookPath: func(file string) (string, error) {
 			switch file {
-			case "pio", "brew", "open":
+			case "pio", "brew", "open", "launchctl":
 				return "/usr/bin/" + file, nil
 			default:
 				return "", errors.New("not found")
@@ -828,7 +899,7 @@ func TestRunWithDepsRetriesLaunchAgentBootstrapRace(t *testing.T) {
 		},
 		lookPath: func(file string) (string, error) {
 			switch file {
-			case "pio", "brew", "open":
+			case "pio", "brew", "open", "launchctl":
 				return "/usr/bin/" + file, nil
 			default:
 				return "", errors.New("not found")
@@ -897,7 +968,7 @@ func TestRunWithDepsFallsBackToKickstartWhenLaunchAgentAlreadyLoaded(t *testing.
 		},
 		lookPath: func(file string) (string, error) {
 			switch file {
-			case "pio", "brew", "open":
+			case "pio", "brew", "open", "launchctl":
 				return "/usr/bin/" + file, nil
 			default:
 				return "", errors.New("not found")

@@ -177,6 +177,8 @@ func (e *StepError) ErrorCode() errcode.Code {
 		return errcode.SetupCodexbarValidate
 	case "codexbar-install":
 		return errcode.SetupCodexbarInstall
+	case "dependency-preflight":
+		return errcode.SetupDependencyPreflight
 	case "list-ports":
 		return errcode.SetupListPorts
 	case "select-port":
@@ -239,12 +241,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 	fmt.Fprintf(d.stdout, "Mode: %s\n", mode)
 
-	allowInstall := !opts.ValidateOnly && !opts.DryRun
-	codexbarBin, err := ensureCodexbar(ctx, d, allowInstall)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(d.stdout, "CodexBar CLI: %s\n", codexbarBin)
+	var err error
 
 	transportName := normalizeSetupTransport(opts.Transport)
 	if transportName == "" {
@@ -272,6 +269,18 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	if target != "" {
 		fmt.Fprintf(d.stdout, "Launch agent target: %s\n", target)
 	}
+
+	if err := runDependencyPreflight(opts, transportName, d); err != nil {
+		return err
+	}
+	fmt.Fprintln(d.stdout, "Setup preflight: ok")
+
+	allowInstall := !opts.ValidateOnly && !opts.DryRun
+	codexbarBin, err := ensureCodexbar(ctx, d, allowInstall)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(d.stdout, "CodexBar CLI: %s\n", codexbarBin)
 
 	port := ""
 	if transportName == "usb" {
@@ -569,6 +578,40 @@ func normalizeSetupTarget(value string) string {
 		target = "http://" + target
 	}
 	return target
+}
+
+func runDependencyPreflight(opts Options, transportName string, d deps) error {
+	if !opts.ValidateOnly && !opts.DryRun {
+		if err := requireSetupCommand(d, "launchctl",
+			"starts and restarts the VibeTV background service on macOS",
+			"run setup on macOS as your normal logged-in user, then rerun `codexbar-display setup`",
+		); err != nil {
+			return err
+		}
+	}
+
+	if normalizeSetupTransport(transportName) == "usb" && !opts.SkipFlash {
+		if err := requireSetupCommand(d, "pio",
+			"builds and uploads VibeTV firmware when USB flashing is requested",
+			"install PlatformIO CLI with `python3 -m pip install --user platformio`, ensure `pio` is in PATH, then rerun setup",
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func requireSetupCommand(d deps, name, why, action string) error {
+	if _, err := d.lookPath(name); err != nil {
+		return &StepError{
+			Step: "dependency-preflight",
+			Code: errcode.SetupDependencyPreflight,
+			Err:  fmt.Errorf("missing dependency %q: %s (%w)", name, why, err),
+			Hint: action,
+		}
+	}
+	return nil
 }
 
 func ensureCodexbar(ctx context.Context, d deps, allowInstall bool) (string, error) {

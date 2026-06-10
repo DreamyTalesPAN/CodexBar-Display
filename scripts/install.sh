@@ -54,9 +54,16 @@ die() {
   exit 1
 }
 
-require_cmd() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    die "missing required command: $1"
+require_cmd_for() {
+  local cmd="$1"
+  local why="$2"
+  local action="$3"
+
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    printf 'error: missing dependency: %s\n' "$cmd" >&2
+    printf 'needed for: %s\n' "$why" >&2
+    printf 'next step: %s\n' "$action" >&2
+    exit 1
   fi
 }
 
@@ -266,13 +273,13 @@ main() {
     exit 0
   fi
 
-  require_cmd curl
-  require_cmd shasum
-  require_cmd awk
-  require_cmd sed
-  require_cmd grep
-  require_cmd uname
-  require_cmd mktemp
+  require_cmd_for curl "download the VibeTV installer files from GitHub" "install curl or use a standard macOS Terminal, then rerun the installer."
+  require_cmd_for shasum "verify the downloaded VibeTV binary checksum" "install the macOS command line tools, then rerun the installer."
+  require_cmd_for awk "read the expected checksum from the release file" "install the macOS command line tools, then rerun the installer."
+  require_cmd_for sed "read the latest GitHub release version" "install the macOS command line tools, then rerun the installer."
+  require_cmd_for grep "find the matching checksum entry" "install the macOS command line tools, then rerun the installer."
+  require_cmd_for uname "detect your Mac CPU architecture" "use a standard macOS Terminal, then rerun the installer."
+  require_cmd_for mktemp "create a temporary download folder" "use a standard macOS Terminal, then rerun the installer."
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
     die "this installer only supports macOS"
