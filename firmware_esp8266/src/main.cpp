@@ -80,6 +80,7 @@ String themeCapabilitiesJSON(bool enabled) {
   }
   out += "{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += String(codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives);
+  out += ",\"supportedPrimitiveTypes\":[\"text\",\"rect\",\"progress\",\"gif\",\"sprite\",\"pixels\"]";
   out += ",\"supportsStoredThemes\":true,\"maxStoredThemeSpecBytes\":";
   out += String(kMaxStoredThemeSpecBytes);
   out += ",\"maxThemeGifAssets\":";

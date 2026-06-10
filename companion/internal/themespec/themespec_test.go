@@ -395,6 +395,34 @@ func TestValidateAgainstCapabilitiesChecksGifLimits(t *testing.T) {
 	}
 }
 
+func TestValidateAgainstCapabilitiesChecksPrimitiveTypes(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "sprite-theme",
+		ThemeRev:         1,
+		FallbackTheme:    "mini",
+		Primitives: []Primitive{
+			{Type: "sprite", X: 0, Y: 0, Width: 24, Height: 24, AssetPath: "/themes/u/s.cbi"},
+		},
+	}
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal raw: %v", err)
+	}
+
+	caps := protocol.DeviceCapabilities{
+		Known:                   true,
+		SupportsThemeSpecV1:     true,
+		MaxThemeSpecBytes:       len(raw) + 10,
+		MaxThemePrimitives:      8,
+		SupportedPrimitiveTypes: []string{"text", "rect", "progress", "gif"},
+		BuiltinThemes:           []string{"mini"},
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, caps); err == nil {
+		t.Fatalf("expected primitive type capability mismatch")
+	}
+}
+
 func TestValidateAgainstCapabilitiesAcceptsCompatibleSpec(t *testing.T) {
 	spec := Spec{
 		ThemeSpecVersion: 1,
@@ -411,11 +439,12 @@ func TestValidateAgainstCapabilitiesAcceptsCompatibleSpec(t *testing.T) {
 	}
 
 	caps := protocol.DeviceCapabilities{
-		Known:               true,
-		SupportsThemeSpecV1: true,
-		MaxThemeSpecBytes:   len(raw) + 10,
-		MaxThemePrimitives:  8,
-		BuiltinThemes:       []string{"classic", "mini"},
+		Known:                   true,
+		SupportsThemeSpecV1:     true,
+		MaxThemeSpecBytes:       len(raw) + 10,
+		MaxThemePrimitives:      8,
+		SupportedPrimitiveTypes: []string{"text", "rect", "progress"},
+		BuiltinThemes:           []string{"classic", "mini"},
 	}
 	if err := ValidateAgainstCapabilities(spec, raw, caps); err != nil {
 		t.Fatalf("expected compatible spec, got %v", err)

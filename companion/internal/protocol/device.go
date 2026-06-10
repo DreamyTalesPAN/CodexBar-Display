@@ -24,17 +24,18 @@ type DisplayCapabilities struct {
 }
 
 type ThemeCapabilities struct {
-	SupportsThemeSpecV1 bool     `json:"supportsThemeSpecV1,omitempty"`
-	MaxThemeSpecBytes   int      `json:"maxThemeSpecBytes,omitempty"`
-	MaxThemePrimitives  int      `json:"maxThemePrimitives,omitempty"`
-	MaxThemeGifAssets   int      `json:"maxThemeGifAssets,omitempty"`
-	MaxThemeGifBytes    int      `json:"maxThemeGifBytes,omitempty"`
-	MaxThemeGifWidth    int      `json:"maxThemeGifWidth,omitempty"`
-	MaxThemeGifHeight   int      `json:"maxThemeGifHeight,omitempty"`
-	MaxThemeGifPixels   int      `json:"maxThemeGifPixels,omitempty"`
-	BuiltinThemes       []string `json:"builtinThemes,omitempty"`
-	CachedThemeID       string   `json:"cachedThemeId,omitempty"`
-	CachedThemeRev      int      `json:"cachedThemeRev,omitempty"`
+	SupportsThemeSpecV1     bool     `json:"supportsThemeSpecV1,omitempty"`
+	MaxThemeSpecBytes       int      `json:"maxThemeSpecBytes,omitempty"`
+	MaxThemePrimitives      int      `json:"maxThemePrimitives,omitempty"`
+	MaxThemeGifAssets       int      `json:"maxThemeGifAssets,omitempty"`
+	MaxThemeGifBytes        int      `json:"maxThemeGifBytes,omitempty"`
+	MaxThemeGifWidth        int      `json:"maxThemeGifWidth,omitempty"`
+	MaxThemeGifHeight       int      `json:"maxThemeGifHeight,omitempty"`
+	MaxThemeGifPixels       int      `json:"maxThemeGifPixels,omitempty"`
+	SupportedPrimitiveTypes []string `json:"supportedPrimitiveTypes,omitempty"`
+	BuiltinThemes           []string `json:"builtinThemes,omitempty"`
+	CachedThemeID           string   `json:"cachedThemeId,omitempty"`
+	CachedThemeRev          int      `json:"cachedThemeRev,omitempty"`
 }
 
 type TransportCapabilities struct {
@@ -73,6 +74,9 @@ func (h DeviceHello) Normalize() DeviceHello {
 	}
 	for i := range h.Capabilities.Theme.BuiltinThemes {
 		h.Capabilities.Theme.BuiltinThemes[i] = strings.TrimSpace(strings.ToLower(h.Capabilities.Theme.BuiltinThemes[i]))
+	}
+	for i := range h.Capabilities.Theme.SupportedPrimitiveTypes {
+		h.Capabilities.Theme.SupportedPrimitiveTypes[i] = strings.TrimSpace(strings.ToLower(h.Capabilities.Theme.SupportedPrimitiveTypes[i]))
 	}
 	h.Capabilities.Theme.CachedThemeID = strings.TrimSpace(h.Capabilities.Theme.CachedThemeID)
 	h.Capabilities.Transport.Active = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Active))
@@ -114,6 +118,7 @@ type DeviceCapabilities struct {
 	MaxThemeGifWidth           int
 	MaxThemeGifHeight          int
 	MaxThemeGifPixels          int
+	SupportedPrimitiveTypes    []string
 	BuiltinThemes              []string
 	CachedThemeID              string
 	CachedThemeRev             int
@@ -165,6 +170,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		MaxThemeGifWidth:           h.Capabilities.Theme.MaxThemeGifWidth,
 		MaxThemeGifHeight:          h.Capabilities.Theme.MaxThemeGifHeight,
 		MaxThemeGifPixels:          h.Capabilities.Theme.MaxThemeGifPixels,
+		SupportedPrimitiveTypes:    append([]string(nil), h.Capabilities.Theme.SupportedPrimitiveTypes...),
 		BuiltinThemes:              append([]string(nil), h.Capabilities.Theme.BuiltinThemes...),
 		CachedThemeID:              h.Capabilities.Theme.CachedThemeID,
 		CachedThemeRev:             h.Capabilities.Theme.CachedThemeRev,

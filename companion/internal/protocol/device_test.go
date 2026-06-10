@@ -22,17 +22,18 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 				},
 			},
 			Theme: ThemeCapabilities{
-				SupportsThemeSpecV1: true,
-				MaxThemeSpecBytes:   1024,
-				MaxThemePrimitives:  32,
-				MaxThemeGifAssets:   1,
-				MaxThemeGifBytes:    24576,
-				MaxThemeGifWidth:    80,
-				MaxThemeGifHeight:   80,
-				MaxThemeGifPixels:   6400,
-				BuiltinThemes:       []string{"classic", "crt", "mini"},
-				CachedThemeID:       "mini-transport",
-				CachedThemeRev:      3,
+				SupportsThemeSpecV1:     true,
+				MaxThemeSpecBytes:       1024,
+				MaxThemePrimitives:      32,
+				MaxThemeGifAssets:       1,
+				MaxThemeGifBytes:        24576,
+				MaxThemeGifWidth:        80,
+				MaxThemeGifHeight:       80,
+				MaxThemeGifPixels:       6400,
+				SupportedPrimitiveTypes: []string{"Text", "RECT", "progress", "gif"},
+				BuiltinThemes:           []string{"classic", "crt", "mini"},
+				CachedThemeID:           "mini-transport",
+				CachedThemeRev:          3,
 			},
 			Transport: TransportCapabilities{
 				Active:    "usb",
@@ -64,6 +65,15 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	}
 	if caps.MaxThemeGifAssets != 1 || caps.MaxThemeGifBytes != 24576 || caps.MaxThemeGifWidth != 80 || caps.MaxThemeGifHeight != 80 || caps.MaxThemeGifPixels != 6400 {
 		t.Fatalf("unexpected GIF limits: %+v", caps)
+	}
+	if got, want := caps.SupportedPrimitiveTypes, []string{"text", "rect", "progress", "gif"}; len(got) != len(want) {
+		t.Fatalf("unexpected primitive type count: got=%v want=%v", got, want)
+	} else {
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("unexpected primitive type at %d: got=%v want=%v", i, got, want)
+			}
+		}
 	}
 	if caps.ActiveTransport != "usb" {
 		t.Fatalf("unexpected transport: %q", caps.ActiveTransport)

@@ -86,6 +86,38 @@ type GifMetadataCacheEntry = {
   metadata?: GifMetadata;
   error?: string;
 };
+type DeviceProfile = {
+  source: "offline" | "device";
+  label: string;
+  maxStoredThemeSpecBytes: number;
+  maxFrameBytes: number;
+  maxThemePrimitives: number;
+  supportedPrimitiveTypes: PrimitiveType[];
+  maxThemeGifAssets: number;
+  maxThemeGifBytes: number;
+  maxThemeGifWidth: number;
+  maxThemeGifHeight: number;
+  maxThemeGifPixels: number;
+};
+type DeviceHello = {
+  board?: string;
+  firmware?: string;
+  maxFrameBytes?: number;
+  capabilities?: {
+    theme?: {
+      maxThemeSpecBytes?: number;
+      maxStoredThemeSpecBytes?: number;
+      maxThemePrimitives?: number;
+      supportedPrimitiveTypes?: string[];
+      maxThemeGifAssets?: number;
+      maxThemeGifBytes?: number;
+      maxThemeGifWidth?: number;
+      maxThemeGifHeight?: number;
+      maxThemeGifPixels?: number;
+      supportsStoredThemes?: boolean;
+    };
+  };
+};
 type SpriteSource = {
   file: File;
   previewUrl: string;
@@ -212,6 +244,7 @@ interface AppState {
   warnings: string[];
   notice: string;
   targetOrigin: string;
+  deviceProfile: DeviceProfile;
   pixelTool: PixelTool;
   pixelBrushToken: string;
   snapEnabled: boolean;
@@ -275,6 +308,22 @@ const frame: FrameData = {
 };
 const UPDATE_LABEL_PREVIEW_TOGGLE_MS = 1500;
 const UPDATE_LABEL_PREVIEW_TEXTS = ["Update Available:", "vibetv.local"] as const;
+
+function defaultDeviceProfile(): DeviceProfile {
+  return {
+    source: "offline",
+    label: "Offline ESP8266 defaults",
+    maxStoredThemeSpecBytes: MAX_SPEC_BYTES,
+    maxFrameBytes: MAX_FRAME_BYTES,
+    maxThemePrimitives: MAX_PRIMITIVES,
+    supportedPrimitiveTypes: [...SUPPORTED_PRIMITIVE_TYPES],
+    maxThemeGifAssets: MAX_GIF_ASSETS,
+    maxThemeGifBytes: MAX_GIF_BYTES,
+    maxThemeGifWidth: MAX_GIF_WIDTH,
+    maxThemeGifHeight: MAX_GIF_HEIGHT,
+    maxThemeGifPixels: MAX_GIF_PIXELS,
+  };
+}
 
 function previewTime(date: Date): string {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -2281,6 +2330,7 @@ const state: AppState = {
   warnings: [],
   notice: restoredDraft ? `Last draft restored from ${formatSavedAt(restoredDraft.savedAt)}.` : "",
   targetOrigin: storedTargetOrigin(),
+  deviceProfile: defaultDeviceProfile(),
   pixelTool: "move",
   pixelBrushToken: "a",
   snapEnabled: true,
@@ -2654,6 +2704,81 @@ function normalizeTargetOrigin(value: string): string {
   return withProtocol.replace(/\/+$/, "");
 }
 
+function numberOrDefault(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function primitiveTypesOrDefault(value: unknown, fallback: PrimitiveType[]): PrimitiveType[] {
+  if (!Array.isArray(value)) {
+    return [...fallback];
+  }
+  const supported = value
+    .map((item) => typeof item === "string" ? item.trim().toLowerCase() : "")
+    .filter((item): item is PrimitiveType => SUPPORTED_PRIMITIVE_TYPES.includes(item as PrimitiveType));
+  return supported.length > 0 ? supported : [...fallback];
+}
+
+function deviceProfileFromHello(hello: DeviceHello): DeviceProfile {
+  const defaults = defaultDeviceProfile();
+  const theme = hello.capabilities?.theme;
+  const board = hello.board?.trim() || "Vibe TV";
+  const firmware = hello.firmware?.trim();
+  return {
+    source: "device",
+    label: firmware ? `${board} ${firmware}` : board,
+    maxStoredThemeSpecBytes: numberOrDefault(theme?.maxStoredThemeSpecBytes, numberOrDefault(theme?.maxThemeSpecBytes, defaults.maxStoredThemeSpecBytes)),
+    maxFrameBytes: numberOrDefault(hello.maxFrameBytes, defaults.maxFrameBytes),
+    maxThemePrimitives: numberOrDefault(theme?.maxThemePrimitives, defaults.maxThemePrimitives),
+    supportedPrimitiveTypes: primitiveTypesOrDefault(theme?.supportedPrimitiveTypes, defaults.supportedPrimitiveTypes),
+    maxThemeGifAssets: numberOrDefault(theme?.maxThemeGifAssets, defaults.maxThemeGifAssets),
+    maxThemeGifBytes: numberOrDefault(theme?.maxThemeGifBytes, defaults.maxThemeGifBytes),
+    maxThemeGifWidth: numberOrDefault(theme?.maxThemeGifWidth, defaults.maxThemeGifWidth),
+    maxThemeGifHeight: numberOrDefault(theme?.maxThemeGifHeight, defaults.maxThemeGifHeight),
+    maxThemeGifPixels: numberOrDefault(theme?.maxThemeGifPixels, defaults.maxThemeGifPixels),
+  };
+}
+
+async function readDeviceProfile(targetOrigin: string): Promise<DeviceProfile | null> {
+  const response = await fetchWithCorsFallback(`${targetOrigin}/hello`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  if (response.type === "opaque") {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(await responseFailureMessage(response, "Device capability check failed"));
+  }
+  return deviceProfileFromHello(await response.json() as DeviceHello);
+}
+
+async function refreshDeviceProfile(): Promise<boolean> {
+  const targetOrigin = normalizeTargetOrigin(state.targetOrigin);
+  state.targetOrigin = targetOrigin;
+  persistTargetOrigin();
+  state.notice = "Reading Vibe TV capabilities.";
+  render();
+  try {
+    const profile = await readDeviceProfile(targetOrigin);
+    if (!profile) {
+      state.deviceProfile = defaultDeviceProfile();
+      state.notice = "Browser could not read device capabilities; using offline ESP8266 defaults.";
+      render();
+      return false;
+    }
+    state.deviceProfile = profile;
+    validateCurrentSpec();
+    state.notice = `Validating against ${state.deviceProfile.label}.`;
+    render();
+    return true;
+  } catch (error) {
+    state.deviceProfile = defaultDeviceProfile();
+    state.notice = error instanceof Error ? error.message : "Could not read device capabilities.";
+  }
+  render();
+  return false;
+}
+
 function syncJsonFromSpec() {
   normalizeMiniThemeSpec(state.spec);
   state.jsonText = prettyJson(state.spec);
@@ -2887,6 +3012,7 @@ function validateThemeAssetPaths(primitive: Primitive, prefix: string, errors: s
 function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const profile = state.deviceProfile;
 
   if (spec.themeSpecVersion !== 1) {
     errors.push("themeSpecVersion muss 1 sein.");
@@ -2906,14 +3032,16 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
   if (!Array.isArray(spec.primitives) || spec.primitives.length === 0) {
     errors.push("Mindestens ein Primitive ist erforderlich.");
   }
-  if (spec.primitives.length > MAX_PRIMITIVES) {
-    errors.push(`Zu viele Primitives: ${spec.primitives.length}/${MAX_PRIMITIVES}.`);
+  if (spec.primitives.length > profile.maxThemePrimitives) {
+    errors.push(`Zu viele Primitives: ${spec.primitives.length}/${profile.maxThemePrimitives}.`);
   }
 
   spec.primitives.forEach((primitive, index) => {
     const prefix = `Primitive ${index + 1}`;
     if (!SUPPORTED_PRIMITIVE_TYPES.includes(primitive.type)) {
       errors.push(`${prefix}: type muss ${SUPPORTED_PRIMITIVE_TYPES.join(", ")} sein.`);
+    } else if (!profile.supportedPrimitiveTypes.includes(primitive.type)) {
+      errors.push(`${prefix}: ${primitive.type} wird von ${profile.label} nicht unterstützt.`);
     }
     if (!isNonNegativeInteger(primitive.x) || !isNonNegativeInteger(primitive.y)) {
       errors.push(`${prefix}: x/y müssen ganze Zahlen ab 0 sein.`);
@@ -2958,8 +3086,8 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
       if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
         errors.push(`${prefix}: width/height müssen größer als 0 sein.`);
       } else {
-        if (primitive.width > MAX_GIF_WIDTH || primitive.height > MAX_GIF_HEIGHT || primitive.width * primitive.height > MAX_GIF_PIXELS) {
-          errors.push(`${prefix}: GIF ist zu groß. Limit ist ${MAX_GIF_WIDTH}x${MAX_GIF_HEIGHT} wie mini.gif.`);
+        if (primitive.width > profile.maxThemeGifWidth || primitive.height > profile.maxThemeGifHeight || primitive.width * primitive.height > profile.maxThemeGifPixels) {
+          errors.push(`${prefix}: GIF ist zu groß. Limit ist ${profile.maxThemeGifWidth}x${profile.maxThemeGifHeight}.`);
         }
       }
       validateThemeAssetPaths(primitive, prefix, errors);
@@ -3009,22 +3137,22 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
   });
 
   const bytes = new TextEncoder().encode(JSON.stringify(buildDeviceThemeSpec(spec))).length;
-  if (bytes > MAX_SPEC_BYTES) {
-    errors.push(`ThemeSpec ist zu groß: ${bytes}/${MAX_SPEC_BYTES} Bytes.`);
+  if (bytes > profile.maxStoredThemeSpecBytes) {
+    errors.push(`ThemeSpec ist zu groß: ${bytes}/${profile.maxStoredThemeSpecBytes} Bytes.`);
   }
   const frameBytes = new TextEncoder().encode(JSON.stringify(buildLiveFramePayload(spec))).length;
-  if (frameBytes > MAX_FRAME_BYTES) {
-    errors.push(`Payload ist zu groß für Vibe TV: ${frameBytes}/${MAX_FRAME_BYTES} Bytes.`);
+  if (frameBytes > profile.maxFrameBytes) {
+    errors.push(`Payload ist zu groß für Vibe TV: ${frameBytes}/${profile.maxFrameBytes} Bytes.`);
   }
 
   const gifPaths = uniqueAssetPaths("gif", spec);
-  if (gifPaths.length > MAX_GIF_ASSETS) {
-    errors.push(`Zu viele GIFs: ${gifPaths.length}/${MAX_GIF_ASSETS}. VibeTV ESP8266 unterstützt ein mini.gif-großes GIF pro Theme.`);
+  if (gifPaths.length > profile.maxThemeGifAssets) {
+    errors.push(`Zu viele GIFs: ${gifPaths.length}/${profile.maxThemeGifAssets}.`);
   }
   for (const path of gifPaths) {
     const file = state.gifAssets[path]?.file;
-    if (file && file.size > MAX_GIF_BYTES) {
-      errors.push(`GIF ${path} ist zu groß: ${file.size}/${MAX_GIF_BYTES} Bytes. Orientiere dich an mini.gif.`);
+    if (file && file.size > profile.maxThemeGifBytes) {
+      errors.push(`GIF ${path} ist zu groß: ${file.size}/${profile.maxThemeGifBytes} Bytes.`);
     }
   }
 
@@ -3180,6 +3308,7 @@ function render() {
   const selectedCount = selectedPrimitiveIndices().length;
   const bytes = new TextEncoder().encode(JSON.stringify(buildDeviceThemeSpec(state.spec))).length;
   const frameBytes = new TextEncoder().encode(JSON.stringify(buildLiveFramePayload())).length;
+  const profile = state.deviceProfile;
 
   app.innerHTML = `
     <section class="studio-shell">
@@ -3187,9 +3316,10 @@ function render() {
         <h1>Theme Studio</h1>
         <div class="appbar-actions">
           <div class="status-strip">
-            ${metric("Theme", bytes, MAX_SPEC_BYTES)}
-            ${metric("Live", frameBytes, MAX_FRAME_BYTES)}
-            ${metric("Primitives", state.spec.primitives.length, MAX_PRIMITIVES)}
+            ${metric("Theme", bytes, profile.maxStoredThemeSpecBytes)}
+            ${metric("Live", frameBytes, profile.maxFrameBytes)}
+            ${metric("Primitives", state.spec.primitives.length, profile.maxThemePrimitives)}
+            <span class="health ${profile.source === "device" ? "ok" : "warn"}">${escapeHtml(profile.label)}</span>
             <span class="health ${state.errors.length ? "bad" : "ok"}">${state.errors.length ? "Invalid" : "Valid"}</span>
           </div>
         </div>
@@ -3204,6 +3334,7 @@ function render() {
           <label>Vibe TV
             <input data-field="targetOrigin" aria-label="Vibe TV URL" value="${escapeAttr(state.targetOrigin)}" />
           </label>
+          <button class="full-width small-button" data-action="read-device-profile">Read Device Profile</button>
           <label>Background
             <span class="color-row">
               <input type="color" data-field="bgColor" value="${escapeAttr(state.spec.bgColor ?? "#000000")}" />
@@ -6513,6 +6644,10 @@ async function handleAction(action: string) {
     await saveThemeLocally();
     return;
   }
+  if (action === "read-device-profile") {
+    await refreshDeviceProfile();
+    return;
+  }
   if (action === "save-draft") {
     if (!applyPendingJsonEdit()) {
       return;
@@ -6702,8 +6837,9 @@ function addGifPrimitive(file: File) {
     render();
     return;
   }
-  if (file.size > MAX_GIF_BYTES) {
-    state.notice = `GIF is too large (${file.size}/${MAX_GIF_BYTES} bytes). Use a mini.gif-sized asset.`;
+  const maxGifBytes = state.deviceProfile.maxThemeGifBytes;
+  if (file.size > maxGifBytes) {
+    state.notice = `GIF is too large (${file.size}/${maxGifBytes} bytes). Use a smaller asset.`;
     render();
     return;
   }
@@ -7472,17 +7608,24 @@ function arrayBufferFor(data: Uint8Array): ArrayBuffer {
 }
 
 async function sendThemeToVibeTV() {
-  validateCurrentSpec();
-  if (state.errors.length > 0) {
-    state.notice = "Theme is invalid. Fix the errors before sending.";
-    render();
-    return;
-  }
-
   try {
     const targetOrigin = normalizeTargetOrigin(state.targetOrigin);
     state.targetOrigin = targetOrigin;
     persistTargetOrigin();
+    state.notice = "Checking Vibe TV capabilities.";
+    render();
+
+    const profile = await readDeviceProfile(targetOrigin);
+    if (profile) {
+      state.deviceProfile = profile;
+    }
+    validateCurrentSpec();
+    if (state.errors.length > 0) {
+      state.notice = `Theme is invalid for ${state.deviceProfile.label}. Fix the errors before sending.`;
+      render();
+      return;
+    }
+
     state.notice = "Sending theme to Vibe TV.";
     render();
     await uploadThemeAssets(targetOrigin);
@@ -7526,7 +7669,7 @@ async function sendThemeToVibeTV() {
 
 async function sendLegacyInlineTheme(targetOrigin: string) {
   const inlineBytes = new TextEncoder().encode(JSON.stringify(buildFramePayload())).length;
-  if (inlineBytes > MAX_FRAME_BYTES) {
+  if (inlineBytes > state.deviceProfile.maxFrameBytes) {
     throw new Error("This Vibe TV firmware does not support stored themes yet. Update the firmware, then send this larger theme again.");
   }
 
