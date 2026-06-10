@@ -21,6 +21,8 @@ const (
 	defaultWiFiTimeout      = 5 * time.Second
 	assetUploadAttempts     = 3
 	assetUploadRetryMaxBody = 512
+	deviceAuthHeader        = "X-VibeTV-Token"
+	deviceAuthEnv           = "CODEXBAR_DISPLAY_DEVICE_TOKEN"
 )
 
 var assetUploadRetryDelay = 1500 * time.Millisecond
@@ -63,7 +65,7 @@ func (WiFiTransport) Name() string {
 }
 
 func (t WiFiTransport) ResolvePort(requested string) (string, error) {
-	return normalizeWiFiTarget(requested)
+	return normalizeWiFiTargetWithToken(requested)
 }
 
 func (t WiFiTransport) DeviceCapabilities(target string) (protocol.DeviceCapabilities, error) {
@@ -93,7 +95,13 @@ func (t WiFiTransport) SendLine(target string, line []byte) error {
 	if err != nil {
 		return err
 	}
-	resp, err := t.client.Post(base+"/frame", "application/json", bytes.NewReader(line))
+	req, err := http.NewRequest(http.MethodPost, base+"/frame", bytes.NewReader(line))
+	if err != nil {
+		return fmt.Errorf("build frame request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	applyDeviceAuth(req, target)
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("post frame: %w", err)
 	}
@@ -135,7 +143,13 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 	contentType := writer.FormDataContentType()
 	var lastErr error
 	for attempt := 1; attempt <= assetUploadAttempts; attempt++ {
-		resp, err := t.client.Post(endpoint, contentType, bytes.NewReader(body.Bytes()))
+		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body.Bytes()))
+		if err != nil {
+			return fmt.Errorf("build asset request %s: %w", devicePath, err)
+		}
+		req.Header.Set("Content-Type", contentType)
+		applyDeviceAuth(req, target)
+		resp, err := t.client.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("post asset %s: %w", devicePath, err)
 			if shouldRetryAssetUpload(err) && attempt < assetUploadAttempts {
@@ -222,7 +236,13 @@ func (t WiFiTransport) ActivateStoredTheme(target, devicePath string) error {
 	if err != nil {
 		return fmt.Errorf("marshal theme activation: %w", err)
 	}
-	resp, err := t.client.Post(base+"/theme/active", "application/json", bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, base+"/theme/active", bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("build theme activation request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	applyDeviceAuth(req, target)
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("post theme activation: %w", err)
 	}
@@ -232,6 +252,54 @@ func (t WiFiTransport) ActivateStoredTheme(target, devicePath string) error {
 		return fmt.Errorf("post theme activation: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+func applyDeviceAuth(req *http.Request, rawTarget string) {
+	if token := deviceAuthTokenForTarget(rawTarget); token != "" {
+		req.Header.Set(deviceAuthHeader, token)
+	}
+}
+
+func deviceAuthTokenForTarget(raw string) string {
+	token := deviceAuthTokenFromTarget(raw)
+	if token != "" {
+		return token
+	}
+	return strings.TrimSpace(os.Getenv(deviceAuthEnv))
+}
+
+func deviceAuthTokenFromTarget(raw string) string {
+	target := strings.TrimSpace(raw)
+	if target == "" {
+		return ""
+	}
+	if !strings.Contains(target, "://") {
+		target = "http://" + target
+	}
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Query().Get("token"))
+}
+
+func normalizeWiFiTargetWithToken(raw string) (string, error) {
+	base, err := normalizeWiFiTarget(raw)
+	if err != nil {
+		return "", err
+	}
+	token := deviceAuthTokenFromTarget(raw)
+	if token == "" {
+		return base, nil
+	}
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	query.Set("token", token)
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
 }
 
 func normalizeWiFiTarget(raw string) (string, error) {
