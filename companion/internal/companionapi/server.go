@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ const (
 	appOrigin        = "https://app.vibetv.shop"
 	defaultDevOrigin = "http://localhost:3000"
 	deviceTimeout    = 15 * time.Second
+	themeInstallEnv  = "VIBETV_ENABLE_WIFI_THEME_INSTALL"
 )
 
 type Options struct {
@@ -399,7 +401,7 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		ThemeID            string `json:"themeId"`
 		PackURL            string `json:"packUrl"`
 		CatalogURL         string `json:"catalogUrl"`
-		SkipFirmwareUpdate bool   `json:"skipFirmwareUpdate"`
+		SkipFirmwareUpdate *bool  `json:"skipFirmwareUpdate"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -408,12 +410,26 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_theme_source", "themeId or packUrl is required.", "Select a theme and retry.")
 		return
 	}
+	if !themeInstallEnabled() {
+		writeError(
+			w,
+			http.StatusForbidden,
+			"theme_install_disabled",
+			"Theme install is disabled for this Companion build.",
+			"Set VIBETV_ENABLE_WIFI_THEME_INSTALL=1 only during a prepared hardware test window, then restart the Companion.",
+		)
+		return
+	}
+	skipFirmwareUpdate := true
+	if req.SkipFirmwareUpdate != nil {
+		skipFirmwareUpdate = *req.SkipFirmwareUpdate
+	}
 	result, err := s.installTheme(r.Context(), themeinstall.Options{
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
 		CatalogURL:         strings.TrimSpace(req.CatalogURL),
 		Target:             targetWithToken(cfg.DeviceTarget, cfg.DeviceToken),
-		SkipFirmwareUpdate: req.SkipFirmwareUpdate,
+		SkipFirmwareUpdate: skipFirmwareUpdate,
 		Out:                io.Discard,
 	})
 	if err != nil {
@@ -625,7 +641,32 @@ func writeInstallError(w http.ResponseWriter, err error) {
 	if strings.TrimSpace(next) == "" {
 		next = "Keep VibeTV powered on and retry the install."
 	}
-	writeError(w, http.StatusBadGateway, code, "Theme install failed.", next)
+	message := "Theme install failed."
+	if detail := sanitizeErrorDetail(err); detail != "" {
+		message = "Theme install failed: " + detail
+	}
+	writeError(w, http.StatusBadGateway, code, message, next)
+}
+
+var sensitiveQueryValuePattern = regexp.MustCompile(`(?i)([?&](?:token|auth|key|secret)=)[^&\s"]+`)
+
+func sanitizeErrorDetail(err error) string {
+	if err == nil {
+		return ""
+	}
+	detail := strings.TrimSpace(err.Error())
+	if detail == "" {
+		return ""
+	}
+	detail = sensitiveQueryValuePattern.ReplaceAllString(detail, "${1}<redacted>")
+	if len(detail) > 240 {
+		detail = detail[:237] + "..."
+	}
+	return detail
+}
+
+func themeInstallEnabled() bool {
+	return strings.TrimSpace(os.Getenv(themeInstallEnv)) == "1"
 }
 
 func writeError(w http.ResponseWriter, status int, code, message, nextAction string) {

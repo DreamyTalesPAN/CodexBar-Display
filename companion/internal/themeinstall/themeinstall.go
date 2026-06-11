@@ -101,11 +101,6 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	if out == nil {
 		out = io.Discard
 	}
-	now := opts.Now
-	if now == nil {
-		now = time.Now
-	}
-
 	resolvedPack, err := ResolveSource(strings.TrimSpace(opts.PackURL), strings.TrimSpace(opts.CatalogURL), strings.TrimSpace(opts.ThemeID))
 	if err != nil {
 		return Result{}, err
@@ -252,30 +247,6 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  err,
 			Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
-		}
-	}
-
-	frame := protocol.Frame{
-		V:         protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion),
-		Provider:  "vibetv",
-		Label:     "VibeTV",
-		Session:   50,
-		Weekly:    50,
-		ResetSec:  3600,
-		UsageMode: "remaining",
-		Time:      now().Format("15:04"),
-		Date:      now().Format("02.01.2006"),
-	}
-	line, err := frame.MarshalLine()
-	if err != nil {
-		return Result{}, err
-	}
-	if err := wifi.SendLine(resolvedTarget, line); err != nil {
-		return Result{}, &InstallError{
-			Op:   "theme-pack/send-frame",
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "theme is installed; wait a moment or retry if the display did not update",
 		}
 	}
 

@@ -225,8 +225,8 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 	if !activated {
 		t.Fatalf("expected stored theme activation")
 	}
-	if !sentFrame {
-		t.Fatalf("expected live frame after activation")
+	if sentFrame {
+		t.Fatalf("expected theme install not to send demo live frame")
 	}
 }
 
@@ -437,8 +437,11 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 	if !uploaded["/themes/u/cm.cbi"] || !uploaded["/themes/u/cm.json"] {
 		t.Fatalf("expected asset and theme spec uploads, got %#v", uploaded)
 	}
-	if !activated || !sentFrame {
-		t.Fatalf("expected activation and frame, activated=%t sentFrame=%t", activated, sentFrame)
+	if !activated {
+		t.Fatalf("expected activation")
+	}
+	if sentFrame {
+		t.Fatalf("expected theme install not to send demo live frame")
 	}
 }
 

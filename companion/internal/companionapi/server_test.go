@@ -3,6 +3,7 @@ package companionapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -75,6 +76,8 @@ func TestDeviceNotFoundErrorFormat(t *testing.T) {
 }
 
 func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
+	t.Setenv(themeInstallEnv, "1")
+
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/hello" {
 			t.Fatalf("unexpected device path %s", r.URL.Path)
@@ -91,7 +94,7 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 		return themeinstall.Result{ThemeID: opts.ThemeID, Target: opts.Target}, nil
 	}
 
-	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip","skipFirmwareUpdate":true}`)
+	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip"}`)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
 	req.Header.Set("Content-Type", "application/json")
@@ -106,6 +109,78 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	}
 	if !strings.Contains(gotOpts.Target, "token=") {
 		t.Fatalf("expected target to include pairing token for transport auth, got %q", gotOpts.Target)
+	}
+	if !gotOpts.SkipFirmwareUpdate {
+		t.Fatalf("expected local API theme install to skip firmware update by default")
+	}
+}
+
+func TestThemeInstallErrorIncludesSanitizedDetail(t *testing.T) {
+	t.Setenv(themeInstallEnv, "1")
+
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(ctx context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{}, errors.New(`theme-pack/upload: post asset /themes/u/cm.cbi: Post "http://vibetv.local/assets?path=%2Fthemes%2Fu%2Fcm.cbi&token=pair-token": connection reset by peer`)
+	}
+
+	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip"}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected status 502, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !strings.Contains(got.Error.Message, "theme-pack/upload") {
+		t.Fatalf("expected install detail in response, got %+v", got.Error)
+	}
+	if strings.Contains(got.Error.Message, "pair-token") {
+		t.Fatalf("install error leaked pairing token: %q", got.Error.Message)
+	}
+}
+
+func TestThemeInstallDisabledByDefault(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip"}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "theme_install_disabled" {
+		t.Fatalf("unexpected disabled response: %+v", got)
 	}
 }
 
