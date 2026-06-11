@@ -18,7 +18,9 @@ const (
 )
 
 type Config struct {
-	Theme string `json:"theme,omitempty"`
+	Theme        string `json:"theme,omitempty"`
+	DeviceTarget string `json:"deviceTarget,omitempty"`
+	DeviceToken  string `json:"deviceToken,omitempty"`
 }
 
 func NormalizeTheme(raw string) string {
@@ -65,6 +67,8 @@ func Load(home string) (Config, error) {
 		return Config{}, fmt.Errorf("parse runtime config: %w", err)
 	}
 	cfg.Theme = NormalizeTheme(cfg.Theme)
+	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
+	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
 	return cfg, nil
 }
 
@@ -75,6 +79,8 @@ func Save(home string, cfg Config) error {
 	}
 
 	cfg.Theme = NormalizeTheme(cfg.Theme)
+	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
+	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
 
 	path := ConfigPath(home)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
