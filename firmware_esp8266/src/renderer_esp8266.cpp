@@ -94,6 +94,30 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
   return snapshot;
 }
 
+RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
+  RendererHealthSnapshot snapshot;
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  snapshot.themeSpecActive = display::HasFrame() && display::CurrentFrame().hasThemeSpec;
+  if (snapshot.themeSpecActive) {
+    snapshot.activeTheme = display::CurrentFrame().themeSpecId.length() > 0
+                               ? display::CurrentFrame().themeSpecId
+                               : "theme-spec";
+  } else {
+    snapshot.activeTheme = themeName(display::ActiveTheme());
+  }
+  snapshot.themeSpecRenderOk = !snapshot.themeSpecActive || display::ThemeSpecRenderOk();
+  snapshot.themeSpecRenderFailures = display::ThemeSpecRenderFailures();
+  const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
+  snapshot.gifActivePath = gif.activePath;
+  snapshot.gifFilePresent = gif.filePresent;
+  snapshot.gifDecoderOpen = gif.decoderOpen;
+  snapshot.gifLastErrorStage = gif.lastErrorStage;
+#else
+  snapshot.activeTheme = "probe";
+#endif
+  return snapshot;
+}
+
 bool RendererESP8266::SupportsBrightnessControl() const {
 #ifdef TFT_BL
   return true;

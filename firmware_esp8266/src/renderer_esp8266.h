@@ -39,11 +39,23 @@ struct RendererDebugSnapshot {
   unsigned long gifLastErrorAgeMs = 0;
 };
 
+struct RendererHealthSnapshot {
+  String activeTheme;
+  bool themeSpecActive = false;
+  bool themeSpecRenderOk = true;
+  unsigned long themeSpecRenderFailures = 0;
+  String gifActivePath;
+  bool gifFilePresent = false;
+  bool gifDecoderOpen = false;
+  String gifLastErrorStage;
+};
+
 class RendererESP8266 : public app::Renderer {
  public:
   void Setup(app::RuntimeContext& ctx) override;
   void OnFrameAccepted(app::RuntimeContext& ctx, const core::SerialConsumeEvent& event) override;
   RendererDebugSnapshot DebugSnapshot() const;
+  RendererHealthSnapshot HealthSnapshot() const;
   void ResetGifStateForAssetUpdate();
   bool SupportsBrightnessControl() const;
   void ApplyBrightnessPercent(uint8_t percent);

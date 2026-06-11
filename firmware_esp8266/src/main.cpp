@@ -74,16 +74,19 @@ const char* const kFirmwareUpdateNoticeTexts[] = {
 constexpr uint8_t kFirmwareUpdateNoticeTextCount =
     sizeof(kFirmwareUpdateNoticeTexts) / sizeof(kFirmwareUpdateNoticeTexts[0]);
 
-String themeCapabilitiesJSON(bool enabled) {
+String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
-  out.reserve(260);
+  out.reserve(compact ? 180 : 260);
   if (!enabled) {
     return "{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
   out += "{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += String(codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives);
-  out += ",\"supportedPrimitiveTypes\":[\"text\",\"rect\",\"progress\",\"gif\",\"sprite\",\"pixels\"]";
-  out += ",\"supportsStoredThemes\":true,\"maxStoredThemeSpecBytes\":";
+  if (!compact) {
+    out += ",\"supportedPrimitiveTypes\":[\"text\",\"rect\",\"progress\",\"gif\",\"sprite\",\"pixels\"]";
+    out += ",\"supportsStoredThemes\":true";
+  }
+  out += ",\"maxStoredThemeSpecBytes\":";
   out += String(kMaxStoredThemeSpecBytes);
   out += ",\"maxThemeGifAssets\":";
   out += String(codexbar_display::themespec::kMaxThemeSpecGifAssets);
@@ -180,6 +183,7 @@ OtaUploadDiagnostics otaDiagnostics;
 RuntimeRenderDiagnostics renderDiagnostics;
 DeviceSettings deviceSettings;
 String deviceAuthToken;
+String bootResetReasonJSON;
 
 void addCorsHeaders();
 
@@ -680,19 +684,23 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
   Serial.printf("frame_received transport=%s\n", transport);
 }
 
-const char* transportCapabilitiesJSON(const char* activeTransport) {
+const char* transportCapabilitiesJSON(const char* activeTransport, bool compact = false) {
   const bool isUsb = activeTransport != nullptr && strcmp(activeTransport, "usb") == 0;
   static String json;
-  json = "{\"display\":{\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16,\"brightness\":";
+  json = "{\"display\":{";
+  if (!compact) {
+    json += "\"widthPx\":240,\"heightPx\":240,\"colorDepthBits\":16,";
+  }
+  json += "\"brightness\":";
   appendBrightnessCapabilityJSON(json);
   json += "},\"theme\":";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
-  json += themeCapabilitiesJSON(false);
+  json += themeCapabilitiesJSON(false, compact);
 #else
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  json += themeCapabilitiesJSON(true);
+  json += themeCapabilitiesJSON(true, compact);
 #else
-  json += themeCapabilitiesJSON(false);
+  json += themeCapabilitiesJSON(false, compact);
 #endif
 #endif
   json += ",";
@@ -1026,7 +1034,7 @@ String connectedPageHTML() {
     html += htmlEscape(setupCommand);
     html += F("</pre></section>");
   }
-  html += F("<p><a href='/health'>Status</a> <a href='/update'>Update</a> <a href='/themes'>Themes</a></p>");
+  html += F("<p><a href='/health'>Status</a> <a href='/update'>Update</a></p>");
   const String tokenQuery = deviceAuthConfigured() ? String("?token=") + deviceAuthToken : String();
   if (renderer.SupportsBrightnessControl()) {
     html += F("<section><form method='post' action='/api/settings");
@@ -1051,6 +1059,7 @@ String connectedPageHTML() {
 }
 
 void handleRoot() {
+  webServer.keepAlive(false);
   if (setupMode) {
     webServer.send(200, "text/html; charset=utf-8", setupPageHTML());
     return;
@@ -1059,11 +1068,13 @@ void handleRoot() {
 }
 
 void redirectToSetupRoot() {
+  webServer.keepAlive(false);
   webServer.sendHeader("Location", String("http://") + kSetupHost + "/", true);
   webServer.send(302, "text/plain; charset=utf-8", "");
 }
 
 void handleCaptivePortalProbe() {
+  webServer.keepAlive(false);
   if (setupMode) {
     webServer.send(200, "text/html; charset=utf-8", setupPageHTML());
     return;
@@ -1072,6 +1083,7 @@ void handleCaptivePortalProbe() {
 }
 
 void handleSaveWifi() {
+  webServer.keepAlive(false);
   String ssid = webServer.arg("custom_ssid");
   ssid.trim();
   if (ssid.length() == 0) {
@@ -1096,6 +1108,7 @@ void handleSaveWifi() {
 }
 
 void handleResetWifi() {
+  webServer.keepAlive(false);
   if (webServer.method() != HTTP_POST) {
     webServer.send(405, "text/plain; charset=utf-8", "method not allowed");
     return;
@@ -1113,6 +1126,7 @@ void handleResetWifi() {
 }
 
 void addCorsHeaders() {
+  webServer.keepAlive(false);
   webServer.sendHeader("Access-Control-Allow-Origin", "*");
   webServer.sendHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
   webServer.sendHeader("Access-Control-Allow-Headers", String("Content-Type,") + kDeviceAuthHeader);
@@ -1120,22 +1134,28 @@ void addCorsHeaders() {
 
 void handleHello() {
   addCorsHeaders();
-  webServer.send(200, "application/json", codexbar_display::app::BuildDeviceHelloJSON(makeTransportConfig("wifi")));
-}
-
-String wifiModeName() {
-  switch (WiFi.getMode()) {
-    case WIFI_OFF:
-      return "off";
-    case WIFI_STA:
-      return "station";
-    case WIFI_AP:
-      return "access_point";
-    case WIFI_AP_STA:
-      return "ap_station";
-    default:
-      return "unknown";
-  }
+  String out;
+  out.reserve(560);
+  out += "{\"kind\":\"hello\",\"protocolVersion\":2,\"board\":\"";
+  out += CODEXBAR_DISPLAY_BOARD_ID;
+  out += "\",\"firmware\":\"";
+  out += CODEXBAR_DISPLAY_FW_VERSION;
+  out += "\",\"maxFrameBytes\":";
+  out += String(kMaxFrameBytes);
+  out += ",\"capabilities\":{\"display\":{\"brightness\":";
+  out += renderer.SupportsBrightnessControl() ? "{\"supported\":true}" : "{\"supported\":false}";
+  out += "},\"theme\":";
+#ifdef CODEXBAR_DISPLAY_PROBE_ONLY
+  out += themeCapabilitiesJSON(false, true);
+#else
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  out += themeCapabilitiesJSON(true, true);
+#else
+  out += themeCapabilitiesJSON(false, true);
+#endif
+#endif
+  out += ",\"transport\":{\"active\":\"wifi\"}}}";
+  webServer.send(200, "application/json", out);
 }
 
 bool isSafeAssetPath(const String& path) {
@@ -1240,43 +1260,19 @@ void appendAssetListJSON(String& out) {
 }
 
 void handleHealth() {
-  const bool wifiConnected = WiFi.status() == WL_CONNECTED;
-  const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
+  const codexbar_display::esp8266::RendererHealthSnapshot snapshot = renderer.HealthSnapshot();
 
   String out;
-  out.reserve(1200);
-  out += "{\"ok\":true";
-  out += ",\"firmware\":\"";
+  out.reserve(640);
+  out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
-  out += "\",\"board\":\"";
-  out += jsonEscape(CODEXBAR_DISPLAY_BOARD_ID);
   out += "\",\"system\":{\"freeHeap\":";
   out += String(ESP.getFreeHeap());
-  out += ",\"maxFreeBlock\":";
-  out += String(ESP.getMaxFreeBlockSize());
-  out += ",\"heapFragmentationPct\":";
-  out += String(ESP.getHeapFragmentation());
-  out += ",\"sketchSize\":";
-  out += String(ESP.getSketchSize());
-  out += ",\"freeSketchSpace\":";
-  out += String(ESP.getFreeSketchSpace());
-  out += ",\"resetReason\":\"";
-  out += jsonEscape(ESP.getResetReason());
-  out += "\"";
-  out += "},\"wifi\":{\"mode\":\"";
-  out += wifiModeName();
-  out += "\",\"connected\":";
-  out += wifiConnected ? "true" : "false";
-  out += ",\"ip\":\"";
-  out += wifiConnected ? WiFi.localIP().toString() : "";
-  out += "\",\"softApIp\":\"";
-  out += (setupMode || WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) ? WiFi.softAPIP().toString() : "";
-  out += "\",\"rssi\":";
-  out += wifiConnected ? String(WiFi.RSSI()) : "0";
+  out += ",\"resetReason\":";
+  out += bootResetReasonJSON;
   out += "},";
   const bool filesystemMounted = filesystemInfoJSON(out);
-  out += ",";
-  out += "\"display\":{\"activeTheme\":\"";
+  out += ",\"display\":{\"activeTheme\":\"";
   out += jsonEscape(snapshot.activeTheme);
   out += "\",\"themeSpec\":{\"active\":";
   out += snapshot.themeSpecActive ? "true" : "false";
@@ -1284,16 +1280,12 @@ void handleHealth() {
   out += snapshot.themeSpecRenderOk ? "true" : "false";
   out += ",\"renderFailures\":";
   out += String(snapshot.themeSpecRenderFailures);
-  out += ",\"compiled\":";
-  out += snapshot.themeSpecCompiled ? "true" : "false";
   out += "},\"gif\":{\"activePath\":\"";
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";
   out += snapshot.gifFilePresent ? "true" : "false";
   out += ",\"decoderOpen\":";
   out += snapshot.gifDecoderOpen ? "true" : "false";
-  out += ",\"blocked\":";
-  out += snapshot.gifBlocked ? "true" : "false";
   out += ",\"lastError\":";
   appendJSONNullableString(out, snapshot.gifLastErrorStage);
   out += "}},\"render\":{\"fullCount\":";
@@ -1301,33 +1293,12 @@ void handleHealth() {
   out += ",\"partialCount\":";
   out += String(renderDiagnostics.partialCount);
   out += ",\"lastKind\":\"";
-  out += renderDiagnostics.lastKind;
-  out += "\"}";
-  out += ",";
-  out += "\"update\":{\"available\":";
-  out += firmwareUpdate.available ? "true" : "false";
-  out += ",\"latestVersion\":";
-  appendJSONNullableString(out, firmwareUpdate.latestVersion);
-  out += ",\"status\":\"";
-  out += jsonEscape(firmwareUpdate.lastStatus);
-  out += "\",\"lastError\":";
-  appendJSONNullableString(out, firmwareUpdate.lastError);
-  out += ",\"rawFirmwareUrl\":\"http://";
-  out += WiFi.localIP().toString();
-  out += ":8081/update/firmware.raw\",\"upload\":{\"status\":\"";
-  out += otaDiagnostics.status;
-  out += "\",\"successCount\":";
-  out += String(otaDiagnostics.successCount);
-  out += ",\"failureCount\":";
-  out += String(otaDiagnostics.failureCount);
-  out += "}}";
-  out += ",";
+  out += jsonEscape(renderDiagnostics.lastKind);
+  out += "\"},";
   appendSettingsJSON(out);
-  out += ",\"transport\":{\"active\":\"wifi\",\"supported\":[\"usb\",\"wifi\"],\"httpPort\":80,\"maxFrameBytes\":";
-  out += String(kMaxFrameBytes);
-  out += "}}";
+  out += "}";
 
-  Serial.printf("health_requested ip=%s fs_mounted=%d\n", webServer.client().remoteIP().toString().c_str(), filesystemMounted ? 1 : 0);
+  (void)filesystemMounted;
   addCorsHeaders();
   webServer.send(200, "application/json", out);
 }
@@ -1727,60 +1698,6 @@ bool activateStoredThemePath(const String& path, String& themeId, int& themeRev,
   return true;
 }
 
-void sendThemeUseForm(const String& path, const String& tokenQuery) {
-  webServer.sendContent_P(PSTR("<form method='post' action='/theme/active"));
-  webServer.sendContent(tokenQuery);
-  webServer.sendContent_P(PSTR("'><input type='hidden' name='path' value='"));
-  webServer.sendContent(htmlEscape(path));
-  webServer.sendContent_P(PSTR("'><button>Use</button></form>"));
-}
-
-void sendThemeOptionHTML(const String& path, const String& tokenQuery) {
-  if (!path.startsWith("/themes/") || !path.endsWith(".json")) {
-    return;
-  }
-
-  webServer.sendContent_P(PSTR("<section><code>"));
-  if (path == kDefaultThemeSpecPath) {
-    webServer.sendContent_P(PSTR("Default Mini"));
-  } else {
-    webServer.sendContent(htmlEscape(path));
-  }
-  webServer.sendContent_P(PSTR("</code>"));
-  if (path == activeThemeSpecPath) {
-    webServer.sendContent_P(PSTR("<p>Active</p>"));
-  } else {
-    sendThemeUseForm(path, tokenQuery);
-  }
-  webServer.sendContent_P(PSTR("</section>"));
-}
-
-void sendThemeOptionsFromDirHTML(const String& dirPath, const String& tokenQuery, uint8_t depth) {
-  if (depth > 4 || !LittleFS.begin()) {
-    return;
-  }
-  Dir dir = LittleFS.openDir(dirPath);
-  while (dir.next()) {
-    const String path = normalizedAssetListPath(dirPath, dir.fileName());
-    if (dir.isDirectory()) {
-      sendThemeOptionsFromDirHTML(path, tokenQuery, depth + 1);
-      continue;
-    }
-    sendThemeOptionHTML(path, tokenQuery);
-  }
-}
-
-void handleThemesPage() {
-  const String tokenQuery = deviceAuthConfigured() ? String("?token=") + deviceAuthToken : String();
-  if (!webServer.chunkedResponseModeStart(200, "text/html; charset=utf-8")) {
-    webServer.send(505, "text/plain", "");
-    return;
-  }
-  webServer.sendContent_P(PSTR("<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><title>VibeTV Themes</title><h1>Themes</h1><p><a href='/'>Home</a> <a href='https://vibetv.shop/themes'>Shop</a></p>"));
-  sendThemeOptionsFromDirHTML("/themes/u", tokenQuery, 0);
-  webServer.chunkedResponseFinalize();
-}
-
 #endif
 
 void handleThemeActive() {
@@ -1820,7 +1737,8 @@ void handleThemeActive() {
   }
 
   if (formMode) {
-    webServer.sendHeader("Location", "/themes");
+    webServer.keepAlive(false);
+    webServer.sendHeader("Location", "/");
     webServer.send(303);
     return;
   }
@@ -1882,6 +1800,7 @@ String updatePageHTML() {
 }
 
 void handleUpdatePage() {
+  webServer.keepAlive(false);
   webServer.send(200, "text/html; charset=utf-8", updatePageHTML());
 }
 
@@ -1989,6 +1908,7 @@ void scheduleReboot(const char* reason) {
 }
 
 void handleOtaResult(const char* target) {
+  webServer.keepAlive(false);
   if (otaUploadError == "unauthorized") {
     otaUploadInProgress = false;
     otaDiagnostics.status = "failed";
@@ -2256,9 +2176,6 @@ void startHttpServer() {
       handleAssetUploadResult,
       handleAssetUpload);
   webServer.on("/assets", HTTP_DELETE, handleAssetDelete);
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  webServer.on("/themes", HTTP_GET, handleThemesPage);
-#endif
   webServer.on("/theme/active", HTTP_POST, handleThemeActive);
   webServer.on("/frame", HTTP_POST, handleFrame);
   webServer.on("/update", HTTP_GET, handleUpdatePage);
@@ -2419,7 +2336,9 @@ void recordBench(unsigned long loopStartUs, bool rendered, unsigned long renderU
 void setup() {
   Serial.begin(115200);
   delay(200);
-
+  bootResetReasonJSON = "\"";
+  bootResetReasonJSON += jsonEscape(ESP.getResetReason());
+  bootResetReasonJSON += "\"";
   renderer.Setup(runtimeCtx);
   loadDeviceSettings();
   loadDeviceAuthToken();
