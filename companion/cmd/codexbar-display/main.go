@@ -612,10 +612,6 @@ func runThemePackInstall(args []string) error {
 	return err
 }
 
-func resolveThemePackInstallSource(packPath, catalogRef, themeID string) (string, error) {
-	return themeinstall.ResolveSource(packPath, catalogRef, themeID)
-}
-
 var themePackInstallFirmwareUpdateFn = runThemePackInstallFirmwareUpdate
 
 func runThemePackInstallFirmwareUpdate(target, manifestURL string) error {
