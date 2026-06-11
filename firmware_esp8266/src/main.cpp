@@ -1648,10 +1648,6 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
   const codexbar_display::core::Frame previous = runtimeCtx.runtime.current;
   codexbar_display::core::Frame next = hadFrame ? previous : codexbar_display::core::Frame{};
 
-  if (!hadFrame) {
-    next.provider = "codex";
-    next.label = "Codex";
-  }
   next.hasError = false;
   next.error = "";
   next.clearThemeSpec = false;
