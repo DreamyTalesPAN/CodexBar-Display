@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,6 +20,8 @@ const (
 	defaultWiFiTimeout      = 5 * time.Second
 	assetUploadAttempts     = 3
 	assetUploadRetryMaxBody = 512
+	assetUploadBytesPerSec  = 1024
+	assetUploadReadChunk    = 512
 	deviceAuthHeader        = "X-VibeTV-Token"
 	deviceAuthEnv           = "CODEXBAR_DISPLAY_DEVICE_TOKEN"
 )
@@ -73,7 +74,12 @@ func (t WiFiTransport) DeviceCapabilities(target string) (protocol.DeviceCapabil
 	if err != nil {
 		return protocol.DeviceCapabilities{}, err
 	}
-	resp, err := t.client.Get(base + "/hello")
+	req, err := http.NewRequest(http.MethodGet, base+"/hello", nil)
+	if err != nil {
+		return protocol.DeviceCapabilities{}, fmt.Errorf("build device hello request: %w", err)
+	}
+	req.Close = true
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return protocol.DeviceCapabilities{}, fmt.Errorf("get device hello: %w", err)
 	}
@@ -90,6 +96,28 @@ func (t WiFiTransport) DeviceCapabilities(target string) (protocol.DeviceCapabil
 	return protocol.CapabilitiesFromHello(hello), nil
 }
 
+func (t WiFiTransport) DeviceHealth(target string) error {
+	base, err := normalizeWiFiTarget(target)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodGet, base+"/health", nil)
+	if err != nil {
+		return fmt.Errorf("build device health request: %w", err)
+	}
+	req.Close = true
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("get device health: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("get device health: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 func (t WiFiTransport) SendLine(target string, line []byte) error {
 	base, err := normalizeWiFiTarget(target)
 	if err != nil {
@@ -100,6 +128,7 @@ func (t WiFiTransport) SendLine(target string, line []byte) error {
 		return fmt.Errorf("build frame request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Close = true
 	applyDeviceAuth(req, target)
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -141,28 +170,20 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 
 	endpoint := base + "/assets?path=" + url.QueryEscape(devicePath)
 	contentType := writer.FormDataContentType()
+	bodyBytes := body.Bytes()
 	var lastErr error
 	for attempt := 1; attempt <= assetUploadAttempts; attempt++ {
-		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body.Bytes()))
+		req, err := http.NewRequest(http.MethodPost, endpoint, newRateLimitedAssetReader(bodyBytes))
 		if err != nil {
 			return fmt.Errorf("build asset request %s: %w", devicePath, err)
 		}
 		req.Header.Set("Content-Type", contentType)
+		req.Close = true
+		req.ContentLength = int64(len(bodyBytes))
 		applyDeviceAuth(req, target)
 		resp, err := t.client.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("post asset %s: %w", devicePath, err)
-			if shouldRetryAssetUpload(err) && attempt < assetUploadAttempts {
-				t.noteAssetUploadRetry(AssetUploadRetry{
-					DevicePath:  devicePath,
-					Attempt:     attempt,
-					MaxAttempts: assetUploadAttempts,
-					Err:         err,
-				})
-				time.Sleep(assetUploadRetryDelay)
-				continue
-			}
-			return lastErr
+			return fmt.Errorf("post asset %s: %w", devicePath, err)
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			_ = resp.Body.Close()
@@ -185,38 +206,29 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 	return lastErr
 }
 
+type rateLimitedAssetReader struct {
+	reader *bytes.Reader
+}
+
+func newRateLimitedAssetReader(data []byte) io.Reader {
+	return &rateLimitedAssetReader{reader: bytes.NewReader(data)}
+}
+
+func (r *rateLimitedAssetReader) Read(p []byte) (int, error) {
+	if len(p) > assetUploadReadChunk {
+		p = p[:assetUploadReadChunk]
+	}
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		time.Sleep(time.Duration(n) * time.Second / time.Duration(assetUploadBytesPerSec))
+	}
+	return n, err
+}
+
 func (t WiFiTransport) noteAssetUploadRetry(retry AssetUploadRetry) {
 	if t.assetUploadRetryObserver != nil {
 		t.assetUploadRetryObserver(retry)
 	}
-}
-
-func shouldRetryAssetUpload(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errorsIsTimeout(err) {
-		return true
-	}
-	text := strings.ToLower(err.Error())
-	return strings.Contains(text, "connection reset by peer") ||
-		strings.Contains(text, "broken pipe") ||
-		strings.Contains(text, "eof") ||
-		strings.Contains(text, "server closed idle connection")
-}
-
-func errorsIsTimeout(err error) bool {
-	if err == nil {
-		return false
-	}
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-		return true
-	}
-	if os.IsTimeout(err) {
-		return true
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "client.timeout exceeded") ||
-		strings.Contains(strings.ToLower(err.Error()), "context deadline exceeded")
 }
 
 func retryableAssetStatus(statusCode int) bool {
@@ -241,6 +253,7 @@ func (t WiFiTransport) ActivateStoredTheme(target, devicePath string) error {
 		return fmt.Errorf("build theme activation request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Close = true
 	applyDeviceAuth(req, target)
 	resp, err := t.client.Do(req)
 	if err != nil {
