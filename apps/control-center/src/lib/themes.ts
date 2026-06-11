@@ -25,6 +25,8 @@ export type ThemeCatalogResponse = {
   issue?: string;
 };
 
+type StorefrontTokenMode = "public" | "private";
+
 const SHOPIFY_API_VERSION =
   process.env.SHOPIFY_STOREFRONT_API_VERSION?.trim() || "2026-04";
 const SHOPIFY_COLLECTION_HANDLE =
@@ -90,11 +92,21 @@ export async function getThemeCatalog(): Promise<ThemeCatalogResponse> {
   const shopDomain = normalizeShopDomain(
     process.env.SHOPIFY_STORE_DOMAIN || process.env.SHOPIFY_SHOP_DOMAIN,
   );
-  const storefrontToken = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN?.trim();
+  const privateStorefrontToken =
+    process.env.SHOPIFY_STOREFRONT_PRIVATE_TOKEN?.trim();
+  const publicStorefrontToken =
+    process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN?.trim();
+  const storefrontToken = privateStorefrontToken || publicStorefrontToken;
+  const storefrontTokenMode: StorefrontTokenMode | "auto" =
+    privateStorefrontToken ? "private" : "auto";
 
   if (shopDomain && storefrontToken) {
     try {
-      const themes = await fetchShopifyThemes(shopDomain, storefrontToken);
+      const themes = await fetchShopifyThemes(
+        shopDomain,
+        storefrontToken,
+        storefrontTokenMode,
+      );
       return {
         themes,
         source: "shopify",
@@ -121,6 +133,27 @@ export async function getThemeCatalog(): Promise<ThemeCatalogResponse> {
 async function fetchShopifyThemes(
   shopDomain: string,
   storefrontToken: string,
+  tokenMode: StorefrontTokenMode | "auto",
+): Promise<ThemeProduct[]> {
+  const modes: StorefrontTokenMode[] =
+    tokenMode === "auto" ? ["public", "private"] : [tokenMode];
+  let lastError: unknown;
+
+  for (const mode of modes) {
+    try {
+      return await fetchShopifyThemesWithMode(shopDomain, storefrontToken, mode);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+}
+
+async function fetchShopifyThemesWithMode(
+  shopDomain: string,
+  storefrontToken: string,
+  tokenMode: StorefrontTokenMode,
 ): Promise<ThemeProduct[]> {
   const response = await fetch(
     `https://${shopDomain}/api/${SHOPIFY_API_VERSION}/graphql.json`,
@@ -128,7 +161,9 @@ async function fetchShopifyThemes(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Shopify-Storefront-Access-Token": storefrontToken,
+        [tokenMode === "private"
+          ? "Shopify-Storefront-Private-Token"
+          : "X-Shopify-Storefront-Access-Token"]: storefrontToken,
       },
       body: JSON.stringify({
         query: SHOPIFY_THEMES_QUERY,

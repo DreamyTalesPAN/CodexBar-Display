@@ -93,6 +93,20 @@ These docs are for development, support, and operations:
 
 ## Local Development
 
+### Live Device Safety
+
+The attached Vibe TV is not a routine test target. Local development must use unit tests, mocks, and read-only device checks first.
+
+Allowed read-only checks:
+
+```bash
+curl http://vibetv.local/hello
+curl http://vibetv.local/health
+curl http://vibetv.local/assets
+```
+
+Do not run firmware updates, theme-pack installs, asset uploads, frame posts, or WiFi resets against `vibetv.local` or a device IP unless a human has explicitly approved that exact hardware test. After one failed hardware write test, stop and debug with code/tests before touching the device again.
+
 ```bash
 cd companion
 go test ./...

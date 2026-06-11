@@ -227,6 +227,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           body: JSON.stringify({
             themeId: selectedTheme.themeId,
             packUrl: selectedTheme.packUrl,
+            skipFirmwareUpdate: true,
           }),
         },
       );
