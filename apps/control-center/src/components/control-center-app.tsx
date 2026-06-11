@@ -77,6 +77,8 @@ type Props = {
   initialThemeId?: string;
 };
 
+type ActiveTab = "themes" | "settings";
+
 export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const initialTheme = useMemo(
     () =>
@@ -95,6 +97,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
+  const [activeTab, setActiveTab] = useState<ActiveTab>("themes");
 
   const selectedTheme = useMemo(
     () =>
@@ -253,12 +256,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device?.capabilities?.display?.brightness?.maxPercent ?? 100;
 
   return (
-    <main className="min-h-screen bg-[#f5f6f3] text-[#171b1f]">
-      <div className="border-b border-[#d9ddd2] bg-[#fcfdf8]">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-5 py-5 md:flex-row md:items-center md:justify-between">
-          <div>
+    <main className="min-h-screen bg-[#f4f5f1] text-[#171b1f]">
+      <div className="border-b border-[#d8dccf] bg-[#fbfcf7]">
+        <div className="mx-auto max-w-6xl px-5 py-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-3">
-              <div className="grid size-10 place-items-center border border-[#262b2f] bg-[#262b2f] text-[#f6f2df]">
+              <div className="grid size-10 shrink-0 place-items-center border border-[#252b2e] bg-[#252b2e] text-[#f6f2df]">
                 <Monitor size={20} aria-hidden />
               </div>
               <div>
@@ -267,49 +270,38 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 </h1>
               </div>
             </div>
-          </div>
-          <div className="grid grid-cols-3 gap-2 text-sm">
-            <StatusPill
-              icon={<PlugZap size={15} />}
-              label="Companion"
-              value={labelForCompanion(companionStatus)}
-              tone={companionStatus === "online" ? "good" : "warn"}
-            />
-            <StatusPill
-              icon={<Wifi size={15} />}
-              label="Gerät"
-              value={labelForDevice(deviceState, device)}
-              tone={device?.connected ? "good" : "warn"}
-            />
-            <StatusPill
-              icon={<ShieldCheck size={15} />}
-              label="Pairing"
-              value={device?.paired ? "Bereit" : "Offen"}
-              tone={device?.paired ? "good" : "neutral"}
-            />
+            <div className="inline-grid h-10 grid-cols-2 border border-[#cfd4c8] bg-white p-1">
+              <TabButton
+                active={activeTab === "themes"}
+                icon={<Download size={15} />}
+                label="Themes"
+                onClick={() => setActiveTab("themes")}
+              />
+              <TabButton
+                active={activeTab === "settings"}
+                icon={<Settings size={15} />}
+                label="Settings"
+                onClick={() => setActiveTab("settings")}
+              />
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="mx-auto grid max-w-7xl gap-5 px-5 py-5 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="space-y-4">
-          <section className="border border-[#d9ddd2] bg-white">
-            <SectionHeader
-              icon={<Search size={17} />}
-              title="Theme Library"
-              detail={`${catalog.themes.length} Themes`}
-            />
-            {catalog.issue ? (
-              <div className="border-t border-[#eceee8] px-4 py-3 text-sm text-[#7a5a16]">
-                {catalog.issue}
-              </div>
-            ) : null}
-            <div className="divide-y divide-[#eceee8]">
-              {catalog.themes.length ? (
-                catalog.themes.map((theme) => (
+      <div className="mx-auto max-w-6xl px-5 py-5">
+        {activeTab === "themes" ? (
+          <section className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
+            <div className="border border-[#d8dccf] bg-white">
+              <SectionHeader
+                icon={<Search size={17} />}
+                title="Theme Library"
+                detail={`${catalog.themes.length} Themes`}
+              />
+              <div className="min-h-[420px] divide-y divide-[#eceee8]">
+                {catalog.themes.map((theme) => (
                   <button
                     key={theme.themeId}
-                    className={`grid w-full grid-cols-[76px_minmax(0,1fr)] gap-3 px-4 py-3 text-left transition ${
+                    className={`grid w-full grid-cols-[72px_minmax(0,1fr)] gap-3 px-4 py-3 text-left transition ${
                       theme.themeId === selectedTheme?.themeId
                         ? "bg-[#edf6ee]"
                         : "hover:bg-[#f8f9f4]"
@@ -327,31 +319,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                         <span>{theme.themeId}</span>
                       </span>
                       <span className="mt-2 line-clamp-2 text-xs leading-5 text-[#5a6356]">
-                        {theme.description ||
-                          "Bereit für die Installation über den Companion."}
+                        {theme.description || "Theme aus Shopify."}
                       </span>
                     </span>
                   </button>
-                ))
-              ) : (
-                <div className="px-4 py-8 text-sm leading-6 text-[#586252]">
-                  Keine Shopify-Themes geladen. Prüfe die Storefront-API-Env
-                  und die Collection `themes-2`.
-                </div>
-              )}
+                ))}
+              </div>
             </div>
-          </section>
-        </aside>
 
-        <div className="space-y-5">
-          <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-            <div className="border border-[#d9ddd2] bg-white">
+            <div className="border border-[#d8dccf] bg-white">
               <SectionHeader
                 icon={<Download size={17} />}
                 title="Installieren"
                 detail={selectedTheme?.themeId || "Kein Theme"}
               />
-              <div className="grid gap-5 p-4 md:grid-cols-[180px_minmax(0,1fr)]">
+              <div className="grid gap-5 p-5 md:grid-cols-[200px_minmax(0,1fr)]">
                 {selectedTheme ? (
                   <ThemePreview large theme={selectedTheme} />
                 ) : null}
@@ -363,31 +345,35 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                       </h2>
                       <p className="mt-2 max-w-2xl text-sm leading-6 text-[#586252]">
                         {selectedTheme?.description ||
-                          "Wähle links ein Theme aus der Library aus."}
+                          "Die Theme-Library wird aus Shopify geladen."}
                       </p>
                     </div>
-                    {selectedTheme?.isFree ? (
-                      <span className="border border-[#a5d2ad] bg-[#edf8ef] px-2.5 py-1 text-xs font-semibold text-[#1d6b36]">
-                        Kostenlos
-                      </span>
-                    ) : (
-                      <span className="border border-[#e0c987] bg-[#fff8df] px-2.5 py-1 text-xs font-semibold text-[#7a5a16]">
-                        Nicht im MVP
-                      </span>
-                    )}
+                    {selectedTheme ? (
+                      selectedTheme.isFree ? (
+                        <span className="border border-[#a5d2ad] bg-[#edf8ef] px-2.5 py-1 text-xs font-semibold text-[#1d6b36]">
+                          Kostenlos
+                        </span>
+                      ) : (
+                        <span className="border border-[#e0c987] bg-[#fff8df] px-2.5 py-1 text-xs font-semibold text-[#7a5a16]">
+                          Nicht im MVP
+                        </span>
+                      )
+                    ) : null}
                   </div>
 
-                  <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
-                    <Fact label="Theme-ID" value={selectedTheme?.themeId} />
-                    <Fact
-                      label="Version"
-                      value={selectedTheme?.themeVersion || "MVP"}
-                    />
-                    <Fact
-                      label="Firmware"
-                      value={selectedTheme?.requiresFirmware || "aktuell"}
-                    />
-                  </dl>
+                  {selectedTheme ? (
+                    <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
+                      <Fact label="Theme-ID" value={selectedTheme.themeId} />
+                      <Fact
+                        label="Version"
+                        value={selectedTheme.themeVersion || "MVP"}
+                      />
+                      <Fact
+                        label="Firmware"
+                        value={selectedTheme.requiresFirmware || "aktuell"}
+                      />
+                    </dl>
+                  ) : null}
 
                   <div className="mt-5 flex flex-wrap gap-3">
                     <IconButton
@@ -420,15 +406,66 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 </div>
               </div>
             </div>
+          </section>
+        ) : (
+          <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="space-y-5">
+              <div className="border border-[#d8dccf] bg-white">
+                <SectionHeader
+                  icon={<Activity size={17} />}
+                  title="Local API"
+                  detail="127.0.0.1:47832"
+                />
+                <div className="grid gap-4 p-5 sm:grid-cols-3">
+                  <StatusTile
+                    icon={<PlugZap size={16} />}
+                    label="Bridge"
+                    value={labelForCompanion(companionStatus)}
+                    tone={companionStatus === "online" ? "good" : "warn"}
+                  />
+                  <StatusTile
+                    icon={<Wifi size={16} />}
+                    label="Gerät"
+                    value={labelForDevice(deviceState, device)}
+                    tone={device?.connected ? "good" : "warn"}
+                  />
+                  <StatusTile
+                    icon={<ShieldCheck size={16} />}
+                    label="Pairing"
+                    value={device?.paired ? "Bereit" : "Offen"}
+                    tone={device?.paired ? "good" : "neutral"}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-3 border-t border-[#eceee8] px-5 py-4">
+                  <IconButton
+                    busy={busyAction === "status"}
+                    icon={<PlugZap size={16} />}
+                    label="Bridge prüfen"
+                    onClick={checkCompanion}
+                  />
+                  <IconButton
+                    busy={busyAction === "discover"}
+                    icon={<Search size={16} />}
+                    label="Gerät suchen"
+                    onClick={discoverDevice}
+                  />
+                  <IconButton
+                    busy={busyAction === "pair"}
+                    disabled={!device?.connected}
+                    icon={<ShieldCheck size={16} />}
+                    label="Pairen"
+                    onClick={pairDevice}
+                  />
+                </div>
+              </div>
 
-            <div className="border border-[#d9ddd2] bg-white">
-              <SectionHeader
-                icon={<Activity size={17} />}
-                title="Verbindung"
-                detail={device?.target || "127.0.0.1:47832"}
-              />
-              <div className="space-y-4 p-4">
-                <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="border border-[#d8dccf] bg-white">
+                <SectionHeader
+                  icon={<Wifi size={17} />}
+                  title="Device"
+                  detail={device?.target || "nicht verbunden"}
+                />
+                <div className="grid gap-3 p-5 text-sm sm:grid-cols-2 lg:grid-cols-4">
                   <Fact label="Board" value={device?.board || "unbekannt"} />
                   <Fact
                     label="Firmware"
@@ -447,105 +484,140 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                     }
                   />
                 </div>
-                <div className="flex flex-wrap gap-3">
-                  <IconButton
-                    busy={busyAction === "status"}
-                    icon={<PlugZap size={16} />}
-                    label="Companion prüfen"
-                    onClick={checkCompanion}
-                  />
-                  <IconButton
-                    busy={busyAction === "discover"}
-                    icon={<Search size={16} />}
-                    label="Suchen"
-                    onClick={discoverDevice}
-                  />
-                  <IconButton
-                    busy={busyAction === "pair"}
-                    disabled={!device?.connected}
-                    icon={<ShieldCheck size={16} />}
-                    label="Pairen"
-                    onClick={pairDevice}
-                  />
-                </div>
               </div>
-            </div>
-          </section>
 
-          <section className="grid gap-5 xl:grid-cols-[minmax(360px,0.8fr)_minmax(0,1.2fr)]">
-            <div className="border border-[#d9ddd2] bg-white">
-              <SectionHeader
-                icon={<SlidersHorizontal size={17} />}
-                title="Helligkeit"
-                detail={brightness == null ? "nicht geladen" : `${brightness}%`}
-              />
-              <div className="space-y-4 p-4">
-                <input
-                  aria-label="Helligkeit"
-                  className="h-2 w-full accent-[#2f7d46]"
-                  disabled={!brightnessSupported || brightness == null}
-                  max={maxBrightness}
-                  min={minBrightness}
-                  onChange={(event) =>
-                    setBrightness(Number(event.target.value))
+              <div className="border border-[#d8dccf] bg-white">
+                <SectionHeader
+                  icon={<SlidersHorizontal size={17} />}
+                  title="Brightness"
+                  detail={
+                    brightness == null ? "nicht geladen" : `${brightness}%`
                   }
-                  onMouseUp={() =>
-                    brightness != null && void saveBrightness(brightness)
-                  }
-                  onTouchEnd={() =>
-                    brightness != null && void saveBrightness(brightness)
-                  }
-                  type="range"
-                  value={brightness ?? minBrightness}
                 />
-                <div className="flex flex-wrap gap-3">
-                  <IconButton
-                    busy={busyAction === "settings"}
-                    disabled={!device?.connected}
-                    icon={<Settings size={16} />}
-                    label="Settings laden"
-                    onClick={loadSettings}
-                  />
-                  <IconButton
-                    busy={busyAction === "brightness"}
-                    disabled={!device?.connected || brightness == null}
-                    icon={<Check size={16} />}
-                    label="Speichern"
-                    onClick={() =>
+                <div className="space-y-4 p-5">
+                  <input
+                    aria-label="Helligkeit"
+                    className="h-2 w-full accent-[#2f7d46]"
+                    disabled={!brightnessSupported || brightness == null}
+                    max={maxBrightness}
+                    min={minBrightness}
+                    onChange={(event) =>
+                      setBrightness(Number(event.target.value))
+                    }
+                    onMouseUp={() =>
                       brightness != null && void saveBrightness(brightness)
                     }
+                    onTouchEnd={() =>
+                      brightness != null && void saveBrightness(brightness)
+                    }
+                    type="range"
+                    value={brightness ?? minBrightness}
                   />
+                  <div className="flex flex-wrap gap-3">
+                    <IconButton
+                      busy={busyAction === "settings"}
+                      disabled={!device?.connected}
+                      icon={<Settings size={16} />}
+                      label="Laden"
+                      onClick={loadSettings}
+                    />
+                    <IconButton
+                      busy={busyAction === "brightness"}
+                      disabled={!device?.connected || brightness == null}
+                      icon={<Check size={16} />}
+                      label="Speichern"
+                      onClick={() =>
+                        brightness != null && void saveBrightness(brightness)
+                      }
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="border border-[#d9ddd2] bg-white">
+            <div className="border border-[#d8dccf] bg-white">
               <SectionHeader
                 icon={<AlertTriangle size={17} />}
                 title="Status"
                 detail={lastError ? lastError.code : "bereit"}
               />
-              <div className="p-4">
+              <div className="p-5">
                 {lastError ? (
                   <div className="border border-[#e3c27d] bg-[#fff8df] p-3 text-sm text-[#664b13]">
                     <div className="font-semibold">{lastError.message}</div>
-                    <div className="mt-1">{lastError.nextAction}</div>
+                    <div className="mt-1 leading-6">{lastError.nextAction}</div>
                     <div className="mt-2 font-mono text-xs">
                       {lastError.code}
                     </div>
                   </div>
                 ) : (
                   <div className="border border-[#d7e6d5] bg-[#f4faf0] p-3 text-sm text-[#315d32]">
-                    Companion-API bereit. Wähle ein Theme, prüfe das Gerät und
-                    starte die Installation.
+                    Local API bereit. Wähle ein Theme und starte die
+                    Installation.
                   </div>
                 )}
               </div>
             </div>
           </section>
-        </div>
+        )}
       </div>
     </main>
+  );
+}
+
+function TabButton({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`inline-flex items-center justify-center gap-2 px-4 text-sm font-semibold transition ${
+        active
+          ? "bg-[#252b2e] text-white"
+          : "bg-white text-[#536052] hover:bg-[#f4f6ef]"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function StatusTile({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  tone: "good" | "warn" | "neutral";
+}) {
+  const toneClass =
+    tone === "good"
+      ? "border-[#a5d2ad] bg-[#edf8ef] text-[#245d33]"
+      : tone === "warn"
+        ? "border-[#e3c27d] bg-[#fff8df] text-[#664b13]"
+        : "border-[#d6d8d1] bg-[#f5f6f3] text-[#50584d]";
+
+  return (
+    <div className={`min-w-0 border px-3 py-3 ${toneClass}`}>
+      <div className="flex items-center gap-2 text-xs">
+        {icon}
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="mt-2 truncate text-base font-semibold">{value}</div>
+    </div>
   );
 }
 
@@ -595,35 +667,6 @@ function SectionHeader({
         {title}
       </div>
       <div className="truncate text-xs text-[#6a7365]">{detail}</div>
-    </div>
-  );
-}
-
-function StatusPill({
-  icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  tone: "good" | "warn" | "neutral";
-}) {
-  const toneClass =
-    tone === "good"
-      ? "border-[#a5d2ad] bg-[#edf8ef] text-[#245d33]"
-      : tone === "warn"
-        ? "border-[#e3c27d] bg-[#fff8df] text-[#664b13]"
-        : "border-[#d6d8d1] bg-[#f5f6f3] text-[#50584d]";
-
-  return (
-    <div className={`min-w-0 border px-3 py-2 ${toneClass}`}>
-      <div className="flex items-center gap-1.5 text-xs">
-        {icon}
-        <span className="truncate">{label}</span>
-      </div>
-      <div className="mt-1 truncate font-semibold">{value}</div>
     </div>
   );
 }
