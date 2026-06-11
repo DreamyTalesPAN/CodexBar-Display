@@ -265,9 +265,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 <h1 className="text-2xl font-semibold">
                   VibeTV Control Center
                 </h1>
-                <p className="text-sm text-[#66705f]">
-                  Themes installieren, Gerät koppeln und Helligkeit setzen.
-                </p>
               </div>
             </div>
           </div>
