@@ -25,6 +25,7 @@ using codexbar_display::themespec::Sink;
 using codexbar_display::themespec::SpriteCommand;
 using codexbar_display::themespec::TextCommand;
 using codexbar_display::themespec::kThemeSpecFieldActivity;
+using codexbar_display::themespec::kThemeSpecFieldLabel;
 using codexbar_display::themespec::kThemeSpecFieldReset;
 using codexbar_display::themespec::kThemeSpecFieldSession;
 using codexbar_display::themespec::kThemeSpecFieldWeekly;
@@ -387,6 +388,30 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_INT(2, pixels.height);
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, pixels.color);
   TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
+}
+
+void testLabelBindingShowsUpdateNoticeWhenAvailable() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "primitives": [
+      {"type":"text","x":5,"y":6,"binding":"label"},
+      {"type":"text","x":7,"y":8,"text":"{label} Usage"}
+    ]
+  })JSON";
+
+  FrameData frame = testFrame();
+  frame.updateAvailable = true;
+  frame.updateNotice = "vibetv.local";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(3, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_STRING("vibetv.local", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("vibetv.local Usage", sink.commands[2].text.c_str());
 }
 
 void testRendersCompactCommandsAndBindings() {
@@ -1163,6 +1188,22 @@ void testCompactThemeSpecFrameIsCached() {
   TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("\"t\":\"tx\"") >= 0);
 }
 
+void testThemeSpecUpdateAvailabilityChangesLabelField() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300,"update":{"available":false,"status":"current","latestVersion":"1.0.17"},"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":0,"y":0,"binding":"label"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+
+  const char* updateFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300,"update":{"available":true,"status":"update_available","latestVersion":"1.0.20"}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, updateFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE(event.themeSpecChangedFields & kThemeSpecFieldLabel);
+}
+
 void testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -1267,6 +1308,7 @@ int main() {
   RUN_TEST(testInvalidSpecsReturnFalse);
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);
+  RUN_TEST(testLabelBindingShowsUpdateNoticeWhenAvailable);
   RUN_TEST(testRendersCompactCommandsAndBindings);
   RUN_TEST(testCompactTextWidthMapsToMaxWidthForAlignment);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
@@ -1294,6 +1336,7 @@ int main() {
   RUN_TEST(testThemeSpecErrorFrameRestoresCachedThemeAfterPlainFrame);
   RUN_TEST(testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset);
   RUN_TEST(testThemeSpecIgnoresUpdateMetadataForVisualDirty);
+  RUN_TEST(testThemeSpecUpdateAvailabilityChangesLabelField);
   RUN_TEST(testThemeSpecCacheCarriesLayoutAcrossLiveFrames);
   RUN_TEST(testCompactThemeSpecFrameIsCached);
   RUN_TEST(testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent);

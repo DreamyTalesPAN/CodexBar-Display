@@ -191,7 +191,7 @@ During normal operation the display uses explicit support states:
 - Live usage: a valid USB or WiFi frame is rendering; provider/usage data is shown, not theme asset names.
 - `Check Mac App`: the device previously had data, but no fresh frame arrived for more than two minutes.
 - `Update Mac App`: the Companion reported an incompatible usage app version or payload format.
-- `Update Available:` / `vibetv.local`: a firmware update is available. The system notice is drawn above Mini and stored ThemeSpec renderers and alternates every 1.5 seconds.
+- `Update Available:` / `vibetv.local`: a firmware update is available. Built-in themes show the system notice. ThemeSpec themes receive the same alternating text through their provider-label binding.
 - `Update running`: firmware, filesystem, or display asset upload is in progress. The display intentionally does not show internal paths such as GIF or theme asset filenames.
 - `WiFi reset`: saved WiFi credentials are being cleared before setup mode restarts.
 
@@ -206,7 +206,7 @@ Smoke checklist for #53:
 - After WiFi connects, confirm the waiting screen shows `Open Setup`, `vibetv.local`, and the fallback IP.
 - Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.
 - Send a frame with `update.available=true` while Mini is active and confirm the bottom notice alternates between `Update Available:` and `vibetv.local`.
-- Apply one stored ThemeSpec, send the same update frame again, and confirm the same notice stays visible without switching back to Mini or flashing a full-screen notice.
+- Apply one stored ThemeSpec with a provider-label primitive, send the same update frame again, and confirm the provider-label area alternates between `Update Available:` and `vibetv.local` without drawing the bottom system notice.
 - Stop the Companion for more than two minutes after a frame and confirm `Check Mac App`.
 - Send a runtime error frame and confirm the display shows a customer-friendly CodexBar action, not an internal error code.
 - Start firmware/filesystem/asset upload and confirm the display says `Update running` without asset paths.

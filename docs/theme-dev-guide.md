@@ -18,6 +18,7 @@ The compiled scene copies normal strings and `idle`/`coding` `stateAssets` paths
 - Use `CBA1` animated sprites for character animation and state animation.
 - Make the main background full-screen at 240x240. If the design uses an inset panel or window, include the surrounding background in the background asset instead of leaving the display uncovered.
 - Keep ThemeSpec primitives for dynamic content: usage bars, percentages, reset time, provider label, time, date, and state-dependent asset selection.
+- Treat the provider label as the firmware update notice slot. When an update is available, ThemeSpec firmware swaps `{label}` / `label` to `Update Available:` and `vibetv.local`; do not reserve a separate bottom bar for this.
 - Keep all primitives that can change at runtime inside stable bounds. Text without a width is allowed, but the firmware treats it conservatively up to the right display edge for partial render safety.
 - Combine many small decorative rects into one sprite asset.
 - Combine static text labels into a sprite when they do not need to change.
@@ -48,11 +49,23 @@ These are not hard limits, but good launch targets for ESP8266 themes:
 - Primitive count: preferably below 16 for static themes, below 20 for animated themes.
 - Static visual detail: pushed into `CBI1` sprites.
 - Animated characters: pushed into `CBA1` sprites.
+- Large static sprites are allowed only after hardware testing. Treat anything above roughly 10k source pixels, for example `106x105`, as a RAM-risk item; full-width art such as `240x128` must be tested through repeated theme switches.
 - GIFs: at most one GIF per ESP8266 theme, max 24 KiB and 80x80 draw box. Use `mini.gif` as the reference size.
 - Dynamic primitives: only what must update from usage data.
 - Device health after activation: `renderOk: true`; no rising `renderFailures`; heap should not be critically low.
 - Normal idle/coding and usage updates should use partial render after the first full render.
 - Full render count may increase after activation, reconnect, explicit theme change, clear, or render recovery. It should not climb continuously during steady live data updates.
+
+## WiFi Upload Safety
+
+Theme install over WiFi is a firmware stress path, not just a file copy. The ESP8266 has little RAM, so asset uploads must be slow and boring.
+
+- Keep Companion asset uploads rate-limited. Do not remove the upload throttle to make installs feel faster.
+- Do not immediately retry `connection reset by peer`, EOF, or timeout during `/assets`. First check `/health`; if the device rebooted or is unreachable, stop and let it recover.
+- Upload assets first, upload the ThemeSpec second, activate last. Do not activate a ThemeSpec while one of its assets may be partial.
+- After install, check `/health`: `system.freeHeap`, `display.themeSpec.renderOk`, `display.themeSpec.renderFailures`, and `display.gif.decoderOpen`.
+- A healthy non-GIF ThemeSpec should not leave `display.gif.decoderOpen=true`. If it does, the previous GIF renderer was not released and heap will collapse after repeated switches.
+- Test repeated switches, not only a single install. Minimum smoke path: `synthwave -> clippy -> synthwave`, with `/health` green after each activation.
 
 ## Good Pattern
 
