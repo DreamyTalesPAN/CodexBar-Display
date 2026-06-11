@@ -32,6 +32,8 @@ const SHOPIFY_COLLECTION_HANDLE =
 const GITHUB_CATALOG_URL =
   process.env.THEME_PACK_CATALOG_URL?.trim() ||
   "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json";
+const ALLOW_CATALOG_FALLBACK =
+  process.env.CONTROL_CENTER_ALLOW_CATALOG_FALLBACK === "1";
 
 type ShopifyMetafield = { value?: string | null } | null;
 
@@ -46,11 +48,17 @@ type ShopifyProduct = {
     minVariantPrice?: { amount?: string | null; currencyCode?: string | null };
   };
   themeId?: ShopifyMetafield;
+  legacyThemeId?: ShopifyMetafield;
   themeVersion?: ShopifyMetafield;
+  legacyThemeVersion?: ShopifyMetafield;
   manifestUrl?: ShopifyMetafield;
+  legacyManifestUrl?: ShopifyMetafield;
   packUrl?: ShopifyMetafield;
+  legacyPackUrl?: ShopifyMetafield;
   compatibleBoards?: ShopifyMetafield;
+  legacyCompatibleBoards?: ShopifyMetafield;
   requiresFirmware?: ShopifyMetafield;
+  legacyRequiresFirmware?: ShopifyMetafield;
 };
 
 type ShopifyCollectionResponse = {
@@ -93,16 +101,21 @@ export async function getThemeCatalog(): Promise<ThemeCatalogResponse> {
         storefrontConfigured: true,
       };
     } catch (error) {
-      const fallback = await fetchGitHubCatalog(
-        `Shopify Storefront API konnte nicht geladen werden: ${messageFromError(error)}`,
-      );
-      return { ...fallback, storefrontConfigured: true };
+      const issue = `Shopify Storefront API konnte nicht geladen werden: ${messageFromError(error)}`;
+      if (ALLOW_CATALOG_FALLBACK) {
+        const fallback = await fetchGitHubCatalog(issue);
+        return { ...fallback, storefrontConfigured: true };
+      }
+      return emptyCatalog(issue, true);
     }
   }
 
-  return fetchGitHubCatalog(
-    "Shopify Storefront API ist noch nicht konfiguriert. Setze SHOPIFY_STORE_DOMAIN und SHOPIFY_STOREFRONT_ACCESS_TOKEN.",
-  );
+  const issue =
+    "Shopify Storefront API ist noch nicht konfiguriert. Setze SHOPIFY_STORE_DOMAIN und SHOPIFY_STOREFRONT_ACCESS_TOKEN.";
+  if (ALLOW_CATALOG_FALLBACK) {
+    return fetchGitHubCatalog(issue);
+  }
+  return emptyCatalog(issue, false);
 }
 
 async function fetchShopifyThemes(
@@ -148,7 +161,8 @@ async function fetchShopifyThemes(
 }
 
 function mapShopifyProduct(product: ShopifyProduct): ThemeProduct | null {
-  const themeId = product.themeId?.value?.trim();
+  const themeId =
+    product.themeId?.value?.trim() || product.legacyThemeId?.value?.trim();
   if (!themeId) {
     return null;
   }
@@ -167,11 +181,25 @@ function mapShopifyProduct(product: ShopifyProduct): ThemeProduct | null {
     priceLabel: isFree ? "Kostenlos" : formatMoney(amount, currency),
     isFree,
     themeId,
-    themeVersion: product.themeVersion?.value?.trim() || undefined,
-    manifestUrl: product.manifestUrl?.value?.trim() || undefined,
-    packUrl: product.packUrl?.value?.trim() || undefined,
-    compatibleBoards: splitList(product.compatibleBoards?.value),
-    requiresFirmware: product.requiresFirmware?.value?.trim() || undefined,
+    themeVersion:
+      product.themeVersion?.value?.trim() ||
+      product.legacyThemeVersion?.value?.trim() ||
+      undefined,
+    manifestUrl:
+      product.manifestUrl?.value?.trim() ||
+      product.legacyManifestUrl?.value?.trim() ||
+      undefined,
+    packUrl:
+      product.packUrl?.value?.trim() ||
+      product.legacyPackUrl?.value?.trim() ||
+      undefined,
+    compatibleBoards: splitList(
+      product.compatibleBoards?.value || product.legacyCompatibleBoards?.value,
+    ),
+    requiresFirmware:
+      product.requiresFirmware?.value?.trim() ||
+      product.legacyRequiresFirmware?.value?.trim() ||
+      undefined,
     source: "shopify",
   };
 }
@@ -218,29 +246,20 @@ async function fetchGitHubCatalog(
       issue,
     };
   } catch (error) {
-    return {
-      themes: fallbackThemes(),
-      source: "fallback",
-      storefrontConfigured: false,
-      issue: issue || messageFromError(error),
-    };
+    return emptyCatalog(issue || messageFromError(error), false);
   }
 }
 
-function fallbackThemes(): ThemeProduct[] {
-  return [
-    {
-      id: "mini-classic",
-      title: "Mini Classic",
-      description: "Kompaktes Standard-Theme für den ersten Install-Test.",
-      priceLabel: "Kostenlos",
-      isFree: true,
-      themeId: "mini-classic",
-      packUrl:
-        "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-mini-classic.zip",
-      source: "fallback",
-    },
-  ];
+function emptyCatalog(
+  issue: string,
+  storefrontConfigured: boolean,
+): ThemeCatalogResponse {
+  return {
+    themes: [],
+    source: "fallback",
+    storefrontConfigured,
+    issue,
+  };
 }
 
 function normalizeShopDomain(raw: string | undefined): string {
@@ -318,19 +337,37 @@ const SHOPIFY_THEMES_QUERY = `#graphql
             themeId: metafield(namespace: "vibetv", key: "theme_id") {
               value
             }
+            legacyThemeId: metafield(namespace: "theme", key: "theme_id") {
+              value
+            }
             themeVersion: metafield(namespace: "vibetv", key: "theme_version") {
+              value
+            }
+            legacyThemeVersion: metafield(namespace: "theme", key: "theme_version") {
               value
             }
             manifestUrl: metafield(namespace: "vibetv", key: "manifest_url") {
               value
             }
+            legacyManifestUrl: metafield(namespace: "theme", key: "manifest_url") {
+              value
+            }
             packUrl: metafield(namespace: "vibetv", key: "pack_url") {
+              value
+            }
+            legacyPackUrl: metafield(namespace: "theme", key: "pack_url") {
               value
             }
             compatibleBoards: metafield(namespace: "vibetv", key: "compatible_boards") {
               value
             }
+            legacyCompatibleBoards: metafield(namespace: "theme", key: "compatible_boards") {
+              value
+            }
             requiresFirmware: metafield(namespace: "vibetv", key: "requires_firmware") {
+              value
+            }
+            legacyRequiresFirmware: metafield(namespace: "theme", key: "requires_firmware") {
               value
             }
           }

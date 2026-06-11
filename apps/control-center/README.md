@@ -35,7 +35,7 @@ SHOPIFY_STOREFRONT_API_VERSION=2026-04
 SHOPIFY_THEME_COLLECTION_HANDLE=themes-2
 ```
 
-If Shopify env vars are missing, the app falls back to the GitHub theme-pack catalog so the Companion flow can still be reviewed.
+If Shopify env vars are missing, the app shows a configuration warning and no installable themes. Set `CONTROL_CENTER_ALLOW_CATALOG_FALLBACK=1` only for explicit local development with repo catalog data.
 
 ## Flow
 

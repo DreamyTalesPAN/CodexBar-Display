@@ -308,33 +308,40 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               </div>
             ) : null}
             <div className="divide-y divide-[#eceee8]">
-              {catalog.themes.map((theme) => (
-                <button
-                  key={theme.themeId}
-                  className={`grid w-full grid-cols-[76px_minmax(0,1fr)] gap-3 px-4 py-3 text-left transition ${
-                    theme.themeId === selectedTheme?.themeId
-                      ? "bg-[#edf6ee]"
-                      : "hover:bg-[#f8f9f4]"
-                  }`}
-                  onClick={() => setSelectedThemeId(theme.themeId)}
-                  type="button"
-                >
-                  <ThemePreview theme={theme} />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold">
-                      {theme.title}
+              {catalog.themes.length ? (
+                catalog.themes.map((theme) => (
+                  <button
+                    key={theme.themeId}
+                    className={`grid w-full grid-cols-[76px_minmax(0,1fr)] gap-3 px-4 py-3 text-left transition ${
+                      theme.themeId === selectedTheme?.themeId
+                        ? "bg-[#edf6ee]"
+                        : "hover:bg-[#f8f9f4]"
+                    }`}
+                    onClick={() => setSelectedThemeId(theme.themeId)}
+                    type="button"
+                  >
+                    <ThemePreview theme={theme} />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold">
+                        {theme.title}
+                      </span>
+                      <span className="mt-1 flex flex-wrap gap-2 text-xs text-[#687160]">
+                        <span>{theme.priceLabel}</span>
+                        <span>{theme.themeId}</span>
+                      </span>
+                      <span className="mt-2 line-clamp-2 text-xs leading-5 text-[#5a6356]">
+                        {theme.description ||
+                          "Bereit für die Installation über den Companion."}
+                      </span>
                     </span>
-                    <span className="mt-1 flex flex-wrap gap-2 text-xs text-[#687160]">
-                      <span>{theme.priceLabel}</span>
-                      <span>{theme.themeId}</span>
-                    </span>
-                    <span className="mt-2 line-clamp-2 text-xs leading-5 text-[#5a6356]">
-                      {theme.description ||
-                        "Bereit für die Installation über den Companion."}
-                    </span>
-                  </span>
-                </button>
-              ))}
+                  </button>
+                ))
+              ) : (
+                <div className="px-4 py-8 text-sm leading-6 text-[#586252]">
+                  Keine Shopify-Themes geladen. Prüfe die Storefront-API-Env
+                  und die Collection `themes-2`.
+                </div>
+              )}
             </div>
           </section>
         </aside>
