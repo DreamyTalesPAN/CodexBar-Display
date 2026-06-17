@@ -108,8 +108,12 @@ Shopify does not host the ZIPs. Shopify only provides the `theme_id` for the cop
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme clippy --target http://vibetv.local
 ```
 
-5. Companion checks firmware for that VibeTV first. If an update is available, it installs the firmware update and waits for the device to come back.
-6. Companion reads the GitHub VibeTV catalog, resolves the Theme Pack ZIP from the `theme_id`, uploads assets to `/assets`, activates the stored ThemeSpec via `/theme/active`, then sends one live frame.
+5. Companion reads the GitHub VibeTV catalog, resolves the Theme Pack ZIP from the `theme_id`, uploads assets to `/assets`, and activates the stored ThemeSpec via `/theme/active`. The regular daemon keeps sending real live frames after install.
+6. Firmware updates stay in a separate explicit update flow. The hosted install journey must not silently flash firmware while installing a theme.
+
+## Hardware Test Guardrail
+
+WiFi theme installs write to the device. Do not run them against `vibetv.local` as a routine development check. Use mocks and read-only checks first, and run live theme install only during an explicit hardware test window with the device owner present.
 
 ## Why This Stays Small On The Device
 

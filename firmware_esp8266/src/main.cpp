@@ -43,7 +43,9 @@ constexpr size_t kWifiSsidBytes = 33;
 constexpr size_t kWifiPasswordBytes = 65;
 constexpr size_t kWifiCredsBytes = 4 + kWifiSsidBytes + kWifiPasswordBytes;
 constexpr size_t kBootRecoveryOffset = kWifiCredsBytes;
-constexpr size_t kBootRecoveryBytes = 5;
+constexpr size_t kBootRecoveryBytes = 6;
+constexpr size_t kBootRecoveryCounterOffset = kBootRecoveryOffset + 4;
+constexpr size_t kBootRecoveryUploadOffset = kBootRecoveryOffset + 5;
 constexpr size_t kEepromBytes = kWifiCredsBytes + kBootRecoveryBytes;
 constexpr unsigned long kWifiConnectTimeoutMs = 20000UL;
 constexpr unsigned long kWifiReconnectRetryMs = 5000UL;
@@ -53,6 +55,7 @@ constexpr unsigned long kBootRecoveryStableMs = 30000UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr uint8_t kBootRecoveryThreshold = 3;
+constexpr uint8_t kBootRecoveryUploadMarker = 0xA5;
 constexpr size_t kMaxAssetPathBytes = 32;
 constexpr size_t kMaxStoredThemeSpecBytes = 4096;
 constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxThemeSpecGifAssetBytes;
@@ -159,9 +162,11 @@ bool otaUploadSucceeded = false;
 bool otaUploadInProgress = false;
 String otaUploadError;
 bool assetUploadSucceeded = false;
+bool assetUploadInProgress = false;
 String assetUploadError;
 String assetUploadPath;
 size_t assetUploadBytesSeen = 0;
+File assetUploadFile;
 String activeThemeSpecPath;
 String activeThemeSpecHash;
 String setupWifiOptionsHTML;
@@ -863,14 +868,38 @@ uint8_t readBootRecoveryCounter() {
   if (magic != kBootRecoveryMagic) {
     return 0;
   }
-  return EEPROM.read(kBootRecoveryOffset + 4);
+  return EEPROM.read(kBootRecoveryCounterOffset);
+}
+
+bool readBootRecoveryUploadActive() {
+  EEPROM.begin(kEepromBytes);
+  uint32_t magic = 0;
+  EEPROM.get(kBootRecoveryOffset, magic);
+  if (magic != kBootRecoveryMagic) {
+    return false;
+  }
+  return EEPROM.read(kBootRecoveryUploadOffset) == kBootRecoveryUploadMarker;
+}
+
+void writeBootRecoveryState(uint8_t counter, bool uploadActive) {
+  EEPROM.begin(kEepromBytes);
+  EEPROM.put(kBootRecoveryOffset, kBootRecoveryMagic);
+  EEPROM.write(kBootRecoveryCounterOffset, counter);
+  EEPROM.write(kBootRecoveryUploadOffset, uploadActive ? kBootRecoveryUploadMarker : 0);
+  EEPROM.commit();
 }
 
 void writeBootRecoveryCounter(uint8_t counter) {
-  EEPROM.begin(kEepromBytes);
-  EEPROM.put(kBootRecoveryOffset, kBootRecoveryMagic);
-  EEPROM.write(kBootRecoveryOffset + 4, counter);
-  EEPROM.commit();
+  writeBootRecoveryState(counter, readBootRecoveryUploadActive());
+}
+
+void markBootRecoveryUploadActive(bool active) {
+  const bool previous = readBootRecoveryUploadActive();
+  if (previous == active) {
+    return;
+  }
+  writeBootRecoveryState(readBootRecoveryCounter(), active);
+  Serial.printf("boot_recovery_upload_marker active=%d\n", active ? 1 : 0);
 }
 
 void clearBootRecoveryCounter() {
@@ -884,6 +913,12 @@ void clearBootRecoveryCounter() {
 }
 
 bool consumeBootRecoveryTrigger() {
+  if (readBootRecoveryUploadActive()) {
+    clearBootRecoveryCounter();
+    Serial.println("boot_recovery_counter_skipped reason=upload_recovery");
+    return false;
+  }
+
   uint8_t counter = readBootRecoveryCounter();
   if (counter < 255) {
     ++counter;
@@ -1378,8 +1413,34 @@ void handleAssetsList() {
 }
 
 void setAssetUploadError(const String& message) {
+  if (assetUploadFile) {
+    assetUploadFile.close();
+  }
+  if (assetUploadError.length() > 0) {
+    return;
+  }
   assetUploadError = message;
   Serial.printf("asset_upload_error path=%s message=%s\n", assetUploadPath.c_str(), assetUploadError.c_str());
+}
+
+void finishAssetUploadRequest() {
+  if (assetUploadFile) {
+    assetUploadFile.close();
+  }
+  markBootRecoveryUploadActive(false);
+  assetUploadInProgress = false;
+}
+
+void discardPartialAssetUpload() {
+  if (assetUploadPath.length() == 0 || !isSafeAssetPath(assetUploadPath)) {
+    return;
+  }
+  if (!LittleFS.begin() || !LittleFS.exists(assetUploadPath)) {
+    return;
+  }
+  if (LittleFS.remove(assetUploadPath)) {
+    Serial.printf("asset_upload_discarded path=%s\n", assetUploadPath.c_str());
+  }
 }
 
 String requestedAssetPath() {
@@ -1423,18 +1484,27 @@ bool assetUploadBytesWouldExceedLimits(size_t nextChunkSize) {
   return assetUploadBytesSeen + nextChunkSize > kMaxThemeGifAssetBytes;
 }
 
+void enterAssetUploadSafeMode() {
+  firmwareUpdateNoticeDirty = false;
+  frameStaleStatusRendered = false;
+  renderer.ResetGifStateForAssetUpdate();
+  close_all_fs();
+  stopMdnsResponder("asset_upload");
+  WiFiUDP::stopAll();
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);
+  ESP.wdtFeed();
+}
+
 void handleAssetUpload() {
   HTTPUpload& upload = webServer.upload();
 
   if (upload.status == UPLOAD_FILE_START) {
     assetUploadSucceeded = false;
+    assetUploadInProgress = true;
     assetUploadError = "";
     assetUploadPath = requestedAssetPath();
     assetUploadBytesSeen = 0;
     Serial.printf("asset_upload_start path=%s filename=%s content_length=%zu\n", assetUploadPath.c_str(), upload.filename.c_str(), upload.contentLength);
-    drawUpdateStatus("Loading display");
-    renderer.ResetGifStateForAssetUpdate();
-    waitStatusRendered = true;
 
     if (!requestHasValidAuth()) {
       setAssetUploadError("unauthorized");
@@ -1448,6 +1518,8 @@ void handleAssetUpload() {
       setAssetUploadError("gif asset too large");
       return;
     }
+    markBootRecoveryUploadActive(true);
+    enterAssetUploadSafeMode();
     if (!LittleFS.begin()) {
       setAssetUploadError("filesystem mount failed");
       return;
@@ -1459,12 +1531,11 @@ void handleAssetUpload() {
     if (LittleFS.exists(assetUploadPath)) {
       LittleFS.remove(assetUploadPath);
     }
-    File file = LittleFS.open(assetUploadPath, "w");
-    if (!file) {
+    assetUploadFile = LittleFS.open(assetUploadPath, "w");
+    if (!assetUploadFile) {
       setAssetUploadError("open asset failed");
       return;
     }
-    file.close();
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (assetUploadError.length() > 0) {
       return;
@@ -1474,29 +1545,34 @@ void handleAssetUpload() {
       yield();
       return;
     }
-    File file = LittleFS.open(assetUploadPath, "a");
-    if (!file) {
+    if (!assetUploadFile) {
       setAssetUploadError("append asset failed");
       return;
     }
-    if (file.write(upload.buf, upload.currentSize) != upload.currentSize) {
+    if (assetUploadFile.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setAssetUploadError("write asset failed");
     }
     assetUploadBytesSeen += upload.currentSize;
-    file.close();
+    ESP.wdtFeed();
   } else if (upload.status == UPLOAD_FILE_END) {
+    if (assetUploadFile) {
+      assetUploadFile.flush();
+      assetUploadFile.close();
+    }
     if (assetUploadError.length() == 0) {
       assetUploadSucceeded = true;
       Serial.printf("asset_upload_success path=%s bytes=%zu\n", assetUploadPath.c_str(), upload.totalSize);
     }
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
     setAssetUploadError("upload aborted");
+    finishAssetUploadRequest();
   }
   yield();
 }
 
 void handleAssetUploadResult() {
   if (assetUploadError == "unauthorized") {
+    finishAssetUploadRequest();
     addCorsHeaders();
     webServer.sendHeader("WWW-Authenticate", "VibeTV token");
     webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
@@ -1504,6 +1580,8 @@ void handleAssetUploadResult() {
   }
   if (!assetUploadSucceeded || assetUploadError.length() > 0) {
     const String error = assetUploadError.length() > 0 ? assetUploadError : "upload failed";
+    discardPartialAssetUpload();
+    finishAssetUploadRequest();
     addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", error);
     return;
@@ -1514,6 +1592,7 @@ void handleAssetUploadResult() {
   out += "{\"ok\":true,\"path\":\"";
   out += jsonEscape(assetUploadPath);
   out += "\"}";
+  finishAssetUploadRequest();
   addCorsHeaders();
   webServer.send(200, "application/json", out);
 }
@@ -1644,6 +1723,9 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
 }
 
 void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev, const String& fallbackTheme) {
+  renderer.ResetGifStateForAssetUpdate();
+  close_all_fs();
+
   const bool hadFrame = codexbar_display::app::HasFrame(runtimeCtx);
   const codexbar_display::core::Frame previous = runtimeCtx.runtime.current;
   codexbar_display::core::Frame next = hadFrame ? previous : codexbar_display::core::Frame{};
@@ -1825,6 +1907,7 @@ void enterOtaSafeMode(int command) {
   frameStaleStatusRendered = false;
   renderer.ResetGifStateForAssetUpdate();
   close_all_fs();
+  stopMdnsResponder("ota_upload");
   WiFiUDP::stopAll();
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
   ESP.wdtFeed();
@@ -1864,6 +1947,7 @@ void handleOtaUpload(int command, const char* target) {
       setOtaError("unauthorized");
       return;
     }
+    markBootRecoveryUploadActive(true);
     enterOtaSafeMode(command);
     if (!Update.begin(maxSize, command)) {
       setOtaError(Update.getErrorString());
@@ -1907,6 +1991,7 @@ void handleOtaResult(const char* target) {
   webServer.keepAlive(false);
   if (otaUploadError == "unauthorized") {
     otaUploadInProgress = false;
+    markBootRecoveryUploadActive(false);
     otaDiagnostics.status = "failed";
     otaDiagnostics.lastError = otaUploadError;
     otaDiagnostics.updateError = Update.getError();
@@ -1919,6 +2004,7 @@ void handleOtaResult(const char* target) {
   }
   if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
     otaUploadInProgress = false;
+    markBootRecoveryUploadActive(false);
     const String error = otaUploadError.length() > 0 ? otaUploadError : Update.getErrorString();
     otaDiagnostics.status = "failed";
     otaDiagnostics.lastError = error;
@@ -2097,6 +2183,7 @@ void handleRawOtaClient() {
     otaDiagnostics.status = "reboot_scheduled";
     scheduleReboot("firmware_raw");
   } else {
+    markBootRecoveryUploadActive(false);
     if (otaUploadError.length() == 0) {
       setOtaError(Update.getErrorString());
     }
@@ -2383,7 +2470,7 @@ void loop() {
     maintainFirmwareUpdateNotice();
   }
 
-  if (otaUploadInProgress) {
+  if (otaUploadInProgress || assetUploadInProgress) {
     if (httpServerStarted) {
       webServer.handleClient();
     }

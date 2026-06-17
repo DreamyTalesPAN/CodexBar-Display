@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestWiFiTransportDeviceCapabilitiesReadsHello(t *testing.T) {
@@ -60,6 +59,25 @@ func TestWiFiTransportSendLinePostsFrame(t *testing.T) {
 	}
 	if gotToken != "pair-token-123" {
 		t.Fatalf("unexpected auth token %q", gotToken)
+	}
+}
+
+func TestWiFiTransportDeviceHealthReadsHealth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if !r.Close {
+			t.Fatalf("expected health request to close connection")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	if err := transport.DeviceHealth(server.URL); err != nil {
+		t.Fatalf("DeviceHealth returned error: %v", err)
 	}
 }
 
@@ -130,49 +148,21 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 	}
 }
 
-func TestWiFiTransportUploadAssetRetriesConnectionReset(t *testing.T) {
-	previousDelay := assetUploadRetryDelay
-	assetUploadRetryDelay = time.Millisecond
-	t.Cleanup(func() {
-		assetUploadRetryDelay = previousDelay
-	})
-
+func TestWiFiTransportUploadAssetDoesNotRetryConnectionReset(t *testing.T) {
 	var attempts int
-	var gotPath string
 	transport := NewWiFiTransportWithClient(&http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			attempts++
-			if attempts == 1 {
-				return nil, errors.New("read tcp 192.168.178.172:55149->192.168.178.163:80: read: connection reset by peer")
-			}
-			if req.URL.Path != "/assets" {
-				t.Fatalf("unexpected path %s", req.URL.Path)
-			}
-			gotPath = req.URL.Query().Get("path")
-			body, err := io.ReadAll(req.Body)
-			if err != nil {
-				t.Fatalf("read request body: %v", err)
-			}
-			if !strings.Contains(string(body), "CBI1") {
-				t.Fatalf("expected retry body to contain asset data, got %q", string(body))
-			}
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
-				Header:     make(http.Header),
-				Request:    req,
-			}, nil
+			return nil, errors.New("read tcp 192.168.178.172:55149->192.168.178.163:80: read: connection reset by peer")
 		}),
 	})
 
-	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
-		t.Fatalf("UploadAsset returned error: %v", err)
+	err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n"))
+	if err == nil || !strings.Contains(err.Error(), "connection reset by peer") {
+		t.Fatalf("expected connection reset error, got %v", err)
 	}
-	if attempts != 2 {
-		t.Fatalf("expected one retry, got attempts=%d", attempts)
-	}
-	if gotPath != "/themes/u/cm.cbi" {
-		t.Fatalf("unexpected path %q", gotPath)
+	if attempts != 1 {
+		t.Fatalf("expected no retry after connection reset, got attempts=%d", attempts)
 	}
 }
 
