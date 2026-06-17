@@ -233,4 +233,4 @@ Track these before declaring the app end-to-end complete:
 - [x] Add Updates and Logs placeholder screens without fake backend claims.
 - [x] Remove non-brand colors from Control Center UI.
 - [x] Verify local app via browser and run `npm run lint`, `npm run build`, and `go test ./...`.
-- [ ] Push to PR #120 only; do not merge, release, or tag.
+- [x] Push to PR #120 only; do not merge, release, or tag.
