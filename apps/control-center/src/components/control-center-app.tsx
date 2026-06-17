@@ -73,8 +73,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
       id: "session-start",
-      label: "Control Center geöffnet",
-      detail: "Lokale Browser-Sitzung gestartet.",
+      label: "Control Center opened",
+      detail: "Browser session started.",
       at: "Session",
       tone: "unknown",
     },
@@ -132,9 +132,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceState(payload.device.paired ? "paired" : "online");
         if (!quiet) {
           addEvent({
-            label: "Device gelesen",
-            detail: `${payload.device.target || "VibeTV"} ist ${
-              payload.device.connected ? "verbunden" : "nicht verbunden"
+            label: "Device checked",
+            detail: `${payload.device.target || "VibeTV"} is ${
+              payload.device.connected ? "connected" : "waiting for signal"
             }.`,
             tone: payload.device.connected ? "ready" : "attention",
           });
@@ -148,11 +148,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (!quiet) {
           const normalized = normalizeCaughtError(
             error,
-            "VibeTV wurde nicht gefunden.",
+            "VibeTV needs attention.",
           );
           setLastError(normalized);
           addEvent({
-            label: "Device nicht erreichbar",
+            label: "Device check needs attention",
             detail: normalized.nextAction,
             tone: "attention",
           });
@@ -191,21 +191,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceState("unknown");
       }
       addEvent({
-        label: "Bridge geprüft",
+        label: "Bridge checked",
         detail: payload.device?.target
-          ? `Companion online, Ziel ${payload.device.target}.`
-          : "Companion online, noch kein Device-Ziel bestätigt.",
+          ? `Companion online, target ${payload.device.target}.`
+          : "Companion online, device target pending.",
         at: checkedAt,
         tone: "ready",
       });
     } catch (error) {
-      const normalized = normalizeCaughtError(error, "Companion läuft nicht.");
+      const normalized = normalizeCaughtError(error, "Companion needs attention.");
       setCompanionStatus("missing");
       setCompanionInfo(null);
       setThemeInstallEnabled(false);
       setLastError(normalized);
       addEvent({
-        label: "Bridge nicht erreichbar",
+        label: "Bridge check needs attention",
         detail: normalized.nextAction,
         tone: "attention",
       });
@@ -222,21 +222,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         payload.settings?.display?.brightnessPercent ?? null;
       setBrightness(loadedBrightness);
       addEvent({
-        label: "Settings geladen",
+        label: "Settings loaded",
         detail:
           loadedBrightness == null
-            ? "Helligkeit wurde noch nicht gemeldet."
-            : `Helligkeit steht auf ${loadedBrightness}%.`,
+            ? "Brightness is ready to load."
+            : `Brightness is set to ${loadedBrightness}%.`,
         tone: "ready",
       });
     } catch (error) {
       const normalized = normalizeCaughtError(
         error,
-        "Settings konnten nicht geladen werden.",
+        "Settings need attention.",
       );
       setLastError(normalized);
       addEvent({
-        label: "Settings-Read fehlgeschlagen",
+        label: "Settings check needs attention",
         detail: normalized.nextAction,
         tone: "attention",
       });
@@ -256,8 +256,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceState(payload.device.paired ? "paired" : "online");
       setDevice(payload.device);
       addEvent({
-        label: "Device gefunden",
-        detail: payload.device.target || "VibeTV wurde vom Companion gefunden.",
+        label: "Device found",
+        detail: payload.device.target || "VibeTV is available through Companion.",
         tone: payload.device.connected ? "ready" : "unknown",
       });
       if (payload.device.connected) {
@@ -266,12 +266,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } catch (error) {
       const normalized = normalizeCaughtError(
         error,
-        "VibeTV wurde nicht gefunden.",
+        "VibeTV needs attention.",
       );
       setDeviceState("offline");
       setLastError(normalized);
       addEvent({
-        label: "Discovery fehlgeschlagen",
+        label: "Discovery needs attention",
         detail: normalized.nextAction,
         tone: "attention",
       });
@@ -290,18 +290,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceState("paired");
       setDevice(payload.device);
       addEvent({
-        label: "Device gepairt",
-        detail: payload.device.target || "Pairing-Token wurde gespeichert.",
+        label: "Device paired",
+        detail: payload.device.target || "Pairing is ready.",
         tone: "ready",
       });
       if (payload.device.connected) {
         void loadSettings();
       }
     } catch (error) {
-      const normalized = normalizeCaughtError(error, "Pairing fehlgeschlagen.");
+      const normalized = normalizeCaughtError(error, "Pairing needs attention.");
       setLastError(normalized);
       addEvent({
-        label: "Pairing fehlgeschlagen",
+        label: "Pairing needs attention",
         detail: normalized.nextAction,
         tone: "attention",
       });
@@ -323,18 +323,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           payload.settings?.display?.brightnessPercent ?? value;
         setBrightness(savedValue);
         addEvent({
-          label: "Helligkeit gespeichert",
-          detail: `Display-Helligkeit steht auf ${savedValue}%.`,
+          label: "Brightness saved",
+          detail: `Display brightness is set to ${savedValue}%.`,
           tone: "ready",
         });
       } catch (error) {
         const normalized = normalizeCaughtError(
           error,
-          "Helligkeit konnte nicht gespeichert werden.",
+          "Brightness needs attention.",
         );
         setLastError(normalized);
         addEvent({
-          label: "Helligkeit nicht gespeichert",
+          label: "Brightness save needs attention",
           detail: normalized.nextAction,
           tone: "attention",
         });
@@ -352,8 +352,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setBusyAction("install");
     setLastInstall(undefined);
     addEvent({
-      label: "Theme-Install gestartet",
-      detail: `${selectedTheme.title} wird mit Firmware-Update-Skip angefragt.`,
+      label: "Theme install started",
+      detail: `${selectedTheme.title} is ready for device install.`,
       tone: "unknown",
     });
     try {
@@ -370,7 +370,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       setLastInstall(payload.result);
       addEvent({
-        label: "Theme installiert",
+        label: "Theme installed",
         detail: payload.result?.name || selectedTheme.title,
         tone: "ready",
       });
@@ -378,11 +378,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } catch (error) {
       const normalized = normalizeCaughtError(
         error,
-        "Theme konnte nicht installiert werden.",
+        "Theme install needs attention.",
       );
       setLastError(normalized);
       addEvent({
-        label: "Theme-Install blockiert",
+        label: "Theme install protected",
         detail: normalized.nextAction,
         tone: "attention",
       });
@@ -439,7 +439,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onBrightnessChange={setBrightness}
           onCheckBridge={checkCompanion}
           onDiscoverDevice={discoverDevice}
-          onLoadSettings={loadSettings}
           onPairDevice={pairDevice}
           onSaveBrightness={saveBrightness}
           themeInstallEnabled={themeInstallEnabled}
@@ -490,13 +489,13 @@ function normalizeError(error: unknown, status: number): ApiError {
     return {
       code: maybeError.code || `HTTP_${status}`,
       message: maybeError.message || "Request failed.",
-      nextAction: maybeError.nextAction || "Bitte erneut versuchen.",
+      nextAction: maybeError.nextAction || "Try again.",
     };
   }
   return {
     code: `HTTP_${status}`,
     message: "Request failed.",
-    nextAction: "Bitte erneut versuchen.",
+    nextAction: "Try again.",
   };
 }
 
@@ -514,7 +513,7 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
   return {
     code: "CLIENT_ERROR",
     message: fallbackMessage,
-    nextAction: "Bitte Companion und VibeTV-Verbindung prüfen.",
+    nextAction: "Check Companion and VibeTV connection.",
   };
 }
 

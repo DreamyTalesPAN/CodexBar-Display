@@ -207,5 +207,5 @@ function labelForCompanion(status: CompanionStatus): string {
   if (status === "missing") {
     return "Missing";
   }
-  return "Unknown";
+  return "Check required";
 }

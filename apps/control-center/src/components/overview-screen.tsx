@@ -2,7 +2,6 @@ import {
   ArrowUpFromLine,
   Check,
   CircleHelp,
-  Download,
   ExternalLink,
   Lock,
   Monitor,
@@ -19,7 +18,6 @@ import type {
   ControlCenterEvent,
   DeviceInfo,
   DeviceState,
-  ReadinessItem,
   ReadinessTone,
 } from "./control-center-types";
 
@@ -46,13 +44,6 @@ export function OverviewScreen({
 }: OverviewScreenProps) {
   const connected = Boolean(device?.connected);
   const hero = buildHeroCopy({ companionStatus, connected, lastError });
-  const readiness = buildReadiness({
-    companionStatus,
-    deviceState,
-    device,
-    themeInstallEnabled,
-    lastCheckedAt,
-  });
   const displayEvents = buildSessionEvents({
     companionStatus,
     device,
@@ -72,9 +63,6 @@ export function OverviewScreen({
               <h2 className="max-w-[440px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
                 {hero.title}
               </h2>
-              <p className="mt-5 text-xl leading-8 text-[#444933]">
-                Know where you stand.
-              </p>
             </div>
           </div>
 
@@ -93,7 +81,7 @@ export function OverviewScreen({
               badge={device?.firmware ? "Current" : undefined}
               icon={<ArrowUpFromLine size={18} aria-hidden />}
               label="Firmware"
-              value={device?.firmware || "Unknown"}
+              value={device?.firmware || "Check required"}
             />
           </dl>
         </div>
@@ -121,14 +109,12 @@ export function OverviewScreen({
             <ExternalLink size={16} aria-hidden />
           </button>
         </div>
-        <ol className="grid gap-6 lg:grid-cols-4">
-          {displayEvents.slice(0, 4).map((event, index) => (
-            <EventItem event={event} index={index} key={event.id} />
+        <ol className="grid border-y border-[#747A60]">
+          {displayEvents.slice(0, 3).map((event) => (
+            <EventItem event={event} key={event.id} />
           ))}
         </ol>
       </section>
-
-      <ReadinessStrip items={readiness} />
 
       <div className="mt-8 grid gap-4 text-sm text-[#444933] md:hidden">
         <InfoPill icon={<Server size={16} aria-hidden />}>
@@ -193,61 +179,36 @@ function StatusRow({
 
 function EventItem({
   event,
-  index,
 }: {
   event: ControlCenterEvent;
-  index: number;
 }) {
-  const icons = [
-    <Wifi size={26} aria-hidden key="wifi" />,
-    <Monitor size={26} aria-hidden key="monitor" />,
-    <ArrowUpFromLine size={26} aria-hidden key="firmware" />,
-    <Lock size={26} aria-hidden key="lock" />,
-  ];
-
   return (
-    <li className="grid gap-4 lg:grid-cols-[64px_minmax(0,1fr)] lg:border-r lg:border-[#747A60] lg:pr-7 lg:last:border-r-0">
-      <div className="grid size-14 place-items-center rounded-full bg-[#1B1B1B] text-[#CCFF00]">
-        {icons[index] || <Signal size={26} aria-hidden />}
+    <li className="grid min-h-[74px] grid-cols-[54px_minmax(0,1fr)_96px] items-center gap-5 border-b border-[#747A60] py-4 last:border-b-0">
+      <div className="grid size-11 place-items-center rounded-full bg-[#1B1B1B] text-[#CCFF00]">
+        {iconForEvent(event)}
       </div>
       <div className="min-w-0">
-        <div className="truncate font-bold text-[#1B1B1B]">{event.label}</div>
-        <div className="mt-1 truncate text-[#444933]">{event.detail}</div>
-        <div className="mt-1 text-[#444933]">{event.at || "Session"}</div>
+        <div className="font-bold leading-5 text-[#1B1B1B]">{event.label}</div>
+        <div className="mt-1 leading-5 text-[#444933]">{event.detail}</div>
       </div>
+      <div className="text-right text-sm text-[#444933]">{event.at || "Session"}</div>
     </li>
   );
 }
 
-function ReadinessStrip({ items }: { items: ReadinessItem[] }) {
-  return (
-    <section className="mt-8 border border-[#747A60] bg-[#F9F9F9] px-8 py-6">
-      <h3 className="mb-4 text-base font-bold text-[#1B1B1B]">Readiness</h3>
-      <dl className="grid gap-4 md:grid-cols-3 xl:grid-cols-7">
-        {items.map((item) => (
-          <div
-            className="grid min-w-0 grid-cols-[34px_minmax(0,1fr)] items-center gap-3 md:border-r md:border-[#747A60] md:pr-5 md:last:border-r-0"
-            key={item.label}
-          >
-            <div className="text-[#506600]">{iconForReadiness(item.label)}</div>
-            <div className="min-w-0">
-              <dt className="text-sm font-bold leading-5 text-[#1B1B1B]">
-                {item.label}
-              </dt>
-              <dd className="mt-0.5 text-sm leading-5 text-[#1B1B1B]">
-                <span className="block truncate">{item.value}</span>
-                {item.detail ? (
-                  <span className="block truncate text-[#444933]">
-                    {item.detail}
-                  </span>
-                ) : null}
-              </dd>
-            </div>
-          </div>
-        ))}
-      </dl>
-    </section>
-  );
+function iconForEvent(event: ControlCenterEvent) {
+  switch (event.id) {
+    case "bridge":
+      return <Wifi size={22} aria-hidden />;
+    case "device":
+      return <Monitor size={22} aria-hidden />;
+    case "firmware":
+      return <ArrowUpFromLine size={22} aria-hidden />;
+    case "last-error":
+      return <CircleHelp size={22} aria-hidden />;
+    default:
+      return <Signal size={22} aria-hidden />;
+  }
 }
 
 function InfoPill({
@@ -263,91 +224,6 @@ function InfoPill({
       <span>{children}</span>
     </div>
   );
-}
-
-function iconForReadiness(label: string) {
-  switch (label) {
-    case "Connection":
-      return <Wifi size={30} aria-hidden />;
-    case "Bridge":
-      return <Server size={30} aria-hidden />;
-    case "Device":
-      return <Monitor size={30} aria-hidden />;
-    case "Firmware":
-      return <ArrowUpFromLine size={30} aria-hidden />;
-    case "Updates":
-      return <Download size={30} aria-hidden />;
-    case "Write Access":
-      return <Lock size={30} aria-hidden />;
-    default:
-      return <Signal size={30} aria-hidden />;
-  }
-}
-
-function buildReadiness({
-  companionStatus,
-  deviceState,
-  device,
-  themeInstallEnabled,
-  lastCheckedAt,
-}: {
-  companionStatus: CompanionStatus;
-  deviceState: DeviceState;
-  device: DeviceInfo | null;
-  themeInstallEnabled: boolean;
-  lastCheckedAt?: string | null;
-}): ReadinessItem[] {
-  const connected = Boolean(device?.connected);
-
-  return [
-    {
-      label: "Connection",
-      value: connected ? "Good" : "Check",
-      detail: connected ? undefined : "Discovery",
-      tone: connected ? "ready" : "attention",
-    },
-    {
-      label: "Bridge",
-      value: labelForCompanion(companionStatus),
-      detail: companionStatus === "online" ? undefined : "Start local API",
-      tone:
-        companionStatus === "online"
-          ? "ready"
-          : companionStatus === "missing"
-            ? "attention"
-            : "unknown",
-    },
-    {
-      label: "Device",
-      value: labelForDevice(deviceState, device),
-      detail: device?.target?.replace(/^https?:\/\//, ""),
-      tone: connected ? "ready" : deviceState === "offline" ? "attention" : "unknown",
-    },
-    {
-      label: "Firmware",
-      value: device?.firmware ? "Current" : "Unknown",
-      detail: device?.firmware || undefined,
-      tone: device?.firmware ? "ready" : "unknown",
-    },
-    {
-      label: "Updates",
-      value: "No endpoint",
-      detail: "MVP",
-      tone: "unknown",
-    },
-    {
-      label: "Write Access",
-      value: themeInstallEnabled ? "Enabled" : "Locked",
-      detail: themeInstallEnabled ? undefined : "Read-only",
-      tone: themeInstallEnabled ? "ready" : "attention",
-    },
-    {
-      label: "Signal",
-      value: lastCheckedAt ? "Fresh" : "Session",
-      detail: lastCheckedAt || undefined,
-      tone: lastCheckedAt ? "ready" : "unknown",
-    },
-  ];
 }
 
 function buildSessionEvents({
@@ -390,15 +266,15 @@ function buildSessionEvents({
     },
     {
       id: "firmware",
-      label: device?.firmware ? "Firmware current" : "Firmware unknown",
-      detail: device?.firmware || "No device read",
+      label: device?.firmware ? "Firmware current" : "Firmware pending",
+      detail: device?.firmware || "Waiting for device",
       at: lastCheckedAt || "Session",
       tone: device?.firmware ? "ready" : "unknown",
     },
     {
       id: "install-lock",
-      label: themeInstallEnabled ? "Install enabled" : "Install locked",
-      detail: themeInstallEnabled ? "Write window open" : "Read-only mode",
+      label: themeInstallEnabled ? "Install enabled" : "Install protected",
+      detail: themeInstallEnabled ? "Ready" : "Protected",
       at: lastCheckedAt || "Session",
       tone: themeInstallEnabled ? "ready" : "attention",
     },
@@ -455,7 +331,7 @@ function labelForCompanion(status: CompanionStatus): string {
   if (status === "missing") {
     return "Missing";
   }
-  return "Unknown";
+  return "Waiting for bridge";
 }
 
 function labelForDevice(state: DeviceState, device: DeviceInfo | null): string {
@@ -465,5 +341,5 @@ function labelForDevice(state: DeviceState, device: DeviceInfo | null): string {
   if (state === "offline") {
     return "Offline";
   }
-  return "Unknown";
+  return "Waiting for device";
 }

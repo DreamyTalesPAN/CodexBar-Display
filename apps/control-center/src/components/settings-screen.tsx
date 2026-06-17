@@ -61,7 +61,6 @@ export type SettingsScreenProps = {
   onCheckBridge: () => void;
   onDiscoverDevice: () => void;
   onPairDevice: () => void;
-  onLoadSettings: () => void;
   onBrightnessChange: (value: number) => void;
   onSaveBrightness: (value: number) => void;
 };
@@ -73,12 +72,10 @@ export function SettingsScreen({
   brightness,
   themeInstallEnabled,
   busyAction,
-  lastError,
   companionUrl = "127.0.0.1:47832",
   onCheckBridge,
   onDiscoverDevice,
   onPairDevice,
-  onLoadSettings,
   onBrightnessChange,
   onSaveBrightness,
 }: SettingsScreenProps) {
@@ -130,15 +127,34 @@ export function SettingsScreen({
             value={device?.paired ? "Paired" : "Open"}
           />
           <StatusRow
-            detail={themeInstallEnabled ? undefined : "Read-only"}
+            detail={themeInstallEnabled ? undefined : "Protected"}
             icon={<Lock size={18} aria-hidden />}
             label="Install"
-            value={themeInstallEnabled ? "Enabled" : "Locked"}
+            value={themeInstallEnabled ? "Enabled" : "Protected"}
           />
         </dl>
       </section>
 
-      <section className="grid gap-8 border-b border-[#747A60] py-8 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <section className="border-b border-[#747A60] py-8">
+        <h3 className="mb-5 text-base font-bold text-[#1B1B1B]">
+          Device facts
+        </h3>
+        <dl className="grid gap-4 md:grid-cols-5">
+          <Fact label="Target" value={device?.target || "Not reported"} />
+          <Fact label="Board" value={device?.board || "Not reported"} />
+          <Fact label="Firmware" value={device?.firmware || "Not reported"} />
+          <Fact
+            label="Transport"
+            value={device?.capabilities?.transport?.active || "Not reported"}
+          />
+          <Fact
+            label="ThemeSpec"
+            value={themeSpecReady ? "Ready" : "Check required"}
+          />
+        </dl>
+      </section>
+
+      <section className="border-b border-[#747A60] py-8">
         <div className="min-w-0">
           <div className="mb-5 flex items-center justify-between gap-4">
             <h3 className="text-base font-bold text-[#1B1B1B]">
@@ -170,28 +186,14 @@ export function SettingsScreen({
             />
           </div>
         </div>
-
-        <aside className="border border-[#747A60] p-5">
-          <div className="flex items-center justify-between gap-4">
-            <h3 className="text-base font-bold text-[#1B1B1B]">Request status</h3>
-            <span className="text-sm text-[#506600]">
-              {lastError?.code || "Ready"}
-            </span>
-          </div>
-          <p className="mt-4 text-sm leading-6 text-[#444933]">
-            {lastError
-              ? `${lastError.message}: ${lastError.nextAction}`
-              : "No error in this local session."}
-          </p>
-        </aside>
       </section>
 
-      <section className="grid gap-8 border-b border-[#747A60] py-8 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <section className="border-b border-[#747A60] py-8">
         <div>
           <div className="mb-5 flex items-center justify-between gap-4">
             <h3 className="text-base font-bold text-[#1B1B1B]">Display</h3>
             <span className="text-sm text-[#444933]">
-              {brightness == null ? "Not loaded" : `${brightness}%`}
+              {brightness == null ? "Load required" : `${brightness}%`}
             </span>
           </div>
           <div className="grid gap-5">
@@ -221,13 +223,6 @@ export function SettingsScreen({
             </div>
             <div className="flex flex-wrap gap-3">
               <CommandButton
-                busy={busyAction === "settings"}
-                disabled={!device?.connected}
-                icon={<RefreshCw size={18} aria-hidden />}
-                label="Load settings"
-                onClick={onLoadSettings}
-              />
-              <CommandButton
                 busy={busyAction === "brightness"}
                 disabled={!device?.connected || brightness == null}
                 icon={<Check size={18} aria-hidden />}
@@ -238,39 +233,6 @@ export function SettingsScreen({
             </div>
           </div>
         </div>
-
-        <aside className="border border-[#747A60] p-5">
-          <div className="flex items-center justify-between gap-4">
-            <h3 className="text-base font-bold text-[#1B1B1B]">Install safety</h3>
-            <span className="text-sm text-[#506600]">
-              {themeInstallEnabled ? "Enabled" : "Locked"}
-            </span>
-          </div>
-          <p className="mt-4 text-sm leading-6 text-[#444933]">
-            {themeInstallEnabled
-              ? "Theme writes are enabled for this local test window."
-              : "Theme writes stay locked until the local install flag is enabled."}
-          </p>
-        </aside>
-      </section>
-
-      <section className="py-8">
-        <h3 className="mb-5 text-base font-bold text-[#1B1B1B]">
-          Device facts
-        </h3>
-        <dl className="grid gap-4 md:grid-cols-5">
-          <Fact label="Target" value={device?.target || "Unknown"} />
-          <Fact label="Board" value={device?.board || "Unknown"} />
-          <Fact label="Firmware" value={device?.firmware || "Unknown"} />
-          <Fact
-            label="Transport"
-            value={device?.capabilities?.transport?.active || "Unknown"}
-          />
-          <Fact
-            label="ThemeSpec"
-            value={themeSpecReady ? "Ready" : "Not confirmed"}
-          />
-        </dl>
       </section>
     </div>
   );
@@ -368,5 +330,5 @@ function labelForDevice(
   if (state === "offline") {
     return "Offline";
   }
-  return "Unknown";
+  return "Check required";
 }
