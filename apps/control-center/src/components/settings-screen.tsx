@@ -102,10 +102,6 @@ export function SettingsScreen({
               <h2 className="max-w-[520px] text-[clamp(2.7rem,4.8vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
                 Control the essentials
               </h2>
-              <p className="mt-5 text-xl leading-8 text-[#444933]">
-                Connect, pair and tune the display without leaving the command
-                center.
-              </p>
             </div>
           </div>
         </div>
