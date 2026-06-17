@@ -75,8 +75,13 @@ type statusResponse struct {
 }
 
 type companion struct {
-	Status  string `json:"status"`
-	Version string `json:"version"`
+	Status   string            `json:"status"`
+	Version  string            `json:"version"`
+	Features companionFeatures `json:"features"`
+}
+
+type companionFeatures struct {
+	ThemeInstallEnabled bool `json:"themeInstallEnabled"`
 }
 
 type settingsResponse struct {
@@ -207,6 +212,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Companion: companion{
 			Status:  "ready",
 			Version: buildinfo.NormalizedVersion(),
+			Features: companionFeatures{
+				ThemeInstallEnabled: themeInstallEnabled(),
+			},
 		},
 		Device: deviceInfo{
 			Target:    publicTarget(cfg.DeviceTarget),

@@ -30,6 +30,14 @@ type ApiError = {
 type CompanionStatus = "unknown" | "online" | "missing";
 type DeviceState = "unknown" | "online" | "offline" | "paired";
 
+type CompanionInfo = {
+  status?: string;
+  version?: string;
+  features?: {
+    themeInstallEnabled?: boolean;
+  };
+};
+
 type DeviceInfo = {
   target?: string;
   connected: boolean;
@@ -98,6 +106,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
   const [activeTab, setActiveTab] = useState<ActiveTab>("themes");
+  const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
 
   const selectedTheme = useMemo(
     () =>
@@ -125,17 +134,69 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [],
   );
 
+  const refreshDevice = useCallback(
+    async ({ quiet = false }: { quiet?: boolean } = {}) => {
+      try {
+        const payload = await runCompanion<{ device: DeviceInfo }>(
+          "/v1/device",
+        );
+        setDevice(payload.device);
+        setDeviceState(payload.device.paired ? "paired" : "online");
+        return payload.device;
+      } catch (error) {
+        setDevice((current) =>
+          current
+            ? { ...current, connected: false }
+            : current,
+        );
+        setDeviceState("offline");
+        if (!quiet) {
+          setLastError(
+            normalizeCaughtError(error, "VibeTV wurde nicht gefunden."),
+          );
+        }
+        return null;
+      }
+    },
+    [runCompanion],
+  );
+
   const checkCompanion = useCallback(async () => {
     setBusyAction("status");
     try {
-      const payload = await runCompanion<{ device?: DeviceInfo }>("/v1/status");
+      const payload = await runCompanion<{
+        companion?: CompanionInfo;
+        device?: DeviceInfo;
+      }>("/v1/status");
       setCompanionStatus("online");
+      setThemeInstallEnabled(
+        Boolean(payload.companion?.features?.themeInstallEnabled),
+      );
       if (payload.device?.target) {
         setDevice(payload.device);
+        setDeviceState(payload.device.connected ? "online" : "unknown");
+        void refreshDevice({ quiet: true });
+      } else {
+        setDeviceState("unknown");
       }
     } catch (error) {
       setCompanionStatus("missing");
+      setThemeInstallEnabled(false);
       setLastError(normalizeCaughtError(error, "Companion läuft nicht."));
+    } finally {
+      setBusyAction(null);
+    }
+  }, [refreshDevice, runCompanion]);
+
+  const loadSettings = useCallback(async () => {
+    setBusyAction("settings");
+    try {
+      const payload = await runCompanion<SettingsResponse>("/v1/settings");
+      setBrightness(payload.settings?.display?.brightnessPercent ?? null);
+    } catch (error) {
+      setLastError(
+        normalizeCaughtError(error, "Settings konnten nicht geladen werden."),
+      );
     } finally {
       setBusyAction(null);
     }
@@ -151,13 +212,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setCompanionStatus("online");
       setDeviceState(payload.device.paired ? "paired" : "online");
       setDevice(payload.device);
+      if (payload.device.connected) {
+        void loadSettings();
+      }
     } catch (error) {
       setDeviceState("offline");
       setLastError(normalizeCaughtError(error, "VibeTV wurde nicht gefunden."));
     } finally {
       setBusyAction(null);
     }
-  }, [runCompanion]);
+  }, [loadSettings, runCompanion]);
 
   const pairDevice = useCallback(async () => {
     setBusyAction("pair");
@@ -168,26 +232,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       setDeviceState("paired");
       setDevice(payload.device);
+      if (payload.device.connected) {
+        void loadSettings();
+      }
     } catch (error) {
       setLastError(normalizeCaughtError(error, "Pairing fehlgeschlagen."));
     } finally {
       setBusyAction(null);
     }
-  }, [runCompanion]);
-
-  const loadSettings = useCallback(async () => {
-    setBusyAction("settings");
-    try {
-      const payload = await runCompanion<SettingsResponse>("/v1/settings");
-      setBrightness(payload.settings?.display?.brightnessPercent ?? null);
-    } catch (error) {
-      setLastError(
-        normalizeCaughtError(error, "Settings konnten nicht geladen werden."),
-      );
-    } finally {
-      setBusyAction(null);
-    }
-  }, [runCompanion]);
+  }, [loadSettings, runCompanion]);
 
   const saveBrightness = useCallback(
     async (value: number) => {
@@ -255,6 +308,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device?.capabilities?.display?.brightness?.minPercent ?? 10;
   const maxBrightness =
     device?.capabilities?.display?.brightness?.maxPercent ?? 100;
+  const installBlockedReason = installBlockReason({
+    selectedTheme,
+    companionStatus,
+    device,
+    themeInstallEnabled,
+  });
+  const statusNotice = readyStatusNotice({
+    companionStatus,
+    device,
+    themeInstallEnabled,
+  });
+  const statusNoticeReady =
+    companionStatus === "online" && Boolean(device?.connected) && themeInstallEnabled;
 
   return (
     <main className="min-h-screen bg-[#f4f5f1] text-[#171b1f]">
@@ -379,7 +445,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                   <div className="mt-5 flex flex-wrap gap-3">
                     <IconButton
                       busy={busyAction === "install"}
-                      disabled={!selectedTheme?.isFree || !device?.connected}
+                      disabled={Boolean(installBlockedReason)}
                       icon={<Download size={16} />}
                       label="Auf VibeTV installieren"
                       onClick={installTheme}
@@ -392,6 +458,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                       onClick={discoverDevice}
                     />
                   </div>
+                  {installBlockedReason ? (
+                    <div className="mt-3 border border-[#e3c27d] bg-[#fff8df] p-3 text-sm leading-6 text-[#664b13]">
+                      {installBlockedReason}
+                    </div>
+                  ) : null}
 
                   {lastInstall ? (
                     <div className="mt-4 border border-[#a5d2ad] bg-[#f1faf2] p-3 text-sm text-[#245d33]">
@@ -417,7 +488,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                   title="Local API"
                   detail="127.0.0.1:47832"
                 />
-                <div className="grid gap-4 p-5 sm:grid-cols-3">
+                <div className="grid gap-4 p-5 sm:grid-cols-4">
                   <StatusTile
                     icon={<PlugZap size={16} />}
                     label="Bridge"
@@ -433,8 +504,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                   <StatusTile
                     icon={<ShieldCheck size={16} />}
                     label="Pairing"
-                    value={device?.paired ? "Bereit" : "Offen"}
-                    tone={device?.paired ? "good" : "neutral"}
+                    value={labelForPairing(device)}
+                    tone={device?.connected && device.paired ? "good" : "neutral"}
+                  />
+                  <StatusTile
+                    icon={<Download size={16} />}
+                    label="Install"
+                    value={themeInstallEnabled ? "Aktiv" : "Gesperrt"}
+                    tone={themeInstallEnabled ? "good" : "warn"}
                   />
                 </div>
                 <div className="flex flex-wrap gap-3 border-t border-[#eceee8] px-5 py-4">
@@ -552,9 +629,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                     </div>
                   </div>
                 ) : (
-                  <div className="border border-[#d7e6d5] bg-[#f4faf0] p-3 text-sm text-[#315d32]">
-                    Local API bereit. Wähle ein Theme und starte die
-                    Installation.
+                  <div
+                    className={`border p-3 text-sm ${
+                      statusNoticeReady
+                        ? "border-[#d7e6d5] bg-[#f4faf0] text-[#315d32]"
+                        : "border-[#e3c27d] bg-[#fff8df] text-[#664b13]"
+                    }`}
+                  >
+                    {statusNotice}
                   </div>
                 )}
               </div>
@@ -733,6 +815,63 @@ function labelForDevice(state: DeviceState, device: DeviceInfo | null): string {
     return "Offline";
   }
   return "Unbekannt";
+}
+
+function labelForPairing(device: DeviceInfo | null): string {
+  if (!device?.paired) {
+    return "Offen";
+  }
+  return device.connected ? "Bereit" : "Gespeichert";
+}
+
+function installBlockReason({
+  selectedTheme,
+  companionStatus,
+  device,
+  themeInstallEnabled,
+}: {
+  selectedTheme?: ThemeProduct;
+  companionStatus: CompanionStatus;
+  device: DeviceInfo | null;
+  themeInstallEnabled: boolean;
+}): string {
+  if (!selectedTheme) {
+    return "Wähle zuerst ein Theme aus.";
+  }
+  if (!selectedTheme.isFree) {
+    return "Bezahlte Themes sind in diesem MVP noch nicht installierbar.";
+  }
+  if (companionStatus !== "online") {
+    return "Starte den Mac Companion, damit die App lokal mit VibeTV sprechen kann.";
+  }
+  if (!device?.connected) {
+    return "VibeTV ist noch nicht verbunden. Nutze Gerät suchen im Control Center.";
+  }
+  if (!themeInstallEnabled) {
+    return "Theme-Install ist im Companion bewusst gesperrt. Starte ihn nur für ein Hardware-Testfenster mit VIBETV_ENABLE_WIFI_THEME_INSTALL=1 neu.";
+  }
+  return "";
+}
+
+function readyStatusNotice({
+  companionStatus,
+  device,
+  themeInstallEnabled,
+}: {
+  companionStatus: CompanionStatus;
+  device: DeviceInfo | null;
+  themeInstallEnabled: boolean;
+}): string {
+  if (companionStatus !== "online") {
+    return "Starte den Mac Companion, damit diese App lokal mit VibeTV sprechen kann.";
+  }
+  if (!device?.connected) {
+    return "Local API bereit. Suche oder verbinde VibeTV, bevor du Themes installierst oder Settings änderst.";
+  }
+  if (!themeInstallEnabled) {
+    return "VibeTV ist verbunden. Theme-Install bleibt gesperrt, bis du den Companion für ein Hardware-Testfenster freigibst.";
+  }
+  return "VibeTV ist verbunden. Wähle ein Theme und starte die Installation.";
 }
 
 function normalizeError(

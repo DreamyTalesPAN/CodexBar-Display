@@ -31,8 +31,31 @@ func TestStatusWorksWithoutDevice(t *testing.T) {
 	if !got.OK || got.Companion.Status != "ready" {
 		t.Fatalf("unexpected status response: %+v", got)
 	}
+	if got.Companion.Features.ThemeInstallEnabled {
+		t.Fatalf("expected theme install disabled by default")
+	}
 	if got.Device.Connected {
 		t.Fatalf("expected disconnected device without probing, got %+v", got.Device)
+	}
+}
+
+func TestStatusReportsThemeInstallFeatureFlag(t *testing.T) {
+	t.Setenv(themeInstallEnv, "1")
+	server := newTestServer(t, runtimeconfig.Config{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.Companion.Features.ThemeInstallEnabled {
+		t.Fatalf("expected theme install feature flag to be enabled")
 	}
 }
 
