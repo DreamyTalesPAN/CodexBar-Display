@@ -1,66 +1,25 @@
 "use client";
 
-import Image from "next/image";
-import {
-  Activity,
-  AlertTriangle,
-  Check,
-  Download,
-  Monitor,
-  PlugZap,
-  RefreshCw,
-  Search,
-  Settings,
-  ShieldCheck,
-  SlidersHorizontal,
-  Wifi,
-} from "lucide-react";
-import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
+import type { ThemeCatalogResponse } from "@/lib/themes";
+import { ControlCenterShell } from "./control-center-shell";
+import type {
+  ActiveTab,
+  ApiError,
+  CompanionInfo,
+  CompanionStatus,
+  ControlCenterEvent,
+  DeviceInfo,
+  DeviceState,
+} from "./control-center-types";
+import { LogsScreen } from "./logs-screen";
+import { OverviewScreen } from "./overview-screen";
+import { SettingsScreen } from "./settings-screen";
+import { ThemeLibraryScreen } from "./theme-library-screen";
+import { UpdatesScreen } from "./updates-screen";
 
 const COMPANION_URL = "http://127.0.0.1:47832";
-
-type ApiError = {
-  code: string;
-  message: string;
-  nextAction: string;
-};
-
-type CompanionStatus = "unknown" | "online" | "missing";
-type DeviceState = "unknown" | "online" | "offline" | "paired";
-
-type CompanionInfo = {
-  status?: string;
-  version?: string;
-  features?: {
-    themeInstallEnabled?: boolean;
-  };
-};
-
-type DeviceInfo = {
-  target?: string;
-  connected: boolean;
-  paired?: boolean;
-  board?: string;
-  firmware?: string;
-  capabilities?: {
-    display?: {
-      brightness?: {
-        supported?: boolean;
-        minPercent?: number;
-        maxPercent?: number;
-      };
-    };
-    theme?: {
-      supportsThemeSpecV1?: boolean;
-      maxThemeGifBytes?: number;
-    };
-    transport?: {
-      active?: string;
-    };
-  };
-};
+const COMPANION_ENDPOINT = "127.0.0.1:47832";
 
 type SettingsResponse = {
   settings?: {
@@ -85,8 +44,6 @@ type Props = {
   initialThemeId?: string;
 };
 
-type ActiveTab = "themes" | "settings";
-
 export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const initialTheme = useMemo(
     () =>
@@ -97,22 +54,53 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [selectedThemeId, setSelectedThemeId] = useState(
     initialTheme?.themeId || "",
   );
+  const [activeTab, setActiveTab] = useState<ActiveTab>(
+    initialThemeId ? "theme-library" : "overview",
+  );
   const [companionStatus, setCompanionStatus] =
     useState<CompanionStatus>("unknown");
+  const [companionInfo, setCompanionInfo] = useState<CompanionInfo | null>(
+    null,
+  );
   const [deviceState, setDeviceState] = useState<DeviceState>("unknown");
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [brightness, setBrightness] = useState<number | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
-  const [activeTab, setActiveTab] = useState<ActiveTab>("themes");
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
+  const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
+    {
+      id: "session-start",
+      label: "Control Center geöffnet",
+      detail: "Lokale Browser-Sitzung gestartet.",
+      at: "Session",
+      tone: "unknown",
+    },
+  ]);
 
   const selectedTheme = useMemo(
     () =>
       catalog.themes.find((theme) => theme.themeId === selectedThemeId) ||
       initialTheme,
     [catalog.themes, initialTheme, selectedThemeId],
+  );
+
+  const addEvent = useCallback(
+    (event: Omit<ControlCenterEvent, "id" | "at"> & { at?: string }) => {
+      setEvents((current) =>
+        [
+          {
+            id: `${Date.now()}-${current.length}`,
+            at: event.at || formatTime(),
+            ...event,
+          },
+          ...current,
+        ].slice(0, 10),
+      );
+    },
+    [],
   );
 
   const runCompanion = useCallback(
@@ -142,23 +130,37 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         );
         setDevice(payload.device);
         setDeviceState(payload.device.paired ? "paired" : "online");
+        if (!quiet) {
+          addEvent({
+            label: "Device gelesen",
+            detail: `${payload.device.target || "VibeTV"} ist ${
+              payload.device.connected ? "verbunden" : "nicht verbunden"
+            }.`,
+            tone: payload.device.connected ? "ready" : "attention",
+          });
+        }
         return payload.device;
       } catch (error) {
         setDevice((current) =>
-          current
-            ? { ...current, connected: false }
-            : current,
+          current ? { ...current, connected: false } : current,
         );
         setDeviceState("offline");
         if (!quiet) {
-          setLastError(
-            normalizeCaughtError(error, "VibeTV wurde nicht gefunden."),
+          const normalized = normalizeCaughtError(
+            error,
+            "VibeTV wurde nicht gefunden.",
           );
+          setLastError(normalized);
+          addEvent({
+            label: "Device nicht erreichbar",
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
         }
         return null;
       }
     },
-    [runCompanion],
+    [addEvent, runCompanion],
   );
 
   const checkCompanion = useCallback(async () => {
@@ -168,39 +170,80 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         companion?: CompanionInfo;
         device?: DeviceInfo;
       }>("/v1/status");
+      const checkedAt = formatTime();
       setCompanionStatus("online");
+      setCompanionInfo(payload.companion || null);
+      setLastCheckedAt(checkedAt);
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
       if (payload.device?.target) {
         setDevice(payload.device);
-        setDeviceState(payload.device.connected ? "online" : "unknown");
+        setDeviceState(
+          payload.device.paired
+            ? "paired"
+            : payload.device.connected
+              ? "online"
+              : "unknown",
+        );
         void refreshDevice({ quiet: true });
       } else {
         setDeviceState("unknown");
       }
+      addEvent({
+        label: "Bridge geprüft",
+        detail: payload.device?.target
+          ? `Companion online, Ziel ${payload.device.target}.`
+          : "Companion online, noch kein Device-Ziel bestätigt.",
+        at: checkedAt,
+        tone: "ready",
+      });
     } catch (error) {
+      const normalized = normalizeCaughtError(error, "Companion läuft nicht.");
       setCompanionStatus("missing");
+      setCompanionInfo(null);
       setThemeInstallEnabled(false);
-      setLastError(normalizeCaughtError(error, "Companion läuft nicht."));
+      setLastError(normalized);
+      addEvent({
+        label: "Bridge nicht erreichbar",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
     } finally {
       setBusyAction(null);
     }
-  }, [refreshDevice, runCompanion]);
+  }, [addEvent, refreshDevice, runCompanion]);
 
   const loadSettings = useCallback(async () => {
     setBusyAction("settings");
     try {
       const payload = await runCompanion<SettingsResponse>("/v1/settings");
-      setBrightness(payload.settings?.display?.brightnessPercent ?? null);
+      const loadedBrightness =
+        payload.settings?.display?.brightnessPercent ?? null;
+      setBrightness(loadedBrightness);
+      addEvent({
+        label: "Settings geladen",
+        detail:
+          loadedBrightness == null
+            ? "Helligkeit wurde noch nicht gemeldet."
+            : `Helligkeit steht auf ${loadedBrightness}%.`,
+        tone: "ready",
+      });
     } catch (error) {
-      setLastError(
-        normalizeCaughtError(error, "Settings konnten nicht geladen werden."),
+      const normalized = normalizeCaughtError(
+        error,
+        "Settings konnten nicht geladen werden.",
       );
+      setLastError(normalized);
+      addEvent({
+        label: "Settings-Read fehlgeschlagen",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
     } finally {
       setBusyAction(null);
     }
-  }, [runCompanion]);
+  }, [addEvent, runCompanion]);
 
   const discoverDevice = useCallback(async () => {
     setBusyAction("discover");
@@ -212,16 +255,30 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setCompanionStatus("online");
       setDeviceState(payload.device.paired ? "paired" : "online");
       setDevice(payload.device);
+      addEvent({
+        label: "Device gefunden",
+        detail: payload.device.target || "VibeTV wurde vom Companion gefunden.",
+        tone: payload.device.connected ? "ready" : "unknown",
+      });
       if (payload.device.connected) {
         void loadSettings();
       }
     } catch (error) {
+      const normalized = normalizeCaughtError(
+        error,
+        "VibeTV wurde nicht gefunden.",
+      );
       setDeviceState("offline");
-      setLastError(normalizeCaughtError(error, "VibeTV wurde nicht gefunden."));
+      setLastError(normalized);
+      addEvent({
+        label: "Discovery fehlgeschlagen",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
     } finally {
       setBusyAction(null);
     }
-  }, [loadSettings, runCompanion]);
+  }, [addEvent, loadSettings, runCompanion]);
 
   const pairDevice = useCallback(async () => {
     setBusyAction("pair");
@@ -232,15 +289,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       setDeviceState("paired");
       setDevice(payload.device);
+      addEvent({
+        label: "Device gepairt",
+        detail: payload.device.target || "Pairing-Token wurde gespeichert.",
+        tone: "ready",
+      });
       if (payload.device.connected) {
         void loadSettings();
       }
     } catch (error) {
-      setLastError(normalizeCaughtError(error, "Pairing fehlgeschlagen."));
+      const normalized = normalizeCaughtError(error, "Pairing fehlgeschlagen.");
+      setLastError(normalized);
+      addEvent({
+        label: "Pairing fehlgeschlagen",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
     } finally {
       setBusyAction(null);
     }
-  }, [loadSettings, runCompanion]);
+  }, [addEvent, loadSettings, runCompanion]);
 
   const saveBrightness = useCallback(
     async (value: number) => {
@@ -251,19 +319,30 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           method: "POST",
           body: JSON.stringify({ brightnessPercent: value }),
         });
-        setBrightness(payload.settings?.display?.brightnessPercent ?? value);
+        const savedValue =
+          payload.settings?.display?.brightnessPercent ?? value;
+        setBrightness(savedValue);
+        addEvent({
+          label: "Helligkeit gespeichert",
+          detail: `Display-Helligkeit steht auf ${savedValue}%.`,
+          tone: "ready",
+        });
       } catch (error) {
-        setLastError(
-          normalizeCaughtError(
-            error,
-            "Helligkeit konnte nicht gespeichert werden.",
-          ),
+        const normalized = normalizeCaughtError(
+          error,
+          "Helligkeit konnte nicht gespeichert werden.",
         );
+        setLastError(normalized);
+        addEvent({
+          label: "Helligkeit nicht gespeichert",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
       } finally {
         setBusyAction(null);
       }
     },
-    [runCompanion],
+    [addEvent, runCompanion],
   );
 
   const installTheme = useCallback(async () => {
@@ -272,6 +351,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
     setBusyAction("install");
     setLastInstall(undefined);
+    addEvent({
+      label: "Theme-Install gestartet",
+      detail: `${selectedTheme.title} wird mit Firmware-Update-Skip angefragt.`,
+      tone: "unknown",
+    });
     try {
       const payload = await runCompanion<InstallResponse>(
         "/v1/themes/install",
@@ -285,15 +369,27 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         },
       );
       setLastInstall(payload.result);
+      addEvent({
+        label: "Theme installiert",
+        detail: payload.result?.name || selectedTheme.title,
+        tone: "ready",
+      });
       await loadSettings();
     } catch (error) {
-      setLastError(
-        normalizeCaughtError(error, "Theme konnte nicht installiert werden."),
+      const normalized = normalizeCaughtError(
+        error,
+        "Theme konnte nicht installiert werden.",
       );
+      setLastError(normalized);
+      addEvent({
+        label: "Theme-Install blockiert",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
     } finally {
       setBusyAction(null);
     }
-  }, [loadSettings, runCompanion, selectedTheme]);
+  }, [addEvent, loadSettings, runCompanion, selectedTheme]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -302,605 +398,146 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return () => window.clearTimeout(timer);
   }, [checkCompanion]);
 
-  const brightnessSupported =
-    device?.capabilities?.display?.brightness?.supported ?? true;
-  const minBrightness =
-    device?.capabilities?.display?.brightness?.minPercent ?? 10;
-  const maxBrightness =
-    device?.capabilities?.display?.brightness?.maxPercent ?? 100;
-  const installBlockedReason = installBlockReason({
-    selectedTheme,
-    companionStatus,
-    device,
-    themeInstallEnabled,
-  });
-  const statusNotice = readyStatusNotice({
-    companionStatus,
-    device,
-    themeInstallEnabled,
-  });
-  const statusNoticeReady =
-    companionStatus === "online" && Boolean(device?.connected) && themeInstallEnabled;
+  const activeTheme = lastInstall
+    ? {
+        themeId: lastInstall.themeId,
+        title: lastInstall.name,
+        themeVersion: String(lastInstall.themeRev),
+      }
+    : selectedTheme
+      ? {
+          themeId: selectedTheme.themeId,
+          title: selectedTheme.title,
+          themeVersion: selectedTheme.themeVersion,
+        }
+      : null;
+
+  const logs = events.map((event) => ({
+    id: event.id,
+    label: event.label,
+    detail: event.detail,
+    timestamp: event.at,
+  }));
 
   return (
-    <main className="min-h-screen bg-[#f4f5f1] text-[#171b1f]">
-      <div className="border-b border-[#d8dccf] bg-[#fbfcf7]">
-        <div className="mx-auto max-w-6xl px-5 py-4">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="grid size-10 shrink-0 place-items-center border border-[#252b2e] bg-[#252b2e] text-[#f6f2df]">
-                <Monitor size={20} aria-hidden />
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold">
-                  VibeTV Control Center
-                </h1>
-              </div>
-            </div>
-            <div className="inline-grid h-10 grid-cols-2 border border-[#cfd4c8] bg-white p-1">
-              <TabButton
-                active={activeTab === "themes"}
-                icon={<Download size={15} />}
-                label="Themes"
-                onClick={() => setActiveTab("themes")}
-              />
-              <TabButton
-                active={activeTab === "settings"}
-                icon={<Settings size={15} />}
-                label="Settings"
-                onClick={() => setActiveTab("settings")}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mx-auto max-w-6xl px-5 py-5">
-        {activeTab === "themes" ? (
-          <section className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
-            <div className="border border-[#d8dccf] bg-white">
-              <SectionHeader
-                icon={<Search size={17} />}
-                title="Theme Library"
-                detail={`${catalog.themes.length} Themes`}
-              />
-              <div className="min-h-[420px] divide-y divide-[#eceee8]">
-                {catalog.themes.map((theme) => (
-                  <button
-                    key={theme.themeId}
-                    className={`grid w-full grid-cols-[72px_minmax(0,1fr)] gap-3 px-4 py-3 text-left transition ${
-                      theme.themeId === selectedTheme?.themeId
-                        ? "bg-[#edf6ee]"
-                        : "hover:bg-[#f8f9f4]"
-                    }`}
-                    onClick={() => setSelectedThemeId(theme.themeId)}
-                    type="button"
-                  >
-                    <ThemePreview theme={theme} />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold">
-                        {theme.title}
-                      </span>
-                      <span className="mt-1 flex flex-wrap gap-2 text-xs text-[#687160]">
-                        <span>{theme.priceLabel}</span>
-                        <span>{theme.themeId}</span>
-                      </span>
-                      <span className="mt-2 line-clamp-2 text-xs leading-5 text-[#5a6356]">
-                        {theme.description || "Theme aus Shopify."}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="border border-[#d8dccf] bg-white">
-              <SectionHeader
-                icon={<Download size={17} />}
-                title="Installieren"
-                detail={selectedTheme?.themeId || "Kein Theme"}
-              />
-              <div className="grid gap-5 p-5 md:grid-cols-[200px_minmax(0,1fr)]">
-                {selectedTheme ? (
-                  <ThemePreview large theme={selectedTheme} />
-                ) : null}
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-xl font-semibold">
-                        {selectedTheme?.title || "Theme auswählen"}
-                      </h2>
-                      <p className="mt-2 max-w-2xl text-sm leading-6 text-[#586252]">
-                        {selectedTheme?.description ||
-                          "Die Theme-Library wird aus Shopify geladen."}
-                      </p>
-                    </div>
-                    {selectedTheme ? (
-                      selectedTheme.isFree ? (
-                        <span className="border border-[#a5d2ad] bg-[#edf8ef] px-2.5 py-1 text-xs font-semibold text-[#1d6b36]">
-                          Kostenlos
-                        </span>
-                      ) : (
-                        <span className="border border-[#e0c987] bg-[#fff8df] px-2.5 py-1 text-xs font-semibold text-[#7a5a16]">
-                          Nicht im MVP
-                        </span>
-                      )
-                    ) : null}
-                  </div>
-
-                  {selectedTheme ? (
-                    <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
-                      <Fact label="Theme-ID" value={selectedTheme.themeId} />
-                      <Fact
-                        label="Version"
-                        value={selectedTheme.themeVersion || "MVP"}
-                      />
-                      <Fact
-                        label="Firmware"
-                        value={selectedTheme.requiresFirmware || "aktuell"}
-                      />
-                    </dl>
-                  ) : null}
-
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    <IconButton
-                      busy={busyAction === "install"}
-                      disabled={Boolean(installBlockedReason)}
-                      icon={<Download size={16} />}
-                      label="Auf VibeTV installieren"
-                      onClick={installTheme}
-                      primary
-                    />
-                    <IconButton
-                      busy={busyAction === "discover"}
-                      icon={<RefreshCw size={16} />}
-                      label="Gerät suchen"
-                      onClick={discoverDevice}
-                    />
-                  </div>
-                  {installBlockedReason ? (
-                    <div className="mt-3 border border-[#e3c27d] bg-[#fff8df] p-3 text-sm leading-6 text-[#664b13]">
-                      {installBlockedReason}
-                    </div>
-                  ) : null}
-
-                  {lastInstall ? (
-                    <div className="mt-4 border border-[#a5d2ad] bg-[#f1faf2] p-3 text-sm text-[#245d33]">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <Check size={16} aria-hidden />
-                        Installiert: {lastInstall.name}
-                      </div>
-                      <div className="mt-1 font-mono text-xs">
-                        {lastInstall.activePath}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </section>
-        ) : (
-          <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="space-y-5">
-              <div className="border border-[#d8dccf] bg-white">
-                <SectionHeader
-                  icon={<Activity size={17} />}
-                  title="Local API"
-                  detail="127.0.0.1:47832"
-                />
-                <div className="grid gap-4 p-5 sm:grid-cols-4">
-                  <StatusTile
-                    icon={<PlugZap size={16} />}
-                    label="Bridge"
-                    value={labelForCompanion(companionStatus)}
-                    tone={companionStatus === "online" ? "good" : "warn"}
-                  />
-                  <StatusTile
-                    icon={<Wifi size={16} />}
-                    label="Gerät"
-                    value={labelForDevice(deviceState, device)}
-                    tone={device?.connected ? "good" : "warn"}
-                  />
-                  <StatusTile
-                    icon={<ShieldCheck size={16} />}
-                    label="Pairing"
-                    value={labelForPairing(device)}
-                    tone={device?.connected && device.paired ? "good" : "neutral"}
-                  />
-                  <StatusTile
-                    icon={<Download size={16} />}
-                    label="Install"
-                    value={themeInstallEnabled ? "Aktiv" : "Gesperrt"}
-                    tone={themeInstallEnabled ? "good" : "warn"}
-                  />
-                </div>
-                <div className="flex flex-wrap gap-3 border-t border-[#eceee8] px-5 py-4">
-                  <IconButton
-                    busy={busyAction === "status"}
-                    icon={<PlugZap size={16} />}
-                    label="Bridge prüfen"
-                    onClick={checkCompanion}
-                  />
-                  <IconButton
-                    busy={busyAction === "discover"}
-                    icon={<Search size={16} />}
-                    label="Gerät suchen"
-                    onClick={discoverDevice}
-                  />
-                  <IconButton
-                    busy={busyAction === "pair"}
-                    disabled={!device?.connected}
-                    icon={<ShieldCheck size={16} />}
-                    label="Pairen"
-                    onClick={pairDevice}
-                  />
-                </div>
-              </div>
-
-              <div className="border border-[#d8dccf] bg-white">
-                <SectionHeader
-                  icon={<Wifi size={17} />}
-                  title="Device"
-                  detail={device?.target || "nicht verbunden"}
-                />
-                <div className="grid gap-3 p-5 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                  <Fact label="Board" value={device?.board || "unbekannt"} />
-                  <Fact
-                    label="Firmware"
-                    value={device?.firmware || "unbekannt"}
-                  />
-                  <Fact
-                    label="Transport"
-                    value={device?.capabilities?.transport?.active || "wifi"}
-                  />
-                  <Fact
-                    label="ThemeSpec"
-                    value={
-                      device?.capabilities?.theme?.supportsThemeSpecV1
-                        ? "bereit"
-                        : "offen"
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="border border-[#d8dccf] bg-white">
-                <SectionHeader
-                  icon={<SlidersHorizontal size={17} />}
-                  title="Brightness"
-                  detail={
-                    brightness == null ? "nicht geladen" : `${brightness}%`
-                  }
-                />
-                <div className="space-y-4 p-5">
-                  <input
-                    aria-label="Helligkeit"
-                    className="h-2 w-full accent-[#2f7d46]"
-                    disabled={!brightnessSupported || brightness == null}
-                    max={maxBrightness}
-                    min={minBrightness}
-                    onChange={(event) =>
-                      setBrightness(Number(event.target.value))
-                    }
-                    onMouseUp={() =>
-                      brightness != null && void saveBrightness(brightness)
-                    }
-                    onTouchEnd={() =>
-                      brightness != null && void saveBrightness(brightness)
-                    }
-                    type="range"
-                    value={brightness ?? minBrightness}
-                  />
-                  <div className="flex flex-wrap gap-3">
-                    <IconButton
-                      busy={busyAction === "settings"}
-                      disabled={!device?.connected}
-                      icon={<Settings size={16} />}
-                      label="Laden"
-                      onClick={loadSettings}
-                    />
-                    <IconButton
-                      busy={busyAction === "brightness"}
-                      disabled={!device?.connected || brightness == null}
-                      icon={<Check size={16} />}
-                      label="Speichern"
-                      onClick={() =>
-                        brightness != null && void saveBrightness(brightness)
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="border border-[#d8dccf] bg-white">
-              <SectionHeader
-                icon={<AlertTriangle size={17} />}
-                title="Status"
-                detail={lastError ? lastError.code : "bereit"}
-              />
-              <div className="p-5">
-                {lastError ? (
-                  <div className="border border-[#e3c27d] bg-[#fff8df] p-3 text-sm text-[#664b13]">
-                    <div className="font-semibold">{lastError.message}</div>
-                    <div className="mt-1 leading-6">{lastError.nextAction}</div>
-                    <div className="mt-2 font-mono text-xs">
-                      {lastError.code}
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className={`border p-3 text-sm ${
-                      statusNoticeReady
-                        ? "border-[#d7e6d5] bg-[#f4faf0] text-[#315d32]"
-                        : "border-[#e3c27d] bg-[#fff8df] text-[#664b13]"
-                    }`}
-                  >
-                    {statusNotice}
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
-      </div>
-    </main>
-  );
-}
-
-function TabButton({
-  active,
-  icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className={`inline-flex items-center justify-center gap-2 px-4 text-sm font-semibold transition ${
-        active
-          ? "bg-[#252b2e] text-white"
-          : "bg-white text-[#536052] hover:bg-[#f4f6ef]"
-      }`}
-      onClick={onClick}
-      type="button"
+    <ControlCenterShell
+      activeTab={activeTab}
+      companionEndpoint={COMPANION_ENDPOINT}
+      companionStatus={companionStatus}
+      device={device}
+      deviceState={deviceState}
+      onTabChange={setActiveTab}
     >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
-function StatusTile({
-  icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  tone: "good" | "warn" | "neutral";
-}) {
-  const toneClass =
-    tone === "good"
-      ? "border-[#a5d2ad] bg-[#edf8ef] text-[#245d33]"
-      : tone === "warn"
-        ? "border-[#e3c27d] bg-[#fff8df] text-[#664b13]"
-        : "border-[#d6d8d1] bg-[#f5f6f3] text-[#50584d]";
-
-  return (
-    <div className={`min-w-0 border px-3 py-3 ${toneClass}`}>
-      <div className="flex items-center gap-2 text-xs">
-        {icon}
-        <span className="truncate">{label}</span>
-      </div>
-      <div className="mt-2 truncate text-base font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function ThemePreview({
-  theme,
-  large,
-}: {
-  theme: ThemeProduct;
-  large?: boolean;
-}) {
-  const className = large
-    ? "relative aspect-square w-full overflow-hidden border border-[#d9ddd2] bg-[#eef1e8]"
-    : "relative size-[76px] overflow-hidden border border-[#d9ddd2] bg-[#eef1e8]";
-
-  return (
-    <span className={className}>
-      {theme.imageUrl ? (
-        <Image
-          alt={theme.imageAlt || theme.title}
-          className="object-cover"
-          fill
-          sizes={large ? "180px" : "76px"}
-          src={theme.imageUrl}
+      {activeTab === "overview" ? (
+        <OverviewScreen
+          activeTheme={activeTheme}
+          companionEndpoint={COMPANION_URL}
+          companionStatus={companionStatus}
+          device={device}
+          deviceState={deviceState}
+          events={events.slice(0, 4)}
+          lastCheckedAt={lastCheckedAt}
+          lastError={lastError}
+          themeInstallEnabled={themeInstallEnabled}
         />
-      ) : (
-        <span className="grid h-full place-items-center bg-[#26302f] text-center text-sm font-semibold text-[#f5f1df]">
-          {theme.themeId.slice(0, 2).toUpperCase()}
-        </span>
-      )}
-    </span>
+      ) : null}
+
+      {activeTab === "settings" ? (
+        <SettingsScreen
+          brightness={brightness}
+          busyAction={busyAction}
+          companionStatus={companionStatus}
+          companionUrl={COMPANION_ENDPOINT}
+          device={device}
+          deviceState={deviceState}
+          lastError={lastError}
+          onBrightnessChange={setBrightness}
+          onCheckBridge={checkCompanion}
+          onDiscoverDevice={discoverDevice}
+          onLoadSettings={loadSettings}
+          onPairDevice={pairDevice}
+          onSaveBrightness={saveBrightness}
+          themeInstallEnabled={themeInstallEnabled}
+        />
+      ) : null}
+
+      {activeTab === "theme-library" ? (
+        <ThemeLibraryScreen
+          busyAction={busyAction}
+          catalogIssue={catalog.issue}
+          companionStatus={companionStatus}
+          device={device}
+          lastInstall={lastInstall}
+          onDiscoverDevice={discoverDevice}
+          onInstallTheme={installTheme}
+          onSelectTheme={setSelectedThemeId}
+          selectedTheme={selectedTheme}
+          selectedThemeId={selectedThemeId}
+          themeInstallEnabled={themeInstallEnabled}
+          themes={catalog.themes}
+        />
+      ) : null}
+
+      {activeTab === "updates" ? (
+        <UpdatesScreen
+          busyAction={busyAction}
+          companionStatus={companionStatus}
+          companionVersion={companionInfo?.version}
+          device={device}
+          onCheckBridge={checkCompanion}
+        />
+      ) : null}
+
+      {activeTab === "logs" ? (
+        <LogsScreen
+          busyAction={busyAction}
+          events={logs}
+          lastError={lastError}
+          onRefresh={checkCompanion}
+        />
+      ) : null}
+    </ControlCenterShell>
   );
 }
 
-function SectionHeader({
-  icon,
-  title,
-  detail,
-}: {
-  icon: ReactNode;
-  title: string;
-  detail: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-[#eceee8] px-4 py-3">
-      <div className="flex items-center gap-2 text-sm font-semibold">
-        {icon}
-        {title}
-      </div>
-      <div className="truncate text-xs text-[#6a7365]">{detail}</div>
-    </div>
-  );
-}
-
-function Fact({ label, value }: { label: string; value?: string }) {
-  return (
-    <div className="min-w-0 border border-[#eceee8] bg-[#fbfcf7] px-3 py-2">
-      <div className="text-xs text-[#6a7365]">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold">
-        {value || "offen"}
-      </div>
-    </div>
-  );
-}
-
-function IconButton({
-  icon,
-  label,
-  onClick,
-  disabled,
-  busy,
-  primary,
-}: {
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  busy?: boolean;
-  primary?: boolean;
-}) {
-  return (
-    <button
-      className={`inline-flex h-10 items-center gap-2 border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
-        primary
-          ? "border-[#26302f] bg-[#26302f] text-white hover:bg-[#3b4745]"
-          : "border-[#cbd1c4] bg-white text-[#26302f] hover:bg-[#f4f6ef]"
-      }`}
-      disabled={disabled || busy}
-      onClick={onClick}
-      type="button"
-    >
-      {busy ? <RefreshCw className="animate-spin" size={16} /> : icon}
-      <span>{busy ? "Läuft..." : label}</span>
-    </button>
-  );
-}
-
-function labelForCompanion(status: CompanionStatus): string {
-  if (status === "online") {
-    return "Online";
-  }
-  if (status === "missing") {
-    return "Fehlt";
-  }
-  return "Prüfen";
-}
-
-function labelForDevice(state: DeviceState, device: DeviceInfo | null): string {
-  if (device?.connected) {
-    return state === "paired" || device.paired ? "Verbunden" : "Gefunden";
-  }
-  if (state === "offline") {
-    return "Offline";
-  }
-  return "Unbekannt";
-}
-
-function labelForPairing(device: DeviceInfo | null): string {
-  if (!device?.paired) {
-    return "Offen";
-  }
-  return device.connected ? "Bereit" : "Gespeichert";
-}
-
-function installBlockReason({
-  selectedTheme,
-  companionStatus,
-  device,
-  themeInstallEnabled,
-}: {
-  selectedTheme?: ThemeProduct;
-  companionStatus: CompanionStatus;
-  device: DeviceInfo | null;
-  themeInstallEnabled: boolean;
-}): string {
-  if (!selectedTheme) {
-    return "Wähle zuerst ein Theme aus.";
-  }
-  if (!selectedTheme.isFree) {
-    return "Bezahlte Themes sind in diesem MVP noch nicht installierbar.";
-  }
-  if (companionStatus !== "online") {
-    return "Starte den Mac Companion, damit die App lokal mit VibeTV sprechen kann.";
-  }
-  if (!device?.connected) {
-    return "VibeTV ist noch nicht verbunden. Nutze Gerät suchen im Control Center.";
-  }
-  if (!themeInstallEnabled) {
-    return "Theme-Install ist im Companion bewusst gesperrt. Starte ihn nur für ein Hardware-Testfenster mit VIBETV_ENABLE_WIFI_THEME_INSTALL=1 neu.";
-  }
-  return "";
-}
-
-function readyStatusNotice({
-  companionStatus,
-  device,
-  themeInstallEnabled,
-}: {
-  companionStatus: CompanionStatus;
-  device: DeviceInfo | null;
-  themeInstallEnabled: boolean;
-}): string {
-  if (companionStatus !== "online") {
-    return "Starte den Mac Companion, damit diese App lokal mit VibeTV sprechen kann.";
-  }
-  if (!device?.connected) {
-    return "Local API bereit. Suche oder verbinde VibeTV, bevor du Themes installierst oder Settings änderst.";
-  }
-  if (!themeInstallEnabled) {
-    return "VibeTV ist verbunden. Theme-Install bleibt gesperrt, bis du den Companion für ein Hardware-Testfenster freigibst.";
-  }
-  return "VibeTV ist verbunden. Wähle ein Theme und starte die Installation.";
-}
-
-function normalizeError(
-  raw: Partial<ApiError> | undefined,
-  status: number,
-): ApiError {
-  return {
-    code: raw?.code || `http_${status}`,
-    message: raw?.message || "Request fehlgeschlagen.",
-    nextAction:
-      raw?.nextAction || "Prüfe Companion und VibeTV, dann erneut versuchen.",
-  };
-}
-
-function normalizeCaughtError(error: unknown, fallback: string): ApiError {
-  if (typeof error === "object" && error && "code" in error) {
-    return error as ApiError;
-  }
-  if (error instanceof TypeError) {
+function normalizeError(error: unknown, status: number): ApiError {
+  if (error && typeof error === "object") {
+    const maybeError = error as Partial<ApiError>;
     return {
-      code: "companion_unreachable",
-      message: fallback,
-      nextAction:
-        "Starte den Mac Companion und prüfe, dass er auf 127.0.0.1:47832 läuft.",
+      code: maybeError.code || `HTTP_${status}`,
+      message: maybeError.message || "Request failed.",
+      nextAction: maybeError.nextAction || "Bitte erneut versuchen.",
     };
   }
   return {
-    code: "request_failed",
-    message: fallback,
+    code: `HTTP_${status}`,
+    message: "Request failed.",
     nextAction: "Bitte erneut versuchen.",
   };
+}
+
+function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError {
+  if (error && typeof error === "object" && "code" in error) {
+    return error as ApiError;
+  }
+  if (error instanceof Error) {
+    return {
+      code: "CLIENT_ERROR",
+      message: fallbackMessage,
+      nextAction: error.message,
+    };
+  }
+  return {
+    code: "CLIENT_ERROR",
+    message: fallbackMessage,
+    nextAction: "Bitte Companion und VibeTV-Verbindung prüfen.",
+  };
+}
+
+function formatTime(): string {
+  return new Intl.DateTimeFormat("de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date());
 }

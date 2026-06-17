@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #F9F9F9;
+  --foreground: #1B1B1B;
+  --vibetv-signal: #CCFF00;
+  --vibetv-signal-hover: #ABD600;
+  --vibetv-support: #506600;
+  --vibetv-ink: #1B1B1B;
+  --vibetv-body: #444933;
+  --vibetv-surface: #F9F9F9;
+  --vibetv-surface-secondary: #EEEEEE;
+  --vibetv-stroke: #747A60;
+  --vibetv-inverse: #EDEDED;
 }
 
 @theme inline {
@@ -10,13 +19,6 @@
   --color-foreground: var(--foreground);
   --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
