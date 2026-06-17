@@ -20,6 +20,7 @@ import { UpdatesScreen } from "./updates-screen";
 
 const COMPANION_URL = "http://127.0.0.1:47832";
 const COMPANION_ENDPOINT = "127.0.0.1:47832";
+const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 
 type SettingsResponse = {
   settings?: {
@@ -27,6 +28,7 @@ type SettingsResponse = {
       brightnessPercent?: number;
     };
   };
+  device?: DeviceInfo;
 };
 
 type InstallResponse = {
@@ -64,6 +66,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const [deviceState, setDeviceState] = useState<DeviceState>("unknown");
   const [device, setDevice] = useState<DeviceInfo | null>(null);
+  const [deviceTarget, setDeviceTarget] = useState(readInitialDeviceTarget);
   const [brightness, setBrightness] = useState<number | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [lastError, setLastError] = useState<ApiError | null>(null);
@@ -129,6 +132,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           "/v1/device",
         );
         setDevice(payload.device);
+        if (payload.device.target) {
+          setDeviceTarget(payload.device.target);
+          rememberDeviceTarget(payload.device.target);
+        }
         setDeviceState(payload.device.paired ? "paired" : "online");
         if (!quiet) {
           addEvent({
@@ -163,6 +170,45 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [addEvent, runCompanion],
   );
 
+  const loadSettings = useCallback(async () => {
+    setBusyAction("settings");
+    try {
+      const payload = await runCompanion<SettingsResponse>("/v1/settings");
+      const loadedBrightness =
+        payload.settings?.display?.brightnessPercent ?? null;
+      setBrightness(loadedBrightness);
+      if (payload.device) {
+        setDevice(payload.device);
+        setDeviceState(payload.device.paired ? "paired" : "online");
+        if (payload.device.target) {
+          setDeviceTarget(payload.device.target);
+          rememberDeviceTarget(payload.device.target);
+        }
+      }
+      addEvent({
+        label: "Settings loaded",
+        detail:
+          loadedBrightness == null
+            ? "Brightness is ready to load."
+            : `Brightness is set to ${loadedBrightness}%.`,
+        tone: "ready",
+      });
+    } catch (error) {
+      const normalized = normalizeCaughtError(
+        error,
+        "Settings need attention.",
+      );
+      setLastError(normalized);
+      addEvent({
+        label: "Settings check needs attention",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  }, [addEvent, runCompanion]);
+
   const checkCompanion = useCallback(async () => {
     setBusyAction("status");
     try {
@@ -179,6 +225,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       if (payload.device?.target) {
         setDevice(payload.device);
+        setDeviceTarget(payload.device.target);
+        rememberDeviceTarget(payload.device.target);
         setDeviceState(
           payload.device.paired
             ? "paired"
@@ -186,7 +234,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               ? "online"
               : "unknown",
         );
-        void refreshDevice({ quiet: true });
+        const refreshed = await refreshDevice({ quiet: true });
+        if (refreshed?.connected) {
+          void loadSettings();
+        }
       } else {
         setDeviceState("unknown");
       }
@@ -212,49 +263,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } finally {
       setBusyAction(null);
     }
-  }, [addEvent, refreshDevice, runCompanion]);
+  }, [addEvent, loadSettings, refreshDevice, runCompanion]);
 
-  const loadSettings = useCallback(async () => {
-    setBusyAction("settings");
-    try {
-      const payload = await runCompanion<SettingsResponse>("/v1/settings");
-      const loadedBrightness =
-        payload.settings?.display?.brightnessPercent ?? null;
-      setBrightness(loadedBrightness);
-      addEvent({
-        label: "Settings loaded",
-        detail:
-          loadedBrightness == null
-            ? "Brightness is ready to load."
-            : `Brightness is set to ${loadedBrightness}%.`,
-        tone: "ready",
-      });
-    } catch (error) {
-      const normalized = normalizeCaughtError(
-        error,
-        "Settings need attention.",
-      );
-      setLastError(normalized);
-      addEvent({
-        label: "Settings check needs attention",
-        detail: normalized.nextAction,
-        tone: "attention",
-      });
-    } finally {
-      setBusyAction(null);
-    }
-  }, [addEvent, runCompanion]);
-
-  const discoverDevice = useCallback(async () => {
+  const discoverDevice = useCallback(async (targetOverride?: string) => {
     setBusyAction("discover");
     try {
+      const target = normalizeDeviceTarget(targetOverride || deviceTarget);
       const payload = await runCompanion<{ device: DeviceInfo }>(
         "/v1/device/discover",
-        { method: "POST", body: "{}" },
+        {
+          method: "POST",
+          body: target ? JSON.stringify({ target }) : "{}",
+        },
       );
       setCompanionStatus("online");
       setDeviceState(payload.device.paired ? "paired" : "online");
       setDevice(payload.device);
+      if (payload.device.target) {
+        setDeviceTarget(payload.device.target);
+        rememberDeviceTarget(payload.device.target);
+      }
       addEvent({
         label: "Device found",
         detail: payload.device.target || "VibeTV is available through Companion.",
@@ -278,17 +306,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } finally {
       setBusyAction(null);
     }
-  }, [addEvent, loadSettings, runCompanion]);
+  }, [addEvent, deviceTarget, loadSettings, runCompanion]);
 
   const pairDevice = useCallback(async () => {
     setBusyAction("pair");
     try {
+      const target = normalizeDeviceTarget(deviceTarget);
       const payload = await runCompanion<{ device: DeviceInfo }>(
         "/v1/device/pair",
-        { method: "POST", body: "{}" },
+        {
+          method: "POST",
+          body: target ? JSON.stringify({ target }) : "{}",
+        },
       );
       setDeviceState("paired");
       setDevice(payload.device);
+      if (payload.device.target) {
+        setDeviceTarget(payload.device.target);
+        rememberDeviceTarget(payload.device.target);
+      }
       addEvent({
         label: "Device paired",
         detail: payload.device.target || "Pairing is ready.",
@@ -308,7 +344,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } finally {
       setBusyAction(null);
     }
-  }, [addEvent, loadSettings, runCompanion]);
+  }, [addEvent, deviceTarget, loadSettings, runCompanion]);
 
   const saveBrightness = useCallback(
     async (value: number) => {
@@ -322,6 +358,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const savedValue =
           payload.settings?.display?.brightnessPercent ?? value;
         setBrightness(savedValue);
+        if (payload.device) {
+          setDevice(payload.device);
+          setDeviceState(payload.device.paired ? "paired" : "online");
+          if (payload.device.target) {
+            setDeviceTarget(payload.device.target);
+            rememberDeviceTarget(payload.device.target);
+          }
+        }
         addEvent({
           label: "Brightness saved",
           detail: `Display brightness is set to ${savedValue}%.`,
@@ -393,10 +437,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      if (deviceTarget) {
+        void discoverDevice(deviceTarget);
+        return;
+      }
       void checkCompanion();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [checkCompanion]);
+  }, [checkCompanion, deviceTarget, discoverDevice]);
 
   const logs = events.map((event) => ({
     id: event.id,
@@ -515,6 +563,48 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
     message: fallbackMessage,
     nextAction: "Check Companion and VibeTV connection.",
   };
+}
+
+function readInitialDeviceTarget(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return normalizeDeviceTarget(
+      params.get("target") ||
+        window.localStorage.getItem(DEVICE_TARGET_STORAGE_KEY) ||
+        "",
+    );
+  } catch {
+    return "";
+  }
+}
+
+function rememberDeviceTarget(target: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const normalized = normalizeDeviceTarget(target);
+  if (!normalized) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(DEVICE_TARGET_STORAGE_KEY, normalized);
+  } catch {
+    // localStorage may be unavailable in private or restricted browser contexts.
+  }
+}
+
+function normalizeDeviceTarget(target: string): string {
+  const trimmed = target.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  return `http://${trimmed}`;
 }
 
 function formatTime(): string {
