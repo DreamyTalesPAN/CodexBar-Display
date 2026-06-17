@@ -539,7 +539,7 @@ func buildTestThemePackZip(t *testing.T) []byte {
 func disableThemePackUploadSettleDelay(t *testing.T) {
 	t.Helper()
 	previous := themePackUploadSettleDelay
-	themePackUploadSettleDelay = 0
+	themePackUploadSettleDelay = -1
 	t.Cleanup(func() {
 		themePackUploadSettleDelay = previous
 	})
