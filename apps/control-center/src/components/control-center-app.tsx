@@ -449,7 +449,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       {activeTab === "theme-library" ? (
         <ThemeLibraryScreen
           busyAction={busyAction}
-          catalogIssue={catalog.issue}
           companionStatus={companionStatus}
           device={device}
           lastInstall={lastInstall}

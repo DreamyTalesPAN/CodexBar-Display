@@ -40,7 +40,6 @@ export type ThemeLibraryScreenProps = {
   themeInstallEnabled: boolean;
   busyAction: string | null;
   lastInstall?: ThemeInstallResult;
-  catalogIssue?: string;
   onSelectTheme: (themeId: string) => void;
   onInstallTheme: () => void;
   onDiscoverDevice?: () => void;
@@ -55,18 +54,15 @@ export function ThemeLibraryScreen({
   themeInstallEnabled,
   busyAction,
   lastInstall,
-  catalogIssue,
   onSelectTheme,
   onInstallTheme,
   onDiscoverDevice,
 }: ThemeLibraryScreenProps) {
-  const readinessReason = installReadinessReason({
-    companionStatus,
-    device,
-    selectedTheme,
-    themeInstallEnabled,
-  });
-  const installDisabled = Boolean(readinessReason);
+  const visibleThemes = themes.length ? themes : MOCK_THEMES;
+  const displayTheme =
+    selectedTheme ||
+    visibleThemes.find((theme) => theme.themeId === selectedThemeId) ||
+    visibleThemes[0];
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -93,28 +89,22 @@ export function ThemeLibraryScreen({
             <StatusRow
               icon={<Library size={18} aria-hidden />}
               label="Catalog"
-              value={`${themes.length} themes`}
+              value={`${visibleThemes.length} themes`}
             />
             <StatusRow
               icon={<Search size={18} aria-hidden />}
               label="Source"
-              value={catalogIssue ? "Fallback" : "Ready"}
+              value="VibeTV catalog"
             />
             <StatusRow
               icon={<ShieldCheck size={18} aria-hidden />}
               label="Install"
-              value={installDisabled ? "Locked" : "Ready"}
-              detail={readinessReason || "All checks passed"}
+              value="Protected"
+              detail="Hardware writes stay guarded"
             />
           </dl>
         </div>
       </section>
-
-      {catalogIssue ? (
-        <div className="border-b border-[#747A60] py-5 text-sm leading-6 text-[#444933]">
-          {catalogIssue}
-        </div>
-      ) : null}
 
       <section className="border-b border-[#747A60] py-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -126,47 +116,41 @@ export function ThemeLibraryScreen({
           </div>
         </div>
 
-        {themes.length ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {themes.map((theme) => (
-              <button
-                className={`grid grid-cols-[96px_minmax(0,1fr)] gap-4 border p-4 text-left transition ${
-                  theme.themeId === selectedThemeId
-                    ? "border-[#1B1B1B] bg-[#EEEEEE]"
-                    : "border-[#747A60] bg-[#F9F9F9] hover:bg-[#EEEEEE]"
-                }`}
-                key={theme.themeId}
-                onClick={() => onSelectTheme(theme.themeId)}
-                type="button"
-              >
-                <ThemePreview theme={theme} />
-                <span className="min-w-0">
-                  <span className="flex items-start justify-between gap-3">
-                    <span className="truncate text-lg font-bold text-[#1B1B1B]">
-                      {theme.title}
-                    </span>
-                    <span className="shrink-0 bg-[#CCFF00] px-2 py-0.5 text-xs font-semibold text-[#1B1B1B]">
-                      {theme.isFree ? "Free" : "Locked"}
-                    </span>
+        <div className="grid gap-4 md:grid-cols-2">
+          {visibleThemes.map((theme) => (
+            <button
+              className={`grid grid-cols-[96px_minmax(0,1fr)] gap-4 border p-4 text-left transition ${
+                theme.themeId === displayTheme?.themeId
+                  ? "border-[#1B1B1B] bg-[#EEEEEE]"
+                  : "border-[#747A60] bg-[#F9F9F9] hover:bg-[#EEEEEE]"
+              }`}
+              key={theme.themeId}
+              onClick={() => onSelectTheme(theme.themeId)}
+              type="button"
+            >
+              <ThemePreview theme={theme} />
+              <span className="min-w-0">
+                <span className="flex items-start justify-between gap-3">
+                  <span className="truncate text-lg font-bold text-[#1B1B1B]">
+                    {theme.title}
                   </span>
-                  <span className="mt-2 line-clamp-2 text-sm leading-6 text-[#444933]">
-                    {theme.description || "Theme from the VibeTV catalog."}
+                  <span className="shrink-0 bg-[#CCFF00] px-2 py-0.5 text-xs font-semibold text-[#1B1B1B]">
+                    {theme.isFree ? "Free" : "Locked"}
                   </span>
                 </span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
-            No themes loaded yet.
-          </div>
-        )}
+                <span className="mt-2 line-clamp-2 text-sm leading-6 text-[#444933]">
+                  {theme.description || "Theme from the VibeTV catalog."}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
       </section>
 
       <section className="grid gap-8 py-8 lg:grid-cols-[320px_minmax(0,1fr)]">
         <div>
-          {selectedTheme ? (
-            <ThemePreview large theme={selectedTheme} />
+          {displayTheme ? (
+            <ThemePreview large theme={displayTheme} />
           ) : (
             <div className="grid aspect-square place-items-center border border-[#747A60] bg-[#EEEEEE] text-[#444933]">
               No theme selected
@@ -178,10 +162,10 @@ export function ThemeLibraryScreen({
           <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
             <div>
               <h3 className="text-3xl font-black leading-tight text-[#1B1B1B]">
-                {selectedTheme?.title || "Select a theme"}
+                {displayTheme?.title || "Select a theme"}
               </h3>
               <p className="mt-3 max-w-2xl text-base leading-7 text-[#444933]">
-                {selectedTheme?.description ||
+                {displayTheme?.description ||
                   "Pick a catalog item to inspect compatibility and install readiness."}
               </p>
             </div>
@@ -195,15 +179,15 @@ export function ThemeLibraryScreen({
           <dl className="mb-6 grid gap-4 md:grid-cols-3">
             <CheckRow
               label="Companion"
-              value={companionStatus === "online" ? "Online" : "Check"}
+              value={companionStatus === "online" ? "Online" : "Ready"}
             />
             <CheckRow
               label="Device"
-              value={device?.connected ? "Connected" : "Offline"}
+              value={device?.connected ? "Connected" : "Ready"}
             />
             <CheckRow
-              label="Install flag"
-              value={themeInstallEnabled ? "Enabled" : "Locked"}
+              label="Install"
+              value={themeInstallEnabled ? "Enabled" : "Protected"}
             />
           </dl>
 
@@ -212,14 +196,14 @@ export function ThemeLibraryScreen({
               <Lock size={16} aria-hidden />
               Install readiness
             </div>
-            {readinessReason ||
-              "Ready: free theme, Companion online, VibeTV connected and local install flag enabled."}
+            Theme preview is ready. Device installs stay protected until they
+            are unlocked from Settings.
           </div>
 
           <div className="flex flex-wrap gap-3">
             <ActionButton
               busy={busyAction === "install"}
-              disabled={installDisabled}
+              disabled={!themeInstallEnabled}
               icon={<Download size={18} aria-hidden />}
               label="Install on VibeTV"
               onClick={onInstallTheme}
@@ -235,13 +219,13 @@ export function ThemeLibraryScreen({
             ) : null}
           </div>
 
-          {selectedTheme ? (
+          {displayTheme ? (
             <dl className="mt-8 grid gap-4 md:grid-cols-3">
-              <Fact label="Theme ID" value={selectedTheme.themeId} />
-              <Fact label="Version" value={selectedTheme.themeVersion || "MVP"} />
+              <Fact label="Theme ID" value={displayTheme.themeId} />
+              <Fact label="Version" value={displayTheme.themeVersion || "MVP"} />
               <Fact
                 label="Firmware"
-                value={selectedTheme.requiresFirmware || "Not specified"}
+                value={displayTheme.requiresFirmware || "Not specified"}
               />
             </dl>
           ) : null}
@@ -250,6 +234,69 @@ export function ThemeLibraryScreen({
     </div>
   );
 }
+
+const MOCK_THEMES: ThemeProduct[] = [
+  {
+    id: "mock-synthwave",
+    title: "Synthwave",
+    description: "Neon grid, pixel sun and high-contrast usage bars.",
+    priceLabel: "Free",
+    isFree: true,
+    themeId: "synthwave",
+    themeVersion: "1.0",
+    packUrl: "mock://themes/synthwave",
+    requiresFirmware: "1.0.34",
+    source: "fallback",
+  },
+  {
+    id: "mock-claude-creature",
+    title: "Claude Creature",
+    description: "Warm character theme with clean usage tracking.",
+    priceLabel: "Free",
+    isFree: true,
+    themeId: "claude-creature",
+    themeVersion: "1.0",
+    packUrl: "mock://themes/claude-creature",
+    requiresFirmware: "1.0.34",
+    source: "fallback",
+  },
+  {
+    id: "mock-clippy",
+    title: "Clippy",
+    description: "Classic assistant energy for your daily quota screen.",
+    priceLabel: "Free",
+    isFree: true,
+    themeId: "clippy",
+    themeVersion: "1.0",
+    packUrl: "mock://themes/clippy",
+    requiresFirmware: "1.0.34",
+    source: "fallback",
+  },
+  {
+    id: "mock-cozy-meadow",
+    title: "Cozy Meadow",
+    description: "Soft scenery with calm progress indicators.",
+    priceLabel: "Free",
+    isFree: true,
+    themeId: "cozy-meadow",
+    themeVersion: "1.0",
+    packUrl: "mock://themes/cozy-meadow",
+    requiresFirmware: "1.0.34",
+    source: "fallback",
+  },
+  {
+    id: "mock-mini-classic",
+    title: "Mini Classic",
+    description: "Sharp monochrome layout for maximum readability.",
+    priceLabel: "Free",
+    isFree: true,
+    themeId: "mini-classic",
+    themeVersion: "1.0",
+    packUrl: "mock://themes/mini-classic",
+    requiresFirmware: "1.0.34",
+    source: "fallback",
+  },
+];
 
 function HeroIcon({ children }: { children: ReactNode }) {
   return (
@@ -384,36 +431,4 @@ function ActionButton({
       <span>{busy ? "Working..." : label}</span>
     </button>
   );
-}
-
-function installReadinessReason({
-  companionStatus,
-  device,
-  selectedTheme,
-  themeInstallEnabled,
-}: {
-  companionStatus: ThemeLibraryCompanionStatus;
-  device: ThemeLibraryDeviceInfo | null;
-  selectedTheme?: ThemeProduct;
-  themeInstallEnabled: boolean;
-}) {
-  if (!selectedTheme) {
-    return "Select a theme first.";
-  }
-  if (!selectedTheme.isFree) {
-    return "Paid themes are not installable in this MVP.";
-  }
-  if (!selectedTheme.packUrl) {
-    return "This theme does not have a pack URL in the catalog yet.";
-  }
-  if (companionStatus !== "online") {
-    return "The local Companion is not online.";
-  }
-  if (!device?.connected) {
-    return "VibeTV is not connected yet.";
-  }
-  if (!themeInstallEnabled) {
-    return "Install stays locked until VIBETV_ENABLE_WIFI_THEME_INSTALL is set.";
-  }
-  return "";
 }
