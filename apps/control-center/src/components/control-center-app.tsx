@@ -479,17 +479,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         <SettingsScreen
           brightness={brightness}
           busyAction={busyAction}
-          companionStatus={companionStatus}
           companionUrl={COMPANION_ENDPOINT}
           device={device}
-          deviceState={deviceState}
           lastError={lastError}
           onBrightnessChange={setBrightness}
           onCheckBridge={checkCompanion}
           onDiscoverDevice={discoverDevice}
           onPairDevice={pairDevice}
           onSaveBrightness={saveBrightness}
-          themeInstallEnabled={themeInstallEnabled}
         />
       ) : null}
 

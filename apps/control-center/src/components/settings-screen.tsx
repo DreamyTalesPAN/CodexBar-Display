@@ -2,13 +2,10 @@
 
 import {
   Check,
-  Lock,
   PlugZap,
   RefreshCw,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
-  Wifi,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -50,11 +47,8 @@ export type SettingsDeviceInfo = {
 };
 
 export type SettingsScreenProps = {
-  companionStatus: SettingsCompanionStatus;
-  deviceState: SettingsDeviceState;
   device: SettingsDeviceInfo | null;
   brightness: number | null;
-  themeInstallEnabled: boolean;
   busyAction: string | null;
   lastError?: SettingsApiError | null;
   companionUrl?: string;
@@ -66,11 +60,8 @@ export type SettingsScreenProps = {
 };
 
 export function SettingsScreen({
-  companionStatus,
-  deviceState,
   device,
   brightness,
-  themeInstallEnabled,
   busyAction,
   companionUrl = "127.0.0.1:47832",
   onCheckBridge,
@@ -92,45 +83,6 @@ export function SettingsScreen({
 
   return (
     <div className="mx-auto max-w-[1180px]">
-      <section className="grid min-h-[330px] items-center gap-10 border-b border-[#747A60] py-10 lg:grid-cols-[minmax(0,560px)_minmax(360px,1fr)]">
-        <div className="min-w-0">
-          <div className="flex items-start gap-5">
-            <HeroIcon>
-              <SlidersHorizontal size={36} aria-hidden />
-            </HeroIcon>
-            <div className="min-w-0">
-              <h2 className="max-w-[520px] text-[clamp(2.7rem,4.8vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-                Control the essentials
-              </h2>
-            </div>
-          </div>
-        </div>
-
-        <dl className="grid gap-0 border-y border-[#747A60]">
-          <StatusRow
-            icon={<PlugZap size={18} aria-hidden />}
-            label="Bridge"
-            value={labelForCompanion(companionStatus)}
-          />
-          <StatusRow
-            icon={<Wifi size={18} aria-hidden />}
-            label="Device"
-            value={labelForDevice(deviceState, device)}
-          />
-          <StatusRow
-            icon={<ShieldCheck size={18} aria-hidden />}
-            label="Pairing"
-            value={device?.paired ? "Paired" : "Open"}
-          />
-          <StatusRow
-            detail={themeInstallEnabled ? undefined : "Protected"}
-            icon={<Lock size={18} aria-hidden />}
-            label="Install"
-            value={themeInstallEnabled ? "Enabled" : "Protected"}
-          />
-        </dl>
-      </section>
-
       <section className="border-b border-[#747A60] py-8">
         <h3 className="mb-5 text-base font-bold text-[#1B1B1B]">
           Device facts
@@ -234,37 +186,6 @@ export function SettingsScreen({
   );
 }
 
-function HeroIcon({ children }: { children: ReactNode }) {
-  return (
-    <div className="grid size-16 shrink-0 place-items-center rounded-full border border-[#747A60] bg-[#EEEEEE] text-[#1B1B1B]">
-      {children}
-    </div>
-  );
-}
-
-function StatusRow({
-  detail,
-  icon,
-  label,
-  value,
-}: {
-  detail?: string;
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="grid min-h-[54px] grid-cols-[28px_1fr_120px] items-start gap-3 border-b border-[#747A60] py-3 last:border-b-0">
-      <div className="pt-0.5 text-[#506600]">{icon}</div>
-      <dt className="font-medium text-[#1B1B1B]">{label}</dt>
-      <dd className="min-w-0 text-[#1B1B1B]">
-        <span>{value}</span>
-        {detail ? <div className="mt-1 text-sm text-[#444933]">{detail}</div> : null}
-      </dd>
-    </div>
-  );
-}
-
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 border-r border-[#747A60] pr-5 last:border-r-0">
@@ -304,27 +225,4 @@ function CommandButton({
       <span>{busy ? "Working..." : label}</span>
     </button>
   );
-}
-
-function labelForCompanion(status: SettingsCompanionStatus): string {
-  if (status === "online") {
-    return "Online";
-  }
-  if (status === "missing") {
-    return "Missing";
-  }
-  return "Check";
-}
-
-function labelForDevice(
-  state: SettingsDeviceState,
-  device: SettingsDeviceInfo | null,
-): string {
-  if (device?.connected) {
-    return state === "paired" || device.paired ? "Connected" : "Found";
-  }
-  if (state === "offline") {
-    return "Offline";
-  }
-  return "Check required";
 }
