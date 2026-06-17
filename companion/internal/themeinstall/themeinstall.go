@@ -22,6 +22,7 @@ import (
 const (
 	DefaultCatalogURL          = "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json"
 	DefaultWiFiTimeout         = 60 * time.Second
+	DefaultUploadSettleDelay   = 750 * time.Millisecond
 	DefaultFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 )
 
@@ -39,6 +40,7 @@ type Options struct {
 	Out                 io.Writer
 	HTTPClient          *http.Client
 	FirmwareUpdater     FirmwareUpdater
+	UploadSettleDelay   time.Duration
 	Now                 func() time.Time
 }
 
@@ -121,6 +123,10 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	client := opts.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: DefaultWiFiTimeout}
+	}
+	uploadSettleDelay := opts.UploadSettleDelay
+	if uploadSettleDelay == 0 {
+		uploadSettleDelay = DefaultUploadSettleDelay
 	}
 	wifi := transportlayer.NewWiFiTransportWithClient(client)
 	resolvedTarget, err := wifi.ResolvePort(strings.TrimSpace(opts.Target))
@@ -227,6 +233,14 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 		if opts.Verbose {
 			fmt.Fprintf(out, "Uploaded asset: %s bytes=%d\n", asset.Entry.Path, len(asset.Data))
 		}
+		if err := settleUpload(wifi, resolvedTarget, asset.Entry.Path, uploadSettleDelay, opts.Verbose, out); err != nil {
+			return Result{}, &InstallError{
+				Op:   "theme-pack/upload",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  uploadError(asset.Entry.Path, err, opts.Verbose),
+				Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+			}
+		}
 	}
 	if err := wifi.UploadAsset(resolvedTarget, pack.ThemeSpecFile.Entry.Path, filepath.Base(pack.ThemeSpecFile.Entry.File), pack.ThemeSpecRaw); err != nil {
 		return Result{}, &InstallError{
@@ -238,6 +252,14 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	}
 	if opts.Verbose {
 		fmt.Fprintf(out, "Uploaded theme spec: %s bytes=%d\n", pack.ThemeSpecFile.Entry.Path, len(pack.ThemeSpecRaw))
+	}
+	if err := settleUpload(wifi, resolvedTarget, pack.ThemeSpecFile.Entry.Path, uploadSettleDelay, opts.Verbose, out); err != nil {
+		return Result{}, &InstallError{
+			Op:   "theme-pack/upload",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  uploadError(pack.ThemeSpecFile.Entry.Path, err, opts.Verbose),
+			Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+		}
 	}
 
 	fmt.Fprintln(out, "Activating theme...")
@@ -318,9 +340,39 @@ func FallbackThemeSpecCapabilities() protocol.DeviceCapabilities {
 	}
 }
 
+func settleUpload(wifi transportlayer.WiFiTransport, target, devicePath string, delay time.Duration, verbose bool, out io.Writer) error {
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+	if err := wifi.DeviceHealth(target); err != nil {
+		return &uploadHealthError{devicePath: devicePath, err: err}
+	}
+	if verbose {
+		fmt.Fprintf(out, "Upload verified: %s\n", devicePath)
+	}
+	return nil
+}
+
+type uploadHealthError struct {
+	devicePath string
+	err        error
+}
+
+func (e *uploadHealthError) Error() string {
+	return fmt.Sprintf("device did not answer health check after uploading %s", e.devicePath)
+}
+
+func (e *uploadHealthError) Unwrap() error {
+	return e.err
+}
+
 func uploadError(devicePath string, err error, verbose bool) error {
 	if verbose {
 		return fmt.Errorf("upload failed for %s: %w", devicePath, err)
+	}
+	var healthErr *uploadHealthError
+	if errors.As(err, &healthErr) {
+		return fmt.Errorf("theme upload did not finish for %s: device health check failed after upload", devicePath)
 	}
 	return fmt.Errorf("theme upload did not finish for %s", devicePath)
 }

@@ -38,6 +38,8 @@ inline void RenderYield() {
 struct FrameData {
   const char* provider = "";
   const char* label = "";
+  bool updateAvailable = false;
+  const char* updateNotice = "";
   int session = 0;
   int weekly = 0;
   int64_t resetSecs = 0;
@@ -432,6 +434,13 @@ inline const char* SafeText(const char* value) {
   return value == nullptr ? "" : value;
 }
 
+inline const char* LabelText(const FrameData& frame) {
+  if (frame.updateAvailable && SafeText(frame.updateNotice)[0] != '\0') {
+    return SafeText(frame.updateNotice);
+  }
+  return SafeText(frame.label);
+}
+
 inline void BoundValue(const char* key, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -440,7 +449,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
   key = SafeText(key);
 
   if (std::strcmp(key, "label") == 0 || std::strcmp(key, "providerLabel") == 0 || std::strcmp(key, "l") == 0) {
-    std::snprintf(out, outSize, "%s", SafeText(frame.label));
+    std::snprintf(out, outSize, "%s", LabelText(frame));
     return;
   }
   if (std::strcmp(key, "provider") == 0 || std::strcmp(key, "pr") == 0) {

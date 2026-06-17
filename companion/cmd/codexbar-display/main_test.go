@@ -128,12 +128,12 @@ func TestThemeValidateSupportsWiFiTransport(t *testing.T) {
 }
 
 func TestThemePackInstallSupportsPackURL(t *testing.T) {
+	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
 	downloadedPack := false
 	firmwareUpdated := false
 	uploaded := map[string]bool{}
 	activated := false
-	sentFrame := false
 	previousFirmwareUpdate := themePackInstallFirmwareUpdateFn
 	t.Cleanup(func() {
 		themePackInstallFirmwareUpdateFn = previousFirmwareUpdate
@@ -178,8 +178,7 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 			}
 			activated = true
 			w.WriteHeader(http.StatusOK)
-		case "/frame":
-			sentFrame = true
+		case "/health":
 			w.WriteHeader(http.StatusOK)
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -225,12 +224,10 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 	if !activated {
 		t.Fatalf("expected stored theme activation")
 	}
-	if sentFrame {
-		t.Fatalf("expected theme install not to send demo live frame")
-	}
 }
 
 func TestThemePackInstallLogsConciseRetry(t *testing.T) {
+	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
 	assetAttempts := 0
 
@@ -252,7 +249,7 @@ func TestThemePackInstallLogsConciseRetry(t *testing.T) {
 				}
 			}
 			w.WriteHeader(http.StatusOK)
-		case "/theme/active", "/frame":
+		case "/theme/active", "/health":
 			w.WriteHeader(http.StatusOK)
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -285,6 +282,7 @@ func TestThemePackInstallLogsConciseRetry(t *testing.T) {
 }
 
 func TestThemePackInstallWrapsUploadFailureForCustomers(t *testing.T) {
+	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -329,6 +327,7 @@ func TestThemePackInstallWrapsUploadFailureForCustomers(t *testing.T) {
 }
 
 func TestThemePackInstallVerboseShowsDetails(t *testing.T) {
+	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -339,7 +338,7 @@ func TestThemePackInstallVerboseShowsDetails(t *testing.T) {
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
-		case "/assets", "/theme/active", "/frame":
+		case "/assets", "/theme/active", "/health":
 			w.WriteHeader(http.StatusOK)
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -363,7 +362,9 @@ func TestThemePackInstallVerboseShowsDetails(t *testing.T) {
 		"Firmware check: skipped",
 		"Device: board=esp8266-smalltv-st7789",
 		"Uploaded asset: /themes/u/cm.cbi",
+		"Upload verified: /themes/u/cm.cbi",
 		"Uploaded theme spec: /themes/u/cm.json",
+		"Upload verified: /themes/u/cm.json",
 		"Active theme path: /themes/u/cm.json themeId=cozy-meadow rev=1",
 	} {
 		if !strings.Contains(output, want) {
@@ -373,13 +374,13 @@ func TestThemePackInstallVerboseShowsDetails(t *testing.T) {
 }
 
 func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
+	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
 	downloadedCatalog := false
 	downloadedPack := false
 	firmwareUpdated := false
 	uploaded := map[string]bool{}
 	activated := false
-	sentFrame := false
 	previousFirmwareUpdate := themePackInstallFirmwareUpdateFn
 	t.Cleanup(func() {
 		themePackInstallFirmwareUpdateFn = previousFirmwareUpdate
@@ -411,8 +412,7 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 		case "/theme/active":
 			activated = true
 			w.WriteHeader(http.StatusOK)
-		case "/frame":
-			sentFrame = true
+		case "/health":
 			w.WriteHeader(http.StatusOK)
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -440,8 +440,50 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 	if !activated {
 		t.Fatalf("expected activation")
 	}
-	if sentFrame {
-		t.Fatalf("expected theme install not to send demo live frame")
+}
+
+func TestThemePackInstallFailsBeforeActivationWhenUploadHealthFails(t *testing.T) {
+	disableThemePackUploadSettleDelay(t)
+	packZip := buildTestThemePackZip(t)
+	activated := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cozy-meadow.zip":
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(packZip)
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
+		case "/assets":
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("device busy"))
+		case "/theme/active":
+			activated = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	_, err := captureStdout(t, func() error {
+		return runThemePackInstall([]string{
+			"--pack", server.URL + "/cozy-meadow.zip",
+			"--target", server.URL,
+			"--skip-firmware-update",
+		})
+	})
+	if err == nil {
+		t.Fatalf("expected upload health failure")
+	}
+	if activated {
+		t.Fatalf("activation should not run after upload health failure")
+	}
+	if !strings.Contains(err.Error(), "theme-pack/upload: theme upload did not finish for /themes/u/cm.cbi: device health check failed after upload") {
+		t.Fatalf("expected upload-scoped error, got %q", err.Error())
 	}
 }
 
@@ -492,6 +534,15 @@ func buildTestThemePackZip(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+func disableThemePackUploadSettleDelay(t *testing.T) {
+	t.Helper()
+	previous := themePackUploadSettleDelay
+	themePackUploadSettleDelay = -1
+	t.Cleanup(func() {
+		themePackUploadSettleDelay = previous
+	})
 }
 
 func captureStdout(t *testing.T, fn func() error) (string, error) {

@@ -29,6 +29,8 @@ import (
 
 const defaultThemeCatalogURL = themeinstall.DefaultCatalogURL
 
+var themePackUploadSettleDelay = 750 * time.Millisecond
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -605,6 +607,7 @@ func runThemePackInstall(args []string) error {
 		AllowUnknown:        *allowUnknown,
 		Verbose:             *verbose,
 		Out:                 os.Stdout,
+		UploadSettleDelay:   themePackUploadSettleDelay,
 		FirmwareUpdater: func(ctx context.Context, target, manifestURL string) error {
 			return themePackInstallFirmwareUpdateFn(target, manifestURL)
 		},
