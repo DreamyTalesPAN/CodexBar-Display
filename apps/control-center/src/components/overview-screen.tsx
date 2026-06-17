@@ -95,12 +95,6 @@ export function OverviewScreen({
               label="Firmware"
               value={device?.firmware || "Unknown"}
             />
-            <StatusRow
-              detail={themeInstallEnabled ? undefined : "Read-only mode"}
-              icon={<Lock size={18} aria-hidden />}
-              label="Write Access"
-              value={themeInstallEnabled ? "Enabled" : "Locked"}
-            />
           </dl>
         </div>
 
