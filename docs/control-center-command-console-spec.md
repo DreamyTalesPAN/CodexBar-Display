@@ -166,7 +166,7 @@ Current target components:
 - `Shell`
 - `SideNav`
 - `OverviewScreen`
-- `DeviceMockup`
+- `ProductHeroImage`
 - `ReadinessStrip`
 - `LastEvents`
 - `SettingsScreen`

@@ -1,6 +1,4 @@
 import type { ReactNode } from "react";
-import type { ThemeProduct } from "@/lib/themes";
-
 export type { ThemeProduct } from "@/lib/themes";
 
 export const VIBETV_COLORS = {
@@ -87,8 +85,3 @@ export type ShellNavItem = {
   detail?: string;
   icon?: ReactNode;
 };
-
-export type DeviceMockupTheme = Pick<
-  ThemeProduct,
-  "themeId" | "title" | "themeVersion"
->;

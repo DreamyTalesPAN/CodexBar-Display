@@ -398,20 +398,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return () => window.clearTimeout(timer);
   }, [checkCompanion]);
 
-  const activeTheme = lastInstall
-    ? {
-        themeId: lastInstall.themeId,
-        title: lastInstall.name,
-        themeVersion: String(lastInstall.themeRev),
-      }
-    : selectedTheme
-      ? {
-          themeId: selectedTheme.themeId,
-          title: selectedTheme.title,
-          themeVersion: selectedTheme.themeVersion,
-        }
-      : null;
-
   const logs = events.map((event) => ({
     id: event.id,
     label: event.label,
@@ -430,7 +416,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     >
       {activeTab === "overview" ? (
         <OverviewScreen
-          activeTheme={activeTheme}
           companionEndpoint={COMPANION_URL}
           companionStatus={companionStatus}
           device={device}
