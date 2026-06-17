@@ -4,10 +4,12 @@ import Image from "next/image";
 import {
   Check,
   Download,
+  Library,
   Lock,
   Monitor,
   RefreshCw,
   Search,
+  ShieldCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ThemeProduct } from "@/lib/themes";
@@ -67,179 +69,237 @@ export function ThemeLibraryScreen({
   const installDisabled = Boolean(readinessReason);
 
   return (
-    <section className="grid gap-4 lg:grid-cols-[380px_minmax(0,1fr)]">
-      <section className="border border-[#747A60] bg-[#F9F9F9]">
-        <SectionHeader
-          detail={`${themes.length} Themes`}
-          icon={<Search size={17} aria-hidden />}
-          title="Theme Library"
-        />
-        {catalogIssue ? (
-          <div className="border-b border-[#747A60] bg-[#EEEEEE] p-3 text-sm leading-6 text-[#444933]">
-            {catalogIssue}
+    <div className="mx-auto max-w-[1180px]">
+      <section className="grid min-h-[330px] items-center gap-10 border-b border-[#747A60] py-10 lg:grid-cols-[minmax(0,520px)_minmax(360px,1fr)]">
+        <div className="min-w-0">
+          <div className="flex items-start gap-5">
+            <HeroIcon>
+              <Library size={36} aria-hidden />
+            </HeroIcon>
+            <div className="min-w-0">
+              <h2 className="max-w-[520px] text-[clamp(2.7rem,4.8vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
+                Choose a theme
+              </h2>
+              <p className="mt-5 text-xl leading-8 text-[#444933]">
+                Browse the catalog, preview the selected pack and keep install
+                writes guarded.
+              </p>
+            </div>
           </div>
-        ) : null}
-        <div className="min-h-[420px] divide-y divide-[#747A60]">
-          {themes.length ? (
-            themes.map((theme) => (
+        </div>
+
+        <div className="border-y border-[#747A60] py-4">
+          <dl className="grid gap-0">
+            <StatusRow
+              icon={<Library size={18} aria-hidden />}
+              label="Catalog"
+              value={`${themes.length} themes`}
+            />
+            <StatusRow
+              icon={<Search size={18} aria-hidden />}
+              label="Source"
+              value={catalogIssue ? "Fallback" : "Ready"}
+            />
+            <StatusRow
+              icon={<ShieldCheck size={18} aria-hidden />}
+              label="Install"
+              value={installDisabled ? "Locked" : "Ready"}
+              detail={readinessReason || "All checks passed"}
+            />
+          </dl>
+        </div>
+      </section>
+
+      {catalogIssue ? (
+        <div className="border-b border-[#747A60] py-5 text-sm leading-6 text-[#444933]">
+          {catalogIssue}
+        </div>
+      ) : null}
+
+      <section className="border-b border-[#747A60] py-8">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <h3 className="text-base font-bold text-[#1B1B1B]">Theme Library</h3>
+          <div className="flex flex-wrap gap-2">
+            <FilterPill active>Free</FilterPill>
+            <FilterPill>Compatible</FilterPill>
+            <FilterPill>Installed</FilterPill>
+          </div>
+        </div>
+
+        {themes.length ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            {themes.map((theme) => (
               <button
-                key={theme.themeId}
-                className={`grid w-full grid-cols-[76px_minmax(0,1fr)] gap-3 px-4 py-3 text-left transition ${
+                className={`grid grid-cols-[96px_minmax(0,1fr)] gap-4 border p-4 text-left transition ${
                   theme.themeId === selectedThemeId
-                    ? "bg-[#EEEEEE]"
-                    : "bg-[#F9F9F9] hover:bg-[#EEEEEE]"
+                    ? "border-[#1B1B1B] bg-[#EEEEEE]"
+                    : "border-[#747A60] bg-[#F9F9F9] hover:bg-[#EEEEEE]"
                 }`}
+                key={theme.themeId}
                 onClick={() => onSelectTheme(theme.themeId)}
                 type="button"
               >
                 <ThemePreview theme={theme} />
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold text-[#1B1B1B]">
-                    {theme.title}
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="truncate text-lg font-bold text-[#1B1B1B]">
+                      {theme.title}
+                    </span>
+                    <span className="shrink-0 bg-[#CCFF00] px-2 py-0.5 text-xs font-semibold text-[#1B1B1B]">
+                      {theme.isFree ? "Free" : "Locked"}
+                    </span>
                   </span>
-                  <span className="mt-1 flex flex-wrap gap-2 text-xs text-[#747A60]">
-                    <span>{theme.priceLabel}</span>
-                    <span>{theme.themeId}</span>
-                  </span>
-                  <span className="mt-2 line-clamp-2 text-xs leading-5 text-[#444933]">
-                    {theme.description || "Theme aus dem Katalog."}
+                  <span className="mt-2 line-clamp-2 text-sm leading-6 text-[#444933]">
+                    {theme.description || "Theme from the VibeTV catalog."}
                   </span>
                 </span>
               </button>
-            ))
-          ) : (
-            <div className="p-4 text-sm leading-6 text-[#444933]">
-              Keine Themes geladen. Die Library bleibt leer, bis Shopify oder
-              der lokale Katalog Daten liefert.
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
+            No themes loaded yet.
+          </div>
+        )}
       </section>
 
-      <section className="border border-[#747A60] bg-[#F9F9F9]">
-        <SectionHeader
-          detail={selectedTheme?.themeId || "kein Theme"}
-          icon={<Download size={17} aria-hidden />}
-          title="Selected Theme"
-        />
-        <div className="grid gap-5 p-4 md:grid-cols-[220px_minmax(0,1fr)]">
+      <section className="grid gap-8 py-8 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <div>
           {selectedTheme ? (
             <ThemePreview large theme={selectedTheme} />
           ) : (
-            <div className="grid aspect-square w-full place-items-center border border-[#747A60] bg-[#EEEEEE] text-sm text-[#444933]">
-              Kein Theme ausgewählt
+            <div className="grid aspect-square place-items-center border border-[#747A60] bg-[#EEEEEE] text-[#444933]">
+              No theme selected
             </div>
           )}
+        </div>
 
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold text-[#1B1B1B]">
-                  {selectedTheme?.title || "Theme auswählen"}
-                </h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#444933]">
-                  {selectedTheme?.description ||
-                    "Wähle links ein Theme, um Details und Install-Status zu sehen."}
-                </p>
-              </div>
-              {selectedTheme ? (
-                <span className="border border-[#747A60] bg-[#EEEEEE] px-2.5 py-1 text-xs font-semibold text-[#506600]">
-                  {selectedTheme.isFree ? "Kostenlos" : "Nicht im MVP"}
-                </span>
-              ) : null}
+        <div className="min-w-0">
+          <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h3 className="text-3xl font-black leading-tight text-[#1B1B1B]">
+                {selectedTheme?.title || "Select a theme"}
+              </h3>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-[#444933]">
+                {selectedTheme?.description ||
+                  "Pick a catalog item to inspect compatibility and install readiness."}
+              </p>
             </div>
-
-            {selectedTheme ? (
-              <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
-                <Fact label="Theme-ID" value={selectedTheme.themeId} />
-                <Fact
-                  label="Version"
-                  value={selectedTheme.themeVersion || "MVP"}
-                />
-                <Fact
-                  label="Firmware"
-                  value={selectedTheme.requiresFirmware || "nicht angegeben"}
-                />
-                <Fact
-                  label="Board"
-                  value={selectedTheme.compatibleBoards?.join(", ") || "offen"}
-                />
-                <Fact
-                  label="Quelle"
-                  value={sourceLabel(selectedTheme.source)}
-                />
-                <Fact
-                  label="Pack"
-                  value={selectedTheme.packUrl ? "vorhanden" : "fehlt"}
-                />
-              </dl>
-            ) : null}
-
-            <div className="mt-5 border border-[#747A60] bg-[#EEEEEE] p-3 text-sm leading-6 text-[#444933]">
-              <div className="flex items-center gap-2 font-semibold text-[#1B1B1B]">
-                <Lock size={16} aria-hidden />
-                Install Readiness
-              </div>
-              <div className="mt-1">
-                {readinessReason ||
-                  "Bereit: kostenloses Theme, Companion online, VibeTV verbunden und lokaler Install-Flag aktiv."}
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap gap-2">
-              <ActionButton
-                busy={busyAction === "install"}
-                disabled={installDisabled}
-                icon={<Download size={16} aria-hidden />}
-                label="Auf VibeTV installieren"
-                onClick={onInstallTheme}
-                primary
-              />
-              {onDiscoverDevice ? (
-                <ActionButton
-                  busy={busyAction === "discover"}
-                  icon={<RefreshCw size={16} aria-hidden />}
-                  label="Gerät suchen"
-                  onClick={onDiscoverDevice}
-                />
-              ) : null}
-            </div>
-
             {lastInstall ? (
-              <div className="mt-5 border border-[#747A60] bg-[#CCFF00] p-3 text-sm text-[#1B1B1B]">
-                <div className="flex items-center gap-2 font-semibold">
-                  <Check size={16} aria-hidden />
-                  Zuletzt installiert: {lastInstall.name}
-                </div>
-                <div className="mt-1 font-mono text-xs">
-                  {lastInstall.activePath}
-                </div>
+              <div className="bg-[#CCFF00] px-3 py-2 text-sm font-semibold text-[#1B1B1B]">
+                Installed: {lastInstall.name}
               </div>
             ) : null}
           </div>
+
+          <dl className="mb-6 grid gap-4 md:grid-cols-3">
+            <CheckRow
+              label="Companion"
+              value={companionStatus === "online" ? "Online" : "Check"}
+            />
+            <CheckRow
+              label="Device"
+              value={device?.connected ? "Connected" : "Offline"}
+            />
+            <CheckRow
+              label="Install flag"
+              value={themeInstallEnabled ? "Enabled" : "Locked"}
+            />
+          </dl>
+
+          <div className="mb-6 border border-[#747A60] p-4 text-sm leading-6 text-[#444933]">
+            <div className="mb-1 flex items-center gap-2 font-bold text-[#1B1B1B]">
+              <Lock size={16} aria-hidden />
+              Install readiness
+            </div>
+            {readinessReason ||
+              "Ready: free theme, Companion online, VibeTV connected and local install flag enabled."}
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <ActionButton
+              busy={busyAction === "install"}
+              disabled={installDisabled}
+              icon={<Download size={18} aria-hidden />}
+              label="Install on VibeTV"
+              onClick={onInstallTheme}
+              primary
+            />
+            {onDiscoverDevice ? (
+              <ActionButton
+                busy={busyAction === "discover"}
+                icon={<RefreshCw size={18} aria-hidden />}
+                label="Find device"
+                onClick={onDiscoverDevice}
+              />
+            ) : null}
+          </div>
+
+          {selectedTheme ? (
+            <dl className="mt-8 grid gap-4 md:grid-cols-3">
+              <Fact label="Theme ID" value={selectedTheme.themeId} />
+              <Fact label="Version" value={selectedTheme.themeVersion || "MVP"} />
+              <Fact
+                label="Firmware"
+                value={selectedTheme.requiresFirmware || "Not specified"}
+              />
+            </dl>
+          ) : null}
         </div>
       </section>
-    </section>
+    </div>
   );
 }
 
-function SectionHeader({
+function HeroIcon({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid size-16 shrink-0 place-items-center rounded-full border border-[#747A60] bg-[#EEEEEE] text-[#1B1B1B]">
+      {children}
+    </div>
+  );
+}
+
+function StatusRow({
   detail,
   icon,
-  title,
+  label,
+  value,
 }: {
-  detail: string;
+  detail?: string;
   icon: ReactNode;
-  title: string;
+  label: string;
+  value: string;
 }) {
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-[#747A60] px-4 py-3">
-      <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[#1B1B1B]">
-        {icon}
-        <span className="truncate">{title}</span>
-      </div>
-      <div className="truncate text-xs text-[#747A60]">{detail}</div>
-    </header>
+    <div className="grid min-h-[54px] grid-cols-[28px_1fr_150px] items-start gap-3 border-b border-[#747A60] py-3 last:border-b-0">
+      <div className="pt-0.5 text-[#506600]">{icon}</div>
+      <dt className="font-medium text-[#1B1B1B]">{label}</dt>
+      <dd className="min-w-0 text-[#1B1B1B]">
+        <span>{value}</span>
+        {detail ? <div className="mt-1 text-sm text-[#444933]">{detail}</div> : null}
+      </dd>
+    </div>
+  );
+}
+
+function FilterPill({
+  active,
+  children,
+}: {
+  active?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      className={`h-9 border px-3 text-sm font-semibold ${
+        active
+          ? "border-[#CCFF00] bg-[#CCFF00] text-[#1B1B1B]"
+          : "border-[#747A60] bg-[#F9F9F9] text-[#1B1B1B]"
+      }`}
+      type="button"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -252,7 +312,7 @@ function ThemePreview({
 }) {
   const className = large
     ? "relative aspect-square w-full overflow-hidden border border-[#747A60] bg-[#EEEEEE]"
-    : "relative size-[76px] overflow-hidden border border-[#747A60] bg-[#EEEEEE]";
+    : "relative size-24 overflow-hidden border border-[#747A60] bg-[#EEEEEE]";
 
   return (
     <span className={className}>
@@ -261,25 +321,35 @@ function ThemePreview({
           alt={theme.imageAlt || theme.title}
           className="object-cover"
           fill
-          sizes={large ? "220px" : "76px"}
+          sizes={large ? "320px" : "(min-width: 1280px) 300px, 50vw"}
           src={theme.imageUrl}
         />
       ) : (
         <span className="grid h-full place-items-center bg-[#1B1B1B] text-center text-sm font-semibold text-[#EDEDED]">
-          <Monitor size={large ? 32 : 20} aria-hidden />
+          <Monitor size={large ? 36 : 24} aria-hidden />
         </span>
       )}
     </span>
   );
 }
 
+function CheckRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 border-r border-[#747A60] pr-4 last:border-r-0">
+      <Check size={22} className="text-[#506600]" aria-hidden />
+      <div>
+        <dt className="font-bold text-[#1B1B1B]">{label}</dt>
+        <dd className="mt-1 text-sm text-[#444933]">{value}</dd>
+      </div>
+    </div>
+  );
+}
+
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 border border-[#747A60] bg-[#EEEEEE] px-3 py-2">
-      <dt className="text-xs text-[#747A60]">{label}</dt>
-      <dd className="mt-1 truncate text-sm font-semibold text-[#1B1B1B]">
-        {value}
-      </dd>
+    <div className="border-r border-[#747A60] pr-4 last:border-r-0">
+      <dt className="text-sm font-bold text-[#1B1B1B]">{label}</dt>
+      <dd className="mt-1 truncate text-sm text-[#444933]">{value}</dd>
     </div>
   );
 }
@@ -301,7 +371,7 @@ function ActionButton({
 }) {
   return (
     <button
-      className={`inline-flex h-10 items-center gap-2 border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`inline-flex h-12 items-center justify-center gap-2 border px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
         primary
           ? "border-[#CCFF00] bg-[#CCFF00] text-[#1B1B1B] hover:bg-[#ABD600]"
           : "border-[#747A60] bg-[#F9F9F9] text-[#1B1B1B] hover:bg-[#EEEEEE]"
@@ -310,8 +380,8 @@ function ActionButton({
       onClick={onClick}
       type="button"
     >
-      {busy ? <RefreshCw className="animate-spin" size={16} /> : icon}
-      <span>{busy ? "Läuft..." : label}</span>
+      {busy ? <RefreshCw className="animate-spin" size={18} /> : icon}
+      <span>{busy ? "Working..." : label}</span>
     </button>
   );
 }
@@ -328,32 +398,22 @@ function installReadinessReason({
   themeInstallEnabled: boolean;
 }) {
   if (!selectedTheme) {
-    return "Wähle zuerst ein Theme aus.";
+    return "Select a theme first.";
   }
   if (!selectedTheme.isFree) {
-    return "Bezahlte Themes sind im MVP noch nicht installierbar.";
+    return "Paid themes are not installable in this MVP.";
   }
   if (!selectedTheme.packUrl) {
-    return "Dieses Theme hat noch keine Pack-URL im Katalog.";
+    return "This theme does not have a pack URL in the catalog yet.";
   }
   if (companionStatus !== "online") {
-    return "Der lokale Companion ist nicht online.";
+    return "The local Companion is not online.";
   }
   if (!device?.connected) {
-    return "VibeTV ist noch nicht verbunden.";
+    return "VibeTV is not connected yet.";
   }
   if (!themeInstallEnabled) {
-    return "Install bleibt gesperrt, bis VIBETV_ENABLE_WIFI_THEME_INSTALL gesetzt ist.";
+    return "Install stays locked until VIBETV_ENABLE_WIFI_THEME_INSTALL is set.";
   }
   return "";
-}
-
-function sourceLabel(source: ThemeProduct["source"]) {
-  if (source === "shopify") {
-    return "Shopify";
-  }
-  if (source === "github-catalog") {
-    return "GitHub Katalog";
-  }
-  return "Fallback";
 }

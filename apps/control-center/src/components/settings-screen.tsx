@@ -92,101 +92,118 @@ export function SettingsScreen({
   const themeSpecReady = Boolean(
     device?.capabilities?.theme?.supportsThemeSpecV1,
   );
-  const installSafetyReason = themeInstallEnabled
-    ? "Lokale Theme-Installationen sind für dieses Testfenster freigeschaltet."
-    : "Theme-Installationen sind gesperrt, solange VIBETV_ENABLE_WIFI_THEME_INSTALL nicht gesetzt ist.";
 
   return (
-    <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="grid gap-4">
-        <section className="border border-[#747A60] bg-[#F9F9F9]">
-          <SectionHeader
-            detail={companionUrl}
-            icon={<PlugZap size={17} aria-hidden />}
-            title="Connection Controls"
-          />
-          <div className="grid gap-3 p-4 sm:grid-cols-4">
-            <StatusTile
-              icon={<PlugZap size={16} aria-hidden />}
-              label="Bridge"
-              value={labelForCompanion(companionStatus)}
-            />
-            <StatusTile
-              icon={<Wifi size={16} aria-hidden />}
-              label="Gerät"
-              value={labelForDevice(deviceState, device)}
-            />
-            <StatusTile
-              icon={<ShieldCheck size={16} aria-hidden />}
-              label="Pairing"
-              value={device?.paired ? "Gepaart" : "Offen"}
-            />
-            <StatusTile
-              icon={<Lock size={16} aria-hidden />}
-              label="Install"
-              value={themeInstallEnabled ? "Aktiv" : "Gesperrt"}
-            />
+    <div className="mx-auto max-w-[1180px]">
+      <section className="grid min-h-[330px] items-center gap-10 border-b border-[#747A60] py-10 lg:grid-cols-[minmax(0,560px)_minmax(360px,1fr)]">
+        <div className="min-w-0">
+          <div className="flex items-start gap-5">
+            <HeroIcon>
+              <SlidersHorizontal size={36} aria-hidden />
+            </HeroIcon>
+            <div className="min-w-0">
+              <h2 className="max-w-[520px] text-[clamp(2.7rem,4.8vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
+                Control the essentials
+              </h2>
+              <p className="mt-5 text-xl leading-8 text-[#444933]">
+                Connect, pair and tune the display without leaving the command
+                center.
+              </p>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2 border-t border-[#747A60] px-4 py-3">
-            <ActionButton
+        </div>
+
+        <dl className="grid gap-0 border-y border-[#747A60]">
+          <StatusRow
+            icon={<PlugZap size={18} aria-hidden />}
+            label="Bridge"
+            value={labelForCompanion(companionStatus)}
+          />
+          <StatusRow
+            icon={<Wifi size={18} aria-hidden />}
+            label="Device"
+            value={labelForDevice(deviceState, device)}
+          />
+          <StatusRow
+            icon={<ShieldCheck size={18} aria-hidden />}
+            label="Pairing"
+            value={device?.paired ? "Paired" : "Open"}
+          />
+          <StatusRow
+            detail={themeInstallEnabled ? undefined : "Read-only"}
+            icon={<Lock size={18} aria-hidden />}
+            label="Install"
+            value={themeInstallEnabled ? "Enabled" : "Locked"}
+          />
+        </dl>
+      </section>
+
+      <section className="grid gap-8 border-b border-[#747A60] py-8 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <h3 className="text-base font-bold text-[#1B1B1B]">
+              Connection controls
+            </h3>
+            <span className="font-mono text-sm text-[#444933]">
+              {companionUrl}
+            </span>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <CommandButton
               busy={busyAction === "status"}
-              icon={<PlugZap size={16} aria-hidden />}
-              label="Bridge prüfen"
+              icon={<PlugZap size={18} aria-hidden />}
+              label="Check bridge"
               onClick={onCheckBridge}
             />
-            <ActionButton
+            <CommandButton
               busy={busyAction === "discover"}
-              icon={<Search size={16} aria-hidden />}
-              label="Gerät suchen"
+              icon={<Search size={18} aria-hidden />}
+              label="Find VibeTV"
               onClick={onDiscoverDevice}
             />
-            <ActionButton
+            <CommandButton
               busy={busyAction === "pair"}
               disabled={!device?.connected}
-              icon={<ShieldCheck size={16} aria-hidden />}
-              label="Pairen"
+              icon={<ShieldCheck size={18} aria-hidden />}
+              label="Pair device"
               onClick={onPairDevice}
             />
           </div>
-        </section>
+        </div>
 
-        <section className="border border-[#747A60] bg-[#F9F9F9]">
-          <SectionHeader
-            detail={device?.target || "nicht verbunden"}
-            icon={<Wifi size={17} aria-hidden />}
-            title="Device Facts"
-          />
-          <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
-            <Fact label="Target URL" value={device?.target || "unbekannt"} />
-            <Fact label="Board" value={device?.board || "unbekannt"} />
-            <Fact label="Firmware" value={device?.firmware || "unbekannt"} />
-            <Fact
-              label="Transport"
-              value={device?.capabilities?.transport?.active || "unbekannt"}
-            />
-            <Fact
-              label="ThemeSpec"
-              value={themeSpecReady ? "bereit" : "nicht bestätigt"}
-            />
+        <aside className="border border-[#747A60] p-5">
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-base font-bold text-[#1B1B1B]">Request status</h3>
+            <span className="text-sm text-[#506600]">
+              {lastError?.code || "Ready"}
+            </span>
           </div>
-        </section>
+          <p className="mt-4 text-sm leading-6 text-[#444933]">
+            {lastError
+              ? `${lastError.message}: ${lastError.nextAction}`
+              : "No error in this local session."}
+          </p>
+        </aside>
+      </section>
 
-        <section className="border border-[#747A60] bg-[#F9F9F9]">
-          <SectionHeader
-            detail={brightness == null ? "nicht geladen" : `${brightness}%`}
-            icon={<SlidersHorizontal size={17} aria-hidden />}
-            title="Display Controls"
-          />
-          <div className="space-y-4 p-4">
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between gap-3 text-sm text-[#444933]">
-                <span>Helligkeit</span>
+      <section className="grid gap-8 border-b border-[#747A60] py-8 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div>
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <h3 className="text-base font-bold text-[#1B1B1B]">Display</h3>
+            <span className="text-sm text-[#444933]">
+              {brightness == null ? "Not loaded" : `${brightness}%`}
+            </span>
+          </div>
+          <div className="grid gap-5">
+            <div>
+              <div className="mb-3 flex items-center justify-between text-sm text-[#444933]">
+                <span>Brightness</span>
                 <span className="font-semibold text-[#1B1B1B]">
-                  {brightness == null ? "offen" : `${brightness}%`}
+                  {brightness == null ? "Open" : `${brightness}%`}
                 </span>
               </div>
               <input
-                aria-label="Helligkeit"
+                aria-label="Brightness"
                 className="h-2 w-full accent-[#CCFF00] disabled:opacity-50"
                 disabled={!brightnessSupport || brightness == null}
                 max={maxBrightness}
@@ -197,136 +214,109 @@ export function SettingsScreen({
                 type="range"
                 value={currentBrightness}
               />
-              <div className="flex justify-between text-xs text-[#747A60]">
+              <div className="mt-2 flex justify-between text-xs text-[#444933]">
                 <span>{minBrightness}%</span>
                 <span>{maxBrightness}%</span>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <ActionButton
+            <div className="flex flex-wrap gap-3">
+              <CommandButton
                 busy={busyAction === "settings"}
                 disabled={!device?.connected}
-                icon={<RefreshCw size={16} aria-hidden />}
-                label="Settings laden"
+                icon={<RefreshCw size={18} aria-hidden />}
+                label="Load settings"
                 onClick={onLoadSettings}
               />
-              <ActionButton
+              <CommandButton
                 busy={busyAction === "brightness"}
                 disabled={!device?.connected || brightness == null}
-                icon={<Check size={16} aria-hidden />}
-                label="Helligkeit speichern"
+                icon={<Check size={18} aria-hidden />}
+                label="Save brightness"
                 onClick={() => onSaveBrightness(currentBrightness)}
                 primary
               />
             </div>
           </div>
-        </section>
-      </div>
+        </div>
 
-      <aside className="grid content-start gap-4">
-        <section className="border border-[#747A60] bg-[#F9F9F9]">
-          <SectionHeader
-            detail={themeInstallEnabled ? "freigegeben" : "gesperrt"}
-            icon={<Lock size={17} aria-hidden />}
-            title="Install Safety"
-          />
-          <div className="space-y-3 p-4 text-sm leading-6 text-[#444933]">
-            <p>{installSafetyReason}</p>
-            <div className="border border-[#747A60] bg-[#EEEEEE] p-3">
-              <div className="text-xs font-semibold uppercase text-[#506600]">
-                Warum
-              </div>
-              <p className="mt-1">
-                Schreibzugriffe auf echte VibeTV-Hardware bleiben bewusst aus,
-                bis das lokale Testfenster explizit aktiviert wurde.
-              </p>
-            </div>
+        <aside className="border border-[#747A60] p-5">
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-base font-bold text-[#1B1B1B]">Install safety</h3>
+            <span className="text-sm text-[#506600]">
+              {themeInstallEnabled ? "Enabled" : "Locked"}
+            </span>
           </div>
-        </section>
+          <p className="mt-4 text-sm leading-6 text-[#444933]">
+            {themeInstallEnabled
+              ? "Theme writes are enabled for this local test window."
+              : "Theme writes stay locked until the local install flag is enabled."}
+          </p>
+        </aside>
+      </section>
 
-        <section className="border border-[#747A60] bg-[#F9F9F9]">
-          <SectionHeader
-            detail={lastError?.code || "bereit"}
-            icon={<ShieldCheck size={17} aria-hidden />}
-            title="Request Status"
+      <section className="py-8">
+        <h3 className="mb-5 text-base font-bold text-[#1B1B1B]">
+          Device facts
+        </h3>
+        <dl className="grid gap-4 md:grid-cols-5">
+          <Fact label="Target" value={device?.target || "Unknown"} />
+          <Fact label="Board" value={device?.board || "Unknown"} />
+          <Fact label="Firmware" value={device?.firmware || "Unknown"} />
+          <Fact
+            label="Transport"
+            value={device?.capabilities?.transport?.active || "Unknown"}
           />
-          <div className="p-4">
-            {lastError ? (
-              <div className="border border-[#747A60] bg-[#EEEEEE] p-3 text-sm leading-6 text-[#444933]">
-                <div className="font-semibold text-[#1B1B1B]">
-                  {lastError.message}
-                </div>
-                <div className="mt-1">{lastError.nextAction}</div>
-                <div className="mt-2 font-mono text-xs text-[#747A60]">
-                  {lastError.code}
-                </div>
-              </div>
-            ) : (
-              <div className="border border-[#747A60] bg-[#EEEEEE] p-3 text-sm text-[#444933]">
-                Noch kein Fehler in dieser Sitzung.
-              </div>
-            )}
-          </div>
-        </section>
-      </aside>
-    </section>
+          <Fact
+            label="ThemeSpec"
+            value={themeSpecReady ? "Ready" : "Not confirmed"}
+          />
+        </dl>
+      </section>
+    </div>
   );
 }
 
-function SectionHeader({
-  detail,
-  icon,
-  title,
-}: {
-  detail: string;
-  icon: ReactNode;
-  title: string;
-}) {
+function HeroIcon({ children }: { children: ReactNode }) {
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-[#747A60] px-4 py-3">
-      <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[#1B1B1B]">
-        {icon}
-        <span className="truncate">{title}</span>
-      </div>
-      <div className="truncate text-xs text-[#747A60]">{detail}</div>
-    </header>
+    <div className="grid size-16 shrink-0 place-items-center rounded-full border border-[#747A60] bg-[#EEEEEE] text-[#1B1B1B]">
+      {children}
+    </div>
   );
 }
 
-function StatusTile({
+function StatusRow({
+  detail,
   icon,
   label,
   value,
 }: {
+  detail?: string;
   icon: ReactNode;
   label: string;
   value: string;
 }) {
   return (
-    <div className="min-w-0 border border-[#747A60] bg-[#EEEEEE] px-3 py-3">
-      <div className="flex items-center gap-2 text-xs text-[#506600]">
-        {icon}
-        <span className="truncate">{label}</span>
-      </div>
-      <div className="mt-2 truncate text-base font-semibold text-[#1B1B1B]">
-        {value}
-      </div>
+    <div className="grid min-h-[54px] grid-cols-[28px_1fr_120px] items-start gap-3 border-b border-[#747A60] py-3 last:border-b-0">
+      <div className="pt-0.5 text-[#506600]">{icon}</div>
+      <dt className="font-medium text-[#1B1B1B]">{label}</dt>
+      <dd className="min-w-0 text-[#1B1B1B]">
+        <span>{value}</span>
+        {detail ? <div className="mt-1 text-sm text-[#444933]">{detail}</div> : null}
+      </dd>
     </div>
   );
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 border border-[#747A60] bg-[#EEEEEE] px-3 py-2">
-      <div className="text-xs text-[#747A60]">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold text-[#1B1B1B]">
-        {value}
-      </div>
+    <div className="min-w-0 border-r border-[#747A60] pr-5 last:border-r-0">
+      <dt className="text-sm font-bold text-[#1B1B1B]">{label}</dt>
+      <dd className="mt-1 truncate text-sm text-[#444933]">{value}</dd>
     </div>
   );
 }
 
-function ActionButton({
+function CommandButton({
   busy,
   disabled,
   icon,
@@ -343,7 +333,7 @@ function ActionButton({
 }) {
   return (
     <button
-      className={`inline-flex h-10 items-center gap-2 border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`inline-flex h-12 items-center justify-center gap-2 border px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
         primary
           ? "border-[#CCFF00] bg-[#CCFF00] text-[#1B1B1B] hover:bg-[#ABD600]"
           : "border-[#747A60] bg-[#F9F9F9] text-[#1B1B1B] hover:bg-[#EEEEEE]"
@@ -352,8 +342,8 @@ function ActionButton({
       onClick={onClick}
       type="button"
     >
-      {busy ? <RefreshCw className="animate-spin" size={16} /> : icon}
-      <span>{busy ? "Läuft..." : label}</span>
+      {busy ? <RefreshCw className="animate-spin" size={18} /> : icon}
+      <span>{busy ? "Working..." : label}</span>
     </button>
   );
 }
@@ -363,9 +353,9 @@ function labelForCompanion(status: SettingsCompanionStatus): string {
     return "Online";
   }
   if (status === "missing") {
-    return "Fehlt";
+    return "Missing";
   }
-  return "Prüfen";
+  return "Check";
 }
 
 function labelForDevice(
@@ -373,10 +363,10 @@ function labelForDevice(
   device: SettingsDeviceInfo | null,
 ): string {
   if (device?.connected) {
-    return state === "paired" || device.paired ? "Verbunden" : "Gefunden";
+    return state === "paired" || device.paired ? "Connected" : "Found";
   }
   if (state === "offline") {
     return "Offline";
   }
-  return "Unbekannt";
+  return "Unknown";
 }
