@@ -87,7 +87,7 @@ export function SettingsScreen({
         <h3 className="mb-5 text-base font-bold text-[#1B1B1B]">
           Device facts
         </h3>
-        <dl className="grid gap-4 md:grid-cols-5">
+        <dl className="divide-y divide-[#747A60] border-y border-[#747A60]">
           <Fact label="Target" value={device?.target || "Not reported"} />
           <Fact label="Board" value={device?.board || "Not reported"} />
           <Fact label="Firmware" value={device?.firmware || "Not reported"} />
@@ -188,9 +188,9 @@ export function SettingsScreen({
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 border-r border-[#747A60] pr-5 last:border-r-0">
+    <div className="grid min-h-[52px] gap-1 py-3 sm:grid-cols-[160px_minmax(0,1fr)] sm:items-start sm:gap-6">
       <dt className="text-sm font-bold text-[#1B1B1B]">{label}</dt>
-      <dd className="mt-1 truncate text-sm text-[#444933]">{value}</dd>
+      <dd className="break-words text-sm leading-6 text-[#444933]">{value}</dd>
     </div>
   );
 }
