@@ -62,10 +62,6 @@ export function ThemeLibraryScreen({
               <h2 className="max-w-[520px] text-[clamp(2.7rem,4.8vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
                 Choose a theme
               </h2>
-              <p className="mt-5 text-xl leading-8 text-[#444933]">
-                Browse the catalog, preview each pack and install only when
-                device access is ready.
-              </p>
             </div>
           </div>
         </div>
