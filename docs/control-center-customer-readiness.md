@@ -45,6 +45,15 @@ It performs these steps:
 - starts `codexbar-display api --addr 127.0.0.1:47832`,
 - verifies `http://127.0.0.1:47832/v1/status`.
 
+Future releases also build macOS `.pkg` assets:
+
+```text
+VibeTV-Companion-API-arm64-v<version>.pkg
+VibeTV-Companion-API-amd64-v<version>.pkg
+```
+
+The package installs the binary under `/Library/Application Support/VibeTV/bin/`, installs `/Library/LaunchAgents/com.codexbar-display.companion-api.plist`, and starts the LaunchAgent for the current console user after install. The package build script supports optional `--sign-identity` and `--notary-profile`, but a real signed/notarized customer package still requires Apple Developer ID Installer credentials and notarization setup.
+
 Support restart:
 
 ```bash

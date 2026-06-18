@@ -158,3 +158,50 @@ jobs:
             dist/firmware/firmware-manifest.json
             dist/firmware/firmware-manifest-*.json
             dist/checksums-*.txt
+
+  build-companion-pkgs:
+    needs: build-and-release
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+
+      - name: Build Companion PKGs
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${VERSION#v}"
+          mkdir -p dist/companion dist/companion-pkg
+
+          cd companion
+          for ARCH in amd64 arm64; do
+            OUT="../dist/companion/codexbar-display-darwin-${ARCH}-v${VERSION}"
+            GOOS=darwin GOARCH="${ARCH}" CGO_ENABLED=0 \
+              go build \
+              -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${VERSION} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o "${OUT}" ./cmd/codexbar-display
+          done
+          cd ..
+
+          for ARCH in amd64 arm64; do
+            scripts/build-control-center-companion-pkg.sh \
+              --version "${VERSION}" \
+              --arch "${ARCH}" \
+              --binary "dist/companion/codexbar-display-darwin-${ARCH}-v${VERSION}" \
+              --out "dist/companion-pkg"
+          done
+
+      - name: Upload Companion PKGs to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: false
+          files: |
+            dist/companion-pkg/*.pkg
