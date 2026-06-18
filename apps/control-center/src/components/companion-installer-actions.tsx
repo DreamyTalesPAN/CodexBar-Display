@@ -87,8 +87,10 @@ export function companionPackageLabel(
 }
 
 export function CompanionDownloadActions({
+  action = "install",
   release,
 }: {
+  action?: "install" | "repair" | "update";
   release: CompanionReleaseInfo | null;
 }) {
   const packages = release?.packageDownloadUrls;
@@ -96,13 +98,19 @@ export function CompanionDownloadActions({
     packages?.macosArm64
       ? {
           href: packages.macosArm64,
-          label: packages.macosAmd64 ? "Apple silicon package" : "Mac package",
+          label: packageActionLabel(
+            action,
+            packages.macosAmd64 ? "Apple silicon" : "Mac",
+          ),
         }
       : null,
     packages?.macosAmd64
       ? {
           href: packages.macosAmd64,
-          label: packages.macosArm64 ? "Intel Mac package" : "Mac package",
+          label: packageActionLabel(
+            action,
+            packages.macosArm64 ? "Intel Mac" : "Mac",
+          ),
         }
       : null,
   ].filter((item): item is { href: string; label: string } => Boolean(item));
@@ -121,7 +129,7 @@ export function CompanionDownloadActions({
         {release?.installerDownloadUrl ? (
           <DownloadLink
             href={release.installerDownloadUrl}
-            label="Script installer"
+            label={scriptActionLabel(action)}
           />
         ) : null}
       </>
@@ -132,7 +140,7 @@ export function CompanionDownloadActions({
     return (
       <DownloadLink
         href={release.installerDownloadUrl}
-        label="Download installer"
+        label={scriptActionLabel(action)}
         primary
       />
     );
@@ -148,6 +156,29 @@ export function CompanionDownloadActions({
       <span>Installer pending</span>
     </button>
   );
+}
+
+function packageActionLabel(
+  action: "install" | "repair" | "update",
+  platform: "Apple silicon" | "Intel Mac" | "Mac",
+): string {
+  if (action === "update") {
+    return `Update ${platform}`;
+  }
+  if (action === "repair") {
+    return `Repair ${platform}`;
+  }
+  return `Install ${platform}`;
+}
+
+function scriptActionLabel(action: "install" | "repair" | "update"): string {
+  if (action === "update") {
+    return "Update with script";
+  }
+  if (action === "repair") {
+    return "Repair with script";
+  }
+  return "Script installer";
 }
 
 function DownloadLink({

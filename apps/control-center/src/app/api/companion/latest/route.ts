@@ -83,7 +83,7 @@ export async function GET(request: Request) {
 
 async function fetchLatestRelease(): Promise<GitHubRelease> {
   const releaseUrl =
-    process.env.CONTROL_CENTER_COMPANION_RELEASE_API_URL ||
+    process.env["CONTROL_CENTER_COMPANION_RELEASE_API_URL"] ||
     DEFAULT_RELEASE_API_URL;
   const response = await fetch(releaseUrl, {
     cache: "no-store",

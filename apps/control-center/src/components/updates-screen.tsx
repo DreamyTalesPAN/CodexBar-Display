@@ -69,6 +69,14 @@ export function UpdatesScreen({
   const companionAvailable =
     companionRelease?.latestVersion || companionRelease?.release || "Checking";
   const companionPackageStatus = companionPackageLabel(companionRelease);
+  const companionAction = companionInstallerAction({
+    companionStatus,
+    release: companionRelease,
+  });
+  const companionActionDetail = companionInstallerDetail({
+    action: companionAction,
+    release: companionRelease,
+  });
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="min-h-[330px] border-b border-[#747A60] py-10">
@@ -92,6 +100,9 @@ export function UpdatesScreen({
         <h3 className="mb-6 text-base font-bold text-[#1B1B1B]">
           Companion app
         </h3>
+        <p className="mb-5 max-w-[720px] text-sm leading-6 text-[#444933]">
+          {companionActionDetail}
+        </p>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
           <dl className="grid gap-0 border-y border-[#747A60]">
@@ -118,7 +129,10 @@ export function UpdatesScreen({
           </dl>
 
           <div className="flex flex-col items-start gap-3 lg:items-end">
-            <CompanionDownloadActions release={companionRelease} />
+            <CompanionDownloadActions
+              action={companionAction}
+              release={companionRelease}
+            />
             <button
               className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-60"
               disabled={companionCheckBusy}
@@ -181,6 +195,47 @@ export function UpdatesScreen({
       </section>
     </div>
   );
+}
+
+function companionInstallerAction({
+  companionStatus,
+  release,
+}: {
+  companionStatus: UpdatesCompanionStatus;
+  release: CompanionReleaseInfo | null;
+}): "install" | "repair" | "update" {
+  if (companionStatus === "missing") {
+    return "install";
+  }
+  if (release?.updateAvailable) {
+    return "update";
+  }
+  return "repair";
+}
+
+function companionInstallerDetail({
+  action,
+  release,
+}: {
+  action: "install" | "repair" | "update";
+  release: CompanionReleaseInfo | null;
+}): string {
+  if (!release) {
+    return "Checking the latest Companion release and available installer assets.";
+  }
+  if (release.status === "check_failed") {
+    return "Release check failed. Use Check Companion again before sending a customer to a download.";
+  }
+  if (release.status === "missing_asset") {
+    return "The latest release does not include customer installer assets yet.";
+  }
+  if (action === "update") {
+    return "A newer Companion is available. Installing the package updates the local bridge while keeping the app on app.vibetv.shop.";
+  }
+  if (action === "repair") {
+    return "Use the package again if Companion is installed but stuck, damaged, or needs a clean restart.";
+  }
+  return "Install Companion on this computer first, then return to the app and check the bridge again.";
 }
 
 function companionReleaseLabel(release: CompanionReleaseInfo | null): string {
