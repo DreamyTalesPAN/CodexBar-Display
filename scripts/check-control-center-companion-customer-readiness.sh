@@ -2,12 +2,17 @@
 set -euo pipefail
 
 REPO="DreamyTalesPAN/CodexBar-Display"
+PKG_IDENTIFIER="shop.vibetv.companion-api"
+SERVICE_LABEL="com.codexbar-display.companion-api"
+INSTALLED_BIN="/Library/Application Support/VibeTV/bin/codexbar-display"
+INSTALLED_PLIST="/Library/LaunchAgents/${SERVICE_LABEL}.plist"
 RELEASE_TAG=""
 RELEASE_JSON=""
 PKG_PATH=""
 APP_URL=""
 EXPECT_VERSION=""
 CHECK_LOCAL=0
+CHECK_INSTALLED_PACKAGE=0
 REQUIRE_SIGNED=0
 REQUIRE_NOTARIZED=0
 
@@ -26,8 +31,9 @@ Options:
   --require-signed                 Fail if the package is not signed.
   --require-notarized              Fail if the package is not notarized/stapled.
   --app-url https://app.vibetv.shop Check hosted app HTTP reachability.
+  --installed-package              Check installed macOS package receipt, files, and LaunchAgent.
   --local-companion                Check local Companion status on 127.0.0.1:47832.
-  --expect-version x.y.z           Require local Companion version when using --local-companion.
+  --expect-version x.y.z           Require installed/local Companion version where checked.
   -h, --help                       Show this help.
 
 Examples:
@@ -39,6 +45,11 @@ Examples:
     --app-url https://app.vibetv.shop
 
   scripts/check-control-center-companion-customer-readiness.sh --local-companion
+
+  scripts/check-control-center-companion-customer-readiness.sh \
+    --installed-package \
+    --local-companion \
+    --expect-version 1.0.32
 
 This script does not install packages, start services, discover devices, or perform
 hardware writes. It is safe for preflight and customer-readiness audits.
@@ -116,6 +127,10 @@ parse_args() {
         ;;
       --app-url=*)
         APP_URL="${1#*=}"
+        shift
+        ;;
+      --installed-package)
+        CHECK_INSTALLED_PACKAGE=1
         shift
         ;;
       --local-companion)
@@ -241,6 +256,33 @@ check_app_url() {
   log "app reachable: $APP_URL"
 }
 
+check_installed_package() {
+  local info receipt_version service
+  [[ "$CHECK_INSTALLED_PACKAGE" == 1 ]] || return 0
+
+  [[ "$(uname -s)" == "Darwin" ]] || die "--installed-package checks require macOS"
+  require_cmd pkgutil
+  require_cmd launchctl
+  require_cmd awk
+  require_cmd id
+
+  info="$(pkgutil --pkg-info "$PKG_IDENTIFIER" 2>/dev/null || true)"
+  [[ -n "$info" ]] || die "package receipt not found: $PKG_IDENTIFIER"
+  receipt_version="$(printf '%s\n' "$info" | awk -F': ' '$1 == "version" {print $2; exit}')"
+  [[ -n "$receipt_version" ]] || die "package receipt did not report a version"
+  if [[ -n "$EXPECT_VERSION" && "$receipt_version" != "$EXPECT_VERSION" ]]; then
+    die "expected package receipt version $EXPECT_VERSION, got $receipt_version"
+  fi
+
+  [[ -x "$INSTALLED_BIN" ]] || die "installed Companion binary is missing or not executable: $INSTALLED_BIN"
+  [[ -f "$INSTALLED_PLIST" ]] || die "installed LaunchAgent plist is missing: $INSTALLED_PLIST"
+
+  service="gui/$(id -u)/${SERVICE_LABEL}"
+  launchctl print "$service" >/dev/null 2>&1 \
+    || die "LaunchAgent is not loaded for current user: $service"
+  log "installed package ok: version ${receipt_version}"
+}
+
 check_local_companion() {
   local response version
   [[ "$CHECK_LOCAL" == 1 ]] || return 0
@@ -266,6 +308,7 @@ main() {
   check_release_assets
   check_package
   check_app_url
+  check_installed_package
   check_local_companion
   log "customer-readiness checks passed"
 }

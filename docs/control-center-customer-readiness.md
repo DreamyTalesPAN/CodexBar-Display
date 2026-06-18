@@ -146,11 +146,12 @@ After installing on a clean Mac, run:
 
 ```bash
 scripts/check-control-center-companion-customer-readiness.sh \
+  --installed-package \
   --local-companion \
   --expect-version <version>
 ```
 
-The validation script is read-only. It does not install packages, start services, discover devices, or write to VibeTV hardware.
+The clean-Mac installed-package check verifies the macOS package receipt, installed Companion binary, installed LaunchAgent plist, and whether the LaunchAgent is loaded for the current user. The validation script is read-only. It does not install packages, start services, discover devices, or write to VibeTV hardware.
 
 ## Support Checks
 
