@@ -54,6 +54,21 @@ VibeTV-Companion-API-amd64-v<version>.pkg
 
 The package installs the binary under `/Library/Application Support/VibeTV/bin/`, installs `/Library/LaunchAgents/com.codexbar-display.companion-api.plist`, and starts the LaunchAgent for the current console user after install. The package build script supports optional `--sign-identity` and `--notary-profile`, but a real signed/notarized customer package still requires Apple Developer ID Installer credentials and notarization setup.
 
+The release workflow is prepared for optional signing/notarization. Without secrets it still builds unsigned `.pkg` assets. With secrets configured, the `build-companion-pkgs` release job imports the Developer ID Installer certificate into a temporary keychain, signs the packages, stores a notarytool profile, submits each package for notarization, and staples the result.
+
+Required GitHub secrets for signed packages:
+
+- `VIBETV_PKG_CERTIFICATE_BASE64`: base64-encoded `.p12` containing the Developer ID Installer certificate and private key.
+- `VIBETV_PKG_CERTIFICATE_PASSWORD`: password for that `.p12`.
+- `VIBETV_PKG_SIGN_IDENTITY`: optional explicit identity name, for example `Developer ID Installer: Company (TEAMID)`. If omitted, the workflow attempts to auto-detect a Developer ID Installer identity.
+
+Additional GitHub secrets for notarized packages:
+
+- `VIBETV_NOTARY_APPLE_ID`
+- `VIBETV_NOTARY_TEAM_ID`
+- `VIBETV_NOTARY_APP_SPECIFIC_PASSWORD`
+- `VIBETV_NOTARY_PROFILE`: optional notarytool profile name; defaults to `vibetv-notary`.
+
 Support restart:
 
 ```bash

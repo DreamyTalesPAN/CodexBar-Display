@@ -14,6 +14,7 @@ BINARY=""
 OUT_DIR=""
 SIGN_IDENTITY="${VIBETV_PKG_SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${VIBETV_NOTARY_PROFILE:-}"
+NOTARY_KEYCHAIN="${VIBETV_NOTARY_KEYCHAIN:-}"
 TMPDIR_PKG=""
 
 usage() {
@@ -254,7 +255,11 @@ build_pkg() {
 
   if [[ -n "$NOTARY_PROFILE" ]]; then
     command -v xcrun >/dev/null 2>&1 || die "xcrun is required for notarization"
-    xcrun notarytool submit "$pkg_path" --keychain-profile "$NOTARY_PROFILE" --wait
+    notary_args=(notarytool submit "$pkg_path" --keychain-profile "$NOTARY_PROFILE" --wait)
+    if [[ -n "$NOTARY_KEYCHAIN" ]]; then
+      notary_args+=(--keychain "$NOTARY_KEYCHAIN")
+    fi
+    xcrun "${notary_args[@]}"
     xcrun stapler staple "$pkg_path"
   fi
 
