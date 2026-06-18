@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 const DEFAULT_RELEASE_API_URL =
   "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest";
 const INSTALLER_ASSET_NAME = "install-control-center-companion.sh";
+const PACKAGE_ASSET_RE = /^VibeTV-Companion-API-(arm64|amd64)-v.+\.pkg$/;
 
 type GitHubRelease = {
   tag_name?: string;
@@ -30,8 +31,12 @@ export async function GET(request: Request) {
     const installer = (release.assets || []).find(
       (asset) => asset.name === INSTALLER_ASSET_NAME,
     );
+    const packageDownloadUrls = findPackageDownloadUrls(release.assets || []);
+    const hasPackageDownload = Boolean(
+      packageDownloadUrls.macosArm64 || packageDownloadUrls.macosAmd64,
+    );
 
-    if (!installer?.browser_download_url) {
+    if (!installer?.browser_download_url && !hasPackageDownload) {
       return Response.json({
         checkedAt,
         status: "missing_asset",
@@ -39,7 +44,8 @@ export async function GET(request: Request) {
         latestVersion: latestVersion || undefined,
         installedVersion: installedVersion || undefined,
         updateAvailable: false,
-        message: "Companion installer is not published in the latest release yet.",
+        message:
+          "Companion installer is not published in the latest release yet.",
       } satisfies CompanionReleaseInfo);
     }
 
@@ -54,10 +60,15 @@ export async function GET(request: Request) {
           installedVersion &&
           compareSemver(latestVersion, installedVersion) > 0,
       ),
-      installerDownloadUrl: installer.browser_download_url,
-      message: installedVersion
-        ? "Companion installer is available."
-        : "Companion installer is available for this Mac.",
+      ...(installer?.browser_download_url
+        ? { installerDownloadUrl: installer.browser_download_url }
+        : {}),
+      ...(hasPackageDownload ? { packageDownloadUrls } : {}),
+      message: hasPackageDownload
+        ? "Companion package is available for macOS."
+        : installedVersion
+          ? "Companion installer is available."
+          : "Companion installer is available for this Mac.",
     } satisfies CompanionReleaseInfo);
   } catch {
     return Response.json({
@@ -112,4 +123,24 @@ function parseSemver(version: string): [number, number, number] {
 
 function normalizeVersion(version: string): string {
   return version.trim().replace(/^v/i, "");
+}
+
+function findPackageDownloadUrls(assets: GitHubReleaseAsset[]) {
+  const urls: NonNullable<CompanionReleaseInfo["packageDownloadUrls"]> = {};
+
+  for (const asset of assets) {
+    const name = asset.name || "";
+    const match = name.match(PACKAGE_ASSET_RE);
+    if (!match || !asset.browser_download_url) {
+      continue;
+    }
+    if (match[1] === "arm64") {
+      urls.macosArm64 = asset.browser_download_url;
+    }
+    if (match[1] === "amd64") {
+      urls.macosAmd64 = asset.browser_download_url;
+    }
+  }
+
+  return urls;
 }

@@ -62,6 +62,7 @@ export function UpdatesScreen({
       : companionVersion || "Unknown";
   const companionAvailable =
     companionRelease?.latestVersion || companionRelease?.release || "Checking";
+  const companionPackageStatus = companionPackageLabel(companionRelease);
 
   const refreshCompanionRelease = useCallback(async () => {
     setCompanionCheckBusy(true);
@@ -133,6 +134,11 @@ export function UpdatesScreen({
               value={companionAvailable}
             />
             <FirmwareRow
+              icon={<Download size={20} aria-hidden />}
+              label="Mac package"
+              value={companionPackageStatus}
+            />
+            <FirmwareRow
               icon={<Check size={20} aria-hidden />}
               label="Status"
               value={companionReleaseStatus}
@@ -140,24 +146,7 @@ export function UpdatesScreen({
           </dl>
 
           <div className="flex flex-col items-start gap-3 lg:items-end">
-            {companionRelease?.installerDownloadUrl ? (
-              <a
-                className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#CCFF00] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#ABD600]"
-                href={companionRelease.installerDownloadUrl}
-              >
-                <Download size={18} aria-hidden />
-                <span>Download installer</span>
-              </a>
-            ) : (
-              <button
-                className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#444933] opacity-80"
-                disabled
-                type="button"
-              >
-                <Download size={18} aria-hidden />
-                <span>Installer pending</span>
-              </button>
-            )}
+            <CompanionDownloadActions release={companionRelease} />
             <button
               className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-60"
               disabled={companionCheckBusy}
@@ -233,6 +222,113 @@ function companionReleaseLabel(release: CompanionReleaseInfo | null): string {
     return "Installer pending";
   }
   return "Check failed";
+}
+
+function companionPackageLabel(release: CompanionReleaseInfo | null): string {
+  if (!release) {
+    return "Checking";
+  }
+
+  const packages = release.packageDownloadUrls;
+  const hasArm64 = Boolean(packages?.macosArm64);
+  const hasAmd64 = Boolean(packages?.macosAmd64);
+
+  if (hasArm64 && hasAmd64) {
+    return "Apple silicon + Intel";
+  }
+  if (hasArm64) {
+    return "Apple silicon";
+  }
+  if (hasAmd64) {
+    return "Intel Mac";
+  }
+  if (release.status === "check_failed") {
+    return "Check failed";
+  }
+  return "Package pending";
+}
+
+function CompanionDownloadActions({
+  release,
+}: {
+  release: CompanionReleaseInfo | null;
+}) {
+  const packages = release?.packageDownloadUrls;
+  const packageButtons = [
+    packages?.macosArm64
+      ? {
+          href: packages.macosArm64,
+          label: packages.macosAmd64 ? "Apple silicon package" : "Mac package",
+        }
+      : null,
+    packages?.macosAmd64
+      ? {
+          href: packages.macosAmd64,
+          label: packages.macosArm64 ? "Intel Mac package" : "Mac package",
+        }
+      : null,
+  ].filter((item): item is { href: string; label: string } => Boolean(item));
+
+  if (packageButtons.length > 0) {
+    return (
+      <>
+        {packageButtons.map((button) => (
+          <DownloadLink
+            href={button.href}
+            key={button.href}
+            label={button.label}
+            primary
+          />
+        ))}
+        {release?.installerDownloadUrl ? (
+          <DownloadLink href={release.installerDownloadUrl} label="Script installer" />
+        ) : null}
+      </>
+    );
+  }
+
+  if (release?.installerDownloadUrl) {
+    return (
+      <DownloadLink
+        href={release.installerDownloadUrl}
+        label="Download installer"
+        primary
+      />
+    );
+  }
+
+  return (
+    <button
+      className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#444933] opacity-80"
+      disabled
+      type="button"
+    >
+      <Download size={18} aria-hidden />
+      <span>Installer pending</span>
+    </button>
+  );
+}
+
+function DownloadLink({
+  href,
+  label,
+  primary,
+}: {
+  href: string;
+  label: string;
+  primary?: boolean;
+}) {
+  return (
+    <a
+      className={`inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] px-4 text-sm font-semibold text-[#1B1B1B] transition ${
+        primary ? "bg-[#CCFF00] hover:bg-[#ABD600]" : "bg-[#F9F9F9] hover:bg-[#EEEEEE]"
+      }`}
+      href={href}
+    >
+      <Download size={18} aria-hidden />
+      <span>{label}</span>
+    </a>
+  );
 }
 
 function HeroIcon({

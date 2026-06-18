@@ -88,7 +88,13 @@ VIBETV_COMPANION_DEV_ORIGIN=http://localhost:3002 ./scripts/install-control-cent
 
 The API LaunchAgent is separate from the older frame-sending daemon LaunchAgent. The API service exists so `app.vibetv.shop` can talk to the local machine without keeping a Terminal window open.
 
-The Control Center Updates screen checks `/api/companion/latest`. That route reads the latest GitHub Release and only exposes a download link when the release actually contains `install-control-center-companion.sh`. Until the first release with that asset exists, the app shows the installer as pending instead of linking customers to a missing file.
+The Control Center Updates screen checks `/api/companion/latest`. That route reads the latest GitHub Release and only exposes download links when the release actually contains customer installer assets:
+
+- `VibeTV-Companion-API-arm64-v<version>.pkg`
+- `VibeTV-Companion-API-amd64-v<version>.pkg`
+- `install-control-center-companion.sh`
+
+The app prefers the macOS package links when present and keeps the shell installer as a support fallback. Until the first release with those assets exists, the app shows the installer as pending instead of linking customers to a missing file.
 
 ## Support Checks
 
