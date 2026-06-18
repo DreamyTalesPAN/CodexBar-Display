@@ -1,7 +1,9 @@
 "use client";
 
-import { Check, Monitor, RefreshCw } from "lucide-react";
+import { Check, Download, Monitor, RefreshCw, Server } from "lucide-react";
 import type { ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { CompanionReleaseInfo } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 
 export type UpdatesCompanionStatus = "unknown" | "online" | "missing";
@@ -22,11 +24,16 @@ export type UpdatesScreenProps = {
 };
 
 export function UpdatesScreen({
+  companionStatus,
   device,
+  companionVersion,
   firmwareUpdate,
   onCheckUpdates,
   busyAction,
 }: UpdatesScreenProps) {
+  const [companionRelease, setCompanionRelease] =
+    useState<CompanionReleaseInfo | null>(null);
+  const [companionCheckBusy, setCompanionCheckBusy] = useState(false);
   const installedFirmware =
     firmwareUpdate?.installedFirmware || device?.firmware || "Unknown";
   const latestFirmware = firmwareUpdate?.latestFirmware || "Checking";
@@ -48,6 +55,46 @@ export function UpdatesScreen({
       : updateAvailable
         ? "Update available"
         : "Up to date";
+  const companionReleaseStatus = companionReleaseLabel(companionRelease);
+  const companionInstalled =
+    companionStatus === "missing"
+      ? "Not running"
+      : companionVersion || "Unknown";
+  const companionAvailable =
+    companionRelease?.latestVersion || companionRelease?.release || "Checking";
+
+  const refreshCompanionRelease = useCallback(async () => {
+    setCompanionCheckBusy(true);
+    try {
+      const params = new URLSearchParams();
+      if (companionVersion) {
+        params.set("version", companionVersion);
+      }
+      const suffix = params.toString() ? `?${params.toString()}` : "";
+      const response = await fetch(`/api/companion/latest${suffix}`);
+      if (!response.ok) {
+        throw new Error(`companion release check failed: ${response.status}`);
+      }
+      setCompanionRelease((await response.json()) as CompanionReleaseInfo);
+    } catch {
+      setCompanionRelease({
+        checkedAt: new Date().toISOString(),
+        status: "check_failed",
+        installedVersion: companionVersion,
+        updateAvailable: false,
+        message: "Companion release check failed.",
+      });
+    } finally {
+      setCompanionCheckBusy(false);
+    }
+  }, [companionVersion]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshCompanionRelease();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshCompanionRelease]);
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -64,6 +111,66 @@ export function UpdatesScreen({
             <h2 className="max-w-[560px] text-[clamp(3rem,5vw,5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
               {title}
             </h2>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b border-[#747A60] py-8">
+        <h3 className="mb-6 text-base font-bold text-[#1B1B1B]">
+          Companion app
+        </h3>
+
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
+          <dl className="grid gap-0 border-y border-[#747A60]">
+            <FirmwareRow
+              icon={<Server size={20} aria-hidden />}
+              label="Installed Companion"
+              value={companionInstalled}
+            />
+            <FirmwareRow
+              icon={<Download size={20} aria-hidden />}
+              label="Release installer"
+              value={companionAvailable}
+            />
+            <FirmwareRow
+              icon={<Check size={20} aria-hidden />}
+              label="Status"
+              value={companionReleaseStatus}
+            />
+          </dl>
+
+          <div className="flex flex-col items-start gap-3 lg:items-end">
+            {companionRelease?.installerDownloadUrl ? (
+              <a
+                className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#CCFF00] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#ABD600]"
+                href={companionRelease.installerDownloadUrl}
+              >
+                <Download size={18} aria-hidden />
+                <span>Download installer</span>
+              </a>
+            ) : (
+              <button
+                className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#444933] opacity-80"
+                disabled
+                type="button"
+              >
+                <Download size={18} aria-hidden />
+                <span>Installer pending</span>
+              </button>
+            )}
+            <button
+              className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={companionCheckBusy}
+              onClick={refreshCompanionRelease}
+              type="button"
+            >
+              {companionCheckBusy ? (
+                <RefreshCw className="animate-spin" size={18} />
+              ) : (
+                <RefreshCw size={18} aria-hidden />
+              )}
+              <span>{companionCheckBusy ? "Checking" : "Check Companion"}</span>
+            </button>
           </div>
         </div>
       </section>
@@ -113,6 +220,19 @@ export function UpdatesScreen({
       </section>
     </div>
   );
+}
+
+function companionReleaseLabel(release: CompanionReleaseInfo | null): string {
+  if (!release) {
+    return "Checking";
+  }
+  if (release.status === "available") {
+    return release.updateAvailable ? "Update available" : "Installer available";
+  }
+  if (release.status === "missing_asset") {
+    return "Installer pending";
+  }
+  return "Check failed";
 }
 
 function HeroIcon({
