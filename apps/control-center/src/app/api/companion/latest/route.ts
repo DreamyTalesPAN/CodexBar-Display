@@ -5,7 +5,6 @@ export const dynamic = "force-dynamic";
 const DEFAULT_RELEASE_API_URL =
   "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest";
 const INSTALLER_ASSET_NAME = "install-control-center-companion.sh";
-const PACKAGE_ASSET_RE = /^VibeTV-Companion-API-(arm64|amd64)-v.+\.pkg$/;
 
 type GitHubRelease = {
   tag_name?: string;
@@ -31,7 +30,10 @@ export async function GET(request: Request) {
     const installer = (release.assets || []).find(
       (asset) => asset.name === INSTALLER_ASSET_NAME,
     );
-    const packageDownloadUrls = findPackageDownloadUrls(release.assets || []);
+    const packageDownloadUrls = findPackageDownloadUrls(
+      release.assets || [],
+      latestVersion,
+    );
     const hasPackageDownload = Boolean(
       packageDownloadUrls.macosArm64 || packageDownloadUrls.macosAmd64,
     );
@@ -125,19 +127,29 @@ function normalizeVersion(version: string): string {
   return version.trim().replace(/^v/i, "");
 }
 
-function findPackageDownloadUrls(assets: GitHubReleaseAsset[]) {
+function findPackageDownloadUrls(
+  assets: GitHubReleaseAsset[],
+  version: string,
+) {
   const urls: NonNullable<CompanionReleaseInfo["packageDownloadUrls"]> = {};
+  if (!version) {
+    return urls;
+  }
+
+  const expectedNames = {
+    arm64: `VibeTV-Companion-API-arm64-v${version}.pkg`,
+    amd64: `VibeTV-Companion-API-amd64-v${version}.pkg`,
+  };
 
   for (const asset of assets) {
     const name = asset.name || "";
-    const match = name.match(PACKAGE_ASSET_RE);
-    if (!match || !asset.browser_download_url) {
+    if (!asset.browser_download_url) {
       continue;
     }
-    if (match[1] === "arm64") {
+    if (name === expectedNames.arm64) {
       urls.macosArm64 = asset.browser_download_url;
     }
-    if (match[1] === "amd64") {
+    if (name === expectedNames.amd64) {
       urls.macosAmd64 = asset.browser_download_url;
     }
   }

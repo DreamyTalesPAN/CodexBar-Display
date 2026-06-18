@@ -109,6 +109,8 @@ The Control Center Updates screen checks `/api/companion/latest`. That route rea
 - `VibeTV-Companion-API-amd64-v<version>.pkg`
 - `install-control-center-companion.sh`
 
+Package links must exactly match the latest release tag version. If the latest release is `v1.0.32`, the app only exposes `VibeTV-Companion-API-arm64-v1.0.32.pkg` and `VibeTV-Companion-API-amd64-v1.0.32.pkg`; older or mismatched package assets stay hidden.
+
 The app prefers the macOS package links when present and keeps the shell installer as a support fallback. Until the first release with those assets exists, the app shows the installer as pending instead of linking customers to a missing file.
 
 The Overview screen uses the same release check when Companion is missing, so a new customer does not have to discover the Updates tab first. That missing-Companion state explains that the Chrome local-network permission only allows the website to contact local services; the customer still needs to install/start Companion on the computer.
