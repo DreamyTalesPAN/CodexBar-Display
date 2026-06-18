@@ -100,16 +100,18 @@ Shopify does not host the ZIPs. Shopify only provides the `theme_id` for the cop
 ## Customer Flow
 
 1. Customer visits `vibetv.shop/themes`.
-2. Storefront lists `vibetv_theme` metaobjects.
-3. Each theme card uses its `theme_id` to render a copyable install command.
-4. Customer copies and runs the command:
+2. Storefront lists VibeTV theme products from Shopify.
+3. Each theme product links to `https://app.vibetv.shop/install/<theme_id>`.
+4. The hosted app opens a readiness check for the selected theme. It can show missing Companion, missing VibeTV, multiple-device selection, or write-gate locked states before any device write happens.
+5. Once Companion, VibeTV discovery and the write gate are ready, the customer can start install from the app.
+6. Companion reads the GitHub VibeTV catalog, resolves the Theme Pack ZIP from the `theme_id`, uploads assets to `/assets`, and activates the stored ThemeSpec via `/theme/active`. The regular daemon keeps sending real live frames after install.
+7. Firmware updates stay in a separate explicit update flow. The hosted install journey must not silently flash firmware while installing a theme.
+
+Legacy command-copy flow for support/testing:
 
 ```bash
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme clippy --target http://vibetv.local
 ```
-
-5. Companion reads the GitHub VibeTV catalog, resolves the Theme Pack ZIP from the `theme_id`, uploads assets to `/assets`, and activates the stored ThemeSpec via `/theme/active`. The regular daemon keeps sending real live frames after install.
-6. Firmware updates stay in a separate explicit update flow. The hosted install journey must not silently flash firmware while installing a theme.
 
 ## Hardware Test Guardrail
 

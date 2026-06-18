@@ -44,6 +44,7 @@ export type ThemeLibraryScreenProps = {
   themeInstallEnabled: boolean;
   busyAction: string | null;
   installStatus?: ThemeInstallStatus | null;
+  installEntry?: boolean;
   lastInstall?: ThemeInstallResult;
   onSelectTheme: (themeId: string) => void;
   onInstallTheme: (theme: ThemeProduct) => void;
@@ -58,6 +59,7 @@ export function ThemeLibraryScreen({
   busyAction,
   device,
   installStatus,
+  installEntry,
   lastInstall,
   companionStatus,
   themeInstallEnabled,
@@ -88,8 +90,14 @@ export function ThemeLibraryScreen({
             </HeroIcon>
             <div className="min-w-0">
               <h2 className="max-w-[520px] text-[clamp(2.7rem,4.8vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-                Choose a theme
+                {installEntry ? "Check install readiness" : "Choose a theme"}
               </h2>
+              {installEntry && displayTheme ? (
+                <p className="mt-4 max-w-[640px] text-base leading-7 text-[#444933]">
+                  {displayTheme.title} is selected. Install starts only when
+                  Companion, VibeTV discovery and the write gate are ready.
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
@@ -271,12 +279,26 @@ function ThemeListItem({
           })}
         </button>
       </div>
-      {activeInstall ? <InlineInstallProgress status={installStatus} /> : null}
+      {activeInstall ? (
+        <InlineInstallProgress
+          canRetry={!disabled}
+          onRetry={() => onInstallTheme(theme)}
+          status={installStatus}
+        />
+      ) : null}
     </li>
   );
 }
 
-function InlineInstallProgress({ status }: { status: ThemeInstallStatus }) {
+function InlineInstallProgress({
+  canRetry,
+  onRetry,
+  status,
+}: {
+  canRetry: boolean;
+  onRetry: () => void;
+  status: ThemeInstallStatus;
+}) {
   const failed = status.phase === "error";
   const progressWidth = failed ? "w-full" : "w-2/3";
 
@@ -301,6 +323,15 @@ function InlineInstallProgress({ status }: { status: ThemeInstallStatus }) {
             {status.logs.length} log lines
           </span>
         </summary>
+        {failed && canRetry ? (
+          <button
+            className="mt-3 border border-[#747A60] bg-[#F9F9F9] px-3 py-1 text-xs font-semibold text-[#1B1B1B] hover:bg-[#CCFF00]"
+            onClick={onRetry}
+            type="button"
+          >
+            Retry install
+          </button>
+        ) : null}
         <ol className="mt-3 divide-y divide-[#747A60] border-y border-[#747A60]">
           {status.logs.slice(-8).map((line, index) => (
             <li

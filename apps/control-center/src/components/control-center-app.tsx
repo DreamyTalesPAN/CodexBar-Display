@@ -673,6 +673,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onCheckBridge={checkCompanion}
           onInstallTheme={installTheme}
           onSelectTheme={setSelectedThemeId}
+          installEntry={Boolean(initialThemeId)}
           selectedTheme={selectedTheme}
           selectedThemeId={selectedThemeId}
           themeInstallEnabled={themeInstallEnabled}
