@@ -651,9 +651,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           busyAction={busyAction}
           companionUrl={COMPANION_ENDPOINT}
           device={device}
+          deviceTarget={deviceTarget}
           lastError={lastError}
           onBrightnessChange={setBrightness}
           onCheckBridge={checkCompanion}
+          onDeviceTargetChange={setDeviceTarget}
           onDiscoverDevice={discoverDevice}
           onPairDevice={pairDevice}
           onSaveBrightness={saveBrightness}

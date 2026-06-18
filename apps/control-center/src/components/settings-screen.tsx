@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  TriangleAlert,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -52,8 +53,10 @@ export type SettingsScreenProps = {
   busyAction: string | null;
   lastError?: SettingsApiError | null;
   companionUrl?: string;
+  deviceTarget: string;
   onCheckBridge: () => void;
-  onDiscoverDevice: () => void;
+  onDeviceTargetChange: (target: string) => void;
+  onDiscoverDevice: (targetOverride?: string) => void;
   onPairDevice: () => void;
   onBrightnessChange: (value: number) => void;
   onSaveBrightness: (value: number) => void;
@@ -63,8 +66,11 @@ export function SettingsScreen({
   device,
   brightness,
   busyAction,
+  lastError,
   companionUrl = "127.0.0.1:47832",
+  deviceTarget,
   onCheckBridge,
+  onDeviceTargetChange,
   onDiscoverDevice,
   onPairDevice,
   onBrightnessChange,
@@ -93,6 +99,38 @@ export function SettingsScreen({
               {companionUrl}
             </span>
           </div>
+          {lastError ? (
+            <div className="mb-5 flex gap-3 border border-[#747A60] bg-[#F9F9F9] p-4 text-sm text-[#444933]">
+              <TriangleAlert
+                className="mt-0.5 shrink-0 text-[#5E7200]"
+                size={18}
+                aria-hidden
+              />
+              <div className="min-w-0">
+                <div className="font-semibold text-[#1B1B1B]">
+                  {lastError.message}
+                </div>
+                <div className="mt-1 break-words">{lastError.nextAction}</div>
+              </div>
+            </div>
+          ) : null}
+          <div className="mb-4 grid gap-2">
+            <label
+              className="text-sm font-bold text-[#1B1B1B]"
+              htmlFor="device-target"
+            >
+              VibeTV target
+            </label>
+            <input
+              className="h-12 border border-[#747A60] bg-[#F9F9F9] px-3 font-mono text-sm text-[#1B1B1B] outline-none transition placeholder:text-[#747A60] focus:border-[#5E7200]"
+              id="device-target"
+              onChange={(event) => onDeviceTargetChange(event.target.value)}
+              placeholder="vibetv.local or 192.168.178.163"
+              spellCheck={false}
+              type="text"
+              value={deviceTarget}
+            />
+          </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <CommandButton
               busy={busyAction === "status"}
@@ -104,7 +142,7 @@ export function SettingsScreen({
               busy={busyAction === "discover"}
               icon={<Search size={18} aria-hidden />}
               label="Find VibeTV"
-              onClick={onDiscoverDevice}
+              onClick={() => onDiscoverDevice(deviceTarget)}
             />
             <CommandButton
               busy={busyAction === "pair"}

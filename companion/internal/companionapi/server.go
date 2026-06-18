@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -62,6 +63,17 @@ type apiError struct {
 type errorResponse struct {
 	OK    bool     `json:"ok"`
 	Error apiError `json:"error"`
+}
+
+type multipleDevicesError struct {
+	targets []string
+}
+
+func (e *multipleDevicesError) Error() string {
+	if e == nil || len(e.targets) == 0 {
+		return "multiple VibeTV devices found"
+	}
+	return fmt.Sprintf("multiple VibeTV devices found: %s", strings.Join(e.targets, ", "))
 }
 
 type deviceInfo struct {
@@ -248,7 +260,7 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 	}
 	target, hello, err := s.discover(r.Context(), cfg, req.Target)
 	if err != nil {
-		writeDeviceNotFound(w)
+		writeDiscoveryError(w, err)
 		return
 	}
 	cfg.DeviceTarget = target
@@ -301,19 +313,31 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	target := strings.TrimSpace(req.Target)
+	requestedTarget := strings.TrimSpace(req.Target)
+	target := requestedTarget
 	if target == "" {
 		target = strings.TrimSpace(cfg.DeviceTarget)
 	}
 	if target == "" {
 		discoveredTarget, _, discoverErr := s.discover(r.Context(), cfg, "")
 		if discoverErr != nil {
-			writeDeviceNotFound(w)
+			writeDiscoveryError(w, discoverErr)
 			return
 		}
 		target = discoveredTarget
 	}
 	token, err := s.pair(r.Context(), target)
+	if err != nil && requestedTarget == "" {
+		discoveredTarget, _, discoverErr := s.discover(r.Context(), cfg, "")
+		if discoverErr != nil {
+			writeDiscoveryError(w, discoverErr)
+			return
+		}
+		if discoveredTarget != target {
+			target = discoveredTarget
+			token, err = s.pair(r.Context(), target)
+		}
+	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", "Keep VibeTV powered on, then retry pairing.")
 		return
@@ -580,12 +604,26 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 	}()
 
 	var lastErr error
+	var matches []result
 	for res := range results {
 		if res.err == nil {
-			cancel()
-			return normalizeTarget(res.target), res.hello, nil
+			res.target = normalizeTarget(res.target)
+			matches = append(matches, res)
+			if len(matches) > 1 {
+				cancel()
+				targets := make([]string, 0, len(matches))
+				for _, match := range matches {
+					targets = append(targets, match.target)
+				}
+				sort.Strings(targets)
+				return "", protocol.DeviceHello{}, &multipleDevicesError{targets: targets}
+			}
+			continue
 		}
 		lastErr = res.err
+	}
+	if len(matches) == 1 {
+		return matches[0].target, matches[0].hello, nil
 	}
 	if lastErr == nil {
 		lastErr = errors.New("subnet discovery found no device")
@@ -742,6 +780,21 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 
 func writeDeviceNotFound(w http.ResponseWriter) {
 	writeError(w, http.StatusNotFound, "device_not_found", "No VibeTV device was found.", "Make sure VibeTV is powered on and run device discovery again.")
+}
+
+func writeDiscoveryError(w http.ResponseWriter, err error) {
+	var multiple *multipleDevicesError
+	if errors.As(err, &multiple) {
+		writeError(
+			w,
+			http.StatusConflict,
+			"multiple_devices_found",
+			"Multiple VibeTV devices were found.",
+			"Enter the exact VibeTV target in Settings, for example http://vibetv.local or http://<device-ip>, then run discovery again.",
+		)
+		return
+	}
+	writeDeviceNotFound(w)
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter) {

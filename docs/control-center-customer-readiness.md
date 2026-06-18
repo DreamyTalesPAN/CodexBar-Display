@@ -23,8 +23,10 @@ The browser permission prompt only allows the website to contact local services.
 4. Customer installs or starts the Companion.
 5. Companion runs as a macOS LaunchAgent and survives login/reboot.
 6. App searches for VibeTV on the same WiFi/LAN.
-7. App can read bridge status, device status, firmware, active theme, and settings.
-8. Theme install writes stay locked until the hardware-safe release gate is enabled.
+7. If exactly one VibeTV is found, the Companion stores that target for later checks.
+8. If multiple VibeTV devices are found, the Companion refuses to auto-pick one. The customer must enter the exact target in Settings, for example `vibetv.local` or `http://192.168.178.163`, then run discovery again.
+9. App can read bridge status, device status, firmware, active theme, and settings.
+10. Theme install writes stay locked until the hardware-safe release gate is enabled.
 
 ## macOS Companion API Installer
 
@@ -57,6 +59,24 @@ Check whether the API responds:
 ```bash
 curl -fsS http://127.0.0.1:47832/v1/status
 ```
+
+Run a read-only discovery:
+
+```bash
+curl -fsS -X POST http://127.0.0.1:47832/v1/device/discover \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+Run discovery against an exact target:
+
+```bash
+curl -fsS -X POST http://127.0.0.1:47832/v1/device/discover \
+  -H 'Content-Type: application/json' \
+  -d '{"target":"http://192.168.178.163"}'
+```
+
+If discovery returns `multiple_devices_found`, do not guess. Ask the customer which VibeTV they want to control and use the exact target in Settings.
 
 Inspect service state:
 

@@ -153,6 +153,77 @@ func TestDeviceDiscoverFallsBackToSubnetCandidateAndPersistsTarget(t *testing.T)
 	}
 }
 
+func TestDeviceDiscoverReturnsConflictForMultipleSubnetCandidates(t *testing.T) {
+	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gone", http.StatusServiceUnavailable)
+	}))
+	defer stale.Close()
+
+	first := newHelloDeviceServer(t)
+	defer first.Close()
+	second := newHelloDeviceServer(t)
+	defer second.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: stale.URL})
+	server.subnetTargets = func() []string {
+		return []string{first.URL, second.URL}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/discover", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "multiple_devices_found" {
+		t.Fatalf("unexpected multiple-devices response: %+v", got)
+	}
+	if got.Error.NextAction == "" {
+		t.Fatalf("expected next action for manual target entry")
+	}
+}
+
+func TestDevicePairReturnsConflictForMultipleDiscoveryCandidates(t *testing.T) {
+	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gone", http.StatusServiceUnavailable)
+	}))
+	defer stale.Close()
+
+	first := newHelloDeviceServer(t)
+	defer first.Close()
+	second := newHelloDeviceServer(t)
+	defer second.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: stale.URL})
+	server.subnetTargets = func() []string {
+		return []string{first.URL, second.URL}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/pair", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "multiple_devices_found" {
+		t.Fatalf("unexpected multiple-devices response: %+v", got)
+	}
+}
+
 func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	t.Setenv(themeInstallEnv, "1")
 
@@ -365,4 +436,15 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		return nil
 	}
 	return server
+}
+
+func newHelloDeviceServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
 }
