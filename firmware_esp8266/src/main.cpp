@@ -68,6 +68,7 @@ const char kMdnsName[] = "vibetv";
 const char kMdnsHost[] = "vibetv.local";
 const char kDeviceSettingsPath[] = "/s";
 const char kDeviceAuthTokenPath[] = "/auth";
+const char kActiveThemeSpecPathFile[] = "/theme-active";
 const char kDeviceAuthHeader[] = "X-VibeTV-Token";
 const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
 const char* const kFirmwareUpdateNoticeTexts[] = {
@@ -1311,6 +1312,10 @@ void handleHealth() {
   out += jsonEscape(snapshot.activeTheme);
   out += "\",\"themeSpec\":{\"active\":";
   out += snapshot.themeSpecActive ? "true" : "false";
+  out += ",\"path\":";
+  appendJSONNullableString(out, activeThemeSpecPath);
+  out += ",\"hash\":";
+  appendJSONNullableString(out, activeThemeSpecHash);
   out += ",\"renderOk\":";
   out += snapshot.themeSpecRenderOk ? "true" : "false";
   out += ",\"renderFailures\":";
@@ -1635,6 +1640,37 @@ void handleAssetDelete() {
 }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+bool readActiveThemeSpecPath(String& path) {
+  path = "";
+  if (!LittleFS.begin() || !LittleFS.exists(kActiveThemeSpecPathFile)) {
+    return false;
+  }
+  File file = LittleFS.open(kActiveThemeSpecPathFile, "r");
+  if (!file) {
+    return false;
+  }
+  path = file.readString();
+  file.close();
+  path.trim();
+  return isSafeAssetPath(path) && path.startsWith("/themes/");
+}
+
+bool saveActiveThemeSpecPath(const String& path) {
+  if (!isSafeAssetPath(path) || !path.startsWith("/themes/")) {
+    return false;
+  }
+  if (!LittleFS.begin()) {
+    return false;
+  }
+  File file = LittleFS.open(kActiveThemeSpecPathFile, "w");
+  if (!file) {
+    return false;
+  }
+  const size_t written = file.print(path);
+  file.close();
+  return written == path.length();
+}
+
 bool readStoredThemeSpec(const String& path, String& raw, String& error) {
   if (!isSafeAssetPath(path) || !path.startsWith("/themes/")) {
     error = "invalid theme path";
@@ -1775,6 +1811,10 @@ bool activateStoredThemePath(const String& path, String& themeId, int& themeRev,
   if (!themeSpecMetadata(raw, themeId, themeRev, fallbackTheme, error)) {
     return false;
   }
+  if (!saveActiveThemeSpecPath(path)) {
+    error = "save active theme failed";
+    return false;
+  }
 
   activateStoredThemeSpec(path, raw, themeId, themeRev, fallbackTheme);
   return true;
@@ -1846,14 +1886,40 @@ void handleThemeActive() {
 }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-void loadDefaultStoredThemeSpecCache() {
+bool loadStoredThemeSpecCacheFromPath(const String& path) {
   String error;
-  if (!readStoredThemeSpec(kDefaultThemeSpecPath, runtimeCtx.runtime.cachedThemeSpecRaw, error)) {
-    return;
+  String raw;
+  if (!readStoredThemeSpec(path, raw, error)) {
+    Serial.printf("theme_cache_load_failed path=%s err=%s\n", path.c_str(), error.c_str());
+    return false;
   }
 
-  runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
-  runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
+  String themeId;
+  int themeRev = 0;
+  String fallbackTheme;
+  if (!themeSpecMetadata(raw, themeId, themeRev, fallbackTheme, error)) {
+    Serial.printf("theme_cache_load_failed path=%s err=%s\n", path.c_str(), error.c_str());
+    return false;
+  }
+
+  runtimeCtx.runtime.cachedThemeId = themeId;
+  runtimeCtx.runtime.cachedThemeRev = themeRev;
+  runtimeCtx.runtime.cachedThemeSpecRaw = raw;
+  activeThemeSpecPath = path;
+  activeThemeSpecHash = hashHex8(raw);
+  Serial.printf("theme_cache_loaded path=%s id=%s rev=%d\n", path.c_str(), themeId.c_str(), themeRev);
+  return true;
+}
+
+void loadDefaultStoredThemeSpecCache() {
+  String activePath;
+  if (readActiveThemeSpecPath(activePath) && loadStoredThemeSpecCacheFromPath(activePath)) {
+    return;
+  }
+  if (loadStoredThemeSpecCacheFromPath(kDefaultThemeSpecPath)) {
+    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
+    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
+  }
 }
 #endif
 
