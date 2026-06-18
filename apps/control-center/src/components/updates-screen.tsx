@@ -2,6 +2,7 @@
 
 import { Check, Monitor, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
+import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 
 export type UpdatesCompanionStatus = "unknown" | "online" | "missing";
 
@@ -15,19 +16,38 @@ export type UpdatesScreenProps = {
   companionStatus: UpdatesCompanionStatus;
   device: UpdatesDeviceInfo | null;
   companionVersion?: string;
-  onCheckBridge?: () => void;
+  firmwareUpdate?: FirmwareUpdateInfo | null;
+  onCheckUpdates?: () => void;
   busyAction?: string | null;
 };
 
-const LATEST_FIRMWARE_VERSION = "1.0.34";
-
 export function UpdatesScreen({
   device,
-  onCheckBridge,
+  firmwareUpdate,
+  onCheckUpdates,
   busyAction,
 }: UpdatesScreenProps) {
-  const installedFirmware = device?.firmware || LATEST_FIRMWARE_VERSION;
-  const updateAvailable = installedFirmware !== LATEST_FIRMWARE_VERSION;
+  const installedFirmware =
+    firmwareUpdate?.installedFirmware || device?.firmware || "Unknown";
+  const latestFirmware = firmwareUpdate?.latestFirmware || "Checking";
+  const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
+  const checking = Boolean(device?.firmware && !firmwareUpdate);
+  const refreshing = busyAction === "firmware-check";
+  const checkFailed = firmwareUpdate?.status === "check_failed";
+  const title = checking
+    ? "Checking updates"
+    : checkFailed
+      ? "Update check failed"
+      : updateAvailable
+        ? "Update available"
+        : "Up to date";
+  const status = checking
+    ? "Checking"
+    : checkFailed
+      ? "Check failed"
+      : updateAvailable
+        ? "Update available"
+        : "Up to date";
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -42,7 +62,7 @@ export function UpdatesScreen({
           </HeroIcon>
           <div className="min-w-0">
             <h2 className="max-w-[560px] text-[clamp(3rem,5vw,5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-              {updateAvailable ? "Update available" : "Up to date"}
+              {title}
             </h2>
           </div>
         </div>
@@ -63,31 +83,29 @@ export function UpdatesScreen({
             <FirmwareRow
               icon={<RefreshCw size={20} aria-hidden />}
               label="Available firmware"
-              value={LATEST_FIRMWARE_VERSION}
+              value={latestFirmware}
             />
             <FirmwareRow
               icon={<Check size={20} aria-hidden />}
               label="Status"
-              value={updateAvailable ? "Update available" : "Up to date"}
+              value={status}
             />
           </dl>
 
           <div className="flex items-start lg:justify-end">
             <button
               className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#CCFF00] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#ABD600] disabled:bg-[#F9F9F9] disabled:text-[#444933] disabled:opacity-80"
-              disabled={!updateAvailable || busyAction === "status"}
-              onClick={onCheckBridge}
+              disabled={checking || refreshing || !device?.firmware}
+              onClick={onCheckUpdates}
               type="button"
             >
-              {busyAction === "status" ? (
+              {checking || refreshing ? (
                 <RefreshCw className="animate-spin" size={18} />
               ) : (
                 <RefreshCw size={18} aria-hidden />
               )}
               <span>
-                {updateAvailable
-                  ? "Update firmware"
-                  : "Firmware up to date"}
+                {checking || refreshing ? "Checking updates" : "Check for updates"}
               </span>
             </button>
           </div>

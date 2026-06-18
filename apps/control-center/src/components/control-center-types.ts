@@ -37,6 +37,7 @@ export type DeviceInfo = {
   paired?: boolean;
   board?: string;
   firmware?: string;
+  activeTheme?: string;
   capabilities?: {
     display?: {
       brightness?: {

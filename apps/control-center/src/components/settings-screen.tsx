@@ -84,25 +84,6 @@ export function SettingsScreen({
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="border-b border-[#747A60] py-8">
-        <h3 className="mb-5 text-base font-bold text-[#1B1B1B]">
-          Device facts
-        </h3>
-        <dl className="divide-y divide-[#747A60] border-y border-[#747A60]">
-          <Fact label="Target" value={device?.target || "Not reported"} />
-          <Fact label="Board" value={device?.board || "Not reported"} />
-          <Fact label="Firmware" value={device?.firmware || "Not reported"} />
-          <Fact
-            label="Transport"
-            value={device?.capabilities?.transport?.active || "Not reported"}
-          />
-          <Fact
-            label="ThemeSpec"
-            value={themeSpecReady ? "Ready" : "Check required"}
-          />
-        </dl>
-      </section>
-
-      <section className="border-b border-[#747A60] py-8">
         <div className="min-w-0">
           <div className="mb-5 flex items-center justify-between gap-4">
             <h3 className="text-base font-bold text-[#1B1B1B]">
@@ -134,6 +115,25 @@ export function SettingsScreen({
             />
           </div>
         </div>
+      </section>
+
+      <section className="border-b border-[#747A60] py-8">
+        <h3 className="mb-5 text-base font-bold text-[#1B1B1B]">
+          Device facts
+        </h3>
+        <dl className="divide-y divide-[#747A60] border-y border-[#747A60]">
+          <Fact label="Target" value={device?.target || "Not reported"} />
+          <Fact label="Board" value={device?.board || "Not reported"} />
+          <Fact label="Firmware" value={device?.firmware || "Not reported"} />
+          <Fact
+            label="Transport"
+            value={device?.capabilities?.transport?.active || "Not reported"}
+          />
+          <Fact
+            label="ThemeSpec"
+            value={themeSpecReady ? "Ready" : "Check required"}
+          />
+        </dl>
       </section>
 
       <section className="border-b border-[#747A60] py-8">

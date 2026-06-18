@@ -65,6 +65,7 @@ type deviceInfo struct {
 	Paired       bool                      `json:"paired,omitempty"`
 	Board        string                    `json:"board,omitempty"`
 	Firmware     string                    `json:"firmware,omitempty"`
+	ActiveTheme  string                    `json:"activeTheme,omitempty"`
 	Capabilities *protocol.CapabilityBlock `json:"capabilities,omitempty"`
 }
 
@@ -340,15 +341,17 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	settings, err := s.getSettings(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
+	health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "settings_read_failed", "Could not read VibeTV settings.", "Keep VibeTV powered on and retry.")
 		return
 	}
+	device := deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello)
+	device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)
 	writeJSON(w, http.StatusOK, settingsResponse{
 		OK:       true,
-		Settings: settings,
-		Device:   deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello),
+		Settings: health.Settings,
+		Device:   device,
 	})
 }
 
@@ -432,13 +435,15 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if req.SkipFirmwareUpdate != nil {
 		skipFirmwareUpdate = *req.SkipFirmwareUpdate
 	}
+	var installLog bytes.Buffer
 	result, err := s.installTheme(r.Context(), themeinstall.Options{
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
 		CatalogURL:         strings.TrimSpace(req.CatalogURL),
 		Target:             targetWithToken(cfg.DeviceTarget, cfg.DeviceToken),
 		SkipFirmwareUpdate: skipFirmwareUpdate,
-		Out:                io.Discard,
+		Verbose:            true,
+		Out:                &installLog,
 	})
 	if err != nil {
 		writeInstallError(w, err)
@@ -447,7 +452,20 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool                `json:"ok"`
 		Result themeinstall.Result `json:"result"`
-	}{OK: true, Result: result})
+		Logs   []string            `json:"logs,omitempty"`
+	}{OK: true, Result: result, Logs: splitInstallLog(installLog.String())})
+}
+
+func splitInstallLog(log string) []string {
+	lines := strings.Split(log, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 func (s *Server) config() (runtimeconfig.Config, error) {
@@ -502,14 +520,19 @@ func (s *Server) getHello(ctx context.Context, target, token string) (protocol.D
 	return hello.Normalize(), nil
 }
 
-func (s *Server) getSettings(ctx context.Context, target, token string) (deviceSettings, error) {
-	var health struct {
-		Settings deviceSettings `json:"settings"`
-	}
+type deviceHealth struct {
+	Settings deviceSettings `json:"settings"`
+	Display  struct {
+		ActiveTheme string `json:"activeTheme"`
+	} `json:"display"`
+}
+
+func (s *Server) getHealth(ctx context.Context, target, token string) (deviceHealth, error) {
+	var health deviceHealth
 	if err := s.doJSON(ctx, http.MethodGet, target, "/health", token, nil, &health); err != nil {
-		return deviceSettings{}, err
+		return deviceHealth{}, err
 	}
-	return health.Settings, nil
+	return health, nil
 }
 
 func (s *Server) updateBrightness(ctx context.Context, target, token string, brightness int) (deviceSettings, error) {

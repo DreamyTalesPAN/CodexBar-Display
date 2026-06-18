@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
+import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type {
   ApiError,
   CompanionStatus,
@@ -29,6 +30,7 @@ type OverviewScreenProps = {
   companionEndpoint?: string;
   lastError?: ApiError | null;
   lastCheckedAt?: string | null;
+  firmwareUpdate?: FirmwareUpdateInfo | null;
   events?: ControlCenterEvent[];
 };
 
@@ -40,10 +42,12 @@ export function OverviewScreen({
   companionEndpoint = "http://127.0.0.1:47832",
   lastError,
   lastCheckedAt,
+  firmwareUpdate,
   events,
 }: OverviewScreenProps) {
   const connected = Boolean(device?.connected);
   const hero = buildHeroCopy({ companionStatus, connected, lastError });
+  const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
   const displayEvents = buildSessionEvents({
     companionStatus,
     device,
@@ -78,7 +82,7 @@ export function OverviewScreen({
               value={labelForDevice(deviceState, device)}
             />
             <StatusRow
-              badge={device?.firmware ? "Current" : undefined}
+              badge={firmwareUpdateAvailable ? "Update" : undefined}
               icon={<ArrowUpFromLine size={18} aria-hidden />}
               label="Firmware"
               value={device?.firmware || "Check required"}

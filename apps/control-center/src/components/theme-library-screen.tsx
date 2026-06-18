@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Library, Monitor, X } from "lucide-react";
+import { Library, Monitor, RefreshCw, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import type { ThemeProduct } from "@/lib/themes";
@@ -13,6 +13,7 @@ export type ThemeLibraryDeviceInfo = {
   paired?: boolean;
   board?: string;
   firmware?: string;
+  activeTheme?: string;
 };
 
 export type ThemeInstallResult = {
@@ -23,6 +24,17 @@ export type ThemeInstallResult = {
   themeRev: number;
 };
 
+export type ThemeInstallStatus = {
+  phase: "installing" | "complete" | "error";
+  themeId: string;
+  title: string;
+  startedAt: string;
+  finishedAt?: string;
+  logs: string[];
+  result?: ThemeInstallResult;
+  error?: string;
+};
+
 export type ThemeLibraryScreenProps = {
   themes: ThemeProduct[];
   selectedTheme?: ThemeProduct;
@@ -31,9 +43,10 @@ export type ThemeLibraryScreenProps = {
   device: ThemeLibraryDeviceInfo | null;
   themeInstallEnabled: boolean;
   busyAction: string | null;
+  installStatus?: ThemeInstallStatus | null;
   lastInstall?: ThemeInstallResult;
   onSelectTheme: (themeId: string) => void;
-  onInstallTheme: () => void;
+  onInstallTheme: (theme: ThemeProduct) => void;
   onDiscoverDevice?: () => void;
 };
 
@@ -41,7 +54,13 @@ export function ThemeLibraryScreen({
   themes,
   selectedTheme,
   selectedThemeId,
+  busyAction,
+  device,
+  installStatus,
+  lastInstall,
+  themeInstallEnabled,
   onSelectTheme,
+  onInstallTheme,
 }: ThemeLibraryScreenProps) {
   const visibleThemes = themes.length ? themes : MOCK_THEMES;
   const [previewTheme, setPreviewTheme] = useState<ThemeProduct | null>(null);
@@ -74,36 +93,20 @@ export function ThemeLibraryScreen({
 
         <ul className="divide-y divide-[#747A60] border-y border-[#747A60]">
           {visibleThemes.map((theme) => (
-            <li
-              className={`grid grid-cols-[96px_minmax(0,1fr)_auto] items-center gap-5 py-4 transition ${
-                theme.themeId === displayTheme?.themeId ? "bg-[#EEEEEE]" : ""
-              }`}
+            <ThemeListItem
+              busyAction={busyAction}
+              device={device}
+              displayThemeId={displayTheme?.themeId}
+              installStatus={installStatus}
               key={theme.themeId}
-            >
-              <button
-                aria-label={`Preview ${theme.title}`}
-                className="text-left"
-                onClick={() => setPreviewTheme(theme)}
-                type="button"
-              >
-                <ThemePreview theme={theme} />
-              </button>
-              <div className="min-w-0">
-                <div className="truncate text-lg font-bold text-[#1B1B1B]">
-                  {theme.title}
-                </div>
-                <div className="mt-1 line-clamp-1 text-sm leading-6 text-[#444933]">
-                  {theme.description || "Theme from the VibeTV catalog."}
-                </div>
-              </div>
-              <button
-                className="mr-3 h-10 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00]"
-                onClick={() => onSelectTheme(theme.themeId)}
-                type="button"
-              >
-                Install
-              </button>
-            </li>
+              lastInstall={lastInstall}
+              onInstallTheme={onInstallTheme}
+              onPreviewTheme={setPreviewTheme}
+              onSelectTheme={onSelectTheme}
+              selectedThemeId={selectedThemeId}
+              theme={theme}
+              themeInstallEnabled={themeInstallEnabled}
+            />
           ))}
         </ul>
       </section>
@@ -137,6 +140,145 @@ export function ThemeLibraryScreen({
   );
 }
 
+function ThemeListItem({
+  busyAction,
+  device,
+  displayThemeId,
+  installStatus,
+  lastInstall,
+  onInstallTheme,
+  onPreviewTheme,
+  onSelectTheme,
+  selectedThemeId,
+  theme,
+  themeInstallEnabled,
+}: {
+  busyAction: string | null;
+  device: ThemeLibraryDeviceInfo | null;
+  displayThemeId?: string;
+  installStatus?: ThemeInstallStatus | null;
+  lastInstall?: ThemeInstallResult;
+  onInstallTheme: (theme: ThemeProduct) => void;
+  onPreviewTheme: (theme: ThemeProduct) => void;
+  onSelectTheme: (themeId: string) => void;
+  selectedThemeId: string;
+  theme: ThemeProduct;
+  themeInstallEnabled: boolean;
+}) {
+  const installed =
+    lastInstall?.themeId === theme.themeId || device?.activeTheme === theme.themeId;
+  const installing = busyAction === "install" && theme.themeId === selectedThemeId;
+  const activeInstall =
+    installStatus?.themeId === theme.themeId &&
+    installStatus.phase !== "complete";
+
+  return (
+    <li className={theme.themeId === displayThemeId ? "bg-[#EEEEEE]" : ""}>
+      <div className="grid grid-cols-[96px_minmax(0,1fr)_auto] items-center gap-5 py-4 transition">
+        <button
+          aria-label={`Preview ${theme.title}`}
+          className="text-left"
+          onClick={() => onPreviewTheme(theme)}
+          type="button"
+        >
+          <ThemePreview theme={theme} />
+        </button>
+        <div className="min-w-0">
+          <div className="truncate text-lg font-bold text-[#1B1B1B]">
+            {theme.title}
+          </div>
+          <div className="mt-1 line-clamp-1 text-sm leading-6 text-[#444933]">
+            {theme.description || "Theme from the VibeTV catalog."}
+          </div>
+        </div>
+        <button
+          className="mr-3 h-10 min-w-[96px] border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-70"
+          disabled={
+            installing ||
+            installed ||
+            !device?.connected ||
+            !themeInstallEnabled ||
+            !theme.packUrl
+          }
+          onClick={() => {
+            onSelectTheme(theme.themeId);
+            onInstallTheme(theme);
+          }}
+          type="button"
+        >
+          {labelForInstallButton({
+            busy: busyAction === "install",
+            installed,
+            selected: theme.themeId === selectedThemeId,
+          })}
+        </button>
+      </div>
+      {activeInstall ? <InlineInstallProgress status={installStatus} /> : null}
+    </li>
+  );
+}
+
+function InlineInstallProgress({ status }: { status: ThemeInstallStatus }) {
+  const failed = status.phase === "error";
+  const progressWidth = failed ? "w-full" : "w-2/3";
+
+  return (
+    <div className="px-0 pb-4">
+      <div className="mr-3 h-2 overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
+        <div
+          className={`h-full bg-[#CCFF00] ${progressWidth} ${
+            failed ? "" : "animate-pulse"
+          }`}
+        />
+      </div>
+      <details className="mr-3 mt-3">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-bold text-[#1B1B1B]">
+          {failed ? (
+            <X size={16} aria-hidden />
+          ) : (
+            <RefreshCw className="animate-spin" size={16} aria-hidden />
+          )}
+          <span>{failed ? "Install failed" : "Installing"}</span>
+          <span className="font-normal text-[#444933]">
+            {status.logs.length} log lines
+          </span>
+        </summary>
+        <ol className="mt-3 divide-y divide-[#747A60] border-y border-[#747A60]">
+          {status.logs.slice(-8).map((line, index) => (
+            <li
+              className="grid grid-cols-[32px_minmax(0,1fr)] gap-3 py-2 text-sm text-[#444933]"
+              key={`${line}-${index}`}
+            >
+              <span className="font-mono text-xs text-[#506600]">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <span className="break-words">{line}</span>
+            </li>
+          ))}
+        </ol>
+      </details>
+    </div>
+  );
+}
+
+function labelForInstallButton({
+  busy,
+  installed,
+  selected,
+}: {
+  busy: boolean;
+  installed: boolean;
+  selected: boolean;
+}) {
+  if (busy && selected) {
+    return "Installing";
+  }
+  if (installed) {
+    return "Installed";
+  }
+  return "Install";
+}
+
 const MOCK_THEMES: ThemeProduct[] = [
   {
     id: "mock-synthwave",
@@ -147,7 +289,7 @@ const MOCK_THEMES: ThemeProduct[] = [
     themeId: "synthwave",
     themeVersion: "1.0",
     packUrl: "mock://themes/synthwave",
-    requiresFirmware: "1.0.34",
+    requiresFirmware: "1.0.30",
     source: "fallback",
   },
   {
@@ -159,7 +301,7 @@ const MOCK_THEMES: ThemeProduct[] = [
     themeId: "claude-creature",
     themeVersion: "1.0",
     packUrl: "mock://themes/claude-creature",
-    requiresFirmware: "1.0.34",
+    requiresFirmware: "1.0.30",
     source: "fallback",
   },
   {
@@ -171,7 +313,7 @@ const MOCK_THEMES: ThemeProduct[] = [
     themeId: "clippy",
     themeVersion: "1.0",
     packUrl: "mock://themes/clippy",
-    requiresFirmware: "1.0.34",
+    requiresFirmware: "1.0.30",
     source: "fallback",
   },
   {
@@ -183,7 +325,7 @@ const MOCK_THEMES: ThemeProduct[] = [
     themeId: "cozy-meadow",
     themeVersion: "1.0",
     packUrl: "mock://themes/cozy-meadow",
-    requiresFirmware: "1.0.34",
+    requiresFirmware: "1.0.30",
     source: "fallback",
   },
   {
@@ -195,7 +337,7 @@ const MOCK_THEMES: ThemeProduct[] = [
     themeId: "mini-classic",
     themeVersion: "1.0",
     packUrl: "mock://themes/mini-classic",
-    requiresFirmware: "1.0.34",
+    requiresFirmware: "1.0.30",
     source: "fallback",
   },
 ];

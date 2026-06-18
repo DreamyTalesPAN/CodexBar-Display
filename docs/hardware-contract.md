@@ -64,6 +64,8 @@ Companion negotiation:
 - ThemeSpec v1 (declarative JSON):
   - validated by companion before send
   - checked against capability limits (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`)
+  - active stored ThemeSpec path is persisted on the device, so the last activated ThemeSpec is restored after reboot before live usage frames arrive
+  - if the persisted active ThemeSpec is missing or invalid, firmware falls back to the built-in `mini-classic` ThemeSpec cache
   - no user-script execution on firmware
 
 ## Local USB ThemeSpec Flow

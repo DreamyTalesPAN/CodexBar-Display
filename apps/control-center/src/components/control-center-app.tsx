@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type { ThemeCatalogResponse } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import type {
@@ -39,11 +40,23 @@ type InstallResponse = {
     activePath: string;
     themeRev: number;
   };
+  logs?: string[];
 };
 
 type Props = {
   catalog: ThemeCatalogResponse;
   initialThemeId?: string;
+};
+
+type ThemeInstallStatus = {
+  phase: "installing" | "complete" | "error";
+  themeId: string;
+  title: string;
+  startedAt: string;
+  finishedAt?: string;
+  logs: string[];
+  result?: InstallResponse["result"];
+  error?: string;
 };
 
 export function ControlCenterApp({ catalog, initialThemeId }: Props) {
@@ -71,7 +84,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
+  const [themeInstallStatus, setThemeInstallStatus] =
+    useState<ThemeInstallStatus | null>(null);
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+  const [firmwareUpdate, setFirmwareUpdate] =
+    useState<FirmwareUpdateInfo | null>(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
@@ -124,6 +141,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [],
   );
+
+  const refreshCompanionFeatures = useCallback(async () => {
+    try {
+      const payload = await runCompanion<{
+        companion?: CompanionInfo;
+      }>("/v1/status");
+      setCompanionStatus("online");
+      setCompanionInfo(payload.companion || null);
+      setThemeInstallEnabled(
+        Boolean(payload.companion?.features?.themeInstallEnabled),
+      );
+    } catch {
+      setThemeInstallEnabled(false);
+    }
+  }, [runCompanion]);
 
   const refreshDevice = useCallback(
     async ({ quiet = false }: { quiet?: boolean } = {}) => {
@@ -180,6 +212,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (payload.device) {
         setDevice(payload.device);
         setDeviceState(payload.device.paired ? "paired" : "online");
+        if (
+          payload.device.activeTheme &&
+          catalog.themes.some(
+            (theme) => theme.themeId === payload.device?.activeTheme,
+          )
+        ) {
+          setSelectedThemeId(payload.device.activeTheme);
+        }
         if (payload.device.target) {
           setDeviceTarget(payload.device.target);
           rememberDeviceTarget(payload.device.target);
@@ -207,7 +247,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } finally {
       setBusyAction(null);
     }
-  }, [addEvent, runCompanion]);
+  }, [addEvent, catalog.themes, runCompanion]);
 
   const checkCompanion = useCallback(async () => {
     setBusyAction("status");
@@ -277,6 +317,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         },
       );
       setCompanionStatus("online");
+      void refreshCompanionFeatures();
       setDeviceState(payload.device.paired ? "paired" : "online");
       setDevice(payload.device);
       if (payload.device.target) {
@@ -306,7 +347,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } finally {
       setBusyAction(null);
     }
-  }, [addEvent, deviceTarget, loadSettings, runCompanion]);
+  }, [
+    addEvent,
+    deviceTarget,
+    loadSettings,
+    refreshCompanionFeatures,
+    runCompanion,
+  ]);
 
   const pairDevice = useCallback(async () => {
     setBusyAction("pair");
@@ -320,6 +367,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         },
       );
       setDeviceState("paired");
+      void refreshCompanionFeatures();
       setDevice(payload.device);
       if (payload.device.target) {
         setDeviceTarget(payload.device.target);
@@ -344,7 +392,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } finally {
       setBusyAction(null);
     }
-  }, [addEvent, deviceTarget, loadSettings, runCompanion]);
+  }, [
+    addEvent,
+    deviceTarget,
+    loadSettings,
+    refreshCompanionFeatures,
+    runCompanion,
+  ]);
 
   const saveBrightness = useCallback(
     async (value: number) => {
@@ -389,15 +443,30 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [addEvent, runCompanion],
   );
 
-  const installTheme = useCallback(async () => {
-    if (!selectedTheme) {
+  const installTheme = useCallback(async (theme = selectedTheme) => {
+    if (!theme) {
       return;
     }
     setBusyAction("install");
     setLastInstall(undefined);
+    setSelectedThemeId(theme.themeId);
+    const startedAt = formatTime();
+    const initialLogs = [
+      "Install request sent to Companion.",
+      `Theme: ${theme.title}`,
+      theme.packUrl ? `Pack URL: ${theme.packUrl}` : "Pack URL missing.",
+    ];
+    setThemeInstallStatus({
+      phase: "installing",
+      themeId: theme.themeId,
+      title: theme.title,
+      startedAt,
+      logs: initialLogs,
+    });
     addEvent({
       label: "Theme install started",
-      detail: `${selectedTheme.title} is ready for device install.`,
+      detail: `${theme.title} is ready for device install.`,
+      at: startedAt,
       tone: "unknown",
     });
     try {
@@ -406,16 +475,34 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         {
           method: "POST",
           body: JSON.stringify({
-            themeId: selectedTheme.themeId,
-            packUrl: selectedTheme.packUrl,
+            themeId: theme.themeId,
+            packUrl: theme.packUrl,
             skipFirmwareUpdate: true,
           }),
         },
       );
       setLastInstall(payload.result);
+      const finishedAt = formatTime();
+      setThemeInstallStatus({
+        phase: "complete",
+        themeId: theme.themeId,
+        title: theme.title,
+        startedAt,
+        finishedAt,
+        logs: [...initialLogs, ...(payload.logs || [])],
+        result: payload.result,
+      });
+      if (payload.result?.themeId) {
+        setDevice((current) =>
+          current
+            ? { ...current, activeTheme: payload.result?.themeId }
+            : current,
+        );
+      }
       addEvent({
         label: "Theme installed",
-        detail: payload.result?.name || selectedTheme.title,
+        detail: payload.result?.name || theme.title,
+        at: finishedAt,
         tone: "ready",
       });
       await loadSettings();
@@ -425,6 +512,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         "Theme install needs attention.",
       );
       setLastError(normalized);
+      setThemeInstallStatus({
+        phase: "error",
+        themeId: theme.themeId,
+        title: theme.title,
+        startedAt,
+        finishedAt: formatTime(),
+        logs: [...initialLogs, normalized.message, normalized.nextAction],
+        error: normalized.nextAction,
+      });
       addEvent({
         label: "Theme install protected",
         detail: normalized.nextAction,
@@ -446,12 +542,81 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return () => window.clearTimeout(timer);
   }, [checkCompanion, deviceTarget, discoverDevice]);
 
+  const deviceBoard = device?.board;
+  const deviceFirmware = device?.firmware;
+
+  const refreshFirmwareUpdate = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!deviceBoard || !deviceFirmware) {
+        setFirmwareUpdate(null);
+        return;
+      }
+
+      const params = new URLSearchParams({
+        board: deviceBoard,
+        firmware: deviceFirmware,
+      });
+
+      try {
+        const response = await fetch(`/api/firmware/latest?${params.toString()}`, {
+          signal,
+        });
+        if (!response.ok) {
+          throw new Error(`firmware check failed: ${response.status}`);
+        }
+        setFirmwareUpdate((await response.json()) as FirmwareUpdateInfo);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        setFirmwareUpdate({
+          checkedAt: new Date().toISOString(),
+          installedFirmware: deviceFirmware,
+          updateAvailable: false,
+          status: "check_failed",
+          message: "Firmware release check failed.",
+        });
+      }
+    },
+    [deviceBoard, deviceFirmware],
+  );
+
+  const checkFirmwareUpdates = useCallback(async () => {
+    setBusyAction("firmware-check");
+    try {
+      await refreshFirmwareUpdate();
+    } finally {
+      setBusyAction(null);
+    }
+  }, [refreshFirmwareUpdate]);
+
+  useEffect(() => {
+    if (!deviceBoard || !deviceFirmware) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void refreshFirmwareUpdate(controller.signal);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [deviceBoard, deviceFirmware, refreshFirmwareUpdate]);
+
   const logs = events.map((event) => ({
     id: event.id,
     label: event.label,
     detail: event.detail,
     timestamp: event.at,
   }));
+  const effectiveFirmwareUpdate =
+    firmwareUpdate?.installedFirmware === device?.firmware
+      ? firmwareUpdate
+      : null;
+  const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
 
   return (
     <ControlCenterShell
@@ -460,6 +625,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       companionStatus={companionStatus}
       device={device}
       deviceState={deviceState}
+      firmwareUpdateAvailable={firmwareUpdateAvailable}
       onTabChange={setActiveTab}
     >
       {activeTab === "overview" ? (
@@ -471,6 +637,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           events={events.slice(0, 4)}
           lastCheckedAt={lastCheckedAt}
           lastError={lastError}
+          firmwareUpdate={effectiveFirmwareUpdate}
           themeInstallEnabled={themeInstallEnabled}
         />
       ) : null}
@@ -495,6 +662,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           busyAction={busyAction}
           companionStatus={companionStatus}
           device={device}
+          installStatus={themeInstallStatus}
           lastInstall={lastInstall}
           onDiscoverDevice={discoverDevice}
           onInstallTheme={installTheme}
@@ -512,7 +680,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           companionStatus={companionStatus}
           companionVersion={companionInfo?.version}
           device={device}
-          onCheckBridge={checkCompanion}
+          firmwareUpdate={effectiveFirmwareUpdate}
+          onCheckUpdates={checkFirmwareUpdates}
         />
       ) : null}
 

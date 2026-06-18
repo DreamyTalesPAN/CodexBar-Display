@@ -2,13 +2,11 @@
 
 import {
   Activity,
-  ChevronDown,
   CircleHelp,
   ExternalLink,
   FileText,
   Grid2X2,
   RefreshCw,
-  Settings,
   SlidersHorizontal,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -28,6 +26,7 @@ type ControlCenterShellProps = {
   companionStatus: CompanionStatus;
   deviceState: DeviceState;
   device: DeviceInfo | null;
+  firmwareUpdateAvailable?: boolean;
 };
 
 const NAV_ITEMS: ShellNavItem[] = [
@@ -65,6 +64,7 @@ export function ControlCenterShell({
   companionEndpoint = "127.0.0.1:47832",
   companionStatus,
   device,
+  firmwareUpdateAvailable = false,
 }: ControlCenterShellProps) {
   const targetLabel = device?.target?.replace(/^https?:\/\//, "") || "vibetv.local";
 
@@ -87,6 +87,7 @@ export function ControlCenterShell({
                 active={item.id === activeTab}
                 item={item}
                 key={item.id}
+                notify={item.id === "updates" && firmwareUpdateAvailable}
                 onClick={() => onTabChange(item.id)}
               />
             ))}
@@ -136,15 +137,6 @@ export function ControlCenterShell({
                 <span className="size-2 rounded-full bg-[#CCFF00]" />
                 <span>{targetLabel}</span>
               </div>
-              <div className="h-8 w-px bg-[#747A60]" />
-              <button
-                className="inline-flex items-center gap-4 text-base text-[#1B1B1B]"
-                type="button"
-              >
-                <Settings size={22} aria-hidden />
-                <span>Control Center 1.0.34</span>
-                <ChevronDown size={18} aria-hidden />
-              </button>
             </div>
 
             <div className="flex items-center gap-2 overflow-x-auto md:hidden">
@@ -162,6 +154,14 @@ export function ControlCenterShell({
                 >
                   {item.icon}
                   <span>{item.label}</span>
+                  {item.id === "updates" && firmwareUpdateAvailable ? (
+                    <span
+                      aria-label="Update available"
+                      className={`size-2.5 rounded-full ${
+                        item.id === activeTab ? "bg-[#1B1B1B]" : "bg-[#CCFF00]"
+                      }`}
+                    />
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -177,10 +177,12 @@ export function ControlCenterShell({
 function ShellNavButton({
   active,
   item,
+  notify,
   onClick,
 }: {
   active: boolean;
   item: ShellNavItem;
+  notify?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -196,6 +198,14 @@ function ShellNavButton({
     >
       <span className="grid size-7 place-items-center">{item.icon}</span>
       <span className="min-w-0 truncate">{item.label}</span>
+      {notify ? (
+        <span
+          aria-label="Update available"
+          className={`ml-auto size-3 rounded-full ${
+            active ? "bg-[#1B1B1B]" : "bg-[#CCFF00]"
+          }`}
+        />
+      ) : null}
     </button>
   );
 }
