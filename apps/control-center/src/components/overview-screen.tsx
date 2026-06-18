@@ -1,3 +1,5 @@
+"use client";
+
 import {
   ArrowUpFromLine,
   Check,
@@ -6,6 +8,7 @@ import {
   Lock,
   Monitor,
   Play,
+  RefreshCw,
   Server,
   ShieldCheck,
   Signal,
@@ -15,6 +18,10 @@ import {
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
+import {
+  CompanionDownloadActions,
+  useCompanionRelease,
+} from "./companion-installer-actions";
 import type {
   ApiError,
   CompanionStatus,
@@ -54,6 +61,12 @@ export function OverviewScreen({
   onDiscoverDevice,
 }: OverviewScreenProps) {
   const connected = Boolean(device?.connected);
+  const companionMissing = companionStatus === "missing";
+  const {
+    busy: companionReleaseBusy,
+    refresh: refreshCompanionRelease,
+    release: companionRelease,
+  } = useCompanionRelease(undefined, { enabled: companionMissing });
   const hero = buildHeroCopy({ companionStatus, connected, lastError });
   const setup = buildSetupState({
     companionStatus,
@@ -154,6 +167,40 @@ export function OverviewScreen({
           </div>
         </div>
       </section>
+
+      {companionMissing ? (
+        <section className="border-b border-[#747A60] py-6">
+          <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-[#1B1B1B]">
+                Companion installer
+              </h3>
+              <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
+                Install the Companion on this computer, then return here and
+                check the bridge again. Chrome Allow only permits local access;
+                it does not install or start Companion.
+              </p>
+            </div>
+
+            <div className="flex flex-col items-start gap-3 md:items-end">
+              <CompanionDownloadActions release={companionRelease} />
+              <button
+                className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={companionReleaseBusy}
+                onClick={refreshCompanionRelease}
+                type="button"
+              >
+                {companionReleaseBusy ? (
+                  <RefreshCw className="animate-spin" size={18} />
+                ) : (
+                  <RefreshCw size={18} aria-hidden />
+                )}
+                <span>{companionReleaseBusy ? "Checking" : "Check installer"}</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="border-b border-[#747A60] py-6">
         <div className="mb-6 flex items-center justify-between gap-4">

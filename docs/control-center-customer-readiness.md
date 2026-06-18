@@ -96,6 +96,8 @@ The Control Center Updates screen checks `/api/companion/latest`. That route rea
 
 The app prefers the macOS package links when present and keeps the shell installer as a support fallback. Until the first release with those assets exists, the app shows the installer as pending instead of linking customers to a missing file.
 
+The Overview screen uses the same release check when Companion is missing, so a new customer does not have to discover the Updates tab first. That missing-Companion state explains that the Chrome local-network permission only allows the website to contact local services; the customer still needs to install/start Companion on the computer.
+
 ## Support Checks
 
 Check whether the API responds:
