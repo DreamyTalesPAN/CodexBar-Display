@@ -30,13 +30,40 @@ The browser permission prompt only allows the website to contact local services.
 
 ## macOS Companion API Installer
 
-The current repository-level installer is:
+The customer/support release installer is published as a GitHub Release asset:
+
+```bash
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
+```
+
+It performs these steps:
+
+- downloads the matching `codexbar-display` macOS release binary,
+- verifies the release SHA-256 checksum,
+- installs the binary to `~/Library/Application Support/codexbar-display/bin/codexbar-display`,
+- writes `~/Library/LaunchAgents/com.codexbar-display.companion-api.plist`,
+- starts `codexbar-display api --addr 127.0.0.1:47832`,
+- verifies `http://127.0.0.1:47832/v1/status`.
+
+Support restart:
+
+```bash
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --restart
+```
+
+Support uninstall of the API LaunchAgent:
+
+```bash
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --uninstall
+```
+
+The repository-level development installer remains available:
 
 ```bash
 ./scripts/install-control-center-companion.sh
 ```
 
-It performs these steps:
+It performs these steps without downloading from GitHub Releases:
 
 - builds `companion/cmd/codexbar-display`,
 - installs the binary to `~/Library/Application Support/codexbar-display/bin/codexbar-display`,
