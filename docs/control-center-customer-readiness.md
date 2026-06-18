@@ -119,6 +119,39 @@ The Updates screen labels the same package actions by state:
 - `Update` when the installed Companion version is behind the latest release.
 - `Repair` when Companion is already current but should be reinstalled or restarted cleanly.
 
+## Customer Readiness Validation
+
+Use the read-only validation script before asking a customer to use a release:
+
+```bash
+scripts/check-control-center-companion-customer-readiness.sh \
+  --release v<version> \
+  --pkg dist/companion-pkg/VibeTV-Companion-API-arm64-v<version>.pkg \
+  --require-signed \
+  --require-notarized \
+  --app-url https://app.vibetv.shop
+```
+
+What it checks:
+
+- release contains `install-control-center-companion.sh`,
+- release contains both macOS package assets,
+- package payload includes the Companion binary and LaunchAgent plist,
+- package payload has no AppleDouble files,
+- optional Developer ID Installer signature,
+- optional notarization staple,
+- hosted app HTTP reachability.
+
+After installing on a clean Mac, run:
+
+```bash
+scripts/check-control-center-companion-customer-readiness.sh \
+  --local-companion \
+  --expect-version <version>
+```
+
+The validation script is read-only. It does not install packages, start services, discover devices, or write to VibeTV hardware.
+
 ## Support Checks
 
 Check whether the API responds:
