@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Library, Monitor, RefreshCw, X } from "lucide-react";
+import { Library, Lock, Monitor, RefreshCw, ShieldCheck, Wifi, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import type { ThemeProduct } from "@/lib/themes";
@@ -47,6 +47,7 @@ export type ThemeLibraryScreenProps = {
   lastInstall?: ThemeInstallResult;
   onSelectTheme: (themeId: string) => void;
   onInstallTheme: (theme: ThemeProduct) => void;
+  onCheckBridge?: () => void;
   onDiscoverDevice?: () => void;
 };
 
@@ -58,7 +59,10 @@ export function ThemeLibraryScreen({
   device,
   installStatus,
   lastInstall,
+  companionStatus,
   themeInstallEnabled,
+  onCheckBridge,
+  onDiscoverDevice,
   onSelectTheme,
   onInstallTheme,
 }: ThemeLibraryScreenProps) {
@@ -68,6 +72,11 @@ export function ThemeLibraryScreen({
     selectedTheme ||
     visibleThemes.find((theme) => theme.themeId === selectedThemeId) ||
     visibleThemes[0];
+  const readiness = buildInstallReadiness({
+    companionStatus,
+    device,
+    themeInstallEnabled,
+  });
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -87,8 +96,43 @@ export function ThemeLibraryScreen({
       </section>
 
       <section className="border-b border-[#747A60] py-8">
-        <div className="mb-6">
-          <h3 className="text-base font-bold text-[#1B1B1B]">Theme Library</h3>
+        <div className="mb-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <div className="flex min-w-0 gap-4">
+            <div className="grid size-11 shrink-0 place-items-center rounded-full bg-[#1B1B1B] text-[#CCFF00]">
+              {readiness.icon}
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-[#1B1B1B]">
+                {readiness.title}
+              </h3>
+              <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
+                {readiness.detail}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row md:justify-end">
+            {companionStatus !== "online" ? (
+              <button
+                className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00]"
+                onClick={onCheckBridge}
+                type="button"
+              >
+                <Wifi size={17} aria-hidden />
+                Check bridge
+              </button>
+            ) : null}
+            {companionStatus === "online" && !device?.connected ? (
+              <button
+                className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#1B1B1B] px-4 text-sm font-semibold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
+                onClick={onDiscoverDevice}
+                type="button"
+              >
+                <Monitor size={17} aria-hidden />
+                Find VibeTV
+              </button>
+            ) : null}
+          </div>
         </div>
 
         <ul className="divide-y divide-[#747A60] border-y border-[#747A60]">
@@ -105,6 +149,7 @@ export function ThemeLibraryScreen({
               onSelectTheme={onSelectTheme}
               selectedThemeId={selectedThemeId}
               theme={theme}
+              themeInstallBlockedReason={readiness.buttonReason}
               themeInstallEnabled={themeInstallEnabled}
             />
           ))}
@@ -151,6 +196,7 @@ function ThemeListItem({
   onSelectTheme,
   selectedThemeId,
   theme,
+  themeInstallBlockedReason,
   themeInstallEnabled,
 }: {
   busyAction: string | null;
@@ -163,6 +209,7 @@ function ThemeListItem({
   onSelectTheme: (themeId: string) => void;
   selectedThemeId: string;
   theme: ThemeProduct;
+  themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
 }) {
   const installed =
@@ -171,6 +218,21 @@ function ThemeListItem({
   const activeInstall =
     installStatus?.themeId === theme.themeId &&
     installStatus.phase !== "complete";
+  const disabled =
+    installing ||
+    installed ||
+    !device?.connected ||
+    !themeInstallEnabled ||
+    !theme.packUrl;
+  const title = disabled
+    ? installDisabledReason({
+        installed,
+        connected: Boolean(device?.connected),
+        hasPack: Boolean(theme.packUrl),
+        themeInstallBlockedReason,
+        themeInstallEnabled,
+      })
+    : `Install ${theme.title}`;
 
   return (
     <li className={theme.themeId === displayThemeId ? "bg-[#EEEEEE]" : ""}>
@@ -193,23 +255,19 @@ function ThemeListItem({
         </div>
         <button
           className="mr-3 h-10 min-w-[96px] border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-70"
-          disabled={
-            installing ||
-            installed ||
-            !device?.connected ||
-            !themeInstallEnabled ||
-            !theme.packUrl
-          }
+          disabled={disabled}
           onClick={() => {
             onSelectTheme(theme.themeId);
             onInstallTheme(theme);
           }}
+          title={title}
           type="button"
         >
           {labelForInstallButton({
             busy: busyAction === "install",
             installed,
             selected: theme.themeId === selectedThemeId,
+            disabled,
           })}
         </button>
       </div>
@@ -263,10 +321,12 @@ function InlineInstallProgress({ status }: { status: ThemeInstallStatus }) {
 
 function labelForInstallButton({
   busy,
+  disabled,
   installed,
   selected,
 }: {
   busy: boolean;
+  disabled: boolean;
   installed: boolean;
   selected: boolean;
 }) {
@@ -276,7 +336,83 @@ function labelForInstallButton({
   if (installed) {
     return "Installed";
   }
+  if (disabled) {
+    return "Locked";
+  }
   return "Install";
+}
+
+function buildInstallReadiness({
+  companionStatus,
+  device,
+  themeInstallEnabled,
+}: {
+  companionStatus: ThemeLibraryCompanionStatus;
+  device: ThemeLibraryDeviceInfo | null;
+  themeInstallEnabled: boolean;
+}) {
+  if (companionStatus !== "online") {
+    return {
+      title: "Companion required",
+      detail:
+        "Themes can be browsed now. Installing needs the local Companion running on this computer.",
+      buttonReason: "Start Companion first.",
+      icon: <Wifi size={22} aria-hidden />,
+    };
+  }
+  if (!device?.connected) {
+    return {
+      title: "VibeTV not found",
+      detail:
+        "Companion is online. Search for VibeTV on the same WiFi network before enabling install.",
+      buttonReason: "Find VibeTV first.",
+      icon: <Monitor size={22} aria-hidden />,
+    };
+  }
+  if (!themeInstallEnabled) {
+    return {
+      title: "Install protected",
+      detail:
+        "Device reads are ready. Theme install writes stay locked until the hardware-safe release gate is enabled.",
+      buttonReason: "Theme install is protected for this release gate.",
+      icon: <Lock size={22} aria-hidden />,
+    };
+  }
+  return {
+    title: "Ready for install",
+    detail:
+      "Companion and VibeTV are online, and this Companion build allows theme install writes.",
+    buttonReason: "",
+    icon: <ShieldCheck size={22} aria-hidden />,
+  };
+}
+
+function installDisabledReason({
+  connected,
+  hasPack,
+  installed,
+  themeInstallBlockedReason,
+  themeInstallEnabled,
+}: {
+  connected: boolean;
+  hasPack: boolean;
+  installed: boolean;
+  themeInstallBlockedReason: string;
+  themeInstallEnabled: boolean;
+}) {
+  if (installed) {
+    return "Theme is already installed.";
+  }
+  if (!hasPack) {
+    return "Theme pack URL is missing.";
+  }
+  if (!connected) {
+    return themeInstallBlockedReason || "Find VibeTV first.";
+  }
+  if (!themeInstallEnabled) {
+    return themeInstallBlockedReason || "Theme install is protected.";
+  }
+  return "Install is not available right now.";
 }
 
 const MOCK_THEMES: ThemeProduct[] = [

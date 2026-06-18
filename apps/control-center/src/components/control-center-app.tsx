@@ -638,6 +638,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           lastCheckedAt={lastCheckedAt}
           lastError={lastError}
           firmwareUpdate={effectiveFirmwareUpdate}
+          busyAction={busyAction}
+          onCheckBridge={checkCompanion}
+          onDiscoverDevice={discoverDevice}
           themeInstallEnabled={themeInstallEnabled}
         />
       ) : null}
@@ -665,6 +668,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           installStatus={themeInstallStatus}
           lastInstall={lastInstall}
           onDiscoverDevice={discoverDevice}
+          onCheckBridge={checkCompanion}
           onInstallTheme={installTheme}
           onSelectTheme={setSelectedThemeId}
           selectedTheme={selectedTheme}

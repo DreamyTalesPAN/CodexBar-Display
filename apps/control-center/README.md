@@ -24,6 +24,17 @@ If the app runs on another local port, start the Companion with a matching dev o
 go run ./cmd/codexbar-display api --dev-origin http://localhost:3002
 ```
 
+For the hosted customer flow, use the macOS Companion API LaunchAgent installer from
+the repository root:
+
+```bash
+./scripts/install-control-center-companion.sh
+```
+
+That starts the local API in the background, so the web app no longer depends on a
+Terminal window staying open. The older frame-sending daemon LaunchAgent is separate.
+See `docs/control-center-customer-readiness.md` for the support flow.
+
 ## Device Write Guardrails
 
 The Control Center must not trigger firmware updates from the theme install flow. Browser installs send `skipFirmwareUpdate: true`; firmware update belongs to a separate explicit update flow.

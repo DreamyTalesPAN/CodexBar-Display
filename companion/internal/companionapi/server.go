@@ -13,6 +13,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
@@ -24,11 +25,14 @@ import (
 )
 
 const (
-	DefaultAddr      = "127.0.0.1:47832"
-	appOrigin        = "https://app.vibetv.shop"
-	defaultDevOrigin = "http://localhost:3000"
-	deviceTimeout    = 15 * time.Second
-	themeInstallEnv  = "VIBETV_ENABLE_WIFI_THEME_INSTALL"
+	DefaultAddr        = "127.0.0.1:47832"
+	appOrigin          = "https://app.vibetv.shop"
+	defaultDevOrigin   = "http://localhost:3000"
+	deviceTimeout      = 15 * time.Second
+	discoveryProbeTime = 1500 * time.Millisecond
+	subnetProbeLimit   = 32
+	subnetProbeTime    = 450 * time.Millisecond
+	themeInstallEnv    = "VIBETV_ENABLE_WIFI_THEME_INSTALL"
 )
 
 type Options struct {
@@ -46,6 +50,7 @@ type Server struct {
 	loadConfig     func(string) (runtimeconfig.Config, error)
 	saveConfig     func(string, runtimeconfig.Config) error
 	installTheme   func(context.Context, themeinstall.Options) (themeinstall.Result, error)
+	subnetTargets  func() []string
 }
 
 type apiError struct {
@@ -140,6 +145,7 @@ func New(opts Options) (*Server, error) {
 		loadConfig:     runtimeconfig.Load,
 		saveConfig:     runtimeconfig.Save,
 		installTheme:   themeinstall.Install,
+		subnetTargets:  localSubnetTargets,
 	}, nil
 }
 
@@ -500,14 +506,89 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 	candidates := uniqueStrings(explicitTarget, cfg.DeviceTarget, setup.DefaultWiFiTarget())
 	var lastErr error
 	for _, candidate := range candidates {
-		hello, err := s.getHello(ctx, candidate, cfg.DeviceToken)
+		hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, discoveryProbeTime)
 		if err == nil {
 			return normalizeTarget(candidate), hello, nil
 		}
 		lastErr = err
 	}
+	if target, hello, err := s.discoverSubnet(ctx, cfg); err == nil {
+		return target, hello, nil
+	} else if err != nil {
+		lastErr = err
+	}
 	if lastErr == nil {
 		lastErr = errors.New("no device candidates")
+	}
+	return "", protocol.DeviceHello{}, lastErr
+}
+
+func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (string, protocol.DeviceHello, error) {
+	if s.subnetTargets == nil {
+		return "", protocol.DeviceHello{}, errors.New("subnet discovery unavailable")
+	}
+	candidates := uniqueStrings(s.subnetTargets()...)
+	if len(candidates) == 0 {
+		return "", protocol.DeviceHello{}, errors.New("no subnet candidates")
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type result struct {
+		target string
+		hello  protocol.DeviceHello
+		err    error
+	}
+	jobs := make(chan string)
+	results := make(chan result, len(candidates))
+	workers := subnetProbeLimit
+	if len(candidates) < workers {
+		workers = len(candidates)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for candidate := range jobs {
+				hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, subnetProbeTime)
+				select {
+				case results <- result{target: candidate, hello: hello, err: err}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+		for _, candidate := range candidates {
+			select {
+			case jobs <- candidate:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var lastErr error
+	for res := range results {
+		if res.err == nil {
+			cancel()
+			return normalizeTarget(res.target), res.hello, nil
+		}
+		lastErr = res.err
+	}
+	if lastErr == nil {
+		lastErr = errors.New("subnet discovery found no device")
 	}
 	return "", protocol.DeviceHello{}, lastErr
 }
@@ -518,6 +599,15 @@ func (s *Server) getHello(ctx context.Context, target, token string) (protocol.D
 		return protocol.DeviceHello{}, err
 	}
 	return hello.Normalize(), nil
+}
+
+func (s *Server) getHelloProbe(ctx context.Context, target, token string, timeout time.Duration) (protocol.DeviceHello, error) {
+	if timeout <= 0 {
+		return s.getHello(ctx, target, token)
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return s.getHello(probeCtx, target, token)
 }
 
 type deviceHealth struct {
@@ -781,6 +871,55 @@ func applyDeviceToken(req *http.Request, token string) {
 	if token = strings.TrimSpace(token); token != "" {
 		req.Header.Set("X-VibeTV-Token", token)
 	}
+}
+
+func localSubnetTargets() []string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var targets []string
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ip, _, ok := addrToIPv4(addr)
+			if !ok {
+				continue
+			}
+			for host := 1; host <= 254; host++ {
+				if int(ip[3]) == host {
+					continue
+				}
+				targets = append(targets, fmt.Sprintf("http://%d.%d.%d.%d", ip[0], ip[1], ip[2], host))
+			}
+		}
+	}
+	return uniqueStrings(targets...)
+}
+
+func addrToIPv4(addr net.Addr) (net.IP, *net.IPNet, bool) {
+	var ip net.IP
+	var network *net.IPNet
+	switch value := addr.(type) {
+	case *net.IPNet:
+		ip = value.IP
+		network = value
+	case *net.IPAddr:
+		ip = value.IP
+	default:
+		return nil, nil, false
+	}
+	ip = ip.To4()
+	if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || !ip.IsPrivate() {
+		return nil, nil, false
+	}
+	return ip, network, true
 }
 
 func uniqueStrings(values ...string) []string {

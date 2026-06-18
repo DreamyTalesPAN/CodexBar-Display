@@ -131,6 +131,9 @@ type runtimeDeps struct {
 	fetchUpdateState  func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
 	newSelector       func() *codexbar.ProviderSelector
 	logf              func(string, ...any)
+	homeDir           func() (string, error)
+	loadConfig        func(string) (runtimeconfig.Config, error)
+	saveConfig        func(string, runtimeconfig.Config) error
 	transportName     string
 }
 
@@ -177,6 +180,15 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	if d.logf == nil {
 		d.logf = defaultRuntimeLogf
 	}
+	if d.homeDir == nil {
+		d.homeDir = os.UserHomeDir
+	}
+	if d.loadConfig == nil {
+		d.loadConfig = runtimeconfig.Load
+	}
+	if d.saveConfig == nil {
+		d.saveConfig = runtimeconfig.Save
+	}
 	return d
 }
 
@@ -208,6 +220,7 @@ type runtimeState struct {
 	lastCodingAt           time.Time
 	lastActivity           string
 	lastActivityCause      string
+	deviceTarget           string
 }
 
 type cycleResult struct {
@@ -489,6 +502,20 @@ func requestedDeviceTarget(opts Options) string {
 	return strings.TrimSpace(opts.Port)
 }
 
+func effectiveCycleTarget(requestedTarget string, state *runtimeState, deps runtimeDeps) string {
+	requestedTarget = strings.TrimSpace(requestedTarget)
+	if deps.transportName != "wifi" {
+		return requestedTarget
+	}
+	if state != nil && strings.TrimSpace(state.deviceTarget) != "" {
+		return strings.TrimSpace(state.deviceTarget)
+	}
+	if cfg, ok := loadRuntimeConfig(deps); ok && strings.TrimSpace(cfg.DeviceTarget) != "" {
+		return strings.TrimSpace(cfg.DeviceTarget)
+	}
+	return requestedTarget
+}
+
 func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
 	if state == nil {
 		state = &runtimeState{}
@@ -499,7 +526,8 @@ func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
 	return state
 }
 
-func resolveCycleDevice(requestedPort string, deps runtimeDeps) (string, protocol.DeviceCapabilities, int, error) {
+func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeDeps) (string, protocol.DeviceCapabilities, int, error) {
+	requestedPort = effectiveCycleTarget(requestedPort, state, deps)
 	port, err := resolvePortWithFallback(requestedPort, deps)
 	if err != nil {
 		hint := errcode.DefaultRecovery(errcode.RuntimeSerialResolve)
@@ -517,6 +545,7 @@ func resolveCycleDevice(requestedPort string, deps runtimeDeps) (string, protoco
 	caps, capsErr := deps.deviceCaps(port)
 	if capsErr != nil {
 		if recoveredPort, recoveredCaps, recovered := recoverStaleWiFiTarget(port, capsErr, deps); recovered {
+			rememberRecoveredWiFiTarget(recoveredPort, state, deps)
 			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
 		}
 		deps.logf("runtime event=device-caps-read-failed target=%s transport=%s err=%v\n", port, deps.transportName, capsErr)
@@ -524,11 +553,63 @@ func resolveCycleDevice(requestedPort string, deps runtimeDeps) (string, protoco
 	} else if !caps.Known {
 		unknownErr := errors.New("device capabilities unknown")
 		if recoveredPort, recoveredCaps, recovered := recoverStaleWiFiTarget(port, unknownErr, deps); recovered {
+			rememberRecoveredWiFiTarget(recoveredPort, state, deps)
 			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
 		}
 	}
 
+	rememberActiveWiFiTarget(port, caps, state)
 	return port, caps, maxFrameBytesForCaps(caps), nil
+}
+
+func rememberActiveWiFiTarget(target string, caps protocol.DeviceCapabilities, state *runtimeState) {
+	if state == nil || strings.TrimSpace(target) == "" || !caps.Known {
+		return
+	}
+	state.deviceTarget = strings.TrimSpace(target)
+}
+
+func rememberRecoveredWiFiTarget(target string, state *runtimeState, deps runtimeDeps) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return
+	}
+	if state != nil {
+		state.deviceTarget = target
+	}
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok {
+		return
+	}
+	if isSameTarget(cfg.DeviceTarget, target) {
+		return
+	}
+	cfg.DeviceTarget = target
+	if err := saveRuntimeConfig(cfg, deps); err != nil {
+		deps.logf("runtime event=wifi-target-persist-failed target=%s err=%v\n", target, err)
+		return
+	}
+	deps.logf("runtime event=wifi-target-persisted target=%s\n", target)
+}
+
+func loadRuntimeConfig(deps runtimeDeps) (runtimeconfig.Config, bool) {
+	home, err := deps.homeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return runtimeconfig.Config{}, false
+	}
+	cfg, err := deps.loadConfig(home)
+	if err != nil {
+		return runtimeconfig.Config{}, false
+	}
+	return cfg, true
+}
+
+func saveRuntimeConfig(cfg runtimeconfig.Config, deps runtimeDeps) error {
+	home, err := deps.homeDir()
+	if err != nil {
+		return err
+	}
+	return deps.saveConfig(home, cfg)
 }
 
 func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) (string, protocol.DeviceCapabilities, bool) {
@@ -921,7 +1002,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
 
-	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, deps)
+	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
 	if err != nil {
 		return err
 	}
@@ -967,7 +1048,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
 
-	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, deps)
+	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
 	if err != nil {
 		return err
 	}

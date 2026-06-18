@@ -5,7 +5,9 @@ import {
   ExternalLink,
   Lock,
   Monitor,
+  Play,
   Server,
+  ShieldCheck,
   Signal,
   SlidersHorizontal,
   Wifi,
@@ -28,10 +30,13 @@ type OverviewScreenProps = {
   device: DeviceInfo | null;
   themeInstallEnabled: boolean;
   companionEndpoint?: string;
+  busyAction?: string | null;
   lastError?: ApiError | null;
   lastCheckedAt?: string | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
   events?: ControlCenterEvent[];
+  onCheckBridge?: () => void;
+  onDiscoverDevice?: () => void;
 };
 
 export function OverviewScreen({
@@ -40,13 +45,22 @@ export function OverviewScreen({
   device,
   themeInstallEnabled,
   companionEndpoint = "http://127.0.0.1:47832",
+  busyAction,
   lastError,
   lastCheckedAt,
   firmwareUpdate,
   events,
+  onCheckBridge,
+  onDiscoverDevice,
 }: OverviewScreenProps) {
   const connected = Boolean(device?.connected);
   const hero = buildHeroCopy({ companionStatus, connected, lastError });
+  const setup = buildSetupState({
+    companionStatus,
+    connected,
+    deviceState,
+    lastError,
+  });
   const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
   const displayEvents = buildSessionEvents({
     companionStatus,
@@ -99,6 +113,45 @@ export function OverviewScreen({
             src="/images/vibetv-device-overview.png"
             width={570}
           />
+        </div>
+      </section>
+
+      <section className="border-b border-[#747A60] py-6">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <div className="flex min-w-0 gap-4">
+            <div className="grid size-11 shrink-0 place-items-center rounded-full bg-[#1B1B1B] text-[#CCFF00]">
+              {setup.icon}
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-[#1B1B1B]">
+                {setup.title}
+              </h3>
+              <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
+                {setup.detail}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row md:justify-end">
+            <button
+              className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+              disabled={busyAction === "status"}
+              onClick={onCheckBridge}
+              type="button"
+            >
+              <Wifi size={17} aria-hidden />
+              {busyAction === "status" ? "Checking" : "Check bridge"}
+            </button>
+            <button
+              className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#1B1B1B] px-4 text-sm font-semibold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+              disabled={companionStatus !== "online" || busyAction === "discover"}
+              onClick={onDiscoverDevice}
+              type="button"
+            >
+              <Monitor size={17} aria-hidden />
+              {busyAction === "discover" ? "Searching" : "Find VibeTV"}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -325,6 +378,50 @@ function buildHeroCopy({
     title: "VibeTV needs a signal",
     tone: "attention" as ReadinessTone,
     icon: <SlidersHorizontal size={34} aria-hidden />,
+  };
+}
+
+function buildSetupState({
+  companionStatus,
+  connected,
+  deviceState,
+  lastError,
+}: {
+  companionStatus: CompanionStatus;
+  connected: boolean;
+  deviceState: DeviceState;
+  lastError?: ApiError | null;
+}) {
+  if (companionStatus === "missing") {
+    return {
+      title: "Install or start Companion",
+      detail:
+        "app.vibetv.shop is live, but it can only reach your VibeTV through the local Companion on this computer. The browser permission allows that local connection; it does not start Companion.",
+      icon: <Play size={22} aria-hidden />,
+    };
+  }
+  if (!connected && deviceState === "offline") {
+    return {
+      title: "Find the device on this network",
+      detail:
+        lastError?.nextAction ||
+        "Companion is running, but VibeTV was not found yet. Keep VibeTV powered on and search again.",
+      icon: <Monitor size={22} aria-hidden />,
+    };
+  }
+  if (connected) {
+    return {
+      title: "Read-only checks are ready",
+      detail:
+        "Companion can read device status and settings. Theme install writes stay protected until the release gate is explicitly enabled for a hardware test.",
+      icon: <ShieldCheck size={22} aria-hidden />,
+    };
+  }
+  return {
+    title: "Check local bridge",
+    detail:
+      "Start by checking Companion, then search for VibeTV on the same WiFi network.",
+    icon: <Wifi size={22} aria-hidden />,
   };
 }
 

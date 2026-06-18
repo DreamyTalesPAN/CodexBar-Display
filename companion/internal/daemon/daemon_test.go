@@ -1535,10 +1535,19 @@ func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
 	var resolved []string
 	var sentPort string
 	var logged strings.Builder
+	savedConfig := runtimeconfig.Config{DeviceTarget: staleTarget}
 
 	err := runCycleWithDeps(context.Background(), staleTarget, state, runtimeDeps{
 		now:           func() time.Time { return now },
 		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return savedConfig, nil
+		},
+		saveConfig: func(_ string, cfg runtimeconfig.Config) error {
+			savedConfig = cfg
+			return nil
+		},
 		resolvePort: func(target string) (string, error) {
 			resolved = append(resolved, target)
 			return target, nil
@@ -1581,6 +1590,60 @@ func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
 	}
 	if !strings.Contains(logged.String(), "wifi-target-recovered") {
 		t.Fatalf("expected recovery log, got %q", logged.String())
+	}
+	if savedConfig.DeviceTarget != recoveredTarget {
+		t.Fatalf("expected recovered target to be persisted, got %+v", savedConfig)
+	}
+	if state.deviceTarget != recoveredTarget {
+		t.Fatalf("expected recovered target in runtime state, got %q", state.deviceTarget)
+	}
+
+	resolved = nil
+	sentPort = ""
+	now = now.Add(time.Second)
+	err = runCycleWithDeps(context.Background(), staleTarget, state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return savedConfig, nil
+		},
+		saveConfig: func(_ string, cfg runtimeconfig.Config) error {
+			savedConfig = cfg
+			return nil
+		},
+		resolvePort: func(target string) (string, error) {
+			resolved = append(resolved, target)
+			return target, nil
+		},
+		deviceCaps: func(target string) (protocol.DeviceCapabilities, error) {
+			if target != recoveredTarget {
+				return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected target after recovery %s", target)
+			}
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				Board:                     "esp8266-smalltv-st7789",
+				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+				MaxFrameBytes:             2048,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+		},
+		sendLine: func(port string, line []byte) error {
+			sentPort = port
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("second runCycleWithDeps returned error: %v", err)
+	}
+	if got := strings.Join(resolved, ","); got != recoveredTarget {
+		t.Fatalf("expected second cycle to use recovered target only, got %q", got)
+	}
+	if sentPort != recoveredTarget {
+		t.Fatalf("expected second frame sent to recovered target, got %q", sentPort)
 	}
 }
 
@@ -1627,6 +1690,61 @@ func TestRunCycleWithDepsRecoversUnknownWiFiTargetViaLocalTarget(t *testing.T) {
 	}
 	if sentPort != recoveredTarget {
 		t.Fatalf("expected frame sent to recovered target, got %q", sentPort)
+	}
+}
+
+func TestRunCycleWithDepsUsesRuntimeConfigTargetOverStaleLaunchAgentTarget(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	const staleLaunchAgentTarget = "http://192.168.178.73"
+	const runtimeTarget = "http://192.168.178.163"
+	var resolved []string
+	var sentPort string
+
+	err := runCycleWithDeps(context.Background(), staleLaunchAgentTarget, state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{DeviceTarget: runtimeTarget}, nil
+		},
+		resolvePort: func(target string) (string, error) {
+			resolved = append(resolved, target)
+			return target, nil
+		},
+		deviceCaps: func(target string) (protocol.DeviceCapabilities, error) {
+			if target != runtimeTarget {
+				return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected target %s", target)
+			}
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				Board:                     "esp8266-smalltv-st7789",
+				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+				MaxFrameBytes:             2048,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+		},
+		sendLine: func(port string, line []byte) error {
+			sentPort = port
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("runCycleWithDeps returned error: %v", err)
+	}
+	if got := strings.Join(resolved, ","); got != runtimeTarget {
+		t.Fatalf("expected runtime config target to win, got resolve order %q", got)
+	}
+	if sentPort != runtimeTarget {
+		t.Fatalf("expected frame sent to runtime config target, got %q", sentPort)
 	}
 }
 
