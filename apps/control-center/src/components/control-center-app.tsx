@@ -12,6 +12,7 @@ import type {
   ControlCenterEvent,
   DeviceInfo,
   DeviceState,
+  SupportDiagnostics,
 } from "./control-center-types";
 import { LogsScreen } from "./logs-screen";
 import { OverviewScreen } from "./overview-screen";
@@ -90,6 +91,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [firmwareUpdate, setFirmwareUpdate] =
     useState<FirmwareUpdateInfo | null>(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
+  const [supportDiagnostics, setSupportDiagnostics] =
+    useState<SupportDiagnostics | null>(null);
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
       id: "session-start",
@@ -590,6 +593,55 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, [refreshFirmwareUpdate]);
 
+  const loadSupportDiagnostics = useCallback(async () => {
+    setBusyAction("diagnostics");
+    try {
+      const payload =
+        await runCompanion<SupportDiagnostics>("/v1/diagnostics");
+      setSupportDiagnostics(payload);
+      setCompanionStatus("online");
+      setCompanionInfo(payload.companion || null);
+      setThemeInstallEnabled(
+        Boolean(payload.companion?.features?.themeInstallEnabled),
+      );
+      if (payload.device) {
+        setDevice(payload.device);
+        if (payload.device.target) {
+          setDeviceTarget(payload.device.target);
+          rememberDeviceTarget(payload.device.target);
+        }
+        setDeviceState(
+          payload.device.paired
+            ? "paired"
+            : payload.device.connected
+              ? "online"
+              : "unknown",
+        );
+      }
+      addEvent({
+        label: "Support report loaded",
+        detail: `${payload.checks?.length || 0} checks ready for support.`,
+        tone: payload.checks?.some((check) => check.status === "fail")
+          ? "attention"
+          : "ready",
+      });
+    } catch (error) {
+      const normalized = normalizeCaughtError(
+        error,
+        "Support report needs attention.",
+      );
+      setCompanionStatus("missing");
+      setLastError(normalized);
+      addEvent({
+        label: "Support report needs attention",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  }, [addEvent, runCompanion]);
+
   useEffect(() => {
     if (!deviceBoard || !deviceFirmware) {
       return;
@@ -695,8 +747,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       {activeTab === "logs" ? (
         <LogsScreen
           busyAction={busyAction}
+          diagnostics={supportDiagnostics}
           events={logs}
           lastError={lastError}
+          onLoadDiagnostics={loadSupportDiagnostics}
           onRefresh={checkCompanion}
         />
       ) : null}

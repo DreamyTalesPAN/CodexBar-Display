@@ -29,6 +29,19 @@ export type CompanionInfo = {
   };
 };
 
+export type SupportDiagnostics = {
+  generatedAt?: string;
+  companion?: CompanionInfo;
+  device?: DeviceInfo;
+  checks?: Array<{
+    name: string;
+    status: "pass" | "attention" | "fail" | "locked" | string;
+    detail?: string;
+    errorCode?: string;
+    nextAction?: string;
+  }>;
+};
+
 export type DeviceState = "unknown" | "online" | "offline" | "paired";
 
 export type DeviceInfo = {

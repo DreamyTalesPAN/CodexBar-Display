@@ -92,6 +92,22 @@ type statusResponse struct {
 	Device    deviceInfo `json:"device"`
 }
 
+type diagnosticsResponse struct {
+	OK          bool              `json:"ok"`
+	GeneratedAt string            `json:"generatedAt"`
+	Companion   companion         `json:"companion"`
+	Device      deviceInfo        `json:"device"`
+	Checks      []diagnosticCheck `json:"checks"`
+}
+
+type diagnosticCheck struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Detail     string `json:"detail,omitempty"`
+	ErrorCode  string `json:"errorCode,omitempty"`
+	NextAction string `json:"nextAction,omitempty"`
+}
+
 type companion struct {
 	Status   string            `json:"status"`
 	Version  string            `json:"version"`
@@ -191,6 +207,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/status", s.handleStatus)
+	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device", s.handleDevice)
 	mux.HandleFunc("/v1/device/pair", s.handleDevicePair)
@@ -227,20 +244,136 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg, _ := s.loadConfig(s.home)
 	writeJSON(w, http.StatusOK, statusResponse{
-		OK: true,
-		Companion: companion{
-			Status:  "ready",
-			Version: buildinfo.NormalizedVersion(),
-			Features: companionFeatures{
-				ThemeInstallEnabled: themeInstallEnabled(),
-			},
-		},
+		OK:        true,
+		Companion: s.companionInfo(),
 		Device: deviceInfo{
 			Target:    publicTarget(cfg.DeviceTarget),
 			Connected: false,
 			Paired:    strings.TrimSpace(cfg.DeviceToken) != "",
 		},
 	})
+}
+
+func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+
+	checks := []diagnosticCheck{
+		{
+			Name:   "companion_api",
+			Status: "pass",
+			Detail: "Companion API is responding on loopback.",
+		},
+	}
+	if themeInstallEnabled() {
+		checks = append(checks, diagnosticCheck{
+			Name:   "theme_install_gate",
+			Status: "attention",
+			Detail: "Theme install write gate is enabled.",
+		})
+	} else {
+		checks = append(checks, diagnosticCheck{
+			Name:       "theme_install_gate",
+			Status:     "locked",
+			Detail:     "Theme install write gate is disabled.",
+			NextAction: "Enable only during an approved hardware test window.",
+		})
+	}
+
+	device := deviceInfo{
+		Target:    publicTarget(cfg.DeviceTarget),
+		Connected: false,
+		Paired:    strings.TrimSpace(cfg.DeviceToken) != "",
+	}
+	if strings.TrimSpace(cfg.DeviceTarget) == "" {
+		checks = append(checks, diagnosticCheck{
+			Name:       "device_target",
+			Status:     "attention",
+			Detail:     "No VibeTV target is configured.",
+			ErrorCode:  "device_target_missing",
+			NextAction: "Run device discovery or enter the exact VibeTV target in Settings.",
+		})
+		writeJSON(w, http.StatusOK, diagnosticsResponse{
+			OK:          true,
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			Companion:   s.companionInfo(),
+			Device:      device,
+			Checks:      checks,
+		})
+		return
+	}
+
+	checks = append(checks, diagnosticCheck{
+		Name:   "device_target",
+		Status: "pass",
+		Detail: publicTarget(cfg.DeviceTarget),
+	})
+	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+	if err != nil {
+		checks = append(checks, diagnosticCheck{
+			Name:       "device_hello",
+			Status:     "fail",
+			Detail:     sanitizeErrorDetail(err),
+			ErrorCode:  "device_hello_failed",
+			NextAction: "Keep VibeTV powered on, then run discovery again.",
+		})
+		writeJSON(w, http.StatusOK, diagnosticsResponse{
+			OK:          true,
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			Companion:   s.companionInfo(),
+			Device:      device,
+			Checks:      checks,
+		})
+		return
+	}
+
+	device = deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello)
+	checks = append(checks, diagnosticCheck{
+		Name:   "device_hello",
+		Status: "pass",
+		Detail: "VibeTV /hello is reachable.",
+	})
+	health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
+	if err != nil {
+		checks = append(checks, diagnosticCheck{
+			Name:       "device_health",
+			Status:     "attention",
+			Detail:     sanitizeErrorDetail(err),
+			ErrorCode:  "device_health_failed",
+			NextAction: "Read-only device discovery works; retry settings or check firmware health.",
+		})
+	} else {
+		device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)
+		checks = append(checks, diagnosticCheck{
+			Name:   "device_health",
+			Status: "pass",
+			Detail: "VibeTV /health is reachable.",
+		})
+	}
+
+	writeJSON(w, http.StatusOK, diagnosticsResponse{
+		OK:          true,
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Companion:   s.companionInfo(),
+		Device:      device,
+		Checks:      checks,
+	})
+}
+
+func (s *Server) companionInfo() companion {
+	return companion{
+		Status:  "ready",
+		Version: buildinfo.NormalizedVersion(),
+		Features: companionFeatures{
+			ThemeInstallEnabled: themeInstallEnabled(),
+		},
+	}
 }
 
 func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {

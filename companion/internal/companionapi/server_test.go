@@ -98,6 +98,77 @@ func TestDeviceNotFoundErrorFormat(t *testing.T) {
 	}
 }
 
+func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil)
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got diagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || got.Companion.Status != "ready" || got.GeneratedAt == "" {
+		t.Fatalf("unexpected diagnostics response: %+v", got)
+	}
+	if got.Device.Connected || got.Device.Target != "" {
+		t.Fatalf("expected no connected device target, got %+v", got.Device)
+	}
+	if !hasDiagnosticCheck(got.Checks, "device_target", "attention") {
+		t.Fatalf("expected missing target diagnostic, got %+v", got.Checks)
+	}
+}
+
+func TestDiagnosticsReportsDeviceWithoutLeakingToken(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+			t.Fatalf("expected pairing token header for device request, got %q", got)
+		}
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"synthwave"},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil)
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "pair-token") {
+		t.Fatalf("diagnostics leaked pairing token: %s", body)
+	}
+	var got diagnosticsResponse
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.Device.Connected || !got.Device.Paired || got.Device.ActiveTheme != "synthwave" {
+		t.Fatalf("unexpected device diagnostics: %+v", got.Device)
+	}
+	if !hasDiagnosticCheck(got.Checks, "device_hello", "pass") {
+		t.Fatalf("expected hello pass check, got %+v", got.Checks)
+	}
+	if !hasDiagnosticCheck(got.Checks, "device_health", "pass") {
+		t.Fatalf("expected health pass check, got %+v", got.Checks)
+	}
+}
+
 func TestDeviceDiscoverFallsBackToSubnetCandidateAndPersistsTarget(t *testing.T) {
 	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusServiceUnavailable)
@@ -447,4 +518,13 @@ func newHelloDeviceServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
 	}))
+}
+
+func hasDiagnosticCheck(checks []diagnosticCheck, name, status string) bool {
+	for _, check := range checks {
+		if check.Name == name && check.Status == status {
+			return true
+		}
+	}
+	return false
 }

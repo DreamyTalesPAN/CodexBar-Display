@@ -160,6 +160,14 @@ Check whether the API responds:
 curl -fsS http://127.0.0.1:47832/v1/status
 ```
 
+Create a redacted support report:
+
+```bash
+curl -fsS http://127.0.0.1:47832/v1/diagnostics
+```
+
+The support report is read-only. It includes Companion version, install-gate state, configured public device target, pairing presence, `/hello` status, `/health` status, board, firmware, and active theme when available. It must not include the pairing token or tokenized URLs.
+
 Run a read-only discovery:
 
 ```bash
@@ -208,6 +216,7 @@ launchctl bootout gui/$(id -u)/com.codexbar-display.companion-api
 Read-only checks are allowed:
 
 - `GET /v1/status`
+- `GET /v1/diagnostics`
 - `GET /v1/device`
 - `POST /v1/device/discover`
 - `GET /v1/settings`
