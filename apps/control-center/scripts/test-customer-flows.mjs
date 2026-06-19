@@ -898,7 +898,10 @@ async function testScriptOnlyReleaseShowsSupportFallback(
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
-  await assertSingleCompanionInstallLink(page);
+  await page
+    .getByText("Installer is not ready yet.")
+    .waitFor({ timeout: 10_000 });
+  await assertNoCompanionInstallLink(page);
   await assertNoLegacyCompanionDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
   assert(
@@ -924,7 +927,10 @@ async function testPartialPackageReleaseShowsSupportFallback(
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
-  await assertSingleCompanionInstallLink(page);
+  await page
+    .getByText("Installer is not ready yet.")
+    .waitFor({ timeout: 10_000 });
+  await assertNoCompanionInstallLink(page);
   await assertNoLegacyCompanionDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
   assert(
@@ -1444,6 +1450,16 @@ async function assertSingleCompanionInstallLink(page) {
   assert(
     installLinkCount === 1,
     `expected one Companion install action, got ${installLinkCount}`,
+  );
+}
+
+async function assertNoCompanionInstallLink(page) {
+  const installLinkCount = await page
+    .getByRole("link", { name: "Install Companion" })
+    .count();
+  assert(
+    installLinkCount === 0,
+    `expected no Companion install link without complete macOS packages, got ${installLinkCount}`,
   );
 }
 

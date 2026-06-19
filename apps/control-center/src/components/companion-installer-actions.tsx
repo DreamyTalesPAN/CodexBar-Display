@@ -223,22 +223,6 @@ export function CompanionPrimaryAction({
     );
   }
 
-  if (release?.installerDownloadUrl) {
-    return (
-      <>
-        <a
-          className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
-          href={release.installerDownloadUrl}
-          onClick={() => setDownloadStartedFor(downloadKey)}
-        >
-          <Download size={18} aria-hidden />
-          <span>Install Companion</span>
-        </a>
-        {downloadStarted ? <AfterDownloadNotice action="install" /> : null}
-      </>
-    );
-  }
-
   if (release?.status === "check_failed") {
     return (
       <button

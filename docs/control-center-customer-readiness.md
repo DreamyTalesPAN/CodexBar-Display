@@ -26,7 +26,7 @@ The local Companion responds to Chrome Private Network Access preflights from th
 5. Companion runs as a macOS LaunchAgent and survives login/reboot.
 6. App searches for VibeTV on the same WiFi/LAN.
 7. If exactly one VibeTV is found, the Companion stores that target for later checks.
-8. If multiple VibeTV devices are found, the Companion refuses to auto-pick one. The customer must enter the exact target in the VibeTV target field, for example `vibetv.local` or `http://192.168.178.163`, then run discovery again. A manually entered target is strict: if that exact target does not answer, the Companion reports a device error instead of falling back to another discovered VibeTV.
+8. If multiple VibeTV devices are found, the Companion refuses to auto-pick one. The customer must enter the exact VibeTV address, for example `vibetv.local` or `192.168.178.163`, then use `Connect VibeTV` again. A manually entered address is strict: if that exact VibeTV does not answer, the Companion reports a device error instead of falling back to another discovered VibeTV.
 9. App can read Companion status, VibeTV status, firmware, active theme, and settings.
 10. Theme install writes stay locked until the hardware-safe release gate is enabled.
 
@@ -126,7 +126,7 @@ Package links must exactly match the latest release tag version. If the latest r
 
 The app prefers the macOS package links when present. When both Apple silicon and Intel `.pkg` assets exist, customer-facing download actions show the package buttons and do not offer the shell script next to them. Because the release workflow only uploads `.pkg` release assets after signing and notarization validation, package buttons should not appear for unsigned local build artifacts. Until the first release with those assets exists, the app shows the installer as unavailable instead of linking customers to a missing file.
 
-If only the shell script asset is available, the Updates screen must label it as a support fallback instead of a normal customer installer. The primary package state stays `Mac package pending`; the script link is secondary. Normal customer onboarding should use the signed and notarized macOS package buttons.
+If only the shell script asset is available, setup screens must not present it as the normal customer installer. The primary setup state stays passive, such as `Installer is not ready yet.` The script link is only a secondary support fallback in post-setup update/repair surfaces. Normal customer onboarding should use the signed and notarized macOS package buttons.
 
 When the browser can detect the Mac architecture, the matching package is shown first and marked `This Mac`. If detection is unavailable, both Apple silicon and Intel packages remain visible without marking both as the primary recommendation.
 
@@ -134,17 +134,17 @@ The Overview screen and the `/install/<theme_id>` entry use the same release che
 
 The Overview and `/install/<theme_id>` setup path should not show release diagnostics, internal asset names, or multiple equal actions. Customers should see only the next action that can move setup forward.
 
-After a customer clicks any Companion download action, the app shows the immediate next step in place: open the package from Downloads, finish the install/update/repair, then return to the same page. The page keeps checking Companion and moves forward when it becomes available.
+After a customer clicks any Companion download action, the app shows the immediate next step in place: open the downloaded installer, finish the install/update/repair, then return to the same page. The page keeps checking Companion and moves forward when it becomes available.
 
 The Updates screen is available only after setup is complete. It should expose update actions, not setup recovery actions.
 
 While the page is open in the missing-Companion state, it quietly checks Companion again. After the customer installs or starts Companion, the UI should move forward without requiring a manual refresh.
 
-When Companion is running but VibeTV is not found, the Overview screen and the `/install/<theme_id>` entry expose a `VibeTV target` field and one `Connect VibeTV` action. Customers or support can enter the exact `vibetv.local`/IP target there and connect without leaving the current flow.
+When Companion is running but VibeTV is not found, the Overview screen and the `/install/<theme_id>` entry expose a `VibeTV address` field and one `Connect VibeTV` action. Customers or support can enter the exact `vibetv.local`/IP address there and connect without leaving the current flow.
 
 Manual targets may be `vibetv.local`, an IP address, or an `http(s)` URL with a host and optional valid port. The Companion rejects explicit targets with unsupported schemes, invalid ports, paths, username/password credentials, query strings, or fragments so support reports do not collect tokenized URLs.
 
-If an exact target does not answer, the app keeps Companion online and shows VibeTV as not found. That means the customer should correct the device target or WiFi state, not reinstall Companion.
+If an exact address does not answer, the app keeps Companion online and shows VibeTV as not found. That means the customer should correct the VibeTV address or WiFi state, not reinstall Companion.
 
 If the Shopify theme catalog is empty or the requested `/install/<theme_id>` does not exist in the catalog, the app must show a locked catalog state. It must not fall back to demo/mock themes or silently select the first available theme for an unknown Shopify link.
 
@@ -264,7 +264,7 @@ Create a redacted support report:
 curl -fsS http://127.0.0.1:47832/v1/diagnostics
 ```
 
-The support report is read-only. It includes Companion version, install-gate state, configured public device target, pairing presence, `/hello` status, `/health` status, board, firmware, and active theme when available. It must not include the pairing token or tokenized URLs.
+The support report is read-only. It includes Companion version, install-gate state, configured VibeTV address, pairing presence, `/hello` status, `/health` status, board, firmware, and active theme when available. It must not include the pairing token or tokenized URLs.
 
 In the hosted app, the Logs screen can copy the loaded support report or download it as `vibetv-support-report-<timestamp>.json`. The download path is useful when browser clipboard permission is blocked.
 
@@ -276,7 +276,7 @@ curl -fsS -X POST http://127.0.0.1:47832/v1/device/discover \
   -d '{}'
 ```
 
-Run discovery against an exact target:
+Run discovery against an exact VibeTV address:
 
 ```bash
 curl -fsS -X POST http://127.0.0.1:47832/v1/device/discover \
@@ -284,7 +284,7 @@ curl -fsS -X POST http://127.0.0.1:47832/v1/device/discover \
   -d '{"target":"http://192.168.178.163"}'
 ```
 
-If discovery returns `multiple_devices_found`, do not guess. Ask the customer which VibeTV they want to control and use the exact target in the VibeTV target field.
+If discovery returns `multiple_devices_found`, do not guess. Ask the customer which VibeTV they want to control and use the exact VibeTV address in the app.
 
 Inspect service state:
 
