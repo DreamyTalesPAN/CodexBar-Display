@@ -39,7 +39,7 @@ jobs:
           echo "Customer package signing and notarization secrets are configured."
 
   build-and-release:
-    needs: customer-package-preflight
+    needs: build-companion-pkgs
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -170,6 +170,19 @@ jobs:
                   f.write("\n")
           PY
 
+      - name: Download validated Companion PKGs
+        uses: actions/download-artifact@v4
+        with:
+          name: companion-pkgs
+          path: dist/companion-pkg
+
+      - name: Build release checksums
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${VERSION#v}"
           (
             cd dist
             find . -type f ! -name "checksums-*" -print0 | sort -z | xargs -0 sha256sum > "checksums-v${VERSION}.txt"
@@ -183,6 +196,7 @@ jobs:
             dist/install.sh
             dist/install-control-center-companion.sh
             dist/companion/*
+            dist/companion-pkg/*.pkg
             dist/firmware/*.bin
             dist/firmware/*.bin.gz
             dist/firmware/firmware-manifest.json
@@ -190,7 +204,7 @@ jobs:
             dist/checksums-*.txt
 
   build-companion-pkgs:
-    needs: build-and-release
+    needs: customer-package-preflight
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -346,10 +360,10 @@ jobs:
           echo "error: signed and notarized Companion PKGs are required for customer releases." >&2
           exit 1
 
-      - name: Upload Companion PKGs to GitHub Release
+      - name: Upload validated Companion PKGs
         if: ${{ steps.signing.outputs.ready == 'true' && steps.notarization.outputs.ready == 'true' }}
-        uses: softprops/action-gh-release@v2
+        uses: actions/upload-artifact@v4
         with:
-          generate_release_notes: false
-          files: |
-            dist/companion-pkg/*.pkg
+          name: companion-pkgs
+          path: dist/companion-pkg/*.pkg
+          if-no-files-found: error

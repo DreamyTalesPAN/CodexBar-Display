@@ -63,6 +63,9 @@ jobs:
       - name: Test customer-ready gate
         run: ./scripts/test-control-center-customer-ready-gate.sh
 
+      - name: Test Control Center release workflow
+        run: ./scripts/test-control-center-release-workflow.sh
+
       - name: Test legacy Companion installer guard
         run: ./scripts/test-control-center-companion-legacy-installer.sh
 
