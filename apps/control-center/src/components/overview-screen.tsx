@@ -33,7 +33,7 @@ type OverviewScreenProps = {
   lastError?: ApiError | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
   deviceTarget: string;
-  onCheckBridge?: () => void;
+  onCheckCompanion?: () => void;
   onConnectDevice?: (targetOverride?: string) => void;
   onDeviceTargetChange?: (target: string) => void;
 };
@@ -46,7 +46,7 @@ export function OverviewScreen({
   lastError,
   firmwareUpdate,
   deviceTarget,
-  onCheckBridge,
+  onCheckCompanion,
   onConnectDevice,
   onDeviceTargetChange,
 }: OverviewScreenProps) {
@@ -149,7 +149,7 @@ export function OverviewScreen({
                   disabled={localActionBusy && busyAction !== "status"}
                   icon={<Wifi size={18} aria-hidden />}
                   label="Start setup"
-                  onClick={onCheckBridge}
+                  onClick={onCheckCompanion}
                 />
               ) : null}
               {setup.action === "connect" ? (

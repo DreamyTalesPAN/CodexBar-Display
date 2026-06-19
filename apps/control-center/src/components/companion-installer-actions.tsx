@@ -89,7 +89,7 @@ export function companionPackageLabel(
   if (release.status === "check_failed") {
     return "Check failed";
   }
-  return "Package pending";
+  return "Not ready yet";
 }
 
 export function CompanionDownloadActions({
@@ -252,26 +252,30 @@ export function CompanionPrimaryAction({
           size={18}
           aria-hidden
         />
-        <span>{busy ? "Checking installer" : "Check installer again"}</span>
+        <span>{busy ? "Checking" : "Try again"}</span>
       </button>
     );
   }
 
-  return (
-    <button
-      className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#747A60] bg-[#EEEEEE] px-5 text-sm font-bold text-[#444933]"
-      disabled
-      type="button"
-    >
-      {busy || !release ? (
+  if (busy || !release) {
+    return (
+      <div
+        className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-5 text-sm font-bold text-[#444933]"
+        role="status"
+      >
         <RefreshCw className="animate-spin" size={18} aria-hidden />
-      ) : (
-        <Download size={18} aria-hidden />
-      )}
-      <span>
-        {busy || !release ? "Checking installer" : "Installer unavailable"}
-      </span>
-    </button>
+        <span>Checking installer</span>
+      </div>
+    );
+  }
+
+  return (
+    <p
+      className="max-w-[260px] border border-[#747A60] bg-[#F9F9F9] px-4 py-3 text-sm font-semibold leading-5 text-[#444933]"
+      role="status"
+    >
+      Installer is not ready yet.
+    </p>
   );
 }
 
@@ -284,9 +288,9 @@ function PendingPackageButton({
     release?.status === "check_failed"
       ? "Check failed"
       : release?.status === "missing_asset"
-        ? "Installer unavailable"
+        ? "Not ready yet"
       : release && !hasCompleteMacPackages(release)
-        ? "Mac package pending"
+        ? "Not ready yet"
         : "Checking installer";
 
   return (

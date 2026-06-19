@@ -4,14 +4,14 @@ This document is the current Shopify rollout plan for the hosted Control Center 
 
 ## Current Decision
 
-The MVP uses normal Shopify products as the visible theme catalog:
+The rollout uses normal Shopify products as the visible theme catalog:
 
 - Shop domain: `vibetv.shop`
 - Theme collection handle: `themes-2`
 - Hosted app: `https://app.vibetv.shop`
 - Product entry URL: `https://app.vibetv.shop/install/<theme_id>`
 
-The Control Center already reads products from Shopify Storefront API through `apps/control-center/src/lib/themes.ts`. App-owned Shopify Metaobjects can still be revisited later, but they are not the current MVP source of truth.
+The Control Center reads products from Shopify Storefront API through `apps/control-center/src/lib/themes.ts`. App-owned Shopify Metaobjects can still be revisited later, but they are not the current source of truth.
 
 ## Product Model
 
@@ -20,7 +20,7 @@ Each customer-visible theme should be a Shopify product in the `themes-2` collec
 Required:
 
 - Product title, description, and preview images/GIFs.
-- Product price `0`, because the MVP only installs free themes.
+- Product price `0`, because the first customer flow only installs free themes.
 - Product type or tag: `VibeTV Theme`.
 - Metafield `vibetv.theme_id`.
 
@@ -60,7 +60,7 @@ Use this Custom Liquid block on VibeTV theme product pages:
       Check compatibility in the app
     </a>
     <p class="vtv-theme-readiness__note">
-      Opens the hosted Control Center. Install only starts after Companion, VibeTV pairing, device checks, and the protected write gate are ready.
+      Opens the hosted Control Center. The app checks setup first, then shows the next step.
     </p>
   {% else %}
     <button type="button" class="button add-to-cart-button" disabled>
@@ -73,7 +73,7 @@ Use this Custom Liquid block on VibeTV theme product pages:
 
 The validated source is also stored in `docs/vibetv-theme-product-custom-liquid.liquid`.
 
-Do not use customer-facing copy like `Jetzt installieren` while #129 is open. The correct public promise is readiness/compatibility checking. Real theme-install writes remain protected until the hardware write gate is approved.
+Do not use customer-facing copy like `Jetzt installieren` while #129 is open. The correct public promise is readiness/compatibility checking. Real theme installs stay blocked until a dedicated hardware test approves them.
 
 Live rollout status on 2026-06-19: the main `vibetv.shop` theme template `templates/product.themes.json` uses the readiness button for the product handles `synthwave-theme`, `clippy-theme`, and `claude-creature-theme`. Those buttons link to the technical Control Center theme IDs `synthwave`, `clippy`, and `claude-creature`. The old `theme-pack install --target http://vibetv.local` command-copy block is no longer present on those public product pages.
 
@@ -83,13 +83,13 @@ Live rollout status on 2026-06-19: the main `vibetv.shop` theme template `templa
 2. Customer opens a VibeTV theme product.
 3. Product page button opens `https://app.vibetv.shop/install/<theme_id>`.
 4. The hosted app opens the selected theme readiness screen.
-5. If Companion is missing, the app shows Companion package/script download actions directly.
-6. If Companion is running but VibeTV is not found, the app shows a `VibeTV target` field in the same install flow.
+5. If Companion is missing, the app shows one Companion install/repair action.
+6. If Companion is running but VibeTV is not found, the app shows a `VibeTV target` field and one `Connect VibeTV` action.
 7. If multiple VibeTV devices are found, the app asks for the exact target instead of guessing.
 8. If the catalog is empty or the requested `theme_id` is not found, the app shows a blocked catalog state instead of demo themes or the first available theme.
-9. If the selected theme is paid, missing a pack URL, incompatible with the detected board, or requires newer firmware, the button names the blocker directly, for example `Pack Missing`, `Not Supported`, or `Update Needed`.
-10. If Companion is missing or the write gate is closed, the button names that blocker directly, for example `Needs Companion` or `Protected`.
-11. Once Companion, VibeTV discovery, free theme status, pack URL, board compatibility, firmware compatibility, and the write gate are ready, the customer can start install from the app.
+9. If the selected theme is not available, incompatible with the detected board, or requires newer firmware, the app uses customer language such as `Unavailable`, `Not Supported`, or `Update Needed`.
+10. If theme installs are not available in the current build, the app keeps Theme Library locked instead of exposing install controls.
+11. Once Companion, VibeTV connection, free theme status, pack URL, board compatibility, firmware compatibility, and theme install are ready, the customer can start install from the app.
 12. Firmware updates stay in a separate explicit update flow. The hosted install journey must not silently flash firmware while installing a theme.
 
 ## GitHub Theme Pack Artifacts

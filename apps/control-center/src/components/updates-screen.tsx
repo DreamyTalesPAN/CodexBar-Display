@@ -224,7 +224,7 @@ function CompanionUpdateAction({
         size={18}
         aria-hidden
       />
-      <span>{busy || !release ? "Checking installer" : "Check installer"}</span>
+      <span>{busy || !release ? "Checking" : "Check again"}</span>
     </button>
   );
 }
@@ -261,12 +261,12 @@ function companionReleaseLabel(release: CompanionReleaseInfo | null): string {
   }
   if (release.status === "available") {
     if (!hasCompleteMacPackages(release)) {
-      return "Installer unavailable";
+      return "Not ready yet";
     }
     return release.updateAvailable ? "Update available" : "Installer available";
   }
   if (release.status === "missing_asset") {
-    return "Installer unavailable";
+    return "Not ready yet";
   }
   return "Check failed";
 }

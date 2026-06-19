@@ -532,7 +532,7 @@ function labelForInstallButton({
 function labelForInstallBlocker(blocker: ThemeInstallBlocker | null): string {
   const text = `${blocker?.reason || ""} ${blocker?.readinessTitle || ""}`;
   if (/companion|start companion/i.test(text)) {
-    return "Needs Companion";
+    return "Setup First";
   }
   if (/connect|pair/i.test(text)) {
     return "Connect First";

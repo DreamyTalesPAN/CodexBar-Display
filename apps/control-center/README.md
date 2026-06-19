@@ -1,6 +1,6 @@
 # VibeTV Control Center
 
-Hosted MVP for `https://app.vibetv.shop`.
+Hosted customer app for `https://app.vibetv.shop`.
 
 ## Local Development
 
@@ -88,4 +88,4 @@ Validate the hosted customer catalog before rollout:
   --expect-shopify-product-pages
 ```
 
-No paid theme entitlement logic is included in this MVP.
+Paid theme entitlement logic is not part of the first customer flow.

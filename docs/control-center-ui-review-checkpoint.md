@@ -13,6 +13,6 @@ To reset the gate:
 
 ## Last Review Notes
 
-- Reviewed scope: Overview setup flow, Settings simplification, Theme Library unavailable states.
-- Customer rule: one next action, no internal bridge/API/release-gate/debug explanations.
-- Verification: customer flow tests, lint, local desktop/mobile browser text and overflow check.
+- Reviewed scope: Overview setup flow, Settings simplification, Theme Library unavailable states, missing-installer setup state, Shopify entry copy.
+- Customer rule: one next action when an action is possible; no dead setup buttons; no internal bridge/API/release-gate/debug explanations.
+- Verification: customer flow tests, lint, UI gate, local mobile browser text and overflow check.

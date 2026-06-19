@@ -833,7 +833,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           deviceTarget={deviceTarget}
           firmwareUpdate={effectiveFirmwareUpdate}
           busyAction={busyAction}
-          onCheckBridge={checkCompanion}
+          onCheckCompanion={checkCompanion}
           onConnectDevice={connectDevice}
           onDeviceTargetChange={handleDeviceTargetChange}
         />

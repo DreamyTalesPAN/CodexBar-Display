@@ -726,7 +726,7 @@ async function testReleaseCheckFailureShowsNoDownloadActions(
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await page
-    .getByRole("button", { name: "Check installer again" })
+    .getByRole("button", { name: "Try again" })
     .waitFor({ timeout: 10_000 });
 
   await assertNoLegacyCompanionDownloadActions(page);
@@ -755,8 +755,12 @@ async function testMissingAssetReleaseShowsNoDownloadActions(
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await page
-    .getByRole("button", { name: "Installer unavailable" })
+    .getByText("Installer is not ready yet.")
     .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByRole("button", { name: "Installer unavailable" }).count()) === 0,
+    "missing-asset setup should not show a dead installer button",
+  );
 
   await assertNoLegacyCompanionDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
