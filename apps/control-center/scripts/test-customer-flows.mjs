@@ -154,6 +154,7 @@ const companionDevice = {
 async function main() {
   const fixtureServer = await startFixtureServer();
   const catalogUrl = `http://127.0.0.1:${fixtureServer.port}/theme-packs.json`;
+  const failedCatalogUrl = `http://127.0.0.1:${fixtureServer.port}/theme-packs-failed.json`;
   const completeReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-complete.json`;
   const scriptOnlyReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-script-only.json`;
   const partialPackageReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-partial-package.json`;
@@ -317,6 +318,18 @@ async function main() {
       status: "check_failed",
       updateAvailable: false,
     });
+    await stopProcess(app.process);
+    app = undefined;
+
+    appContext = await startTestApp({
+      catalogUrl: failedCatalogUrl,
+      releaseUrl: completeReleaseUrl,
+    });
+    app = appContext.app;
+    await testThemeCatalogApiKeepsCustomerSafeIssue(
+      appContext.appUrl,
+      fixtureServer,
+    );
     console.log("control-center customer flow tests passed");
   } finally {
     await browser?.close();
@@ -1117,6 +1130,34 @@ async function assertCompanionReleaseApi(
   }
 }
 
+async function testThemeCatalogApiKeepsCustomerSafeIssue(
+  appUrl,
+  fixtureServer,
+) {
+  const initialCatalogRequests = fixtureServer.failedCatalogRequestCount;
+  const response = await fetch(`${appUrl}/api/themes`);
+  assert(
+    response.ok,
+    `expected theme catalog API HTTP 200, got ${response.status}`,
+  );
+  const payload = await response.json();
+  assert(
+    Array.isArray(payload.themes) && payload.themes.length === 0,
+    `theme catalog API should return an empty theme list, got ${JSON.stringify(
+      payload.themes,
+    )}`,
+  );
+  assert(
+    payload.issue === "Themes are not available right now.",
+    `theme catalog API issue=${payload.issue}`,
+  );
+  assertCustomerThemeCatalogIssue(payload.issue);
+  assert(
+    fixtureServer.failedCatalogRequestCount > initialCatalogRequests,
+    "failed theme catalog flow did not read the local catalog fixture",
+  );
+}
+
 function assertCustomerApiMessage(message) {
   assert(
     typeof message === "string" && message.trim().length > 0,
@@ -1134,6 +1175,30 @@ function assertCustomerApiMessage(message) {
     assert(
       !message.includes(text),
       `release API message should not expose ${text}: ${message}`,
+    );
+  }
+}
+
+function assertCustomerThemeCatalogIssue(issue) {
+  assert(
+    typeof issue === "string" && issue.trim().length > 0,
+    "theme catalog API must include a customer-safe issue",
+  );
+  const forbidden = [
+    "Shopify",
+    "Storefront",
+    "API",
+    "HTTP",
+    "SHOPIFY_",
+    "TOKEN",
+    "configured",
+    "configuration",
+    "environment",
+  ];
+  for (const text of forbidden) {
+    assert(
+      !issue.includes(text),
+      `theme catalog API issue should not expose ${text}: ${issue}`,
     );
   }
 }
@@ -1260,6 +1325,7 @@ async function routeCompanionOnline(
 
 async function startFixtureServer() {
   let catalogRequestCount = 0;
+  let failedCatalogRequestCount = 0;
   let releaseRequestCount = 0;
   let scriptOnlyReleaseRequestCount = 0;
   let partialReleaseRequestCount = 0;
@@ -1271,6 +1337,12 @@ async function startFixtureServer() {
       catalogRequestCount += 1;
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify(catalogFixture));
+      return;
+    }
+    if (request.url === "/theme-packs-failed.json") {
+      failedCatalogRequestCount += 1;
+      response.writeHead(503, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ message: "theme catalog unavailable" }));
       return;
     }
     if (request.url === "/github-release-complete.json") {
@@ -1319,6 +1391,9 @@ async function startFixtureServer() {
     port: address.port,
     get catalogRequestCount() {
       return catalogRequestCount;
+    },
+    get failedCatalogRequestCount() {
+      return failedCatalogRequestCount;
     },
     get releaseRequestCount() {
       return releaseRequestCount;
