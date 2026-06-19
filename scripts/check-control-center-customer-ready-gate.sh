@@ -222,6 +222,8 @@ run_local_checks() {
 
   run_step "Control Center UI review gate" \
     node "${ROOT}/scripts/check-control-center-ui-review-gate.mjs"
+  run_step "Control Center customer docs guard" \
+    "${ROOT}/scripts/check-control-center-customer-docs.sh"
   run_step "Control Center lint" \
     run_in_dir "$APP_DIR" npm run lint
   run_step "Control Center customer-flow tests" \

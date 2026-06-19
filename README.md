@@ -12,65 +12,14 @@ Vibe TV ships ready for WiFi setup.
 3. If your device opens a setup browser automatically, use it. Otherwise open `http://vibetv.local`. If that does not load, open `http://192.168.4.1`.
 4. Choose your home WiFi, enter the password, and save.
 5. After Vibe TV restarts, the display shows `vibetv.local` plus a fallback IP address.
-6. Open `http://vibetv.local` in your browser. If that does not load, use the fallback IP shown on the display. Then select `Copy Mac Setup Command`.
-7. Open Terminal (on Mac: Cmd + Space, type Terminal, hit enter), paste the copied command, and press Enter.
+6. Open `https://app.vibetv.shop` on your Mac.
+7. Follow the one main button in the app. If it asks for Companion, download it, open the downloaded installer, finish the install, then return to the app.
+8. If the app asks for a Vibe TV address, use `vibetv.local` or the IP address shown on the Vibe TV screen.
+9. Select `Connect VibeTV`.
 
-```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
-```
+Normal customer setup does not require Terminal, USB flashing, or manual commands.
 
-The installer defaults to WiFi, `http://vibetv.local`, and the Mini theme.
-
-Or copy this prompt into any AI:
-
-```text
-I plugged in my Vibe TV and connected it to my home WiFi through the VibeTV-Setup hotspot. Please help me set up the Mac Companion end-to-end over WiFi.
-
-Your job:
-- Assume I want the standard setup flow on macOS.
-- If you have terminal or tool access, do the setup yourself instead of asking me to copy commands.
-- Use the official installer:
-  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
-- After running it, verify that the setup worked.
-- Only if you cannot run commands yourself, explain exactly what I should do in simple ELI5 language, one small step at a time.
-
-Success means:
-- setup completes without errors
-- the Vibe TV no longer stays on the Open Setup screen
-- usage appears automatically on the display
-
-If something fails, troubleshoot in this order:
-- confirm the Vibe TV IP address
-- confirm the Mac is on the same WiFi
-- rerun the installer
-- check that the daemon target is http://vibetv.local
-
-If you cannot act directly, do not dump a long checklist. Give me only the next action, wait for the result, and then continue.
-```
-
-The installer:
-
-- checks that you are on macOS
-- downloads the matching `codexbar-display` build for your Mac
-- verifies the checksum
-- installs CodexBar if it is missing
-- sets up the background service
-- warms up CodexBar on fresh installs
-- runs a health check at the end
-
-To stop the background service for good until you explicitly re-enable it:
-
-```bash
-codexbar-display service stop
-```
-
-To start it again:
-
-```bash
-codexbar-display service start
-```
-
-If the device shows `Open Setup`, the hardware is usually fine. It means Vibe TV is on WiFi and is waiting for the Mac Companion setup command.
+If the device shows `Open Setup`, the hardware is usually fine. It means Vibe TV is on WiFi and is waiting for the Mac Companion.
 
 To reset WiFi setup, open the Vibe TV setup page in a browser and use `Reset WiFi Setup`. If the device is not reachable, unplug power during early boot three times in a row; on the next boot, Vibe TV clears saved WiFi credentials and starts the `VibeTV-Setup` hotspot.
 
