@@ -96,24 +96,24 @@ export function UpdatesScreen({
 
       <section className="border-b border-[#747A60] py-8">
         <h3 className="mb-6 text-base font-bold text-[#1B1B1B]">
-          Companion app
+          Companion
         </h3>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
           <dl className="grid gap-0 border-y border-[#747A60]">
             <FirmwareRow
               icon={<Server size={20} aria-hidden />}
-              label="Installed Companion"
+              label="Installed version"
               value={companionInstalled}
             />
             <FirmwareRow
               icon={<Download size={20} aria-hidden />}
-              label="Release installer"
+              label="Latest version"
               value={companionAvailable}
             />
             <FirmwareRow
               icon={<Download size={20} aria-hidden />}
-              label="Mac package"
+              label="Mac installer"
               value={companionPackageStatus}
             />
             <FirmwareRow
@@ -212,20 +212,34 @@ function CompanionUpdateAction({
     );
   }
 
+  if (!release) {
+    return <ActionStatus label="Checking" busy />;
+  }
+
+  if (release.status === "check_failed") {
+    return (
+      <button
+        className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-5 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={busy}
+        onClick={onCheckInstaller}
+        type="button"
+      >
+        <RefreshCw
+          className={busy ? "animate-spin" : undefined}
+          size={18}
+          aria-hidden
+        />
+        <span>{busy ? "Checking" : "Try again"}</span>
+      </button>
+    );
+  }
+
+  if (!hasCompleteMacPackages(release)) {
+    return <ActionStatus label="Not ready yet" />;
+  }
+
   return (
-    <button
-      className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:border-[#747A60] disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-      disabled={busy || !release}
-      onClick={onCheckInstaller}
-      type="button"
-    >
-      <RefreshCw
-        className={busy || !release ? "animate-spin" : undefined}
-        size={18}
-        aria-hidden
-      />
-      <span>{busy || !release ? "Checking" : "Check again"}</span>
-    </button>
+    <ActionStatus label="Ready" />
   );
 }
 
@@ -269,6 +283,15 @@ function companionReleaseLabel(release: CompanionReleaseInfo | null): string {
     return "Not ready yet";
   }
   return "Check failed";
+}
+
+function ActionStatus({ busy, label }: { busy?: boolean; label: string }) {
+  return (
+    <div className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-5 text-sm font-semibold text-[#444933]">
+      {busy ? <RefreshCw className="animate-spin" size={18} aria-hidden /> : null}
+      <span>{label}</span>
+    </div>
+  );
 }
 
 function HeroIcon({

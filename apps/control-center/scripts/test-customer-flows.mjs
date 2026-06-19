@@ -190,6 +190,7 @@ async function main() {
       appContext.appUrl,
     );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
+    await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testPairingRequiredThemeStaysLocked(browser, appContext.appUrl);
     await testThemeWithoutPackUrlStaysLocked(browser, appContext.appUrl);
@@ -280,6 +281,10 @@ async function main() {
       browser,
       appContext.appUrl,
       fixtureServer,
+    );
+    await testUpdatesHideUnavailableCompanionAction(
+      browser,
+      appContext.appUrl,
     );
     await assertCompanionReleaseApi(appContext.appUrl, {
       installerAsset: null,
@@ -473,6 +478,60 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
       `Settings should not show setup/debug text: ${text}`,
     );
   }
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests);
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page.getByRole("link", { name: "Update Companion" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByText("Installed version").waitFor({ timeout: 10_000 });
+  await page.getByText("Latest version").waitFor({ timeout: 10_000 });
+  await page.getByText("Mac installer").waitFor({ timeout: 10_000 });
+
+  const hiddenUpdatesText = ["Release installer", "Mac package"];
+  for (const text of hiddenUpdatesText) {
+    assert(
+      (await page.getByText(text).count()) === 0,
+      `Updates should not show package/release jargon: ${text}`,
+    );
+  }
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testUpdatesHideUnavailableCompanionAction(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests);
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page.getByText("Not ready yet").first().waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("Not ready yet").count()) >= 1,
+    "Updates should show the unavailable Companion installer state",
+  );
+
+  assert(
+    (await page.getByRole("button", { name: "Check again" }).count()) === 0,
+    "Updates should not show a dead Companion installer retry button",
+  );
+  assert(
+    (await page.getByRole("link", { name: "Update Companion" }).count()) === 0,
+    "Updates should not show a Companion update link without macOS packages",
+  );
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
