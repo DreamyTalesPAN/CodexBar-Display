@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:customer-flows": "node scripts/test-customer-flows.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.17.0",

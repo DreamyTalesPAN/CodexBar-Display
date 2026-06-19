@@ -3,7 +3,6 @@
 import {
   Activity,
   CircleHelp,
-  ExternalLink,
   FileText,
   Grid2X2,
   RefreshCw,
@@ -112,48 +111,53 @@ export function ControlCenterShell({
 
             <button
               className="flex h-16 items-center justify-between border border-[#444933] px-5 text-left text-[#EDEDED] transition hover:border-[#747A60]"
+              onClick={() => onTabChange("logs")}
               type="button"
             >
               <span className="flex items-center gap-4">
                 <CircleHelp size={26} aria-hidden />
                 <span>Help & Support</span>
               </span>
-              <ExternalLink size={18} aria-hidden />
+              <FileText size={18} aria-hidden />
             </button>
           </div>
         </aside>
 
         <section className="min-w-0">
           <header className="flex h-[86px] items-center justify-between border-b border-[#747A60] bg-[#F9F9F9] px-7 lg:px-10">
-            <div className="min-w-0">
+            <div className="hidden min-w-0 lg:block">
               <h1 className="truncate text-xl font-semibold text-[#1B1B1B]">
                 {NAV_ITEMS.find((item) => item.id === activeTab)?.label ||
                   "Overview"}
               </h1>
             </div>
 
-            <div className="hidden items-center gap-8 md:flex">
+            <div className="hidden items-center gap-8 lg:flex">
               <div className="inline-flex items-center gap-3 text-base text-[#1B1B1B]">
                 <span className="size-2 rounded-full bg-[#CCFF00]" />
                 <span>{targetLabel}</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 overflow-x-auto md:hidden">
+            <div className="flex w-full min-w-0 items-center gap-2 overflow-x-auto lg:hidden">
               {NAV_ITEMS.map((item) => (
                 <button
+                  aria-label={item.label}
                   aria-current={item.id === activeTab ? "page" : undefined}
-                  className={`inline-flex h-11 shrink-0 items-center gap-2 px-3 text-sm font-semibold transition ${
+                  className={`inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 px-3 text-sm font-semibold transition ${
                     item.id === activeTab
                       ? "bg-[#CCFF00] text-[#1B1B1B]"
                       : "border border-[#747A60] bg-[#F9F9F9] text-[#1B1B1B]"
                   }`}
                   key={item.id}
                   onClick={() => onTabChange(item.id)}
+                  title={item.label}
                   type="button"
                 >
                   {item.icon}
-                  <span>{item.label}</span>
+                  <span className="sr-only min-[560px]:not-sr-only">
+                    {item.label}
+                  </span>
                   {item.id === "updates" && firmwareUpdateAvailable ? (
                     <span
                       aria-label="Update available"

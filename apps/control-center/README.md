@@ -11,6 +11,14 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+Run the customer-flow browser test without live Shopify, Companion, or VibeTV access:
+
+```bash
+npm run test:customer-flows
+```
+
+The test builds the app with a local catalog fixture, starts `next start` on a free localhost port, mocks Companion browser calls, and checks the critical `/install/[themeId]` flows.
+
 The local Companion API must run on `127.0.0.1:47832` for real device actions:
 
 ```bash
@@ -57,15 +65,27 @@ SHOPIFY_STOREFRONT_ACCESS_TOKEN=...
 SHOPIFY_STOREFRONT_PRIVATE_TOKEN=...
 SHOPIFY_STOREFRONT_API_VERSION=2026-04
 SHOPIFY_THEME_COLLECTION_HANDLE=themes-2
+CONTROL_CENTER_GITHUB_TOKEN=...
 ```
 
-Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `SHOPIFY_STOREFRONT_ACCESS_TOKEN` for a public token. If Shopify env vars are missing, the app shows a configuration warning and no installable themes. Set `CONTROL_CENTER_ALLOW_CATALOG_FALLBACK=1` only for explicit local development with repo catalog data.
+Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `SHOPIFY_STOREFRONT_ACCESS_TOKEN` for a public token. `CONTROL_CENTER_GITHUB_TOKEN` is optional, server-side only, and keeps GitHub release checks for Companion installer assets away from anonymous rate limits. If Shopify env vars are missing, the app shows a configuration warning and no installable themes. Set `CONTROL_CENTER_ALLOW_CATALOG_FALLBACK=1` only for explicit local development with repo catalog data.
 
 ## Flow
 
-- `/` shows the theme library, Companion state, VibeTV state, install action and brightness.
+- `/` opens the Control Center overview with Companion, VibeTV and update state.
 - `/install/[themeId]` opens the same app with a theme preselected.
 - Browser talks directly to `http://127.0.0.1:47832`.
 - The server reads Shopify product data through the Storefront API and only sends normalized public theme data to the browser.
+
+Validate the hosted customer catalog before rollout:
+
+```bash
+../../scripts/check-control-center-companion-customer-readiness.sh \
+  --app-url https://app.vibetv.shop \
+  --expect-catalog-source shopify \
+  --expect-theme-id <theme_id> \
+  --expect-all-free-themes-installable \
+  --expect-shopify-product-pages
+```
 
 No paid theme entitlement logic is included in this MVP.

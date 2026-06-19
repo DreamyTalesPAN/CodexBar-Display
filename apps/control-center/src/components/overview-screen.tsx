@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import {
   CompanionDownloadActions,
+  CompanionReleaseNotice,
   useCompanionRelease,
 } from "./companion-installer-actions";
 import type {
@@ -30,6 +31,7 @@ import type {
   DeviceState,
   ReadinessTone,
 } from "./control-center-types";
+import { DeviceTargetForm } from "./device-target-form";
 
 type OverviewScreenProps = {
   companionStatus: CompanionStatus;
@@ -42,8 +44,11 @@ type OverviewScreenProps = {
   lastCheckedAt?: string | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
   events?: ControlCenterEvent[];
+  deviceTarget: string;
   onCheckBridge?: () => void;
-  onDiscoverDevice?: () => void;
+  onDeviceTargetChange?: (target: string) => void;
+  onDiscoverDevice?: (targetOverride?: string) => void;
+  onViewLogs?: () => void;
 };
 
 export function OverviewScreen({
@@ -57,8 +62,11 @@ export function OverviewScreen({
   lastCheckedAt,
   firmwareUpdate,
   events,
+  deviceTarget,
   onCheckBridge,
+  onDeviceTargetChange,
   onDiscoverDevice,
+  onViewLogs,
 }: OverviewScreenProps) {
   const connected = Boolean(device?.connected);
   const companionMissing = companionStatus === "missing";
@@ -74,7 +82,9 @@ export function OverviewScreen({
     deviceState,
     lastError,
   });
+  const localActionBusy = Boolean(busyAction);
   const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
+  const showTargetControl = companionStatus === "online" && !connected;
   const displayEvents = buildSessionEvents({
     companionStatus,
     device,
@@ -148,7 +158,7 @@ export function OverviewScreen({
           <div className="flex flex-col gap-3 sm:flex-row md:justify-end">
             <button
               className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-              disabled={busyAction === "status"}
+              disabled={localActionBusy}
               onClick={onCheckBridge}
               type="button"
             >
@@ -157,8 +167,8 @@ export function OverviewScreen({
             </button>
             <button
               className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#1B1B1B] px-4 text-sm font-semibold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-              disabled={companionStatus !== "online" || busyAction === "discover"}
-              onClick={onDiscoverDevice}
+              disabled={companionStatus !== "online" || localActionBusy}
+              onClick={() => onDiscoverDevice?.(deviceTarget)}
               type="button"
             >
               <Monitor size={17} aria-hidden />
@@ -168,6 +178,20 @@ export function OverviewScreen({
         </div>
       </section>
 
+      {showTargetControl ? (
+        <section className="border-b border-[#747A60] py-6">
+          <DeviceTargetForm
+            busy={busyAction === "discover"}
+            disabled={localActionBusy}
+            id="overview-device-target"
+            lastError={lastError}
+            onChange={onDeviceTargetChange}
+            onSubmit={onDiscoverDevice}
+            value={deviceTarget}
+          />
+        </section>
+      ) : null}
+
       {companionMissing ? (
         <section className="border-b border-[#747A60] py-6">
           <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
@@ -176,14 +200,15 @@ export function OverviewScreen({
                 Companion installer
               </h3>
               <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
-                Install the Companion on this computer, then return here and
-                check the bridge again. Chrome Allow only permits local access;
-                it does not install or start Companion.
+                Install or repair the Companion on this computer, then return
+                here and check the bridge again. Chrome Allow only permits
+                local access; it does not install or start Companion.
               </p>
             </div>
 
             <div className="flex flex-col items-start gap-3 md:items-end">
               <CompanionDownloadActions release={companionRelease} />
+              <CompanionReleaseNotice release={companionRelease} />
               <button
                 className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={companionReleaseBusy}
@@ -207,6 +232,7 @@ export function OverviewScreen({
           <h3 className="text-base font-bold text-[#1B1B1B]">Last events</h3>
           <button
             className="inline-flex items-center gap-2 text-sm font-semibold text-[#506600] transition hover:text-[#1B1B1B]"
+            onClick={onViewLogs}
             type="button"
           >
             View all logs
@@ -287,15 +313,21 @@ function EventItem({
   event: ControlCenterEvent;
 }) {
   return (
-    <li className="grid min-h-[74px] grid-cols-[54px_minmax(0,1fr)_96px] items-center gap-5 border-b border-[#747A60] py-4 last:border-b-0">
+    <li className="grid min-h-[74px] grid-cols-[44px_minmax(0,1fr)] items-center gap-x-4 gap-y-2 border-b border-[#747A60] py-4 last:border-b-0 sm:grid-cols-[54px_minmax(0,1fr)_96px] sm:gap-5">
       <div className="grid size-11 place-items-center rounded-full bg-[#1B1B1B] text-[#CCFF00]">
         {iconForEvent(event)}
       </div>
       <div className="min-w-0">
-        <div className="font-bold leading-5 text-[#1B1B1B]">{event.label}</div>
-        <div className="mt-1 leading-5 text-[#444933]">{event.detail}</div>
+        <div className="break-words font-bold leading-5 text-[#1B1B1B]">
+          {event.label}
+        </div>
+        <div className="mt-1 break-words leading-5 text-[#444933]">
+          {event.detail}
+        </div>
       </div>
-      <div className="text-right text-sm text-[#444933]">{event.at || "Session"}</div>
+      <div className="col-start-2 min-w-0 break-words text-sm text-[#444933] sm:col-start-auto sm:text-right">
+        {event.at || "Session"}
+      </div>
     </li>
   );
 }
@@ -441,9 +473,9 @@ function buildSetupState({
 }) {
   if (companionStatus === "missing") {
     return {
-      title: "Install or start Companion",
+      title: "Install or repair Companion",
       detail:
-        "app.vibetv.shop is live, but it can only reach your VibeTV through the local Companion on this computer. The browser permission allows that local connection; it does not start Companion.",
+        "app.vibetv.shop is live, but it can only reach your VibeTV through the local Companion on this computer. If Companion is installed but still offline, run the package again to repair it and allow browser local access when asked.",
       icon: <Play size={22} aria-hidden />,
     };
   }

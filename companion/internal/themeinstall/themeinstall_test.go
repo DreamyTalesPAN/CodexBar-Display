@@ -25,3 +25,10 @@ func TestStripTargetCredentialsRemovesTokenQuery(t *testing.T) {
 		t.Fatalf("unexpected stripped target %q", got)
 	}
 }
+
+func TestStripURLCredentialsRemovesSignedSourceDetails(t *testing.T) {
+	got := stripURLCredentials("https://user:secret@example.com/theme.zip?X-Amz-Signature=abc#frag")
+	if got != "https://example.com/theme.zip" {
+		t.Fatalf("unexpected stripped source %q", got)
+	}
+}

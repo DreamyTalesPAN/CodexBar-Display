@@ -1,69 +1,98 @@
-# VibeTV Shopify Theme Shop
+# VibeTV Shopify Theme Journey
 
-This is the target architecture for `vibetv.shop`. Do not mix this with any other Shopify business.
+This document is the current Shopify rollout plan for the hosted Control Center flow.
 
-## Decision
+## Current Decision
 
-Use **GitHub-hosted theme packs + app-owned Shopify Metaobjects** for the free theme catalog.
+The MVP uses normal Shopify products as the visible theme catalog:
 
-Do not model free themes as normal Shopify products for the MVP. Products make sense later if themes become paid, need checkout, or need order history. For a free download catalog they add too much checkout/cart behavior.
+- Shop domain: `vibetv.shop`
+- Theme collection handle: `themes-2`
+- Hosted app: `https://app.vibetv.shop`
+- Product entry URL: `https://app.vibetv.shop/install/<theme_id>`
 
-## Data Model
+The Control Center already reads products from Shopify Storefront API through `apps/control-center/src/lib/themes.ts`. App-owned Shopify Metaobjects can still be revisited later, but they are not the current MVP source of truth.
 
-Define a VibeTV theme metaobject in the VibeTV Shopify app configuration:
+## Product Model
 
-```toml
-[metaobjects.app.vibetv_theme]
-name = "VibeTV Theme"
-display_name_field = "title"
-access.admin = "merchant_read_write"
-access.storefront = "public_read"
+Each customer-visible theme should be a Shopify product in the `themes-2` collection.
 
-[metaobjects.app.vibetv_theme.fields.title]
-name = "Title"
-type = "single_line_text_field"
-required = true
+Required:
 
-[metaobjects.app.vibetv_theme.fields.short_description]
-name = "Short Description"
-type = "multi_line_text_field"
+- Product title, description, and preview images/GIFs.
+- Product price `0`, because the MVP only installs free themes.
+- Product type or tag: `VibeTV Theme`.
+- Metafield `vibetv.theme_id`.
 
-[metaobjects.app.vibetv_theme.fields.theme_id]
-name = "Theme ID"
-type = "single_line_text_field"
-required = true
+Recommended:
 
-[metaobjects.app.vibetv_theme.fields.theme_rev]
-name = "Theme Revision"
-type = "number_integer"
-required = true
+- `vibetv.theme_version`
+- `vibetv.manifest_url`
+- `vibetv.pack_url`
+- `vibetv.compatible_boards`
+- `vibetv.requires_firmware`
 
-[metaobjects.app.vibetv_theme.fields.preview_image]
-name = "Preview Image"
-type = "file_reference"
+The `vibetv.theme_id` value must match the ID used by the Control Center and the GitHub theme-pack catalog, for example `synthwave`, `clippy`, or `claude-creature`.
 
-[metaobjects.app.vibetv_theme.fields.min_firmware_version]
-name = "Minimum Firmware Version"
-type = "single_line_text_field"
+Shopify is the catalog and preview surface. The installable ZIPs stay in GitHub release/repo artifacts for now. If a Shopify product does not define a valid `vibetv.pack_url`, the Control Center fills the missing or invalid pack URL from the GitHub catalog by matching `vibetv.theme_id`.
 
-[metaobjects.app.vibetv_theme.fields.tags]
-name = "Tags"
-type = "list.single_line_text_field"
+## Product Button
 
-[metaobjects.app.vibetv_theme.fields.featured]
-name = "Featured"
-type = "boolean"
+Use this Custom Liquid block on VibeTV theme product pages:
 
-[metaobjects.app.vibetv_theme.fields.sort_order]
-name = "Sort Order"
-type = "number_integer"
+```liquid
+{% liquid
+  assign theme_product = product
+  if theme_product == blank
+    assign theme_product = closest.product
+  endif
+  assign theme_id = theme_product.metafields.vibetv.theme_id.value | default: theme_product.metafields.theme.theme_id.value
+  assign readiness_url = ''
+  if theme_id != blank
+    assign encoded_theme_id = theme_id | url_encode
+    assign readiness_url = 'https://app.vibetv.shop/install/' | append: encoded_theme_id
+  endif
+%}
+
+<div class="vtv-theme-readiness" data-vtv-theme-readiness>
+  {% if readiness_url != blank %}
+    <a class="button add-to-cart-button" href="{{ readiness_url }}" target="_blank" rel="noopener">
+      Check compatibility in the app
+    </a>
+    <p class="vtv-theme-readiness__note">
+      Opens the hosted Control Center. Install only starts after Companion, VibeTV pairing, device checks, and the protected write gate are ready.
+    </p>
+  {% else %}
+    <button type="button" class="button add-to-cart-button" disabled>
+      Theme check unavailable
+    </button>
+    <p class="vtv-theme-readiness__note">Add the theme_id metafield before sending this theme page to customers.</p>
+  {% endif %}
+</div>
 ```
 
-Shopify docs say TOML-defined app-owned metaobjects are version-controlled and deployed with `shopify app deploy`. They also support `access.storefront = "public_read"`, so the storefront can list the themes.
+The validated source is also stored in `docs/vibetv-theme-product-custom-liquid.liquid`.
 
-`theme_id` is the key field. It must exactly match the ID in GitHub's `dist/theme-packs/vibetv-theme-packs.json`, for example `synthwave`, `clippy`, or `claude-creature`.
+Do not use customer-facing copy like `Jetzt installieren` while #129 is open. The correct public promise is readiness/compatibility checking. Real theme-install writes remain protected until the hardware write gate is approved.
 
-## GitHub Build Flow
+Live rollout status on 2026-06-19: the main `vibetv.shop` theme template `templates/product.themes.json` uses the readiness button for `synthwave-theme`, `clippy-theme`, and `claude-creature-theme`. The old `theme-pack install --target http://vibetv.local` command-copy block is no longer present on those public product pages.
+
+## Customer Flow
+
+1. Customer visits `https://vibetv.shop/collections/themes-2`.
+2. Customer opens a VibeTV theme product.
+3. Product page button opens `https://app.vibetv.shop/install/<theme_id>`.
+4. The hosted app opens the selected theme readiness screen.
+5. If Companion is missing, the app shows Companion package/script download actions directly.
+6. If Companion is running but VibeTV is not found, the app shows a `VibeTV target` field in the same install flow.
+7. If multiple VibeTV devices are found, the app asks for the exact target instead of guessing.
+8. If the catalog is empty or the requested `theme_id` is not found, the app shows a locked catalog state instead of demo themes or the first available theme.
+9. If the selected theme is paid, missing a pack URL, incompatible with the detected board, or requires newer firmware, install stays `Locked`.
+10. If the write gate is closed, install stays `Locked`.
+11. Once Companion, VibeTV discovery, free theme status, pack URL, board compatibility, firmware compatibility, and the write gate are ready, the customer can start install from the app.
+12. Firmware updates stay in a separate explicit update flow. The hosted install journey must not silently flash firmware while installing a theme.
+
+## GitHub Theme Pack Artifacts
 
 Theme source files live in this repo:
 
@@ -73,13 +102,13 @@ theme-packs/<theme-id>/theme.json
 theme-packs/<theme-id>/assets/*
 ```
 
-Build the GitHub-hosted install artifacts from the repo root:
+Build artifacts from the repo root:
 
 ```bash
 node scripts/build-theme-packs.mjs
 ```
 
-Commit these generated files to GitHub:
+Committed generated files include:
 
 ```text
 dist/theme-packs/vibetv-theme-packs.json
@@ -87,49 +116,60 @@ dist/theme-packs/vibetv-theme-synthwave.zip
 dist/theme-packs/vibetv-theme-clippy.zip
 dist/theme-packs/vibetv-theme-claude-creature.zip
 dist/theme-packs/vibetv-theme-cozy-meadow.zip
+dist/theme-packs/vibetv-theme-mini-classic.zip
 ```
 
-The Companion default catalog URL is:
+The fallback catalog URL is:
 
 ```text
 https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json
 ```
 
-Shopify does not host the ZIPs. Shopify only provides the `theme_id` for the copyable install command.
+## Hardware Test Guardrail
 
-## Customer Flow
+WiFi theme installs write to the device. Do not run them against `vibetv.local` as a routine development check.
 
-1. Customer visits `vibetv.shop/themes`.
-2. Storefront lists VibeTV theme products from Shopify.
-3. Each theme product links to `https://app.vibetv.shop/install/<theme_id>`.
-4. The hosted app opens a readiness check for the selected theme. It can show missing Companion, missing VibeTV, multiple-device selection, or write-gate locked states before any device write happens.
-5. Once Companion, VibeTV discovery and the write gate are ready, the customer can start install from the app.
-6. Companion reads the GitHub VibeTV catalog, resolves the Theme Pack ZIP from the `theme_id`, uploads assets to `/assets`, and activates the stored ThemeSpec via `/theme/active`. The regular daemon keeps sending real live frames after install.
-7. Firmware updates stay in a separate explicit update flow. The hosted install journey must not silently flash firmware while installing a theme.
+Before linking customers to a theme product, verify that the hosted app is reading the Shopify catalog and that the product resolves to an installable free theme:
 
-Legacy command-copy flow for support/testing:
+```bash
+scripts/check-control-center-companion-customer-readiness.sh \
+  --app-url https://app.vibetv.shop \
+  --expect-catalog-source shopify \
+  --expect-theme-id <theme_id> \
+  --expect-all-free-themes-installable \
+  --expect-shopify-product-pages
+```
+
+That check only reads public HTTP pages and the hosted app. It fails if `/api/themes` is empty, served from the wrong catalog source, missing the selected `theme_id`, returning a paid theme for that ID, missing a free theme `themeId`, missing the resolved `packUrl`, returning a `packUrl` that is not an `http(s)` download URL, exposing any free collection theme that is not installable, if the selected `/install/<theme_id>` route is not reachable, if any free collection theme's `/install/<theme_id>` route is not reachable, if a free Shopify catalog item has neither `productUrl` nor `handle`, if a Shopify product page does not link to `https://app.vibetv.shop/install/<theme_id>`, or if the old terminal install command is still present on the product page.
+
+Allowed without extra hardware approval:
+
+- Shopify product/collection browsing.
+- Hosted app readiness checks.
+- Companion installer availability checks.
+- Read-only Companion status, diagnostics, device discovery, and settings reads.
+
+Not allowed without current explicit approval:
+
+- `POST /v1/themes/install`
+- `POST /assets`
+- `POST /theme/active`
+- firmware updates
+- any repeated hardware write test after a failed write
+
+## Legacy Support Command
+
+The old command-copy path is support/testing only:
 
 ```bash
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme clippy --target http://vibetv.local
 ```
 
-## Hardware Test Guardrail
-
-WiFi theme installs write to the device. Do not run them against `vibetv.local` as a routine development check. Use mocks and read-only checks first, and run live theme install only during an explicit hardware test window with the device owner present.
-
-## Why This Stays Small On The Device
-
-`vibetv.local` remains the device portal, not the theme store. It only needs:
-
-- status from `/health`
-- upload endpoints `/assets`
-- activation endpoint `/theme/active`
-- optional link to the external theme shop
-
-The storefront metadata and previews live on Shopify. The install catalog and ZIP downloads live on GitHub.
+Do not present this as the normal customer journey.
 
 ## Sources
 
-- Shopify Metaobject definitions: https://shopify.dev/docs/apps/build/metaobjects/manage-metaobject-definitions
-- Shopify Metaobjects overview: https://shopify.dev/docs/apps/build/metaobjects
-- Shopify Admin `fileCreate`: supports Files, including generic files, with async processing.
+- Shopify Liquid metafields: `product.metafields.namespace.key.value`
+- Shopify Liquid `url_encode` filter
+- Control Center implementation: `apps/control-center/src/lib/themes.ts`
+- Customer readiness doc: `docs/control-center-customer-readiness.md`

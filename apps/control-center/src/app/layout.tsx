@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "VibeTV Control Center",
-  description: "Installiere VibeTV Themes über den lokalen Mac Companion.",
+  description: "Check VibeTV theme readiness through the local Mac Companion.",
 };
 
 export default function RootLayout({

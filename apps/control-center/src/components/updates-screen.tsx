@@ -1,12 +1,14 @@
 "use client";
 
-import { Check, Download, Monitor, RefreshCw, Server } from "lucide-react";
+import { Check, Download, Monitor, RefreshCw, Server, Wifi } from "lucide-react";
 import type { ReactNode } from "react";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import {
   CompanionDownloadActions,
+  CompanionReleaseNotice,
   companionPackageLabel,
+  hasCompleteMacPackages,
   useCompanionRelease,
 } from "./companion-installer-actions";
 
@@ -23,6 +25,7 @@ export type UpdatesScreenProps = {
   device: UpdatesDeviceInfo | null;
   companionVersion?: string;
   firmwareUpdate?: FirmwareUpdateInfo | null;
+  onCheckBridge?: () => void;
   onCheckUpdates?: () => void;
   busyAction?: string | null;
 };
@@ -32,6 +35,7 @@ export function UpdatesScreen({
   device,
   companionVersion,
   firmwareUpdate,
+  onCheckBridge,
   onCheckUpdates,
   busyAction,
 }: UpdatesScreenProps) {
@@ -133,6 +137,22 @@ export function UpdatesScreen({
               action={companionAction}
               release={companionRelease}
             />
+            <CompanionReleaseNotice release={companionRelease} />
+            <button
+              className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!onCheckBridge || Boolean(busyAction)}
+              onClick={onCheckBridge}
+              type="button"
+            >
+              {busyAction === "status" ? (
+                <RefreshCw className="animate-spin" size={18} />
+              ) : (
+                <Wifi size={18} aria-hidden />
+              )}
+              <span>
+                {busyAction === "status" ? "Checking bridge" : "Check bridge"}
+              </span>
+            </button>
             <button
               className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-60"
               disabled={companionCheckBusy}
@@ -144,7 +164,7 @@ export function UpdatesScreen({
               ) : (
                 <RefreshCw size={18} aria-hidden />
               )}
-              <span>{companionCheckBusy ? "Checking" : "Check Companion"}</span>
+              <span>{companionCheckBusy ? "Checking" : "Check installer"}</span>
             </button>
           </div>
         </div>
@@ -229,13 +249,16 @@ function companionInstallerDetail({
   if (release.status === "missing_asset") {
     return "The latest release does not include customer installer assets yet.";
   }
+  if (!hasCompleteMacPackages(release)) {
+    return "The signed Mac package is not available yet. The script is only a support fallback.";
+  }
   if (action === "update") {
     return "A newer Companion is available. Installing the package updates the local bridge while keeping the app on app.vibetv.shop.";
   }
   if (action === "repair") {
     return "Use the package again if Companion is installed but stuck, damaged, or needs a clean restart.";
   }
-  return "Install Companion on this computer first, then return to the app and check the bridge again.";
+  return "Install Companion on this computer first. If it is already installed but not detected, run the package again as a repair and allow browser local access when asked.";
 }
 
 function companionReleaseLabel(release: CompanionReleaseInfo | null): string {
@@ -243,6 +266,9 @@ function companionReleaseLabel(release: CompanionReleaseInfo | null): string {
     return "Checking";
   }
   if (release.status === "available") {
+    if (!hasCompleteMacPackages(release)) {
+      return "Support script only";
+    }
     return release.updateAvailable ? "Update available" : "Installer available";
   }
   if (release.status === "missing_asset") {

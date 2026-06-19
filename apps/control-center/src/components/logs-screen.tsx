@@ -4,6 +4,7 @@ import {
   Activity,
   AlertTriangle,
   Clipboard,
+  Download,
   FileText,
   Clock,
   RefreshCw,
@@ -59,6 +60,23 @@ export function LogsScreen({
     }
   }
 
+  function downloadDiagnostics() {
+    if (!diagnosticsText) {
+      return;
+    }
+    const blob = new Blob([diagnosticsText], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = supportReportFilename(diagnostics?.generatedAt);
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="border-b border-[#747A60] py-10">
@@ -92,6 +110,15 @@ export function LogsScreen({
             >
               <Clipboard size={18} aria-hidden />
               <span>{copyState === "copied" ? "Copied" : "Copy report"}</span>
+            </button>
+            <button
+              className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!diagnosticsText}
+              onClick={downloadDiagnostics}
+              type="button"
+            >
+              <Download size={18} aria-hidden />
+              <span>Download report</span>
             </button>
           </div>
         </div>
@@ -152,7 +179,7 @@ export function LogsScreen({
           </div>
         ) : (
           <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
-            Load a support report after the next bridge check.
+            Load a support report to diagnose Companion and VibeTV state.
           </div>
         )}
         {copyState === "failed" ? (
@@ -203,16 +230,20 @@ export function LogsScreen({
                   <Activity size={23} aria-hidden />
                 </div>
                 <div className="min-w-0">
-                  <div className="font-bold text-[#1B1B1B]">{event.label}</div>
+                  <div className="break-words font-bold text-[#1B1B1B]">
+                    {event.label}
+                  </div>
                   {event.detail ? (
-                    <div className="mt-1 text-sm leading-6 text-[#444933]">
+                    <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
                       {event.detail}
                     </div>
                   ) : null}
                 </div>
-                <div className="flex items-center gap-2 text-sm text-[#444933] md:justify-end">
+                <div className="flex min-w-0 items-center gap-2 break-words text-sm text-[#444933] md:justify-end">
                   <Clock size={15} aria-hidden />
-                  {event.timestamp || "Session"}
+                  <span className="min-w-0 break-words">
+                    {event.timestamp || "Session"}
+                  </span>
                 </div>
               </li>
             ))}
@@ -257,4 +288,12 @@ function formatDiagnosticTime(value?: string): string {
     minute: "2-digit",
     second: "2-digit",
   }).format(date);
+}
+
+function supportReportFilename(value?: string): string {
+  const timestamp = value ? new Date(value) : new Date();
+  const safeTimestamp = Number.isNaN(timestamp.getTime())
+    ? "session"
+    : timestamp.toISOString().replace(/[:.]/g, "-");
+  return `vibetv-support-report-${safeTimestamp}.json`;
 }

@@ -13,6 +13,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,14 @@ func (e *multipleDevicesError) Error() string {
 		return "multiple VibeTV devices found"
 	}
 	return fmt.Sprintf("multiple VibeTV devices found: %s", strings.Join(e.targets, ", "))
+}
+
+type invalidTargetError struct {
+	target string
+}
+
+func (e *invalidTargetError) Error() string {
+	return "invalid VibeTV target"
 }
 
 type deviceInfo struct {
@@ -225,6 +234,9 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if strings.EqualFold(strings.TrimSpace(r.Header.Get("Access-Control-Request-Private-Network")), "true") {
+				w.Header().Set("Access-Control-Allow-Private-Network", "true")
+			}
 		}
 		if r.Method == http.MethodOptions {
 			if origin != "" && !allowed {
@@ -297,7 +309,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Status:     "attention",
 			Detail:     "No VibeTV target is configured.",
 			ErrorCode:  "device_target_missing",
-			NextAction: "Run device discovery or enter the exact VibeTV target in Settings.",
+			NextAction: "Run device discovery or enter the exact VibeTV target in the VibeTV target field.",
 		})
 		writeJSON(w, http.StatusOK, diagnosticsResponse{
 			OK:          true,
@@ -448,6 +460,14 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 	}
 	requestedTarget := strings.TrimSpace(req.Target)
 	target := requestedTarget
+	if requestedTarget != "" {
+		normalizedTarget, targetErr := normalizeExplicitDeviceTarget(requestedTarget)
+		if targetErr != nil {
+			writeInvalidDeviceTarget(w)
+			return
+		}
+		target = normalizedTarget
+	}
 	if target == "" {
 		target = strings.TrimSpace(cfg.DeviceTarget)
 	}
@@ -567,10 +587,6 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	cfg, _, ok := s.requireDevice(w, r)
-	if !ok {
-		return
-	}
 	var req struct {
 		ThemeID            string `json:"themeId"`
 		PackURL            string `json:"packUrl"`
@@ -584,6 +600,16 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_theme_source", "themeId or packUrl is required.", "Select a theme and retry.")
 		return
 	}
+	if !validRemoteThemePackURL(req.PackURL) {
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"invalid_theme_pack_url",
+			"Theme pack URL is invalid.",
+			"Fix the Shopify theme pack URL to an http(s) download URL, then reload the catalog.",
+		)
+		return
+	}
 	if !themeInstallEnabled() {
 		writeError(
 			w,
@@ -592,6 +618,13 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 			"Theme install is disabled for this Companion build.",
 			"Set VIBETV_ENABLE_WIFI_THEME_INSTALL=1 only during a prepared hardware test window, then restart the Companion.",
 		)
+		return
+	}
+	cfg, hello, ok := s.requireDevice(w, r)
+	if !ok {
+		return
+	}
+	if !s.requireThemeInstallPreflight(w, r, cfg, hello) {
 		return
 	}
 	skipFirmwareUpdate := true
@@ -619,16 +652,68 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	}{OK: true, Result: result, Logs: splitInstallLog(installLog.String())})
 }
 
+func (s *Server) requireThemeInstallPreflight(w http.ResponseWriter, r *http.Request, cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
+	if strings.TrimSpace(cfg.DeviceToken) == "" {
+		writeError(
+			w,
+			http.StatusForbidden,
+			"pairing_required",
+			"VibeTV pairing is required before installing themes.",
+			"Pair VibeTV, then retry install.",
+		)
+		return false
+	}
+
+	caps := protocol.CapabilitiesFromHello(hello)
+	if !caps.Known || !caps.SupportsThemeSpecV1 {
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"theme_install_unsupported",
+			"This VibeTV does not advertise theme install support.",
+			"Update VibeTV firmware or use a device that supports ThemeSpec v1.",
+		)
+		return false
+	}
+
+	if _, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err != nil {
+		writeError(
+			w,
+			http.StatusBadGateway,
+			"device_health_failed",
+			"VibeTV health check failed before theme install.",
+			"Keep VibeTV powered on, confirm it is on the same WiFi, then retry discovery before installing.",
+		)
+		return false
+	}
+	return true
+}
+
 func splitInstallLog(log string) []string {
 	lines := strings.Split(log, "\n")
 	out := make([]string, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line != "" {
-			out = append(out, line)
+			out = append(out, sanitizeLogLine(line))
 		}
 	}
 	return out
+}
+
+func validRemoteThemePackURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return true
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if parsed.User != nil || strings.TrimSpace(parsed.Host) == "" {
+		return false
+	}
+	return strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")
 }
 
 func (s *Server) config() (runtimeconfig.Config, error) {
@@ -660,7 +745,20 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 }
 
 func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) (string, protocol.DeviceHello, error) {
-	candidates := uniqueStrings(explicitTarget, cfg.DeviceTarget, setup.DefaultWiFiTarget())
+	explicitTarget = strings.TrimSpace(explicitTarget)
+	if explicitTarget != "" {
+		target, targetErr := normalizeExplicitDeviceTarget(explicitTarget)
+		if targetErr != nil {
+			return "", protocol.DeviceHello{}, targetErr
+		}
+		hello, err := s.getHelloProbe(ctx, target, cfg.DeviceToken, discoveryProbeTime)
+		if err != nil {
+			return "", protocol.DeviceHello{}, err
+		}
+		return target, hello, nil
+	}
+
+	candidates := uniqueStrings(cfg.DeviceTarget, setup.DefaultWiFiTarget())
 	var lastErr error
 	for _, candidate := range candidates {
 		hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, discoveryProbeTime)
@@ -916,6 +1014,11 @@ func writeDeviceNotFound(w http.ResponseWriter) {
 }
 
 func writeDiscoveryError(w http.ResponseWriter, err error) {
+	var invalidTarget *invalidTargetError
+	if errors.As(err, &invalidTarget) {
+		writeInvalidDeviceTarget(w)
+		return
+	}
 	var multiple *multipleDevicesError
 	if errors.As(err, &multiple) {
 		writeError(
@@ -923,11 +1026,15 @@ func writeDiscoveryError(w http.ResponseWriter, err error) {
 			http.StatusConflict,
 			"multiple_devices_found",
 			"Multiple VibeTV devices were found.",
-			"Enter the exact VibeTV target in Settings, for example http://vibetv.local or http://<device-ip>, then run discovery again.",
+			"Enter the exact VibeTV target in the VibeTV target field, for example http://vibetv.local or http://<device-ip>, then search again.",
 		)
 		return
 	}
 	writeDeviceNotFound(w)
+}
+
+func writeInvalidDeviceTarget(w http.ResponseWriter) {
+	writeError(w, http.StatusBadRequest, "invalid_device_target", "VibeTV target is invalid.", "Enter vibetv.local, an IP address, or an http(s) URL with a valid port and without path, username, password, query, or fragment.")
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter) {
@@ -956,6 +1063,21 @@ func writeInstallError(w http.ResponseWriter, err error) {
 }
 
 var sensitiveQueryValuePattern = regexp.MustCompile(`(?i)([?&](?:token|auth|key|secret)=)[^&\s"]+`)
+var sensitiveURLUserInfoPattern = regexp.MustCompile(`(?i)\b(https?://)[^/\s"@]+@`)
+var publicLogURLPattern = regexp.MustCompile(`https?://[^\s)]+`)
+
+func sanitizeLogLine(line string) string {
+	return publicLogURLPattern.ReplaceAllStringFunc(line, func(raw string) string {
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			return raw
+		}
+		parsed.User = nil
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return parsed.String()
+	})
+}
 
 func sanitizeErrorDetail(err error) string {
 	if err == nil {
@@ -965,6 +1087,7 @@ func sanitizeErrorDetail(err error) string {
 	if detail == "" {
 		return ""
 	}
+	detail = sensitiveURLUserInfoPattern.ReplaceAllString(detail, "${1}<redacted>@")
 	detail = sensitiveQueryValuePattern.ReplaceAllString(detail, "${1}<redacted>")
 	if len(detail) > 240 {
 		detail = detail[:237] + "..."
@@ -1033,8 +1156,57 @@ func normalizeTarget(target string) string {
 	return parsed.String()
 }
 
+func normalizeExplicitDeviceTarget(target string) (string, error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return "", &invalidTargetError{}
+	}
+	if !strings.Contains(target, "://") {
+		target = "http://" + target
+	}
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return "", &invalidTargetError{target: target}
+	}
+	if parsed.User != nil || strings.TrimSpace(parsed.Host) == "" {
+		return "", &invalidTargetError{target: target}
+	}
+	if !validExplicitTargetPort(parsed) {
+		return "", &invalidTargetError{target: target}
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
+		return "", &invalidTargetError{target: target}
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return "", &invalidTargetError{target: target}
+	}
+	if strings.TrimSpace(parsed.RawQuery) != "" || strings.TrimSpace(parsed.Fragment) != "" {
+		return "", &invalidTargetError{target: target}
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return parsed.String(), nil
+}
+
+func validExplicitTargetPort(parsed *url.URL) bool {
+	port := parsed.Port()
+	if port == "" {
+		return !strings.HasSuffix(parsed.Host, ":")
+	}
+	value, err := strconv.Atoi(port)
+	return err == nil && value > 0 && value <= 65535
+}
+
 func publicTarget(target string) string {
-	return normalizeTarget(target)
+	target = normalizeTarget(target)
+	if target == "" {
+		return ""
+	}
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return target
+	}
+	parsed.User = nil
+	return parsed.String()
 }
 
 func targetWithToken(target, token string) string {

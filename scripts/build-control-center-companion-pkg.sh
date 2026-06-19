@@ -30,6 +30,7 @@ What it does:
   - builds a macOS .pkg containing the Companion API binary
   - installs the binary under /Library/Application Support/VibeTV/bin
   - installs /Library/LaunchAgents/com.codexbar-display.companion-api.plist
+  - unloads legacy/user LaunchAgents before payload install
   - starts or restarts the LaunchAgent for the current console user after install
 
 Signing and notarization are optional and only run when configured.
@@ -204,6 +205,13 @@ if [[ -z "$uid" ]]; then
 fi
 
 launchctl bootout "gui/${uid}/${label}" >/dev/null 2>&1 || true
+
+home_dir="$(dscl . -read "/Users/${console_user}" NFSHomeDirectory 2>/dev/null | sed 's/^NFSHomeDirectory: //' || true)"
+if [[ -n "$home_dir" && -d "$home_dir" ]]; then
+  legacy_plist="${home_dir}/Library/LaunchAgents/${label}.plist"
+  rm -f "$legacy_plist" >/dev/null 2>&1 || true
+fi
+
 launchctl bootstrap "gui/${uid}" "$plist" >/dev/null 2>&1 || true
 launchctl enable "gui/${uid}/${label}" >/dev/null 2>&1 || true
 launchctl kickstart -k "gui/${uid}/${label}" >/dev/null 2>&1 || true
@@ -211,6 +219,37 @@ launchctl kickstart -k "gui/${uid}/${label}" >/dev/null 2>&1 || true
 exit 0
 EOF
   chmod 755 "$postinstall"
+}
+
+write_preinstall() {
+  local preinstall="$1"
+  cat > "$preinstall" <<'EOF'
+#!/bin/bash
+set -e
+
+label="com.codexbar-display.companion-api"
+console_user="$(stat -f %Su /dev/console 2>/dev/null || true)"
+
+if [[ -z "$console_user" || "$console_user" == "root" || "$console_user" == "loginwindow" ]]; then
+  exit 0
+fi
+
+uid="$(id -u "$console_user" 2>/dev/null || true)"
+if [[ -z "$uid" ]]; then
+  exit 0
+fi
+
+launchctl bootout "gui/${uid}/${label}" >/dev/null 2>&1 || true
+
+home_dir="$(dscl . -read "/Users/${console_user}" NFSHomeDirectory 2>/dev/null | sed 's/^NFSHomeDirectory: //' || true)"
+if [[ -n "$home_dir" && -d "$home_dir" ]]; then
+  legacy_plist="${home_dir}/Library/LaunchAgents/${label}.plist"
+  rm -f "$legacy_plist" >/dev/null 2>&1 || true
+fi
+
+exit 0
+EOF
+  chmod 755 "$preinstall"
 }
 
 build_pkg() {
@@ -226,6 +265,7 @@ build_pkg() {
   chmod 755 "${root}${BIN_PATH}"
   write_plist "${root}${PLIST_PATH}"
   chmod 644 "${root}${PLIST_PATH}"
+  write_preinstall "${scripts}/preinstall"
   write_postinstall "${scripts}/postinstall"
   if command -v xattr >/dev/null 2>&1; then
     xattr -cr "$root" "$scripts" >/dev/null 2>&1 || true
@@ -251,7 +291,7 @@ build_pkg() {
   fi
   pkg_args+=("$pkg_path")
 
-  COPYFILE_DISABLE=1 pkgbuild "${pkg_args[@]}"
+  COPYFILE_DISABLE=1 pkgbuild "${pkg_args[@]}" >&2
 
   if [[ -n "$NOTARY_PROFILE" ]]; then
     command -v xcrun >/dev/null 2>&1 || die "xcrun is required for notarization"

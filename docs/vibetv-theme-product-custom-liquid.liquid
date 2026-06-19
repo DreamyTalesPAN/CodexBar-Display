@@ -1,0 +1,50 @@
+{% liquid
+  assign theme_product = product
+  if theme_product == blank
+    assign theme_product = closest.product
+  endif
+  assign theme_id = theme_product.metafields.vibetv.theme_id.value | default: theme_product.metafields.theme.theme_id.value
+  assign readiness_url = ''
+  if theme_id != blank
+    assign encoded_theme_id = theme_id | url_encode
+    assign readiness_url = 'https://app.vibetv.shop/install/' | append: encoded_theme_id
+  endif
+%}
+
+<div class="vtv-theme-readiness" data-vtv-theme-readiness>
+  <style>
+    .vtv-theme-readiness {
+      display: grid;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    .vtv-theme-readiness__note {
+      margin: 0;
+      color: rgb(var(--color-foreground-rgb, 27 27 27) / 0.72);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+  </style>
+
+  {% if readiness_url != blank %}
+    <a class="button add-to-cart-button" href="{{ readiness_url }}" target="_blank" rel="noopener">
+      <span class="add-to-cart-text">
+        <span class="add-to-cart-text__content">
+          <span>Check compatibility in the app</span>
+        </span>
+      </span>
+    </a>
+    <p class="vtv-theme-readiness__note">
+      Opens the hosted Control Center. Install only starts after Companion, VibeTV pairing, device checks, and the protected write gate are ready.
+    </p>
+  {% else %}
+    <button type="button" class="button add-to-cart-button" disabled>
+      <span class="add-to-cart-text">
+        <span class="add-to-cart-text__content">
+          <span>Theme check unavailable</span>
+        </span>
+      </span>
+    </button>
+    <p class="vtv-theme-readiness__note">Add the theme_id metafield before sending this theme page to customers.</p>
+  {% endif %}
+</div>

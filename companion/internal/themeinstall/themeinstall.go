@@ -117,7 +117,7 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	}
 	fmt.Fprintf(out, "Preparing theme: %s\n", themeName)
 	if opts.Verbose {
-		fmt.Fprintf(out, "Theme source: %s\n", resolvedPack)
+		fmt.Fprintf(out, "Theme source: %s\n", stripURLCredentials(resolvedPack))
 	}
 
 	client := opts.HTTPClient
@@ -288,9 +288,13 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 }
 
 func stripTargetCredentials(target string) string {
-	parsed, err := url.Parse(strings.TrimSpace(target))
+	return stripURLCredentials(target)
+}
+
+func stripURLCredentials(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return strings.TrimSpace(target)
+		return strings.TrimSpace(raw)
 	}
 	parsed.User = nil
 	parsed.RawQuery = ""

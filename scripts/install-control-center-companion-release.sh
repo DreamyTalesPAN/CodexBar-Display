@@ -5,6 +5,7 @@ DEFAULT_REPO="DreamyTalesPAN/CodexBar-Display"
 GITHUB_API_BASE="https://api.github.com"
 GITHUB_DOWNLOAD_BASE="https://github.com"
 INSTALL_NAME="codexbar-display"
+PKG_IDENTIFIER="shop.vibetv.companion-api"
 APP_SUPPORT_DIR="${HOME}/Library/Application Support/codexbar-display"
 BIN_DIR="${APP_SUPPORT_DIR}/bin"
 BIN_PATH="${BIN_DIR}/${INSTALL_NAME}"
@@ -20,6 +21,7 @@ RELEASE_VERSION="${VIBETV_COMPANION_VERSION:-}"
 ADDR="${VIBETV_COMPANION_ADDR:-127.0.0.1:47832}"
 DEV_ORIGIN="${VIBETV_COMPANION_DEV_ORIGIN:-}"
 MODE="install"
+FORCE_LEGACY_SCRIPT=0
 TMPDIR_INSTALL=""
 DOWNLOAD_BIN=""
 CHECKSUMS_FILE=""
@@ -33,6 +35,7 @@ Usage:
   install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832]
   install-control-center-companion.sh --restart
   install-control-center-companion.sh --uninstall
+  install-control-center-companion.sh --force-legacy-script
 
 What it does:
   - downloads the matching codexbar-display macOS release binary
@@ -45,6 +48,10 @@ What it does:
 Examples:
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --restart
+
+If the signed macOS package is already installed, this legacy support script
+exits before touching the user LaunchAgent. Use the package repair/update path
+instead, unless support explicitly asks for --force-legacy-script.
 EOF
 }
 
@@ -226,6 +233,19 @@ uninstall_service() {
   log "vibetv: installed binary kept at ${BIN_PATH}"
 }
 
+installed_package_version() {
+  pkgutil --pkg-info "$PKG_IDENTIFIER" 2>/dev/null \
+    | awk -F': ' '$1 == "version" {print $2; exit}' || true
+}
+
+guard_against_package_install() {
+  local package_version
+  [[ "$FORCE_LEGACY_SCRIPT" == 0 ]] || return 0
+
+  package_version="$(installed_package_version)"
+  [[ -z "$package_version" ]] || die "VibeTV Companion package ${package_version} is already installed. Use the signed package repair/update path instead of this legacy support script. Support can override with --force-legacy-script."
+}
+
 detect_arch() {
   ARCH="$(uname -m)"
   case "$ARCH" in
@@ -292,6 +312,10 @@ parse_args() {
         MODE="uninstall"
         shift
         ;;
+      --force-legacy-script)
+        FORCE_LEGACY_SCRIPT=1
+        shift
+        ;;
       *)
         die "unknown argument: $1"
         ;;
@@ -302,18 +326,22 @@ parse_args() {
 main() {
   parse_args "$@"
 
+  require_cmd_for uname "detect your Mac CPU architecture" "use a standard macOS Terminal, then rerun the installer."
+
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    die "this installer currently supports macOS only"
+  fi
+
   require_cmd_for curl "download the VibeTV Companion release files" "use a standard macOS Terminal with curl available, then rerun the installer."
   require_cmd_for shasum "verify the downloaded Companion binary checksum" "install the macOS command line tools, then rerun the installer."
   require_cmd_for awk "read the expected checksum from the release file" "install the macOS command line tools, then rerun the installer."
   require_cmd_for sed "read the latest GitHub release version" "install the macOS command line tools, then rerun the installer."
   require_cmd_for grep "find the matching checksum entry" "install the macOS command line tools, then rerun the installer."
-  require_cmd_for uname "detect your Mac CPU architecture" "use a standard macOS Terminal, then rerun the installer."
   require_cmd_for mktemp "create a temporary download folder" "use a standard macOS Terminal, then rerun the installer."
   require_cmd_for launchctl "install and control the macOS LaunchAgent" "run on macOS, then rerun the installer."
+  require_cmd_for pkgutil "avoid conflicts with the signed VibeTV Companion package" "run on macOS, then rerun the installer."
 
-  if [[ "$(uname -s)" != "Darwin" ]]; then
-    die "this installer currently supports macOS only"
-  fi
+  guard_against_package_install
 
   if [[ "$MODE" == "uninstall" ]]; then
     uninstall_service

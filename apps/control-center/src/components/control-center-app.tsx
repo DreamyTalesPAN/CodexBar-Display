@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type { ThemeCatalogResponse } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
@@ -63,12 +63,13 @@ type ThemeInstallStatus = {
 export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const initialTheme = useMemo(
     () =>
-      catalog.themes.find((theme) => theme.themeId === initialThemeId) ||
-      catalog.themes[0],
+      initialThemeId
+        ? catalog.themes.find((theme) => theme.themeId === initialThemeId)
+        : catalog.themes[0],
     [catalog.themes, initialThemeId],
   );
   const [selectedThemeId, setSelectedThemeId] = useState(
-    initialTheme?.themeId || "",
+    initialThemeId || initialTheme?.themeId || "",
   );
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     initialThemeId ? "theme-library" : "overview",
@@ -93,6 +94,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
+  const didRunInitialConnectionCheck = useRef(false);
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
       id: "session-start",
@@ -104,11 +106,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   ]);
 
   const selectedTheme = useMemo(
-    () =>
-      catalog.themes.find((theme) => theme.themeId === selectedThemeId) ||
-      initialTheme,
-    [catalog.themes, initialTheme, selectedThemeId],
+    () => catalog.themes.find((theme) => theme.themeId === selectedThemeId),
+    [catalog.themes, selectedThemeId],
   );
+
+  const handleDeviceTargetChange = useCallback((target: string) => {
+    setDeviceTarget(target);
+    if (target.trim() === "") {
+      forgetDeviceTarget();
+    }
+  }, []);
 
   const addEvent = useCallback(
     (event: Omit<ControlCenterEvent, "id" | "at"> & { at?: string }) => {
@@ -126,15 +133,30 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [],
   );
 
+  const markCompanionUnavailable = useCallback(() => {
+    setCompanionStatus("missing");
+    setCompanionInfo(null);
+    setThemeInstallEnabled(false);
+    setDevice(null);
+    setDeviceState("unknown");
+  }, []);
+
   const runCompanion = useCallback(
-    async <T,>(path: string, init?: RequestInit): Promise<T> => {
-      setLastError(null);
+    async <T,>(
+      path: string,
+      init?: RequestInit,
+      options?: { preserveLastError?: boolean },
+    ): Promise<T> => {
+      if (!options?.preserveLastError) {
+        setLastError(null);
+      }
+      const headers = new Headers(init?.headers);
+      if (init?.body && !headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
       const response = await fetch(`${COMPANION_URL}${path}`, {
         ...init,
-        headers: {
-          "Content-Type": "application/json",
-          ...init?.headers,
-        },
+        headers,
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload?.ok === false) {
@@ -149,16 +171,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     try {
       const payload = await runCompanion<{
         companion?: CompanionInfo;
-      }>("/v1/status");
+      }>("/v1/status", undefined, { preserveLastError: true });
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
     } catch {
-      setThemeInstallEnabled(false);
+      markCompanionUnavailable();
     }
-  }, [runCompanion]);
+  }, [markCompanionUnavailable, runCompanion]);
 
   const refreshDevice = useCallback(
     async ({ quiet = false }: { quiet?: boolean } = {}) => {
@@ -183,15 +205,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         return payload.device;
       } catch (error) {
-        setDevice((current) =>
-          current ? { ...current, connected: false } : current,
+        const normalized = normalizeCaughtError(
+          error,
+          "VibeTV needs attention.",
         );
-        setDeviceState("offline");
-        if (!quiet) {
-          const normalized = normalizeCaughtError(
-            error,
-            "VibeTV needs attention.",
+        if (isCompanionMissingError(normalized)) {
+          markCompanionUnavailable();
+        } else {
+          setDevice((current) =>
+            current ? { ...current, connected: false } : current,
           );
+          setDeviceState("offline");
+        }
+        if (!quiet) {
           setLastError(normalized);
           addEvent({
             label: "Device check needs attention",
@@ -202,7 +228,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return null;
       }
     },
-    [addEvent, runCompanion],
+    [addEvent, markCompanionUnavailable, runCompanion],
   );
 
   const loadSettings = useCallback(async () => {
@@ -216,6 +242,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDevice(payload.device);
         setDeviceState(payload.device.paired ? "paired" : "online");
         if (
+          !initialThemeId &&
           payload.device.activeTheme &&
           catalog.themes.some(
             (theme) => theme.themeId === payload.device?.activeTheme,
@@ -241,6 +268,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         error,
         "Settings need attention.",
       );
+      if (isCompanionMissingError(normalized)) {
+        markCompanionUnavailable();
+      }
       setLastError(normalized);
       addEvent({
         label: "Settings check needs attention",
@@ -250,18 +280,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } finally {
       setBusyAction(null);
     }
-  }, [addEvent, catalog.themes, runCompanion]);
+  }, [
+    addEvent,
+    catalog.themes,
+    initialThemeId,
+    markCompanionUnavailable,
+    runCompanion,
+  ]);
 
-  const checkCompanion = useCallback(async () => {
-    setBusyAction("status");
+  const checkCompanion = useCallback(async (options?: { quiet?: boolean }) => {
+    const quiet = Boolean(options?.quiet);
+    if (!quiet) {
+      setBusyAction("status");
+    }
     try {
       const payload = await runCompanion<{
         companion?: CompanionInfo;
         device?: DeviceInfo;
-      }>("/v1/status");
+      }>("/v1/status", undefined, { preserveLastError: quiet });
       const checkedAt = formatTime();
+      const wasMissing = companionStatus === "missing";
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
+      setLastError(null);
       setLastCheckedAt(checkedAt);
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
@@ -282,36 +323,48 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           void loadSettings();
         }
       } else {
+        setDevice(null);
         setDeviceState("unknown");
       }
-      addEvent({
-        label: "Bridge checked",
-        detail: payload.device?.target
-          ? `Companion online, target ${payload.device.target}.`
-          : "Companion online, device target pending.",
-        at: checkedAt,
-        tone: "ready",
-      });
+      if (!quiet || wasMissing) {
+        addEvent({
+          label: wasMissing ? "Bridge reconnected" : "Bridge checked",
+          detail: payload.device?.target
+            ? `Companion online, target ${payload.device.target}.`
+            : "Companion online, device target pending.",
+          at: checkedAt,
+          tone: "ready",
+        });
+      }
     } catch (error) {
       const normalized = normalizeCaughtError(error, "Companion needs attention.");
-      setCompanionStatus("missing");
-      setCompanionInfo(null);
-      setThemeInstallEnabled(false);
-      setLastError(normalized);
-      addEvent({
-        label: "Bridge check needs attention",
-        detail: normalized.nextAction,
-        tone: "attention",
-      });
+      markCompanionUnavailable();
+      if (!quiet) {
+        setLastError(normalized);
+        addEvent({
+          label: "Bridge check needs attention",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
+      }
     } finally {
-      setBusyAction(null);
+      if (!quiet) {
+        setBusyAction(null);
+      }
     }
-  }, [addEvent, loadSettings, refreshDevice, runCompanion]);
+  }, [
+    addEvent,
+    companionStatus,
+    loadSettings,
+    markCompanionUnavailable,
+    refreshDevice,
+    runCompanion,
+  ]);
 
   const discoverDevice = useCallback(async (targetOverride?: string) => {
     setBusyAction("discover");
+    const target = normalizeDeviceTarget(targetOverride || deviceTarget);
     try {
-      const target = normalizeDeviceTarget(targetOverride || deviceTarget);
       const payload = await runCompanion<{ device: DeviceInfo }>(
         "/v1/device/discover",
         {
@@ -340,7 +393,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         error,
         "VibeTV needs attention.",
       );
-      setDeviceState("offline");
+      if (isCompanionMissingError(normalized)) {
+        markCompanionUnavailable();
+      } else {
+        setCompanionStatus("online");
+        void refreshCompanionFeatures();
+        setDevice(target ? { target, connected: false } : null);
+        setDeviceState("offline");
+      }
       setLastError(normalized);
       addEvent({
         label: "Discovery needs attention",
@@ -354,6 +414,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent,
     deviceTarget,
     loadSettings,
+    markCompanionUnavailable,
     refreshCompanionFeatures,
     runCompanion,
   ]);
@@ -386,6 +447,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
     } catch (error) {
       const normalized = normalizeCaughtError(error, "Pairing needs attention.");
+      if (isCompanionMissingError(normalized)) {
+        markCompanionUnavailable();
+      }
       setLastError(normalized);
       addEvent({
         label: "Pairing needs attention",
@@ -399,6 +463,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent,
     deviceTarget,
     loadSettings,
+    markCompanionUnavailable,
     refreshCompanionFeatures,
     runCompanion,
   ]);
@@ -433,6 +498,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           error,
           "Brightness needs attention.",
         );
+        if (isCompanionMissingError(normalized)) {
+          markCompanionUnavailable();
+        }
         setLastError(normalized);
         addEvent({
           label: "Brightness save needs attention",
@@ -443,7 +511,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setBusyAction(null);
       }
     },
-    [addEvent, runCompanion],
+    [addEvent, markCompanionUnavailable, runCompanion],
   );
 
   const installTheme = useCallback(async (theme = selectedTheme) => {
@@ -457,7 +525,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const initialLogs = [
       "Install request sent to Companion.",
       `Theme: ${theme.title}`,
-      theme.packUrl ? `Pack URL: ${theme.packUrl}` : "Pack URL missing.",
+      theme.packUrl
+        ? `Pack URL: ${publicDownloadUrl(theme.packUrl)}`
+        : "Pack URL missing.",
     ];
     setThemeInstallStatus({
       phase: "installing",
@@ -492,7 +562,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         title: theme.title,
         startedAt,
         finishedAt,
-        logs: [...initialLogs, ...(payload.logs || [])],
+        logs: [...initialLogs, ...safeLogLines(payload.logs)],
         result: payload.result,
       });
       if (payload.result?.themeId) {
@@ -514,6 +584,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         error,
         "Theme install needs attention.",
       );
+      if (isCompanionMissingError(normalized)) {
+        markCompanionUnavailable();
+      }
       setLastError(normalized);
       setThemeInstallStatus({
         phase: "error",
@@ -532,9 +605,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } finally {
       setBusyAction(null);
     }
-  }, [addEvent, loadSettings, runCompanion, selectedTheme]);
+  }, [
+    addEvent,
+    loadSettings,
+    markCompanionUnavailable,
+    runCompanion,
+    selectedTheme,
+  ]);
 
   useEffect(() => {
+    if (didRunInitialConnectionCheck.current) {
+      return;
+    }
+    didRunInitialConnectionCheck.current = true;
+
     const timer = window.setTimeout(() => {
       if (deviceTarget) {
         void discoverDevice(deviceTarget);
@@ -544,6 +628,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [checkCompanion, deviceTarget, discoverDevice]);
+
+  useEffect(() => {
+    if (companionStatus !== "missing") {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "hidden" || busyAction) {
+        return;
+      }
+      void checkCompanion({ quiet: true });
+    }, 5000);
+
+    return () => window.clearInterval(timer);
+  }, [busyAction, checkCompanion, companionStatus]);
 
   const deviceBoard = device?.board;
   const deviceFirmware = device?.firmware;
@@ -630,7 +729,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         error,
         "Support report needs attention.",
       );
-      setCompanionStatus("missing");
+      markCompanionUnavailable();
+      setSupportDiagnostics(null);
       setLastError(normalized);
       addEvent({
         label: "Support report needs attention",
@@ -640,7 +740,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } finally {
       setBusyAction(null);
     }
-  }, [addEvent, runCompanion]);
+  }, [addEvent, markCompanionUnavailable, runCompanion]);
 
   useEffect(() => {
     if (!deviceBoard || !deviceFirmware) {
@@ -689,10 +789,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           events={events.slice(0, 4)}
           lastCheckedAt={lastCheckedAt}
           lastError={lastError}
+          deviceTarget={deviceTarget}
           firmwareUpdate={effectiveFirmwareUpdate}
           busyAction={busyAction}
           onCheckBridge={checkCompanion}
+          onDeviceTargetChange={handleDeviceTargetChange}
           onDiscoverDevice={discoverDevice}
+          onViewLogs={() => setActiveTab("logs")}
           themeInstallEnabled={themeInstallEnabled}
         />
       ) : null}
@@ -707,7 +810,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           lastError={lastError}
           onBrightnessChange={setBrightness}
           onCheckBridge={checkCompanion}
-          onDeviceTargetChange={setDeviceTarget}
+          onDeviceTargetChange={handleDeviceTargetChange}
           onDiscoverDevice={discoverDevice}
           onPairDevice={pairDevice}
           onSaveBrightness={saveBrightness}
@@ -719,15 +822,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           busyAction={busyAction}
           companionStatus={companionStatus}
           device={device}
+          deviceTarget={deviceTarget}
           installStatus={themeInstallStatus}
+          catalogIssue={catalog.issue}
+          catalogSource={catalog.source}
           lastInstall={lastInstall}
+          lastError={lastError}
+          onDeviceTargetChange={handleDeviceTargetChange}
           onDiscoverDevice={discoverDevice}
           onCheckBridge={checkCompanion}
           onInstallTheme={installTheme}
+          onPairDevice={pairDevice}
           onSelectTheme={setSelectedThemeId}
           installEntry={Boolean(initialThemeId)}
+          requestedThemeId={initialThemeId}
           selectedTheme={selectedTheme}
           selectedThemeId={selectedThemeId}
+          storefrontConfigured={catalog.storefrontConfigured}
           themeInstallEnabled={themeInstallEnabled}
           themes={catalog.themes}
         />
@@ -740,6 +851,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           companionVersion={companionInfo?.version}
           device={device}
           firmwareUpdate={effectiveFirmwareUpdate}
+          onCheckBridge={checkCompanion}
           onCheckUpdates={checkFirmwareUpdates}
         />
       ) : null}
@@ -779,6 +891,14 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
     return error as ApiError;
   }
   if (error instanceof Error) {
+    if (isCompanionConnectionError(error)) {
+      return {
+        code: "COMPANION_UNREACHABLE",
+        message: "Companion is not reachable.",
+        nextAction:
+          "Install or repair Companion, make sure it is running, allow browser local access if prompted, then check the bridge again.",
+      };
+    }
     return {
       code: "CLIENT_ERROR",
       message: fallbackMessage,
@@ -790,6 +910,16 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
     message: fallbackMessage,
     nextAction: "Check Companion and VibeTV connection.",
   };
+}
+
+function isCompanionConnectionError(error: Error): boolean {
+  return /failed to fetch|fetch failed|load failed|networkerror/i.test(
+    error.message,
+  );
+}
+
+function isCompanionMissingError(error: ApiError): boolean {
+  return error.code === "COMPANION_UNREACHABLE";
 }
 
 function readInitialDeviceTarget(): string {
@@ -823,15 +953,51 @@ function rememberDeviceTarget(target: string) {
   }
 }
 
+function forgetDeviceTarget() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(DEVICE_TARGET_STORAGE_KEY);
+  } catch {
+    // localStorage may be unavailable in private or restricted browser contexts.
+  }
+}
+
 function normalizeDeviceTarget(target: string): string {
   const trimmed = target.trim();
   if (!trimmed) {
     return "";
   }
-  if (/^https?:\/\//i.test(trimmed)) {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
     return trimmed;
   }
   return `http://${trimmed}`;
+}
+
+function publicDownloadUrl(raw: string): string {
+  try {
+    const parsed = new URL(raw);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return raw.replace(/\?.*$/, "");
+  }
+}
+
+function safeLogLines(lines?: string[]): string[] {
+  return (lines || [])
+    .map((line) => sanitizeLogLine(line))
+    .filter((line) => line.trim() !== "");
+}
+
+function sanitizeLogLine(line: string): string {
+  return line.replace(/https?:\/\/[^\s)]+/gi, (match) =>
+    publicDownloadUrl(match),
+  );
 }
 
 function formatTime(): string {

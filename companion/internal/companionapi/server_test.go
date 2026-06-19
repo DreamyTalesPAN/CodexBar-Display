@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -76,6 +77,41 @@ func TestCORSAllowedAndForeignOrigins(t *testing.T) {
 	server.Handler().ServeHTTP(foreign, foreignReq)
 	if got := foreign.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Fatalf("expected no CORS header for foreign origin, got %q", got)
+	}
+}
+
+func TestPrivateNetworkAccessPreflightForAllowedOrigin(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+
+	allowed := httptest.NewRecorder()
+	allowedReq := httptest.NewRequest(http.MethodOptions, "/v1/status", nil)
+	allowedReq.Header.Set("Origin", "https://app.vibetv.shop")
+	allowedReq.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	allowedReq.Header.Set("Access-Control-Request-Private-Network", "true")
+	server.Handler().ServeHTTP(allowed, allowedReq)
+
+	if allowed.Code != http.StatusNoContent {
+		t.Fatalf("expected private network preflight 204, got %d body=%s", allowed.Code, allowed.Body.String())
+	}
+	if got := allowed.Header().Get("Access-Control-Allow-Origin"); got != "https://app.vibetv.shop" {
+		t.Fatalf("expected allowed origin header, got %q", got)
+	}
+	if got := allowed.Header().Get("Access-Control-Allow-Private-Network"); got != "true" {
+		t.Fatalf("expected private network allow header, got %q", got)
+	}
+
+	foreign := httptest.NewRecorder()
+	foreignReq := httptest.NewRequest(http.MethodOptions, "/v1/status", nil)
+	foreignReq.Header.Set("Origin", "https://evil.example")
+	foreignReq.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	foreignReq.Header.Set("Access-Control-Request-Private-Network", "true")
+	server.Handler().ServeHTTP(foreign, foreignReq)
+
+	if foreign.Code != http.StatusForbidden {
+		t.Fatalf("expected foreign private network preflight 403, got %d body=%s", foreign.Code, foreign.Body.String())
+	}
+	if got := foreign.Header().Get("Access-Control-Allow-Private-Network"); got != "" {
+		t.Fatalf("expected no private network allow header for foreign origin, got %q", got)
 	}
 }
 
@@ -166,6 +202,83 @@ func TestDiagnosticsReportsDeviceWithoutLeakingToken(t *testing.T) {
 	}
 	if !hasDiagnosticCheck(got.Checks, "device_health", "pass") {
 		t.Fatalf("expected health pass check, got %+v", got.Checks)
+	}
+}
+
+func TestDiagnosticsRedactsPublicTargetCredentials(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/setup/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/setup/health":
+			http.Error(w, "health unavailable", http.StatusServiceUnavailable)
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	target := strings.Replace(device.URL, "http://", "http://user:secret@", 1) + "/setup?token=pair-token"
+	expectedPublicTarget := device.URL + "/setup"
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: target, DeviceToken: "pair-token"})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil)
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, sensitive := range []string{"user:secret", "pair-token", "token="} {
+		if strings.Contains(body, sensitive) {
+			t.Fatalf("diagnostics leaked %q in body: %s", sensitive, body)
+		}
+	}
+	var got diagnosticsResponse
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Target != expectedPublicTarget {
+		t.Fatalf("expected public target without credentials or query, got %q", got.Device.Target)
+	}
+	if !hasDiagnosticCheck(got.Checks, "device_target", "pass") {
+		t.Fatalf("expected device target pass check, got %+v", got.Checks)
+	}
+	if got := diagnosticCheckDetail(got.Checks, "device_target"); got != expectedPublicTarget {
+		t.Fatalf("expected redacted target detail %q, got %q", expectedPublicTarget, got)
+	}
+}
+
+func TestSanitizeErrorDetailRedactsURLCredentials(t *testing.T) {
+	detail := sanitizeErrorDetail(errors.New("GET http://user:secret@vibetv.local/setup?token=pair-token&key=api-key failed"))
+
+	for _, sensitive := range []string{"user:secret", "pair-token", "api-key"} {
+		if strings.Contains(detail, sensitive) {
+			t.Fatalf("sanitized detail leaked %q: %s", sensitive, detail)
+		}
+	}
+	for _, expected := range []string{"http://<redacted>@vibetv.local", "token=<redacted>", "key=<redacted>"} {
+		if !strings.Contains(detail, expected) {
+			t.Fatalf("sanitized detail missing %q: %s", expected, detail)
+		}
+	}
+}
+
+func TestSplitInstallLogStripsPrivateURLDetails(t *testing.T) {
+	logs := splitInstallLog("Theme source: https://user:secret@example.com/theme.zip?token=abc&expires=soon#frag\nDone\n")
+	want := []string{
+		"Theme source: https://example.com/theme.zip",
+		"Done",
+	}
+	if len(logs) != len(want) {
+		t.Fatalf("expected %d log lines, got %d: %#v", len(want), len(logs), logs)
+	}
+	for i := range want {
+		if logs[i] != want[i] {
+			t.Fatalf("log line %d = %q, want %q", i, logs[i], want[i])
+		}
 	}
 }
 
@@ -261,6 +374,123 @@ func TestDeviceDiscoverReturnsConflictForMultipleSubnetCandidates(t *testing.T) 
 	}
 }
 
+func TestDeviceDiscoverDoesNotFallbackWhenExplicitTargetFails(t *testing.T) {
+	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gone", http.StatusServiceUnavailable)
+	}))
+	defer stale.Close()
+
+	device := newHelloDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string {
+		return []string{device.URL}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/device/discover",
+		strings.NewReader(`{"target":`+strconv.Quote(stale.URL)+`}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected explicit target failure status 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "device_not_found" {
+		t.Fatalf("unexpected explicit target response: %+v", got)
+	}
+}
+
+func TestDeviceDiscoverRejectsInvalidExplicitTarget(t *testing.T) {
+	for _, target := range []string{
+		"ftp://vibetv.local",
+		"http://ftp://vibetv.local",
+		"http://vibetv.local:",
+		"http://vibetv.local:abc",
+		"http://vibetv.local:0",
+		"http://vibetv.local:99999",
+		"http://vibetv.local/setup",
+		"http://vibetv.local?token=pair-token",
+		"http://vibetv.local/#setup",
+	} {
+		t.Run(target, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.subnetTargets = func() []string {
+				t.Fatal("subnet discovery should not run for invalid explicit target")
+				return nil
+			}
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/v1/device/discover",
+				strings.NewReader(`{"target":`+strconv.Quote(target)+`}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			server.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			var got errorResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if got.OK || got.Error.Code != "invalid_device_target" {
+				t.Fatalf("unexpected invalid target response: %+v", got)
+			}
+		})
+	}
+}
+
+func TestDevicePairRejectsInvalidExplicitTarget(t *testing.T) {
+	for _, target := range []string{
+		"http://user:pass@vibetv.local",
+		"http://vibetv.local:abc",
+		"http://vibetv.local:0",
+		"http://vibetv.local:99999",
+	} {
+		t.Run(target, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.subnetTargets = func() []string {
+				t.Fatal("subnet discovery should not run for invalid explicit target")
+				return nil
+			}
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/v1/device/pair",
+				strings.NewReader(`{"target":`+strconv.Quote(target)+`}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			server.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			var got errorResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if got.OK || got.Error.Code != "invalid_device_target" {
+				t.Fatalf("unexpected invalid target response: %+v", got)
+			}
+		})
+	}
+}
+
 func TestDevicePairReturnsConflictForMultipleDiscoveryCandidates(t *testing.T) {
 	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusServiceUnavailable)
@@ -299,11 +529,16 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	t.Setenv(themeInstallEnv, "1")
 
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/hello" {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
 	}))
 	defer device.Close()
 
@@ -339,11 +574,16 @@ func TestThemeInstallErrorIncludesSanitizedDetail(t *testing.T) {
 	t.Setenv(themeInstallEnv, "1")
 
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/hello" {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
 	}))
 	defer device.Close()
 
@@ -374,13 +614,153 @@ func TestThemeInstallErrorIncludesSanitizedDetail(t *testing.T) {
 	}
 }
 
-func TestThemeInstallDisabledByDefault(t *testing.T) {
+func TestThemeInstallRequiresPairingBeforeWrite(t *testing.T) {
+	t.Setenv(themeInstallEnv, "1")
+
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL})
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		t.Fatal("install should not be called without pairing")
+		return themeinstall.Result{}, nil
+	}
+
+	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip"}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "pairing_required" {
+		t.Fatalf("unexpected pairing response: %+v", got)
+	}
+}
+
+func TestThemeInstallRejectsInvalidPackURLBeforeGate(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/hello" {
+		t.Fatalf("device should not be contacted for invalid pack URL, got %s", r.URL.Path)
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		t.Fatal("install should not be called for invalid pack URL")
+		return themeinstall.Result{}, nil
+	}
+
+	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"/local/theme.zip"}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "invalid_theme_pack_url" {
+		t.Fatalf("unexpected invalid pack URL response: %+v", got)
+	}
+}
+
+func TestThemeInstallRequiresThemeSpecSupportBeforeWrite(t *testing.T) {
+	t.Setenv(themeInstallEnv, "1")
+
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			t.Fatal("health should not be called when theme capability is missing")
+		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		t.Fatal("install should not be called without ThemeSpec support")
+		return themeinstall.Result{}, nil
+	}
+
+	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip"}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "theme_install_unsupported" {
+		t.Fatalf("unexpected unsupported response: %+v", got)
+	}
+}
+
+func TestThemeInstallRequiresHealthBeforeWrite(t *testing.T) {
+	t.Setenv(themeInstallEnv, "1")
+
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			http.Error(w, "health unavailable", http.StatusServiceUnavailable)
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		t.Fatal("install should not be called when health check fails")
+		return themeinstall.Result{}, nil
+	}
+
+	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip"}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected status 502, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "device_health_failed" {
+		t.Fatalf("unexpected health response: %+v", got)
+	}
+}
+
+func TestThemeInstallDisabledByDefault(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("device should not be contacted while theme install is disabled, got %s", r.URL.Path)
 	}))
 	defer device.Close()
 
@@ -520,6 +900,22 @@ func newHelloDeviceServer(t *testing.T) *httptest.Server {
 	}))
 }
 
+func newThemeInstallReadyDeviceServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+}
+
 func hasDiagnosticCheck(checks []diagnosticCheck, name, status string) bool {
 	for _, check := range checks {
 		if check.Name == name && check.Status == status {
@@ -527,4 +923,13 @@ func hasDiagnosticCheck(checks []diagnosticCheck, name, status string) bool {
 		}
 	}
 	return false
+}
+
+func diagnosticCheckDetail(checks []diagnosticCheck, name string) string {
+	for _, check := range checks {
+		if check.Name == name {
+			return check.Detail
+		}
+	}
+	return ""
 }

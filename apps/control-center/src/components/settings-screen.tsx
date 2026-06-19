@@ -9,6 +9,10 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import {
+  DEVICE_TARGET_PLACEHOLDER,
+  deviceTargetHelpText,
+} from "./device-target-copy";
 
 export type SettingsCompanionStatus = "unknown" | "online" | "missing";
 export type SettingsDeviceState =
@@ -86,6 +90,7 @@ export function SettingsScreen({
   const themeSpecReady = Boolean(
     device?.capabilities?.theme?.supportsThemeSpecV1,
   );
+  const localActionBusy = Boolean(busyAction);
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -121,11 +126,15 @@ export function SettingsScreen({
             >
               VibeTV target
             </label>
+            <p className="text-sm leading-6 text-[#444933]">
+              {deviceTargetHelpText(lastError)}
+            </p>
             <input
-              className="h-12 border border-[#747A60] bg-[#F9F9F9] px-3 font-mono text-sm text-[#1B1B1B] outline-none transition placeholder:text-[#747A60] focus:border-[#5E7200]"
+              className="h-12 border border-[#747A60] bg-[#F9F9F9] px-3 font-mono text-sm text-[#1B1B1B] outline-none transition placeholder:text-[#747A60] focus:border-[#5E7200] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+              disabled={localActionBusy}
               id="device-target"
               onChange={(event) => onDeviceTargetChange(event.target.value)}
-              placeholder="vibetv.local or 192.168.178.163"
+              placeholder={DEVICE_TARGET_PLACEHOLDER}
               spellCheck={false}
               type="text"
               value={deviceTarget}
@@ -134,19 +143,23 @@ export function SettingsScreen({
           <div className="grid gap-4 sm:grid-cols-3">
             <CommandButton
               busy={busyAction === "status"}
+              disabled={localActionBusy && busyAction !== "status"}
               icon={<PlugZap size={18} aria-hidden />}
               label="Check bridge"
               onClick={onCheckBridge}
             />
             <CommandButton
               busy={busyAction === "discover"}
+              disabled={localActionBusy && busyAction !== "discover"}
               icon={<Search size={18} aria-hidden />}
               label="Find VibeTV"
               onClick={() => onDiscoverDevice(deviceTarget)}
             />
             <CommandButton
               busy={busyAction === "pair"}
-              disabled={!device?.connected}
+              disabled={
+                !device?.connected || (localActionBusy && busyAction !== "pair")
+              }
               icon={<ShieldCheck size={18} aria-hidden />}
               label="Pair device"
               onClick={onPairDevice}
@@ -193,7 +206,7 @@ export function SettingsScreen({
               <input
                 aria-label="Brightness"
                 className="h-2 w-full accent-[#CCFF00] disabled:opacity-50"
-                disabled={!brightnessSupport || brightness == null}
+                disabled={!brightnessSupport || brightness == null || localActionBusy}
                 max={maxBrightness}
                 min={minBrightness}
                 onChange={(event) =>
@@ -210,7 +223,11 @@ export function SettingsScreen({
             <div className="flex flex-wrap gap-3">
               <CommandButton
                 busy={busyAction === "brightness"}
-                disabled={!device?.connected || brightness == null}
+                disabled={
+                  !device?.connected ||
+                  brightness == null ||
+                  (localActionBusy && busyAction !== "brightness")
+                }
                 icon={<Check size={18} aria-hidden />}
                 label="Save brightness"
                 onClick={() => onSaveBrightness(currentBrightness)}

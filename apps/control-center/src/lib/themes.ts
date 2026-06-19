@@ -1,9 +1,12 @@
+import { isRemoteThemePackUrl } from "./theme-pack-url";
+
 export type ThemeSource = "shopify" | "github-catalog" | "fallback";
 
 export type ThemeProduct = {
   id: string;
   title: string;
   handle?: string;
+  productUrl?: string;
   description?: string;
   imageUrl?: string;
   imageAlt?: string;
@@ -81,10 +84,13 @@ type ThemePackCatalog = {
     name?: string;
     description?: string;
     downloadUrl?: string;
+    downloadAsset?: string;
     packUrl?: string;
     manifestUrl?: string;
     themeRev?: number;
     version?: string;
+    compatibleBoards?: string[];
+    requiresFirmware?: string;
   }>;
 };
 
@@ -102,11 +108,12 @@ export async function getThemeCatalog(): Promise<ThemeCatalogResponse> {
 
   if (shopDomain && storefrontToken) {
     try {
-      const themes = await fetchShopifyThemes(
+      const shopifyThemes = await fetchShopifyThemes(
         shopDomain,
         storefrontToken,
         storefrontTokenMode,
       );
+      const themes = await enrichThemesWithGitHubCatalog(shopifyThemes);
       return {
         themes,
         source: "shopify",
@@ -191,11 +198,14 @@ async function fetchShopifyThemesWithMode(
   }
 
   return products
-    .map(mapShopifyProduct)
+    .map((product) => mapShopifyProduct(product, shopDomain))
     .filter((theme): theme is ThemeProduct => Boolean(theme));
 }
 
-function mapShopifyProduct(product: ShopifyProduct): ThemeProduct | null {
+function mapShopifyProduct(
+  product: ShopifyProduct,
+  shopDomain: string,
+): ThemeProduct | null {
   const themeId =
     product.themeId?.value?.trim() || product.legacyThemeId?.value?.trim();
   if (!themeId) {
@@ -210,6 +220,9 @@ function mapShopifyProduct(product: ShopifyProduct): ThemeProduct | null {
     id: product.id,
     title: product.title,
     handle: product.handle,
+    productUrl: product.handle
+      ? `https://${shopDomain}/products/${encodeURIComponent(product.handle)}`
+      : undefined,
     description: product.description?.trim() || undefined,
     imageUrl: product.featuredImage?.url || undefined,
     imageAlt: product.featuredImage?.altText || product.title,
@@ -243,36 +256,7 @@ async function fetchGitHubCatalog(
   issue?: string,
 ): Promise<ThemeCatalogResponse> {
   try {
-    const response = await fetch(GITHUB_CATALOG_URL, {
-      next: { revalidate: 300 },
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const catalog = (await response.json()) as ThemePackCatalog;
-    const themes = (catalog.themes || [])
-      .map((theme): ThemeProduct | null => {
-        const themeId = theme.id?.trim();
-        if (!themeId) {
-          return null;
-        }
-        return {
-          id: themeId,
-          title: theme.title || theme.name || titleFromThemeId(themeId),
-          description: theme.description,
-          priceLabel: "Kostenlos",
-          isFree: true,
-          themeId,
-          themeVersion:
-            theme.version ||
-            (theme.themeRev ? `rev ${theme.themeRev}` : undefined),
-          manifestUrl: theme.manifestUrl,
-          packUrl: resolveCatalogUrl(theme.downloadUrl || theme.packUrl),
-          source: "github-catalog",
-        };
-      })
-      .filter((theme): theme is ThemeProduct => Boolean(theme));
+    const themes = await fetchGitHubCatalogThemes();
 
     return {
       themes,
@@ -282,6 +266,77 @@ async function fetchGitHubCatalog(
     };
   } catch (error) {
     return emptyCatalog(issue || messageFromError(error), false);
+  }
+}
+
+async function fetchGitHubCatalogThemes(): Promise<ThemeProduct[]> {
+  const response = await fetch(GITHUB_CATALOG_URL, {
+    next: { revalidate: 300 },
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const catalog = (await response.json()) as ThemePackCatalog;
+  return (catalog.themes || [])
+    .map((theme): ThemeProduct | null => {
+      const themeId = theme.id?.trim();
+      if (!themeId) {
+        return null;
+      }
+      const packUrl = resolveCatalogUrl(
+        theme.downloadUrl || theme.packUrl || theme.downloadAsset,
+      );
+      return {
+        id: themeId,
+        title: theme.title || theme.name || titleFromThemeId(themeId),
+        description: theme.description,
+        priceLabel: "Kostenlos",
+        isFree: true,
+        themeId,
+        themeVersion:
+          theme.version ||
+          (theme.themeRev ? `rev ${theme.themeRev}` : undefined),
+        manifestUrl: theme.manifestUrl,
+        packUrl,
+        compatibleBoards: theme.compatibleBoards,
+        requiresFirmware: theme.requiresFirmware,
+        source: "github-catalog",
+      };
+    })
+    .filter((theme): theme is ThemeProduct => Boolean(theme));
+}
+
+async function enrichThemesWithGitHubCatalog(
+  shopifyThemes: ThemeProduct[],
+): Promise<ThemeProduct[]> {
+  if (!shopifyThemes.length) {
+    return shopifyThemes;
+  }
+
+  try {
+    const githubThemes = await fetchGitHubCatalogThemes();
+    const githubByThemeId = new Map(
+      githubThemes.map((theme) => [theme.themeId, theme]),
+    );
+    return shopifyThemes.map((theme) => {
+      const fallback = githubByThemeId.get(theme.themeId);
+      if (!fallback) {
+        return theme;
+      }
+      return {
+        ...theme,
+        compatibleBoards:
+          theme.compatibleBoards || fallback.compatibleBoards,
+        manifestUrl: theme.manifestUrl || fallback.manifestUrl,
+        packUrl: chooseThemePackUrl(theme.packUrl, fallback.packUrl),
+        requiresFirmware:
+          theme.requiresFirmware || fallback.requiresFirmware,
+        themeVersion: theme.themeVersion || fallback.themeVersion,
+      };
+    });
+  } catch {
+    return shopifyThemes;
   }
 }
 
@@ -312,13 +367,31 @@ function normalizeShopDomain(raw: string | undefined): string {
 }
 
 function resolveCatalogUrl(raw: string | undefined): string | undefined {
-  if (!raw) {
+  const value = raw?.trim();
+  if (!value) {
     return undefined;
   }
-  if (/^https?:\/\//.test(raw)) {
-    return raw;
+  try {
+    const resolved = /^https?:\/\//i.test(value)
+      ? value
+      : new URL(value, GITHUB_CATALOG_URL).toString();
+    return isRemoteThemePackUrl(resolved) ? resolved : undefined;
+  } catch {
+    return undefined;
   }
-  return new URL(raw, GITHUB_CATALOG_URL).toString();
+}
+
+function chooseThemePackUrl(
+  primary?: string,
+  fallback?: string,
+): string | undefined {
+  if (isRemoteThemePackUrl(primary)) {
+    return primary?.trim();
+  }
+  if (isRemoteThemePackUrl(fallback)) {
+    return fallback?.trim();
+  }
+  return primary?.trim() || fallback?.trim() || undefined;
 }
 
 function formatMoney(amount: number, currency: string): string {
