@@ -33,6 +33,13 @@ assert_gate_runs_release_workflow_test() {
     || die "customer-ready gate must call test-control-center-release-workflow.sh"
 }
 
+assert_gate_runs_candidate_package_workflow_test() {
+  grep -F 'run_step "Control Center candidate package workflow test"' "$GATE" >/dev/null \
+    || die "customer-ready gate must run the Control Center candidate package workflow test"
+  grep -F 'test-control-center-candidate-pkg-workflow.sh' "$GATE" >/dev/null \
+    || die "customer-ready gate must call test-control-center-candidate-pkg-workflow.sh"
+}
+
 assert_gate_runs_package_smoke_test() {
   grep -F 'run_step "Companion package smoke test"' "$GATE" >/dev/null \
     || die "customer-ready gate must run the Companion package smoke test on macOS"
@@ -225,6 +232,7 @@ write_complete_release_json "$COMPLETE_RELEASE"
 write_missing_package_release_json "$MISSING_RELEASE"
 
 assert_gate_runs_release_workflow_test
+assert_gate_runs_candidate_package_workflow_test
 assert_gate_runs_package_smoke_test
 assert_gate_runs_customer_docs_guard
 assert_gate_runs_customer_ui_copy_guard

@@ -75,6 +75,8 @@ Additional GitHub secrets for notarized packages:
 - `VIBETV_NOTARY_APP_SPECIFIC_PASSWORD`
 - `VIBETV_NOTARY_PROFILE`: optional notarytool profile name; defaults to `vibetv-notary`.
 
+Before tagging a release, use the manual GitHub Actions workflow `Control Center Customer Package Candidate` to build signed and notarized Mac App package candidates from the current branch. Pass the planned version, for example `1.0.32`. The workflow uploads the `.pkg` files as a private Actions artifact for Clean-Mac validation, keeps repository permissions read-only, and does not create or update a GitHub Release. After Clean-Mac validation passes, the normal release workflow must still build and publish the final package assets for the release tag.
+
 Support restart:
 
 ```bash
@@ -206,10 +208,11 @@ Keep the script behavior covered in CI with:
 ```bash
 scripts/test-control-center-companion-customer-readiness.sh
 scripts/test-control-center-release-workflow.sh
+scripts/test-control-center-candidate-pkg-workflow.sh
 scripts/test-control-center-companion-legacy-installer.sh
 ```
 
-The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Companion, or VibeTV hardware. The release workflow test proves the public GitHub Release cannot be created before signed/notarized Companion PKGs are validated, downloaded into the release job, and included in the release checksums. The legacy installer guard test uses fake `pkgutil`, `launchctl`, and `curl` with a temporary `HOME`; it proves the shell installer refuses to touch the old user LaunchAgent after a package receipt exists unless support explicitly passes `--force-legacy-script`.
+The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Companion, or VibeTV hardware. The release workflow test proves the public GitHub Release cannot be created before signed/notarized Companion PKGs are validated, downloaded into the release job, and included in the release checksums. The candidate workflow test proves the pre-release Clean-Mac package path stays manual, read-only, non-release, signed/notarized, and artifact-only. The legacy installer guard test uses fake `pkgutil`, `launchctl`, and `curl` with a temporary `HOME`; it proves the shell installer refuses to touch the old user LaunchAgent after a package receipt exists unless support explicitly passes `--force-legacy-script`.
 
 Keep the macOS package builder covered with:
 
