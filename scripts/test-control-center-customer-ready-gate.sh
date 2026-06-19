@@ -47,6 +47,13 @@ assert_gate_runs_customer_docs_guard() {
     || die "customer-ready gate must call check-control-center-customer-docs.sh"
 }
 
+assert_gate_runs_customer_ui_copy_guard() {
+  grep -F 'run_step "Control Center customer UI copy guard"' "$GATE" >/dev/null \
+    || die "customer-ready gate must run the Control Center customer UI copy guard"
+  grep -F 'npm run check:customer-ui-copy' "$GATE" >/dev/null \
+    || die "customer-ready gate must call npm run check:customer-ui-copy"
+}
+
 write_fake_curl() {
   local path
   path="$1"
@@ -220,6 +227,7 @@ write_missing_package_release_json "$MISSING_RELEASE"
 assert_gate_runs_release_workflow_test
 assert_gate_runs_package_smoke_test
 assert_gate_runs_customer_docs_guard
+assert_gate_runs_customer_ui_copy_guard
 run_expect_automated_success
 run_expect_missing_release_failure
 run_expect_manual_gate_failure

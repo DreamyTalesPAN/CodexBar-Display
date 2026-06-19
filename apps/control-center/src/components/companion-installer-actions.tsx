@@ -41,7 +41,7 @@ export function useCompanionRelease(
         status: "check_failed",
         installedVersion: companionVersion,
         updateAvailable: false,
-        message: "Companion release check failed.",
+        message: "Mac App check failed.",
       });
     } finally {
       setBusy(false);

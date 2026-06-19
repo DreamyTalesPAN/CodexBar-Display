@@ -37,6 +37,10 @@ Before shipping customer-facing UI changes, answer these in order:
 7. Did the change add a new customer decision that the software could make automatically?
 8. Does mobile have the same decision order and no wrapped or crowded action rows?
 
+## Automated Copy Guard
+
+Run `npm run check:customer-ui-copy` in `apps/control-center` before shipping customer-facing UI changes. It parses customer-facing TSX copy and blocks internal wording such as `Companion`, `Bridge`, local API terms, release/package diagnostics, and technical setup substeps.
+
 ## Delete First
 
 When the UI feels confusing, simplify in this order:

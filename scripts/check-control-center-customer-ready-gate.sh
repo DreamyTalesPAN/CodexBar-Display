@@ -226,6 +226,8 @@ run_local_checks() {
     "${ROOT}/scripts/check-control-center-customer-docs.sh"
   run_step "Control Center lint" \
     run_in_dir "$APP_DIR" npm run lint
+  run_step "Control Center customer UI copy guard" \
+    run_in_dir "$APP_DIR" npm run check:customer-ui-copy
   run_step "Control Center customer-flow tests" \
     run_in_dir "$APP_DIR" npm run test:customer-flows
   run_step "Customer-readiness checker tests" \

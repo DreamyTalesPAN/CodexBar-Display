@@ -850,7 +850,7 @@ function activeThemeDetail({
     return "Active on VibeTV: unknown until the Mac App is running.";
   }
   if (!connected) {
-    return "Active on VibeTV: find VibeTV first.";
+    return "Active on VibeTV: connect VibeTV first.";
   }
   return "Active on VibeTV: not reported by the device.";
 }

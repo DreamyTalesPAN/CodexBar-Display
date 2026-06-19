@@ -115,6 +115,10 @@ jobs:
         working-directory: apps/control-center
         run: npm run lint
 
+      - name: Check Control Center customer UI copy
+        working-directory: apps/control-center
+        run: npm run check:customer-ui-copy
+
       - name: Test Control Center customer flows
         working-directory: apps/control-center
         run: npm run test:customer-flows

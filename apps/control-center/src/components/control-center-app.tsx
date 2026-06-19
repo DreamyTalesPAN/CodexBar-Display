@@ -402,7 +402,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       setLastError(normalized);
       addEvent({
-        label: "Discovery needs attention",
+        label: "VibeTV needs attention",
         detail: normalized.nextAction,
         tone: "attention",
       });
