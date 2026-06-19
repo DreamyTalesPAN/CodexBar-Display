@@ -48,10 +48,6 @@ export async function GET(request: Request) {
     const hasPackageDownload = Boolean(
       packageDownloadUrls.macosArm64 && packageDownloadUrls.macosAmd64,
     );
-    const hasPartialPackageDownload = Boolean(
-      packageDownloadUrls.macosArm64 || packageDownloadUrls.macosAmd64,
-    );
-
     if (!hasPackageDownload) {
       return Response.json({
         checkedAt,
@@ -60,10 +56,7 @@ export async function GET(request: Request) {
         latestVersion: latestVersion || undefined,
         installedVersion: installedVersion || undefined,
         updateAvailable: false,
-        message:
-          hasPartialPackageDownload
-            ? "Companion package assets are incomplete."
-            : "Companion installer is not published in the latest release yet.",
+        message: "Mac App installer is not ready yet.",
       } satisfies CompanionReleaseInfo);
     }
 
@@ -79,7 +72,7 @@ export async function GET(request: Request) {
           compareSemver(latestVersion, installedVersion) > 0,
       ),
       packageDownloadUrls,
-      message: "Companion package is available for macOS.",
+      message: "Mac App installer is ready.",
     } satisfies CompanionReleaseInfo);
   } catch {
     return Response.json({
@@ -87,7 +80,7 @@ export async function GET(request: Request) {
       status: "check_failed",
       installedVersion: installedVersion || undefined,
       updateAvailable: false,
-      message: "Companion release check failed.",
+      message: "Mac App check failed.",
     } satisfies CompanionReleaseInfo);
   }
 }

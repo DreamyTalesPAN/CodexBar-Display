@@ -623,6 +623,18 @@ if payload.get("status") != "available":
 if payload.get("latestVersion") != version:
     errors.append(f"latestVersion={payload.get('latestVersion')!r}")
 
+message = str(payload.get("message", ""))
+for forbidden in (
+    "Companion",
+    "latest release",
+    "release check",
+    "package asset",
+    "customer installer",
+    "not published",
+):
+    if forbidden in message:
+        errors.append(f"message exposes {forbidden!r}")
+
 for field, expected in expected_package_assets.items():
     url = get_path(payload, field)
     if not url:

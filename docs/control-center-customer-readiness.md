@@ -4,30 +4,30 @@ This document tracks the customer-facing hosted app flow for `https://app.vibetv
 
 ## Current Architecture
 
-`app.vibetv.shop` is the customer UI. It runs in the browser and talks to a local Companion API on the customer's computer:
+`app.vibetv.shop` is the customer UI. It runs in the browser and talks to the local Mac App service on the customer's computer:
 
 ```text
 app.vibetv.shop
   -> http://127.0.0.1:47832/v1/status
-  -> local Companion API
+  -> local Mac App service
   -> VibeTV on the customer's LAN
 ```
 
-The browser permission prompt only allows the website to contact local services. It does not install, start, or repair the Companion.
+The browser permission prompt only allows the website to contact local services. It does not install, start, or repair the Mac App.
 
 The local Companion responds to Chrome Private Network Access preflights from the allowed hosted origin. Allowed preflights include `Access-Control-Allow-Private-Network: true`; unknown origins remain blocked.
 
 ## Customer Flow
 
 1. Customer opens `https://app.vibetv.shop`.
-2. App checks the local Companion API at `127.0.0.1:47832`.
-3. If Companion is missing, the app shows one primary Companion install/repair action.
-4. Customer installs or starts the Companion.
-5. Companion runs as a macOS LaunchAgent and survives login/reboot.
+2. App checks the local Mac App service at `127.0.0.1:47832`.
+3. If the Mac App is missing, the app shows one primary Mac App install/repair action.
+4. Customer installs or starts the Mac App.
+5. The Mac App runs as a macOS LaunchAgent and survives login/reboot.
 6. App searches for VibeTV on the same WiFi/LAN.
-7. If exactly one VibeTV is found, the Companion stores that target for later checks.
-8. If multiple VibeTV devices are found, the Companion refuses to auto-pick one. The customer must enter the exact VibeTV address, for example `vibetv.local` or `192.168.178.163`, then use `Connect VibeTV` again. A manually entered address is strict: if that exact VibeTV does not answer, the Companion reports a device error instead of falling back to another discovered VibeTV.
-9. App can read Companion status, VibeTV status, firmware, active theme, and settings.
+7. If exactly one VibeTV is found, the Mac App stores that address for later checks.
+8. If multiple VibeTV devices are found, the Mac App refuses to auto-pick one. The customer must enter the exact VibeTV address, for example `vibetv.local` or `192.168.178.163`, then use `Connect VibeTV` again. A manually entered address is strict: if that exact VibeTV does not answer, the Mac App reports a device error instead of falling back to another discovered VibeTV.
+9. App can read Mac App status, VibeTV status, firmware, active theme, and settings.
 10. Theme install writes stay locked until the hardware-safe release gate is enabled.
 
 ## macOS Companion API Installer
@@ -122,6 +122,8 @@ Set `CONTROL_CENTER_GITHUB_TOKEN` in the hosted app environment when possible. T
 
 Successful GitHub release reads are cached server-side for one minute. Failed release reads are not cached, so the customer-facing retry button can check again immediately.
 
+The `/api/companion/latest` route may keep technical field names and asset filenames for compatibility, but its human-readable `message` must use customer language such as `Mac App installer is not ready yet.` It must not expose `Companion`, release/package diagnostics, or customer installer internals.
+
 Package links must exactly match the latest release tag version. If the latest release is `v1.0.32`, the app only exposes package download buttons when both `VibeTV-Companion-API-arm64-v1.0.32.pkg` and `VibeTV-Companion-API-amd64-v1.0.32.pkg` exist. Older, mismatched, or partial package assets stay hidden.
 
 The app prefers the macOS package links when present. When both Apple silicon and Intel `.pkg` assets exist, customer-facing download actions show the package buttons and do not offer the shell script next to them. Because the release workflow only uploads `.pkg` release assets after signing and notarization validation, package buttons should not appear for unsigned local build artifacts. Until the first release with those assets exists, the app shows the installer as unavailable instead of linking customers to a missing file.
@@ -130,29 +132,29 @@ If only the shell script asset is available, setup screens must not present it a
 
 When the browser can detect the Mac architecture, the matching package is shown first and marked `This Mac`. If detection is unavailable, both Apple silicon and Intel packages remain visible without marking both as the primary recommendation.
 
-The Overview screen and the `/install/<theme_id>` entry use the same release check when Companion is missing, so a new customer does not have to discover the Updates tab first. That setup state has one primary action: install or repair Companion. If Companion is already installed but the app still cannot reach it, the package download is also the repair path.
+The Overview screen and the `/install/<theme_id>` entry use the same release check when the Mac App is missing, so a new customer does not have to discover the Updates tab first. That setup state has one primary action: install or repair the Mac App. If the Mac App is already installed but the app still cannot reach it, the package download is also the repair path.
 
 The Overview and `/install/<theme_id>` setup path should not show release diagnostics, internal asset names, or multiple equal actions. Customers should see only the next action that can move setup forward.
 
-After a customer clicks any Companion download action, the app shows the immediate next step in place: open the downloaded installer, finish the install/update/repair, then return to the same page. The page keeps checking Companion and moves forward when it becomes available.
+After a customer clicks any Mac App download action, the app shows the immediate next step in place: open the downloaded installer, finish the install/update/repair, then return to the same page. The page keeps checking the Mac App and moves forward when it becomes available.
 
 The Updates screen is available only after setup is complete. It should expose update actions, not setup recovery actions.
 
-While the page is open in the missing-Companion state, it quietly checks Companion again. After the customer installs or starts Companion, the UI should move forward without requiring a manual refresh.
+While the page is open in the missing-Mac-App state, it quietly checks the Mac App again. After the customer installs or starts the Mac App, the UI should move forward without requiring a manual refresh.
 
-When Companion is running but VibeTV is not found, the Overview screen and the `/install/<theme_id>` entry expose a `VibeTV address` field and one `Connect VibeTV` action. Customers or support can enter the exact `vibetv.local`/IP address there and connect without leaving the current flow.
+When the Mac App is running but VibeTV is not found, the Overview screen and the `/install/<theme_id>` entry expose a `VibeTV address` field and one `Connect VibeTV` action. Customers or support can enter the exact `vibetv.local`/IP address there and connect without leaving the current flow.
 
 Manual targets may be `vibetv.local`, an IP address, or an `http(s)` URL with a host and optional valid port. The Companion rejects explicit targets with unsupported schemes, invalid ports, paths, username/password credentials, query strings, or fragments so support reports do not collect tokenized URLs.
 
-If an exact address does not answer, the app keeps Companion online and shows VibeTV as not found. That means the customer should correct the VibeTV address or WiFi state, not reinstall Companion.
+If an exact address does not answer, the app keeps the Mac App online and shows VibeTV as not found. That means the customer should correct the VibeTV address or WiFi state, not reinstall the Mac App.
 
 If the Shopify theme catalog is empty or the requested `/install/<theme_id>` does not exist in the catalog, the app must show a locked catalog state. It must not fall back to demo/mock themes or silently select the first available theme for an unknown Shopify link.
 
 The Updates screen labels the same package actions by state:
 
-- `Install` when Companion is not running yet.
-- `Update` when the installed Companion version is behind the latest release.
-- `Repair` when Companion is already current but should be reinstalled or restarted cleanly.
+- `Install` when the Mac App is not running yet.
+- `Update` when the installed Mac App version is behind the latest release.
+- `Repair` when the Mac App is already current but should be reinstalled or restarted cleanly.
 
 The public VibeTV Shopify theme products now link to this hosted readiness flow instead of copying a terminal install command. As of 2026-06-19, the Shopify products `synthwave-theme`, `clippy-theme`, and `claude-creature-theme` link to technical Control Center theme IDs `synthwave`, `clippy`, and `claude-creature`, and no longer expose a terminal theme-pack install command as customer-facing copy.
 

@@ -8,6 +8,7 @@ const appRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const files = [
   ...collectFiles(join(appRoot, "src", "components")),
   join(appRoot, "src", "app", "layout.tsx"),
+  join(appRoot, "src", "app", "api", "companion", "latest", "route.ts"),
 ].filter((file) => file.endsWith(".tsx") || file.endsWith(".ts"));
 
 const forbiddenPatterns = [
@@ -152,6 +153,12 @@ function shouldIgnoreText(text) {
     return true;
   }
   if (text.startsWith("/") || text.startsWith("http://") || text.startsWith("https://")) {
+    return true;
+  }
+  if (text.includes("VibeTV-Companion-API-")) {
+    return true;
+  }
+  if (/^[A-Za-z0-9-]+$/.test(text) && text.includes("-")) {
     return true;
   }
   if (/^[A-Z0-9_]+$/.test(text)) {

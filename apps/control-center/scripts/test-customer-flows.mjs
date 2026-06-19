@@ -1076,6 +1076,7 @@ async function assertCompanionReleaseApi(
     payload.installedVersion === "1.0.32",
     `release API installedVersion=${payload.installedVersion}, expected 1.0.32`,
   );
+  assertCustomerApiMessage(payload.message);
 
   if (installerAsset) {
     assert(
@@ -1112,6 +1113,27 @@ async function assertCompanionReleaseApi(
       `release API should hide incomplete package URLs, got ${JSON.stringify(
         payload.packageDownloadUrls,
       )}`,
+    );
+  }
+}
+
+function assertCustomerApiMessage(message) {
+  assert(
+    typeof message === "string" && message.trim().length > 0,
+    "release API must include a customer-safe message",
+  );
+  const forbidden = [
+    "Companion",
+    "latest release",
+    "release check",
+    "package asset",
+    "customer installer",
+    "not published",
+  ];
+  for (const text of forbidden) {
+    assert(
+      !message.includes(text),
+      `release API message should not expose ${text}: ${message}`,
     );
   }
 }
