@@ -9,7 +9,37 @@ permissions:
   contents: write
 
 jobs:
+  customer-package-preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require customer package signing and notarization secrets
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.VIBETV_PKG_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.VIBETV_PKG_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.VIBETV_NOTARY_APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.VIBETV_NOTARY_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.VIBETV_NOTARY_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          missing=()
+          [[ -n "${CERTIFICATE_BASE64}" ]] || missing+=(VIBETV_PKG_CERTIFICATE_BASE64)
+          [[ -n "${CERTIFICATE_PASSWORD}" ]] || missing+=(VIBETV_PKG_CERTIFICATE_PASSWORD)
+          [[ -n "${APPLE_ID}" ]] || missing+=(VIBETV_NOTARY_APPLE_ID)
+          [[ -n "${APPLE_TEAM_ID}" ]] || missing+=(VIBETV_NOTARY_TEAM_ID)
+          [[ -n "${APPLE_APP_SPECIFIC_PASSWORD}" ]] || missing+=(VIBETV_NOTARY_APP_SPECIFIC_PASSWORD)
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "error: customer release package secrets are missing:" >&2
+            printf '  - %s\n' "${missing[@]}" >&2
+            echo "Configure Developer ID Installer signing and Apple notarization secrets before tagging a customer release." >&2
+            exit 1
+          fi
+
+          echo "Customer package signing and notarization secrets are configured."
+
   build-and-release:
+    needs: customer-package-preflight
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -172,7 +202,7 @@ jobs:
           go-version-file: companion/go.mod
           cache-dependency-path: companion/go.sum
 
-      - name: Prepare optional Apple package signing
+      - name: Prepare Apple package signing
         id: signing
         env:
           CERTIFICATE_BASE64: ${{ secrets.VIBETV_PKG_CERTIFICATE_BASE64 }}
@@ -182,9 +212,9 @@ jobs:
           set -euo pipefail
 
           if [[ -z "${CERTIFICATE_BASE64}" || -z "${CERTIFICATE_PASSWORD}" ]]; then
-            echo "Apple package signing secrets are not configured; building unsigned Companion PKGs."
+            echo "error: Apple package signing secrets are not configured." >&2
             echo "ready=false" >> "${GITHUB_OUTPUT}"
-            exit 0
+            exit 1
           fi
 
           KEYCHAIN_PATH="${RUNNER_TEMP}/vibetv-signing.keychain-db"
@@ -222,7 +252,7 @@ jobs:
           echo "ready=true" >> "${GITHUB_OUTPUT}"
           echo "Companion PKGs will be signed with Developer ID Installer."
 
-      - name: Prepare optional Apple notarization
+      - name: Prepare Apple notarization
         id: notarization
         env:
           APPLE_ID: ${{ secrets.VIBETV_NOTARY_APPLE_ID }}
@@ -233,14 +263,14 @@ jobs:
           set -euo pipefail
 
           if [[ -z "${VIBETV_PKG_SIGN_IDENTITY:-}" ]]; then
-            echo "Skipping notarization because package signing is not configured."
+            echo "error: package signing is not configured." >&2
             echo "ready=false" >> "${GITHUB_OUTPUT}"
-            exit 0
+            exit 1
           fi
           if [[ -z "${APPLE_ID}" || -z "${APPLE_TEAM_ID}" || -z "${APPLE_APP_SPECIFIC_PASSWORD}" ]]; then
-            echo "Apple notarization secrets are not configured; signed PKGs will not be notarized."
+            echo "error: Apple notarization secrets are not configured." >&2
             echo "ready=false" >> "${GITHUB_OUTPUT}"
-            exit 0
+            exit 1
           fi
 
           PROFILE="${NOTARY_PROFILE:-vibetv-notary}"
@@ -310,11 +340,11 @@ jobs:
               --require-notarized
           done
 
-      - name: Skip unsigned Companion PKG release upload
+      - name: Reject unsigned Companion PKG release upload
         if: ${{ steps.signing.outputs.ready != 'true' || steps.notarization.outputs.ready != 'true' }}
         run: |
-          echo "Signed and notarized Companion PKG secrets are not fully configured."
-          echo "Built PKGs will not be uploaded as customer release assets."
+          echo "error: signed and notarized Companion PKGs are required for customer releases." >&2
+          exit 1
 
       - name: Upload Companion PKGs to GitHub Release
         if: ${{ steps.signing.outputs.ready == 'true' && steps.notarization.outputs.ready == 'true' }}

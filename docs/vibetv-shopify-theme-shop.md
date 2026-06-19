@@ -75,7 +75,7 @@ The validated source is also stored in `docs/vibetv-theme-product-custom-liquid.
 
 Do not use customer-facing copy like `Jetzt installieren` while #129 is open. The correct public promise is readiness/compatibility checking. Real theme-install writes remain protected until the hardware write gate is approved.
 
-Live rollout status on 2026-06-19: the main `vibetv.shop` theme template `templates/product.themes.json` uses the readiness button for `synthwave-theme`, `clippy-theme`, and `claude-creature-theme`. The old `theme-pack install --target http://vibetv.local` command-copy block is no longer present on those public product pages.
+Live rollout status on 2026-06-19: the main `vibetv.shop` theme template `templates/product.themes.json` uses the readiness button for the product handles `synthwave-theme`, `clippy-theme`, and `claude-creature-theme`. Those buttons link to the technical Control Center theme IDs `synthwave`, `clippy`, and `claude-creature`. The old `theme-pack install --target http://vibetv.local` command-copy block is no longer present on those public product pages.
 
 ## Customer Flow
 
