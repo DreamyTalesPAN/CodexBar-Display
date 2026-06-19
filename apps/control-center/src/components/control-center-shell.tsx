@@ -60,7 +60,11 @@ export function ControlCenterShell({
   disabledTabs = [],
   firmwareUpdateAvailable = false,
 }: ControlCenterShellProps) {
-  const targetLabel = device?.target?.replace(/^https?:\/\//, "") || "vibetv.local";
+  const setupConnected = Boolean(device?.connected && device.paired);
+  const targetLabel = setupConnected
+    ? device?.target?.replace(/^https?:\/\//, "") || "VibeTV connected"
+    : "Setup needed";
+  const targetDotClass = setupConnected ? "bg-[#CCFF00]" : "bg-[#747A60]";
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
 
@@ -116,7 +120,7 @@ export function ControlCenterShell({
 
             <div className="hidden items-center gap-8 lg:flex">
               <div className="inline-flex items-center gap-3 text-base text-[#1B1B1B]">
-                <span className="size-2 rounded-full bg-[#CCFF00]" />
+                <span className={`size-2 rounded-full ${targetDotClass}`} />
                 <span>{targetLabel}</span>
               </div>
             </div>

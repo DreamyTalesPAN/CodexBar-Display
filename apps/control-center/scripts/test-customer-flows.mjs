@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const nextBin = join(root, "node_modules", "next", "dist", "bin", "next");
 const viewport = { width: 390, height: 844 };
+const desktopViewport = { width: 1280, height: 900 };
 
 const catalogFixture = {
   themes: [
@@ -181,6 +182,10 @@ async function main() {
       fixtureServer,
     );
     await testSetupTabsAreLockedUntilSetupComplete(
+      browser,
+      appContext.appUrl,
+    );
+    await testDesktopHeaderDoesNotClaimDeviceDuringSetup(
       browser,
       appContext.appUrl,
     );
@@ -410,6 +415,26 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
   await assertNoSetupJargon(page);
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
+  const page = await browser.newPage({ viewport: desktopViewport });
+  const installRequests = [];
+  await routeCompanionMissing(page, installRequests);
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByText("Install Companion first").waitFor({
+    timeout: 10_000,
+  });
+
+  await page.getByText("Setup needed").waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("vibetv.local").count()) === 0,
+    "desktop header should not show vibetv.local while setup is incomplete",
+  );
+
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
