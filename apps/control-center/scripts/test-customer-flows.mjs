@@ -192,6 +192,7 @@ async function main() {
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testSupportReportExportsAppearAfterReportLoads(browser, appContext.appUrl);
+    await testVibeTVAddressCopyStaysCustomerOnly(browser, appContext.appUrl);
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testThemeInstallStatusStaysCustomerOnly(browser, appContext.appUrl);
     await testPairingRequiredThemeStaysLocked(browser, appContext.appUrl);
@@ -567,6 +568,45 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   await page.getByRole("button", { name: "Download report" }).waitFor({
     timeout: 10_000,
   });
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testVibeTVAddressCopyStaysCustomerOnly(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      target: "",
+      connected: false,
+      paired: false,
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByLabel("VibeTV address").waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Connect VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+
+  const hiddenAddressText = [
+    "VibeTV target",
+    "Search target",
+    "http(s)",
+    "valid port",
+    "username",
+    "password",
+    "query",
+    "fragment",
+  ];
+  for (const text of hiddenAddressText) {
+    assert(
+      (await page.getByText(text).count()) === 0,
+      `VibeTV address setup should not show technical text: ${text}`,
+    );
+  }
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);

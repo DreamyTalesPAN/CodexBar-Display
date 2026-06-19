@@ -23,7 +23,7 @@ type DeviceTargetFormProps = {
 
 export function DeviceTargetForm({
   busy = false,
-  buttonLabel = "Search target",
+  buttonLabel = "Connect VibeTV",
   className = "grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end",
   disabled = false,
   id,
@@ -44,7 +44,7 @@ export function DeviceTargetForm({
     <form className={className} onSubmit={handleSubmit}>
       <div className="min-w-0">
         <label className="text-sm font-bold text-[#1B1B1B]" htmlFor={id}>
-          VibeTV target
+          VibeTV address
         </label>
         <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
           {deviceTargetHelpText(lastError)}
