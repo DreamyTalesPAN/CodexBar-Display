@@ -31,29 +31,29 @@ That command is no-write: it does not merge, release, install packages, start se
 ../../scripts/check-control-center-customer-ready-gate.sh --automated-only
 ```
 
-The local Companion API must run on `127.0.0.1:47832` for real device actions:
+The local Mac App service must run on `127.0.0.1:47832` for real device actions:
 
 ```bash
 cd ../../companion
 go run ./cmd/codexbar-display api
 ```
 
-If the app runs on another local port, start the Companion with a matching dev origin, for example:
+If the app runs on another local port, start the local service with a matching dev origin, for example:
 
 ```bash
 go run ./cmd/codexbar-display api --dev-origin http://localhost:3002
 ```
 
-For the hosted customer flow, use the macOS Companion API LaunchAgent installer from
-the repository root:
+For local development, install the Mac App service from the repository root:
 
 ```bash
 ./scripts/install-control-center-companion.sh
 ```
 
-That starts the local API in the background, so the web app no longer depends on a
-Terminal window staying open. The older frame-sending daemon LaunchAgent is separate.
-See `docs/control-center-customer-readiness.md` for the support flow.
+That starts the local service in the background, so the web app no longer depends
+on a Terminal window staying open. Normal customer installs use the signed Mac App
+`.pkg` assets from the GitHub Release. The older frame-sending daemon LaunchAgent
+is separate. See `docs/control-center-customer-readiness.md` for the support flow.
 
 ## Device Write Guardrails
 
@@ -80,13 +80,13 @@ SHOPIFY_THEME_COLLECTION_HANDLE=themes-2
 CONTROL_CENTER_GITHUB_TOKEN=...
 ```
 
-Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `SHOPIFY_STOREFRONT_ACCESS_TOKEN` for a public token. `CONTROL_CENTER_GITHUB_TOKEN` is optional, server-side only, and keeps GitHub release checks for Companion installer assets away from anonymous rate limits. If Shopify env vars are missing, the app shows a configuration warning and no installable themes. Set `CONTROL_CENTER_ALLOW_CATALOG_FALLBACK=1` only for explicit local development with repo catalog data.
+Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `SHOPIFY_STOREFRONT_ACCESS_TOKEN` for a public token. `CONTROL_CENTER_GITHUB_TOKEN` is optional, server-side only, and keeps GitHub release checks for Mac App package assets away from anonymous rate limits. If Shopify env vars are missing, the app shows a configuration warning and no installable themes. Set `CONTROL_CENTER_ALLOW_CATALOG_FALLBACK=1` only for explicit local development with repo catalog data.
 
 ## Flow
 
-- `/` opens the Control Center overview with Companion, VibeTV and update state.
+- `/` opens the Control Center overview with Mac App, VibeTV and update state.
 - `/install/[themeId]` opens the same app with a theme preselected.
-- Browser talks directly to `http://127.0.0.1:47832`.
+- Browser talks directly to the local Mac App service at `http://127.0.0.1:47832`.
 - The server reads Shopify product data through the Storefront API and only sends normalized public theme data to the browser.
 
 Validate the hosted customer catalog before rollout:

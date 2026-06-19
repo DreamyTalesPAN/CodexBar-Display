@@ -387,7 +387,7 @@ Run this list before every v0 release decision.
 - [ ] Downloaded candidate package checksum matched `checksums-v<version>.txt` from the same artifact.
 - [ ] Clean-Mac validation was confirmed with:
   `scripts/check-control-center-companion-customer-readiness.sh --installed-package --local-companion --expect-version <version>`.
-- [ ] Release artifacts include companion binaries, firmware binaries, checksums, and signed/notarized Companion packages.
+- [ ] Release artifacts include companion binaries, firmware binaries, checksums, and signed/notarized Mac App packages.
 - [ ] GitHub Release includes both customer installer packages for the release tag:
   `VibeTV-Companion-API-arm64-v<version>.pkg` and `VibeTV-Companion-API-amd64-v<version>.pkg`.
 - [ ] Firmware artifact reports expected `CODEXBAR_DISPLAY_FW_VERSION` for the release tag.
@@ -482,7 +482,7 @@ Firmware bench envs:
 - Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
 - Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
-- GitHub release artifacts include companion binaries, firmware binaries, checksums, and both signed/notarized Companion packages:
+- GitHub release artifacts include companion binaries, firmware binaries, checksums, and both signed/notarized Mac App packages:
   `VibeTV-Companion-API-arm64-v<version>.pkg` and `VibeTV-Companion-API-amd64-v<version>.pkg`.
 - Pre-release Clean-Mac validation uses the manual `Control Center Customer Package Candidate` workflow after that workflow file exists on the default branch. It uploads private Actions artifacts only; it does not tag, merge, or create a GitHub Release.
 - A customer release is not ready until those two package assets exist on the GitHub Release and match the tag version.

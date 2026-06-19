@@ -15,7 +15,7 @@ app.vibetv.shop
 
 The browser permission prompt only allows the website to contact local services. It does not install, start, or repair the Mac App.
 
-The local Companion responds to Chrome Private Network Access preflights from the allowed hosted origin. Allowed preflights include `Access-Control-Allow-Private-Network: true`; unknown origins remain blocked.
+The local Mac App service responds to Chrome Private Network Access preflights from the allowed hosted origin. Allowed preflights include `Access-Control-Allow-Private-Network: true`; unknown origins remain blocked.
 
 ## Customer Flow
 
@@ -30,24 +30,9 @@ The local Companion responds to Chrome Private Network Access preflights from th
 9. App can read Mac App status, VibeTV status, firmware, active theme, and settings.
 10. Theme install writes stay locked until the hardware-safe release gate is enabled.
 
-## macOS Companion API Installer
+## Mac App Package Path
 
-The customer/support release installer is published as a GitHub Release asset:
-
-```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
-```
-
-It performs these steps:
-
-- downloads the matching `codexbar-display` macOS release binary,
-- verifies the release SHA-256 checksum,
-- installs the binary to `~/Library/Application Support/codexbar-display/bin/codexbar-display`,
-- writes `~/Library/LaunchAgents/com.codexbar-display.companion-api.plist`,
-- starts `codexbar-display api --addr 127.0.0.1:47832`,
-- verifies `http://127.0.0.1:47832/v1/status`.
-
-Customer releases must include macOS `.pkg` assets:
+Normal customer installs use signed and notarized macOS `.pkg` assets from the GitHub Release:
 
 ```text
 VibeTV-Companion-API-arm64-v<version>.pkg
@@ -56,7 +41,22 @@ VibeTV-Companion-API-amd64-v<version>.pkg
 
 The package installs the binary under `/Library/Application Support/VibeTV/bin/`, installs `/Library/LaunchAgents/com.codexbar-display.companion-api.plist`, and starts the LaunchAgent for the current console user after install. Customer packages require Apple Developer ID Installer credentials and notarization setup.
 
-The release workflow now fails before creating customer release assets unless the package signing and notarization secrets are configured. With secrets configured, the `build-companion-pkgs` release job imports the Developer ID Installer certificate into a temporary keychain, signs the packages, stores a notarytool profile, submits each package for notarization, staples the result, validates both packages again with signature and notarization checks, and uploads the validated `.pkg` files as an internal workflow artifact. The `build-and-release` job waits for that artifact, downloads it, builds release checksums after the `.pkg` files are present, and only then creates the public GitHub Release with the Companion packages included.
+The legacy shell installer may still be published as a support-only GitHub Release asset:
+
+```bash
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
+```
+
+That support script performs these steps:
+
+- downloads the matching `codexbar-display` macOS release binary,
+- verifies the release SHA-256 checksum,
+- installs the binary to `~/Library/Application Support/codexbar-display/bin/codexbar-display`,
+- writes `~/Library/LaunchAgents/com.codexbar-display.companion-api.plist`,
+- starts `codexbar-display api --addr 127.0.0.1:47832`,
+- verifies `http://127.0.0.1:47832/v1/status`.
+
+The release workflow now fails before creating customer release assets unless the package signing and notarization secrets are configured. With secrets configured, the `build-companion-pkgs` release job imports the Developer ID Installer certificate into a temporary keychain, signs the packages, stores a notarytool profile, submits each package for notarization, staples the result, validates both packages again with signature and notarization checks, and uploads the validated `.pkg` files as an internal workflow artifact. The `build-and-release` job waits for that artifact, downloads it, builds release checksums after the `.pkg` files are present, and only then creates the public GitHub Release with the Mac App packages included.
 
 When the `.pkg` is installed or repaired, its `preinstall` script unloads the existing `com.codexbar-display.companion-api` LaunchAgent for the console user and removes the old script-installed user plist at `~/Library/LaunchAgents/com.codexbar-display.companion-api.plist` before the new payload is written. Its `postinstall` script then loads the package LaunchAgent from `/Library/LaunchAgents`. The package LaunchAgent becomes the single active Companion API service.
 
@@ -147,7 +147,7 @@ Package links must exactly match the latest release tag version. If the latest r
 
 The app prefers the macOS package links when present. When both Apple silicon and Intel `.pkg` assets exist, customer-facing download actions show the package buttons and do not offer the shell script next to them. Because the release workflow only uploads `.pkg` release assets after signing and notarization validation, package buttons should not appear for unsigned local build artifacts. Until the first release with those assets exists, the app shows the installer as unavailable instead of linking customers to a missing file.
 
-If only the shell script asset is available, setup screens must not present it as the normal customer installer. The primary setup state stays passive, such as `Installer is not ready yet.` Normal customer onboarding uses only the signed and notarized macOS package buttons.
+If only the shell script asset is available, setup screens must not present it as the normal customer installer. The primary setup state stays passive, such as `Mac App is not ready yet.` Normal customer onboarding uses only the signed and notarized macOS package buttons.
 
 When the browser can detect the Mac architecture, the matching package is shown first and marked `This Mac`. If detection is unavailable, both Apple silicon and Intel packages remain visible without marking both as the primary recommendation.
 
@@ -155,7 +155,7 @@ The Overview screen and the `/install/<theme_id>` entry use the same release che
 
 The Overview and `/install/<theme_id>` setup path should not show release diagnostics, internal asset names, or multiple equal actions. Customers should see only the next action that can move setup forward.
 
-After a customer clicks any Mac App download action, the app shows the immediate next step in place: open the downloaded installer, finish the install/update/repair, then return to the same page. The page keeps checking the Mac App and moves forward when it becomes available.
+After a customer clicks any Mac App download action, the app shows the immediate next step in place: open the downloaded installer, finish the install/update/repair, then return to the same page. The app checks quietly and moves forward when the Mac App becomes available.
 
 The Updates screen is available only after setup is complete. It should expose update actions, not setup recovery actions.
 
@@ -171,9 +171,9 @@ If the Shopify theme catalog is empty or the requested `/install/<theme_id>` doe
 
 The Updates screen labels the same package actions by state:
 
-- `Install` when the Mac App is not running yet.
-- `Update` when the installed Mac App version is behind the latest release.
-- `Repair` when the Mac App is already current but should be reinstalled or restarted cleanly.
+- `Install Mac App` when the Mac App is not running yet.
+- `Update Mac App` when the installed Mac App version is behind the latest release.
+- `Repair Mac App` when the Mac App is already current but should be reinstalled or restarted cleanly.
 
 The public VibeTV Shopify theme products now link to this hosted readiness flow instead of copying a terminal install command. As of 2026-06-19, the Shopify products `synthwave-theme`, `clippy-theme`, and `claude-creature-theme` link to technical Control Center theme IDs `synthwave`, `clippy`, and `claude-creature`, and no longer expose a terminal theme-pack install command as customer-facing copy.
 
@@ -187,13 +187,13 @@ scripts/check-control-center-customer-ready-gate.sh
 
 This gate is intentionally strict. It never merges, tags, releases, installs packages, starts services, discovers devices, or writes to VibeTV hardware. It only runs local checks and read-only hosted/release checks, then fails until the non-automated customer gates are also confirmed:
 
-- latest or selected release exposes both signed macOS Companion package assets through the hosted app,
+- latest or selected release exposes both signed Mac App package assets through the hosted app,
 - signed package was validated on a clean Mac,
 - the user explicitly approved and passed the hardware write flow.
 
 Clean-Mac evidence comes from the candidate package workflow above plus the installed-package readiness check. Do not pass `--clean-mac-tested` only because the workflow produced an artifact; the package has to be installed and verified on a clean Mac first.
 
-On macOS, the local gate also builds temporary unsigned Companion packages and validates their metadata, payload, scripts, and binary architecture without installing them. On non-macOS systems, that smoke step is skipped and the dedicated `companion-pkg-smoke` CI job covers it on macOS.
+On macOS, the local gate also builds temporary unsigned Mac App packages and validates their metadata, payload, scripts, and binary architecture without installing them. On non-macOS systems, that smoke step is skipped and the dedicated `companion-pkg-smoke` CI job covers it on macOS.
 
 Use an exact tag when validating a specific release:
 
@@ -231,7 +231,7 @@ scripts/test-control-center-candidate-pkg-workflow.sh
 scripts/test-control-center-companion-legacy-installer.sh
 ```
 
-The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Companion, or VibeTV hardware. The release workflow test proves the public GitHub Release cannot be created before signed/notarized Companion PKGs are validated, downloaded into the release job, and included in the release checksums. The candidate workflow test proves the pre-release Clean-Mac package path stays manual, read-only, non-release, signed/notarized, and artifact-only. The legacy installer guard test uses fake `pkgutil`, `launchctl`, and `curl` with a temporary `HOME`; it proves the shell installer refuses to touch the old user LaunchAgent after a package receipt exists unless support explicitly passes `--force-legacy-script`.
+The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Mac App service, or VibeTV hardware. The release workflow test proves the public GitHub Release cannot be created before signed/notarized Mac App packages are validated, downloaded into the release job, and included in the release checksums. The candidate workflow test proves the pre-release Clean-Mac package path stays manual, read-only, non-release, signed/notarized, and artifact-only. The legacy installer guard test uses fake `pkgutil`, `launchctl`, and `curl` with a temporary `HOME`; it proves the shell installer refuses to touch the old user LaunchAgent after a package receipt exists unless support explicitly passes `--force-legacy-script`.
 
 Keep the macOS package builder covered with:
 
@@ -239,7 +239,7 @@ Keep the macOS package builder covered with:
 scripts/test-control-center-companion-pkg-build.sh
 ```
 
-That smoke test runs on macOS, builds temporary unsigned `arm64` and `amd64` Companion packages, then validates both packages with the same read-only readiness checker. It does not install packages, start services, discover devices, or write to VibeTV hardware.
+That smoke test runs on macOS, builds temporary unsigned `arm64` and `amd64` Mac App packages, then validates both packages with the same read-only readiness checker. It does not install packages, start services, discover devices, or write to VibeTV hardware.
 
 What it checks:
 
