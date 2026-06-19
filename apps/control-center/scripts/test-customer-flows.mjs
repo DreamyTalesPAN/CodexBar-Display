@@ -195,6 +195,7 @@ async function main() {
     await testVibeTVAddressCopyStaysCustomerOnly(browser, appContext.appUrl);
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testThemeInstallStatusStaysCustomerOnly(browser, appContext.appUrl);
+    await testCustomerLogsStayCustomerOnly(browser, appContext.appUrl);
     await testPairingRequiredThemeStaysLocked(browser, appContext.appUrl);
     await testThemeWithoutPackUrlStaysLocked(browser, appContext.appUrl);
     await testBoardIncompatibleThemeStaysLocked(browser, appContext.appUrl);
@@ -568,6 +569,11 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   await page.getByRole("button", { name: "Download report" }).waitFor({
     timeout: 10_000,
   });
+  await page.getByText("VibeTV address").waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("Target", { exact: true }).count()) === 0,
+    "Support report should use customer language for the VibeTV address",
+  );
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -674,6 +680,55 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
     assert(
       (await page.getByText(text).count()) === 0,
       `Theme install status should not show technical text: ${text}`,
+    );
+  }
+
+  assert(
+    installRequests.length === 1,
+    `expected one mocked install request, got ${installRequests.length}`,
+  );
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  let settingsCalls = 0;
+  await routeCompanionOnline(page, installRequests, () => {
+    settingsCalls += 1;
+  });
+
+  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
+  await waitForCondition(
+    () => settingsCalls >= 1,
+    "expected settings refresh before customer log copy check",
+  );
+
+  const installButton = page
+    .locator("li")
+    .filter({ hasText: "Fixture Synthwave Theme" })
+    .getByRole("button", { name: "Install" });
+  await installButton.waitFor({ timeout: 10_000 });
+  await installButton.click();
+  await page.getByText("Install failed").waitFor({ timeout: 10_000 });
+
+  await page.getByRole("button", { name: "Logs" }).click();
+  await page.getByRole("heading", { name: "Timeline" }).waitFor({
+    timeout: 10_000,
+  });
+
+  const hiddenLogText = [
+    "target",
+    "protected",
+    "Pack URL",
+    "Install request sent to Companion",
+    "cdn.example.test",
+  ];
+  for (const text of hiddenLogText) {
+    assert(
+      (await page.getByText(text, { exact: false }).count()) === 0,
+      `Logs should not show technical text: ${text}`,
     );
   }
 

@@ -137,7 +137,7 @@ export function LogsScreen({
                 value={diagnostics.companion?.version || "Unknown"}
               />
               <DiagnosticFact
-                label="Target"
+                label="VibeTV address"
                 value={diagnostics.device?.target || "Not configured"}
               />
               <DiagnosticFact

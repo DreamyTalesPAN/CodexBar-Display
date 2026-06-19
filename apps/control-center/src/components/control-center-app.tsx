@@ -194,10 +194,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceState(payload.device.paired ? "paired" : "online");
         if (!quiet) {
           addEvent({
-            label: "Device checked",
-            detail: `${payload.device.target || "VibeTV"} is ${
-              payload.device.connected ? "connected" : "waiting for signal"
-            }.`,
+            label: "VibeTV checked",
+            detail: payload.device.connected
+              ? "VibeTV is connected."
+              : "VibeTV is waiting for signal.",
             tone: payload.device.connected ? "ready" : "attention",
           });
         }
@@ -327,8 +327,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         addEvent({
           label: wasMissing ? "Companion reconnected" : "Companion checked",
           detail: payload.device?.target
-            ? `Companion online, target ${payload.device.target}.`
-            : "Companion online, device target pending.",
+            ? "Companion is ready."
+            : "VibeTV still needs to be connected.",
           at: checkedAt,
           tone: "ready",
         });
@@ -378,8 +378,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         rememberDeviceTarget(payload.device.target);
       }
       addEvent({
-        label: "Device found",
-        detail: payload.device.target || "VibeTV is available through Companion.",
+        label: "VibeTV found",
+        detail: payload.device.connected
+          ? "VibeTV is connected."
+          : "VibeTV is waiting for signal.",
         tone: payload.device.connected ? "ready" : "unknown",
       });
       if (payload.device.connected) {
@@ -457,7 +459,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       addEvent({
         label: nextDevice.paired ? "VibeTV connected" : "VibeTV found",
-        detail: nextDevice.target || "VibeTV is available through Companion.",
+        detail: nextDevice.connected
+          ? "VibeTV is connected."
+          : "VibeTV is waiting for signal.",
         tone: nextDevice.connected ? "ready" : "unknown",
       });
       if (nextDevice.connected) {
@@ -549,11 +553,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setSelectedThemeId(theme.themeId);
     const startedAt = formatTime();
     const initialLogs = [
-      "Install request sent to Companion.",
+      "Install started.",
       `Theme: ${theme.title}`,
-      theme.packUrl
-        ? `Pack URL: ${publicDownloadUrl(theme.packUrl)}`
-        : "Pack URL missing.",
     ];
     setThemeInstallStatus({
       phase: "installing",
@@ -588,7 +589,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         title: theme.title,
         startedAt,
         finishedAt,
-        logs: [...initialLogs, ...safeLogLines(payload.logs)],
+        logs: [...initialLogs, "Install finished."],
         result: payload.result,
       });
       if (payload.result?.themeId) {
@@ -624,7 +625,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         error: normalized.nextAction,
       });
       addEvent({
-        label: "Theme install protected",
+        label: "Theme install needs attention",
         detail: normalized.nextAction,
         tone: "attention",
       });
@@ -997,31 +998,6 @@ function normalizeDeviceTarget(target: string): string {
     return trimmed;
   }
   return `http://${trimmed}`;
-}
-
-function publicDownloadUrl(raw: string): string {
-  try {
-    const parsed = new URL(raw);
-    parsed.username = "";
-    parsed.password = "";
-    parsed.search = "";
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return raw.replace(/\?.*$/, "");
-  }
-}
-
-function safeLogLines(lines?: string[]): string[] {
-  return (lines || [])
-    .map((line) => sanitizeLogLine(line))
-    .filter((line) => line.trim() !== "");
-}
-
-function sanitizeLogLine(line: string): string {
-  return line.replace(/https?:\/\/[^\s)]+/gi, (match) =>
-    publicDownloadUrl(match),
-  );
 }
 
 function formatTime(): string {
