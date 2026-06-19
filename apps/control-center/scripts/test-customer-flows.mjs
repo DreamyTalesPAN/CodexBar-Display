@@ -617,7 +617,9 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   await page.getByRole("button", { name: "Download report" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("VibeTV address").waitFor({ timeout: 10_000 });
+  await page.getByText("VibeTV address", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
   assert(
     (await page.getByText("Companion", { exact: false }).count()) === 0,
     "Support report should not show internal Companion naming",
@@ -626,6 +628,19 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
     (await page.getByText("Target", { exact: true }).count()) === 0,
     "Support report should use customer language for the VibeTV address",
   );
+  const hiddenSupportText = [
+    "Companion",
+    "API",
+    "target",
+    "http://vibetv.local",
+    "COMPANION_UNREACHABLE",
+  ];
+  for (const text of hiddenSupportText) {
+    assert(
+      (await page.getByText(text, { exact: false }).count()) === 0,
+      `Support report should not show internal diagnostic text: ${text}`,
+    );
+  }
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1401,7 +1416,8 @@ async function routeCompanionOnline(
             {
               name: "companion",
               status: "pass",
-              detail: "Companion is running.",
+              detail: "Companion API target http://vibetv.local is reachable.",
+              nextAction: "No action needed for COMPANION_UNREACHABLE.",
             },
             {
               name: "vibetv",

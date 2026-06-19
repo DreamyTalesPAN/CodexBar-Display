@@ -138,7 +138,7 @@ export function LogsScreen({
               />
               <DiagnosticFact
                 label="VibeTV address"
-                value={diagnostics.device?.target || "Not configured"}
+                value={formatDeviceAddress(diagnostics.device?.target)}
               />
               <DiagnosticFact
                 label="Device"
@@ -217,9 +217,9 @@ export function LogsScreen({
           <div className="mb-6 border border-[#747A60] bg-[#EEEEEE] p-4 text-sm leading-6 text-[#444933]">
             <div className="mb-1 flex items-center gap-2 font-bold text-[#1B1B1B]">
               <AlertTriangle size={17} aria-hidden />
-              {lastError.message}
+              {formatCustomerSupportText(lastError.message)}
             </div>
-            {lastError.nextAction}
+            {formatCustomerSupportText(lastError.nextAction)}
           </div>
         ) : null}
 
@@ -235,11 +235,11 @@ export function LogsScreen({
                 </div>
                 <div className="min-w-0">
                   <div className="break-words font-bold text-[#1B1B1B]">
-                    {event.label}
+                    {formatCustomerSupportText(event.label)}
                   </div>
                   {event.detail ? (
                     <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-                      {event.detail}
+                      {formatCustomerSupportText(event.detail)}
                     </div>
                   ) : null}
                 </div>
@@ -283,7 +283,25 @@ function formatCheckName(name: string): string {
 }
 
 function formatCustomerSupportText(value: string): string {
-  return value.replace(/\bCompanion\b/g, "Mac App");
+  return value
+    .replace(/\bCompanion\s+API\b/gi, "Mac App")
+    .replace(/\bCompanion\b/g, "Mac App")
+    .replace(/\bbridge\b/gi, "Mac App")
+    .replace(/\bdaemon\b/gi, "Mac App")
+    .replace(/\blocal\s+API\b/gi, "Mac App")
+    .replace(/\bAPI\b/g, "app")
+    .replace(/\btarget\b/gi, "VibeTV address")
+    .replace(/\bpack\s*URL\b/gi, "theme download")
+    .replace(/\bpackUrl\b/g, "theme download")
+    .replace(/\bCOMPANION_UNREACHABLE\b/g, "Mac App is not open")
+    .replace(/\bCLIENT_ERROR\b/g, "Something needs attention")
+    .replace(/\bHTTP_\d+\b/g, "Connection failed")
+    .replace(/\bVibeTV-Companion-API-\S+/g, "Mac App installer")
+    .replace(/https?:\/\/\S+/g, "saved link");
+}
+
+function formatDeviceAddress(value?: string): string {
+  return value?.trim().replace(/^https?:\/\//i, "") || "Not configured";
 }
 
 function formatDiagnosticTime(value?: string): string {
