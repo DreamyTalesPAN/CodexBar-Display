@@ -32,7 +32,7 @@ export function useCompanionRelease(
       const suffix = params.toString() ? `?${params.toString()}` : "";
       const response = await fetch(`/api/companion/latest${suffix}`);
       if (!response.ok) {
-        throw new Error(`companion release check failed: ${response.status}`);
+        throw new Error(`Mac App check failed: ${response.status}`);
       }
       setRelease((await response.json()) as CompanionReleaseInfo);
     } catch {

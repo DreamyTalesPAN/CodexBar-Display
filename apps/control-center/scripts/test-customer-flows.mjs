@@ -155,6 +155,8 @@ async function main() {
   const fixtureServer = await startFixtureServer();
   const catalogUrl = `http://127.0.0.1:${fixtureServer.port}/theme-packs.json`;
   const failedCatalogUrl = `http://127.0.0.1:${fixtureServer.port}/theme-packs-failed.json`;
+  const firmwareUrl = `http://127.0.0.1:${fixtureServer.port}/firmware-manifest.json`;
+  const failedFirmwareUrl = `http://127.0.0.1:${fixtureServer.port}/firmware-manifest-failed.json`;
   const completeReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-complete.json`;
   const scriptOnlyReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-script-only.json`;
   const partialPackageReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-partial-package.json`;
@@ -165,7 +167,7 @@ async function main() {
   let browser;
 
   try {
-    await runNextBuild({ catalogUrl, releaseUrl: completeReleaseUrl });
+    await runNextBuild({ catalogUrl, firmwareUrl, releaseUrl: completeReleaseUrl });
     assert(
       fixtureServer.catalogRequestCount > 0,
       "customer flow build did not read the local catalog fixture",
@@ -210,6 +212,22 @@ async function main() {
       },
       status: "available",
       updateAvailable: true,
+    });
+    await assertFirmwareUpdateApi(appContext.appUrl, {
+      board: companionDevice.board,
+      firmware: companionDevice.firmware,
+      latestFirmware: "1.0.33",
+      message: "Firmware update available.",
+      status: "update_available",
+      updateAvailable: true,
+    });
+    await assertFirmwareUpdateApi(appContext.appUrl, {
+      board: "unknown_board",
+      firmware: companionDevice.firmware,
+      latestFirmware: null,
+      message: "No update is available for this VibeTV.",
+      status: "no_board_release",
+      updateAvailable: false,
     });
     await stopProcess(app.process);
     app = undefined;
@@ -330,6 +348,23 @@ async function main() {
       appContext.appUrl,
       fixtureServer,
     );
+    await stopProcess(app.process);
+    app = undefined;
+
+    appContext = await startTestApp({
+      catalogUrl,
+      firmwareUrl: failedFirmwareUrl,
+      releaseUrl: completeReleaseUrl,
+    });
+    app = appContext.app;
+    await assertFirmwareUpdateApi(appContext.appUrl, {
+      board: companionDevice.board,
+      firmware: companionDevice.firmware,
+      latestFirmware: null,
+      message: "Firmware check failed.",
+      status: "check_failed",
+      updateAvailable: false,
+    });
     console.log("control-center customer flow tests passed");
   } finally {
     await browser?.close();
@@ -338,10 +373,10 @@ async function main() {
   }
 }
 
-async function startTestApp({ catalogUrl, releaseUrl }) {
+async function startTestApp({ catalogUrl, firmwareUrl, releaseUrl }) {
   const appPort = await findFreePort();
   const appUrl = `http://127.0.0.1:${appPort}`;
-  const app = startNext({ appPort, catalogUrl, releaseUrl });
+  const app = startNext({ appPort, catalogUrl, firmwareUrl, releaseUrl });
   await waitForHttp(appUrl);
   return { app, appUrl };
 }
@@ -1130,6 +1165,48 @@ async function assertCompanionReleaseApi(
   }
 }
 
+async function assertFirmwareUpdateApi(
+  appUrl,
+  {
+    board,
+    firmware,
+    latestFirmware,
+    message,
+    status,
+    updateAvailable,
+  },
+) {
+  const params = new URLSearchParams({ board, firmware });
+  const response = await fetch(`${appUrl}/api/firmware/latest?${params}`);
+  assert(
+    response.ok,
+    `expected firmware API HTTP 200, got ${response.status}`,
+  );
+  const payload = await response.json();
+
+  assert(
+    payload.status === status,
+    `firmware API status=${payload.status}, expected ${status}`,
+  );
+  assert(
+    payload.updateAvailable === updateAvailable,
+    `firmware API updateAvailable=${payload.updateAvailable}, expected ${updateAvailable}`,
+  );
+  assert(
+    (payload.latestFirmware || null) === latestFirmware,
+    `firmware API latestFirmware=${payload.latestFirmware}, expected ${latestFirmware}`,
+  );
+  assert(
+    payload.installedFirmware === firmware,
+    `firmware API installedFirmware=${payload.installedFirmware}, expected ${firmware}`,
+  );
+  assert(
+    payload.message === message,
+    `firmware API message=${payload.message}, expected ${message}`,
+  );
+  assertCustomerFirmwareMessage(payload.message);
+}
+
 async function testThemeCatalogApiKeepsCustomerSafeIssue(
   appUrl,
   fixtureServer,
@@ -1175,6 +1252,27 @@ function assertCustomerApiMessage(message) {
     assert(
       !message.includes(text),
       `release API message should not expose ${text}: ${message}`,
+    );
+  }
+}
+
+function assertCustomerFirmwareMessage(message) {
+  assert(
+    typeof message === "string" && message.trim().length > 0,
+    "firmware API must include a customer-safe message",
+  );
+  const forbidden = [
+    "release check",
+    "firmware release",
+    "manifest",
+    "API",
+    "HTTP",
+    "board",
+  ];
+  for (const text of forbidden) {
+    assert(
+      !message.toLowerCase().includes(text.toLowerCase()),
+      `firmware API message should not expose ${text}: ${message}`,
     );
   }
 }
@@ -1345,6 +1443,27 @@ async function startFixtureServer() {
       response.end(JSON.stringify({ message: "theme catalog unavailable" }));
       return;
     }
+    if (request.url === "/firmware-manifest.json") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          release: "v1.0.99",
+          artifacts: [
+            {
+              board: companionDevice.board,
+              firmwareVersion: "1.0.33",
+              message: "Firmware update available.",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    if (request.url === "/firmware-manifest-failed.json") {
+      response.writeHead(503, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ message: "firmware unavailable" }));
+      return;
+    }
     if (request.url === "/github-release-complete.json") {
       releaseRequestCount += 1;
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -1420,13 +1539,13 @@ async function startFixtureServer() {
   };
 }
 
-function startNext({ appPort, catalogUrl, releaseUrl }) {
+function startNext({ appPort, catalogUrl, firmwareUrl, releaseUrl }) {
   const child = spawn(
     process.execPath,
     [nextBin, "start", "--hostname", "127.0.0.1", "--port", String(appPort)],
     {
       cwd: root,
-      env: testEnv(catalogUrl, releaseUrl),
+      env: testEnv(catalogUrl, firmwareUrl, releaseUrl),
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -1437,10 +1556,10 @@ function startNext({ appPort, catalogUrl, releaseUrl }) {
   return { process: child };
 }
 
-async function runNextBuild({ catalogUrl, releaseUrl }) {
+async function runNextBuild({ catalogUrl, firmwareUrl, releaseUrl }) {
   await runCommand(process.execPath, [nextBin, "build"], {
     cwd: root,
-    env: testEnv(catalogUrl, releaseUrl),
+    env: testEnv(catalogUrl, firmwareUrl, releaseUrl),
   });
 }
 
@@ -1461,11 +1580,14 @@ async function runCommand(command, args, options) {
   }
 }
 
-function testEnv(catalogUrl, releaseUrl) {
+function testEnv(catalogUrl, firmwareUrl, releaseUrl) {
+  const resolvedFirmwareUrl =
+    firmwareUrl || catalogUrl.replace(/\/[^/]+$/, "/firmware-manifest.json");
   return {
     ...process.env,
     CONTROL_CENTER_ALLOW_CATALOG_FALLBACK: "1",
     CONTROL_CENTER_COMPANION_RELEASE_API_URL: releaseUrl,
+    CONTROL_CENTER_FIRMWARE_MANIFEST_URL: resolvedFirmwareUrl,
     CONTROL_CENTER_GITHUB_TOKEN: "",
     GITHUB_TOKEN: "",
     SHOPIFY_STORE_DOMAIN: "",

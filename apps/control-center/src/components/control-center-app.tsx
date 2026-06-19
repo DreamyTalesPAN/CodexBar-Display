@@ -703,7 +703,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           installedFirmware: deviceFirmware,
           updateAvailable: false,
           status: "check_failed",
-          message: "Firmware release check failed.",
+          message: "Firmware check failed.",
         });
       }
     },

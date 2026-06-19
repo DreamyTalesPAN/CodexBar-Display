@@ -30,7 +30,7 @@ const forbiddenPatterns = [
   {
     label: "release/package jargon",
     pattern:
-      /\b(release gate|latest release|customer installer|installer asset|Mac package|package pending|not published)\b/i,
+      /\b(release gate|release check|latest release|customer installer|installer asset|Mac package|package pending|not published)\b/i,
     suggestion: "Show a simple installer status instead.",
   },
   {

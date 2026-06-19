@@ -29,7 +29,7 @@ export async function GET(request: Request) {
       installedFirmware: installedFirmware || undefined,
       updateAvailable: false,
       status: "missing_device_info",
-      message: "Device firmware information is not available yet.",
+      message: "VibeTV update info is not available yet.",
     } satisfies FirmwareUpdateInfo);
   }
 
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
         release: manifest.release,
         updateAvailable: false,
         status: "no_board_release",
-        message: "No firmware release is listed for this board.",
+        message: "No update is available for this VibeTV.",
       } satisfies FirmwareUpdateInfo);
     }
 
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       installedFirmware,
       updateAvailable: false,
       status: "check_failed",
-      message: "Firmware release check failed.",
+      message: "Firmware check failed.",
     } satisfies FirmwareUpdateInfo);
   }
 }
