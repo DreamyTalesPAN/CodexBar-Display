@@ -75,7 +75,7 @@ The validated source is also stored in `docs/vibetv-theme-product-custom-liquid.
 
 Do not use customer-facing copy like `Jetzt installieren` while #129 is open. The correct public promise is readiness/compatibility checking. Real theme installs stay blocked until a dedicated hardware test approves them.
 
-Live rollout status on 2026-06-19: the main `vibetv.shop` theme template `templates/product.themes.json` uses the readiness button for the product handles `synthwave-theme`, `clippy-theme`, and `claude-creature-theme`. Those buttons link to the technical Control Center theme IDs `synthwave`, `clippy`, and `claude-creature`. The old `theme-pack install --target http://vibetv.local` command-copy block is no longer present on those public product pages.
+Live rollout status on 2026-06-19: the main `vibetv.shop` theme template `templates/product.themes.json` uses the readiness button for the product handles `synthwave-theme`, `clippy-theme`, and `claude-creature-theme`. Those buttons link to the technical Control Center theme IDs `synthwave`, `clippy`, and `claude-creature`. The old terminal command-copy block is no longer present on those public product pages.
 
 ## Customer Flow
 
@@ -157,15 +157,9 @@ Not allowed without current explicit approval:
 - firmware updates
 - any repeated hardware write test after a failed write
 
-## Legacy Support Command
+## Legacy Support Path
 
-The old command-copy path is support/testing only:
-
-```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme clippy --target http://vibetv.local
-```
-
-Do not present this as the normal customer journey.
+The old command-copy path is support/testing only. Do not paste terminal install commands into Shopify product pages, product descriptions, Custom Liquid snippets, or customer-facing setup docs.
 
 ## Sources
 

@@ -20,6 +20,16 @@ checks = [
         (root / "docs/customer-setup.md").read_text(encoding="utf-8"),
         None,
     ),
+    (
+        "docs/control-center-customer-readiness.md",
+        (root / "docs/control-center-customer-readiness.md").read_text(encoding="utf-8"),
+        None,
+    ),
+    (
+        "docs/vibetv-shopify-theme-shop.md",
+        (root / "docs/vibetv-shopify-theme-shop.md").read_text(encoding="utf-8"),
+        None,
+    ),
 ]
 
 forbidden = [

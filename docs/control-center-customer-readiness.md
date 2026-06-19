@@ -154,7 +154,7 @@ The Updates screen labels the same package actions by state:
 - `Update` when the installed Companion version is behind the latest release.
 - `Repair` when Companion is already current but should be reinstalled or restarted cleanly.
 
-The public VibeTV Shopify theme products now link to this hosted readiness flow instead of copying a terminal install command. As of 2026-06-19, the Shopify products `synthwave-theme`, `clippy-theme`, and `claude-creature-theme` link to technical Control Center theme IDs `synthwave`, `clippy`, and `claude-creature`, and no longer expose `codexbar-display theme-pack install --target http://vibetv.local` as customer-facing copy.
+The public VibeTV Shopify theme products now link to this hosted readiness flow instead of copying a terminal install command. As of 2026-06-19, the Shopify products `synthwave-theme`, `clippy-theme`, and `claude-creature-theme` link to technical Control Center theme IDs `synthwave`, `clippy`, and `claude-creature`, and no longer expose a terminal theme-pack install command as customer-facing copy.
 
 ## Customer Readiness Validation
 
@@ -219,7 +219,7 @@ That smoke test runs on macOS, builds temporary unsigned `arm64` and `amd64` Com
 
 What it checks:
 
-- release contains `install-control-center-companion.sh`,
+- release may contain the legacy support script without exposing it through the customer API,
 - release contains both macOS package assets,
 - package metadata uses the expected package identifier, version, and `/` install location,
 - package payload includes the Companion binary and LaunchAgent plist,
