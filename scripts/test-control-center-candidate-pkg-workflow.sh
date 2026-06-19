@@ -105,6 +105,8 @@ main() {
     "customer readiness doc must show running the workflow for a chosen branch"
   assert_contains "$readiness_doc" "-f version=<version>" \
     "customer readiness doc must require an explicit candidate package version"
+  assert_contains "$readiness_doc" "check-control-center-candidate-pkg-artifact.sh" \
+    "customer readiness doc must include the candidate package artifact checker"
   assert_contains "$readiness_doc" "--installed-package" \
     "customer readiness doc must connect candidate artifacts to Clean-Mac installed-package validation"
   assert_contains "$readiness_doc" "--clean-mac-tested" \
@@ -112,6 +114,8 @@ main() {
 
   assert_contains "$runbook_doc" "gh workflow run control-center-customer-pkg-candidate.yml --ref <branch> -f version=<version>" \
     "operator runbook must include the exact candidate workflow dispatch command"
+  assert_contains "$runbook_doc" "check-control-center-candidate-pkg-artifact.sh --artifact-dir <artifact-dir> --version <version>" \
+    "operator runbook must include the candidate package artifact checker command"
   assert_contains "$runbook_doc" "check-control-center-companion-customer-readiness.sh --installed-package --local-companion --expect-version <version>" \
     "operator runbook must include the Clean-Mac installed-package validation command"
 

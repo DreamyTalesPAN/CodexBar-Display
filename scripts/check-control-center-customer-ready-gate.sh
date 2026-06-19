@@ -238,6 +238,8 @@ run_local_checks() {
     "${ROOT}/scripts/test-control-center-release-workflow.sh"
   run_step "Control Center candidate package workflow test" \
     "${ROOT}/scripts/test-control-center-candidate-pkg-workflow.sh"
+  run_step "Control Center candidate package artifact checker test" \
+    "${ROOT}/scripts/test-control-center-candidate-pkg-artifact.sh"
   if [[ "$(uname -s)" == "Darwin" ]]; then
     run_step "Companion package smoke test" \
       "${ROOT}/scripts/test-control-center-companion-pkg-build.sh"

@@ -83,7 +83,15 @@ gh workflow run control-center-customer-pkg-candidate.yml \
   -f version=<version>
 ```
 
-Use the planned release version, for example `1.0.32`. The workflow uploads the `.pkg` files and `checksums-v<version>.txt` as a private Actions artifact for Clean-Mac validation, keeps repository permissions read-only, and does not create or update a GitHub Release. Download the `vibetv-mac-app-pkgs-v<version>` artifact from the run, verify the package checksum, install the matching package on a clean Mac, then run the installed-package readiness check from this repo:
+Use the planned release version, for example `1.0.32`. The workflow uploads the `.pkg` files and `checksums-v<version>.txt` as a private Actions artifact for Clean-Mac validation, keeps repository permissions read-only, and does not create or update a GitHub Release. Download the `vibetv-mac-app-pkgs-v<version>` artifact from the run, then verify that the package set and checksums match:
+
+```bash
+scripts/check-control-center-candidate-pkg-artifact.sh \
+  --artifact-dir <artifact-dir> \
+  --version <version>
+```
+
+After that artifact check passes, install the matching package on a clean Mac, then run the installed-package readiness check from this repo:
 
 ```bash
 scripts/check-control-center-companion-customer-readiness.sh \
@@ -228,10 +236,11 @@ Keep the script behavior covered in CI with:
 scripts/test-control-center-companion-customer-readiness.sh
 scripts/test-control-center-release-workflow.sh
 scripts/test-control-center-candidate-pkg-workflow.sh
+scripts/test-control-center-candidate-pkg-artifact.sh
 scripts/test-control-center-companion-legacy-installer.sh
 ```
 
-The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Mac App service, or VibeTV hardware. The release workflow test proves the public GitHub Release cannot be created before signed/notarized Mac App packages are validated, downloaded into the release job, and included in the release checksums. The candidate workflow test proves the pre-release Clean-Mac package path stays manual, read-only, non-release, signed/notarized, and artifact-only. The legacy installer guard test uses fake `pkgutil`, `launchctl`, and `curl` with a temporary `HOME`; it proves the shell installer refuses to touch the old user LaunchAgent after a package receipt exists unless support explicitly passes `--force-legacy-script`.
+The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Mac App service, or VibeTV hardware. The release workflow test proves the public GitHub Release cannot be created before signed/notarized Mac App packages are validated, downloaded into the release job, and included in the release checksums. The candidate workflow test proves the pre-release Clean-Mac package path stays manual, read-only, non-release, signed/notarized, and artifact-only. The candidate artifact test proves a downloaded candidate artifact fails closed when package files, versions, or checksums do not match. The legacy installer guard test uses fake `pkgutil`, `launchctl`, and `curl` with a temporary `HOME`; it proves the shell installer refuses to touch the old user LaunchAgent after a package receipt exists unless support explicitly passes `--force-legacy-script`.
 
 Keep the macOS package builder covered with:
 
