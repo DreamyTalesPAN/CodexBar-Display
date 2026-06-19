@@ -26,6 +26,13 @@ assert_contains() {
     || die "expected output to contain: ${needle}"
 }
 
+assert_gate_runs_release_workflow_test() {
+  grep -F 'run_step "Control Center release workflow test"' "$GATE" >/dev/null \
+    || die "customer-ready gate must run the Control Center release workflow test"
+  grep -F 'test-control-center-release-workflow.sh' "$GATE" >/dev/null \
+    || die "customer-ready gate must call test-control-center-release-workflow.sh"
+}
+
 write_fake_curl() {
   local path
   path="$1"
@@ -197,6 +204,7 @@ write_fake_curl "$FAKE_CURL"
 write_complete_release_json "$COMPLETE_RELEASE"
 write_missing_package_release_json "$MISSING_RELEASE"
 
+assert_gate_runs_release_workflow_test
 run_expect_automated_success
 run_expect_missing_release_failure
 run_expect_manual_gate_failure

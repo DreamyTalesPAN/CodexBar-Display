@@ -228,6 +228,8 @@ run_local_checks() {
     run_in_dir "$APP_DIR" npm run test:customer-flows
   run_step "Customer-readiness checker tests" \
     "${ROOT}/scripts/test-control-center-companion-customer-readiness.sh"
+  run_step "Control Center release workflow test" \
+    "${ROOT}/scripts/test-control-center-release-workflow.sh"
   run_step "Legacy Companion installer guard tests" \
     "${ROOT}/scripts/test-control-center-companion-legacy-installer.sh"
 }

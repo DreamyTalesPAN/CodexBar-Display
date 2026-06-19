@@ -201,10 +201,11 @@ Keep the script behavior covered in CI with:
 
 ```bash
 scripts/test-control-center-companion-customer-readiness.sh
+scripts/test-control-center-release-workflow.sh
 scripts/test-control-center-companion-legacy-installer.sh
 ```
 
-The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Companion, or VibeTV hardware. The legacy installer guard test uses fake `pkgutil`, `launchctl`, and `curl` with a temporary `HOME`; it proves the shell installer refuses to touch the old user LaunchAgent after a package receipt exists unless support explicitly passes `--force-legacy-script`.
+The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Companion, or VibeTV hardware. The release workflow test proves the public GitHub Release cannot be created before signed/notarized Companion PKGs are validated, downloaded into the release job, and included in the release checksums. The legacy installer guard test uses fake `pkgutil`, `launchctl`, and `curl` with a temporary `HOME`; it proves the shell installer refuses to touch the old user LaunchAgent after a package receipt exists unless support explicitly passes `--force-legacy-script`.
 
 Keep the macOS package builder covered with:
 
