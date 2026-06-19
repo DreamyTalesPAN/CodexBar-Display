@@ -39,6 +39,9 @@ const GITHUB_CATALOG_URL =
   "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json";
 const ALLOW_CATALOG_FALLBACK =
   process.env.CONTROL_CENTER_ALLOW_CATALOG_FALLBACK === "1";
+const CUSTOMER_THEME_CATALOG_ISSUE = "Themes could not be loaded right now.";
+const CUSTOMER_THEME_CATALOG_UNAVAILABLE =
+  "Themes are not available right now.";
 
 type ShopifyMetafield = { value?: string | null } | null;
 
@@ -119,8 +122,8 @@ export async function getThemeCatalog(): Promise<ThemeCatalogResponse> {
         source: "shopify",
         storefrontConfigured: true,
       };
-    } catch (error) {
-      const issue = `Shopify Storefront API konnte nicht geladen werden: ${messageFromError(error)}`;
+    } catch {
+      const issue = CUSTOMER_THEME_CATALOG_ISSUE;
       if (ALLOW_CATALOG_FALLBACK) {
         const fallback = await fetchGitHubCatalog(issue);
         return { ...fallback, storefrontConfigured: true };
@@ -129,8 +132,7 @@ export async function getThemeCatalog(): Promise<ThemeCatalogResponse> {
     }
   }
 
-  const issue =
-    "Shopify Storefront API ist noch nicht konfiguriert. Setze SHOPIFY_STORE_DOMAIN und SHOPIFY_STOREFRONT_ACCESS_TOKEN.";
+  const issue = CUSTOMER_THEME_CATALOG_UNAVAILABLE;
   if (ALLOW_CATALOG_FALLBACK) {
     return fetchGitHubCatalog(issue);
   }
@@ -264,8 +266,8 @@ async function fetchGitHubCatalog(
       storefrontConfigured: false,
       issue,
     };
-  } catch (error) {
-    return emptyCatalog(issue || messageFromError(error), false);
+  } catch {
+    return emptyCatalog(issue || CUSTOMER_THEME_CATALOG_ISSUE, false);
   }
 }
 
@@ -415,10 +417,6 @@ function titleFromThemeId(themeId: string): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function messageFromError(error: unknown): string {
-  return error instanceof Error ? error.message : "Unbekannter Fehler";
 }
 
 const SHOPIFY_THEMES_QUERY = `#graphql

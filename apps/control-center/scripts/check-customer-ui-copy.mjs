@@ -7,8 +7,8 @@ const appRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const files = [
   ...collectFiles(join(appRoot, "src", "components")),
-  join(appRoot, "src", "app", "layout.tsx"),
-  join(appRoot, "src", "app", "api", "companion", "latest", "route.ts"),
+  ...collectFiles(join(appRoot, "src", "app")),
+  join(appRoot, "src", "lib", "themes.ts"),
 ].filter((file) => file.endsWith(".tsx") || file.endsWith(".ts"));
 
 const forbiddenPatterns = [
