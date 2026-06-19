@@ -9,6 +9,7 @@ GITHUB_API_BASE="${CONTROL_CENTER_GITHUB_API_BASE:-https://api.github.com}"
 APP_URL="https://app.vibetv.shop"
 THEME_ID="synthwave"
 RELEASE_TAG=""
+RELEASE_JSON=""
 SKIP_LOCAL=0
 SKIP_LIVE=0
 SKIP_RELEASE=0
@@ -41,6 +42,7 @@ Default behavior:
 
 Options:
   --release v1.2.3       Check an exact release tag instead of GitHub latest.
+  --release-json path    Use a local GitHub release JSON fixture.
   --app-url URL          Hosted app URL. Default: https://app.vibetv.shop.
   --theme-id ID          Public free theme used for deep-link checks. Default: synthwave.
   --skip-local           Skip local app/UI tests.
@@ -82,6 +84,18 @@ parse_args() {
         ;;
       --release=*)
         RELEASE_TAG="${1#*=}"
+        shift
+        ;;
+      --release-json)
+        [[ $# -ge 2 ]] || {
+          fail "--release-json requires a value"
+          return
+        }
+        RELEASE_JSON="$2"
+        shift 2
+        ;;
+      --release-json=*)
+        RELEASE_JSON="${1#*=}"
         shift
         ;;
       --app-url)
@@ -240,19 +254,34 @@ run_release_checks() {
     return
   }
 
-  if [[ -n "$RELEASE_TAG" ]]; then
+  if [[ -n "$RELEASE_TAG" && -n "$RELEASE_JSON" ]]; then
+    fail "Use only one of --release or --release-json"
+    return
+  fi
+
+  local release_args=()
+  if [[ -n "$RELEASE_JSON" ]]; then
+    [[ -f "$RELEASE_JSON" ]] || {
+      fail "Release JSON does not exist: ${RELEASE_JSON}"
+      return
+    }
+    release_args=(--release-json "$RELEASE_JSON")
+    tag="fixture ${RELEASE_JSON}"
+  elif [[ -n "$RELEASE_TAG" ]]; then
     tag="$RELEASE_TAG"
+    release_args=(--release "$tag")
   else
     if ! tag="$(latest_release_tag)"; then
       fail "Latest GitHub release could not be resolved"
       return
     fi
+    release_args=(--release "$tag")
   fi
 
   log "Release under test: ${tag}"
   run_step "Release exposes customer Companion packages through hosted app" \
     "$READINESS" \
-      --release "$tag" \
+      "${release_args[@]}" \
       --app-url "$APP_URL"
 }
 

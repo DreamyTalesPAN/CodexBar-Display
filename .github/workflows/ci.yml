@@ -60,6 +60,9 @@ jobs:
       - name: Test customer-readiness checker
         run: ./scripts/test-control-center-companion-customer-readiness.sh
 
+      - name: Test customer-ready gate
+        run: ./scripts/test-control-center-customer-ready-gate.sh
+
       - name: Test legacy Companion installer guard
         run: ./scripts/test-control-center-companion-legacy-installer.sh
 
