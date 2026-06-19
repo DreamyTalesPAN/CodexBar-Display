@@ -601,7 +601,6 @@ expected_package_assets = {
     "packageDownloadUrls.macosArm64": f"VibeTV-Companion-API-arm64-v{version}.pkg",
     "packageDownloadUrls.macosAmd64": f"VibeTV-Companion-API-amd64-v{version}.pkg",
 }
-expected_installer_asset = "install-control-center-companion.sh"
 
 
 def get_path(root, dotted):
@@ -633,11 +632,8 @@ for field, expected in expected_package_assets.items():
         errors.append(f"{field} points to {asset_name(url)!r}, expected {expected!r}")
 
 installer_url = get_path(payload, "installerDownloadUrl")
-if installer_url and asset_name(installer_url) != expected_installer_asset:
-    errors.append(
-        "installerDownloadUrl points to "
-        f"{asset_name(installer_url)!r}, expected {expected_installer_asset!r}"
-    )
+if installer_url:
+    errors.append("installerDownloadUrl must stay hidden from the customer API")
 
 if errors:
     print("hosted app Companion release API mismatch:", "; ".join(errors), file=sys.stderr)

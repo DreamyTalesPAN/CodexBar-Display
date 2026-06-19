@@ -279,6 +279,7 @@ run_expect_app_release_missing_package_failure() {
 
   [[ "$status" -ne 0 ]] || die "expected hosted app missing package URL check to fail"
   assert_contains "$output" "packageDownloadUrls.macosAmd64 missing"
+  assert_contains "$output" "installerDownloadUrl must stay hidden from the customer API"
 }
 
 run_expect_local_companion_success() {
@@ -579,7 +580,6 @@ JSON
 {
   "status": "available",
   "latestVersion": "1.2.3",
-  "installerDownloadUrl": "https://downloads.example.test/install-control-center-companion.sh",
   "packageDownloadUrls": {
     "macosArm64": "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.2.3.pkg",
     "macosAmd64": "https://downloads.example.test/VibeTV-Companion-API-amd64-v1.2.3.pkg"

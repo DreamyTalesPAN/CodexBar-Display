@@ -201,7 +201,7 @@ async function main() {
     await testBoardIncompatibleThemeStaysLocked(browser, appContext.appUrl);
     await testFirmwareIncompatibleThemeStaysLocked(browser, appContext.appUrl);
     await assertCompanionReleaseApi(appContext.appUrl, {
-      installerAsset: "install-control-center-companion.sh",
+      installerAsset: null,
       latestVersion: "1.0.99",
       packageAssets: {
         macosAmd64: "VibeTV-Companion-API-amd64-v1.0.99.pkg",
@@ -224,11 +224,11 @@ async function main() {
       fixtureServer,
     );
     await assertCompanionReleaseApi(appContext.appUrl, {
-      installerAsset: "install-control-center-companion.sh",
+      installerAsset: null,
       latestVersion: "1.0.98",
       packageAssets: null,
-      status: "available",
-      updateAvailable: true,
+      status: "missing_asset",
+      updateAvailable: false,
     });
     await stopProcess(app.process);
     app = undefined;
@@ -244,11 +244,11 @@ async function main() {
       fixtureServer,
     );
     await assertCompanionReleaseApi(appContext.appUrl, {
-      installerAsset: "install-control-center-companion.sh",
+      installerAsset: null,
       latestVersion: "1.0.97",
       packageAssets: null,
-      status: "available",
-      updateAvailable: true,
+      status: "missing_asset",
+      updateAvailable: false,
     });
     await stopProcess(app.process);
     app = undefined;

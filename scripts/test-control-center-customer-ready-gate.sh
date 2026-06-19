@@ -66,7 +66,6 @@ case "$url" in
 {
   "status": "available",
   "latestVersion": "${version}",
-  "installerDownloadUrl": "https://downloads.example.test/install-control-center-companion.sh",
   "packageDownloadUrls": {
     "macosArm64": "https://downloads.example.test/VibeTV-Companion-API-arm64-v${version}.pkg",
     "macosAmd64": "https://downloads.example.test/VibeTV-Companion-API-amd64-v${version}.pkg"

@@ -116,7 +116,7 @@ The Control Center Updates screen checks `/api/companion/latest`. That route rea
 - `VibeTV-Companion-API-arm64-v<version>.pkg`
 - `VibeTV-Companion-API-amd64-v<version>.pkg`
 
-The legacy `install-control-center-companion.sh` asset is optional. When it exists, the app treats it as a support fallback; when both package assets exist without the script, the customer package path is still ready.
+The legacy `install-control-center-companion.sh` asset is optional for support. The hosted customer API does not expose it as an install action; when both package assets exist without the script, the customer package path is still ready.
 
 Set `CONTROL_CENTER_GITHUB_TOKEN` in the hosted app environment when possible. The token is used only by the server-side release check and is not sent to the browser. The read-only customer-readiness script also uses `CONTROL_CENTER_GITHUB_TOKEN` or `GITHUB_TOKEN` for GitHub release reads when present. Without a token, GitHub release reads are anonymous and can hit rate limits.
 
@@ -126,7 +126,7 @@ Package links must exactly match the latest release tag version. If the latest r
 
 The app prefers the macOS package links when present. When both Apple silicon and Intel `.pkg` assets exist, customer-facing download actions show the package buttons and do not offer the shell script next to them. Because the release workflow only uploads `.pkg` release assets after signing and notarization validation, package buttons should not appear for unsigned local build artifacts. Until the first release with those assets exists, the app shows the installer as unavailable instead of linking customers to a missing file.
 
-If only the shell script asset is available, setup screens must not present it as the normal customer installer. The primary setup state stays passive, such as `Installer is not ready yet.` The script link is only a secondary support fallback in post-setup update/repair surfaces. Normal customer onboarding should use the signed and notarized macOS package buttons.
+If only the shell script asset is available, setup screens must not present it as the normal customer installer. The primary setup state stays passive, such as `Installer is not ready yet.` Normal customer onboarding uses only the signed and notarized macOS package buttons.
 
 When the browser can detect the Mac architecture, the matching package is shown first and marked `This Mac`. If detection is unavailable, both Apple silicon and Intel packages remain visible without marking both as the primary recommendation.
 

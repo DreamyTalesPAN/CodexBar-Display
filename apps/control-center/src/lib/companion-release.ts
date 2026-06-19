@@ -10,7 +10,6 @@ export type CompanionReleaseInfo = {
   latestVersion?: string;
   installedVersion?: string;
   updateAvailable: boolean;
-  installerDownloadUrl?: string;
   packageDownloadUrls?: {
     macosArm64?: string;
     macosAmd64?: string;

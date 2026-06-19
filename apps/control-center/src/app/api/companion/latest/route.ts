@@ -4,7 +4,6 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_RELEASE_API_URL =
   "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest";
-const INSTALLER_ASSET_NAME = "install-control-center-companion.sh";
 const RELEASE_CACHE_TTL_MS = 60_000;
 
 type GitHubRelease = {
@@ -42,9 +41,6 @@ export async function GET(request: Request) {
     const release = await fetchLatestRelease();
     const releaseTag = release.tag_name?.trim() || "";
     const latestVersion = normalizeVersion(releaseTag);
-    const installer = (release.assets || []).find(
-      (asset) => asset.name === INSTALLER_ASSET_NAME,
-    );
     const packageDownloadUrls = findPackageDownloadUrls(
       release.assets || [],
       latestVersion,
@@ -56,7 +52,7 @@ export async function GET(request: Request) {
       packageDownloadUrls.macosArm64 || packageDownloadUrls.macosAmd64,
     );
 
-    if (!installer?.browser_download_url && !hasPackageDownload) {
+    if (!hasPackageDownload) {
       return Response.json({
         checkedAt,
         status: "missing_asset",
@@ -65,7 +61,9 @@ export async function GET(request: Request) {
         installedVersion: installedVersion || undefined,
         updateAvailable: false,
         message:
-          "Companion installer is not published in the latest release yet.",
+          hasPartialPackageDownload
+            ? "Companion package assets are incomplete."
+            : "Companion installer is not published in the latest release yet.",
       } satisfies CompanionReleaseInfo);
     }
 
@@ -80,17 +78,8 @@ export async function GET(request: Request) {
           installedVersion &&
           compareSemver(latestVersion, installedVersion) > 0,
       ),
-      ...(installer?.browser_download_url
-        ? { installerDownloadUrl: installer.browser_download_url }
-        : {}),
-      ...(hasPackageDownload ? { packageDownloadUrls } : {}),
-      message: hasPackageDownload
-        ? "Companion package is available for macOS."
-        : hasPartialPackageDownload
-          ? "Companion package assets are incomplete; script installer is available as a support fallback."
-          : installedVersion
-            ? "Companion installer is available."
-            : "Companion installer is available for this Mac.",
+      packageDownloadUrls,
+      message: "Companion package is available for macOS.",
     } satisfies CompanionReleaseInfo);
   } catch {
     return Response.json({

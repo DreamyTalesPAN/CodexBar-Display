@@ -108,7 +108,6 @@ export function CompanionDownloadActions({
     action,
     release?.release,
     release?.latestVersion,
-    release?.installerDownloadUrl,
     packages?.macosArm64,
     packages?.macosAmd64,
   ].join("|");
@@ -163,20 +162,6 @@ export function CompanionDownloadActions({
     );
   }
 
-  if (release?.installerDownloadUrl) {
-    return (
-      <>
-        <PendingPackageButton release={release} />
-        <DownloadLink
-          href={release.installerDownloadUrl}
-          label={scriptActionLabel(action)}
-          onDownloadStart={() => setDownloadStartedFor(downloadKey)}
-        />
-        {downloadStarted ? <AfterDownloadNotice action={action} /> : null}
-      </>
-    );
-  }
-
   return <PendingPackageButton release={release} />;
 }
 
@@ -202,7 +187,6 @@ export function CompanionPrimaryAction({
     "install",
     release?.release,
     release?.latestVersion,
-    release?.installerDownloadUrl,
     packageUrl,
   ].join("|");
   const downloadStarted = downloadStartedFor === downloadKey;
@@ -300,16 +284,6 @@ function packageActionLabel(
     return `Repair ${platform}`;
   }
   return `Install ${platform}`;
-}
-
-function scriptActionLabel(action: "install" | "repair" | "update"): string {
-  if (action === "update") {
-    return "Support update script";
-  }
-  if (action === "repair") {
-    return "Support repair script";
-  }
-  return "Support install script";
 }
 
 function DownloadLink({
