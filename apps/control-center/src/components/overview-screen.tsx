@@ -20,7 +20,6 @@ import type { ReactNode } from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import {
   CompanionDownloadActions,
-  CompanionReleaseNotice,
   useCompanionRelease,
 } from "./companion-installer-actions";
 import type {
@@ -211,27 +210,6 @@ export function OverviewScreen({
             onSubmit={onDiscoverDevice}
             value={deviceTarget}
           />
-        </section>
-      ) : null}
-
-      {companionMissing ? (
-        <section className="border-b border-[#747A60] py-6">
-          <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-            <div className="min-w-0">
-              <h3 className="text-base font-bold text-[#1B1B1B]">
-                Why the display can still show usage
-              </h3>
-              <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
-                The usage screen can be driven by the old local frame service.
-                app.vibetv.shop needs the Companion API as a browser bridge
-                before it can read the device, find VibeTV, or install themes.
-              </p>
-            </div>
-
-            <div className="flex flex-col items-start gap-3 md:items-end">
-              <CompanionReleaseNotice release={companionRelease} />
-            </div>
-          </div>
         </section>
       ) : null}
 
