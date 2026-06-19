@@ -243,7 +243,7 @@ guard_against_package_install() {
   [[ "$FORCE_LEGACY_SCRIPT" == 0 ]] || return 0
 
   package_version="$(installed_package_version)"
-  [[ -z "$package_version" ]] || die "VibeTV Companion package ${package_version} is already installed. Use the signed package repair/update path instead of this legacy support script. Support can override with --force-legacy-script."
+  [[ -z "$package_version" ]] || die "VibeTV Mac App package ${package_version} is already installed. Use the signed package repair/update path instead of this legacy support script. Support can override with --force-legacy-script."
 }
 
 detect_arch() {
@@ -339,7 +339,7 @@ main() {
   require_cmd_for grep "find the matching checksum entry" "install the macOS command line tools, then rerun the installer."
   require_cmd_for mktemp "create a temporary download folder" "use a standard macOS Terminal, then rerun the installer."
   require_cmd_for launchctl "install and control the macOS LaunchAgent" "run on macOS, then rerun the installer."
-  require_cmd_for pkgutil "avoid conflicts with the signed VibeTV Companion package" "run on macOS, then rerun the installer."
+  require_cmd_for pkgutil "avoid conflicts with the signed VibeTV Mac App package" "run on macOS, then rerun the installer."
 
   guard_against_package_install
 

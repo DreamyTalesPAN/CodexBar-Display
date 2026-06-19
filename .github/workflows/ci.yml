@@ -72,7 +72,7 @@ jobs:
       - name: Test Control Center candidate package workflow
         run: ./scripts/test-control-center-candidate-pkg-workflow.sh
 
-      - name: Test legacy Companion installer guard
+      - name: Test legacy Mac App support script guard
         run: ./scripts/test-control-center-companion-legacy-installer.sh
 
   theme-studio-tests:
@@ -141,7 +141,7 @@ jobs:
           go-version-file: companion/go.mod
           cache-dependency-path: companion/go.sum
 
-      - name: Build and validate unsigned Companion PKGs
+      - name: Build and validate unsigned Mac App PKGs
         run: ./scripts/test-control-center-companion-pkg-build.sh
 
   theme-pack-build:

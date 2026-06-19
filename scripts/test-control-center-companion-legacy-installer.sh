@@ -120,7 +120,7 @@ run_guard_blocks_mode() {
   set -e
 
   [[ "$status" -ne 0 ]] || die "expected legacy installer --${mode} to stop when package receipt exists"
-  assert_contains "$output" "VibeTV Companion package 1.2.3 is already installed"
+  assert_contains "$output" "VibeTV Mac App package 1.2.3 is already installed"
   [[ -f "$plist" ]] || die "legacy plist was removed despite package guard"
   [[ ! -s "${root}/launchctl.log" ]] || die "launchctl was called despite package guard"
   [[ ! -s "${root}/curl.log" ]] || die "curl was called despite package guard"
@@ -150,4 +150,4 @@ run_guard_blocks_mode restart
 run_guard_blocks_mode uninstall
 run_force_uninstall_allows_legacy_cleanup
 
-printf 'legacy Companion installer guard tests passed\n'
+printf 'legacy Mac App support script guard tests passed\n'

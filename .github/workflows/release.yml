@@ -170,7 +170,7 @@ jobs:
                   f.write("\n")
           PY
 
-      - name: Download validated Companion PKGs
+      - name: Download validated Mac App PKGs
         uses: actions/download-artifact@v4
         with:
           name: companion-pkgs
@@ -264,7 +264,7 @@ jobs:
           echo "VIBETV_PKG_SIGN_IDENTITY=${SIGN_IDENTITY}" >> "${GITHUB_ENV}"
           echo "VIBETV_NOTARY_KEYCHAIN=${KEYCHAIN_PATH}" >> "${GITHUB_ENV}"
           echo "ready=true" >> "${GITHUB_OUTPUT}"
-          echo "Companion PKGs will be signed with Developer ID Installer."
+          echo "Mac App PKGs will be signed with Developer ID Installer."
 
       - name: Prepare Apple notarization
         id: notarization
@@ -296,9 +296,9 @@ jobs:
 
           echo "VIBETV_NOTARY_PROFILE=${PROFILE}" >> "${GITHUB_ENV}"
           echo "ready=true" >> "${GITHUB_OUTPUT}"
-          echo "Companion PKGs will be submitted for notarization."
+          echo "Mac App PKGs will be submitted for notarization."
 
-      - name: Build Companion PKGs
+      - name: Build Mac App PKGs
         env:
           VERSION: ${{ github.ref_name }}
         run: |
@@ -325,7 +325,7 @@ jobs:
               --out "dist/companion-pkg"
           done
 
-      - name: Validate Companion PKG payloads
+      - name: Validate Mac App PKG payloads
         env:
           VERSION: ${{ github.ref_name }}
         run: |
@@ -338,7 +338,7 @@ jobs:
               --expect-version "${VERSION}"
           done
 
-      - name: Validate signed customer Companion PKGs
+      - name: Validate signed customer Mac App PKGs
         if: ${{ steps.signing.outputs.ready == 'true' && steps.notarization.outputs.ready == 'true' }}
         env:
           VERSION: ${{ github.ref_name }}
@@ -354,13 +354,13 @@ jobs:
               --require-notarized
           done
 
-      - name: Reject unsigned Companion PKG release upload
+      - name: Reject unsigned Mac App PKG release upload
         if: ${{ steps.signing.outputs.ready != 'true' || steps.notarization.outputs.ready != 'true' }}
         run: |
-          echo "error: signed and notarized Companion PKGs are required for customer releases." >&2
+          echo "error: signed and notarized Mac App PKGs are required for customer releases." >&2
           exit 1
 
-      - name: Upload validated Companion PKGs
+      - name: Upload validated Mac App PKGs
         if: ${{ steps.signing.outputs.ready == 'true' && steps.notarization.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:

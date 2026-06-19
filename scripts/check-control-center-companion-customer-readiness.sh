@@ -43,13 +43,13 @@ usage() {
 Usage:
   check-control-center-companion-customer-readiness.sh [options]
 
-Read-only checks for the hosted Control Center customer Companion path.
+Read-only checks for the hosted Control Center customer Mac App path.
 
 Options:
   --repo owner/name                 GitHub repo. Default: DreamyTalesPAN/CodexBar-Display
   --release v1.2.3                 Check expected macOS package release asset names.
   --release-json path              Use a local GitHub release JSON fixture instead of GitHub API.
-  --pkg path/to/package.pkg         Inspect a macOS Companion .pkg payload.
+  --pkg path/to/package.pkg         Inspect a Mac App .pkg payload.
   --require-signed                 Fail if the package is not signed.
   --require-notarized              Fail if the package is not notarized/stapled.
   --app-url https://app.vibetv.shop Check hosted app HTTP reachability. With --release/--release-json, also check /api/companion/latest package links.
@@ -65,8 +65,8 @@ Options:
   --shopify-product-page url theme_id
                                    Check a public Shopify product page links to /install/theme_id and no longer exposes the legacy terminal command. Repeatable.
   --installed-package              Check installed macOS package receipt, files, and LaunchAgent.
-  --local-companion                Check local Companion status on VIBETV_COMPANION_ADDR, default 127.0.0.1:47832.
-  --expect-version x.y.z           Require package, installed, and local Companion version where checked.
+  --local-companion                Check local Mac App status on VIBETV_COMPANION_ADDR, default 127.0.0.1:47832.
+  --expect-version x.y.z           Require package, installed, and local Mac App version where checked.
   -h, --help                       Show this help.
 
 Examples:

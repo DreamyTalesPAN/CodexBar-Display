@@ -37,7 +37,7 @@ Runs the no-write Control Center customer-ready gate.
 Default behavior:
   - runs local Control Center checks,
   - checks the hosted customer app and Shopify catalog,
-  - checks the latest GitHub release for customer macOS Companion packages,
+  - checks the latest GitHub release for customer Mac App packages,
   - fails until Clean-Mac and approved hardware-test evidence is supplied.
 
 Options:
@@ -241,12 +241,12 @@ run_local_checks() {
   run_step "Control Center candidate package artifact checker test" \
     "${ROOT}/scripts/test-control-center-candidate-pkg-artifact.sh"
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    run_step "Companion package smoke test" \
+    run_step "Mac App package smoke test" \
       "${ROOT}/scripts/test-control-center-companion-pkg-build.sh"
   else
-    log "SKIP: Companion package smoke test requires macOS"
+    log "SKIP: Mac App package smoke test requires macOS"
   fi
-  run_step "Legacy Companion installer guard tests" \
+  run_step "Legacy Mac App support script guard tests" \
     "${ROOT}/scripts/test-control-center-companion-legacy-installer.sh"
 }
 
@@ -297,7 +297,7 @@ run_release_checks() {
   fi
 
   log "Release under test: ${tag}"
-  run_step "Release exposes customer Companion packages through hosted app" \
+  run_step "Release exposes customer Mac App packages through hosted app" \
     "$READINESS" \
       "${release_args[@]}" \
       --app-url "$APP_URL"

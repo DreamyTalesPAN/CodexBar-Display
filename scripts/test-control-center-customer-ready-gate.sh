@@ -55,8 +55,8 @@ assert_gate_runs_candidate_artifact_checker_test() {
 }
 
 assert_gate_runs_package_smoke_test() {
-  grep -F 'run_step "Companion package smoke test"' "$GATE" >/dev/null \
-    || die "customer-ready gate must run the Companion package smoke test on macOS"
+  grep -F 'run_step "Mac App package smoke test"' "$GATE" >/dev/null \
+    || die "customer-ready gate must run the Mac App package smoke test on macOS"
   grep -F 'test-control-center-companion-pkg-build.sh' "$GATE" >/dev/null \
     || die "customer-ready gate must call test-control-center-companion-pkg-build.sh"
 }

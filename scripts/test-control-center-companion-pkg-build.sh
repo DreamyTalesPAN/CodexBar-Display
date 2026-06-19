@@ -23,7 +23,7 @@ cleanup() {
 
 main() {
   [[ "$(uname -s)" == "Darwin" ]] \
-    || die "macOS is required for Companion .pkg smoke tests"
+    || die "macOS is required for Mac App .pkg smoke tests"
   require_cmd go
   require_cmd pkgbuild
   require_cmd pkgutil
@@ -62,9 +62,9 @@ main() {
   done
 
   if [[ "$KEEP_WORK_DIR" == "1" ]]; then
-    printf 'Companion package smoke artifacts kept at %s\n' "$WORK_DIR"
+    printf 'Mac App package smoke artifacts kept at %s\n' "$WORK_DIR"
   fi
-  printf 'companion package smoke tests passed\n'
+  printf 'mac app package smoke tests passed\n'
 }
 
 main "$@"

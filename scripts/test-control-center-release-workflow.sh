@@ -45,13 +45,13 @@ main() {
   pkg_job="$(job_block "build-companion-pkgs")"
 
   assert_contains "$release_job" "needs: build-companion-pkgs" \
-    "build-and-release must wait for validated Companion PKGs before creating the release"
+    "build-and-release must wait for validated Mac App PKGs before creating the release"
   assert_contains "$release_job" "uses: actions/download-artifact@v4" \
-    "build-and-release must download the validated Companion PKG artifact"
+    "build-and-release must download the validated Mac App PKG artifact"
   assert_contains "$release_job" "name: companion-pkgs" \
     "build-and-release must download the companion-pkgs artifact"
   assert_contains "$release_job" "dist/companion-pkg/*.pkg" \
-    "GitHub Release must include the signed Companion PKG assets"
+    "GitHub Release must include the signed Mac App PKG assets"
   assert_contains "$release_job" "Build release checksums" \
     "build-and-release must build checksums after PKGs are available"
 
@@ -70,14 +70,14 @@ main() {
   [[ "$release_count" == "1" ]] \
     || die "release workflow must have exactly one public GitHub Release creation step"
 
-  validate_line="$(line_number "Validate signed customer Companion PKGs")"
-  upload_line="$(line_number "Upload validated Companion PKGs")"
+  validate_line="$(line_number "Validate signed customer Mac App PKGs")"
+  upload_line="$(line_number "Upload validated Mac App PKGs")"
   [[ -n "$validate_line" && -n "$upload_line" ]] \
     || die "release workflow must validate signed PKGs before upload"
   (( validate_line < upload_line )) \
     || die "validated PKGs must be uploaded only after signed/notarized validation"
 
-  download_line="$(line_number "Download validated Companion PKGs")"
+  download_line="$(line_number "Download validated Mac App PKGs")"
   checksum_line="$(line_number "Build release checksums")"
   release_line="$(line_number "Create GitHub Release")"
   [[ -n "$download_line" && -n "$checksum_line" && -n "$release_line" ]] \
