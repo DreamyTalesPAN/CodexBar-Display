@@ -25,11 +25,13 @@ Before claiming the Control Center is customer-ready, run the repository-level g
 ../../scripts/check-control-center-customer-ready-gate.sh
 ```
 
-That command is no-write: it does not merge, release, install packages, start services, discover devices, or touch VibeTV hardware. During normal development, run the automated subset only:
+That command is no-write: it does not merge, release, install packages, start services, discover devices, or touch VibeTV hardware. During normal feature-branch development before package release assets exist, run the automated non-release subset:
 
 ```bash
-../../scripts/check-control-center-customer-ready-gate.sh --automated-only
+../../scripts/check-control-center-customer-ready-gate.sh --automated-only --skip-release
 ```
+
+After a candidate or public release contains the Mac App packages, drop `--skip-release` to verify the release links too.
 
 The local Mac App service must run on `127.0.0.1:47832` for real device actions:
 

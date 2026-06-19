@@ -209,11 +209,13 @@ Use an exact tag when validating a specific release:
 scripts/check-control-center-customer-ready-gate.sh --release v<version>
 ```
 
-During normal development, use the automated subset without claiming customer readiness:
+During normal feature-branch development before package release assets exist, use the automated non-release subset without claiming customer readiness:
 
 ```bash
-scripts/check-control-center-customer-ready-gate.sh --automated-only
+scripts/check-control-center-customer-ready-gate.sh --automated-only --skip-release
 ```
+
+After a candidate or public release exposes the Mac App packages, remove `--skip-release` so the same automated gate also verifies release links.
 
 Use the read-only validation script before asking a customer to use a release:
 

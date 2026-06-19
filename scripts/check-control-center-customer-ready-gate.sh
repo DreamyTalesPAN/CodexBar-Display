@@ -49,6 +49,8 @@ Options:
   --skip-live            Skip hosted app and Shopify catalog checks.
   --skip-release         Skip release package checks.
   --automated-only       Do not require manual Clean-Mac or hardware evidence.
+                         Release checks still run; combine with --skip-release
+                         for no-release feature-branch development checks.
   --clean-mac-tested     Assert the signed package was validated on a clean Mac.
   --hardware-tested      Assert a user-approved hardware write test passed.
   -h, --help             Show this help.
