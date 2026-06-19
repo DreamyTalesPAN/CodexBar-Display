@@ -1206,12 +1206,17 @@ async function assertNoSetupJargon(page) {
   const hiddenSetupText = [
     "Check Companion",
     "Check bridge",
+    "Check installer",
     "Bridge",
     "127.0.0.1",
     "local Companion API",
     "release gate",
     "write",
     "Last events",
+    "Installer unavailable",
+    "Mac package pending",
+    "Needs Companion",
+    "Protected",
   ];
 
   for (const text of hiddenSetupText) {
