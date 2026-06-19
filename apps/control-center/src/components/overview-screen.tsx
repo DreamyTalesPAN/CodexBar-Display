@@ -287,8 +287,7 @@ function buildSetupState({
   if (companionStatus === "missing") {
     return {
       title: "Install Mac App first",
-      detail:
-        "Install the Mac App on this computer. This page keeps checking and moves on when it is ready.",
+      detail: "",
       icon: <Play size={22} aria-hidden />,
     };
   }

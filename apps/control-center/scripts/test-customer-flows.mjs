@@ -1540,6 +1540,8 @@ async function assertNoSetupJargon(page) {
     "Checking installer",
     "Mac installer",
     "Installer is not ready yet",
+    "Install the Mac App on this computer",
+    "This page keeps checking",
     "Bridge",
     "127.0.0.1",
     "local Companion API",
