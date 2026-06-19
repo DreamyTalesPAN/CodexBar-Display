@@ -96,7 +96,7 @@ export function UpdatesScreen({
 
       <section className="border-b border-[#747A60] py-8">
         <h3 className="mb-6 text-base font-bold text-[#1B1B1B]">
-          Companion
+          Mac App
         </h3>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
@@ -245,12 +245,12 @@ function CompanionUpdateAction({
 
 function companionActionLabel(action: "install" | "repair" | "update"): string {
   if (action === "update") {
-    return "Update Companion";
+    return "Update Mac App";
   }
   if (action === "repair") {
-    return "Repair Companion";
+    return "Repair Mac App";
   }
-  return "Install Companion";
+  return "Install Mac App";
 }
 
 function companionInstallerAction({

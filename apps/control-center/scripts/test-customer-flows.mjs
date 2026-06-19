@@ -346,16 +346,16 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   await page.goto(`${appUrl}/install/does-not-exist`, {
     waitUntil: "networkidle",
   });
-  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await assertSingleCompanionInstallLink(page);
   await clickDownloadWithoutLeavingPage(
-    page.getByRole("link", { name: "Install Companion" }),
+    page.getByRole("link", { name: "Install Mac App" }),
   );
   await page
     .getByText(
-      "Download started. Open the downloaded installer, finish setup, then return here and check Companion again.",
+      "Download started. Open the downloaded installer, finish setup, then return here and check the Mac App again.",
     )
     .waitFor({ timeout: 10_000 });
 
@@ -433,7 +433,7 @@ async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
-  await page.getByText("Install Companion first").waitFor({
+  await page.getByText("Install Mac App first").waitFor({
     timeout: 10_000,
   });
 
@@ -495,7 +495,7 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Updates" }).click();
-  await page.getByRole("link", { name: "Update Companion" }).waitFor({
+  await page.getByRole("link", { name: "Update Mac App" }).waitFor({
     timeout: 10_000,
   });
   await page.getByText("Installed version").waitFor({ timeout: 10_000 });
@@ -525,16 +525,16 @@ async function testUpdatesHideUnavailableCompanionAction(browser, appUrl) {
   await page.getByText("Not ready yet").first().waitFor({ timeout: 10_000 });
   assert(
     (await page.getByText("Not ready yet").count()) >= 1,
-    "Updates should show the unavailable Companion installer state",
+    "Updates should show the unavailable Mac App installer state",
   );
 
   assert(
     (await page.getByRole("button", { name: "Check again" }).count()) === 0,
-    "Updates should not show a dead Companion installer retry button",
+    "Updates should not show a dead Mac App installer retry button",
   );
   assert(
-    (await page.getByRole("link", { name: "Update Companion" }).count()) === 0,
-    "Updates should not show a Companion update link without macOS packages",
+    (await page.getByRole("link", { name: "Update Mac App" }).count()) === 0,
+    "Updates should not show a Mac App update link without macOS packages",
   );
 
   assertNoInstallRequests(installRequests);
@@ -570,6 +570,10 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
     timeout: 10_000,
   });
   await page.getByText("VibeTV address").waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("Companion", { exact: false }).count()) === 0,
+    "Support report should not show internal Companion naming",
+  );
   assert(
     (await page.getByText("Target", { exact: true }).count()) === 0,
     "Support report should use customer language for the VibeTV address",
@@ -804,7 +808,7 @@ async function testThemeWithoutPackUrlStaysLocked(browser, appUrl) {
     waitUntil: "networkidle",
   });
 
-  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   assert(
@@ -895,7 +899,7 @@ async function testScriptOnlyReleaseShowsSupportFallback(
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await page
@@ -924,7 +928,7 @@ async function testPartialPackageReleaseShowsSupportFallback(
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await page
@@ -953,16 +957,16 @@ async function testPackageOnlyReleaseShowsPackageDownloads(
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await assertSingleCompanionInstallLink(page);
   await clickDownloadWithoutLeavingPage(
-    page.getByRole("link", { name: "Install Companion" }),
+    page.getByRole("link", { name: "Install Mac App" }),
   );
   await page
     .getByText(
-      "Download started. Open the downloaded installer, finish setup, then return here and check Companion again.",
+      "Download started. Open the downloaded installer, finish setup, then return here and check the Mac App again.",
     )
     .waitFor({ timeout: 10_000 });
 
@@ -988,7 +992,7 @@ async function testReleaseCheckFailureShowsNoDownloadActions(
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await page
@@ -1017,7 +1021,7 @@ async function testMissingAssetReleaseShowsNoDownloadActions(
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await page
@@ -1444,7 +1448,7 @@ async function assertNoMobileOverflow(page) {
 }
 
 async function assertSingleCompanionInstallLink(page) {
-  const installLink = page.getByRole("link", { name: "Install Companion" });
+  const installLink = page.getByRole("link", { name: "Install Mac App" });
   await installLink.waitFor({ timeout: 10_000 });
   const installLinkCount = await installLink.count();
   assert(
@@ -1455,7 +1459,7 @@ async function assertSingleCompanionInstallLink(page) {
 
 async function assertNoCompanionInstallLink(page) {
   const installLinkCount = await page
-    .getByRole("link", { name: "Install Companion" })
+    .getByRole("link", { name: "Install Mac App" })
     .count();
   assert(
     installLinkCount === 0,

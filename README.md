@@ -13,13 +13,13 @@ Vibe TV ships ready for WiFi setup.
 4. Choose your home WiFi, enter the password, and save.
 5. After Vibe TV restarts, the display shows `vibetv.local` plus a fallback IP address.
 6. Open `https://app.vibetv.shop` on your Mac.
-7. Follow the one main button in the app. If it asks for Companion, download it, open the downloaded installer, finish the install, then return to the app.
+7. Follow the one main button in the app. If it asks for the Mac App, download it, open the downloaded installer, finish the install, then return to the app.
 8. If the app asks for a Vibe TV address, use `vibetv.local` or the IP address shown on the Vibe TV screen.
 9. Select `Connect VibeTV`.
 
 Normal customer setup does not require Terminal, USB flashing, or manual commands.
 
-If the device shows `Open Setup`, the hardware is usually fine. It means Vibe TV is on WiFi and is waiting for the Mac Companion.
+If the device shows `Open Setup`, the hardware is usually fine. It means Vibe TV is on WiFi and is waiting for the Mac App.
 
 To reset WiFi setup, open the Vibe TV setup page in a browser and use `Reset WiFi Setup`. If the device is not reachable, unplug power during early boot three times in a row; on the next boot, Vibe TV clears saved WiFi credentials and starts the `VibeTV-Setup` hotspot.
 

@@ -325,21 +325,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       if (!quiet || wasMissing) {
         addEvent({
-          label: wasMissing ? "Companion reconnected" : "Companion checked",
+          label: wasMissing ? "Mac App reconnected" : "Mac App checked",
           detail: payload.device?.target
-            ? "Companion is ready."
+            ? "Mac App is ready."
             : "VibeTV still needs to be connected.",
           at: checkedAt,
           tone: "ready",
         });
       }
     } catch (error) {
-      const normalized = normalizeCaughtError(error, "Companion needs attention.");
+      const normalized = normalizeCaughtError(error, "Mac App needs attention.");
       markCompanionUnavailable();
       if (!quiet) {
         setLastError(normalized);
         addEvent({
-          label: "Companion check needs attention",
+          label: "Mac App check needs attention",
           detail: normalized.nextAction,
           tone: "attention",
         });
@@ -919,9 +919,9 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
     if (isCompanionConnectionError(error)) {
       return {
         code: "COMPANION_UNREACHABLE",
-        message: "Companion is not reachable.",
+        message: "Mac App is not reachable.",
         nextAction:
-          "Install or repair Companion, make sure it is running, allow browser local access if prompted, then check Companion again.",
+          "Install or repair the Mac App, make sure it is running, allow browser local access if prompted, then check the Mac App again.",
       };
     }
     return {
@@ -933,7 +933,7 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
   return {
     code: "CLIENT_ERROR",
     message: fallbackMessage,
-    nextAction: "Check Companion and VibeTV connection.",
+    nextAction: "Check the Mac App and VibeTV connection.",
   };
 }
 

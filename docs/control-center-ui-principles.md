@@ -9,7 +9,7 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 - **Task-first information architecture:** navigation follows the customer setup journey, not the internal system architecture.
 - **Cognitive load reduction:** remove explanatory paragraphs, duplicate status text, and implementation details unless they directly unblock the next action.
 - **Error prevention over error explanation:** disable or hide actions that would fail instead of explaining why they failed after the click.
-- **Plain-language labels:** use customer words: Companion, VibeTV, Install, Connect, Update. Avoid internal words such as bridge, asset, package signing, protocol, transport, daemon, write gate, API, or agent.
+- **Plain-language labels:** use customer words: Mac App, VibeTV, Install, Connect, Update. Avoid internal words such as bridge, asset, package signing, protocol, transport, daemon, write gate, API, Companion, or agent.
 - **Automation-first workflows:** buttons should do the background work in sequence. Customers should not choose between technical substeps such as discover, pair, check bridge, check installer, or find device.
 - **State gating:** tabs and controls that are not usable in the current setup state stay locked. Overview owns setup recovery.
 - **Visual hierarchy discipline:** no button stacks with equal weight. If multiple actions appear, the design is probably exposing implementation detail.
@@ -19,7 +19,7 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 
 1. Overview is the only place for incomplete setup recovery.
 2. Settings, Theme Library, and Updates stay locked until setup is complete.
-3. Setup is complete when Companion is running and VibeTV is connected and paired.
+3. Setup is complete when the Mac App is running and VibeTV is connected and paired.
 4. Theme Library is additionally locked until theme installs are allowed by the release gate.
 5. Logs may stay available because they are support/diagnostics, not a customer workflow.
 6. A Shopify theme install deep link must not bypass setup gating.
@@ -46,4 +46,3 @@ When the UI feels confusing, simplify in this order:
 3. Merge technical substeps into one customer action.
 4. Rename labels into customer language.
 5. Only then add new UI.
-

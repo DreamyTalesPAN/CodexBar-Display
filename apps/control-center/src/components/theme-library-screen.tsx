@@ -581,9 +581,9 @@ function buildInstallReadiness({
   }
   if (companionStatus !== "online") {
     return {
-      title: "Install Companion first",
+      title: "Install Mac App first",
       detail: "",
-      buttonReason: "Start Companion first.",
+      buttonReason: "Install Mac App first.",
       icon: <Wifi size={22} aria-hidden />,
     };
   }
@@ -591,7 +591,7 @@ function buildInstallReadiness({
     return {
       title: "VibeTV not found",
       detail:
-        "Companion is online. Connect VibeTV on the same WiFi network before enabling install.",
+        "Connect VibeTV on the same WiFi network before installing themes.",
       buttonReason: "Connect VibeTV first.",
       icon: <Monitor size={22} aria-hidden />,
     };
@@ -847,7 +847,7 @@ function activeThemeDetail({
     return `Active on VibeTV: ${activeThemeLabel}.`;
   }
   if (companionStatus !== "online") {
-    return "Active on VibeTV: unknown until Companion is running.";
+    return "Active on VibeTV: unknown until the Mac App is running.";
   }
   if (!connected) {
     return "Active on VibeTV: find VibeTV first.";

@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "VibeTV Control Center",
-  description: "Check VibeTV theme readiness through the local Mac Companion.",
+  description: "Set up and manage VibeTV through the local Mac App.",
 };
 
 export default function RootLayout({

@@ -86,7 +86,7 @@ export function OverviewScreen({
           <dl className="mt-9 max-w-[420px]">
             <StatusRow
               icon={<Wifi size={18} aria-hidden />}
-              label="Companion"
+              label="Mac App"
               value={labelForCompanion(companionStatus)}
             />
             <StatusRow
@@ -246,7 +246,7 @@ function buildHeroCopy({
 }) {
   if (companionStatus === "missing") {
     return {
-      title: "Install Companion",
+      title: "Install Mac App",
       tone: "attention" as ReadinessTone,
       icon: <CircleHelp size={36} aria-hidden />,
       detail: lastError?.nextAction,
@@ -286,9 +286,9 @@ function buildSetupState({
 } | null {
   if (companionStatus === "missing") {
     return {
-      title: "Install Companion first",
+      title: "Install Mac App first",
       detail:
-        "Install the Mac app on this computer. This page keeps checking and moves on when it is ready.",
+        "Install the Mac App on this computer. This page keeps checking and moves on when it is ready.",
       icon: <Play size={22} aria-hidden />,
     };
   }
@@ -334,7 +334,7 @@ function labelForCompanion(status: CompanionStatus): string {
   if (status === "missing") {
     return "Needs install";
   }
-  return "Waiting for Companion";
+  return "Waiting for Mac App";
 }
 
 function labelForDevice(state: DeviceState, device: DeviceInfo | null): string {

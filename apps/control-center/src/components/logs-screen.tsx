@@ -133,7 +133,7 @@ export function LogsScreen({
                 value={formatDiagnosticTime(diagnostics.generatedAt)}
               />
               <DiagnosticFact
-                label="Companion"
+                label="Mac App"
                 value={diagnostics.companion?.version || "Unknown"}
               />
               <DiagnosticFact
@@ -166,12 +166,12 @@ export function LogsScreen({
                     </div>
                     {check.detail ? (
                       <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-                        {check.detail}
+                        {formatCustomerSupportText(check.detail)}
                       </div>
                     ) : null}
                     {check.nextAction ? (
                       <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-                        {check.nextAction}
+                        {formatCustomerSupportText(check.nextAction)}
                       </div>
                     ) : null}
                   </div>
@@ -181,7 +181,7 @@ export function LogsScreen({
           </div>
         ) : (
           <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
-            Load a support report to diagnose Companion and VibeTV state.
+            Load a support report to diagnose Mac App and VibeTV state.
           </div>
         )}
         {copyState === "failed" ? (
@@ -252,7 +252,7 @@ export function LogsScreen({
           </ol>
         ) : (
           <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
-            Activity will appear after the next Companion check.
+            Activity will appear after the next Mac App check.
           </div>
         )}
       </section>
@@ -270,11 +270,18 @@ function DiagnosticFact({ label, value }: { label: string; value: string }) {
 }
 
 function formatCheckName(name: string): string {
+  if (name.trim().toLowerCase() === "companion") {
+    return "Mac App";
+  }
   return name
     .split("_")
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatCustomerSupportText(value: string): string {
+  return value.replace(/\bCompanion\b/g, "Mac App");
 }
 
 function formatDiagnosticTime(value?: string): string {

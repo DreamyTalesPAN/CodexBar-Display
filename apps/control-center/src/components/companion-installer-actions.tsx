@@ -200,7 +200,7 @@ export function CompanionPrimaryAction({
           onClick={() => setDownloadStartedFor(downloadKey)}
         >
           <Download size={18} aria-hidden />
-          <span>Install Companion</span>
+          <span>Install Mac App</span>
         </a>
         {downloadStarted ? <AfterDownloadNotice action="install" /> : null}
       </>
@@ -342,12 +342,12 @@ function AfterDownloadNotice({
 
 function afterDownloadDetail(action: "install" | "repair" | "update"): string {
   if (action === "update") {
-    return "Download started. Open the downloaded installer, finish the update, then return here and check Companion again.";
+    return "Download started. Open the downloaded installer, finish the update, then return here and check the Mac App again.";
   }
   if (action === "repair") {
-    return "Download started. Open the downloaded installer, finish the repair, then return here and check Companion again.";
+    return "Download started. Open the downloaded installer, finish the repair, then return here and check the Mac App again.";
   }
-  return "Download started. Open the downloaded installer, finish setup, then return here and check Companion again.";
+  return "Download started. Open the downloaded installer, finish setup, then return here and check the Mac App again.";
 }
 
 export function hasCompleteMacPackages(
