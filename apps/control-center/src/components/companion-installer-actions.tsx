@@ -232,7 +232,7 @@ export function CompanionPrimaryAction({
         role="status"
       >
         <RefreshCw className="animate-spin" size={18} aria-hidden />
-        <span>Checking installer</span>
+        <span>Checking Mac App</span>
       </div>
     );
   }
@@ -242,7 +242,7 @@ export function CompanionPrimaryAction({
       className="max-w-[260px] border border-[#747A60] bg-[#F9F9F9] px-4 py-3 text-sm font-semibold leading-5 text-[#444933]"
       role="status"
     >
-      Installer is not ready yet.
+      Mac App is not ready yet.
     </p>
   );
 }
@@ -259,7 +259,7 @@ function PendingPackageButton({
         ? "Not ready yet"
       : release && !hasCompleteMacPackages(release)
         ? "Not ready yet"
-        : "Checking installer";
+        : "Checking Mac App";
 
   return (
     <button

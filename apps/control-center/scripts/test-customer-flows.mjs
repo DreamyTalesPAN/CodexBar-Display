@@ -500,7 +500,7 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   });
   await page.getByText("Installed version").waitFor({ timeout: 10_000 });
   await page.getByText("Latest version").waitFor({ timeout: 10_000 });
-  await page.getByText("Mac installer").waitFor({ timeout: 10_000 });
+  await page.getByText("Mac App download").waitFor({ timeout: 10_000 });
 
   const hiddenUpdatesText = ["Release installer", "Mac package"];
   for (const text of hiddenUpdatesText) {
@@ -903,7 +903,7 @@ async function testScriptOnlyReleaseShowsSupportFallback(
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await page
-    .getByText("Installer is not ready yet.")
+    .getByText("Mac App is not ready yet.")
     .waitFor({ timeout: 10_000 });
   await assertNoCompanionInstallLink(page);
   await assertNoLegacyCompanionDownloadActions(page);
@@ -932,7 +932,7 @@ async function testPartialPackageReleaseShowsSupportFallback(
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await page
-    .getByText("Installer is not ready yet.")
+    .getByText("Mac App is not ready yet.")
     .waitFor({ timeout: 10_000 });
   await assertNoCompanionInstallLink(page);
   await assertNoLegacyCompanionDownloadActions(page);
@@ -1025,7 +1025,7 @@ async function testMissingAssetReleaseShowsNoDownloadActions(
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await page
-    .getByText("Installer is not ready yet.")
+    .getByText("Mac App is not ready yet.")
     .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("button", { name: "Installer unavailable" }).count()) === 0,
@@ -1537,6 +1537,9 @@ async function assertNoSetupJargon(page) {
     "Check Companion",
     "Check bridge",
     "Check installer",
+    "Checking installer",
+    "Mac installer",
+    "Installer is not ready yet",
     "Bridge",
     "127.0.0.1",
     "local Companion API",

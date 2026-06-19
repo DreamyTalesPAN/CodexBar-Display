@@ -40,6 +40,11 @@ const forbiddenPatterns = [
     suggestion: "Use one Connect VibeTV or Install Mac App action.",
   },
   {
+    label: "indirect installer wording",
+    pattern: /\b(Checking installer|Mac installer)\b|^Installer is not ready yet\.?$/i,
+    suggestion: "Use direct Mac App wording for setup and update states.",
+  },
+  {
     label: "technical target wording",
     pattern:
       /\b(VibeTV target|Search target|target URL|valid port|username|password|query string|fragment)\b/i,

@@ -113,7 +113,7 @@ export function UpdatesScreen({
             />
             <FirmwareRow
               icon={<Download size={20} aria-hidden />}
-              label="Mac installer"
+              label="Mac App download"
               value={companionPackageStatus}
             />
             <FirmwareRow
