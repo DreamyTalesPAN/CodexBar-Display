@@ -13,7 +13,7 @@ import {
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
-import type { ThemeProduct, ThemeSource } from "@/lib/themes";
+import type { ThemeProduct } from "@/lib/themes";
 
 export type ThemeLibraryCompanionStatus = "unknown" | "online" | "missing";
 
@@ -56,7 +56,6 @@ export type ThemeLibraryScreenProps = {
   selectedTheme?: ThemeProduct;
   selectedThemeId: string;
   catalogIssue?: string;
-  catalogSource: ThemeSource;
   companionStatus: ThemeLibraryCompanionStatus;
   device: ThemeLibraryDeviceInfo | null;
   themeInstallEnabled: boolean;
@@ -76,7 +75,6 @@ export function ThemeLibraryScreen({
   selectedThemeId,
   busyAction,
   catalogIssue,
-  catalogSource,
   device,
   installStatus,
   installEntry,
@@ -159,8 +157,8 @@ export function ThemeLibraryScreen({
               ) : null}
               {installEntry && requestedThemeMissing ? (
                 <p className="mt-4 max-w-[640px] text-base leading-7 text-[#444933]">
-                  The Shopify link requested {requestedThemeId}, but this theme
-                  is not in the app catalog right now.
+                  This theme is not available right now. Choose another theme
+                  below.
                 </p>
               ) : null}
             </div>
@@ -173,7 +171,6 @@ export function ThemeLibraryScreen({
         {catalogEmpty ? (
           <CatalogEmptyState
             catalogIssue={catalogIssue}
-            catalogSource={catalogSource}
             requestedThemeId={requestedThemeId}
             storefrontConfigured={storefrontConfigured}
           />
@@ -241,20 +238,18 @@ export function ThemeLibraryScreen({
 
 function CatalogEmptyState({
   catalogIssue,
-  catalogSource,
   requestedThemeId,
   storefrontConfigured,
 }: {
   catalogIssue?: string;
-  catalogSource: ThemeSource;
   requestedThemeId?: string;
   storefrontConfigured: boolean;
 }) {
-  const detail =
-    catalogIssue ||
-    (storefrontConfigured
-      ? "Shopify is configured, but the theme collection did not return any VibeTV theme products."
-      : "Shopify Storefront settings are missing, so the app cannot load customer themes.");
+  const detail = requestedThemeId
+    ? "This theme is not available right now. Open the theme shop or choose another theme later."
+    : storefrontConfigured || catalogIssue
+      ? "Themes could not be loaded right now. Reload the page or open the theme shop."
+      : "Themes are not available from this page right now. Open the theme shop instead.";
 
   return (
     <div className="grid gap-5 border-y border-[#747A60] py-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -264,18 +259,10 @@ function CatalogEmptyState({
         </div>
         <div className="min-w-0">
           <h3 className="text-base font-bold text-[#1B1B1B]">
-            No installable themes loaded
+            Themes unavailable
           </h3>
           <p className="mt-1 max-w-[760px] text-sm leading-6 text-[#444933]">
             {detail}
-          </p>
-          {requestedThemeId ? (
-            <p className="mt-2 max-w-[760px] break-words font-mono text-xs leading-5 text-[#444933]">
-              Requested theme: {requestedThemeId}
-            </p>
-          ) : null}
-          <p className="mt-2 text-xs font-semibold uppercase tracking-normal text-[#506600]">
-            Catalog source: {catalogSource}
           </p>
         </div>
       </div>
@@ -319,12 +306,10 @@ function MissingRequestedThemeNotice({
       />
       <div className="min-w-0">
         <div className="font-semibold text-[#1B1B1B]">
-          Shopify theme link was not found
+          Theme is not available
         </div>
         <div className="mt-1 break-words">
-          The app catalog does not contain {requestedThemeId}. Choose another
-          theme below, or fix the product metafield before sending this link to
-          customers.
+          Choose another theme below, or open the theme shop.
         </div>
       </div>
     </div>
@@ -553,7 +538,7 @@ function labelForInstallBlocker(blocker: ThemeInstallBlocker | null): string {
     return "Connect First";
   }
   if (/pack/i.test(text)) {
-    return "Pack Missing";
+    return "Unavailable";
   }
   if (/firmware|update firmware/i.test(text)) {
     return "Update Needed";
@@ -561,8 +546,8 @@ function labelForInstallBlocker(blocker: ThemeInstallBlocker | null): string {
   if (/board|support/i.test(text)) {
     return "Not Supported";
   }
-  if (/protected|write gate/i.test(text)) {
-    return "Protected";
+  if (/protected/i.test(text)) {
+    return "Unavailable";
   }
   if (/paid|checkout/i.test(text)) {
     return "Checkout Needed";
@@ -646,17 +631,15 @@ function buildInstallReadiness({
 
   if (!themeInstallEnabled) {
     return {
-      title: "Install protected",
-      detail:
-        "Device reads are ready. Theme install writes stay locked until the hardware-safe release gate is enabled.",
-      buttonReason: "Theme install is protected for this release gate.",
+      title: "Themes unavailable",
+      detail: "Theme installs are not available right now.",
+      buttonReason: "Theme installs are not available right now.",
       icon: <Lock size={22} aria-hidden />,
     };
   }
   return {
     title: "Ready for install",
-    detail:
-      "Companion and VibeTV are online, and this Companion build allows theme install writes.",
+    detail: "Choose a theme and install it on the connected VibeTV.",
     buttonReason: "",
     icon: <ShieldCheck size={22} aria-hidden />,
   };
@@ -725,7 +708,8 @@ function buildThemeInstallBlocker({
   }
   if (!themeInstallEnabled) {
     return {
-      reason: themeInstallBlockedReason || "Theme install is protected.",
+      reason:
+        themeInstallBlockedReason || "Theme installs are not available right now.",
     };
   }
   return null;
@@ -734,28 +718,26 @@ function buildThemeInstallBlocker({
 function themeMetadataBlocker(theme: ThemeProduct): ThemeInstallBlocker | null {
   if (!theme.isFree) {
     return {
-      reason: "Paid theme checkout is not supported in this MVP.",
-      readinessTitle: "Free themes only",
+      reason: "Get this theme first.",
+      readinessTitle: "Checkout needed",
       readinessDetail:
-        "This MVP installs free themes only. Paid theme checkout and entitlement checks are not part of this release.",
+        "Open the theme shop to get this theme before installing it.",
       readinessIcon: <Lock size={22} aria-hidden />,
     };
   }
   if (!theme.packUrl) {
     return {
-      reason: "Theme pack URL is missing.",
-      readinessTitle: "Theme pack missing",
-      readinessDetail:
-        "This Shopify theme is missing the technical pack URL, so it cannot be installed yet.",
+      reason: "Theme is not available right now.",
+      readinessTitle: "Theme unavailable",
+      readinessDetail: "Choose another theme or try again later.",
       readinessIcon: <Library size={22} aria-hidden />,
     };
   }
   if (!isRemoteThemePackUrl(theme.packUrl)) {
     return {
-      reason: "Theme pack URL must be an http(s) download URL.",
-      readinessTitle: "Theme pack URL invalid",
-      readinessDetail:
-        "This Shopify theme has a technical pack URL, but it is not an http(s) download URL. Fix the product metafield before install.",
+      reason: "Theme is not available right now.",
+      readinessTitle: "Theme unavailable",
+      readinessDetail: "Choose another theme or try again later.",
       readinessIcon: <Library size={22} aria-hidden />,
     };
   }
@@ -772,10 +754,10 @@ function themeBoardBlocker(
   }
   if (!device.board) {
     return {
-      reason: "Device board must be read before install.",
-      readinessTitle: "Board check required",
+      reason: "Check VibeTV first.",
+      readinessTitle: "Check VibeTV first",
       readinessDetail:
-        "This theme declares compatible boards. Read the VibeTV device facts before installing it.",
+        "Reconnect VibeTV, then try this theme again.",
       readinessIcon: <Monitor size={22} aria-hidden />,
     };
   }
@@ -789,9 +771,9 @@ function themeBoardBlocker(
     return null;
   }
   return {
-    reason: `Theme does not support ${device.board}.`,
-    readinessTitle: "Board not supported",
-    readinessDetail: `${theme.title} does not list ${device.board} as a compatible VibeTV board.`,
+    reason: "This theme does not support this VibeTV.",
+    readinessTitle: "Not supported",
+    readinessDetail: "Choose another theme for this VibeTV.",
     readinessIcon: <Lock size={22} aria-hidden />,
   };
 }
@@ -806,10 +788,9 @@ function themeFirmwareBlocker(
   }
   if (!device.firmware) {
     return {
-      reason: "Device firmware must be read before install.",
-      readinessTitle: "Firmware check required",
-      readinessDetail:
-        "This theme declares a minimum firmware version. Read the VibeTV firmware before installing it.",
+      reason: "Check VibeTV first.",
+      readinessTitle: "Check VibeTV first",
+      readinessDetail: "Reconnect VibeTV, then try this theme again.",
       readinessIcon: <RefreshCw size={22} aria-hidden />,
     };
   }

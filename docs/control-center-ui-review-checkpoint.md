@@ -13,6 +13,6 @@ To reset the gate:
 
 ## Last Review Notes
 
-- Reviewed scope: setup flow, tab gating, Companion install/update surfaces, Theme Library readiness.
-- Customer rule: one next action, no internal release/bridge/asset explanations.
-
+- Reviewed scope: Overview setup flow, Settings simplification, Theme Library unavailable states.
+- Customer rule: one next action, no internal bridge/API/release-gate/debug explanations.
+- Verification: customer flow tests, lint, local desktop/mobile browser text and overflow check.

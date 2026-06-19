@@ -184,6 +184,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testPairingRequiredThemeStaysLocked(browser, appContext.appUrl);
     await testThemeWithoutPackUrlStaysLocked(browser, appContext.appUrl);
@@ -333,6 +334,7 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   });
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
+  await assertNoSetupJargon(page);
   await assertSingleCompanionInstallLink(page);
   await clickDownloadWithoutLeavingPage(
     page.getByRole("link", { name: "Install Companion" }),
@@ -405,6 +407,48 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
     (await page.getByRole("heading", { name: "Choose a theme" }).count()) === 0,
     "locked Theme Library tab should not navigate to the theme chooser",
   );
+  await assertNoSetupJargon(page);
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testSettingsStayCustomerOnly(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  let settingsCalls = 0;
+  await routeCompanionOnline(page, installRequests, () => {
+    settingsCalls += 1;
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await waitForCondition(
+    () => settingsCalls >= 1,
+    "expected settings refresh before opening Settings",
+  );
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("heading", { name: "Display" }).waitFor({
+    timeout: 10_000,
+  });
+
+  const hiddenCustomerText = [
+    "Connection controls",
+    "VibeTV target",
+    "Device facts",
+    "Check Companion",
+    "Connect VibeTV",
+    "Transport",
+    "ThemeSpec",
+  ];
+
+  for (const text of hiddenCustomerText) {
+    assert(
+      (await page.getByText(text).count()) === 0,
+      `Settings should not show setup/debug text: ${text}`,
+    );
+  }
+
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -502,6 +546,7 @@ async function testThemeWithoutPackUrlStaysLocked(browser, appUrl) {
 
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
+  await assertNoSetupJargon(page);
   assert(
     (await page.getByText("Theme pack missing").count()) === 0,
     "locked Theme Library should not show theme pack diagnostics",
@@ -592,6 +637,7 @@ async function testScriptOnlyReleaseShowsSupportFallback(
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
+  await assertNoSetupJargon(page);
   await assertSingleCompanionInstallLink(page);
   await assertNoLegacyCompanionDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
@@ -617,6 +663,7 @@ async function testPartialPackageReleaseShowsSupportFallback(
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
+  await assertNoSetupJargon(page);
   await assertSingleCompanionInstallLink(page);
   await assertNoLegacyCompanionDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
@@ -642,6 +689,7 @@ async function testPackageOnlyReleaseShowsPackageDownloads(
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
+  await assertNoSetupJargon(page);
   await assertSingleCompanionInstallLink(page);
   await clickDownloadWithoutLeavingPage(
     page.getByRole("link", { name: "Install Companion" }),
@@ -676,6 +724,7 @@ async function testReleaseCheckFailureShowsNoDownloadActions(
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
+  await assertNoSetupJargon(page);
   await page
     .getByRole("button", { name: "Check installer again" })
     .waitFor({ timeout: 10_000 });
@@ -704,6 +753,7 @@ async function testMissingAssetReleaseShowsNoDownloadActions(
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await assertThemeLibraryLockedBehindSetup(page);
+  await assertNoSetupJargon(page);
   await page
     .getByRole("button", { name: "Installer unavailable" })
     .waitFor({ timeout: 10_000 });
@@ -1146,6 +1196,26 @@ async function assertThemeLibraryLockedBehindSetup(page) {
     (await page.getByText("Theme browsing works here").count()) === 0,
     "locked Theme Library tab should not show setup helper copy",
   );
+}
+
+async function assertNoSetupJargon(page) {
+  const hiddenSetupText = [
+    "Check Companion",
+    "Check bridge",
+    "Bridge",
+    "127.0.0.1",
+    "local Companion API",
+    "release gate",
+    "write",
+    "Last events",
+  ];
+
+  for (const text of hiddenSetupText) {
+    assert(
+      (await page.getByText(text).count()) === 0,
+      `setup should not show internal text: ${text}`,
+    );
+  }
 }
 
 async function assertNoLegacyCompanionDownloadActions(page) {

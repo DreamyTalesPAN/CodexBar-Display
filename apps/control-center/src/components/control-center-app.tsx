@@ -21,7 +21,6 @@ import { ThemeLibraryScreen } from "./theme-library-screen";
 import { UpdatesScreen } from "./updates-screen";
 
 const COMPANION_URL = "http://127.0.0.1:47832";
-const COMPANION_ENDPOINT = "127.0.0.1:47832";
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 
 type SettingsResponse = {
@@ -88,7 +87,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
   const [themeInstallStatus, setThemeInstallStatus] =
     useState<ThemeInstallStatus | null>(null);
-  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
   const [firmwareUpdate, setFirmwareUpdate] =
     useState<FirmwareUpdateInfo | null>(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
@@ -303,7 +301,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
       setLastError(null);
-      setLastCheckedAt(checkedAt);
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
@@ -829,12 +826,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     >
       {activeShellTab === "overview" ? (
         <OverviewScreen
-          companionEndpoint={COMPANION_URL}
           companionStatus={companionStatus}
           device={device}
           deviceState={deviceState}
-          events={events.slice(0, 4)}
-          lastCheckedAt={lastCheckedAt}
           lastError={lastError}
           deviceTarget={deviceTarget}
           firmwareUpdate={effectiveFirmwareUpdate}
@@ -842,8 +836,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onCheckBridge={checkCompanion}
           onConnectDevice={connectDevice}
           onDeviceTargetChange={handleDeviceTargetChange}
-          onViewLogs={() => setActiveTab("logs")}
-          themeInstallEnabled={themeInstallEnabled}
         />
       ) : null}
 
@@ -851,15 +843,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         <SettingsScreen
           brightness={brightness}
           busyAction={busyAction}
-          companionStatus={companionStatus}
-          companionUrl={COMPANION_ENDPOINT}
           device={device}
-          deviceTarget={deviceTarget}
-          lastError={lastError}
           onBrightnessChange={setBrightness}
-          onCheckBridge={checkCompanion}
-          onConnectDevice={connectDevice}
-          onDeviceTargetChange={handleDeviceTargetChange}
           onSaveBrightness={saveBrightness}
         />
       ) : null}
@@ -871,7 +856,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           device={device}
           installStatus={themeInstallStatus}
           catalogIssue={catalog.issue}
-          catalogSource={catalog.source}
           lastInstall={lastInstall}
           onInstallTheme={installTheme}
           onSelectTheme={setSelectedThemeId}
