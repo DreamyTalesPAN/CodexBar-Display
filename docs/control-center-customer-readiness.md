@@ -56,7 +56,7 @@ VibeTV-Companion-API-amd64-v<version>.pkg
 
 The package installs the binary under `/Library/Application Support/VibeTV/bin/`, installs `/Library/LaunchAgents/com.codexbar-display.companion-api.plist`, and starts the LaunchAgent for the current console user after install. Customer packages require Apple Developer ID Installer credentials and notarization setup.
 
-The release workflow now fails before creating customer release assets unless the package signing and notarization secrets are configured. With secrets configured, the `build-companion-pkgs` release job imports the Developer ID Installer certificate into a temporary keychain, signs the packages, stores a notarytool profile, submits each package for notarization, staples the result, validates both packages again with signature and notarization checks, and only then uploads the `.pkg` assets to the release.
+The release workflow now fails before creating customer release assets unless the package signing and notarization secrets are configured. With secrets configured, the `build-companion-pkgs` release job imports the Developer ID Installer certificate into a temporary keychain, signs the packages, stores a notarytool profile, submits each package for notarization, staples the result, validates both packages again with signature and notarization checks, and uploads the validated `.pkg` files as an internal workflow artifact. The `build-and-release` job waits for that artifact, downloads it, builds release checksums after the `.pkg` files are present, and only then creates the public GitHub Release with the Companion packages included.
 
 When the `.pkg` is installed or repaired, its `preinstall` script unloads the existing `com.codexbar-display.companion-api` LaunchAgent for the console user and removes the old script-installed user plist at `~/Library/LaunchAgents/com.codexbar-display.companion-api.plist` before the new payload is written. Its `postinstall` script then loads the package LaunchAgent from `/Library/LaunchAgents`. The package LaunchAgent becomes the single active Companion API service.
 
@@ -169,6 +169,8 @@ This gate is intentionally strict. It never merges, tags, releases, installs pac
 - latest or selected release exposes both signed macOS Companion package assets through the hosted app,
 - signed package was validated on a clean Mac,
 - the user explicitly approved and passed the hardware write flow.
+
+On macOS, the local gate also builds temporary unsigned Companion packages and validates their metadata, payload, scripts, and binary architecture without installing them. On non-macOS systems, that smoke step is skipped and the dedicated `companion-pkg-smoke` CI job covers it on macOS.
 
 Use an exact tag when validating a specific release:
 

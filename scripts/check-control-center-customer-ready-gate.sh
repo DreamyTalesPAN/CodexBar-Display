@@ -230,6 +230,12 @@ run_local_checks() {
     "${ROOT}/scripts/test-control-center-companion-customer-readiness.sh"
   run_step "Control Center release workflow test" \
     "${ROOT}/scripts/test-control-center-release-workflow.sh"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    run_step "Companion package smoke test" \
+      "${ROOT}/scripts/test-control-center-companion-pkg-build.sh"
+  else
+    log "SKIP: Companion package smoke test requires macOS"
+  fi
   run_step "Legacy Companion installer guard tests" \
     "${ROOT}/scripts/test-control-center-companion-legacy-installer.sh"
 }

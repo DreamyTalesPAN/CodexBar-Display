@@ -33,6 +33,13 @@ assert_gate_runs_release_workflow_test() {
     || die "customer-ready gate must call test-control-center-release-workflow.sh"
 }
 
+assert_gate_runs_package_smoke_test() {
+  grep -F 'run_step "Companion package smoke test"' "$GATE" >/dev/null \
+    || die "customer-ready gate must run the Companion package smoke test on macOS"
+  grep -F 'test-control-center-companion-pkg-build.sh' "$GATE" >/dev/null \
+    || die "customer-ready gate must call test-control-center-companion-pkg-build.sh"
+}
+
 write_fake_curl() {
   local path
   path="$1"
@@ -205,6 +212,7 @@ write_complete_release_json "$COMPLETE_RELEASE"
 write_missing_package_release_json "$MISSING_RELEASE"
 
 assert_gate_runs_release_workflow_test
+assert_gate_runs_package_smoke_test
 run_expect_automated_success
 run_expect_missing_release_failure
 run_expect_manual_gate_failure
