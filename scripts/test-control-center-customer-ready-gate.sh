@@ -33,6 +33,13 @@ assert_gate_runs_release_workflow_test() {
     || die "customer-ready gate must call test-control-center-release-workflow.sh"
 }
 
+assert_gate_runs_ui_review_gate_test() {
+  grep -F 'run_step "Control Center UI review gate tests"' "$GATE" >/dev/null \
+    || die "customer-ready gate must run the Control Center UI review gate tests"
+  grep -F 'test-control-center-ui-review-gate.sh' "$GATE" >/dev/null \
+    || die "customer-ready gate must call test-control-center-ui-review-gate.sh"
+}
+
 assert_gate_runs_candidate_package_workflow_test() {
   grep -F 'run_step "Control Center candidate package workflow test"' "$GATE" >/dev/null \
     || die "customer-ready gate must run the Control Center candidate package workflow test"
@@ -231,6 +238,7 @@ write_fake_curl "$FAKE_CURL"
 write_complete_release_json "$COMPLETE_RELEASE"
 write_missing_package_release_json "$MISSING_RELEASE"
 
+assert_gate_runs_ui_review_gate_test
 assert_gate_runs_release_workflow_test
 assert_gate_runs_candidate_package_workflow_test
 assert_gate_runs_package_smoke_test

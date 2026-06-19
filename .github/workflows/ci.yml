@@ -22,6 +22,9 @@ jobs:
       - name: Check Control Center UI review gate
         run: node scripts/check-control-center-ui-review-gate.mjs
 
+      - name: Test Control Center UI review gate
+        run: ./scripts/test-control-center-ui-review-gate.sh
+
   companion-tests:
     runs-on: ubuntu-latest
     steps:
