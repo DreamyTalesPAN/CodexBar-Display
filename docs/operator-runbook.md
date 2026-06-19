@@ -381,7 +381,9 @@ Run this list before every v0 release decision.
 ### Build + Artifacts
 - [ ] `go test ./...` in `companion` is green.
 - [ ] `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789` is green.
-- [ ] Release artifacts include companion binaries, firmware binaries, checksums.
+- [ ] Release artifacts include companion binaries, firmware binaries, checksums, and signed/notarized Companion packages.
+- [ ] GitHub Release includes both customer installer packages for the release tag:
+  `VibeTV-Companion-API-arm64-v<version>.pkg` and `VibeTV-Companion-API-amd64-v<version>.pkg`.
 - [ ] Firmware artifact reports expected `CODEXBAR_DISPLAY_FW_VERSION` for the release tag.
 
 ### Functional Gate (release-gated env)
@@ -474,4 +476,6 @@ Firmware bench envs:
 - Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
 - Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
-- GitHub release artifacts include companion binaries, firmware binaries, and checksums.
+- GitHub release artifacts include companion binaries, firmware binaries, checksums, and both signed/notarized Companion packages:
+  `VibeTV-Companion-API-arm64-v<version>.pkg` and `VibeTV-Companion-API-amd64-v<version>.pkg`.
+- A customer release is not ready until those two package assets exist on the GitHub Release and match the tag version.
