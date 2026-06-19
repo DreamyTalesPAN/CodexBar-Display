@@ -59,7 +59,10 @@ run_gate() {
   local repo="$1"
   (
     cd "$repo"
-    CONTROL_CENTER_UI_REVIEW_INTERVAL=5 node "$GATE"
+    CONTROL_CENTER_UI_REVIEW_INTERVAL=5 \
+      GITHUB_ACTIONS= \
+      GITHUB_EVENT_NAME= \
+      node "$GATE"
   ) 2>&1
 }
 
@@ -159,6 +162,8 @@ test_review_marker_resets_gate() {
 test_pull_request_merge_commit_uses_pr_head() {
   local repo="${TMP_ROOT}/pull-request-merge"
   setup_repo "$repo"
+  local base_branch
+  base_branch="$(git -C "$repo" symbolic-ref --short HEAD)"
 
   git -C "$repo" checkout -q -b feature
   commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
@@ -170,7 +175,7 @@ test_pull_request_merge_commit_uses_pr_head() {
   local feature_head
   feature_head="$(git -C "$repo" rev-parse HEAD)"
 
-  git -C "$repo" checkout -q master
+  git -C "$repo" checkout -q "$base_branch"
   commit_file "$repo" "docs/base-follow-up.md" "Base follow-up non-ui change"
   git -C "$repo" merge -q --no-ff "$feature_head" -m "Merge pull request"
 
