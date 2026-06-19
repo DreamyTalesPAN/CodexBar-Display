@@ -11,6 +11,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  control-center-ui-review-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check Control Center UI review gate
+        run: node scripts/check-control-center-ui-review-gate.mjs
+
   companion-tests:
     runs-on: ubuntu-latest
     steps:
