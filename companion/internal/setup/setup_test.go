@@ -527,6 +527,77 @@ func TestRunWithDepsKeepsExistingThemeWhenUnset(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsPersistsWiFiTargetInRuntimeConfig(t *testing.T) {
+	home := t.TempDir()
+	execPath := mustCreateExecutable(t)
+
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		Theme:        "crt",
+		DeviceTarget: "http://192.168.178.163",
+		DeviceToken:  "pair-token",
+	}); err != nil {
+		t.Fatalf("seed runtime config: %v", err)
+	}
+
+	err := runWithDeps(context.Background(), Options{
+		Transport: "wifi",
+		Target:    "http://192.168.178.72",
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success, got %v", err)
+	}
+
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.72" {
+		t.Fatalf("expected runtime config target to follow setup target, got %q", cfg.DeviceTarget)
+	}
+	if cfg.Theme != "crt" {
+		t.Fatalf("expected existing theme override to stay crt, got %q", cfg.Theme)
+	}
+	if cfg.DeviceToken != "pair-token" {
+		t.Fatalf("expected device token to be preserved, got %q", cfg.DeviceToken)
+	}
+
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	plistData, readErr := os.ReadFile(plistPath)
+	if readErr != nil {
+		t.Fatalf("read plist: %v", readErr)
+	}
+	if !strings.Contains(string(plistData), "<string>http://192.168.178.72</string>") {
+		t.Fatalf("expected launch agent target to match runtime config, got:\n%s", string(plistData))
+	}
+}
+
 func TestRunWithDepsContinuesWhenSkipFlashAndProbeFails(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
