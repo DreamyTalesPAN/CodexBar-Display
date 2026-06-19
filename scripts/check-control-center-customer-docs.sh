@@ -32,6 +32,16 @@ checks = [
     ),
 ]
 
+section_checks = [
+    (
+        "docs/vibetv-shopify-theme-shop.md Customer Flow",
+        (root / "docs/vibetv-shopify-theme-shop.md").read_text(encoding="utf-8"),
+        "## Customer Flow",
+        "## GitHub Theme Pack Artifacts",
+        ["Companion", "bridge", "API", "terminal command"],
+    ),
+]
+
 forbidden = [
     "Copy Mac Setup Command",
     "AI-native path",
@@ -50,6 +60,15 @@ for label, body, stop_marker in checks:
     for needle in forbidden:
         if needle in scanned:
             errors.append(f"{label}: legacy customer setup copy still present: {needle}")
+
+for label, body, start_marker, end_marker, needles in section_checks:
+    if start_marker not in body or end_marker not in body:
+        errors.append(f"{label}: expected customer-facing section markers are missing")
+        continue
+    scanned = body.split(start_marker, 1)[1].split(end_marker, 1)[0]
+    for needle in needles:
+        if needle in scanned:
+            errors.append(f"{label}: customer flow uses internal wording: {needle}")
 
 if errors:
     for error in errors:

@@ -83,13 +83,13 @@ Live rollout status on 2026-06-19: the main `vibetv.shop` theme template `templa
 2. Customer opens a VibeTV theme product.
 3. Product page button opens `https://app.vibetv.shop/install/<theme_id>`.
 4. The hosted app opens the selected theme readiness screen.
-5. If Companion is missing, the app shows one Companion install/repair action.
-6. If Companion is running but VibeTV is not found, the app shows a `VibeTV address` field and one `Connect VibeTV` action.
+5. If the Mac App is missing, the app shows one Mac App install/repair action.
+6. If the Mac App is running but VibeTV is not found, the app shows a `VibeTV address` field and one `Connect VibeTV` action.
 7. If multiple VibeTV devices are found, the app asks for the exact VibeTV address instead of guessing.
 8. If the catalog is empty or the requested `theme_id` is not found, the app shows a blocked catalog state instead of demo themes or the first available theme.
 9. If the selected theme is not available, incompatible with the detected board, or requires newer firmware, the app uses customer language such as `Unavailable`, `Not Supported`, or `Update Needed`.
 10. If theme installs are not available in the current build, the app keeps Theme Library locked instead of exposing install controls.
-11. Once Companion, VibeTV connection, free theme status, pack URL, board compatibility, firmware compatibility, and theme install are ready, the customer can start install from the app.
+11. Once the Mac App, VibeTV connection, free theme status, pack URL, board compatibility, firmware compatibility, and theme install are ready, the customer can start install from the app.
 12. Firmware updates stay in a separate explicit update flow. The hosted install journey must not silently flash firmware while installing a theme.
 
 ## GitHub Theme Pack Artifacts
@@ -146,8 +146,8 @@ Allowed without extra hardware approval:
 
 - Shopify product/collection browsing.
 - Hosted app readiness checks.
-- Companion installer availability checks.
-- Read-only Companion status, diagnostics, device discovery, and settings reads.
+- Mac App installer availability checks.
+- Read-only Mac App status, diagnostics, device discovery, and settings reads.
 
 Not allowed without current explicit approval:
 
