@@ -191,6 +191,7 @@ async function main() {
     );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
+    await testSupportReportExportsAppearAfterReportLoads(browser, appContext.appUrl);
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testPairingRequiredThemeStaysLocked(browser, appContext.appUrl);
     await testThemeWithoutPackUrlStaysLocked(browser, appContext.appUrl);
@@ -532,6 +533,39 @@ async function testUpdatesHideUnavailableCompanionAction(browser, appUrl) {
     (await page.getByRole("link", { name: "Update Companion" }).count()) === 0,
     "Updates should not show a Companion update link without macOS packages",
   );
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests);
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Logs" }).click();
+  await page.getByRole("heading", { name: "Support report" }).waitFor({
+    timeout: 10_000,
+  });
+
+  assert(
+    (await page.getByRole("button", { name: "Copy report" }).count()) === 0,
+    "Support report should not show Copy before a report is loaded",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Download report" }).count()) === 0,
+    "Support report should not show Download before a report is loaded",
+  );
+
+  await page.getByRole("button", { name: "Load report" }).click();
+  await page.getByRole("button", { name: "Copy report" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Download report" }).waitFor({
+    timeout: 10_000,
+  });
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1010,6 +1044,34 @@ async function routeCompanionOnline(
           ok: true,
           settings: { display: { brightnessPercent: 50 } },
           device: currentDevice,
+        }),
+      });
+      return;
+    }
+    if (url.pathname === "/v1/diagnostics") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          generatedAt: "2026-06-19T12:00:00.000Z",
+          companion: {
+            version: "1.0.32",
+            features: { themeInstallEnabled: true },
+          },
+          device: currentDevice,
+          checks: [
+            {
+              name: "companion",
+              status: "pass",
+              detail: "Companion is running.",
+            },
+            {
+              name: "vibetv",
+              status: "pass",
+              detail: "VibeTV is connected.",
+            },
+          ],
         }),
       });
       return;

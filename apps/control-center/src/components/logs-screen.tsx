@@ -102,24 +102,26 @@ export function LogsScreen({
                 </span>
               </button>
             ) : null}
-            <button
-              className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!diagnosticsText}
-              onClick={copyDiagnostics}
-              type="button"
-            >
-              <Clipboard size={18} aria-hidden />
-              <span>{copyState === "copied" ? "Copied" : "Copy report"}</span>
-            </button>
-            <button
-              className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!diagnosticsText}
-              onClick={downloadDiagnostics}
-              type="button"
-            >
-              <Download size={18} aria-hidden />
-              <span>Download report</span>
-            </button>
+            {diagnosticsText ? (
+              <>
+                <button
+                  className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
+                  onClick={copyDiagnostics}
+                  type="button"
+                >
+                  <Clipboard size={18} aria-hidden />
+                  <span>{copyState === "copied" ? "Copied" : "Copy report"}</span>
+                </button>
+                <button
+                  className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
+                  onClick={downloadDiagnostics}
+                  type="button"
+                >
+                  <Download size={18} aria-hidden />
+                  <span>Download report</span>
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
 

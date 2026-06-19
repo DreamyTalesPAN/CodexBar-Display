@@ -13,6 +13,7 @@ To reset the gate:
 
 ## Last Review Notes
 
-- Reviewed scope: Overview setup flow, Settings simplification, Theme Library unavailable states, missing-installer setup state, Shopify entry copy.
-- Customer rule: one next action when an action is possible; no dead setup buttons; no internal bridge/API/release-gate/debug explanations.
-- Verification: customer flow tests with expanded setup-jargon guard, lint, UI gate, local mobile browser text and overflow check.
+- Reviewed scope: Overview setup flow, header setup status, Settings lock/simplification, Theme Library gating, Updates Companion actions, Support report actions.
+- Customer rule: one next action when an action is possible; unavailable actions stay hidden or become passive status; no internal bridge/API/release-gate/debug explanations in setup or theme flows.
+- Simplifications accepted: header no longer suggests a connected `vibetv.local` during setup; Updates uses customer labels and hides dead installer retries; Support report only shows Copy/Download after a report exists.
+- Verification: customer-flow browser tests cover setup locks, desktop header state, Updates action states, Support report exports, setup-jargon guards, and mobile overflow; lint and customer-ready gate local checks run green.

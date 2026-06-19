@@ -24,16 +24,20 @@ const uiFilePatterns = [
 ];
 
 const reviewCommit = latestReviewCommit();
-const workingTreeReviewMarker = !reviewCommit && existsSync(REVIEW_FILE);
+const workingTreeChangedFiles = changedFilesInWorkingTree();
+const workingTreeReviewMarker =
+  workingTreeChangedFiles.includes(REVIEW_FILE) ||
+  (!reviewCommit && existsSync(REVIEW_FILE));
 const commitsSinceReview = reviewCommit
-  ? Number(git(["rev-list", "--count", `${reviewCommit}..HEAD`]))
+  ? workingTreeReviewMarker
+    ? 0
+    : Number(git(["rev-list", "--count", `${reviewCommit}..HEAD`]))
   : workingTreeReviewMarker
     ? 0
   : Number(git(["rev-list", "--count", "HEAD"]));
 const committedChangedFiles = workingTreeReviewMarker
   ? []
   : changedFilesSince(reviewCommit);
-const workingTreeChangedFiles = changedFilesInWorkingTree();
 const changedFiles = unique([...committedChangedFiles, ...workingTreeChangedFiles]);
 const uiChangedFiles = changedFiles.filter(isUiFile);
 const projectedCommits =
