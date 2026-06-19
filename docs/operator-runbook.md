@@ -62,9 +62,19 @@ cd companion
 This installs the companion runtime, persists the Mini theme on fresh installs, and writes a WiFi LaunchAgent.
 It does not require USB serial.
 
-### USB development flash path
+### WiFi firmware update path
 
-Use only when a device is physically attached with a working data-capable USB serial connection:
+Use this for normal devices. It downloads the latest published firmware manifest and installs the matching release asset over WiFi:
+
+```bash
+codexbar-display install-update \
+  --target http://vibetv.local \
+  --confirm-live-update
+```
+
+### USB recovery flash path
+
+Use only when a device is physically attached with a working data-capable USB serial connection and WiFi OTA is not available. This path flashes release firmware, not a local source build:
 
 ```bash
 cd companion
@@ -103,6 +113,7 @@ Use these rules when selecting `--firmware-env`:
 - Legacy compile-theme/GIF/probe env names are unsupported; use only the runtime envs above.
 - `lilygo_t_display_s3` is an experimental fallback and does not block v0 release decisions.
 - MVP release go/no-go is gated only by `esp8266_smalltv_st7789`.
+- Do not use `pio run -t upload` for published firmware. Direct source uploads require `CODEXBAR_DISPLAY_ALLOW_SOURCE_UPLOAD=1` and are only for intentional development tests.
 
 During setup, runtime assets are installed to:
 - Binary: `~/Library/Application Support/codexbar-display/bin/codexbar-display`

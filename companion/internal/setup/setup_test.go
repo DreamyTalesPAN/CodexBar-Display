@@ -95,8 +95,8 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 		t.Fatalf("expected brew install call, got %#v", calls)
 	}
 
-	if !commandSeen(calls, "pio", []string{"run", "-e", firmwareEnvironment, "-t", "upload", "--upload-port", "/dev/cu.usbserial42"}) {
-		t.Fatalf("expected firmware flash call with selected port, got %#v", calls)
+	if !commandSeen(calls, execPath, []string{"upgrade", "--port", "/dev/cu.usbserial42", "--firmware-env", firmwareEnvironment}) {
+		t.Fatalf("expected release firmware upgrade call with selected port, got %#v", calls)
 	}
 
 	if !commandSeen(calls, "launchctl", []string{"bootstrap", "gui/501", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")}) {
@@ -711,7 +711,7 @@ func TestRunWithDepsFailsPreflightWhenPlatformIOMissingForUSBFlash(t *testing.T)
 	if !strings.Contains(msg, "missing dependency \"pio\"") {
 		t.Fatalf("expected pio dependency message, got %q", msg)
 	}
-	if !strings.Contains(msg, "USB flashing is requested") {
+	if !strings.Contains(msg, "release firmware over USB") {
 		t.Fatalf("expected why-it-is-needed text, got %q", msg)
 	}
 	if !strings.Contains(msg, "python3 -m pip install --user platformio") {
@@ -851,7 +851,7 @@ func TestRunWithDepsReportsFlashFailureWithConcreteHint(t *testing.T) {
 			}
 		},
 		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
-			if name == "pio" {
+			if name == execPath {
 				return "Failed to connect to ESP32-S3: Resource busy", errors.New("exit status 1")
 			}
 			return "", nil
@@ -1183,7 +1183,7 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 	}
 }
 
-func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T) {
+func TestRunWithDepsUsesReleaseUpgradeForEsp8266FirmwareEnvironment(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	repo := filepath.Join(tmp, "repo")
@@ -1194,7 +1194,7 @@ func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
 
-	var pioCall *commandCall
+	var upgradeCall *commandCall
 	err := runWithDeps(context.Background(), Options{
 		Transport:   "usb",
 		AssumeYes:   true,
@@ -1231,9 +1231,9 @@ func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T
 			}
 		},
 		runCommand: func(_ context.Context, dir string, name string, args ...string) (string, error) {
-			if name == "pio" {
+			if name == execPath {
 				c := commandCall{dir: dir, name: name, args: append([]string(nil), args...)}
-				pioCall = &c
+				upgradeCall = &c
 			}
 			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
 				return "state = running", nil
@@ -1244,15 +1244,14 @@ func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T
 	if err != nil {
 		t.Fatalf("expected setup success, got %v", err)
 	}
-	if pioCall == nil {
-		t.Fatalf("expected firmware flash call")
+	if upgradeCall == nil {
+		t.Fatalf("expected release firmware upgrade call")
 	}
-	expectedDir := filepath.Join(repo, "firmware_esp8266")
-	if pioCall.dir != expectedDir {
-		t.Fatalf("expected esp8266 firmware dir %q, got %q", expectedDir, pioCall.dir)
+	if upgradeCall.dir != "" {
+		t.Fatalf("expected release upgrade to run outside the repo, got dir %q", upgradeCall.dir)
 	}
-	if !commandSeen([]commandCall{*pioCall}, "pio", []string{"run", "-e", "esp8266_smalltv_st7789", "-t", "upload", "--upload-port", "/dev/cu.usbserial42"}) {
-		t.Fatalf("unexpected pio args: %#v", pioCall.args)
+	if !commandSeen([]commandCall{*upgradeCall}, execPath, []string{"upgrade", "--port", "/dev/cu.usbserial42", "--firmware-env", "esp8266_smalltv_st7789"}) {
+		t.Fatalf("unexpected release upgrade args: %#v", upgradeCall.args)
 	}
 }
 

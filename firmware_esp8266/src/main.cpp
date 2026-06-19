@@ -449,6 +449,9 @@ void markFirmwareUpdateNoticeDirty() {
       codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
     return;
   }
+  if (!codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec) {
+    return;
+  }
   if (!runtimeCtx.screenDirty && !waitStatusRendered && !frameStaleStatusRendered) {
     firmwareUpdateNoticeDirty = true;
   } else {
@@ -463,6 +466,7 @@ bool shouldShowFirmwareUpdateNotice() {
          !waitStatusRendered &&
          !frameStaleStatusRendered &&
          codexbar_display::app::HasFrame(runtimeCtx) &&
+         codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec &&
          !codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
 }
 
@@ -503,6 +507,7 @@ void maintainFirmwareUpdateNotice() {
       setupMode ||
       frameStaleStatusRendered ||
       !codexbar_display::app::HasFrame(runtimeCtx) ||
+      !codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec ||
       codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
     clearFirmwareUpdateNotice();
     return;

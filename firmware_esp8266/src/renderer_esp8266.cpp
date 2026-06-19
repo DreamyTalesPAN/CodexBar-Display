@@ -409,6 +409,7 @@ void RendererESP8266::DrawConnectedSetupInstructions(
 void RendererESP8266::DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const String& text) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
+  (void)text;
   if (display::CurrentFrame().hasThemeSpec) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
@@ -422,7 +423,6 @@ void RendererESP8266::DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const S
 #endif
     return;
   }
-  display::DrawFirmwareUpdateNoticeOverlay(text);
 #else
   (void)ctx;
   Serial.printf("probe_update_notice text=%s\n", text.c_str());

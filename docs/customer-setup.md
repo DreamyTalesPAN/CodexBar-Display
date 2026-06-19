@@ -115,7 +115,7 @@ The installer checks required tools before setup changes anything important. If 
 | `shasum`, `awk`, `sed`, `grep`, `uname`, `mktemp` | Verifies the release and detects the right Mac binary. | Install the macOS command line tools, then rerun the installer. |
 | `launchctl` | Starts the background service that sends frames to Vibe TV. | Run setup on macOS as your normal logged-in user, then rerun `codexbar-display setup`. |
 | CodexBar CLI | Provides the usage data shown on Vibe TV. | The setup tries Homebrew automatically. If that fails, run `brew install --cask steipete/tap/codexbar`, then rerun setup. |
-| `pio` | Only needed for manual USB firmware flashing. | Standard WiFi setup does not need this. For USB flashing, install PlatformIO with `python3 -m pip install --user platformio`, then rerun setup. |
+| `pio` | Only needed for explicit USB recovery flashing. | Standard WiFi setup and firmware updates do not need this. For USB recovery, install PlatformIO with `python3 -m pip install --user platformio`, then rerun the support command. |
 
 Setup is safe to rerun after fixing a missing dependency.
 

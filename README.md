@@ -117,6 +117,14 @@ cd ..
 pio run -d firmware_esp8266 -e esp8266_smalltv_st7789
 ```
 
+Release firmware is not flashed from a local PlatformIO build. Use WiFi OTA for normal devices:
+
+```bash
+codexbar-display install-update --target http://vibetv.local --confirm-live-update
+```
+
+Direct `pio` uploads are blocked unless `CODEXBAR_DISPLAY_ALLOW_SOURCE_UPLOAD=1` is set for an intentional source firmware test.
+
 ## License
 
 Released under the MIT License. See [LICENSE](LICENSE).
