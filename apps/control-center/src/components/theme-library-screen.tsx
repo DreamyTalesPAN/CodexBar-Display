@@ -658,7 +658,7 @@ function installDisabledReason({
     return "Another theme install is already running.";
   }
   if (actionInFlight) {
-    return "Another local action is already running.";
+    return "Please wait for the current step to finish.";
   }
   if (installed) {
     return "Theme is already installed.";

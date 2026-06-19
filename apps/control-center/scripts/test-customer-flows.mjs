@@ -355,7 +355,7 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   );
   await page
     .getByText(
-      "Download started. Open the package from Downloads, finish the installer, then return here and check Companion again.",
+      "Download started. Open the downloaded installer, finish setup, then return here and check Companion again.",
     )
     .waitFor({ timeout: 10_000 });
 
@@ -956,7 +956,7 @@ async function testPackageOnlyReleaseShowsPackageDownloads(
   );
   await page
     .getByText(
-      "Download started. Open the package from Downloads, finish the installer, then return here and check Companion again.",
+      "Download started. Open the downloaded installer, finish setup, then return here and check Companion again.",
     )
     .waitFor({ timeout: 10_000 });
 

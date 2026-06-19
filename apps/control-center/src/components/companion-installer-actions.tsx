@@ -384,12 +384,12 @@ function AfterDownloadNotice({
 
 function afterDownloadDetail(action: "install" | "repair" | "update"): string {
   if (action === "update") {
-    return "Download started. Open the package from Downloads, finish the update, then return here and check Companion again.";
+    return "Download started. Open the downloaded installer, finish the update, then return here and check Companion again.";
   }
   if (action === "repair") {
-    return "Download started. Open the package from Downloads, finish the repair, then return here and check Companion again.";
+    return "Download started. Open the downloaded installer, finish the repair, then return here and check Companion again.";
   }
-  return "Download started. Open the package from Downloads, finish the installer, then return here and check Companion again.";
+  return "Download started. Open the downloaded installer, finish setup, then return here and check Companion again.";
 }
 
 export function hasCompleteMacPackages(
