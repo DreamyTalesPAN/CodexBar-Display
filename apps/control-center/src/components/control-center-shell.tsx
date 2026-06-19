@@ -2,7 +2,6 @@
 
 import {
   Activity,
-  CircleHelp,
   FileText,
   Grid2X2,
   RefreshCw,
@@ -47,7 +46,7 @@ const NAV_ITEMS: ShellNavItem[] = [
   },
   {
     id: "logs",
-    label: "Logs",
+    label: "Support",
     icon: <FileText size={22} aria-hidden />,
   },
 ];
@@ -93,20 +92,6 @@ export function ControlCenterShell({
               />
             ))}
           </nav>
-
-          <div className="px-5 pb-8">
-            <button
-              className="flex h-16 items-center justify-between border border-[#444933] px-5 text-left text-[#EDEDED] transition hover:border-[#747A60]"
-              onClick={() => onTabChange("logs")}
-              type="button"
-            >
-              <span className="flex items-center gap-4">
-                <CircleHelp size={26} aria-hidden />
-                <span>Help & Support</span>
-              </span>
-              <FileText size={18} aria-hidden />
-            </button>
-          </div>
         </aside>
 
         <section className="min-w-0">

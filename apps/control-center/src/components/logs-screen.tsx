@@ -98,7 +98,7 @@ export function LogsScreen({
                   <FileText size={18} aria-hidden />
                 )}
                 <span>
-                  {busyAction === "diagnostics" ? "Loading..." : "Load report"}
+                  {busyAction === "diagnostics" ? "Creating" : "Create report"}
                 </span>
               </button>
             ) : null}
@@ -181,7 +181,7 @@ export function LogsScreen({
           </div>
         ) : (
           <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
-            Load a support report to diagnose Mac App and VibeTV state.
+            Create a support report when support asks for it.
           </div>
         )}
         {copyState === "failed" ? (
@@ -193,7 +193,9 @@ export function LogsScreen({
 
       <section className="border-b border-[#747A60] py-10">
         <div className="mb-6 flex items-center justify-between gap-4">
-          <h3 className="text-base font-bold text-[#1B1B1B]">Timeline</h3>
+          <h3 className="text-base font-bold text-[#1B1B1B]">
+            Recent activity
+          </h3>
           {onRefresh ? (
             <button
               className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
@@ -252,7 +254,7 @@ export function LogsScreen({
           </ol>
         ) : (
           <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
-            Activity will appear after the next Mac App check.
+            Recent activity will appear here.
           </div>
         )}
       </section>

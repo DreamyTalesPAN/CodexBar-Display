@@ -21,7 +21,7 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 2. Settings, Theme Library, and Updates stay locked until setup is complete.
 3. Setup is complete when the Mac App is running and VibeTV is connected and paired.
 4. Theme Library is additionally locked until theme installs are allowed by the release gate.
-5. Logs may stay available because they are support/diagnostics, not a customer workflow.
+5. Support may stay available because it only creates support reports and shows recent activity, not a setup workflow.
 6. A Shopify theme install deep link must not bypass setup gating.
 
 ## Review Checklist

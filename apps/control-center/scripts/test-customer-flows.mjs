@@ -548,7 +548,7 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   await routeCompanionOnline(page, installRequests);
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: "Logs" }).click();
+  await page.getByRole("button", { name: "Support" }).click();
   await page.getByRole("heading", { name: "Support report" }).waitFor({
     timeout: 10_000,
   });
@@ -562,7 +562,7 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
     "Support report should not show Download before a report is loaded",
   );
 
-  await page.getByRole("button", { name: "Load report" }).click();
+  await page.getByRole("button", { name: "Create report" }).click();
   await page.getByRole("button", { name: "Copy report" }).waitFor({
     timeout: 10_000,
   });
@@ -717,8 +717,8 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
   await installButton.click();
   await page.getByText("Install failed").waitFor({ timeout: 10_000 });
 
-  await page.getByRole("button", { name: "Logs" }).click();
-  await page.getByRole("heading", { name: "Timeline" }).waitFor({
+  await page.getByRole("button", { name: "Support" }).click();
+  await page.getByRole("heading", { name: "Recent activity" }).waitFor({
     timeout: 10_000,
   });
 
@@ -732,7 +732,7 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
   for (const text of hiddenLogText) {
     assert(
       (await page.getByText(text, { exact: false }).count()) === 0,
-      `Logs should not show technical text: ${text}`,
+      `Support should not show technical text: ${text}`,
     );
   }
 
