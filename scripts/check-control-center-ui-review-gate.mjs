@@ -30,15 +30,34 @@ const commitsSinceReview = reviewCommit
   : workingTreeReviewMarker
     ? 0
   : Number(git(["rev-list", "--count", "HEAD"]));
-const changedFiles = workingTreeReviewMarker ? [] : changedFilesSince(reviewCommit);
+const committedChangedFiles = workingTreeReviewMarker
+  ? []
+  : changedFilesSince(reviewCommit);
+const workingTreeChangedFiles = changedFilesInWorkingTree();
+const changedFiles = unique([...committedChangedFiles, ...workingTreeChangedFiles]);
 const uiChangedFiles = changedFiles.filter(isUiFile);
-const due = commitsSinceReview >= interval && uiChangedFiles.length > 0;
+const projectedCommits =
+  commitsSinceReview + (workingTreeChangedFiles.some(isUiFile) ? 1 : 0);
+const due = projectedCommits >= interval && uiChangedFiles.length > 0;
 
-printSummary({ changedFiles, commitsSinceReview, due, reviewCommit, uiChangedFiles });
+printSummary({
+  changedFiles,
+  committedChangedFiles,
+  commitsSinceReview,
+  due,
+  projectedCommits,
+  reviewCommit,
+  uiChangedFiles,
+  workingTreeChangedFiles,
+});
 
 if (due) {
+  const commitSummary =
+    projectedCommits === commitsSinceReview
+      ? `${commitsSinceReview} commits`
+      : `${commitsSinceReview} committed changes plus current working-tree UI changes`;
   const message = [
-    `Control Center UI review is due: ${commitsSinceReview} commits since ${REVIEW_FILE}.`,
+    `Control Center UI review is due: ${commitSummary} since ${REVIEW_FILE}.`,
     `Customer-facing UI changed in ${uiChangedFiles.length} file(s).`,
     `Review ${PRINCIPLES_FILE}, simplify the UI, then update ${REVIEW_FILE}.`,
   ].join(" ");
@@ -76,16 +95,27 @@ function changedFilesSince(commit) {
   return lines(git(["diff", "--name-only", `${commit}..HEAD`]));
 }
 
+function changedFilesInWorkingTree() {
+  return unique([
+    ...lines(git(["diff", "--name-only"])),
+    ...lines(git(["diff", "--name-only", "--cached"])),
+    ...lines(git(["ls-files", "--others", "--exclude-standard"])),
+  ]);
+}
+
 function isUiFile(file) {
   return uiFilePatterns.some((pattern) => pattern.test(file));
 }
 
 function printSummary({
   changedFiles,
+  committedChangedFiles,
   commitsSinceReview,
   due,
+  projectedCommits,
   reviewCommit,
   uiChangedFiles,
+  workingTreeChangedFiles,
 }) {
   const status = due ? "due" : "ok";
   console.log(`Control Center UI review gate: ${status}`);
@@ -93,6 +123,11 @@ function printSummary({
     `Review marker: ${reviewCommit || (workingTreeReviewMarker ? "working tree" : "none")}`,
   );
   console.log(`Commits since marker: ${commitsSinceReview}/${interval}`);
+  if (workingTreeChangedFiles.some(isUiFile)) {
+    console.log(`Projected commits after current UI changes: ${projectedCommits}/${interval}`);
+  }
+  console.log(`Committed files since marker: ${committedChangedFiles.length}`);
+  console.log(`Working tree files: ${workingTreeChangedFiles.length}`);
   console.log(`Changed files since marker: ${changedFiles.length}`);
   console.log(`UI-impacting files since marker: ${uiChangedFiles.length}`);
   if (uiChangedFiles.length > 0) {
@@ -129,4 +164,8 @@ function lines(value) {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function unique(values) {
+  return [...new Set(values)];
 }

@@ -19,6 +19,18 @@ npm run test:customer-flows
 
 The test builds the app with a local catalog fixture, starts `next start` on a free localhost port, mocks Companion browser calls, and checks the critical `/install/[themeId]` flows.
 
+Before claiming the Control Center is customer-ready, run the repository-level gate:
+
+```bash
+../../scripts/check-control-center-customer-ready-gate.sh
+```
+
+That command is no-write: it does not merge, release, install packages, start services, discover devices, or touch VibeTV hardware. During normal development, run the automated subset only:
+
+```bash
+../../scripts/check-control-center-customer-ready-gate.sh --automated-only
+```
+
 The local Companion API must run on `127.0.0.1:47832` for real device actions:
 
 ```bash

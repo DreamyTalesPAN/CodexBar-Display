@@ -158,6 +158,30 @@ The public VibeTV Shopify theme products now link to this hosted readiness flow 
 
 ## Customer Readiness Validation
 
+Final local gate before telling anyone this is customer-ready:
+
+```bash
+scripts/check-control-center-customer-ready-gate.sh
+```
+
+This gate is intentionally strict. It never merges, tags, releases, installs packages, starts services, discovers devices, or writes to VibeTV hardware. It only runs local checks and read-only hosted/release checks, then fails until the non-automated customer gates are also confirmed:
+
+- latest or selected release exposes both signed macOS Companion package assets through the hosted app,
+- signed package was validated on a clean Mac,
+- the user explicitly approved and passed the hardware write flow.
+
+Use an exact tag when validating a specific release:
+
+```bash
+scripts/check-control-center-customer-ready-gate.sh --release v<version>
+```
+
+During normal development, use the automated subset without claiming customer readiness:
+
+```bash
+scripts/check-control-center-customer-ready-gate.sh --automated-only
+```
+
 Use the read-only validation script before asking a customer to use a release:
 
 ```bash
