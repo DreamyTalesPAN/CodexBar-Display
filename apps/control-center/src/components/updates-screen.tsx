@@ -1,14 +1,13 @@
 "use client";
 
-import { Check, Download, Monitor, RefreshCw, Server, Wifi } from "lucide-react";
+import { Check, Download, Monitor, RefreshCw, Server } from "lucide-react";
 import type { ReactNode } from "react";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import {
-  CompanionDownloadActions,
-  CompanionReleaseNotice,
   companionPackageLabel,
   hasCompleteMacPackages,
+  usePreferredMacPackage,
   useCompanionRelease,
 } from "./companion-installer-actions";
 
@@ -25,7 +24,6 @@ export type UpdatesScreenProps = {
   device: UpdatesDeviceInfo | null;
   companionVersion?: string;
   firmwareUpdate?: FirmwareUpdateInfo | null;
-  onCheckBridge?: () => void;
   onCheckUpdates?: () => void;
   busyAction?: string | null;
 };
@@ -35,7 +33,6 @@ export function UpdatesScreen({
   device,
   companionVersion,
   firmwareUpdate,
-  onCheckBridge,
   onCheckUpdates,
   busyAction,
 }: UpdatesScreenProps) {
@@ -77,10 +74,7 @@ export function UpdatesScreen({
     companionStatus,
     release: companionRelease,
   });
-  const companionActionDetail = companionInstallerDetail({
-    action: companionAction,
-    release: companionRelease,
-  });
+  const preferredPackage = usePreferredMacPackage();
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="min-h-[330px] border-b border-[#747A60] py-10">
@@ -104,9 +98,6 @@ export function UpdatesScreen({
         <h3 className="mb-6 text-base font-bold text-[#1B1B1B]">
           Companion app
         </h3>
-        <p className="mb-5 max-w-[720px] text-sm leading-6 text-[#444933]">
-          {companionActionDetail}
-        </p>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
           <dl className="grid gap-0 border-y border-[#747A60]">
@@ -132,40 +123,14 @@ export function UpdatesScreen({
             />
           </dl>
 
-          <div className="flex flex-col items-start gap-3 lg:items-end">
-            <CompanionDownloadActions
+          <div className="flex items-start lg:justify-end">
+            <CompanionUpdateAction
               action={companionAction}
+              busy={companionCheckBusy}
+              onCheckInstaller={refreshCompanionRelease}
+              preferredPackage={preferredPackage}
               release={companionRelease}
             />
-            <CompanionReleaseNotice release={companionRelease} />
-            <button
-              className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={!onCheckBridge || Boolean(busyAction)}
-              onClick={onCheckBridge}
-              type="button"
-            >
-              {busyAction === "status" ? (
-                <RefreshCw className="animate-spin" size={18} />
-              ) : (
-                <Wifi size={18} aria-hidden />
-              )}
-              <span>
-                {busyAction === "status" ? "Checking bridge" : "Check bridge"}
-              </span>
-            </button>
-            <button
-              className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={companionCheckBusy}
-              onClick={refreshCompanionRelease}
-              type="button"
-            >
-              {companionCheckBusy ? (
-                <RefreshCw className="animate-spin" size={18} />
-              ) : (
-                <RefreshCw size={18} aria-hidden />
-              )}
-              <span>{companionCheckBusy ? "Checking" : "Check installer"}</span>
-            </button>
           </div>
         </div>
       </section>
@@ -217,6 +182,63 @@ export function UpdatesScreen({
   );
 }
 
+function CompanionUpdateAction({
+  action,
+  busy,
+  onCheckInstaller,
+  preferredPackage,
+  release,
+}: {
+  action: "install" | "repair" | "update";
+  busy: boolean;
+  onCheckInstaller: () => void;
+  preferredPackage: "macosArm64" | "macosAmd64" | null;
+  release: CompanionReleaseInfo | null;
+}) {
+  const packageUrl = preferredPackage
+    ? release?.packageDownloadUrls?.[preferredPackage]
+    : release?.packageDownloadUrls?.macosArm64 ||
+      release?.packageDownloadUrls?.macosAmd64;
+
+  if (packageUrl) {
+    return (
+      <a
+        className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
+        href={packageUrl}
+      >
+        <Download size={18} aria-hidden />
+        <span>{companionActionLabel(action)}</span>
+      </a>
+    );
+  }
+
+  return (
+    <button
+      className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:border-[#747A60] disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+      disabled={busy || !release}
+      onClick={onCheckInstaller}
+      type="button"
+    >
+      <RefreshCw
+        className={busy || !release ? "animate-spin" : undefined}
+        size={18}
+        aria-hidden
+      />
+      <span>{busy || !release ? "Checking installer" : "Check installer"}</span>
+    </button>
+  );
+}
+
+function companionActionLabel(action: "install" | "repair" | "update"): string {
+  if (action === "update") {
+    return "Update Companion";
+  }
+  if (action === "repair") {
+    return "Repair Companion";
+  }
+  return "Install Companion";
+}
+
 function companionInstallerAction({
   companionStatus,
   release,
@@ -233,41 +255,13 @@ function companionInstallerAction({
   return "repair";
 }
 
-function companionInstallerDetail({
-  action,
-  release,
-}: {
-  action: "install" | "repair" | "update";
-  release: CompanionReleaseInfo | null;
-}): string {
-  if (!release) {
-    return "Checking the latest Companion release and available installer assets.";
-  }
-  if (release.status === "check_failed") {
-    return "Release check failed. Use Check Companion again before sending a customer to a download.";
-  }
-  if (release.status === "missing_asset") {
-    return "The latest release does not include customer installer assets yet.";
-  }
-  if (!hasCompleteMacPackages(release)) {
-    return "The signed Mac package is not available yet. The script is only a support fallback.";
-  }
-  if (action === "update") {
-    return "A newer Companion is available. Installing the package updates the local bridge while keeping the app on app.vibetv.shop.";
-  }
-  if (action === "repair") {
-    return "Use the package again if Companion is installed but stuck, damaged, or needs a clean restart.";
-  }
-  return "Install Companion on this computer first. If it is already installed but not detected, run the package again as a repair and allow browser local access when asked.";
-}
-
 function companionReleaseLabel(release: CompanionReleaseInfo | null): string {
   if (!release) {
     return "Checking";
   }
   if (release.status === "available") {
     if (!hasCompleteMacPackages(release)) {
-      return "Support script only";
+      return "Installer unavailable";
     }
     return release.updateAvailable ? "Update available" : "Installer available";
   }

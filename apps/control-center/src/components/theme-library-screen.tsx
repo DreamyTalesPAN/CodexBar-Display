@@ -14,13 +14,6 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
 import type { ThemeProduct, ThemeSource } from "@/lib/themes";
-import {
-  CompanionDownloadActions,
-  CompanionReleaseNotice,
-  useCompanionRelease,
-} from "./companion-installer-actions";
-import type { ApiError } from "./control-center-types";
-import { DeviceTargetForm } from "./device-target-form";
 
 export type ThemeLibraryCompanionStatus = "unknown" | "online" | "missing";
 
@@ -66,21 +59,15 @@ export type ThemeLibraryScreenProps = {
   catalogSource: ThemeSource;
   companionStatus: ThemeLibraryCompanionStatus;
   device: ThemeLibraryDeviceInfo | null;
-  deviceTarget: string;
   themeInstallEnabled: boolean;
   busyAction: string | null;
   installStatus?: ThemeInstallStatus | null;
   installEntry?: boolean;
-  lastError?: ApiError | null;
   lastInstall?: ThemeInstallResult;
   requestedThemeId?: string;
   storefrontConfigured: boolean;
-  onDeviceTargetChange?: (target: string) => void;
   onSelectTheme: (themeId: string) => void;
   onInstallTheme: (theme: ThemeProduct) => void;
-  onCheckBridge?: () => void;
-  onDiscoverDevice?: (targetOverride?: string) => void;
-  onPairDevice?: () => void;
 };
 
 export function ThemeLibraryScreen({
@@ -91,34 +78,37 @@ export function ThemeLibraryScreen({
   catalogIssue,
   catalogSource,
   device,
-  deviceTarget,
   installStatus,
   installEntry,
-  lastError,
   lastInstall,
   requestedThemeId,
   companionStatus,
   storefrontConfigured,
   themeInstallEnabled,
-  onCheckBridge,
-  onDeviceTargetChange,
-  onDiscoverDevice,
   onSelectTheme,
   onInstallTheme,
-  onPairDevice,
 }: ThemeLibraryScreenProps) {
   const visibleThemes = themes;
   const [previewTheme, setPreviewTheme] = useState<ThemeProduct | null>(null);
   const displayTheme =
     selectedTheme ||
     visibleThemes.find((theme) => theme.themeId === selectedThemeId);
-  const activeThemeLabel = labelForActiveTheme(visibleThemes, device?.activeTheme);
+  const activeThemeLabel = labelForActiveTheme(
+    visibleThemes,
+    device?.activeTheme,
+  );
   const catalogEmpty = visibleThemes.length === 0;
   const requestedThemeMissing = Boolean(
-    requestedThemeId &&
-      selectedThemeId === requestedThemeId &&
-      !displayTheme,
+    requestedThemeId && selectedThemeId === requestedThemeId && !displayTheme,
   );
+  const activeThemeDetailText =
+    companionStatus === "online" && device?.connected
+      ? activeThemeDetail({
+          activeThemeLabel,
+          companionStatus,
+          connected: true,
+        })
+      : "";
   const readiness = requestedThemeMissing
     ? {
         title: "Choose an available theme",
@@ -133,16 +123,11 @@ export function ThemeLibraryScreen({
         selectedTheme: displayTheme,
         themeInstallEnabled,
       });
-  const companionMissing = companionStatus === "missing";
-  const pairingRequired =
-    companionStatus === "online" && Boolean(device?.connected) && !device?.paired;
-  const {
-    busy: companionReleaseBusy,
-    refresh: refreshCompanionRelease,
-    release: companionRelease,
-  } = useCompanionRelease(undefined, { enabled: companionMissing });
-  const showTargetControl = companionStatus === "online" && !device?.connected;
-  const localActionBusy = Boolean(busyAction);
+  const setupBlocked =
+    companionStatus !== "online" ||
+    !device?.connected ||
+    !device.paired ||
+    !themeInstallEnabled;
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -158,28 +143,18 @@ export function ThemeLibraryScreen({
                   ? "Theme catalog unavailable"
                   : requestedThemeMissing
                     ? "Theme not available"
-                    : installEntry
-                      ? "Check install readiness"
-                      : "Choose a theme"}
+                    : "Choose a theme"}
               </h2>
               {displayTheme ? (
                 <p className="mt-4 max-w-[640px] text-base leading-7 text-[#444933]">
-                  Selected in this app: {displayTheme.title}.{" "}
-                  {activeThemeDetail({
-                    activeThemeLabel,
-                    companionStatus,
-                    connected: Boolean(device?.connected),
-                  })}
+                  Selected in this app: {displayTheme.title}.
+                  {activeThemeDetailText ? ` ${activeThemeDetailText}` : ""}
                 </p>
               ) : null}
               {!displayTheme && !catalogEmpty && !requestedThemeMissing ? (
                 <p className="mt-4 max-w-[640px] text-base leading-7 text-[#444933]">
-                  Choose a theme to inspect install readiness.{" "}
-                  {activeThemeDetail({
-                    activeThemeLabel,
-                    companionStatus,
-                    connected: Boolean(device?.connected),
-                  })}
+                  Choose a theme for the connected VibeTV.
+                  {activeThemeDetailText ? ` ${activeThemeDetailText}` : ""}
                 </p>
               ) : null}
               {installEntry && requestedThemeMissing ? (
@@ -193,7 +168,8 @@ export function ThemeLibraryScreen({
         </div>
       </section>
 
-      <section className="border-b border-[#747A60] py-8">
+      {!setupBlocked ? (
+        <section className="border-b border-[#747A60] py-8">
         {catalogEmpty ? (
           <CatalogEmptyState
             catalogIssue={catalogIssue}
@@ -204,104 +180,8 @@ export function ThemeLibraryScreen({
         ) : (
           <>
             {requestedThemeMissing ? (
-              <MissingRequestedThemeNotice requestedThemeId={requestedThemeId} />
-            ) : null}
-
-            <div className="mb-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,auto)] lg:items-start">
-              <div className="flex min-w-0 gap-4">
-                <div className="grid size-11 shrink-0 place-items-center rounded-full bg-[#1B1B1B] text-[#CCFF00]">
-                  {readiness.icon}
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-base font-bold text-[#1B1B1B]">
-                    {readiness.title}
-                  </h3>
-                  <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
-                    {readiness.detail}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap lg:max-w-[620px] lg:justify-end">
-                {companionMissing ? (
-                  <>
-                    <CompanionDownloadActions release={companionRelease} />
-                    <CompanionReleaseNotice release={companionRelease} />
-                    <button
-                      className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={companionReleaseBusy}
-                      onClick={refreshCompanionRelease}
-                      type="button"
-                    >
-                      {companionReleaseBusy ? (
-                        <RefreshCw className="animate-spin" size={18} />
-                      ) : (
-                        <RefreshCw size={18} aria-hidden />
-                      )}
-                      <span>
-                        {companionReleaseBusy ? "Checking" : "Check installer"}
-                      </span>
-                    </button>
-                  </>
-                ) : null}
-                {companionStatus !== "online" ? (
-                  <button
-                    className="inline-flex h-12 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-                    disabled={localActionBusy}
-                    onClick={onCheckBridge}
-                    type="button"
-                  >
-                    {busyAction === "status" ? (
-                      <RefreshCw className="animate-spin" size={17} />
-                    ) : (
-                      <Wifi size={17} aria-hidden />
-                    )}
-                    {busyAction === "status" ? "Checking" : "Check bridge"}
-                  </button>
-                ) : null}
-                {companionStatus === "online" && !device?.connected ? (
-                  <button
-                    className="inline-flex h-12 items-center justify-center gap-2 border border-[#747A60] bg-[#1B1B1B] px-4 text-sm font-semibold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-                    disabled={localActionBusy}
-                    onClick={() => onDiscoverDevice?.(deviceTarget)}
-                    type="button"
-                  >
-                    {busyAction === "discover" ? (
-                      <RefreshCw className="animate-spin" size={17} />
-                    ) : (
-                      <Monitor size={17} aria-hidden />
-                    )}
-                    {busyAction === "discover" ? "Searching" : "Find VibeTV"}
-                  </button>
-                ) : null}
-                {pairingRequired ? (
-                  <button
-                    className="inline-flex h-12 items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-4 text-sm font-semibold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-                    disabled={localActionBusy}
-                    onClick={onPairDevice}
-                    type="button"
-                  >
-                    {busyAction === "pair" ? (
-                      <RefreshCw className="animate-spin" size={17} />
-                    ) : (
-                      <Lock size={17} aria-hidden />
-                    )}
-                    <span>{busyAction === "pair" ? "Pairing" : "Pair VibeTV"}</span>
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            {showTargetControl ? (
-              <DeviceTargetForm
-                busy={busyAction === "discover"}
-                className="mb-6 grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end"
-                disabled={localActionBusy}
-                id="theme-library-device-target"
-                lastError={lastError}
-                onChange={onDeviceTargetChange}
-                onSubmit={onDiscoverDevice}
-                value={deviceTarget}
+              <MissingRequestedThemeNotice
+                requestedThemeId={requestedThemeId}
               />
             ) : null}
 
@@ -326,7 +206,8 @@ export function ThemeLibraryScreen({
             </ul>
           </>
         )}
-      </section>
+        </section>
+      ) : null}
 
       {previewTheme ? (
         <div
@@ -478,7 +359,8 @@ function ThemeListItem({
   themeInstallEnabled: boolean;
 }) {
   const installed =
-    lastInstall?.themeId === theme.themeId || device?.activeTheme === theme.themeId;
+    lastInstall?.themeId === theme.themeId ||
+    device?.activeTheme === theme.themeId;
   const installInFlight = busyAction === "install";
   const actionInFlight = Boolean(busyAction);
   const visibleInstallStatus = installStatus?.themeId === theme.themeId;
@@ -489,10 +371,7 @@ function ThemeListItem({
     themeInstallEnabled,
   });
   const blockedLabel = labelForInstallBlocker(blocker);
-  const disabled =
-    actionInFlight ||
-    installed ||
-    Boolean(blocker);
+  const disabled = actionInFlight || installed || Boolean(blocker);
   const canSelectInstead =
     !actionInFlight &&
     !installed &&
@@ -501,7 +380,12 @@ function ThemeListItem({
   const title = canSelectInstead
     ? `Select ${theme.title}`
     : disabled
-      ? installDisabledReason({ actionInFlight, installInFlight, installed, blocker })
+      ? installDisabledReason({
+          actionInFlight,
+          installInFlight,
+          installed,
+          blocker,
+        })
       : `Install ${theme.title}`;
 
   return (
@@ -569,7 +453,11 @@ function InlineInstallProgress({
   const failed = status.phase === "error";
   const complete = status.phase === "complete";
   const progressWidth = failed || complete ? "w-full" : "w-2/3";
-  const title = failed ? "Install failed" : complete ? "Installed" : "Installing";
+  const title = failed
+    ? "Install failed"
+    : complete
+      ? "Installed"
+      : "Installing";
 
   return (
     <div className="px-0 pb-4">
@@ -661,8 +549,8 @@ function labelForInstallBlocker(blocker: ThemeInstallBlocker | null): string {
   if (/companion|start companion/i.test(text)) {
     return "Needs Companion";
   }
-  if (/pair/i.test(text)) {
-    return "Pair First";
+  if (/connect|pair/i.test(text)) {
+    return "Connect First";
   }
   if (/pack/i.test(text)) {
     return "Pack Missing";
@@ -711,8 +599,7 @@ function buildInstallReadiness({
   if (companionStatus !== "online") {
     return {
       title: "Install Companion first",
-      detail:
-        "Theme browsing works here, but installs need the local Companion API on this computer. The display can still show usage while this browser bridge is missing.",
+      detail: "",
       buttonReason: "Start Companion first.",
       icon: <Wifi size={22} aria-hidden />,
     };
@@ -721,17 +608,17 @@ function buildInstallReadiness({
     return {
       title: "VibeTV not found",
       detail:
-        "Companion is online. Search for VibeTV on the same WiFi network before enabling install.",
-      buttonReason: "Find VibeTV first.",
+        "Companion is online. Connect VibeTV on the same WiFi network before enabling install.",
+      buttonReason: "Connect VibeTV first.",
       icon: <Monitor size={22} aria-hidden />,
     };
   }
   if (!device.paired) {
     return {
-      title: "Pairing required",
+      title: "VibeTV connection required",
       detail:
-        "VibeTV is reachable. Pair it once before theme install writes are allowed.",
-      buttonReason: "Pair VibeTV first.",
+        "VibeTV is reachable. Connect it once before theme install is available.",
+      buttonReason: "Connect VibeTV first.",
       icon: <Lock size={22} aria-hidden />,
     };
   }
@@ -744,7 +631,11 @@ function buildInstallReadiness({
         themeInstallEnabled,
       })
     : null;
-  if (blocker?.readinessTitle && blocker.readinessDetail && blocker.readinessIcon) {
+  if (
+    blocker?.readinessTitle &&
+    blocker.readinessDetail &&
+    blocker.readinessIcon
+  ) {
     return {
       title: blocker.readinessTitle,
       detail: blocker.readinessDetail,
@@ -813,14 +704,14 @@ function buildThemeInstallBlocker({
     return metadataBlocker;
   }
   if (!device?.connected) {
-    return { reason: themeInstallBlockedReason || "Find VibeTV first." };
+    return { reason: themeInstallBlockedReason || "Connect VibeTV first." };
   }
   if (!device.paired) {
     return {
-      reason: "Pair VibeTV first.",
-      readinessTitle: "Pairing required",
+      reason: "Connect VibeTV first.",
+      readinessTitle: "VibeTV connection required",
       readinessDetail:
-        "This VibeTV is reachable, but theme install writes require pairing first.",
+        "This VibeTV is reachable, but theme install requires a completed connection first.",
       readinessIcon: <Lock size={22} aria-hidden />,
     };
   }
@@ -934,7 +825,10 @@ function themeFirmwareBlocker(
 }
 
 function normalizeBoard(value: string): string {
-  return value.trim().toLowerCase().replace(/[_\s]+/g, "-");
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
 }
 
 function compareVersions(left: string, right: string): number {

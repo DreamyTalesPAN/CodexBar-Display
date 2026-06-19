@@ -1,7 +1,6 @@
 "use client";
 
-import { CheckCircle2, Download } from "lucide-react";
-import type { ReactNode } from "react";
+import { CheckCircle2, Download, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
 
@@ -181,6 +180,101 @@ export function CompanionDownloadActions({
   return <PendingPackageButton release={release} />;
 }
 
+export function CompanionPrimaryAction({
+  busy,
+  onRetry,
+  release,
+}: {
+  busy: boolean;
+  onRetry: () => void;
+  release: CompanionReleaseInfo | null;
+}) {
+  const [downloadStartedFor, setDownloadStartedFor] = useState<string | null>(
+    null,
+  );
+  const preferredPackage = usePreferredMacPackage();
+  const packages = release?.packageDownloadUrls;
+  const packageUrl =
+    (preferredPackage ? packages?.[preferredPackage] : undefined) ||
+    packages?.macosArm64 ||
+    packages?.macosAmd64;
+  const downloadKey = [
+    "install",
+    release?.release,
+    release?.latestVersion,
+    release?.installerDownloadUrl,
+    packageUrl,
+  ].join("|");
+  const downloadStarted = downloadStartedFor === downloadKey;
+
+  if (packageUrl) {
+    return (
+      <>
+        <a
+          className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
+          href={packageUrl}
+          onClick={() => setDownloadStartedFor(downloadKey)}
+        >
+          <Download size={18} aria-hidden />
+          <span>Install Companion</span>
+        </a>
+        {downloadStarted ? <AfterDownloadNotice action="install" /> : null}
+      </>
+    );
+  }
+
+  if (release?.installerDownloadUrl) {
+    return (
+      <>
+        <a
+          className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
+          href={release.installerDownloadUrl}
+          onClick={() => setDownloadStartedFor(downloadKey)}
+        >
+          <Download size={18} aria-hidden />
+          <span>Install Companion</span>
+        </a>
+        {downloadStarted ? <AfterDownloadNotice action="install" /> : null}
+      </>
+    );
+  }
+
+  if (release?.status === "check_failed") {
+    return (
+      <button
+        className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+        disabled={busy}
+        onClick={onRetry}
+        type="button"
+      >
+        <RefreshCw
+          className={busy ? "animate-spin" : undefined}
+          size={18}
+          aria-hidden
+        />
+        <span>{busy ? "Checking installer" : "Check installer again"}</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#747A60] bg-[#EEEEEE] px-5 text-sm font-bold text-[#444933]"
+      disabled
+      type="button"
+    >
+      {busy || !release ? (
+        <RefreshCw className="animate-spin" size={18} aria-hidden />
+      ) : (
+        <Download size={18} aria-hidden />
+      )}
+      <span>
+        {busy || !release ? "Checking installer" : "Installer unavailable"}
+      </span>
+    </button>
+  );
+}
+
 function PendingPackageButton({
   release,
 }: {
@@ -204,27 +298,6 @@ function PendingPackageButton({
       <Download size={18} aria-hidden />
       <span>{label}</span>
     </button>
-  );
-}
-
-export function CompanionReleaseNotice({
-  release,
-}: {
-  release: CompanionReleaseInfo | null;
-}) {
-  if (!release) {
-    return (
-      <ReleaseNoticeFrame>
-        Checking GitHub for the latest Companion installer assets.
-      </ReleaseNoticeFrame>
-    );
-  }
-
-  const detail = releaseDetail(release);
-  return (
-    <ReleaseNoticeFrame tone={noticeTone(release)}>
-      {detail}
-    </ReleaseNoticeFrame>
   );
 }
 
@@ -312,51 +385,7 @@ function afterDownloadDetail(action: "install" | "repair" | "update"): string {
   if (action === "repair") {
     return "Download started. Open the package from Downloads, finish the repair, then return here and check Companion again.";
   }
-  return "Download started. Open the package from Downloads, finish the installer, then return here and check the bridge again.";
-}
-
-function ReleaseNoticeFrame({
-  children,
-  tone = "neutral",
-}: {
-  children: ReactNode;
-  tone?: "neutral" | "attention";
-}) {
-  const toneClass =
-    tone === "attention"
-      ? "border-[#747A60] bg-[#EEEEEE] text-[#1B1B1B]"
-      : "border-[#747A60] bg-[#F9F9F9] text-[#444933]";
-  return (
-    <p
-      className={`w-full max-w-[420px] border px-3 py-2 text-xs leading-5 ${toneClass}`}
-    >
-      {children}
-    </p>
-  );
-}
-
-function noticeTone(release: CompanionReleaseInfo): "neutral" | "attention" {
-  return release.status === "available" && hasCompleteMacPackages(release)
-    ? "neutral"
-    : "attention";
-}
-
-function releaseDetail(release: CompanionReleaseInfo): string {
-  const version = release.release || release.latestVersion;
-  const prefix = version ? `${version}: ` : "";
-  if (release.status === "missing_asset") {
-    return `${prefix}${release.message} Customers cannot install Companion from this page until the signed macOS package is attached.`;
-  }
-  if (release.status === "check_failed") {
-    return `${prefix}${release.message} Check your connection, then use Check installer again.`;
-  }
-  if (
-    release.packageDownloadUrls?.macosArm64 ||
-    release.packageDownloadUrls?.macosAmd64
-  ) {
-    return `${prefix}${release.message}`;
-  }
-  return `${prefix}${release.message}`;
+  return "Download started. Open the package from Downloads, finish the installer, then return here and check Companion again.";
 }
 
 export function hasCompleteMacPackages(
@@ -386,7 +415,7 @@ function sortPackageButtons<T extends { packageKey: MacPackageKey }>(
   });
 }
 
-function usePreferredMacPackage(): MacPackageKey | null {
+export function usePreferredMacPackage(): MacPackageKey | null {
   const [preferredPackage, setPreferredPackage] =
     useState<MacPackageKey | null>(null);
 

@@ -11,9 +11,7 @@ import {
 import type { ReactNode } from "react";
 import type {
   ActiveTab,
-  CompanionStatus,
   DeviceInfo,
-  DeviceState,
   ShellNavItem,
 } from "./control-center-types";
 
@@ -21,10 +19,8 @@ type ControlCenterShellProps = {
   activeTab: ActiveTab;
   onTabChange: (tab: ActiveTab) => void;
   children: ReactNode;
-  companionEndpoint?: string;
-  companionStatus: CompanionStatus;
-  deviceState: DeviceState;
   device: DeviceInfo | null;
+  disabledTabs?: ActiveTab[];
   firmwareUpdateAvailable?: boolean;
 };
 
@@ -60,12 +56,13 @@ export function ControlCenterShell({
   activeTab,
   onTabChange,
   children,
-  companionEndpoint = "127.0.0.1:47832",
-  companionStatus,
   device,
+  disabledTabs = [],
   firmwareUpdateAvailable = false,
 }: ControlCenterShellProps) {
   const targetLabel = device?.target?.replace(/^https?:\/\//, "") || "vibetv.local";
+  const disabledTabSet = new Set(disabledTabs);
+  const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
 
   return (
     <main className="min-h-screen bg-[#F9F9F9] text-[#1B1B1B]">
@@ -84,6 +81,7 @@ export function ControlCenterShell({
             {NAV_ITEMS.map((item) => (
               <ShellNavButton
                 active={item.id === activeTab}
+                disabled={isTabDisabled(item.id)}
                 item={item}
                 key={item.id}
                 notify={item.id === "updates" && firmwareUpdateAvailable}
@@ -92,23 +90,7 @@ export function ControlCenterShell({
             ))}
           </nav>
 
-          <div className="grid gap-12 px-5 pb-8">
-            <div className="border border-[#444933] px-8 py-6">
-              <div className="flex items-start gap-4">
-                <span className="mt-1 size-3 rounded-full bg-[#CCFF00]" />
-                <div>
-                  <div className="text-lg font-bold text-[#EDEDED]">Bridge</div>
-                  <div className="mt-1 text-lg text-[#CCFF00]">
-                    {labelForCompanion(companionStatus)}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-6 leading-6 text-[#EDEDED]">
-                <div>{targetLabel}</div>
-                <div>{companionEndpoint}</div>
-              </div>
-            </div>
-
+          <div className="px-5 pb-8">
             <button
               className="flex h-16 items-center justify-between border border-[#444933] px-5 text-left text-[#EDEDED] transition hover:border-[#747A60]"
               onClick={() => onTabChange("logs")}
@@ -144,11 +126,17 @@ export function ControlCenterShell({
                 <button
                   aria-label={item.label}
                   aria-current={item.id === activeTab ? "page" : undefined}
+                  aria-disabled={
+                    isTabDisabled(item.id) ? true : undefined
+                  }
                   className={`inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 px-3 text-sm font-semibold transition ${
-                    item.id === activeTab
+                    isTabDisabled(item.id)
+                      ? "border border-[#747A60] bg-[#EEEEEE] text-[#444933] opacity-50"
+                      : item.id === activeTab
                       ? "bg-[#CCFF00] text-[#1B1B1B]"
                       : "border border-[#747A60] bg-[#F9F9F9] text-[#1B1B1B]"
                   }`}
+                  disabled={isTabDisabled(item.id)}
                   key={item.id}
                   onClick={() => onTabChange(item.id)}
                   title={item.label}
@@ -180,11 +168,13 @@ export function ControlCenterShell({
 
 function ShellNavButton({
   active,
+  disabled,
   item,
   notify,
   onClick,
 }: {
   active: boolean;
+  disabled?: boolean;
   item: ShellNavItem;
   notify?: boolean;
   onClick: () => void;
@@ -192,11 +182,15 @@ function ShellNavButton({
   return (
     <button
       aria-current={active ? "page" : undefined}
+      aria-disabled={disabled || undefined}
       className={`flex h-[72px] w-full items-center gap-5 border-b border-[#444933] px-9 text-left text-lg transition ${
-        active
+        disabled
+          ? "cursor-not-allowed bg-[#1B1B1B] text-[#747A60] opacity-50"
+          : active
           ? "bg-[#CCFF00] text-[#1B1B1B]"
           : "bg-[#1B1B1B] text-[#EDEDED] hover:bg-[#444933]"
       }`}
+      disabled={disabled}
       onClick={onClick}
       type="button"
     >
@@ -212,14 +206,4 @@ function ShellNavButton({
       ) : null}
     </button>
   );
-}
-
-function labelForCompanion(status: CompanionStatus): string {
-  if (status === "online") {
-    return "Online";
-  }
-  if (status === "missing") {
-    return "Missing";
-  }
-  return "Check required";
 }

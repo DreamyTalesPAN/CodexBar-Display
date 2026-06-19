@@ -328,7 +328,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       if (!quiet || wasMissing) {
         addEvent({
-          label: wasMissing ? "Bridge reconnected" : "Bridge checked",
+          label: wasMissing ? "Companion reconnected" : "Companion checked",
           detail: payload.device?.target
             ? `Companion online, target ${payload.device.target}.`
             : "Companion online, device target pending.",
@@ -342,7 +342,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (!quiet) {
         setLastError(normalized);
         addEvent({
-          label: "Bridge check needs attention",
+          label: "Companion check needs attention",
           detail: normalized.nextAction,
           tone: "attention",
         });
@@ -419,40 +419,69 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
   ]);
 
-  const pairDevice = useCallback(async () => {
-    setBusyAction("pair");
+  const connectDevice = useCallback(async (targetOverride?: string) => {
+    setBusyAction("connect");
+    const target = normalizeDeviceTarget(targetOverride || deviceTarget);
     try {
-      const target = normalizeDeviceTarget(deviceTarget);
-      const payload = await runCompanion<{ device: DeviceInfo }>(
-        "/v1/device/pair",
+      const discovered = await runCompanion<{ device: DeviceInfo }>(
+        "/v1/device/discover",
         {
           method: "POST",
           body: target ? JSON.stringify({ target }) : "{}",
         },
       );
-      setDeviceState("paired");
+      setCompanionStatus("online");
       void refreshCompanionFeatures();
-      setDevice(payload.device);
-      if (payload.device.target) {
-        setDeviceTarget(payload.device.target);
-        rememberDeviceTarget(payload.device.target);
+
+      let nextDevice = discovered.device;
+      const nextTarget = normalizeDeviceTarget(nextDevice.target || target);
+      if (nextDevice.connected && !nextDevice.paired) {
+        const paired = await runCompanion<{ device: DeviceInfo }>(
+          "/v1/device/pair",
+          {
+            method: "POST",
+            body: nextTarget ? JSON.stringify({ target: nextTarget }) : "{}",
+          },
+        );
+        nextDevice = paired.device;
+      }
+
+      setDeviceState(
+        nextDevice.paired
+          ? "paired"
+          : nextDevice.connected
+            ? "online"
+            : "offline",
+      );
+      setDevice(nextDevice);
+      if (nextDevice.target) {
+        setDeviceTarget(nextDevice.target);
+        rememberDeviceTarget(nextDevice.target);
       }
       addEvent({
-        label: "Device paired",
-        detail: payload.device.target || "Pairing is ready.",
-        tone: "ready",
+        label: nextDevice.paired ? "VibeTV connected" : "VibeTV found",
+        detail: nextDevice.target || "VibeTV is available through Companion.",
+        tone: nextDevice.connected ? "ready" : "unknown",
       });
-      if (payload.device.connected) {
+      if (nextDevice.connected) {
         void loadSettings();
       }
     } catch (error) {
-      const normalized = normalizeCaughtError(error, "Pairing needs attention.");
+      const normalized = normalizeCaughtError(
+        error,
+        "VibeTV connection needs attention.",
+      );
       if (isCompanionMissingError(normalized)) {
         markCompanionUnavailable();
+      } else {
+        setCompanionStatus("online");
+        void refreshCompanionFeatures();
+        setDevice(target ? { target, connected: false } : null);
+        setDeviceState("offline");
       }
       setLastError(normalized);
       addEvent({
-        label: "Pairing needs attention",
+        label: "VibeTV connection needs attention",
         detail: normalized.nextAction,
         tone: "attention",
       });
@@ -769,18 +798,36 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? firmwareUpdate
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
+  const setupComplete = Boolean(
+    companionStatus === "online" && device?.connected && device.paired,
+  );
+  const themeLibraryEnabled = Boolean(
+    setupComplete && themeInstallEnabled,
+  );
+  const disabledTabs: ActiveTab[] = setupComplete
+    ? themeLibraryEnabled
+      ? []
+      : ["theme-library"]
+    : ["settings", "theme-library", "updates"];
+  const activeShellTab =
+    disabledTabs.includes(activeTab)
+      ? "overview"
+      : activeTab;
 
   return (
     <ControlCenterShell
-      activeTab={activeTab}
-      companionEndpoint={COMPANION_ENDPOINT}
-      companionStatus={companionStatus}
+      activeTab={activeShellTab}
+      disabledTabs={disabledTabs}
       device={device}
-      deviceState={deviceState}
       firmwareUpdateAvailable={firmwareUpdateAvailable}
-      onTabChange={setActiveTab}
+      onTabChange={(tab) => {
+        if (disabledTabs.includes(tab)) {
+          return;
+        }
+        setActiveTab(tab);
+      }}
     >
-      {activeTab === "overview" ? (
+      {activeShellTab === "overview" ? (
         <OverviewScreen
           companionEndpoint={COMPANION_URL}
           companionStatus={companionStatus}
@@ -793,46 +840,40 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           firmwareUpdate={effectiveFirmwareUpdate}
           busyAction={busyAction}
           onCheckBridge={checkCompanion}
+          onConnectDevice={connectDevice}
           onDeviceTargetChange={handleDeviceTargetChange}
-          onDiscoverDevice={discoverDevice}
           onViewLogs={() => setActiveTab("logs")}
           themeInstallEnabled={themeInstallEnabled}
         />
       ) : null}
 
-      {activeTab === "settings" ? (
+      {activeShellTab === "settings" ? (
         <SettingsScreen
           brightness={brightness}
           busyAction={busyAction}
+          companionStatus={companionStatus}
           companionUrl={COMPANION_ENDPOINT}
           device={device}
           deviceTarget={deviceTarget}
           lastError={lastError}
           onBrightnessChange={setBrightness}
           onCheckBridge={checkCompanion}
+          onConnectDevice={connectDevice}
           onDeviceTargetChange={handleDeviceTargetChange}
-          onDiscoverDevice={discoverDevice}
-          onPairDevice={pairDevice}
           onSaveBrightness={saveBrightness}
         />
       ) : null}
 
-      {activeTab === "theme-library" ? (
+      {activeShellTab === "theme-library" ? (
         <ThemeLibraryScreen
           busyAction={busyAction}
           companionStatus={companionStatus}
           device={device}
-          deviceTarget={deviceTarget}
           installStatus={themeInstallStatus}
           catalogIssue={catalog.issue}
           catalogSource={catalog.source}
           lastInstall={lastInstall}
-          lastError={lastError}
-          onDeviceTargetChange={handleDeviceTargetChange}
-          onDiscoverDevice={discoverDevice}
-          onCheckBridge={checkCompanion}
           onInstallTheme={installTheme}
-          onPairDevice={pairDevice}
           onSelectTheme={setSelectedThemeId}
           installEntry={Boolean(initialThemeId)}
           requestedThemeId={initialThemeId}
@@ -844,19 +885,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         />
       ) : null}
 
-      {activeTab === "updates" ? (
+      {activeShellTab === "updates" ? (
         <UpdatesScreen
           busyAction={busyAction}
           companionStatus={companionStatus}
           companionVersion={companionInfo?.version}
           device={device}
           firmwareUpdate={effectiveFirmwareUpdate}
-          onCheckBridge={checkCompanion}
           onCheckUpdates={checkFirmwareUpdates}
         />
       ) : null}
 
-      {activeTab === "logs" ? (
+      {activeShellTab === "logs" ? (
         <LogsScreen
           busyAction={busyAction}
           diagnostics={supportDiagnostics}
@@ -896,7 +936,7 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
         code: "COMPANION_UNREACHABLE",
         message: "Companion is not reachable.",
         nextAction:
-          "Install or repair Companion, make sure it is running, allow browser local access if prompted, then check the bridge again.",
+          "Install or repair Companion, make sure it is running, allow browser local access if prompted, then check Companion again.",
       };
     }
     return {

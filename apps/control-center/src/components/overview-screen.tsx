@@ -8,7 +8,6 @@ import {
   Lock,
   Monitor,
   Play,
-  RefreshCw,
   Server,
   ShieldCheck,
   Signal,
@@ -19,7 +18,7 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import {
-  CompanionDownloadActions,
+  CompanionPrimaryAction,
   useCompanionRelease,
 } from "./companion-installer-actions";
 import type {
@@ -45,8 +44,8 @@ type OverviewScreenProps = {
   events?: ControlCenterEvent[];
   deviceTarget: string;
   onCheckBridge?: () => void;
+  onConnectDevice?: (targetOverride?: string) => void;
   onDeviceTargetChange?: (target: string) => void;
-  onDiscoverDevice?: (targetOverride?: string) => void;
   onViewLogs?: () => void;
 };
 
@@ -63,8 +62,8 @@ export function OverviewScreen({
   events,
   deviceTarget,
   onCheckBridge,
+  onConnectDevice,
   onDeviceTargetChange,
-  onDiscoverDevice,
   onViewLogs,
 }: OverviewScreenProps) {
   const connected = Boolean(device?.connected);
@@ -109,7 +108,7 @@ export function OverviewScreen({
           <dl className="mt-9 max-w-[420px]">
             <StatusRow
               icon={<Wifi size={18} aria-hidden />}
-              label="Bridge"
+              label="Companion"
               value={labelForCompanion(companionStatus)}
             />
             <StatusRow
@@ -154,46 +153,35 @@ export function OverviewScreen({
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap md:justify-end">
+          <div className="flex flex-col gap-3 md:justify-end">
             {companionMissing ? (
-              <>
-                <CompanionDownloadActions release={companionRelease} />
+              <CompanionPrimaryAction
+                busy={companionReleaseBusy}
+                onRetry={refreshCompanionRelease}
+                release={companionRelease}
+              />
+            ) : null}
+            {!companionMissing ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap md:justify-end">
                 <button
-                  className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={companionReleaseBusy}
-                  onClick={refreshCompanionRelease}
+                  className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+                  disabled={localActionBusy}
+                  onClick={onCheckBridge}
                   type="button"
                 >
-                  {companionReleaseBusy ? (
-                    <RefreshCw className="animate-spin" size={18} />
-                  ) : (
-                    <RefreshCw size={18} aria-hidden />
-                  )}
-                  <span>
-                    {companionReleaseBusy ? "Checking" : "Check installer"}
-                  </span>
+                  <Wifi size={17} aria-hidden />
+                  {busyAction === "status" ? "Checking" : "Check Companion"}
                 </button>
-              </>
-            ) : null}
-            <button
-              className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-              disabled={localActionBusy}
-              onClick={onCheckBridge}
-              type="button"
-            >
-              <Wifi size={17} aria-hidden />
-              {busyAction === "status" ? "Checking" : "Check bridge"}
-            </button>
-            {!companionMissing ? (
-              <button
+                <button
                 className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#1B1B1B] px-4 text-sm font-semibold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
                 disabled={companionStatus !== "online" || localActionBusy}
-                onClick={() => onDiscoverDevice?.(deviceTarget)}
+                onClick={() => onConnectDevice?.(deviceTarget)}
                 type="button"
               >
                 <Monitor size={17} aria-hidden />
-                {busyAction === "discover" ? "Searching" : "Find VibeTV"}
+                {busyAction === "connect" ? "Connecting" : "Connect VibeTV"}
               </button>
+            </div>
             ) : null}
           </div>
         </div>
@@ -202,12 +190,14 @@ export function OverviewScreen({
       {showTargetControl ? (
         <section className="border-b border-[#747A60] py-6">
           <DeviceTargetForm
-            busy={busyAction === "discover"}
+            busy={busyAction === "connect"}
             disabled={localActionBusy}
+            buttonLabel="Connect VibeTV"
             id="overview-device-target"
             lastError={lastError}
             onChange={onDeviceTargetChange}
-            onSubmit={onDiscoverDevice}
+            onSubmit={onConnectDevice}
+            searchingLabel="Connecting"
             value={deviceTarget}
           />
         </section>
@@ -368,8 +358,8 @@ function buildSessionEvents({
       id: "bridge",
       label:
         companionStatus === "online"
-          ? "Bridge checked"
-          : "Bridge needs attention",
+          ? "Companion checked"
+          : "Companion needs attention",
       detail:
         companionStatus === "online"
           ? device?.target?.replace(/^https?:\/\//, "") ||
@@ -461,7 +451,7 @@ function buildSetupState({
     return {
       title: "Install Companion first",
       detail:
-        "This website needs the local Companion API on this computer. Install or repair Companion, then use Check bridge before searching for VibeTV.",
+        "This website needs the local Companion API on this computer. Install or repair Companion, then check Companion before searching for VibeTV.",
       icon: <Play size={22} aria-hidden />,
     };
   }
@@ -483,7 +473,7 @@ function buildSetupState({
     };
   }
   return {
-    title: "Check local bridge",
+    title: "Check Companion",
     detail:
       "Start by checking Companion, then search for VibeTV on the same WiFi network.",
     icon: <Wifi size={22} aria-hidden />,
@@ -497,7 +487,7 @@ function labelForCompanion(status: CompanionStatus): string {
   if (status === "missing") {
     return "Missing";
   }
-  return "Waiting for bridge";
+  return "Waiting for Companion";
 }
 
 function labelForDevice(state: DeviceState, device: DeviceInfo | null): string {

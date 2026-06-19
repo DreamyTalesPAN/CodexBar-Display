@@ -5,10 +5,13 @@ import {
   PlugZap,
   RefreshCw,
   Search,
-  ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import {
+  CompanionPrimaryAction,
+  useCompanionRelease,
+} from "./companion-installer-actions";
 import {
   DEVICE_TARGET_PLACEHOLDER,
   deviceTargetHelpText,
@@ -52,6 +55,7 @@ export type SettingsDeviceInfo = {
 };
 
 export type SettingsScreenProps = {
+  companionStatus: SettingsCompanionStatus;
   device: SettingsDeviceInfo | null;
   brightness: number | null;
   busyAction: string | null;
@@ -59,14 +63,14 @@ export type SettingsScreenProps = {
   companionUrl?: string;
   deviceTarget: string;
   onCheckBridge: () => void;
+  onConnectDevice: (targetOverride?: string) => void;
   onDeviceTargetChange: (target: string) => void;
-  onDiscoverDevice: (targetOverride?: string) => void;
-  onPairDevice: () => void;
   onBrightnessChange: (value: number) => void;
   onSaveBrightness: (value: number) => void;
 };
 
 export function SettingsScreen({
+  companionStatus,
   device,
   brightness,
   busyAction,
@@ -74,9 +78,8 @@ export function SettingsScreen({
   companionUrl = "127.0.0.1:47832",
   deviceTarget,
   onCheckBridge,
+  onConnectDevice,
   onDeviceTargetChange,
-  onDiscoverDevice,
-  onPairDevice,
   onBrightnessChange,
   onSaveBrightness,
 }: SettingsScreenProps) {
@@ -91,6 +94,13 @@ export function SettingsScreen({
     device?.capabilities?.theme?.supportsThemeSpecV1,
   );
   const localActionBusy = Boolean(busyAction);
+  const companionMissing = companionStatus === "missing";
+  const companionOnline = companionStatus === "online";
+  const {
+    busy: companionReleaseBusy,
+    refresh: refreshCompanionRelease,
+    release: companionRelease,
+  } = useCompanionRelease(undefined, { enabled: companionMissing });
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -104,7 +114,35 @@ export function SettingsScreen({
               {companionUrl}
             </span>
           </div>
-          {lastError ? (
+          {companionMissing ? (
+            <StepGate
+              detail="You need Companion on this computer before VibeTV can be connected."
+              title="Install Companion first"
+            >
+              <CompanionPrimaryAction
+                busy={companionReleaseBusy}
+                onRetry={refreshCompanionRelease}
+                release={companionRelease}
+              />
+            </StepGate>
+          ) : null}
+          {!companionMissing && !companionOnline ? (
+            <StepGate
+              detail="Check whether Companion is running on this computer before connecting VibeTV."
+              title="Check Companion first"
+            >
+              <CommandButton
+                busy={busyAction === "status"}
+                busyLabel="Checking"
+                disabled={localActionBusy && busyAction !== "status"}
+                icon={<PlugZap size={18} aria-hidden />}
+                label="Check Companion"
+                onClick={onCheckBridge}
+                primary
+              />
+            </StepGate>
+          ) : null}
+          {companionOnline && lastError ? (
             <div className="mb-5 flex gap-3 border border-[#747A60] bg-[#F9F9F9] p-4 text-sm text-[#444933]">
               <TriangleAlert
                 className="mt-0.5 shrink-0 text-[#5E7200]"
@@ -119,75 +157,75 @@ export function SettingsScreen({
               </div>
             </div>
           ) : null}
-          <div className="mb-4 grid gap-2">
-            <label
-              className="text-sm font-bold text-[#1B1B1B]"
-              htmlFor="device-target"
-            >
-              VibeTV target
-            </label>
-            <p className="text-sm leading-6 text-[#444933]">
-              {deviceTargetHelpText(lastError)}
-            </p>
-            <input
-              className="h-12 border border-[#747A60] bg-[#F9F9F9] px-3 font-mono text-sm text-[#1B1B1B] outline-none transition placeholder:text-[#747A60] focus:border-[#5E7200] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-              disabled={localActionBusy}
-              id="device-target"
-              onChange={(event) => onDeviceTargetChange(event.target.value)}
-              placeholder={DEVICE_TARGET_PLACEHOLDER}
-              spellCheck={false}
-              type="text"
-              value={deviceTarget}
-            />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <CommandButton
-              busy={busyAction === "status"}
-              disabled={localActionBusy && busyAction !== "status"}
-              icon={<PlugZap size={18} aria-hidden />}
-              label="Check bridge"
-              onClick={onCheckBridge}
-            />
-            <CommandButton
-              busy={busyAction === "discover"}
-              disabled={localActionBusy && busyAction !== "discover"}
-              icon={<Search size={18} aria-hidden />}
-              label="Find VibeTV"
-              onClick={() => onDiscoverDevice(deviceTarget)}
-            />
-            <CommandButton
-              busy={busyAction === "pair"}
-              disabled={
-                !device?.connected || (localActionBusy && busyAction !== "pair")
-              }
-              icon={<ShieldCheck size={18} aria-hidden />}
-              label="Pair device"
-              onClick={onPairDevice}
-            />
-          </div>
+          {companionOnline ? (
+            <>
+              <div className="mb-4 grid gap-2">
+                <label
+                  className="text-sm font-bold text-[#1B1B1B]"
+                  htmlFor="device-target"
+                >
+                  VibeTV target
+                </label>
+                <p className="text-sm leading-6 text-[#444933]">
+                  {deviceTargetHelpText(lastError)}
+                </p>
+                <input
+                  className="h-12 border border-[#747A60] bg-[#F9F9F9] px-3 font-mono text-sm text-[#1B1B1B] outline-none transition placeholder:text-[#747A60] focus:border-[#5E7200] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+                  disabled={localActionBusy}
+                  id="device-target"
+                  onChange={(event) => onDeviceTargetChange(event.target.value)}
+                  placeholder={DEVICE_TARGET_PLACEHOLDER}
+                  spellCheck={false}
+                  type="text"
+                  value={deviceTarget}
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <CommandButton
+                  busy={busyAction === "status"}
+                  disabled={localActionBusy && busyAction !== "status"}
+                  icon={<PlugZap size={18} aria-hidden />}
+                  label="Check Companion"
+                  onClick={onCheckBridge}
+                />
+                <CommandButton
+                  busy={busyAction === "connect"}
+                  busyLabel="Connecting"
+                  disabled={localActionBusy && busyAction !== "connect"}
+                  icon={<Search size={18} aria-hidden />}
+                  label="Connect VibeTV"
+                  onClick={() => onConnectDevice(deviceTarget)}
+                  primary
+                />
+              </div>
+            </>
+          ) : null}
         </div>
       </section>
 
-      <section className="border-b border-[#747A60] py-8">
-        <h3 className="mb-5 text-base font-bold text-[#1B1B1B]">
-          Device facts
-        </h3>
-        <dl className="divide-y divide-[#747A60] border-y border-[#747A60]">
-          <Fact label="Target" value={device?.target || "Not reported"} />
-          <Fact label="Board" value={device?.board || "Not reported"} />
-          <Fact label="Firmware" value={device?.firmware || "Not reported"} />
-          <Fact
-            label="Transport"
-            value={device?.capabilities?.transport?.active || "Not reported"}
-          />
-          <Fact
-            label="ThemeSpec"
-            value={themeSpecReady ? "Ready" : "Check required"}
-          />
-        </dl>
-      </section>
+      {companionOnline ? (
+        <section className="border-b border-[#747A60] py-8">
+          <h3 className="mb-5 text-base font-bold text-[#1B1B1B]">
+            Device facts
+          </h3>
+          <dl className="divide-y divide-[#747A60] border-y border-[#747A60]">
+            <Fact label="Target" value={device?.target || "Not reported"} />
+            <Fact label="Board" value={device?.board || "Not reported"} />
+            <Fact label="Firmware" value={device?.firmware || "Not reported"} />
+            <Fact
+              label="Transport"
+              value={device?.capabilities?.transport?.active || "Not reported"}
+            />
+            <Fact
+              label="ThemeSpec"
+              value={themeSpecReady ? "Ready" : "Check required"}
+            />
+          </dl>
+        </section>
+      ) : null}
 
-      <section className="border-b border-[#747A60] py-8">
+      {companionOnline ? (
+        <section className="border-b border-[#747A60] py-8">
         <div>
           <div className="mb-5 flex items-center justify-between gap-4">
             <h3 className="text-base font-bold text-[#1B1B1B]">Display</h3>
@@ -237,6 +275,29 @@ export function SettingsScreen({
           </div>
         </div>
       </section>
+      ) : null}
+    </div>
+  );
+}
+
+function StepGate({
+  children,
+  detail,
+  title,
+}: {
+  children: ReactNode;
+  detail: string;
+  title: string;
+}) {
+  return (
+    <div className="grid gap-5 border border-[#747A60] bg-[#F9F9F9] p-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <div className="min-w-0">
+        <h4 className="text-base font-bold text-[#1B1B1B]">{title}</h4>
+        <p className="mt-1 max-w-[640px] text-sm leading-6 text-[#444933]">
+          {detail}
+        </p>
+      </div>
+      <div className="flex md:justify-end">{children}</div>
     </div>
   );
 }
@@ -252,6 +313,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 function CommandButton({
   busy,
+  busyLabel = "Working...",
   disabled,
   icon,
   label,
@@ -259,6 +321,7 @@ function CommandButton({
   primary,
 }: {
   busy?: boolean;
+  busyLabel?: string;
   disabled?: boolean;
   icon: ReactNode;
   label: string;
@@ -277,7 +340,7 @@ function CommandButton({
       type="button"
     >
       {busy ? <RefreshCw className="animate-spin" size={18} /> : icon}
-      <span>{busy ? "Working..." : label}</span>
+      <span>{busy ? busyLabel : label}</span>
     </button>
   );
 }

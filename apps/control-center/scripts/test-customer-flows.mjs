@@ -175,12 +175,12 @@ async function main() {
       releaseUrl: completeReleaseUrl,
     });
     app = appContext.app;
-    await testMissingShopifyThemeCanSelectAvailableTheme(
+    await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
       browser,
       appContext.appUrl,
       fixtureServer,
     );
-    await testThemeLibraryStartsWithoutFirstThemeLock(
+    await testSetupTabsAreLockedUntilSetupComplete(
       browser,
       appContext.appUrl,
     );
@@ -318,7 +318,7 @@ async function startTestApp({ catalogUrl, releaseUrl }) {
   return { app, appUrl };
 }
 
-async function testMissingShopifyThemeCanSelectAvailableTheme(
+async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   browser,
   appUrl,
   fixtureServer,
@@ -331,58 +331,32 @@ async function testMissingShopifyThemeCanSelectAvailableTheme(
   await page.goto(`${appUrl}/install/does-not-exist`, {
     waitUntil: "networkidle",
   });
-  await page
-    .getByText("Shopify theme link was not found")
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByText("Fixture Synthwave Theme")
-    .waitFor({ timeout: 10_000 });
-
-  const selectButtonsBefore = await page.getByRole("button", {
-    name: "Select",
-  }).count();
-  assert(
-    selectButtonsBefore >= 1,
-    `expected Select buttons for available themes, got ${selectButtonsBefore}`,
-  );
-
-  await page
-    .locator("li")
-    .filter({ hasText: "Fixture Synthwave Theme" })
-    .getByRole("button", { name: "Select" })
-    .click();
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
-  await page
-    .getByText("Selected in this app: Fixture Synthwave Theme.")
-    .waitFor({ timeout: 10_000 });
-  await page.getByRole("link", { name: "Install Apple silicon" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByRole("link", { name: "Install Intel Mac" }).waitFor({
-    timeout: 10_000,
-  });
+  await assertThemeLibraryLockedBehindSetup(page);
+  await assertSingleCompanionInstallLink(page);
   await clickDownloadWithoutLeavingPage(
-    page.getByRole("link", { name: "Install Apple silicon" }),
+    page.getByRole("link", { name: "Install Companion" }),
   );
   await page
     .getByText(
-      "Download started. Open the package from Downloads, finish the installer, then return here and check the bridge again.",
+      "Download started. Open the package from Downloads, finish the installer, then return here and check Companion again.",
     )
     .waitFor({ timeout: 10_000 });
 
   assert(
     (await page.getByText("Shopify theme link was not found").count()) === 0,
-    "missing-theme notice should clear after selecting an available theme",
+    "locked Theme Library should not show missing-theme notices",
   );
   assert(
     (await page.getByText("Theme not available").count()) === 0,
-    "missing-theme heading should clear after selecting an available theme",
+    "locked Theme Library should not show missing-theme headings",
   );
   assert(
-    (await page.getByRole("link", { name: "Support install script" }).count()) ===
-      0,
-    "complete package release should not show the support script link",
+    (await page.getByText("Fixture Synthwave Theme").count()) === 0,
+    "locked Theme Library should not show theme rows",
   );
+  await assertNoLegacyCompanionDownloadActions(page);
+  await assertNoThemeLibraryReleaseDiagnostics(page);
   assert(
     fixtureServer.releaseRequestCount > initialReleaseRequests,
     "missing-Companion flow did not read the local release fixture",
@@ -392,35 +366,44 @@ async function testMissingShopifyThemeCanSelectAvailableTheme(
   await page.close();
 }
 
-async function testThemeLibraryStartsWithoutFirstThemeLock(browser, appUrl) {
+async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
   const page = await browser.newPage({ viewport });
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: "Theme Library" }).click();
-  await page
-    .getByRole("heading", { name: "Choose a theme" })
-    .waitFor({ timeout: 10_000 });
-  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
-  await page
-    .getByText("Active on VibeTV: unknown until Companion is running.")
-    .waitFor({ timeout: 10_000 });
-
-  const synthwaveRow = page
-    .locator("li")
-    .filter({ hasText: "Fixture Synthwave Theme" });
-  await synthwaveRow.getByRole("button", { name: "Select" }).waitFor({
-    timeout: 10_000,
+  const settingsButton = page.getByRole("button", {
+    name: "Settings",
   });
+  const themeLibraryButton = page.getByRole("button", {
+    name: "Theme Library",
+  });
+  const updatesButton = page.getByRole("button", {
+    name: "Updates",
+  });
+  await settingsButton.waitFor({ timeout: 10_000 });
+  await themeLibraryButton.waitFor({ timeout: 10_000 });
+  await updatesButton.waitFor({ timeout: 10_000 });
+  assert(
+    await settingsButton.isDisabled(),
+    "Settings tab should stay disabled until setup is complete",
+  );
+  assert(
+    await themeLibraryButton.isDisabled(),
+    "Theme Library tab should stay disabled until setup can install themes",
+  );
+  assert(
+    await updatesButton.isDisabled(),
+    "Updates tab should stay disabled until setup is complete",
+  );
   assert(
     (await page.getByText("Selected in this app: Fixture Synthwave Theme.").count()) ===
       0,
-    "plain Theme Library should not preselect the first theme",
+    "locked Theme Library tab should not preselect the first theme",
   );
   assert(
-    (await synthwaveRow.getByRole("button", { name: "Locked" }).count()) === 0,
-    "plain Theme Library should not show Synthwave as locked",
+    (await page.getByRole("heading", { name: "Choose a theme" }).count()) === 0,
+    "locked Theme Library tab should not navigate to the theme chooser",
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -438,7 +421,7 @@ async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
   await waitForCondition(
     () => settingsCalls >= 1,
-    "expected settings refresh during initial connected bridge check",
+    "expected settings refresh during initial connected Companion check",
   );
 
   await page
@@ -479,35 +462,19 @@ async function testPairingRequiredThemeStaysLocked(browser, appUrl) {
     "expected settings refresh for pairing readiness check",
   );
 
+  await assertThemeLibraryLockedBehindSetup(page);
   await page
-    .getByText("Selected in this app: Fixture Synthwave Theme.")
-    .waitFor({ timeout: 10_000 });
-  await page.getByText("Pairing required").waitFor({ timeout: 10_000 });
-  await page
-    .getByText(
-      "VibeTV is reachable. Pair it once before theme install writes are allowed.",
-    )
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("button", { name: "Pair VibeTV" })
+    .getByRole("button", { name: "Connect VibeTV" })
     .waitFor({ timeout: 10_000 });
 
-  const lockedButton = page
-    .locator("li")
-    .filter({ hasText: "Fixture Synthwave Theme" })
-    .getByRole("button", { name: "Pair First" });
-  await lockedButton.waitFor({ timeout: 10_000 });
-  assert(
-    await lockedButton.isDisabled(),
-    "unpaired VibeTV should keep the install button disabled",
-  );
-
-  await page.getByRole("button", { name: "Pair VibeTV" }).click();
+  await page.getByRole("button", { name: "Connect VibeTV" }).click();
   await waitForCondition(
     () => settingsCalls >= 2,
     "expected settings refresh after pairing",
   );
-  await page.getByText("Ready for install").waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Selected in this app: Fixture Synthwave Theme.")
+    .waitFor({ timeout: 10_000 });
   const installButton = page
     .locator("li")
     .filter({ hasText: "Fixture Synthwave Theme" })
@@ -533,24 +500,11 @@ async function testThemeWithoutPackUrlStaysLocked(browser, appUrl) {
     waitUntil: "networkidle",
   });
 
-  await page
-    .getByText("Selected in this app: Fixture Missing Pack Theme.")
-    .waitFor({ timeout: 10_000 });
-  await page.getByText("Theme pack missing").waitFor({ timeout: 10_000 });
-  await page
-    .getByText(
-      "This Shopify theme is missing the technical pack URL, so it cannot be installed yet.",
-    )
-    .waitFor({ timeout: 10_000 });
-
-  const lockedButton = page
-    .locator("li")
-    .filter({ hasText: "Fixture Missing Pack Theme" })
-    .getByRole("button", { name: "Pack Missing" });
-  await lockedButton.waitFor({ timeout: 10_000 });
+  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
+  await assertThemeLibraryLockedBehindSetup(page);
   assert(
-    await lockedButton.isDisabled(),
-    "theme without pack URL should keep the install button disabled",
+    (await page.getByText("Theme pack missing").count()) === 0,
+    "locked Theme Library should not show theme pack diagnostics",
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -575,12 +529,6 @@ async function testBoardIncompatibleThemeStaysLocked(browser, appUrl) {
 
   await page
     .getByText("Selected in this app: Fixture ESP32 Only Theme.")
-    .waitFor({ timeout: 10_000 });
-  await page.getByText("Board not supported").waitFor({ timeout: 10_000 });
-  await page
-    .getByText(
-      "Fixture ESP32 Only Theme does not list esp8266_smalltv_st7789 as a compatible VibeTV board.",
-    )
     .waitFor({ timeout: 10_000 });
 
   const lockedButton = page
@@ -616,12 +564,6 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   await page
     .getByText("Selected in this app: Fixture Future Firmware Theme.")
     .waitFor({ timeout: 10_000 });
-  await page.getByText("Firmware too old").waitFor({ timeout: 10_000 });
-  await page
-    .getByText(
-      "Fixture Future Firmware Theme requires firmware 9.9.9 or newer. Update firmware before installing this theme.",
-    )
-    .waitFor({ timeout: 10_000 });
 
   const lockedButton = page
     .locator("li")
@@ -649,25 +591,10 @@ async function testScriptOnlyReleaseShowsSupportFallback(
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
-  await page
-    .getByText("Selected in this app: Fixture Synthwave Theme.")
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("button", { name: "Mac package pending" })
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("link", { name: "Support install script" })
-    .waitFor({ timeout: 10_000 });
-
-  assert(
-    (await page.getByRole("link", { name: "Install Apple silicon" }).count()) ===
-      0,
-    "script-only release should not show the Apple silicon package button",
-  );
-  assert(
-    (await page.getByRole("link", { name: "Install Intel Mac" }).count()) === 0,
-    "script-only release should not show the Intel package button",
-  );
+  await assertThemeLibraryLockedBehindSetup(page);
+  await assertSingleCompanionInstallLink(page);
+  await assertNoLegacyCompanionDownloadActions(page);
+  await assertNoThemeLibraryReleaseDiagnostics(page);
   assert(
     fixtureServer.scriptOnlyReleaseRequestCount > initialReleaseRequests,
     "script-only flow did not read the local release fixture",
@@ -689,25 +616,10 @@ async function testPartialPackageReleaseShowsSupportFallback(
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
-  await page
-    .getByText("Selected in this app: Fixture Synthwave Theme.")
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("button", { name: "Mac package pending" })
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("link", { name: "Support install script" })
-    .waitFor({ timeout: 10_000 });
-
-  assert(
-    (await page.getByRole("link", { name: "Install Apple silicon" }).count()) ===
-      0,
-    "partial package release should not show the Apple silicon package button",
-  );
-  assert(
-    (await page.getByRole("link", { name: "Install Intel Mac" }).count()) === 0,
-    "partial package release should not show the Intel package button",
-  );
+  await assertThemeLibraryLockedBehindSetup(page);
+  await assertSingleCompanionInstallLink(page);
+  await assertNoLegacyCompanionDownloadActions(page);
+  await assertNoThemeLibraryReleaseDiagnostics(page);
   assert(
     fixtureServer.partialReleaseRequestCount > initialReleaseRequests,
     "partial-package flow did not read the local release fixture",
@@ -729,29 +641,19 @@ async function testPackageOnlyReleaseShowsPackageDownloads(
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
-  await page
-    .getByText("Selected in this app: Fixture Synthwave Theme.")
-    .waitFor({ timeout: 10_000 });
-  await page.getByRole("link", { name: "Install Apple silicon" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByRole("link", { name: "Install Intel Mac" }).waitFor({
-    timeout: 10_000,
-  });
+  await assertThemeLibraryLockedBehindSetup(page);
+  await assertSingleCompanionInstallLink(page);
   await clickDownloadWithoutLeavingPage(
-    page.getByRole("link", { name: "Install Apple silicon" }),
+    page.getByRole("link", { name: "Install Companion" }),
   );
   await page
     .getByText(
-      "Download started. Open the package from Downloads, finish the installer, then return here and check the bridge again.",
+      "Download started. Open the package from Downloads, finish the installer, then return here and check Companion again.",
     )
     .waitFor({ timeout: 10_000 });
 
-  assert(
-    (await page.getByRole("link", { name: "Support install script" }).count()) ===
-      0,
-    "package-only release should not show the support script link",
-  );
+  await assertNoLegacyCompanionDownloadActions(page);
+  await assertNoThemeLibraryReleaseDiagnostics(page);
   assert(
     fixtureServer.packageOnlyReleaseRequestCount > initialReleaseRequests,
     "package-only flow did not read the local release fixture",
@@ -773,32 +675,13 @@ async function testReleaseCheckFailureShowsNoDownloadActions(
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
+  await assertThemeLibraryLockedBehindSetup(page);
   await page
-    .getByText("Selected in this app: Fixture Synthwave Theme.")
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("button", { name: "Check failed" })
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByText(
-      "Companion release check failed. Check your connection, then use Check installer again.",
-    )
+    .getByRole("button", { name: "Check installer again" })
     .waitFor({ timeout: 10_000 });
 
-  assert(
-    (await page.getByRole("link", { name: "Install Apple silicon" }).count()) ===
-      0,
-    "failed release check should not show the Apple silicon package button",
-  );
-  assert(
-    (await page.getByRole("link", { name: "Install Intel Mac" }).count()) === 0,
-    "failed release check should not show the Intel package button",
-  );
-  assert(
-    (await page.getByRole("link", { name: "Support install script" }).count()) ===
-      0,
-    "failed release check should not show the support script link",
-  );
+  await assertNoLegacyCompanionDownloadActions(page);
+  await assertNoThemeLibraryReleaseDiagnostics(page);
   assert(
     fixtureServer.failedReleaseRequestCount > initialReleaseRequests,
     "failed-release flow did not read the local release fixture",
@@ -820,32 +703,13 @@ async function testMissingAssetReleaseShowsNoDownloadActions(
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
   await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
-  await page
-    .getByText("Selected in this app: Fixture Synthwave Theme.")
-    .waitFor({ timeout: 10_000 });
+  await assertThemeLibraryLockedBehindSetup(page);
   await page
     .getByRole("button", { name: "Installer unavailable" })
     .waitFor({ timeout: 10_000 });
-  await page
-    .getByText(
-      "v1.0.96: Companion installer is not published in the latest release yet.",
-    )
-    .waitFor({ timeout: 10_000 });
 
-  assert(
-    (await page.getByRole("link", { name: "Install Apple silicon" }).count()) ===
-      0,
-    "missing-asset release should not show the Apple silicon package button",
-  );
-  assert(
-    (await page.getByRole("link", { name: "Install Intel Mac" }).count()) === 0,
-    "missing-asset release should not show the Intel package button",
-  );
-  assert(
-    (await page.getByRole("link", { name: "Support install script" }).count()) ===
-      0,
-    "missing-asset release should not show the support script link",
-  );
+  await assertNoLegacyCompanionDownloadActions(page);
+  await assertNoThemeLibraryReleaseDiagnostics(page);
   assert(
     fixtureServer.missingAssetReleaseRequestCount > initialReleaseRequests,
     "missing-asset flow did not read the local release fixture",
@@ -961,6 +825,14 @@ async function routeCompanionOnline(
         currentDevice,
       ) || { ...currentDevice, paired: true };
       currentDevice = nextDevice;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, device: currentDevice }),
+      });
+      return;
+    }
+    if (url.pathname === "/v1/device/discover") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1221,6 +1093,94 @@ async function assertNoMobileOverflow(page) {
     bodyWidth <= viewportWidth + 1,
     `mobile overflow: body=${bodyWidth}, viewport=${viewportWidth}`,
   );
+}
+
+async function assertSingleCompanionInstallLink(page) {
+  const installLink = page.getByRole("link", { name: "Install Companion" });
+  await installLink.waitFor({ timeout: 10_000 });
+  const installLinkCount = await installLink.count();
+  assert(
+    installLinkCount === 1,
+    `expected one Companion install action, got ${installLinkCount}`,
+  );
+}
+
+async function assertThemeLibraryLockedBehindSetup(page) {
+  const themeLibraryButton = page.getByRole("button", {
+    name: "Theme Library",
+  });
+  const settingsButton = page.getByRole("button", {
+    name: "Settings",
+  });
+  const updatesButton = page.getByRole("button", {
+    name: "Updates",
+  });
+  await settingsButton.waitFor({ timeout: 10_000 });
+  await themeLibraryButton.waitFor({ timeout: 10_000 });
+  await updatesButton.waitFor({ timeout: 10_000 });
+  assert(
+    await settingsButton.isDisabled(),
+    "Settings tab should stay disabled until setup is complete",
+  );
+  assert(
+    await themeLibraryButton.isDisabled(),
+    "Theme Library tab should stay disabled until setup can install themes",
+  );
+  assert(
+    await updatesButton.isDisabled(),
+    "Updates tab should stay disabled until setup is complete",
+  );
+  assert(
+    (await page.getByRole("heading", { name: "Choose a theme" }).count()) === 0,
+    "locked Theme Library tab should not show the theme chooser",
+  );
+  assert(
+    (await page.getByText("Fixture Synthwave Theme").count()) === 0,
+    "locked Theme Library tab should not show theme rows",
+  );
+  assert(
+    (await page.getByText("Selected in this app").count()) === 0,
+    "locked Theme Library tab should not show selected theme state",
+  );
+  assert(
+    (await page.getByText("Theme browsing works here").count()) === 0,
+    "locked Theme Library tab should not show setup helper copy",
+  );
+}
+
+async function assertNoLegacyCompanionDownloadActions(page) {
+  const legacyActions = [
+    "Install Apple silicon",
+    "Install Intel Mac",
+    "Support install script",
+    "Mac package pending",
+    "Check failed",
+  ];
+
+  for (const label of legacyActions) {
+    const role = label === "Mac package pending" || label === "Check failed"
+      ? "button"
+      : "link";
+    assert(
+      (await page.getByRole(role, { name: label }).count()) === 0,
+      `Theme Library should not show legacy Companion action: ${label}`,
+    );
+  }
+}
+
+async function assertNoThemeLibraryReleaseDiagnostics(page) {
+  const diagnostics = [
+    "Companion installer is not published",
+    "Customers cannot install Companion",
+    "Companion release check failed. Check your connection",
+  ];
+
+  for (const text of diagnostics) {
+    assert(
+      (await page.getByText(text).count()) === 0,
+      `Theme Library should not show release diagnostic: ${text}`,
+    );
+  }
 }
 
 async function clickDownloadWithoutLeavingPage(locator) {

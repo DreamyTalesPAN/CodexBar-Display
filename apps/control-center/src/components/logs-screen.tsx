@@ -250,7 +250,7 @@ export function LogsScreen({
           </ol>
         ) : (
           <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
-            Activity will appear after the next bridge check.
+            Activity will appear after the next Companion check.
           </div>
         )}
       </section>
