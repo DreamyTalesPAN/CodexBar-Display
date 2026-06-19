@@ -124,9 +124,9 @@ Successful GitHub release reads are cached server-side for one minute. Failed re
 
 Package links must exactly match the latest release tag version. If the latest release is `v1.0.32`, the app only exposes package download buttons when both `VibeTV-Companion-API-arm64-v1.0.32.pkg` and `VibeTV-Companion-API-amd64-v1.0.32.pkg` exist. Older, mismatched, or partial package assets stay hidden.
 
-The app prefers the macOS package links when present. When both Apple silicon and Intel `.pkg` assets exist, customer-facing download actions show the package buttons and do not offer the shell script next to them. Because the release workflow only uploads `.pkg` release assets after signing and notarization validation, package buttons should not appear for unsigned local build artifacts. Until the first release with those assets exists, the app shows the installer as pending instead of linking customers to a missing file.
+The app prefers the macOS package links when present. When both Apple silicon and Intel `.pkg` assets exist, customer-facing download actions show the package buttons and do not offer the shell script next to them. Because the release workflow only uploads `.pkg` release assets after signing and notarization validation, package buttons should not appear for unsigned local build artifacts. Until the first release with those assets exists, the app shows the installer as unavailable instead of linking customers to a missing file.
 
-If only the shell script asset is available, the Updates screen must label it as a support fallback instead of a normal customer installer. The primary package state stays `Installer pending`; the script link is secondary. Normal customer onboarding should use the signed and notarized macOS package buttons.
+If only the shell script asset is available, the Updates screen must label it as a support fallback instead of a normal customer installer. The primary package state stays `Mac package pending`; the script link is secondary. Normal customer onboarding should use the signed and notarized macOS package buttons.
 
 When the browser can detect the Mac architecture, the matching package is shown first and marked `This Mac`. If detection is unavailable, both Apple silicon and Intel packages remain visible without marking both as the primary recommendation.
 

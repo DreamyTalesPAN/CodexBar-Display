@@ -272,7 +272,7 @@ function companionReleaseLabel(release: CompanionReleaseInfo | null): string {
     return release.updateAvailable ? "Update available" : "Installer available";
   }
   if (release.status === "missing_asset") {
-    return "Installer pending";
+    return "Installer unavailable";
   }
   return "Check failed";
 }

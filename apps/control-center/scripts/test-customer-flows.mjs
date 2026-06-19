@@ -180,6 +180,10 @@ async function main() {
       appContext.appUrl,
       fixtureServer,
     );
+    await testThemeLibraryStartsWithoutFirstThemeLock(
+      browser,
+      appContext.appUrl,
+    );
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testPairingRequiredThemeStaysLocked(browser, appContext.appUrl);
     await testThemeWithoutPackUrlStaysLocked(browser, appContext.appUrl);
@@ -347,9 +351,9 @@ async function testMissingShopifyThemeCanSelectAvailableTheme(
     .filter({ hasText: "Fixture Synthwave Theme" })
     .getByRole("button", { name: "Select" })
     .click();
-  await page.getByText("Companion required").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await page
-    .getByText("Fixture Synthwave Theme is selected.")
+    .getByText("Selected in this app: Fixture Synthwave Theme.")
     .waitFor({ timeout: 10_000 });
   await page.getByRole("link", { name: "Install Apple silicon" }).waitFor({
     timeout: 10_000,
@@ -388,6 +392,41 @@ async function testMissingShopifyThemeCanSelectAvailableTheme(
   await page.close();
 }
 
+async function testThemeLibraryStartsWithoutFirstThemeLock(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  await routeCompanionMissing(page, installRequests);
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Theme Library" }).click();
+  await page
+    .getByRole("heading", { name: "Choose a theme" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Active on VibeTV: unknown until Companion is running.")
+    .waitFor({ timeout: 10_000 });
+
+  const synthwaveRow = page
+    .locator("li")
+    .filter({ hasText: "Fixture Synthwave Theme" });
+  await synthwaveRow.getByRole("button", { name: "Select" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByText("Selected in this app: Fixture Synthwave Theme.").count()) ===
+      0,
+    "plain Theme Library should not preselect the first theme",
+  );
+  assert(
+    (await synthwaveRow.getByRole("button", { name: "Locked" }).count()) === 0,
+    "plain Theme Library should not show Synthwave as locked",
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
 async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
   const page = await browser.newPage({ viewport });
   const installRequests = [];
@@ -403,10 +442,10 @@ async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
   );
 
   await page
-    .getByText("Fixture Synthwave Theme is selected.")
+    .getByText("Selected in this app: Fixture Synthwave Theme.")
     .waitFor({ timeout: 10_000 });
   assert(
-    (await page.getByText("Fixture Clippy Theme is selected.").count()) === 0,
+    (await page.getByText("Selected in this app: Fixture Clippy Theme.").count()) === 0,
     "settings refresh should not replace requested Shopify theme with active device theme",
   );
   assertNoInstallRequests(installRequests);
@@ -441,7 +480,7 @@ async function testPairingRequiredThemeStaysLocked(browser, appUrl) {
   );
 
   await page
-    .getByText("Fixture Synthwave Theme is selected.")
+    .getByText("Selected in this app: Fixture Synthwave Theme.")
     .waitFor({ timeout: 10_000 });
   await page.getByText("Pairing required").waitFor({ timeout: 10_000 });
   await page
@@ -456,7 +495,7 @@ async function testPairingRequiredThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .locator("li")
     .filter({ hasText: "Fixture Synthwave Theme" })
-    .getByRole("button", { name: "Locked" });
+    .getByRole("button", { name: "Pair First" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),
@@ -495,7 +534,7 @@ async function testThemeWithoutPackUrlStaysLocked(browser, appUrl) {
   });
 
   await page
-    .getByText("Fixture Missing Pack Theme is selected.")
+    .getByText("Selected in this app: Fixture Missing Pack Theme.")
     .waitFor({ timeout: 10_000 });
   await page.getByText("Theme pack missing").waitFor({ timeout: 10_000 });
   await page
@@ -507,7 +546,7 @@ async function testThemeWithoutPackUrlStaysLocked(browser, appUrl) {
   const lockedButton = page
     .locator("li")
     .filter({ hasText: "Fixture Missing Pack Theme" })
-    .getByRole("button", { name: "Locked" });
+    .getByRole("button", { name: "Pack Missing" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),
@@ -535,7 +574,7 @@ async function testBoardIncompatibleThemeStaysLocked(browser, appUrl) {
   );
 
   await page
-    .getByText("Fixture ESP32 Only Theme is selected.")
+    .getByText("Selected in this app: Fixture ESP32 Only Theme.")
     .waitFor({ timeout: 10_000 });
   await page.getByText("Board not supported").waitFor({ timeout: 10_000 });
   await page
@@ -547,7 +586,7 @@ async function testBoardIncompatibleThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .locator("li")
     .filter({ hasText: "Fixture ESP32 Only Theme" })
-    .getByRole("button", { name: "Locked" });
+    .getByRole("button", { name: "Not Supported" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),
@@ -575,7 +614,7 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   );
 
   await page
-    .getByText("Fixture Future Firmware Theme is selected.")
+    .getByText("Selected in this app: Fixture Future Firmware Theme.")
     .waitFor({ timeout: 10_000 });
   await page.getByText("Firmware too old").waitFor({ timeout: 10_000 });
   await page
@@ -587,7 +626,7 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   const lockedButton = page
     .locator("li")
     .filter({ hasText: "Fixture Future Firmware Theme" })
-    .getByRole("button", { name: "Locked" });
+    .getByRole("button", { name: "Update Needed" });
   await lockedButton.waitFor({ timeout: 10_000 });
   assert(
     await lockedButton.isDisabled(),
@@ -609,12 +648,12 @@ async function testScriptOnlyReleaseShowsSupportFallback(
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Companion required").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await page
-    .getByText("Fixture Synthwave Theme is selected.")
+    .getByText("Selected in this app: Fixture Synthwave Theme.")
     .waitFor({ timeout: 10_000 });
   await page
-    .getByRole("button", { name: "Installer pending" })
+    .getByRole("button", { name: "Mac package pending" })
     .waitFor({ timeout: 10_000 });
   await page
     .getByRole("link", { name: "Support install script" })
@@ -649,12 +688,12 @@ async function testPartialPackageReleaseShowsSupportFallback(
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Companion required").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await page
-    .getByText("Fixture Synthwave Theme is selected.")
+    .getByText("Selected in this app: Fixture Synthwave Theme.")
     .waitFor({ timeout: 10_000 });
   await page
-    .getByRole("button", { name: "Installer pending" })
+    .getByRole("button", { name: "Mac package pending" })
     .waitFor({ timeout: 10_000 });
   await page
     .getByRole("link", { name: "Support install script" })
@@ -689,9 +728,9 @@ async function testPackageOnlyReleaseShowsPackageDownloads(
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Companion required").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await page
-    .getByText("Fixture Synthwave Theme is selected.")
+    .getByText("Selected in this app: Fixture Synthwave Theme.")
     .waitFor({ timeout: 10_000 });
   await page.getByRole("link", { name: "Install Apple silicon" }).waitFor({
     timeout: 10_000,
@@ -733,9 +772,9 @@ async function testReleaseCheckFailureShowsNoDownloadActions(
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Companion required").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await page
-    .getByText("Fixture Synthwave Theme is selected.")
+    .getByText("Selected in this app: Fixture Synthwave Theme.")
     .waitFor({ timeout: 10_000 });
   await page
     .getByRole("button", { name: "Check failed" })
@@ -780,12 +819,12 @@ async function testMissingAssetReleaseShowsNoDownloadActions(
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Companion required").waitFor({ timeout: 10_000 });
+  await page.getByText("Install Companion first").waitFor({ timeout: 10_000 });
   await page
-    .getByText("Fixture Synthwave Theme is selected.")
+    .getByText("Selected in this app: Fixture Synthwave Theme.")
     .waitFor({ timeout: 10_000 });
   await page
-    .getByRole("button", { name: "Installer pending" })
+    .getByRole("button", { name: "Installer unavailable" })
     .waitFor({ timeout: 10_000 });
   await page
     .getByText(

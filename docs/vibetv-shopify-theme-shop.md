@@ -86,9 +86,9 @@ Live rollout status on 2026-06-19: the main `vibetv.shop` theme template `templa
 5. If Companion is missing, the app shows Companion package/script download actions directly.
 6. If Companion is running but VibeTV is not found, the app shows a `VibeTV target` field in the same install flow.
 7. If multiple VibeTV devices are found, the app asks for the exact target instead of guessing.
-8. If the catalog is empty or the requested `theme_id` is not found, the app shows a locked catalog state instead of demo themes or the first available theme.
-9. If the selected theme is paid, missing a pack URL, incompatible with the detected board, or requires newer firmware, install stays `Locked`.
-10. If the write gate is closed, install stays `Locked`.
+8. If the catalog is empty or the requested `theme_id` is not found, the app shows a blocked catalog state instead of demo themes or the first available theme.
+9. If the selected theme is paid, missing a pack URL, incompatible with the detected board, or requires newer firmware, the button names the blocker directly, for example `Pack Missing`, `Not Supported`, or `Update Needed`.
+10. If Companion is missing or the write gate is closed, the button names that blocker directly, for example `Needs Companion` or `Protected`.
 11. Once Companion, VibeTV discovery, free theme status, pack URL, board compatibility, firmware compatibility, and the write gate are ready, the customer can start install from the app.
 12. Firmware updates stay in a separate explicit update flow. The hosted install journey must not silently flash firmware while installing a theme.
 

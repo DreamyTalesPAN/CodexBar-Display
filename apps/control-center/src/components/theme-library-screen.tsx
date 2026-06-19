@@ -112,6 +112,7 @@ export function ThemeLibraryScreen({
   const displayTheme =
     selectedTheme ||
     visibleThemes.find((theme) => theme.themeId === selectedThemeId);
+  const activeThemeLabel = labelForActiveTheme(visibleThemes, device?.activeTheme);
   const catalogEmpty = visibleThemes.length === 0;
   const requestedThemeMissing = Boolean(
     requestedThemeId &&
@@ -161,10 +162,24 @@ export function ThemeLibraryScreen({
                       ? "Check install readiness"
                       : "Choose a theme"}
               </h2>
-              {installEntry && displayTheme ? (
+              {displayTheme ? (
                 <p className="mt-4 max-w-[640px] text-base leading-7 text-[#444933]">
-                  {displayTheme.title} is selected. Install starts only when
-                  Companion, VibeTV discovery and the write gate are ready.
+                  Selected in this app: {displayTheme.title}.{" "}
+                  {activeThemeDetail({
+                    activeThemeLabel,
+                    companionStatus,
+                    connected: Boolean(device?.connected),
+                  })}
+                </p>
+              ) : null}
+              {!displayTheme && !catalogEmpty && !requestedThemeMissing ? (
+                <p className="mt-4 max-w-[640px] text-base leading-7 text-[#444933]">
+                  Choose a theme to inspect install readiness.{" "}
+                  {activeThemeDetail({
+                    activeThemeLabel,
+                    companionStatus,
+                    connected: Boolean(device?.connected),
+                  })}
                 </p>
               ) : null}
               {installEntry && requestedThemeMissing ? (
@@ -473,6 +488,7 @@ function ThemeListItem({
     themeInstallBlockedReason,
     themeInstallEnabled,
   });
+  const blockedLabel = labelForInstallBlocker(blocker);
   const disabled =
     actionInFlight ||
     installed ||
@@ -521,6 +537,7 @@ function ThemeListItem({
         >
           {labelForInstallButton({
             actionInFlight,
+            blockedLabel,
             canSelectInstead,
             installInFlight,
             installed,
@@ -606,6 +623,7 @@ function InlineInstallProgress({
 
 function labelForInstallButton({
   actionInFlight,
+  blockedLabel,
   canSelectInstead,
   disabled,
   installInFlight,
@@ -613,6 +631,7 @@ function labelForInstallButton({
   selected,
 }: {
   actionInFlight: boolean;
+  blockedLabel: string;
   canSelectInstead: boolean;
   disabled: boolean;
   installInFlight: boolean;
@@ -632,9 +651,35 @@ function labelForInstallButton({
     return "Select";
   }
   if (disabled) {
-    return "Locked";
+    return blockedLabel;
   }
   return "Install";
+}
+
+function labelForInstallBlocker(blocker: ThemeInstallBlocker | null): string {
+  const text = `${blocker?.reason || ""} ${blocker?.readinessTitle || ""}`;
+  if (/companion|start companion/i.test(text)) {
+    return "Needs Companion";
+  }
+  if (/pair/i.test(text)) {
+    return "Pair First";
+  }
+  if (/pack/i.test(text)) {
+    return "Pack Missing";
+  }
+  if (/firmware|update firmware/i.test(text)) {
+    return "Update Needed";
+  }
+  if (/board|support/i.test(text)) {
+    return "Not Supported";
+  }
+  if (/protected|write gate/i.test(text)) {
+    return "Protected";
+  }
+  if (/paid|checkout/i.test(text)) {
+    return "Checkout Needed";
+  }
+  return "Unavailable";
 }
 
 function buildInstallReadiness({
@@ -665,9 +710,9 @@ function buildInstallReadiness({
   }
   if (companionStatus !== "online") {
     return {
-      title: "Companion required",
+      title: "Install Companion first",
       detail:
-        "Themes can be browsed now. Installing needs the local Companion running on this computer.",
+        "Theme browsing works here, but installs need the local Companion API on this computer. The display can still show usage while this browser bridge is missing.",
       buttonReason: "Start Companion first.",
       icon: <Wifi size={22} aria-hidden />,
     };
@@ -903,6 +948,38 @@ function compareVersions(left: string, right: string): number {
     }
   }
   return 0;
+}
+
+function labelForActiveTheme(
+  themes: ThemeProduct[],
+  activeTheme?: string,
+): string | null {
+  const value = activeTheme?.trim();
+  if (!value) {
+    return null;
+  }
+  return themes.find((theme) => theme.themeId === value)?.title || value;
+}
+
+function activeThemeDetail({
+  activeThemeLabel,
+  companionStatus,
+  connected,
+}: {
+  activeThemeLabel: string | null;
+  companionStatus: ThemeLibraryCompanionStatus;
+  connected: boolean;
+}): string {
+  if (activeThemeLabel) {
+    return `Active on VibeTV: ${activeThemeLabel}.`;
+  }
+  if (companionStatus !== "online") {
+    return "Active on VibeTV: unknown until Companion is running.";
+  }
+  if (!connected) {
+    return "Active on VibeTV: find VibeTV first.";
+  }
+  return "Active on VibeTV: not reported by the device.";
 }
 
 function parseVersion(value: string): number[] {

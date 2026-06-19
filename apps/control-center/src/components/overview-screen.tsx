@@ -155,7 +155,27 @@ export function OverviewScreen({
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row md:justify-end">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap md:justify-end">
+            {companionMissing ? (
+              <>
+                <CompanionDownloadActions release={companionRelease} />
+                <button
+                  className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={companionReleaseBusy}
+                  onClick={refreshCompanionRelease}
+                  type="button"
+                >
+                  {companionReleaseBusy ? (
+                    <RefreshCw className="animate-spin" size={18} />
+                  ) : (
+                    <RefreshCw size={18} aria-hidden />
+                  )}
+                  <span>
+                    {companionReleaseBusy ? "Checking" : "Check installer"}
+                  </span>
+                </button>
+              </>
+            ) : null}
             <button
               className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
               disabled={localActionBusy}
@@ -165,15 +185,17 @@ export function OverviewScreen({
               <Wifi size={17} aria-hidden />
               {busyAction === "status" ? "Checking" : "Check bridge"}
             </button>
-            <button
-              className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#1B1B1B] px-4 text-sm font-semibold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-              disabled={companionStatus !== "online" || localActionBusy}
-              onClick={() => onDiscoverDevice?.(deviceTarget)}
-              type="button"
-            >
-              <Monitor size={17} aria-hidden />
-              {busyAction === "discover" ? "Searching" : "Find VibeTV"}
-            </button>
+            {!companionMissing ? (
+              <button
+                className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#1B1B1B] px-4 text-sm font-semibold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+                disabled={companionStatus !== "online" || localActionBusy}
+                onClick={() => onDiscoverDevice?.(deviceTarget)}
+                type="button"
+              >
+                <Monitor size={17} aria-hidden />
+                {busyAction === "discover" ? "Searching" : "Find VibeTV"}
+              </button>
+            ) : null}
           </div>
         </div>
       </section>
@@ -197,31 +219,17 @@ export function OverviewScreen({
           <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
             <div className="min-w-0">
               <h3 className="text-base font-bold text-[#1B1B1B]">
-                Companion installer
+                Why the display can still show usage
               </h3>
               <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
-                Install or repair the Companion on this computer, then return
-                here and check the bridge again. Chrome Allow only permits
-                local access; it does not install or start Companion.
+                The usage screen can be driven by the old local frame service.
+                app.vibetv.shop needs the Companion API as a browser bridge
+                before it can read the device, find VibeTV, or install themes.
               </p>
             </div>
 
             <div className="flex flex-col items-start gap-3 md:items-end">
-              <CompanionDownloadActions release={companionRelease} />
               <CompanionReleaseNotice release={companionRelease} />
-              <button
-                className="inline-flex h-11 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={companionReleaseBusy}
-                onClick={refreshCompanionRelease}
-                type="button"
-              >
-                {companionReleaseBusy ? (
-                  <RefreshCw className="animate-spin" size={18} />
-                ) : (
-                  <RefreshCw size={18} aria-hidden />
-                )}
-                <span>{companionReleaseBusy ? "Checking" : "Check installer"}</span>
-              </button>
             </div>
           </div>
         </section>
@@ -440,7 +448,7 @@ function buildHeroCopy({
 }) {
   if (companionStatus === "missing") {
     return {
-      title: "Companion is offline",
+      title: "Companion not ready",
       tone: "attention" as ReadinessTone,
       icon: <CircleHelp size={36} aria-hidden />,
       detail: lastError?.nextAction,
@@ -473,9 +481,9 @@ function buildSetupState({
 }) {
   if (companionStatus === "missing") {
     return {
-      title: "Install or repair Companion",
+      title: "Install Companion first",
       detail:
-        "app.vibetv.shop is live, but it can only reach your VibeTV through the local Companion on this computer. If Companion is installed but still offline, run the package again to repair it and allow browser local access when asked.",
+        "This website needs the local Companion API on this computer. Install or repair Companion, then use Check bridge before searching for VibeTV.",
       icon: <Play size={22} aria-hidden />,
     };
   }

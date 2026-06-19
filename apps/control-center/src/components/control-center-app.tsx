@@ -65,11 +65,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     () =>
       initialThemeId
         ? catalog.themes.find((theme) => theme.themeId === initialThemeId)
-        : catalog.themes[0],
+        : undefined,
     [catalog.themes, initialThemeId],
   );
   const [selectedThemeId, setSelectedThemeId] = useState(
-    initialThemeId || initialTheme?.themeId || "",
+    initialTheme?.themeId || initialThemeId || "",
   );
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     initialThemeId ? "theme-library" : "overview",

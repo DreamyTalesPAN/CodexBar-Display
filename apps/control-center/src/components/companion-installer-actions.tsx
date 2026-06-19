@@ -189,8 +189,10 @@ function PendingPackageButton({
   const label =
     release?.status === "check_failed"
       ? "Check failed"
+      : release?.status === "missing_asset"
+        ? "Installer unavailable"
       : release && !hasCompleteMacPackages(release)
-        ? "Installer pending"
+        ? "Mac package pending"
         : "Checking installer";
 
   return (
@@ -343,7 +345,7 @@ function releaseDetail(release: CompanionReleaseInfo): string {
   const version = release.release || release.latestVersion;
   const prefix = version ? `${version}: ` : "";
   if (release.status === "missing_asset") {
-    return `${prefix}${release.message}`;
+    return `${prefix}${release.message} Customers cannot install Companion from this page until the signed macOS package is attached.`;
   }
   if (release.status === "check_failed") {
     return `${prefix}${release.message} Check your connection, then use Check installer again.`;
