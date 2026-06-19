@@ -149,10 +149,21 @@ jobs:
               --require-notarized
           done
 
+      - name: Build package checksums
+        run: |
+          set -euo pipefail
+
+          (
+            cd dist/companion-pkg
+            shasum -a 256 *.pkg > "checksums-v${VIBETV_CANDIDATE_VERSION}.txt"
+          )
+
       - name: Upload signed Mac App package candidate
         uses: actions/upload-artifact@v4
         with:
           name: vibetv-mac-app-pkgs-v${{ env.VIBETV_CANDIDATE_VERSION }}
-          path: dist/companion-pkg/*.pkg
+          path: |
+            dist/companion-pkg/*.pkg
+            dist/companion-pkg/checksums-*.txt
           if-no-files-found: error
           retention-days: 14

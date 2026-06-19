@@ -83,7 +83,7 @@ gh workflow run control-center-customer-pkg-candidate.yml \
   -f version=<version>
 ```
 
-Use the planned release version, for example `1.0.32`. The workflow uploads the `.pkg` files as a private Actions artifact for Clean-Mac validation, keeps repository permissions read-only, and does not create or update a GitHub Release. Download the `vibetv-mac-app-pkgs-v<version>` artifact from the run, install the matching package on a clean Mac, then run the installed-package readiness check from this repo:
+Use the planned release version, for example `1.0.32`. The workflow uploads the `.pkg` files and `checksums-v<version>.txt` as a private Actions artifact for Clean-Mac validation, keeps repository permissions read-only, and does not create or update a GitHub Release. Download the `vibetv-mac-app-pkgs-v<version>` artifact from the run, verify the package checksum, install the matching package on a clean Mac, then run the installed-package readiness check from this repo:
 
 ```bash
 scripts/check-control-center-companion-customer-readiness.sh \

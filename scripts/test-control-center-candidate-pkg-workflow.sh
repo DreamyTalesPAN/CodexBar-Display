@@ -35,7 +35,7 @@ main() {
   [[ -f "$READINESS_DOC" ]] || die "customer readiness doc is missing"
   [[ -f "$RUNBOOK_DOC" ]] || die "operator runbook is missing"
 
-  local workflow readiness_doc runbook_doc validate_line upload_line
+  local workflow readiness_doc runbook_doc validate_line checksum_line upload_line
   workflow="$(<"$WORKFLOW")"
   readiness_doc="$(<"$READINESS_DOC")"
   runbook_doc="$(<"$RUNBOOK_DOC")"
@@ -78,17 +78,24 @@ main() {
     "candidate package workflow must validate notarization"
   assert_contains "$workflow" "uses: actions/upload-artifact@v4" \
     "candidate package workflow must upload internal package artifacts"
+  assert_contains "$workflow" "Build package checksums" \
+    "candidate package workflow must build package checksums"
+  assert_contains "$workflow" "shasum -a 256 *.pkg" \
+    "candidate package workflow must checksum every package candidate"
+  assert_contains "$workflow" "dist/companion-pkg/checksums-*.txt" \
+    "candidate package workflow must upload package checksums"
   assert_contains "$workflow" "if-no-files-found: error" \
     "candidate package workflow must fail if no packages were produced"
   assert_contains "$workflow" "retention-days: 14" \
     "candidate package workflow artifacts must expire automatically"
 
   validate_line="$(line_number "Validate signed and notarized Mac App packages")"
+  checksum_line="$(line_number "Build package checksums")"
   upload_line="$(line_number "Upload signed Mac App package candidate")"
-  [[ -n "$validate_line" && -n "$upload_line" ]] \
-    || die "candidate package workflow must validate packages before uploading them"
-  (( validate_line < upload_line )) \
-    || die "candidate package artifacts must be uploaded only after validation"
+  [[ -n "$validate_line" && -n "$checksum_line" && -n "$upload_line" ]] \
+    || die "candidate package workflow must validate and checksum packages before uploading them"
+  (( validate_line < checksum_line && checksum_line < upload_line )) \
+    || die "candidate package artifacts must be uploaded only after validation and checksums"
 
   assert_contains "$readiness_doc" "workflow file must already exist on the default branch" \
     "customer readiness doc must explain the default-branch dispatch requirement"

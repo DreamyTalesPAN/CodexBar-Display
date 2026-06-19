@@ -384,6 +384,7 @@ Run this list before every v0 release decision.
 - [ ] Manual workflow `Control Center Customer Package Candidate` produced signed/notarized Mac App package candidates for the planned version, and the downloaded artifact passed Clean-Mac validation.
 - [ ] Candidate workflow was dispatched after the workflow file existed on the default branch:
   `gh workflow run control-center-customer-pkg-candidate.yml --ref <branch> -f version=<version>`.
+- [ ] Downloaded candidate package checksum matched `checksums-v<version>.txt` from the same artifact.
 - [ ] Clean-Mac validation was confirmed with:
   `scripts/check-control-center-companion-customer-readiness.sh --installed-package --local-companion --expect-version <version>`.
 - [ ] Release artifacts include companion binaries, firmware binaries, checksums, and signed/notarized Companion packages.
