@@ -75,7 +75,24 @@ Additional GitHub secrets for notarized packages:
 - `VIBETV_NOTARY_APP_SPECIFIC_PASSWORD`
 - `VIBETV_NOTARY_PROFILE`: optional notarytool profile name; defaults to `vibetv-notary`.
 
-Before tagging a release, use the manual GitHub Actions workflow `Control Center Customer Package Candidate` to build signed and notarized Mac App package candidates from the current branch. Pass the planned version, for example `1.0.32`. The workflow uploads the `.pkg` files as a private Actions artifact for Clean-Mac validation, keeps repository permissions read-only, and does not create or update a GitHub Release. After Clean-Mac validation passes, the normal release workflow must still build and publish the final package assets for the release tag.
+Before tagging a release, use the manual GitHub Actions workflow `Control Center Customer Package Candidate` to build signed and notarized Mac App package candidates. The workflow file must already exist on the default branch before GitHub can dispatch it. After this PR lands on `main`, but before creating a release tag, run it against the release candidate branch or `main`:
+
+```bash
+gh workflow run control-center-customer-pkg-candidate.yml \
+  --ref <branch> \
+  -f version=<version>
+```
+
+Use the planned release version, for example `1.0.32`. The workflow uploads the `.pkg` files as a private Actions artifact for Clean-Mac validation, keeps repository permissions read-only, and does not create or update a GitHub Release. Download the `vibetv-mac-app-pkgs-v<version>` artifact from the run, install the matching package on a clean Mac, then run the installed-package readiness check from this repo:
+
+```bash
+scripts/check-control-center-companion-customer-readiness.sh \
+  --installed-package \
+  --local-companion \
+  --expect-version <version>
+```
+
+Only after that check passes can the customer-ready gate be run with `--clean-mac-tested`. The normal release workflow must still build and publish the final package assets for the release tag.
 
 Support restart:
 
@@ -173,6 +190,8 @@ This gate is intentionally strict. It never merges, tags, releases, installs pac
 - latest or selected release exposes both signed macOS Companion package assets through the hosted app,
 - signed package was validated on a clean Mac,
 - the user explicitly approved and passed the hardware write flow.
+
+Clean-Mac evidence comes from the candidate package workflow above plus the installed-package readiness check. Do not pass `--clean-mac-tested` only because the workflow produced an artifact; the package has to be installed and verified on a clean Mac first.
 
 On macOS, the local gate also builds temporary unsigned Companion packages and validates their metadata, payload, scripts, and binary architecture without installing them. On non-macOS systems, that smoke step is skipped and the dedicated `companion-pkg-smoke` CI job covers it on macOS.
 

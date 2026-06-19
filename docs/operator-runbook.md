@@ -382,6 +382,10 @@ Run this list before every v0 release decision.
 - [ ] `go test ./...` in `companion` is green.
 - [ ] `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789` is green.
 - [ ] Manual workflow `Control Center Customer Package Candidate` produced signed/notarized Mac App package candidates for the planned version, and the downloaded artifact passed Clean-Mac validation.
+- [ ] Candidate workflow was dispatched after the workflow file existed on the default branch:
+  `gh workflow run control-center-customer-pkg-candidate.yml --ref <branch> -f version=<version>`.
+- [ ] Clean-Mac validation was confirmed with:
+  `scripts/check-control-center-companion-customer-readiness.sh --installed-package --local-companion --expect-version <version>`.
 - [ ] Release artifacts include companion binaries, firmware binaries, checksums, and signed/notarized Companion packages.
 - [ ] GitHub Release includes both customer installer packages for the release tag:
   `VibeTV-Companion-API-arm64-v<version>.pkg` and `VibeTV-Companion-API-amd64-v<version>.pkg`.
@@ -479,5 +483,5 @@ Firmware bench envs:
 - Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
 - GitHub release artifacts include companion binaries, firmware binaries, checksums, and both signed/notarized Companion packages:
   `VibeTV-Companion-API-arm64-v<version>.pkg` and `VibeTV-Companion-API-amd64-v<version>.pkg`.
-- Pre-release Clean-Mac validation uses the manual `Control Center Customer Package Candidate` workflow. It uploads private Actions artifacts only; it does not tag, merge, or create a GitHub Release.
+- Pre-release Clean-Mac validation uses the manual `Control Center Customer Package Candidate` workflow after that workflow file exists on the default branch. It uploads private Actions artifacts only; it does not tag, merge, or create a GitHub Release.
 - A customer release is not ready until those two package assets exist on the GitHub Release and match the tag version.
