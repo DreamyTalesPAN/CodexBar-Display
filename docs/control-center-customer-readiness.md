@@ -21,13 +21,13 @@ The local Companion responds to Chrome Private Network Access preflights from th
 
 1. Customer opens `https://app.vibetv.shop`.
 2. App checks the local Companion API at `127.0.0.1:47832`.
-3. If Companion is missing, the app shows the local bridge state and repair actions.
+3. If Companion is missing, the app shows one primary Companion install/repair action.
 4. Customer installs or starts the Companion.
 5. Companion runs as a macOS LaunchAgent and survives login/reboot.
 6. App searches for VibeTV on the same WiFi/LAN.
 7. If exactly one VibeTV is found, the Companion stores that target for later checks.
 8. If multiple VibeTV devices are found, the Companion refuses to auto-pick one. The customer must enter the exact target in the VibeTV target field, for example `vibetv.local` or `http://192.168.178.163`, then run discovery again. A manually entered target is strict: if that exact target does not answer, the Companion reports a device error instead of falling back to another discovered VibeTV.
-9. App can read bridge status, device status, firmware, active theme, and settings.
+9. App can read Companion status, VibeTV status, firmware, active theme, and settings.
 10. Theme install writes stay locked until the hardware-safe release gate is enabled.
 
 ## macOS Companion API Installer
@@ -130,21 +130,21 @@ If only the shell script asset is available, the Updates screen must label it as
 
 When the browser can detect the Mac architecture, the matching package is shown first and marked `This Mac`. If detection is unavailable, both Apple silicon and Intel packages remain visible without marking both as the primary recommendation.
 
-The Overview screen and the `/install/<theme_id>` Theme Library entry use the same release check when Companion is missing, so a new customer does not have to discover the Updates tab first. That missing-Companion state explains that the Chrome local-network permission only allows the website to contact local services; the customer still needs to install/start Companion on the computer. If Companion is already installed but the app still cannot reach it, the package download is also the repair path: run the package again, then allow browser local access when asked and check the bridge again.
+The Overview screen and the `/install/<theme_id>` entry use the same release check when Companion is missing, so a new customer does not have to discover the Updates tab first. That setup state has one primary action: install or repair Companion. If Companion is already installed but the app still cannot reach it, the package download is also the repair path.
 
-The Overview, `/install/<theme_id>`, and Updates installer actions show the release-check message next to the download buttons. Customers should see whether the package is available, the latest release is missing customer assets, or the GitHub release check failed and needs to be retried.
+The Overview and `/install/<theme_id>` setup path should not show release diagnostics, internal asset names, or multiple equal actions. Customers should see only the next action that can move setup forward.
 
-After a customer clicks any Companion download action, the app shows the immediate next step in place: open the package from Downloads, finish the install/update/repair, then return to the same page and check the bridge or Companion again. This keeps the customer in the hosted flow instead of leaving them with only a downloaded file.
+After a customer clicks any Companion download action, the app shows the immediate next step in place: open the package from Downloads, finish the install/update/repair, then return to the same page. The page keeps checking Companion and moves forward when it becomes available.
 
-The Updates screen separates the two checks: `Check bridge` talks to the local Companion on `127.0.0.1:47832`, while `Check installer` only refreshes the GitHub release asset state. After a customer finishes a package install/update/repair, use `Check bridge` or wait for the quiet bridge check to move the app online.
+The Updates screen is available only after setup is complete. It should expose update actions, not setup recovery actions.
 
-While the page is open in the missing-Companion state, it quietly checks the local bridge again. After the customer installs or starts Companion, the UI should move to Bridge online without requiring a manual refresh.
+While the page is open in the missing-Companion state, it quietly checks Companion again. After the customer installs or starts Companion, the UI should move forward without requiring a manual refresh.
 
-When Companion is running but VibeTV is not found, the Overview screen and the `/install/<theme_id>` entry expose a `VibeTV target` field. Customers or support can enter the exact `vibetv.local`/IP target there and run discovery without leaving the current flow. The same target state is shared with Settings.
+When Companion is running but VibeTV is not found, the Overview screen and the `/install/<theme_id>` entry expose a `VibeTV target` field and one `Connect VibeTV` action. Customers or support can enter the exact `vibetv.local`/IP target there and connect without leaving the current flow.
 
 Manual targets may be `vibetv.local`, an IP address, or an `http(s)` URL with a host and optional valid port. The Companion rejects explicit targets with unsupported schemes, invalid ports, paths, username/password credentials, query strings, or fragments so support reports do not collect tokenized URLs.
 
-If an exact target does not answer, the app keeps the Bridge state online and shows VibeTV as not found. That means the customer should correct the device target or WiFi state, not reinstall Companion.
+If an exact target does not answer, the app keeps Companion online and shows VibeTV as not found. That means the customer should correct the device target or WiFi state, not reinstall Companion.
 
 If the Shopify theme catalog is empty or the requested `/install/<theme_id>` does not exist in the catalog, the app must show a locked catalog state. It must not fall back to demo/mock themes or silently select the first available theme for an unknown Shopify link.
 
