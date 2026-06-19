@@ -443,6 +443,11 @@ function InlineInstallProgress({
     : complete
       ? "Installed"
       : "Installing";
+  const detail = failed
+    ? status.error || "Theme was not installed. Try again."
+    : complete
+      ? "Theme is active on VibeTV."
+      : "Sending theme to VibeTV.";
 
   return (
     <div className="px-0 pb-4">
@@ -453,43 +458,36 @@ function InlineInstallProgress({
           }`}
         />
       </div>
-      <details className="mr-3 mt-3" open={failed || undefined}>
-        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-bold text-[#1B1B1B]">
+      <div className="mr-3 mt-3 flex flex-col gap-3 border border-[#747A60] bg-[#F9F9F9] p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2">
           {failed ? (
-            <X size={16} aria-hidden />
+            <X className="mt-0.5 shrink-0" size={16} aria-hidden />
           ) : complete ? (
-            <ShieldCheck size={16} aria-hidden />
+            <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden />
           ) : (
-            <RefreshCw className="animate-spin" size={16} aria-hidden />
+            <RefreshCw
+              className="mt-0.5 shrink-0 animate-spin"
+              size={16}
+              aria-hidden
+            />
           )}
-          <span>{title}</span>
-          <span className="font-normal text-[#444933]">
-            {status.logs.length} log lines
-          </span>
-        </summary>
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-[#1B1B1B]">{title}</div>
+            <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
+              {detail}
+            </div>
+          </div>
+        </div>
         {failed && canRetry ? (
           <button
-            className="mt-3 border border-[#747A60] bg-[#F9F9F9] px-3 py-1 text-xs font-semibold text-[#1B1B1B] hover:bg-[#CCFF00]"
+            className="h-10 min-w-[120px] border border-[#747A60] bg-[#F9F9F9] px-3 text-sm font-semibold text-[#1B1B1B] hover:bg-[#CCFF00]"
             onClick={onRetry}
             type="button"
           >
-            Retry install
+            Try again
           </button>
         ) : null}
-        <ol className="mt-3 divide-y divide-[#747A60] border-y border-[#747A60]">
-          {status.logs.slice(-8).map((line, index) => (
-            <li
-              className="grid grid-cols-[32px_minmax(0,1fr)] gap-3 py-2 text-sm text-[#444933]"
-              key={`${line}-${index}`}
-            >
-              <span className="font-mono text-xs text-[#506600]">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <span className="break-words">{line}</span>
-            </li>
-          ))}
-        </ol>
-      </details>
+      </div>
     </div>
   );
 }

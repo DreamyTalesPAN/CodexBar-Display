@@ -193,6 +193,7 @@ async function main() {
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testSupportReportExportsAppearAfterReportLoads(browser, appContext.appUrl);
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
+    await testThemeInstallStatusStaysCustomerOnly(browser, appContext.appUrl);
     await testPairingRequiredThemeStaysLocked(browser, appContext.appUrl);
     await testThemeWithoutPackUrlStaysLocked(browser, appContext.appUrl);
     await testBoardIncompatibleThemeStaysLocked(browser, appContext.appUrl);
@@ -594,6 +595,52 @@ async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
     "settings refresh should not replace requested Shopify theme with active device theme",
   );
   assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  let settingsCalls = 0;
+  await routeCompanionOnline(page, installRequests, () => {
+    settingsCalls += 1;
+  });
+
+  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
+  await waitForCondition(
+    () => settingsCalls >= 1,
+    "expected settings refresh before theme install status check",
+  );
+
+  const installButton = page
+    .locator("li")
+    .filter({ hasText: "Fixture Synthwave Theme" })
+    .getByRole("button", { name: "Install" });
+  await installButton.waitFor({ timeout: 10_000 });
+  await installButton.click();
+  await page.getByText("Install failed").waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Try again" }).waitFor({
+    timeout: 10_000,
+  });
+
+  const hiddenInstallText = [
+    "log lines",
+    "Pack URL",
+    "Install request sent to Companion",
+    "cdn.example.test",
+  ];
+  for (const text of hiddenInstallText) {
+    assert(
+      (await page.getByText(text).count()) === 0,
+      `Theme install status should not show technical text: ${text}`,
+    );
+  }
+
+  assert(
+    installRequests.length === 1,
+    `expected one mocked install request, got ${installRequests.length}`,
+  );
   await assertNoMobileOverflow(page);
   await page.close();
 }
