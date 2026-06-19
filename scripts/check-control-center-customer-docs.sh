@@ -21,8 +21,18 @@ checks = [
         None,
     ),
     (
+        "apps/control-center/README.md",
+        (root / "apps/control-center/README.md").read_text(encoding="utf-8"),
+        None,
+    ),
+    (
         "docs/control-center-customer-readiness.md",
         (root / "docs/control-center-customer-readiness.md").read_text(encoding="utf-8"),
+        None,
+    ),
+    (
+        "docs/operator-runbook.md",
+        (root / "docs/operator-runbook.md").read_text(encoding="utf-8"),
         None,
     ),
     (
@@ -50,6 +60,15 @@ forbidden = [
     "theme-pack install --target",
     "check that the daemon target",
     "setup command",
+    "Companion installer assets",
+    "For the hosted customer flow, use the macOS Companion API LaunchAgent installer",
+    "customer/support release installer",
+    "Installer is not ready yet",
+    "Mac package pending",
+    "signed/notarized Companion packages",
+    "signed/notarized Companion PKGs",
+    "Companion packages included",
+    "Browser talks directly to `http://127.0.0.1:47832`",
 ]
 
 errors = []

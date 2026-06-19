@@ -198,10 +198,10 @@ During normal operation the display uses explicit support states:
 - `Starting`: boot is running before WiFi mode is known.
 - `VIBE TV SETUP` with `VibeTV-Setup` and the setup IP: setup AP is active; customer should join the setup WiFi and open the shown address.
 - `Connecting WiFi`: station mode is connecting to the saved or imported SSID.
-- `Open Setup`: WiFi is connected and the device is waiting for the Mac Companion setup command. `vibetv.local` and the fallback IP are shown on-screen; the local Web UI also shows the fallback IP.
+- `Open Setup`: WiFi is connected and the device is waiting for Mac App setup. `vibetv.local` and the fallback IP are shown on-screen; the local Web UI also shows the fallback IP.
 - Live usage: a valid USB or WiFi frame is rendering; provider/usage data is shown, not theme asset names.
 - `Check Mac App`: the device previously had data, but no fresh frame arrived for more than two minutes.
-- `Update Mac App`: the Companion reported an incompatible usage app version or payload format.
+- `Update Mac App`: the Mac App reported an incompatible usage app version or payload format.
 - `Update Available:` / `vibetv.local`: a firmware update is available. Built-in themes show the system notice. ThemeSpec themes receive the same alternating text through their provider-label binding.
 - `Update running`: firmware, filesystem, or display asset upload is in progress. The display intentionally does not show internal paths such as GIF or theme asset filenames.
 - `WiFi reset`: saved WiFi credentials are being cleared before setup mode restarts.
@@ -218,7 +218,7 @@ Smoke checklist for #53:
 - Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.
 - Send a frame with `update.available=true` while Mini is active and confirm the bottom notice alternates between `Update Available:` and `vibetv.local`.
 - Apply one stored ThemeSpec with a provider-label primitive, send the same update frame again, and confirm the provider-label area alternates between `Update Available:` and `vibetv.local` without drawing the bottom system notice.
-- Stop the Companion for more than two minutes after a frame and confirm `Check Mac App`.
+- Stop the Mac App service for more than two minutes after a frame and confirm `Check Mac App`.
 - Send a runtime error frame and confirm the display shows a customer-friendly CodexBar action, not an internal error code.
 - Start firmware/filesystem/asset upload and confirm the display says `Update running` without asset paths.
 
