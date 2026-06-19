@@ -20,10 +20,10 @@ const uiFilePatterns = [
   /^apps\/control-center\/src\/lib\//,
   /^apps\/control-center\/public\//,
   /^apps\/control-center\/scripts\/test-customer-flows\.mjs$/,
-  /^apps\/control-center\/README\.md$/,
 ];
 
-const reviewCommit = latestReviewCommit();
+const analysisRef = analysisHeadRef();
+const reviewCommit = latestReviewCommit(analysisRef);
 const workingTreeChangedFiles = changedFilesInWorkingTree();
 const workingTreeReviewMarker =
   workingTreeChangedFiles.includes(REVIEW_FILE) ||
@@ -31,13 +31,13 @@ const workingTreeReviewMarker =
 const commitsSinceReview = reviewCommit
   ? workingTreeReviewMarker
     ? 0
-    : Number(git(["rev-list", "--count", `${reviewCommit}..HEAD`]))
+    : Number(git(["rev-list", "--count", `${reviewCommit}..${analysisRef}`]))
   : workingTreeReviewMarker
     ? 0
-  : Number(git(["rev-list", "--count", "HEAD"]));
+  : Number(git(["rev-list", "--count", analysisRef]));
 const committedChangedFiles = workingTreeReviewMarker
   ? []
-  : changedFilesSince(reviewCommit);
+  : changedFilesSince(reviewCommit, analysisRef);
 const changedFiles = unique([...committedChangedFiles, ...workingTreeChangedFiles]);
 const uiChangedFiles = changedFiles.filter(isUiFile);
 const projectedCommits =
@@ -49,6 +49,7 @@ printSummary({
   committedChangedFiles,
   commitsSinceReview,
   due,
+  analysisRef,
   projectedCommits,
   reviewCommit,
   uiChangedFiles,
@@ -87,16 +88,27 @@ function readInterval() {
   return value;
 }
 
-function latestReviewCommit() {
-  const result = tryGit(["log", "-n", "1", "--format=%H", "--", REVIEW_FILE]);
+function analysisHeadRef() {
+  const eventName = process.env["GITHUB_EVENT_NAME"] || "";
+  if (/^pull_request/.test(eventName)) {
+    const prHead = tryGit(["rev-parse", "--verify", "HEAD^2"]);
+    if (prHead) {
+      return prHead;
+    }
+  }
+  return "HEAD";
+}
+
+function latestReviewCommit(ref) {
+  const result = tryGit(["log", "-n", "1", "--format=%H", ref, "--", REVIEW_FILE]);
   return result || null;
 }
 
-function changedFilesSince(commit) {
+function changedFilesSince(commit, ref) {
   if (!commit) {
-    return lines(git(["ls-files"]));
+    return lines(git(["ls-tree", "-r", "--name-only", ref]));
   }
-  return lines(git(["diff", "--name-only", `${commit}..HEAD`]));
+  return lines(git(["diff", "--name-only", `${commit}..${ref}`]));
 }
 
 function changedFilesInWorkingTree() {
@@ -116,6 +128,7 @@ function printSummary({
   committedChangedFiles,
   commitsSinceReview,
   due,
+  analysisRef,
   projectedCommits,
   reviewCommit,
   uiChangedFiles,
@@ -123,6 +136,9 @@ function printSummary({
 }) {
   const status = due ? "due" : "ok";
   console.log(`Control Center UI review gate: ${status}`);
+  if (analysisRef !== "HEAD") {
+    console.log(`Review head: ${analysisRef}`);
+  }
   console.log(
     `Review marker: ${reviewCommit || (workingTreeReviewMarker ? "working tree" : "none")}`,
   );

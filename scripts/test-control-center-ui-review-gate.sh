@@ -63,6 +63,17 @@ run_gate() {
   ) 2>&1
 }
 
+run_gate_pull_request() {
+  local repo="$1"
+  (
+    cd "$repo"
+    CONTROL_CENTER_UI_REVIEW_INTERVAL=5 \
+      GITHUB_ACTIONS=true \
+      GITHUB_EVENT_NAME=pull_request \
+      node "$GATE"
+  ) 2>&1
+}
+
 expect_gate_success() {
   local repo="$1"
   local output
@@ -94,6 +105,16 @@ test_non_ui_commits_do_not_block() {
   setup_repo "$repo"
   for index in 1 2 3 4 5 6; do
     commit_file "$repo" "docs/non-ui-${index}.md" "Document non-ui change ${index}"
+  done
+  expect_gate_success "$repo"
+}
+
+test_control_center_readme_does_not_block() {
+  local repo="${TMP_ROOT}/control-center-readme"
+  setup_repo "$repo"
+  for index in 1 2 3 4 5; do
+    commit_file "$repo" "apps/control-center/README.md" \
+      "Document Control Center setup ${index}"
   done
   expect_gate_success "$repo"
 }
@@ -135,9 +156,46 @@ test_review_marker_resets_gate() {
   expect_gate_success "$repo"
 }
 
+test_pull_request_merge_commit_uses_pr_head() {
+  local repo="${TMP_ROOT}/pull-request-merge"
+  setup_repo "$repo"
+
+  git -C "$repo" checkout -q -b feature
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  for index in 1 2 3; do
+    commit_file "$repo" "docs/feature-follow-up-${index}.md" \
+      "Feature follow-up non-ui change ${index}"
+  done
+  local feature_head
+  feature_head="$(git -C "$repo" rev-parse HEAD)"
+
+  git -C "$repo" checkout -q master
+  commit_file "$repo" "docs/base-follow-up.md" "Base follow-up non-ui change"
+  git -C "$repo" merge -q --no-ff "$feature_head" -m "Merge pull request"
+
+  local output status
+  set +e
+  output="$(run_gate "$repo")"
+  status=$?
+  set -e
+  [[ "$status" -ne 0 ]] || die "expected normal merge-head UI review gate to fail"
+  assert_contains "$output" "Control Center UI review gate: due"
+
+  output="$(run_gate_pull_request "$repo")" || {
+    printf '%s\n' "$output" >&2
+    die "expected pull_request merge-head UI review gate to pass"
+  }
+  assert_contains "$output" "Control Center UI review gate: ok"
+  assert_contains "$output" "Review head: ${feature_head}"
+  assert_contains "$output" "Commits since marker: 4/5"
+}
+
 test_non_ui_commits_do_not_block
+test_control_center_readme_does_not_block
 test_ui_change_blocks_after_interval
 test_working_tree_ui_change_counts_as_next_commit
 test_review_marker_resets_gate
+test_pull_request_merge_commit_uses_pr_head
 
 printf 'control-center UI review gate tests passed\n'
