@@ -502,8 +502,7 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
     "Updates tab should stay disabled until setup is complete",
   );
   assert(
-    (await page.getByText("Selected in this app: Fixture Synthwave Theme.").count()) ===
-      0,
+    (await page.getByText("Selected in this app").count()) === 0,
     "locked Theme Library tab should not preselect the first theme",
   );
   assert(
@@ -794,13 +793,8 @@ async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
     "expected settings refresh during initial connected Companion check",
   );
 
-  await page
-    .getByText("Selected in this app: Fixture Synthwave Theme.")
-    .waitFor({ timeout: 10_000 });
-  assert(
-    (await page.getByText("Selected in this app: Fixture Clippy Theme.").count()) === 0,
-    "settings refresh should not replace requested Shopify theme with active device theme",
-  );
+  await assertSelectedThemeRow(page, "Fixture Synthwave Theme");
+  await assertThemeRowNotSelected(page, "Fixture Clippy Theme");
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -937,9 +931,7 @@ async function testPairingRequiredThemeStaysLocked(browser, appUrl) {
     () => settingsCalls >= 2,
     "expected settings refresh after pairing",
   );
-  await page
-    .getByText("Selected in this app: Fixture Synthwave Theme.")
-    .waitFor({ timeout: 10_000 });
+  await assertSelectedThemeRow(page, "Fixture Synthwave Theme");
   const installButton = page
     .locator("li")
     .filter({ hasText: "Fixture Synthwave Theme" })
@@ -993,9 +985,7 @@ async function testBoardIncompatibleThemeStaysLocked(browser, appUrl) {
     "expected settings refresh for board compatibility readiness check",
   );
 
-  await page
-    .getByText("Selected in this app: Fixture ESP32 Only Theme.")
-    .waitFor({ timeout: 10_000 });
+  await assertSelectedThemeRow(page, "Fixture ESP32 Only Theme");
 
   const lockedButton = page
     .locator("li")
@@ -1027,9 +1017,7 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
     "expected settings refresh for firmware compatibility readiness check",
   );
 
-  await page
-    .getByText("Selected in this app: Fixture Future Firmware Theme.")
-    .waitFor({ timeout: 10_000 });
+  await assertSelectedThemeRow(page, "Fixture Future Firmware Theme");
 
   const lockedButton = page
     .locator("li")
@@ -1840,6 +1828,30 @@ async function assertThemeLibraryLockedBehindSetup(page) {
   assert(
     (await page.getByText("Theme browsing works here").count()) === 0,
     "locked Theme Library tab should not show setup helper copy",
+  );
+}
+
+async function assertSelectedThemeRow(page, themeTitle) {
+  const row = page.locator("li").filter({ hasText: themeTitle });
+  await row.waitFor({ timeout: 10_000 });
+  const background = await row.evaluate(
+    (element) => window.getComputedStyle(element).backgroundColor,
+  );
+  assert(
+    background === "rgb(238, 238, 238)",
+    `${themeTitle} should be the selected theme row`,
+  );
+}
+
+async function assertThemeRowNotSelected(page, themeTitle) {
+  const row = page.locator("li").filter({ hasText: themeTitle });
+  await row.waitFor({ timeout: 10_000 });
+  const background = await row.evaluate(
+    (element) => window.getComputedStyle(element).backgroundColor,
+  );
+  assert(
+    background !== "rgb(238, 238, 238)",
+    `${themeTitle} should not be the selected theme row`,
   );
 }
 

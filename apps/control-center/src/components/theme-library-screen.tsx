@@ -91,22 +91,10 @@ export function ThemeLibraryScreen({
   const displayTheme =
     selectedTheme ||
     visibleThemes.find((theme) => theme.themeId === selectedThemeId);
-  const activeThemeLabel = labelForActiveTheme(
-    visibleThemes,
-    device?.activeTheme,
-  );
   const catalogEmpty = visibleThemes.length === 0;
   const requestedThemeMissing = Boolean(
     requestedThemeId && selectedThemeId === requestedThemeId && !displayTheme,
   );
-  const activeThemeDetailText =
-    companionStatus === "online" && device?.connected
-      ? activeThemeDetail({
-          activeThemeLabel,
-          companionStatus,
-          connected: true,
-        })
-      : "";
   const readiness = requestedThemeMissing
     ? {
         title: "Choose an available theme",
@@ -143,18 +131,6 @@ export function ThemeLibraryScreen({
                     ? "Theme not available"
                     : "Choose a theme"}
               </h2>
-              {displayTheme ? (
-                <p className="mt-4 max-w-[640px] text-base leading-7 text-[#444933]">
-                  Selected in this app: {displayTheme.title}.
-                  {activeThemeDetailText ? ` ${activeThemeDetailText}` : ""}
-                </p>
-              ) : null}
-              {!displayTheme && !catalogEmpty && !requestedThemeMissing ? (
-                <p className="mt-4 max-w-[640px] text-base leading-7 text-[#444933]">
-                  Choose a theme for the connected VibeTV.
-                  {activeThemeDetailText ? ` ${activeThemeDetailText}` : ""}
-                </p>
-              ) : null}
               {installEntry && requestedThemeMissing ? (
                 <p className="mt-4 max-w-[640px] text-base leading-7 text-[#444933]">
                   This theme is not available right now. Choose another theme
@@ -821,38 +797,6 @@ function compareVersions(left: string, right: string): number {
     }
   }
   return 0;
-}
-
-function labelForActiveTheme(
-  themes: ThemeProduct[],
-  activeTheme?: string,
-): string | null {
-  const value = activeTheme?.trim();
-  if (!value) {
-    return null;
-  }
-  return themes.find((theme) => theme.themeId === value)?.title || value;
-}
-
-function activeThemeDetail({
-  activeThemeLabel,
-  companionStatus,
-  connected,
-}: {
-  activeThemeLabel: string | null;
-  companionStatus: ThemeLibraryCompanionStatus;
-  connected: boolean;
-}): string {
-  if (activeThemeLabel) {
-    return `Active on VibeTV: ${activeThemeLabel}.`;
-  }
-  if (companionStatus !== "online") {
-    return "Active on VibeTV: unknown until the Mac App is running.";
-  }
-  if (!connected) {
-    return "Active on VibeTV: connect VibeTV first.";
-  }
-  return "Active on VibeTV: not reported by the device.";
 }
 
 function parseVersion(value: string): number[] {
