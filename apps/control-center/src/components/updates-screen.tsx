@@ -62,14 +62,22 @@ export function UpdatesScreen({
       : updateAvailable
         ? "Update available"
         : "Up to date";
-  const companionReleaseStatus = companionReleaseLabel(companionRelease);
+  const macAppRunning = companionStatus === "online";
+  const completeMacPackages = hasCompleteMacPackages(companionRelease);
+  const showMacDownloadRow = !macAppRunning || completeMacPackages;
+  const companionReleaseStatus = companionReleaseLabel({
+    macAppRunning,
+    release: companionRelease,
+  });
   const companionInstalled =
     companionStatus === "missing"
       ? "Not running"
       : companionVersion || "Unknown";
   const companionAvailable =
     companionRelease?.latestVersion || companionRelease?.release || "Checking";
-  const companionPackageStatus = companionPackageLabel(companionRelease);
+  const companionPackageStatus = macAppRunning && !completeMacPackages
+    ? "Ready"
+    : companionPackageLabel(companionRelease);
   const companionAction = companionInstallerAction({
     companionStatus,
     release: companionRelease,
@@ -111,11 +119,13 @@ export function UpdatesScreen({
               label="Latest version"
               value={companionAvailable}
             />
-            <FirmwareRow
-              icon={<Download size={20} aria-hidden />}
-              label="Mac App download"
-              value={companionPackageStatus}
-            />
+            {showMacDownloadRow ? (
+              <FirmwareRow
+                icon={<Download size={20} aria-hidden />}
+                label="Mac App download"
+                value={companionPackageStatus}
+              />
+            ) : null}
             <FirmwareRow
               icon={<Check size={20} aria-hidden />}
               label="Status"
@@ -127,6 +137,7 @@ export function UpdatesScreen({
             <CompanionUpdateAction
               action={companionAction}
               busy={companionCheckBusy}
+              companionStatus={companionStatus}
               onCheckInstaller={refreshCompanionRelease}
               preferredPackage={preferredPackage}
               release={companionRelease}
@@ -185,12 +196,14 @@ export function UpdatesScreen({
 function CompanionUpdateAction({
   action,
   busy,
+  companionStatus,
   onCheckInstaller,
   preferredPackage,
   release,
 }: {
   action: "install" | "repair" | "update";
   busy: boolean;
+  companionStatus: UpdatesCompanionStatus;
   onCheckInstaller: () => void;
   preferredPackage: "macosArm64" | "macosAmd64" | null;
   release: CompanionReleaseInfo | null;
@@ -200,7 +213,10 @@ function CompanionUpdateAction({
     : release?.packageDownloadUrls?.macosArm64 ||
       release?.packageDownloadUrls?.macosAmd64;
 
-  if (packageUrl) {
+  if (
+    packageUrl &&
+    (companionStatus === "missing" || release?.updateAvailable)
+  ) {
     return (
       <a
         className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
@@ -210,6 +226,10 @@ function CompanionUpdateAction({
         <span>{companionActionLabel(action)}</span>
       </a>
     );
+  }
+
+  if (companionStatus === "online") {
+    return null;
   }
 
   if (!release) {
@@ -269,7 +289,19 @@ function companionInstallerAction({
   return "repair";
 }
 
-function companionReleaseLabel(release: CompanionReleaseInfo | null): string {
+function companionReleaseLabel({
+  macAppRunning,
+  release,
+}: {
+  macAppRunning: boolean;
+  release: CompanionReleaseInfo | null;
+}): string {
+  if (macAppRunning) {
+    if (release?.updateAvailable && hasCompleteMacPackages(release)) {
+      return "Update available";
+    }
+    return "Ready";
+  }
   if (!release) {
     return "Checking";
   }

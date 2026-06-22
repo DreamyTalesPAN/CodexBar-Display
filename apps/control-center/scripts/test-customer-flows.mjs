@@ -610,10 +610,14 @@ async function testUpdatesHideUnavailableCompanionAction(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Updates" }).click();
-  await page.getByText("Not ready yet").first().waitFor({ timeout: 10_000 });
+  await page.getByText("Ready").first().waitFor({ timeout: 10_000 });
   assert(
-    (await page.getByText("Not ready yet").count()) >= 1,
-    "Updates should show the unavailable Mac App installer state",
+    (await page.getByText("Not ready yet").count()) === 0,
+    "Updates should not show unavailable Mac App installer state when the Mac App is running",
+  );
+  assert(
+    (await page.getByText("Mac App download").count()) === 0,
+    "Updates should hide Mac App download state when the Mac App is already running",
   );
 
   assert(
