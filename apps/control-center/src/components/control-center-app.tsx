@@ -23,6 +23,10 @@ import { UpdatesScreen } from "./updates-screen";
 const COMPANION_URL = "http://127.0.0.1:47832";
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 
+type LocalNetworkRequestInit = RequestInit & {
+  targetAddressSpace?: "local";
+};
+
 type SettingsResponse = {
   settings?: {
     display?: {
@@ -152,10 +156,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (init?.body && !headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
       }
-      const response = await fetch(`${COMPANION_URL}${path}`, {
+      const requestInit: LocalNetworkRequestInit = {
         ...init,
         headers,
-      });
+        targetAddressSpace: "local",
+      };
+      const response = await fetch(`${COMPANION_URL}${path}`, requestInit);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload?.ok === false) {
         throw normalizeError(payload?.error, response.status);
