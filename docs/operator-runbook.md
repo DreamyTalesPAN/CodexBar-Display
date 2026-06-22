@@ -198,7 +198,7 @@ During normal operation the display uses explicit support states:
 - `Starting`: boot is running before WiFi mode is known.
 - `SETUP WIFI` with `VibeTV-Setup` and the setup IP: setup AP is active; customer should join the setup WiFi and open the shown address.
 - `Connecting WiFi`: station mode is connecting to the saved or imported SSID.
-- `OPEN ON MAC` with `app.vibetv.shop`: WiFi is connected and the device is waiting for the customer to install or open the Mac App from the hosted Control Center.
+- `WiFi connected!` with `Now go to:` and `app.vibetv.shop`: WiFi is connected and the device gives the customer the hosted Control Center URL.
 - Live usage: a valid USB or WiFi frame is rendering; provider/usage data is shown, not theme asset names.
 - `Open App` / `app.vibetv.shop`: the device previously had data, but no fresh frame arrived for more than two minutes, or the Mac App reported a recoverable runtime problem.
 - `Install Mac App` / `app.vibetv.shop`: the device received a runtime frame saying the Mac App binary is missing.
@@ -215,7 +215,7 @@ Smoke checklist for #53:
 - Boot device and confirm the first screen says `Starting`.
 - Clear WiFi and confirm setup AP screen shows `VibeTV-Setup` plus the setup IP.
 - Save WiFi and confirm the connecting screen shows `Connecting WiFi` plus the SSID.
-- After WiFi connects, confirm the waiting screen shows `OPEN ON MAC`, `app.vibetv.shop`, `Install Mac App`, and `Then pair VibeTV`.
+- After WiFi connects, confirm the waiting screen shows only `WiFi connected!`, `Now go to:`, and `app.vibetv.shop`.
 - Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.
 - Send a frame with `update.available=true` and confirm the customer-facing update text alternates between `Update in App` and `app.vibetv.shop`.
 - Apply one stored ThemeSpec with a provider-label primitive, send the same update frame again, and confirm the provider-label area alternates between `Update in App` and `app.vibetv.shop`.

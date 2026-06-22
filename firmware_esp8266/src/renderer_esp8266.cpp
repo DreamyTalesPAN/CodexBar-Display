@@ -341,20 +341,17 @@ void RendererESP8266::DrawConnectedSetupInstructions(
 
   (void)host;
   (void)fallbackIp;
-  const char* title = "OPEN ON MAC";
-  const char* action = "app.vibetv.shop";
-  const char* detail = "Install Mac App";
-  const char* fallback = "Then pair VibeTV";
+  const char* title = "WiFi connected!";
+  const char* action = "Now go to:";
+  const char* detail = "app.vibetv.shop";
   const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
-  const int actionSize = display::ChooseTextSizeToFit(action, 3, 1, tft.width() - 8);
+  const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);
   const int detailSize = display::ChooseTextSizeToFit(detail, 2, 1, tft.width() - 14);
-  const int fallbackSize = display::ChooseTextSizeToFit(fallback, 2, 1, tft.width() - 14);
 
   const int totalH =
       display::TextPixelHeight(titleSize) + 12 +
       display::TextPixelHeight(actionSize) + 10 +
-      display::TextPixelHeight(detailSize) + 8 +
-      display::TextPixelHeight(fallbackSize);
+      display::TextPixelHeight(detailSize);
   int y = (tft.height() - totalH) / 2;
   if (y < 6) {
     y = 6;
@@ -373,15 +370,9 @@ void RendererESP8266::DrawConnectedSetupInstructions(
 
   y += display::TextPixelHeight(actionSize) + 10;
   display::SetClassicTextSize(detailSize);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(detail, detailSize), y);
   tft.print(detail);
-
-  y += display::TextPixelHeight(detailSize) + 8;
-  display::SetClassicTextSize(fallbackSize);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(fallback, fallbackSize), y);
-  tft.print(fallback);
 
   ctx.lastRenderedSecs = -1;
   ctx.lastRenderedMinuteBucket = -1;
