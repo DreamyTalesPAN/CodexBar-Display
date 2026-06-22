@@ -148,7 +148,7 @@ export function OverviewScreen({
                   busyLabel="Checking"
                   disabled={localActionBusy && busyAction !== "status"}
                   icon={<Wifi size={18} aria-hidden />}
-                  label="Start setup"
+                  label={setup.actionLabel || "Start setup"}
                   onClick={onCheckCompanion}
                 />
               ) : null}
@@ -244,6 +244,14 @@ function buildHeroCopy({
   connected: boolean;
   lastError?: ApiError | null;
 }) {
+  if (isLocalNetworkAccessError(lastError)) {
+    return {
+      title: "Allow browser access",
+      tone: "attention" as ReadinessTone,
+      icon: <CircleHelp size={36} aria-hidden />,
+      detail: lastError?.nextAction,
+    };
+  }
   if (companionStatus === "missing") {
     return {
       title: "Install Mac App",
@@ -280,10 +288,20 @@ function buildSetupState({
   lastError?: ApiError | null;
 }): {
   action?: "check" | "connect";
+  actionLabel?: string;
   detail: string;
   icon: ReactNode;
   title: string;
 } | null {
+  if (isLocalNetworkAccessError(lastError)) {
+    return {
+      title: "Allow browser access",
+      detail: lastError?.nextAction || "When Chrome asks, choose Allow.",
+      icon: <Wifi size={22} aria-hidden />,
+      action: "check",
+      actionLabel: "Allow access",
+    };
+  }
   if (companionStatus === "missing") {
     return {
       title: "Install Mac App first",
@@ -324,6 +342,10 @@ function buildSetupState({
     detail: "Keep VibeTV powered on and connected to the same WiFi.",
     icon: <Wifi size={22} aria-hidden />,
   };
+}
+
+function isLocalNetworkAccessError(error?: ApiError | null): boolean {
+  return error?.code === "LOCAL_NETWORK_ACCESS_REQUIRED";
 }
 
 function labelForCompanion(status: CompanionStatus): string {

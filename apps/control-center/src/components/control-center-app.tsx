@@ -24,7 +24,7 @@ const COMPANION_URL = "http://127.0.0.1:47832";
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 
 type LocalNetworkRequestInit = RequestInit & {
-  targetAddressSpace?: "local";
+  targetAddressSpace?: "loopback";
 };
 
 type SettingsResponse = {
@@ -143,6 +143,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setDeviceState("unknown");
   }, []);
 
+  const markCompanionAccessBlocked = useCallback(() => {
+    setCompanionStatus("unknown");
+    setCompanionInfo(null);
+    setThemeInstallEnabled(false);
+    setDevice(null);
+    setDeviceState("unknown");
+  }, []);
+
   const runCompanion = useCallback(
     async <T,>(
       path: string,
@@ -159,14 +167,31 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const requestInit: LocalNetworkRequestInit = {
         ...init,
         headers,
-        targetAddressSpace: "local",
+        targetAddressSpace: "loopback",
       };
-      const response = await fetch(`${COMPANION_URL}${path}`, requestInit);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.ok === false) {
-        throw normalizeError(payload?.error, response.status);
+      try {
+        const response = await fetch(`${COMPANION_URL}${path}`, requestInit);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.ok === false) {
+          throw normalizeError(payload?.error, response.status);
+        }
+        return payload as T;
+      } catch (error) {
+        if (error instanceof Error && isCompanionConnectionError(error)) {
+          const accessState = await readLocalNetworkAccessState();
+          if (accessState === "denied" || accessState === "prompt") {
+            throw {
+              code: "LOCAL_NETWORK_ACCESS_REQUIRED",
+              message: "Browser access is blocked.",
+              nextAction:
+                accessState === "denied"
+                  ? "Allow local network access for this site, then try again."
+                  : "When Chrome asks, choose Allow.",
+            } satisfies ApiError;
+          }
+        }
+        throw error;
       }
-      return payload as T;
     },
     [],
   );
@@ -181,10 +206,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
-    } catch {
-      markCompanionUnavailable();
+    } catch (error) {
+      const normalized = normalizeCaughtError(error, "Mac App needs attention.");
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else {
+        markCompanionUnavailable();
+      }
     }
-  }, [markCompanionUnavailable, runCompanion]);
+  }, [markCompanionAccessBlocked, markCompanionUnavailable, runCompanion]);
 
   const refreshDevice = useCallback(
     async ({ quiet = false }: { quiet?: boolean } = {}) => {
@@ -213,7 +243,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           error,
           "VibeTV needs attention.",
         );
-        if (isCompanionMissingError(normalized)) {
+        if (isLocalNetworkAccessError(normalized)) {
+          markCompanionAccessBlocked();
+        } else if (isCompanionMissingError(normalized)) {
           markCompanionUnavailable();
         } else {
           setDevice((current) =>
@@ -232,7 +264,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return null;
       }
     },
-    [addEvent, markCompanionUnavailable, runCompanion],
+    [
+      addEvent,
+      markCompanionAccessBlocked,
+      markCompanionUnavailable,
+      runCompanion,
+    ],
   );
 
   const loadSettings = useCallback(async () => {
@@ -272,7 +309,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         error,
         "Settings need attention.",
       );
-      if (isCompanionMissingError(normalized)) {
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else if (isCompanionMissingError(normalized)) {
         markCompanionUnavailable();
       }
       setLastError(normalized);
@@ -288,6 +327,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent,
     catalog.themes,
     initialThemeId,
+    markCompanionAccessBlocked,
     markCompanionUnavailable,
     runCompanion,
   ]);
@@ -341,7 +381,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
     } catch (error) {
       const normalized = normalizeCaughtError(error, "Mac App needs attention.");
-      markCompanionUnavailable();
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else {
+        markCompanionUnavailable();
+      }
       if (!quiet) {
         setLastError(normalized);
         addEvent({
@@ -359,6 +403,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent,
     companionStatus,
     loadSettings,
+    markCompanionAccessBlocked,
     markCompanionUnavailable,
     refreshDevice,
     runCompanion,
@@ -401,7 +446,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         error,
         "VibeTV needs attention.",
       );
-      if (isCompanionMissingError(normalized)) {
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else if (isCompanionMissingError(normalized)) {
         markCompanionUnavailable();
       } else {
         setCompanionStatus("online");
@@ -421,6 +468,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     addEvent,
     loadSettings,
+    markCompanionAccessBlocked,
     markCompanionUnavailable,
     refreshCompanionFeatures,
     runCompanion,
@@ -483,7 +531,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         error,
         "VibeTV connection needs attention.",
       );
-      if (isCompanionMissingError(normalized)) {
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else if (isCompanionMissingError(normalized)) {
         markCompanionUnavailable();
       } else {
         setCompanionStatus("online");
@@ -503,6 +553,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     addEvent,
     loadSettings,
+    markCompanionAccessBlocked,
     markCompanionUnavailable,
     refreshCompanionFeatures,
     runCompanion,
@@ -538,7 +589,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           error,
           "Brightness needs attention.",
         );
-        if (isCompanionMissingError(normalized)) {
+        if (isLocalNetworkAccessError(normalized)) {
+          markCompanionAccessBlocked();
+        } else if (isCompanionMissingError(normalized)) {
           markCompanionUnavailable();
         }
         setLastError(normalized);
@@ -551,7 +604,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setBusyAction(null);
       }
     },
-    [addEvent, markCompanionUnavailable, runCompanion],
+    [
+      addEvent,
+      markCompanionAccessBlocked,
+      markCompanionUnavailable,
+      runCompanion,
+    ],
   );
 
   const installTheme = useCallback(async (theme = selectedTheme) => {
@@ -621,7 +679,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         error,
         "Theme install needs attention.",
       );
-      if (isCompanionMissingError(normalized)) {
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else if (isCompanionMissingError(normalized)) {
         markCompanionUnavailable();
       }
       setLastError(normalized);
@@ -645,6 +705,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     addEvent,
     loadSettings,
+    markCompanionAccessBlocked,
     markCompanionUnavailable,
     runCompanion,
     selectedTheme,
@@ -766,7 +827,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         error,
         "Support report failed.",
       );
-      markCompanionUnavailable();
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else {
+        markCompanionUnavailable();
+      }
       setSupportDiagnostics(null);
       setLastError(normalized);
       addEvent({
@@ -777,7 +842,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } finally {
       setBusyAction(null);
     }
-  }, [addEvent, markCompanionUnavailable, runCompanion]);
+  }, [
+    addEvent,
+    markCompanionAccessBlocked,
+    markCompanionUnavailable,
+    runCompanion,
+  ]);
 
   useEffect(() => {
     if (!deviceBoard || !deviceFirmware) {
@@ -954,6 +1024,26 @@ function isCompanionConnectionError(error: Error): boolean {
 
 function isCompanionMissingError(error: ApiError): boolean {
   return error.code === "COMPANION_UNREACHABLE";
+}
+
+function isLocalNetworkAccessError(error: ApiError): boolean {
+  return error.code === "LOCAL_NETWORK_ACCESS_REQUIRED";
+}
+
+async function readLocalNetworkAccessState(): Promise<
+  PermissionState | "unsupported"
+> {
+  if (typeof navigator === "undefined" || !navigator.permissions?.query) {
+    return "unsupported";
+  }
+  try {
+    const status = await navigator.permissions.query({
+      name: "local-network-access" as PermissionName,
+    });
+    return status.state;
+  } catch {
+    return "unsupported";
+  }
 }
 
 function readInitialDeviceTarget(): string {

@@ -179,6 +179,10 @@ async function main() {
       releaseUrl: completeReleaseUrl,
     });
     app = appContext.app;
+    await testLocalNetworkPermissionComesBeforeMacAppInstall(
+      browser,
+      appContext.appUrl,
+    );
     await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
       browser,
       appContext.appUrl,
@@ -385,12 +389,45 @@ async function startTestApp({ catalogUrl, firmwareUrl, releaseUrl }) {
   return { app, appUrl };
 }
 
+async function newCustomerPage(browser, appUrl, options) {
+  const page = await browser.newPage(options);
+  await page.context().grantPermissions(["local-network-access"], {
+    origin: appUrl,
+  });
+  return page;
+}
+
+async function testLocalNetworkPermissionComesBeforeMacAppInstall(
+  browser,
+  appUrl,
+) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  await routeCompanionMissing(page, installRequests);
+
+  await page.goto(appUrl, {
+    waitUntil: "networkidle",
+  });
+  await page
+    .locator("h2")
+    .filter({ hasText: "Allow browser access" })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByRole("button", { name: "Allow access" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("Install Mac App first").count()) === 0,
+    "browser permission should be requested before showing Mac App install",
+  );
+  await page.close();
+}
+
 async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   browser,
   appUrl,
   fixtureServer,
 ) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const initialReleaseRequests = fixtureServer.releaseRequestCount;
   await routeCompanionMissing(page, installRequests);
@@ -435,7 +472,7 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
 }
 
 async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
 
@@ -480,7 +517,7 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
 }
 
 async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
-  const page = await browser.newPage({ viewport: desktopViewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
 
@@ -500,7 +537,7 @@ async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
 }
 
 async function testSettingsStayCustomerOnly(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let settingsCalls = 0;
   await routeCompanionOnline(page, installRequests, () => {
@@ -541,7 +578,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
 }
 
 async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests);
 
@@ -568,7 +605,7 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
 }
 
 async function testUpdatesHideUnavailableCompanionAction(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests);
 
@@ -595,7 +632,7 @@ async function testUpdatesHideUnavailableCompanionAction(browser, appUrl) {
 }
 
 async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests);
 
@@ -652,7 +689,7 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
 }
 
 async function testVibeTVAddressCopyStaysCustomerOnly(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: {
@@ -694,7 +731,7 @@ async function testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
   browser,
   appUrl,
 ) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const discoverRequests = [];
   let settingsCalls = 0;
@@ -744,7 +781,7 @@ async function testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
 }
 
 async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let settingsCalls = 0;
   await routeCompanionOnline(page, installRequests, () => {
@@ -770,7 +807,7 @@ async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
 }
 
 async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let settingsCalls = 0;
   await routeCompanionOnline(page, installRequests, () => {
@@ -816,7 +853,7 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
 }
 
 async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let settingsCalls = 0;
   await routeCompanionOnline(page, installRequests, () => {
@@ -865,7 +902,7 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
 }
 
 async function testPairingRequiredThemeStaysLocked(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const pairRequests = [];
   let settingsCalls = 0;
@@ -920,7 +957,7 @@ async function testPairingRequiredThemeStaysLocked(browser, appUrl) {
 }
 
 async function testThemeWithoutPackUrlStaysLocked(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
 
@@ -941,7 +978,7 @@ async function testThemeWithoutPackUrlStaysLocked(browser, appUrl) {
 }
 
 async function testBoardIncompatibleThemeStaysLocked(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let settingsCalls = 0;
   await routeCompanionOnline(page, installRequests, () => {
@@ -975,7 +1012,7 @@ async function testBoardIncompatibleThemeStaysLocked(browser, appUrl) {
 }
 
 async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let settingsCalls = 0;
   await routeCompanionOnline(page, installRequests, () => {
@@ -1013,7 +1050,7 @@ async function testScriptOnlyReleaseShowsSupportFallback(
   appUrl,
   fixtureServer,
 ) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const initialReleaseRequests = fixtureServer.scriptOnlyReleaseRequestCount;
   await routeCompanionMissing(page, installRequests);
@@ -1042,7 +1079,7 @@ async function testPartialPackageReleaseShowsSupportFallback(
   appUrl,
   fixtureServer,
 ) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const initialReleaseRequests = fixtureServer.partialReleaseRequestCount;
   await routeCompanionMissing(page, installRequests);
@@ -1071,7 +1108,7 @@ async function testPackageOnlyReleaseShowsPackageDownloads(
   appUrl,
   fixtureServer,
 ) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const initialReleaseRequests = fixtureServer.packageOnlyReleaseRequestCount;
   await routeCompanionMissing(page, installRequests);
@@ -1106,7 +1143,7 @@ async function testReleaseCheckFailureShowsNoDownloadActions(
   appUrl,
   fixtureServer,
 ) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const initialReleaseRequests = fixtureServer.failedReleaseRequestCount;
   await routeCompanionMissing(page, installRequests);
@@ -1135,7 +1172,7 @@ async function testMissingAssetReleaseShowsNoDownloadActions(
   appUrl,
   fixtureServer,
 ) {
-  const page = await browser.newPage({ viewport });
+  const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const initialReleaseRequests = fixtureServer.missingAssetReleaseRequestCount;
   await routeCompanionMissing(page, installRequests);
