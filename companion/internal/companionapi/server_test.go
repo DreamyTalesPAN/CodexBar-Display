@@ -71,12 +71,50 @@ func TestCORSAllowedAndForeignOrigins(t *testing.T) {
 		t.Fatalf("expected allowed origin header, got %q", got)
 	}
 
+	previewOrigin := "https://codex-vibetv-control-center-120qndufj-paul-anduschus-projects.vercel.app"
+	preview := httptest.NewRecorder()
+	previewReq := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	previewReq.Header.Set("Origin", previewOrigin)
+	server.Handler().ServeHTTP(preview, previewReq)
+	if got := preview.Header().Get("Access-Control-Allow-Origin"); got != previewOrigin {
+		t.Fatalf("expected preview origin header %q, got %q", previewOrigin, got)
+	}
+
 	foreign := httptest.NewRecorder()
 	foreignReq := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
 	foreignReq.Header.Set("Origin", "https://evil.example")
 	server.Handler().ServeHTTP(foreign, foreignReq)
 	if got := foreign.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Fatalf("expected no CORS header for foreign origin, got %q", got)
+	}
+}
+
+func TestCORSRejectsForeignVercelPreviewOrigins(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+
+	for _, origin := range []string{
+		"https://codex-vibetv-control-center-120qndufj-attacker.vercel.app",
+		"https://other-vibetv-control-center-120qndufj-paul-anduschus-projects.vercel.app",
+		"https://codex-vibetv-control-center-paul-anduschus-projects.vercel.app",
+		"https://codex-vibetv-control-center-120qndufj-paul-anduschus-projects.vercel.app.evil.example",
+		"http://codex-vibetv-control-center-120qndufj-paul-anduschus-projects.vercel.app",
+		"https://codex-vibetv-control-center-120qndufj-paul-anduschus-projects.vercel.app:443",
+	} {
+		t.Run(origin, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodOptions, "/v1/status", nil)
+			req.Header.Set("Origin", origin)
+			req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+			req.Header.Set("Access-Control-Request-Private-Network", "true")
+			server.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("expected preview origin %q to be forbidden, got %d body=%s", origin, rec.Code, rec.Body.String())
+			}
+			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+				t.Fatalf("expected no CORS origin header for %q, got %q", origin, got)
+			}
+		})
 	}
 }
 
@@ -98,6 +136,24 @@ func TestPrivateNetworkAccessPreflightForAllowedOrigin(t *testing.T) {
 	}
 	if got := allowed.Header().Get("Access-Control-Allow-Private-Network"); got != "true" {
 		t.Fatalf("expected private network allow header, got %q", got)
+	}
+
+	previewOrigin := "https://codex-vibetv-control-center-120qndufj-paul-anduschus-projects.vercel.app"
+	preview := httptest.NewRecorder()
+	previewReq := httptest.NewRequest(http.MethodOptions, "/v1/status", nil)
+	previewReq.Header.Set("Origin", previewOrigin)
+	previewReq.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	previewReq.Header.Set("Access-Control-Request-Private-Network", "true")
+	server.Handler().ServeHTTP(preview, previewReq)
+
+	if preview.Code != http.StatusNoContent {
+		t.Fatalf("expected preview private network preflight 204, got %d body=%s", preview.Code, preview.Body.String())
+	}
+	if got := preview.Header().Get("Access-Control-Allow-Origin"); got != previewOrigin {
+		t.Fatalf("expected preview origin header %q, got %q", previewOrigin, got)
+	}
+	if got := preview.Header().Get("Access-Control-Allow-Private-Network"); got != "true" {
+		t.Fatalf("expected preview private network allow header, got %q", got)
 	}
 
 	foreign := httptest.NewRecorder()

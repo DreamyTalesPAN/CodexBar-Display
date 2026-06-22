@@ -27,14 +27,16 @@ import (
 )
 
 const (
-	DefaultAddr        = "127.0.0.1:47832"
-	appOrigin          = "https://app.vibetv.shop"
-	defaultDevOrigin   = "http://localhost:3000"
-	deviceTimeout      = 15 * time.Second
-	discoveryProbeTime = 1500 * time.Millisecond
-	subnetProbeLimit   = 32
-	subnetProbeTime    = 450 * time.Millisecond
-	themeInstallEnv    = "VIBETV_ENABLE_WIFI_THEME_INSTALL"
+	DefaultAddr             = "127.0.0.1:47832"
+	appOrigin               = "https://app.vibetv.shop"
+	defaultDevOrigin        = "http://localhost:3000"
+	previewOriginHostPrefix = "codex-vibetv-control-center-"
+	previewOriginHostSuffix = "-paul-anduschus-projects.vercel.app"
+	deviceTimeout           = 15 * time.Second
+	discoveryProbeTime      = 1500 * time.Millisecond
+	subnetProbeLimit        = 32
+	subnetProbeTime         = 450 * time.Millisecond
+	themeInstallEnv         = "VIBETV_ENABLE_WIFI_THEME_INSTALL"
 )
 
 type Options struct {
@@ -228,7 +230,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
-		_, allowed := s.allowedOrigins[origin]
+		allowed := s.isAllowedOrigin(origin)
 		if origin != "" && allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
@@ -248,6 +250,36 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) isAllowedOrigin(origin string) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return false
+	}
+	if _, allowed := s.allowedOrigins[origin]; allowed {
+		return true
+	}
+	return isAllowedPreviewOrigin(origin)
+}
+
+func isAllowedPreviewOrigin(origin string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(origin))
+	if err != nil {
+		return false
+	}
+	if parsed.Scheme != "https" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	if host == "" || parsed.Port() != "" {
+		return false
+	}
+	if !strings.HasPrefix(host, previewOriginHostPrefix) || !strings.HasSuffix(host, previewOriginHostSuffix) {
+		return false
+	}
+	previewID := strings.TrimSuffix(strings.TrimPrefix(host, previewOriginHostPrefix), previewOriginHostSuffix)
+	return previewID != "" && !strings.Contains(previewID, ".")
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
