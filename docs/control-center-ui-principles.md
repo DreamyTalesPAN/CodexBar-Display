@@ -41,6 +41,13 @@ Before shipping customer-facing UI changes, answer these in order:
 
 Run `npm run check:customer-ui-copy` in `apps/control-center` before shipping customer-facing UI changes. It parses customer-facing TSX copy and blocks internal wording such as `Companion`, `Bridge`, local API terms, release/package diagnostics, and technical setup substeps.
 
+## Verification Budget
+
+- Copy-only deletion or wording changes: run `npm run check:customer-ui-copy` and `git diff --check`. Do not run the full customer-flow browser suite unless the text change also changes state, navigation, actions, or layout risk.
+- Small UI state changes: run `npm run test:customer-smoke` in `apps/control-center`.
+- Flow, API, setup gating, install, update, or release changes: run `npm run test:customer-flows`.
+- Merge-readiness claims: run the repository customer-ready gate.
+
 ## Delete First
 
 When the UI feels confusing, simplify in this order:

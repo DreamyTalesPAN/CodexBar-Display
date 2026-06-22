@@ -9,6 +9,7 @@
     "lint": "eslint",
     "check:customer-ui-copy": "node scripts/check-customer-ui-copy.mjs",
     "check:ui-review": "node ../../scripts/check-control-center-ui-review-gate.mjs",
+    "test:customer-smoke": "node scripts/test-customer-flows.mjs --smoke",
     "test:customer-flows": "node scripts/test-customer-flows.mjs"
   },
   "dependencies": {

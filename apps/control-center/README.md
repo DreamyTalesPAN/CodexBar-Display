@@ -19,6 +19,21 @@ npm run test:customer-flows
 
 The test builds the app with a local catalog fixture, starts `next start` on a free localhost port, mocks Companion browser calls, and checks the critical `/install/[themeId]` flows.
 
+For small copy-only changes, do not run the full browser suite by default. Use the smallest check that matches the risk:
+
+```bash
+npm run check:customer-ui-copy
+git diff --check
+```
+
+If the copy change touches setup state, theme selection, or update status and needs a quick browser check, run the smoke path instead of the full flow suite:
+
+```bash
+npm run test:customer-smoke
+```
+
+Run `npm run test:customer-flows` for state changes, navigation/action changes, API behavior changes, or before claiming merge readiness.
+
 Before claiming the Control Center is customer-ready, run the repository-level gate:
 
 ```bash

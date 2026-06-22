@@ -9,6 +9,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const nextBin = join(root, "node_modules", "next", "dist", "bin", "next");
 const viewport = { width: 390, height: 844 };
 const desktopViewport = { width: 1280, height: 900 };
+const smokeOnly = process.argv.includes("--smoke");
 
 const catalogFixture = {
   themes: [
@@ -176,9 +177,22 @@ async function main() {
 
     let appContext = await startTestApp({
       catalogUrl,
-      releaseUrl: completeReleaseUrl,
+      releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (smokeOnly) {
+      await testSetupTabsAreLockedUntilSetupComplete(
+        browser,
+        appContext.appUrl,
+      );
+      await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
+      await testUpdatesHideUnavailableCompanionAction(
+        browser,
+        appContext.appUrl,
+      );
+      console.log("control-center customer smoke tests passed");
+      return;
+    }
     await testLocalNetworkPermissionComesBeforeMacAppInstall(
       browser,
       appContext.appUrl,
