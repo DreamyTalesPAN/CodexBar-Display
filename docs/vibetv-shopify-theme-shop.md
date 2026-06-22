@@ -1,6 +1,6 @@
 # VibeTV Shopify Theme Journey
 
-This document is the current Shopify rollout plan for the hosted Control Center flow.
+This document is the current Shopify rollout plan for customer-visible VibeTV theme products.
 
 ## Current Decision
 
@@ -9,9 +9,12 @@ The rollout uses normal Shopify products as the visible theme catalog:
 - Shop domain: `vibetv.shop`
 - Theme collection handle: `themes-2`
 - Hosted app: `https://app.vibetv.shop`
-- Product entry URL: `https://app.vibetv.shop/install/<theme_id>`
+- Product entry surface: `https://vibetv.shop/products/<theme-handle>`
+- Current product action: visible Terminal install command.
 
 The Control Center reads products from Shopify Storefront API through `apps/control-center/src/lib/themes.ts`. App-owned Shopify Metaobjects can still be revisited later, but they are not the current source of truth.
+
+Do not link Shopify theme product pages to `https://app.vibetv.shop/install/<theme_id>` until the hosted app path is actually customer-available, including a signed Mac App installer attached to a release and verified on a clean Mac. Until then, the product pages must show the direct Terminal install command.
 
 ## Product Model
 
@@ -38,59 +41,27 @@ Shopify is the catalog and preview surface. The installable ZIPs stay in GitHub 
 
 ## Product Button
 
-Use this Custom Liquid block on VibeTV theme product pages:
+Use the Custom Liquid block stored in `docs/vibetv-theme-product-custom-liquid.liquid` on VibeTV theme product pages. It renders one primary action, `Copy install command`, then shows the actual command:
 
 ```liquid
-{% liquid
-  assign theme_product = product
-  if theme_product == blank
-    assign theme_product = closest.product
-  endif
-  assign theme_id = theme_product.metafields.vibetv.theme_id.value | default: theme_product.metafields.theme.theme_id.value
-  assign readiness_url = ''
-  if theme_id != blank
-    assign encoded_theme_id = theme_id | url_encode
-    assign readiness_url = 'https://app.vibetv.shop/install/' | append: encoded_theme_id
-  endif
-%}
-
-<div class="vtv-theme-readiness" data-vtv-theme-readiness>
-  {% if readiness_url != blank %}
-    <a class="button add-to-cart-button" href="{{ readiness_url }}" target="_blank" rel="noopener">
-      Check compatibility in the app
-    </a>
-    <p class="vtv-theme-readiness__note">
-      Opens the hosted Control Center. The app checks setup first, then shows the next step.
-    </p>
-  {% else %}
-    <button type="button" class="button add-to-cart-button" disabled>
-      Theme check unavailable
-    </button>
-    <p class="vtv-theme-readiness__note">Add the theme_id metafield before sending this theme page to customers.</p>
-  {% endif %}
-</div>
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local
 ```
 
-The validated source is also stored in `docs/vibetv-theme-product-custom-liquid.liquid`.
+The Liquid derives `<theme_id>` from `vibetv.theme_id` or `theme.theme_id`.
 
-Do not use customer-facing copy like `Jetzt installieren` while #129 is open. The correct public promise is readiness/compatibility checking. Real theme installs stay blocked until a dedicated hardware test approves them.
+Do not use customer-facing copy like `Check compatibility in the app`, `Opens the hosted Control Center`, or `Jetzt installieren` on Shopify theme product pages while the app path is not customer-available.
 
-Live rollout status on 2026-06-19: the main `vibetv.shop` theme template `templates/product.themes.json` uses the readiness button for the product handles `synthwave-theme`, `clippy-theme`, and `claude-creature-theme`. Those buttons link to the technical Control Center theme IDs `synthwave`, `clippy`, and `claude-creature`. The old terminal command-copy block is no longer present on those public product pages.
+Live rollout status on 2026-06-22: the main `vibetv.shop` theme template `templates/product.themes.json` shows the Terminal command block for VibeTV theme products. The Synthwave page was verified publicly with `Copy install command` and `codexbar-display theme-pack install --theme synthwave --target http://vibetv.local`. It does not link to `app.vibetv.shop`.
 
 ## Customer Flow
 
 1. Customer visits `https://vibetv.shop/collections/themes-2`.
 2. Customer opens a VibeTV theme product.
-3. Product page button opens `https://app.vibetv.shop/install/<theme_id>`.
-4. The hosted app opens the selected theme readiness screen.
-5. If the Mac App is missing, the app shows one Mac App install/repair action.
-6. If the Mac App is running but VibeTV is not found, the app shows a `VibeTV address` field and one `Connect VibeTV` action.
-7. If multiple VibeTV devices are found, the app asks for the exact VibeTV address instead of guessing.
-8. If the catalog is empty or the requested `theme_id` is not found, the app shows a blocked catalog state instead of demo themes or the first available theme.
-9. If the selected theme is not available, incompatible with the detected board, or requires newer firmware, the app uses customer language such as `Unavailable`, `Not Supported`, or `Update Needed`.
-10. If theme installs are not available in the current build, the app keeps Theme Library locked instead of exposing install controls.
-11. Once the Mac App, VibeTV connection, free theme status, pack URL, board compatibility, firmware compatibility, and theme install are ready, the customer can start install from the app.
-12. Firmware updates stay in a separate explicit update flow. The hosted install journey must not silently flash firmware while installing a theme.
+3. Product page shows one primary action: `Copy install command`.
+4. Customer opens Terminal, pastes the command, and presses Return while VibeTV is on the same WiFi.
+5. The command installs/updates the CLI helper and runs `codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local`.
+
+Future app flow: once the hosted Control Center and signed Mac App installer are truly customer-available, the product page can move back to an app entry point. At that point, the app must show one next action at a time: install/repair Mac App, connect VibeTV, update firmware if explicitly needed, then install the selected theme.
 
 ## GitHub Theme Pack Artifacts
 
@@ -140,7 +111,7 @@ scripts/check-control-center-companion-customer-readiness.sh \
   --expect-shopify-product-pages
 ```
 
-That check only reads public HTTP pages and the hosted app. It fails if `/api/themes` is empty, served from the wrong catalog source, missing the selected `theme_id`, returning a paid theme for that ID, missing a free theme `themeId`, missing the resolved `packUrl`, returning a `packUrl` that is not an `http(s)` download URL, exposing any free collection theme that is not installable, if the selected `/install/<theme_id>` route is not reachable, if any free collection theme's `/install/<theme_id>` route is not reachable, if a free Shopify catalog item has neither `productUrl` nor `handle`, if a Shopify product page does not link to `https://app.vibetv.shop/install/<theme_id>`, or if the old terminal install command is still present on the product page.
+That check only reads public HTTP pages and the hosted app. It fails if `/api/themes` is empty, served from the wrong catalog source, missing the selected `theme_id`, returning a paid theme for that ID, missing a free theme `themeId`, missing the resolved `packUrl`, returning a `packUrl` that is not an `http(s)` download URL, exposing any free collection theme that is not installable, if the selected `/install/<theme_id>` route is not reachable, if any free collection theme's `/install/<theme_id>` route is not reachable, if a free Shopify catalog item has neither `productUrl` nor `handle`, if a Shopify product page does not show `Copy install command`, if it does not include `codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local`, or if it still links customers to the unavailable hosted app install CTA.
 
 Allowed without extra hardware approval:
 
@@ -157,9 +128,9 @@ Not allowed without current explicit approval:
 - firmware updates
 - any repeated hardware write test after a failed write
 
-## Legacy Support Path
+## Hosted App Return Path
 
-The old command-copy path is support/testing only. Do not paste terminal install commands into Shopify product pages, product descriptions, Custom Liquid snippets, or customer-facing setup docs.
+Switch Shopify theme product pages back to `https://app.vibetv.shop/install/<theme_id>` only after the hosted Control Center path is customer-available end to end. That means signed Mac App installer assets are attached to a release, the clean-Mac install path is verified, and the app gives customers one clear next action instead of exposing internal setup states.
 
 ## Sources
 

@@ -901,20 +901,20 @@ html_path, product_url, theme_id, app_url = sys.argv[1:]
 with open(html_path, encoding="utf-8", errors="replace") as f:
     html = f.read()
 
-expected = f"{app_url.rstrip('/')}/install/{quote(theme_id, safe='')}"
-allowed_readiness_copy = [
-    "Check compatibility in the app",
-    "Kompatibilität prüfen",
-    "In App öffnen",
-    "In der App öffnen",
-    "Bereitschaft prüfen",
+expected_command = (
+    f"codexbar-display theme-pack install --theme {theme_id} "
+    "--target http://vibetv.local"
+)
+required_terminal_copy = [
+    "Copy install command",
+    expected_command,
 ]
 forbidden = [
-    "codexbar-display theme-pack install",
-    "theme-pack install --theme",
-    "theme-pack install --target",
-    "install.sh | bash",
-    "http://vibetv.local",
+    f"{app_url.rstrip('/')}/install/{quote(theme_id, safe='')}",
+    "app.vibetv.shop/install",
+    "Check compatibility in the app",
+    "Opens the hosted Control Center",
+    "Theme check unavailable",
     "Jetzt installieren",
     "Jetzt Theme installieren",
     "Install now",
@@ -923,16 +923,12 @@ forbidden = [
 ]
 
 errors = []
-if expected not in html:
-    errors.append(f"missing hosted app link {expected}")
-if not any(copy in html for copy in allowed_readiness_copy):
-    errors.append(
-        "missing gated readiness button copy; expected one of: "
-        + ", ".join(allowed_readiness_copy)
-    )
+for copy in required_terminal_copy:
+    if copy not in html:
+        errors.append(f"missing terminal install copy: {copy}")
 for needle in forbidden:
     if needle in html:
-        errors.append(f"legacy customer copy still present: {needle}")
+        errors.append(f"unavailable app install copy still present: {needle}")
 
 if errors:
     print(

@@ -55,9 +55,7 @@ section_checks = [
 forbidden = [
     "Copy Mac Setup Command",
     "AI-native path",
-    "install.sh | bash",
     "codexbar-display install-update --target",
-    "theme-pack install --target",
     "check that the daemon target",
     "setup command",
     "Companion installer assets",
@@ -71,6 +69,16 @@ forbidden = [
     "Browser talks directly to `http://127.0.0.1:47832`",
 ]
 
+terminal_install_forbidden = [
+    "install.sh | bash",
+    "theme-pack install --target",
+]
+
+terminal_install_allowed_labels = {
+    "docs/control-center-customer-readiness.md",
+    "docs/vibetv-shopify-theme-shop.md",
+}
+
 errors = []
 for label, body, stop_marker in checks:
     scanned = body
@@ -79,6 +87,10 @@ for label, body, stop_marker in checks:
     for needle in forbidden:
         if needle in scanned:
             errors.append(f"{label}: legacy customer setup copy still present: {needle}")
+    if label not in terminal_install_allowed_labels:
+        for needle in terminal_install_forbidden:
+            if needle in scanned:
+                errors.append(f"{label}: terminal install copy is only allowed in Shopify theme product docs: {needle}")
 
 for label, body, start_marker, end_marker, needles in section_checks:
     if start_marker not in body or end_marker not in body:
@@ -94,5 +106,5 @@ if errors:
         print(f"error: {error}", file=sys.stderr)
     sys.exit(1)
 
-print("Control Center customer docs are app-first")
+print("Control Center customer docs stay simple")
 PY
