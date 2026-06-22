@@ -625,8 +625,8 @@ const char* usageModeText() {
 
 const char* themeSpecUpdateNoticeText() {
   return ((millis() / kThemeSpecUpdateNoticeToggleMs) % 2) == 0
-             ? "Update Available:"
-             : "vibetv.local";
+             ? "Update in App"
+             : "app.vibetv.shop";
 }
 
 themespec::FrameData currentThemeSpecFrameData() {

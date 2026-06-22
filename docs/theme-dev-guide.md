@@ -18,7 +18,7 @@ The compiled scene copies normal strings and `idle`/`coding` `stateAssets` paths
 - Use `CBA1` animated sprites for character animation and state animation.
 - Make the main background full-screen at 240x240. If the design uses an inset panel or window, include the surrounding background in the background asset instead of leaving the display uncovered.
 - Keep ThemeSpec primitives for dynamic content: usage bars, percentages, reset time, provider label, time, date, and state-dependent asset selection.
-- Treat the provider label as the firmware update notice slot. When an update is available, ThemeSpec firmware swaps `{label}` / `label` to `Update Available:` and `vibetv.local`; do not reserve a separate bottom bar for this.
+- Treat the provider label as the firmware update notice slot. When an update is available, ThemeSpec firmware swaps `{label}` / `label` to `Update in App` and `app.vibetv.shop`; do not reserve a separate bottom bar for this.
 - Keep all primitives that can change at runtime inside stable bounds. Text without a width is allowed, but the firmware treats it conservatively up to the right display edge for partial render safety.
 - Combine many small decorative rects into one sprite asset.
 - Combine static text labels into a sprite when they do not need to change.

@@ -16,7 +16,7 @@ This guide is for the normal customer setup. It uses WiFi for VibeTV and the Con
 3. Join `VibeTV-Setup` from your Mac or phone.
 4. If a setup page opens automatically, use it. Otherwise open `http://vibetv.local`. If that does not load, open `http://192.168.4.1`.
 5. Choose your home WiFi, enter the password, and save.
-6. Wait while VibeTV restarts. The display shows `vibetv.local` and, if needed, an IP address.
+6. Wait while VibeTV restarts. When WiFi is ready, the display shows `app.vibetv.shop`.
 
 ## Set Up the Mac App
 
@@ -24,8 +24,7 @@ This guide is for the normal customer setup. It uses WiFi for VibeTV and the Con
 2. Follow the one main button shown in the app.
 3. If the app asks you to install the Mac App, download it, open the downloaded installer, finish the install, then return to the app.
 4. If your browser asks for local network access, allow it.
-5. When the app asks for a VibeTV address, use `vibetv.local` or the IP address shown on the VibeTV screen.
-6. Select `Connect VibeTV`.
+5. Select the main button in the app to find and connect VibeTV.
 
 Normal setup does not require Terminal, USB flashing, or manual commands.
 
@@ -40,11 +39,13 @@ Normal setup does not require Terminal, USB flashing, or manual commands.
 | Display | Meaning | What to do |
 | --- | --- | --- |
 | `Starting` | VibeTV is booting. | Wait. |
-| `Join WiFi` / `VibeTV-Setup` | VibeTV needs WiFi setup. | Join the `VibeTV-Setup` WiFi and open the address shown on the display. |
+| `SETUP WIFI` / `VibeTV-Setup` | VibeTV needs WiFi setup. | Join the `VibeTV-Setup` WiFi and open the address shown on the display. |
 | `Connecting WiFi` | VibeTV is joining your home WiFi. | Wait. |
-| `Open Setup` | WiFi works, but the Mac App is not connected yet. | Open `https://app.vibetv.shop` on your Mac. |
-| `Check Mac App` | VibeTV is waiting for fresh Mac data. | Open `https://app.vibetv.shop` and check the Mac App setup. |
+| `OPEN ON MAC` / `app.vibetv.shop` | WiFi works, but the Mac App is not connected yet. | Open `https://app.vibetv.shop` on your Mac and follow the main button. |
+| `Open App` / `app.vibetv.shop` | VibeTV is waiting for fresh Mac data. | Open `https://app.vibetv.shop` on your Mac and follow the main button. |
+| `Install Mac App` | The Mac App is missing. | Open `https://app.vibetv.shop` and install it from there. |
 | `Update Mac App` | The Mac App needs an update. | Open `https://app.vibetv.shop` and follow the update button. |
+| `Update in App` | VibeTV has an update ready. | Open `https://app.vibetv.shop` and follow the main button. |
 | `Update running` | VibeTV is being updated. | Do not unplug power. |
 | `WiFi reset` | Saved WiFi settings are being cleared. | Wait for `VibeTV-Setup` to appear again. |
 
@@ -52,7 +53,7 @@ Normal setup does not require Terminal, USB flashing, or manual commands.
 
 - If `https://app.vibetv.shop` says the Mac App is not ready, install or repair the Mac App from the app.
 - If the app cannot find VibeTV, check that your Mac and VibeTV are on the same WiFi.
-- If `vibetv.local` does not work, use the IP address shown on the VibeTV screen.
+- If the app cannot find VibeTV, make sure your Mac and VibeTV are on the same WiFi, then restart VibeTV and try again.
 - If the app does not show an install or update button when you need one, contact support.
 
 ## Reset WiFi Setup
