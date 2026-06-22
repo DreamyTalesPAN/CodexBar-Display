@@ -159,7 +159,7 @@ export function OverviewScreen({
                   disabled={localActionBusy && busyAction !== "connect"}
                   icon={<Monitor size={18} aria-hidden />}
                   label="Connect VibeTV"
-                  onClick={() => onConnectDevice?.(deviceTarget)}
+                  onClick={() => onConnectDevice?.()}
                 />
               ) : null}
             </div>

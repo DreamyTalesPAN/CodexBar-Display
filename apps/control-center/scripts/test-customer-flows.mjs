@@ -196,6 +196,10 @@ async function main() {
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testSupportReportExportsAppearAfterReportLoads(browser, appContext.appUrl);
     await testVibeTVAddressCopyStaysCustomerOnly(browser, appContext.appUrl);
+    await testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
+      browser,
+      appContext.appUrl,
+    );
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testThemeInstallStatusStaysCustomerOnly(browser, appContext.appUrl);
     await testCustomerLogsStayCustomerOnly(browser, appContext.appUrl);
@@ -681,6 +685,59 @@ async function testVibeTVAddressCopyStaysCustomerOnly(browser, appUrl) {
     );
   }
 
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
+  browser,
+  appUrl,
+) {
+  const page = await browser.newPage({ viewport });
+  const installRequests = [];
+  const discoverRequests = [];
+  let settingsCalls = 0;
+  await routeCompanionOnline(
+    page,
+    installRequests,
+    () => {
+      settingsCalls += 1;
+    },
+    {
+      onDiscover: (postData) => {
+        discoverRequests.push(postData || "");
+        return {
+          ...companionDevice,
+          target: "http://vibetv.local",
+          connected: true,
+          paired: true,
+        };
+      },
+    },
+  );
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "vibetv.controlCenter.deviceTarget",
+      "http://192.168.178.163",
+    );
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
+  await waitForCondition(
+    () => discoverRequests.length >= 1,
+    "expected automatic VibeTV discovery to run",
+  );
+
+  assert(
+    discoverRequests[0] === "{}",
+    `automatic discovery should not force stale saved address, got ${discoverRequests[0]}`,
+  );
+  assert(
+    settingsCalls >= 1,
+    "automatic discovery should continue into settings refresh after finding VibeTV",
+  );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -1329,7 +1386,7 @@ async function routeCompanionOnline(
   page,
   installRequests,
   onSettings = () => {},
-  { device = companionDevice, onPair } = {},
+  { device = companionDevice, onDiscover, onPair } = {},
 ) {
   let currentDevice = device;
   await page.route("http://127.0.0.1:47832/v1/**", async (route) => {
@@ -1357,10 +1414,14 @@ async function routeCompanionOnline(
       return;
     }
     if (url.pathname === "/v1/device/discover") {
+      const nextDevice =
+        onDiscover?.(route.request().postData() || "", currentDevice) ||
+        currentDevice;
+      currentDevice = nextDevice;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ ok: true, device: currentDevice }),
+        body: JSON.stringify({ ok: true, device: nextDevice }),
       });
       return;
     }

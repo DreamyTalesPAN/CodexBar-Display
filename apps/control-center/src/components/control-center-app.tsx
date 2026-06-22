@@ -360,7 +360,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const discoverDevice = useCallback(async (targetOverride?: string) => {
     setBusyAction("discover");
-    const target = normalizeDeviceTarget(targetOverride || deviceTarget);
+    const target =
+      typeof targetOverride === "string"
+        ? normalizeDeviceTarget(targetOverride)
+        : "";
     try {
       const payload = await runCompanion<{ device: DeviceInfo }>(
         "/v1/device/discover",
@@ -411,7 +414,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, [
     addEvent,
-    deviceTarget,
     loadSettings,
     markCompanionUnavailable,
     refreshCompanionFeatures,
@@ -420,7 +422,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const connectDevice = useCallback(async (targetOverride?: string) => {
     setBusyAction("connect");
-    const target = normalizeDeviceTarget(targetOverride || deviceTarget);
+    const target =
+      typeof targetOverride === "string"
+        ? normalizeDeviceTarget(targetOverride)
+        : "";
     try {
       const discovered = await runCompanion<{ device: DeviceInfo }>(
         "/v1/device/discover",
@@ -491,7 +496,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, [
     addEvent,
-    deviceTarget,
     loadSettings,
     markCompanionUnavailable,
     refreshCompanionFeatures,
@@ -648,7 +652,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
     const timer = window.setTimeout(() => {
       if (deviceTarget) {
-        void discoverDevice(deviceTarget);
+        void discoverDevice();
         return;
       }
       void checkCompanion();
