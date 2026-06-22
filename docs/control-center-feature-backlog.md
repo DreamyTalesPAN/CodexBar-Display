@@ -42,11 +42,11 @@ Wichtig für die UI: `GET /v1/status` ist gut für "Bridge lebt", aber nicht aus
 | --- | --- | --- | --- |
 | Overview | Ja | Nein | Bestehende Status-, Device- und Settings-Felder reichen für Bridge, Device, Firmware, Pairing, ThemeSpec-Readiness, Transport, Helligkeit und Install-Lock. |
 | Settings | Ja | Nein | `POST /v1/device/discover`, `POST /v1/device/pair`, `GET/POST /v1/settings` decken die geforderten Controls ab. |
-| Theme Library | Ja | Nein | Theme-Katalog ist im Control Center vorhanden; Install geht über `POST /v1/themes/install` und bleibt per Flag gesperrt. |
+| Theme Library | Ja | Nein | Theme-Katalog ist im Control Center vorhanden; Install geht über `POST /v1/themes/install`, sobald die Mac-App als Kunden-PKG mit Theme-Install-Flag läuft und VibeTV verbunden/gepairt ist. |
 | Updates | Nur Platzhalter | Ja | Daemon kennt `UpdateState`, aber Companion API veröffentlicht keinen `/v1/updates`-Endpoint und kein Update-Feld in `/v1/status` oder `/v1/device`. In #120 nur aktuelle Firmware anzeigen. |
 | Logs | Nur lokale Session-Events | Ja | Es gibt keinen persistenten Companion-Event- oder Log-Endpoint. In #120 kann die UI nur eigene Browser-Events wie "Bridge geprüft" oder "Device gelesen" anzeigen. |
 | Active theme metadata | Teilweise | Wahrscheinlich ja | `/hello` kann `cachedThemeId`/`cachedThemeRev` in `capabilities.theme` liefern. Das reicht für einen technischen Hinweis, aber nicht für Titel, Quelle, Preview, Install-Zeit, Renderstatus oder Abgleich mit dem Shopify-Katalog. |
-| Install enablement | Ja, gesperrt | Später ja | Die API meldet `themeInstallEnabled` und blockt ohne `VIBETV_ENABLE_WIFI_THEME_INSTALL=1`. PR #120 soll diese Sperre sichtbar machen und Install nur unter den bestehenden Guardrails erlauben. Kundenfähige gehostete Install-Freigabe braucht ein eigenes Sicherheits-/Hardware-Flow-Issue. |
+| Install enablement | Ja | Nein | Die API meldet `themeInstallEnabled` und blockt ohne `VIBETV_ENABLE_WIFI_THEME_INSTALL=1`. Kunden-PKGs setzen den Flag im LaunchAgent; lokale Dev-/Support-Runs bleiben ohne Flag gesperrt. |
 
 ## Offene Feature-Lücken
 
