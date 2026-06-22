@@ -256,6 +256,8 @@ scripts/test-control-center-companion-pkg-build.sh
 
 That smoke test runs on macOS, builds temporary unsigned `arm64` and `amd64` Mac App packages, then validates both packages with the same read-only readiness checker. It does not install packages, start services, discover devices, or write to VibeTV hardware.
 
+The `companion-pkg-smoke` CI job also uploads those validated unsigned packages as a short-lived GitHub Actions artifact named `vibetv-unsigned-mac-app-pkgs-v<version>-<sha>`. Use that artifact only for manual internal install tests that intentionally accept macOS unsigned-package warnings. It is not a customer release asset and must not be linked from the hosted app or Shopify product pages.
+
 What it checks:
 
 - release may contain the legacy support script without exposing it through the customer API,
