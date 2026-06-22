@@ -201,6 +201,10 @@ This gate is intentionally strict. It never merges, tags, releases, installs pac
 
 Clean-Mac evidence comes from the candidate package workflow above plus the installed-package readiness check. Do not pass `--clean-mac-tested` only because the workflow produced an artifact; the package has to be installed and verified on a clean Mac first.
 
+Hardware write evidence is recorded in `docs/control-center-hardware-test-evidence.md`.
+The current PR has a user-approved WiFi theme install result there for the Control Center
+write path, and further device writes still require fresh approval.
+
 On macOS, the local gate also builds temporary unsigned Mac App packages and validates their metadata, payload, scripts, and binary architecture without installing them. On non-macOS systems, that smoke step is skipped and the dedicated `companion-pkg-smoke` CI job covers it on macOS.
 
 Use an exact tag when validating a specific release:
