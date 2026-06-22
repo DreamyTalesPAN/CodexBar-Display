@@ -32,14 +32,16 @@ The local Mac App service responds to Chrome Private Network Access preflights f
 
 ## Mac App Package Path
 
-Normal customer installs use signed and notarized macOS `.pkg` assets from the GitHub Release:
+Current transition releases publish macOS `.pkg` assets from the GitHub Release so `app.vibetv.shop` can offer a direct Mac App download:
 
 ```text
 VibeTV-Companion-API-arm64-v<version>.pkg
 VibeTV-Companion-API-amd64-v<version>.pkg
 ```
 
-The package installs the binary under `/Library/Application Support/VibeTV/bin/`, installs `/Library/LaunchAgents/com.codexbar-display.companion-api.plist`, and starts the LaunchAgent for the current console user after install. Customer packages require Apple Developer ID Installer credentials and notarization setup.
+The package installs the binary under `/Library/Application Support/VibeTV/bin/`, installs `/Library/LaunchAgents/com.codexbar-display.companion-api.plist`, and starts the LaunchAgent for the current console user after install.
+
+Transition release packages are currently unsigned. That is enough for internal/beta download testing, but it is not customer-ready because macOS will show an unidentified-developer security path. Before treating this as a normal customer installer, switch the release packages back to signed and notarized output.
 
 The legacy shell installer may still be published as a support-only GitHub Release asset:
 
@@ -56,13 +58,22 @@ That support script performs these steps:
 - starts `codexbar-display api --addr 127.0.0.1:47832`,
 - verifies `http://127.0.0.1:47832/v1/status`.
 
-The release workflow now fails before creating customer release assets unless the package signing and notarization secrets are configured. With secrets configured, the `build-companion-pkgs` release job imports the Developer ID Installer certificate into a temporary keychain, signs the packages, stores a notarytool profile, submits each package for notarization, staples the result, validates both packages again with signature and notarization checks, and uploads the validated `.pkg` files as an internal workflow artifact. The `build-and-release` job waits for that artifact, downloads it, builds release checksums after the `.pkg` files are present, and only then creates the public GitHub Release with the Mac App packages included.
+The release workflow currently builds unsigned `arm64` and `amd64` `.pkg` files on `macos-latest`, validates their payload metadata/scripts/binary architecture, uploads them as an internal `companion-pkgs` workflow artifact, then the `build-and-release` job downloads that artifact, includes the `.pkg` files in release checksums, and publishes them as GitHub Release assets. Because `/api/companion/latest` reads the latest GitHub Release, the app's `Install Mac App` button can download these packages directly.
+
+To move from this transition path to a customer-ready signed path, add Apple Developer ID Installer signing and notarization back to the release package job:
+
+1. Import a Developer ID Installer `.p12` into a temporary keychain.
+2. Pass `--sign-identity "Developer ID Installer: Company (TEAMID)"` to `scripts/build-control-center-companion-pkg.sh`.
+3. Store an Apple notarytool profile from Apple ID, Team ID, and app-specific password.
+4. Pass `--notary-profile <profile>` to the package builder so each `.pkg` is submitted, accepted, and stapled.
+5. Validate every release package with `scripts/check-control-center-companion-customer-readiness.sh --pkg <pkg> --expect-version <version> --require-signed --require-notarized`.
+6. Run a clean-Mac install check before calling the flow customer-ready.
 
 When the `.pkg` is installed or repaired, its `preinstall` script unloads the existing `com.codexbar-display.companion-api` LaunchAgent for the console user and removes the old script-installed user plist at `~/Library/LaunchAgents/com.codexbar-display.companion-api.plist` before the new payload is written. Its `postinstall` script then loads the package LaunchAgent from `/Library/LaunchAgents`. The package LaunchAgent becomes the single active Companion API service.
 
 After the package is installed, the legacy shell installer refuses to run when it detects the package receipt `shop.vibetv.companion-api`. This prevents support steps from accidentally recreating the old user LaunchAgent. Use the package repair/update path instead. Support can still override the guard explicitly with `--force-legacy-script` when they intentionally need the legacy script.
 
-Required GitHub secrets for signed packages:
+Required GitHub secrets for the future signed package path:
 
 - `VIBETV_PKG_CERTIFICATE_BASE64`: base64-encoded `.p12` containing the Developer ID Installer certificate and private key.
 - `VIBETV_PKG_CERTIFICATE_PASSWORD`: password for that `.p12`.
@@ -75,7 +86,7 @@ Additional GitHub secrets for notarized packages:
 - `VIBETV_NOTARY_APP_SPECIFIC_PASSWORD`
 - `VIBETV_NOTARY_PROFILE`: optional notarytool profile name; defaults to `vibetv-notary`.
 
-Before tagging a release, use the manual GitHub Actions workflow `Control Center Customer Package Candidate` to build signed and notarized Mac App package candidates. The workflow file must already exist on the default branch before GitHub can dispatch it. After this PR lands on `main`, but before creating a release tag, run it against the release candidate branch or `main`:
+Before calling a release customer-ready, use the manual GitHub Actions workflow `Control Center Customer Package Candidate` to build signed and notarized Mac App package candidates. The workflow file must already exist on the default branch before GitHub can dispatch it. After this PR lands on `main`, run it against the release candidate branch or `main`:
 
 ```bash
 gh workflow run control-center-customer-pkg-candidate.yml \
@@ -153,9 +164,9 @@ The `/api/companion/latest` route may keep technical field names and asset filen
 
 Package links must exactly match the latest release tag version. If the latest release is `v1.0.32`, the app only exposes package download buttons when both `VibeTV-Companion-API-arm64-v1.0.32.pkg` and `VibeTV-Companion-API-amd64-v1.0.32.pkg` exist. Older, mismatched, or partial package assets stay hidden.
 
-The app prefers the macOS package links when present. When both Apple silicon and Intel `.pkg` assets exist, customer-facing download actions show the package buttons and do not offer the shell script next to them. Because the release workflow only uploads `.pkg` release assets after signing and notarization validation, package buttons should not appear for unsigned local build artifacts. Until the first release with those assets exists, the app shows the installer as unavailable instead of linking customers to a missing file.
+The app prefers the macOS package links when present. When both Apple silicon and Intel `.pkg` assets exist, customer-facing download actions show the package buttons and do not offer the shell script next to them. The app does not know whether a package is signed; it only checks that both release assets exist and match the latest release version. Unsigned transition packages can therefore appear in the app once they are attached to the latest GitHub Release. That is acceptable for beta/support testing, but customer-ready release approval still requires signed/notarized packages and clean-Mac validation.
 
-If only the shell script asset is available, setup screens must not present it as the normal customer installer. The primary setup state stays passive, such as `Mac App is not ready yet.` Normal customer onboarding uses only the signed and notarized macOS package buttons.
+If only the shell script asset is available, setup screens must not present it as the normal customer installer. The primary setup state stays passive, such as `Mac App is not ready yet.` Final customer onboarding should use signed and notarized macOS package buttons; the current unsigned package buttons are a transition/beta path only.
 
 When the browser can detect the Mac architecture, the matching package is shown first and marked `This Mac`. If detection is unavailable, both Apple silicon and Intel packages remain visible without marking both as the primary recommendation.
 
@@ -195,7 +206,7 @@ scripts/check-control-center-customer-ready-gate.sh
 
 This gate is intentionally strict. It never merges, tags, releases, installs packages, starts services, discovers devices, or writes to VibeTV hardware. It only runs local checks and read-only hosted/release checks, then fails until the non-automated customer gates are also confirmed:
 
-- latest or selected release exposes both signed Mac App package assets through the hosted app,
+- latest or selected release exposes both Mac App package assets through the hosted app,
 - signed package was validated on a clean Mac,
 - the user explicitly approved and passed the hardware write flow.
 
@@ -246,7 +257,7 @@ scripts/test-control-center-candidate-pkg-artifact.sh
 scripts/test-control-center-companion-legacy-installer.sh
 ```
 
-The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Mac App service, or VibeTV hardware. The release workflow test proves the public GitHub Release cannot be created before signed/notarized Mac App packages are validated, downloaded into the release job, and included in the release checksums. The candidate workflow test proves the pre-release Clean-Mac package path stays manual, read-only, non-release, signed/notarized, and artifact-only. The candidate artifact test proves a downloaded candidate artifact fails closed when package files, versions, or checksums do not match. The legacy installer guard test uses fake `pkgutil`, `launchctl`, and `curl` with a temporary `HOME`; it proves the shell installer refuses to touch the old user LaunchAgent after a package receipt exists unless support explicitly passes `--force-legacy-script`.
+The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Mac App service, or VibeTV hardware. The release workflow test proves the public GitHub Release cannot be created before Mac App packages are validated, downloaded into the release job, and included in the release checksums. The candidate workflow test proves the pre-release Clean-Mac package path stays manual, read-only, non-release, signed/notarized, and artifact-only. The candidate artifact test proves a downloaded candidate artifact fails closed when package files, versions, or checksums do not match. The legacy installer guard test uses fake `pkgutil`, `launchctl`, and `curl` with a temporary `HOME`; it proves the shell installer refuses to touch the old user LaunchAgent after a package receipt exists unless support explicitly passes `--force-legacy-script`.
 
 Keep the macOS package builder covered with:
 
@@ -256,7 +267,7 @@ scripts/test-control-center-companion-pkg-build.sh
 
 That smoke test runs on macOS, builds temporary unsigned `arm64` and `amd64` Mac App packages, then validates both packages with the same read-only readiness checker. It does not install packages, start services, discover devices, or write to VibeTV hardware.
 
-The `companion-pkg-smoke` CI job also uploads those validated unsigned packages as a short-lived GitHub Actions artifact named `vibetv-unsigned-mac-app-pkgs-v<version>-<sha>`. Use that artifact only for manual internal install tests that intentionally accept macOS unsigned-package warnings. It is not a customer release asset and must not be linked from the hosted app or Shopify product pages.
+The `companion-pkg-smoke` CI job also uploads those validated unsigned packages as a short-lived GitHub Actions artifact named `vibetv-unsigned-mac-app-pkgs-v<version>-<sha>`. Use that artifact only for manual internal install tests that intentionally accept macOS unsigned-package warnings. It is not a customer release asset. The tag release workflow separately publishes unsigned transition `.pkg` files as Release assets so the hosted app can download them.
 
 What it checks:
 

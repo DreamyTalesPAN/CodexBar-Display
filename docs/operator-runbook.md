@@ -382,14 +382,14 @@ Run this list before every v0 release decision.
 ### Build + Artifacts
 - [ ] `go test ./...` in `companion` is green.
 - [ ] `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789` is green.
-- [ ] Manual workflow `Control Center Customer Package Candidate` produced signed/notarized Mac App package candidates for the planned version, and the downloaded artifact passed Clean-Mac validation.
+- [ ] For customer-ready release approval, manual workflow `Control Center Customer Package Candidate` produced signed/notarized Mac App package candidates for the planned version, and the downloaded artifact passed Clean-Mac validation.
 - [ ] Candidate workflow was dispatched after the workflow file existed on the default branch:
   `gh workflow run control-center-customer-pkg-candidate.yml --ref <branch> -f version=<version>`.
 - [ ] Downloaded candidate artifact passed:
   `scripts/check-control-center-candidate-pkg-artifact.sh --artifact-dir <artifact-dir> --version <version>`.
 - [ ] Clean-Mac validation was confirmed with:
   `scripts/check-control-center-companion-customer-readiness.sh --installed-package --local-companion --expect-version <version>`.
-- [ ] Release artifacts include companion binaries, firmware binaries, checksums, and signed/notarized Mac App packages.
+- [ ] Release artifacts include companion binaries, firmware binaries, checksums, and both Mac App packages. Transition releases may use unsigned packages; customer-ready approval still requires signed/notarized packages.
 - [ ] GitHub Release includes both customer installer packages for the release tag:
   `VibeTV-Companion-API-arm64-v<version>.pkg` and `VibeTV-Companion-API-amd64-v<version>.pkg`.
 - [ ] Firmware artifact reports expected `CODEXBAR_DISPLAY_FW_VERSION` for the release tag.
@@ -484,7 +484,8 @@ Firmware bench envs:
 - Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
 - Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
-- GitHub release artifacts include companion binaries, firmware binaries, checksums, and both signed/notarized Mac App packages:
+- GitHub release artifacts include companion binaries, firmware binaries, checksums, and both Mac App packages:
   `VibeTV-Companion-API-arm64-v<version>.pkg` and `VibeTV-Companion-API-amd64-v<version>.pkg`.
+- Current tag releases publish unsigned transition packages so `app.vibetv.shop` can offer a direct download. Customer-ready releases still require Developer ID Installer signing, Apple notarization, stapling, `--require-signed --require-notarized` validation, and a clean-Mac install check.
 - Pre-release Clean-Mac validation uses the manual `Control Center Customer Package Candidate` workflow after that workflow file exists on the default branch. It uploads private Actions artifacts only; it does not tag, merge, or create a GitHub Release.
 - A customer release is not ready until those two package assets exist on the GitHub Release and match the tag version.

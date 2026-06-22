@@ -9,35 +9,6 @@ permissions:
   contents: write
 
 jobs:
-  customer-package-preflight:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require customer package signing and notarization secrets
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.VIBETV_PKG_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.VIBETV_PKG_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.VIBETV_NOTARY_APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.VIBETV_NOTARY_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.VIBETV_NOTARY_APP_SPECIFIC_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          missing=()
-          [[ -n "${CERTIFICATE_BASE64}" ]] || missing+=(VIBETV_PKG_CERTIFICATE_BASE64)
-          [[ -n "${CERTIFICATE_PASSWORD}" ]] || missing+=(VIBETV_PKG_CERTIFICATE_PASSWORD)
-          [[ -n "${APPLE_ID}" ]] || missing+=(VIBETV_NOTARY_APPLE_ID)
-          [[ -n "${APPLE_TEAM_ID}" ]] || missing+=(VIBETV_NOTARY_TEAM_ID)
-          [[ -n "${APPLE_APP_SPECIFIC_PASSWORD}" ]] || missing+=(VIBETV_NOTARY_APP_SPECIFIC_PASSWORD)
-
-          if (( ${#missing[@]} > 0 )); then
-            echo "error: customer release package secrets are missing:" >&2
-            printf '  - %s\n' "${missing[@]}" >&2
-            echo "Configure Developer ID Installer signing and Apple notarization secrets before tagging a customer release." >&2
-            exit 1
-          fi
-
-          echo "Customer package signing and notarization secrets are configured."
-
   build-and-release:
     needs: build-companion-pkgs
     runs-on: ubuntu-latest
@@ -204,7 +175,6 @@ jobs:
             dist/checksums-*.txt
 
   build-companion-pkgs:
-    needs: customer-package-preflight
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -215,88 +185,6 @@ jobs:
         with:
           go-version-file: companion/go.mod
           cache-dependency-path: companion/go.sum
-
-      - name: Prepare Apple package signing
-        id: signing
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.VIBETV_PKG_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.VIBETV_PKG_CERTIFICATE_PASSWORD }}
-          SIGN_IDENTITY: ${{ secrets.VIBETV_PKG_SIGN_IDENTITY }}
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${CERTIFICATE_BASE64}" || -z "${CERTIFICATE_PASSWORD}" ]]; then
-            echo "error: Apple package signing secrets are not configured." >&2
-            echo "ready=false" >> "${GITHUB_OUTPUT}"
-            exit 1
-          fi
-
-          KEYCHAIN_PATH="${RUNNER_TEMP}/vibetv-signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
-          CERTIFICATE_PATH="${RUNNER_TEMP}/vibetv-installer-certificate.p12"
-
-          printf '%s' "${CERTIFICATE_BASE64}" | base64 --decode > "${CERTIFICATE_PATH}"
-          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
-          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security default-keychain -s "${KEYCHAIN_PATH}"
-          security import "${CERTIFICATE_PATH}" \
-            -k "${KEYCHAIN_PATH}" \
-            -P "${CERTIFICATE_PASSWORD}" \
-            -T /usr/bin/pkgbuild \
-            -T /usr/bin/productbuild \
-            -T /usr/bin/security
-          security set-key-partition-list \
-            -S apple-tool:,apple: \
-            -s \
-            -k "${KEYCHAIN_PASSWORD}" \
-            "${KEYCHAIN_PATH}"
-
-          if [[ -z "${SIGN_IDENTITY}" ]]; then
-            SIGN_IDENTITY="$(security find-identity -v -p basic "${KEYCHAIN_PATH}" | awk -F '"' '/Developer ID Installer/ {print $2; exit}')"
-          fi
-          if [[ -z "${SIGN_IDENTITY}" ]]; then
-            echo "error: could not find a Developer ID Installer signing identity" >&2
-            exit 1
-          fi
-
-          echo "VIBETV_SIGNING_KEYCHAIN=${KEYCHAIN_PATH}" >> "${GITHUB_ENV}"
-          echo "VIBETV_PKG_SIGN_IDENTITY=${SIGN_IDENTITY}" >> "${GITHUB_ENV}"
-          echo "VIBETV_NOTARY_KEYCHAIN=${KEYCHAIN_PATH}" >> "${GITHUB_ENV}"
-          echo "ready=true" >> "${GITHUB_OUTPUT}"
-          echo "Mac App PKGs will be signed with Developer ID Installer."
-
-      - name: Prepare Apple notarization
-        id: notarization
-        env:
-          APPLE_ID: ${{ secrets.VIBETV_NOTARY_APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.VIBETV_NOTARY_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.VIBETV_NOTARY_APP_SPECIFIC_PASSWORD }}
-          NOTARY_PROFILE: ${{ secrets.VIBETV_NOTARY_PROFILE }}
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${VIBETV_PKG_SIGN_IDENTITY:-}" ]]; then
-            echo "error: package signing is not configured." >&2
-            echo "ready=false" >> "${GITHUB_OUTPUT}"
-            exit 1
-          fi
-          if [[ -z "${APPLE_ID}" || -z "${APPLE_TEAM_ID}" || -z "${APPLE_APP_SPECIFIC_PASSWORD}" ]]; then
-            echo "error: Apple notarization secrets are not configured." >&2
-            echo "ready=false" >> "${GITHUB_OUTPUT}"
-            exit 1
-          fi
-
-          PROFILE="${NOTARY_PROFILE:-vibetv-notary}"
-          xcrun notarytool store-credentials "${PROFILE}" \
-            --apple-id "${APPLE_ID}" \
-            --team-id "${APPLE_TEAM_ID}" \
-            --password "${APPLE_APP_SPECIFIC_PASSWORD}" \
-            --keychain "${VIBETV_SIGNING_KEYCHAIN}"
-
-          echo "VIBETV_NOTARY_PROFILE=${PROFILE}" >> "${GITHUB_ENV}"
-          echo "ready=true" >> "${GITHUB_OUTPUT}"
-          echo "Mac App PKGs will be submitted for notarization."
 
       - name: Build Mac App PKGs
         env:
@@ -338,30 +226,7 @@ jobs:
               --expect-version "${VERSION}"
           done
 
-      - name: Validate signed customer Mac App PKGs
-        if: ${{ steps.signing.outputs.ready == 'true' && steps.notarization.outputs.ready == 'true' }}
-        env:
-          VERSION: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          VERSION="${VERSION#v}"
-          for PKG in dist/companion-pkg/*.pkg; do
-            scripts/check-control-center-companion-customer-readiness.sh \
-              --pkg "${PKG}" \
-              --expect-version "${VERSION}" \
-              --require-signed \
-              --require-notarized
-          done
-
-      - name: Reject unsigned Mac App PKG release upload
-        if: ${{ steps.signing.outputs.ready != 'true' || steps.notarization.outputs.ready != 'true' }}
-        run: |
-          echo "error: signed and notarized Mac App PKGs are required for customer releases." >&2
-          exit 1
-
-      - name: Upload validated Mac App PKGs
-        if: ${{ steps.signing.outputs.ready == 'true' && steps.notarization.outputs.ready == 'true' }}
+      - name: Upload validated unsigned Mac App PKGs
         uses: actions/upload-artifact@v4
         with:
           name: companion-pkgs
