@@ -233,7 +233,7 @@ async function main() {
       appContext.appUrl,
     );
     await testCustomerLogsStayCustomerOnly(browser, appContext.appUrl);
-    await testPairingRequiredThemeStaysLocked(browser, appContext.appUrl);
+    await testUnpairedThemeDeepLinkAutoRepairs(browser, appContext.appUrl);
     await testThemeWithoutPackUrlStaysLocked(browser, appContext.appUrl);
     await testBoardIncompatibleThemeStaysLocked(browser, appContext.appUrl);
     await testFirmwareIncompatibleThemeStaysLocked(browser, appContext.appUrl);
@@ -878,9 +878,14 @@ async function testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
     "expected automatic VibeTV repair to run",
   );
 
+  const repairPayload = JSON.parse(repairRequests[0] || "{}");
   assert(
-    repairRequests[0] === "{}",
+    repairPayload.target == null,
     `automatic repair should not force stale saved address, got ${repairRequests[0]}`,
+  );
+  assert(
+    repairPayload.forcePair === true,
+    `automatic repair should re-pair stale bindings, got ${repairRequests[0]}`,
   );
   assert(
     settingsCalls >= 1,
@@ -1087,7 +1092,7 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
   await page.close();
 }
 
-async function testPairingRequiredThemeStaysLocked(browser, appUrl) {
+async function testUnpairedThemeDeepLinkAutoRepairs(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const pairRequests = [];
@@ -1108,14 +1113,9 @@ async function testPairingRequiredThemeStaysLocked(browser, appUrl) {
   );
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
-  await assertThemeLibraryLockedBehindSetup(page);
-  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
   await waitForCondition(
     () => pairRequests.length === 1,
-    "expected setup to pair VibeTV automatically",
+    "expected setup to repair and pair VibeTV automatically",
   );
   await waitForCondition(
     () => settingsCalls >= 2,

@@ -530,6 +530,60 @@ func TestDeviceRepairForcePairRotatesToken(t *testing.T) {
 	}
 }
 
+func TestDeviceRepairForcePairIgnoresStaleTokenDuringDiscovery(t *testing.T) {
+	var sawTokenlessHello bool
+	var sawNewTokenHello bool
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			switch got := r.Header.Get("X-VibeTV-Token"); got {
+			case "":
+				sawTokenlessHello = true
+			case "new-token":
+				sawNewTokenHello = true
+			default:
+				http.Error(w, "stale token", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/api/pair":
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST pair, got %s", r.Method)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"new-token"}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: "http://vibetv.local", DeviceToken: "old-token"})
+	server.runSetup = func(_ context.Context, opts setup.Options) error {
+		if opts.Target != device.URL {
+			t.Fatalf("expected display stream target %q, got %q", device.URL, opts.Target)
+		}
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{"target":"`+device.URL+`","forcePair":true}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !sawTokenlessHello {
+		t.Fatal("expected force repair discovery to probe without stale token")
+	}
+	if !sawNewTokenHello {
+		t.Fatal("expected repair response refresh to use the new token")
+	}
+}
+
 func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		Theme:        "mini",

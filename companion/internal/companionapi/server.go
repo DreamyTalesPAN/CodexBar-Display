@@ -667,7 +667,16 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
 	}
-	target, hello, err := s.discover(ctx, cfg, requestedTarget)
+	discoveryCfg := cfg
+	if forcePair {
+		discoveryCfg.DeviceToken = ""
+	}
+	target, hello, err := s.discover(ctx, discoveryCfg, requestedTarget)
+	if err != nil && !forcePair && strings.TrimSpace(cfg.DeviceToken) != "" {
+		discoveryCfg = cfg
+		discoveryCfg.DeviceToken = ""
+		target, hello, err = s.discover(ctx, discoveryCfg, requestedTarget)
+	}
 	if err != nil {
 		return deviceInfo{}, err
 	}

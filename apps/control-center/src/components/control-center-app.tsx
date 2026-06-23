@@ -880,9 +880,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       isLocalNetworkAccessError(lastError)
     ) {
       return;
-    }
-    didRunAutoRepair.current = true;
-    void repairConnection({ quiet: true });
+	}
+	didRunAutoRepair.current = true;
+	void repairConnection({ forcePair: true, quiet: true });
   }, [
     busyAction,
     companionStatus,
