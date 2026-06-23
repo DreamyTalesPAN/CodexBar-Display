@@ -576,7 +576,7 @@ func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 		writeDeviceNotFound(w)
 		return
 	}
-	hello, err := s.getHello(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
+	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
 	if err != nil {
 		writeDeviceNotFound(w)
 		return
