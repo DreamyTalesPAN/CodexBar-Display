@@ -126,6 +126,7 @@ export function SetupScreen({
   const wifiConfirmed =
     wifiConfirmedState || setupComplete || previewStep === "mac-app";
   const connecting =
+    busyAction === "status" ||
     busyAction === "connect" ||
     busyAction === "discover" ||
     busyAction === "repair";

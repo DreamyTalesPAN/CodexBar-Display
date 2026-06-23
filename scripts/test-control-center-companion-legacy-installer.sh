@@ -74,7 +74,17 @@ printf '%s\n' "$*" >> "${FAKE_CURL_LOG:?}"
 exit 22
 EOF
 
-  chmod +x "${fake_bin}/uname" "${fake_bin}/pkgutil" "${fake_bin}/launchctl" "${fake_bin}/curl"
+  cat > "${fake_bin}/codesign" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+
+  cat > "${fake_bin}/xattr" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+
+  chmod +x "${fake_bin}/uname" "${fake_bin}/pkgutil" "${fake_bin}/launchctl" "${fake_bin}/curl" "${fake_bin}/codesign" "${fake_bin}/xattr"
 }
 
 prepare_home() {

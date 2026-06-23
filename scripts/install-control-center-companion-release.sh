@@ -224,6 +224,13 @@ install_binary() {
   mkdir -p "$BIN_DIR"
   cp "$DOWNLOAD_BIN" "$BIN_PATH"
   chmod 755 "$BIN_PATH"
+  if command -v xattr >/dev/null 2>&1; then
+    xattr -cr "$BIN_PATH" >/dev/null 2>&1 || true
+  fi
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --sign - "$BIN_PATH" >/dev/null 2>&1 \
+      || die "macOS could not prepare the Companion binary for launch. Open System Settings > Privacy & Security, allow VibeTV if prompted, then rerun this installer."
+  fi
 }
 
 uninstall_service() {

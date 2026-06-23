@@ -453,9 +453,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               ? "online"
               : "unknown",
         );
-        const refreshed = await refreshDevice({ quiet: true });
-        if (refreshed?.connected) {
-          void loadSettings();
+        if (payload.device.connected) {
+          const refreshed = await refreshDevice({ quiet: true });
+          if (refreshed?.connected) {
+            void loadSettings();
+          }
         }
       } else {
         setDevice(null);
