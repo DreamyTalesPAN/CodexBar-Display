@@ -112,8 +112,7 @@ export function ThemeLibraryScreen({
   const setupBlocked =
     companionStatus !== "online" ||
     !device?.connected ||
-    !device.paired ||
-    !themeInstallEnabled;
+    !device.paired;
 
   return (
     <div className="mx-auto max-w-[1180px]">

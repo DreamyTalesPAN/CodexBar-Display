@@ -584,6 +584,12 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     (await page.getByText("needs an update before themes").count()) === 0,
     "setup must not require the theme install write gate",
   );
+  await page.getByRole("button", { name: "Theme Library" }).click();
+  await page
+    .getByRole("heading", { name: "Choose a theme" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByText("Fixture Synthwave Theme").waitFor({ timeout: 10_000 });
+  await page.getByText("Fixture Clippy Theme").waitFor({ timeout: 10_000 });
   assertNoInstallRequests(installRequests);
   await page.close();
 }
