@@ -473,20 +473,6 @@ function FinishSetupContent({
     return <StatusNote>VibeTV is ready.</StatusNote>;
   }
 
-  if (
-    busyAction === "connect" ||
-    busyAction === "discover" ||
-    busyAction === "repair"
-  ) {
-    return (
-      <StatusNote
-        icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
-      >
-        Reconnecting VibeTV...
-      </StatusNote>
-    );
-  }
-
   if (deviceState === "offline") {
     return (
       <div className="grid gap-5">
@@ -513,6 +499,20 @@ function FinishSetupContent({
           value={deviceTarget}
         />
       </div>
+    );
+  }
+
+  if (
+    busyAction === "connect" ||
+    busyAction === "discover" ||
+    busyAction === "repair"
+  ) {
+    return (
+      <StatusNote
+        icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
+      >
+        Reconnecting VibeTV...
+      </StatusNote>
     );
   }
 
