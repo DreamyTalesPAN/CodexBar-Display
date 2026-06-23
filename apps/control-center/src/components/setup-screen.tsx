@@ -189,11 +189,12 @@ export function SetupScreen({
     () =>
       buildStepStates({
         activeStep,
+        macAppConfirmed,
         macAppReady,
         setupComplete,
         wifiConfirmed,
       }),
-    [activeStep, macAppReady, setupComplete, wifiConfirmed],
+    [activeStep, macAppConfirmed, macAppReady, setupComplete, wifiConfirmed],
   );
 
   function confirmWifi() {
@@ -702,11 +703,13 @@ function buildActiveStep({
 
 function buildStepStates({
   activeStep,
+  macAppConfirmed,
   macAppReady,
   setupComplete,
   wifiConfirmed,
 }: {
   activeStep: StepId;
+  macAppConfirmed: boolean;
   macAppReady: boolean;
   setupComplete: boolean;
   wifiConfirmed: boolean;
@@ -718,7 +721,7 @@ function buildStepStates({
         : activeStep === "wifi"
           ? "active"
           : "blocked",
-    "mac-app": macAppReady
+    "mac-app": macAppConfirmed || macAppReady || setupComplete
       ? "complete"
       : activeStep === "mac-app"
         ? "active"
