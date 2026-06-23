@@ -436,8 +436,16 @@ async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
   await page
     .getByRole("button", { name: "VibeTV is on WiFi" })
     .waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Plug VibeTV into power.")
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Wait until VibeTV shows VibeTV-Setup.")
+    .waitFor({ timeout: 10_000 });
   await page.getByText("Take your phone.").waitFor({ timeout: 10_000 });
-  await page.getByText("VibeTV-Setup").waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Open WiFi settings and join")
+    .waitFor({ timeout: 10_000 });
   await page.getByText("192.168.4.1").waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("button", { name: "Allow access" }).count()) === 0,

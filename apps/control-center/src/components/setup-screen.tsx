@@ -239,24 +239,26 @@ export function SetupScreen({
             {activeStep === "wifi" ? (
               <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                 <ol className="grid gap-2 text-sm leading-6 text-[#444933]">
-                  <li>1. Take your phone.</li>
+                  <li>1. Plug VibeTV into power.</li>
+                  <li>2. Wait until VibeTV shows VibeTV-Setup.</li>
+                  <li>3. Take your phone.</li>
                   <li>
-                    2. Open WiFi settings and join{" "}
+                    4. Open WiFi settings and join{" "}
                     <strong className="font-black text-[#1B1B1B]">
                       VibeTV-Setup
                     </strong>
                     .
                   </li>
                   <li>
-                    3. Open{" "}
+                    5. Open{" "}
                     <strong className="font-black text-[#1B1B1B]">
                       192.168.4.1
                     </strong>{" "}
                     on your phone.
                   </li>
-                  <li>4. Choose your home WiFi and save.</li>
+                  <li>6. Choose your home WiFi and save.</li>
                   <li>
-                    5. Wait until VibeTV says WiFi connected, then continue
+                    7. Wait until VibeTV says WiFi connected, then continue
                     here.
                   </li>
                 </ol>
