@@ -271,7 +271,7 @@ export function SetupScreen({
                     .
                   </li>
                   <li>
-                    5. Open{" "}
+                    5. If the browser does not open automatically, open{" "}
                     <strong className="font-black text-[#1B1B1B]">
                       192.168.4.1
                     </strong>{" "}
