@@ -662,9 +662,14 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 
 	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
 	var gotOpts themeinstall.Options
+	var setupCalls []setup.Options
 	server.installTheme = func(ctx context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
 		gotOpts = opts
 		return themeinstall.Result{ThemeID: opts.ThemeID, Target: opts.Target}, nil
+	}
+	server.runSetup = func(_ context.Context, opts setup.Options) error {
+		setupCalls = append(setupCalls, opts)
+		return nil
 	}
 
 	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip"}`)
@@ -685,6 +690,20 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	}
 	if !gotOpts.SkipFirmwareUpdate {
 		t.Fatalf("expected local API theme install to skip firmware update by default")
+	}
+	if len(setupCalls) != 2 {
+		t.Fatalf("expected validate and apply display stream refresh calls, got %+v", setupCalls)
+	}
+	for index, call := range setupCalls {
+		if call.Transport != "wifi" || call.Target != device.URL || !call.AssumeYes || !call.SkipFlash {
+			t.Fatalf("setup call %d must refresh wifi stream without flashing, got %+v", index, call)
+		}
+	}
+	if !setupCalls[0].ValidateOnly {
+		t.Fatalf("first setup refresh call should validate dependencies, got %+v", setupCalls[0])
+	}
+	if setupCalls[1].ValidateOnly {
+		t.Fatalf("second setup refresh call should apply launch agent changes, got %+v", setupCalls[1])
 	}
 }
 

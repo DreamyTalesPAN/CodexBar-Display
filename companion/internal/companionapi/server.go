@@ -689,6 +689,17 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		writeInstallError(w, err)
 		return
 	}
+	if err := s.startDisplayStream(r.Context(), cfg.DeviceTarget); err != nil {
+		writeError(
+			w,
+			http.StatusBadGateway,
+			"display_stream_refresh_failed",
+			"Theme installed, but Mac App could not refresh the VibeTV display.",
+			"Run setup again or restart the Mac App, then retry.",
+		)
+		return
+	}
+	fmt.Fprintln(&installLog, "Display stream: refreshed")
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool                `json:"ok"`
 		Result themeinstall.Result `json:"result"`
