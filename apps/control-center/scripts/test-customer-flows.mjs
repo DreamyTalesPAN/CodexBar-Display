@@ -193,7 +193,7 @@ async function main() {
       console.log("control-center customer smoke tests passed");
       return;
     }
-    await testLocalNetworkPermissionComesBeforeMacAppInstall(
+    await testLocalNetworkPermissionComesAfterPhoneWifiStep(
       browser,
       appContext.appUrl,
     );
@@ -411,7 +411,7 @@ async function newCustomerPage(browser, appUrl, options) {
   return page;
 }
 
-async function testLocalNetworkPermissionComesBeforeMacAppInstall(
+async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
   browser,
   appUrl,
 ) {
@@ -422,44 +422,44 @@ async function testLocalNetworkPermissionComesBeforeMacAppInstall(
   await page.goto(appUrl, {
     waitUntil: "networkidle",
   });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
   await page
-    .locator("h2")
-    .filter({ hasText: "Allow browser access" })
+    .getByRole("button", { name: "VibeTV is on WiFi" })
     .waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("button", { name: "Allow access" })
-    .waitFor({ timeout: 10_000 });
+  await page.getByText("Take your phone.").waitFor({ timeout: 10_000 });
+  await page.getByText("VibeTV-Setup").waitFor({ timeout: 10_000 });
+  await page.getByText("192.168.4.1").waitFor({ timeout: 10_000 });
   assert(
-    (await page.getByText("Install Mac App first").count()) === 0,
-    "browser permission should be requested before showing Mac App install",
+    (await page.getByRole("button", { name: "Allow access" }).count()) === 0,
+    "browser permission should not be requested before the WiFi step",
   );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
 async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   browser,
   appUrl,
-  fixtureServer,
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const initialReleaseRequests = fixtureServer.releaseRequestCount;
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/does-not-exist`, {
     waitUntil: "networkidle",
   });
-  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
-  await assertSingleCompanionInstallLink(page);
-  await clickDownloadWithoutLeavingPage(
-    page.getByRole("link", { name: "Install Mac App" }),
-  );
   await page
-    .getByText(
-      "Download started. Open the downloaded installer, finish setup, then return here and check the Mac App again.",
-    )
+    .getByRole("button", { name: "VibeTV is on WiFi" })
+    .click();
+  await page
+    .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
 
   assert(
@@ -476,10 +476,6 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   );
   await assertNoLegacyCompanionDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
-  assert(
-    fixtureServer.releaseRequestCount > initialReleaseRequests,
-    "missing-Companion flow did not read the local release fixture",
-  );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -500,9 +496,21 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
   const updatesButton = page.getByRole("button", {
     name: "Updates",
   });
+  const overviewButton = page.getByRole("button", {
+    name: "Overview",
+  });
+  const supportButton = page.getByRole("button", {
+    name: "Support",
+  });
+  await overviewButton.waitFor({ timeout: 10_000 });
   await settingsButton.waitFor({ timeout: 10_000 });
   await themeLibraryButton.waitFor({ timeout: 10_000 });
   await updatesButton.waitFor({ timeout: 10_000 });
+  await supportButton.waitFor({ timeout: 10_000 });
+  assert(
+    await overviewButton.isDisabled(),
+    "Overview tab should stay disabled until setup is complete",
+  );
   assert(
     await settingsButton.isDisabled(),
     "Settings tab should stay disabled until setup is complete",
@@ -514,6 +522,10 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
   assert(
     await updatesButton.isDisabled(),
     "Updates tab should stay disabled until setup is complete",
+  );
+  assert(
+    await supportButton.isDisabled(),
+    "Support tab should stay disabled until setup is complete",
   );
   assert(
     (await page.getByText("Selected in this app").count()) === 0,
@@ -535,7 +547,7 @@ async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
-  await page.getByText("Install Mac App first").waitFor({
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
     timeout: 10_000,
   });
 
@@ -934,17 +946,15 @@ async function testPairingRequiredThemeStaysLocked(browser, appUrl) {
   );
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await waitForCondition(
-    () => settingsCalls >= 1,
-    "expected settings refresh for pairing readiness check",
-  );
-
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
   await assertThemeLibraryLockedBehindSetup(page);
-  await page
-    .getByRole("button", { name: "Connect VibeTV" })
-    .waitFor({ timeout: 10_000 });
-
-  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
+  await waitForCondition(
+    () => pairRequests.length === 1,
+    "expected setup to pair VibeTV automatically",
+  );
   await waitForCondition(
     () => settingsCalls >= 2,
     "expected settings refresh after pairing",
@@ -975,7 +985,9 @@ async function testThemeWithoutPackUrlStaysLocked(browser, appUrl) {
     waitUntil: "networkidle",
   });
 
-  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   assert(
@@ -1054,27 +1066,24 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
 async function testScriptOnlyReleaseShowsSupportFallback(
   browser,
   appUrl,
-  fixtureServer,
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const initialReleaseRequests = fixtureServer.scriptOnlyReleaseRequestCount;
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
   await page
-    .getByText("Mac App is not ready yet.")
+    .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
   await assertNoCompanionInstallLink(page);
   await assertNoLegacyCompanionDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
-  assert(
-    fixtureServer.scriptOnlyReleaseRequestCount > initialReleaseRequests,
-    "script-only flow did not read the local release fixture",
-  );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -1083,27 +1092,24 @@ async function testScriptOnlyReleaseShowsSupportFallback(
 async function testPartialPackageReleaseShowsSupportFallback(
   browser,
   appUrl,
-  fixtureServer,
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const initialReleaseRequests = fixtureServer.partialReleaseRequestCount;
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
   await page
-    .getByText("Mac App is not ready yet.")
+    .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
   await assertNoCompanionInstallLink(page);
   await assertNoLegacyCompanionDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
-  assert(
-    fixtureServer.partialReleaseRequestCount > initialReleaseRequests,
-    "partial-package flow did not read the local release fixture",
-  );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -1112,33 +1118,26 @@ async function testPartialPackageReleaseShowsSupportFallback(
 async function testPackageOnlyReleaseShowsPackageDownloads(
   browser,
   appUrl,
-  fixtureServer,
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const initialReleaseRequests = fixtureServer.packageOnlyReleaseRequestCount;
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
-  await assertSingleCompanionInstallLink(page);
-  await clickDownloadWithoutLeavingPage(
-    page.getByRole("link", { name: "Install Mac App" }),
-  );
   await page
-    .getByText(
-      "Download started. Open the downloaded installer, finish setup, then return here and check the Mac App again.",
-    )
+    .getByRole("button", { name: "VibeTV is on WiFi" })
+    .click();
+  await page
+    .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
 
   await assertNoLegacyCompanionDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
-  assert(
-    fixtureServer.packageOnlyReleaseRequestCount > initialReleaseRequests,
-    "package-only flow did not read the local release fixture",
-  );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -1147,27 +1146,24 @@ async function testPackageOnlyReleaseShowsPackageDownloads(
 async function testReleaseCheckFailureShowsNoDownloadActions(
   browser,
   appUrl,
-  fixtureServer,
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const initialReleaseRequests = fixtureServer.failedReleaseRequestCount;
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
   await page
-    .getByRole("button", { name: "Try again" })
+    .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
 
   await assertNoLegacyCompanionDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
-  assert(
-    fixtureServer.failedReleaseRequestCount > initialReleaseRequests,
-    "failed-release flow did not read the local release fixture",
-  );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -1176,31 +1172,23 @@ async function testReleaseCheckFailureShowsNoDownloadActions(
 async function testMissingAssetReleaseShowsNoDownloadActions(
   browser,
   appUrl,
-  fixtureServer,
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const initialReleaseRequests = fixtureServer.missingAssetReleaseRequestCount;
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByText("Install Mac App first").waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
   await page
-    .getByText("Mac App is not ready yet.")
+    .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
-  assert(
-    (await page.getByRole("button", { name: "Installer unavailable" }).count()) === 0,
-    "missing-asset setup should not show a dead installer button",
-  );
-
   await assertNoLegacyCompanionDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
-  assert(
-    fixtureServer.missingAssetReleaseRequestCount > initialReleaseRequests,
-    "missing-asset flow did not read the local release fixture",
-  );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -1786,16 +1774,6 @@ async function assertNoMobileOverflow(page) {
   );
 }
 
-async function assertSingleCompanionInstallLink(page) {
-  const installLink = page.getByRole("link", { name: "Install Mac App" });
-  await installLink.waitFor({ timeout: 10_000 });
-  const installLinkCount = await installLink.count();
-  assert(
-    installLinkCount === 1,
-    `expected one Companion install action, got ${installLinkCount}`,
-  );
-}
-
 async function assertNoCompanionInstallLink(page) {
   const installLinkCount = await page
     .getByRole("link", { name: "Install Mac App" })
@@ -1936,19 +1914,6 @@ async function assertNoThemeLibraryReleaseDiagnostics(page) {
       `Theme Library should not show release diagnostic: ${text}`,
     );
   }
-}
-
-async function clickDownloadWithoutLeavingPage(locator) {
-  await locator.evaluate((anchor) => {
-    anchor.addEventListener(
-      "click",
-      (event) => {
-        event.preventDefault();
-      },
-      { once: true },
-    );
-    anchor.click();
-  });
 }
 
 async function waitForCondition(predicate, message, timeoutMs = 10_000) {

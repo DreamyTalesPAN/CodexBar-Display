@@ -268,9 +268,9 @@ void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const Stri
   tft.setTextWrap(false);
   tft.setTextFont(1);
 
-  const char* title = "SETUP WIFI";
+  const char* title = "USE PHONE";
   const char* action = "Join WiFi:";
-  const char* detail = "Then open:";
+  const char* detail = "Open:";
   const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
   const int ssidSize = display::ChooseTextSizeToFit(ssid.c_str(), 3, 2, tft.width() - 8);
   const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);

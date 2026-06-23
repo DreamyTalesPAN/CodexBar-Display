@@ -70,6 +70,7 @@ export type DeviceInfo = {
 };
 
 export type ActiveTab =
+  | "setup"
   | "overview"
   | "settings"
   | "theme-library"

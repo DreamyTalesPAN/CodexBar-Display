@@ -5,70 +5,35 @@ import {
   Check,
   CircleHelp,
   Monitor,
-  Play,
   SlidersHorizontal,
   Wifi,
 } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import {
-  CompanionPrimaryAction,
-  useCompanionRelease,
-} from "./companion-installer-actions";
 import type {
-  ApiError,
   CompanionStatus,
   DeviceInfo,
   DeviceState,
   ReadinessTone,
 } from "./control-center-types";
-import { DeviceTargetForm } from "./device-target-form";
 
 type OverviewScreenProps = {
   companionStatus: CompanionStatus;
   deviceState: DeviceState;
   device: DeviceInfo | null;
-  busyAction?: string | null;
-  lastError?: ApiError | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
-  deviceTarget: string;
-  onCheckCompanion?: () => void;
-  onConnectDevice?: (targetOverride?: string) => void;
-  onDeviceTargetChange?: (target: string) => void;
 };
 
 export function OverviewScreen({
   companionStatus,
   deviceState,
   device,
-  busyAction,
-  lastError,
   firmwareUpdate,
-  deviceTarget,
-  onCheckCompanion,
-  onConnectDevice,
-  onDeviceTargetChange,
 }: OverviewScreenProps) {
   const connected = Boolean(device?.connected);
-  const paired = Boolean(device?.paired || deviceState === "paired");
-  const companionMissing = companionStatus === "missing";
-  const {
-    busy: companionReleaseBusy,
-    refresh: refreshCompanionRelease,
-    release: companionRelease,
-  } = useCompanionRelease(undefined, { enabled: companionMissing });
-  const hero = buildHeroCopy({ companionStatus, connected, lastError });
-  const setup = buildSetupState({
-    companionStatus,
-    connected,
-    paired,
-    deviceState,
-    lastError,
-  });
-  const localActionBusy = Boolean(busyAction);
+  const hero = buildHeroCopy({ companionStatus, connected });
   const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
-  const showTargetControl = companionStatus === "online" && !connected;
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -114,74 +79,6 @@ export function OverviewScreen({
           />
         </div>
       </section>
-
-      {setup ? (
-        <section className="border-b border-[#747A60] py-6">
-          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-            <div className="flex min-w-0 gap-4">
-              <div className="grid size-11 shrink-0 place-items-center rounded-full bg-[#1B1B1B] text-[#CCFF00]">
-                {setup.icon}
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-base font-bold text-[#1B1B1B]">
-                  {setup.title}
-                </h3>
-                {setup.detail ? (
-                  <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
-                    {setup.detail}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="flex md:justify-end">
-              {companionMissing ? (
-                <CompanionPrimaryAction
-                  busy={companionReleaseBusy}
-                  onRetry={refreshCompanionRelease}
-                  release={companionRelease}
-                />
-              ) : null}
-              {setup.action === "check" ? (
-                <PrimarySetupButton
-                  busy={busyAction === "status"}
-                  busyLabel="Checking"
-                  disabled={localActionBusy && busyAction !== "status"}
-                  icon={<Wifi size={18} aria-hidden />}
-                  label={setup.actionLabel || "Start setup"}
-                  onClick={onCheckCompanion}
-                />
-              ) : null}
-              {setup.action === "connect" ? (
-                <PrimarySetupButton
-                  busy={busyAction === "connect"}
-                  busyLabel="Connecting"
-                  disabled={localActionBusy && busyAction !== "connect"}
-                  icon={<Monitor size={18} aria-hidden />}
-                  label="Connect VibeTV"
-                  onClick={() => onConnectDevice?.()}
-                />
-              ) : null}
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {showTargetControl ? (
-        <section className="border-b border-[#747A60] py-6">
-          <DeviceTargetForm
-            busy={busyAction === "connect"}
-            disabled={localActionBusy}
-            buttonLabel="Connect VibeTV"
-            id="overview-device-target"
-            lastError={lastError}
-            onChange={onDeviceTargetChange}
-            onSubmit={onConnectDevice}
-            searchingLabel="Connecting"
-            value={deviceTarget}
-          />
-        </section>
-      ) : null}
     </div>
   );
 }
@@ -238,28 +135,10 @@ function StatusRow({
 function buildHeroCopy({
   companionStatus,
   connected,
-  lastError,
 }: {
   companionStatus: CompanionStatus;
   connected: boolean;
-  lastError?: ApiError | null;
 }) {
-  if (isLocalNetworkAccessError(lastError)) {
-    return {
-      title: "Allow browser access",
-      tone: "attention" as ReadinessTone,
-      icon: <CircleHelp size={36} aria-hidden />,
-      detail: lastError?.nextAction,
-    };
-  }
-  if (companionStatus === "missing") {
-    return {
-      title: "Install Mac App",
-      tone: "attention" as ReadinessTone,
-      icon: <CircleHelp size={36} aria-hidden />,
-      detail: lastError?.nextAction,
-    };
-  }
   if (connected) {
     return {
       title: "VibeTV is connected",
@@ -268,84 +147,15 @@ function buildHeroCopy({
     };
   }
   return {
-    title: "Connect VibeTV",
+    title: companionStatus === "missing" ? "Setup needed" : "VibeTV status",
     tone: "attention" as ReadinessTone,
-    icon: <SlidersHorizontal size={34} aria-hidden />,
+    icon:
+      companionStatus === "missing" ? (
+        <CircleHelp size={36} aria-hidden />
+      ) : (
+        <SlidersHorizontal size={34} aria-hidden />
+      ),
   };
-}
-
-function buildSetupState({
-  companionStatus,
-  connected,
-  paired,
-  deviceState,
-  lastError,
-}: {
-  companionStatus: CompanionStatus;
-  connected: boolean;
-  paired: boolean;
-  deviceState: DeviceState;
-  lastError?: ApiError | null;
-}): {
-  action?: "check" | "connect";
-  actionLabel?: string;
-  detail: string;
-  icon: ReactNode;
-  title: string;
-} | null {
-  if (isLocalNetworkAccessError(lastError)) {
-    return {
-      title: "Allow browser access",
-      detail: lastError?.nextAction || "When Chrome asks, choose Allow.",
-      icon: <Wifi size={22} aria-hidden />,
-      action: "check",
-      actionLabel: "Allow access",
-    };
-  }
-  if (companionStatus === "missing") {
-    return {
-      title: "Install Mac App first",
-      detail: "",
-      icon: <Play size={22} aria-hidden />,
-    };
-  }
-  if (companionStatus !== "online") {
-    return {
-      title: "Start setup",
-      detail: "We will check this Mac first, then show the next step.",
-      icon: <Wifi size={22} aria-hidden />,
-      action: "check",
-    };
-  }
-  if (connected && !paired) {
-    return {
-      title: "Connect VibeTV",
-      detail: "Pair this VibeTV once so this Mac can manage it.",
-      icon: <Monitor size={22} aria-hidden />,
-      action: "connect",
-    };
-  }
-  if (!connected && deviceState === "offline") {
-    return {
-      title: "Connect VibeTV",
-      detail:
-        lastError?.nextAction ||
-        "Keep VibeTV powered on and connected to the same WiFi.",
-      icon: <Monitor size={22} aria-hidden />,
-    };
-  }
-  if (connected) {
-    return null;
-  }
-  return {
-    title: "Connect VibeTV",
-    detail: "Keep VibeTV powered on and connected to the same WiFi.",
-    icon: <Wifi size={22} aria-hidden />,
-  };
-}
-
-function isLocalNetworkAccessError(error?: ApiError | null): boolean {
-  return error?.code === "LOCAL_NETWORK_ACCESS_REQUIRED";
 }
 
 function labelForCompanion(status: CompanionStatus): string {
@@ -366,32 +176,4 @@ function labelForDevice(state: DeviceState, device: DeviceInfo | null): string {
     return "Offline";
   }
   return "Waiting for device";
-}
-
-function PrimarySetupButton({
-  busy,
-  busyLabel,
-  disabled,
-  icon,
-  label,
-  onClick,
-}: {
-  busy?: boolean;
-  busyLabel: string;
-  disabled?: boolean;
-  icon: ReactNode;
-  label: string;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:border-[#747A60] disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-      disabled={disabled || busy}
-      onClick={onClick}
-      type="button"
-    >
-      {icon}
-      <span>{busy ? busyLabel : label}</span>
-    </button>
-  );
 }

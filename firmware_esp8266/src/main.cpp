@@ -1041,7 +1041,7 @@ String setupPageHTML() {
   html += "select,input,button{box-sizing:border-box;width:100%;font:inherit;padding:12px;border-radius:8px;border:1px solid #555;background:#181a1d;color:#fff}";
   html += "button{margin-top:22px;background:#c7ff00;color:#111;border:0;font-weight:700}.muted{color:#aaa;line-height:1.4}";
   html += "</style></head><body><main><h1>VibeTV WiFi</h1>";
-  html += "<p class='muted'>Choose your home WiFi and save. After restart, VibeTV shows the app address for your Mac.</p>";
+  html += "<p class='muted'>Choose your home WiFi and save. Keep your Mac on its normal WiFi. After restart, VibeTV shows the app address for your Mac.</p>";
   html += "<form method='post' action='/save'><label>Choose WiFi</label><select name='ssid'>";
   html += setupWifiOptionsHTML.length() > 0 ? setupWifiOptionsHTML : "<option value=''>No networks found</option>";
   html += "</select><label>Enter SSID manually</label><input name='custom_ssid' maxlength='32' autocomplete='off' placeholder='WiFi name'>";
