@@ -155,13 +155,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, []);
 
   useEffect(() => {
-    function handleBlockedBrowserFetch() {
-      markCompanionAccessBlocked();
+    async function handleBlockedBrowserFetch() {
+      const accessState = await readLocalNetworkAccessState();
+      if (accessState === "denied") {
+        markCompanionAccessBlocked();
+        setBusyAction(null);
+        setLastError({
+          code: "LOCAL_NETWORK_ACCESS_REQUIRED",
+          message: "Browser access is blocked.",
+          nextAction:
+            "Allow local network access for this site, then try again.",
+        });
+        return;
+      }
+      markCompanionUnavailable();
       setBusyAction(null);
       setLastError({
-        code: "LOCAL_NETWORK_ACCESS_REQUIRED",
-        message: "Browser access is blocked.",
-        nextAction: "When Chrome asks, choose Allow.",
+        code: "COMPANION_UNREACHABLE",
+        message: "Mac App is not open.",
+        nextAction: "Install or repair the Mac App, open it, then try again.",
       });
     }
 
@@ -176,7 +188,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         isLocalCompanionFetchFailureReason(event.reason)
       ) {
         event.preventDefault();
-        handleBlockedBrowserFetch();
+        void handleBlockedBrowserFetch();
       }
     }
 
@@ -186,7 +198,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         isLocalCompanionFetchFailureReason(event.error || event.message)
       ) {
         event.preventDefault();
-        handleBlockedBrowserFetch();
+        void handleBlockedBrowserFetch();
       }
     }
 
@@ -199,7 +211,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       window.removeEventListener("error", handleWindowError);
     };
-  }, [markCompanionAccessBlocked]);
+  }, [markCompanionAccessBlocked, markCompanionUnavailable]);
 
   const runCompanion = useCallback(
     async <T,>(
@@ -236,14 +248,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       } catch (error) {
         if (error instanceof Error && isCompanionConnectionError(error)) {
           const accessState = await readLocalNetworkAccessState();
-          if (accessState === "denied" || accessState === "prompt") {
+          if (accessState === "denied") {
             throw {
               code: "LOCAL_NETWORK_ACCESS_REQUIRED",
               message: "Browser access is blocked.",
               nextAction:
-                accessState === "denied"
-                  ? "Allow local network access for this site, then try again."
-                  : "When Chrome asks, choose Allow.",
+                "Allow local network access for this site, then try again.",
             } satisfies ApiError;
           }
         }
@@ -940,8 +950,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !setupPreviewStep &&
     companionStatus === "online" &&
       device?.connected &&
-      device.paired &&
-      themeInstallEnabled,
+      device.paired,
   );
   useEffect(() => {
     if (!setupComplete || didRouteAfterSetupComplete.current) {

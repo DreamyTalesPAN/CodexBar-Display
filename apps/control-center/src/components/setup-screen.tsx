@@ -19,7 +19,11 @@ import type {
 } from "./control-center-types";
 import { DeviceTargetForm } from "./device-target-form";
 
-const AGENT_PROMPT = `Please install the VibeTV Mac App on this Mac.
+const DEFAULT_CONTROL_CENTER_ORIGIN = "https://app.vibetv.shop";
+const INSTALLER_SCRIPT_PATH = "/install-control-center-companion.sh";
+
+function buildAgentPrompt(terminalCommand: string) {
+  return `Please install the VibeTV Mac App on this Mac.
 
 VibeTV is a small WiFi desk display for showing usage and theme screens. Its firmware and Mac App source are open source here:
 https://github.com/DreamyTalesPAN/CodexBar-Display
@@ -47,7 +51,7 @@ If you cannot run Terminal commands:
 
 Run this Terminal command:
 
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
+${terminalCommand}
 
 After it finishes, verify it with:
 
@@ -60,9 +64,19 @@ Then tell me:
 - the next step: return to app.vibetv.shop, choose Allow when the browser asks for access, and continue setup
 
 Do not flash firmware, install themes, reset WiFi, or write to my VibeTV. Only install and verify the Mac App.`;
+}
 
-const TERMINAL_COMMAND =
-  "curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash";
+function buildTerminalCommand(origin: string) {
+  const installCommand = `curl -fsSL ${origin}${INSTALLER_SCRIPT_PATH} | bash`;
+  if (origin === DEFAULT_CONTROL_CENTER_ORIGIN) {
+    return installCommand;
+  }
+  return `${installCommand} -s -- --dev-origin ${shellQuote(origin)}`;
+}
+
+function shellQuote(value: string) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
 
 type SetupScreenProps = {
   busyAction?: string | null;
@@ -99,16 +113,28 @@ export function SetupScreen({
 }: SetupScreenProps) {
   const [wifiConfirmedState, setWifiConfirmedState] = useState(false);
   const [agentPromptCopied, setAgentPromptCopied] = useState(false);
+  const [macAppConfirmedState, setMacAppConfirmedState] = useState(false);
   const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
   const [terminalCommandCopied, setTerminalCommandCopied] = useState(false);
   const [setupMode, setSetupMode] = useState<SetupMode>("agentic");
   const autoConnectStarted = useRef(false);
   const localAccessNeeded = isLocalNetworkAccessError(lastError);
   const macAppReady = companionStatus === "online";
+  const macAppConfirmed =
+    macAppConfirmedState || macAppReady || setupComplete;
   const connected = Boolean(device?.connected && device.paired);
   const wifiConfirmed =
     wifiConfirmedState || setupComplete || previewStep === "mac-app";
   const connecting = busyAction === "connect" || busyAction === "discover";
+  const controlCenterOrigin =
+    typeof window === "undefined"
+      ? DEFAULT_CONTROL_CENTER_ORIGIN
+      : window.location.origin;
+  const terminalCommand = buildTerminalCommand(controlCenterOrigin);
+  const agentPrompt = useMemo(
+    () => buildAgentPrompt(terminalCommand),
+    [terminalCommand],
+  );
 
   useEffect(() => {
     if (
@@ -140,6 +166,7 @@ export function SetupScreen({
       buildActiveStep({
         companionStatus,
         localAccessNeeded,
+        macAppConfirmed,
         macAppReady,
         setupComplete,
         wifiConfirmed,
@@ -147,6 +174,7 @@ export function SetupScreen({
     [
       companionStatus,
       localAccessNeeded,
+      macAppConfirmed,
       macAppReady,
       previewStep,
       setupComplete,
@@ -166,6 +194,11 @@ export function SetupScreen({
 
   function confirmWifi() {
     setWifiConfirmedState(true);
+    runCheckCompanion();
+  }
+
+  function confirmMacApp() {
+    setMacAppConfirmedState(true);
     runCheckCompanion();
   }
 
@@ -289,7 +322,7 @@ export function SetupScreen({
                         ) : null}
                         {promptPreviewOpen ? (
                           <pre className="max-h-[280px] w-full max-w-full overflow-auto whitespace-pre-wrap border-t border-[#747A60] bg-[#EEEEEE] p-4 text-xs leading-5 text-[#1B1B1B] [overflow-wrap:anywhere]">
-                            {AGENT_PROMPT}
+                            {agentPrompt}
                           </pre>
                         ) : null}
                       </div>
@@ -297,7 +330,7 @@ export function SetupScreen({
                         icon={<Copy size={18} aria-hidden />}
                         label={agentPromptCopied ? "Prompt copied" : "Copy prompt"}
                         onClick={async () => {
-                          await copyText(AGENT_PROMPT);
+                          await copyText(agentPrompt);
                           setAgentPromptCopied(true);
                         }}
                       />
@@ -317,8 +350,11 @@ export function SetupScreen({
                     <p className="text-sm leading-6 text-[#444933]">
                       Open Terminal, paste this command, then press Enter.
                     </p>
-                    <code className="block overflow-x-auto border border-[#747A60] bg-[#EEEEEE] p-3 text-xs text-[#1B1B1B]">
-                      {TERMINAL_COMMAND}
+                    <code
+                      className="block overflow-x-auto border border-[#747A60] bg-[#EEEEEE] p-3 text-xs text-[#1B1B1B]"
+                      suppressHydrationWarning
+                    >
+                      {terminalCommand}
                     </code>
                     <SecondaryButton
                       icon={<Copy size={16} aria-hidden />}
@@ -328,12 +364,22 @@ export function SetupScreen({
                           : "Copy terminal command"
                       }
                       onClick={async () => {
-                        await copyText(TERMINAL_COMMAND);
+                        await copyText(terminalCommand);
                         setTerminalCommandCopied(true);
                       }}
                     />
                   </div>
                 ) : null}
+
+                <div className="flex flex-wrap gap-3">
+                  <PrimaryButton
+                    busy={busyAction === "status"}
+                    busyLabel="Checking"
+                    icon={<RefreshCw size={18} aria-hidden />}
+                    label="Mac App is installed"
+                    onClick={confirmMacApp}
+                  />
+                </div>
               </div>
             ) : null}
           </SetupStep>
@@ -615,12 +661,14 @@ function StatusNote({
 function buildActiveStep({
   companionStatus,
   localAccessNeeded,
+  macAppConfirmed,
   macAppReady,
   setupComplete,
   wifiConfirmed,
 }: {
   companionStatus: CompanionStatus;
   localAccessNeeded: boolean;
+  macAppConfirmed: boolean;
   macAppReady: boolean;
   setupComplete: boolean;
   wifiConfirmed: boolean;
@@ -630,6 +678,9 @@ function buildActiveStep({
   }
   if (!wifiConfirmed) {
     return "wifi";
+  }
+  if (!macAppReady && !macAppConfirmed) {
+    return "mac-app";
   }
   if (localAccessNeeded) {
     return "browser-access";

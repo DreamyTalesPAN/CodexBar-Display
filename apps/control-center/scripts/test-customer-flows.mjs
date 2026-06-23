@@ -729,8 +729,9 @@ async function testVibeTVAddressCopyStaysCustomerOnly(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
   await page.getByLabel("VibeTV address").waitFor({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Connect VibeTV" }).waitFor({
+  await page.getByRole("button", { name: "Use this address" }).waitFor({
     timeout: 10_000,
   });
 
@@ -1405,12 +1406,13 @@ function assertCustomerThemeCatalogIssue(issue) {
 }
 
 async function routeCompanionMissing(page, installRequests) {
-  await page.route("http://127.0.0.1:47832/v1/**", async (route) => {
-    if (route.request().url().includes("/v1/themes/install")) {
+  const handler = async (route) => {
+    if (companionPath(route).includes("/v1/themes/install")) {
       installRequests.push(route.request().postData());
     }
     await route.abort("failed");
-  });
+  };
+  await routeCompanionPaths(page, handler);
 }
 
 async function routeCompanionOnline(
@@ -1420,9 +1422,9 @@ async function routeCompanionOnline(
   { device = companionDevice, onDiscover, onPair } = {},
 ) {
   let currentDevice = device;
-  await page.route("http://127.0.0.1:47832/v1/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/v1/themes/install") {
+  const handler = async (route) => {
+    const pathname = companionPath(route);
+    if (pathname === "/v1/themes/install") {
       installRequests.push(route.request().postData());
       await route.fulfill({
         status: 500,
@@ -1431,7 +1433,7 @@ async function routeCompanionOnline(
       });
       return;
     }
-    if (url.pathname === "/v1/device/pair") {
+    if (pathname === "/v1/device/pair") {
       const nextDevice = onPair?.(
         route.request().postData() || "",
         currentDevice,
@@ -1444,7 +1446,7 @@ async function routeCompanionOnline(
       });
       return;
     }
-    if (url.pathname === "/v1/device/discover") {
+    if (pathname === "/v1/device/discover") {
       const nextDevice =
         onDiscover?.(route.request().postData() || "", currentDevice) ||
         currentDevice;
@@ -1456,7 +1458,7 @@ async function routeCompanionOnline(
       });
       return;
     }
-    if (url.pathname === "/v1/status") {
+    if (pathname === "/v1/status") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1471,7 +1473,7 @@ async function routeCompanionOnline(
       });
       return;
     }
-    if (url.pathname === "/v1/device") {
+    if (pathname === "/v1/device") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1479,7 +1481,7 @@ async function routeCompanionOnline(
       });
       return;
     }
-    if (url.pathname === "/v1/settings") {
+    if (pathname === "/v1/settings") {
       onSettings();
       await route.fulfill({
         status: 200,
@@ -1492,7 +1494,7 @@ async function routeCompanionOnline(
       });
       return;
     }
-    if (url.pathname === "/v1/diagnostics") {
+    if (pathname === "/v1/diagnostics") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1526,7 +1528,22 @@ async function routeCompanionOnline(
       contentType: "application/json",
       body: JSON.stringify({ ok: false }),
     });
-  });
+  };
+  await routeCompanionPaths(page, handler);
+}
+
+async function routeCompanionPaths(page, handler) {
+  await page.route("http://127.0.0.1:47832/v1/**", handler);
+  await page.route("**/api/local-companion/v1/**", handler);
+}
+
+function companionPath(route) {
+  const pathname = new URL(route.request().url()).pathname;
+  const proxyPrefix = "/api/local-companion/";
+  if (pathname.startsWith(proxyPrefix)) {
+    return `/${pathname.slice(proxyPrefix.length)}`;
+  }
+  return pathname;
 }
 
 async function startFixtureServer() {
