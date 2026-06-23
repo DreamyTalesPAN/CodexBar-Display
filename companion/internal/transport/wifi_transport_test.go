@@ -54,11 +54,19 @@ func TestWiFiTransportSendLinePostsFrame(t *testing.T) {
 	if err := transport.SendLine(server.URL+"/?token=pair-token-123", line); err != nil {
 		t.Fatalf("SendLine returned error: %v", err)
 	}
-	if gotBody != string(line) {
+	if gotBody != strings.TrimSpace(string(line)) {
 		t.Fatalf("unexpected body %q", gotBody)
 	}
 	if gotToken != "pair-token-123" {
 		t.Fatalf("unexpected auth token %q", gotToken)
+	}
+}
+
+func TestWiFiTransportSendLineRejectsEmptyFrame(t *testing.T) {
+	transport := NewWiFiTransportWithClient(nil)
+	err := transport.SendLine("http://vibetv.local", []byte("\n"))
+	if err == nil || !strings.Contains(err.Error(), "frame body required") {
+		t.Fatalf("expected empty frame error, got %v", err)
 	}
 }
 

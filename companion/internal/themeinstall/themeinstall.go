@@ -1,7 +1,9 @@
 package themeinstall
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +27,8 @@ const (
 	DefaultUploadSettleDelay   = 750 * time.Millisecond
 	DefaultFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 )
+
+var installingThemeSpec = json.RawMessage(`{"v":1,"id":"installing","rev":1,"fb":"mini","p":[{"t":"r","x":0,"y":0,"w":240,"h":240,"c":"#111111"},{"t":"tx","x":28,"y":58,"v":"INSTALLING","s":2,"c":"#B6FF00"},{"t":"tx","x":36,"y":94,"v":"NEW THEME","s":2,"c":"#FFFFFF"},{"t":"p","x":34,"y":150,"w":172,"h":18,"b":"s","c":"#B6FF00","bg":"#303030"}]}`)
 
 type FirmwareUpdater func(ctx context.Context, target, manifestURL string) error
 
@@ -202,6 +206,11 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 			Err:  err,
 		}
 	}
+	if err := sendInstallingThemeFrame(wifi, resolvedTarget, caps); err != nil {
+		fmt.Fprintf(out, "Install screen: skipped (%v)\n", err)
+	} else {
+		fmt.Fprintln(out, "Install screen: showing on VibeTV")
+	}
 
 	retryNoted := false
 	wifi = wifi.WithAssetUploadRetryObserver(func(retry transportlayer.AssetUploadRetry) {
@@ -285,6 +294,36 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 		ThemeRevision:     pack.ThemeSpec.ThemeRev,
 		CapabilitiesKnown: caps.Known,
 	}, nil
+}
+
+func sendInstallingThemeFrame(wifi transportlayer.WiFiTransport, target string, caps protocol.DeviceCapabilities) error {
+	if !caps.SupportsThemeSpecV1 {
+		return errors.New("device does not support theme-spec-v1")
+	}
+	frame := protocol.Frame{
+		V:         protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion),
+		Provider:  "vibetv",
+		Label:     "Installing",
+		Session:   45,
+		Weekly:    45,
+		UsageMode: "remaining",
+		ThemeSpec: installingThemeSpec,
+	}
+	line, err := frame.MarshalLine()
+	if err != nil {
+		return fmt.Errorf("build install screen frame: %w", err)
+	}
+	maxFrameBytes := caps.MaxFrameBytes
+	if maxFrameBytes <= 0 {
+		maxFrameBytes = protocol.DefaultMaxFrameBytes
+	}
+	if len(bytes.TrimSpace(line)) > maxFrameBytes {
+		return fmt.Errorf("install screen frame exceeds device limit: size=%d limit=%d", len(bytes.TrimSpace(line)), maxFrameBytes)
+	}
+	if err := wifi.SendLine(target, line); err != nil {
+		return fmt.Errorf("send install screen frame: %w", err)
+	}
+	return nil
 }
 
 func stripTargetCredentials(target string) string {

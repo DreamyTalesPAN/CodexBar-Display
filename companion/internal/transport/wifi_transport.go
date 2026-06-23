@@ -123,7 +123,11 @@ func (t WiFiTransport) SendLine(target string, line []byte) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, base+"/frame", bytes.NewReader(line))
+	body := bytes.TrimSpace(line)
+	if len(body) == 0 {
+		return fmt.Errorf("frame body required")
+	}
+	req, err := http.NewRequest(http.MethodPost, base+"/frame", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build frame request: %w", err)
 	}
