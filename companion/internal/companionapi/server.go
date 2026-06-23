@@ -54,6 +54,7 @@ type Server struct {
 	loadConfig     func(string) (runtimeconfig.Config, error)
 	saveConfig     func(string, runtimeconfig.Config) error
 	installTheme   func(context.Context, themeinstall.Options) (themeinstall.Result, error)
+	runSetup       func(context.Context, setup.Options) error
 	subnetTargets  func() []string
 }
 
@@ -184,6 +185,7 @@ func New(opts Options) (*Server, error) {
 		loadConfig:     runtimeconfig.Load,
 		saveConfig:     runtimeconfig.Save,
 		installTheme:   themeinstall.Install,
+		runSetup:       setup.Run,
 		subnetTargets:  localSubnetTargets,
 	}, nil
 }
@@ -531,6 +533,16 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 	cfg.DeviceToken = token
 	if err := s.saveConfig(s.home, cfg); err != nil {
 		writeInternalError(w, err)
+		return
+	}
+	if err := s.startDisplayStream(r.Context(), target); err != nil {
+		writeError(
+			w,
+			http.StatusBadGateway,
+			"display_stream_start_failed",
+			"Mac App could not start the VibeTV display stream.",
+			"Run the manual Mac App setup command, then retry VibeTV connection.",
+		)
 		return
 	}
 	hello, _ := s.getHello(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
@@ -954,6 +966,25 @@ func (s *Server) pair(ctx context.Context, target string) (string, error) {
 		return "", errors.New("pairing response did not include token")
 	}
 	return token, nil
+}
+
+func (s *Server) startDisplayStream(ctx context.Context, target string) error {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return errors.New("device target is empty")
+	}
+	opts := setup.Options{
+		Transport: "wifi",
+		Target:    target,
+		AssumeYes: true,
+		SkipFlash: true,
+	}
+	validateOpts := opts
+	validateOpts.ValidateOnly = true
+	if err := s.runSetup(ctx, validateOpts); err != nil {
+		return err
+	}
+	return s.runSetup(ctx, opts)
 }
 
 func (s *Server) doJSON(ctx context.Context, method, target, path, token string, body any, out any) error {

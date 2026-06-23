@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 )
 
@@ -581,6 +582,69 @@ func TestDevicePairReturnsConflictForMultipleDiscoveryCandidates(t *testing.T) {
 	}
 }
 
+func TestDevicePairStartsDisplayStreamWithoutFirmwareFlash(t *testing.T) {
+	device := newPairableDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL})
+	var setupCalls []setup.Options
+	server.runSetup = func(_ context.Context, opts setup.Options) error {
+		setupCalls = append(setupCalls, opts)
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/pair", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(setupCalls) != 2 {
+		t.Fatalf("expected validate and apply setup calls, got %+v", setupCalls)
+	}
+	for index, call := range setupCalls {
+		if call.Transport != "wifi" || call.Target != device.URL || !call.AssumeYes || !call.SkipFlash {
+			t.Fatalf("setup call %d must start wifi stream without flashing, got %+v", index, call)
+		}
+	}
+	if !setupCalls[0].ValidateOnly {
+		t.Fatalf("first setup call should validate dependencies before applying, got %+v", setupCalls[0])
+	}
+	if setupCalls[1].ValidateOnly {
+		t.Fatalf("second setup call should apply launch agent changes, got %+v", setupCalls[1])
+	}
+}
+
+func TestDevicePairReturnsErrorWhenDisplayStreamCannotStart(t *testing.T) {
+	device := newPairableDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL})
+	server.runSetup = func(context.Context, setup.Options) error {
+		return errors.New("codexbar missing")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/pair", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected status 502, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "display_stream_start_failed" || got.Error.NextAction == "" {
+		t.Fatalf("unexpected display stream error: %+v", got)
+	}
+}
+
 func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	t.Setenv(themeInstallEnv, "1")
 
@@ -942,6 +1006,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		current = next
 		return nil
 	}
+	server.runSetup = func(context.Context, setup.Options) error {
+		return nil
+	}
 	return server
 }
 
@@ -953,6 +1020,28 @@ func newHelloDeviceServer(t *testing.T) *httptest.Server {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+}
+
+func newPairableDeviceServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Fatalf("expected pairing token for hello, got %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/api/pair":
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST pair, got %s", r.Method)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token"}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
 	}))
 }
 
