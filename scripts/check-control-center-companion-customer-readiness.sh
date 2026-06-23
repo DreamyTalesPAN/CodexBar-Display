@@ -473,8 +473,6 @@ else:
     else:
         if env.get("PATH") != "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin":
             errors.append("LaunchAgent EnvironmentVariables.PATH is not the customer package PATH")
-        if env.get("VIBETV_ENABLE_WIFI_THEME_INSTALL") != "1":
-            errors.append("LaunchAgent EnvironmentVariables.VIBETV_ENABLE_WIFI_THEME_INSTALL must be 1")
 
 if errors:
     print("package metadata mismatch: " + "; ".join(errors), file=sys.stderr)
@@ -1038,8 +1036,6 @@ if not isinstance(env, dict):
 else:
     if env.get("PATH") != "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin":
         errors.append("EnvironmentVariables.PATH is not the customer package PATH")
-    if env.get("VIBETV_ENABLE_WIFI_THEME_INSTALL") != "1":
-        errors.append("EnvironmentVariables.VIBETV_ENABLE_WIFI_THEME_INSTALL must be 1")
 
 if errors:
     print("installed LaunchAgent plist mismatch: " + "; ".join(errors), file=sys.stderr)

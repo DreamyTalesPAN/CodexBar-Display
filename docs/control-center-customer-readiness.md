@@ -373,7 +373,7 @@ Read-only checks are allowed:
 - `POST /v1/device/discover`
 - `GET /v1/settings`
 
-Customer Mac App packages set `VIBETV_ENABLE_WIFI_THEME_INSTALL=1` in the package LaunchAgent so a normal install can use Theme Library after VibeTV is connected. Local development and ad-hoc Companion runs stay locked unless that flag is set explicitly. Browser installs send `skipFirmwareUpdate: true`, and the install path must not trigger firmware updates.
+Customer Mac App packages enable Theme Library installs by default after VibeTV is connected and paired. Local development and ad-hoc Companion runs can opt into read-only mode with `VIBETV_DISABLE_WIFI_THEME_INSTALL=1`. Browser installs send `skipFirmwareUpdate: true`, and the install path must not trigger firmware updates.
 
 The app-side install preflight keeps the customer button locked until these checks pass:
 
@@ -392,6 +392,6 @@ The Companion also enforces a server-side write preflight before delegating to t
 - Pairing token exists.
 - `/hello` advertises ThemeSpec v1 support.
 - `/health` is reachable.
-- `VIBETV_ENABLE_WIFI_THEME_INSTALL=1` is enabled by the customer package LaunchAgent, or explicitly enabled for an approved local hardware test window.
+- Theme install has not been explicitly disabled with `VIBETV_DISABLE_WIFI_THEME_INSTALL=1`.
 
 Do not run device write tests, merge, or tag a release until the user has tested and explicitly approved the hardware flow.

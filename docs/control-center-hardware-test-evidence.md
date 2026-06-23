@@ -20,7 +20,7 @@ Device:
 
 Test action:
 
-- Started the local Mac App service from `companion` with `VIBETV_ENABLE_WIFI_THEME_INSTALL=1`.
+- Started the local Mac App service from `companion` with normal theme install enabled.
 - Connected through `POST /v1/device/discover` without an explicit target.
 - Installed theme `synthwave` through `POST /v1/themes/install`.
 - Payload included `skipFirmwareUpdate: true`.

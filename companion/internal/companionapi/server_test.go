@@ -33,16 +33,16 @@ func TestStatusWorksWithoutDevice(t *testing.T) {
 	if !got.OK || got.Companion.Status != "ready" {
 		t.Fatalf("unexpected status response: %+v", got)
 	}
-	if got.Companion.Features.ThemeInstallEnabled {
-		t.Fatalf("expected theme install disabled by default")
+	if !got.Companion.Features.ThemeInstallEnabled {
+		t.Fatalf("expected theme install enabled by default")
 	}
 	if got.Device.Connected {
 		t.Fatalf("expected disconnected device without probing, got %+v", got.Device)
 	}
 }
 
-func TestStatusReportsThemeInstallFeatureFlag(t *testing.T) {
-	t.Setenv(themeInstallEnv, "1")
+func TestStatusReportsThemeInstallDisableFlag(t *testing.T) {
+	t.Setenv(themeInstallDisableEnv, "1")
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
@@ -56,8 +56,8 @@ func TestStatusReportsThemeInstallFeatureFlag(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if !got.Companion.Features.ThemeInstallEnabled {
-		t.Fatalf("expected theme install feature flag to be enabled")
+	if got.Companion.Features.ThemeInstallEnabled {
+		t.Fatalf("expected theme install disable flag to be honored")
 	}
 }
 
@@ -646,8 +646,6 @@ func TestDevicePairReturnsErrorWhenDisplayStreamCannotStart(t *testing.T) {
 }
 
 func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
-	t.Setenv(themeInstallEnv, "1")
-
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
@@ -691,8 +689,6 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 }
 
 func TestThemeInstallErrorIncludesSanitizedDetail(t *testing.T) {
-	t.Setenv(themeInstallEnv, "1")
-
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
@@ -735,8 +731,6 @@ func TestThemeInstallErrorIncludesSanitizedDetail(t *testing.T) {
 }
 
 func TestThemeInstallRequiresPairingBeforeWrite(t *testing.T) {
-	t.Setenv(themeInstallEnv, "1")
-
 	device := newThemeInstallReadyDeviceServer(t)
 	defer device.Close()
 
@@ -797,8 +791,6 @@ func TestThemeInstallRejectsInvalidPackURLBeforeGate(t *testing.T) {
 }
 
 func TestThemeInstallRequiresThemeSpecSupportBeforeWrite(t *testing.T) {
-	t.Setenv(themeInstallEnv, "1")
-
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
@@ -838,8 +830,6 @@ func TestThemeInstallRequiresThemeSpecSupportBeforeWrite(t *testing.T) {
 }
 
 func TestThemeInstallRequiresHealthBeforeWrite(t *testing.T) {
-	t.Setenv(themeInstallEnv, "1")
-
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
@@ -878,7 +868,9 @@ func TestThemeInstallRequiresHealthBeforeWrite(t *testing.T) {
 	}
 }
 
-func TestThemeInstallDisabledByDefault(t *testing.T) {
+func TestThemeInstallCanBeDisabledByLocalEnv(t *testing.T) {
+	t.Setenv(themeInstallDisableEnv, "1")
+
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("device should not be contacted while theme install is disabled, got %s", r.URL.Path)
 	}))

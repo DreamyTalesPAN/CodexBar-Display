@@ -76,13 +76,13 @@ is separate. See `docs/control-center-customer-readiness.md` for the support flo
 
 The Control Center must not trigger firmware updates from the theme install flow. Browser installs send `skipFirmwareUpdate: true`; firmware update belongs to a separate explicit update flow.
 
-The local Companion API currently blocks WiFi theme installs by default because ESP8266 asset uploads can destabilize the attached test device. Enable install only during a prepared hardware test window:
+Theme install is available by default after the Mac App is online and VibeTV is paired. For read-only demos or diagnostics, disable it locally:
 
 ```bash
-VIBETV_ENABLE_WIFI_THEME_INSTALL=1 go run ./cmd/codexbar-display api --dev-origin http://localhost:3002
+VIBETV_DISABLE_WIFI_THEME_INSTALL=1 go run ./cmd/codexbar-display api --dev-origin http://localhost:3002
 ```
 
-Do not enable this for routine UI checks. Use read-only Companion calls and mocked/unit tests first.
+Use read-only Companion calls and mocked/unit tests before installing themes on shared hardware.
 
 ## Environment
 

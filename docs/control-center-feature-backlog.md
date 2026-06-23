@@ -42,11 +42,11 @@ Wichtig für die UI: `GET /v1/status` ist gut für "Bridge lebt", aber nicht aus
 | --- | --- | --- | --- |
 | Overview | Ja | Nein | Bestehende Status-, Device- und Settings-Felder reichen für Bridge, Device, Firmware, Pairing, ThemeSpec-Readiness, Transport, Helligkeit und Install-Lock. |
 | Settings | Ja | Nein | `POST /v1/device/discover`, `POST /v1/device/pair`, `GET/POST /v1/settings` decken die geforderten Controls ab. |
-| Theme Library | Ja | Nein | Theme-Katalog ist im Control Center vorhanden; Install geht über `POST /v1/themes/install`, sobald die Mac-App als Kunden-PKG mit Theme-Install-Flag läuft und VibeTV verbunden/gepairt ist. |
+| Theme Library | Ja | Nein | Theme-Katalog ist im Control Center vorhanden; Install geht über `POST /v1/themes/install`, sobald die Mac-App läuft und VibeTV verbunden/gepairt ist. |
 | Updates | Nur Platzhalter | Ja | Daemon kennt `UpdateState`, aber Companion API veröffentlicht keinen `/v1/updates`-Endpoint und kein Update-Feld in `/v1/status` oder `/v1/device`. In #120 nur aktuelle Firmware anzeigen. |
 | Logs | Nur lokale Session-Events | Ja | Es gibt keinen persistenten Companion-Event- oder Log-Endpoint. In #120 kann die UI nur eigene Browser-Events wie "Bridge geprüft" oder "Device gelesen" anzeigen. |
 | Active theme metadata | Teilweise | Wahrscheinlich ja | `/hello` kann `cachedThemeId`/`cachedThemeRev` in `capabilities.theme` liefern. Das reicht für einen technischen Hinweis, aber nicht für Titel, Quelle, Preview, Install-Zeit, Renderstatus oder Abgleich mit dem Shopify-Katalog. |
-| Install enablement | Ja | Nein | Die API meldet `themeInstallEnabled` und blockt ohne `VIBETV_ENABLE_WIFI_THEME_INSTALL=1`. Kunden-PKGs setzen den Flag im LaunchAgent; lokale Dev-/Support-Runs bleiben ohne Flag gesperrt. |
+| Install enablement | Ja | Nein | Die API meldet `themeInstallEnabled`; Install ist standardmäßig aktiv und kann für read-only Läufe mit `VIBETV_DISABLE_WIFI_THEME_INSTALL=1` deaktiviert werden. |
 
 ## Offene Feature-Lücken
 
@@ -115,7 +115,7 @@ Neues Issue:
 Aktueller Stand:
 
 - `GET /v1/status` liefert `companion.features.themeInstallEnabled`.
-- `POST /v1/themes/install` blockt ohne `VIBETV_ENABLE_WIFI_THEME_INSTALL=1`.
+- `POST /v1/themes/install` blockt nur, wenn `VIBETV_DISABLE_WIFI_THEME_INSTALL=1` gesetzt ist.
 - Control Center sendet bereits `skipFirmwareUpdate: true`.
 
 PR #120:

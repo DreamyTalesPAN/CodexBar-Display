@@ -114,8 +114,8 @@ Required sections:
   - load settings
   - save brightness
 - Safety state:
-  - whether theme installs are locked
-  - why writes are disabled when `VIBETV_ENABLE_WIFI_THEME_INSTALL` is absent
+  - whether theme installs are available
+  - whether writes were explicitly disabled with `VIBETV_DISABLE_WIFI_THEME_INSTALL`
 
 ### Theme Library
 
@@ -219,9 +219,9 @@ Track these before declaring the app end-to-end complete:
    - Proposed destination: likely in this PR if cheap; otherwise new issue.
 
 4. Customer-safe install enablement
-   - Current status: guarded by `VIBETV_ENABLE_WIFI_THEME_INSTALL=1`.
-   - Proposed destination: keep guardrail in this PR.
-   - No automatic hosted install until hardware path is explicitly approved.
+   - Current status: enabled after the Mac App is online and VibeTV is paired.
+   - Proposed destination: keep firmware updates out of theme install.
+   - Theme install can be disabled locally with `VIBETV_DISABLE_WIFI_THEME_INSTALL=1` for read-only diagnostics.
 
 ## Implementation Tasks
 

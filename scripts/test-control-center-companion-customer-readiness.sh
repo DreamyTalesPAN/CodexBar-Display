@@ -389,8 +389,6 @@ write_installed_package_plist() {
     <dict>
       <key>PATH</key>
       <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-      <key>VIBETV_ENABLE_WIFI_THEME_INSTALL</key>
-      <string>1</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

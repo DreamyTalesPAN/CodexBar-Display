@@ -582,7 +582,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
   }
   assert(
     (await page.getByText("needs an update before themes").count()) === 0,
-    "setup must not require the theme install write gate",
+    "setup must not require theme install availability",
   );
   await page.getByRole("button", { name: "Theme Library" }).click();
   await page

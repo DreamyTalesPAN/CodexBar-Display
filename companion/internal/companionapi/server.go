@@ -36,7 +36,7 @@ const (
 	discoveryProbeTime      = 1500 * time.Millisecond
 	subnetProbeLimit        = 32
 	subnetProbeTime         = 450 * time.Millisecond
-	themeInstallEnv         = "VIBETV_ENABLE_WIFI_THEME_INSTALL"
+	themeInstallDisableEnv  = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
 )
 
 type Options struct {
@@ -320,15 +320,15 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	if themeInstallEnabled() {
 		checks = append(checks, diagnosticCheck{
 			Name:   "theme_install_gate",
-			Status: "attention",
-			Detail: "Theme install write gate is enabled.",
+			Status: "pass",
+			Detail: "Theme install is available.",
 		})
 	} else {
 		checks = append(checks, diagnosticCheck{
 			Name:       "theme_install_gate",
-			Status:     "locked",
-			Detail:     "Theme install write gate is disabled.",
-			NextAction: "Enable only during an approved hardware test window.",
+			Status:     "disabled",
+			Detail:     "Theme install is disabled by local Mac App configuration.",
+			NextAction: "Unset VIBETV_DISABLE_WIFI_THEME_INSTALL, then restart the Mac App.",
 		})
 	}
 
@@ -660,7 +660,7 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 			http.StatusForbidden,
 			"theme_install_disabled",
 			"Theme install is disabled for this Companion build.",
-			"Set VIBETV_ENABLE_WIFI_THEME_INSTALL=1 only during a prepared hardware test window, then restart the Companion.",
+			"Unset VIBETV_DISABLE_WIFI_THEME_INSTALL, then restart the Mac App.",
 		)
 		return
 	}
@@ -1159,7 +1159,12 @@ func sanitizeErrorDetail(err error) string {
 }
 
 func themeInstallEnabled() bool {
-	return strings.TrimSpace(os.Getenv(themeInstallEnv)) == "1"
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(themeInstallDisableEnv))) {
+	case "1", "true", "yes", "on":
+		return false
+	default:
+		return true
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, code, message, nextAction string) {
