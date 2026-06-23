@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
@@ -46,6 +47,7 @@ type Options struct {
 	FirmwareUpdater     FirmwareUpdater
 	UploadSettleDelay   time.Duration
 	Now                 func() time.Time
+	FetchLiveFrame      func(context.Context) (protocol.Frame, error)
 }
 
 type Result struct {
@@ -280,6 +282,11 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 			Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
 		}
 	}
+	if err := sendLiveThemeFrame(ctx, wifi, resolvedTarget, caps, opts.FetchLiveFrame); err != nil {
+		fmt.Fprintf(out, "Live usage frame: skipped (%v)\n", err)
+	} else {
+		fmt.Fprintln(out, "Live usage frame: refreshed")
+	}
 
 	fmt.Fprintf(out, "Done: theme %s installed on %s\n", pack.Manifest.ID, displayTarget)
 	if opts.Verbose {
@@ -322,6 +329,36 @@ func sendInstallingThemeFrame(wifi transportlayer.WiFiTransport, target string, 
 	}
 	if err := wifi.SendLine(target, line); err != nil {
 		return fmt.Errorf("send install screen frame: %w", err)
+	}
+	return nil
+}
+
+func sendLiveThemeFrame(ctx context.Context, wifi transportlayer.WiFiTransport, target string, caps protocol.DeviceCapabilities, fetchFrame func(context.Context) (protocol.Frame, error)) error {
+	if fetchFrame == nil {
+		fetchFrame = codexbar.FetchFirstFrame
+	}
+	frame, err := fetchFrame(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch current usage: %w", err)
+	}
+	frame = frame.Normalize()
+	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
+	frame.Theme = ""
+	frame.ThemeSpec = nil
+	frame.ConfirmClearThemeSpec = false
+	line, err := frame.MarshalLine()
+	if err != nil {
+		return fmt.Errorf("build live frame: %w", err)
+	}
+	maxFrameBytes := caps.MaxFrameBytes
+	if maxFrameBytes <= 0 {
+		maxFrameBytes = protocol.DefaultMaxFrameBytes
+	}
+	if len(bytes.TrimSpace(line)) > maxFrameBytes {
+		return fmt.Errorf("live frame exceeds device limit: size=%d limit=%d", len(bytes.TrimSpace(line)), maxFrameBytes)
+	}
+	if err := wifi.SendLine(target, line); err != nil {
+		return fmt.Errorf("send live frame: %w", err)
 	}
 	return nil
 }
