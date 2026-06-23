@@ -554,12 +554,12 @@ upload_multipart() {
   local timeout_secs="${5:-$upload_timeout_secs}"
   local response_file="/tmp/vibetv-provision-upload-response.$$"
   local error_file="/tmp/vibetv-provision-upload-error.$$"
-  local auth_args=()
+  local curl_args=(curl -fsS --connect-timeout 5 --max-time "$timeout_secs")
   [[ -f "$file" ]] || die "${label} file not found: $file"
   current_stage="upload: ${label}"
   last_upload_result=""
   if [[ -n "$device_token" ]]; then
-    auth_args=(-H "X-VibeTV-Token:${device_token}")
+    curl_args+=(-H "X-VibeTV-Token:${device_token}")
   fi
 
   log "upload: ${label} -> $(redact_token "$url") field=${field} file=${file}"
@@ -576,8 +576,7 @@ upload_multipart() {
   fi
 
   set +e
-  curl -fsS --connect-timeout 5 --max-time "$timeout_secs" \
-    "${auth_args[@]}" \
+  "${curl_args[@]}" \
     -X POST -F "${field}=@${file};filename=$(basename "$file")" "$url" \
     >"$response_file" 2>"$error_file"
   local status=$?
@@ -648,11 +647,11 @@ send_frame() {
   local url="$2"
   local payload="$3"
   local response_file="/tmp/vibetv-provision-frame.$$"
-  local auth_args=()
+  local curl_args=(curl -fsS --connect-timeout 5 --max-time "$curl_timeout_secs" -H "Content-Type: application/json")
   local attempt
   log "smoke: sending ${label} frame"
   if [[ -n "$device_token" ]]; then
-    auth_args=(-H "X-VibeTV-Token:${device_token}")
+    curl_args+=(-H "X-VibeTV-Token:${device_token}")
   fi
   if [[ "$dry_run" == "1" ]]; then
     if [[ -n "$device_token" ]]; then
@@ -666,8 +665,7 @@ send_frame() {
   fi
 
   for attempt in 1 2 3; do
-    if curl -fsS --connect-timeout 5 --max-time "$curl_timeout_secs" \
-      -H "Content-Type: application/json" "${auth_args[@]}" --data-binary "$payload" "$url" >"$response_file"; then
+    if "${curl_args[@]}" --data-binary "$payload" "$url" >"$response_file"; then
       if [[ "$(tr -d '\r\n' <"$response_file")" == "ok" ]]; then
         rm -f "$response_file"
         log "smoke: ${label} accepted"
