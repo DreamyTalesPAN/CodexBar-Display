@@ -88,6 +88,25 @@ func (e *invalidTargetError) Error() string {
 	return "invalid VibeTV target"
 }
 
+type repairStageError struct {
+	stage string
+	err   error
+}
+
+func (e *repairStageError) Error() string {
+	if e == nil || e.err == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s: %v", e.stage, e.err)
+}
+
+func (e *repairStageError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
 type deviceInfo struct {
 	Target       string                    `json:"target,omitempty"`
 	Connected    bool                      `json:"connected"`
@@ -102,6 +121,11 @@ type statusResponse struct {
 	OK        bool       `json:"ok"`
 	Companion companion  `json:"companion"`
 	Device    deviceInfo `json:"device"`
+}
+
+type deviceActionResponse struct {
+	OK     bool       `json:"ok"`
+	Device deviceInfo `json:"device"`
 }
 
 type diagnosticsResponse struct {
@@ -222,8 +246,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
+	mux.HandleFunc("/v1/device/repair", s.handleDeviceRepair)
 	mux.HandleFunc("/v1/device", s.handleDevice)
 	mux.HandleFunc("/v1/device/pair", s.handleDevicePair)
+	mux.HandleFunc("/v1/setup/reset", s.handleSetupReset)
 	mux.HandleFunc("/v1/settings", s.handleSettings)
 	mux.HandleFunc("/v1/themes/install", s.handleThemeInstall)
 	return s.withCORS(mux)
@@ -453,6 +479,47 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 	}{OK: true, Device: deviceFromHello(target, cfg.DeviceToken, hello)})
 }
 
+func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		Target    string `json:"target"`
+		ForcePair bool   `json:"forcePair"`
+	}
+	if !decodeOptionalJSON(w, r, &req) {
+		return
+	}
+	device, err := s.repairDevice(r.Context(), strings.TrimSpace(req.Target), req.ForcePair)
+	if err != nil {
+		writeRepairError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
+}
+
+func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	cfg.DeviceTarget = ""
+	cfg.DeviceToken = ""
+	if err := s.saveConfig(s.home, cfg); err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, statusResponse{
+		OK:        true,
+		Companion: s.companionInfo(),
+		Device:    deviceInfo{Connected: false},
+	})
+}
+
 func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -550,6 +617,38 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		OK     bool       `json:"ok"`
 		Device deviceInfo `json:"device"`
 	}{OK: true, Device: deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello)})
+}
+
+func (s *Server) repairDevice(ctx context.Context, requestedTarget string, forcePair bool) (deviceInfo, error) {
+	cfg, err := s.config()
+	if err != nil {
+		return deviceInfo{}, &repairStageError{stage: "config", err: err}
+	}
+	target, hello, err := s.discover(ctx, cfg, requestedTarget)
+	if err != nil {
+		return deviceInfo{}, err
+	}
+
+	token := strings.TrimSpace(cfg.DeviceToken)
+	if forcePair || token == "" {
+		token, err = s.pair(ctx, target)
+		if err != nil {
+			return deviceInfo{}, &repairStageError{stage: "pair", err: err}
+		}
+	}
+
+	cfg.DeviceTarget = target
+	cfg.DeviceToken = token
+	if err := s.saveConfig(s.home, cfg); err != nil {
+		return deviceInfo{}, &repairStageError{stage: "config", err: err}
+	}
+	if err := s.startDisplayStream(ctx, target); err != nil {
+		return deviceInfo{}, &repairStageError{stage: "display-stream", err: err}
+	}
+	if refreshedHello, err := s.getHello(ctx, target, token); err == nil {
+		hello = refreshedHello
+	}
+	return deviceFromHello(target, token, hello), nil
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -1103,6 +1202,34 @@ func writeDiscoveryError(w http.ResponseWriter, err error) {
 			"Enter the exact VibeTV target in the VibeTV target field, for example http://vibetv.local or http://<device-ip>, then search again.",
 		)
 		return
+	}
+	writeDeviceNotFound(w)
+}
+
+func writeRepairError(w http.ResponseWriter, err error) {
+	var invalidTarget *invalidTargetError
+	if errors.As(err, &invalidTarget) {
+		writeInvalidDeviceTarget(w)
+		return
+	}
+	var multiple *multipleDevicesError
+	if errors.As(err, &multiple) {
+		writeDiscoveryError(w, err)
+		return
+	}
+	var stageErr *repairStageError
+	if errors.As(err, &stageErr) {
+		switch stageErr.stage {
+		case "config":
+			writeInternalError(w, err)
+			return
+		case "pair":
+			writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", "Keep VibeTV powered on, then retry Fix connection.")
+			return
+		case "display-stream":
+			writeError(w, http.StatusBadGateway, "display_stream_repair_failed", "Mac App could not refresh the VibeTV display stream.", "Run setup again or restart the Mac App, then retry Fix connection.")
+			return
+		}
 	}
 	writeDeviceNotFound(w)
 }

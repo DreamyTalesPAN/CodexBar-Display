@@ -86,8 +86,9 @@ type SetupScreenProps = {
   deviceTarget: string;
   lastError?: ApiError | null;
   onCheckCompanion?: () => void | Promise<void>;
-  onConnectDevice?: (targetOverride?: string) => void;
   onDeviceTargetChange?: (target: string) => void;
+  onRepairConnection?: (targetOverride?: string) => void;
+  onResetSetup?: () => void;
   previewStep?: "mac-app" | null;
   setupComplete: boolean;
 };
@@ -104,8 +105,9 @@ export function SetupScreen({
   deviceTarget,
   lastError,
   onCheckCompanion,
-  onConnectDevice,
   onDeviceTargetChange,
+  onRepairConnection,
+  onResetSetup,
   previewStep,
   setupComplete,
 }: SetupScreenProps) {
@@ -123,7 +125,10 @@ export function SetupScreen({
   const connected = Boolean(device?.connected && device.paired);
   const wifiConfirmed =
     wifiConfirmedState || setupComplete || previewStep === "mac-app";
-  const connecting = busyAction === "connect" || busyAction === "discover";
+  const connecting =
+    busyAction === "connect" ||
+    busyAction === "discover" ||
+    busyAction === "repair";
   const controlCenterOrigin =
     typeof window === "undefined"
       ? DEFAULT_CONTROL_CENTER_ORIGIN
@@ -147,13 +152,13 @@ export function SetupScreen({
       return;
     }
     autoConnectStarted.current = true;
-    onConnectDevice?.();
+    onRepairConnection?.();
   }, [
     connected,
     connecting,
     localAccessNeeded,
     macAppReady,
-    onConnectDevice,
+    onRepairConnection,
     setupComplete,
     wifiConfirmed,
   ]);
@@ -206,7 +211,7 @@ export function SetupScreen({
 
   function retryConnect() {
     autoConnectStarted.current = true;
-    onConnectDevice?.();
+    onRepairConnection?.();
   }
 
   return (
@@ -224,6 +229,22 @@ export function SetupScreen({
             <h2 className="max-w-[520px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
               {setupComplete ? "Setup complete" : "Set up your VibeTV"}
             </h2>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <PrimaryButton
+                busy={busyAction === "repair"}
+                busyLabel="Fixing"
+                icon={<RefreshCw size={18} aria-hidden />}
+                label="Fix connection"
+                onClick={() => onRepairConnection?.()}
+              />
+              <SecondaryButton
+                busy={busyAction === "reset-setup"}
+                busyLabel="Resetting"
+                icon={<Clipboard size={16} aria-hidden />}
+                label="Run setup again"
+                onClick={onResetSetup}
+              />
+            </div>
           </div>
         </div>
       </section>
@@ -419,8 +440,8 @@ export function SetupScreen({
                 deviceState={deviceState}
                 deviceTarget={deviceTarget}
                 lastError={lastError}
-                onConnectDevice={retryConnect}
                 onDeviceTargetChange={onDeviceTargetChange}
+                onRepairConnection={retryConnect}
                 setupComplete={setupComplete}
               />
             ) : null}
@@ -436,28 +457,32 @@ function FinishSetupContent({
   deviceState,
   deviceTarget,
   lastError,
-  onConnectDevice,
   onDeviceTargetChange,
+  onRepairConnection,
   setupComplete,
 }: {
   busyAction?: string | null;
   deviceState: DeviceState;
   deviceTarget: string;
   lastError?: ApiError | null;
-  onConnectDevice?: (targetOverride?: string) => void;
   onDeviceTargetChange?: (target: string) => void;
+  onRepairConnection?: (targetOverride?: string) => void;
   setupComplete: boolean;
 }) {
   if (setupComplete) {
     return <StatusNote>VibeTV is ready.</StatusNote>;
   }
 
-  if (busyAction === "connect" || busyAction === "discover") {
+  if (
+    busyAction === "connect" ||
+    busyAction === "discover" ||
+    busyAction === "repair"
+  ) {
     return (
       <StatusNote
         icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
       >
-        Connecting VibeTV...
+        Fixing VibeTV connection...
       </StatusNote>
     );
   }
@@ -471,20 +496,20 @@ function FinishSetupContent({
           </p>
           <PrimaryButton
             icon={<RefreshCw size={18} aria-hidden />}
-            label="Try again"
-            onClick={() => onConnectDevice?.()}
+            label="Fix connection"
+            onClick={() => onRepairConnection?.()}
           />
         </div>
         <DeviceTargetForm
-          busy={busyAction === "connect"}
-          buttonLabel="Use this address"
+          busy={busyAction === "repair"}
+          buttonLabel="Fix this address"
           className="grid gap-4"
           disabled={Boolean(busyAction)}
           id="setup-device-target"
           lastError={lastError}
           onChange={onDeviceTargetChange}
-          onSubmit={onConnectDevice}
-          searchingLabel="Connecting"
+          onSubmit={onRepairConnection}
+          searchingLabel="Fixing"
           value={deviceTarget}
         />
       </div>
@@ -598,22 +623,27 @@ function PrimaryButton({
 }
 
 function SecondaryButton({
+  busy,
+  busyLabel,
   icon,
   label,
   onClick,
 }: {
+  busy?: boolean;
+  busyLabel?: string;
   icon?: ReactNode;
   label: string;
   onClick?: () => void;
 }) {
   return (
     <button
-      className="inline-flex min-h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-5 py-2 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
+      className="inline-flex min-h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-5 py-2 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+      disabled={busy}
       onClick={onClick}
       type="button"
     >
-      {icon}
-      <span>{label}</span>
+      {busy ? <Loader2 className="animate-spin" size={16} aria-hidden /> : icon}
+      <span>{busy ? busyLabel || label : label}</span>
     </button>
   );
 }

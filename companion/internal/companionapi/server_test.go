@@ -431,6 +431,138 @@ func TestDeviceDiscoverReturnsConflictForMultipleSubnetCandidates(t *testing.T) 
 	}
 }
 
+func TestDeviceRepairFallsBackToSubnetAndRefreshesDisplayStream(t *testing.T) {
+	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gone", http.StatusServiceUnavailable)
+	}))
+	defer stale.Close()
+
+	device := newRepairableDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: stale.URL, DeviceToken: "existing-token"})
+	server.subnetTargets = func() []string {
+		return []string{device.URL}
+	}
+	var setupCalls []setup.Options
+	server.runSetup = func(_ context.Context, opts setup.Options) error {
+		setupCalls = append(setupCalls, opts)
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || !got.Device.Connected || !got.Device.Paired || got.Device.Target != device.URL {
+		t.Fatalf("unexpected repair response: %+v", got)
+	}
+	if len(setupCalls) != 2 {
+		t.Fatalf("expected validate and apply display stream calls, got %+v", setupCalls)
+	}
+	for index, call := range setupCalls {
+		if call.Transport != "wifi" || call.Target != device.URL || !call.AssumeYes || !call.SkipFlash {
+			t.Fatalf("setup call %d must refresh wifi stream without flashing, got %+v", index, call)
+		}
+	}
+	if !setupCalls[0].ValidateOnly || setupCalls[1].ValidateOnly {
+		t.Fatalf("expected validate then apply setup calls, got %+v", setupCalls)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	server.Handler().ServeHTTP(rec, req)
+	var status statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.Device.Target != device.URL || !status.Device.Paired {
+		t.Fatalf("expected persisted repaired target and token, got %+v", status.Device)
+	}
+}
+
+func TestDeviceRepairForcePairRotatesToken(t *testing.T) {
+	device := newRepairableDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "old-token"})
+	var setupCalls []setup.Options
+	server.runSetup = func(_ context.Context, opts setup.Options) error {
+		setupCalls = append(setupCalls, opts)
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{"forcePair":true}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.Device.Paired {
+		t.Fatalf("expected paired device, got %+v", got.Device)
+	}
+	if len(setupCalls) != 2 {
+		t.Fatalf("expected display stream refresh, got %+v", setupCalls)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if strings.Contains(rec.Body.String(), "new-token") || strings.Contains(rec.Body.String(), "old-token") {
+		t.Fatalf("diagnostics leaked token after repair: %s", rec.Body.String())
+	}
+}
+
+func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		Theme:        "mini",
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil)
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Target != "" || got.Device.Paired || got.Device.Connected {
+		t.Fatalf("expected reset device state, got %+v", got.Device)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if got.Device.Target != "" || got.Device.Paired {
+		t.Fatalf("expected persisted device reset, got %+v", got.Device)
+	}
+}
+
 func TestDeviceDiscoverDoesNotFallbackWhenExplicitTargetFails(t *testing.T) {
 	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusServiceUnavailable)
@@ -1050,6 +1182,28 @@ func newPairableDeviceServer(t *testing.T) *httptest.Server {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token"}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+}
+
+func newRepairableDeviceServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/api/pair":
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST pair, got %s", r.Method)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"new-token"}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"clippy"},"settings":{"display":{"brightnessPercent":40}}}`))
 		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}

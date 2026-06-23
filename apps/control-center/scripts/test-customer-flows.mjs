@@ -434,6 +434,12 @@ async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
     timeout: 10_000,
   });
   await page
+    .getByRole("button", { name: "Fix connection" })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByRole("button", { name: "Run setup again" })
+    .waitFor({ timeout: 10_000 });
+  await page
     .getByRole("button", { name: "VibeTV is on WiFi" })
     .waitFor({ timeout: 10_000 });
   await page
@@ -787,12 +793,13 @@ async function testVibeTVAddressCopyStaysCustomerOnly(browser, appUrl) {
       connected: false,
       paired: false,
     },
+    repairError: true,
   });
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
   await page.getByLabel("VibeTV address").waitFor({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Use this address" }).waitFor({
+  await page.getByRole("button", { name: "Fix this address" }).waitFor({
     timeout: 10_000,
   });
 
@@ -824,7 +831,7 @@ async function testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const discoverRequests = [];
+  const repairRequests = [];
   let settingsCalls = 0;
   await routeCompanionOnline(
     page,
@@ -833,8 +840,14 @@ async function testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
       settingsCalls += 1;
     },
     {
-      onDiscover: (postData) => {
-        discoverRequests.push(postData || "");
+      device: {
+        ...companionDevice,
+        target: "http://192.168.178.163",
+        connected: false,
+        paired: true,
+      },
+      onRepair: (postData) => {
+        repairRequests.push(postData || "");
         return {
           ...companionDevice,
           target: "http://vibetv.local",
@@ -854,17 +867,17 @@ async function testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
   await waitForCondition(
-    () => discoverRequests.length >= 1,
-    "expected automatic VibeTV discovery to run",
+    () => repairRequests.length >= 1,
+    "expected automatic VibeTV repair to run",
   );
 
   assert(
-    discoverRequests[0] === "{}",
-    `automatic discovery should not force stale saved address, got ${discoverRequests[0]}`,
+    repairRequests[0] === "{}",
+    `automatic repair should not force stale saved address, got ${repairRequests[0]}`,
   );
   assert(
     settingsCalls >= 1,
-    "automatic discovery should continue into settings refresh after finding VibeTV",
+    "automatic repair should continue into settings refresh after finding VibeTV",
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1030,8 +1043,8 @@ async function testPairingRequiredThemeStaysLocked(browser, appUrl) {
   assert(await installButton.isEnabled(), "paired VibeTV should unlock install");
   assert(pairRequests.length === 1, "pairing should call Companion once");
   assert(
-    pairRequests[0]?.includes("http://vibetv.local"),
-    `pairing request did not include target: ${pairRequests[0]}`,
+    pairRequests[0]?.includes('"forcePair":true'),
+    `pairing repair request did not force pairing: ${pairRequests[0]}`,
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1485,6 +1498,9 @@ async function routeCompanionOnline(
     device = companionDevice,
     onDiscover,
     onPair,
+    onRepair,
+    onReset,
+    repairError = false,
   } = {},
 ) {
   let currentDevice = device;
@@ -1509,6 +1525,62 @@ async function routeCompanionOnline(
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ ok: true, device: currentDevice }),
+      });
+      return;
+    }
+    if (pathname === "/v1/device/repair") {
+      if (repairError) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: {
+              code: "device_not_found",
+              message: "No VibeTV device was found.",
+              nextAction: "Make sure VibeTV is powered on and run Fix connection again.",
+            },
+          }),
+        });
+        return;
+      }
+      const postData = route.request().postData() || "";
+      const parsed = parseJSON(postData);
+      let nextDevice =
+        onRepair?.(postData, currentDevice) ||
+        (parsed?.forcePair
+          ? onPair?.(postData, currentDevice) || {
+              ...currentDevice,
+              paired: true,
+            }
+          : currentDevice);
+      nextDevice = {
+        ...nextDevice,
+        connected: true,
+        paired: Boolean(nextDevice.paired),
+      };
+      currentDevice = nextDevice;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, device: currentDevice }),
+      });
+      return;
+    }
+    if (pathname === "/v1/setup/reset") {
+      onReset?.(route.request().postData() || "", currentDevice);
+      currentDevice = { connected: false };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          companion: {
+            version: "1.0.32",
+            features: companionFeatures,
+          },
+          device: currentDevice,
+        }),
       });
       return;
     }
@@ -1601,6 +1673,14 @@ async function routeCompanionOnline(
 async function routeCompanionPaths(page, handler) {
   await page.route("http://127.0.0.1:47832/v1/**", handler);
   await page.route("**/api/local-companion/v1/**", handler);
+}
+
+function parseJSON(raw) {
+  try {
+    return JSON.parse(raw || "{}");
+  } catch {
+    return null;
+  }
 }
 
 function companionPath(route) {

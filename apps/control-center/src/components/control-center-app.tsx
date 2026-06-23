@@ -94,10 +94,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [firmwareUpdate, setFirmwareUpdate] =
     useState<FirmwareUpdateInfo | null>(null);
   const setupPreviewStep = useMemo(() => readLocalSetupPreviewStep(), []);
+  const [setupResetVersion, setSetupResetVersion] = useState(0);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
   const didRunInitialConnectionCheck = useRef(false);
+  const didRunAutoRepair = useRef(false);
   const didRouteAfterSetupComplete = useRef(false);
   const lastCompanionRequestAt = useRef(0);
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
@@ -476,153 +478,145 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
   ]);
 
-  const discoverDevice = useCallback(async (targetOverride?: string) => {
-    setBusyAction("discover");
-    const target =
-      typeof targetOverride === "string"
-        ? normalizeDeviceTarget(targetOverride)
-        : "";
-    try {
-      const payload = await runCompanion<{ device: DeviceInfo }>(
-        "/v1/device/discover",
-        {
-          method: "POST",
-          body: target ? JSON.stringify({ target }) : "{}",
-        },
-      );
-      setCompanionStatus("online");
-      void refreshCompanionFeatures();
-      setDeviceState(payload.device.paired ? "paired" : "online");
-      setDevice(payload.device);
-      if (payload.device.target) {
-        setDeviceTarget(payload.device.target);
-        rememberDeviceTarget(payload.device.target);
-      }
-      addEvent({
-        label: "VibeTV found",
-        detail: payload.device.connected
-          ? "VibeTV is connected."
-          : "VibeTV is waiting for signal.",
-        tone: payload.device.connected ? "ready" : "unknown",
-      });
-      if (payload.device.connected) {
-        void loadSettings();
-      }
-    } catch (error) {
-      const normalized = normalizeCaughtError(
-        error,
-        "VibeTV needs attention.",
-      );
-      if (isLocalNetworkAccessError(normalized)) {
-        markCompanionAccessBlocked();
-      } else if (isCompanionMissingError(normalized)) {
-        markCompanionUnavailable();
-      } else {
-        setCompanionStatus("online");
-        void refreshCompanionFeatures();
-        setDevice(target ? { target, connected: false } : null);
-        setDeviceState("offline");
-      }
-      setLastError(normalized);
-      addEvent({
-        label: "VibeTV needs attention",
-        detail: normalized.nextAction,
-        tone: "attention",
-      });
-    } finally {
-      setBusyAction(null);
-    }
-  }, [
-    addEvent,
-    loadSettings,
-    markCompanionAccessBlocked,
-    markCompanionUnavailable,
-    refreshCompanionFeatures,
-    runCompanion,
-  ]);
-
-  const connectDevice = useCallback(async (targetOverride?: string) => {
-    setBusyAction("connect");
-    const target =
-      typeof targetOverride === "string"
-        ? normalizeDeviceTarget(targetOverride)
-        : "";
-    try {
-      const discovered = await runCompanion<{ device: DeviceInfo }>(
-        "/v1/device/discover",
-        {
-          method: "POST",
-          body: target ? JSON.stringify({ target }) : "{}",
-        },
-      );
-      setCompanionStatus("online");
-      void refreshCompanionFeatures();
-
-      let nextDevice = discovered.device;
-      const nextTarget = normalizeDeviceTarget(nextDevice.target || target);
-      if (nextDevice.connected && !nextDevice.paired) {
-        const paired = await runCompanion<{ device: DeviceInfo }>(
-          "/v1/device/pair",
+  const repairConnection = useCallback(
+    async (options?: {
+      targetOverride?: string;
+      forcePair?: boolean;
+      quiet?: boolean;
+    }) => {
+      const quiet = Boolean(options?.quiet);
+      const target =
+        typeof options?.targetOverride === "string"
+          ? normalizeDeviceTarget(options.targetOverride)
+          : "";
+      setBusyAction("repair");
+      try {
+        const payload = await runCompanion<{ device: DeviceInfo }>(
+          "/v1/device/repair",
           {
             method: "POST",
-            body: nextTarget ? JSON.stringify({ target: nextTarget }) : "{}",
+            body: JSON.stringify({
+              ...(target ? { target } : {}),
+              ...(options?.forcePair ? { forcePair: true } : {}),
+            }),
           },
+          { preserveLastError: quiet },
         );
-        nextDevice = paired.device;
-      }
-
-      setDeviceState(
-        nextDevice.paired
-          ? "paired"
-          : nextDevice.connected
-            ? "online"
-            : "offline",
-      );
-      setDevice(nextDevice);
-      if (nextDevice.target) {
-        setDeviceTarget(nextDevice.target);
-        rememberDeviceTarget(nextDevice.target);
-      }
-      addEvent({
-        label: nextDevice.paired ? "VibeTV connected" : "VibeTV found",
-        detail: nextDevice.connected
-          ? "VibeTV is connected."
-          : "VibeTV is waiting for signal.",
-        tone: nextDevice.connected ? "ready" : "unknown",
-      });
-      if (nextDevice.connected) {
-        void loadSettings();
-      }
-    } catch (error) {
-      const normalized = normalizeCaughtError(
-        error,
-        "VibeTV connection needs attention.",
-      );
-      if (isLocalNetworkAccessError(normalized)) {
-        markCompanionAccessBlocked();
-      } else if (isCompanionMissingError(normalized)) {
-        markCompanionUnavailable();
-      } else {
         setCompanionStatus("online");
         void refreshCompanionFeatures();
-        setDevice(target ? { target, connected: false } : null);
-        setDeviceState("offline");
+        setLastError(null);
+        setDevice(payload.device);
+        setDeviceState(
+          payload.device.paired
+            ? "paired"
+            : payload.device.connected
+              ? "online"
+              : "offline",
+        );
+        if (payload.device.target) {
+          setDeviceTarget(payload.device.target);
+          rememberDeviceTarget(payload.device.target);
+        }
+        addEvent({
+          label: quiet ? "Connection repaired" : "VibeTV connection fixed",
+          detail: payload.device.connected
+            ? "VibeTV is connected."
+            : "VibeTV is waiting for signal.",
+          tone: payload.device.connected ? "ready" : "attention",
+        });
+        if (payload.device.connected) {
+          void loadSettings();
+        }
+      } catch (error) {
+        const normalized = normalizeCaughtError(
+          error,
+          "VibeTV connection needs attention.",
+        );
+        if (isLocalNetworkAccessError(normalized)) {
+          markCompanionAccessBlocked();
+        } else if (isCompanionMissingError(normalized)) {
+          markCompanionUnavailable();
+        } else {
+          setCompanionStatus("online");
+          void refreshCompanionFeatures();
+          setDevice(target ? { target, connected: false } : null);
+          setDeviceState("offline");
+        }
+        if (!quiet) {
+          setLastError(normalized);
+          addEvent({
+            label: "Fix connection needs attention",
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
+        }
+      } finally {
+        setBusyAction(null);
       }
-      setLastError(normalized);
+    },
+    [
+      addEvent,
+      loadSettings,
+      markCompanionAccessBlocked,
+      markCompanionUnavailable,
+      refreshCompanionFeatures,
+      runCompanion,
+    ],
+  );
+
+  const resetSetup = useCallback(async () => {
+    setBusyAction("reset-setup");
+    setLastError(null);
+    forgetDeviceTarget();
+    setDeviceTarget("");
+    setDevice(null);
+    setDeviceState("unknown");
+    setBrightness(null);
+    setLastInstall(undefined);
+    setThemeInstallStatus(null);
+    setSupportDiagnostics(null);
+    setFirmwareUpdate(null);
+    didRunAutoRepair.current = false;
+    didRouteAfterSetupComplete.current = false;
+    setActiveTab("setup");
+    try {
+      const payload = await runCompanion<{
+        companion?: CompanionInfo;
+        device?: DeviceInfo;
+      }>("/v1/setup/reset", { method: "POST" });
+      setCompanionStatus("online");
+      setCompanionInfo(payload.companion || null);
+      setThemeInstallEnabled(
+        Boolean(payload.companion?.features?.themeInstallEnabled),
+      );
+      if (payload.device) {
+        setDevice(payload.device.connected ? payload.device : null);
+      }
       addEvent({
-        label: "VibeTV connection needs attention",
-        detail: normalized.nextAction,
-        tone: "attention",
+        label: "Setup restarted",
+        detail: "Local VibeTV connection was cleared.",
+        tone: "unknown",
+      });
+    } catch (error) {
+      const normalized = normalizeCaughtError(error, "Setup reset locally.");
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else {
+        markCompanionUnavailable();
+      }
+      addEvent({
+        label: "Setup restarted locally",
+        detail: "Mac App connection will be checked again.",
+        tone: "unknown",
       });
     } finally {
+      setSetupResetVersion((current) => current + 1);
       setBusyAction(null);
     }
   }, [
     addEvent,
-    loadSettings,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
-    refreshCompanionFeatures,
     runCompanion,
   ]);
 
@@ -788,14 +782,35 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     didRunInitialConnectionCheck.current = true;
 
     const timer = window.setTimeout(() => {
-      if (deviceTarget) {
-        void discoverDevice();
-        return;
-      }
       void checkCompanion();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [checkCompanion, deviceTarget, discoverDevice, setupPreviewStep]);
+  }, [checkCompanion, setupPreviewStep]);
+
+  useEffect(() => {
+    if (
+      setupPreviewStep ||
+      didRunAutoRepair.current ||
+      busyAction ||
+      companionStatus !== "online" ||
+      !device?.target ||
+      (device.connected && device.paired) ||
+      isLocalNetworkAccessError(lastError)
+    ) {
+      return;
+    }
+    didRunAutoRepair.current = true;
+    void repairConnection({ quiet: true });
+  }, [
+    busyAction,
+    companionStatus,
+    device?.connected,
+    device?.paired,
+    device?.target,
+    lastError,
+    repairConnection,
+    setupPreviewStep,
+  ]);
 
   useEffect(() => {
     if (companionStatus !== "missing") {
@@ -983,6 +998,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     >
       {activeShellTab === "setup" ? (
         <SetupScreen
+          key={setupResetVersion}
           companionStatus={companionStatus}
           device={device}
           deviceState={deviceState}
@@ -992,8 +1008,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           previewStep={setupPreviewStep}
           setupComplete={setupComplete}
           onCheckCompanion={checkCompanion}
-          onConnectDevice={connectDevice}
           onDeviceTargetChange={handleDeviceTargetChange}
+          onRepairConnection={(targetOverride) =>
+            repairConnection({ targetOverride, forcePair: true })
+          }
+          onResetSetup={resetSetup}
         />
       ) : null}
 
@@ -1136,8 +1155,8 @@ function isCompanionMissingError(error: ApiError): boolean {
   return error.code === "COMPANION_UNREACHABLE";
 }
 
-function isLocalNetworkAccessError(error: ApiError): boolean {
-  return error.code === "LOCAL_NETWORK_ACCESS_REQUIRED";
+function isLocalNetworkAccessError(error?: ApiError | null): boolean {
+  return error?.code === "LOCAL_NETWORK_ACCESS_REQUIRED";
 }
 
 async function readLocalNetworkAccessState(): Promise<
