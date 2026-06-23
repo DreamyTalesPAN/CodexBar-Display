@@ -24,6 +24,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
@@ -507,7 +508,8 @@ func runInstallUpdate(args []string) error {
 		fmt.Printf("Firmware downloaded: %s sha256=%s\n", imagePath, strings.TrimSpace(artifact.SHA256))
 	}
 
-	if err := uploadFirmwareOTAFn(ctx, base, imagePath); err != nil {
+	deviceToken := firmwareUpdateDeviceToken(home)
+	if err := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken); err != nil {
 		return &commandError{
 			Op:   "ota-upload",
 			Code: errcode.UpgradeFlashFirmware,
@@ -527,6 +529,14 @@ func runInstallUpdate(args []string) error {
 	}
 	fmt.Printf("Done: firmware %s installed\n", targetVersion)
 	return nil
+}
+
+func firmwareUpdateDeviceToken(home string) string {
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.DeviceToken)
 }
 
 type releaseHTTPDoer interface {
@@ -1017,8 +1027,8 @@ func fetchDeviceHelloHTTP(ctx context.Context, base string) (protocol.DeviceHell
 	return hello.Normalize(), nil
 }
 
-func uploadFirmwareOTA(ctx context.Context, base, imagePath string) error {
-	if err := uploadFirmwareOTARaw(ctx, base, imagePath); err == nil {
+func uploadFirmwareOTA(ctx context.Context, base, imagePath, token string) error {
+	if err := uploadFirmwareOTARaw(ctx, base, imagePath, token); err == nil {
 		return nil
 	} else if !rawFirmwareUploadUnavailable(err) {
 		return err
@@ -1052,6 +1062,7 @@ func uploadFirmwareOTA(ctx context.Context, base, imagePath string) error {
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("User-Agent", "codexbar-display-update")
+	applyFirmwareUpdateToken(req, token)
 	req.ContentLength = int64(body.Len())
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
@@ -1065,7 +1076,7 @@ func uploadFirmwareOTA(ctx context.Context, base, imagePath string) error {
 	return nil
 }
 
-func uploadFirmwareOTARaw(ctx context.Context, base, imagePath string) error {
+func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) error {
 	endpoint, err := rawFirmwareEndpoint(base)
 	if err != nil {
 		return err
@@ -1086,6 +1097,7 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath string) error {
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("User-Agent", "codexbar-display-update")
+	applyFirmwareUpdateToken(req, token)
 	req.ContentLength = info.Size()
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
@@ -1097,6 +1109,13 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath string) error {
 		return fmt.Errorf("POST /update/firmware.raw returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+func applyFirmwareUpdateToken(req *http.Request, token string) {
+	token = strings.TrimSpace(token)
+	if token != "" {
+		req.Header.Set("X-VibeTV-Token", token)
+	}
 }
 
 func rawFirmwareEndpoint(base string) (string, error) {
