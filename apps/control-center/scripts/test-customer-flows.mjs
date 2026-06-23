@@ -228,6 +228,10 @@ async function main() {
     );
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testThemeInstallStatusStaysCustomerOnly(browser, appContext.appUrl);
+    await testThemeInstallShowsIntermediateProgress(
+      browser,
+      appContext.appUrl,
+    );
     await testCustomerLogsStayCustomerOnly(browser, appContext.appUrl);
     await testPairingRequiredThemeStaysLocked(browser, appContext.appUrl);
     await testThemeWithoutPackUrlStaysLocked(browser, appContext.appUrl);
@@ -951,6 +955,86 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
   await page.close();
 }
 
+async function testThemeInstallShowsIntermediateProgress(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  let settingsCalls = 0;
+  await routeCompanionOnline(
+    page,
+    installRequests,
+    () => {
+      settingsCalls += 1;
+    },
+    {
+      installStatusSequence: [
+        {
+          phase: "installing",
+          message: "Uploading theme files.",
+          progress: 40,
+          logs: ["Preparing theme files.", "Uploading theme files."],
+        },
+        {
+          phase: "installing",
+          message: "Uploaded theme file 1.",
+          progress: 46,
+          logs: [
+            "Preparing theme files.",
+            "Uploading theme files.",
+            "Uploaded theme file 1.",
+          ],
+        },
+        {
+          phase: "complete",
+          message: "Theme is active on VibeTV.",
+          progress: 100,
+          logs: [
+            "Preparing theme files.",
+            "Uploading theme files.",
+            "Uploaded theme file 1.",
+            "Theme is active on VibeTV.",
+          ],
+          result: {
+            themeId: "synthwave",
+            packId: "synthwave",
+            name: "Synthwave",
+            activePath: "/themes/u/synthwave.json",
+            themeRev: 1,
+          },
+        },
+      ],
+    },
+  );
+
+  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
+  await waitForCondition(
+    () => settingsCalls >= 1,
+    "expected settings refresh before theme install progress check",
+  );
+
+  const installButton = page
+    .locator("li")
+    .filter({ hasText: "Fixture Synthwave Theme" })
+    .getByRole("button", { name: "Install" });
+  await installButton.waitFor({ timeout: 10_000 });
+  await installButton.click();
+  await page.getByText("Uploading theme files.").waitFor({ timeout: 10_000 });
+  await page.getByText("Uploaded theme file 1.").waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Installed" }).waitFor({
+    timeout: 10_000,
+  });
+
+  assert(
+    installRequests.length === 1,
+    `expected one mocked install request, got ${installRequests.length}`,
+  );
+  assert(
+    installRequests[0]?.includes('"async":true'),
+    `theme install should request async progress, got ${installRequests[0]}`,
+  );
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
 async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
@@ -1500,14 +1584,83 @@ async function routeCompanionOnline(
     onPair,
     onRepair,
     onReset,
+    installStatusSequence,
     repairError = false,
   } = {},
 ) {
   let currentDevice = device;
+  let activeInstallJobId = "";
+  let installStatusIndex = 0;
   const handler = async (route) => {
     const pathname = companionPath(route);
+    if (pathname === "/v1/themes/install/status") {
+      const fallbackStatus = {
+        phase: "error",
+        message: "Theme install failed.",
+        progress: 100,
+        logs: [
+          "Preparing theme files.",
+          "Uploading theme files.",
+          "Theme install failed.",
+        ],
+        error: {
+          code: "theme_install_failed",
+          message: "Theme install failed.",
+          nextAction: "Keep VibeTV powered on and retry the install.",
+        },
+      };
+      const sequence =
+        Array.isArray(installStatusSequence) &&
+        installStatusSequence.length > 0
+          ? installStatusSequence
+          : [fallbackStatus];
+      const nextStatus =
+        sequence[Math.min(installStatusIndex, sequence.length - 1)] ||
+        fallbackStatus;
+      installStatusIndex += 1;
+      if (nextStatus.phase === "complete" && nextStatus.result?.themeId) {
+        currentDevice = {
+          ...currentDevice,
+          activeTheme: nextStatus.result.themeId,
+        };
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          job: {
+            id: activeInstallJobId || "install-job-1",
+            startedAt: "2026-06-23T12:00:00.000Z",
+            ...nextStatus,
+          },
+        }),
+      });
+      return;
+    }
     if (pathname === "/v1/themes/install") {
-      installRequests.push(route.request().postData());
+      const postData = route.request().postData() || "";
+      installRequests.push(postData);
+      const parsed = parseJSON(postData);
+      if (parsed?.async) {
+        activeInstallJobId = "install-job-1";
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: true,
+            job: {
+              id: activeInstallJobId,
+              phase: "installing",
+              message: "Preparing theme files.",
+              progress: 10,
+              startedAt: "2026-06-23T12:00:00.000Z",
+              logs: ["Preparing theme files."],
+            },
+          }),
+        });
+        return;
+      }
       await route.fulfill({
         status: 500,
         contentType: "application/json",

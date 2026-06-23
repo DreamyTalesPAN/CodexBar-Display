@@ -38,15 +38,30 @@ type SettingsResponse = {
   device?: DeviceInfo;
 };
 
+type ThemeInstallResult = {
+  themeId: string;
+  packId: string;
+  name: string;
+  activePath: string;
+  themeRev: number;
+};
+
 type InstallResponse = {
-  result?: {
-    themeId: string;
-    packId: string;
-    name: string;
-    activePath: string;
-    themeRev: number;
-  };
+  job?: ThemeInstallJob;
+  result?: ThemeInstallResult;
   logs?: string[];
+};
+
+type ThemeInstallJob = {
+  id: string;
+  phase: "installing" | "complete" | "error";
+  message?: string;
+  progress?: number;
+  startedAt?: string;
+  finishedAt?: string;
+  logs?: string[];
+  result?: ThemeInstallResult;
+  error?: ApiError;
 };
 
 type Props = {
@@ -60,10 +75,18 @@ type ThemeInstallStatus = {
   title: string;
   startedAt: string;
   finishedAt?: string;
+  message?: string;
+  progress?: number;
   logs: string[];
-  result?: InstallResponse["result"];
+  result?: ThemeInstallResult;
   error?: string;
 };
+
+type RunCompanion = <T>(
+  path: string,
+  init?: RequestInit,
+  options?: { preserveLastError?: boolean },
+) => Promise<T>;
 
 export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const initialTheme = useMemo(
@@ -681,15 +704,39 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setLastInstall(undefined);
     setSelectedThemeId(theme.themeId);
     const startedAt = formatTime();
-    const initialLogs = [
-      "Install started.",
-      `Theme: ${theme.title}`,
-    ];
+    const initialLogs = ["Preparing theme install."];
+    const applyInstallJob = (job: ThemeInstallJob) => {
+      const phase =
+        job.phase === "complete"
+          ? "complete"
+          : job.phase === "error"
+            ? "error"
+            : "installing";
+      const logs = customerInstallLogs(job.logs, initialLogs);
+      setThemeInstallStatus({
+        phase,
+        themeId: theme.themeId,
+        title: theme.title,
+        startedAt,
+        finishedAt:
+          phase === "complete" || phase === "error" ? formatTime() : undefined,
+        message:
+          job.message ||
+          logs[logs.length - 1] ||
+          "Preparing theme install.",
+        progress: clampProgress(job.progress),
+        logs,
+        result: job.result,
+        error: job.error?.nextAction,
+      });
+    };
     setThemeInstallStatus({
       phase: "installing",
       themeId: theme.themeId,
       title: theme.title,
       startedAt,
+      message: initialLogs[0],
+      progress: 5,
       logs: initialLogs,
     });
     addEvent({
@@ -707,10 +754,39 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             themeId: theme.themeId,
             packUrl: theme.packUrl,
             skipFirmwareUpdate: true,
+            async: true,
           }),
         },
       );
-      setLastInstall(payload.result);
+      let result = payload.result;
+      let logs = customerInstallLogs(payload.logs, initialLogs);
+      if (payload.job) {
+        applyInstallJob(payload.job);
+        const finishedJob = await pollThemeInstallJob({
+          applyInstallJob,
+          jobId: payload.job.id,
+          runCompanion,
+        });
+        if (finishedJob.phase === "error") {
+          throw (
+            finishedJob.error || {
+              code: "theme_install_failed",
+              message: "Theme install failed.",
+              nextAction: "Keep VibeTV powered on and retry the install.",
+            }
+          );
+        }
+        result = finishedJob.result;
+        logs = customerInstallLogs(finishedJob.logs, logs);
+      }
+      if (!result) {
+        throw {
+          code: "theme_install_failed",
+          message: "Theme install failed.",
+          nextAction: "Keep VibeTV powered on and retry the install.",
+        } satisfies ApiError;
+      }
+      setLastInstall(result);
       const finishedAt = formatTime();
       setThemeInstallStatus({
         phase: "complete",
@@ -718,19 +794,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         title: theme.title,
         startedAt,
         finishedAt,
-        logs: [...initialLogs, "Install finished."],
-        result: payload.result,
+        message: "Theme is active on VibeTV.",
+        progress: 100,
+        logs: customerInstallLogs([...logs, "Theme is active on VibeTV."]),
+        result,
       });
-      if (payload.result?.themeId) {
+      if (result.themeId) {
         setDevice((current) =>
           current
-            ? { ...current, activeTheme: payload.result?.themeId }
+            ? { ...current, activeTheme: result.themeId }
             : current,
         );
       }
       addEvent({
         label: "Theme installed",
-        detail: payload.result?.name || theme.title,
+        detail: result.name || theme.title,
         at: finishedAt,
         tone: "ready",
       });
@@ -752,6 +830,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         title: theme.title,
         startedAt,
         finishedAt: formatTime(),
+        message: normalized.nextAction,
+        progress: 100,
         logs: [...initialLogs, normalized.message, normalized.nextAction],
         error: normalized.nextAction,
       });
@@ -1094,6 +1174,56 @@ function normalizeError(error: unknown, status: number): ApiError {
     message: "Request failed.",
     nextAction: "Try again.",
   };
+}
+
+async function pollThemeInstallJob({
+  applyInstallJob,
+  jobId,
+  runCompanion,
+}: {
+  applyInstallJob: (job: ThemeInstallJob) => void;
+  jobId: string;
+  runCompanion: RunCompanion;
+}): Promise<ThemeInstallJob> {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    await delay(500);
+    const payload = await runCompanion<{ job: ThemeInstallJob }>(
+      `/v1/themes/install/status?jobId=${encodeURIComponent(jobId)}`,
+      undefined,
+      { preserveLastError: true },
+    );
+    applyInstallJob(payload.job);
+    if (payload.job.phase === "complete" || payload.job.phase === "error") {
+      return payload.job;
+    }
+  }
+  throw {
+    code: "theme_install_timeout",
+    message: "Theme install is taking longer than expected.",
+    nextAction: "Keep VibeTV powered on, then check the theme again.",
+  } satisfies ApiError;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function customerInstallLogs(
+  logs: string[] | undefined,
+  fallback: string[] = ["Preparing theme install."],
+): string[] {
+  const cleaned = (logs || [])
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line, index, all) => all.indexOf(line) === index);
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
+function clampProgress(value: number | undefined): number {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return 5;
+  }
+  return Math.max(5, Math.min(100, Math.round(value)));
 }
 
 function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError {

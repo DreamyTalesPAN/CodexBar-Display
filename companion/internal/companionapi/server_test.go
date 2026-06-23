@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
@@ -836,6 +837,87 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	}
 	if setupCalls[1].ValidateOnly {
 		t.Fatalf("second setup refresh call should apply launch agent changes, got %+v", setupCalls[1])
+	}
+}
+
+func TestThemeInstallAsyncReportsCustomerProgress(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		_, _ = io.WriteString(opts.Out, "Preparing theme: Clippy\n")
+		_, _ = io.WriteString(opts.Out, "Uploading theme files...\n")
+		_, _ = io.WriteString(opts.Out, "Uploaded asset: /themes/u/clippy.cbi bytes=123\n")
+		_, _ = io.WriteString(opts.Out, "Activating theme...\n")
+		return themeinstall.Result{
+			ThemeID:       opts.ThemeID,
+			PackID:        "clippy",
+			Name:          "Clippy",
+			ActivePath:    "/themes/u/clippy.json",
+			ThemeRevision: 1,
+		}, nil
+	}
+
+	body := strings.NewReader(`{"themeId":"clippy","packUrl":"https://example.com/clippy.zip","async":true}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started themeInstallJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+	if started.Job.ID == "" || started.Job.Phase != "installing" {
+		t.Fatalf("unexpected started job: %+v", started.Job)
+	}
+
+	var got themeInstallJobResponse
+	for attempt := 0; attempt < 50; attempt++ {
+		rec = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/v1/themes/install/status?jobId="+started.Job.ID, nil)
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status response: %v", err)
+		}
+		if got.Job.Phase == "complete" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got.Job.Phase != "complete" {
+		t.Fatalf("expected completed job, got %+v", got.Job)
+	}
+	if got.Job.Result == nil || got.Job.Result.ThemeID != "clippy" {
+		t.Fatalf("expected result in completed job, got %+v", got.Job)
+	}
+	joinedLogs := strings.Join(got.Job.Logs, "\n")
+	for _, want := range []string{"Preparing theme files.", "Uploading theme files.", "Uploaded theme file 1.", "Theme is active on VibeTV."} {
+		if !strings.Contains(joinedLogs, want) {
+			t.Fatalf("expected customer progress log %q in %q", want, joinedLogs)
+		}
+	}
+	if strings.Contains(joinedLogs, "/themes/u") || strings.Contains(joinedLogs, "https://example.com") {
+		t.Fatalf("async progress leaked technical install detail: %q", joinedLogs)
 	}
 }
 

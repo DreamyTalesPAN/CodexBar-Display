@@ -46,6 +46,8 @@ export type ThemeInstallStatus = {
   title: string;
   startedAt: string;
   finishedAt?: string;
+  message?: string;
+  progress?: number;
   logs: string[];
   result?: ThemeInstallResult;
   error?: string;
@@ -412,7 +414,9 @@ function InlineInstallProgress({
 }) {
   const failed = status.phase === "error";
   const complete = status.phase === "complete";
-  const progressWidth = failed || complete ? "w-full" : "w-2/3";
+  const progress = clampInstallProgress(
+    failed || complete ? 100 : status.progress,
+  );
   const title = failed
     ? "Install failed"
     : complete
@@ -422,15 +426,19 @@ function InlineInstallProgress({
     ? status.error || "Theme was not installed. Try again."
     : complete
       ? "Theme is active on VibeTV."
-      : "Sending theme to VibeTV.";
+      : status.message ||
+        status.logs[status.logs.length - 1] ||
+        "Preparing theme install.";
+  const previousSteps = failed || complete ? [] : status.logs.slice(-4, -1);
 
   return (
     <div className="px-0 pb-4">
       <div className="mr-3 h-2 overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
         <div
-          className={`h-full bg-[#CCFF00] ${progressWidth} ${
+          className={`h-full bg-[#CCFF00] transition-[width] duration-300 ${
             failed || complete ? "" : "animate-pulse"
           }`}
+          style={{ width: `${progress}%` }}
         />
       </div>
       <div className="mr-3 mt-3 flex flex-col gap-3 border border-[#747A60] bg-[#F9F9F9] p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -451,6 +459,13 @@ function InlineInstallProgress({
             <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
               {detail}
             </div>
+            {previousSteps.length > 0 ? (
+              <ol className="mt-2 space-y-1 text-xs leading-5 text-[#5D634F]">
+                {previousSteps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            ) : null}
           </div>
         </div>
         {failed && canRetry ? (
@@ -465,6 +480,13 @@ function InlineInstallProgress({
       </div>
     </div>
   );
+}
+
+function clampInstallProgress(value: number | undefined): number {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return 5;
+  }
+  return Math.max(5, Math.min(100, Math.round(value)));
 }
 
 function labelForInstallButton({

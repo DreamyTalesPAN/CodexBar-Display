@@ -56,6 +56,9 @@ type Server struct {
 	installTheme   func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup       func(context.Context, setup.Options) error
 	subnetTargets  func() []string
+	installJobsMu  sync.Mutex
+	installJobs    map[string]*themeInstallJob
+	nextInstallJob uint64
 }
 
 type apiError struct {
@@ -126,6 +129,44 @@ type statusResponse struct {
 type deviceActionResponse struct {
 	OK     bool       `json:"ok"`
 	Device deviceInfo `json:"device"`
+}
+
+type themeInstallRequest struct {
+	ThemeID            string `json:"themeId"`
+	PackURL            string `json:"packUrl"`
+	CatalogURL         string `json:"catalogUrl"`
+	SkipFirmwareUpdate *bool  `json:"skipFirmwareUpdate"`
+	Async              bool   `json:"async"`
+}
+
+type themeInstallJob struct {
+	ID         string               `json:"id"`
+	Phase      string               `json:"phase"`
+	Message    string               `json:"message"`
+	Progress   int                  `json:"progress"`
+	StartedAt  time.Time            `json:"startedAt"`
+	FinishedAt *time.Time           `json:"finishedAt,omitempty"`
+	Logs       []string             `json:"logs,omitempty"`
+	Result     *themeinstall.Result `json:"result,omitempty"`
+	Error      *apiError            `json:"error,omitempty"`
+	uploads    int
+}
+
+type themeInstallJobResponse struct {
+	OK  bool            `json:"ok"`
+	Job themeInstallJob `json:"job"`
+}
+
+type statusAPIError struct {
+	status int
+	api    apiError
+}
+
+func (e *statusAPIError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.api.Message
 }
 
 type diagnosticsResponse struct {
@@ -211,6 +252,7 @@ func New(opts Options) (*Server, error) {
 		installTheme:   themeinstall.Install,
 		runSetup:       setup.Run,
 		subnetTargets:  localSubnetTargets,
+		installJobs:    make(map[string]*themeInstallJob),
 	}, nil
 }
 
@@ -252,6 +294,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/setup/reset", s.handleSetupReset)
 	mux.HandleFunc("/v1/settings", s.handleSettings)
 	mux.HandleFunc("/v1/themes/install", s.handleThemeInstall)
+	mux.HandleFunc("/v1/themes/install/status", s.handleThemeInstallStatus)
 	return s.withCORS(mux)
 }
 
@@ -730,12 +773,7 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	var req struct {
-		ThemeID            string `json:"themeId"`
-		PackURL            string `json:"packUrl"`
-		CatalogURL         string `json:"catalogUrl"`
-		SkipFirmwareUpdate *bool  `json:"skipFirmwareUpdate"`
-	}
+	var req themeInstallRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
@@ -770,40 +808,256 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if !s.requireThemeInstallPreflight(w, r, cfg, hello) {
 		return
 	}
+	if req.Async {
+		job := s.createThemeInstallJob()
+		s.startThemeInstallJob(r.Context(), job.ID, cfg, req)
+		writeJSON(w, http.StatusAccepted, themeInstallJobResponse{OK: true, Job: job})
+		return
+	}
+
+	var installLog bytes.Buffer
+	result, err := s.runThemeInstall(r.Context(), cfg, req, &installLog)
+	if err != nil {
+		writeThemeInstallError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		OK     bool                `json:"ok"`
+		Result themeinstall.Result `json:"result"`
+		Logs   []string            `json:"logs,omitempty"`
+	}{OK: true, Result: result, Logs: splitInstallLog(installLog.String())})
+}
+
+func (s *Server) handleThemeInstallStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	jobID := strings.TrimSpace(r.URL.Query().Get("jobId"))
+	if jobID == "" {
+		writeError(w, http.StatusBadRequest, "missing_install_job", "Theme install status is missing.", "Start theme install again.")
+		return
+	}
+	job, ok := s.themeInstallJobSnapshot(jobID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "install_job_not_found", "Theme install status was not found.", "Start theme install again.")
+		return
+	}
+	writeJSON(w, http.StatusOK, themeInstallJobResponse{OK: true, Job: job})
+}
+
+func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, req themeInstallRequest, out io.Writer) (themeinstall.Result, error) {
 	skipFirmwareUpdate := true
 	if req.SkipFirmwareUpdate != nil {
 		skipFirmwareUpdate = *req.SkipFirmwareUpdate
 	}
-	var installLog bytes.Buffer
-	result, err := s.installTheme(r.Context(), themeinstall.Options{
+	result, err := s.installTheme(ctx, themeinstall.Options{
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
 		CatalogURL:         strings.TrimSpace(req.CatalogURL),
 		Target:             targetWithToken(cfg.DeviceTarget, cfg.DeviceToken),
 		SkipFirmwareUpdate: skipFirmwareUpdate,
 		Verbose:            true,
-		Out:                &installLog,
+		Out:                out,
 	})
 	if err != nil {
-		writeInstallError(w, err)
+		return themeinstall.Result{}, err
+	}
+	fmt.Fprintln(out, "Refreshing display stream...")
+	if err := s.startDisplayStream(ctx, cfg.DeviceTarget); err != nil {
+		return themeinstall.Result{}, &statusAPIError{
+			status: http.StatusBadGateway,
+			api: apiError{
+				Code:       "display_stream_refresh_failed",
+				Message:    "Theme installed, but Mac App could not refresh the VibeTV display.",
+				NextAction: "Run setup again or restart the Mac App, then retry.",
+			},
+		}
+	}
+	fmt.Fprintln(out, "Display stream: refreshed")
+	return result, nil
+}
+
+func (s *Server) createThemeInstallJob() themeInstallJob {
+	s.installJobsMu.Lock()
+	defer s.installJobsMu.Unlock()
+	if s.installJobs == nil {
+		s.installJobs = make(map[string]*themeInstallJob)
+	}
+	s.nextInstallJob++
+	id := fmt.Sprintf("theme-install-%d-%d", time.Now().UnixNano(), s.nextInstallJob)
+	job := &themeInstallJob{
+		ID:        id,
+		Phase:     "installing",
+		Message:   "Preparing theme install.",
+		Progress:  5,
+		StartedAt: time.Now().UTC(),
+		Logs:      []string{"Preparing theme install."},
+	}
+	s.installJobs[id] = job
+	return cloneThemeInstallJob(job)
+}
+
+func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req themeInstallRequest) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		writer := &themeInstallProgressWriter{server: s, jobID: jobID}
+		result, err := s.runThemeInstall(ctx, cfg, req, writer)
+		finishedAt := time.Now().UTC()
+		if err != nil {
+			_, apiErr := themeInstallErrorPayload(err)
+			s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
+				job.Phase = "error"
+				job.Message = "Theme install failed."
+				job.Progress = 100
+				job.FinishedAt = &finishedAt
+				job.Error = &apiErr
+				appendInstallJobLog(job, "Theme install failed.")
+			})
+			return
+		}
+		s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
+			job.Phase = "complete"
+			job.Message = "Theme is active on VibeTV."
+			job.Progress = 100
+			job.FinishedAt = &finishedAt
+			job.Result = &result
+			appendInstallJobLog(job, "Theme is active on VibeTV.")
+		})
+	}()
+}
+
+func (s *Server) updateThemeInstallJob(jobID string, update func(*themeInstallJob)) {
+	s.installJobsMu.Lock()
+	defer s.installJobsMu.Unlock()
+	if s.installJobs == nil {
 		return
 	}
-	if err := s.startDisplayStream(r.Context(), cfg.DeviceTarget); err != nil {
-		writeError(
-			w,
-			http.StatusBadGateway,
-			"display_stream_refresh_failed",
-			"Theme installed, but Mac App could not refresh the VibeTV display.",
-			"Run setup again or restart the Mac App, then retry.",
-		)
+	job := s.installJobs[jobID]
+	if job == nil {
 		return
 	}
-	fmt.Fprintln(&installLog, "Display stream: refreshed")
-	writeJSON(w, http.StatusOK, struct {
-		OK     bool                `json:"ok"`
-		Result themeinstall.Result `json:"result"`
-		Logs   []string            `json:"logs,omitempty"`
-	}{OK: true, Result: result, Logs: splitInstallLog(installLog.String())})
+	update(job)
+}
+
+func (s *Server) themeInstallJobSnapshot(jobID string) (themeInstallJob, bool) {
+	s.installJobsMu.Lock()
+	defer s.installJobsMu.Unlock()
+	job := s.installJobs[jobID]
+	if job == nil {
+		return themeInstallJob{}, false
+	}
+	return cloneThemeInstallJob(job), true
+}
+
+func cloneThemeInstallJob(job *themeInstallJob) themeInstallJob {
+	if job == nil {
+		return themeInstallJob{}
+	}
+	clone := *job
+	clone.Logs = append([]string(nil), job.Logs...)
+	if job.Result != nil {
+		result := *job.Result
+		clone.Result = &result
+	}
+	if job.Error != nil {
+		apiErr := *job.Error
+		clone.Error = &apiErr
+	}
+	if job.FinishedAt != nil {
+		finishedAt := *job.FinishedAt
+		clone.FinishedAt = &finishedAt
+	}
+	return clone
+}
+
+type themeInstallProgressWriter struct {
+	server  *Server
+	jobID   string
+	pending string
+}
+
+func (w *themeInstallProgressWriter) Write(p []byte) (int, error) {
+	text := w.pending + string(p)
+	lines := strings.Split(text, "\n")
+	if !strings.HasSuffix(text, "\n") {
+		w.pending = lines[len(lines)-1]
+		lines = lines[:len(lines)-1]
+	} else {
+		w.pending = ""
+	}
+	for _, line := range lines {
+		w.noteLine(line)
+	}
+	return len(p), nil
+}
+
+func (w *themeInstallProgressWriter) noteLine(line string) {
+	line = strings.TrimSpace(line)
+	if line == "" || w.server == nil {
+		return
+	}
+	w.server.updateThemeInstallJob(w.jobID, func(job *themeInstallJob) {
+		message, progress, ok := customerInstallProgress(line, job)
+		if !ok {
+			return
+		}
+		job.Message = message
+		if progress > job.Progress {
+			job.Progress = progress
+		}
+		appendInstallJobLog(job, message)
+	})
+}
+
+func customerInstallProgress(line string, job *themeInstallJob) (string, int, bool) {
+	switch {
+	case strings.HasPrefix(line, "Preparing theme:"):
+		return "Preparing theme files.", 10, true
+	case strings.HasPrefix(line, "Checking device"):
+		return "Checking VibeTV.", 20, true
+	case strings.HasPrefix(line, "Install screen: showing"):
+		return "Showing install screen on VibeTV.", 30, true
+	case strings.HasPrefix(line, "Upload interrupted"):
+		return "Upload interrupted. Retrying.", maxInt(job.Progress, 40), true
+	case strings.HasPrefix(line, "Retrying upload:"):
+		return "Retrying theme file upload.", maxInt(job.Progress, 40), true
+	case strings.HasPrefix(line, "Uploading theme files"):
+		return "Uploading theme files.", 40, true
+	case strings.HasPrefix(line, "Uploaded asset:"):
+		job.uploads++
+		return fmt.Sprintf("Uploaded theme file %d.", job.uploads), minInt(70, 40+job.uploads*6), true
+	case strings.HasPrefix(line, "Uploaded theme spec:"):
+		return "Uploaded theme layout.", 76, true
+	case strings.HasPrefix(line, "Activating theme"):
+		return "Activating theme.", 84, true
+	case strings.HasPrefix(line, "Live usage frame: refreshed"):
+		return "Refreshing live usage.", 90, true
+	case strings.HasPrefix(line, "Live usage frame: skipped"):
+		return "Waiting for live usage.", 90, true
+	case strings.HasPrefix(line, "Refreshing display stream"):
+		return "Refreshing display stream.", 94, true
+	case strings.HasPrefix(line, "Display stream: refreshed"):
+		return "Display stream refreshed.", 98, true
+	case strings.HasPrefix(line, "Done:"):
+		return "Theme installed.", 88, true
+	default:
+		return "", 0, false
+	}
+}
+
+func appendInstallJobLog(job *themeInstallJob, message string) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return
+	}
+	if len(job.Logs) > 0 && job.Logs[len(job.Logs)-1] == message {
+		return
+	}
+	job.Logs = append(job.Logs, message)
+	if len(job.Logs) > 12 {
+		job.Logs = append([]string(nil), job.Logs[len(job.Logs)-12:]...)
+	}
 }
 
 func (s *Server) requireThemeInstallPreflight(w http.ResponseWriter, r *http.Request, cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
@@ -1247,7 +1501,16 @@ func writeInternalError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, "internal_error", "The companion could not complete the request.", "Restart the companion and retry.")
 }
 
-func writeInstallError(w http.ResponseWriter, err error) {
+func writeThemeInstallError(w http.ResponseWriter, err error) {
+	status, apiErr := themeInstallErrorPayload(err)
+	writeError(w, status, apiErr.Code, apiErr.Message, apiErr.NextAction)
+}
+
+func themeInstallErrorPayload(err error) (int, apiError) {
+	var apiStatus *statusAPIError
+	if errors.As(err, &apiStatus) {
+		return apiStatus.status, apiStatus.api
+	}
 	code := "theme_install_failed"
 	if c := errcode.Of(err); c != "" {
 		code = string(c)
@@ -1260,7 +1523,15 @@ func writeInstallError(w http.ResponseWriter, err error) {
 	if detail := sanitizeErrorDetail(err); detail != "" {
 		message = "Theme install failed: " + detail
 	}
-	writeError(w, http.StatusBadGateway, code, message, next)
+	return http.StatusBadGateway, apiError{
+		Code:       code,
+		Message:    message,
+		NextAction: next,
+	}
+}
+
+func writeInstallError(w http.ResponseWriter, err error) {
+	writeThemeInstallError(w, err)
 }
 
 var sensitiveQueryValuePattern = regexp.MustCompile(`(?i)([?&](?:token|auth|key|secret)=)[^&\s"]+`)
@@ -1303,6 +1574,20 @@ func themeInstallEnabled() bool {
 	default:
 		return true
 	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func writeError(w http.ResponseWriter, status int, code, message, nextAction string) {
