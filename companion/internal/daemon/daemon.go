@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -936,6 +937,7 @@ func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
 }
 
 func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
+	publicPort := publicDeviceTarget(port)
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = attachClockFields(frame, deps.now())
@@ -944,7 +946,7 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 		var applied bool
 		frame, applied = applyThemeToFrame(frame, selectedTheme, caps)
 		if !applied {
-			deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", port, caps.Board, selectedTheme)
+			deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", publicPort, caps.Board, selectedTheme)
 		}
 	}
 
@@ -962,7 +964,8 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 	}
 	frame = marshaledFrame
 
-	if err := deps.sendLine(port, line); err != nil {
+	sendTarget := sendTargetWithRuntimeAuth(port, deps)
+	if err := deps.sendLine(sendTarget, line); err != nil {
 		return &RuntimeError{
 			Kind: runtimeErrorSerialWrite,
 			Op:   "send-line",
@@ -972,7 +975,7 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 	}
 
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		port, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -987,6 +990,61 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 	}
 
 	return nil
+}
+
+func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) string {
+	if deps.transportName != "wifi" {
+		return target
+	}
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok {
+		return target
+	}
+	return targetWithDeviceToken(target, cfg.DeviceToken)
+}
+
+func targetWithDeviceToken(target, token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return target
+	}
+	parsed, ok := parseDeviceTarget(target)
+	if !ok {
+		return target
+	}
+	query := parsed.Query()
+	if strings.TrimSpace(query.Get("token")) != "" {
+		return target
+	}
+	query.Set("token", token)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func publicDeviceTarget(target string) string {
+	parsed, ok := parseDeviceTarget(target)
+	if !ok {
+		return target
+	}
+	query := parsed.Query()
+	if _, hasToken := query["token"]; !hasToken {
+		return target
+	}
+	query.Del("token")
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func parseDeviceTarget(target string) (*url.URL, bool) {
+	target = strings.TrimSpace(target)
+	if target == "" || !strings.Contains(target, "://") {
+		return nil, false
+	}
+	parsed, err := url.Parse(target)
+	if err != nil || strings.TrimSpace(parsed.Scheme) == "" || strings.TrimSpace(parsed.Host) == "" {
+		return nil, false
+	}
+	return parsed, true
 }
 
 func attachClockFields(frame protocol.Frame, now time.Time) protocol.Frame {

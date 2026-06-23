@@ -1748,6 +1748,65 @@ func TestRunCycleWithDepsUsesRuntimeConfigTargetOverStaleLaunchAgentTarget(t *te
 	}
 }
 
+func TestRunCycleWithDepsSendsRuntimeConfigDeviceTokenWithoutLoggingIt(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	const runtimeTarget = "http://192.168.178.163"
+	const pairToken = "pair-token"
+	var sentPort string
+	var logged strings.Builder
+
+	err := runCycleWithDeps(context.Background(), "http://192.168.178.72", state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{DeviceTarget: runtimeTarget, DeviceToken: pairToken}, nil
+		},
+		resolvePort: func(target string) (string, error) {
+			return target, nil
+		},
+		deviceCaps: func(target string) (protocol.DeviceCapabilities, error) {
+			if target != runtimeTarget {
+				return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected target %s", target)
+			}
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				Board:                     "esp8266-smalltv-st7789",
+				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+				MaxFrameBytes:             2048,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+		},
+		sendLine: func(port string, line []byte) error {
+			sentPort = port
+			return nil
+		},
+		logf: func(format string, args ...any) {
+			_, _ = fmt.Fprintf(&logged, format, args...)
+		},
+	})
+	if err != nil {
+		t.Fatalf("runCycleWithDeps returned error: %v", err)
+	}
+	if sentPort != runtimeTarget+"?token="+pairToken {
+		t.Fatalf("expected frame sent with runtime config token, got %q", sentPort)
+	}
+	if strings.Contains(logged.String(), pairToken) {
+		t.Fatalf("daemon logs leaked pairing token: %q", logged.String())
+	}
+	if !strings.Contains(logged.String(), "sent frame -> "+runtimeTarget) {
+		t.Fatalf("expected public target in logs, got %q", logged.String())
+	}
+}
+
 func TestRunWithDepsRetriesAndRecoversAfterReconnect(t *testing.T) {
 	prepareFastTestEnv(t)
 
