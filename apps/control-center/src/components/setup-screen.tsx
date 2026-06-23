@@ -232,7 +232,7 @@ export function SetupScreen({
             <div className="mt-6 flex flex-wrap gap-3">
               <PrimaryButton
                 busy={busyAction === "repair"}
-                busyLabel="Fixing"
+                busyLabel="Reconnecting"
                 icon={<RefreshCw size={18} aria-hidden />}
                 label="Fix connection"
                 onClick={() => onRepairConnection?.()}
@@ -482,7 +482,7 @@ function FinishSetupContent({
       <StatusNote
         icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
       >
-        Fixing VibeTV connection...
+        Reconnecting VibeTV...
       </StatusNote>
     );
   }
@@ -509,7 +509,7 @@ function FinishSetupContent({
           lastError={lastError}
           onChange={onDeviceTargetChange}
           onSubmit={onRepairConnection}
-          searchingLabel="Fixing"
+          searchingLabel="Reconnecting"
           value={deviceTarget}
         />
       </div>
