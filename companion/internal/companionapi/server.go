@@ -1530,10 +1530,6 @@ func themeInstallErrorPayload(err error) (int, apiError) {
 	}
 }
 
-func writeInstallError(w http.ResponseWriter, err error) {
-	writeThemeInstallError(w, err)
-}
-
 var sensitiveQueryValuePattern = regexp.MustCompile(`(?i)([?&](?:token|auth|key|secret)=)[^&\s"]+`)
 var sensitiveURLUserInfoPattern = regexp.MustCompile(`(?i)\b(https?://)[^/\s"@]+@`)
 var publicLogURLPattern = regexp.MustCompile(`https?://[^\s)]+`)
