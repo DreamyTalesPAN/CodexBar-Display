@@ -991,7 +991,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           busyAction={busyAction}
           previewStep={setupPreviewStep}
           setupComplete={setupComplete}
-          themeInstallEnabled={themeInstallEnabled}
           onCheckCompanion={checkCompanion}
           onConnectDevice={connectDevice}
           onDeviceTargetChange={handleDeviceTargetChange}

@@ -185,6 +185,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testSetupUnlocksWhenThemeInstallGateDisabled(
+        browser,
+        appContext.appUrl,
+      );
       await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
       await testUpdatesHideUnavailableCompanionAction(
         browser,
@@ -203,6 +207,10 @@ async function main() {
       fixtureServer,
     );
     await testSetupTabsAreLockedUntilSetupComplete(
+      browser,
+      appContext.appUrl,
+    );
+    await testSetupUnlocksWhenThemeInstallGateDisabled(
       browser,
       appContext.appUrl,
     );
@@ -538,6 +546,45 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
   await assertNoSetupJargon(page);
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: { themeInstallEnabled: false },
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll("nav button")).some(
+        (button) =>
+          button.textContent?.includes("Overview") && !button.disabled,
+      ),
+    null,
+    { timeout: 20_000 },
+  );
+  for (const tabName of [
+    "Overview",
+    "Settings",
+    "Theme Library",
+    "Updates",
+    "Support",
+  ]) {
+    const button = page.getByRole("button", { name: tabName });
+    await button.waitFor({ timeout: 10_000 });
+    assert(
+      !(await button.isDisabled()),
+      `${tabName} tab should be unlocked after paired setup even when theme installs are gated`,
+    );
+  }
+  assert(
+    (await page.getByText("needs an update before themes").count()) === 0,
+    "setup must not require the theme install write gate",
+  );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -1419,7 +1466,12 @@ async function routeCompanionOnline(
   page,
   installRequests,
   onSettings = () => {},
-  { device = companionDevice, onDiscover, onPair } = {},
+  {
+    companionFeatures = { themeInstallEnabled: true },
+    device = companionDevice,
+    onDiscover,
+    onPair,
+  } = {},
 ) {
   let currentDevice = device;
   const handler = async (route) => {
@@ -1466,7 +1518,7 @@ async function routeCompanionOnline(
           ok: true,
           companion: {
             version: "1.0.32",
-            features: { themeInstallEnabled: true },
+            features: companionFeatures,
           },
           device: currentDevice,
         }),
@@ -1503,7 +1555,7 @@ async function routeCompanionOnline(
           generatedAt: "2026-06-19T12:00:00.000Z",
           companion: {
             version: "1.0.32",
-            features: { themeInstallEnabled: true },
+            features: companionFeatures,
           },
           device: currentDevice,
           checks: [

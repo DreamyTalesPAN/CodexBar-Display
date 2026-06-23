@@ -90,7 +90,6 @@ type SetupScreenProps = {
   onDeviceTargetChange?: (target: string) => void;
   previewStep?: "mac-app" | null;
   setupComplete: boolean;
-  themeInstallEnabled: boolean;
 };
 
 type StepId = "wifi" | "mac-app" | "browser-access" | "finish";
@@ -109,7 +108,6 @@ export function SetupScreen({
   onDeviceTargetChange,
   previewStep,
   setupComplete,
-  themeInstallEnabled,
 }: SetupScreenProps) {
   const [wifiConfirmedState, setWifiConfirmedState] = useState(false);
   const [agentPromptCopied, setAgentPromptCopied] = useState(false);
@@ -416,14 +414,12 @@ export function SetupScreen({
             {activeStep === "finish" ? (
               <FinishSetupContent
                 busyAction={busyAction}
-                connected={connected}
                 deviceState={deviceState}
                 deviceTarget={deviceTarget}
                 lastError={lastError}
                 onConnectDevice={retryConnect}
                 onDeviceTargetChange={onDeviceTargetChange}
                 setupComplete={setupComplete}
-                themeInstallEnabled={themeInstallEnabled}
               />
             ) : null}
           </SetupStep>
@@ -435,43 +431,23 @@ export function SetupScreen({
 
 function FinishSetupContent({
   busyAction,
-  connected,
   deviceState,
   deviceTarget,
   lastError,
   onConnectDevice,
   onDeviceTargetChange,
   setupComplete,
-  themeInstallEnabled,
 }: {
   busyAction?: string | null;
-  connected: boolean;
   deviceState: DeviceState;
   deviceTarget: string;
   lastError?: ApiError | null;
   onConnectDevice?: (targetOverride?: string) => void;
   onDeviceTargetChange?: (target: string) => void;
   setupComplete: boolean;
-  themeInstallEnabled: boolean;
 }) {
   if (setupComplete) {
     return <StatusNote>VibeTV is ready.</StatusNote>;
-  }
-
-  if (connected && !themeInstallEnabled) {
-    return (
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-        <p className="text-sm leading-6 text-[#444933]">
-          The Mac App is connected but needs an update before themes can be
-          installed.
-        </p>
-        <PrimaryButton
-          icon={<RefreshCw size={18} aria-hidden />}
-          label="Check again"
-          onClick={() => onConnectDevice?.()}
-        />
-      </div>
-    );
   }
 
   if (busyAction === "connect" || busyAction === "discover") {
