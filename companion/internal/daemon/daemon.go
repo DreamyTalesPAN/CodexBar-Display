@@ -766,7 +766,7 @@ func selectFirmwareUpdate(caps protocol.DeviceCapabilities, manifest firmwareMan
 		return protocol.UpdateState{Available: false, Status: "no_board_release"}, nil
 	}
 	update := protocol.UpdateState{
-		Available:     latest.Compare(current) > 0,
+		Available:     firmwareReleaseNewerThanCurrent(*latest, current),
 		LatestVersion: latestRaw,
 		Severity:      latestArtifact.Severity,
 		Message:       latestArtifact.Message,
@@ -774,12 +774,25 @@ func selectFirmwareUpdate(caps protocol.DeviceCapabilities, manifest firmwareMan
 		FilesystemURL: latestArtifact.FilesystemURL,
 		SHA256:        latestArtifact.SHA256,
 	}
-	if latest.Compare(current) <= 0 {
+	if !update.Available {
 		update.Status = "current"
 		return update, nil
 	}
 	update.Status = "update_available"
 	return update, nil
+}
+
+func firmwareReleaseNewerThanCurrent(latest, current versioning.SemVer) bool {
+	if latest.Major != current.Major {
+		return latest.Major > current.Major
+	}
+	if latest.Minor != current.Minor {
+		return latest.Minor > current.Minor
+	}
+	if latest.Patch != current.Patch {
+		return latest.Patch > current.Patch
+	}
+	return false
 }
 
 func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {

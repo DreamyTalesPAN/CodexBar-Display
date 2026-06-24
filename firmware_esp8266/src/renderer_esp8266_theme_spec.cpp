@@ -21,7 +21,6 @@ namespace display {
 namespace {
 
 constexpr unsigned long kThemeSpecAnimatedTickMs = 20UL;
-constexpr unsigned long kThemeSpecUpdateNoticeToggleMs = 1500UL;
 constexpr int kAnimatedSpriteCacheSlots = 2;
 unsigned long nextThemeSpecAnimatedTickAtMs = 0;
 bool lastThemeSpecRenderOk = true;
@@ -676,18 +675,12 @@ const char* usageModeText() {
   return "used";
 }
 
-const char* themeSpecUpdateNoticeText() {
-  return ((millis() / kThemeSpecUpdateNoticeToggleMs) % 2) == 0
-             ? "Update available"
-             : "app.vibetv.shop";
-}
-
 themespec::FrameData currentThemeSpecFrameData() {
   themespec::FrameData frame;
   frame.provider = CurrentFrame().provider.c_str();
   frame.label = ProviderLabelText();
   frame.updateAvailable = CurrentFrame().updateAvailable;
-  frame.updateNotice = themeSpecUpdateNoticeText();
+  frame.updateNotice = ThemeSpecUpdateNoticeText();
   frame.session = CurrentFrame().session;
   frame.weekly = CurrentFrame().weekly;
   frame.resetSecs = CurrentRemainingSecs();

@@ -536,6 +536,7 @@ void applyFrameUpdateState() {
 
   const codexbar_display::core::Frame& frame = codexbar_display::app::CurrentFrame(runtimeCtx);
   if (!frame.hasUpdateAvailable) {
+    clearFirmwareUpdateNotice();
     return;
   }
 
@@ -2555,19 +2556,6 @@ void loop() {
     return;
   }
 
-  if (firmwareUpdateNoticeDirty &&
-      !waitStatusRendered &&
-      codexbar_display::app::HasFrame(runtimeCtx) &&
-      !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
-      !runtimeCtx.screenDirty &&
-      !frameStaleStatusRendered) {
-    const unsigned long renderStartUs = micros();
-    drawFirmwareUpdateNotice();
-    rendered = true;
-    renderDurationUs = micros() - renderStartUs;
-    recordRenderPartial("update_notice", renderDurationUs);
-  }
-
   if (!waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
@@ -2591,6 +2579,19 @@ void loop() {
         runtimeCtx.lastRenderedSecs = remain;
       }
     }
+  }
+
+  if (firmwareUpdateNoticeDirty &&
+      !waitStatusRendered &&
+      codexbar_display::app::HasFrame(runtimeCtx) &&
+      !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+      !runtimeCtx.screenDirty &&
+      !frameStaleStatusRendered) {
+    const unsigned long renderStartUs = micros();
+    drawFirmwareUpdateNotice();
+    rendered = true;
+    renderDurationUs = micros() - renderStartUs;
+    recordRenderPartial("update_notice", renderDurationUs);
   }
 
   if (!setupMode &&

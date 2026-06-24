@@ -20,6 +20,7 @@ struct SharedState {
   TFT_eSPI tft = TFT_eSPI();
   Theme activeTheme = defaultTheme();
   GifCoreESP8266 gifCore;
+  String themeSpecUpdateNoticeText;
   uint16_t displayTransactionDepth = 0;
   uint8_t splashWaitingDots = 0;
   unsigned long splashDotsLastTick = 0;
@@ -68,6 +69,14 @@ inline Theme& ActiveTheme() {
 
 inline GifCoreESP8266& GifCore() {
   return State().gifCore;
+}
+
+inline void SetThemeSpecUpdateNoticeText(const String& text) {
+  State().themeSpecUpdateNoticeText = text;
+}
+
+inline const char* ThemeSpecUpdateNoticeText() {
+  return State().themeSpecUpdateNoticeText.c_str();
 }
 
 bool BeginDisplayTransaction();

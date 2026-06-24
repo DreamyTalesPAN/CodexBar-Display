@@ -1262,6 +1262,32 @@ func TestSelectFirmwareUpdateComparesBoardRelease(t *testing.T) {
 	if current.Available || current.Status != "current" {
 		t.Fatalf("expected current state, got %+v", current)
 	}
+
+	devCurrent, err := selectFirmwareUpdate(protocol.DeviceCapabilities{
+		Board:    "esp8266-smalltv-st7789",
+		Firmware: "1.0.1-dev",
+	}, firmwareManifest{Artifacts: []firmwareArtifact{
+		{Board: "esp8266-smalltv-st7789", FirmwareVersion: "1.0.1"},
+	}})
+	if err != nil {
+		t.Fatalf("select dev current: %v", err)
+	}
+	if devCurrent.Available || devCurrent.Status != "current" {
+		t.Fatalf("expected dev build for same release to be current, got %+v", devCurrent)
+	}
+
+	nextRelease, err := selectFirmwareUpdate(protocol.DeviceCapabilities{
+		Board:    "esp8266-smalltv-st7789",
+		Firmware: "1.0.1-dev",
+	}, firmwareManifest{Artifacts: []firmwareArtifact{
+		{Board: "esp8266-smalltv-st7789", FirmwareVersion: "1.0.2"},
+	}})
+	if err != nil {
+		t.Fatalf("select next release for dev build: %v", err)
+	}
+	if !nextRelease.Available || nextRelease.Status != "update_available" {
+		t.Fatalf("expected newer release to update dev build, got %+v", nextRelease)
+	}
 }
 
 func TestMarshalFrameWithinLimitDropsTokenStatsBeforeFallback(t *testing.T) {
