@@ -24,6 +24,17 @@ void GifCoreESP8266::Setup(const char* preloadAssetPath) {
   if (!fsMounted_) {
     fsMounted_ = LittleFS.begin();
   }
+  if (!EnsureDecoder()) {
+    lastErrorPath_ = preloadAssetPath != nullptr ? preloadAssetPath : "";
+    lastErrorStage_ = "decoder_alloc";
+    lastErrorFailures_ = 1;
+    lastFailureAtMs_ = millis();
+  } else if (lastErrorStage_ == "decoder_alloc") {
+    lastErrorPath_ = "";
+    lastErrorStage_ = "";
+    lastErrorFailures_ = 0;
+    lastFailureAtMs_ = 0;
+  }
   if (fsMounted_ && preloadAssetPath != nullptr && preloadAssetPath[0] != '\0') {
     filePresent_ = LittleFS.exists(preloadAssetPath);
     if (filePresent_) {
@@ -43,7 +54,6 @@ void GifCoreESP8266::Stop() {
     file_.close();
   }
   decoderOpen_ = false;
-  ReleaseDecoder();
   suppressDraw_ = false;
   nextFrameAtMs_ = 0;
   gifWidth_ = 0;
@@ -407,6 +417,7 @@ GifCoreStatusSnapshot GifCoreESP8266::StatusSnapshot() const {
   snapshot.fsMounted = fsMounted_;
   snapshot.filePresent = filePresent_;
   snapshot.fileOpen = static_cast<bool>(file_);
+  snapshot.decoderAllocated = decoder_ != nullptr;
   snapshot.decoderOpen = decoderOpen_;
   snapshot.lastErrorPath = lastErrorPath_;
   snapshot.lastErrorStage = lastErrorStage_;

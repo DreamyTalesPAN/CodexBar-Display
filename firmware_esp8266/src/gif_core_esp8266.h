@@ -54,6 +54,7 @@ struct GifCoreStatusSnapshot {
   bool fsMounted = false;
   bool filePresent = false;
   bool fileOpen = false;
+  bool decoderAllocated = false;
   bool decoderOpen = false;
   bool blocked = false;
   uint8_t consecutiveFailures = 0;

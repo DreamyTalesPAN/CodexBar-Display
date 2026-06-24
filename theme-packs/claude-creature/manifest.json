@@ -6,10 +6,10 @@
   "version": "1.0.0",
   "minFirmware": "1.0.24",
   "themeSpec": {
-    "path": "/themes/u/claude--1-defca1.json",
+    "path": "/themes/u/claude--1-12ab01.json",
     "file": "theme.json",
-    "bytes": 861,
-    "sha256": "89866a37382f7754b7229eff8a83bc18a944bdd0f2f6703dbb21db648e9db713",
+    "bytes": 925,
+    "sha256": "d1e99f5dc1662a4a5ee1c2ec05cb1bc14e25accf7017b2804cb0c1493628926b",
     "contentType": "application/json"
   },
   "assets": [

@@ -1333,6 +1333,8 @@ void handleHealth() {
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";
   out += snapshot.gifFilePresent ? "true" : "false";
+  out += ",\"decoderAllocated\":";
+  out += snapshot.gifDecoderAllocated ? "true" : "false";
   out += ",\"decoderOpen\":";
   out += snapshot.gifDecoderOpen ? "true" : "false";
   out += ",\"lastError\":";

@@ -80,6 +80,7 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
   snapshot.gifActivePath = gif.activePath;
   snapshot.gifFilePresent = gif.filePresent;
   snapshot.gifFileOpen = gif.fileOpen;
+  snapshot.gifDecoderAllocated = gif.decoderAllocated;
   snapshot.gifDecoderOpen = gif.decoderOpen;
   snapshot.gifBlocked = gif.blocked;
   snapshot.gifConsecutiveFailures = gif.consecutiveFailures;
@@ -110,6 +111,7 @@ RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
   const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
   snapshot.gifActivePath = gif.activePath;
   snapshot.gifFilePresent = gif.filePresent;
+  snapshot.gifDecoderAllocated = gif.decoderAllocated;
   snapshot.gifDecoderOpen = gif.decoderOpen;
   snapshot.gifLastErrorStage = gif.lastErrorStage;
 #else

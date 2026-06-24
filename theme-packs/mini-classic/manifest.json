@@ -6,10 +6,10 @@
   "version": "1.0.0",
   "minFirmware": "1.0.24",
   "themeSpec": {
-    "path": "/themes/u/mini-cl-1-410a37.json",
+    "path": "/themes/u/mini-cl-1-b3c3f7.json",
     "file": "theme.json",
-    "bytes": 642,
-    "sha256": "c576cc945943e6776aa16739629977c6dc3c25be573cc3ff77ad65a7e548fd61",
+    "bytes": 709,
+    "sha256": "7d789f716dceb59dcb96205c6810357be785db7fc1165b898fe35fc9dd83ac37",
     "contentType": "application/json"
   },
   "assets": [

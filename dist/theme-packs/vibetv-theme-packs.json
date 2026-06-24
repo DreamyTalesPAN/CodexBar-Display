@@ -6,16 +6,16 @@
       "title": "Claude Creature",
       "themeRev": 1,
       "downloadAsset": "vibetv-theme-claude-creature.zip",
-      "sha256": "84144c289fe8366a250ddeecda7b8ddb0569fbe295c5681bcb6d17738b2ac83b",
-      "bytes": 3277
+      "sha256": "2e730a7b14237e31db67f5fad2b25523d48bc885ad8a3068b800b9edff594c76",
+      "bytes": 3298
     },
     {
       "id": "clippy",
       "title": "Clippy",
       "themeRev": 1,
       "downloadAsset": "vibetv-theme-clippy.zip",
-      "sha256": "c3875a457d7e123a3f837cb87c3585bba54c66a0b53ba384f42b202cd984098f",
-      "bytes": 18590
+      "sha256": "99aa677562e971910477d74611e814054efdf741ae99badd3ebf06d8da8b6579",
+      "bytes": 18581
     },
     {
       "id": "cozy-meadow",
@@ -30,16 +30,16 @@
       "title": "Mini Classic",
       "themeRev": 1,
       "downloadAsset": "vibetv-theme-mini-classic.zip",
-      "sha256": "321aa4b7f8fb99583dedda2b68dd6fc517e82356296e012d8634eebb1d071a3a",
-      "bytes": 18405
+      "sha256": "ad11259c295b13757db718e76833572c2da64c4dd23b3a6a90653849cdfe29c9",
+      "bytes": 18443
     },
     {
       "id": "synthwave",
       "title": "Synthwave",
       "themeRev": 1,
       "downloadAsset": "vibetv-theme-synthwave.zip",
-      "sha256": "4e79df726843c08c35053ac71e1728b188dabcae46b71ffe3e2065ad0da32973",
-      "bytes": 1530
+      "sha256": "d66f9e01a55f142a047f6680804a064e5d0aebd8a25457c5698d15188ff350b3",
+      "bytes": 1537
     }
   ]
 }

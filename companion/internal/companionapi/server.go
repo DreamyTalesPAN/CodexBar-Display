@@ -867,6 +867,14 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		SkipFirmwareUpdate: skipFirmwareUpdate,
 		Verbose:            true,
 		Out:                out,
+		PairTokenStore: func(target, token string) error {
+			target = normalizeTarget(target)
+			if target != "" {
+				cfg.DeviceTarget = target
+			}
+			cfg.DeviceToken = strings.TrimSpace(token)
+			return s.saveConfig(s.home, cfg)
+		},
 	})
 	if err != nil {
 		return themeinstall.Result{}, err

@@ -135,6 +135,7 @@ type runtimeDeps struct {
 	homeDir           func() (string, error)
 	loadConfig        func(string) (runtimeconfig.Config, error)
 	saveConfig        func(string, runtimeconfig.Config) error
+	discoverWiFi      func([]string) (transportlayer.WiFiDiscoveryResult, error)
 	transportName     string
 }
 
@@ -189,6 +190,14 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.saveConfig == nil {
 		d.saveConfig = runtimeconfig.Save
+	}
+	if d.discoverWiFi == nil {
+		d.discoverWiFi = func(candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
+			return transportlayer.DiscoverWiFiDevice(context.Background(), transportlayer.WiFiDiscoveryOptions{
+				Candidates:         candidates,
+				IncludeNetworkScan: true,
+			})
+		}
 	}
 	return d
 }
@@ -614,24 +623,41 @@ func saveRuntimeConfig(cfg runtimeconfig.Config, deps runtimeDeps) error {
 }
 
 func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) (string, protocol.DeviceCapabilities, bool) {
-	if deps.transportName != "wifi" || isDefaultWiFiTarget(stalePort) {
+	if deps.transportName != "wifi" {
 		return "", protocol.DeviceCapabilities{}, false
 	}
-	fallbackPort, resolveErr := deps.resolvePort(defaultWiFiTarget)
-	if resolveErr != nil || isSameTarget(stalePort, fallbackPort) {
+	if !isDefaultWiFiTarget(stalePort) {
+		fallbackPort, resolveErr := deps.resolvePort(defaultWiFiTarget)
+		if resolveErr == nil && !isSameTarget(stalePort, fallbackPort) {
+			caps, capsErr := deps.deviceCaps(fallbackPort)
+			if capsErr == nil && caps.Known {
+				deps.logf(
+					"runtime event=wifi-target-recovered from=%s to=%s staleErr=%v\n",
+					stalePort,
+					fallbackPort,
+					staleErr,
+				)
+				return fallbackPort, caps, true
+			}
+		}
+	}
+
+	result, discoverErr := deps.discoverWiFi([]string{stalePort, defaultWiFiTarget})
+	if discoverErr != nil {
 		return "", protocol.DeviceCapabilities{}, false
 	}
-	caps, capsErr := deps.deviceCaps(fallbackPort)
-	if capsErr != nil || !caps.Known {
+	caps := protocol.CapabilitiesFromHello(result.Hello)
+	if !caps.Known {
 		return "", protocol.DeviceCapabilities{}, false
 	}
 	deps.logf(
-		"runtime event=wifi-target-recovered from=%s to=%s staleErr=%v\n",
+		"runtime event=wifi-target-discovered from=%s to=%s source=%s staleErr=%v\n",
 		stalePort,
-		fallbackPort,
+		result.Target,
+		result.Source,
 		staleErr,
 	)
-	return fallbackPort, caps, true
+	return result.Target, caps, true
 }
 
 func isDefaultWiFiTarget(target string) bool {

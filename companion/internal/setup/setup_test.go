@@ -12,6 +12,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
 type commandCall struct {
@@ -222,6 +223,7 @@ func TestRunWithDepsConfiguresWiFiLaunchAgentTarget(t *testing.T) {
 			t.Fatalf("wifi setup must not read USB device hello")
 			return protocol.DeviceHello{}, nil
 		},
+		discoverWiFi: noSetupWiFiDiscovery(t),
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -284,6 +286,7 @@ func TestRunWithDepsDefaultsToWiFiLaunchAgentTarget(t *testing.T) {
 			t.Fatalf("default setup must not resolve serial ports")
 			return "", nil
 		},
+		discoverWiFi: noSetupWiFiDiscovery(t),
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -553,7 +556,8 @@ func TestRunWithDepsPersistsWiFiTargetInRuntimeConfig(t *testing.T) {
 		homeDir: func() (string, error) {
 			return home, nil
 		},
-		uid: func() int { return 501 },
+		uid:          func() int { return 501 },
+		discoverWiFi: noSetupWiFiDiscovery(t),
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1519,4 +1523,11 @@ func mustCreateExecutable(t *testing.T) string {
 	path := filepath.Join(t.TempDir(), "codexbar-display-source")
 	mustWriteFile(t, path, []byte("binary-content"), 0o755)
 	return path
+}
+
+func noSetupWiFiDiscovery(t *testing.T) func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error) {
+	t.Helper()
+	return func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error) {
+		return transportlayer.WiFiDiscoveryResult{}, errors.New("not found")
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/health"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
@@ -30,6 +32,7 @@ import (
 const defaultThemeCatalogURL = themeinstall.DefaultCatalogURL
 
 var themePackUploadSettleDelay = 750 * time.Millisecond
+var themePackInstallFetchLiveFrameFn = codexbar.FetchFirstFrame
 
 func main() {
 	if len(os.Args) < 2 {
@@ -597,22 +600,113 @@ func runThemePackInstall(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	installTarget := resolveThemePackInstallTarget(fs, strings.TrimSpace(*target))
 	_, err := themeinstall.Install(context.Background(), themeinstall.Options{
 		PackURL:             strings.TrimSpace(*packPath),
 		CatalogURL:          strings.TrimSpace(*catalogRef),
 		ThemeID:             strings.TrimSpace(*themeID),
-		Target:              strings.TrimSpace(*target),
+		Target:              installTarget,
 		FirmwareManifestURL: strings.TrimSpace(*firmwareManifestURL),
 		SkipFirmwareUpdate:  *skipFirmwareUpdate,
 		AllowUnknown:        *allowUnknown,
 		Verbose:             *verbose,
 		Out:                 os.Stdout,
 		UploadSettleDelay:   themePackUploadSettleDelay,
+		PairTokenStore:      saveThemeInstallPairingToken,
+		FetchLiveFrame:      themePackInstallFetchLiveFrameFn,
 		FirmwareUpdater: func(ctx context.Context, target, manifestURL string) error {
 			return themePackInstallFirmwareUpdateFn(target, manifestURL)
 		},
 	})
 	return err
+}
+
+func resolveThemePackInstallTarget(fs *flag.FlagSet, requested string) string {
+	cfg, ok := loadRuntimeConfigForCommand()
+	if ok && !flagWasSet(fs, "target") && strings.TrimSpace(cfg.DeviceTarget) != "" {
+		requested = strings.TrimSpace(cfg.DeviceTarget)
+	}
+	if ok && strings.TrimSpace(cfg.DeviceToken) != "" {
+		return targetWithQueryToken(requested, cfg.DeviceToken)
+	}
+	return requested
+}
+
+func saveThemeInstallPairingToken(target, token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return err
+	}
+	if publicTarget := publicDeviceTargetForConfig(target); publicTarget != "" {
+		cfg.DeviceTarget = publicTarget
+	}
+	cfg.DeviceToken = token
+	return runtimeconfig.Save(home, cfg)
+}
+
+func loadRuntimeConfigForCommand() (runtimeconfig.Config, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return runtimeconfig.Config{}, false
+	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return runtimeconfig.Config{}, false
+	}
+	return cfg, true
+}
+
+func targetWithQueryToken(target, token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return strings.TrimSpace(target)
+	}
+	parsed, ok := parseCommandDeviceTarget(target)
+	if !ok {
+		return strings.TrimSpace(target)
+	}
+	query := parsed.Query()
+	if strings.TrimSpace(query.Get("token")) != "" {
+		return parsed.String()
+	}
+	query.Set("token", token)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func publicDeviceTargetForConfig(target string) string {
+	parsed, ok := parseCommandDeviceTarget(target)
+	if !ok {
+		return strings.TrimSpace(target)
+	}
+	query := parsed.Query()
+	query.Del("token")
+	parsed.RawQuery = query.Encode()
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/")
+}
+
+func parseCommandDeviceTarget(target string) (*url.URL, bool) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return nil, false
+	}
+	if !strings.Contains(target, "://") {
+		target = "http://" + target
+	}
+	parsed, err := url.Parse(target)
+	if err != nil || strings.TrimSpace(parsed.Scheme) == "" || strings.TrimSpace(parsed.Host) == "" {
+		return nil, false
+	}
+	return parsed, true
 }
 
 var themePackInstallFirmwareUpdateFn = runThemePackInstallFirmwareUpdate
