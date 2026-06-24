@@ -211,6 +211,59 @@ func TestRepositoryThemePacksLoadWithRenderableAssets(t *testing.T) {
 	}
 }
 
+func TestMiniClassicLabelsUseFrameUsageMode(t *testing.T) {
+	pack, err := Load(filepath.Join("..", "..", "..", "theme-packs", "mini-classic"))
+	if err != nil {
+		t.Fatalf("load mini-classic: %v", err)
+	}
+	if pack.ThemeSpec.ThemeRev < 2 {
+		t.Fatalf("expected mini-classic rev >= 2 after usage mode label fix, got %d", pack.ThemeSpec.ThemeRev)
+	}
+
+	var usageModeLabels int
+	for _, primitive := range pack.ThemeSpec.Primitives {
+		switch primitive.Text {
+		case "left", "remaining":
+			t.Fatalf("mini-classic must not hard-code %q for usedPercent frames", primitive.Text)
+		case "{usageMode}":
+			usageModeLabels++
+		}
+	}
+	if usageModeLabels != 2 {
+		t.Fatalf("expected two mini-classic usageMode labels, got %d", usageModeLabels)
+	}
+}
+
+func TestRepositoryThemePacksDoNotHardCodeRemainingLabels(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "theme-packs")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, entry.Name())
+		if _, err := os.Stat(filepath.Join(dir, "manifest.json")); err != nil {
+			continue
+		}
+		t.Run(entry.Name(), func(t *testing.T) {
+			pack, err := Load(dir)
+			if err != nil {
+				t.Fatalf("load theme pack: %v", err)
+			}
+			for _, primitive := range pack.ThemeSpec.Primitives {
+				text := strings.ToLower(strings.TrimSpace(primitive.Text))
+				if strings.Contains(text, "left") || strings.Contains(text, "remaining") {
+					t.Fatalf("theme pack must use {usageMode} instead of hard-coded usage label %q", primitive.Text)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadRejectsUnsafePackFile(t *testing.T) {
 	dir := writeThemePack(t, `"themeSpec":{"path":"/themes/u/cm.json","file":"../theme.json"}`)
 

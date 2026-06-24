@@ -8,8 +8,8 @@
   "themeSpec": {
     "path": "/themes/u/clippy-1-5d86bb.json",
     "file": "theme.json",
-    "bytes": 981,
-    "sha256": "81ad086feb4ae191957f4f6b13cc50110cf0f22f5c2d4d2bdd8345502ae8e5db",
+    "bytes": 995,
+    "sha256": "3c728c33bac2ef91f1039b365d0be9dfce87d6c0fb692f2455686810fbf8efb1",
     "contentType": "application/json"
   },
   "assets": [
