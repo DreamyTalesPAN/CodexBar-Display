@@ -29,6 +29,7 @@ struct RendererDebugSnapshot {
   String gifActivePath;
   bool gifFilePresent = false;
   bool gifFileOpen = false;
+  bool gifDecoderAllocated = false;
   bool gifDecoderOpen = false;
   bool gifBlocked = false;
   uint8_t gifConsecutiveFailures = 0;
@@ -46,6 +47,7 @@ struct RendererHealthSnapshot {
   unsigned long themeSpecRenderFailures = 0;
   String gifActivePath;
   bool gifFilePresent = false;
+  bool gifDecoderAllocated = false;
   bool gifDecoderOpen = false;
   String gifLastErrorStage;
 };

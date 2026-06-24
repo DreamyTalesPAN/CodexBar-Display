@@ -254,6 +254,8 @@ interface AppState {
   targetOrigin: string;
   deviceToken: string;
   deviceProfile: DeviceProfile;
+  deviceHealth: DeviceHealth | null;
+  deviceHealthReadAt: number | null;
   deviceBrightnessPercent: number | null;
   stabilityCheck: StabilityCheckState;
   pixelTool: PixelTool;
@@ -292,7 +294,11 @@ interface DeviceHealth {
     };
     gif?: {
       activePath?: string;
+      filePresent?: boolean;
+      decoderAllocated?: boolean;
+      decoderOpen?: boolean;
       lastError?: unknown;
+      lastErrorStage?: unknown;
     };
   };
   settings?: {
@@ -301,6 +307,8 @@ interface DeviceHealth {
     };
   };
 }
+
+type DeviceGIFHealth = NonNullable<NonNullable<DeviceHealth["display"]>["gif"]>;
 
 interface DeviceAssets {
   filesystem?: {
@@ -332,6 +340,7 @@ const UPDATE_LABEL_PREVIEW_TEXTS = ["Update Available:", "vibetv.local"] as cons
 const STABILITY_CHECK_MS = 60_000;
 const STABILITY_POLL_MS = 5_000;
 const LOW_HEAP_WARNING_BYTES = 6000;
+const MIN_GIF_PLAYBACK_HEAP_BYTES = 32_000;
 
 function defaultDeviceProfile(): DeviceProfile {
   return {
@@ -2364,6 +2373,8 @@ const state: AppState = {
   targetOrigin: storedTargetOrigin(),
   deviceToken: storedDeviceToken(),
   deviceProfile: defaultDeviceProfile(),
+  deviceHealth: null,
+  deviceHealthReadAt: null,
   deviceBrightnessPercent: null,
   stabilityCheck: defaultStabilityCheck(),
   pixelTool: "move",
@@ -2798,6 +2809,95 @@ function brightnessFromHealth(health: DeviceHealth | null): number | null {
   return typeof value === "number" && Number.isFinite(value) ? clamp(Math.round(value), 10, 100) : null;
 }
 
+function stringFromHealthValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value).trim();
+}
+
+function gifHealthLastError(gif: DeviceGIFHealth | undefined): string {
+  const lastError = stringFromHealthValue(gif?.lastError);
+  const lastErrorStage = stringFromHealthValue(gif?.lastErrorStage);
+  if (lastError && lastErrorStage && lastErrorStage !== lastError) {
+    return `${lastError}/${lastErrorStage}`;
+  }
+  return lastError || lastErrorStage;
+}
+
+function heapSuffix(health: DeviceHealth): string {
+  const heap = health.system?.freeHeap;
+  return typeof heap === "number" ? ` Current freeHeap=${heap} bytes.` : "";
+}
+
+function gifPlaybackPreflightIssueFromHealth(health: DeviceHealth | null, spec: ThemeSpec): string | null {
+  const expectedGifPaths = uniqueGifAssetPathsForSpec(spec);
+  if (expectedGifPaths.length === 0 || !health) {
+    return null;
+  }
+  const gif = health.display?.gif;
+  const activePath = gif?.activePath ?? "";
+  const usesActiveGIF = activePath.length > 0 && expectedGifPaths.includes(activePath);
+  if (usesActiveGIF && gif) {
+    const lastError = gifHealthLastError(gif);
+    if (gif.filePresent === false) {
+      return `GIF preflight failed: Vibe TV reports ${activePath} as active, but the file is missing.${heapSuffix(health)}`;
+    }
+    if (gif.decoderAllocated === false) {
+      return `GIF preflight failed: Vibe TV could not reserve the GIF decoder.${heapSuffix(health)}`;
+    }
+    if (lastError) {
+      return `GIF preflight failed: Vibe TV already cannot open ${activePath} (${lastError}).${heapSuffix(health)}`;
+    }
+    if (gif.decoderOpen === false) {
+      return `GIF preflight failed: Vibe TV reports ${activePath}, but the GIF decoder is not open.${heapSuffix(health)}`;
+    }
+  }
+  const heap = health.system?.freeHeap;
+  if (typeof heap === "number" && heap < MIN_GIF_PLAYBACK_HEAP_BYTES && gif?.decoderAllocated !== true) {
+    return `GIF preflight warning: freeHeap is low for GIF playback (${heap}/${MIN_GIF_PLAYBACK_HEAP_BYTES} bytes). This theme may render without the GIF.`;
+  }
+  return null;
+}
+
+function gifPlaybackConfirmationFromHealth(health: DeviceHealth, spec: ThemeSpec): { ok: boolean; message: string | null } {
+  const expectedGifPaths = uniqueGifAssetPathsForSpec(spec);
+  if (expectedGifPaths.length === 0) {
+    return { ok: true, message: null };
+  }
+  const gif = health.display?.gif;
+  if (!gif) {
+    return { ok: false, message: "Theme sent, but Vibe TV health did not report GIF playback status." };
+  }
+  const activePath = gif.activePath ?? "";
+  if (!expectedGifPaths.includes(activePath)) {
+    return { ok: false, message: `Theme sent, but Vibe TV reports ${activePath || "no GIF"} instead of ${expectedGifPaths.join(", ")}.` };
+  }
+  if (gif.filePresent === false) {
+    return { ok: false, message: `Theme sent, but GIF ${activePath} is missing on Vibe TV.` };
+  }
+  if (gif.decoderAllocated === false) {
+    return { ok: false, message: `Theme sent, but Vibe TV did not reserve the GIF decoder.${heapSuffix(health)}` };
+  }
+  const lastError = gifHealthLastError(gif);
+  if (lastError) {
+    return { ok: false, message: `Theme sent, but Vibe TV could not open GIF ${activePath} (${lastError}).${heapSuffix(health)}` };
+  }
+  if (gif.decoderOpen === false) {
+    return { ok: false, message: `Theme sent, but Vibe TV reports GIF ${activePath} as closed.${heapSuffix(health)}` };
+  }
+  return { ok: true, message: `Theme sent to Vibe TV and confirmed active with GIF ${activePath}.` };
+}
+
+function recordDeviceHealth(health: DeviceHealth | null) {
+  state.deviceHealth = health;
+  state.deviceHealthReadAt = health ? Date.now() : null;
+  const brightness = brightnessFromHealth(health);
+  if (brightness !== null) {
+    state.deviceBrightnessPercent = brightness;
+  }
+}
+
 async function readDeviceProfile(targetOrigin: string): Promise<DeviceProfile | null> {
   const response = await fetchWithCorsFallback(`${targetOrigin}/hello`, {
     method: "GET",
@@ -2822,18 +2922,23 @@ async function refreshDeviceProfile(): Promise<boolean> {
     const profile = await readDeviceProfile(targetOrigin);
     if (!profile) {
       state.deviceProfile = defaultDeviceProfile();
+      state.deviceHealth = null;
+      state.deviceHealthReadAt = null;
       state.notice = "Browser could not read device capabilities; using offline ESP8266 defaults.";
       render();
       return false;
     }
     state.deviceProfile = profile;
-    state.deviceBrightnessPercent = brightnessFromHealth(await fetchDeviceHealth(targetOrigin));
+    const health = await fetchDeviceHealth(targetOrigin);
+    recordDeviceHealth(health);
     validateCurrentSpec();
     state.notice = `Validating against ${state.deviceProfile.label}.`;
     render();
     return true;
   } catch (error) {
     state.deviceProfile = defaultDeviceProfile();
+    state.deviceHealth = null;
+    state.deviceHealthReadAt = null;
     state.notice = error instanceof Error ? error.message : "Could not read device capabilities.";
   }
   render();
@@ -3215,6 +3320,10 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
     if (file && file.size > profile.maxThemeGifBytes) {
       errors.push(`GIF ${path} ist zu groß: ${file.size}/${profile.maxThemeGifBytes} Bytes.`);
     }
+  }
+  const gifPreflightIssue = gifPlaybackPreflightIssueFromHealth(state.deviceHealth, spec);
+  if (gifPreflightIssue) {
+    warnings.push(gifPreflightIssue);
   }
 
   const renderBudget = estimateRenderBudget(spec);
@@ -5418,8 +5527,8 @@ function labelPreviewValue(): string {
     return frame.label;
   }
   const elapsed = Math.max(0, Date.now() - state.labelPreviewStartedAtMs);
-  const phase = Math.floor(elapsed / UPDATE_LABEL_PREVIEW_TOGGLE_MS) % UPDATE_LABEL_PREVIEW_TEXTS.length;
-  return UPDATE_LABEL_PREVIEW_TEXTS[phase];
+  const phase = Math.floor(elapsed / UPDATE_LABEL_PREVIEW_TOGGLE_MS) % (UPDATE_LABEL_PREVIEW_TEXTS.length + 1);
+  return phase === 0 ? frame.label : UPDATE_LABEL_PREVIEW_TEXTS[phase - 1];
 }
 
 function labelPreviewAnimating(): boolean {
@@ -7748,9 +7857,17 @@ async function sendThemeToVibeTV() {
     if (profile) {
       state.deviceProfile = profile;
     }
+    const health = await fetchDeviceHealth(targetOrigin);
+    recordDeviceHealth(health);
     validateCurrentSpec();
     if (state.errors.length > 0) {
       state.notice = `Theme is invalid for ${state.deviceProfile.label}. Fix the errors before sending.`;
+      render();
+      return;
+    }
+    const gifPreflightIssue = gifPlaybackPreflightIssueFromHealth(health, state.spec);
+    if (gifPreflightIssue) {
+      state.notice = gifPreflightIssue;
       render();
       return;
     }
@@ -7801,6 +7918,35 @@ function deviceAuthHeaders(): Record<string, string> {
   return token ? { [DEVICE_AUTH_HEADER]: token } : {};
 }
 
+function storeDeviceToken(token: string) {
+  state.deviceToken = token.trim();
+  persistDeviceToken();
+}
+
+async function requestDevicePairingToken(targetOrigin: string): Promise<string> {
+  const body = new URLSearchParams({ api: "1" });
+  const response = await fetchWithCorsFallback(`${targetOrigin}/api/pair`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+      Accept: "application/json",
+    },
+    body,
+  });
+  if (response.type === "opaque") {
+    throw new Error("Pairing response was not readable. Open vibetv.local and copy the token manually.");
+  }
+  if (!response.ok) {
+    throw new Error(await responseFailureMessage(response, "Pairing failed"));
+  }
+  const result = await response.json() as { token?: string };
+  const token = typeof result.token === "string" ? result.token.trim() : "";
+  if (!token) {
+    throw new Error("Pairing did not return a token.");
+  }
+  return token;
+}
+
 async function pairDevice() {
   const targetOrigin = normalizeTargetOrigin(state.targetOrigin);
   state.targetOrigin = targetOrigin;
@@ -7808,33 +7954,37 @@ async function pairDevice() {
   state.notice = "Pairing with Vibe TV.";
   render();
   try {
-    const body = new URLSearchParams({ api: "1" });
-    const response = await fetchWithCorsFallback(`${targetOrigin}/api/pair`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        Accept: "application/json",
-      },
-      body,
-    });
-    if (response.type === "opaque") {
-      throw new Error("Pairing response was not readable. Open vibetv.local and copy the token manually.");
-    }
-    if (!response.ok) {
-      throw new Error(await responseFailureMessage(response, "Pairing failed"));
-    }
-    const result = await response.json() as { token?: string };
-    const token = typeof result.token === "string" ? result.token.trim() : "";
-    if (!token) {
-      throw new Error("Pairing did not return a token.");
-    }
-    state.deviceToken = token;
-    persistDeviceToken();
+    const token = await requestDevicePairingToken(targetOrigin);
+    storeDeviceToken(token);
     state.notice = "Vibe TV paired. Future changes will use this token.";
   } catch (error) {
     state.notice = error instanceof Error ? error.message : `Could not pair with Vibe TV at ${targetOrigin}.`;
   }
   render();
+}
+
+async function deviceWriteResponseNeedsPairing(response: Response): Promise<boolean> {
+  if (response.type === "opaque" || response.ok) {
+    return false;
+  }
+  if (response.status === 401 || response.status === 403) {
+    return true;
+  }
+  const detail = await response.clone().text().catch(() => "");
+  return /\b(pairing token required|invalid pairing token|missing pairing token|unauthorized)\b/i.test(detail);
+}
+
+async function fetchDeviceWriteWithPairRetry(targetOrigin: string, url: string, initFactory: () => RequestInit): Promise<Response> {
+  let response = await fetchWithCorsFallback(url, initFactory());
+  if (!await deviceWriteResponseNeedsPairing(response)) {
+    return response;
+  }
+  state.notice = "Pairing with Vibe TV, then retrying.";
+  render();
+  const token = await requestDevicePairingToken(targetOrigin);
+  storeDeviceToken(token);
+  response = await fetchWithCorsFallback(url, initFactory());
+  return response;
 }
 
 async function saveDeviceSettings() {
@@ -7849,23 +7999,26 @@ async function saveDeviceSettings() {
   state.notice = "Saving device settings.";
   render();
   try {
-    const body = new URLSearchParams({
-      api: "1",
-      b: String(clamp(state.deviceBrightnessPercent, 10, 100)),
-    });
-    const response = await fetchWithCorsFallback(`${targetOrigin}/api/settings`, {
-      method: "POST",
-      headers: {
-        ...deviceAuthHeaders(),
-        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        Accept: "application/json",
-      },
-      body,
+    const response = await fetchDeviceWriteWithPairRetry(targetOrigin, `${targetOrigin}/api/settings`, () => {
+      const body = new URLSearchParams({
+        api: "1",
+        b: String(clamp(state.deviceBrightnessPercent ?? 0, 10, 100)),
+      });
+      return {
+        method: "POST",
+        headers: {
+          ...deviceAuthHeaders(),
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          Accept: "application/json",
+        },
+        body,
+      };
     });
     if (response.type !== "opaque" && !response.ok) {
       throw new Error(await responseFailureMessage(response, "Device settings save failed"));
     }
-    state.deviceBrightnessPercent = brightnessFromHealth(await fetchDeviceHealth(targetOrigin)) ?? state.deviceBrightnessPercent;
+    const health = await fetchDeviceHealth(targetOrigin);
+    recordDeviceHealth(health);
     state.notice = `Brightness saved at ${state.deviceBrightnessPercent}%.`;
   } catch (error) {
     state.notice = error instanceof Error ? error.message : `Could not save settings at ${targetOrigin}.`;
@@ -7906,9 +8059,9 @@ function stabilityFinding(health: DeviceHealth, spec: ThemeSpec, baseline: Stabi
   if (baseline.themeSpecActive && themeSpec?.active === false) {
     return { status: "failed", message: "Device fell back from the stored ThemeSpec during the stability check." };
   }
-  const gifError = health.display?.gif?.lastError;
-  if (gifError != null) {
-    return { status: "failed", message: `GIF decoder reported ${String(gifError)}.` };
+  const gifConfirmation = gifPlaybackConfirmationFromHealth(health, spec);
+  if (!gifConfirmation.ok) {
+    return { status: "failed", message: gifConfirmation.message ?? "GIF playback failed." };
   }
   const resetReason = health.system?.resetReason ?? "";
   if (baseline.resetReason && resetReason && resetReason !== baseline.resetReason) {
@@ -8004,19 +8157,19 @@ async function clearDeviceThemeSpec(targetOrigin: string) {
 }
 
 async function postFramePayload(targetOrigin: string, payload: Record<string, unknown>): Promise<Response> {
-  return fetchWithCorsFallback(`${targetOrigin}/frame`, {
+  return fetchDeviceWriteWithPairRetry(targetOrigin, `${targetOrigin}/frame`, () => ({
     method: "POST",
     headers: { ...deviceAuthHeaders(), "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(payload),
-  });
+  }));
 }
 
 async function activateStoredTheme(targetOrigin: string, path: string): Promise<Response> {
-  return fetchWithCorsFallback(`${targetOrigin}/theme/active`, {
+  return fetchDeviceWriteWithPairRetry(targetOrigin, `${targetOrigin}/theme/active`, () => ({
     method: "POST",
     headers: { ...deviceAuthHeaders(), "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ path }),
-  });
+  }));
 }
 
 async function uploadThemeAssets(targetOrigin: string) {
@@ -8032,12 +8185,14 @@ async function uploadThemeAsset(targetOrigin: string, path: string, asset: Uploa
   if (!asset) {
     return;
   }
-  const body = new FormData();
-  body.append("asset", asset.file, asset.file.name);
-  const response = await fetchWithCorsFallback(`${targetOrigin}/assets?path=${encodeURIComponent(path)}`, {
-    method: "POST",
-    headers: deviceAuthHeaders(),
-    body,
+  const response = await fetchDeviceWriteWithPairRetry(targetOrigin, `${targetOrigin}/assets?path=${encodeURIComponent(path)}`, () => {
+    const body = new FormData();
+    body.append("asset", asset.file, asset.file.name);
+    return {
+      method: "POST",
+      headers: deviceAuthHeaders(),
+      body,
+    };
   });
   if (response.type !== "opaque" && !response.ok) {
     throw new Error(await responseFailureMessage(response, `${label} upload failed`));
@@ -8086,10 +8241,10 @@ async function fetchDeviceAssets(targetOrigin: string): Promise<DeviceAssets | n
 }
 
 async function deleteThemeAsset(targetOrigin: string, path: string): Promise<Response> {
-  return fetchWithCorsFallback(`${targetOrigin}/assets?path=${encodeURIComponent(path)}`, {
+  return fetchDeviceWriteWithPairRetry(targetOrigin, `${targetOrigin}/assets?path=${encodeURIComponent(path)}`, () => ({
     method: "DELETE",
     headers: deviceAuthHeaders(),
-  });
+  }));
 }
 
 function cleanupNotice(count: number): string {
@@ -8100,18 +8255,26 @@ function cleanupNotice(count: number): string {
 }
 
 async function confirmThemeApplied(targetOrigin: string, spec: ThemeSpec): Promise<string | null> {
+  let lastMessage = "";
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const health = await fetchDeviceHealth(targetOrigin);
     if (!health) {
       return "Theme sent to Vibe TV. Local dev mode cannot read the device confirmation.";
     }
+    recordDeviceHealth(health);
     const confirmed = themeAppliedFromHealth(health, spec);
     if (confirmed.ok) {
       return confirmed.message;
     }
+    if (confirmed.message) {
+      lastMessage = confirmed.message;
+    }
     if (attempt < 9) {
       await delay(750);
     }
+  }
+  if (lastMessage) {
+    throw new Error(lastMessage);
   }
   throw new Error("Theme was sent, but Vibe TV health still reports the fallback theme.");
 }
@@ -8164,6 +8327,13 @@ function themeAppliedFromHealth(health: DeviceHealth, spec: ThemeSpec): { ok: bo
     const sameHash = !themeSpec.hash || themeSpec.hash === expectedHash;
     const samePath = !themeSpec.path || themeSpec.path === themeSpecAssetPath(spec);
     if (sameId && sameRev && sameHash && samePath) {
+      const gifConfirmation = gifPlaybackConfirmationFromHealth(health, spec);
+      if (!gifConfirmation.ok) {
+        return { ok: false, message: gifConfirmation.message ?? "" };
+      }
+      if (gifConfirmation.message) {
+        return { ok: true, message: gifConfirmation.message };
+      }
       if (typeof health.system?.freeHeap === "number" && health.system.freeHeap < 6000) {
         return { ok: true, message: `Theme sent to Vibe TV and confirmed active. Warning: device heap is low (${health.system.freeHeap} bytes).` };
       }
@@ -8173,7 +8343,8 @@ function themeAppliedFromHealth(health: DeviceHealth, spec: ThemeSpec): { ok: bo
 
   const activePath = health.display?.gif?.activePath;
   const expectedGifPaths = uniqueGifAssetPathsForSpec(spec);
-  if (activePath && expectedGifPaths.includes(activePath) && health.display?.gif?.lastError == null) {
+  const gifConfirmation = gifPlaybackConfirmationFromHealth(health, spec);
+  if (activePath && expectedGifPaths.includes(activePath) && gifConfirmation.ok) {
     return { ok: true, message: `Theme sent to Vibe TV and confirmed via ${activePath}.` };
   }
 

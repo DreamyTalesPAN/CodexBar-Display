@@ -72,8 +72,9 @@ const char kActiveThemeSpecPathFile[] = "/theme-active";
 const char kDeviceAuthHeader[] = "X-VibeTV-Token";
 const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
 const char* const kFirmwareUpdateNoticeTexts[] = {
+    "",
     "Update Available:",
-    "vibetv.local",
+    kMdnsHost,
 };
 constexpr uint8_t kFirmwareUpdateNoticeTextCount =
     sizeof(kFirmwareUpdateNoticeTexts) / sizeof(kFirmwareUpdateNoticeTexts[0]);
@@ -449,6 +450,9 @@ void markFirmwareUpdateNoticeDirty() {
       codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
     return;
   }
+  if (!codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec) {
+    return;
+  }
   if (!runtimeCtx.screenDirty && !waitStatusRendered && !frameStaleStatusRendered) {
     firmwareUpdateNoticeDirty = true;
   } else {
@@ -463,6 +467,7 @@ bool shouldShowFirmwareUpdateNotice() {
          !waitStatusRendered &&
          !frameStaleStatusRendered &&
          codexbar_display::app::HasFrame(runtimeCtx) &&
+         codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec &&
          !codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
 }
 
@@ -503,6 +508,7 @@ void maintainFirmwareUpdateNotice() {
       setupMode ||
       frameStaleStatusRendered ||
       !codexbar_display::app::HasFrame(runtimeCtx) ||
+      !codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec ||
       codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
     clearFirmwareUpdateNotice();
     return;
@@ -529,6 +535,7 @@ void applyFrameUpdateState() {
 
   const codexbar_display::core::Frame& frame = codexbar_display::app::CurrentFrame(runtimeCtx);
   if (!frame.hasUpdateAvailable) {
+    clearFirmwareUpdateNotice();
     return;
   }
 
@@ -1324,6 +1331,8 @@ void handleHealth() {
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";
   out += snapshot.gifFilePresent ? "true" : "false";
+  out += ",\"decoderAllocated\":";
+  out += snapshot.gifDecoderAllocated ? "true" : "false";
   out += ",\"decoderOpen\":";
   out += snapshot.gifDecoderOpen ? "true" : "false";
   out += ",\"lastError\":";
@@ -2551,19 +2560,6 @@ void loop() {
     return;
   }
 
-  if (firmwareUpdateNoticeDirty &&
-      !waitStatusRendered &&
-      codexbar_display::app::HasFrame(runtimeCtx) &&
-      !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
-      !runtimeCtx.screenDirty &&
-      !frameStaleStatusRendered) {
-    const unsigned long renderStartUs = micros();
-    drawFirmwareUpdateNotice();
-    rendered = true;
-    renderDurationUs = micros() - renderStartUs;
-    recordRenderPartial("update_notice", renderDurationUs);
-  }
-
   if (!waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
@@ -2587,6 +2583,19 @@ void loop() {
         runtimeCtx.lastRenderedSecs = remain;
       }
     }
+  }
+
+  if (firmwareUpdateNoticeDirty &&
+      !waitStatusRendered &&
+      codexbar_display::app::HasFrame(runtimeCtx) &&
+      !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+      !runtimeCtx.screenDirty &&
+      !frameStaleStatusRendered) {
+    const unsigned long renderStartUs = micros();
+    drawFirmwareUpdateNotice();
+    rendered = true;
+    renderDurationUs = micros() - renderStartUs;
+    recordRenderPartial("update_notice", renderDurationUs);
   }
 
   if (!setupMode &&

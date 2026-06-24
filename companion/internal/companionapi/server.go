@@ -21,6 +21,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
+	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
 const (
@@ -472,18 +473,15 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 
 func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) (string, protocol.DeviceHello, error) {
 	candidates := uniqueStrings(explicitTarget, cfg.DeviceTarget, setup.DefaultWiFiTarget())
-	var lastErr error
-	for _, candidate := range candidates {
-		hello, err := s.getHello(ctx, candidate, cfg.DeviceToken)
-		if err == nil {
-			return normalizeTarget(candidate), hello, nil
-		}
-		lastErr = err
+	result, err := transportlayer.DiscoverWiFiDevice(ctx, transportlayer.WiFiDiscoveryOptions{
+		Candidates:         candidates,
+		IncludeNetworkScan: true,
+		Client:             s.client,
+	})
+	if err != nil {
+		return "", protocol.DeviceHello{}, err
 	}
-	if lastErr == nil {
-		lastErr = errors.New("no device candidates")
-	}
-	return "", protocol.DeviceHello{}, lastErr
+	return normalizeTarget(result.Target), result.Hello, nil
 }
 
 func (s *Server) getHello(ctx context.Context, target, token string) (protocol.DeviceHello, error) {

@@ -39,6 +39,7 @@ struct FrameData {
   const char* provider = "";
   const char* label = "";
   bool updateAvailable = false;
+  bool showUpdateNotice = false;
   const char* updateNotice = "";
   int session = 0;
   int weekly = 0;
@@ -435,7 +436,7 @@ inline const char* SafeText(const char* value) {
 }
 
 inline const char* LabelText(const FrameData& frame) {
-  if (frame.updateAvailable && SafeText(frame.updateNotice)[0] != '\0') {
+  if (frame.updateAvailable && frame.showUpdateNotice && SafeText(frame.updateNotice)[0] != '\0') {
     return SafeText(frame.updateNotice);
   }
   return SafeText(frame.label);
@@ -1074,6 +1075,33 @@ inline int ApproxTextWidth(const char* text, int size) {
   return static_cast<int>(std::strlen(text)) * 6 * size;
 }
 
+inline int ApproxTextHeight(int font, int size) {
+  if (size <= 0) {
+    return 0;
+  }
+  int baseHeight = 8;
+  switch (font) {
+    case 2:
+      baseHeight = 16;
+      break;
+    case 4:
+      baseHeight = 26;
+      break;
+    case 6:
+    case 7:
+      baseHeight = 48;
+      break;
+    case 8:
+      baseHeight = 75;
+      break;
+    case 1:
+    default:
+      baseHeight = 8;
+      break;
+  }
+  return (baseHeight * size) + 4;
+}
+
 inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const FrameData& frame) {
   if (StringEqualsAny(primitive.binding, "weekly", "weeklyPercent", "w")) {
     return ClampPct(frame.weekly);
@@ -1123,7 +1151,7 @@ inline bool CompiledPrimitiveBounds(
     if (primitive.size <= 0) {
       return false;
     }
-    bounds.height = 8 * primitive.size;
+    bounds.height = ApproxTextHeight(primitive.font, primitive.size);
     bounds.width = primitive.maxWidth;
     if (bounds.width <= 0) {
       if (requireStableTextBounds) {

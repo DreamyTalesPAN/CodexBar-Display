@@ -81,6 +81,64 @@ func TestWiFiTransportDeviceHealthReadsHealth(t *testing.T) {
 	}
 }
 
+func TestWiFiTransportDeviceHealthSnapshotReadsGIFLastError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"path":"/themes/u/mini.json","renderOk":true},"gif":{"activePath":"/themes/mini/mini.gif","filePresent":true,"decoderAllocated":true,"decoderOpen":false,"lastError":"decoder_alloc"}}}`))
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	health, err := transport.DeviceHealthSnapshot(server.URL)
+	if err != nil {
+		t.Fatalf("DeviceHealthSnapshot returned error: %v", err)
+	}
+	if health.Display.GIF.LastError != "decoder_alloc" {
+		t.Fatalf("unexpected GIF lastError %q", health.Display.GIF.LastError)
+	}
+	if health.Display.GIF.DecoderOpen {
+		t.Fatal("expected closed GIF decoder")
+	}
+	if !health.Display.GIF.DecoderAllocated {
+		t.Fatal("expected allocated GIF decoder")
+	}
+}
+
+func TestWiFiTransportPairDevicePostsPairingAPI(t *testing.T) {
+	var gotBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/pair" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST /api/pair, got %s", r.Method)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		gotBody = string(body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token-abc"}`))
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	token, err := transport.PairDevice(server.URL)
+	if err != nil {
+		t.Fatalf("PairDevice returned error: %v", err)
+	}
+	if token != "pair-token-abc" {
+		t.Fatalf("unexpected token %q", token)
+	}
+	if gotBody != "api=1" {
+		t.Fatalf("unexpected pair body %q", gotBody)
+	}
+}
+
 func TestWiFiTransportResolveTargetAddsHTTPDefault(t *testing.T) {
 	transport := NewWiFiTransportWithClient(nil)
 	target, err := transport.ResolvePort("192.168.178.123")
