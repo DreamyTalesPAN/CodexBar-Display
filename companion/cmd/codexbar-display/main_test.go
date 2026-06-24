@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
 func TestParseDaemonOptionsWiFiTarget(t *testing.T) {
@@ -152,6 +155,8 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
+		case "/frame":
+			handleThemePackFrame(t, w, r)
 		case "/assets":
 			if !firmwareUpdated {
 				t.Fatalf("expected firmware update before theme asset upload")
@@ -179,7 +184,7 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 			activated = true
 			w.WriteHeader(http.StatusOK)
 		case "/health":
-			w.WriteHeader(http.StatusOK)
+			writeHealthyThemePackRender(w)
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -239,6 +244,8 @@ func TestThemePackInstallLogsConciseRetry(t *testing.T) {
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
+		case "/frame":
+			handleThemePackFrame(t, w, r)
 		case "/assets":
 			if r.URL.Query().Get("path") == "/themes/u/cm.cbi" {
 				assetAttempts++
@@ -249,8 +256,10 @@ func TestThemePackInstallLogsConciseRetry(t *testing.T) {
 				}
 			}
 			w.WriteHeader(http.StatusOK)
-		case "/theme/active", "/health":
+		case "/theme/active":
 			w.WriteHeader(http.StatusOK)
+		case "/health":
+			writeHealthyThemePackRender(w)
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -293,6 +302,8 @@ func TestThemePackInstallWrapsUploadFailureForCustomers(t *testing.T) {
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
+		case "/frame":
+			handleThemePackFrame(t, w, r)
 		case "/assets":
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("raw device failure"))
@@ -338,8 +349,12 @@ func TestThemePackInstallVerboseShowsDetails(t *testing.T) {
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
-		case "/assets", "/theme/active", "/health":
+		case "/frame":
+			handleThemePackFrame(t, w, r)
+		case "/assets", "/theme/active":
 			w.WriteHeader(http.StatusOK)
+		case "/health":
+			writeHealthyThemePackRender(w)
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -403,6 +418,8 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
+		case "/frame":
+			handleThemePackFrame(t, w, r)
 		case "/assets":
 			if !firmwareUpdated {
 				t.Fatalf("expected firmware update before theme asset upload")
@@ -413,7 +430,7 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 			activated = true
 			w.WriteHeader(http.StatusOK)
 		case "/health":
-			w.WriteHeader(http.StatusOK)
+			writeHealthyThemePackRender(w)
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -455,6 +472,8 @@ func TestThemePackInstallFailsBeforeActivationWhenUploadHealthFails(t *testing.T
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
+		case "/frame":
+			handleThemePackFrame(t, w, r)
 		case "/assets":
 			w.WriteHeader(http.StatusOK)
 		case "/health":
@@ -539,10 +558,42 @@ func buildTestThemePackZip(t *testing.T) []byte {
 func disableThemePackUploadSettleDelay(t *testing.T) {
 	t.Helper()
 	previous := themePackUploadSettleDelay
+	previousFetchLiveFrame := themePackInstallFetchLiveFrameFn
 	themePackUploadSettleDelay = -1
+	themePackInstallFetchLiveFrameFn = func(context.Context) (protocol.Frame, error) {
+		return protocol.Frame{
+			Provider:  "codex",
+			Label:     "Codex",
+			Session:   12,
+			Weekly:    30,
+			ResetSec:  3600,
+			UsageMode: "remaining",
+		}, nil
+	}
 	t.Cleanup(func() {
 		themePackUploadSettleDelay = previous
+		themePackInstallFetchLiveFrameFn = previousFetchLiveFrame
 	})
+}
+
+func handleThemePackFrame(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	t.Helper()
+	if r.Method != http.MethodPost {
+		t.Fatalf("expected POST /frame, got %s", r.Method)
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatalf("read frame body: %v", err)
+	}
+	if !bytes.Contains(bytes.TrimSpace(body), []byte(`"provider"`)) {
+		t.Fatalf("unexpected frame body %q", string(body))
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func writeHealthyThemePackRender(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"cozy-meadow","themeSpec":{"active":true,"path":"/themes/u/cm.json","renderOk":true}}}`))
 }
 
 func captureStdout(t *testing.T, fn func() error) (string, error) {

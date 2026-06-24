@@ -126,6 +126,101 @@ func TestRunCycleWithDepsLogsUsageSourceFreshModeAndTransport(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithDepsUsesRuntimeConfigTargetOverStaleLaunchAgentTarget(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+	var resolvedTarget string
+	var sentTarget string
+
+	err := runCycleWithDeps(context.Background(), "http://vibetv.local", state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{DeviceTarget: "http://192.168.178.159"}, nil
+		},
+		resolvePort: func(target string) (string, error) {
+			resolvedTarget = target
+			return target, nil
+		},
+		deviceCaps: func(target string) (protocol.DeviceCapabilities, error) {
+			if target != "http://192.168.178.159" {
+				t.Fatalf("expected direct IP capabilities target, got %q", target)
+			}
+			return protocol.DeviceCapabilities{Known: true, Board: "esp8266-smalltv-st7789", NegotiatedProtocolVersion: 2, MaxFrameBytes: 2048}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(target string, line []byte) error {
+			sentTarget = target
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+	if resolvedTarget != "http://192.168.178.159" || sentTarget != "http://192.168.178.159" {
+		t.Fatalf("expected runtime-config target to win, resolved=%q sent=%q", resolvedTarget, sentTarget)
+	}
+}
+
+func TestRunCycleWithDepsSendsRuntimeConfigDeviceTokenWithoutLoggingIt(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+	var logged strings.Builder
+	var sentTarget string
+
+	err := runCycleWithDeps(context.Background(), "http://192.168.178.159", state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{
+				DeviceTarget: "http://192.168.178.159",
+				DeviceToken:  "pair-token-secret",
+			}, nil
+		},
+		resolvePort: func(target string) (string, error) {
+			return target, nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{Known: true, Board: "esp8266-smalltv-st7789", NegotiatedProtocolVersion: 2, MaxFrameBytes: 2048}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+		},
+		logf: func(format string, args ...any) {
+			logged.WriteString(fmt.Sprintf(format, args...))
+		},
+		sendLine: func(target string, line []byte) error {
+			sentTarget = target
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+	if sentTarget != "http://192.168.178.159?token=pair-token-secret" {
+		t.Fatalf("expected tokenized send target, got %q", sentTarget)
+	}
+	if strings.Contains(logged.String(), "pair-token-secret") {
+		t.Fatalf("daemon log leaked pairing token: %q", logged.String())
+	}
+	if !strings.Contains(logged.String(), "sent frame -> http://192.168.178.159") {
+		t.Fatalf("expected public target in log, got %q", logged.String())
+	}
+}
+
 func TestRunCycleWithDepsAttachesClockFields(t *testing.T) {
 	prepareFastTestEnv(t)
 

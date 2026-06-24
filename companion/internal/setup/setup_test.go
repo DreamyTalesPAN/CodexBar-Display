@@ -259,6 +259,76 @@ func TestRunWithDepsConfiguresWiFiLaunchAgentTarget(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsPersistsWiFiTargetAndTokenInRuntimeConfig(t *testing.T) {
+	home := t.TempDir()
+	execPath := mustCreateExecutable(t)
+	var stdout bytes.Buffer
+
+	err := runWithDeps(context.Background(), Options{
+		Transport: "wifi",
+		Target:    "192.168.178.66?token=pair-token-123",
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &stdout,
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			t.Fatalf("wifi setup must not list serial ports")
+			return nil, nil
+		},
+		resolvePort: func(string) (string, error) {
+			t.Fatalf("wifi setup must not resolve serial ports")
+			return "", nil
+		},
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success, got %v", err)
+	}
+
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.66" || cfg.DeviceToken != "pair-token-123" {
+		t.Fatalf("unexpected runtime device config: %+v", cfg)
+	}
+
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	plistData, readErr := os.ReadFile(plistPath)
+	if readErr != nil {
+		t.Fatalf("read plist: %v", readErr)
+	}
+	plist := string(plistData)
+	if strings.Contains(plist, "pair-token-123") || strings.Contains(stdout.String(), "pair-token-123") {
+		t.Fatalf("pairing token must not be written to plist or setup output, plist:\n%s\nstdout:\n%s", plist, stdout.String())
+	}
+	if !strings.Contains(plist, "<string>http://192.168.178.66</string>") {
+		t.Fatalf("expected public WiFi target in plist, got:\n%s", plist)
+	}
+}
+
 func TestRunWithDepsDefaultsToWiFiLaunchAgentTarget(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
