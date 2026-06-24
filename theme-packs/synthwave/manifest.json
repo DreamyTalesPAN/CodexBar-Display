@@ -8,8 +8,8 @@
   "themeSpec": {
     "path": "/themes/u/synthwa-1-0432f1.json",
     "file": "theme.json",
-    "bytes": 743,
-    "sha256": "c45c01b11da1745d4270c1ef08286ad3b79ce74da526b5d8b807674592680a31",
+    "bytes": 729,
+    "sha256": "44f5c350fcf0ec2fa67c798b5b6cab7e2c1c7a93854a99c5a6bfa95efe3c721c",
     "contentType": "application/json"
   },
   "assets": [

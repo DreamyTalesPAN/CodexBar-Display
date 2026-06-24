@@ -196,7 +196,7 @@ void addCorsHeaders();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
 constexpr const char* kDefaultThemeSpecId = "mini-classic";
-constexpr int kDefaultThemeSpecRev = 2;
+constexpr int kDefaultThemeSpecRev = 1;
 #endif
 
 void recordRenderFull(const char* kind, unsigned long durationUs) {

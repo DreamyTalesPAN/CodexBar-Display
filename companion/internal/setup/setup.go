@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -266,14 +265,6 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 			Hint: "use --target http://vibetv.local or the IP shown on Vibe TV",
 		}
 	}
-	runtimeConfigTarget := ""
-	if transportName == "wifi" {
-		runtimeConfigTarget = target
-		publicTarget, _ := splitDeviceTargetToken(target)
-		if publicTarget != "" {
-			target = publicTarget
-		}
-	}
 	fmt.Fprintf(d.stdout, "Launch agent transport: %s\n", transportName)
 	if target != "" {
 		fmt.Fprintf(d.stdout, "Launch agent target: %s\n", target)
@@ -472,7 +463,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 	fmt.Fprintf(d.stdout, "Recovery backup dir: %s\n", backupDir)
 
-	if err := applyRuntimeConfig(home, opts.Theme, runtimeConfigTarget, d.stdout); err != nil {
+	if err := applyRuntimeConfig(home, opts.Theme, d.stdout); err != nil {
 		return &StepError{
 			Step: "write-runtime-config",
 			Err:  err,
@@ -1209,78 +1200,55 @@ func installRecoveryAssets(repoRoot, home string) (string, string, error) {
 	return restoreTarget, backupDir, nil
 }
 
-func applyRuntimeConfig(home, rawTheme, rawDeviceTarget string, stdout io.Writer) error {
+func applyRuntimeConfig(home, rawTheme string, stdout io.Writer) error {
+	themeInput := strings.TrimSpace(rawTheme)
+	if themeInput == "" {
+		cfg, err := runtimeconfig.Load(home)
+		if err != nil {
+			return err
+		}
+		if runtimeconfig.NormalizeTheme(cfg.Theme) != "" {
+			return nil
+		}
+		cfg.Theme = runtimeconfig.DefaultTheme()
+		if err := runtimeconfig.Save(home, cfg); err != nil {
+			return err
+		}
+		if stdout != nil {
+			fmt.Fprintf(stdout, "Runtime config: theme=%s (default)\n", cfg.Theme)
+		}
+		return nil
+	}
+
 	cfg, err := runtimeconfig.Load(home)
 	if err != nil {
 		return err
 	}
 
-	changed := false
-	deviceTarget, deviceToken := splitDeviceTargetToken(rawDeviceTarget)
-	if deviceTarget != "" && cfg.DeviceTarget != deviceTarget {
-		cfg.DeviceTarget = deviceTarget
-		changed = true
-	}
-	if deviceToken != "" && cfg.DeviceToken != deviceToken {
-		cfg.DeviceToken = deviceToken
-		changed = true
-	}
-
-	themeInput := strings.TrimSpace(rawTheme)
-	if themeInput == "" {
-		if runtimeconfig.NormalizeTheme(cfg.Theme) != "" {
-			// Keep the user's existing theme override.
-		} else {
-			cfg.Theme = runtimeconfig.DefaultTheme()
-			changed = true
-			if stdout != nil {
-				fmt.Fprintf(stdout, "Runtime config: theme=%s (default)\n", cfg.Theme)
-			}
-		}
-	} else if runtimeconfig.ClearThemeValue(themeInput) {
+	switch {
+	case runtimeconfig.ClearThemeValue(themeInput):
 		cfg.Theme = ""
-		changed = true
+		if err := runtimeconfig.Save(home, cfg); err != nil {
+			return err
+		}
 		if stdout != nil {
 			fmt.Fprintln(stdout, "Runtime config: cleared theme override")
 		}
-	} else {
+		return nil
+	default:
 		normalized := runtimeconfig.NormalizeTheme(themeInput)
 		if normalized == "" {
 			return fmt.Errorf("unsupported theme %q", themeInput)
 		}
 		cfg.Theme = normalized
-		changed = true
+		if err := runtimeconfig.Save(home, cfg); err != nil {
+			return err
+		}
 		if stdout != nil {
 			fmt.Fprintf(stdout, "Runtime config: theme=%s\n", normalized)
 		}
-	}
-
-	if deviceTarget != "" && stdout != nil {
-		fmt.Fprintf(stdout, "Runtime config: deviceTarget=%s\n", deviceTarget)
-	}
-	if !changed {
 		return nil
 	}
-	return runtimeconfig.Save(home, cfg)
-}
-
-func splitDeviceTargetToken(raw string) (target, token string) {
-	target = strings.TrimSpace(raw)
-	if target == "" {
-		return "", ""
-	}
-	if !strings.Contains(target, "://") {
-		target = "http://" + target
-	}
-	parsed, err := url.Parse(target)
-	if err != nil {
-		return strings.TrimSpace(raw), ""
-	}
-	token = strings.TrimSpace(parsed.Query().Get("token"))
-	query := parsed.Query()
-	query.Del("token")
-	parsed.RawQuery = query.Encode()
-	return strings.TrimRight(parsed.String(), "/"), token
 }
 
 func stdinIsInteractive() bool {

@@ -43,27 +43,6 @@ type AssetUploadRetry struct {
 
 type AssetUploadRetryObserver func(AssetUploadRetry)
 
-type DeviceHealthSnapshot struct {
-	OK      bool `json:"ok"`
-	Display struct {
-		ActiveTheme string `json:"activeTheme"`
-		ThemeSpec   struct {
-			Active         bool   `json:"active"`
-			Path           string `json:"path"`
-			Hash           string `json:"hash"`
-			RenderOk       bool   `json:"renderOk"`
-			RenderError    string `json:"renderError"`
-			RenderFailures int    `json:"renderFailures"`
-		} `json:"themeSpec"`
-		GIF struct {
-			ActivePath     string `json:"activePath"`
-			FilePresent    bool   `json:"filePresent"`
-			DecoderOpen    bool   `json:"decoderOpen"`
-			LastErrorStage string `json:"lastErrorStage"`
-		} `json:"gif"`
-	} `json:"display"`
-}
-
 func NewWiFiTransport() DeviceTransport {
 	return WiFiTransport{
 		client: &http.Client{Timeout: defaultWiFiTimeout},
@@ -118,70 +97,25 @@ func (t WiFiTransport) DeviceCapabilities(target string) (protocol.DeviceCapabil
 }
 
 func (t WiFiTransport) DeviceHealth(target string) error {
-	_, err := t.DeviceHealthSnapshot(target)
-	return err
-}
-
-func (t WiFiTransport) DeviceHealthSnapshot(target string) (DeviceHealthSnapshot, error) {
 	base, err := normalizeWiFiTarget(target)
 	if err != nil {
-		return DeviceHealthSnapshot{}, err
+		return err
 	}
 	req, err := http.NewRequest(http.MethodGet, base+"/health", nil)
 	if err != nil {
-		return DeviceHealthSnapshot{}, fmt.Errorf("build device health request: %w", err)
+		return fmt.Errorf("build device health request: %w", err)
 	}
 	req.Close = true
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return DeviceHealthSnapshot{}, fmt.Errorf("get device health: %w", err)
+		return fmt.Errorf("get device health: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return DeviceHealthSnapshot{}, fmt.Errorf("get device health: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+		return fmt.Errorf("get device health: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	var health DeviceHealthSnapshot
-	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
-		return DeviceHealthSnapshot{}, fmt.Errorf("decode device health: %w", err)
-	}
-	return health, nil
-}
-
-func (t WiFiTransport) PairDevice(target string) (string, error) {
-	base, err := normalizeWiFiTarget(target)
-	if err != nil {
-		return "", err
-	}
-	form := url.Values{}
-	form.Set("api", "1")
-	req, err := http.NewRequest(http.MethodPost, base+"/api/pair", strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", fmt.Errorf("build device pair request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Close = true
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("post device pair: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", fmt.Errorf("post device pair: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var payload struct {
-		OK    bool   `json:"ok"`
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode device pair: %w", err)
-	}
-	token := strings.TrimSpace(payload.Token)
-	if !payload.OK || token == "" {
-		return "", fmt.Errorf("pairing response did not include token")
-	}
-	return token, nil
+	return nil
 }
 
 func (t WiFiTransport) SendLine(target string, line []byte) error {

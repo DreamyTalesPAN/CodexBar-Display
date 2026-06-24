@@ -81,61 +81,6 @@ func TestWiFiTransportDeviceHealthReadsHealth(t *testing.T) {
 	}
 }
 
-func TestWiFiTransportDeviceHealthSnapshotDecodesThemeSpecStatus(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/health" {
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"path":"/themes/u/mini-classic.json","hash":"abc123","renderOk":true,"renderFailures":0},"gif":{"activePath":"/themes/mini/mini.gif","filePresent":true,"decoderOpen":true}}}`))
-	}))
-	defer server.Close()
-
-	transport := NewWiFiTransportWithClient(server.Client())
-	health, err := transport.DeviceHealthSnapshot(server.URL)
-	if err != nil {
-		t.Fatalf("DeviceHealthSnapshot returned error: %v", err)
-	}
-	if !health.Display.ThemeSpec.Active || !health.Display.ThemeSpec.RenderOk {
-		t.Fatalf("expected active healthy theme spec, got %+v", health.Display.ThemeSpec)
-	}
-	if health.Display.ActiveTheme != "mini-classic" || health.Display.ThemeSpec.Path != "/themes/u/mini-classic.json" {
-		t.Fatalf("unexpected health snapshot: %+v", health.Display)
-	}
-}
-
-func TestWiFiTransportPairDevicePostsPairingAPI(t *testing.T) {
-	var gotBody string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/pair" {
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-		if r.Method != http.MethodPost {
-			t.Fatalf("expected POST /api/pair, got %s", r.Method)
-		}
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read request body: %v", err)
-		}
-		gotBody = string(body)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token-abc"}`))
-	}))
-	defer server.Close()
-
-	transport := NewWiFiTransportWithClient(server.Client())
-	token, err := transport.PairDevice(server.URL)
-	if err != nil {
-		t.Fatalf("PairDevice returned error: %v", err)
-	}
-	if token != "pair-token-abc" {
-		t.Fatalf("unexpected token %q", token)
-	}
-	if gotBody != "api=1" {
-		t.Fatalf("unexpected pair body %q", gotBody)
-	}
-}
-
 func TestWiFiTransportResolveTargetAddsHTTPDefault(t *testing.T) {
 	transport := NewWiFiTransportWithClient(nil)
 	target, err := transport.ResolvePort("192.168.178.123")

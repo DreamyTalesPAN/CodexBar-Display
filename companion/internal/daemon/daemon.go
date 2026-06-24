@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -132,9 +131,6 @@ type runtimeDeps struct {
 	fetchUpdateState  func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
 	newSelector       func() *codexbar.ProviderSelector
 	logf              func(string, ...any)
-	homeDir           func() (string, error)
-	loadConfig        func(string) (runtimeconfig.Config, error)
-	saveConfig        func(string, runtimeconfig.Config) error
 	transportName     string
 }
 
@@ -181,15 +177,6 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	if d.logf == nil {
 		d.logf = defaultRuntimeLogf
 	}
-	if d.homeDir == nil {
-		d.homeDir = os.UserHomeDir
-	}
-	if d.loadConfig == nil {
-		d.loadConfig = runtimeconfig.Load
-	}
-	if d.saveConfig == nil {
-		d.saveConfig = runtimeconfig.Save
-	}
 	return d
 }
 
@@ -221,7 +208,6 @@ type runtimeState struct {
 	lastCodingAt           time.Time
 	lastActivity           string
 	lastActivityCause      string
-	deviceTarget           string
 }
 
 type cycleResult struct {
@@ -503,20 +489,6 @@ func requestedDeviceTarget(opts Options) string {
 	return strings.TrimSpace(opts.Port)
 }
 
-func effectiveCycleTarget(requestedTarget string, state *runtimeState, deps runtimeDeps) string {
-	requestedTarget = strings.TrimSpace(requestedTarget)
-	if deps.transportName != "wifi" {
-		return requestedTarget
-	}
-	if state != nil && strings.TrimSpace(state.deviceTarget) != "" {
-		return strings.TrimSpace(state.deviceTarget)
-	}
-	if cfg, ok := loadRuntimeConfig(deps); ok && strings.TrimSpace(cfg.DeviceTarget) != "" {
-		return strings.TrimSpace(cfg.DeviceTarget)
-	}
-	return requestedTarget
-}
-
 func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
 	if state == nil {
 		state = &runtimeState{}
@@ -527,8 +499,7 @@ func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
 	return state
 }
 
-func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeDeps) (string, protocol.DeviceCapabilities, int, error) {
-	requestedPort = effectiveCycleTarget(requestedPort, state, deps)
+func resolveCycleDevice(requestedPort string, deps runtimeDeps) (string, protocol.DeviceCapabilities, int, error) {
 	port, err := resolvePortWithFallback(requestedPort, deps)
 	if err != nil {
 		hint := errcode.DefaultRecovery(errcode.RuntimeSerialResolve)
@@ -546,7 +517,6 @@ func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeD
 	caps, capsErr := deps.deviceCaps(port)
 	if capsErr != nil {
 		if recoveredPort, recoveredCaps, recovered := recoverStaleWiFiTarget(port, capsErr, deps); recovered {
-			rememberRecoveredWiFiTarget(recoveredPort, state, deps)
 			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
 		}
 		deps.logf("runtime event=device-caps-read-failed target=%s transport=%s err=%v\n", port, deps.transportName, capsErr)
@@ -554,63 +524,11 @@ func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeD
 	} else if !caps.Known {
 		unknownErr := errors.New("device capabilities unknown")
 		if recoveredPort, recoveredCaps, recovered := recoverStaleWiFiTarget(port, unknownErr, deps); recovered {
-			rememberRecoveredWiFiTarget(recoveredPort, state, deps)
 			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
 		}
 	}
 
-	rememberActiveWiFiTarget(port, caps, state)
 	return port, caps, maxFrameBytesForCaps(caps), nil
-}
-
-func rememberActiveWiFiTarget(target string, caps protocol.DeviceCapabilities, state *runtimeState) {
-	if state == nil || strings.TrimSpace(target) == "" || !caps.Known {
-		return
-	}
-	state.deviceTarget = strings.TrimSpace(target)
-}
-
-func rememberRecoveredWiFiTarget(target string, state *runtimeState, deps runtimeDeps) {
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return
-	}
-	if state != nil {
-		state.deviceTarget = target
-	}
-	cfg, ok := loadRuntimeConfig(deps)
-	if !ok {
-		return
-	}
-	if isSameTarget(cfg.DeviceTarget, target) {
-		return
-	}
-	cfg.DeviceTarget = target
-	if err := saveRuntimeConfig(cfg, deps); err != nil {
-		deps.logf("runtime event=wifi-target-persist-failed target=%s err=%v\n", target, err)
-		return
-	}
-	deps.logf("runtime event=wifi-target-persisted target=%s\n", target)
-}
-
-func loadRuntimeConfig(deps runtimeDeps) (runtimeconfig.Config, bool) {
-	home, err := deps.homeDir()
-	if err != nil || strings.TrimSpace(home) == "" {
-		return runtimeconfig.Config{}, false
-	}
-	cfg, err := deps.loadConfig(home)
-	if err != nil {
-		return runtimeconfig.Config{}, false
-	}
-	return cfg, true
-}
-
-func saveRuntimeConfig(cfg runtimeconfig.Config, deps runtimeDeps) error {
-	home, err := deps.homeDir()
-	if err != nil {
-		return err
-	}
-	return deps.saveConfig(home, cfg)
 }
 
 func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) (string, protocol.DeviceCapabilities, bool) {
@@ -937,7 +855,6 @@ func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
 }
 
 func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
-	publicPort := publicDeviceTarget(port)
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = attachClockFields(frame, deps.now())
@@ -946,7 +863,7 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 		var applied bool
 		frame, applied = applyThemeToFrame(frame, selectedTheme, caps)
 		if !applied {
-			deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", publicPort, caps.Board, selectedTheme)
+			deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", port, caps.Board, selectedTheme)
 		}
 	}
 
@@ -964,8 +881,7 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 	}
 	frame = marshaledFrame
 
-	sendTarget := sendTargetWithRuntimeAuth(port, deps)
-	if err := deps.sendLine(sendTarget, line); err != nil {
+	if err := deps.sendLine(port, line); err != nil {
 		return &RuntimeError{
 			Kind: runtimeErrorSerialWrite,
 			Op:   "send-line",
@@ -975,7 +891,7 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 	}
 
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+		port, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -992,61 +908,6 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 	return nil
 }
 
-func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) string {
-	if deps.transportName != "wifi" {
-		return target
-	}
-	cfg, ok := loadRuntimeConfig(deps)
-	if !ok {
-		return target
-	}
-	return targetWithDeviceToken(target, cfg.DeviceToken)
-}
-
-func targetWithDeviceToken(target, token string) string {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return target
-	}
-	parsed, ok := parseDeviceTarget(target)
-	if !ok {
-		return target
-	}
-	query := parsed.Query()
-	if strings.TrimSpace(query.Get("token")) != "" {
-		return target
-	}
-	query.Set("token", token)
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
-}
-
-func publicDeviceTarget(target string) string {
-	parsed, ok := parseDeviceTarget(target)
-	if !ok {
-		return target
-	}
-	query := parsed.Query()
-	if _, hasToken := query["token"]; !hasToken {
-		return target
-	}
-	query.Del("token")
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
-}
-
-func parseDeviceTarget(target string) (*url.URL, bool) {
-	target = strings.TrimSpace(target)
-	if target == "" || !strings.Contains(target, "://") {
-		return nil, false
-	}
-	parsed, err := url.Parse(target)
-	if err != nil || strings.TrimSpace(parsed.Scheme) == "" || strings.TrimSpace(parsed.Host) == "" {
-		return nil, false
-	}
-	return parsed, true
-}
-
 func attachClockFields(frame protocol.Frame, now time.Time) protocol.Frame {
 	if now.IsZero() {
 		now = time.Now()
@@ -1060,7 +921,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
 
-	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
+	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, deps)
 	if err != nil {
 		return err
 	}
@@ -1106,7 +967,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
 
-	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
+	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, deps)
 	if err != nil {
 		return err
 	}
