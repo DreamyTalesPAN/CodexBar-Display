@@ -201,6 +201,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testFixConnectionDoesNotRepairWhenMacAppIsOffline(
+      browser,
+      appContext.appUrl,
+    );
     await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
       browser,
       appContext.appUrl,
@@ -465,6 +469,37 @@ async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
     "browser permission should not be requested before the WiFi step",
   );
   assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testFixConnectionDoesNotRepairWhenMacAppIsOffline(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const companionRequests = [];
+  await routeCompanionMissing(page, installRequests, (pathname) => {
+    companionRequests.push(pathname);
+  });
+
+  await page.goto(appUrl, {
+    waitUntil: "networkidle",
+  });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Fix connection" }).click();
+  await page
+    .getByText("Mac App is not running.", { exact: false })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    !companionRequests.includes("/v1/device/repair"),
+    "Fix connection must not call device repair when the Mac App is offline",
+  );
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
   await page.close();
 }
 
@@ -1566,9 +1601,11 @@ function assertCustomerThemeCatalogIssue(issue) {
   }
 }
 
-async function routeCompanionMissing(page, installRequests) {
+async function routeCompanionMissing(page, installRequests, onRequest = () => {}) {
   const handler = async (route) => {
-    if (companionPath(route).includes("/v1/themes/install")) {
+    const pathname = companionPath(route);
+    onRequest(pathname);
+    if (pathname.includes("/v1/themes/install")) {
       installRequests.push(route.request().postData());
     }
     await route.abort("failed");

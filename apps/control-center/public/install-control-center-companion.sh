@@ -41,17 +41,17 @@ What it does:
   - downloads the matching codexbar-display macOS release binary
   - verifies the release checksum
   - installs the binary under ~/Library/Application Support/codexbar-display/bin
-  - stops the old background LaunchAgent if it exists
-  - starts the local Mac setup service from this Terminal session
+  - stops the old background service if it exists
+  - starts the local Mac setup service as a user LaunchAgent with --launchagent
+  - otherwise starts it from this Terminal session
   - verifies http://127.0.0.1:47832/v1/status
 
 Examples:
-  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
+  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --launchagent
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --restart
 
-By default the service is started from Terminal, because this is the customer
-setup path for the current Control Center. Support can pass --launchagent for
-old local testing only.
+By default the service is started from Terminal. The Control Center setup prompt
+passes --launchagent so the Mac setup service keeps running after setup.
 EOF
 }
 
@@ -197,12 +197,12 @@ restart_service() {
       die "LaunchAgent is missing: ${PLIST_PATH}. Run install first."
     fi
 
-    require_cmd_for launchctl "start the old macOS LaunchAgent mode" "rerun without --launchagent."
+    require_cmd_for launchctl "start the macOS user LaunchAgent mode" "rerun with --terminal-session."
     launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
     launchctl enable "$SERVICE" >/dev/null 2>&1 || true
     if ! launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH" >/dev/null 2>&1; then
       if ! launchctl print "$SERVICE" >/dev/null 2>&1; then
-        die "failed to load the old background service. Rerun without --launchagent."
+        die "failed to load the background service. Rerun with --terminal-session."
       fi
     fi
     launchctl kickstart -k "$SERVICE" >/dev/null
@@ -467,7 +467,7 @@ main() {
 
   log "vibetv: Mac setup binary installed at ${BIN_PATH}"
   if [[ "$START_MODE" == "launchagent" ]]; then
-    log "vibetv: old background service installed at ${PLIST_PATH}"
+    log "vibetv: background service installed at ${PLIST_PATH}"
   else
     log "vibetv: started from this Terminal session"
   fi

@@ -179,6 +179,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setDeviceState("unknown");
   }, []);
 
+  const handleCompanionUnavailableForRepair = useCallback(
+    (quiet: boolean) => {
+      const normalized = companionUnavailableError();
+      markCompanionUnavailable();
+      setActiveTab("setup");
+      if (!quiet) {
+        setLastError(normalized);
+        addEvent({
+          label: "Mac App is not running",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
+      }
+    },
+    [addEvent, markCompanionUnavailable],
+  );
+
   useEffect(() => {
     async function handleBlockedBrowserFetch() {
       const accessState = await readLocalNetworkAccessState();
@@ -514,6 +531,54 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           : "";
       setBusyAction("repair");
       try {
+        if (companionStatus === "missing") {
+          handleCompanionUnavailableForRepair(quiet);
+          return;
+        }
+        if (companionStatus !== "online") {
+          try {
+            const statusPayload = await runCompanion<{
+              companion?: CompanionInfo;
+              device?: DeviceInfo;
+            }>("/v1/status", undefined, { preserveLastError: quiet });
+            setCompanionStatus("online");
+            setCompanionInfo(statusPayload.companion || null);
+            setThemeInstallEnabled(
+              Boolean(statusPayload.companion?.features?.themeInstallEnabled),
+            );
+            if (statusPayload.device?.target) {
+              setDevice(statusPayload.device);
+              setDeviceTarget(statusPayload.device.target);
+              rememberDeviceTarget(statusPayload.device.target);
+              setDeviceState(
+                statusPayload.device.paired
+                  ? "paired"
+                  : statusPayload.device.connected
+                    ? "online"
+                    : "unknown",
+              );
+            }
+          } catch (statusError) {
+            const normalized = normalizeCaughtError(
+              statusError,
+              "Mac App needs attention.",
+            );
+            if (isLocalNetworkAccessError(normalized)) {
+              markCompanionAccessBlocked();
+              if (!quiet) {
+                setLastError(normalized);
+                addEvent({
+                  label: "Browser access needs attention",
+                  detail: normalized.nextAction,
+                  tone: "attention",
+                });
+              }
+            } else {
+              handleCompanionUnavailableForRepair(quiet);
+            }
+            return;
+          }
+        }
         const payload = await runCompanion<{ device: DeviceInfo }>(
           "/v1/device/repair",
           {
@@ -579,6 +644,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [
       addEvent,
+      companionStatus,
+      handleCompanionUnavailableForRepair,
       loadSettings,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
@@ -1232,11 +1299,7 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
   }
   if (error instanceof Error) {
     if (isCompanionConnectionError(error)) {
-      return {
-        code: "COMPANION_UNREACHABLE",
-        message: "Mac App is not open.",
-        nextAction: "Install or repair the Mac App, open it, then try again.",
-      };
+      return companionUnavailableError();
     }
     return {
       code: "CLIENT_ERROR",
@@ -1251,8 +1314,17 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
   };
 }
 
+function companionUnavailableError(): ApiError {
+  return {
+    code: "COMPANION_UNREACHABLE",
+    message: "Mac App is not running.",
+    nextAction:
+      "Run Agentic setup again, then click Mac App is installed.",
+  };
+}
+
 function isCompanionConnectionError(error: Error): boolean {
-  return /failed to fetch|fetch failed|load failed|networkerror/i.test(
+  return /failed to fetch|fetch failed|load failed|networkerror|connection refused|err_connection_refused|couldn'?t connect/i.test(
     error.message,
   );
 }
@@ -1276,7 +1348,7 @@ function isLocalCompanionFetchFailureReason(reason: unknown): boolean {
   if (reason instanceof Error) {
     return isCompanionConnectionError(reason);
   }
-  return /failed to fetch|fetch failed|load failed|networkerror/i.test(
+  return /failed to fetch|fetch failed|load failed|networkerror|connection refused|err_connection_refused|couldn'?t connect/i.test(
     String(reason),
   );
 }

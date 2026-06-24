@@ -53,7 +53,7 @@ Run this Terminal command:
 
 ${terminalCommand}
 
-This command should install the Mac App helper and start it in the background from this Terminal session. Do not convert it to a macOS LaunchAgent.
+This command should install the Mac App helper as a user LaunchAgent so it keeps running after setup. Do not install a signed package.
 
 After the command finishes, verify it with:
 
@@ -70,7 +70,7 @@ Do not flash firmware, install themes, reset WiFi, or write to my VibeTV. Only i
 
 function buildTerminalCommand(origin: string) {
   const installerUrl = `${origin}${INSTALLER_SCRIPT_PATH}`;
-  const args = ["--terminal-session"];
+  const args = ["--launchagent"];
   if (origin !== DEFAULT_CONTROL_CENTER_ORIGIN) {
     args.push("--dev-origin", shellQuote(origin));
   }
@@ -126,9 +126,10 @@ export function SetupScreen({
   const [setupMode, setSetupMode] = useState<SetupMode>("agentic");
   const autoConnectStarted = useRef(false);
   const localAccessNeeded = isLocalNetworkAccessError(lastError);
+  const macAppMissing = isCompanionMissingError(lastError);
   const macAppReady = companionStatus === "online";
   const macAppConfirmed =
-    macAppConfirmedState || macAppReady || setupComplete;
+    !macAppMissing && (macAppConfirmedState || macAppReady || setupComplete);
   const connected = Boolean(device?.connected && device.paired);
   const wifiConfirmed =
     wifiConfirmedState || setupComplete || previewStep === "mac-app";
@@ -254,6 +255,7 @@ export function SetupScreen({
                 onClick={onResetSetup}
               />
             </div>
+            {lastError ? <ErrorNote error={lastError} /> : null}
           </div>
         </div>
       </section>
@@ -399,6 +401,13 @@ export function SetupScreen({
                       }}
                     />
                   </div>
+                ) : null}
+
+                {macAppMissing ? (
+                  <StatusNote icon={<RefreshCw size={16} aria-hidden />}>
+                    Mac App is not running. Run Agentic setup again, then click
+                    Mac App is installed.
+                  </StatusNote>
                 ) : null}
 
                 <div className="flex flex-wrap gap-3">
@@ -675,6 +684,18 @@ function StatusNote({
   );
 }
 
+function ErrorNote({ error }: { error: ApiError }) {
+  return (
+    <div
+      className="mt-4 grid max-w-[560px] gap-1 border border-[#747A60] bg-[#F9F9F9] px-4 py-3 text-sm text-[#444933]"
+      role="alert"
+    >
+      <strong className="font-black text-[#1B1B1B]">{error.message}</strong>
+      <span>{error.nextAction}</span>
+    </div>
+  );
+}
+
 function buildActiveStep({
   companionStatus,
   localAccessNeeded,
@@ -750,6 +771,10 @@ function buildStepStates({
 
 function isLocalNetworkAccessError(error?: ApiError | null): boolean {
   return error?.code === "LOCAL_NETWORK_ACCESS_REQUIRED";
+}
+
+function isCompanionMissingError(error?: ApiError | null): boolean {
+  return error?.code === "COMPANION_UNREACHABLE";
 }
 
 async function copyText(text: string) {
