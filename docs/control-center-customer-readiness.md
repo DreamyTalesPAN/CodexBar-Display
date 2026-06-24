@@ -23,109 +23,46 @@ The local Mac App service responds to Chrome Private Network Access preflights f
 2. App checks the local Mac App service at `127.0.0.1:47832`.
 3. If the Mac App is missing, the app shows one primary Mac App install/repair action.
 4. Customer installs or starts the Mac App.
-5. The Mac App runs as a macOS LaunchAgent and survives login/reboot.
+5. The Mac App service runs from the Agentic Terminal setup context.
 6. App searches for VibeTV on the same WiFi/LAN.
 7. If exactly one VibeTV is found, the Mac App stores that address for later checks.
 8. If multiple VibeTV devices are found, the Mac App refuses to auto-pick one. The customer must enter the exact VibeTV address, for example `vibetv.local` or `192.168.178.163`, then use `Connect VibeTV` again. A manually entered address is strict: if that exact VibeTV does not answer, the Mac App reports a device error instead of falling back to another discovered VibeTV.
 9. App can read Mac App status, VibeTV status, firmware, active theme, and settings.
 10. Theme install writes stay locked until the hardware-safe release gate is enabled.
 
-## Mac App Package Path
+## Agentic Terminal Path
 
-Current transition releases publish macOS `.pkg` assets from the GitHub Release so `app.vibetv.shop` can offer a direct Mac App download:
-
-```text
-VibeTV-Companion-API-arm64-v<version>.pkg
-VibeTV-Companion-API-amd64-v<version>.pkg
-```
-
-The package installs the binary under `/Library/Application Support/VibeTV/bin/`, installs `/Library/LaunchAgents/com.codexbar-display.companion-api.plist`, and starts the LaunchAgent for the current console user after install.
-
-Transition release packages are currently unsigned. That is enough for internal/beta download testing, but it is not customer-ready because macOS will show an unidentified-developer security path. Before treating this as a normal customer installer, switch the release packages back to signed and notarized output.
-
-The legacy shell installer may still be published as a support-only GitHub Release asset:
+The current v1 setup does not depend on a packaged macOS installer. The Setup tab gives the customer an Agentic setup prompt and a manual Terminal fallback. Both use the release shell installer:
 
 ```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --terminal-session
 ```
 
-That support script performs these steps:
+That script performs these steps:
 
 - downloads the matching `codexbar-display` macOS release binary,
 - verifies the release SHA-256 checksum,
 - installs the binary to `~/Library/Application Support/codexbar-display/bin/codexbar-display`,
-- writes `~/Library/LaunchAgents/com.codexbar-display.companion-api.plist`,
-- starts `codexbar-display api --addr 127.0.0.1:47832`,
+- stops and removes the old user LaunchAgent for this API service if it exists,
+- starts `codexbar-display api --addr 127.0.0.1:47832` in the background from the Terminal session,
+- stores the started process id in `~/Library/Application Support/codexbar-display/run/companion-api.pid`,
 - verifies `http://127.0.0.1:47832/v1/status`.
 
-The release workflow currently builds unsigned `arm64` and `amd64` `.pkg` files on `macos-latest`, validates their payload metadata/scripts/binary architecture, uploads them as an internal `companion-pkgs` workflow artifact, then the `build-and-release` job downloads that artifact, includes the `.pkg` files in release checksums, and publishes them as GitHub Release assets. Because `/api/companion/latest` reads the latest GitHub Release, the app's `Install Mac App` button can download these packages directly.
-
-To move from this transition path to a customer-ready signed path, add Apple Developer ID Installer signing and notarization back to the release package job:
-
-1. Import a Developer ID Installer `.p12` into a temporary keychain.
-2. Pass `--sign-identity "Developer ID Installer: Company (TEAMID)"` to `scripts/build-control-center-companion-pkg.sh`.
-3. Store an Apple notarytool profile from Apple ID, Team ID, and app-specific password.
-4. Pass `--notary-profile <profile>` to the package builder so each `.pkg` is submitted, accepted, and stapled.
-5. Validate every release package with `scripts/check-control-center-companion-customer-readiness.sh --pkg <pkg> --expect-version <version> --require-signed --require-notarized`.
-6. Run a clean-Mac install check before calling the flow customer-ready.
-
-When the `.pkg` is installed or repaired, its `preinstall` script unloads the existing `com.codexbar-display.companion-api` LaunchAgent for the console user and removes the old script-installed user plist at `~/Library/LaunchAgents/com.codexbar-display.companion-api.plist` before the new payload is written. Its `postinstall` script then loads the package LaunchAgent from `/Library/LaunchAgents`. The package LaunchAgent becomes the single active Companion API service.
-
-After the package is installed, the legacy shell installer refuses to run when it detects the package receipt `shop.vibetv.companion-api`. This prevents support steps from accidentally recreating the old user LaunchAgent. Use the package repair/update path instead. Support can still override the guard explicitly with `--force-legacy-script` when they intentionally need the legacy script.
-
-Required GitHub secrets for the future signed package path:
-
-- `VIBETV_PKG_CERTIFICATE_BASE64`: base64-encoded `.p12` containing the Developer ID Installer certificate and private key.
-- `VIBETV_PKG_CERTIFICATE_PASSWORD`: password for that `.p12`.
-- `VIBETV_PKG_SIGN_IDENTITY`: optional explicit identity name, for example `Developer ID Installer: Company (TEAMID)`. If omitted, the workflow attempts to auto-detect a Developer ID Installer identity.
-
-Additional GitHub secrets for notarized packages:
-
-- `VIBETV_NOTARY_APPLE_ID`
-- `VIBETV_NOTARY_TEAM_ID`
-- `VIBETV_NOTARY_APP_SPECIFIC_PASSWORD`
-- `VIBETV_NOTARY_PROFILE`: optional notarytool profile name; defaults to `vibetv-notary`.
-
-Before calling a release customer-ready, use the manual GitHub Actions workflow `Control Center Customer Package Candidate` to build signed and notarized Mac App package candidates. The workflow file must already exist on the default branch before GitHub can dispatch it. After this PR lands on `main`, run it against the release candidate branch or `main`:
-
-```bash
-gh workflow run control-center-customer-pkg-candidate.yml \
-  --ref <branch> \
-  -f version=<version>
-```
-
-Use the planned release version, for example `1.0.32`. The workflow uploads the `.pkg` files and `checksums-v<version>.txt` as a private Actions artifact for Clean-Mac validation, keeps repository permissions read-only, and does not create or update a GitHub Release. Download the `vibetv-mac-app-pkgs-v<version>` artifact from the run, then verify that the package set and checksums match:
-
-```bash
-scripts/check-control-center-candidate-pkg-artifact.sh \
-  --artifact-dir <artifact-dir> \
-  --version <version>
-```
-
-After that artifact check passes, install the matching package on a clean Mac, then run the installed-package readiness check from this repo:
-
-```bash
-scripts/check-control-center-companion-customer-readiness.sh \
-  --installed-package \
-  --local-companion \
-  --expect-version <version>
-```
-
-Only after that check passes can the customer-ready gate be run with `--clean-mac-tested`. The normal release workflow must still build and publish the final package assets for the release tag.
+This is intentional for v1. In hardware testing, the Terminal-started process could reach the customer's LAN/VibeTV, while the same ad-hoc binary launched by the user LaunchAgent could get stuck in a macOS local-network permission state. So the normal customer path starts from the agent/Terminal context and removes the stale user LaunchAgent instead of recreating it.
 
 Support restart:
 
 ```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --restart
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --restart --terminal-session
 ```
 
-Support uninstall of the API LaunchAgent:
+Support uninstall:
 
 ```bash
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --uninstall
 ```
 
-Both legacy support commands are guarded after package migration. If the signed package is already installed, they exit without touching `~/Library/LaunchAgents/com.codexbar-display.companion-api.plist` unless support adds `--force-legacy-script`.
+Uninstall stops the PID-file process and removes the old user LaunchAgent plist if it exists.
 
 The repository-level development installer remains available:
 
@@ -137,8 +74,8 @@ It performs these steps without downloading from GitHub Releases:
 
 - builds `companion/cmd/codexbar-display`,
 - installs the binary to `~/Library/Application Support/codexbar-display/bin/codexbar-display`,
-- writes `~/Library/LaunchAgents/com.codexbar-display.companion-api.plist`,
-- starts `codexbar-display api --addr 127.0.0.1:47832`,
+- removes the old user LaunchAgent plist if present,
+- starts `codexbar-display api --addr 127.0.0.1:47832` in the background from Terminal,
 - verifies `http://127.0.0.1:47832/v1/status`.
 
 Optional local development origin:
@@ -147,34 +84,23 @@ Optional local development origin:
 VIBETV_COMPANION_DEV_ORIGIN=http://localhost:3002 ./scripts/install-control-center-companion.sh
 ```
 
-The API LaunchAgent is separate from the older frame-sending daemon LaunchAgent. The API service exists so `app.vibetv.shop` can talk to the local machine without keeping a Terminal window open.
+The local API service is separate from the older frame-sending daemon LaunchAgent. The older daemon can continue to exist for the display runtime; the Control Center setup path only changes how the browser-facing local service is started.
 
-The Control Center Updates screen checks `/api/companion/latest`. That route reads the latest GitHub Release and only exposes customer package download links when the release actually contains both macOS package assets:
+The Control Center Updates screen checks `/api/companion/latest`. That route still reads the latest GitHub Release for version information, but the v1 setup path does not require macOS package assets. New customer setup should prefer the Agentic prompt and Terminal command above.
 
-- `VibeTV-Companion-API-arm64-v<version>.pkg`
-- `VibeTV-Companion-API-amd64-v<version>.pkg`
-
-The legacy `install-control-center-companion.sh` asset is optional for support. The hosted customer API does not expose it as an install action; when both package assets exist without the script, the customer package path is still ready.
+The `install-control-center-companion.sh` asset is part of the hosted customer setup. The app exposes it through the Agentic prompt rather than as a raw download button.
 
 Set `CONTROL_CENTER_GITHUB_TOKEN` in the hosted app environment when possible. The token is used only by the server-side release check and is not sent to the browser. The read-only customer-readiness script also uses `CONTROL_CENTER_GITHUB_TOKEN` or `GITHUB_TOKEN` for GitHub release reads when present. Without a token, GitHub release reads are anonymous and can hit rate limits.
 
 Successful GitHub release reads are cached server-side for one minute. Failed release reads are not cached, so the customer-facing retry button can check again immediately.
 
-The `/api/companion/latest` route may keep technical field names and asset filenames for compatibility, but its human-readable `message` must use customer language such as `Mac App installer is not ready yet.` It must not expose `Companion`, release/package diagnostics, or customer installer internals.
+The `/api/companion/latest` route may keep technical field names and asset filenames for compatibility, but its human-readable `message` must use customer language. It must not expose `Companion`, release/package diagnostics, or customer installer internals.
 
-Package links must exactly match the latest release tag version. If the latest release is `v1.0.32`, the app only exposes package download buttons when both `VibeTV-Companion-API-arm64-v1.0.32.pkg` and `VibeTV-Companion-API-amd64-v1.0.32.pkg` exist. Older, mismatched, or partial package assets stay hidden.
-
-The app prefers the macOS package links when present. When both Apple silicon and Intel `.pkg` assets exist, customer-facing download actions show the package buttons and do not offer the shell script next to them. The app does not know whether a package is signed; it only checks that both release assets exist and match the latest release version. Unsigned transition packages can therefore appear in the app once they are attached to the latest GitHub Release. That is acceptable for beta/support testing, but customer-ready release approval still requires signed/notarized packages and clean-Mac validation.
-
-If only the shell script asset is available, setup screens must not present it as the normal customer installer. The primary setup state stays passive, such as `Mac App is not ready yet.` Final customer onboarding should use signed and notarized macOS package buttons; the current unsigned package buttons are a transition/beta path only.
-
-When the browser can detect the Mac architecture, the matching package is shown first and marked `This Mac`. If detection is unavailable, both Apple silicon and Intel packages remain visible without marking both as the primary recommendation.
-
-The Overview screen and the `/install/<theme_id>` entry use the same release check when the Mac App is missing, so a new customer does not have to discover the Updates tab first. That setup state has one primary action: install or repair the Mac App. If the Mac App is already installed but the app still cannot reach it, the package download is also the repair path.
+The Overview and `/install/<theme_id>` entry use the same setup state when the Mac App is missing, so a new customer does not have to discover the Updates tab first. That setup state has one primary action: install or repair the Mac App through setup.
 
 The Overview and `/install/<theme_id>` setup path should not show release diagnostics, internal asset names, or multiple equal actions. Customers should see only the next action that can move setup forward.
 
-After a customer clicks any Mac App download action, the app shows the immediate next step in place: open the downloaded installer, finish the install/update/repair, then return to the same page. The app checks quietly and moves forward when the Mac App becomes available.
+After the Agentic setup or manual Terminal command starts the Mac App service, the app checks quietly and moves forward when the Mac App becomes available.
 
 The Updates screen is available only after setup is complete. It should expose update actions, not setup recovery actions.
 
@@ -188,13 +114,13 @@ If an exact address does not answer, the app keeps the Mac App online and shows 
 
 If the Shopify theme catalog is empty or the requested `/install/<theme_id>` does not exist in the catalog, the app must show a locked catalog state. It must not fall back to demo/mock themes or silently select the first available theme for an unknown Shopify link.
 
-The Updates screen labels the same package actions by state:
+The Updates screen labels Mac App state plainly:
 
 - `Install Mac App` when the Mac App is not running yet.
 - `Update Mac App` when the installed Mac App version is behind the latest release.
-- `Repair Mac App` when the Mac App is already current but should be reinstalled or restarted cleanly.
+- `Repair Mac App` when the Mac App is already current but should be restarted cleanly.
 
-The public VibeTV Shopify theme products currently show the direct Terminal install command instead of linking into the hosted readiness flow. As of 2026-06-22, the Synthwave product page is verified to show `Copy install command` and `codexbar-display theme-pack install --theme synthwave --target http://vibetv.local`, with no `app.vibetv.shop` install link. Do not switch product pages back to `Check compatibility in the app` until the hosted Control Center path is truly customer-available, including signed Mac App installer assets and a clean-Mac install test.
+The public VibeTV Shopify theme products currently show the direct Terminal install command instead of linking into the hosted readiness flow. As of 2026-06-22, the Synthwave product page is verified to show `Copy install command` and `codexbar-display theme-pack install --theme synthwave --target http://vibetv.local`, with no `app.vibetv.shop` install link. Switch product pages back to the hosted app only after the Agentic setup path is verified end to end on a customer-like Mac.
 
 ## Customer Readiness Validation
 
@@ -206,17 +132,17 @@ scripts/check-control-center-customer-ready-gate.sh
 
 This gate is intentionally strict. It never merges, tags, releases, installs packages, starts services, discovers devices, or writes to VibeTV hardware. It only runs local checks and read-only hosted/release checks, then fails until the non-automated customer gates are also confirmed:
 
-- latest or selected release exposes both Mac App package assets through the hosted app,
-- signed package was validated on a clean Mac,
+- latest or selected release exposes the Mac setup assets needed by the Agentic setup prompt,
+- Agentic setup was validated on a customer-like Mac,
 - the user explicitly approved and passed the hardware write flow.
 
-Clean-Mac evidence comes from the candidate package workflow above plus the installed-package readiness check. Do not pass `--clean-mac-tested` only because the workflow produced an artifact; the package has to be installed and verified on a clean Mac first.
+Customer-like Mac evidence means the setup prompt was run from a realistic agent/Terminal context, the local service answered `http://127.0.0.1:47832/v1/status`, and the Control Center moved forward without manual code changes.
 
 Hardware write evidence is recorded in `docs/control-center-hardware-test-evidence.md`.
 The current PR has a user-approved WiFi theme install result there for the Control Center
 write path, and further device writes still require fresh approval.
 
-On macOS, the local gate also builds temporary unsigned Mac App packages and validates their metadata, payload, scripts, and binary architecture without installing them. On non-macOS systems, that smoke step is skipped and the dedicated `companion-pkg-smoke` CI job covers it on macOS.
+On macOS, older package smoke coverage may still run as legacy migration coverage. It is not the v1 customer setup path.
 
 Use an exact tag when validating a specific release:
 
@@ -230,16 +156,13 @@ During normal feature-branch development before package release assets exist, us
 scripts/check-control-center-customer-ready-gate.sh --automated-only --skip-release
 ```
 
-After a candidate or public release exposes the Mac App packages, remove `--skip-release` so the same automated gate also verifies release links.
+After a candidate or public release exposes the Mac setup script and binary assets, remove `--skip-release` so the same automated gate also verifies release links.
 
 Use the read-only validation script before asking a customer to use a release:
 
 ```bash
 scripts/check-control-center-companion-customer-readiness.sh \
   --release v<version> \
-  --pkg dist/companion-pkg/VibeTV-Companion-API-arm64-v<version>.pkg \
-  --require-signed \
-  --require-notarized \
   --app-url https://app.vibetv.shop \
   --expect-catalog-source shopify \
   --expect-theme-id <theme_id> \
@@ -257,17 +180,17 @@ scripts/test-control-center-candidate-pkg-artifact.sh
 scripts/test-control-center-companion-legacy-installer.sh
 ```
 
-The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Mac App service, or VibeTV hardware. The release workflow test proves the public GitHub Release cannot be created before Mac App packages are validated, downloaded into the release job, and included in the release checksums. The candidate workflow test proves the pre-release Clean-Mac package path stays manual, read-only, non-release, signed/notarized, and artifact-only. The candidate artifact test proves a downloaded candidate artifact fails closed when package files, versions, or checksums do not match. The legacy installer guard test uses fake `pkgutil`, `launchctl`, and `curl` with a temporary `HOME`; it proves the shell installer refuses to touch the old user LaunchAgent after a package receipt exists unless support explicitly passes `--force-legacy-script`.
+The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Mac App service, or VibeTV hardware. The release workflow and package workflow tests remain as legacy migration coverage. The terminal installer test uses fake `launchctl`, `curl`, and a temporary `HOME`; it proves the shell installer removes the old user LaunchAgent path and starts the local service from the Terminal context.
 
-Keep the macOS package builder covered with:
+Keep the legacy macOS package builder covered with:
 
 ```bash
 scripts/test-control-center-companion-pkg-build.sh
 ```
 
-That smoke test runs on macOS, builds temporary unsigned `arm64` and `amd64` Mac App packages, then validates both packages with the same read-only readiness checker. It does not install packages, start services, discover devices, or write to VibeTV hardware.
+That smoke test runs on macOS, builds temporary legacy `arm64` and `amd64` package artifacts, then validates both with the same read-only readiness checker. It does not install packages, start services, discover devices, or write to VibeTV hardware.
 
-The `companion-pkg-smoke` CI job also uploads those validated unsigned packages as a short-lived GitHub Actions artifact named `vibetv-unsigned-mac-app-pkgs-v<version>-<sha>`. Use that artifact only for manual internal install tests that intentionally accept macOS unsigned-package warnings. It is not a customer release asset. The tag release workflow separately publishes unsigned transition `.pkg` files as Release assets so the hosted app can download them.
+The `companion-pkg-smoke` CI job may upload validated package artifacts for internal legacy testing. It is not the current customer setup artifact.
 
 What it checks:
 
@@ -373,7 +296,7 @@ Read-only checks are allowed:
 - `POST /v1/device/discover`
 - `GET /v1/settings`
 
-Customer Mac App packages enable Theme Library installs by default after VibeTV is connected and paired. Local development and ad-hoc Companion runs can opt into read-only mode with `VIBETV_DISABLE_WIFI_THEME_INSTALL=1`. Browser installs send `skipFirmwareUpdate: true`, and the install path must not trigger firmware updates.
+The Mac App service enables Theme Library installs by default after VibeTV is connected and paired. Local development and ad-hoc Companion runs can opt into read-only mode with `VIBETV_DISABLE_WIFI_THEME_INSTALL=1`. Browser installs send `skipFirmwareUpdate: true`, and the install path must not trigger firmware updates.
 
 The app-side install preflight keeps the customer button locked until these checks pass:
 

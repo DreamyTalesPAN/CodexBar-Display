@@ -53,7 +53,9 @@ Run this Terminal command:
 
 ${terminalCommand}
 
-After it finishes, verify it with:
+This command should install the Mac App helper and start it in the background from this Terminal session. Do not convert it to a macOS LaunchAgent.
+
+After the command finishes, verify it with:
 
 curl -fsS http://127.0.0.1:47832/v1/status
 
@@ -67,11 +69,16 @@ Do not flash firmware, install themes, reset WiFi, or write to my VibeTV. Only i
 }
 
 function buildTerminalCommand(origin: string) {
-  const installCommand = `curl -fsSL ${origin}${INSTALLER_SCRIPT_PATH} | bash`;
+  const installerUrl = `${origin}${INSTALLER_SCRIPT_PATH}`;
+  const args = ["--terminal-session"];
+  if (origin !== DEFAULT_CONTROL_CENTER_ORIGIN) {
+    args.push("--dev-origin", shellQuote(origin));
+  }
+  const installCommand = `curl -fsSL ${installerUrl} | bash -s -- ${args.join(" ")}`;
   if (origin === DEFAULT_CONTROL_CENTER_ORIGIN) {
     return installCommand;
   }
-  return `${installCommand} -s -- --dev-origin ${shellQuote(origin)}`;
+  return installCommand;
 }
 
 function shellQuote(value: string) {

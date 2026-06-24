@@ -46,7 +46,7 @@ That command is no-write: it does not merge, release, install packages, start se
 ../../scripts/check-control-center-customer-ready-gate.sh --automated-only --skip-release
 ```
 
-After a candidate or public release contains the Mac App packages, drop `--skip-release` to verify the release links too.
+For the current v1 setup path, customers use the Agentic setup prompt or the manual Terminal command from the Setup tab.
 
 The local Mac App service must run on `127.0.0.1:47832` for real device actions:
 
@@ -67,10 +67,10 @@ For local development, install the Mac App service from the repository root:
 ./scripts/install-control-center-companion.sh
 ```
 
-That starts the local service in the background, so the web app no longer depends
-on a Terminal window staying open. Normal customer installs use the signed Mac App
-`.pkg` assets from the GitHub Release. The older frame-sending daemon LaunchAgent
-is separate. See `docs/control-center-customer-readiness.md` for the support flow.
+That starts the local service in the background from the Terminal context. The
+hosted v1 setup uses the same Terminal-started service path through the Agentic
+prompt. The older frame-sending daemon LaunchAgent is separate. See
+`docs/control-center-customer-readiness.md` for the support flow.
 
 ## Device Write Guardrails
 

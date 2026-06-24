@@ -3,10 +3,18 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALLER="${ROOT}/scripts/install-control-center-companion-release.sh"
-TMP_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-legacy-installer-test.XXXXXX")"
+TMP_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-terminal-installer-test.XXXXXX")"
 
 cleanup() {
-  rm -rf "$TMP_WORK_DIR"
+  if [[ -d "$TMP_WORK_DIR" ]]; then
+    while IFS= read -r pid_file; do
+      pid="$(cat "$pid_file" 2>/dev/null || true)"
+      if [[ -n "${pid:-}" ]]; then
+        kill "$pid" >/dev/null 2>&1 || true
+      fi
+    done < <(find "$TMP_WORK_DIR" -name companion-api.pid -type f 2>/dev/null || true)
+    rm -rf "$TMP_WORK_DIR"
+  fi
 }
 
 trap cleanup EXIT
@@ -27,9 +35,8 @@ assert_contains() {
 }
 
 write_fake_commands() {
-  local fake_bin pkg_mode
+  local fake_bin
   fake_bin="$1"
-  pkg_mode="$2"
   mkdir -p "$fake_bin"
 
   cat > "${fake_bin}/uname" <<'EOF'
@@ -47,21 +54,6 @@ case "${1:-}" in
 esac
 EOF
 
-  cat > "${fake_bin}/pkgutil" <<EOF
-#!/usr/bin/env bash
-if [[ "\${1:-}" == "--pkg-info" && "${pkg_mode}" == "installed" ]]; then
-  cat <<'INFO'
-package-id: shop.vibetv.companion-api
-version: 1.2.3
-volume: /
-location: /
-install-time: 1780000000
-INFO
-  exit 0
-fi
-exit 1
-EOF
-
   cat > "${fake_bin}/launchctl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${FAKE_LAUNCHCTL_LOG:?}"
@@ -71,26 +63,36 @@ EOF
   cat > "${fake_bin}/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${FAKE_CURL_LOG:?}"
-exit 22
+case "$*" in
+  *"/v1/status"*)
+    exit 0
+    ;;
+  *)
+    exit 22
+    ;;
+esac
 EOF
 
-  cat > "${fake_bin}/codesign" <<'EOF'
-#!/usr/bin/env bash
-exit 0
-EOF
-
-  cat > "${fake_bin}/xattr" <<'EOF'
-#!/usr/bin/env bash
-exit 0
-EOF
-
-  chmod +x "${fake_bin}/uname" "${fake_bin}/pkgutil" "${fake_bin}/launchctl" "${fake_bin}/curl" "${fake_bin}/codesign" "${fake_bin}/xattr"
+  chmod +x "${fake_bin}/uname" "${fake_bin}/launchctl" "${fake_bin}/curl"
 }
 
 prepare_home() {
-  local home
+  local home bin_path
   home="$1"
-  mkdir -p "${home}/Library/LaunchAgents"
+  bin_path="${home}/Library/Application Support/codexbar-display/bin/codexbar-display"
+  mkdir -p "$(dirname "$bin_path")" \
+    "${home}/Library/Application Support/codexbar-display/run" \
+    "${home}/Library/LaunchAgents"
+
+  cat > "$bin_path" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FAKE_API_LOG:?}"
+while true; do
+  sleep 60
+done
+EOF
+  chmod +x "$bin_path"
+
   printf '<plist version="1.0"><dict></dict></plist>\n' \
     > "${home}/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
 }
@@ -103,6 +105,7 @@ run_installer() {
   output="$(
     PATH="${root}/fake-bin:${PATH}" \
       HOME="${root}/home" \
+      FAKE_API_LOG="${root}/api.log" \
       FAKE_LAUNCHCTL_LOG="${root}/launchctl.log" \
       FAKE_CURL_LOG="${root}/curl.log" \
       "$INSTALLER" "$@" \
@@ -114,50 +117,67 @@ run_installer() {
   return "$status"
 }
 
-run_guard_blocks_mode() {
-  local mode root output status plist
-  mode="$1"
-  root="${TMP_WORK_DIR}/guard-${mode}"
-  write_fake_commands "${root}/fake-bin" installed
+run_restart_uses_terminal_started_service() {
+  local root output pid_file pid plist api_log
+  root="${TMP_WORK_DIR}/restart"
+  write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
   : > "${root}/launchctl.log"
   : > "${root}/curl.log"
-  plist="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
+  : > "${root}/api.log"
 
-  set +e
-  output="$(run_installer "$root" "--${mode}")"
-  status=$?
-  set -e
-
-  [[ "$status" -ne 0 ]] || die "expected legacy installer --${mode} to stop when package receipt exists"
-  assert_contains "$output" "VibeTV Mac App package 1.2.3 is already installed"
-  [[ -f "$plist" ]] || die "legacy plist was removed despite package guard"
-  [[ ! -s "${root}/launchctl.log" ]] || die "launchctl was called despite package guard"
-  [[ ! -s "${root}/curl.log" ]] || die "curl was called despite package guard"
-}
-
-run_force_uninstall_allows_legacy_cleanup() {
-  local root output plist
-  root="${TMP_WORK_DIR}/force-uninstall"
-  write_fake_commands "${root}/fake-bin" installed
-  prepare_home "${root}/home"
-  : > "${root}/launchctl.log"
-  : > "${root}/curl.log"
-  plist="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
-
-  output="$(run_installer "$root" --force-legacy-script --uninstall)" || {
+  output="$(run_installer "$root" --restart)" || {
     printf '%s\n' "$output" >&2
-    die "expected forced legacy uninstall to pass"
+    die "expected restart to pass"
   }
 
-  assert_contains "$output" "Companion API LaunchAgent removed"
-  [[ ! -f "$plist" ]] || die "forced legacy uninstall did not remove the user LaunchAgent"
+  pid_file="${root}/home/Library/Application Support/codexbar-display/run/companion-api.pid"
+  plist="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
+  api_log="${root}/api.log"
+
+  assert_contains "$output" "Mac setup service is running"
+  [[ -f "$pid_file" ]] || die "restart did not write terminal service pid"
+  pid="$(cat "$pid_file")"
+  kill -0 "$pid" >/dev/null 2>&1 || die "terminal-started service is not running"
+  [[ ! -f "$plist" ]] || die "legacy LaunchAgent plist should be removed"
   assert_contains "$(cat "${root}/launchctl.log")" "bootout"
-  [[ ! -s "${root}/curl.log" ]] || die "forced legacy uninstall should not call curl"
+  for _ in $(seq 1 20); do
+    if [[ -s "$api_log" ]]; then
+      break
+    fi
+    sleep 0.1
+  done
+  assert_contains "$(cat "$api_log")" "api --addr 127.0.0.1:47832"
 }
 
-run_guard_blocks_mode restart
-run_guard_blocks_mode uninstall
-run_force_uninstall_allows_legacy_cleanup
+run_uninstall_stops_terminal_service_and_legacy_launchagent() {
+  local root output pid_file pid plist
+  root="${TMP_WORK_DIR}/uninstall"
+  write_fake_commands "${root}/fake-bin"
+  prepare_home "${root}/home"
+  : > "${root}/launchctl.log"
+  : > "${root}/curl.log"
+  : > "${root}/api.log"
 
-printf 'legacy Mac App support script guard tests passed\n'
+  pid_file="${root}/home/Library/Application Support/codexbar-display/run/companion-api.pid"
+  plist="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
+  sleep 60 &
+  pid="$!"
+  printf '%s\n' "$pid" > "$pid_file"
+
+  output="$(run_installer "$root" --uninstall)" || {
+    printf '%s\n' "$output" >&2
+    die "expected uninstall to pass"
+  }
+
+  assert_contains "$output" "Mac setup service stopped"
+  [[ ! -f "$pid_file" ]] || die "uninstall did not remove terminal service pid"
+  ! kill -0 "$pid" >/dev/null 2>&1 || die "uninstall did not stop terminal service"
+  [[ ! -f "$plist" ]] || die "uninstall did not remove legacy LaunchAgent plist"
+  assert_contains "$(cat "${root}/launchctl.log")" "bootout"
+}
+
+run_restart_uses_terminal_started_service
+run_uninstall_stops_terminal_service_and_legacy_launchagent
+
+printf 'terminal Mac setup installer tests passed\n'

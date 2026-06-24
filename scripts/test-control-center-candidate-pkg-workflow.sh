@@ -97,20 +97,8 @@ main() {
   (( validate_line < checksum_line && checksum_line < upload_line )) \
     || die "candidate package artifacts must be uploaded only after validation and checksums"
 
-  assert_contains "$readiness_doc" "workflow file must already exist on the default branch" \
-    "customer readiness doc must explain the default-branch dispatch requirement"
-  assert_contains "$readiness_doc" "gh workflow run control-center-customer-pkg-candidate.yml" \
-    "customer readiness doc must include the candidate workflow dispatch command"
-  assert_contains "$readiness_doc" "--ref <branch>" \
-    "customer readiness doc must show running the workflow for a chosen branch"
-  assert_contains "$readiness_doc" "-f version=<version>" \
-    "customer readiness doc must require an explicit candidate package version"
-  assert_contains "$readiness_doc" "check-control-center-candidate-pkg-artifact.sh" \
-    "customer readiness doc must include the candidate package artifact checker"
-  assert_contains "$readiness_doc" "--installed-package" \
-    "customer readiness doc must connect candidate artifacts to Clean-Mac installed-package validation"
-  assert_contains "$readiness_doc" "--clean-mac-tested" \
-    "customer readiness doc must explain when the manual Clean-Mac gate can be supplied"
+  assert_contains "$readiness_doc" "older package smoke coverage may still run as legacy migration coverage" \
+    "customer readiness doc must make the package workflow a legacy check, not the v1 customer setup path"
 
   assert_contains "$runbook_doc" "gh workflow run control-center-customer-pkg-candidate.yml --ref <branch> -f version=<version>" \
     "operator runbook must include the exact candidate workflow dispatch command"

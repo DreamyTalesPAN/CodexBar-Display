@@ -6,6 +6,8 @@ COMPANION_DIR="$ROOT_DIR/companion"
 APP_SUPPORT_DIR="$HOME/Library/Application Support/codexbar-display"
 BIN_DIR="$APP_SUPPORT_DIR/bin"
 BIN_PATH="$BIN_DIR/codexbar-display"
+RUN_DIR="$APP_SUPPORT_DIR/run"
+PID_PATH="$RUN_DIR/companion-api.pid"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST_PATH="$PLIST_DIR/com.codexbar-display.companion-api.plist"
 SERVICE="gui/$(id -u)/com.codexbar-display.companion-api"
@@ -25,7 +27,55 @@ if ! command -v go >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "$BIN_DIR" "$PLIST_DIR"
+stop_launchagent() {
+  if command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
+  fi
+  rm -f "$PLIST_PATH"
+}
+
+stop_terminal_service() {
+  if [[ ! -f "$PID_PATH" ]]; then
+    return 0
+  fi
+
+  local pid
+  pid="$(cat "$PID_PATH" 2>/dev/null || true)"
+  rm -f "$PID_PATH"
+  if [[ -z "$pid" ]]; then
+    return 0
+  fi
+
+  if kill -0 "$pid" >/dev/null 2>&1; then
+    kill "$pid" >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do
+      if ! kill -0 "$pid" >/dev/null 2>&1; then
+        return 0
+      fi
+      sleep 0.1
+    done
+    kill -9 "$pid" >/dev/null 2>&1 || true
+  fi
+}
+
+stop_existing_listener() {
+  command -v lsof >/dev/null 2>&1 || return 0
+
+  local port pids pid command_line
+  port="${ADDR##*:}"
+  [[ "$port" =~ ^[0-9]+$ ]] || return 0
+  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  [[ -n "$pids" ]] || return 0
+
+  for pid in $pids; do
+    command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    if [[ "$command_line" == *"codexbar-display"* ]]; then
+      kill "$pid" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+mkdir -p "$BIN_DIR"
 
 echo "building Companion binary"
 (cd "$COMPANION_DIR" && go build -o "$BIN_PATH" ./cmd/codexbar-display)
@@ -36,77 +86,28 @@ if [[ -n "$DEV_ORIGIN" ]]; then
   api_args+=("--dev-origin" "$DEV_ORIGIN")
 fi
 
-{
-  cat <<PLIST_HEAD
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-  <dict>
-    <key>Label</key>
-    <string>com.codexbar-display.companion-api</string>
+stop_launchagent
+stop_terminal_service
+stop_existing_listener
 
-    <key>ProgramArguments</key>
-    <array>
-PLIST_HEAD
+mkdir -p "$RUN_DIR"
+: > "$LOG_OUT"
+: > "$LOG_ERR"
+nohup "${api_args[@]}" >>"$LOG_OUT" 2>>"$LOG_ERR" &
+printf '%s\n' "$!" > "$PID_PATH"
+disown "$!" >/dev/null 2>&1 || true
 
-  for arg in "${api_args[@]}"; do
-    escaped="${arg//&/&amp;}"
-    escaped="${escaped//</&lt;}"
-    escaped="${escaped//>/&gt;}"
-    escaped="${escaped//\"/&quot;}"
-    printf '      <string>%s</string>\n' "$escaped"
-  done
-
-  cat <<PLIST_TAIL
-    </array>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-      <key>PATH</key>
-      <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
-
-    <key>RunAtLoad</key>
-    <true/>
-
-    <key>KeepAlive</key>
-    <true/>
-
-    <key>StandardOutPath</key>
-    <string>$LOG_OUT</string>
-
-    <key>StandardErrorPath</key>
-    <string>$LOG_ERR</string>
-  </dict>
-</plist>
-PLIST_TAIL
-} > "$PLIST_PATH"
-
-chmod 644 "$PLIST_PATH"
-
-launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
-launchctl enable "$SERVICE" >/dev/null 2>&1 || true
-if ! launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH" >/dev/null 2>&1; then
-  if ! launchctl print "$SERVICE" >/dev/null 2>&1; then
-    echo "error: failed to load Companion LaunchAgent" >&2
-    echo "hint: inspect $LOG_ERR and rerun this script" >&2
-    exit 1
-  fi
-fi
-launchctl kickstart -k "$SERVICE" >/dev/null
-
-echo "waiting for Companion API at http://$ADDR/v1/status"
+echo "waiting for Mac setup service at http://$ADDR/v1/status"
 for _ in $(seq 1 20); do
   if curl -fsS "http://$ADDR/v1/status" >/dev/null 2>&1; then
-    echo "Companion API is running"
-    echo "service: $SERVICE"
-    echo "plist: $PLIST_PATH"
+    echo "Mac setup service is running"
+    echo "pid: $(cat "$PID_PATH")"
     echo "logs: $LOG_OUT / $LOG_ERR"
     exit 0
   fi
   sleep 0.5
 done
 
-echo "error: Companion API did not answer on http://$ADDR/v1/status" >&2
+echo "error: Mac setup service did not answer on http://$ADDR/v1/status" >&2
 echo "hint: inspect $LOG_ERR" >&2
 exit 1

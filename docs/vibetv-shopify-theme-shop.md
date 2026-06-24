@@ -14,7 +14,7 @@ The rollout uses normal Shopify products as the visible theme catalog:
 
 The Control Center reads products from Shopify Storefront API through `apps/control-center/src/lib/themes.ts`. App-owned Shopify Metaobjects can still be revisited later, but they are not the current source of truth.
 
-Do not link Shopify theme product pages to `https://app.vibetv.shop/install/<theme_id>` until the hosted app path is actually customer-available, including a signed Mac App installer attached to a release and verified on a clean Mac. Until then, the product pages must show the direct Terminal install command.
+Do not link Shopify theme product pages to `https://app.vibetv.shop/install/<theme_id>` until the hosted app path is actually customer-available, including the Agentic Mac setup path verified end to end on a customer-like Mac. Until then, the product pages must show the direct Terminal install command.
 
 ## Product Model
 
@@ -61,7 +61,7 @@ Live rollout status on 2026-06-22: the main `vibetv.shop` theme template `templa
 4. Customer opens Terminal, pastes the command, and presses Return while VibeTV is on the same WiFi.
 5. The command installs/updates the CLI helper and runs `codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local`.
 
-Future app flow: once the hosted Control Center and signed Mac App installer are truly customer-available, the product page can move back to an app entry point. At that point, the app must show one next action at a time: install/repair Mac App, connect VibeTV, update firmware if explicitly needed, then install the selected theme.
+Future app flow: once the hosted Control Center and Agentic Mac setup path are truly customer-available, the product page can move back to an app entry point. At that point, the app must show one next action at a time: install/repair Mac App, connect VibeTV, update firmware if explicitly needed, then install the selected theme.
 
 ## GitHub Theme Pack Artifacts
 
@@ -130,7 +130,7 @@ Not allowed without current explicit approval:
 
 ## Hosted App Return Path
 
-Switch Shopify theme product pages back to `https://app.vibetv.shop/install/<theme_id>` only after the hosted Control Center path is customer-available end to end. That means signed Mac App installer assets are attached to a release, the clean-Mac install path is verified, and the app gives customers one clear next action instead of exposing internal setup states.
+Switch Shopify theme product pages back to `https://app.vibetv.shop/install/<theme_id>` only after the hosted Control Center path is customer-available end to end. That means the Agentic Mac setup path is verified on a customer-like Mac, and the app gives customers one clear next action instead of exposing internal setup states.
 
 ## Sources
 

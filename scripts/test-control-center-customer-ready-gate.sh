@@ -211,7 +211,7 @@ run_expect_manual_gate_failure() {
   set -e
 
   [[ "$status" -ne 0 ]] || die "expected missing manual evidence gates to fail"
-  assert_contains "$output" "Clean-Mac package install has not been confirmed"
+  assert_contains "$output" "customer-like Mac setup has not been confirmed"
   assert_contains "$output" "user-approved hardware write test has not been confirmed"
 }
 
@@ -232,7 +232,7 @@ run_expect_manual_gate_success() {
     die "expected customer-ready gate to pass when all fixture gates are satisfied"
   }
 
-  assert_contains "$output" "PASS: Clean-Mac package evidence supplied"
+  assert_contains "$output" "PASS: customer-like Mac setup evidence supplied"
   assert_contains "$output" "PASS: user-approved hardware test evidence supplied"
   assert_contains "$output" "PASS: Control Center customer-ready gate passed"
 }

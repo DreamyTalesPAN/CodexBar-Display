@@ -5,10 +5,11 @@ DEFAULT_REPO="DreamyTalesPAN/CodexBar-Display"
 GITHUB_API_BASE="https://api.github.com"
 GITHUB_DOWNLOAD_BASE="https://github.com"
 INSTALL_NAME="codexbar-display"
-PKG_IDENTIFIER="shop.vibetv.companion-api"
 APP_SUPPORT_DIR="${HOME}/Library/Application Support/codexbar-display"
 BIN_DIR="${APP_SUPPORT_DIR}/bin"
 BIN_PATH="${BIN_DIR}/${INSTALL_NAME}"
+RUN_DIR="${APP_SUPPORT_DIR}/run"
+PID_PATH="${RUN_DIR}/companion-api.pid"
 PLIST_DIR="${HOME}/Library/LaunchAgents"
 PLIST_PATH="${PLIST_DIR}/com.codexbar-display.companion-api.plist"
 SERVICE_LABEL="com.codexbar-display.companion-api"
@@ -21,7 +22,7 @@ RELEASE_VERSION="${VIBETV_COMPANION_VERSION:-}"
 ADDR="${VIBETV_COMPANION_ADDR:-127.0.0.1:47832}"
 DEV_ORIGIN="${VIBETV_COMPANION_DEV_ORIGIN:-}"
 MODE="install"
-FORCE_LEGACY_SCRIPT=0
+START_MODE="${VIBETV_COMPANION_START_MODE:-terminal}"
 TMPDIR_INSTALL=""
 DOWNLOAD_BIN=""
 CHECKSUMS_FILE=""
@@ -35,23 +36,22 @@ Usage:
   install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832]
   install-control-center-companion.sh --restart
   install-control-center-companion.sh --uninstall
-  install-control-center-companion.sh --force-legacy-script
 
 What it does:
   - downloads the matching codexbar-display macOS release binary
   - verifies the release checksum
   - installs the binary under ~/Library/Application Support/codexbar-display/bin
-  - writes a LaunchAgent for `codexbar-display api --addr 127.0.0.1:47832`
-  - starts or restarts the local Companion API
+  - stops the old background LaunchAgent if it exists
+  - starts the local Mac setup service from this Terminal session
   - verifies http://127.0.0.1:47832/v1/status
 
 Examples:
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --restart
 
-If the signed macOS package is already installed, this legacy support script
-exits before touching the user LaunchAgent. Use the package repair/update path
-instead, unless support explicitly asks for --force-legacy-script.
+By default the service is started from Terminal, because this is the customer
+setup path for the current Control Center. Support can pass --launchagent for
+old local testing only.
 EOF
 }
 
@@ -192,32 +192,42 @@ PLIST_TAIL
 }
 
 restart_service() {
-  if [[ ! -f "$PLIST_PATH" ]]; then
-    die "LaunchAgent is missing: ${PLIST_PATH}. Run install first."
+  if [[ "$START_MODE" == "launchagent" ]]; then
+    if [[ ! -f "$PLIST_PATH" ]]; then
+      die "LaunchAgent is missing: ${PLIST_PATH}. Run install first."
+    fi
+
+    require_cmd_for launchctl "start the old macOS LaunchAgent mode" "rerun without --launchagent."
+    launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
+    launchctl enable "$SERVICE" >/dev/null 2>&1 || true
+    if ! launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH" >/dev/null 2>&1; then
+      if ! launchctl print "$SERVICE" >/dev/null 2>&1; then
+        die "failed to load the old background service. Rerun without --launchagent."
+      fi
+    fi
+    launchctl kickstart -k "$SERVICE" >/dev/null
+    return 0
   fi
 
-  launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
-  launchctl enable "$SERVICE" >/dev/null 2>&1 || true
-  if ! launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH" >/dev/null 2>&1; then
-    if ! launchctl print "$SERVICE" >/dev/null 2>&1; then
-      die "failed to load Companion LaunchAgent. Inspect ${LOG_ERR}."
-    fi
-  fi
-  launchctl kickstart -k "$SERVICE" >/dev/null
+  start_terminal_service
 }
 
 wait_for_api() {
-  log "vibetv: waiting for Companion API at http://${ADDR}/v1/status"
+  log "vibetv: waiting for Mac setup service at http://${ADDR}/v1/status"
   for _ in $(seq 1 20); do
     if curl -fsS "http://${ADDR}/v1/status" >/dev/null 2>&1; then
-      log "vibetv: Companion API is running"
-      log "vibetv: service=${SERVICE}"
+      log "vibetv: Mac setup service is running"
+      if [[ "$START_MODE" == "launchagent" ]]; then
+        log "vibetv: service=${SERVICE}"
+      elif [[ -f "$PID_PATH" ]]; then
+        log "vibetv: pid=$(cat "$PID_PATH")"
+      fi
       log "vibetv: logs=${LOG_OUT} / ${LOG_ERR}"
       return 0
     fi
     sleep 0.5
   done
-  die "Companion API did not answer on http://${ADDR}/v1/status. Inspect ${LOG_ERR}."
+  die "Mac setup service did not answer on http://${ADDR}/v1/status. Inspect ${LOG_ERR}."
 }
 
 install_binary() {
@@ -234,23 +244,81 @@ install_binary() {
 }
 
 uninstall_service() {
-  launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
+  stop_terminal_service
+  stop_launchagent
   rm -f "$PLIST_PATH"
-  log "vibetv: Companion API LaunchAgent removed"
+  log "vibetv: Mac setup service stopped"
   log "vibetv: installed binary kept at ${BIN_PATH}"
 }
 
-installed_package_version() {
-  pkgutil --pkg-info "$PKG_IDENTIFIER" 2>/dev/null \
-    | awk -F': ' '$1 == "version" {print $2; exit}' || true
+stop_launchagent() {
+  if command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
+  fi
 }
 
-guard_against_package_install() {
-  local package_version
-  [[ "$FORCE_LEGACY_SCRIPT" == 0 ]] || return 0
+stop_terminal_service() {
+  if [[ ! -f "$PID_PATH" ]]; then
+    return 0
+  fi
 
-  package_version="$(installed_package_version)"
-  [[ -z "$package_version" ]] || die "VibeTV Mac App package ${package_version} is already installed. Use the signed package repair/update path instead of this legacy support script. Support can override with --force-legacy-script."
+  local pid
+  pid="$(cat "$PID_PATH" 2>/dev/null || true)"
+  rm -f "$PID_PATH"
+  if [[ -z "$pid" ]]; then
+    return 0
+  fi
+
+  if kill -0 "$pid" >/dev/null 2>&1; then
+    kill "$pid" >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do
+      if ! kill -0 "$pid" >/dev/null 2>&1; then
+        return 0
+      fi
+      sleep 0.1
+    done
+    kill -9 "$pid" >/dev/null 2>&1 || true
+  fi
+}
+
+stop_existing_listener() {
+  command -v lsof >/dev/null 2>&1 || return 0
+
+  local port pids pid command_line
+  port="${ADDR##*:}"
+  [[ "$port" =~ ^[0-9]+$ ]] || return 0
+  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  [[ -n "$pids" ]] || return 0
+
+  for pid in $pids; do
+    command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    if [[ "$command_line" == *"$INSTALL_NAME"* ]]; then
+      kill "$pid" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+start_terminal_service() {
+  if [[ ! -x "$BIN_PATH" ]]; then
+    die "Mac setup binary is missing: ${BIN_PATH}. Run install first."
+  fi
+
+  stop_launchagent
+  rm -f "$PLIST_PATH"
+  stop_terminal_service
+  stop_existing_listener
+
+  local api_args=("$BIN_PATH" "api" "--addr" "$ADDR")
+  if [[ -n "$DEV_ORIGIN" ]]; then
+    api_args+=("--dev-origin" "$DEV_ORIGIN")
+  fi
+
+  mkdir -p "$RUN_DIR"
+  : > "$LOG_OUT"
+  : > "$LOG_ERR"
+  nohup "${api_args[@]}" >>"$LOG_OUT" 2>>"$LOG_ERR" &
+  printf '%s\n' "$!" > "$PID_PATH"
+  disown "$!" >/dev/null 2>&1 || true
 }
 
 detect_arch() {
@@ -319,8 +387,16 @@ parse_args() {
         MODE="uninstall"
         shift
         ;;
+      --terminal-session)
+        START_MODE="terminal"
+        shift
+        ;;
+      --launchagent)
+        START_MODE="launchagent"
+        shift
+        ;;
       --force-legacy-script)
-        FORCE_LEGACY_SCRIPT=1
+        # Kept as a no-op so older support commands do not fail.
         shift
         ;;
       *)
@@ -345,10 +421,6 @@ main() {
   require_cmd_for sed "read the latest GitHub release version" "install the macOS command line tools, then rerun the installer."
   require_cmd_for grep "find the matching checksum entry" "install the macOS command line tools, then rerun the installer."
   require_cmd_for mktemp "create a temporary download folder" "use a standard macOS Terminal, then rerun the installer."
-  require_cmd_for launchctl "install and control the macOS LaunchAgent" "run on macOS, then rerun the installer."
-  require_cmd_for pkgutil "avoid conflicts with the signed VibeTV Mac App package" "run on macOS, then rerun the installer."
-
-  guard_against_package_install
 
   if [[ "$MODE" == "uninstall" ]]; then
     uninstall_service
@@ -387,12 +459,18 @@ main() {
   verify_checksum
 
   install_binary
-  write_plist
+  if [[ "$START_MODE" == "launchagent" ]]; then
+    write_plist
+  fi
   restart_service
   wait_for_api
 
-  log "vibetv: Companion binary installed at ${BIN_PATH}"
-  log "vibetv: LaunchAgent installed at ${PLIST_PATH}"
+  log "vibetv: Mac setup binary installed at ${BIN_PATH}"
+  if [[ "$START_MODE" == "launchagent" ]]; then
+    log "vibetv: old background service installed at ${PLIST_PATH}"
+  else
+    log "vibetv: started from this Terminal session"
+  fi
 }
 
 main "$@"

@@ -37,8 +37,8 @@ Runs the no-write Control Center customer-ready gate.
 Default behavior:
   - runs local Control Center checks,
   - checks the hosted customer app and Shopify catalog,
-  - checks the latest GitHub release for customer Mac App packages,
-  - fails until Clean-Mac and approved hardware-test evidence is supplied.
+  - checks the latest GitHub release for Mac setup assets,
+  - fails until customer-like Mac setup and approved hardware-test evidence is supplied.
 
 Options:
   --release v1.2.3       Check an exact release tag instead of GitHub latest.
@@ -51,7 +51,7 @@ Options:
   --automated-only       Do not require manual Clean-Mac or hardware evidence.
                          Release checks still run; combine with --skip-release
                          for no-release feature-branch development checks.
-  --clean-mac-tested     Assert the signed package was validated on a clean Mac.
+  --clean-mac-tested     Assert Agentic setup was validated on a customer-like Mac.
   --hardware-tested      Assert a user-approved hardware write test passed.
   -h, --help             Show this help.
 
@@ -248,7 +248,7 @@ run_local_checks() {
   else
     log "SKIP: Mac App package smoke test requires macOS"
   fi
-  run_step "Legacy Mac App support script guard tests" \
+  run_step "Terminal Mac setup installer tests" \
     "${ROOT}/scripts/test-control-center-companion-legacy-installer.sh"
 }
 
@@ -299,7 +299,7 @@ run_release_checks() {
   fi
 
   log "Release under test: ${tag}"
-  run_step "Release exposes customer Mac App packages through hosted app" \
+  run_step "Release exposes customer Mac setup assets through hosted app" \
     "$READINESS" \
       "${release_args[@]}" \
       --app-url "$APP_URL"
@@ -312,9 +312,9 @@ run_manual_gate_checks() {
   }
 
   if [[ "$CLEAN_MAC_TESTED" -eq 1 ]]; then
-    log "PASS: Clean-Mac package evidence supplied"
+    log "PASS: customer-like Mac setup evidence supplied"
   else
-    fail "Clean-Mac package install has not been confirmed"
+    fail "customer-like Mac setup has not been confirmed"
   fi
 
   if [[ "$HARDWARE_TESTED" -eq 1 ]]; then
