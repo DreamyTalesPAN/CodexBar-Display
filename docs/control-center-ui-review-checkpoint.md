@@ -47,3 +47,8 @@ To reset the gate:
 - Customer rule: customer setup should recover stale local bindings automatically; customers should not need to understand saved IPs, pairing tokens, discovery, or re-pairing. A completed step should always use the completed visual state.
 - Simplifications accepted: no new visible setup controls, copy, or customer decisions were added; the existing automatic repair path now re-pairs stale bindings in the background, and the Mac App step uses the same completed checkmark once the flow has advanced.
 - Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `go test ./...`, `lint`, `check:customer-ui-copy`, `test:customer-flows`, `next build`, and `git diff --check` passed locally.
+
+- Reviewed scope: Agentic Mac setup prompt, Terminal fallback command, offline Mac App recovery, setup error placement, and the `Fix connection` path when the local Mac setup service is not running.
+- Customer rule: `Fix connection` may be visible as the emergency action, but it must first verify the Mac App and guide the customer back to setup instead of firing a VibeTV repair request that cannot work. The default setup path remains Agentic setup; Terminal stays a fallback.
+- Simplifications accepted: signed-package language was removed from the installer path; setup keeps two visible recovery actions only, with `Fix connection` primary and `Run setup again` secondary; the Mac App missing state now uses customer language and keeps the customer on the setup step.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `check:customer-ui-copy` and `test:customer-flows` passed locally.
