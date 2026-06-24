@@ -402,6 +402,8 @@ void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
   })JSON";
 
   FrameData frame = testFrame();
+  frame.updateAvailable = true;
+  frame.updateNotice = "app.vibetv.shop";
 
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
@@ -410,6 +412,29 @@ void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
   TEST_ASSERT_EQUAL_STRING("Codex", sink.commands[1].text.c_str());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
   TEST_ASSERT_EQUAL_STRING("Codex Usage", sink.commands[2].text.c_str());
+}
+
+void testChangedLabelPassUsesSynchronizedUpdateNoticeText() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "bgColor": "#000000",
+    "primitives": [
+      {"type":"text","x":21,"y":12,"font":4,"fontSize":1,"maxWidth":198,"binding":"label","align":"center"}
+    ]
+  })JSON";
+
+  FrameData frame = testFrame();
+  frame.updateAvailable = true;
+  frame.showUpdateNotice = true;
+  frame.updateNotice = "app.vibetv.shop";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderChangedSpec(spec, frame, kThemeSpecFieldLabel, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("app.vibetv.shop", sink.commands[2].text.c_str());
 }
 
 void testRendersCompactCommandsAndBindings() {
@@ -844,28 +869,6 @@ void testChangedLabelPassUsesRenderedFontHeightForProviderLabel() {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
   TEST_ASSERT_EQUAL_STRING("Codex", sink.commands[2].text.c_str());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands[3].type));
-}
-
-void testChangedLabelPassUsesSynchronizedUpdateNoticeText() {
-  const char* spec = R"JSON({
-    "themeSpecVersion": 1,
-    "themeId": "codex-test",
-    "themeRev": 1,
-    "bgColor": "#000000",
-    "primitives": [
-      {"type":"text","x":21,"y":12,"font":4,"fontSize":1,"maxWidth":198,"binding":"label","align":"center"}
-    ]
-  })JSON";
-
-  FrameData frame = testFrame();
-  frame.updateAvailable = true;
-  frame.updateNotice = "app.vibetv.shop";
-
-  RecordingSink sink;
-  TEST_ASSERT_TRUE(renderChangedSpec(spec, frame, kThemeSpecFieldLabel, sink));
-  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
-  TEST_ASSERT_EQUAL_STRING("app.vibetv.shop", sink.commands[2].text.c_str());
 }
 
 void testChangedPrimitivePassHandlesCompactClippySpec() {

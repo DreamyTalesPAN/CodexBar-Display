@@ -675,12 +675,17 @@ const char* usageModeText() {
   return "used";
 }
 
-themespec::FrameData currentThemeSpecFrameData() {
+const char* themeSpecUpdateNoticeText() {
+  return "app.vibetv.shop";
+}
+
+themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nullptr) {
   themespec::FrameData frame;
   frame.provider = CurrentFrame().provider.c_str();
   frame.label = ProviderLabelText();
   frame.updateAvailable = CurrentFrame().updateAvailable;
-  frame.updateNotice = ThemeSpecUpdateNoticeText();
+  frame.showUpdateNotice = updateNoticeText != nullptr && updateNoticeText[0] != '\0';
+  frame.updateNotice = frame.showUpdateNotice ? updateNoticeText : themeSpecUpdateNoticeText();
   frame.session = CurrentFrame().session;
   frame.weekly = CurrentFrame().weekly;
   frame.resetSecs = CurrentRemainingSecs();
@@ -759,7 +764,7 @@ bool TickThemeSpecGifs() {
   return ok;
 }
 
-bool RenderThemeSpecPartial(uint32_t changedFields) {
+bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText) {
   markThemeSpecPartialAttempt(changedFields);
   const String& raw = currentThemeSpecRaw();
   if (!CurrentFrame().hasThemeSpec || !codexbar_display::core::ThemeSpecRawLooksRenderable(raw) || changedFields == 0) {
@@ -772,7 +777,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields) {
     return false;
   }
 
-  const auto frameData = currentThemeSpecFrameData();
+  const auto frameData = currentThemeSpecFrameData(updateNoticeText);
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly, true);
   const char* partialError = nullptr;
   bool skippedAnimatedOverlap = false;
@@ -863,8 +868,9 @@ bool TickThemeSpecGifs() {
   return false;
 }
 
-bool RenderThemeSpecPartial(uint32_t changedFields) {
+bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText) {
   (void)changedFields;
+  (void)updateNoticeText;
   return false;
 }
 

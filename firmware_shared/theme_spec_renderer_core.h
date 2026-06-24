@@ -39,6 +39,7 @@ struct FrameData {
   const char* provider = "";
   const char* label = "";
   bool updateAvailable = false;
+  bool showUpdateNotice = false;
   const char* updateNotice = "";
   int session = 0;
   int weekly = 0;
@@ -435,7 +436,7 @@ inline const char* SafeText(const char* value) {
 }
 
 inline const char* LabelText(const FrameData& frame) {
-  if (frame.updateAvailable && SafeText(frame.updateNotice)[0] != '\0') {
+  if (frame.updateAvailable && frame.showUpdateNotice && SafeText(frame.updateNotice)[0] != '\0') {
     return SafeText(frame.updateNotice);
   }
   return SafeText(frame.label);

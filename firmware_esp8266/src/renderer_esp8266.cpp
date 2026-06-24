@@ -388,14 +388,13 @@ void RendererESP8266::DrawConnectedSetupInstructions(
 void RendererESP8266::DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const String& text) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-  display::SetThemeSpecUpdateNoticeText(text);
   if (display::CurrentFrame().hasThemeSpec) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         core::ThemeSpecUsesBinding(raw, "label", "l")) {
       display::DisplayTransaction transaction;
-      if (!display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldLabel)) {
+      if (!display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldLabel, text.c_str())) {
         display::ScreenDirty() = true;
       }
     }
@@ -445,7 +444,7 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
     // error screen for one frame.
     return;
   }
-  DrawStatus(ctx, "VIBE TV", "Open App", "app.vibetv.shop");
+  DrawStatus(ctx, "VIBE TV", "Theme missing", "Install Theme");
 #else
   probe::Render(ctx);
 #endif

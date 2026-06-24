@@ -261,6 +261,77 @@ func TestRunWithDepsConfiguresWiFiLaunchAgentTarget(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsPersistsWiFiTargetAndTokenInRuntimeConfig(t *testing.T) {
+	home := t.TempDir()
+	execPath := mustCreateExecutable(t)
+	var stdout bytes.Buffer
+
+	err := runWithDeps(context.Background(), Options{
+		Transport: "wifi",
+		Target:    "192.168.178.66?token=pair-token-123",
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &stdout,
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			t.Fatalf("wifi setup must not list serial ports")
+			return nil, nil
+		},
+		resolvePort: func(string) (string, error) {
+			t.Fatalf("wifi setup must not resolve serial ports")
+			return "", nil
+		},
+		discoverWiFi: noSetupWiFiDiscovery(t),
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success, got %v", err)
+	}
+
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.66" || cfg.DeviceToken != "pair-token-123" {
+		t.Fatalf("unexpected runtime device config: %+v", cfg)
+	}
+
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	plistData, readErr := os.ReadFile(plistPath)
+	if readErr != nil {
+		t.Fatalf("read plist: %v", readErr)
+	}
+	plist := string(plistData)
+	if strings.Contains(plist, "pair-token-123") || strings.Contains(stdout.String(), "pair-token-123") {
+		t.Fatalf("pairing token must not be written to plist or setup output, plist:\n%s\nstdout:\n%s", plist, stdout.String())
+	}
+	if !strings.Contains(plist, "<string>http://192.168.178.66</string>") {
+		t.Fatalf("expected public WiFi target in plist, got:\n%s", plist)
+	}
+}
+
 func TestRunWithDepsDefaultsToWiFiLaunchAgentTarget(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
@@ -318,6 +389,87 @@ func TestRunWithDepsDefaultsToWiFiLaunchAgentTarget(t *testing.T) {
 		!strings.Contains(plist, "<string>--target</string>") ||
 		!strings.Contains(plist, "<string>http://vibetv.local</string>") {
 		t.Fatalf("expected default WiFi launch agent target in plist, got:\n%s", plist)
+	}
+}
+
+func TestRunWithDepsDiscoversWiFiIPWhenDefaultMDNSIsUnreliable(t *testing.T) {
+	home := t.TempDir()
+	execPath := mustCreateExecutable(t)
+	var gotCandidates []string
+	var stdout bytes.Buffer
+
+	err := runWithDeps(context.Background(), Options{
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &stdout,
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid: func() int { return 501 },
+		listPorts: func() ([]string, error) {
+			t.Fatalf("default WiFi setup must not list serial ports")
+			return nil, nil
+		},
+		resolvePort: func(string) (string, error) {
+			t.Fatalf("default WiFi setup must not resolve serial ports")
+			return "", nil
+		},
+		discoverWiFi: func(_ context.Context, candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
+			gotCandidates = append([]string(nil), candidates...)
+			return transportlayer.WiFiDiscoveryResult{
+				Target: "http://192.168.178.159",
+				Hello:  protocol.DeviceHello{Kind: "hello", Board: "esp8266-smalltv-st7789", ProtocolVersion: 2},
+				Source: "network-scan",
+			}, nil
+		},
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success, got %v", err)
+	}
+	if !containsString(gotCandidates, defaultWiFiTarget) {
+		t.Fatalf("expected default target candidate, got %#v", gotCandidates)
+	}
+
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	plistData, readErr := os.ReadFile(plistPath)
+	if readErr != nil {
+		t.Fatalf("read plist: %v", readErr)
+	}
+	plist := string(plistData)
+	if !strings.Contains(plist, "<string>http://192.168.178.159</string>") {
+		t.Fatalf("expected discovered IP target in plist, got:\n%s", plist)
+	}
+
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.159" {
+		t.Fatalf("expected discovered device target, got %+v", cfg)
+	}
+	if !strings.Contains(stdout.String(), "USB-C only powers") ||
+		!strings.Contains(stdout.String(), "discovered at http://192.168.178.159") {
+		t.Fatalf("expected customer-facing WiFi discovery output, got:\n%s", stdout.String())
 	}
 }
 
@@ -734,10 +886,11 @@ func TestRunWithDepsFailsWithRecoveryWhenCodexbarInstallNotPossible(t *testing.T
 		homeDir: func() (string, error) {
 			return t.TempDir(), nil
 		},
-		uid:         func() int { return 501 },
-		listPorts:   func() ([]string, error) { return []string{"/dev/cu.usbmodem101"}, nil },
-		resolvePort: func(p string) (string, error) { return p, nil },
-		probePort:   func(string) error { return nil },
+		uid:          func() int { return 501 },
+		listPorts:    func() ([]string, error) { return []string{"/dev/cu.usbmodem101"}, nil },
+		resolvePort:  func(p string) (string, error) { return p, nil },
+		probePort:    func(string) error { return nil },
+		discoverWiFi: noSetupWiFiDiscovery(t),
 		findCodexbar: func() (string, error) {
 			return "", errors.New("missing")
 		},

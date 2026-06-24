@@ -156,7 +156,7 @@ void DrawResetCRT(int64_t remainSecs);
 
 bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
-bool RenderThemeSpecPartial(uint32_t changedFields);
+bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText = nullptr);
 void ResetThemeSpecSpriteCaches();
 bool CurrentThemeSpecRenderedSuccessfully();
 bool ThemeSpecRenderOk();
@@ -191,7 +191,6 @@ void TickSplashMini();
 void DrawErrorMini(const String& message);
 void DrawUsageMini();
 void DrawResetMini(int64_t remainSecs);
-
 }  // namespace display
 }  // namespace esp8266
 }  // namespace codexbar_display
