@@ -6,10 +6,10 @@
   "version": "1.0.0",
   "minFirmware": "1.0.24",
   "themeSpec": {
-    "path": "/themes/u/clippy-1-5d86bb.json",
+    "path": "/themes/u/clippy-1-ca9590.json",
     "file": "theme.json",
-    "bytes": 981,
-    "sha256": "81ad086feb4ae191957f4f6b13cc50110cf0f22f5c2d4d2bdd8345502ae8e5db",
+    "bytes": 877,
+    "sha256": "08596e00d501ca085511805148cb8301d067c64e24a47fe50fb543162208b05a",
     "contentType": "application/json"
   },
   "assets": [

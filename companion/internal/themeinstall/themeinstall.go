@@ -1,16 +1,20 @@
 package themeinstall
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
@@ -26,7 +30,15 @@ const (
 	DefaultFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 )
 
+var (
+	renderHealthAttempts = 8
+	renderHealthDelay    = 500 * time.Millisecond
+)
+
+var installingThemeSpec = json.RawMessage(`{"v":1,"id":"installing","rev":1,"fb":"mini","p":[{"t":"r","x":0,"y":0,"w":240,"h":240,"c":"#111111"},{"t":"tx","x":28,"y":58,"v":"INSTALLING","s":2,"c":"#B6FF00"},{"t":"tx","x":36,"y":94,"v":"NEW THEME","s":2,"c":"#FFFFFF"},{"t":"p","x":34,"y":150,"w":172,"h":18,"b":"s","c":"#B6FF00","bg":"#303030"}]}`)
+
 type FirmwareUpdater func(ctx context.Context, target, manifestURL string) error
+type PairTokenStore func(target, token string) error
 
 type Options struct {
 	PackURL             string
@@ -40,8 +52,10 @@ type Options struct {
 	Out                 io.Writer
 	HTTPClient          *http.Client
 	FirmwareUpdater     FirmwareUpdater
+	PairTokenStore      PairTokenStore
 	UploadSettleDelay   time.Duration
 	Now                 func() time.Time
+	FetchLiveFrame      func(context.Context) (protocol.Frame, error)
 }
 
 type Result struct {
@@ -138,6 +152,7 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 			Hint: "use --target http://vibetv.local or the IP shown on Vibe TV",
 		}
 	}
+	resolvedTarget = discoverThemeInstallTarget(ctx, client, resolvedTarget, opts.Verbose, out)
 	displayTarget := stripTargetCredentials(resolvedTarget)
 
 	if !opts.SkipFirmwareUpdate {
@@ -202,6 +217,28 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 			Err:  err,
 		}
 	}
+	if err := sendInstallingThemeFrame(wifi, resolvedTarget, caps); err != nil {
+		if authRequired(err) {
+			pairedTarget, pairErr := pairThemeInstallTarget(wifi, resolvedTarget, opts.PairTokenStore)
+			if pairErr != nil {
+				return Result{}, &InstallError{
+					Op:   "theme-pack/pair",
+					Code: errcode.UpgradeFlashFirmware,
+					Err:  pairErr,
+					Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+				}
+			}
+			resolvedTarget = pairedTarget
+			err = sendInstallingThemeFrame(wifi, resolvedTarget, caps)
+		}
+		if err != nil {
+			fmt.Fprintf(out, "Install screen: skipped (%v)\n", err)
+		} else {
+			fmt.Fprintln(out, "Install screen: showing on VibeTV")
+		}
+	} else {
+		fmt.Fprintln(out, "Install screen: showing on VibeTV")
+	}
 
 	retryNoted := false
 	wifi = wifi.WithAssetUploadRetryObserver(func(retry transportlayer.AssetUploadRetry) {
@@ -222,7 +259,7 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 
 	fmt.Fprintln(out, "Uploading theme files...")
 	for _, asset := range pack.Assets {
-		if err := wifi.UploadAsset(resolvedTarget, asset.Entry.Path, filepath.Base(asset.Entry.File), asset.Data); err != nil {
+		if err := uploadAssetWithPairRetry(wifi, &resolvedTarget, asset.Entry.Path, filepath.Base(asset.Entry.File), asset.Data, opts.PairTokenStore); err != nil {
 			return Result{}, &InstallError{
 				Op:   "theme-pack/upload",
 				Code: errcode.UpgradeFlashFirmware,
@@ -242,7 +279,7 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 			}
 		}
 	}
-	if err := wifi.UploadAsset(resolvedTarget, pack.ThemeSpecFile.Entry.Path, filepath.Base(pack.ThemeSpecFile.Entry.File), pack.ThemeSpecRaw); err != nil {
+	if err := uploadAssetWithPairRetry(wifi, &resolvedTarget, pack.ThemeSpecFile.Entry.Path, filepath.Base(pack.ThemeSpecFile.Entry.File), pack.ThemeSpecRaw, opts.PairTokenStore); err != nil {
 		return Result{}, &InstallError{
 			Op:   "theme-pack/upload",
 			Code: errcode.UpgradeFlashFirmware,
@@ -263,12 +300,42 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	fmt.Fprintln(out, "Activating theme...")
-	if err := wifi.ActivateStoredTheme(resolvedTarget, pack.ThemeSpecFile.Entry.Path); err != nil {
+	if err := activateThemeWithPairRetry(wifi, &resolvedTarget, pack.ThemeSpecFile.Entry.Path, opts.PairTokenStore); err != nil {
 		return Result{}, &InstallError{
 			Op:   "theme-pack/activate",
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  err,
 			Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+		}
+	}
+	if err := sendLiveThemeFrame(ctx, wifi, resolvedTarget, caps, opts.FetchLiveFrame); err != nil {
+		if authRequired(err) {
+			pairedTarget, pairErr := pairThemeInstallTarget(wifi, resolvedTarget, opts.PairTokenStore)
+			if pairErr != nil {
+				return Result{}, &InstallError{
+					Op:   "theme-pack/pair",
+					Code: errcode.UpgradeFlashFirmware,
+					Err:  pairErr,
+					Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+				}
+			}
+			resolvedTarget = pairedTarget
+			err = sendLiveThemeFrame(ctx, wifi, resolvedTarget, caps, opts.FetchLiveFrame)
+		}
+		if err != nil {
+			fmt.Fprintf(out, "Live usage frame: skipped (%v)\n", err)
+		} else {
+			fmt.Fprintln(out, "Live usage frame: refreshed")
+		}
+	} else {
+		fmt.Fprintln(out, "Live usage frame: refreshed")
+	}
+	if err := verifyThemeInstallHealth(wifi, resolvedTarget, pack.ThemeSpecFile.Entry.Path, requiredGIFAssets(pack.ThemeSpec)); err != nil {
+		return Result{}, &InstallError{
+			Op:   "theme-pack/render-health",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  err,
+			Hint: "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output",
 		}
 	}
 
@@ -285,6 +352,277 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 		ThemeRevision:     pack.ThemeSpec.ThemeRev,
 		CapabilitiesKnown: caps.Known,
 	}, nil
+}
+
+func discoverThemeInstallTarget(ctx context.Context, client *http.Client, target string, verbose bool, out io.Writer) string {
+	publicTarget := stripTargetCredentials(target)
+	if !isMDNSTarget(publicTarget) {
+		return target
+	}
+	result, err := transportlayer.DiscoverWiFiDevice(ctx, transportlayer.WiFiDiscoveryOptions{
+		Candidates:         []string{publicTarget},
+		IncludeNetworkScan: true,
+		Client:             client,
+	})
+	if err != nil {
+		if verbose {
+			fmt.Fprintf(out, "Device discovery: no IP fallback found for %s (%v)\n", publicTarget, err)
+		}
+		return target
+	}
+	discovered := strings.TrimSpace(result.Target)
+	if discovered == "" || sameTarget(publicTarget, discovered) {
+		return target
+	}
+	if out != nil {
+		fmt.Fprintf(out, "Device discovery: using %s instead of %s\n", discovered, publicTarget)
+	}
+	return targetWithToken(discovered, targetToken(target))
+}
+
+func sendInstallingThemeFrame(wifi transportlayer.WiFiTransport, target string, caps protocol.DeviceCapabilities) error {
+	if !caps.SupportsThemeSpecV1 {
+		return errors.New("device does not support theme-spec-v1")
+	}
+	frame := protocol.Frame{
+		V:         protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion),
+		Provider:  "vibetv",
+		Label:     "Installing",
+		Session:   45,
+		Weekly:    45,
+		UsageMode: "remaining",
+		ThemeSpec: installingThemeSpec,
+	}
+	line, err := frame.MarshalLine()
+	if err != nil {
+		return fmt.Errorf("build install screen frame: %w", err)
+	}
+	maxFrameBytes := caps.MaxFrameBytes
+	if maxFrameBytes <= 0 {
+		maxFrameBytes = protocol.DefaultMaxFrameBytes
+	}
+	if len(bytes.TrimSpace(line)) > maxFrameBytes {
+		return fmt.Errorf("install screen frame exceeds device limit: size=%d limit=%d", len(bytes.TrimSpace(line)), maxFrameBytes)
+	}
+	if err := wifi.SendLine(target, line); err != nil {
+		return fmt.Errorf("send install screen frame: %w", err)
+	}
+	return nil
+}
+
+func sendLiveThemeFrame(ctx context.Context, wifi transportlayer.WiFiTransport, target string, caps protocol.DeviceCapabilities, fetchFrame func(context.Context) (protocol.Frame, error)) error {
+	if fetchFrame == nil {
+		fetchFrame = codexbar.FetchFirstFrame
+	}
+	frame, err := fetchFrame(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch current usage: %w", err)
+	}
+	frame = frame.Normalize()
+	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
+	frame.Theme = ""
+	frame.ThemeSpec = nil
+	frame.ConfirmClearThemeSpec = false
+	line, err := frame.MarshalLine()
+	if err != nil {
+		return fmt.Errorf("build live frame: %w", err)
+	}
+	maxFrameBytes := caps.MaxFrameBytes
+	if maxFrameBytes <= 0 {
+		maxFrameBytes = protocol.DefaultMaxFrameBytes
+	}
+	if len(bytes.TrimSpace(line)) > maxFrameBytes {
+		return fmt.Errorf("live frame exceeds device limit: size=%d limit=%d", len(bytes.TrimSpace(line)), maxFrameBytes)
+	}
+	if err := wifi.SendLine(target, line); err != nil {
+		return fmt.Errorf("send live frame: %w", err)
+	}
+	return nil
+}
+
+func uploadAssetWithPairRetry(wifi transportlayer.WiFiTransport, target *string, devicePath, filename string, data []byte, store PairTokenStore) error {
+	err := wifi.UploadAsset(*target, devicePath, filename, data)
+	if err == nil || !authRequired(err) {
+		return err
+	}
+	pairedTarget, pairErr := pairThemeInstallTarget(wifi, *target, store)
+	if pairErr != nil {
+		return pairErr
+	}
+	*target = pairedTarget
+	return wifi.UploadAsset(*target, devicePath, filename, data)
+}
+
+func activateThemeWithPairRetry(wifi transportlayer.WiFiTransport, target *string, devicePath string, store PairTokenStore) error {
+	err := wifi.ActivateStoredTheme(*target, devicePath)
+	if err == nil || !authRequired(err) {
+		return err
+	}
+	pairedTarget, pairErr := pairThemeInstallTarget(wifi, *target, store)
+	if pairErr != nil {
+		return pairErr
+	}
+	*target = pairedTarget
+	return wifi.ActivateStoredTheme(*target, devicePath)
+}
+
+func pairThemeInstallTarget(wifi transportlayer.WiFiTransport, target string, store PairTokenStore) (string, error) {
+	token, err := wifi.PairDevice(target)
+	if err != nil {
+		return target, err
+	}
+	publicTarget := stripTargetCredentials(target)
+	if store != nil {
+		if err := store(publicTarget, token); err != nil {
+			return target, err
+		}
+	}
+	return targetWithToken(publicTarget, token), nil
+}
+
+func targetWithToken(target, token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return target
+	}
+	parsed, err := url.Parse(strings.TrimSpace(target))
+	if err != nil {
+		return target
+	}
+	query := parsed.Query()
+	query.Set("token", token)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func targetToken(target string) string {
+	parsed, err := url.Parse(strings.TrimSpace(target))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Query().Get("token"))
+}
+
+func isMDNSTarget(target string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(target))
+	if err != nil {
+		return strings.Contains(strings.ToLower(target), "vibetv.local")
+	}
+	return strings.EqualFold(parsed.Hostname(), "vibetv.local")
+}
+
+func sameTarget(left, right string) bool {
+	return strings.EqualFold(
+		strings.TrimRight(stripTargetCredentials(left), "/"),
+		strings.TrimRight(stripTargetCredentials(right), "/"),
+	)
+}
+
+func authRequired(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "status=401") ||
+		strings.Contains(msg, "pairing token required") ||
+		strings.Contains(msg, "unauthorized")
+}
+
+func verifyThemeInstallHealth(wifi transportlayer.WiFiTransport, target, activePath string, gifAssets []string) error {
+	expectedGIFs := stringSet(gifAssets)
+	var lastErr error
+	for attempt := 0; attempt < renderHealthAttempts; attempt++ {
+		health, err := wifi.DeviceHealthSnapshot(target)
+		if err != nil {
+			lastErr = err
+		} else if err := validateThemeHealthSnapshot(health, activePath, expectedGIFs); err != nil {
+			lastErr = err
+		} else {
+			return nil
+		}
+		time.Sleep(renderHealthDelay)
+	}
+	return lastErr
+}
+
+func validateThemeHealthSnapshot(health transportlayer.DeviceHealthSnapshot, activePath string, expectedGIFs map[string]struct{}) error {
+	if !health.Display.ThemeSpec.Active ||
+		!health.Display.ThemeSpec.RenderOk ||
+		(strings.TrimSpace(activePath) != "" && health.Display.ThemeSpec.Path != activePath) {
+		return fmt.Errorf(
+			"theme render not healthy: active=%t path=%q renderOk=%t renderError=%q activeTheme=%q",
+			health.Display.ThemeSpec.Active,
+			health.Display.ThemeSpec.Path,
+			health.Display.ThemeSpec.RenderOk,
+			health.Display.ThemeSpec.RenderError,
+			health.Display.ActiveTheme,
+		)
+	}
+	if len(expectedGIFs) == 0 {
+		return nil
+	}
+	gif := health.Display.GIF
+	if _, ok := expectedGIFs[gif.ActivePath]; !ok ||
+		!gif.FilePresent ||
+		!gif.DecoderAllocated ||
+		!gif.DecoderOpen ||
+		strings.TrimSpace(gifHealthLastError(gif.LastError, gif.LastErrorStage)) != "" {
+		return fmt.Errorf(
+			"gif playback not healthy: activePath=%q expected=%v filePresent=%t decoderAllocated=%t decoderOpen=%t lastError=%q",
+			gif.ActivePath,
+			mapKeys(expectedGIFs),
+			gif.FilePresent,
+			gif.DecoderAllocated,
+			gif.DecoderOpen,
+			gifHealthLastError(gif.LastError, gif.LastErrorStage),
+		)
+	}
+	return nil
+}
+
+func requiredGIFAssets(spec themespec.Spec) []string {
+	seen := map[string]struct{}{}
+	for _, primitive := range spec.Primitives {
+		if primitive.Type != "gif" {
+			continue
+		}
+		if primitive.AssetPath != "" {
+			seen[primitive.AssetPath] = struct{}{}
+		}
+		for _, assetPath := range primitive.StateAssets {
+			if strings.TrimSpace(assetPath) != "" {
+				seen[assetPath] = struct{}{}
+			}
+		}
+	}
+	return mapKeys(seen)
+}
+
+func stringSet(values []string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out[value] = struct{}{}
+		}
+	}
+	return out
+}
+
+func mapKeys(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func gifHealthLastError(lastError, lastErrorStage string) string {
+	if strings.TrimSpace(lastError) != "" {
+		return strings.TrimSpace(lastError)
+	}
+	return strings.TrimSpace(lastErrorStage)
 }
 
 func stripTargetCredentials(target string) string {

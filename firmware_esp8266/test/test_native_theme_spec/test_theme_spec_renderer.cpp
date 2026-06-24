@@ -390,7 +390,7 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
 }
 
-void testLabelBindingShowsUpdateNoticeWhenAvailable() {
+void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
     "themeId": "codex-test",
@@ -409,9 +409,31 @@ void testLabelBindingShowsUpdateNoticeWhenAvailable() {
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
   TEST_ASSERT_EQUAL_UINT32(3, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[1].type));
-  TEST_ASSERT_EQUAL_STRING("vibetv.local", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Codex", sink.commands[1].text.c_str());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
-  TEST_ASSERT_EQUAL_STRING("vibetv.local Usage", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Codex Usage", sink.commands[2].text.c_str());
+}
+
+void testChangedLabelPassUsesSynchronizedUpdateNoticeText() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "primitives": [
+      {"type":"text","x":5,"y":6,"binding":"label"}
+    ]
+  })JSON";
+
+  FrameData frame = testFrame();
+  frame.updateAvailable = true;
+  frame.showUpdateNotice = true;
+  frame.updateNotice = "vibetv.local";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderChangedSpec(spec, frame, kThemeSpecFieldLabel, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("vibetv.local", sink.commands[2].text.c_str());
 }
 
 void testRendersCompactCommandsAndBindings() {
@@ -748,7 +770,7 @@ void testChangedPrimitivePassReplaysDirtyRegion() {
 
   RecordingSink sessionSink;
   TEST_ASSERT_TRUE(renderChangedSpec(spec, codingFrame, kThemeSpecFieldSession, sessionSink));
-  TEST_ASSERT_EQUAL_UINT32(5, sessionSink.commands.size());
+  TEST_ASSERT_EQUAL_UINT32(6, sessionSink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sessionSink.commands[0].type));
   TEST_ASSERT_EQUAL_INT(40, sessionSink.commands[0].x);
   TEST_ASSERT_EQUAL_INT(41, sessionSink.commands[0].y);
@@ -756,10 +778,12 @@ void testChangedPrimitivePassReplaysDirtyRegion() {
   TEST_ASSERT_EQUAL_INT(20, sessionSink.commands[0].height);
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(sessionSink.commands[1].type));
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sessionSink.commands[2].type));
-  TEST_ASSERT_EQUAL_STRING("97", sessionSink.commands[2].text.c_str());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(sessionSink.commands[3].type));
-  TEST_ASSERT_EQUAL_INT(97, sessionSink.commands[3].percent);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sessionSink.commands[4].type));
+  TEST_ASSERT_EQUAL_STRING("coding", sessionSink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sessionSink.commands[3].type));
+  TEST_ASSERT_EQUAL_STRING("97", sessionSink.commands[3].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(sessionSink.commands[4].type));
+  TEST_ASSERT_EQUAL_INT(97, sessionSink.commands[4].percent);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sessionSink.commands[5].type));
 }
 
 void testChangedPrimitivePassReportsSkippedAnimatedOverlap() {
@@ -817,6 +841,33 @@ void testChangedPrimitivePassUsesThemeBackgroundAndOverlaps() {
   TEST_ASSERT_EQUAL_INT(97, sink.commands[4].percent);
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, sink.commands[4].bg);
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands[5].type));
+}
+
+void testChangedLabelPassUsesRenderedFontHeightForProviderLabel() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "bgColor": "#000000",
+    "primitives": [
+      {"type":"text","x":21,"y":12,"font":4,"fontSize":1,"maxWidth":198,"binding":"label","align":"center"}
+    ]
+  })JSON";
+
+  FrameData frame = testFrame();
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderChangedSpec(spec, frame, kThemeSpecFieldLabel, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(21, sink.commands[0].x);
+  TEST_ASSERT_EQUAL_INT(12, sink.commands[0].y);
+  TEST_ASSERT_EQUAL_INT(198, sink.commands[0].width);
+  TEST_ASSERT_EQUAL_INT(30, sink.commands[0].height);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("Codex", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands[3].type));
 }
 
 void testChangedPrimitivePassHandlesCompactClippySpec() {
@@ -1308,7 +1359,8 @@ int main() {
   RUN_TEST(testInvalidSpecsReturnFalse);
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);
-  RUN_TEST(testLabelBindingShowsUpdateNoticeWhenAvailable);
+  RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
+  RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
   RUN_TEST(testRendersCompactCommandsAndBindings);
   RUN_TEST(testCompactTextWidthMapsToMaxWidthForAlignment);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
@@ -1322,6 +1374,7 @@ int main() {
   RUN_TEST(testChangedPrimitivePassReplaysDirtyRegion);
   RUN_TEST(testChangedPrimitivePassReportsSkippedAnimatedOverlap);
   RUN_TEST(testChangedPrimitivePassUsesThemeBackgroundAndOverlaps);
+  RUN_TEST(testChangedLabelPassUsesRenderedFontHeightForProviderLabel);
   RUN_TEST(testChangedPrimitivePassHandlesCompactClippySpec);
   RUN_TEST(testCompiledThemeSpecFullPartialAndAnimatedPasses);
   RUN_TEST(testChangedPrimitivePassReportsNoAffectedPrimitiveForUnusedReset);

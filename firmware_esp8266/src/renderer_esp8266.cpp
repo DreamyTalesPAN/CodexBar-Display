@@ -80,6 +80,7 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
   snapshot.gifActivePath = gif.activePath;
   snapshot.gifFilePresent = gif.filePresent;
   snapshot.gifFileOpen = gif.fileOpen;
+  snapshot.gifDecoderAllocated = gif.decoderAllocated;
   snapshot.gifDecoderOpen = gif.decoderOpen;
   snapshot.gifBlocked = gif.blocked;
   snapshot.gifConsecutiveFailures = gif.consecutiveFailures;
@@ -110,6 +111,7 @@ RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
   const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
   snapshot.gifActivePath = gif.activePath;
   snapshot.gifFilePresent = gif.filePresent;
+  snapshot.gifDecoderAllocated = gif.decoderAllocated;
   snapshot.gifDecoderOpen = gif.decoderOpen;
   snapshot.gifLastErrorStage = gif.lastErrorStage;
 #else
@@ -415,14 +417,13 @@ void RendererESP8266::DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const S
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         core::ThemeSpecUsesBinding(raw, "label", "l")) {
       display::DisplayTransaction transaction;
-      if (!display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldLabel)) {
+      if (!display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldLabel, text.c_str())) {
         display::ScreenDirty() = true;
       }
     }
 #endif
     return;
   }
-  display::DrawFirmwareUpdateNoticeOverlay(text);
 #else
   (void)ctx;
   Serial.printf("probe_update_notice text=%s\n", text.c_str());
@@ -466,7 +467,7 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
     // error screen for one frame.
     return;
   }
-  DrawStatus(ctx, "VIBE TV", "Theme missing", "Update Mac App");
+  DrawStatus(ctx, "VIBE TV", "Theme missing", "Install Theme");
 #else
   probe::Render(ctx);
 #endif

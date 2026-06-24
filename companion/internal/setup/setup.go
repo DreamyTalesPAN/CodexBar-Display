@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -67,6 +69,7 @@ type deps struct {
 	resolvePort     func(string) (string, error)
 	probePort       func(string) error
 	readDeviceHello func(string) (protocol.DeviceHello, error)
+	discoverWiFi    func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error)
 	findCodexbar    func() (string, error)
 	lookPath        func(string) (string, error)
 	runCommand      commandRunner
@@ -103,6 +106,14 @@ func (d deps) withDefaults() deps {
 	}
 	if d.readDeviceHello == nil {
 		d.readDeviceHello = usb.ReadDeviceHello
+	}
+	if d.discoverWiFi == nil {
+		d.discoverWiFi = func(ctx context.Context, candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
+			return transportlayer.DiscoverWiFiDevice(ctx, transportlayer.WiFiDiscoveryOptions{
+				Candidates:         candidates,
+				IncludeNetworkScan: true,
+			})
+		}
 	}
 	if d.findCodexbar == nil {
 		d.findCodexbar = codexbar.FindBinary
@@ -265,6 +276,15 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 			Hint: "use --target http://vibetv.local or the IP shown on Vibe TV",
 		}
 	}
+	runtimeConfigTarget := ""
+	if transportName == "wifi" {
+		runtimeConfigTarget = target
+		publicTarget, _ := splitDeviceTargetToken(target)
+		if publicTarget != "" {
+			target = publicTarget
+		}
+		fmt.Fprintln(d.stdout, "VibeTV setup uses WiFi. USB-C only powers the customer device; no USB serial port is expected.")
+	}
 	fmt.Fprintf(d.stdout, "Launch agent transport: %s\n", transportName)
 	if target != "" {
 		fmt.Fprintf(d.stdout, "Launch agent target: %s\n", target)
@@ -274,6 +294,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		return err
 	}
 	fmt.Fprintln(d.stdout, "Setup preflight: ok")
+	if transportName == "wifi" && !opts.ValidateOnly && !opts.DryRun {
+		target, runtimeConfigTarget = discoverSetupWiFiTarget(ctx, d, target, runtimeConfigTarget)
+	}
 
 	allowInstall := !opts.ValidateOnly && !opts.DryRun
 	codexbarBin, err := ensureCodexbar(ctx, d, allowInstall)
@@ -463,7 +486,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 	fmt.Fprintf(d.stdout, "Recovery backup dir: %s\n", backupDir)
 
-	if err := applyRuntimeConfig(home, opts.Theme, d.stdout); err != nil {
+	if err := applyRuntimeConfig(home, opts.Theme, runtimeConfigTarget, d.stdout); err != nil {
 		return &StepError{
 			Step: "write-runtime-config",
 			Err:  err,
@@ -1200,55 +1223,146 @@ func installRecoveryAssets(repoRoot, home string) (string, string, error) {
 	return restoreTarget, backupDir, nil
 }
 
-func applyRuntimeConfig(home, rawTheme string, stdout io.Writer) error {
-	themeInput := strings.TrimSpace(rawTheme)
-	if themeInput == "" {
-		cfg, err := runtimeconfig.Load(home)
-		if err != nil {
-			return err
-		}
-		if runtimeconfig.NormalizeTheme(cfg.Theme) != "" {
-			return nil
-		}
-		cfg.Theme = runtimeconfig.DefaultTheme()
-		if err := runtimeconfig.Save(home, cfg); err != nil {
-			return err
-		}
-		if stdout != nil {
-			fmt.Fprintf(stdout, "Runtime config: theme=%s (default)\n", cfg.Theme)
-		}
-		return nil
-	}
-
+func applyRuntimeConfig(home, rawTheme, rawDeviceTarget string, stdout io.Writer) error {
 	cfg, err := runtimeconfig.Load(home)
 	if err != nil {
 		return err
 	}
 
-	switch {
-	case runtimeconfig.ClearThemeValue(themeInput):
-		cfg.Theme = ""
-		if err := runtimeconfig.Save(home, cfg); err != nil {
-			return err
+	changed := false
+	deviceTarget, deviceToken := splitDeviceTargetToken(rawDeviceTarget)
+	if deviceTarget != "" && cfg.DeviceTarget != deviceTarget {
+		cfg.DeviceTarget = deviceTarget
+		changed = true
+	}
+	if deviceToken != "" && cfg.DeviceToken != deviceToken {
+		cfg.DeviceToken = deviceToken
+		changed = true
+	}
+
+	themeInput := strings.TrimSpace(rawTheme)
+	if themeInput == "" {
+		if runtimeconfig.NormalizeTheme(cfg.Theme) != "" {
+			// Keep the user's existing theme override.
+		} else {
+			cfg.Theme = runtimeconfig.DefaultTheme()
+			changed = true
+			if stdout != nil {
+				fmt.Fprintf(stdout, "Runtime config: theme=%s (default)\n", cfg.Theme)
+			}
 		}
+	} else if runtimeconfig.ClearThemeValue(themeInput) {
+		cfg.Theme = ""
+		changed = true
 		if stdout != nil {
 			fmt.Fprintln(stdout, "Runtime config: cleared theme override")
 		}
-		return nil
-	default:
+	} else {
 		normalized := runtimeconfig.NormalizeTheme(themeInput)
 		if normalized == "" {
 			return fmt.Errorf("unsupported theme %q", themeInput)
 		}
 		cfg.Theme = normalized
-		if err := runtimeconfig.Save(home, cfg); err != nil {
-			return err
-		}
+		changed = true
 		if stdout != nil {
 			fmt.Fprintf(stdout, "Runtime config: theme=%s\n", normalized)
 		}
+	}
+
+	if deviceTarget != "" && stdout != nil {
+		fmt.Fprintf(stdout, "Runtime config: deviceTarget=%s\n", deviceTarget)
+	}
+	if !changed {
 		return nil
 	}
+	return runtimeconfig.Save(home, cfg)
+}
+
+func discoverSetupWiFiTarget(ctx context.Context, d deps, target, rawRuntimeTarget string) (string, string) {
+	publicTarget, token := splitDeviceTargetToken(rawRuntimeTarget)
+	if publicTarget == "" {
+		publicTarget = strings.TrimSpace(target)
+	}
+	candidates := uniqueStrings(publicTarget, target, defaultWiFiTarget)
+	result, err := d.discoverWiFi(ctx, candidates)
+	if err != nil {
+		if d.stdout != nil {
+			fmt.Fprintf(d.stdout, "warning: VibeTV auto-discovery did not find a stable IP (%v). Continuing with %s.\n", err, target)
+			fmt.Fprintln(d.stdout, "If setup cannot reach the device, open the VibeTV screen/status page and rerun with --target http://<device-ip>.")
+		}
+		return target, rawRuntimeTarget
+	}
+	discovered := strings.TrimSpace(result.Target)
+	if discovered == "" {
+		return target, rawRuntimeTarget
+	}
+	if d.stdout != nil {
+		if sameSetupTarget(target, discovered) {
+			fmt.Fprintf(d.stdout, "VibeTV device: reachable at %s\n", discovered)
+		} else {
+			fmt.Fprintf(d.stdout, "VibeTV device: discovered at %s; using this instead of %s\n", discovered, target)
+		}
+	}
+	return discovered, targetWithSetupToken(discovered, token)
+}
+
+func targetWithSetupToken(target, token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return strings.TrimSpace(target)
+	}
+	parsed, err := url.Parse(strings.TrimSpace(target))
+	if err != nil {
+		return strings.TrimSpace(target)
+	}
+	query := parsed.Query()
+	query.Set("token", token)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func sameSetupTarget(left, right string) bool {
+	leftTarget, _ := splitDeviceTargetToken(left)
+	rightTarget, _ := splitDeviceTargetToken(right)
+	return strings.EqualFold(strings.TrimRight(leftTarget, "/"), strings.TrimRight(rightTarget, "/"))
+}
+
+func uniqueStrings(values ...string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(strings.TrimRight(value, "/"))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func splitDeviceTargetToken(raw string) (target, token string) {
+	target = strings.TrimSpace(raw)
+	if target == "" {
+		return "", ""
+	}
+	if !strings.Contains(target, "://") {
+		target = "http://" + target
+	}
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return strings.TrimSpace(raw), ""
+	}
+	token = strings.TrimSpace(parsed.Query().Get("token"))
+	query := parsed.Query()
+	query.Del("token")
+	parsed.RawQuery = query.Encode()
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/"), token
 }
 
 func stdinIsInteractive() bool {
