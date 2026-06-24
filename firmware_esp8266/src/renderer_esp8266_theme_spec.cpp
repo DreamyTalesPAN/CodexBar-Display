@@ -494,6 +494,10 @@ class ThemeSpecSink final : public themespec::Sink {
       return;
     }
     clipActive_ = true;
+    clipX_ = x;
+    clipY_ = y;
+    clipW_ = width;
+    clipH_ = height;
     Tft().setViewport(x, y, width, height, false);
   }
 
@@ -503,6 +507,10 @@ class ThemeSpecSink final : public themespec::Sink {
     }
     Tft().resetViewport();
     clipActive_ = false;
+    clipX_ = 0;
+    clipY_ = 0;
+    clipW_ = 0;
+    clipH_ = 0;
   }
 
   void FillScreen(uint16_t color) override {
@@ -526,6 +534,10 @@ class ThemeSpecSink final : public themespec::Sink {
     text.bg = cmd.bg;
     text.hasBg = cmd.hasBg;
     text.wrap = cmd.wrap;
+    int textClipX = cmd.x;
+    int textClipY = cmd.y;
+    int textClipW = cmd.maxWidth;
+    int textClipH = 0;
     if (cmd.maxWidth > 0) {
       TFT_eSPI& tft = Tft();
       int size = cmd.size;
@@ -544,6 +556,17 @@ class ThemeSpecSink final : public themespec::Sink {
       } else if (cmd.align == 2) {
         text.x = cmd.x + max(0, cmd.maxWidth - width);
       }
+      const int fontHeight = static_cast<int>(tft.fontHeight());
+      textClipH = fontHeight > 1 ? fontHeight + 4 : 1;
+    }
+    if (textClipW > 0) {
+      if (!intersectWithActiveClip(textClipX, textClipY, textClipW, textClipH)) {
+        return;
+      }
+      Tft().setViewport(textClipX, textClipY, textClipW, textClipH, false);
+      PrimitiveLayer().DrawText(text);
+      restoreActiveClip();
+      return;
     }
     PrimitiveLayer().DrawText(text);
   }
@@ -608,10 +631,40 @@ class ThemeSpecSink final : public themespec::Sink {
   }
 
  private:
+  bool intersectWithActiveClip(int& x, int& y, int& width, int& height) const {
+    if (width <= 0 || height <= 0) {
+      return false;
+    }
+    if (!clipActive_) {
+      return true;
+    }
+    const int x1 = max(x, clipX_);
+    const int y1 = max(y, clipY_);
+    const int x2 = min(x + width, clipX_ + clipW_);
+    const int y2 = min(y + height, clipY_ + clipH_);
+    x = x1;
+    y = y1;
+    width = x2 - x1;
+    height = y2 - y1;
+    return width > 0 && height > 0;
+  }
+
+  void restoreActiveClip() {
+    if (clipActive_) {
+      Tft().setViewport(clipX_, clipY_, clipW_, clipH_, false);
+    } else {
+      Tft().resetViewport();
+    }
+  }
+
   bool forceAnimatedFrame_ = false;
   SpriteRenderMode spriteRenderMode_ = SpriteRenderMode::All;
   bool clearSpriteTransparent_ = false;
   bool clipActive_ = false;
+  int clipX_ = 0;
+  int clipY_ = 0;
+  int clipW_ = 0;
+  int clipH_ = 0;
   bool hasBackgroundColor_ = false;
   uint16_t backgroundColor_ = 0x0000;
 };
@@ -625,7 +678,7 @@ const char* usageModeText() {
 
 const char* themeSpecUpdateNoticeText() {
   return ((millis() / kThemeSpecUpdateNoticeToggleMs) % 2) == 0
-             ? "Update in App"
+             ? "Update available"
              : "app.vibetv.shop";
 }
 

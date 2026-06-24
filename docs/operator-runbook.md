@@ -203,7 +203,7 @@ During normal operation the display uses explicit support states:
 - `Open App` / `app.vibetv.shop`: the device previously had data, but no fresh frame arrived for more than two minutes, or the Mac App reported a recoverable runtime problem.
 - `Install Mac App` / `app.vibetv.shop`: the device received a runtime frame saying the Mac App binary is missing.
 - `Update Mac App` / `app.vibetv.shop`: the Mac App reported an incompatible usage app version or payload format.
-- `Update in App` / `app.vibetv.shop`: a firmware update is available. ThemeSpec themes receive the same alternating text through their provider-label binding.
+- `Update available` / `app.vibetv.shop`: a firmware update is available. ThemeSpec themes receive the same alternating text through their provider-label binding.
 - `Update running`: firmware, filesystem, or display asset upload is in progress. The display intentionally does not show internal paths such as GIF or theme asset filenames.
 - `WiFi reset`: saved WiFi credentials are being cleared before setup mode restarts.
 
@@ -217,8 +217,8 @@ Smoke checklist for #53:
 - Save WiFi and confirm the connecting screen shows `Connecting WiFi` plus the SSID.
 - After WiFi connects, confirm the waiting screen shows only `WiFi connected!`, `Now go to:`, and `app.vibetv.shop`.
 - Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.
-- Send a frame with `update.available=true` and confirm the customer-facing update text alternates between `Update in App` and `app.vibetv.shop`.
-- Apply one stored ThemeSpec with a provider-label primitive, send the same update frame again, and confirm the provider-label area alternates between `Update in App` and `app.vibetv.shop`.
+- Send a frame with `update.available=true` and confirm the customer-facing update text alternates between `Update available` and `app.vibetv.shop`.
+- Apply one stored ThemeSpec with a provider-label primitive, send the same update frame again, and confirm the provider-label area alternates between `Update available` and `app.vibetv.shop`.
 - Stop the Mac App service for more than two minutes after a frame and confirm `Open App` / `app.vibetv.shop`.
 - Send a runtime error frame and confirm the display shows a customer-friendly action, not an internal error code.
 - Start firmware/filesystem/asset upload and confirm the display says `Update running` without asset paths.

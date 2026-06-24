@@ -45,7 +45,7 @@ Normal setup does not require Terminal, USB flashing, or manual commands.
 | `Open App` / `app.vibetv.shop` | VibeTV is waiting for fresh Mac data. | Open `https://app.vibetv.shop` on your Mac and follow the main button. |
 | `Install Mac App` | The Mac App is missing. | Open `https://app.vibetv.shop` and install it from there. |
 | `Update Mac App` | The Mac App needs an update. | Open `https://app.vibetv.shop` and follow the update button. |
-| `Update in App` | VibeTV has an update ready. | Open `https://app.vibetv.shop` and follow the main button. |
+| `Update available` | VibeTV has an update ready. | Open `https://app.vibetv.shop` and follow the main button. |
 | `Update running` | VibeTV is being updated. | Do not unplug power. |
 | `WiFi reset` | Saved WiFi settings are being cleared. | Wait for `VibeTV-Setup` to appear again. |
 

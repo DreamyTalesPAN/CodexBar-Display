@@ -74,7 +74,7 @@ const char kActiveThemeSpecPathFile[] = "/theme-active";
 const char kDeviceAuthHeader[] = "X-VibeTV-Token";
 const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
 const char* const kFirmwareUpdateNoticeTexts[] = {
-    "Update in App",
+    "Update available",
     kCustomerAppHost,
 };
 constexpr uint8_t kFirmwareUpdateNoticeTextCount =
