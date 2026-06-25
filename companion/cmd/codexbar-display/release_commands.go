@@ -522,6 +522,7 @@ func runInstallUpdate(args []string) (retErr error) {
 	cleanupLaunchAgent := beginUpgradeLaunchAgentRecovery(home, &retErr)
 	defer cleanupLaunchAgent()
 
+	fmt.Println("Uploading firmware...")
 	uploadErr := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken)
 	if uploadErr != nil {
 		if firmwareOTAAuthError(uploadErr) {

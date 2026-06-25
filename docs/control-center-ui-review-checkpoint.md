@@ -13,6 +13,16 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: Updates screen firmware install action, async update progress, retry/report actions, and support-report update status.
+- Customer rule: when an update is available, the primary action must install it from Control Center; progress uses plain states (`Checking VibeTV`, `Updating VibeTV`, `Restarting VibeTV`, `Update complete`) and never exposes firmware URLs, hashes, API, daemon, package, or release internals.
+- Simplifications accepted: firmware update uses the existing local Mac App update engine; Mac App self-update remains a separate download/install path because macOS installation cannot be treated like a silent device OTA update.
+- Verification: pending for this branch update flow; local checks and hardware result are recorded in the task summary.
+
+- Reviewed scope: stale VibeTV image recovery, render-health status in Overview, desktop header status, setup gating while the image is stuck, and the customer `Reload image` action.
+- Customer rule: customers should not see render, heap, API, daemon, or firmware-internal wording; when the connection works but the current image is stale, Control Center first tries to reload the image automatically, then exposes one primary `Reload image` action in Overview only.
+- Simplifications accepted: no troubleshooting choice was added; Settings, Theme Library, and Updates stay locked while the image is stuck; Support remains available for reports; the visible state uses short customer language (`Image is stuck`, `Reload image`, `Reloading image`) while detailed render errors stay in support diagnostics.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `check:customer-ui-copy`, `lint`, `next build`, and `git diff --check` passed locally.
+
 - Reviewed scope: firmware update failure copy, Mac App release check failure copy, Support diagnostics/log masking, public Shopify theme product install path, Shopify product page readiness guard, and customer-docs guard language.
 - Customer rule: until the hosted app path is truly customer-available, Shopify theme product pages show one direct `Copy install command` action instead of sending customers into the unavailable app flow; Control Center UI and support surfaces must keep hiding bridge/API/daemon/target/package details behind Mac App, VibeTV, update, and support language.
 - Simplifications accepted: no new Control Center buttons or setup choices were added; firmware errors now say only whether an update is available or the check failed; Support replaces internal diagnostics and URLs with customer-safe terms; unavailable app CTA copy is now blocked on Shopify product page checks.

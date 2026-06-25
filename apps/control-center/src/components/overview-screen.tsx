@@ -5,17 +5,19 @@ import {
   Check,
   CircleHelp,
   Monitor,
+  RefreshCw,
   SlidersHorizontal,
   Wifi,
 } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import type {
-  CompanionStatus,
-  DeviceInfo,
-  DeviceState,
-  ReadinessTone,
+import {
+  deviceImageIsStuck,
+  type CompanionStatus,
+  type DeviceInfo,
+  type DeviceState,
+  type ReadinessTone,
 } from "./control-center-types";
 
 type OverviewScreenProps = {
@@ -23,16 +25,27 @@ type OverviewScreenProps = {
   deviceState: DeviceState;
   device: DeviceInfo | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
+  busyAction?: string | null;
+  onReloadImage?: () => void;
 };
 
 export function OverviewScreen({
+  busyAction,
   companionStatus,
   deviceState,
   device,
   firmwareUpdate,
+  onReloadImage,
 }: OverviewScreenProps) {
-  const connected = Boolean(device?.connected);
-  const hero = buildHeroCopy({ companionStatus, connected });
+  const imageStuck = deviceImageIsStuck(device);
+  const reloadingImage = busyAction === "reload-display";
+  const connected = Boolean(device?.connected && !imageStuck);
+  const hero = buildHeroCopy({
+    companionStatus,
+    connected,
+    imageStuck,
+    reloadingImage,
+  });
   const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
 
   return (
@@ -57,7 +70,8 @@ export function OverviewScreen({
             <StatusRow
               icon={<Monitor size={18} aria-hidden />}
               label="VibeTV"
-              value={labelForDevice(deviceState, device)}
+              detail={imageStuck ? imageStuckDetail(device) : undefined}
+              value={labelForDevice(deviceState, device, reloadingImage)}
             />
             <StatusRow
               badge={firmwareUpdateAvailable ? "Update" : undefined}
@@ -66,6 +80,23 @@ export function OverviewScreen({
               value={device?.firmware || "Waiting for VibeTV"}
             />
           </dl>
+          {imageStuck && onReloadImage ? (
+            <div className="mt-7">
+              <button
+                className="inline-flex min-h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#CCFF00] px-5 text-sm font-bold text-[#1B1B1B] transition hover:bg-[#ABD600] disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={reloadingImage}
+                onClick={onReloadImage}
+                type="button"
+              >
+                <RefreshCw
+                  className={reloadingImage ? "animate-spin" : undefined}
+                  size={18}
+                  aria-hidden
+                />
+                <span>{reloadingImage ? "Reloading image" : "Reload image"}</span>
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex justify-center lg:justify-end">
@@ -135,10 +166,28 @@ function StatusRow({
 function buildHeroCopy({
   companionStatus,
   connected,
+  imageStuck,
+  reloadingImage,
 }: {
   companionStatus: CompanionStatus;
   connected: boolean;
+  imageStuck: boolean;
+  reloadingImage: boolean;
 }) {
+  if (reloadingImage) {
+    return {
+      title: "VibeTV is updating image",
+      tone: "attention" as ReadinessTone,
+      icon: <RefreshCw className="animate-spin" size={34} aria-hidden />,
+    };
+  }
+  if (imageStuck) {
+    return {
+      title: "Image is stuck",
+      tone: "attention" as ReadinessTone,
+      icon: <RefreshCw size={34} aria-hidden />,
+    };
+  }
   if (connected) {
     return {
       title: "VibeTV is connected",
@@ -168,7 +217,17 @@ function labelForCompanion(status: CompanionStatus): string {
   return "Waiting for Mac App";
 }
 
-function labelForDevice(state: DeviceState, device: DeviceInfo | null): string {
+function labelForDevice(
+  state: DeviceState,
+  device: DeviceInfo | null,
+  reloadingImage: boolean,
+): string {
+  if (reloadingImage) {
+    return "Reloading image";
+  }
+  if (deviceImageIsStuck(device)) {
+    return "Image is stuck";
+  }
   if (device?.connected) {
     return state === "paired" || device.paired ? "Connected" : "Found";
   }
@@ -176,4 +235,12 @@ function labelForDevice(state: DeviceState, device: DeviceInfo | null): string {
     return "Offline";
   }
   return "Waiting for device";
+}
+
+function imageStuckDetail(device: DeviceInfo | null): string {
+  const error = device?.display?.themeSpec?.renderError?.trim();
+  if (error === "low_heap_full_render") {
+    return "The connection works. VibeTV is freeing memory and redrawing the image.";
+  }
+  return "The connection works, but VibeTV could not redraw the current screen.";
 }

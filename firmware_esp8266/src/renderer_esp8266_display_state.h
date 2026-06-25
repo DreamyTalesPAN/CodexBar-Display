@@ -158,6 +158,7 @@ bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText = nullptr);
 void ResetThemeSpecSpriteCaches();
+bool ThemeSpecFullRenderRetryPending();
 bool CurrentThemeSpecRenderedSuccessfully();
 bool ThemeSpecRenderOk();
 const char* ThemeSpecRenderError();

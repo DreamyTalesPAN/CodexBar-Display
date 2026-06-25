@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -300,6 +301,88 @@ func TestRunCycleWithDepsRuntimeConfigDeviceTokenReplacesStaleTargetToken(t *tes
 	}
 	if sentTarget != "http://192.168.178.159?token=fresh-token" {
 		t.Fatalf("expected fresh runtime-config token to replace stale target token, got %q", sentTarget)
+	}
+}
+
+func TestRunCycleWithDepsRepairsStaleDeviceTokenOnUnauthorizedSend(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+	cfg := runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.159",
+		DeviceToken:  "old-token",
+	}
+	var sentTargets []string
+	var pairedTarget string
+	var logged strings.Builder
+
+	err := runCycleWithDeps(context.Background(), "http://192.168.178.159", state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return cfg, nil
+		},
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			cfg = next
+			return nil
+		},
+		resolvePort: func(target string) (string, error) {
+			return target, nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				Board:                     "esp8266-smalltv-st7789",
+				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+				MaxFrameBytes:             2048,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 12, 30, 3600),
+			}, nil
+		},
+		pairDevice: func(_ context.Context, target string) (string, error) {
+			pairedTarget = target
+			return "new-token", nil
+		},
+		logf: func(format string, args ...any) {
+			logged.WriteString(fmt.Sprintf(format, args...))
+		},
+		sendLine: func(target string, _ []byte) error {
+			sentTargets = append(sentTargets, target)
+			if strings.Contains(target, "old-token") {
+				return errors.New(`post frame: status=401 body="pairing token required"`)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success after token repair, got %v", err)
+	}
+	wantTargets := []string{
+		"http://192.168.178.159?token=old-token",
+		"http://192.168.178.159?token=new-token",
+	}
+	if !reflect.DeepEqual(sentTargets, wantTargets) {
+		t.Fatalf("unexpected send targets: got %#v want %#v", sentTargets, wantTargets)
+	}
+	if pairedTarget != "http://192.168.178.159" {
+		t.Fatalf("expected public pairing target, got %q", pairedTarget)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.159" || cfg.DeviceToken != "new-token" {
+		t.Fatalf("expected persisted new token, got %+v", cfg)
+	}
+	log := logged.String()
+	if !strings.Contains(log, "device-token-repaired") {
+		t.Fatalf("expected repair log, got %q", log)
+	}
+	if strings.Contains(log, "old-token") || strings.Contains(log, "new-token") {
+		t.Fatalf("daemon log leaked token: %q", log)
 	}
 }
 

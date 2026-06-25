@@ -21,11 +21,13 @@ namespace display {
 namespace {
 
 constexpr unsigned long kThemeSpecAnimatedTickMs = 20UL;
+constexpr unsigned long kThemeSpecFullRenderRetryMs = 750UL;
 constexpr int kAnimatedSpriteCacheSlots = 2;
 constexpr uint32_t kMinThemeSpecRenderHeapBytes = 4096UL;
 constexpr size_t kSpriteLineReserveBytes = 256;
 constexpr size_t kSpriteLineMaxBytes = 512;
 unsigned long nextThemeSpecAnimatedTickAtMs = 0;
+unsigned long nextThemeSpecFullRenderRetryAtMs = 0;
 bool lastThemeSpecRenderOk = true;
 const char* lastThemeSpecRenderError = "";
 unsigned long themeSpecRenderFailures = 0;
@@ -96,6 +98,7 @@ uint32_t themeSpecRawHash(const String& raw) {
 }
 
 const String& currentThemeSpecRaw();
+void resetAnimatedSpriteCaches();
 
 void markCurrentThemeSpecRendered() {
   markThemeSpecRenderOk();
@@ -115,6 +118,35 @@ bool currentThemeSpecRenderedSuccessfully() {
 
 bool hasThemeSpecRenderHeap() {
   return ESP.getFreeHeap() >= kMinThemeSpecRenderHeapBytes;
+}
+
+bool fullRenderRetryPending() {
+  if (nextThemeSpecFullRenderRetryAtMs == 0) {
+    return false;
+  }
+  return static_cast<long>(millis() - nextThemeSpecFullRenderRetryAtMs) < 0;
+}
+
+void scheduleFullRenderRetry() {
+  nextThemeSpecFullRenderRetryAtMs = millis() + kThemeSpecFullRenderRetryMs;
+}
+
+void clearFullRenderRetry() {
+  nextThemeSpecFullRenderRetryAtMs = 0;
+}
+
+void releaseThemeSpecRenderMemory() {
+  resetAnimatedSpriteCaches();
+  GifCore().ReleaseMemory();
+  cachedThemeSpecDoc.clear();
+  cachedThemeSpecDocHash = 0;
+  themespec::ReleaseCompiledThemeSpec(cachedThemeSpecScene);
+  yield();
+}
+
+bool recoverThemeSpecRenderHeap() {
+  releaseThemeSpecRenderMemory();
+  return hasThemeSpecRenderHeap();
 }
 
 const String& currentThemeSpecRaw() {
@@ -727,18 +759,24 @@ bool DrawThemeSpecUsage() {
   if (!CurrentFrame().hasThemeSpec) {
     return false;
   }
+  if (fullRenderRetryPending()) {
+    return false;
+  }
   const String& raw = currentThemeSpecRaw();
   if (!codexbar_display::core::ThemeSpecRawLooksRenderable(raw)) {
     markThemeSpecRenderFailed("missing_theme_spec");
+    scheduleFullRenderRetry();
     return false;
   }
-  if (!hasThemeSpecRenderHeap()) {
+  if (!hasThemeSpecRenderHeap() && !recoverThemeSpecRenderHeap()) {
     markThemeSpecRenderFailed("low_heap_full_render");
+    scheduleFullRenderRetry();
     return false;
   }
 
   if (!ensureThemeSpecSceneCached(raw)) {
     markThemeSpecRenderFailed("theme_spec_parse_failed");
+    scheduleFullRenderRetry();
     return false;
   }
 
@@ -750,6 +788,7 @@ bool DrawThemeSpecUsage() {
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly);
   if (!themespec::RenderCompiledThemeSpecStaticPrimitives(cachedThemeSpecScene, frameData, sink)) {
     markThemeSpecRenderFailed("full_render_failed");
+    scheduleFullRenderRetry();
     return false;
   }
   if (cachedThemeSpecScene.hasAnimatedAssets) {
@@ -758,6 +797,7 @@ bool DrawThemeSpecUsage() {
   }
 
   markCurrentThemeSpecRendered();
+  clearFullRenderRetry();
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
                                       : 0;
@@ -834,6 +874,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
 
 void ResetThemeSpecSpriteCaches() {
   resetAnimatedSpriteCaches();
+  clearFullRenderRetry();
   lastSuccessfulThemeSpecId = "";
   lastSuccessfulThemeSpecRev = 0;
   lastSuccessfulThemeSpecRawHash = 0;
@@ -842,6 +883,10 @@ void ResetThemeSpecSpriteCaches() {
   cachedThemeSpecDoc.clear();
   cachedThemeSpecDocHash = 0;
   themespec::ReleaseCompiledThemeSpec(cachedThemeSpecScene);
+}
+
+bool ThemeSpecFullRenderRetryPending() {
+  return fullRenderRetryPending();
 }
 
 bool CurrentThemeSpecRenderedSuccessfully() {
@@ -901,6 +946,10 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
 }
 
 void ResetThemeSpecSpriteCaches() {}
+
+bool ThemeSpecFullRenderRetryPending() {
+  return false;
+}
 
 bool CurrentThemeSpecRenderedSuccessfully() {
   return false;

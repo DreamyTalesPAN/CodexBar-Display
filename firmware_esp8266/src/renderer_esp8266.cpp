@@ -121,6 +121,18 @@ RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
   return snapshot;
 }
 
+bool RendererESP8266::ShouldDeferDirtyRender(app::RuntimeContext& ctx) const {
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  display::AttachContext(ctx);
+  return display::HasFrame() &&
+         display::CurrentFrame().hasThemeSpec &&
+         display::ThemeSpecFullRenderRetryPending();
+#else
+  (void)ctx;
+  return false;
+#endif
+}
+
 bool RendererESP8266::SupportsBrightnessControl() const {
 #ifdef TFT_BL
   return true;
@@ -441,8 +453,8 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
       return;
     }
     // ThemeSpec rendering can fail transiently on ESP8266 under low heap while
-    // changing state. Keep the last good visual instead of flashing the mini
-    // error screen for one frame.
+    // changing state. Keep the last good theme visual instead of flashing a
+    // different fallback for one frame.
     return;
   }
   DrawStatus(ctx, "VIBE TV", "Theme missing", "Install Theme");

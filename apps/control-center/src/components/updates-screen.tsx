@@ -1,6 +1,14 @@
 "use client";
 
-import { Check, Download, Monitor, RefreshCw, Server } from "lucide-react";
+import {
+  Check,
+  Download,
+  Monitor,
+  RefreshCw,
+  Server,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
@@ -19,13 +27,30 @@ export type UpdatesDeviceInfo = {
   firmware?: string;
 };
 
+export type FirmwareUpdateStatus = {
+  phase: "installing" | "complete" | "error";
+  startedAt: string;
+  finishedAt?: string;
+  message?: string;
+  progress?: number;
+  logs: string[];
+  result?: {
+    firmware?: string;
+    target?: string;
+  };
+  error?: string;
+};
+
 export type UpdatesScreenProps = {
   companionStatus: UpdatesCompanionStatus;
   device: UpdatesDeviceInfo | null;
   companionVersion?: string;
   firmwareUpdate?: FirmwareUpdateInfo | null;
   onCheckUpdates?: () => void;
+  onCreateReport?: () => void;
+  onInstallUpdate?: () => void;
   busyAction?: string | null;
+  updateStatus?: FirmwareUpdateStatus | null;
 };
 
 export function UpdatesScreen({
@@ -34,7 +59,10 @@ export function UpdatesScreen({
   companionVersion,
   firmwareUpdate,
   onCheckUpdates,
+  onCreateReport,
+  onInstallUpdate,
   busyAction,
+  updateStatus,
 }: UpdatesScreenProps) {
   const {
     busy: companionCheckBusy,
@@ -47,6 +75,9 @@ export function UpdatesScreen({
   const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
   const checking = Boolean(device?.firmware && !firmwareUpdate);
   const refreshing = busyAction === "firmware-check";
+  const installingUpdate = busyAction === "firmware-update" ||
+    updateStatus?.phase === "installing";
+  const creatingReport = busyAction === "diagnostics";
   const checkFailed = firmwareUpdate?.status === "check_failed";
   const title = checking
     ? "Checking updates"
@@ -171,24 +202,175 @@ export function UpdatesScreen({
           </dl>
 
           <div className="flex items-start lg:justify-end">
-            <button
-              className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#CCFF00] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#ABD600] disabled:bg-[#F9F9F9] disabled:text-[#444933] disabled:opacity-80"
-              disabled={checking || refreshing || !device?.firmware}
-              onClick={onCheckUpdates}
-              type="button"
-            >
-              {checking || refreshing ? (
-                <RefreshCw className="animate-spin" size={18} />
-              ) : (
-                <RefreshCw size={18} aria-hidden />
-              )}
-              <span>
-                {checking || refreshing ? "Checking updates" : "Check for updates"}
-              </span>
-            </button>
+            <FirmwareUpdateAction
+              checking={checking}
+              installing={installingUpdate}
+              onCheckUpdates={onCheckUpdates}
+              onInstallUpdate={onInstallUpdate}
+              refreshing={refreshing}
+              updateAvailable={updateAvailable}
+              updateReady={Boolean(device?.firmware)}
+            />
           </div>
         </div>
+
+        {updateStatus ? (
+          <InlineUpdateProgress
+            creatingReport={creatingReport}
+            onCreateReport={onCreateReport}
+            onRetry={onInstallUpdate}
+            status={updateStatus}
+          />
+        ) : null}
       </section>
+    </div>
+  );
+}
+
+function FirmwareUpdateAction({
+  checking,
+  installing,
+  onCheckUpdates,
+  onInstallUpdate,
+  refreshing,
+  updateAvailable,
+  updateReady,
+}: {
+  checking: boolean;
+  installing: boolean;
+  onCheckUpdates?: () => void;
+  onInstallUpdate?: () => void;
+  refreshing: boolean;
+  updateAvailable: boolean;
+  updateReady: boolean;
+}) {
+  if (updateAvailable) {
+    return (
+      <button
+        className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-4 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-80"
+        disabled={installing || !updateReady}
+        onClick={onInstallUpdate}
+        type="button"
+      >
+        {installing ? (
+          <RefreshCw className="animate-spin" size={18} aria-hidden />
+        ) : (
+          <Download size={18} aria-hidden />
+        )}
+        <span>{installing ? "Updating VibeTV" : "Update now"}</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#CCFF00] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#ABD600] disabled:bg-[#F9F9F9] disabled:text-[#444933] disabled:opacity-80"
+      disabled={checking || refreshing || !updateReady}
+      onClick={onCheckUpdates}
+      type="button"
+    >
+      {checking || refreshing ? (
+        <RefreshCw className="animate-spin" size={18} aria-hidden />
+      ) : (
+        <RefreshCw size={18} aria-hidden />
+      )}
+      <span>
+        {checking || refreshing ? "Checking updates" : "Check for updates"}
+      </span>
+    </button>
+  );
+}
+
+function InlineUpdateProgress({
+  creatingReport,
+  onCreateReport,
+  onRetry,
+  status,
+}: {
+  creatingReport: boolean;
+  onCreateReport?: () => void;
+  onRetry?: () => void;
+  status: FirmwareUpdateStatus;
+}) {
+  const failed = status.phase === "error";
+  const complete = status.phase === "complete";
+  const progress = clampUpdateProgress(
+    failed || complete ? 100 : status.progress,
+  );
+  const title = failed
+    ? "Update failed"
+    : complete
+      ? "Update complete"
+      : "Updating VibeTV";
+  const detail = failed
+    ? status.error || "Update was not installed. Try again."
+    : complete
+      ? status.result?.firmware
+        ? `Firmware ${status.result.firmware} is installed.`
+        : "VibeTV is up to date."
+      : status.message ||
+        status.logs[status.logs.length - 1] ||
+        "Preparing VibeTV update.";
+  const previousSteps = failed || complete ? [] : status.logs.slice(-4, -1);
+
+  return (
+    <div className="mt-6" role="status" aria-live="polite">
+      <div className="h-2 overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
+        <div
+          className={`h-full bg-[#CCFF00] transition-[width] duration-300 ${
+            failed || complete ? "" : "animate-pulse"
+          }`}
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="mt-3 flex flex-col gap-3 border border-[#747A60] bg-[#F9F9F9] p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2">
+          {failed ? (
+            <X className="mt-0.5 shrink-0" size={16} aria-hidden />
+          ) : complete ? (
+            <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden />
+          ) : (
+            <RefreshCw
+              className="mt-0.5 shrink-0 animate-spin"
+              size={16}
+              aria-hidden
+            />
+          )}
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-[#1B1B1B]">{title}</div>
+            <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
+              {detail}
+            </div>
+            {previousSteps.length > 0 ? (
+              <ol className="mt-2 space-y-1 text-xs leading-5 text-[#5D634F]">
+                {previousSteps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            ) : null}
+          </div>
+        </div>
+        {failed ? (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              className="h-10 min-w-[120px] border border-[#747A60] bg-[#F9F9F9] px-3 text-sm font-semibold text-[#1B1B1B] hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!onRetry}
+              onClick={onRetry}
+              type="button"
+            >
+              Try again
+            </button>
+            <button
+              className="h-10 min-w-[120px] border border-[#1B1B1B] bg-[#1B1B1B] px-3 text-sm font-semibold text-[#EDEDED] hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+              disabled={!onCreateReport || creatingReport}
+              onClick={onCreateReport}
+              type="button"
+            >
+              {creatingReport ? "Creating report" : "Create report"}
+            </button>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -324,6 +506,13 @@ function ActionStatus({ busy, label }: { busy?: boolean; label: string }) {
       <span>{label}</span>
     </div>
   );
+}
+
+function clampUpdateProgress(value: number | undefined): number {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return 5;
+  }
+  return Math.max(5, Math.min(100, Math.round(value)));
 }
 
 function HeroIcon({

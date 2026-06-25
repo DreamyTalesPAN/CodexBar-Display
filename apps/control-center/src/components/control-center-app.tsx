@@ -4,15 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type { ThemeCatalogResponse } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
-import type {
-  ActiveTab,
-  ApiError,
-  CompanionInfo,
-  CompanionStatus,
-  ControlCenterEvent,
-  DeviceInfo,
-  DeviceState,
-  SupportDiagnostics,
+import {
+  deviceImageIsStuck,
+  deviceSetupIsUsable,
+  type ActiveTab,
+  type ApiError,
+  type CompanionInfo,
+  type CompanionStatus,
+  type ControlCenterEvent,
+  type DeviceInfo,
+  type DeviceState,
+  type SupportDiagnostics,
 } from "./control-center-types";
 import { LogsScreen } from "./logs-screen";
 import { OverviewScreen } from "./overview-screen";
@@ -62,6 +64,38 @@ type ThemeInstallJob = {
   logs?: string[];
   result?: ThemeInstallResult;
   error?: ApiError;
+};
+
+type FirmwareUpdateResult = {
+  firmware?: string;
+  target?: string;
+};
+
+type FirmwareUpdateJob = {
+  id: string;
+  phase: "installing" | "complete" | "error";
+  message?: string;
+  progress?: number;
+  startedAt?: string;
+  finishedAt?: string;
+  logs?: string[];
+  result?: FirmwareUpdateResult;
+  error?: ApiError;
+};
+
+type FirmwareUpdateStatus = {
+  phase: "installing" | "complete" | "error";
+  startedAt: string;
+  finishedAt?: string;
+  message?: string;
+  progress?: number;
+  logs: string[];
+  result?: FirmwareUpdateResult;
+  error?: string;
+};
+
+type FirmwareUpdateResponse = {
+  job?: FirmwareUpdateJob;
 };
 
 type Props = {
@@ -116,6 +150,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<ThemeInstallStatus | null>(null);
   const [firmwareUpdate, setFirmwareUpdate] =
     useState<FirmwareUpdateInfo | null>(null);
+  const [firmwareUpdateStatus, setFirmwareUpdateStatus] =
+    useState<FirmwareUpdateStatus | null>(null);
   const setupPreviewStep = useMemo(() => readLocalSetupPreviewStep(), []);
   const [setupResetVersion, setSetupResetVersion] = useState(0);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
@@ -123,6 +159,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<SupportDiagnostics | null>(null);
   const didRunInitialConnectionCheck = useRef(false);
   const didRunAutoRepair = useRef(false);
+  const didRunAutoDisplayReload = useRef(false);
   const didRouteAfterSetupComplete = useRef(false);
   const lastCompanionRequestAt = useRef(0);
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
@@ -654,6 +691,71 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ],
   );
 
+  const reloadDisplay = useCallback(
+    async (options?: { quiet?: boolean }) => {
+      const quiet = Boolean(options?.quiet);
+      setBusyAction("reload-display");
+      try {
+        const payload = await runCompanion<{ device: DeviceInfo }>(
+          "/v1/device/reload-display",
+          { method: "POST" },
+          { preserveLastError: quiet },
+        );
+        setCompanionStatus("online");
+        setLastError(null);
+        setDevice(payload.device);
+        setDeviceState(
+          payload.device.paired
+            ? "paired"
+            : payload.device.connected
+              ? "online"
+              : "offline",
+        );
+        if (payload.device.target) {
+          setDeviceTarget(payload.device.target);
+          rememberDeviceTarget(payload.device.target);
+        }
+        if (!quiet || !deviceImageIsStuck(payload.device)) {
+          addEvent({
+            label: deviceImageIsStuck(payload.device)
+              ? "Image is still stuck"
+              : "Image reloaded",
+            detail: deviceImageIsStuck(payload.device)
+              ? "Press Reload image again."
+              : "VibeTV redrew the current image.",
+            tone: deviceImageIsStuck(payload.device) ? "attention" : "ready",
+          });
+        }
+      } catch (error) {
+        const normalized = normalizeCaughtError(
+          error,
+          "Image reload failed.",
+        );
+        if (isLocalNetworkAccessError(normalized)) {
+          markCompanionAccessBlocked();
+        } else if (isCompanionMissingError(normalized)) {
+          markCompanionUnavailable();
+        }
+        if (!quiet) {
+          setLastError(normalized);
+          addEvent({
+            label: "Image reload failed",
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
+        }
+      } finally {
+        setBusyAction(null);
+      }
+    },
+    [
+      addEvent,
+      markCompanionAccessBlocked,
+      markCompanionUnavailable,
+      runCompanion,
+    ],
+  );
+
   const resetSetup = useCallback(async () => {
     setBusyAction("reset-setup");
     setLastError(null);
@@ -667,6 +769,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setSupportDiagnostics(null);
     setFirmwareUpdate(null);
     didRunAutoRepair.current = false;
+    didRunAutoDisplayReload.current = false;
     didRouteAfterSetupComplete.current = false;
     setActiveTab("setup");
     try {
@@ -941,7 +1044,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       busyAction ||
       companionStatus !== "online" ||
       !device?.target ||
-      (device.connected && device.paired) ||
+      deviceSetupIsUsable(device) ||
       isLocalNetworkAccessError(lastError)
     ) {
       return;
@@ -951,11 +1054,32 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     busyAction,
     companionStatus,
-    device?.connected,
-    device?.paired,
-    device?.target,
+    device,
     lastError,
     repairConnection,
+    setupPreviewStep,
+  ]);
+
+  useEffect(() => {
+    if (!deviceImageIsStuck(device)) {
+      didRunAutoDisplayReload.current = false;
+      return;
+    }
+    if (
+      setupPreviewStep ||
+      didRunAutoDisplayReload.current ||
+      busyAction ||
+      companionStatus !== "online"
+    ) {
+      return;
+    }
+    didRunAutoDisplayReload.current = true;
+    void reloadDisplay({ quiet: true });
+  }, [
+    busyAction,
+    companionStatus,
+    device,
+    reloadDisplay,
     setupPreviewStep,
   ]);
 
@@ -1021,6 +1145,135 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setBusyAction(null);
     }
   }, [refreshFirmwareUpdate]);
+
+  const installFirmwareUpdate = useCallback(async () => {
+    const startedAt = formatTime();
+    const initialLogs = ["Preparing VibeTV update."];
+    const applyUpdateJob = (job: FirmwareUpdateJob) => {
+      const phase =
+        job.phase === "complete"
+          ? "complete"
+          : job.phase === "error"
+            ? "error"
+            : "installing";
+      const logs = customerUpdateLogs(job.logs, initialLogs);
+      setFirmwareUpdateStatus({
+        phase,
+        startedAt,
+        finishedAt:
+          phase === "complete" || phase === "error" ? formatTime() : undefined,
+        message:
+          job.error?.nextAction ||
+          job.message ||
+          logs[logs.length - 1] ||
+          initialLogs[0],
+        progress: clampProgress(job.progress),
+        logs,
+        result: job.result,
+        error: job.error?.nextAction,
+      });
+    };
+    setBusyAction("firmware-update");
+    setFirmwareUpdateStatus({
+      phase: "installing",
+      startedAt,
+      message: initialLogs[0],
+      progress: 5,
+      logs: initialLogs,
+    });
+    addEvent({
+      label: "VibeTV update started",
+      detail: "VibeTV is being updated.",
+      at: startedAt,
+      tone: "unknown",
+    });
+    try {
+      const payload = await runCompanion<FirmwareUpdateResponse>(
+        "/v1/updates/install",
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
+      if (!payload.job) {
+        throw {
+          code: "firmware_update_failed",
+          message: "VibeTV update failed.",
+          nextAction: "Keep VibeTV powered on, then try again.",
+        } satisfies ApiError;
+      }
+      applyUpdateJob(payload.job);
+      const finishedJob = await pollFirmwareUpdateJob({
+        applyUpdateJob,
+        jobId: payload.job.id,
+        runCompanion,
+      });
+      if (finishedJob.phase === "error") {
+        throw (
+          finishedJob.error || {
+            code: "firmware_update_failed",
+            message: "VibeTV update failed.",
+            nextAction: "Keep VibeTV powered on, then try again.",
+          }
+        );
+      }
+      const logs = customerUpdateLogs(finishedJob.logs, initialLogs);
+      const finishedAt = formatTime();
+      setFirmwareUpdateStatus({
+        phase: "complete",
+        startedAt,
+        finishedAt,
+        message: "Update complete.",
+        progress: 100,
+        logs: customerUpdateLogs([...logs, "Update complete."]),
+        result: finishedJob.result,
+      });
+      addEvent({
+        label: "VibeTV updated",
+        detail: finishedJob.result?.firmware
+          ? `Firmware ${finishedJob.result.firmware} is installed.`
+          : "Update complete.",
+        at: finishedAt,
+        tone: "ready",
+      });
+      await refreshDevice({ quiet: true });
+      await refreshFirmwareUpdate();
+    } catch (error) {
+      const normalized = normalizeCaughtError(
+        error,
+        "VibeTV update failed.",
+      );
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else if (isCompanionMissingError(normalized)) {
+        markCompanionUnavailable();
+      }
+      setLastError(normalized);
+      setFirmwareUpdateStatus({
+        phase: "error",
+        startedAt,
+        finishedAt: formatTime(),
+        message: normalized.nextAction,
+        progress: 100,
+        logs: [...initialLogs, normalized.message, normalized.nextAction],
+        error: normalized.nextAction,
+      });
+      addEvent({
+        label: "VibeTV update failed",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  }, [
+    addEvent,
+    markCompanionAccessBlocked,
+    markCompanionUnavailable,
+    refreshDevice,
+    refreshFirmwareUpdate,
+    runCompanion,
+  ]);
 
   const loadSupportDiagnostics = useCallback(async () => {
     setBusyAction("diagnostics");
@@ -1108,11 +1361,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? firmwareUpdate
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
+  const imageNeedsReload = deviceImageIsStuck(device);
   const setupComplete = Boolean(
     !setupPreviewStep &&
-    companionStatus === "online" &&
-      device?.connected &&
-      device.paired,
+      companionStatus === "online" &&
+      deviceSetupIsUsable(device),
   );
   useEffect(() => {
     if (!setupComplete || didRouteAfterSetupComplete.current) {
@@ -1123,12 +1376,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [initialThemeId, setupComplete]);
 
   const disabledTabs: ActiveTab[] = setupComplete
-    ? []
+    ? imageNeedsReload
+      ? ["settings", "theme-library", "updates"]
+      : []
     : ["overview", "settings", "theme-library", "updates", "logs"];
-  const activeShellTab =
-    disabledTabs.includes(activeTab)
-      ? "setup"
-      : activeTab;
+  const activeShellTab = disabledTabs.includes(activeTab)
+    ? setupComplete
+      ? "overview"
+      : "setup"
+    : activeTab;
 
   return (
     <ControlCenterShell
@@ -1165,10 +1421,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
       {activeShellTab === "overview" ? (
         <OverviewScreen
+          busyAction={busyAction}
           companionStatus={companionStatus}
           device={device}
           deviceState={deviceState}
           firmwareUpdate={effectiveFirmwareUpdate}
+          onReloadImage={() => reloadDisplay()}
         />
       ) : null}
 
@@ -1210,6 +1468,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           device={device}
           firmwareUpdate={effectiveFirmwareUpdate}
           onCheckUpdates={checkFirmwareUpdates}
+          onCreateReport={() => {
+            setActiveTab("logs");
+            void loadSupportDiagnostics();
+          }}
+          onInstallUpdate={installFirmwareUpdate}
+          updateStatus={firmwareUpdateStatus}
         />
       ) : null}
 
@@ -1271,6 +1535,34 @@ async function pollThemeInstallJob({
   } satisfies ApiError;
 }
 
+async function pollFirmwareUpdateJob({
+  applyUpdateJob,
+  jobId,
+  runCompanion,
+}: {
+  applyUpdateJob: (job: FirmwareUpdateJob) => void;
+  jobId: string;
+  runCompanion: RunCompanion;
+}): Promise<FirmwareUpdateJob> {
+  for (let attempt = 0; attempt < 1200; attempt += 1) {
+    await delay(500);
+    const payload = await runCompanion<{ job: FirmwareUpdateJob }>(
+      `/v1/updates/install/status?jobId=${encodeURIComponent(jobId)}`,
+      undefined,
+      { preserveLastError: true },
+    );
+    applyUpdateJob(payload.job);
+    if (payload.job.phase === "complete" || payload.job.phase === "error") {
+      return payload.job;
+    }
+  }
+  throw {
+    code: "firmware_update_timeout",
+    message: "VibeTV update is taking longer than expected.",
+    nextAction: "Keep VibeTV powered on, then create a support report.",
+  } satisfies ApiError;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -1278,6 +1570,17 @@ function delay(ms: number): Promise<void> {
 function customerInstallLogs(
   logs: string[] | undefined,
   fallback: string[] = ["Preparing theme install."],
+): string[] {
+  const cleaned = (logs || [])
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line, index, all) => all.indexOf(line) === index);
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
+function customerUpdateLogs(
+  logs: string[] | undefined,
+  fallback: string[] = ["Preparing VibeTV update."],
 ): string[] {
   const cleaned = (logs || [])
     .map((line) => line.trim())

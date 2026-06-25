@@ -224,6 +224,7 @@ async function main() {
     );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
+    await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
     await testSupportReportExportsAppearAfterReportLoads(browser, appContext.appUrl);
     await testVibeTVAddressCopyStaysCustomerOnly(browser, appContext.appUrl);
     await testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
@@ -730,6 +731,76 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
     assert(
       (await page.getByText(text).count()) === 0,
       `Updates should not show package/release jargon: ${text}`,
+    );
+  }
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const updateRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    onUpdate: (postData) => {
+      updateRequests.push(postData);
+    },
+    updateStatusSequence: [
+      {
+        phase: "installing",
+        message: "Updating VibeTV.",
+        progress: 65,
+        logs: [
+          "Preparing VibeTV update.",
+          "Checking VibeTV.",
+          "Checking update.",
+          "Update downloaded.",
+          "Updating VibeTV.",
+        ],
+      },
+      {
+        phase: "complete",
+        message: "Update complete.",
+        progress: 100,
+        logs: [
+          "Preparing VibeTV update.",
+          "Checking VibeTV.",
+          "Checking update.",
+          "Update downloaded.",
+          "Updating VibeTV.",
+          "Restarting VibeTV.",
+          "Update complete.",
+        ],
+        result: { firmware: "1.0.33" },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page.getByRole("button", { name: "Update now" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Update now" }).click();
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Updating VibeTV" })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Update complete" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByText("Firmware 1.0.33 is installed.").waitFor({
+    timeout: 10_000,
+  });
+  assert(updateRequests.length === 1, "firmware update should start once");
+
+  for (const text of ["sha256", "/update/firmware", "firmwareUrl"]) {
+    assert(
+      (await page.getByText(text, { exact: false }).count()) === 0,
+      `Firmware update progress should not show technical text: ${text}`,
     );
   }
 
@@ -1624,15 +1695,82 @@ async function routeCompanionOnline(
     onPair,
     onRepair,
     onReset,
+    onUpdate,
     installStatusSequence,
+    updateStatusSequence,
     repairError = false,
   } = {},
 ) {
   let currentDevice = device;
   let activeInstallJobId = "";
   let installStatusIndex = 0;
+  let activeUpdateJobId = "";
+  let updateStatusIndex = 0;
   const handler = async (route) => {
     const pathname = companionPath(route);
+    if (pathname === "/v1/updates/install/status") {
+      const fallbackStatus = {
+        phase: "complete",
+        message: "Update complete.",
+        progress: 100,
+        logs: [
+          "Preparing VibeTV update.",
+          "Checking VibeTV.",
+          "Updating VibeTV.",
+          "Update complete.",
+        ],
+        result: { firmware: "1.0.33" },
+      };
+      const sequence =
+        Array.isArray(updateStatusSequence) &&
+        updateStatusSequence.length > 0
+          ? updateStatusSequence
+          : [fallbackStatus];
+      const nextStatus =
+        sequence[Math.min(updateStatusIndex, sequence.length - 1)] ||
+        fallbackStatus;
+      updateStatusIndex += 1;
+      if (nextStatus.phase === "complete" && nextStatus.result?.firmware) {
+        currentDevice = {
+          ...currentDevice,
+          firmware: nextStatus.result.firmware,
+        };
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          job: {
+            id: activeUpdateJobId || "update-job-1",
+            startedAt: "2026-06-23T12:00:00.000Z",
+            ...nextStatus,
+          },
+        }),
+      });
+      return;
+    }
+    if (pathname === "/v1/updates/install") {
+      const postData = route.request().postData() || "";
+      onUpdate?.(postData, currentDevice);
+      activeUpdateJobId = "update-job-1";
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          job: {
+            id: activeUpdateJobId,
+            phase: "installing",
+            message: "Preparing VibeTV update.",
+            progress: 5,
+            startedAt: "2026-06-23T12:00:00.000Z",
+            logs: ["Preparing VibeTV update."],
+          },
+        }),
+      });
+      return;
+    }
     if (pathname === "/v1/themes/install/status") {
       const fallbackStatus = {
         phase: "error",

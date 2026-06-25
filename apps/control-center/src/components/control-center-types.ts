@@ -51,6 +51,24 @@ export type DeviceInfo = {
   board?: string;
   firmware?: string;
   activeTheme?: string;
+  stream?: {
+    healthy?: boolean;
+    running?: boolean;
+    lastSentAt?: string;
+    target?: string;
+    lastTarget?: string;
+    detail?: string;
+  };
+  display?: {
+    themeSpec?: {
+      active?: boolean;
+      path?: string;
+      hash?: string;
+      renderOk?: boolean;
+      renderError?: string;
+      renderFailures?: number;
+    };
+  };
   capabilities?: {
     display?: {
       brightness?: {
@@ -100,3 +118,16 @@ export type ShellNavItem = {
   detail?: string;
   icon?: ReactNode;
 };
+
+export function deviceImageIsStuck(device: DeviceInfo | null | undefined) {
+  const themeSpec = device?.display?.themeSpec;
+  return Boolean(themeSpec?.active && themeSpec.renderOk === false);
+}
+
+export function deviceStreamIsReady(device: DeviceInfo | null | undefined) {
+  return Boolean(device?.paired && device.stream?.healthy);
+}
+
+export function deviceSetupIsUsable(device: DeviceInfo | null | undefined) {
+  return Boolean(device?.paired && (device.connected || deviceStreamIsReady(device)));
+}

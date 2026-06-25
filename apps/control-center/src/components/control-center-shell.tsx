@@ -9,10 +9,12 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import type {
-  ActiveTab,
-  DeviceInfo,
-  ShellNavItem,
+import {
+  deviceImageIsStuck,
+  deviceSetupIsUsable,
+  type ActiveTab,
+  type DeviceInfo,
+  type ShellNavItem,
 } from "./control-center-types";
 
 type ControlCenterShellProps = {
@@ -65,11 +67,14 @@ export function ControlCenterShell({
   disabledTabs = [],
   firmwareUpdateAvailable = false,
 }: ControlCenterShellProps) {
-  const setupConnected = Boolean(device?.connected && device.paired);
+  const imageStuck = deviceImageIsStuck(device);
+  const setupConnected = deviceSetupIsUsable(device);
   const targetLabel = setupConnected
-    ? device?.target?.replace(/^https?:\/\//, "") || "VibeTV connected"
+    ? imageStuck
+      ? "Image is stuck"
+      : device?.target?.replace(/^https?:\/\//, "") || "VibeTV connected"
     : "Setup needed";
-  const targetDotClass = setupConnected ? "bg-[#CCFF00]" : "bg-[#747A60]";
+  const targetDotClass = setupConnected && !imageStuck ? "bg-[#CCFF00]" : "bg-[#747A60]";
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
 

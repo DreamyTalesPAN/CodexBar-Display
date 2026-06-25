@@ -2637,9 +2637,10 @@ void loop() {
     renderer.TickSplash(runtimeCtx);
   }
 
-  if (runtimeCtx.screenDirty && !waitStatusRendered) {
+  if (runtimeCtx.screenDirty && !waitStatusRendered && !renderer.ShouldDeferDirtyRender(runtimeCtx)) {
     const unsigned long renderStartUs = micros();
     const char* fullKind = "usage";
+    bool keepDirty = false;
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
     renderer.DrawUsage(runtimeCtx);
 #else
@@ -2656,6 +2657,10 @@ void loop() {
     } else {
       fullKind = codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec ? "theme_spec_usage" : "usage";
       renderer.DrawUsage(runtimeCtx);
+      if (codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec &&
+          !renderer.DebugSnapshot().themeSpecRenderOk) {
+        keepDirty = true;
+      }
     }
 #endif
     rendered = true;
@@ -2663,8 +2668,10 @@ void loop() {
     drawFirmwareUpdateNotice();
     renderDurationUs = micros() - renderStartUs;
     recordRenderFull(fullKind, renderDurationUs);
-    runtimeCtx.screenDirty = false;
-    firmwareUpdateNoticeDirty = false;
+    if (!keepDirty) {
+      runtimeCtx.screenDirty = false;
+      firmwareUpdateNoticeDirty = false;
+    }
   }
 
 #ifdef CODEXBAR_DISPLAY_RUNTIME_BENCH

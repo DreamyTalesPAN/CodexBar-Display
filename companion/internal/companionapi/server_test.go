@@ -192,6 +192,149 @@ func TestDeviceNotFoundErrorFormat(t *testing.T) {
 	}
 }
 
+func TestDeviceReachableButDisplayStreamNotReadyReportsDisconnected(t *testing.T) {
+	device := newHelloDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Healthy: false,
+			Running: false,
+			Target:  device.URL,
+			Detail:  "Display stream is not loaded.",
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/device", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Device deviceInfo `json:"device"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Connected {
+		t.Fatalf("expected reachable device to stay disconnected until display stream is ready, got %+v", got.Device)
+	}
+	if got.Device.Stream == nil || got.Device.Stream.Healthy {
+		t.Fatalf("expected unhealthy stream detail, got %+v", got.Device.Stream)
+	}
+}
+
+func TestDeviceReachableButRenderFailedReportsDisconnected(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":false,"renderError":"low_heap_full_render","renderFailures":3}},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/device", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Device deviceInfo `json:"device"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Connected {
+		t.Fatalf("expected render failure to report disconnected image, got %+v", got.Device)
+	}
+	if got.Device.Stream == nil || !got.Device.Stream.Healthy {
+		t.Fatalf("expected healthy stream detail, got %+v", got.Device.Stream)
+	}
+	if got.Device.Display == nil || got.Device.Display.ThemeSpec == nil ||
+		got.Device.Display.ThemeSpec.RenderOK == nil ||
+		*got.Device.Display.ThemeSpec.RenderOK ||
+		got.Device.Display.ThemeSpec.RenderError != "low_heap_full_render" {
+		t.Fatalf("expected render failure health, got %+v", got.Device.Display)
+	}
+}
+
+func TestDeviceReloadDisplayWaitsForRenderHealth(t *testing.T) {
+	var healthCalls int
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Fatalf("expected pairing token for hello, got %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Fatalf("expected pairing token for health, got %q", got)
+			}
+			healthCalls++
+			w.Header().Set("Content-Type", "application/json")
+			if healthCalls == 1 {
+				_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"renderOk":false,"renderError":"low_heap_full_render","renderFailures":1}},"settings":{"display":{"brightnessPercent":40}}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"renderOk":true,"renderFailures":1}},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	var setupCalls []setup.Options
+	server.runSetup = func(_ context.Context, opts setup.Options) error {
+		setupCalls = append(setupCalls, opts)
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/reload-display", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || !got.Device.Connected || !got.Device.Paired {
+		t.Fatalf("expected reload response to become connected after render recovery, got %+v", got)
+	}
+	if got.Device.Display == nil || got.Device.Display.ThemeSpec == nil ||
+		got.Device.Display.ThemeSpec.RenderOK == nil ||
+		!*got.Device.Display.ThemeSpec.RenderOK {
+		t.Fatalf("expected healthy render state in response, got %+v", got.Device.Display)
+	}
+	if healthCalls < 2 {
+		t.Fatalf("expected reload to wait for render health, got %d health call(s)", healthCalls)
+	}
+	if len(setupCalls) != 2 {
+		t.Fatalf("expected validate and apply display stream calls, got %+v", setupCalls)
+	}
+	if !setupCalls[0].ValidateOnly || setupCalls[1].ValidateOnly {
+		t.Fatalf("expected validate then apply setup calls, got %+v", setupCalls)
+	}
+}
+
 func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()
@@ -225,7 +368,7 @@ func TestDiagnosticsReportsDeviceWithoutLeakingToken(t *testing.T) {
 		switch r.URL.Path {
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
 		case "/health":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"synthwave"},"settings":{"display":{"brightnessPercent":40}}}`))
@@ -351,7 +494,7 @@ func TestDeviceDiscoverFallsBackToSubnetCandidateAndPersistsTarget(t *testing.T)
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
 	}))
 	defer device.Close()
 
@@ -546,13 +689,16 @@ func TestDeviceRepairForcePairIgnoresStaleTokenDuringDiscovery(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
 		case "/api/pair":
 			if r.Method != http.MethodPost {
 				t.Fatalf("expected POST pair, got %s", r.Method)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"token":"new-token"}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40}}}`))
 		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
@@ -581,6 +727,74 @@ func TestDeviceRepairForcePairIgnoresStaleTokenDuringDiscovery(t *testing.T) {
 	}
 	if !sawNewTokenHello {
 		t.Fatal("expected repair response refresh to use the new token")
+	}
+}
+
+func TestDeviceRepairRepairsStaleTokenWithoutForcePair(t *testing.T) {
+	var sawStaleToken bool
+	var sawTokenlessHello bool
+	var sawNewTokenHello bool
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			switch got := r.Header.Get("X-VibeTV-Token"); got {
+			case "old-token":
+				sawStaleToken = true
+				http.Error(w, "stale token", http.StatusUnauthorized)
+				return
+			case "":
+				sawTokenlessHello = true
+			case "new-token":
+				sawNewTokenHello = true
+			default:
+				t.Fatalf("unexpected token %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/api/pair":
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST pair, got %s", r.Method)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"new-token"}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "old-token"})
+	server.runSetup = func(_ context.Context, opts setup.Options) error {
+		if opts.Target != device.URL {
+			t.Fatalf("expected display stream target %q, got %q", device.URL, opts.Target)
+		}
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !sawStaleToken || !sawTokenlessHello || !sawNewTokenHello {
+		t.Fatalf("expected stale, tokenless, and refreshed probes; stale=%t tokenless=%t new=%t", sawStaleToken, sawTokenlessHello, sawNewTokenHello)
+	}
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	server.Handler().ServeHTTP(rec, req)
+	var status statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if !status.Device.Paired {
+		t.Fatalf("expected repaired pairing state, got %+v", status.Device)
 	}
 }
 
@@ -975,6 +1189,133 @@ func TestThemeInstallAsyncReportsCustomerProgress(t *testing.T) {
 	}
 }
 
+func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.updateFirmware = func(_ context.Context, _ string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer) error {
+		if cfg.DeviceTarget != device.URL || strings.TrimSpace(cfg.DeviceToken) != "pair-token" {
+			t.Fatalf("unexpected update config: %+v", cfg)
+		}
+		if req.Force {
+			t.Fatalf("force should default to false")
+		}
+		for _, line := range []string{
+			"Checking device...",
+			"Device: esp8266-smalltv-st7789 firmware 1.0.31",
+			"Checking firmware...",
+			"Updating firmware: 1.0.31 -> 1.0.32",
+			"Firmware downloaded: /tmp/private/path sha256=secret",
+			"Pausing Mac App during firmware update...",
+			"Uploading firmware...",
+			"Restarting VibeTV...",
+			"Done: firmware 1.0.32 installed",
+		} {
+			_, _ = io.WriteString(out, line+"\n")
+		}
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+	if started.Job.ID == "" || started.Job.Phase != "installing" {
+		t.Fatalf("unexpected started job: %+v", started.Job)
+	}
+
+	var got firmwareUpdateJobResponse
+	for attempt := 0; attempt < 50; attempt++ {
+		rec = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/v1/updates/install/status?jobId="+started.Job.ID, nil)
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status response: %v", err)
+		}
+		if got.Job.Phase == "complete" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got.Job.Phase != "complete" || got.Job.Progress != 100 {
+		t.Fatalf("expected completed update job, got %+v", got.Job)
+	}
+	if got.Job.Result == nil || got.Job.Result.Firmware != "1.0.32" {
+		t.Fatalf("expected firmware result, got %+v", got.Job.Result)
+	}
+	joinedLogs := strings.Join(got.Job.Logs, "\n")
+	for _, want := range []string{"Checking VibeTV.", "Checking update.", "Update downloaded.", "Updating VibeTV.", "Restarting VibeTV.", "Update complete."} {
+		if !strings.Contains(joinedLogs, want) {
+			t.Fatalf("expected customer update log %q in %q", want, joinedLogs)
+		}
+	}
+	for _, hidden := range []string{"/tmp/private", "sha256", "secret"} {
+		if strings.Contains(joinedLogs, hidden) {
+			t.Fatalf("update progress leaked technical detail %q in %q", hidden, joinedLogs)
+		}
+	}
+}
+
+func TestFirmwareUpdateAsyncReportsCustomerError(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, "Checking device...\nUploading firmware...\n")
+		return errors.New(`POST /update/firmware.raw returned 401 body="pair-token rejected"`)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+
+	var got firmwareUpdateJobResponse
+	for attempt := 0; attempt < 50; attempt++ {
+		rec = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/v1/updates/install/status?jobId="+started.Job.ID, nil)
+		server.Handler().ServeHTTP(rec, req)
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status response: %v", err)
+		}
+		if got.Job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got.Job.Phase != "error" || got.Job.Error == nil {
+		t.Fatalf("expected failed update job, got %+v", got.Job)
+	}
+	if got.Job.Error.Code != "firmware_update_failed" {
+		t.Fatalf("unexpected update error: %+v", got.Job.Error)
+	}
+	joinedLogs := strings.Join(got.Job.Logs, "\n")
+	if strings.Contains(joinedLogs, "pair-token") || strings.Contains(got.Job.Error.Message, "pair-token") {
+		t.Fatalf("update error leaked token: job=%+v logs=%q", got.Job, joinedLogs)
+	}
+}
+
 func TestThemeInstallErrorIncludesSanitizedDetail(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1236,6 +1577,9 @@ func TestSettingsValidatesAndForwardsBrightness(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40}}}`))
 		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
@@ -1288,6 +1632,24 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	server.runSetup = func(context.Context, setup.Options) error {
 		return nil
 	}
+	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+		return nil
+	}
+	server.subnetTargets = func() []string {
+		return nil
+	}
+	healthyStream := func(_ context.Context, target string) displayStreamInfo {
+		return displayStreamInfo{
+			Healthy:    true,
+			Running:    true,
+			LastSentAt: time.Now().UTC().Format(time.RFC3339),
+			Target:     publicTarget(target),
+			LastTarget: publicTarget(target),
+			Detail:     "Display stream is sending usage frames.",
+		}
+	}
+	server.streamStatus = healthyStream
+	server.waitStream = healthyStream
 	return server
 }
 
@@ -1298,7 +1660,7 @@ func newHelloDeviceServer(t *testing.T) *httptest.Server {
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
 	}))
 }
 
@@ -1311,13 +1673,16 @@ func newPairableDeviceServer(t *testing.T) *httptest.Server {
 				t.Fatalf("expected pairing token for hello, got %q", got)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
 		case "/api/pair":
 			if r.Method != http.MethodPost {
 				t.Fatalf("expected POST pair, got %s", r.Method)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token"}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40}}}`))
 		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
@@ -1330,7 +1695,7 @@ func newRepairableDeviceServer(t *testing.T) *httptest.Server {
 		switch r.URL.Path {
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.31","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
 		case "/api/pair":
 			if r.Method != http.MethodPost {
 				t.Fatalf("expected POST pair, got %s", r.Method)
@@ -1352,7 +1717,7 @@ func newThemeInstallReadyDeviceServer(t *testing.T) *httptest.Server {
 		switch r.URL.Path {
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
 		case "/health":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))
