@@ -22,6 +22,9 @@ namespace {
 
 constexpr unsigned long kThemeSpecAnimatedTickMs = 20UL;
 constexpr int kAnimatedSpriteCacheSlots = 2;
+constexpr uint32_t kMinThemeSpecRenderHeapBytes = 4096UL;
+constexpr size_t kSpriteLineReserveBytes = 256;
+constexpr size_t kSpriteLineMaxBytes = 512;
 unsigned long nextThemeSpecAnimatedTickAtMs = 0;
 bool lastThemeSpecRenderOk = true;
 const char* lastThemeSpecRenderError = "";
@@ -102,11 +105,16 @@ void markCurrentThemeSpecRendered() {
 }
 
 bool currentThemeSpecRenderedSuccessfully() {
-  return CurrentFrame().hasThemeSpec &&
+  return lastThemeSpecRenderOk &&
+         CurrentFrame().hasThemeSpec &&
          lastSuccessfulThemeSpecRev == CurrentFrame().themeSpecRev &&
          lastSuccessfulThemeSpecId == CurrentFrame().themeSpecId &&
          lastSuccessfulThemeSpecRawHash != 0 &&
          lastSuccessfulThemeSpecRawHash == themeSpecRawHash(currentThemeSpecRaw());
+}
+
+bool hasThemeSpecRenderHeap() {
+  return ESP.getFreeHeap() >= kMinThemeSpecRenderHeapBytes;
 }
 
 const String& currentThemeSpecRaw() {
@@ -142,7 +150,21 @@ bool readSpriteLine(File& file, String& line) {
   if (!file.available()) {
     return false;
   }
-  line = file.readStringUntil('\n');
+  line = "";
+  line.reserve(kSpriteLineReserveBytes);
+  while (file.available()) {
+    const int next = file.read();
+    if (next < 0 || next == '\n') {
+      break;
+    }
+    if (next == '\r') {
+      continue;
+    }
+    if (line.length() >= kSpriteLineMaxBytes) {
+      return false;
+    }
+    line += static_cast<char>(next);
+  }
   line.trim();
   return true;
 }
@@ -708,6 +730,10 @@ bool DrawThemeSpecUsage() {
   const String& raw = currentThemeSpecRaw();
   if (!codexbar_display::core::ThemeSpecRawLooksRenderable(raw)) {
     markThemeSpecRenderFailed("missing_theme_spec");
+    return false;
+  }
+  if (!hasThemeSpecRenderHeap()) {
+    markThemeSpecRenderFailed("low_heap_full_render");
     return false;
   }
 

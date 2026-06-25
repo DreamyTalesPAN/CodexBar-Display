@@ -107,6 +107,7 @@ RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
     snapshot.activeTheme = themeName(display::ActiveTheme());
   }
   snapshot.themeSpecRenderOk = !snapshot.themeSpecActive || display::ThemeSpecRenderOk();
+  snapshot.themeSpecRenderError = snapshot.themeSpecActive ? display::ThemeSpecRenderError() : "";
   snapshot.themeSpecRenderFailures = display::ThemeSpecRenderFailures();
   const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
   snapshot.gifActivePath = gif.activePath;

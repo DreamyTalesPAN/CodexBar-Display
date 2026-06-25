@@ -91,7 +91,7 @@ func main() {
 func printUsage() {
 	fmt.Println("codexbar-display commands:")
 	fmt.Println("  codexbar-display api [--addr 127.0.0.1:47832] [--dev-origin http://localhost:3000]")
-	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 2s] [--once] [--theme classic|crt|mini]")
+	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 30s] [--once] [--theme classic|crt|mini]")
 	fmt.Println("  codexbar-display doctor")
 	fmt.Println("  codexbar-display health")
 	fmt.Println("  codexbar-display service <start|stop|status>")
@@ -139,7 +139,7 @@ func parseDaemonOptions(args []string) (daemon.Options, error) {
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
 	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
-	interval := fs.Duration("interval", 60*time.Second, "poll interval")
+	interval := fs.Duration("interval", 0, "poll interval")
 	once := fs.Bool("once", false, "run one cycle and exit")
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|mini")
 	if err := fs.Parse(args); err != nil {

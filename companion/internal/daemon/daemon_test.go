@@ -54,6 +54,27 @@ func TestRunCycleWithDepsSendsErrorFrameWhenNoLastGood(t *testing.T) {
 	}
 }
 
+func TestDefaultIntervalForTransport(t *testing.T) {
+	tests := []struct {
+		name      string
+		transport string
+		want      time.Duration
+	}{
+		{name: "wifi", transport: "wifi", want: defaultWiFiInterval},
+		{name: "wifi uppercase", transport: "WIFI", want: defaultWiFiInterval},
+		{name: "usb", transport: "usb", want: defaultInterval},
+		{name: "empty", transport: "", want: defaultInterval},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := defaultIntervalForTransport(tt.transport); got != tt.want {
+				t.Fatalf("defaultIntervalForTransport(%q)=%s, expected %s", tt.transport, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunCycleWithDepsSendsVersionErrorFrameWhenCodexBarTooOld(t *testing.T) {
 	prepareFastTestEnv(t)
 

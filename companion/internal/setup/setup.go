@@ -26,13 +26,14 @@ import (
 )
 
 const (
-	launchAgentLabel      = "com.codexbar-display.daemon"
-	defaultDaemonInterval = "2s"
-	defaultLastGoodMaxAge = "168h"
-	defaultTransport      = "wifi"
-	defaultWiFiTarget     = "http://vibetv.local"
-	codexbarInstallURL    = "https://codexbar.app/"
-	codexbarBrewCask      = "steipete/tap/codexbar"
+	launchAgentLabel          = "com.codexbar-display.daemon"
+	defaultDaemonInterval     = "2s"
+	defaultWiFiDaemonInterval = "30s"
+	defaultLastGoodMaxAge     = "168h"
+	defaultTransport          = "wifi"
+	defaultWiFiTarget         = "http://vibetv.local"
+	codexbarInstallURL        = "https://codexbar.app/"
+	codexbarBrewCask          = "steipete/tap/codexbar"
 )
 
 type Options struct {
@@ -933,7 +934,7 @@ func writeLaunchAgentPlist(home, binaryPath, transportName, target, port string)
 }
 
 func renderLaunchAgentPlist(binaryPath, transportName, target, port string) []byte {
-	args := []string{binaryPath, "daemon", "--interval", defaultDaemonInterval}
+	args := []string{binaryPath, "daemon", "--interval", daemonIntervalForSetupTransport(transportName)}
 	if normalizeSetupTransport(transportName) == "wifi" {
 		args = append(args, "--transport", "wifi", "--target", normalizeSetupTarget(target))
 	} else if strings.TrimSpace(port) != "" {
@@ -971,6 +972,17 @@ func renderLaunchAgentPlist(binaryPath, transportName, target, port string) []by
 	b.WriteString("  </dict>\n")
 	b.WriteString("</plist>\n")
 	return []byte(b.String())
+}
+
+func daemonIntervalForSetupTransport(transportName string) string {
+	normalized := normalizeSetupTransport(transportName)
+	if normalized == "" {
+		normalized = defaultTransport
+	}
+	if normalized == "wifi" {
+		return defaultWiFiDaemonInterval
+	}
+	return defaultDaemonInterval
 }
 
 func xmlEscape(value string) string {

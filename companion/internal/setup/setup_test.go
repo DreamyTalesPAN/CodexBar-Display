@@ -21,6 +21,26 @@ type commandCall struct {
 	args []string
 }
 
+func TestDaemonIntervalForSetupTransport(t *testing.T) {
+	tests := []struct {
+		name      string
+		transport string
+		want      string
+	}{
+		{name: "wifi", transport: "wifi", want: defaultWiFiDaemonInterval},
+		{name: "default", transport: "", want: defaultWiFiDaemonInterval},
+		{name: "serial", transport: "serial", want: defaultDaemonInterval},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := daemonIntervalForSetupTransport(tt.transport); got != tt.want {
+				t.Fatalf("daemonIntervalForSetupTransport(%q)=%q, expected %q", tt.transport, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")

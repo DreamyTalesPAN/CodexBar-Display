@@ -1323,11 +1323,15 @@ void handleHealth() {
   const codexbar_display::esp8266::RendererHealthSnapshot snapshot = renderer.HealthSnapshot();
 
   String out;
-  out.reserve(640);
+  out.reserve(768);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
   out += String(ESP.getFreeHeap());
+  out += ",\"maxFreeBlock\":";
+  out += String(ESP.getMaxFreeBlockSize());
+  out += ",\"heapFragmentationPercent\":";
+  out += String(ESP.getHeapFragmentation());
   out += ",\"resetReason\":";
   out += bootResetReasonJSON;
   out += "},";
@@ -1342,6 +1346,8 @@ void handleHealth() {
   appendJSONNullableString(out, activeThemeSpecHash);
   out += ",\"renderOk\":";
   out += snapshot.themeSpecRenderOk ? "true" : "false";
+  out += ",\"renderError\":";
+  appendJSONNullableString(out, snapshot.themeSpecRenderError);
   out += ",\"renderFailures\":";
   out += String(snapshot.themeSpecRenderFailures);
   out += "},\"gif\":{\"activePath\":\"";
@@ -2230,6 +2236,7 @@ void handleRawOtaClient() {
 
   drawUpdateStatus("Loading firmware");
   waitStatusRendered = true;
+  markBootRecoveryUploadActive(true);
   enterOtaSafeMode(U_FLASH);
 
   if (!Update.begin(maxSize, U_FLASH)) {

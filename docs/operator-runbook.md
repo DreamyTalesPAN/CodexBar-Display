@@ -244,11 +244,11 @@ Runtime behavior:
 - If capabilities are known and explicitly do not support theme, companion omits `theme`.
 - Companion negotiates protocol `v2` first and falls back to `v1` when device support is legacy/missing.
 
-For an ad-hoc run:
+For an ad-hoc WiFi run:
 
 ```bash
 cd companion
-CODEXBAR_DISPLAY_THEME=mini ../codexbar-display daemon --interval 2s
+CODEXBAR_DISPLAY_THEME=mini ../codexbar-display daemon --transport wifi --interval 30s
 ```
 
 Preferred persistent config:

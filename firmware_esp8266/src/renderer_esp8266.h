@@ -44,6 +44,7 @@ struct RendererHealthSnapshot {
   String activeTheme;
   bool themeSpecActive = false;
   bool themeSpecRenderOk = true;
+  String themeSpecRenderError;
   unsigned long themeSpecRenderFailures = 0;
   String gifActivePath;
   bool gifFilePresent = false;

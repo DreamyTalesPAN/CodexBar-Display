@@ -37,6 +37,7 @@ type Options struct {
 
 const (
 	defaultInterval            = 2 * time.Second
+	defaultWiFiInterval        = 30 * time.Second
 	defaultCycleTimeout        = 180 * time.Second
 	startupFastPollWindow      = 2 * time.Minute
 	startupFastPollInterval    = 30 * time.Second
@@ -280,7 +281,7 @@ func Run(ctx context.Context, opts Options) error {
 
 func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
-		opts.Interval = defaultInterval
+		opts.Interval = defaultIntervalForTransport(deps.transportName)
 	}
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
@@ -464,6 +465,13 @@ func runCycleWithTimeout(parent context.Context, timeout time.Duration, runCycle
 		}
 		return parent.Err()
 	}
+}
+
+func defaultIntervalForTransport(transportName string) time.Duration {
+	if strings.EqualFold(strings.TrimSpace(transportName), "wifi") {
+		return defaultWiFiInterval
+	}
+	return defaultInterval
 }
 
 func startupInterval(normal, uptime time.Duration) time.Duration {
