@@ -626,23 +626,11 @@ func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) 
 	if deps.transportName != "wifi" {
 		return "", protocol.DeviceCapabilities{}, false
 	}
-	if !isDefaultWiFiTarget(stalePort) {
-		fallbackPort, resolveErr := deps.resolvePort(defaultWiFiTarget)
-		if resolveErr == nil && !isSameTarget(stalePort, fallbackPort) {
-			caps, capsErr := deps.deviceCaps(fallbackPort)
-			if capsErr == nil && caps.Known {
-				deps.logf(
-					"runtime event=wifi-target-recovered from=%s to=%s staleErr=%v\n",
-					stalePort,
-					fallbackPort,
-					staleErr,
-				)
-				return fallbackPort, caps, true
-			}
-		}
+	candidates := []string{stalePort}
+	if isDefaultWiFiTarget(stalePort) {
+		candidates = append(candidates, defaultWiFiTarget)
 	}
-
-	result, discoverErr := deps.discoverWiFi([]string{stalePort, defaultWiFiTarget})
+	result, discoverErr := deps.discoverWiFi(candidates)
 	if discoverErr != nil {
 		return "", protocol.DeviceCapabilities{}, false
 	}
@@ -1052,9 +1040,6 @@ func targetWithDeviceToken(target, token string) string {
 		return target
 	}
 	query := parsed.Query()
-	if strings.TrimSpace(query.Get("token")) != "" {
-		return target
-	}
 	query.Set("token", token)
 	parsed.RawQuery = query.Encode()
 	return parsed.String()

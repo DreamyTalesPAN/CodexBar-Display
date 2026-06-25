@@ -233,6 +233,55 @@ func TestRunCycleWithDepsSendsRuntimeConfigDeviceTokenWithoutLoggingIt(t *testin
 	}
 }
 
+func TestRunCycleWithDepsRuntimeConfigDeviceTokenReplacesStaleTargetToken(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+	var sentTarget string
+
+	err := runCycleWithDeps(context.Background(), "http://192.168.178.159?token=stale-token", state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{
+				DeviceTarget: "http://192.168.178.159",
+				DeviceToken:  "fresh-token",
+			}, nil
+		},
+		resolvePort: func(target string) (string, error) {
+			return target, nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				Board:                     "esp8266-smalltv-st7789",
+				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+				MaxFrameBytes:             2048,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 12, 30, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(target string, _ []byte) error {
+			sentTarget = target
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+	if sentTarget != "http://192.168.178.159?token=fresh-token" {
+		t.Fatalf("expected fresh runtime-config token to replace stale target token, got %q", sentTarget)
+	}
+}
+
 func TestRunCycleWithDepsAttachesClockFields(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -1655,7 +1704,7 @@ func TestRunCycleWithDepsDoesNotFallbackWhenRequestedPortDisappears(t *testing.T
 	}
 }
 
-func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
+func TestRunCycleWithDepsDiscoversNewWiFiIPWhenStoredIPStales(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -1664,7 +1713,7 @@ func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
 	}
 
 	const staleTarget = "http://192.168.178.163"
-	const recoveredTarget = "http://vibetv.local"
+	const recoveredTarget = "http://192.168.178.72"
 	var resolved []string
 	var sentPort string
 	var logged strings.Builder
@@ -1689,14 +1738,26 @@ func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
 			if target == staleTarget {
 				return protocol.DeviceCapabilities{}, errors.New("host is down")
 			}
-			if target != recoveredTarget {
-				return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected target %s", target)
+			return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected direct fallback target %s", target)
+		},
+		discoverWiFi: func(candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
+			if !containsString(candidates, staleTarget) {
+				t.Fatalf("expected stale IP candidate, got %#v", candidates)
 			}
-			return protocol.DeviceCapabilities{
-				Known:                     true,
-				Board:                     "esp8266-smalltv-st7789",
-				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
-				MaxFrameBytes:             2048,
+			if containsString(candidates, defaultWiFiTarget) {
+				t.Fatalf("did not expect default mDNS candidate before network scan for stale IP, got %#v", candidates)
+			}
+			return transportlayer.WiFiDiscoveryResult{
+				Target: recoveredTarget,
+				Hello: protocol.DeviceHello{
+					Kind:            "hello",
+					ProtocolVersion: 2,
+					Board:           "esp8266-smalltv-st7789",
+					Capabilities: protocol.CapabilityBlock{
+						Transport: protocol.TransportCapabilities{Active: "wifi"},
+					},
+				},
+				Source: "network-scan",
 			}, nil
 		},
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
@@ -1715,20 +1776,20 @@ func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runCycleWithDeps returned error: %v", err)
 	}
-	if got := strings.Join(resolved, ","); got != staleTarget+","+recoveredTarget {
+	if got := strings.Join(resolved, ","); got != staleTarget {
 		t.Fatalf("unexpected resolve order %q", got)
 	}
 	if sentPort != recoveredTarget {
-		t.Fatalf("expected frame sent to recovered target, got %q", sentPort)
+		t.Fatalf("expected frame sent to discovered target, got %q", sentPort)
 	}
-	if !strings.Contains(logged.String(), "wifi-target-recovered") {
-		t.Fatalf("expected recovery log, got %q", logged.String())
+	if !strings.Contains(logged.String(), "wifi-target-discovered") {
+		t.Fatalf("expected discovery log, got %q", logged.String())
 	}
 	if savedConfig.DeviceTarget != recoveredTarget {
-		t.Fatalf("expected recovered target to be persisted, got %+v", savedConfig)
+		t.Fatalf("expected discovered target to be persisted, got %+v", savedConfig)
 	}
 	if state.deviceTarget != recoveredTarget {
-		t.Fatalf("expected recovered target in runtime state, got %q", state.deviceTarget)
+		t.Fatalf("expected discovered target in runtime state, got %q", state.deviceTarget)
 	}
 
 	resolved = nil
@@ -1780,7 +1841,7 @@ func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
 	}
 }
 
-func TestRunCycleWithDepsRecoversUnknownWiFiTargetViaLocalTarget(t *testing.T) {
+func TestRunCycleWithDepsDiscoversWiFiIPWhenStoredIPCapabilitiesAreUnknown(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -1789,7 +1850,7 @@ func TestRunCycleWithDepsRecoversUnknownWiFiTargetViaLocalTarget(t *testing.T) {
 	}
 
 	const staleTarget = "http://192.168.178.163"
-	const recoveredTarget = "http://vibetv.local"
+	const recoveredTarget = "http://192.168.178.72"
 	var sentPort string
 
 	err := runCycleWithDeps(context.Background(), staleTarget, state, runtimeDeps{
@@ -1802,11 +1863,26 @@ func TestRunCycleWithDepsRecoversUnknownWiFiTargetViaLocalTarget(t *testing.T) {
 			if target == staleTarget {
 				return protocol.UnknownDeviceCapabilities(), nil
 			}
-			return protocol.DeviceCapabilities{
-				Known:                     true,
-				Board:                     "esp8266-smalltv-st7789",
-				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
-				MaxFrameBytes:             2048,
+			return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected direct fallback target %s", target)
+		},
+		discoverWiFi: func(candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
+			if !containsString(candidates, staleTarget) {
+				t.Fatalf("expected stale IP candidate, got %#v", candidates)
+			}
+			if containsString(candidates, defaultWiFiTarget) {
+				t.Fatalf("did not expect default mDNS candidate before network scan for stale IP, got %#v", candidates)
+			}
+			return transportlayer.WiFiDiscoveryResult{
+				Target: recoveredTarget,
+				Hello: protocol.DeviceHello{
+					Kind:            "hello",
+					ProtocolVersion: 2,
+					Board:           "esp8266-smalltv-st7789",
+					Capabilities: protocol.CapabilityBlock{
+						Transport: protocol.TransportCapabilities{Active: "wifi"},
+					},
+				},
+				Source: "network-scan",
 			}, nil
 		},
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
@@ -1822,7 +1898,7 @@ func TestRunCycleWithDepsRecoversUnknownWiFiTargetViaLocalTarget(t *testing.T) {
 		t.Fatalf("runCycleWithDeps returned error: %v", err)
 	}
 	if sentPort != recoveredTarget {
-		t.Fatalf("expected frame sent to recovered target, got %q", sentPort)
+		t.Fatalf("expected frame sent to discovered target, got %q", sentPort)
 	}
 }
 
