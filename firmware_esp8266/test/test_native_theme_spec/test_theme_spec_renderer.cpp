@@ -437,6 +437,29 @@ void testChangedLabelPassUsesSynchronizedUpdateNoticeText() {
   TEST_ASSERT_EQUAL_STRING("app.vibetv.shop", sink.commands[2].text.c_str());
 }
 
+void testChangedLabelPassCanRestoreProviderText() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "bgColor": "#000000",
+    "primitives": [
+      {"type":"text","x":21,"y":12,"font":4,"fontSize":1,"maxWidth":198,"binding":"label","align":"center"}
+    ]
+  })JSON";
+
+  FrameData frame = testFrame();
+  frame.updateAvailable = true;
+  frame.showUpdateNotice = true;
+  frame.updateNotice = "Codex";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderChangedSpec(spec, frame, kThemeSpecFieldLabel, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("Codex", sink.commands[2].text.c_str());
+}
+
 void testRendersCompactCommandsAndBindings() {
   const char* spec = R"JSON({
     "v": 1,
@@ -1380,6 +1403,7 @@ int main() {
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
+  RUN_TEST(testChangedLabelPassCanRestoreProviderText);
   RUN_TEST(testRendersCompactCommandsAndBindings);
   RUN_TEST(testCompactTextWidthMapsToMaxWidthForAlignment);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);

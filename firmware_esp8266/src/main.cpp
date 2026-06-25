@@ -73,12 +73,10 @@ const char kDeviceAuthTokenPath[] = "/auth";
 const char kActiveThemeSpecPathFile[] = "/theme-active";
 const char kDeviceAuthHeader[] = "X-VibeTV-Token";
 const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
-const char* const kFirmwareUpdateNoticeTexts[] = {
-    "Update available",
-    kCustomerAppHost,
-};
-constexpr uint8_t kFirmwareUpdateNoticeTextCount =
-    sizeof(kFirmwareUpdateNoticeTexts) / sizeof(kFirmwareUpdateNoticeTexts[0]);
+constexpr uint8_t kFirmwareUpdateNoticeTextCount = 3;
+constexpr uint8_t kFirmwareUpdateNoticeProviderPhase = 0;
+constexpr uint8_t kFirmwareUpdateNoticeAvailablePhase = 1;
+constexpr uint8_t kFirmwareUpdateNoticeAppPhase = 2;
 
 String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
@@ -476,7 +474,24 @@ const char* currentFirmwareUpdateNoticeText() {
   if (firmwareUpdate.noticePhase >= kFirmwareUpdateNoticeTextCount) {
     firmwareUpdate.noticePhase = 0;
   }
-  return kFirmwareUpdateNoticeTexts[firmwareUpdate.noticePhase];
+  if (firmwareUpdate.noticePhase == kFirmwareUpdateNoticeAvailablePhase) {
+    return "Update available";
+  }
+  if (firmwareUpdate.noticePhase == kFirmwareUpdateNoticeAppPhase) {
+    return kCustomerAppHost;
+  }
+
+  const codexbar_display::core::Frame& frame = codexbar_display::app::CurrentFrame(runtimeCtx);
+  if (runtimeCtx.topLineOverride.length()) {
+    return runtimeCtx.topLineOverride.c_str();
+  }
+  if (frame.label.length()) {
+    return frame.label.c_str();
+  }
+  if (frame.provider.length()) {
+    return frame.provider.c_str();
+  }
+  return "Provider";
 }
 
 void drawFirmwareUpdateNotice() {
