@@ -51,10 +51,14 @@ VibeTV can show provider usage surfaced by CodexBar. Common examples include:
 
 ## What It Is
 
-VibeTV is the hardware on your desk. The VibeTV Mac App is the local process
-that sends data to the screen. The Control Center at
-[`app.vibetv.shop`](https://app.vibetv.shop) is the customer UI for setup,
-themes, updates, display settings, support, and usage.
+VibeTV is a physical device that sits on your desk and shows your AI usage at
+a glance: provider, limits, tokens, reset time, and status. It gives the usage
+signal a place outside your laptop screen, so you can see where you stand while
+you work.
+
+The Mac App sends the local usage signal to the device. Control Center at
+[`app.vibetv.shop`](https://app.vibetv.shop) is where you set up VibeTV, switch
+themes, change display settings, install updates, and view support information.
 
 VibeTV is built on top of [CodexBar](https://github.com/steipete/CodexBar) for
 AI provider usage data. CodexBar knows how to read usage and quota information
