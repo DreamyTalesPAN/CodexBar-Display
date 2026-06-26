@@ -20,6 +20,26 @@ important changes before they interrupt your work.
 [Themes](docs/themes.md) ·
 [Provider support](docs/providers.md)
 
+## Themes
+
+VibeTV ships with four ready-to-use themes: Mini, Claude Creature, Clippy, and
+Synthwave. They all show the same live usage signal, but each one presents it
+with a different layout and visual style.
+
+| Mini | Claude Creature | Clippy | Synthwave |
+| --- | --- | --- | --- |
+| <img src="docs/assets/vibetv-theme-mini.png" alt="VibeTV Mini theme" width="160"> | <img src="docs/assets/vibetv-theme-claude.png" alt="VibeTV Claude Creature theme" width="160"> | <img src="docs/assets/vibetv-theme-clippy.png" alt="VibeTV Clippy theme" width="160"> | <img src="docs/assets/vibetv-theme-synthwave.png" alt="VibeTV Synthwave theme" width="160"> |
+
+You can switch themes in the Control Center Theme Library. You can also build
+your own themes: VibeTV themes are defined as ThemeSpec layouts with optional
+sprites, GIFs, and live data bindings for provider, usage, tokens, reset time,
+and activity state. Theme Studio helps design and package custom themes so they
+can be installed on the device as theme packs.
+
+Start with [docs/themes.md](docs/themes.md), then use
+[docs/theme-dev-guide.md](docs/theme-dev-guide.md) for hardware-safe theme
+development rules.
+
 ## What It Is
 
 VibeTV is the hardware on your desk. The VibeTV Mac App is the local process
@@ -88,20 +108,6 @@ VibeTV can show provider usage surfaced by CodexBar. Common examples include:
 Different providers expose different data. Some have session and weekly limits,
 some expose token or credit usage, and some only expose spend or status. See
 [docs/providers.md](docs/providers.md) for the longer list and support notes.
-
-## Themes
-
-Themes decide how the same live usage data appears on the device.
-
-| Mini | Claude Creature | Clippy | Synthwave |
-| --- | --- | --- | --- |
-| <img src="docs/assets/vibetv-theme-mini.png" alt="VibeTV Mini theme" width="160"> | <img src="docs/assets/vibetv-theme-claude.png" alt="VibeTV Claude Creature theme" width="160"> | <img src="docs/assets/vibetv-theme-clippy.png" alt="VibeTV Clippy theme" width="160"> | <img src="docs/assets/vibetv-theme-synthwave.png" alt="VibeTV Synthwave theme" width="160"> |
-
-Customers switch themes in the Control Center Theme Library. Developers can build
-new themes with Theme Studio and package them as VibeTV theme packs. Start with
-[docs/themes.md](docs/themes.md), then use
-[docs/theme-dev-guide.md](docs/theme-dev-guide.md) for hardware-safe theme
-development rules.
 
 ## Setup
 
