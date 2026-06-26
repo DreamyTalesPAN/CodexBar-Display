@@ -4,17 +4,22 @@ This document is the current Shopify rollout plan for customer-visible VibeTV th
 
 ## Current Decision
 
-The rollout uses normal Shopify products as the visible theme catalog:
+The launch flow uses normal Shopify products as the visible theme catalog and
+Control Center as the install surface:
 
 - Shop domain: `vibetv.shop`
 - Theme collection handle: `themes-2`
 - Hosted app: `https://app.vibetv.shop`
 - Product entry surface: `https://vibetv.shop/products/<theme-handle>`
-- Current product action: visible Terminal install command.
+- Target product action: open `https://app.vibetv.shop/install/<theme_id>`.
+- Fallback product action during staged rollout: visible Terminal install command.
 
 The Control Center reads products from Shopify Storefront API through `apps/control-center/src/lib/themes.ts`. App-owned Shopify Metaobjects can still be revisited later, but they are not the current source of truth.
 
-Do not link Shopify theme product pages to `https://app.vibetv.shop/install/<theme_id>` until the hosted app path is actually customer-available, including the Agentic Mac setup path verified end to end on a customer-like Mac. Until then, the product pages must show the direct Terminal install command.
+Treat the hosted Control Center path as the state of the art. Theme product
+pages should point customers into Control Center once the launch cutover is
+approved. The direct Terminal command remains useful as a rollback or support
+fallback, not as the preferred product journey.
 
 ## Product Model
 
@@ -41,7 +46,19 @@ Shopify is the catalog and preview surface. The installable ZIPs stay in GitHub 
 
 ## Product Button
 
-Use the Custom Liquid block stored in `docs/vibetv-theme-product-custom-liquid.liquid` on VibeTV theme product pages. It renders one primary action, `Copy install command`, then shows the actual command:
+The preferred launch action opens Control Center with the selected theme:
+
+```text
+https://app.vibetv.shop/install/<theme_id>
+```
+
+Control Center then handles the next available step: install/repair the Mac App,
+connect VibeTV, unlock Theme Library, and install the selected theme.
+
+During staged rollout or support fallback, use the Custom Liquid block stored in
+`docs/vibetv-theme-product-custom-liquid.liquid` on VibeTV theme product pages.
+It renders one primary action, `Copy install command`, then shows the actual
+command:
 
 ```liquid
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local
@@ -49,19 +66,20 @@ curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/do
 
 The Liquid derives `<theme_id>` from `vibetv.theme_id` or `theme.theme_id`.
 
-Do not use customer-facing copy like `Check compatibility in the app`, `Opens the hosted Control Center`, or `Jetzt installieren` on Shopify theme product pages while the app path is not customer-available.
-
-Live rollout status on 2026-06-22: the main `vibetv.shop` theme template `templates/product.themes.json` shows the Terminal command block for VibeTV theme products. The Synthwave page was verified publicly with `Copy install command` and `codexbar-display theme-pack install --theme synthwave --target http://vibetv.local`. It does not link to `app.vibetv.shop`.
-
 ## Customer Flow
 
 1. Customer visits `https://vibetv.shop/collections/themes-2`.
 2. Customer opens a VibeTV theme product.
-3. Product page shows one primary action: `Copy install command`.
-4. Customer opens Terminal, pastes the command, and presses Return while VibeTV is on the same WiFi.
-5. The command installs/updates the CLI helper and runs `codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local`.
+3. Product page opens `https://app.vibetv.shop/install/<theme_id>`.
+4. Control Center checks Mac App, browser access, VibeTV connection, pairing, and theme-install readiness.
+5. If setup is incomplete, Control Center shows only the next setup action.
+6. Once setup is ready, Control Center installs the selected theme.
 
-Future app flow: once the hosted Control Center and Agentic Mac setup path are truly customer-available, the product page can move back to an app entry point. At that point, the app must show one next action at a time: install/repair Mac App, connect VibeTV, update firmware if explicitly needed, then install the selected theme.
+Fallback flow:
+
+1. Product page shows `Copy install command`.
+2. Customer opens Terminal, pastes the command, and presses Return while VibeTV is on the same WiFi.
+3. The command installs/updates the CLI helper and runs `codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local`.
 
 ## GitHub Theme Pack Artifacts
 
@@ -100,7 +118,9 @@ https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/them
 
 WiFi theme installs write to the device. Do not run them against `vibetv.local` as a routine development check.
 
-Before linking customers to a theme product, verify that the hosted app is reading the Shopify catalog and that the product resolves to an installable free theme:
+Before linking customers to a Control Center theme route, verify that the hosted
+app is reading the Shopify catalog and that the product resolves to an
+installable free theme:
 
 ```bash
 scripts/check-control-center-companion-customer-readiness.sh \
@@ -111,7 +131,15 @@ scripts/check-control-center-companion-customer-readiness.sh \
   --expect-shopify-product-pages
 ```
 
-That check only reads public HTTP pages and the hosted app. It fails if `/api/themes` is empty, served from the wrong catalog source, missing the selected `theme_id`, returning a paid theme for that ID, missing a free theme `themeId`, missing the resolved `packUrl`, returning a `packUrl` that is not an `http(s)` download URL, exposing any free collection theme that is not installable, if the selected `/install/<theme_id>` route is not reachable, if any free collection theme's `/install/<theme_id>` route is not reachable, if a free Shopify catalog item has neither `productUrl` nor `handle`, if a Shopify product page does not show `Copy install command`, if it does not include `codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local`, or if it still links customers to the unavailable hosted app install CTA.
+That check only reads public HTTP pages and the hosted app. It fails if
+`/api/themes` is empty, served from the wrong catalog source, missing the
+selected `theme_id`, returning a paid theme for that ID, missing a free theme
+`themeId`, missing the resolved `packUrl`, returning a `packUrl` that is not an
+`http(s)` download URL, exposing any free collection theme that is not
+installable, or if the selected `/install/<theme_id>` route is not reachable.
+
+During staged rollout, the same checker can still assert the fallback Shopify
+product-page command when `--expect-shopify-product-pages` is intentionally used.
 
 Allowed without extra hardware approval:
 
@@ -130,7 +158,15 @@ Not allowed without current explicit approval:
 
 ## Hosted App Return Path
 
-Switch Shopify theme product pages back to `https://app.vibetv.shop/install/<theme_id>` only after the hosted Control Center path is customer-available end to end. That means the Agentic Mac setup path is verified on a customer-like Mac, and the app gives customers one clear next action instead of exposing internal setup states.
+The hosted app path is the intended launch path. A theme product link should
+look like:
+
+```text
+https://app.vibetv.shop/install/<theme_id>
+```
+
+The app must still preserve the Control Center rule: one clear next action at a
+time. A theme install link must not bypass setup gating.
 
 ## Sources
 
