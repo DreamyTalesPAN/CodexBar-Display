@@ -77,16 +77,6 @@ const releaseFixture = {
       browser_download_url:
         "https://downloads.example.test/install-control-center-companion.sh",
     },
-    {
-      name: "VibeTV-Companion-API-arm64-v1.0.99.pkg",
-      browser_download_url:
-        "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.0.99.pkg",
-    },
-    {
-      name: "VibeTV-Companion-API-amd64-v1.0.99.pkg",
-      browser_download_url:
-        "https://downloads.example.test/VibeTV-Companion-API-amd64-v1.0.99.pkg",
-    },
   ],
 };
 
@@ -97,38 +87,6 @@ const scriptOnlyReleaseFixture = {
       name: "install-control-center-companion.sh",
       browser_download_url:
         "https://downloads.example.test/install-control-center-companion.sh",
-    },
-  ],
-};
-
-const partialPackageReleaseFixture = {
-  tag_name: "v1.0.97",
-  assets: [
-    {
-      name: "install-control-center-companion.sh",
-      browser_download_url:
-        "https://downloads.example.test/install-control-center-companion.sh",
-    },
-    {
-      name: "VibeTV-Companion-API-arm64-v1.0.97.pkg",
-      browser_download_url:
-        "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.0.97.pkg",
-    },
-  ],
-};
-
-const packageOnlyReleaseFixture = {
-  tag_name: "v1.0.95",
-  assets: [
-    {
-      name: "VibeTV-Companion-API-arm64-v1.0.95.pkg",
-      browser_download_url:
-        "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.0.95.pkg",
-    },
-    {
-      name: "VibeTV-Companion-API-amd64-v1.0.95.pkg",
-      browser_download_url:
-        "https://downloads.example.test/VibeTV-Companion-API-amd64-v1.0.95.pkg",
     },
   ],
 };
@@ -160,8 +118,6 @@ async function main() {
   const failedFirmwareUrl = `http://127.0.0.1:${fixtureServer.port}/firmware-manifest-failed.json`;
   const completeReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-complete.json`;
   const scriptOnlyReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-script-only.json`;
-  const partialPackageReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-partial-package.json`;
-  const packageOnlyReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-package-only.json`;
   const missingAssetReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-missing-assets.json`;
   const failedReleaseUrl = `http://127.0.0.1:${fixtureServer.port}/github-release-failed.json`;
   let app;
@@ -190,7 +146,7 @@ async function main() {
         appContext.appUrl,
       );
       await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
-      await testUpdatesHideUnavailableCompanionAction(
+      await testUpdatesShowTerminalCommandWithoutPackageAssets(
         browser,
         appContext.appUrl,
       );
@@ -245,10 +201,6 @@ async function main() {
     await assertCompanionReleaseApi(appContext.appUrl, {
       installerAsset: null,
       latestVersion: "1.0.99",
-      packageAssets: {
-        macosAmd64: "VibeTV-Companion-API-amd64-v1.0.99.pkg",
-        macosArm64: "VibeTV-Companion-API-arm64-v1.0.99.pkg",
-      },
       status: "available",
       updateAvailable: true,
     });
@@ -284,50 +236,6 @@ async function main() {
     await assertCompanionReleaseApi(appContext.appUrl, {
       installerAsset: null,
       latestVersion: "1.0.98",
-      packageAssets: null,
-      status: "missing_asset",
-      updateAvailable: false,
-    });
-    await stopProcess(app.process);
-    app = undefined;
-
-    appContext = await startTestApp({
-      catalogUrl,
-      releaseUrl: partialPackageReleaseUrl,
-    });
-    app = appContext.app;
-    await testPartialPackageReleaseShowsSupportFallback(
-      browser,
-      appContext.appUrl,
-      fixtureServer,
-    );
-    await assertCompanionReleaseApi(appContext.appUrl, {
-      installerAsset: null,
-      latestVersion: "1.0.97",
-      packageAssets: null,
-      status: "missing_asset",
-      updateAvailable: false,
-    });
-    await stopProcess(app.process);
-    app = undefined;
-
-    appContext = await startTestApp({
-      catalogUrl,
-      releaseUrl: packageOnlyReleaseUrl,
-    });
-    app = appContext.app;
-    await testPackageOnlyReleaseShowsPackageDownloads(
-      browser,
-      appContext.appUrl,
-      fixtureServer,
-    );
-    await assertCompanionReleaseApi(appContext.appUrl, {
-      installerAsset: null,
-      latestVersion: "1.0.95",
-      packageAssets: {
-        macosAmd64: "VibeTV-Companion-API-amd64-v1.0.95.pkg",
-        macosArm64: "VibeTV-Companion-API-arm64-v1.0.95.pkg",
-      },
       status: "available",
       updateAvailable: true,
     });
@@ -344,16 +252,15 @@ async function main() {
       appContext.appUrl,
       fixtureServer,
     );
-    await testUpdatesHideUnavailableCompanionAction(
+    await testUpdatesShowTerminalCommandWithoutPackageAssets(
       browser,
       appContext.appUrl,
     );
     await assertCompanionReleaseApi(appContext.appUrl, {
       installerAsset: null,
       latestVersion: "1.0.96",
-      packageAssets: null,
-      status: "missing_asset",
-      updateAvailable: false,
+      status: "available",
+      updateAvailable: true,
     });
     await stopProcess(app.process);
     app = undefined;
@@ -371,7 +278,6 @@ async function main() {
     await assertCompanionReleaseApi(appContext.appUrl, {
       installerAsset: null,
       latestVersion: null,
-      packageAssets: null,
       status: "check_failed",
       updateAvailable: false,
     });
@@ -526,6 +432,7 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   await page
     .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
+  await assertMacAppSetupUsesTerminalCommand(page);
 
   assert(
     (await page.getByText("Shopify theme link was not found").count()) === 0,
@@ -719,14 +626,17 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Updates" }).click();
-  await page.getByRole("link", { name: "Update Mac App" }).waitFor({
+  await page.getByRole("button", { name: "Copy update command" }).waitFor({
     timeout: 10_000,
   });
   await page.getByText("Installed version").waitFor({ timeout: 10_000 });
   await page.getByText("Latest version").waitFor({ timeout: 10_000 });
-  await page.getByText("Mac App download").waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("Mac App download").count()) === 0,
+    "Updates should not show package download state",
+  );
 
-  const hiddenUpdatesText = ["Release installer", "Mac package"];
+  const hiddenUpdatesText = ["Release installer", "Mac package", ".pkg"];
   for (const text of hiddenUpdatesText) {
     assert(
       (await page.getByText(text).count()) === 0,
@@ -809,21 +719,26 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   await page.close();
 }
 
-async function testUpdatesHideUnavailableCompanionAction(browser, appUrl) {
+async function testUpdatesShowTerminalCommandWithoutPackageAssets(
+  browser,
+  appUrl,
+) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests);
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Updates" }).click();
-  await page.getByText("Ready").first().waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Copy update command" }).waitFor({
+    timeout: 10_000,
+  });
   assert(
     (await page.getByText("Not ready yet").count()) === 0,
-    "Updates should not show unavailable Mac App installer state when the Mac App is running",
+    "Updates should not show unavailable Mac App package state",
   );
   assert(
     (await page.getByText("Mac App download").count()) === 0,
-    "Updates should hide Mac App download state when the Mac App is already running",
+    "Updates should hide Mac App download state",
   );
 
   assert(
@@ -832,7 +747,7 @@ async function testUpdatesHideUnavailableCompanionAction(browser, appUrl) {
   );
   assert(
     (await page.getByRole("link", { name: "Update Mac App" }).count()) === 0,
-    "Updates should not show a Mac App update link without macOS packages",
+    "Updates should not show a Mac App package update link",
   );
 
   assertNoInstallRequests(installRequests);
@@ -1357,60 +1272,6 @@ async function testScriptOnlyReleaseShowsSupportFallback(
   await page.close();
 }
 
-async function testPartialPackageReleaseShowsSupportFallback(
-  browser,
-  appUrl,
-) {
-  const page = await newCustomerPage(browser, appUrl, { viewport });
-  const installRequests = [];
-  await routeCompanionMissing(page, installRequests);
-
-  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
-  await assertThemeLibraryLockedBehindSetup(page);
-  await assertNoSetupJargon(page);
-  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
-  await page
-    .getByRole("button", { name: "Copy prompt" })
-    .waitFor({ timeout: 10_000 });
-  await assertNoCompanionInstallLink(page);
-  await assertNoLegacyCompanionDownloadActions(page);
-  await assertNoThemeLibraryReleaseDiagnostics(page);
-  assertNoInstallRequests(installRequests);
-  await assertNoMobileOverflow(page);
-  await page.close();
-}
-
-async function testPackageOnlyReleaseShowsPackageDownloads(
-  browser,
-  appUrl,
-) {
-  const page = await newCustomerPage(browser, appUrl, { viewport });
-  const installRequests = [];
-  await routeCompanionMissing(page, installRequests);
-
-  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
-  await assertThemeLibraryLockedBehindSetup(page);
-  await assertNoSetupJargon(page);
-  await page
-    .getByRole("button", { name: "VibeTV is on WiFi" })
-    .click();
-  await page
-    .getByRole("button", { name: "Copy prompt" })
-    .waitFor({ timeout: 10_000 });
-
-  await assertNoLegacyCompanionDownloadActions(page);
-  await assertNoThemeLibraryReleaseDiagnostics(page);
-  assertNoInstallRequests(installRequests);
-  await assertNoMobileOverflow(page);
-  await page.close();
-}
-
 async function testReleaseCheckFailureShowsNoDownloadActions(
   browser,
   appUrl,
@@ -1467,7 +1328,6 @@ async function assertCompanionReleaseApi(
   {
     installerAsset,
     latestVersion,
-    packageAssets,
     status,
     updateAvailable,
   },
@@ -1511,29 +1371,12 @@ async function assertCompanionReleaseApi(
     );
   }
 
-  if (packageAssets) {
-    assert(
-      assetName(payload.packageDownloadUrls?.macosArm64) ===
-        packageAssets.macosArm64,
-      `release API arm64 package=${assetName(
-        payload.packageDownloadUrls?.macosArm64,
-      )}, expected ${packageAssets.macosArm64}`,
-    );
-    assert(
-      assetName(payload.packageDownloadUrls?.macosAmd64) ===
-        packageAssets.macosAmd64,
-      `release API amd64 package=${assetName(
-        payload.packageDownloadUrls?.macosAmd64,
-      )}, expected ${packageAssets.macosAmd64}`,
-    );
-  } else {
-    assert(
-      !payload.packageDownloadUrls,
-      `release API should hide incomplete package URLs, got ${JSON.stringify(
-        payload.packageDownloadUrls,
-      )}`,
-    );
-  }
+  assert(
+    !payload.packageDownloadUrls,
+    `release API should not expose Mac package URLs, got ${JSON.stringify(
+      payload.packageDownloadUrls,
+    )}`,
+  );
 }
 
 async function assertFirmwareUpdateApi(
@@ -2028,8 +1871,6 @@ async function startFixtureServer() {
   let failedCatalogRequestCount = 0;
   let releaseRequestCount = 0;
   let scriptOnlyReleaseRequestCount = 0;
-  let partialReleaseRequestCount = 0;
-  let packageOnlyReleaseRequestCount = 0;
   let missingAssetReleaseRequestCount = 0;
   let failedReleaseRequestCount = 0;
   const server = createServer((request, response) => {
@@ -2078,18 +1919,6 @@ async function startFixtureServer() {
       response.end(JSON.stringify(scriptOnlyReleaseFixture));
       return;
     }
-    if (request.url === "/github-release-partial-package.json") {
-      partialReleaseRequestCount += 1;
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify(partialPackageReleaseFixture));
-      return;
-    }
-    if (request.url === "/github-release-package-only.json") {
-      packageOnlyReleaseRequestCount += 1;
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify(packageOnlyReleaseFixture));
-      return;
-    }
     if (request.url === "/github-release-missing-assets.json") {
       missingAssetReleaseRequestCount += 1;
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -2121,12 +1950,6 @@ async function startFixtureServer() {
     },
     get scriptOnlyReleaseRequestCount() {
       return scriptOnlyReleaseRequestCount;
-    },
-    get partialReleaseRequestCount() {
-      return partialReleaseRequestCount;
-    },
-    get packageOnlyReleaseRequestCount() {
-      return packageOnlyReleaseRequestCount;
     },
     get missingAssetReleaseRequestCount() {
       return missingAssetReleaseRequestCount;
@@ -2274,7 +2097,44 @@ async function assertNoCompanionInstallLink(page) {
     .count();
   assert(
     installLinkCount === 0,
-    `expected no Companion install link without complete macOS packages, got ${installLinkCount}`,
+    `expected no Mac App package install link, got ${installLinkCount}`,
+  );
+}
+
+async function assertMacAppSetupUsesTerminalCommand(page) {
+  await page.getByRole("tab", { name: "Manual setup" }).click();
+  const command = (await page.locator("code").textContent()) || "";
+  assert(
+    command.includes("install-control-center-companion.sh"),
+    `Terminal command should install through the hosted script, got ${command}`,
+  );
+  assert(
+    command.includes("--terminal-session"),
+    `Terminal command should use Terminal session mode, got ${command}`,
+  );
+  assert(
+    !command.includes("--launchagent"),
+    `Terminal command should not use LaunchAgent mode, got ${command}`,
+  );
+  assert(
+    !command.includes(".pkg"),
+    `Terminal command should not use Mac package downloads, got ${command}`,
+  );
+
+  await page.getByRole("tab", { name: "Agentic setup" }).click();
+  await page.getByRole("button", { name: /Prompt preview/ }).click();
+  const prompt = (await page.locator("pre").textContent()) || "";
+  assert(
+    prompt.includes("--terminal-session"),
+    "agent setup prompt should include the Terminal session command",
+  );
+  assert(
+    !prompt.includes("LaunchAgent"),
+    "agent setup prompt should not ask for LaunchAgent setup",
+  );
+  assert(
+    !prompt.includes(".pkg"),
+    "agent setup prompt should not ask for Mac package setup",
   );
 }
 

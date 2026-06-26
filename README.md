@@ -13,11 +13,11 @@ Vibe TV ships ready for WiFi setup.
 4. Choose your home WiFi, enter the password, and save.
 5. After Vibe TV restarts, the display shows `vibetv.local` plus a fallback IP address.
 6. Open `https://app.vibetv.shop` on your Mac.
-7. Follow the one main button in the app. If it asks for the Mac App, download it, open the downloaded installer, finish the install, then return to the app.
+7. Follow the setup steps in the app. If it asks for the Mac App, copy the shown prompt into Codex/Claude Code or copy the Terminal command into Terminal.
 8. If the app asks for a Vibe TV address, use `vibetv.local` or the IP address shown on the Vibe TV screen.
 9. Select `Connect VibeTV`.
 
-Normal customer setup does not require Terminal, USB flashing, or manual commands.
+Normal customer setup does not require USB flashing or a signed macOS package. The first rollout uses a copied Terminal command because there is no notarized Apple installer yet.
 
 If the device shows `Open Setup`, the hardware is usually fine. It means Vibe TV is on WiFi and is waiting for the Mac App.
 
@@ -30,6 +30,31 @@ The full setup guide is in [docs/customer-setup.md](docs/customer-setup.md).
 - ESP8266 firmware for the current Vibe TV target
 - the macOS companion `codexbar-display`
 - release artifacts such as companion binaries, firmware binaries, and checksums
+
+## How Data Moves
+
+`codexbar-display` is the Mac App binary. It depends on CodexBar because CodexBar knows the local AI usage numbers.
+
+The normal path is:
+
+1. CodexBar reads local provider usage.
+2. `codexbar-display` reads CodexBar usage.
+3. The local Mac App service lets `app.vibetv.shop` talk to the Mac.
+4. `codexbar-display` sends display frames to Vibe TV over WiFi.
+5. Vibe TV renders the active theme on the screen.
+
+Important customer/support commands:
+
+```bash
+# install or update the Mac App from the current release
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --terminal-session
+
+# check whether the local Mac App service is running
+curl -fsS http://127.0.0.1:47832/v1/status
+
+# stop the local Mac App service
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --uninstall
+```
 
 ## Technical References
 

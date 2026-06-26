@@ -8,12 +8,6 @@ const RELEASE_CACHE_TTL_MS = 60_000;
 
 type GitHubRelease = {
   tag_name?: string;
-  assets?: GitHubReleaseAsset[];
-};
-
-type GitHubReleaseAsset = {
-  name?: string;
-  browser_download_url?: string;
 };
 
 type ReleaseCacheEntry = {
@@ -41,38 +35,31 @@ export async function GET(request: Request) {
     const release = await fetchLatestRelease();
     const releaseTag = release.tag_name?.trim() || "";
     const latestVersion = normalizeVersion(releaseTag);
-    const packageDownloadUrls = findPackageDownloadUrls(
-      release.assets || [],
-      latestVersion,
-    );
-    const hasPackageDownload = Boolean(
-      packageDownloadUrls.macosArm64 && packageDownloadUrls.macosAmd64,
-    );
-    if (!hasPackageDownload) {
+    if (!latestVersion) {
       return Response.json({
         checkedAt,
-        status: "missing_asset",
+        status: "check_failed",
         release: releaseTag || undefined,
-        latestVersion: latestVersion || undefined,
         installedVersion: installedVersion || undefined,
         updateAvailable: false,
-        message: "Mac App installer is not ready yet.",
+        message: "Mac App check failed.",
       } satisfies CompanionReleaseInfo);
     }
+
+    const updateAvailable = Boolean(
+      installedVersion && compareSemver(latestVersion, installedVersion) > 0,
+    );
 
     return Response.json({
       checkedAt,
       status: "available",
       release: releaseTag || undefined,
-      latestVersion: latestVersion || undefined,
+      latestVersion,
       installedVersion: installedVersion || undefined,
-      updateAvailable: Boolean(
-        latestVersion &&
-          installedVersion &&
-          compareSemver(latestVersion, installedVersion) > 0,
-      ),
-      packageDownloadUrls,
-      message: "Mac App installer is ready.",
+      updateAvailable,
+      message: updateAvailable
+        ? "Mac App update is available."
+        : "Mac App is up to date.",
     } satisfies CompanionReleaseInfo);
   } catch {
     return Response.json({
@@ -185,34 +172,4 @@ function parseSemver(version: string): [number, number, number] {
 
 function normalizeVersion(version: string): string {
   return version.trim().replace(/^v/i, "");
-}
-
-function findPackageDownloadUrls(
-  assets: GitHubReleaseAsset[],
-  version: string,
-) {
-  const urls: NonNullable<CompanionReleaseInfo["packageDownloadUrls"]> = {};
-  if (!version) {
-    return urls;
-  }
-
-  const expectedNames = {
-    arm64: `VibeTV-Companion-API-arm64-v${version}.pkg`,
-    amd64: `VibeTV-Companion-API-amd64-v${version}.pkg`,
-  };
-
-  for (const asset of assets) {
-    const name = asset.name || "";
-    if (!asset.browser_download_url) {
-      continue;
-    }
-    if (name === expectedNames.arm64) {
-      urls.macosArm64 = asset.browser_download_url;
-    }
-    if (name === expectedNames.amd64) {
-      urls.macosAmd64 = asset.browser_download_url;
-    }
-  }
-
-  return urls;
 }

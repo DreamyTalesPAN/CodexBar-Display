@@ -18,9 +18,10 @@ import type {
   DeviceState,
 } from "./control-center-types";
 import { DeviceTargetForm } from "./device-target-form";
-
-const DEFAULT_CONTROL_CENTER_ORIGIN = "https://app.vibetv.shop";
-const INSTALLER_SCRIPT_PATH = "/install-control-center-companion.sh";
+import {
+  buildMacAppTerminalCommand,
+  currentControlCenterOrigin,
+} from "./mac-app-install-command";
 
 function buildAgentPrompt(terminalCommand: string) {
   return `Please install the VibeTV Mac App on this Mac.
@@ -53,7 +54,7 @@ Run this Terminal command:
 
 ${terminalCommand}
 
-This command should install the Mac App helper as a user LaunchAgent so it keeps running after setup. Do not install a signed package.
+This command should install or update the VibeTV Mac App and start it from this Terminal session. Do not install a signed package or a macOS package.
 
 After the command finishes, verify it with:
 
@@ -66,23 +67,6 @@ Then tell me:
 - the next step: return to app.vibetv.shop, choose Allow when the browser asks for access, and continue setup
 
 Do not flash firmware, install themes, reset WiFi, or write to my VibeTV. Only install and verify the Mac App.`;
-}
-
-function buildTerminalCommand(origin: string) {
-  const installerUrl = `${origin}${INSTALLER_SCRIPT_PATH}`;
-  const args = ["--launchagent"];
-  if (origin !== DEFAULT_CONTROL_CENTER_ORIGIN) {
-    args.push("--dev-origin", shellQuote(origin));
-  }
-  const installCommand = `curl -fsSL ${installerUrl} | bash -s -- ${args.join(" ")}`;
-  if (origin === DEFAULT_CONTROL_CENTER_ORIGIN) {
-    return installCommand;
-  }
-  return installCommand;
-}
-
-function shellQuote(value: string) {
-  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 type SetupScreenProps = {
@@ -138,11 +122,8 @@ export function SetupScreen({
     busyAction === "connect" ||
     busyAction === "discover" ||
     busyAction === "repair";
-  const controlCenterOrigin =
-    typeof window === "undefined"
-      ? DEFAULT_CONTROL_CENTER_ORIGIN
-      : window.location.origin;
-  const terminalCommand = buildTerminalCommand(controlCenterOrigin);
+  const controlCenterOrigin = currentControlCenterOrigin();
+  const terminalCommand = buildMacAppTerminalCommand(controlCenterOrigin);
   const agentPrompt = useMemo(
     () => buildAgentPrompt(terminalCommand),
     [terminalCommand],
@@ -405,8 +386,8 @@ export function SetupScreen({
 
                 {macAppMissing ? (
                   <StatusNote icon={<RefreshCw size={16} aria-hidden />}>
-                    Mac App is not running. Run Agentic setup again, then click
-                    Mac App is installed.
+                    Mac App is not running. Run Agentic setup or Manual setup
+                    again, then click Mac App is installed.
                   </StatusNote>
                 ) : null}
 

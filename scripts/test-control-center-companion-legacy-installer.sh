@@ -63,9 +63,36 @@ EOF
   cat > "${fake_bin}/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${FAKE_CURL_LOG:?}"
+out=""
+previous=""
+for arg in "$@"; do
+  if [[ "$previous" == "-o" ]]; then
+    out="$arg"
+    previous=""
+    continue
+  fi
+  previous="$arg"
+done
 case "$*" in
   *"/v1/status"*)
     exit 0
+    ;;
+  *"/releases/latest"*)
+    printf '{"tag_name":"v9.9.9"}\n'
+    ;;
+  *"/codexbar-display-darwin-arm64-v9.9.9"*)
+    [[ -n "$out" ]] || exit 22
+    cat > "$out" <<'BIN'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FAKE_API_LOG:?}"
+while true; do
+  sleep 60
+done
+BIN
+    ;;
+  *"/checksums-v9.9.9.txt"*)
+    [[ -n "$out" ]] || exit 22
+    printf 'deadbeef  codexbar-display-darwin-arm64-v9.9.9\n' > "$out"
     ;;
   *)
     exit 22
@@ -73,7 +100,28 @@ case "$*" in
 esac
 EOF
 
-  chmod +x "${fake_bin}/uname" "${fake_bin}/launchctl" "${fake_bin}/curl"
+  cat > "${fake_bin}/shasum" <<'EOF'
+#!/usr/bin/env bash
+printf 'deadbeef  %s\n' "${@: -1}"
+EOF
+
+  cat > "${fake_bin}/xattr" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+
+  cat > "${fake_bin}/codesign" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+
+  chmod +x \
+    "${fake_bin}/codesign" \
+    "${fake_bin}/curl" \
+    "${fake_bin}/launchctl" \
+    "${fake_bin}/shasum" \
+    "${fake_bin}/uname" \
+    "${fake_bin}/xattr"
 }
 
 prepare_home() {
@@ -95,6 +143,8 @@ EOF
 
   printf '<plist version="1.0"><dict></dict></plist>\n' \
     > "${home}/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
+  printf '<plist version="1.0"><dict></dict></plist>\n' \
+    > "${home}/Library/LaunchAgents/com.codexbar-display.daemon.plist"
 }
 
 run_installer() {
@@ -177,6 +227,40 @@ run_uninstall_stops_terminal_service_and_legacy_launchagent() {
   assert_contains "$(cat "${root}/launchctl.log")" "bootout"
 }
 
+run_install_refreshes_existing_display_stream() {
+  local root output pid_file pid launch_log api_log
+  root="${TMP_WORK_DIR}/install"
+  write_fake_commands "${root}/fake-bin"
+  prepare_home "${root}/home"
+  : > "${root}/launchctl.log"
+  : > "${root}/curl.log"
+  : > "${root}/api.log"
+
+  output="$(run_installer "$root" --version 9.9.9 --terminal-session)" || {
+    printf '%s\n' "$output" >&2
+    die "expected install to pass"
+  }
+
+  pid_file="${root}/home/Library/Application Support/codexbar-display/run/companion-api.pid"
+  launch_log="$(cat "${root}/launchctl.log")"
+  api_log="${root}/api.log"
+
+  assert_contains "$output" "display stream refreshed"
+  assert_contains "$launch_log" "print gui/$(id -u)/com.codexbar-display.daemon"
+  assert_contains "$launch_log" "kickstart -k gui/$(id -u)/com.codexbar-display.daemon"
+  [[ -f "$pid_file" ]] || die "install did not write terminal service pid"
+  pid="$(cat "$pid_file")"
+  kill -0 "$pid" >/dev/null 2>&1 || die "terminal-started service is not running"
+  for _ in $(seq 1 20); do
+    if [[ -s "$api_log" ]]; then
+      break
+    fi
+    sleep 0.1
+  done
+  assert_contains "$(cat "$api_log")" "api --addr 127.0.0.1:47832"
+}
+
+run_install_refreshes_existing_display_stream
 run_restart_uses_terminal_started_service
 run_uninstall_stops_terminal_service_and_legacy_launchagent
 

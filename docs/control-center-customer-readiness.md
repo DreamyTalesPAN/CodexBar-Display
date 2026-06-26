@@ -44,6 +44,7 @@ That script performs these steps:
 - verifies the release SHA-256 checksum,
 - installs the binary to `~/Library/Application Support/codexbar-display/bin/codexbar-display`,
 - stops and removes the old user LaunchAgent for this API service if it exists,
+- refreshes the older display-stream LaunchAgent if it exists, so existing customers do not keep sending frames from an old binary,
 - starts `codexbar-display api --addr 127.0.0.1:47832` in the background from the Terminal session,
 - stores the started process id in `~/Library/Application Support/codexbar-display/run/companion-api.pid`,
 - verifies `http://127.0.0.1:47832/v1/status`.
@@ -84,7 +85,7 @@ Optional local development origin:
 VIBETV_COMPANION_DEV_ORIGIN=http://localhost:3002 ./scripts/install-control-center-companion.sh
 ```
 
-The local API service is separate from the older frame-sending daemon LaunchAgent. The older daemon can continue to exist for the display runtime; the Control Center setup path only changes how the browser-facing local service is started.
+The local API service is separate from the older frame-sending daemon LaunchAgent. Existing customer Macs may still have that daemon. The release installer refreshes it once after installing the new binary, so the old display stream picks up the new `codexbar-display` binary instead of continuing with the previous build.
 
 The Control Center Updates screen checks `/api/companion/latest`. That route still reads the latest GitHub Release for version information, but the v1 setup path does not require macOS package assets. New customer setup should prefer the Agentic prompt and Terminal command above.
 
@@ -94,7 +95,7 @@ Set `CONTROL_CENTER_GITHUB_TOKEN` in the hosted app environment when possible. T
 
 Successful GitHub release reads are cached server-side for one minute. Failed release reads are not cached, so the customer-facing retry button can check again immediately.
 
-The `/api/companion/latest` route may keep technical field names and asset filenames for compatibility, but its human-readable `message` must use customer language. It must not expose `Companion`, release/package diagnostics, or customer installer internals.
+The `/api/companion/latest` route returns version state only. It must not expose macOS package download URLs in the v1 customer flow. Its human-readable `message` must use customer language and avoid release/package diagnostics.
 
 The Overview and `/install/<theme_id>` entry use the same setup state when the Mac App is missing, so a new customer does not have to discover the Updates tab first. That setup state has one primary action: install or repair the Mac App through setup.
 
@@ -114,11 +115,23 @@ If an exact address does not answer, the app keeps the Mac App online and shows 
 
 If the Shopify theme catalog is empty or the requested `/install/<theme_id>` does not exist in the catalog, the app must show a locked catalog state. It must not fall back to demo/mock themes or silently select the first available theme for an unknown Shopify link.
 
-The Updates screen labels Mac App state plainly:
+The Updates screen labels Mac App actions plainly:
 
-- `Install Mac App` when the Mac App is not running yet.
-- `Update Mac App` when the installed Mac App version is behind the latest release.
-- `Repair Mac App` when the Mac App is already current but should be restarted cleanly.
+- `Copy install command` when the Mac App is not running yet.
+- `Copy update command` when the installed Mac App version is behind the latest release.
+- `Copy repair command` only if the Mac App needs a clean restart path.
+
+## Documentation Cleanup Backlog
+
+The top-level README, customer setup guide, Control Center README, and this readiness doc now describe the current v1 path. The older operator/package docs still contain historical package and LaunchAgent material for development and later packaging work. Before public release, split that material into a legacy/later document or issue and write one clean public technical guide covering:
+
+- dependencies: VibeTV hardware, CodexBar, `codexbar-display`, Chrome local-network permission,
+- why CodexBar is installed or required,
+- how usage data moves from CodexBar to the Mac App service to VibeTV,
+- customer commands: install/update, status check, uninstall,
+- support commands and flags: `--terminal-session`, `--restart`, `--uninstall`, `--dev-origin`, `--version`, `--addr`,
+- what data is local, what reaches `app.vibetv.shop`, and what is sent to the device,
+- update flow and failure-report flow.
 
 The public VibeTV Shopify theme products currently show the direct Terminal install command instead of linking into the hosted readiness flow. As of 2026-06-22, the Synthwave product page is verified to show `Copy install command` and `codexbar-display theme-pack install --theme synthwave --target http://vibetv.local`, with no `app.vibetv.shop` install link. Switch product pages back to the hosted app only after the Agentic setup path is verified end to end on a customer-like Mac.
 

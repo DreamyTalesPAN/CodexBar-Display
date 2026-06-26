@@ -46,7 +46,7 @@ That command is no-write: it does not merge, release, install packages, start se
 ../../scripts/check-control-center-customer-ready-gate.sh --automated-only --skip-release
 ```
 
-For the current v1 setup path, customers use the Agentic setup prompt or the manual Terminal command from the Setup tab.
+For the current v1 setup path, customers use the Agentic setup prompt or the manual Terminal command from the Setup tab. The command installs or updates the Mac App from the current release and starts it from the Terminal context.
 
 The local Mac App service must run on `127.0.0.1:47832` for real device actions:
 
@@ -71,6 +71,14 @@ That starts the local service in the background from the Terminal context. The
 hosted v1 setup uses the same Terminal-started service path through the Agentic
 prompt. The older frame-sending daemon LaunchAgent is separate. See
 `docs/control-center-customer-readiness.md` for the support flow.
+
+The hosted customer command is:
+
+```bash
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --terminal-session
+```
+
+This path is intentional while there are no signed/notarized Apple packages.
 
 ## Device Write Guardrails
 
@@ -97,7 +105,7 @@ SHOPIFY_THEME_COLLECTION_HANDLE=themes-2
 CONTROL_CENTER_GITHUB_TOKEN=...
 ```
 
-Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `SHOPIFY_STOREFRONT_ACCESS_TOKEN` for a public token. `CONTROL_CENTER_GITHUB_TOKEN` is optional, server-side only, and keeps GitHub release checks for Mac App package assets away from anonymous rate limits. If Shopify env vars are missing, the app shows a configuration warning and no installable themes. Set `CONTROL_CENTER_ALLOW_CATALOG_FALLBACK=1` only for explicit local development with repo catalog data.
+Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `SHOPIFY_STOREFRONT_ACCESS_TOKEN` for a public token. `CONTROL_CENTER_GITHUB_TOKEN` is optional, server-side only, and keeps GitHub release version checks away from anonymous rate limits. If Shopify env vars are missing, the app shows a configuration warning and no installable themes. Set `CONTROL_CENTER_ALLOW_CATALOG_FALLBACK=1` only for explicit local development with repo catalog data.
 
 ## Flow
 

@@ -787,7 +787,7 @@ bool DrawThemeSpecUsage() {
   const auto frameData = currentThemeSpecFrameData();
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly);
   if (!themespec::RenderCompiledThemeSpecStaticPrimitives(cachedThemeSpecScene, frameData, sink)) {
-    markThemeSpecRenderFailed("full_render_failed");
+    markThemeSpecRenderFailed(nullptr);
     scheduleFullRenderRetry();
     return false;
   }

@@ -14,6 +14,9 @@ PLIST_DIR="${HOME}/Library/LaunchAgents"
 PLIST_PATH="${PLIST_DIR}/com.codexbar-display.companion-api.plist"
 SERVICE_LABEL="com.codexbar-display.companion-api"
 SERVICE="gui/$(id -u)/${SERVICE_LABEL}"
+DISPLAY_DAEMON_LABEL="com.codexbar-display.daemon"
+DISPLAY_DAEMON_PLIST="${PLIST_DIR}/${DISPLAY_DAEMON_LABEL}.plist"
+DISPLAY_DAEMON_SERVICE="gui/$(id -u)/${DISPLAY_DAEMON_LABEL}"
 LOG_OUT="/tmp/codexbar-display-companion-api.out.log"
 LOG_ERR="/tmp/codexbar-display-companion-api.err.log"
 
@@ -42,16 +45,16 @@ What it does:
   - verifies the release checksum
   - installs the binary under ~/Library/Application Support/codexbar-display/bin
   - stops the old background service if it exists
-  - starts the local Mac setup service as a user LaunchAgent with --launchagent
-  - otherwise starts it from this Terminal session
+  - restarts the older display stream if it exists
+  - starts the local Mac setup service from this Terminal session
   - verifies http://127.0.0.1:47832/v1/status
 
 Examples:
-  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --launchagent
+  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --terminal-session
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --restart
 
-By default the service is started from Terminal. The Control Center setup prompt
-passes --launchagent so the Mac setup service keeps running after setup.
+By default the service is started from this Terminal context. This avoids
+unsigned package and background-service setup during the first customer rollout.
 EOF
 }
 
@@ -241,6 +244,26 @@ install_binary() {
     codesign --force --sign - "$BIN_PATH" >/dev/null 2>&1 \
       || die "macOS could not prepare the Companion binary for launch. Open System Settings > Privacy & Security, allow VibeTV if prompted, then rerun this installer."
   fi
+}
+
+restart_display_stream_if_present() {
+  if [[ ! -f "$DISPLAY_DAEMON_PLIST" ]]; then
+    return 0
+  fi
+  if ! command -v launchctl >/dev/null 2>&1; then
+    log "vibetv: display stream refresh skipped because launchctl is unavailable"
+    return 0
+  fi
+
+  if launchctl print "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1; then
+    launchctl kickstart -k "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
+    log "vibetv: display stream refreshed"
+    return 0
+  fi
+
+  launchctl bootstrap "gui/$(id -u)" "$DISPLAY_DAEMON_PLIST" >/dev/null 2>&1 || true
+  launchctl kickstart -k "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
+  log "vibetv: display stream refreshed"
 }
 
 uninstall_service() {
@@ -459,6 +482,7 @@ main() {
   verify_checksum
 
   install_binary
+  restart_display_stream_if_present
   if [[ "$START_MODE" == "launchagent" ]]; then
     write_plist
   fi

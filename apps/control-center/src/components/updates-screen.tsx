@@ -2,6 +2,7 @@
 
 import {
   Check,
+  Copy,
   Download,
   Monitor,
   RefreshCw,
@@ -9,15 +10,14 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
+import { useCompanionRelease } from "./companion-installer-actions";
 import {
-  companionPackageLabel,
-  hasCompleteMacPackages,
-  usePreferredMacPackage,
-  useCompanionRelease,
-} from "./companion-installer-actions";
+  buildMacAppTerminalCommand,
+  currentControlCenterOrigin,
+} from "./mac-app-install-command";
 
 export type UpdatesCompanionStatus = "unknown" | "online" | "missing";
 
@@ -69,10 +69,17 @@ export function UpdatesScreen({
     refresh: refreshCompanionRelease,
     release: companionRelease,
   } = useCompanionRelease(companionVersion);
+  const [macAppCommandCopied, setMacAppCommandCopied] = useState(false);
+  const macAppTerminalCommand = useMemo(
+    () => buildMacAppTerminalCommand(currentControlCenterOrigin()),
+    [],
+  );
   const installedFirmware =
     firmwareUpdate?.installedFirmware || device?.firmware || "Unknown";
   const latestFirmware = firmwareUpdate?.latestFirmware || "Checking";
   const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
+  const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
+  const anyUpdateAvailable = updateAvailable || macAppUpdateAvailable;
   const checking = Boolean(device?.firmware && !firmwareUpdate);
   const refreshing = busyAction === "firmware-check";
   const installingUpdate = busyAction === "firmware-update" ||
@@ -83,7 +90,7 @@ export function UpdatesScreen({
     ? "Checking updates"
     : checkFailed
       ? "Update check failed"
-      : updateAvailable
+      : anyUpdateAvailable
         ? "Update available"
         : "Up to date";
   const status = checking
@@ -94,8 +101,6 @@ export function UpdatesScreen({
         ? "Update available"
         : "Up to date";
   const macAppRunning = companionStatus === "online";
-  const completeMacPackages = hasCompleteMacPackages(companionRelease);
-  const showMacDownloadRow = !macAppRunning || completeMacPackages;
   const companionReleaseStatus = companionReleaseLabel({
     macAppRunning,
     release: companionRelease,
@@ -106,20 +111,21 @@ export function UpdatesScreen({
       : companionVersion || "Unknown";
   const companionAvailable =
     companionRelease?.latestVersion || companionRelease?.release || "Checking";
-  const companionPackageStatus = macAppRunning && !completeMacPackages
-    ? "Ready"
-    : companionPackageLabel(companionRelease);
   const companionAction = companionInstallerAction({
     companionStatus,
     release: companionRelease,
   });
-  const preferredPackage = usePreferredMacPackage();
+  async function copyMacAppCommand() {
+    await copyText(macAppTerminalCommand);
+    setMacAppCommandCopied(true);
+  }
+
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="min-h-[330px] border-b border-[#747A60] py-10">
         <div className="flex items-start gap-5">
-          <HeroIcon active={!updateAvailable}>
-            {updateAvailable ? (
+          <HeroIcon active={!anyUpdateAvailable}>
+            {anyUpdateAvailable ? (
               <RefreshCw size={36} aria-hidden />
             ) : (
               <Check size={38} aria-hidden />
@@ -150,13 +156,6 @@ export function UpdatesScreen({
               label="Latest version"
               value={companionAvailable}
             />
-            {showMacDownloadRow ? (
-              <FirmwareRow
-                icon={<Download size={20} aria-hidden />}
-                label="Mac App download"
-                value={companionPackageStatus}
-              />
-            ) : null}
             <FirmwareRow
               icon={<Check size={20} aria-hidden />}
               label="Status"
@@ -168,9 +167,10 @@ export function UpdatesScreen({
             <CompanionUpdateAction
               action={companionAction}
               busy={companionCheckBusy}
+              commandCopied={macAppCommandCopied}
               companionStatus={companionStatus}
               onCheckInstaller={refreshCompanionRelease}
-              preferredPackage={preferredPackage}
+              onCopyCommand={copyMacAppCommand}
               release={companionRelease}
             />
           </div>
@@ -378,40 +378,44 @@ function InlineUpdateProgress({
 function CompanionUpdateAction({
   action,
   busy,
+  commandCopied,
   companionStatus,
   onCheckInstaller,
-  preferredPackage,
+  onCopyCommand,
   release,
 }: {
   action: "install" | "repair" | "update";
   busy: boolean;
+  commandCopied: boolean;
   companionStatus: UpdatesCompanionStatus;
   onCheckInstaller: () => void;
-  preferredPackage: "macosArm64" | "macosAmd64" | null;
+  onCopyCommand: () => void | Promise<void>;
   release: CompanionReleaseInfo | null;
 }) {
-  const packageUrl = preferredPackage
-    ? release?.packageDownloadUrls?.[preferredPackage]
-    : release?.packageDownloadUrls?.macosArm64 ||
-      release?.packageDownloadUrls?.macosAmd64;
-
-  if (
-    packageUrl &&
-    (companionStatus === "missing" || release?.updateAvailable)
-  ) {
+  if (companionStatus === "missing" || release?.updateAvailable) {
     return (
-      <a
-        className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
-        href={packageUrl}
-      >
-        <Download size={18} aria-hidden />
-        <span>{companionActionLabel(action)}</span>
-      </a>
+      <div className="grid gap-2">
+        <button
+          className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
+          onClick={onCopyCommand}
+          type="button"
+        >
+          <Copy size={18} aria-hidden />
+          <span>
+            {commandCopied ? "Command copied" : companionActionLabel(action)}
+          </span>
+        </button>
+        {commandCopied ? (
+          <p
+            className="max-w-[260px] border border-[#747A60] bg-[#F9F9F9] px-3 py-2 text-xs font-semibold leading-5 text-[#444933]"
+            role="status"
+          >
+            Paste it into Terminal. This page will move on when the Mac App
+            restarts.
+          </p>
+        ) : null}
+      </div>
     );
-  }
-
-  if (companionStatus === "online") {
-    return null;
   }
 
   if (!release) {
@@ -436,23 +440,21 @@ function CompanionUpdateAction({
     );
   }
 
-  if (!hasCompleteMacPackages(release)) {
-    return <ActionStatus label="Not ready yet" />;
+  if (companionStatus === "online") {
+    return null;
   }
 
-  return (
-    <ActionStatus label="Ready" />
-  );
+  return <ActionStatus label="Ready" />;
 }
 
 function companionActionLabel(action: "install" | "repair" | "update"): string {
   if (action === "update") {
-    return "Update Mac App";
+    return "Copy update command";
   }
   if (action === "repair") {
-    return "Repair Mac App";
+    return "Copy repair command";
   }
-  return "Install Mac App";
+  return "Copy install command";
 }
 
 function companionInstallerAction({
@@ -479,7 +481,7 @@ function companionReleaseLabel({
   release: CompanionReleaseInfo | null;
 }): string {
   if (macAppRunning) {
-    if (release?.updateAvailable && hasCompleteMacPackages(release)) {
+    if (release?.updateAvailable) {
       return "Update available";
     }
     return "Ready";
@@ -488,13 +490,10 @@ function companionReleaseLabel({
     return "Checking";
   }
   if (release.status === "available") {
-    if (!hasCompleteMacPackages(release)) {
-      return "Not ready yet";
-    }
-    return release.updateAvailable ? "Update available" : "Installer available";
+    return "Setup needed";
   }
   if (release.status === "missing_asset") {
-    return "Not ready yet";
+    return "Setup needed";
   }
   return "Check failed";
 }
@@ -506,6 +505,10 @@ function ActionStatus({ busy, label }: { busy?: boolean; label: string }) {
       <span>{label}</span>
     </div>
   );
+}
+
+async function copyText(text: string) {
+  await navigator.clipboard.writeText(text);
 }
 
 function clampUpdateProgress(value: number | undefined): number {
