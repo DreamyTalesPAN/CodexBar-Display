@@ -21,8 +21,13 @@ namespace display {
 namespace {
 
 constexpr unsigned long kThemeSpecAnimatedTickMs = 20UL;
+constexpr unsigned long kThemeSpecFullRenderRetryMs = 750UL;
 constexpr int kAnimatedSpriteCacheSlots = 2;
+constexpr uint32_t kMinThemeSpecRenderHeapBytes = 4096UL;
+constexpr size_t kSpriteLineReserveBytes = 256;
+constexpr size_t kSpriteLineMaxBytes = 512;
 unsigned long nextThemeSpecAnimatedTickAtMs = 0;
+unsigned long nextThemeSpecFullRenderRetryAtMs = 0;
 bool lastThemeSpecRenderOk = true;
 const char* lastThemeSpecRenderError = "";
 unsigned long themeSpecRenderFailures = 0;
@@ -61,7 +66,7 @@ void markThemeSpecRenderOk() {
 
 void markThemeSpecRenderFailed(const char* error) {
   lastThemeSpecRenderOk = false;
-  lastThemeSpecRenderError = error == nullptr ? "render_failed" : error;
+  lastThemeSpecRenderError = error == nullptr ? "render_fail" : error;
   themeSpecRenderFailures += 1;
 }
 
@@ -79,7 +84,7 @@ void markThemeSpecPartialOk(uint32_t changedFields) {
 
 void markThemeSpecPartialFailed(uint32_t changedFields, const char* error) {
   lastPartialChangedFields = changedFields;
-  lastPartialError = error == nullptr ? "partial_render_failed" : error;
+  lastPartialError = error == nullptr ? "partial_fail" : error;
   themeSpecPartialFailures += 1;
 }
 
@@ -93,6 +98,7 @@ uint32_t themeSpecRawHash(const String& raw) {
 }
 
 const String& currentThemeSpecRaw();
+void resetAnimatedSpriteCaches();
 
 void markCurrentThemeSpecRendered() {
   markThemeSpecRenderOk();
@@ -102,11 +108,45 @@ void markCurrentThemeSpecRendered() {
 }
 
 bool currentThemeSpecRenderedSuccessfully() {
-  return CurrentFrame().hasThemeSpec &&
+  return lastThemeSpecRenderOk &&
+         CurrentFrame().hasThemeSpec &&
          lastSuccessfulThemeSpecRev == CurrentFrame().themeSpecRev &&
          lastSuccessfulThemeSpecId == CurrentFrame().themeSpecId &&
          lastSuccessfulThemeSpecRawHash != 0 &&
          lastSuccessfulThemeSpecRawHash == themeSpecRawHash(currentThemeSpecRaw());
+}
+
+bool hasThemeSpecRenderHeap() {
+  return ESP.getFreeHeap() >= kMinThemeSpecRenderHeapBytes;
+}
+
+bool fullRenderRetryPending() {
+  if (nextThemeSpecFullRenderRetryAtMs == 0) {
+    return false;
+  }
+  return static_cast<long>(millis() - nextThemeSpecFullRenderRetryAtMs) < 0;
+}
+
+void scheduleFullRenderRetry() {
+  nextThemeSpecFullRenderRetryAtMs = millis() + kThemeSpecFullRenderRetryMs;
+}
+
+void clearFullRenderRetry() {
+  nextThemeSpecFullRenderRetryAtMs = 0;
+}
+
+void releaseThemeSpecRenderMemory() {
+  resetAnimatedSpriteCaches();
+  GifCore().ReleaseMemory();
+  cachedThemeSpecDoc.clear();
+  cachedThemeSpecDocHash = 0;
+  themespec::ReleaseCompiledThemeSpec(cachedThemeSpecScene);
+  yield();
+}
+
+bool recoverThemeSpecRenderHeap() {
+  releaseThemeSpecRenderMemory();
+  return hasThemeSpecRenderHeap();
 }
 
 const String& currentThemeSpecRaw() {
@@ -142,7 +182,21 @@ bool readSpriteLine(File& file, String& line) {
   if (!file.available()) {
     return false;
   }
-  line = file.readStringUntil('\n');
+  line = "";
+  line.reserve(kSpriteLineReserveBytes);
+  while (file.available()) {
+    const int next = file.read();
+    if (next < 0 || next == '\n') {
+      break;
+    }
+    if (next == '\r') {
+      continue;
+    }
+    if (line.length() >= kSpriteLineMaxBytes) {
+      return false;
+    }
+    line += static_cast<char>(next);
+  }
   line.trim();
   return true;
 }
@@ -676,7 +730,7 @@ const char* usageModeText() {
 }
 
 const char* themeSpecUpdateNoticeText() {
-  return "vibetv.local";
+  return "app.vibetv.shop";
 }
 
 themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nullptr) {
@@ -705,14 +759,24 @@ bool DrawThemeSpecUsage() {
   if (!CurrentFrame().hasThemeSpec) {
     return false;
   }
+  if (fullRenderRetryPending()) {
+    return false;
+  }
   const String& raw = currentThemeSpecRaw();
   if (!codexbar_display::core::ThemeSpecRawLooksRenderable(raw)) {
-    markThemeSpecRenderFailed("missing_theme_spec");
+    markThemeSpecRenderFailed("missing_spec");
+    scheduleFullRenderRetry();
+    return false;
+  }
+  if (!hasThemeSpecRenderHeap() && !recoverThemeSpecRenderHeap()) {
+    markThemeSpecRenderFailed("low_heap_full_render");
+    scheduleFullRenderRetry();
     return false;
   }
 
   if (!ensureThemeSpecSceneCached(raw)) {
-    markThemeSpecRenderFailed("theme_spec_parse_failed");
+    markThemeSpecRenderFailed("parse_fail");
+    scheduleFullRenderRetry();
     return false;
   }
 
@@ -723,7 +787,8 @@ bool DrawThemeSpecUsage() {
   const auto frameData = currentThemeSpecFrameData();
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly);
   if (!themespec::RenderCompiledThemeSpecStaticPrimitives(cachedThemeSpecScene, frameData, sink)) {
-    markThemeSpecRenderFailed("full_render_failed");
+    markThemeSpecRenderFailed(nullptr);
+    scheduleFullRenderRetry();
     return false;
   }
   if (cachedThemeSpecScene.hasAnimatedAssets) {
@@ -732,6 +797,7 @@ bool DrawThemeSpecUsage() {
   }
 
   markCurrentThemeSpecRendered();
+  clearFullRenderRetry();
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
                                       : 0;
@@ -768,12 +834,12 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   markThemeSpecPartialAttempt(changedFields);
   const String& raw = currentThemeSpecRaw();
   if (!CurrentFrame().hasThemeSpec || !codexbar_display::core::ThemeSpecRawLooksRenderable(raw) || changedFields == 0) {
-    markThemeSpecPartialFailed(changedFields, changedFields == 0 ? "no_changed_fields" : "missing_theme_spec");
+    markThemeSpecPartialFailed(changedFields, changedFields == 0 ? "no_changes" : "missing_spec");
     return false;
   }
 
   if (!ensureThemeSpecSceneCached(raw)) {
-    markThemeSpecPartialFailed(changedFields, "theme_spec_parse_failed");
+    markThemeSpecPartialFailed(changedFields, "parse_fail");
     return false;
   }
 
@@ -808,6 +874,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
 
 void ResetThemeSpecSpriteCaches() {
   resetAnimatedSpriteCaches();
+  clearFullRenderRetry();
   lastSuccessfulThemeSpecId = "";
   lastSuccessfulThemeSpecRev = 0;
   lastSuccessfulThemeSpecRawHash = 0;
@@ -816,6 +883,10 @@ void ResetThemeSpecSpriteCaches() {
   cachedThemeSpecDoc.clear();
   cachedThemeSpecDocHash = 0;
   themespec::ReleaseCompiledThemeSpec(cachedThemeSpecScene);
+}
+
+bool ThemeSpecFullRenderRetryPending() {
+  return fullRenderRetryPending();
 }
 
 bool CurrentThemeSpecRenderedSuccessfully() {
@@ -875,6 +946,10 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
 }
 
 void ResetThemeSpecSpriteCaches() {}
+
+bool ThemeSpecFullRenderRetryPending() {
+  return false;
+}
 
 bool CurrentThemeSpecRenderedSuccessfully() {
   return false;

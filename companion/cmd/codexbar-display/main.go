@@ -91,7 +91,7 @@ func main() {
 func printUsage() {
 	fmt.Println("codexbar-display commands:")
 	fmt.Println("  codexbar-display api [--addr 127.0.0.1:47832] [--dev-origin http://localhost:3000]")
-	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 2s] [--once] [--theme classic|crt|mini]")
+	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 30s] [--once] [--theme classic|crt|mini]")
 	fmt.Println("  codexbar-display doctor")
 	fmt.Println("  codexbar-display health")
 	fmt.Println("  codexbar-display service <start|stop|status>")
@@ -139,7 +139,7 @@ func parseDaemonOptions(args []string) (daemon.Options, error) {
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
 	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
-	interval := fs.Duration("interval", 60*time.Second, "poll interval")
+	interval := fs.Duration("interval", 0, "poll interval")
 	once := fs.Bool("once", false, "run one cycle and exit")
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|mini")
 	if err := fs.Parse(args); err != nil {
@@ -325,7 +325,7 @@ func runSetup(args []string) error {
 	yes := fs.Bool("yes", false, "auto-select defaults without prompts")
 	skipFlash := fs.Bool("skip-flash", false, "skip firmware flashing")
 	pinPort := fs.Bool("pin-port", false, "pin daemon to selected --port in LaunchAgent (default: auto-detect)")
-	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "PlatformIO environment to flash (examples: esp8266_smalltv_st7789, lilygo_t_display_s3)")
+	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "release firmware environment to flash (examples: esp8266_smalltv_st7789, lilygo_t_display_s3)")
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|mini|none (empty keeps existing setting, defaults new installs to mini)")
 	validateOnly := fs.Bool("validate-only", false, "validate setup prerequisites only; do not change system state")
 	dryRun := fs.Bool("dry-run", false, "show setup actions without applying changes")
