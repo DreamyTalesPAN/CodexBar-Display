@@ -11,6 +11,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  control-center-ui-review-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check Control Center UI review gate
+        run: node scripts/check-control-center-ui-review-gate.mjs
+
+      - name: Test Control Center UI review gate
+        run: ./scripts/test-control-center-ui-review-gate.sh
+
   companion-tests:
     runs-on: ubuntu-latest
     steps:
@@ -46,6 +60,18 @@ jobs:
       - name: Check ESP8266 soak gate
         run: ./scripts/check-esp8266-soak-gate.sh
 
+      - name: Test customer-readiness checker
+        run: ./scripts/test-control-center-companion-customer-readiness.sh
+
+      - name: Test customer-ready gate
+        run: ./scripts/test-control-center-customer-ready-gate.sh
+
+      - name: Test Control Center release workflow
+        run: ./scripts/test-control-center-release-workflow.sh
+
+      - name: Test legacy Mac App support script guard
+        run: ./scripts/test-control-center-companion-legacy-installer.sh
+
   theme-studio-tests:
     runs-on: ubuntu-latest
     steps:
@@ -66,6 +92,39 @@ jobs:
       - name: Build Theme Studio
         working-directory: tools/theme-studio
         run: npm run test:preview
+
+  control-center-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/control-center/package-lock.json
+
+      - name: Install Control Center dependencies
+        working-directory: apps/control-center
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: apps/control-center
+        run: npx playwright install --with-deps chromium
+
+      - name: Lint Control Center
+        working-directory: apps/control-center
+        run: npm run lint
+
+      - name: Check Control Center customer UI copy
+        working-directory: apps/control-center
+        run: npm run check:customer-ui-copy
+
+      - name: Test Control Center customer flows
+        working-directory: apps/control-center
+        run: npm run test:customer-flows
 
   theme-pack-build:
     runs-on: ubuntu-latest

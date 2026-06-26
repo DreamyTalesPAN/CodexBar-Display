@@ -70,6 +70,7 @@ class GifCoreESP8266 {
 #if !CODEXBAR_DISPLAY_GIF_CORE
   void Setup(const char* preloadAssetPath = nullptr) { (void)preloadAssetPath; }
   void Stop() {}
+  void ReleaseMemory() {}
   void ResetFrameSchedule() {}
   void ResetForAssetUpdate() {}
 
@@ -105,6 +106,7 @@ class GifCoreESP8266 {
 #else
   void Setup(const char* preloadAssetPath = nullptr);
   void Stop();
+  void ReleaseMemory();
   void ResetFrameSchedule();
   void ResetForAssetUpdate();
 

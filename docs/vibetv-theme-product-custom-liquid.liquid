@@ -1,0 +1,83 @@
+{% liquid
+  assign theme_product = product
+  if theme_product == blank
+    assign theme_product = closest.product
+  endif
+  assign theme_id = theme_product.metafields.vibetv.theme_id.value | default: theme_product.metafields.theme.theme_id.value
+  assign install_command = ''
+  if theme_id != blank
+    assign install_command = 'curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme ' | append: theme_id | append: ' --target http://vibetv.local'
+  endif
+%}
+
+<div class="vtv-theme-install" data-vtv-theme-install>
+  <style>
+    .vtv-theme-install {
+      display: grid;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    .vtv-theme-install__command {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      border: 1px solid rgb(var(--color-foreground-rgb, 27 27 27) / 0.24);
+      background: rgb(var(--color-foreground-rgb, 27 27 27) / 0.05);
+      color: rgb(var(--color-foreground-rgb, 27 27 27));
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .vtv-theme-install__note {
+      margin: 0;
+      color: rgb(var(--color-foreground-rgb, 27 27 27) / 0.72);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+  </style>
+
+  {% if install_command != blank %}
+    <button class="button add-to-cart-button" type="button" data-vtv-copy-command="{{ install_command | escape }}">
+      <span class="add-to-cart-text">
+        <span class="add-to-cart-text__content">
+          <span data-vtv-copy-label>Copy install command</span>
+        </span>
+      </span>
+    </button>
+    <code class="vtv-theme-install__command">{{ install_command }}</code>
+    <p class="vtv-theme-install__note">Open Terminal, paste this command, and press Return while VibeTV is on the same WiFi.</p>
+  {% else %}
+    <button type="button" class="button add-to-cart-button" disabled>
+      <span class="add-to-cart-text">
+        <span class="add-to-cart-text__content">
+          <span>Install command unavailable</span>
+        </span>
+      </span>
+    </button>
+  {% endif %}
+</div>
+
+<script>
+  (() => {
+    const root = document.querySelector('[data-vtv-theme-install]');
+    if (!root) return;
+    const button = root.querySelector('[data-vtv-copy-command]');
+    const label = root.querySelector('[data-vtv-copy-label]');
+    if (!button || !label) return;
+    const initialLabel = label.textContent;
+    button.addEventListener('click', async () => {
+      const command = button.getAttribute('data-vtv-copy-command');
+      try {
+        await navigator.clipboard.writeText(command);
+        label.textContent = 'Copied';
+      } catch (_) {
+        label.textContent = 'Copy manually';
+      }
+      window.setTimeout(() => {
+        label.textContent = initialLabel;
+      }, 1800);
+    });
+  })();
+</script>
