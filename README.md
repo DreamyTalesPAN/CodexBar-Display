@@ -40,6 +40,30 @@ Start with [docs/themes.md](docs/themes.md), then use
 [docs/theme-dev-guide.md](docs/theme-dev-guide.md) for hardware-safe theme
 development rules.
 
+## Providers
+
+VibeTV can show provider usage surfaced by CodexBar. Common examples include:
+
+- Codex
+- Claude / Claude Code
+- Cursor
+- Gemini
+- Antigravity
+- Kimi and Kimi K2
+- Copilot
+- z.ai
+- Kiro
+- Augment
+- Amp
+- JetBrains AI
+- OpenRouter
+- OpenAI / Azure OpenAI
+- Mistral, DeepSeek, Moonshot, AWS Bedrock, LiteLLM, and more
+
+Different providers expose different data. Some have session and weekly limits,
+some expose token or credit usage, and some only expose spend or status. See
+[docs/providers.md](docs/providers.md) for the longer list and support notes.
+
 ## What It Is
 
 VibeTV is the hardware on your desk. The VibeTV Mac App is the local process
@@ -84,30 +108,6 @@ CodexBar on the Mac
 5. VibeTV renders the selected theme on the 240x240 screen.
 
 The normal customer path does not require USB flashing. USB-C powers the device.
-
-## Providers
-
-VibeTV can show provider usage surfaced by CodexBar. Common examples include:
-
-- Codex
-- Claude / Claude Code
-- Cursor
-- Gemini
-- Antigravity
-- Kimi and Kimi K2
-- Copilot
-- z.ai
-- Kiro
-- Augment
-- Amp
-- JetBrains AI
-- OpenRouter
-- OpenAI / Azure OpenAI
-- Mistral, DeepSeek, Moonshot, AWS Bedrock, LiteLLM, and more
-
-Different providers expose different data. Some have session and weekly limits,
-some expose token or credit usage, and some only expose spend or status. See
-[docs/providers.md](docs/providers.md) for the longer list and support notes.
 
 ## Setup
 
