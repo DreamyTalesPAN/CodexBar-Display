@@ -47,7 +47,7 @@ VibeTV can show provider usage surfaced by CodexBar. Common examples include:
 - JetBrains AI
 - OpenRouter
 - OpenAI / Azure OpenAI
-- Mistral, DeepSeek, Moonshot, AWS Bedrock, LiteLLM, and more
+- Mistral, DeepSeek, Moonshot, AWS Bedrock, LiteLLM, and [more](https://github.com/steipete/CodexBar/blob/main/docs/providers.md)
 
 ## What It Is
 
