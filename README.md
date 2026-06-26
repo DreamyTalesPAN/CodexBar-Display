@@ -48,9 +48,6 @@ backend. Support reports are only created when you ask for them.
 - firmware and Mac App update state
 - the active theme running on the device
 
-Control Center also includes a hosted usage view, Theme Library, update screen,
-display settings, support logs, and a guided setup flow.
-
 ## How It Works
 
 ```text
