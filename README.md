@@ -31,8 +31,12 @@ VibeTV is built on top of [CodexBar](https://github.com/steipete/CodexBar) for
 AI provider usage data. CodexBar knows how to read usage and quota information
 from many AI tools. VibeTV turns that signal into a dedicated physical display.
 
-VibeTV is not a generic smart display. It is a small workflow instrument for
-keeping limits, status, and changes in plain sight.
+VibeTV does not generate new provider data in the cloud. It shows the usage
+signal that already exists on your Mac: CodexBar reads provider usage locally,
+the Mac App turns it into display frames, and those frames go to VibeTV over
+your local WiFi. Control Center loads the app, theme catalog, and update
+metadata from the web, but normal provider usage is not uploaded to a VibeTV
+backend. Support reports are only created when you ask for them.
 
 ## What It Shows
 

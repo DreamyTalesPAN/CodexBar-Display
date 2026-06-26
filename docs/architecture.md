@@ -95,11 +95,15 @@ silently flash firmware.
 
 ## Privacy Shape
 
-- Provider usage is read on the customer's Mac.
+- Provider usage is read on the customer's Mac through CodexBar and the Mac App.
 - The Mac App sends display frames to VibeTV over local WiFi.
-- Control Center can fetch public app, release, and Shopify catalog data.
-- Support diagnostics should avoid secrets, tokens, raw cookie values, direct
-  contact data, and tokenized URLs.
+- Control Center fetches the public app, release metadata, and Shopify theme
+  catalog data from the web.
+- In the normal product flow, provider usage is displayed in the browser and on
+  VibeTV; it is not stored as a VibeTV cloud account dataset.
+- Support diagnostics are created only when requested. They include device/app
+  health fields and are designed to avoid secrets, pairing tokens, raw cookie
+  values, direct contact data, and tokenized URLs.
 
 ## Developer Entry Points
 
