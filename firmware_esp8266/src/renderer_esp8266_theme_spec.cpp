@@ -66,7 +66,7 @@ void markThemeSpecRenderOk() {
 
 void markThemeSpecRenderFailed(const char* error) {
   lastThemeSpecRenderOk = false;
-  lastThemeSpecRenderError = error == nullptr ? "render_failed" : error;
+  lastThemeSpecRenderError = error == nullptr ? "render_fail" : error;
   themeSpecRenderFailures += 1;
 }
 
@@ -84,7 +84,7 @@ void markThemeSpecPartialOk(uint32_t changedFields) {
 
 void markThemeSpecPartialFailed(uint32_t changedFields, const char* error) {
   lastPartialChangedFields = changedFields;
-  lastPartialError = error == nullptr ? "partial_render_failed" : error;
+  lastPartialError = error == nullptr ? "partial_fail" : error;
   themeSpecPartialFailures += 1;
 }
 
@@ -764,7 +764,7 @@ bool DrawThemeSpecUsage() {
   }
   const String& raw = currentThemeSpecRaw();
   if (!codexbar_display::core::ThemeSpecRawLooksRenderable(raw)) {
-    markThemeSpecRenderFailed("missing_theme_spec");
+    markThemeSpecRenderFailed("missing_spec");
     scheduleFullRenderRetry();
     return false;
   }
@@ -775,7 +775,7 @@ bool DrawThemeSpecUsage() {
   }
 
   if (!ensureThemeSpecSceneCached(raw)) {
-    markThemeSpecRenderFailed("theme_spec_parse_failed");
+    markThemeSpecRenderFailed("parse_fail");
     scheduleFullRenderRetry();
     return false;
   }
@@ -834,12 +834,12 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   markThemeSpecPartialAttempt(changedFields);
   const String& raw = currentThemeSpecRaw();
   if (!CurrentFrame().hasThemeSpec || !codexbar_display::core::ThemeSpecRawLooksRenderable(raw) || changedFields == 0) {
-    markThemeSpecPartialFailed(changedFields, changedFields == 0 ? "no_changed_fields" : "missing_theme_spec");
+    markThemeSpecPartialFailed(changedFields, changedFields == 0 ? "no_changes" : "missing_spec");
     return false;
   }
 
   if (!ensureThemeSpecSceneCached(raw)) {
-    markThemeSpecPartialFailed(changedFields, "theme_spec_parse_failed");
+    markThemeSpecPartialFailed(changedFields, "parse_fail");
     return false;
   }
 
