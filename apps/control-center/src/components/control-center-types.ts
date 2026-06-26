@@ -90,6 +90,7 @@ export type DeviceInfo = {
 export type ActiveTab =
   | "setup"
   | "overview"
+  | "usage"
   | "settings"
   | "theme-library"
   | "updates"
@@ -117,6 +118,78 @@ export type ShellNavItem = {
   label: string;
   detail?: string;
   icon?: ReactNode;
+};
+
+export type UsageProviderInfo = {
+  id: string;
+  label: string;
+  source?: string;
+  session: number;
+  weekly: number;
+  resetSecs?: number;
+  usageMode: "used" | "remaining" | string;
+  sessionTokens?: number;
+  weekTokens?: number;
+  totalTokens?: number;
+  activity?: string;
+  stale?: boolean;
+  collectedAt?: string;
+  activityObservedAt?: string;
+  windows?: UsageWindowInfo[];
+  status?: UsageStatusInfo;
+  credits?: UsageCreditsInfo;
+  pace?: UsagePaceInfo[];
+  usageOverTime?: UsageOverTimePoint[];
+};
+
+export type UsageWindowInfo = {
+  id: string;
+  label: string;
+  usedPercent: number;
+  resetSecs?: number;
+  windowMinutes?: number;
+};
+
+export type UsageStatusInfo = {
+  indicator?: string;
+  description?: string;
+  updatedAt?: string;
+  url?: string;
+};
+
+export type UsageCreditsInfo = {
+  remaining: number;
+  updatedAt?: string;
+};
+
+export type UsagePaceInfo = {
+  window: string;
+  stage?: string;
+  deltaPercent?: number;
+  expectedUsedPercent?: number;
+  willLastToReset?: boolean;
+  etaSeconds?: number;
+  summary?: string;
+};
+
+export type UsageOverTimePoint = {
+  day: string;
+  totalCreditsUsed: number;
+  services?: UsageServiceUsage[];
+};
+
+export type UsageServiceUsage = {
+  service: string;
+  creditsUsed: number;
+};
+
+export type UsageSnapshot = {
+  ok?: boolean;
+  generatedAt?: string;
+  source?: string;
+  usageMode?: "used" | "remaining" | string;
+  currentProvider?: string;
+  providers: UsageProviderInfo[];
 };
 
 export function deviceImageIsStuck(device: DeviceInfo | null | undefined) {

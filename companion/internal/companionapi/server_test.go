@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
@@ -59,6 +62,290 @@ func TestStatusReportsThemeInstallDisableFlag(t *testing.T) {
 	}
 	if got.Companion.Features.ThemeInstallEnabled {
 		t.Fatalf("expected theme install disable flag to be honored")
+	}
+}
+
+func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	collectedAt := time.Date(2026, 6, 26, 11, 59, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         collectedAt,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
+					Provider: "codex",
+					Source:   "openai-web",
+					Frame: protocol.Frame{
+						Provider:      "codex",
+						Label:         "Codex",
+						Session:       28,
+						Weekly:        59,
+						ResetSec:      5400,
+						SessionTokens: 1234,
+						WeekTokens:    5678,
+						TotalTokens:   9000,
+						Activity:      "coding",
+						UsageMode:     "used",
+					},
+					Meta: codexbar.ProviderUsageMeta{
+						Windows: []codexbar.UsageWindow{
+							{ID: "primary", Label: "Session", UsedPercent: 28, ResetSec: 5400, WindowMinutes: 300},
+							{ID: "secondary", Label: "Weekly", UsedPercent: 59, ResetSec: 86400, WindowMinutes: 10080},
+							{ID: "codeReview", Label: "Code review", UsedPercent: 7, WindowMinutes: 10080},
+						},
+						Status:  &codexbar.ProviderStatus{Indicator: "none", Description: "Operational", UpdatedAt: collectedAt, URL: "https://status.openai.com/"},
+						Credits: &codexbar.ProviderCredits{Remaining: 112.4, UpdatedAt: collectedAt},
+						Pace: []codexbar.ProviderPace{
+							{Window: "primary", Stage: "ahead", DeltaPercent: 12, ExpectedUsedPercent: 16, ETASeconds: 9000, Summary: "12% in deficit | Expected 16% used | Projected empty in 2h 30m"},
+						},
+						OverTime: []codexbar.UsageOverTimePoint{
+							{
+								Day:              "2026-06-24",
+								TotalCreditsUsed: 12,
+								Services: []codexbar.UsageServiceUsage{
+									{Service: "CLI", CreditsUsed: 8.5},
+									{Service: "Code review", CreditsUsed: 3.5},
+								},
+							},
+							{Day: "2026-06-25", TotalCreditsUsed: 10, Services: []codexbar.UsageServiceUsage{{Service: "CLI", CreditsUsed: 10}}},
+						},
+					},
+					CollectedAt: collectedAt,
+				},
+			},
+		}, true
+	}
+	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		t.Fatal("fetchUsage should not run when snapshots are present")
+		return nil, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || got.Source != "codexbar-display" || got.CurrentProvider != "codex" || got.UsageMode != "used" {
+		t.Fatalf("unexpected usage response metadata: %+v", got)
+	}
+	if len(got.Providers) != 1 {
+		t.Fatalf("expected one provider, got %+v", got.Providers)
+	}
+	provider := got.Providers[0]
+	if provider.ID != "codex" || provider.Label != "Codex" || provider.Source != "openai-web" {
+		t.Fatalf("unexpected provider identity: %+v", provider)
+	}
+	if provider.Session != 28 || provider.Weekly != 59 || provider.ResetSec != 5400 {
+		t.Fatalf("unexpected provider usage: %+v", provider)
+	}
+	if provider.SessionTokens != 1234 || provider.WeekTokens != 5678 || provider.TotalTokens != 9000 {
+		t.Fatalf("unexpected token stats: %+v", provider)
+	}
+	if provider.CollectedAt != collectedAt.Format(time.RFC3339) {
+		t.Fatalf("expected collectedAt %s, got %q", collectedAt.Format(time.RFC3339), provider.CollectedAt)
+	}
+	if len(provider.Windows) != 3 || provider.Windows[2].ID != "codereview" || provider.Windows[2].UsedPercent != 7 {
+		t.Fatalf("expected usage windows metadata, got %+v", provider.Windows)
+	}
+	if provider.Status == nil || provider.Status.Description != "Operational" || provider.Status.URL == "" {
+		t.Fatalf("expected status metadata, got %+v", provider.Status)
+	}
+	if provider.Credits == nil || provider.Credits.Remaining != 112.4 {
+		t.Fatalf("expected credits metadata, got %+v", provider.Credits)
+	}
+	if len(provider.Pace) != 1 || provider.Pace[0].Window != "primary" || provider.Pace[0].Summary == "" {
+		t.Fatalf("expected pace metadata, got %+v", provider.Pace)
+	}
+	if len(provider.UsageOverTime) != 2 || provider.UsageOverTime[0].Day != "2026-06-24" || provider.UsageOverTime[0].TotalCreditsUsed != 12 {
+		t.Fatalf("expected usage-over-time metadata, got %+v", provider.UsageOverTime)
+	}
+	if len(provider.UsageOverTime[0].Services) != 2 || provider.UsageOverTime[0].Services[0].Service != "CLI" {
+		t.Fatalf("expected usage-over-time services, got %+v", provider.UsageOverTime[0].Services)
+	}
+}
+
+func TestUsageFallsBackToCodexBarFetchWhenSnapshotsMissing(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{}, false
+	}
+	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{
+			{
+				Provider: "claude",
+				Source:   "web",
+				Frame: protocol.Frame{
+					Provider: "claude",
+					Label:    "Claude",
+					Session:  11,
+					Weekly:   22,
+					ResetSec: 3600,
+				},
+			},
+		}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Source != "codexbar" || got.CurrentProvider != "claude" {
+		t.Fatalf("unexpected fallback metadata: %+v", got)
+	}
+	if len(got.Providers) != 1 || got.Providers[0].ID != "claude" || got.Providers[0].UsageMode != "used" {
+		t.Fatalf("unexpected fallback providers: %+v", got.Providers)
+	}
+}
+
+func TestUsageRefreshesStaleProviderSnapshots(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-5 * time.Minute),
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
+					Provider:    "codex",
+					Source:      "openai-web",
+					CollectedAt: now.Add(-5 * time.Minute),
+					Stale:       true,
+					Frame: protocol.Frame{
+						Provider: "codex",
+						Label:    "Codex",
+						Session:  4,
+						Weekly:   18,
+					},
+				},
+			},
+		}, true
+	}
+	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{
+			{
+				Provider:    "codex",
+				Source:      "openai-web",
+				CollectedAt: now,
+				Frame: protocol.Frame{
+					Provider: "codex",
+					Label:    "Codex",
+					Session:  9,
+					Weekly:   19,
+				},
+				Meta: codexbar.ProviderUsageMeta{
+					OverTime: []codexbar.UsageOverTimePoint{
+						{Day: "2026-06-26", TotalCreditsUsed: 12},
+					},
+				},
+			},
+		}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Source != "codexbar" {
+		t.Fatalf("expected fresh codexbar source, got %+v", got)
+	}
+	if len(got.Providers) != 1 || got.Providers[0].Session != 9 || got.Providers[0].Stale {
+		t.Fatalf("expected fresh provider usage, got %+v", got.Providers)
+	}
+	if len(got.Providers[0].UsageOverTime) != 1 {
+		t.Fatalf("expected fresh usage-over-time, got %+v", got.Providers[0].UsageOverTime)
+	}
+}
+
+func TestUsageReturnsStaleProviderSnapshotsWhenRefreshFails(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-5 * time.Minute),
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
+					Provider:    "codex",
+					Source:      "openai-web",
+					CollectedAt: now.Add(-5 * time.Minute),
+					Stale:       true,
+					Frame: protocol.Frame{
+						Provider: "codex",
+						Label:    "Codex",
+						Session:  4,
+						Weekly:   18,
+					},
+				},
+			},
+		}, true
+	}
+	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, errors.New("codexbar temporarily unavailable")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected stale snapshot status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Source != "codexbar-display" || len(got.Providers) != 1 || !got.Providers[0].Stale {
+		t.Fatalf("expected stale persisted usage, got %+v", got)
+	}
+}
+
+func TestUsageUnavailableReturnsCustomerSafeError(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{}, false
+	}
+	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, errors.New("secret raw codexbar failure")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "secret raw codexbar failure") {
+		t.Fatalf("usage error leaked raw failure: %s", body)
+	}
+	var got errorResponse
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "usage_unavailable" {
+		t.Fatalf("unexpected error response: %+v", got)
 	}
 }
 

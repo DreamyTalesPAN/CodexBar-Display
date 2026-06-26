@@ -15,6 +15,7 @@ import {
   type DeviceInfo,
   type DeviceState,
   type SupportDiagnostics,
+  type UsageSnapshot,
 } from "./control-center-types";
 import { LogsScreen } from "./logs-screen";
 import { OverviewScreen } from "./overview-screen";
@@ -22,6 +23,7 @@ import { SetupScreen } from "./setup-screen";
 import { SettingsScreen } from "./settings-screen";
 import { ThemeLibraryScreen } from "./theme-library-screen";
 import { UpdatesScreen } from "./updates-screen";
+import { UsageScreen } from "./usage-screen";
 
 const COMPANION_URL = "http://127.0.0.1:47832";
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
@@ -152,6 +154,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<FirmwareUpdateInfo | null>(null);
   const [firmwareUpdateStatus, setFirmwareUpdateStatus] =
     useState<FirmwareUpdateStatus | null>(null);
+  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
+  const [usageError, setUsageError] = useState<ApiError | null>(null);
   const setupPreviewStep = useMemo(() => readLocalSetupPreviewStep(), []);
   const [setupResetVersion, setSetupResetVersion] = useState(0);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
@@ -206,6 +210,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setThemeInstallEnabled(false);
     setDevice(null);
     setDeviceState("unknown");
+    setUsage(null);
+    setUsageError(null);
   }, []);
 
   const markCompanionAccessBlocked = useCallback(() => {
@@ -214,6 +220,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setThemeInstallEnabled(false);
     setDevice(null);
     setDeviceState("unknown");
+    setUsage(null);
+    setUsageError(null);
   }, []);
 
   const handleCompanionUnavailableForRepair = useCallback(
@@ -768,6 +776,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setThemeInstallStatus(null);
     setSupportDiagnostics(null);
     setFirmwareUpdate(null);
+    setUsage(null);
+    setUsageError(null);
     didRunAutoRepair.current = false;
     didRunAutoDisplayReload.current = false;
     didRouteAfterSetupComplete.current = false;
@@ -1275,6 +1285,61 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
   ]);
 
+  const refreshUsage = useCallback(
+    async (options?: { quiet?: boolean }) => {
+      const quiet = Boolean(options?.quiet);
+      if (!quiet) {
+        setBusyAction("usage");
+      }
+      try {
+        const payload = await runCompanion<UsageSnapshot>(
+          "/v1/usage",
+          undefined,
+          { preserveLastError: quiet },
+        );
+        setUsage(payload);
+        setUsageError(null);
+        setCompanionStatus("online");
+        if (!quiet) {
+          addEvent({
+            label: "Usage refreshed",
+            detail: `${payload.providers?.length || 0} provider tiles loaded.`,
+            tone: payload.providers?.length ? "ready" : "attention",
+          });
+        }
+      } catch (error) {
+        const normalized = normalizeCaughtError(
+          error,
+          "Usage needs attention.",
+        );
+        if (isLocalNetworkAccessError(normalized)) {
+          markCompanionAccessBlocked();
+        } else if (isCompanionMissingError(normalized)) {
+          markCompanionUnavailable();
+        }
+        setUsageError(normalized);
+        if (!quiet) {
+          setLastError(normalized);
+          addEvent({
+            label: "Usage refresh needs attention",
+            detail: normalized.nextAction,
+            tone: "attention",
+          });
+        }
+      } finally {
+        if (!quiet) {
+          setBusyAction(null);
+        }
+      }
+    },
+    [
+      addEvent,
+      markCompanionAccessBlocked,
+      markCompanionUnavailable,
+      runCompanion,
+    ],
+  );
+
   const loadSupportDiagnostics = useCallback(async () => {
     setBusyAction("diagnostics");
     try {
@@ -1367,6 +1432,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       companionStatus === "online" &&
       deviceSetupIsUsable(device),
   );
+  const usageAvailable = !setupPreviewStep && companionStatus === "online";
   useEffect(() => {
     if (!setupComplete || didRouteAfterSetupComplete.current) {
       return;
@@ -1379,12 +1445,35 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ? imageNeedsReload
       ? ["settings", "theme-library", "updates"]
       : []
-    : ["overview", "settings", "theme-library", "updates", "logs"];
+    : usageAvailable
+      ? ["overview", "settings", "theme-library", "updates", "logs"]
+      : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
   const activeShellTab = disabledTabs.includes(activeTab)
     ? setupComplete
       ? "overview"
       : "setup"
     : activeTab;
+
+  useEffect(() => {
+    if (activeShellTab !== "usage" || companionStatus !== "online") {
+      return;
+    }
+
+    const initialTimer = window.setTimeout(() => {
+      void refreshUsage({ quiet: true });
+    }, 0);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+      void refreshUsage({ quiet: true });
+    }, 30000);
+
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
+  }, [activeShellTab, companionStatus, refreshUsage]);
 
   return (
     <ControlCenterShell
@@ -1427,6 +1516,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           deviceState={deviceState}
           firmwareUpdate={effectiveFirmwareUpdate}
           onReloadImage={() => reloadDisplay()}
+        />
+      ) : null}
+
+      {activeShellTab === "usage" ? (
+        <UsageScreen
+          busyAction={busyAction}
+          companionStatus={companionStatus}
+          onRefresh={() => refreshUsage()}
+          usage={usage}
+          usageError={usageError}
         />
       ) : null}
 

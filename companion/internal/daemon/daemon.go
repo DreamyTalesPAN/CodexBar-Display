@@ -257,6 +257,22 @@ type persistedLastGood struct {
 	Frame   protocol.Frame `json:"frame"`
 }
 
+type PersistedUsage struct {
+	SavedAt         time.Time
+	CurrentProvider string
+	Providers       []ProviderUsageSnapshot
+}
+
+type ProviderUsageSnapshot struct {
+	Provider           string
+	Frame              protocol.Frame
+	Source             string
+	Meta               codexbar.ProviderUsageMeta
+	CollectedAt        time.Time
+	ActivityObservedAt time.Time
+	Stale              bool
+}
+
 func Run(ctx context.Context, opts Options) error {
 	transportName := normalizeTransportName(opts.Transport)
 	if transportName == "" {
@@ -1758,6 +1774,94 @@ func loadPersistedProviderSnapshotsAnyAge() (map[string]providerSnapshot, time.T
 		return nil, time.Time{}, false
 	}
 	return out, saved.SavedAt, true
+}
+
+func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
+	snapshots, savedAt, ok := loadPersistedProviderSnapshotsAnyAge()
+	if !ok || len(snapshots) == 0 {
+		return PersistedUsage{}, false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	usage := PersistedUsage{
+		SavedAt: savedAt.UTC(),
+	}
+	if frame, _, ok := loadPersistedLastGoodAnyAge(); ok {
+		usage.CurrentProvider = normalizeProviderKey(frame.Provider)
+	}
+
+	for _, key := range orderedProviderUsageKeys(snapshots) {
+		snapshot, ok := snapshots[key]
+		if !ok {
+			continue
+		}
+		frame := snapshot.Frame.Normalize()
+		frame.Provider = normalizeProviderKey(frame.Provider)
+		if frame.Provider == "" {
+			frame.Provider = key
+		}
+		if frame.UsageMode == "" {
+			frame.UsageMode = "used"
+		}
+		usage.Providers = append(usage.Providers, ProviderUsageSnapshot{
+			Provider:           key,
+			Frame:              frame,
+			Source:             strings.TrimSpace(snapshot.Source),
+			Meta:               snapshot.Meta,
+			CollectedAt:        snapshot.Collected.UTC(),
+			ActivityObservedAt: snapshot.ActivityObservedAt.UTC(),
+			Stale:              providerUsageSnapshotIsStale(snapshot, now),
+		})
+	}
+	if len(usage.Providers) == 0 {
+		return PersistedUsage{}, false
+	}
+	if usage.CurrentProvider == "" {
+		usage.CurrentProvider = usage.Providers[0].Provider
+	}
+	return usage, true
+}
+
+func orderedProviderUsageKeys(snapshots map[string]providerSnapshot) []string {
+	if len(snapshots) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(snapshots))
+	keys := make([]string, 0, len(snapshots))
+	for _, key := range collectorProviderOrder() {
+		key = normalizeProviderKey(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := snapshots[key]; !ok {
+			continue
+		}
+		keys = append(keys, key)
+		seen[key] = struct{}{}
+	}
+	remaining := make([]string, 0, len(snapshots)-len(keys))
+	for key := range snapshots {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		remaining = append(remaining, key)
+	}
+	sort.Strings(remaining)
+	return append(keys, remaining...)
+}
+
+func providerUsageSnapshotIsStale(snapshot providerSnapshot, now time.Time) bool {
+	if snapshot.Collected.IsZero() || now.IsZero() {
+		return true
+	}
+	age := now.Sub(snapshot.Collected)
+	if age < 0 {
+		return false
+	}
+	freshFor := collectorInterval(0) + 5*time.Second
+	return age > freshFor
 }
 
 func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) string {

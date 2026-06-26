@@ -100,6 +100,65 @@ func TestParseAllProvidersSkipsProviderErrorPayloads(t *testing.T) {
 	}
 }
 
+func TestParseProviderPayloadKeepsCodexBarUsageMeta(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"openai-web",
+			"status":{"indicator":"none","description":"Operational","updatedAt":"2026-06-26T10:00:00Z","url":"https://status.openai.com/"},
+			"usage":{
+				"primary":{"usedPercent":28,"windowMinutes":300,"resetsAt":"2099-01-01T01:00:00Z"},
+				"secondary":{"usedPercent":59,"windowMinutes":10080,"resetsAt":"2099-01-02T01:00:00Z"},
+				"tertiary":{"usedPercent":12,"windowMinutes":43200},
+				"extra":[{"id":"codeReview","label":"Code review","usedPercent":7,"windowMinutes":10080}]
+			},
+			"pace":{
+				"primary":{"stage":"ahead","deltaPercent":12,"expectedUsedPercent":16,"willLastToReset":false,"etaSeconds":9000,"summary":"12% in deficit | Expected 16% used | Projected empty in 2h 30m"}
+			},
+			"openaiDashboard":{
+				"usageBreakdown":[
+					{"day":"2026-06-24","services":[{"service":"CLI","creditsUsed":8.5},{"service":"Code review","creditsUsed":3.5}],"totalCreditsUsed":12},
+					{"day":"2026-06-25","services":[{"service":"CLI","creditsUsed":10}],"totalCreditsUsed":10}
+				]
+			},
+			"credits":{"remaining":112.4,"updatedAt":"2026-06-26T10:01:00Z"}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected one provider, got %d", len(parsed))
+	}
+	meta := parsed[0].Meta
+	if meta.Status == nil || meta.Status.Indicator != "none" || meta.Status.Description != "Operational" || meta.Status.URL == "" {
+		t.Fatalf("expected status metadata, got %+v", meta.Status)
+	}
+	if meta.Credits == nil || meta.Credits.Remaining != 112.4 {
+		t.Fatalf("expected credits metadata, got %+v", meta.Credits)
+	}
+	if len(meta.Pace) != 1 || meta.Pace[0].Window != "primary" || meta.Pace[0].Summary == "" || meta.Pace[0].ETASeconds != 9000 {
+		t.Fatalf("expected pace metadata, got %+v", meta.Pace)
+	}
+	if len(meta.Windows) != 4 {
+		t.Fatalf("expected primary, secondary, tertiary, extra windows, got %+v", meta.Windows)
+	}
+	if len(meta.OverTime) != 2 || meta.OverTime[0].Day != "2026-06-24" || meta.OverTime[0].TotalCreditsUsed != 12 {
+		t.Fatalf("expected usage-over-time metadata, got %+v", meta.OverTime)
+	}
+	if len(meta.OverTime[0].Services) != 2 || meta.OverTime[0].Services[0].Service != "CLI" {
+		t.Fatalf("expected usage-over-time services, got %+v", meta.OverTime[0].Services)
+	}
+	if meta.Windows[2].ID != "tertiary" || meta.Windows[2].UsedPercent != 12 {
+		t.Fatalf("expected tertiary window, got %+v", meta.Windows[2])
+	}
+	if meta.Windows[3].ID != "codereview" || meta.Windows[3].Label != "Code review" || meta.Windows[3].UsedPercent != 7 {
+		t.Fatalf("expected extra code review window, got %+v", meta.Windows[3])
+	}
+}
+
 func TestUsageBarsShowUsedFromEnv(t *testing.T) {
 	t.Setenv(usageModeEnvVar, "")
 	if _, ok := usageBarsShowUsedFromEnv(); ok {

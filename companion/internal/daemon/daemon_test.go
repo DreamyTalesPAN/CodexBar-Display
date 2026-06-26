@@ -1672,6 +1672,91 @@ func TestConfiguredThemeCLIOverridesEnvAndRuntimeConfig(t *testing.T) {
 	}
 }
 
+func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	now := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
+	if err := persistProviderSnapshots(map[string]providerSnapshot{
+		"claude": {
+			Provider:  "claude",
+			Source:    "web",
+			Collected: now.Add(-2 * time.Minute),
+			Frame: protocol.Frame{
+				Provider: "claude",
+				Label:    "Claude",
+				Session:  20,
+				Weekly:   40,
+				ResetSec: 7200,
+			},
+		},
+		"codex": {
+			Provider:  "codex",
+			Source:    "openai-web",
+			Collected: now.Add(-20 * time.Second),
+			Frame: protocol.Frame{
+				Provider:      "codex",
+				Label:         "Codex",
+				Session:       10,
+				Weekly:        30,
+				ResetSec:      3600,
+				SessionTokens: 500,
+			},
+			Meta: codexbar.ProviderUsageMeta{
+				Credits: &codexbar.ProviderCredits{Remaining: 42.5},
+				Status:  &codexbar.ProviderStatus{Indicator: "none", Description: "Operational"},
+				OverTime: []codexbar.UsageOverTimePoint{
+					{
+						Day:              "2026-06-24",
+						TotalCreditsUsed: 12,
+						Services:         []codexbar.UsageServiceUsage{{Service: "CLI", CreditsUsed: 12}},
+					},
+				},
+			},
+		},
+	}, now); err != nil {
+		t.Fatalf("persist provider snapshots: %v", err)
+	}
+	if err := persistLastGood(protocol.Frame{Provider: "claude", Label: "Claude"}, now); err != nil {
+		t.Fatalf("persist last good: %v", err)
+	}
+
+	usage, ok := LoadPersistedUsage(now)
+	if !ok {
+		t.Fatal("expected persisted usage")
+	}
+	if usage.CurrentProvider != "claude" {
+		t.Fatalf("expected current provider from last good, got %q", usage.CurrentProvider)
+	}
+	if len(usage.Providers) != 2 {
+		t.Fatalf("expected two providers, got %+v", usage.Providers)
+	}
+	if usage.Providers[0].Provider != "codex" || usage.Providers[1].Provider != "claude" {
+		t.Fatalf("expected collector order codex, claude; got %+v", usage.Providers)
+	}
+	if usage.Providers[0].Stale {
+		t.Fatalf("expected fresh codex snapshot, got %+v", usage.Providers[0])
+	}
+	if !usage.Providers[1].Stale {
+		t.Fatalf("expected stale claude snapshot, got %+v", usage.Providers[1])
+	}
+	if usage.Providers[0].Frame.UsageMode != "used" {
+		t.Fatalf("expected default usage mode used, got %q", usage.Providers[0].Frame.UsageMode)
+	}
+	if usage.Providers[0].Frame.SessionTokens != 500 {
+		t.Fatalf("expected token stats to survive, got %+v", usage.Providers[0].Frame)
+	}
+	if usage.Providers[0].Meta.Credits == nil || usage.Providers[0].Meta.Credits.Remaining != 42.5 {
+		t.Fatalf("expected credits metadata to survive, got %+v", usage.Providers[0].Meta.Credits)
+	}
+	if usage.Providers[0].Meta.Status == nil || usage.Providers[0].Meta.Status.Description != "Operational" {
+		t.Fatalf("expected status metadata to survive, got %+v", usage.Providers[0].Meta.Status)
+	}
+	if len(usage.Providers[0].Meta.OverTime) != 1 || usage.Providers[0].Meta.OverTime[0].Day != "2026-06-24" {
+		t.Fatalf("expected usage-over-time metadata to survive, got %+v", usage.Providers[0].Meta.OverTime)
+	}
+}
+
 func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing.T) {
 	prepareFastTestEnv(t)
 

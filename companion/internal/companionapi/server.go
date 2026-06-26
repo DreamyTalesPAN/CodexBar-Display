@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
@@ -44,6 +46,7 @@ const (
 	displayStreamWaitTime   = 12 * time.Second
 	displayRenderWaitTime   = 20 * time.Second
 	firmwareUpdateJobTime   = 10 * time.Minute
+	usageFallbackFetchTime  = 15 * time.Second
 )
 
 type Options struct {
@@ -65,6 +68,8 @@ type Server struct {
 	subnetTargets  func() []string
 	streamStatus   func(context.Context, string) displayStreamInfo
 	waitStream     func(context.Context, string) displayStreamInfo
+	loadUsage      func(time.Time) (daemon.PersistedUsage, bool)
+	fetchUsage     func(context.Context) ([]codexbar.ParsedFrame, error)
 	updateFirmware func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
 	installJobsMu  sync.Mutex
 	installJobs    map[string]*themeInstallJob
@@ -274,6 +279,78 @@ type displaySettings struct {
 	BrightnessPercent int `json:"brightnessPercent"`
 }
 
+type usageResponse struct {
+	OK              bool                `json:"ok"`
+	GeneratedAt     string              `json:"generatedAt"`
+	Source          string              `json:"source"`
+	UsageMode       string              `json:"usageMode"`
+	CurrentProvider string              `json:"currentProvider,omitempty"`
+	Providers       []usageProviderInfo `json:"providers"`
+}
+
+type usageProviderInfo struct {
+	ID                 string                   `json:"id"`
+	Label              string                   `json:"label"`
+	Source             string                   `json:"source,omitempty"`
+	Session            int                      `json:"session"`
+	Weekly             int                      `json:"weekly"`
+	ResetSec           int64                    `json:"resetSecs,omitempty"`
+	UsageMode          string                   `json:"usageMode"`
+	SessionTokens      int64                    `json:"sessionTokens,omitempty"`
+	WeekTokens         int64                    `json:"weekTokens,omitempty"`
+	TotalTokens        int64                    `json:"totalTokens,omitempty"`
+	Activity           string                   `json:"activity,omitempty"`
+	Stale              bool                     `json:"stale"`
+	CollectedAt        string                   `json:"collectedAt,omitempty"`
+	ActivityObservedAt string                   `json:"activityObservedAt,omitempty"`
+	Windows            []usageWindowInfo        `json:"windows,omitempty"`
+	Status             *usageStatusInfo         `json:"status,omitempty"`
+	Credits            *usageCreditsInfo        `json:"credits,omitempty"`
+	Pace               []usagePaceInfo          `json:"pace,omitempty"`
+	UsageOverTime      []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
+}
+
+type usageWindowInfo struct {
+	ID            string `json:"id"`
+	Label         string `json:"label"`
+	UsedPercent   int    `json:"usedPercent"`
+	ResetSec      int64  `json:"resetSecs,omitempty"`
+	WindowMinutes int    `json:"windowMinutes,omitempty"`
+}
+
+type usageStatusInfo struct {
+	Indicator   string `json:"indicator,omitempty"`
+	Description string `json:"description,omitempty"`
+	UpdatedAt   string `json:"updatedAt,omitempty"`
+	URL         string `json:"url,omitempty"`
+}
+
+type usageCreditsInfo struct {
+	Remaining float64 `json:"remaining"`
+	UpdatedAt string  `json:"updatedAt,omitempty"`
+}
+
+type usagePaceInfo struct {
+	Window              string `json:"window"`
+	Stage               string `json:"stage,omitempty"`
+	DeltaPercent        int    `json:"deltaPercent,omitempty"`
+	ExpectedUsedPercent int    `json:"expectedUsedPercent,omitempty"`
+	WillLastToReset     bool   `json:"willLastToReset"`
+	ETASeconds          int64  `json:"etaSeconds,omitempty"`
+	Summary             string `json:"summary,omitempty"`
+}
+
+type usageOverTimePointInfo struct {
+	Day              string                  `json:"day"`
+	TotalCreditsUsed float64                 `json:"totalCreditsUsed"`
+	Services         []usageServiceUsageInfo `json:"services,omitempty"`
+}
+
+type usageServiceUsageInfo struct {
+	Service     string  `json:"service"`
+	CreditsUsed float64 `json:"creditsUsed"`
+}
+
 func New(opts Options) (*Server, error) {
 	addr := strings.TrimSpace(opts.Addr)
 	if addr == "" {
@@ -319,6 +396,8 @@ func New(opts Options) (*Server, error) {
 		subnetTargets:  localSubnetTargets,
 		streamStatus:   inspectDisplayStream,
 		waitStream:     waitForDisplayStream,
+		loadUsage:      daemon.LoadPersistedUsage,
+		fetchUsage:     codexbar.FetchAllProviders,
 		updateFirmware: runFirmwareUpdateCommand,
 		installJobs:    make(map[string]*themeInstallJob),
 		updateJobs:     make(map[string]*firmwareUpdateJob),
@@ -355,6 +434,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/status", s.handleStatus)
+	mux.HandleFunc("/v1/usage", s.handleUsage)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/repair", s.handleDeviceRepair)
@@ -442,6 +522,59 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Companion: s.companionInfo(),
 		Device:    device,
 	})
+}
+
+func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	now := time.Now().UTC()
+	var persisted usageResponse
+	havePersisted := false
+	if s.loadUsage != nil {
+		if usage, ok := s.loadUsage(now); ok && len(usage.Providers) > 0 {
+			persisted = usageResponseFromPersisted(now, usage)
+			havePersisted = len(persisted.Providers) > 0
+			if usageResponseHasFreshProvider(persisted) {
+				writeJSON(w, http.StatusOK, persisted)
+				return
+			}
+		}
+	}
+
+	if s.fetchUsage == nil {
+		if havePersisted {
+			writeJSON(w, http.StatusOK, persisted)
+			return
+		}
+		writeJSON(w, http.StatusOK, emptyUsageResponse(now, "codexbar-display"))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), usageFallbackFetchTime)
+	defer cancel()
+	providers, err := s.fetchUsage(ctx)
+	if err != nil {
+		if havePersisted {
+			writeJSON(w, http.StatusOK, persisted)
+			return
+		}
+		writeError(
+			w,
+			http.StatusServiceUnavailable,
+			"usage_unavailable",
+			"Usage is not ready.",
+			"Open CodexBar and the Mac App, then try again.",
+		)
+		return
+	}
+	resp := usageResponseFromParsed(now, providers)
+	if len(resp.Providers) == 0 && havePersisted {
+		writeJSON(w, http.StatusOK, persisted)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
@@ -607,6 +740,290 @@ func (s *Server) companionInfo() companion {
 			ThemeInstallEnabled: themeInstallEnabled(),
 		},
 	}
+}
+
+func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usageResponse {
+	providers := make([]usageProviderInfo, 0, len(usage.Providers))
+	for _, provider := range usage.Providers {
+		if info, ok := usageProviderFromSnapshot(provider); ok {
+			providers = append(providers, info)
+		}
+	}
+	resp := emptyUsageResponse(now, "codexbar-display")
+	resp.CurrentProvider = strings.TrimSpace(usage.CurrentProvider)
+	resp.Providers = providers
+	resp.UsageMode = usageModeForProviders(providers)
+	if resp.CurrentProvider == "" && len(providers) > 0 {
+		resp.CurrentProvider = providers[0].ID
+	}
+	return resp
+}
+
+func usageResponseFromParsed(now time.Time, parsed []codexbar.ParsedFrame) usageResponse {
+	providers := make([]usageProviderInfo, 0, len(parsed))
+	for _, provider := range parsed {
+		if info, ok := usageProviderFromParsed(provider); ok {
+			providers = append(providers, info)
+		}
+	}
+	resp := emptyUsageResponse(now, "codexbar")
+	resp.Providers = providers
+	resp.UsageMode = usageModeForProviders(providers)
+	if len(providers) > 0 {
+		resp.CurrentProvider = providers[0].ID
+	}
+	return resp
+}
+
+func emptyUsageResponse(now time.Time, source string) usageResponse {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	return usageResponse{
+		OK:          true,
+		GeneratedAt: now.UTC().Format(time.RFC3339),
+		Source:      strings.TrimSpace(source),
+		UsageMode:   "used",
+		Providers:   []usageProviderInfo{},
+	}
+}
+
+func usageResponseHasFreshProvider(resp usageResponse) bool {
+	for _, provider := range resp.Providers {
+		if !provider.Stale {
+			return true
+		}
+	}
+	return false
+}
+
+func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProviderInfo, bool) {
+	frame := snapshot.Frame.Normalize()
+	if strings.TrimSpace(frame.Error) != "" {
+		return usageProviderInfo{}, false
+	}
+	id := usageProviderID(snapshot.Provider, frame.Provider)
+	if id == "" {
+		return usageProviderInfo{}, false
+	}
+	return usageProviderInfo{
+		ID:                 id,
+		Label:              usageProviderLabel(id, frame.Label),
+		Source:             strings.TrimSpace(snapshot.Source),
+		Session:            frame.Session,
+		Weekly:             frame.Weekly,
+		ResetSec:           frame.ResetSec,
+		UsageMode:          usageModeOrDefault(frame.UsageMode),
+		SessionTokens:      frame.SessionTokens,
+		WeekTokens:         frame.WeekTokens,
+		TotalTokens:        frame.TotalTokens,
+		Activity:           strings.TrimSpace(frame.Activity),
+		Stale:              snapshot.Stale,
+		CollectedAt:        formatOptionalTime(snapshot.CollectedAt),
+		ActivityObservedAt: formatOptionalTime(snapshot.ActivityObservedAt),
+		Windows:            usageWindowsFromMeta(snapshot.Meta),
+		Status:             usageStatusFromMeta(snapshot.Meta),
+		Credits:            usageCreditsFromMeta(snapshot.Meta),
+		Pace:               usagePaceFromMeta(snapshot.Meta),
+		UsageOverTime:      usageOverTimeFromMeta(snapshot.Meta),
+	}, true
+}
+
+func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bool) {
+	frame := parsed.Frame.Normalize()
+	if strings.TrimSpace(frame.Error) != "" {
+		return usageProviderInfo{}, false
+	}
+	id := usageProviderID(parsed.Provider, frame.Provider)
+	if id == "" {
+		return usageProviderInfo{}, false
+	}
+	return usageProviderInfo{
+		ID:                 id,
+		Label:              usageProviderLabel(id, frame.Label),
+		Source:             strings.TrimSpace(parsed.Source),
+		Session:            frame.Session,
+		Weekly:             frame.Weekly,
+		ResetSec:           frame.ResetSec,
+		UsageMode:          usageModeOrDefault(frame.UsageMode),
+		SessionTokens:      frame.SessionTokens,
+		WeekTokens:         frame.WeekTokens,
+		TotalTokens:        frame.TotalTokens,
+		Activity:           strings.TrimSpace(frame.Activity),
+		Stale:              parsed.Stale,
+		CollectedAt:        formatOptionalTime(parsed.CollectedAt),
+		ActivityObservedAt: formatOptionalTime(parsed.ActivityObservedAt),
+		Windows:            usageWindowsFromMeta(parsed.Meta),
+		Status:             usageStatusFromMeta(parsed.Meta),
+		Credits:            usageCreditsFromMeta(parsed.Meta),
+		Pace:               usagePaceFromMeta(parsed.Meta),
+		UsageOverTime:      usageOverTimeFromMeta(parsed.Meta),
+	}, true
+}
+
+func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
+	if len(meta.Windows) == 0 {
+		return nil
+	}
+	out := make([]usageWindowInfo, 0, len(meta.Windows))
+	for _, window := range meta.Windows {
+		id := strings.TrimSpace(strings.ToLower(window.ID))
+		label := strings.TrimSpace(window.Label)
+		if id == "" || label == "" {
+			continue
+		}
+		out = append(out, usageWindowInfo{
+			ID:            id,
+			Label:         label,
+			UsedPercent:   clampUsagePercent(window.UsedPercent),
+			ResetSec:      window.ResetSec,
+			WindowMinutes: window.WindowMinutes,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func usageStatusFromMeta(meta codexbar.ProviderUsageMeta) *usageStatusInfo {
+	if meta.Status == nil {
+		return nil
+	}
+	status := usageStatusInfo{
+		Indicator:   strings.TrimSpace(meta.Status.Indicator),
+		Description: strings.TrimSpace(meta.Status.Description),
+		UpdatedAt:   formatOptionalTime(meta.Status.UpdatedAt),
+		URL:         strings.TrimSpace(meta.Status.URL),
+	}
+	if status.Indicator == "" && status.Description == "" && status.UpdatedAt == "" && status.URL == "" {
+		return nil
+	}
+	return &status
+}
+
+func usageCreditsFromMeta(meta codexbar.ProviderUsageMeta) *usageCreditsInfo {
+	if meta.Credits == nil {
+		return nil
+	}
+	return &usageCreditsInfo{
+		Remaining: meta.Credits.Remaining,
+		UpdatedAt: formatOptionalTime(meta.Credits.UpdatedAt),
+	}
+}
+
+func usagePaceFromMeta(meta codexbar.ProviderUsageMeta) []usagePaceInfo {
+	if len(meta.Pace) == 0 {
+		return nil
+	}
+	out := make([]usagePaceInfo, 0, len(meta.Pace))
+	for _, pace := range meta.Pace {
+		window := strings.TrimSpace(strings.ToLower(pace.Window))
+		if window == "" {
+			continue
+		}
+		out = append(out, usagePaceInfo{
+			Window:              window,
+			Stage:               strings.TrimSpace(pace.Stage),
+			DeltaPercent:        pace.DeltaPercent,
+			ExpectedUsedPercent: clampUsagePercent(pace.ExpectedUsedPercent),
+			WillLastToReset:     pace.WillLastToReset,
+			ETASeconds:          pace.ETASeconds,
+			Summary:             strings.TrimSpace(pace.Summary),
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func usageOverTimeFromMeta(meta codexbar.ProviderUsageMeta) []usageOverTimePointInfo {
+	if len(meta.OverTime) == 0 {
+		return nil
+	}
+	out := make([]usageOverTimePointInfo, 0, len(meta.OverTime))
+	for _, point := range meta.OverTime {
+		day := strings.TrimSpace(point.Day)
+		if day == "" {
+			continue
+		}
+		services := make([]usageServiceUsageInfo, 0, len(point.Services))
+		for _, service := range point.Services {
+			name := strings.TrimSpace(service.Service)
+			if name == "" || service.CreditsUsed <= 0 {
+				continue
+			}
+			services = append(services, usageServiceUsageInfo{
+				Service:     name,
+				CreditsUsed: service.CreditsUsed,
+			})
+		}
+		out = append(out, usageOverTimePointInfo{
+			Day:              day,
+			TotalCreditsUsed: point.TotalCreditsUsed,
+			Services:         services,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func usageProviderID(values ...string) string {
+	for _, value := range values {
+		id := strings.TrimSpace(strings.ToLower(value))
+		if id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+func usageProviderLabel(id string, label string) string {
+	label = strings.TrimSpace(label)
+	if label != "" {
+		return label
+	}
+	if id == "" {
+		return "Provider"
+	}
+	return strings.ToUpper(id[:1]) + id[1:]
+}
+
+func usageModeOrDefault(mode string) string {
+	mode = strings.TrimSpace(strings.ToLower(mode))
+	if mode == "remaining" {
+		return "remaining"
+	}
+	return "used"
+}
+
+func usageModeForProviders(providers []usageProviderInfo) string {
+	for _, provider := range providers {
+		if provider.UsageMode != "" {
+			return usageModeOrDefault(provider.UsageMode)
+		}
+	}
+	return "used"
+}
+
+func clampUsagePercent(value int) int {
+	if value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
+}
+
+func formatOptionalTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
 }
 
 func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {

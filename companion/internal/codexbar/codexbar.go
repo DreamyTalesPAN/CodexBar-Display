@@ -348,9 +348,59 @@ type ParsedFrame struct {
 	Provider           string
 	Source             string
 	AccountEmail       string
+	Meta               ProviderUsageMeta
 	CollectedAt        time.Time
 	ActivityObservedAt time.Time
 	Stale              bool
+}
+
+type ProviderUsageMeta struct {
+	Windows  []UsageWindow
+	Status   *ProviderStatus
+	Credits  *ProviderCredits
+	Pace     []ProviderPace
+	OverTime []UsageOverTimePoint
+}
+
+type UsageWindow struct {
+	ID            string
+	Label         string
+	UsedPercent   int
+	ResetSec      int64
+	WindowMinutes int
+}
+
+type ProviderStatus struct {
+	Indicator   string
+	Description string
+	UpdatedAt   time.Time
+	URL         string
+}
+
+type ProviderCredits struct {
+	Remaining float64
+	UpdatedAt time.Time
+}
+
+type ProviderPace struct {
+	Window              string
+	Stage               string
+	DeltaPercent        int
+	ExpectedUsedPercent int
+	WillLastToReset     bool
+	ETASeconds          int64
+	Summary             string
+}
+
+type UsageOverTimePoint struct {
+	Day              string
+	TotalCreditsUsed float64
+	Services         []UsageServiceUsage
+}
+
+type UsageServiceUsage struct {
+	Service     string
+	CreditsUsed float64
 }
 
 type looseVersion struct {
@@ -628,8 +678,378 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		Provider:           provider,
 		Source:             source,
 		AccountEmail:       accountEmail,
+		Meta:               parseProviderUsageMeta(payload),
 		ActivityObservedAt: activityObservedAt,
 	}, nil
+}
+
+func parseProviderUsageMeta(payload map[string]any) ProviderUsageMeta {
+	meta := ProviderUsageMeta{
+		Windows:  parseUsageWindows(payload),
+		Pace:     parseProviderPace(payload),
+		OverTime: parseUsageOverTime(payload),
+	}
+	if status, ok := parseProviderStatus(payload); ok {
+		meta.Status = &status
+	}
+	if credits, ok := parseProviderCredits(payload); ok {
+		meta.Credits = &credits
+	}
+	return meta
+}
+
+func parseUsageOverTime(payload map[string]any) []UsageOverTimePoint {
+	for _, path := range []string{
+		"openaiDashboard.usageBreakdown",
+		"usageBreakdown",
+		"usage.overTime",
+		"usage.history",
+	} {
+		raw, ok := getPath(payload, path)
+		if !ok {
+			continue
+		}
+		if points := parseUsageOverTimePoints(raw); len(points) > 0 {
+			return points
+		}
+	}
+	return nil
+}
+
+func parseUsageOverTimePoints(raw any) []UsageOverTimePoint {
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+
+	points := make([]UsageOverTimePoint, 0, len(items))
+	for _, item := range items {
+		itemMap, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		point, ok := parseUsageOverTimePoint(itemMap)
+		if ok {
+			points = append(points, point)
+		}
+	}
+	if len(points) == 0 {
+		return nil
+	}
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].Day < points[j].Day
+	})
+	const maxUsageOverTimeDays = 30
+	if len(points) > maxUsageOverTimeDays {
+		points = points[len(points)-maxUsageOverTimeDays:]
+	}
+	return points
+}
+
+func parseUsageOverTimePoint(item map[string]any) (UsageOverTimePoint, bool) {
+	day := usageDayKey(firstString(item, "day", "date", "dayKey"))
+	if day == "" {
+		return UsageOverTimePoint{}, false
+	}
+
+	services := parseUsageServiceUsageList(item["services"])
+	total, ok := floatAtPaths(item, "totalCreditsUsed", "total", "creditsUsed")
+	if !ok {
+		for _, service := range services {
+			total += service.CreditsUsed
+		}
+	}
+	if total < 0 {
+		total = 0
+	}
+	if total == 0 && len(services) == 0 {
+		return UsageOverTimePoint{}, false
+	}
+
+	return UsageOverTimePoint{
+		Day:              day,
+		TotalCreditsUsed: total,
+		Services:         services,
+	}, true
+}
+
+func parseUsageServiceUsageList(raw any) []UsageServiceUsage {
+	const maxUsageOverTimeServices = 8
+
+	appendService := func(out []UsageServiceUsage, service string, credits float64) []UsageServiceUsage {
+		service = strings.TrimSpace(service)
+		if service == "" || credits <= 0 {
+			return out
+		}
+		out = append(out, UsageServiceUsage{
+			Service:     service,
+			CreditsUsed: credits,
+		})
+		return out
+	}
+
+	var out []UsageServiceUsage
+	switch v := raw.(type) {
+	case []any:
+		out = make([]UsageServiceUsage, 0, len(v))
+		for _, item := range v {
+			itemMap, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			credits, ok := floatAtPaths(itemMap, "creditsUsed", "credits", "usage")
+			if !ok {
+				continue
+			}
+			out = appendService(out, firstString(itemMap, "service", "label", "name"), credits)
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		out = make([]UsageServiceUsage, 0, len(keys))
+		for _, key := range keys {
+			credits, ok := anyToFloat(v[key])
+			if !ok {
+				continue
+			}
+			out = appendService(out, key, credits)
+		}
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].CreditsUsed == out[j].CreditsUsed {
+			return strings.ToLower(out[i].Service) < strings.ToLower(out[j].Service)
+		}
+		return out[i].CreditsUsed > out[j].CreditsUsed
+	})
+	if len(out) > maxUsageOverTimeServices {
+		out = out[:maxUsageOverTimeServices]
+	}
+	return out
+}
+
+func usageDayKey(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if len(raw) >= len("2006-01-02") {
+		raw = raw[:len("2006-01-02")]
+	}
+	if _, err := time.Parse("2006-01-02", raw); err != nil {
+		return ""
+	}
+	return raw
+}
+
+func parseUsageWindows(payload map[string]any) []UsageWindow {
+	windows := []UsageWindow{}
+	for _, spec := range []struct {
+		id    string
+		label string
+		paths []string
+	}{
+		{id: "primary", label: "Session", paths: []string{"usage.primary", "primary", "openaiDashboard.primaryLimit"}},
+		{id: "secondary", label: "Weekly", paths: []string{"usage.secondary", "secondary", "openaiDashboard.secondaryLimit"}},
+		{id: "tertiary", label: "Tertiary", paths: []string{"usage.tertiary", "tertiary", "openaiDashboard.tertiaryLimit"}},
+	} {
+		if window, ok := usageWindowAtPaths(payload, spec.id, spec.label, spec.paths...); ok {
+			windows = append(windows, window)
+		}
+	}
+
+	extra, ok := getPath(payload, "usage.extra")
+	if !ok {
+		extra, ok = payload["extra"]
+	}
+	if ok {
+		windows = append(windows, parseExtraUsageWindows(extra)...)
+	}
+	return windows
+}
+
+func usageWindowAtPaths(payload map[string]any, id string, label string, paths ...string) (UsageWindow, bool) {
+	for _, path := range paths {
+		raw, ok := getPath(payload, path)
+		if !ok {
+			continue
+		}
+		windowMap, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		window, ok := parseUsageWindowMap(windowMap, id, label)
+		if ok {
+			return window, true
+		}
+	}
+	return UsageWindow{}, false
+}
+
+func parseExtraUsageWindows(raw any) []UsageWindow {
+	switch v := raw.(type) {
+	case []any:
+		out := make([]UsageWindow, 0, len(v))
+		for i, item := range v {
+			itemMap, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			id := firstString(itemMap, "id", "key", "name")
+			if id == "" {
+				id = fmt.Sprintf("extra-%d", i+1)
+			}
+			label := firstString(itemMap, "label", "title", "name")
+			if label == "" {
+				label = humanLabel(id)
+			}
+			if window, ok := parseUsageWindowMap(itemMap, id, label); ok {
+				out = append(out, window)
+			}
+		}
+		return out
+	case map[string]any:
+		out := make([]UsageWindow, 0, len(v))
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			itemMap, ok := v[key].(map[string]any)
+			if !ok {
+				continue
+			}
+			label := firstString(itemMap, "label", "title", "name")
+			if label == "" {
+				label = humanLabel(key)
+			}
+			if window, ok := parseUsageWindowMap(itemMap, key, label); ok {
+				out = append(out, window)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func parseUsageWindowMap(windowMap map[string]any, id string, label string) (UsageWindow, bool) {
+	used := percentAtPaths(windowMap, "usedPercent", "used_percent", "percent", "usagePercent")
+	resetSec := resetSecondsFromWindowMap(windowMap)
+	windowMinutes := intAtPaths(windowMap, "windowMinutes", "window_minutes")
+	if used == 0 && resetSec == 0 && windowMinutes == 0 {
+		return UsageWindow{}, false
+	}
+	return UsageWindow{
+		ID:            strings.TrimSpace(strings.ToLower(id)),
+		Label:         strings.TrimSpace(label),
+		UsedPercent:   used,
+		ResetSec:      resetSec,
+		WindowMinutes: windowMinutes,
+	}, true
+}
+
+func resetSecondsFromWindowMap(windowMap map[string]any) int64 {
+	if n := intAtPaths(windowMap, "resetSecs", "resetSeconds", "reset_after_seconds"); n > 0 {
+		return int64(n)
+	}
+	resetAt := firstStringAtPaths(windowMap, "resetsAt", "resetAt")
+	if resetAt == "" {
+		return 0
+	}
+	t, err := time.Parse(time.RFC3339, resetAt)
+	if err != nil {
+		return 0
+	}
+	if d := time.Until(t); d > 0 {
+		return int64(d.Seconds())
+	}
+	return 0
+}
+
+func parseProviderStatus(payload map[string]any) (ProviderStatus, bool) {
+	statusAny, ok := payload["status"]
+	if !ok {
+		return ProviderStatus{}, false
+	}
+	statusMap, ok := statusAny.(map[string]any)
+	if !ok {
+		return ProviderStatus{}, false
+	}
+	status := ProviderStatus{
+		Indicator:   firstString(statusMap, "indicator", "status"),
+		Description: firstString(statusMap, "description", "summary", "message"),
+		URL:         firstString(statusMap, "url", "statusPageURL", "statusLinkURL"),
+	}
+	if updatedAt := firstRFC3339AtPaths(statusMap, "updatedAt"); !updatedAt.IsZero() {
+		status.UpdatedAt = updatedAt
+	}
+	if status.Indicator == "" && status.Description == "" && status.URL == "" {
+		return ProviderStatus{}, false
+	}
+	return status, true
+}
+
+func parseProviderCredits(payload map[string]any) (ProviderCredits, bool) {
+	creditsAny, ok := payload["credits"]
+	if !ok {
+		return ProviderCredits{}, false
+	}
+	creditsMap, ok := creditsAny.(map[string]any)
+	if !ok {
+		return ProviderCredits{}, false
+	}
+	remaining, ok := floatAtPaths(creditsMap, "remaining", "remainingCredits", "balance")
+	if !ok {
+		return ProviderCredits{}, false
+	}
+	credits := ProviderCredits{Remaining: remaining}
+	if updatedAt := firstRFC3339AtPaths(creditsMap, "updatedAt"); !updatedAt.IsZero() {
+		credits.UpdatedAt = updatedAt
+	}
+	return credits, true
+}
+
+func parseProviderPace(payload map[string]any) []ProviderPace {
+	paceAny, ok := payload["pace"]
+	if !ok {
+		return nil
+	}
+	paceMap, ok := paceAny.(map[string]any)
+	if !ok {
+		return nil
+	}
+	keys := make([]string, 0, len(paceMap))
+	for key := range paceMap {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	out := make([]ProviderPace, 0, len(keys))
+	for _, key := range keys {
+		itemMap, ok := paceMap[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		pace := ProviderPace{
+			Window:              strings.TrimSpace(strings.ToLower(key)),
+			Stage:               firstString(itemMap, "stage"),
+			DeltaPercent:        intAtPaths(itemMap, "deltaPercent"),
+			ExpectedUsedPercent: intAtPaths(itemMap, "expectedUsedPercent"),
+			WillLastToReset:     boolAtPaths(itemMap, "willLastToReset"),
+			ETASeconds:          int64(intAtPaths(itemMap, "etaSeconds")),
+			Summary:             firstString(itemMap, "summary"),
+		}
+		if pace.Stage == "" && pace.Summary == "" {
+			continue
+		}
+		out = append(out, pace)
+	}
+	return out
 }
 
 func recoverCodexFrameFromErrorPayload(payload map[string]any) (ParsedFrame, bool) {
@@ -701,6 +1121,39 @@ func intAtPath(m map[string]any, path string) (int, bool) {
 		return 0, false
 	}
 	return anyToInt(v)
+}
+
+func intAtPaths(m map[string]any, paths ...string) int {
+	for _, path := range paths {
+		if v, ok := getPath(m, path); ok {
+			if n, ok := anyToInt(v); ok {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+func floatAtPaths(m map[string]any, paths ...string) (float64, bool) {
+	for _, path := range paths {
+		if v, ok := getPath(m, path); ok {
+			if n, ok := anyToFloat(v); ok {
+				return n, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func boolAtPaths(m map[string]any, paths ...string) bool {
+	for _, path := range paths {
+		if v, ok := getPath(m, path); ok {
+			if b, ok := anyToBool(v); ok {
+				return b
+			}
+		}
+	}
+	return false
 }
 
 func providerPayloadHasError(payload map[string]any) bool {
@@ -2217,5 +2670,46 @@ func anyToInt(v any) (int, bool) {
 		return n, true
 	default:
 		return 0, false
+	}
+}
+
+func anyToFloat(v any) (float64, bool) {
+	switch t := v.(type) {
+	case float64:
+		return t, true
+	case float32:
+		return float64(t), true
+	case int:
+		return float64(t), true
+	case int64:
+		return float64(t), true
+	case int32:
+		return float64(t), true
+	case json.Number:
+		f, err := t.Float64()
+		return f, err == nil
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(t), 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func anyToBool(v any) (bool, bool) {
+	switch t := v.(type) {
+	case bool:
+		return t, true
+	case string:
+		switch strings.TrimSpace(strings.ToLower(t)) {
+		case "1", "true", "yes", "on":
+			return true, true
+		case "0", "false", "no", "off":
+			return false, true
+		default:
+			return false, false
+		}
+	default:
+		return false, false
 	}
 }

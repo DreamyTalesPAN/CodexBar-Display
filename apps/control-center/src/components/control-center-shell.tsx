@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  BarChart3,
   FileText,
   Grid2X2,
   ListChecks,
@@ -36,6 +37,11 @@ const NAV_ITEMS: ShellNavItem[] = [
     id: "overview",
     label: "Overview",
     icon: <Activity size={22} aria-hidden />,
+  },
+  {
+    id: "usage",
+    label: "Usage",
+    icon: <BarChart3 size={22} aria-hidden />,
   },
   {
     id: "settings",
