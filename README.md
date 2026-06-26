@@ -49,10 +49,6 @@ VibeTV can show provider usage surfaced by CodexBar. Common examples include:
 - OpenAI / Azure OpenAI
 - Mistral, DeepSeek, Moonshot, AWS Bedrock, LiteLLM, and more
 
-Different providers expose different data. Some have session and weekly limits,
-some expose token or credit usage, and some only expose spend or status. See
-[docs/providers.md](docs/providers.md) for the longer list and support notes.
-
 ## What It Is
 
 VibeTV is the hardware on your desk. The VibeTV Mac App is the local process
