@@ -11,12 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"regexp"
-	"sort"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
@@ -25,25 +21,15 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
+	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
 const (
-	DefaultAddr             = "127.0.0.1:47832"
-	appOrigin               = "https://app.vibetv.shop"
-	defaultDevOrigin        = "http://localhost:3000"
-	previewOriginHostPrefix = "codex-vibetv-control-center-"
-	previewOriginHostSuffix = "-paul-anduschus-projects.vercel.app"
-	deviceTimeout           = 15 * time.Second
-	discoveryProbeTime      = 1500 * time.Millisecond
-	subnetProbeLimit        = 32
-	subnetProbeTime         = 450 * time.Millisecond
-	themeInstallDisableEnv  = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
-	displayStreamLabel      = "com.codexbar-display.daemon"
-	displayStreamOutLog     = "/tmp/codexbar-display-daemon.out.log"
-	displayStreamReadyAge   = 2 * time.Minute
-	displayStreamWaitTime   = 12 * time.Second
-	displayRenderWaitTime   = 20 * time.Second
-	firmwareUpdateJobTime   = 10 * time.Minute
+	DefaultAddr      = "127.0.0.1:47832"
+	appOrigin        = "https://app.vibetv.shop"
+	defaultDevOrigin = "http://localhost:3000"
+	deviceTimeout    = 15 * time.Second
+	themeInstallEnv  = "VIBETV_ENABLE_WIFI_THEME_INSTALL"
 )
 
 type Options struct {
@@ -61,17 +47,6 @@ type Server struct {
 	loadConfig     func(string) (runtimeconfig.Config, error)
 	saveConfig     func(string, runtimeconfig.Config) error
 	installTheme   func(context.Context, themeinstall.Options) (themeinstall.Result, error)
-	runSetup       func(context.Context, setup.Options) error
-	subnetTargets  func() []string
-	streamStatus   func(context.Context, string) displayStreamInfo
-	waitStream     func(context.Context, string) displayStreamInfo
-	updateFirmware func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
-	installJobsMu  sync.Mutex
-	installJobs    map[string]*themeInstallJob
-	nextInstallJob uint64
-	updateJobsMu   sync.Mutex
-	updateJobs     map[string]*firmwareUpdateJob
-	nextUpdateJob  uint64
 }
 
 type apiError struct {
@@ -85,76 +60,13 @@ type errorResponse struct {
 	Error apiError `json:"error"`
 }
 
-type multipleDevicesError struct {
-	targets []string
-}
-
-func (e *multipleDevicesError) Error() string {
-	if e == nil || len(e.targets) == 0 {
-		return "multiple VibeTV devices found"
-	}
-	return fmt.Sprintf("multiple VibeTV devices found: %s", strings.Join(e.targets, ", "))
-}
-
-type invalidTargetError struct {
-	target string
-}
-
-func (e *invalidTargetError) Error() string {
-	return "invalid VibeTV target"
-}
-
-type repairStageError struct {
-	stage string
-	err   error
-}
-
-func (e *repairStageError) Error() string {
-	if e == nil || e.err == nil {
-		return ""
-	}
-	return fmt.Sprintf("%s: %v", e.stage, e.err)
-}
-
-func (e *repairStageError) Unwrap() error {
-	if e == nil {
-		return nil
-	}
-	return e.err
-}
-
 type deviceInfo struct {
 	Target       string                    `json:"target,omitempty"`
 	Connected    bool                      `json:"connected"`
 	Paired       bool                      `json:"paired,omitempty"`
 	Board        string                    `json:"board,omitempty"`
 	Firmware     string                    `json:"firmware,omitempty"`
-	ActiveTheme  string                    `json:"activeTheme,omitempty"`
 	Capabilities *protocol.CapabilityBlock `json:"capabilities,omitempty"`
-	Stream       *displayStreamInfo        `json:"stream,omitempty"`
-	Display      *deviceDisplayInfo        `json:"display,omitempty"`
-}
-
-type displayStreamInfo struct {
-	Healthy    bool   `json:"healthy"`
-	Running    bool   `json:"running"`
-	LastSentAt string `json:"lastSentAt,omitempty"`
-	Target     string `json:"target,omitempty"`
-	LastTarget string `json:"lastTarget,omitempty"`
-	Detail     string `json:"detail,omitempty"`
-}
-
-type deviceDisplayInfo struct {
-	ThemeSpec *themeSpecHealth `json:"themeSpec,omitempty"`
-}
-
-type themeSpecHealth struct {
-	Active         bool   `json:"active"`
-	Path           string `json:"path,omitempty"`
-	Hash           string `json:"hash,omitempty"`
-	RenderOK       *bool  `json:"renderOk,omitempty"`
-	RenderError    string `json:"renderError,omitempty"`
-	RenderFailures uint64 `json:"renderFailures,omitempty"`
 }
 
 type statusResponse struct {
@@ -163,101 +75,9 @@ type statusResponse struct {
 	Device    deviceInfo `json:"device"`
 }
 
-type deviceActionResponse struct {
-	OK     bool       `json:"ok"`
-	Device deviceInfo `json:"device"`
-}
-
-type themeInstallRequest struct {
-	ThemeID            string `json:"themeId"`
-	PackURL            string `json:"packUrl"`
-	CatalogURL         string `json:"catalogUrl"`
-	SkipFirmwareUpdate *bool  `json:"skipFirmwareUpdate"`
-	Async              bool   `json:"async"`
-}
-
-type themeInstallJob struct {
-	ID         string               `json:"id"`
-	Phase      string               `json:"phase"`
-	Message    string               `json:"message"`
-	Progress   int                  `json:"progress"`
-	StartedAt  time.Time            `json:"startedAt"`
-	FinishedAt *time.Time           `json:"finishedAt,omitempty"`
-	Logs       []string             `json:"logs,omitempty"`
-	Result     *themeinstall.Result `json:"result,omitempty"`
-	Error      *apiError            `json:"error,omitempty"`
-	uploads    int
-}
-
-type themeInstallJobResponse struct {
-	OK  bool            `json:"ok"`
-	Job themeInstallJob `json:"job"`
-}
-
-type firmwareUpdateRequest struct {
-	Force bool `json:"force,omitempty"`
-}
-
-type firmwareUpdateResult struct {
-	Firmware string `json:"firmware,omitempty"`
-	Target   string `json:"target,omitempty"`
-}
-
-type firmwareUpdateJob struct {
-	ID         string                `json:"id"`
-	Phase      string                `json:"phase"`
-	Message    string                `json:"message"`
-	Progress   int                   `json:"progress"`
-	StartedAt  time.Time             `json:"startedAt"`
-	FinishedAt *time.Time            `json:"finishedAt,omitempty"`
-	Logs       []string              `json:"logs,omitempty"`
-	Result     *firmwareUpdateResult `json:"result,omitempty"`
-	Error      *apiError             `json:"error,omitempty"`
-	target     string
-	firmware   string
-}
-
-type firmwareUpdateJobResponse struct {
-	OK  bool              `json:"ok"`
-	Job firmwareUpdateJob `json:"job"`
-}
-
-type statusAPIError struct {
-	status int
-	api    apiError
-}
-
-func (e *statusAPIError) Error() string {
-	if e == nil {
-		return ""
-	}
-	return e.api.Message
-}
-
-type diagnosticsResponse struct {
-	OK          bool              `json:"ok"`
-	GeneratedAt string            `json:"generatedAt"`
-	Companion   companion         `json:"companion"`
-	Device      deviceInfo        `json:"device"`
-	Checks      []diagnosticCheck `json:"checks"`
-}
-
-type diagnosticCheck struct {
-	Name       string `json:"name"`
-	Status     string `json:"status"`
-	Detail     string `json:"detail,omitempty"`
-	ErrorCode  string `json:"errorCode,omitempty"`
-	NextAction string `json:"nextAction,omitempty"`
-}
-
 type companion struct {
-	Status   string            `json:"status"`
-	Version  string            `json:"version"`
-	Features companionFeatures `json:"features"`
-}
-
-type companionFeatures struct {
-	ThemeInstallEnabled bool `json:"themeInstallEnabled"`
+	Status  string `json:"status"`
+	Version string `json:"version"`
 }
 
 type settingsResponse struct {
@@ -315,13 +135,6 @@ func New(opts Options) (*Server, error) {
 		loadConfig:     runtimeconfig.Load,
 		saveConfig:     runtimeconfig.Save,
 		installTheme:   themeinstall.Install,
-		runSetup:       setup.Run,
-		subnetTargets:  localSubnetTargets,
-		streamStatus:   inspectDisplayStream,
-		waitStream:     waitForDisplayStream,
-		updateFirmware: runFirmwareUpdateCommand,
-		installJobs:    make(map[string]*themeInstallJob),
-		updateJobs:     make(map[string]*firmwareUpdateJob),
 	}, nil
 }
 
@@ -355,33 +168,23 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/status", s.handleStatus)
-	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
-	mux.HandleFunc("/v1/device/repair", s.handleDeviceRepair)
-	mux.HandleFunc("/v1/device/reload-display", s.handleDeviceReloadDisplay)
 	mux.HandleFunc("/v1/device", s.handleDevice)
 	mux.HandleFunc("/v1/device/pair", s.handleDevicePair)
-	mux.HandleFunc("/v1/setup/reset", s.handleSetupReset)
 	mux.HandleFunc("/v1/settings", s.handleSettings)
 	mux.HandleFunc("/v1/themes/install", s.handleThemeInstall)
-	mux.HandleFunc("/v1/themes/install/status", s.handleThemeInstallStatus)
-	mux.HandleFunc("/v1/updates/install", s.handleFirmwareUpdateInstall)
-	mux.HandleFunc("/v1/updates/install/status", s.handleFirmwareUpdateStatus)
 	return s.withCORS(mux)
 }
 
 func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
-		allowed := s.isAllowedOrigin(origin)
+		_, allowed := s.allowedOrigins[origin]
 		if origin != "" && allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-			if strings.EqualFold(strings.TrimSpace(r.Header.Get("Access-Control-Request-Private-Network")), "true") {
-				w.Header().Set("Access-Control-Allow-Private-Network", "true")
-			}
 		}
 		if r.Method == http.MethodOptions {
 			if origin != "" && !allowed {
@@ -395,218 +198,23 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) isAllowedOrigin(origin string) bool {
-	origin = strings.TrimSpace(origin)
-	if origin == "" {
-		return false
-	}
-	if _, allowed := s.allowedOrigins[origin]; allowed {
-		return true
-	}
-	return isAllowedPreviewOrigin(origin)
-}
-
-func isAllowedPreviewOrigin(origin string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(origin))
-	if err != nil {
-		return false
-	}
-	if parsed.Scheme != "https" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return false
-	}
-	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
-	if host == "" || parsed.Port() != "" {
-		return false
-	}
-	if !strings.HasPrefix(host, previewOriginHostPrefix) || !strings.HasSuffix(host, previewOriginHostSuffix) {
-		return false
-	}
-	previewID := strings.TrimSuffix(strings.TrimPrefix(host, previewOriginHostPrefix), previewOriginHostSuffix)
-	return previewID != "" && !strings.Contains(previewID, ".")
-}
-
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 	cfg, _ := s.loadConfig(s.home)
-	stream := s.streamStatus(r.Context(), cfg.DeviceTarget)
-	device := deviceInfo{
-		Target:    publicTarget(cfg.DeviceTarget),
-		Connected: strings.TrimSpace(cfg.DeviceToken) != "" && stream.Healthy,
-		Paired:    strings.TrimSpace(cfg.DeviceToken) != "",
-		Stream:    streamPointer(stream),
-	}
 	writeJSON(w, http.StatusOK, statusResponse{
-		OK:        true,
-		Companion: s.companionInfo(),
-		Device:    device,
-	})
-}
-
-func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
-	}
-	cfg, err := s.config()
-	if err != nil {
-		writeInternalError(w, err)
-		return
-	}
-
-	checks := []diagnosticCheck{
-		{
-			Name:   "companion_api",
-			Status: "pass",
-			Detail: "Companion API is responding on loopback.",
+		OK: true,
+		Companion: companion{
+			Status:  "ready",
+			Version: buildinfo.NormalizedVersion(),
 		},
-	}
-	if themeInstallEnabled() {
-		checks = append(checks, diagnosticCheck{
-			Name:   "theme_install_gate",
-			Status: "pass",
-			Detail: "Theme install is available.",
-		})
-	} else {
-		checks = append(checks, diagnosticCheck{
-			Name:       "theme_install_gate",
-			Status:     "disabled",
-			Detail:     "Theme install is disabled by local Mac App configuration.",
-			NextAction: "Unset VIBETV_DISABLE_WIFI_THEME_INSTALL, then restart the Mac App.",
-		})
-	}
-
-	device := deviceInfo{
-		Target:    publicTarget(cfg.DeviceTarget),
-		Connected: false,
-		Paired:    strings.TrimSpace(cfg.DeviceToken) != "",
-		Stream:    streamPointer(s.streamStatus(r.Context(), cfg.DeviceTarget)),
-	}
-	if strings.TrimSpace(cfg.DeviceTarget) == "" {
-		checks = append(checks, diagnosticCheck{
-			Name:       "device_target",
-			Status:     "attention",
-			Detail:     "No VibeTV target is configured.",
-			ErrorCode:  "device_target_missing",
-			NextAction: "Run device discovery or enter the exact VibeTV target in the VibeTV target field.",
-		})
-		writeJSON(w, http.StatusOK, diagnosticsResponse{
-			OK:          true,
-			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			Companion:   s.companionInfo(),
-			Device:      device,
-			Checks:      checks,
-		})
-		return
-	}
-
-	checks = append(checks, diagnosticCheck{
-		Name:   "device_target",
-		Status: "pass",
-		Detail: publicTarget(cfg.DeviceTarget),
-	})
-	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
-	if err != nil {
-		checks = append(checks, diagnosticCheck{
-			Name:       "device_hello",
-			Status:     "fail",
-			Detail:     sanitizeErrorDetail(err),
-			ErrorCode:  "device_hello_failed",
-			NextAction: "Keep VibeTV powered on, then run discovery again.",
-		})
-		writeJSON(w, http.StatusOK, diagnosticsResponse{
-			OK:          true,
-			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			Companion:   s.companionInfo(),
-			Device:      device,
-			Checks:      checks,
-		})
-		return
-	}
-
-	device = s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello))
-	checks = append(checks, diagnosticCheck{
-		Name:   "device_hello",
-		Status: "pass",
-		Detail: "VibeTV /hello is reachable.",
-	})
-	if device.Stream != nil && device.Stream.Healthy {
-		checks = append(checks, diagnosticCheck{
-			Name:   "display_stream",
-			Status: "pass",
-			Detail: "Mac App display stream is sending frames.",
-		})
-	} else {
-		checks = append(checks, diagnosticCheck{
-			Name:       "display_stream",
-			Status:     "fail",
-			Detail:     displayStreamDiagnosticDetail(device.Stream),
-			ErrorCode:  "display_stream_not_ready",
-			NextAction: "Click Fix connection to restart the display stream.",
-		})
-	}
-	health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
-	if err != nil {
-		checks = append(checks, diagnosticCheck{
-			Name:       "device_health",
-			Status:     "attention",
-			Detail:     sanitizeErrorDetail(err),
-			ErrorCode:  "device_health_failed",
-			NextAction: "Read-only device discovery works; retry settings or check firmware health.",
-		})
-	} else {
-		device = withDeviceHealth(device, health)
-		checks = append(checks, diagnosticCheck{
-			Name:   "device_health",
-			Status: "pass",
-			Detail: "VibeTV /health is reachable.",
-		})
-		if device.Display != nil && device.Display.ThemeSpec != nil && device.Display.ThemeSpec.RenderOK != nil {
-			spec := device.Display.ThemeSpec
-			if *spec.RenderOK {
-				checks = append(checks, diagnosticCheck{
-					Name:   "display_render",
-					Status: "pass",
-					Detail: renderHealthDiagnosticDetail(spec),
-				})
-			} else {
-				checks = append(checks, diagnosticCheck{
-					Name:       "display_render",
-					Status:     "fail",
-					Detail:     renderHealthDiagnosticDetail(spec),
-					ErrorCode:  "display_render_failed",
-					NextAction: "Reload the VibeTV image from Control Center.",
-				})
-			}
-		}
-	}
-	if updateJob, ok := s.latestFirmwareUpdateJob(); ok {
-		checks = append(checks, diagnosticCheck{
-			Name:       "firmware_update",
-			Status:     firmwareUpdateDiagnosticStatus(updateJob),
-			Detail:     firmwareUpdateDiagnosticDetail(updateJob),
-			ErrorCode:  firmwareUpdateDiagnosticErrorCode(updateJob),
-			NextAction: firmwareUpdateDiagnosticNextAction(updateJob),
-		})
-	}
-
-	writeJSON(w, http.StatusOK, diagnosticsResponse{
-		OK:          true,
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Companion:   s.companionInfo(),
-		Device:      device,
-		Checks:      checks,
-	})
-}
-
-func (s *Server) companionInfo() companion {
-	return companion{
-		Status:  "ready",
-		Version: buildinfo.NormalizedVersion(),
-		Features: companionFeatures{
-			ThemeInstallEnabled: themeInstallEnabled(),
+		Device: deviceInfo{
+			Target:    publicTarget(cfg.DeviceTarget),
+			Connected: false,
+			Paired:    strings.TrimSpace(cfg.DeviceToken) != "",
 		},
-	}
+	})
 }
 
 func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
@@ -626,7 +234,7 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 	}
 	target, hello, err := s.discover(r.Context(), cfg, req.Target)
 	if err != nil {
-		writeDiscoveryError(w, err)
+		writeDeviceNotFound(w)
 		return
 	}
 	cfg.DeviceTarget = target
@@ -637,93 +245,7 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool       `json:"ok"`
 		Device deviceInfo `json:"device"`
-	}{OK: true, Device: s.withDisplayStream(r.Context(), target, deviceFromHello(target, cfg.DeviceToken, hello))})
-}
-
-func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPost) {
-		return
-	}
-	var req struct {
-		Target    string `json:"target"`
-		ForcePair bool   `json:"forcePair"`
-	}
-	if !decodeOptionalJSON(w, r, &req) {
-		return
-	}
-	device, err := s.repairDevice(r.Context(), strings.TrimSpace(req.Target), req.ForcePair)
-	if err != nil {
-		writeRepairError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
-}
-
-func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPost) {
-		return
-	}
-	cfg, hello, ok := s.requireDevice(w, r)
-	if !ok {
-		return
-	}
-	if strings.TrimSpace(cfg.DeviceToken) == "" {
-		writeError(
-			w,
-			http.StatusForbidden,
-			"pairing_required",
-			"VibeTV pairing is required before reloading the image.",
-			"Pair VibeTV, then retry.",
-		)
-		return
-	}
-	if err := s.startDisplayStream(r.Context(), cfg.DeviceTarget); err != nil {
-		writeError(
-			w,
-			http.StatusBadGateway,
-			"display_reload_failed",
-			"Could not reload the VibeTV image.",
-			"Keep VibeTV powered on, then retry.",
-		)
-		return
-	}
-	stream := s.waitStream(r.Context(), cfg.DeviceTarget)
-	device := withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
-	health, err := s.waitForDisplayRender(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
-	if err != nil {
-		writeError(
-			w,
-			http.StatusBadGateway,
-			"display_reload_failed",
-			"Could not reload the VibeTV image.",
-			"Keep VibeTV powered on, then press Reload image again.",
-		)
-		return
-	}
-	device = withDeviceHealth(device, health)
-	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
-}
-
-func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPost) {
-		return
-	}
-	cfg, err := s.config()
-	if err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	cfg.DeviceTarget = ""
-	cfg.DeviceToken = ""
-	if err := s.saveConfig(s.home, cfg); err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, statusResponse{
-		OK:        true,
-		Companion: s.companionInfo(),
-		Device:    deviceInfo{Connected: false},
-	})
+	}{OK: true, Device: deviceFromHello(target, cfg.DeviceToken, hello)})
 }
 
 func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
@@ -739,21 +261,15 @@ func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 		writeDeviceNotFound(w)
 		return
 	}
-	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+	hello, err := s.getHello(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
 	if err != nil {
 		writeDeviceNotFound(w)
 		return
 	}
-	device := s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello))
-	if device.Stream != nil && device.Stream.Healthy {
-		if health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err == nil {
-			device = withDeviceHealth(device, health)
-		}
-	}
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool       `json:"ok"`
 		Device deviceInfo `json:"device"`
-	}{OK: true, Device: device})
+	}{OK: true, Device: deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello)})
 }
 
 func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
@@ -771,39 +287,19 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	requestedTarget := strings.TrimSpace(req.Target)
-	target := requestedTarget
-	if requestedTarget != "" {
-		normalizedTarget, targetErr := normalizeExplicitDeviceTarget(requestedTarget)
-		if targetErr != nil {
-			writeInvalidDeviceTarget(w)
-			return
-		}
-		target = normalizedTarget
-	}
+	target := strings.TrimSpace(req.Target)
 	if target == "" {
 		target = strings.TrimSpace(cfg.DeviceTarget)
 	}
 	if target == "" {
 		discoveredTarget, _, discoverErr := s.discover(r.Context(), cfg, "")
 		if discoverErr != nil {
-			writeDiscoveryError(w, discoverErr)
+			writeDeviceNotFound(w)
 			return
 		}
 		target = discoveredTarget
 	}
 	token, err := s.pair(r.Context(), target)
-	if err != nil && requestedTarget == "" {
-		discoveredTarget, _, discoverErr := s.discover(r.Context(), cfg, "")
-		if discoverErr != nil {
-			writeDiscoveryError(w, discoverErr)
-			return
-		}
-		if discoveredTarget != target {
-			target = discoveredTarget
-			token, err = s.pair(r.Context(), target)
-		}
-	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", "Keep VibeTV powered on, then retry pairing.")
 		return
@@ -814,76 +310,11 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	if err := s.startDisplayStream(r.Context(), target); err != nil {
-		writeError(
-			w,
-			http.StatusBadGateway,
-			"display_stream_start_failed",
-			"Mac App could not start the VibeTV display stream.",
-			"Run the manual Mac App setup command, then retry VibeTV connection.",
-		)
-		return
-	}
-	stream := s.waitStream(r.Context(), target)
 	hello, _ := s.getHello(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
-	device := withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
-	if health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err == nil {
-		device = withDeviceHealth(device, health)
-	}
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool       `json:"ok"`
 		Device deviceInfo `json:"device"`
-	}{OK: true, Device: device})
-}
-
-func (s *Server) repairDevice(ctx context.Context, requestedTarget string, forcePair bool) (deviceInfo, error) {
-	cfg, err := s.config()
-	if err != nil {
-		return deviceInfo{}, &repairStageError{stage: "config", err: err}
-	}
-	discoveryCfg := cfg
-	if forcePair {
-		discoveryCfg.DeviceToken = ""
-	}
-	target, hello, err := s.discover(ctx, discoveryCfg, requestedTarget)
-	tokenStale := false
-	if err != nil && !forcePair && strings.TrimSpace(cfg.DeviceToken) != "" {
-		discoveryCfg = cfg
-		discoveryCfg.DeviceToken = ""
-		target, hello, err = s.discover(ctx, discoveryCfg, requestedTarget)
-		if err == nil {
-			tokenStale = true
-		}
-	}
-	if err != nil {
-		return deviceInfo{}, err
-	}
-
-	token := strings.TrimSpace(cfg.DeviceToken)
-	if forcePair || token == "" || tokenStale {
-		token, err = s.pair(ctx, target)
-		if err != nil {
-			return deviceInfo{}, &repairStageError{stage: "pair", err: err}
-		}
-	}
-
-	cfg.DeviceTarget = target
-	cfg.DeviceToken = token
-	if err := s.saveConfig(s.home, cfg); err != nil {
-		return deviceInfo{}, &repairStageError{stage: "config", err: err}
-	}
-	if err := s.startDisplayStream(ctx, target); err != nil {
-		return deviceInfo{}, &repairStageError{stage: "display-stream", err: err}
-	}
-	stream := s.waitStream(ctx, target)
-	if refreshedHello, err := s.getHello(ctx, target, token); err == nil {
-		hello = refreshedHello
-	}
-	device := withDisplayStreamInfo(deviceFromHello(target, token, hello), stream)
-	if health, err := s.getHealth(ctx, target, token); err == nil {
-		device = withDeviceHealth(device, health)
-	}
-	return device, nil
+	}{OK: true, Device: deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello)})
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -902,19 +333,15 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
+	settings, err := s.getSettings(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "settings_read_failed", "Could not read VibeTV settings.", "Keep VibeTV powered on and retry.")
 		return
 	}
-	device := withDeviceHealth(
-		s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello)),
-		health,
-	)
 	writeJSON(w, http.StatusOK, settingsResponse{
 		OK:       true,
-		Settings: health.Settings,
-		Device:   device,
+		Settings: settings,
+		Device:   deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello),
 	})
 }
 
@@ -956,14 +383,10 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "settings_write_failed", "Could not update VibeTV settings.", "Keep VibeTV powered on and retry.")
 		return
 	}
-	device := s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello))
-	if health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err == nil {
-		device = withDeviceHealth(device, health)
-	}
 	writeJSON(w, http.StatusOK, settingsResponse{
 		OK:       true,
 		Settings: settings,
-		Device:   device,
+		Device:   deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello),
 	})
 }
 
@@ -971,22 +394,21 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	var req themeInstallRequest
+	cfg, _, ok := s.requireDevice(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		ThemeID            string `json:"themeId"`
+		PackURL            string `json:"packUrl"`
+		CatalogURL         string `json:"catalogUrl"`
+		SkipFirmwareUpdate *bool  `json:"skipFirmwareUpdate"`
+	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.ThemeID) == "" && strings.TrimSpace(req.PackURL) == "" {
 		writeError(w, http.StatusBadRequest, "missing_theme_source", "themeId or packUrl is required.", "Select a theme and retry.")
-		return
-	}
-	if !validRemoteThemePackURL(req.PackURL) {
-		writeError(
-			w,
-			http.StatusBadRequest,
-			"invalid_theme_pack_url",
-			"Theme pack URL is invalid.",
-			"Fix the Shopify theme pack URL to an http(s) download URL, then reload the catalog.",
-		)
 		return
 	}
 	if !themeInstallEnabled() {
@@ -995,713 +417,30 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 			http.StatusForbidden,
 			"theme_install_disabled",
 			"Theme install is disabled for this Companion build.",
-			"Unset VIBETV_DISABLE_WIFI_THEME_INSTALL, then restart the Mac App.",
+			"Set VIBETV_ENABLE_WIFI_THEME_INSTALL=1 only during a prepared hardware test window, then restart the Companion.",
 		)
 		return
 	}
-	cfg, hello, ok := s.requireDevice(w, r)
-	if !ok {
-		return
-	}
-	if !s.requireThemeInstallPreflight(w, r, cfg, hello) {
-		return
-	}
-	if req.Async {
-		job := s.createThemeInstallJob()
-		s.startThemeInstallJob(r.Context(), job.ID, cfg, req)
-		writeJSON(w, http.StatusAccepted, themeInstallJobResponse{OK: true, Job: job})
-		return
-	}
-
-	var installLog bytes.Buffer
-	result, err := s.runThemeInstall(r.Context(), cfg, req, &installLog)
-	if err != nil {
-		writeThemeInstallError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, struct {
-		OK     bool                `json:"ok"`
-		Result themeinstall.Result `json:"result"`
-		Logs   []string            `json:"logs,omitempty"`
-	}{OK: true, Result: result, Logs: splitInstallLog(installLog.String())})
-}
-
-func (s *Server) handleThemeInstallStatus(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
-	}
-	jobID := strings.TrimSpace(r.URL.Query().Get("jobId"))
-	if jobID == "" {
-		writeError(w, http.StatusBadRequest, "missing_install_job", "Theme install status is missing.", "Start theme install again.")
-		return
-	}
-	job, ok := s.themeInstallJobSnapshot(jobID)
-	if !ok {
-		writeError(w, http.StatusNotFound, "install_job_not_found", "Theme install status was not found.", "Start theme install again.")
-		return
-	}
-	writeJSON(w, http.StatusOK, themeInstallJobResponse{OK: true, Job: job})
-}
-
-func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPost) {
-		return
-	}
-	var req firmwareUpdateRequest
-	if !decodeOptionalJSON(w, r, &req) {
-		return
-	}
-	cfg, hello, ok := s.requireDevice(w, r)
-	if !ok {
-		return
-	}
-	if strings.TrimSpace(cfg.DeviceToken) == "" {
-		writeError(
-			w,
-			http.StatusForbidden,
-			"pairing_required",
-			"VibeTV pairing is required before updating.",
-			"Pair VibeTV, then retry.",
-		)
-		return
-	}
-	caps := protocol.CapabilitiesFromHello(hello)
-	if strings.TrimSpace(caps.Board) == "" || strings.TrimSpace(caps.Firmware) == "" {
-		writeError(
-			w,
-			http.StatusBadGateway,
-			"update_device_info_missing",
-			"Could not read VibeTV update info.",
-			"Keep VibeTV powered on, then retry.",
-		)
-		return
-	}
-	if active, ok := s.activeFirmwareUpdateJob(); ok {
-		writeJSON(w, http.StatusAccepted, firmwareUpdateJobResponse{OK: true, Job: active})
-		return
-	}
-	job := s.createFirmwareUpdateJob(cfg)
-	s.startFirmwareUpdateJob(r.Context(), job.ID, cfg, req)
-	writeJSON(w, http.StatusAccepted, firmwareUpdateJobResponse{OK: true, Job: job})
-}
-
-func (s *Server) handleFirmwareUpdateStatus(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
-	}
-	jobID := strings.TrimSpace(r.URL.Query().Get("jobId"))
-	if jobID == "" {
-		writeError(w, http.StatusBadRequest, "missing_update_job", "Update status is missing.", "Start the update again.")
-		return
-	}
-	job, ok := s.firmwareUpdateJobSnapshot(jobID)
-	if !ok {
-		writeError(w, http.StatusNotFound, "update_job_not_found", "Update status was not found.", "Start the update again.")
-		return
-	}
-	writeJSON(w, http.StatusOK, firmwareUpdateJobResponse{OK: true, Job: job})
-}
-
-func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, req themeInstallRequest, out io.Writer) (themeinstall.Result, error) {
 	skipFirmwareUpdate := true
 	if req.SkipFirmwareUpdate != nil {
 		skipFirmwareUpdate = *req.SkipFirmwareUpdate
 	}
-	result, err := s.installTheme(ctx, themeinstall.Options{
+	result, err := s.installTheme(r.Context(), themeinstall.Options{
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
 		CatalogURL:         strings.TrimSpace(req.CatalogURL),
 		Target:             targetWithToken(cfg.DeviceTarget, cfg.DeviceToken),
 		SkipFirmwareUpdate: skipFirmwareUpdate,
-		Verbose:            true,
-		Out:                out,
-		PairTokenStore: func(target, token string) error {
-			target = normalizeTarget(target)
-			if target != "" {
-				cfg.DeviceTarget = target
-			}
-			cfg.DeviceToken = strings.TrimSpace(token)
-			return s.saveConfig(s.home, cfg)
-		},
+		Out:                io.Discard,
 	})
 	if err != nil {
-		return themeinstall.Result{}, err
-	}
-	fmt.Fprintln(out, "Refreshing display stream...")
-	if err := s.startDisplayStream(ctx, cfg.DeviceTarget); err != nil {
-		return themeinstall.Result{}, &statusAPIError{
-			status: http.StatusBadGateway,
-			api: apiError{
-				Code:       "display_stream_refresh_failed",
-				Message:    "Theme installed, but Mac App could not refresh the VibeTV display.",
-				NextAction: "Run setup again or restart the Mac App, then retry.",
-			},
-		}
-	}
-	fmt.Fprintln(out, "Display stream: refreshed")
-	if _, err := s.waitForDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken); err != nil {
-		return themeinstall.Result{}, &statusAPIError{
-			status: http.StatusBadGateway,
-			api: apiError{
-				Code:       "display_render_failed",
-				Message:    "Theme installed, but VibeTV could not redraw the image.",
-				NextAction: "Use Reload image in Control Center. If it keeps failing, choose a lighter theme.",
-			},
-		}
-	}
-	return result, nil
-}
-
-func (s *Server) createThemeInstallJob() themeInstallJob {
-	s.installJobsMu.Lock()
-	defer s.installJobsMu.Unlock()
-	if s.installJobs == nil {
-		s.installJobs = make(map[string]*themeInstallJob)
-	}
-	s.nextInstallJob++
-	id := fmt.Sprintf("theme-install-%d-%d", time.Now().UnixNano(), s.nextInstallJob)
-	job := &themeInstallJob{
-		ID:        id,
-		Phase:     "installing",
-		Message:   "Preparing theme install.",
-		Progress:  5,
-		StartedAt: time.Now().UTC(),
-		Logs:      []string{"Preparing theme install."},
-	}
-	s.installJobs[id] = job
-	return cloneThemeInstallJob(job)
-}
-
-func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req themeInstallRequest) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-		writer := &themeInstallProgressWriter{server: s, jobID: jobID}
-		result, err := s.runThemeInstall(ctx, cfg, req, writer)
-		finishedAt := time.Now().UTC()
-		if err != nil {
-			_, apiErr := themeInstallErrorPayload(err)
-			s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
-				job.Phase = "error"
-				job.Message = "Theme install failed."
-				job.Progress = 100
-				job.FinishedAt = &finishedAt
-				job.Error = &apiErr
-				appendInstallJobLog(job, "Theme install failed.")
-			})
-			return
-		}
-		s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
-			job.Phase = "complete"
-			job.Message = "Theme is active on VibeTV."
-			job.Progress = 100
-			job.FinishedAt = &finishedAt
-			job.Result = &result
-			appendInstallJobLog(job, "Theme is active on VibeTV.")
-		})
-	}()
-}
-
-func (s *Server) updateThemeInstallJob(jobID string, update func(*themeInstallJob)) {
-	s.installJobsMu.Lock()
-	defer s.installJobsMu.Unlock()
-	if s.installJobs == nil {
+		writeInstallError(w, err)
 		return
 	}
-	job := s.installJobs[jobID]
-	if job == nil {
-		return
-	}
-	update(job)
-}
-
-func (s *Server) themeInstallJobSnapshot(jobID string) (themeInstallJob, bool) {
-	s.installJobsMu.Lock()
-	defer s.installJobsMu.Unlock()
-	job := s.installJobs[jobID]
-	if job == nil {
-		return themeInstallJob{}, false
-	}
-	return cloneThemeInstallJob(job), true
-}
-
-func cloneThemeInstallJob(job *themeInstallJob) themeInstallJob {
-	if job == nil {
-		return themeInstallJob{}
-	}
-	clone := *job
-	clone.Logs = append([]string(nil), job.Logs...)
-	if job.Result != nil {
-		result := *job.Result
-		clone.Result = &result
-	}
-	if job.Error != nil {
-		apiErr := *job.Error
-		clone.Error = &apiErr
-	}
-	if job.FinishedAt != nil {
-		finishedAt := *job.FinishedAt
-		clone.FinishedAt = &finishedAt
-	}
-	return clone
-}
-
-type themeInstallProgressWriter struct {
-	server  *Server
-	jobID   string
-	pending string
-}
-
-func (w *themeInstallProgressWriter) Write(p []byte) (int, error) {
-	text := w.pending + string(p)
-	lines := strings.Split(text, "\n")
-	if !strings.HasSuffix(text, "\n") {
-		w.pending = lines[len(lines)-1]
-		lines = lines[:len(lines)-1]
-	} else {
-		w.pending = ""
-	}
-	for _, line := range lines {
-		w.noteLine(line)
-	}
-	return len(p), nil
-}
-
-func (w *themeInstallProgressWriter) noteLine(line string) {
-	line = strings.TrimSpace(line)
-	if line == "" || w.server == nil {
-		return
-	}
-	w.server.updateThemeInstallJob(w.jobID, func(job *themeInstallJob) {
-		message, progress, ok := customerInstallProgress(line, job)
-		if !ok {
-			return
-		}
-		job.Message = message
-		if progress > job.Progress {
-			job.Progress = progress
-		}
-		appendInstallJobLog(job, message)
-	})
-}
-
-func customerInstallProgress(line string, job *themeInstallJob) (string, int, bool) {
-	switch {
-	case strings.HasPrefix(line, "Preparing theme:"):
-		return "Preparing theme files.", 10, true
-	case strings.HasPrefix(line, "Checking device"):
-		return "Checking VibeTV.", 20, true
-	case strings.HasPrefix(line, "Install screen: showing"):
-		return "Showing install screen on VibeTV.", 30, true
-	case strings.HasPrefix(line, "Upload interrupted"):
-		return "Upload interrupted. Retrying.", maxInt(job.Progress, 40), true
-	case strings.HasPrefix(line, "Retrying upload:"):
-		return "Retrying theme file upload.", maxInt(job.Progress, 40), true
-	case strings.HasPrefix(line, "Uploading theme files"):
-		return "Uploading theme files.", 40, true
-	case strings.HasPrefix(line, "Uploaded asset:"):
-		job.uploads++
-		return fmt.Sprintf("Uploaded theme file %d.", job.uploads), minInt(70, 40+job.uploads*6), true
-	case strings.HasPrefix(line, "Uploaded theme spec:"):
-		return "Uploaded theme layout.", 76, true
-	case strings.HasPrefix(line, "Activating theme"):
-		return "Activating theme.", 84, true
-	case strings.HasPrefix(line, "Live usage frame: refreshed"):
-		return "Refreshing live usage.", 90, true
-	case strings.HasPrefix(line, "Live usage frame: skipped"):
-		return "Waiting for live usage.", 90, true
-	case strings.HasPrefix(line, "Refreshing display stream"):
-		return "Refreshing display stream.", 94, true
-	case strings.HasPrefix(line, "Display stream: refreshed"):
-		return "Display stream refreshed.", 98, true
-	case strings.HasPrefix(line, "Done:"):
-		return "Theme installed.", 88, true
-	default:
-		return "", 0, false
-	}
-}
-
-func appendInstallJobLog(job *themeInstallJob, message string) {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return
-	}
-	if len(job.Logs) > 0 && job.Logs[len(job.Logs)-1] == message {
-		return
-	}
-	job.Logs = append(job.Logs, message)
-	if len(job.Logs) > 12 {
-		job.Logs = append([]string(nil), job.Logs[len(job.Logs)-12:]...)
-	}
-}
-
-func (s *Server) activeFirmwareUpdateJob() (firmwareUpdateJob, bool) {
-	s.updateJobsMu.Lock()
-	defer s.updateJobsMu.Unlock()
-	for _, job := range s.updateJobs {
-		if job != nil && job.Phase == "installing" {
-			return cloneFirmwareUpdateJob(job), true
-		}
-	}
-	return firmwareUpdateJob{}, false
-}
-
-func (s *Server) latestFirmwareUpdateJob() (firmwareUpdateJob, bool) {
-	s.updateJobsMu.Lock()
-	defer s.updateJobsMu.Unlock()
-	var latest *firmwareUpdateJob
-	for _, job := range s.updateJobs {
-		if job == nil {
-			continue
-		}
-		if latest == nil || job.StartedAt.After(latest.StartedAt) {
-			latest = job
-		}
-	}
-	if latest == nil {
-		return firmwareUpdateJob{}, false
-	}
-	return cloneFirmwareUpdateJob(latest), true
-}
-
-func (s *Server) createFirmwareUpdateJob(cfg runtimeconfig.Config) firmwareUpdateJob {
-	s.updateJobsMu.Lock()
-	defer s.updateJobsMu.Unlock()
-	if s.updateJobs == nil {
-		s.updateJobs = make(map[string]*firmwareUpdateJob)
-	}
-	s.nextUpdateJob++
-	id := fmt.Sprintf("firmware-update-%d-%d", time.Now().UnixNano(), s.nextUpdateJob)
-	job := &firmwareUpdateJob{
-		ID:        id,
-		Phase:     "installing",
-		Message:   "Preparing VibeTV update.",
-		Progress:  5,
-		StartedAt: time.Now().UTC(),
-		Logs:      []string{"Preparing VibeTV update."},
-		target:    publicTarget(cfg.DeviceTarget),
-	}
-	s.updateJobs[id] = job
-	return cloneFirmwareUpdateJob(job)
-}
-
-func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req firmwareUpdateRequest) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), firmwareUpdateJobTime)
-		defer cancel()
-		writer := &firmwareUpdateProgressWriter{server: s, jobID: jobID}
-		err := s.updateFirmware(ctx, s.home, cfg, req, writer)
-		finishedAt := time.Now().UTC()
-		if err != nil {
-			apiErr := firmwareUpdateErrorPayload(err)
-			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
-				job.Phase = "error"
-				job.Message = "Update failed."
-				job.Progress = 100
-				job.FinishedAt = &finishedAt
-				job.Error = &apiErr
-				appendFirmwareUpdateJobLog(job, "Update failed.")
-			})
-			return
-		}
-		s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
-			job.Phase = "complete"
-			job.Message = "Update complete."
-			job.Progress = 100
-			job.FinishedAt = &finishedAt
-			job.Result = &firmwareUpdateResult{
-				Firmware: strings.TrimSpace(job.firmware),
-				Target:   strings.TrimSpace(job.target),
-			}
-			appendFirmwareUpdateJobLog(job, "Update complete.")
-		})
-	}()
-}
-
-func (s *Server) updateFirmwareUpdateJob(jobID string, update func(*firmwareUpdateJob)) {
-	s.updateJobsMu.Lock()
-	defer s.updateJobsMu.Unlock()
-	if s.updateJobs == nil {
-		return
-	}
-	job := s.updateJobs[jobID]
-	if job == nil {
-		return
-	}
-	update(job)
-}
-
-func (s *Server) firmwareUpdateJobSnapshot(jobID string) (firmwareUpdateJob, bool) {
-	s.updateJobsMu.Lock()
-	defer s.updateJobsMu.Unlock()
-	job := s.updateJobs[jobID]
-	if job == nil {
-		return firmwareUpdateJob{}, false
-	}
-	return cloneFirmwareUpdateJob(job), true
-}
-
-func cloneFirmwareUpdateJob(job *firmwareUpdateJob) firmwareUpdateJob {
-	if job == nil {
-		return firmwareUpdateJob{}
-	}
-	clone := *job
-	clone.Logs = append([]string(nil), job.Logs...)
-	if job.Result != nil {
-		result := *job.Result
-		clone.Result = &result
-	}
-	if job.Error != nil {
-		apiErr := *job.Error
-		clone.Error = &apiErr
-	}
-	if job.FinishedAt != nil {
-		finishedAt := *job.FinishedAt
-		clone.FinishedAt = &finishedAt
-	}
-	return clone
-}
-
-type firmwareUpdateProgressWriter struct {
-	server  *Server
-	jobID   string
-	pending string
-}
-
-func (w *firmwareUpdateProgressWriter) Write(p []byte) (int, error) {
-	text := w.pending + string(p)
-	lines := strings.Split(text, "\n")
-	if !strings.HasSuffix(text, "\n") {
-		w.pending = lines[len(lines)-1]
-		lines = lines[:len(lines)-1]
-	} else {
-		w.pending = ""
-	}
-	for _, line := range lines {
-		w.noteLine(line)
-	}
-	return len(p), nil
-}
-
-func (w *firmwareUpdateProgressWriter) noteLine(line string) {
-	line = strings.TrimSpace(line)
-	if line == "" || w.server == nil {
-		return
-	}
-	w.server.updateFirmwareUpdateJob(w.jobID, func(job *firmwareUpdateJob) {
-		message, progress, ok := customerFirmwareUpdateProgress(line, job)
-		if !ok {
-			return
-		}
-		job.Message = message
-		if progress > job.Progress {
-			job.Progress = progress
-		}
-		appendFirmwareUpdateJobLog(job, message)
-	})
-}
-
-func customerFirmwareUpdateProgress(line string, job *firmwareUpdateJob) (string, int, bool) {
-	switch {
-	case strings.HasPrefix(line, "Checking device"):
-		return "Checking VibeTV.", 10, true
-	case strings.HasPrefix(line, "Device:"):
-		return "VibeTV is ready.", 18, true
-	case strings.HasPrefix(line, "Checking firmware"):
-		return "Checking update.", 25, true
-	case strings.HasPrefix(line, "Firmware: already current"):
-		return "VibeTV is already up to date.", 95, true
-	case strings.HasPrefix(line, "Updating firmware:"):
-		job.firmware = firmwareVersionFromUpdateLine(line)
-		return "Preparing update.", 35, true
-	case strings.HasPrefix(line, "Firmware downloaded:"):
-		return "Update downloaded.", 45, true
-	case strings.HasPrefix(line, "Pausing Mac App during firmware update"):
-		return "Preparing VibeTV.", 50, true
-	case strings.HasPrefix(line, "Uploading firmware"):
-		return "Updating VibeTV.", 65, true
-	case strings.HasPrefix(line, "Restarting VibeTV"):
-		return "Restarting VibeTV.", 82, true
-	case strings.HasPrefix(line, "Done: firmware"):
-		job.firmware = firmwareVersionFromDoneLine(line)
-		return "Checking result.", 96, true
-	default:
-		return "", 0, false
-	}
-}
-
-func firmwareVersionFromUpdateLine(line string) string {
-	line = strings.TrimSpace(line)
-	if idx := strings.LastIndex(line, "->"); idx >= 0 {
-		return strings.TrimSpace(line[idx+2:])
-	}
-	return ""
-}
-
-func firmwareVersionFromDoneLine(line string) string {
-	line = strings.TrimSpace(strings.TrimPrefix(line, "Done: firmware"))
-	line = strings.TrimSuffix(line, "installed")
-	return strings.TrimSpace(line)
-}
-
-func appendFirmwareUpdateJobLog(job *firmwareUpdateJob, message string) {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return
-	}
-	if len(job.Logs) > 0 && job.Logs[len(job.Logs)-1] == message {
-		return
-	}
-	job.Logs = append(job.Logs, message)
-	if len(job.Logs) > 12 {
-		job.Logs = append([]string(nil), job.Logs[len(job.Logs)-12:]...)
-	}
-}
-
-func firmwareUpdateErrorPayload(err error) apiError {
-	if errcode.Of(err) == errcode.UpgradeVersionGuard {
-		return apiError{
-			Code:       "firmware_update_blocked",
-			Message:    "Update cannot be installed on this VibeTV.",
-			NextAction: "Create a support report.",
-		}
-	}
-	return apiError{
-		Code:       "firmware_update_failed",
-		Message:    "VibeTV update failed.",
-		NextAction: "Keep VibeTV powered on, then try again.",
-	}
-}
-
-func firmwareUpdateDiagnosticStatus(job firmwareUpdateJob) string {
-	switch job.Phase {
-	case "complete":
-		return "pass"
-	case "error":
-		return "fail"
-	default:
-		return "attention"
-	}
-}
-
-func firmwareUpdateDiagnosticDetail(job firmwareUpdateJob) string {
-	switch job.Phase {
-	case "complete":
-		if job.Result != nil && strings.TrimSpace(job.Result.Firmware) != "" {
-			return "Last VibeTV update completed. Firmware " + strings.TrimSpace(job.Result.Firmware) + " is installed."
-		}
-		return "Last VibeTV update completed."
-	case "error":
-		if job.Error != nil && strings.TrimSpace(job.Error.Message) != "" {
-			return "Last VibeTV update failed: " + strings.TrimSpace(job.Error.Message)
-		}
-		return "Last VibeTV update failed."
-	default:
-		return "VibeTV update is still running."
-	}
-}
-
-func firmwareUpdateDiagnosticErrorCode(job firmwareUpdateJob) string {
-	if job.Phase != "error" || job.Error == nil {
-		return ""
-	}
-	return strings.TrimSpace(job.Error.Code)
-}
-
-func firmwareUpdateDiagnosticNextAction(job firmwareUpdateJob) string {
-	if job.Phase != "error" || job.Error == nil {
-		return ""
-	}
-	return strings.TrimSpace(job.Error.NextAction)
-}
-
-func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer) error {
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	target := publicTarget(cfg.DeviceTarget)
-	if target == "" {
-		return errors.New("device target is empty")
-	}
-	args := []string{"install-update", "--target", target, "--confirm-live-update"}
-	if req.Force {
-		args = append(args, "--force")
-	}
-	cmd := exec.CommandContext(ctx, executable, args...)
-	cmd.Stdout = out
-	cmd.Stderr = out
-	if strings.TrimSpace(home) != "" {
-		cmd.Env = append(os.Environ(), "HOME="+home)
-	}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("firmware update command failed: %w", err)
-	}
-	return nil
-}
-
-func (s *Server) requireThemeInstallPreflight(w http.ResponseWriter, r *http.Request, cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
-	if strings.TrimSpace(cfg.DeviceToken) == "" {
-		writeError(
-			w,
-			http.StatusForbidden,
-			"pairing_required",
-			"VibeTV pairing is required before installing themes.",
-			"Pair VibeTV, then retry install.",
-		)
-		return false
-	}
-
-	caps := protocol.CapabilitiesFromHello(hello)
-	if !caps.Known || !caps.SupportsThemeSpecV1 {
-		writeError(
-			w,
-			http.StatusBadRequest,
-			"theme_install_unsupported",
-			"This VibeTV does not advertise theme install support.",
-			"Update VibeTV firmware or use a device that supports ThemeSpec v1.",
-		)
-		return false
-	}
-
-	if _, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err != nil {
-		writeError(
-			w,
-			http.StatusBadGateway,
-			"device_health_failed",
-			"VibeTV health check failed before theme install.",
-			"Keep VibeTV powered on, confirm it is on the same WiFi, then retry discovery before installing.",
-		)
-		return false
-	}
-	return true
-}
-
-func splitInstallLog(log string) []string {
-	lines := strings.Split(log, "\n")
-	out := make([]string, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			out = append(out, sanitizeLogLine(line))
-		}
-	}
-	return out
-}
-
-func validRemoteThemePackURL(raw string) bool {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return true
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return false
-	}
-	if parsed.User != nil || strings.TrimSpace(parsed.Host) == "" {
-		return false
-	}
-	return strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")
+	writeJSON(w, http.StatusOK, struct {
+		OK     bool                `json:"ok"`
+		Result themeinstall.Result `json:"result"`
+	}{OK: true, Result: result})
 }
 
 func (s *Server) config() (runtimeconfig.Config, error) {
@@ -1733,121 +472,16 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 }
 
 func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) (string, protocol.DeviceHello, error) {
-	explicitTarget = strings.TrimSpace(explicitTarget)
-	if explicitTarget != "" {
-		target, targetErr := normalizeExplicitDeviceTarget(explicitTarget)
-		if targetErr != nil {
-			return "", protocol.DeviceHello{}, targetErr
-		}
-		hello, err := s.getHelloProbe(ctx, target, cfg.DeviceToken, discoveryProbeTime)
-		if err != nil {
-			return "", protocol.DeviceHello{}, err
-		}
-		return target, hello, nil
+	candidates := uniqueStrings(explicitTarget, cfg.DeviceTarget, setup.DefaultWiFiTarget())
+	result, err := transportlayer.DiscoverWiFiDevice(ctx, transportlayer.WiFiDiscoveryOptions{
+		Candidates:         candidates,
+		IncludeNetworkScan: true,
+		Client:             s.client,
+	})
+	if err != nil {
+		return "", protocol.DeviceHello{}, err
 	}
-
-	candidates := uniqueStrings(cfg.DeviceTarget, setup.DefaultWiFiTarget())
-	var lastErr error
-	for _, candidate := range candidates {
-		hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, discoveryProbeTime)
-		if err == nil {
-			return normalizeTarget(candidate), hello, nil
-		}
-		lastErr = err
-	}
-	if target, hello, err := s.discoverSubnet(ctx, cfg); err == nil {
-		return target, hello, nil
-	} else if err != nil {
-		lastErr = err
-	}
-	if lastErr == nil {
-		lastErr = errors.New("no device candidates")
-	}
-	return "", protocol.DeviceHello{}, lastErr
-}
-
-func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (string, protocol.DeviceHello, error) {
-	if s.subnetTargets == nil {
-		return "", protocol.DeviceHello{}, errors.New("subnet discovery unavailable")
-	}
-	candidates := uniqueStrings(s.subnetTargets()...)
-	if len(candidates) == 0 {
-		return "", protocol.DeviceHello{}, errors.New("no subnet candidates")
-	}
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	type result struct {
-		target string
-		hello  protocol.DeviceHello
-		err    error
-	}
-	jobs := make(chan string)
-	results := make(chan result, len(candidates))
-	workers := subnetProbeLimit
-	if len(candidates) < workers {
-		workers = len(candidates)
-	}
-
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for candidate := range jobs {
-				hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, subnetProbeTime)
-				select {
-				case results <- result{target: candidate, hello: hello, err: err}:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
-	}
-
-	go func() {
-		defer close(jobs)
-		for _, candidate := range candidates {
-			select {
-			case jobs <- candidate:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	var lastErr error
-	var matches []result
-	for res := range results {
-		if res.err == nil {
-			res.target = normalizeTarget(res.target)
-			matches = append(matches, res)
-			if len(matches) > 1 {
-				cancel()
-				targets := make([]string, 0, len(matches))
-				for _, match := range matches {
-					targets = append(targets, match.target)
-				}
-				sort.Strings(targets)
-				return "", protocol.DeviceHello{}, &multipleDevicesError{targets: targets}
-			}
-			continue
-		}
-		lastErr = res.err
-	}
-	if len(matches) == 1 {
-		return matches[0].target, matches[0].hello, nil
-	}
-	if lastErr == nil {
-		lastErr = errors.New("subnet discovery found no device")
-	}
-	return "", protocol.DeviceHello{}, lastErr
+	return normalizeTarget(result.Target), result.Hello, nil
 }
 
 func (s *Server) getHello(ctx context.Context, target, token string) (protocol.DeviceHello, error) {
@@ -1858,76 +492,14 @@ func (s *Server) getHello(ctx context.Context, target, token string) (protocol.D
 	return hello.Normalize(), nil
 }
 
-func (s *Server) getHelloProbe(ctx context.Context, target, token string, timeout time.Duration) (protocol.DeviceHello, error) {
-	if timeout <= 0 {
-		return s.getHello(ctx, target, token)
+func (s *Server) getSettings(ctx context.Context, target, token string) (deviceSettings, error) {
+	var health struct {
+		Settings deviceSettings `json:"settings"`
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	return s.getHello(probeCtx, target, token)
-}
-
-type deviceHealth struct {
-	Settings deviceSettings `json:"settings"`
-	Display  struct {
-		ActiveTheme string `json:"activeTheme"`
-		ThemeSpec   struct {
-			Active         bool   `json:"active"`
-			Path           string `json:"path"`
-			Hash           string `json:"hash"`
-			RenderOK       *bool  `json:"renderOk"`
-			RenderError    string `json:"renderError"`
-			RenderFailures uint64 `json:"renderFailures"`
-		} `json:"themeSpec"`
-	} `json:"display"`
-}
-
-func (s *Server) getHealth(ctx context.Context, target, token string) (deviceHealth, error) {
-	var health deviceHealth
 	if err := s.doJSON(ctx, http.MethodGet, target, "/health", token, nil, &health); err != nil {
-		return deviceHealth{}, err
+		return deviceSettings{}, err
 	}
-	return health, nil
-}
-
-func (s *Server) waitForDisplayRender(ctx context.Context, target, token string) (deviceHealth, error) {
-	deadline := time.Now().Add(displayRenderWaitTime)
-	var last deviceHealth
-	var lastErr error
-	for {
-		health, err := s.getHealth(ctx, target, token)
-		if err == nil {
-			last = health
-			if renderHealthyFromHealth(health) {
-				return health, nil
-			}
-			lastErr = fmt.Errorf("render failed: %s", strings.TrimSpace(health.Display.ThemeSpec.RenderError))
-		} else {
-			lastErr = err
-		}
-		if time.Now().After(deadline) {
-			if lastErr == nil {
-				lastErr = errors.New("display render did not become healthy")
-			}
-			return last, lastErr
-		}
-		select {
-		case <-ctx.Done():
-			if lastErr == nil {
-				lastErr = ctx.Err()
-			}
-			return last, lastErr
-		case <-time.After(750 * time.Millisecond):
-		}
-	}
-}
-
-func renderHealthyFromHealth(health deviceHealth) bool {
-	spec := health.Display.ThemeSpec
-	if !spec.Active || spec.RenderOK == nil {
-		return true
-	}
-	return *spec.RenderOK
+	return health.Settings, nil
 }
 
 func (s *Server) updateBrightness(ctx context.Context, target, token string, brightness int) (deviceSettings, error) {
@@ -1958,25 +530,6 @@ func (s *Server) pair(ctx context.Context, target string) (string, error) {
 		return "", errors.New("pairing response did not include token")
 	}
 	return token, nil
-}
-
-func (s *Server) startDisplayStream(ctx context.Context, target string) error {
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return errors.New("device target is empty")
-	}
-	opts := setup.Options{
-		Transport: "wifi",
-		Target:    target,
-		AssumeYes: true,
-		SkipFlash: true,
-	}
-	validateOpts := opts
-	validateOpts.ValidateOnly = true
-	if err := s.runSetup(ctx, validateOpts); err != nil {
-		return err
-	}
-	return s.runSetup(ctx, opts)
 }
 
 func (s *Server) doJSON(ctx context.Context, method, target, path, token string, body any, out any) error {
@@ -2068,58 +621,6 @@ func writeDeviceNotFound(w http.ResponseWriter) {
 	writeError(w, http.StatusNotFound, "device_not_found", "No VibeTV device was found.", "Make sure VibeTV is powered on and run device discovery again.")
 }
 
-func writeDiscoveryError(w http.ResponseWriter, err error) {
-	var invalidTarget *invalidTargetError
-	if errors.As(err, &invalidTarget) {
-		writeInvalidDeviceTarget(w)
-		return
-	}
-	var multiple *multipleDevicesError
-	if errors.As(err, &multiple) {
-		writeError(
-			w,
-			http.StatusConflict,
-			"multiple_devices_found",
-			"Multiple VibeTV devices were found.",
-			"Enter the exact VibeTV target in the VibeTV target field, for example http://vibetv.local or http://<device-ip>, then search again.",
-		)
-		return
-	}
-	writeDeviceNotFound(w)
-}
-
-func writeRepairError(w http.ResponseWriter, err error) {
-	var invalidTarget *invalidTargetError
-	if errors.As(err, &invalidTarget) {
-		writeInvalidDeviceTarget(w)
-		return
-	}
-	var multiple *multipleDevicesError
-	if errors.As(err, &multiple) {
-		writeDiscoveryError(w, err)
-		return
-	}
-	var stageErr *repairStageError
-	if errors.As(err, &stageErr) {
-		switch stageErr.stage {
-		case "config":
-			writeInternalError(w, err)
-			return
-		case "pair":
-			writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", "Keep VibeTV powered on, then retry Fix connection.")
-			return
-		case "display-stream":
-			writeError(w, http.StatusBadGateway, "display_stream_repair_failed", "Mac App could not refresh the VibeTV display stream.", "Run setup again or restart the Mac App, then retry Fix connection.")
-			return
-		}
-	}
-	writeDeviceNotFound(w)
-}
-
-func writeInvalidDeviceTarget(w http.ResponseWriter) {
-	writeError(w, http.StatusBadRequest, "invalid_device_target", "VibeTV target is invalid.", "Enter vibetv.local, an IP address, or an http(s) URL with a valid port and without path, username, password, query, or fragment.")
-}
-
 func writeMethodNotAllowed(w http.ResponseWriter) {
 	writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "HTTP method is not allowed.", "Use the documented method for this endpoint.")
 }
@@ -2129,16 +630,7 @@ func writeInternalError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, "internal_error", "The companion could not complete the request.", "Restart the companion and retry.")
 }
 
-func writeThemeInstallError(w http.ResponseWriter, err error) {
-	status, apiErr := themeInstallErrorPayload(err)
-	writeError(w, status, apiErr.Code, apiErr.Message, apiErr.NextAction)
-}
-
-func themeInstallErrorPayload(err error) (int, apiError) {
-	var apiStatus *statusAPIError
-	if errors.As(err, &apiStatus) {
-		return apiStatus.status, apiStatus.api
-	}
+func writeInstallError(w http.ResponseWriter, err error) {
 	code := "theme_install_failed"
 	if c := errcode.Of(err); c != "" {
 		code = string(c)
@@ -2151,29 +643,10 @@ func themeInstallErrorPayload(err error) (int, apiError) {
 	if detail := sanitizeErrorDetail(err); detail != "" {
 		message = "Theme install failed: " + detail
 	}
-	return http.StatusBadGateway, apiError{
-		Code:       code,
-		Message:    message,
-		NextAction: next,
-	}
+	writeError(w, http.StatusBadGateway, code, message, next)
 }
 
 var sensitiveQueryValuePattern = regexp.MustCompile(`(?i)([?&](?:token|auth|key|secret)=)[^&\s"]+`)
-var sensitiveURLUserInfoPattern = regexp.MustCompile(`(?i)\b(https?://)[^/\s"@]+@`)
-var publicLogURLPattern = regexp.MustCompile(`https?://[^\s)]+`)
-
-func sanitizeLogLine(line string) string {
-	return publicLogURLPattern.ReplaceAllStringFunc(line, func(raw string) string {
-		parsed, err := url.Parse(raw)
-		if err != nil {
-			return raw
-		}
-		parsed.User = nil
-		parsed.RawQuery = ""
-		parsed.Fragment = ""
-		return parsed.String()
-	})
-}
 
 func sanitizeErrorDetail(err error) string {
 	if err == nil {
@@ -2183,7 +656,6 @@ func sanitizeErrorDetail(err error) string {
 	if detail == "" {
 		return ""
 	}
-	detail = sensitiveURLUserInfoPattern.ReplaceAllString(detail, "${1}<redacted>@")
 	detail = sensitiveQueryValuePattern.ReplaceAllString(detail, "${1}<redacted>")
 	if len(detail) > 240 {
 		detail = detail[:237] + "..."
@@ -2192,26 +664,7 @@ func sanitizeErrorDetail(err error) string {
 }
 
 func themeInstallEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(themeInstallDisableEnv))) {
-	case "1", "true", "yes", "on":
-		return false
-	default:
-		return true
-	}
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+	return strings.TrimSpace(os.Getenv(themeInstallEnv)) == "1"
 }
 
 func writeError(w http.ResponseWriter, status int, code, message, nextAction string) {
@@ -2229,192 +682,6 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func (s *Server) withDisplayStream(ctx context.Context, target string, device deviceInfo) deviceInfo {
-	return withDisplayStreamInfo(device, s.streamStatus(ctx, target))
-}
-
-func withDisplayStreamInfo(device deviceInfo, stream displayStreamInfo) deviceInfo {
-	if strings.TrimSpace(stream.Target) == "" {
-		stream.Target = device.Target
-	}
-	device.Stream = streamPointer(stream)
-	device.Connected = device.Connected && device.Paired && stream.Healthy
-	return device
-}
-
-func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
-	device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)
-	if health.Display.ThemeSpec.Active || health.Display.ThemeSpec.RenderOK != nil {
-		device.Display = &deviceDisplayInfo{
-			ThemeSpec: &themeSpecHealth{
-				Active:         health.Display.ThemeSpec.Active,
-				Path:           strings.TrimSpace(health.Display.ThemeSpec.Path),
-				Hash:           strings.TrimSpace(health.Display.ThemeSpec.Hash),
-				RenderOK:       health.Display.ThemeSpec.RenderOK,
-				RenderError:    strings.TrimSpace(health.Display.ThemeSpec.RenderError),
-				RenderFailures: health.Display.ThemeSpec.RenderFailures,
-			},
-		}
-	}
-	if !deviceRenderHealthy(device) {
-		device.Connected = false
-	}
-	return device
-}
-
-func deviceRenderHealthy(device deviceInfo) bool {
-	if device.Display == nil || device.Display.ThemeSpec == nil {
-		return true
-	}
-	spec := device.Display.ThemeSpec
-	if !spec.Active || spec.RenderOK == nil {
-		return true
-	}
-	return *spec.RenderOK
-}
-
-func renderHealthDiagnosticDetail(spec *themeSpecHealth) string {
-	if spec == nil {
-		return "VibeTV render health is unavailable."
-	}
-	if spec.RenderOK == nil {
-		return "VibeTV firmware did not report render health."
-	}
-	if *spec.RenderOK {
-		return "VibeTV rendered the current image."
-	}
-	if spec.RenderError != "" {
-		return "VibeTV could not redraw the current image: " + spec.RenderError + "."
-	}
-	return "VibeTV could not redraw the current image."
-}
-
-func streamPointer(stream displayStreamInfo) *displayStreamInfo {
-	if !stream.Healthy && !stream.Running && stream.LastSentAt == "" && stream.Target == "" && stream.LastTarget == "" && stream.Detail == "" {
-		return nil
-	}
-	return &stream
-}
-
-func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo {
-	target = publicTarget(target)
-	stream := displayStreamInfo{Target: target}
-	if target == "" {
-		stream.Detail = "No VibeTV target configured."
-		return stream
-	}
-
-	service := fmt.Sprintf("gui/%d/%s", os.Getuid(), displayStreamLabel)
-	output, err := exec.CommandContext(ctx, "launchctl", "print", service).CombinedOutput()
-	state := parseDisplayStreamLaunchState(string(output))
-	stream.Running = displayStreamLaunchStateRunning(state)
-	if err != nil {
-		stream.Detail = "Display stream is not loaded."
-		return stream
-	}
-	if !stream.Running {
-		stream.Detail = "Display stream is not running."
-		return stream
-	}
-
-	lastSentAt, lastTarget := lastDisplayStreamFrame(displayStreamOutLog)
-	if lastSentAt.IsZero() {
-		stream.Detail = "Display stream has not sent usage yet."
-		return stream
-	}
-	stream.LastSentAt = lastSentAt.UTC().Format(time.RFC3339)
-	stream.LastTarget = publicTarget(lastTarget)
-
-	if stream.LastTarget != "" && !samePublicTarget(target, stream.LastTarget) {
-		stream.Detail = "Display stream is sending to another VibeTV."
-		return stream
-	}
-	if time.Since(lastSentAt) > displayStreamReadyAge {
-		stream.Detail = "Last usage frame is too old."
-		return stream
-	}
-
-	stream.Healthy = true
-	stream.Detail = "Display stream is sending usage frames."
-	return stream
-}
-
-func waitForDisplayStream(ctx context.Context, target string) displayStreamInfo {
-	deadline := time.Now().Add(displayStreamWaitTime)
-	var last displayStreamInfo
-	for {
-		last = inspectDisplayStream(ctx, target)
-		if last.Healthy || time.Now().After(deadline) {
-			return last
-		}
-		select {
-		case <-ctx.Done():
-			return last
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-}
-
-func parseDisplayStreamLaunchState(output string) string {
-	for _, raw := range strings.Split(output, "\n") {
-		line := strings.TrimSpace(raw)
-		if !strings.HasPrefix(line, "state = ") {
-			continue
-		}
-		return strings.TrimSpace(strings.TrimPrefix(line, "state = "))
-	}
-	return ""
-}
-
-func displayStreamLaunchStateRunning(state string) bool {
-	switch strings.TrimSpace(state) {
-	case "running", "waiting", "spawn scheduled":
-		return true
-	default:
-		return false
-	}
-}
-
-func lastDisplayStreamFrame(path string) (time.Time, string) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return time.Time{}, ""
-	}
-	lines := strings.Split(string(data), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if !strings.Contains(line, "sent frame -> ") {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) == 0 {
-			continue
-		}
-		when, err := time.Parse(time.RFC3339, parts[0])
-		if err != nil {
-			continue
-		}
-		after := strings.TrimSpace(strings.SplitN(line, "sent frame -> ", 2)[1])
-		target := ""
-		if fields := strings.Fields(after); len(fields) > 0 {
-			target = fields[0]
-		}
-		return when, target
-	}
-	return time.Time{}, ""
-}
-
-func samePublicTarget(left, right string) bool {
-	return publicTarget(left) == publicTarget(right)
-}
-
-func displayStreamDiagnosticDetail(stream *displayStreamInfo) string {
-	if stream == nil || strings.TrimSpace(stream.Detail) == "" {
-		return "Display stream is not ready."
-	}
-	return stream.Detail
 }
 
 func deviceFromHello(target, token string, hello protocol.DeviceHello) deviceInfo {
@@ -2457,57 +724,8 @@ func normalizeTarget(target string) string {
 	return parsed.String()
 }
 
-func normalizeExplicitDeviceTarget(target string) (string, error) {
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return "", &invalidTargetError{}
-	}
-	if !strings.Contains(target, "://") {
-		target = "http://" + target
-	}
-	parsed, err := url.Parse(target)
-	if err != nil {
-		return "", &invalidTargetError{target: target}
-	}
-	if parsed.User != nil || strings.TrimSpace(parsed.Host) == "" {
-		return "", &invalidTargetError{target: target}
-	}
-	if !validExplicitTargetPort(parsed) {
-		return "", &invalidTargetError{target: target}
-	}
-	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
-		return "", &invalidTargetError{target: target}
-	}
-	if parsed.Path != "" && parsed.Path != "/" {
-		return "", &invalidTargetError{target: target}
-	}
-	if strings.TrimSpace(parsed.RawQuery) != "" || strings.TrimSpace(parsed.Fragment) != "" {
-		return "", &invalidTargetError{target: target}
-	}
-	parsed.Path = strings.TrimRight(parsed.Path, "/")
-	return parsed.String(), nil
-}
-
-func validExplicitTargetPort(parsed *url.URL) bool {
-	port := parsed.Port()
-	if port == "" {
-		return !strings.HasSuffix(parsed.Host, ":")
-	}
-	value, err := strconv.Atoi(port)
-	return err == nil && value > 0 && value <= 65535
-}
-
 func publicTarget(target string) string {
-	target = normalizeTarget(target)
-	if target == "" {
-		return ""
-	}
-	parsed, err := url.Parse(target)
-	if err != nil {
-		return target
-	}
-	parsed.User = nil
-	return parsed.String()
+	return normalizeTarget(target)
 }
 
 func targetWithToken(target, token string) string {
@@ -2530,55 +748,6 @@ func applyDeviceToken(req *http.Request, token string) {
 	if token = strings.TrimSpace(token); token != "" {
 		req.Header.Set("X-VibeTV-Token", token)
 	}
-}
-
-func localSubnetTargets() []string {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return nil
-	}
-	var targets []string
-	for _, iface := range interfaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			ip, _, ok := addrToIPv4(addr)
-			if !ok {
-				continue
-			}
-			for host := 1; host <= 254; host++ {
-				if int(ip[3]) == host {
-					continue
-				}
-				targets = append(targets, fmt.Sprintf("http://%d.%d.%d.%d", ip[0], ip[1], ip[2], host))
-			}
-		}
-	}
-	return uniqueStrings(targets...)
-}
-
-func addrToIPv4(addr net.Addr) (net.IP, *net.IPNet, bool) {
-	var ip net.IP
-	var network *net.IPNet
-	switch value := addr.(type) {
-	case *net.IPNet:
-		ip = value.IP
-		network = value
-	case *net.IPAddr:
-		ip = value.IP
-	default:
-		return nil, nil, false
-	}
-	ip = ip.To4()
-	if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || !ip.IsPrivate() {
-		return nil, nil, false
-	}
-	return ip, network, true
 }
 
 func uniqueStrings(values ...string) []string {

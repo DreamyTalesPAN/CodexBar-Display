@@ -228,8 +228,7 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   const bool usesLabel = ThemeSpecUsesBinding(raw, "label", "l");
   return (ThemeSpecUsesBinding(raw, "provider", "pr") && previous.provider != next.provider) ||
-         (usesLabel &&
-          (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
+         (usesLabel && (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
          (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
          (ThemeSpecUsesBinding(raw, "weekly", "w") && previous.weekly != next.weekly) ||
          (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
@@ -253,7 +252,10 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
   if (previous.provider != next.provider) {
     fields |= themespec::kThemeSpecFieldProvider;
   }
-  if (previous.label != next.label || previous.updateAvailable != next.updateAvailable) {
+  if (previous.label != next.label) {
+    fields |= themespec::kThemeSpecFieldLabel;
+  }
+  if (previous.updateAvailable != next.updateAvailable) {
     fields |= themespec::kThemeSpecFieldLabel;
   }
   if (previous.session != next.session) {

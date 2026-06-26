@@ -131,7 +131,7 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	}
 	fmt.Fprintf(out, "Preparing theme: %s\n", themeName)
 	if opts.Verbose {
-		fmt.Fprintf(out, "Theme source: %s\n", stripTargetCredentials(resolvedPack))
+		fmt.Fprintf(out, "Theme source: %s\n", resolvedPack)
 	}
 
 	client := opts.HTTPClient

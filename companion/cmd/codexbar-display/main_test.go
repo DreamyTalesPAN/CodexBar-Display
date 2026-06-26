@@ -48,9 +48,6 @@ func TestParseDaemonOptionsDefaultsToWiFi(t *testing.T) {
 	if opts.Target != "http://vibetv.local" {
 		t.Fatalf("expected default WiFi target, got %q", opts.Target)
 	}
-	if opts.Interval != 0 {
-		t.Fatalf("expected daemon runtime to choose default interval, got %s", opts.Interval)
-	}
 }
 
 func TestResolveThemeSpecTransportNamePreservesPortOnlyUSBFlow(t *testing.T) {

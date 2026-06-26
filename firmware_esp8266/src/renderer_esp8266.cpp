@@ -107,7 +107,6 @@ RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
     snapshot.activeTheme = themeName(display::ActiveTheme());
   }
   snapshot.themeSpecRenderOk = !snapshot.themeSpecActive || display::ThemeSpecRenderOk();
-  snapshot.themeSpecRenderError = snapshot.themeSpecActive ? display::ThemeSpecRenderError() : "";
   snapshot.themeSpecRenderFailures = display::ThemeSpecRenderFailures();
   const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
   snapshot.gifActivePath = gif.activePath;
@@ -119,18 +118,6 @@ RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
   snapshot.activeTheme = "probe";
 #endif
   return snapshot;
-}
-
-bool RendererESP8266::ShouldDeferDirtyRender(app::RuntimeContext& ctx) const {
-#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
-  display::AttachContext(ctx);
-  return display::HasFrame() &&
-         display::CurrentFrame().hasThemeSpec &&
-         display::ThemeSpecFullRenderRetryPending();
-#else
-  (void)ctx;
-  return false;
-#endif
 }
 
 bool RendererESP8266::SupportsBrightnessControl() const {
@@ -283,7 +270,7 @@ void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const Stri
   tft.setTextWrap(false);
   tft.setTextFont(1);
 
-  const char* title = "USE PHONE";
+  const char* title = "VIBE TV SETUP";
   const char* action = "Join WiFi:";
   const char* detail = "Open:";
   const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
@@ -354,19 +341,24 @@ void RendererESP8266::DrawConnectedSetupInstructions(
   tft.setTextWrap(false);
   tft.setTextFont(1);
 
-  (void)host;
-  (void)fallbackIp;
-  const char* title = "WiFi connected!";
-  const char* action = "Now go to:";
-  const char* detail = "app.vibetv.shop";
+  const char* title = "VIBE TV READY";
+  const char* action = "Open Setup";
+  const char* detail = "Browser:";
+  const char* fallback = "IP:";
   const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
+  const int hostSize = display::ChooseTextSizeToFit(host.c_str(), 3, 2, tft.width() - 8);
   const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);
   const int detailSize = display::ChooseTextSizeToFit(detail, 2, 1, tft.width() - 14);
+  const int fallbackSize = display::ChooseTextSizeToFit(fallback, 2, 1, tft.width() - 14);
+  const int fallbackIpSize = display::ChooseTextSizeToFit(fallbackIp.c_str(), 2, 1, tft.width() - 8);
 
   const int totalH =
       display::TextPixelHeight(titleSize) + 12 +
       display::TextPixelHeight(actionSize) + 10 +
-      display::TextPixelHeight(detailSize);
+      display::TextPixelHeight(detailSize) + 8 +
+      display::TextPixelHeight(hostSize) + 10 +
+      display::TextPixelHeight(fallbackSize) + 4 +
+      display::TextPixelHeight(fallbackIpSize);
   int y = (tft.height() - totalH) / 2;
   if (y < 6) {
     y = 6;
@@ -385,9 +377,27 @@ void RendererESP8266::DrawConnectedSetupInstructions(
 
   y += display::TextPixelHeight(actionSize) + 10;
   display::SetClassicTextSize(detailSize);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(detail, detailSize), y);
   tft.print(detail);
+
+  y += display::TextPixelHeight(detailSize) + 8;
+  display::SetClassicTextSize(hostSize);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(host.c_str(), hostSize), y);
+  tft.print(host);
+
+  y += display::TextPixelHeight(hostSize) + 10;
+  display::SetClassicTextSize(fallbackSize);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(fallback, fallbackSize), y);
+  tft.print(fallback);
+
+  y += display::TextPixelHeight(fallbackSize) + 4;
+  display::SetClassicTextSize(fallbackIpSize);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(fallbackIp.c_str(), fallbackIpSize), y);
+  tft.print(fallbackIp);
 
   ctx.lastRenderedSecs = -1;
   ctx.lastRenderedMinuteBucket = -1;
@@ -437,7 +447,7 @@ void RendererESP8266::DrawError(app::RuntimeContext& ctx, const String& message)
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   (void)message;
-  DrawStatus(ctx, "VIBE TV", "Open App", "app.vibetv.shop");
+  DrawStatus(ctx, "VIBE TV", "Check Mac App", "On your Mac");
 #else
   (void)message;
   probe::Render(ctx);
@@ -453,8 +463,8 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
       return;
     }
     // ThemeSpec rendering can fail transiently on ESP8266 under low heap while
-    // changing state. Keep the last good theme visual instead of flashing a
-    // different fallback for one frame.
+    // changing state. Keep the last good visual instead of flashing the mini
+    // error screen for one frame.
     return;
   }
   DrawStatus(ctx, "VIBE TV", "Theme missing", "Install Theme");

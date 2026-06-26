@@ -18,7 +18,6 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 func TestReleaseStateRoundTrip(t *testing.T) {
@@ -426,7 +425,6 @@ func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
 	imageBody := "firmware image"
 	imageSHA := sha256String(imageBody)
 	uploaded := false
-	pairCalls := 0
 	firmwareVersion := "1.0.0"
 	serverURL := ""
 
@@ -449,15 +447,7 @@ func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
 }`))
 		case "/firmware.bin":
 			_, _ = w.Write([]byte(imageBody))
-		case "/api/pair":
-			pairCalls++
-			_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token"}`))
 		case "/update/firmware":
-			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
-				t.Errorf("expected paired device token header, got %q", got)
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
 			if err := r.ParseMultipartForm(1 << 20); err != nil {
 				t.Errorf("parse multipart: %v", err)
 				w.WriteHeader(http.StatusBadRequest)
@@ -496,22 +486,11 @@ func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
 	if !uploaded {
 		t.Fatal("expected OTA upload")
 	}
-	if pairCalls != 1 {
-		t.Fatalf("expected one pairing call, got %d", pairCalls)
-	}
-	cfg, err := runtimeconfig.Load(os.Getenv("HOME"))
-	if err != nil {
-		t.Fatalf("load runtime config: %v", err)
-	}
-	if cfg.DeviceTarget != server.URL || cfg.DeviceToken != "pair-token" {
-		t.Fatalf("expected paired runtime config, got %+v", cfg)
-	}
 	for _, want := range []string{
 		"Checking device...",
 		"Device: esp8266-smalltv-st7789 firmware 1.0.0",
 		"Checking firmware...",
 		"Updating firmware: 1.0.0 -> 1.0.1",
-		"Pausing Mac App during firmware update...",
 		"Restarting VibeTV...",
 		"Done: firmware 1.0.1 installed",
 	} {
@@ -523,237 +502,6 @@ func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
 		if strings.Contains(output, noisy) {
 			t.Fatalf("expected quiet update output not to contain %q, got:\n%s", noisy, output)
 		}
-	}
-}
-
-func TestRunInstallUpdateUsesStoredDeviceTokenForOTA(t *testing.T) {
-	previousHTTPClient := releaseHTTPClient
-	t.Cleanup(func() {
-		releaseHTTPClient = previousHTTPClient
-	})
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
-		t.Fatalf("save runtime config: %v", err)
-	}
-
-	imageBody := "firmware image"
-	imageSHA := sha256String(imageBody)
-	uploaded := false
-	firmwareVersion := "1.0.0"
-	serverURL := ""
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/hello":
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"` + firmwareVersion + `","features":["theme"],"maxFrameBytes":1024}`))
-		case "/manifest.json":
-			_, _ = w.Write([]byte(`{
-  "schemaVersion": 1,
-  "release": "v1.0.1",
-  "artifacts": [{
-    "firmwareEnv": "esp8266_smalltv_st7789",
-    "board": "esp8266-smalltv-st7789",
-    "firmwareVersion": "1.0.1",
-    "asset": "firmware.bin",
-    "firmwareUrl": "` + serverURL + `/firmware.bin",
-    "sha256": "` + imageSHA + `"
-  }]
-}`))
-		case "/firmware.bin":
-			_, _ = w.Write([]byte(imageBody))
-		case "/update/firmware":
-			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
-				t.Errorf("expected stored device token header, got %q", got)
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-			if err := r.ParseMultipartForm(1 << 20); err != nil {
-				t.Errorf("parse multipart: %v", err)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			uploaded = true
-			firmwareVersion = "1.0.1"
-			_, _ = w.Write([]byte("ok"))
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer server.Close()
-	serverURL = server.URL
-	releaseHTTPClient = server.Client()
-
-	if err := runInstallUpdate([]string{"--target", server.URL, "--manifest-url", server.URL + "/manifest.json"}); err != nil {
-		t.Fatalf("install update: %v", err)
-	}
-	if !uploaded {
-		t.Fatal("expected OTA upload")
-	}
-}
-
-func TestRunInstallUpdateRepairsStaleDeviceTokenOnUnauthorizedOTA(t *testing.T) {
-	previousHTTPClient := releaseHTTPClient
-	previousUpload := uploadFirmwareOTAFn
-	t.Cleanup(func() {
-		releaseHTTPClient = previousHTTPClient
-		uploadFirmwareOTAFn = previousUpload
-	})
-
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "stale-token"}); err != nil {
-		t.Fatalf("save runtime config: %v", err)
-	}
-
-	imageBody := "firmware image"
-	imageSHA := sha256String(imageBody)
-	firmwareVersion := "1.0.0"
-	serverURL := ""
-	pairCalls := 0
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/hello":
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"` + firmwareVersion + `","features":["theme"],"maxFrameBytes":1024}`))
-		case "/manifest.json":
-			_, _ = w.Write([]byte(`{
-  "schemaVersion": 1,
-  "release": "v1.0.1",
-  "artifacts": [{
-    "firmwareEnv": "esp8266_smalltv_st7789",
-    "board": "esp8266-smalltv-st7789",
-    "firmwareVersion": "1.0.1",
-    "asset": "firmware.bin",
-    "firmwareUrl": "` + serverURL + `/firmware.bin",
-    "sha256": "` + imageSHA + `"
-  }]
-}`))
-		case "/firmware.bin":
-			_, _ = w.Write([]byte(imageBody))
-		case "/api/pair":
-			pairCalls++
-			_, _ = w.Write([]byte(`{"ok":true,"token":"fresh-token"}`))
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer server.Close()
-	serverURL = server.URL
-	releaseHTTPClient = server.Client()
-
-	var uploadTokens []string
-	uploadFirmwareOTAFn = func(_ context.Context, _ string, _ string, token string) error {
-		uploadTokens = append(uploadTokens, token)
-		if token == "stale-token" {
-			return errors.New(`POST /update/firmware.raw returned 401 Unauthorized body="pairing token required"`)
-		}
-		if token != "fresh-token" {
-			t.Fatalf("unexpected upload token %q", token)
-		}
-		firmwareVersion = "1.0.1"
-		return nil
-	}
-
-	if err := runInstallUpdate([]string{"--target", server.URL, "--manifest-url", server.URL + "/manifest.json"}); err != nil {
-		t.Fatalf("install update: %v", err)
-	}
-	if pairCalls != 1 {
-		t.Fatalf("expected one repair pairing call, got %d", pairCalls)
-	}
-	if strings.Join(uploadTokens, ",") != "stale-token,fresh-token" {
-		t.Fatalf("unexpected upload token sequence %v", uploadTokens)
-	}
-	cfg, err := runtimeconfig.Load(home)
-	if err != nil {
-		t.Fatalf("load runtime config: %v", err)
-	}
-	if cfg.DeviceToken != "fresh-token" || cfg.DeviceTarget != server.URL {
-		t.Fatalf("expected repaired runtime config, got %+v", cfg)
-	}
-}
-
-func TestRunInstallUpdatePausesLaunchAgentDuringOTAAndRestarts(t *testing.T) {
-	previousHTTPClient := releaseHTTPClient
-	previousUpload := uploadFirmwareOTAFn
-	previousStop := upgradeStopLaunchAgentFn
-	previousRestart := upgradeRestartLaunchAgentFn
-	t.Cleanup(func() {
-		releaseHTTPClient = previousHTTPClient
-		uploadFirmwareOTAFn = previousUpload
-		upgradeStopLaunchAgentFn = previousStop
-		upgradeRestartLaunchAgentFn = previousRestart
-	})
-
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
-		t.Fatalf("save runtime config: %v", err)
-	}
-
-	imageBody := "firmware image"
-	imageSHA := sha256String(imageBody)
-	firmwareVersion := "1.0.0"
-	serverURL := ""
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/hello":
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"` + firmwareVersion + `","features":["theme"],"maxFrameBytes":1024}`))
-		case "/manifest.json":
-			_, _ = w.Write([]byte(`{
-  "schemaVersion": 1,
-  "release": "v1.0.1",
-  "artifacts": [{
-    "firmwareEnv": "esp8266_smalltv_st7789",
-    "board": "esp8266-smalltv-st7789",
-    "firmwareVersion": "1.0.1",
-    "asset": "firmware.bin",
-    "firmwareUrl": "` + serverURL + `/firmware.bin",
-    "sha256": "` + imageSHA + `"
-  }]
-}`))
-		case "/firmware.bin":
-			_, _ = w.Write([]byte(imageBody))
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer server.Close()
-	serverURL = server.URL
-	releaseHTTPClient = server.Client()
-
-	stopCalls := 0
-	restartCalls := 0
-	upgradeStopLaunchAgentFn = func() {
-		stopCalls++
-	}
-	upgradeRestartLaunchAgentFn = func(gotHome string) error {
-		restartCalls++
-		if gotHome != home {
-			t.Fatalf("unexpected restart home %q", gotHome)
-		}
-		return nil
-	}
-	uploadFirmwareOTAFn = func(_ context.Context, _ string, _ string, token string) error {
-		if stopCalls != 1 {
-			t.Fatalf("expected launch agent to be stopped before OTA, got %d stop calls", stopCalls)
-		}
-		if token != "pair-token" {
-			t.Fatalf("unexpected token %q", token)
-		}
-		firmwareVersion = "1.0.1"
-		return nil
-	}
-
-	if err := runInstallUpdate([]string{"--target", server.URL, "--manifest-url", server.URL + "/manifest.json"}); err != nil {
-		t.Fatalf("install update: %v", err)
-	}
-	if stopCalls != 1 {
-		t.Fatalf("expected one stop call, got %d", stopCalls)
-	}
-	if restartCalls != 1 {
-		t.Fatalf("expected one restart call, got %d", restartCalls)
 	}
 }
 

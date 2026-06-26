@@ -16,7 +16,6 @@ health_path="/health"
 hello_path="/hello"
 assets_path="/assets"
 frame_path="/frame"
-device_token=""
 manufacturer_field="firmware"
 firmware_field="firmware"
 filesystem_field="filesystem"
@@ -88,8 +87,6 @@ OTA endpoint options:
                         VibeTV filesystem endpoint. Default: /update/filesystem.
   --assets-path PATH_OR_URL
                         VibeTV assets inspection endpoint. Default: /assets.
-  --device-token TOKEN  Pairing token for protected VibeTV write endpoints.
-                        Sent as X-VibeTV-Token and masked in logs.
   --manufacturer-field NAME
                         Multipart field for manufacturer firmware. Default: firmware.
   --firmware-field NAME
@@ -196,14 +193,6 @@ json_escape() {
 
 lower_ascii() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
-}
-
-redact_token() {
-  local value="$1"
-  if [[ -n "$device_token" ]]; then
-    value="${value//$device_token/<redacted-token>}"
-  fi
-  printf '%s\n' "$value"
 }
 
 build_theme_assets_json() {
@@ -460,21 +449,10 @@ check_assets() {
     return 0
   fi
 
-  local fetch_attempt fetch_ok=0
-  for fetch_attempt in 1 2 3; do
-    if curl_get "$url" >"$body_file"; then
-      fetch_ok=1
-      break
-    fi
-    if [[ "$fetch_attempt" != "3" ]]; then
-      log "assets: retry ${fetch_attempt}/3 after transient read failure"
-      sleep 2
-    fi
-  done
-  if [[ "$fetch_ok" != "1" ]]; then
+  curl_get "$url" >"$body_file" || {
     rm -f "$body_file"
     die "asset verification request failed"
-  fi
+  }
   if [[ "$require_runtime_assets" != "1" ]]; then
     log "assets endpoint:"
     sed 's/^/  /' "$body_file"
@@ -554,29 +532,20 @@ upload_multipart() {
   local timeout_secs="${5:-$upload_timeout_secs}"
   local response_file="/tmp/vibetv-provision-upload-response.$$"
   local error_file="/tmp/vibetv-provision-upload-error.$$"
-  local curl_args=(curl -fsS --connect-timeout 5 --max-time "$timeout_secs")
   [[ -f "$file" ]] || die "${label} file not found: $file"
   current_stage="upload: ${label}"
   last_upload_result=""
-  if [[ -n "$device_token" ]]; then
-    curl_args+=(-H "X-VibeTV-Token:${device_token}")
-  fi
 
-  log "upload: ${label} -> $(redact_token "$url") field=${field} file=${file}"
+  log "upload: ${label} -> ${url} field=${field} file=${file}"
   if [[ "$dry_run" == "1" ]]; then
-    if [[ -n "$device_token" ]]; then
-      printf 'dry-run: curl -fsS --connect-timeout 5 --max-time %q -H %q -X POST -F %q %q\n' \
-        "$timeout_secs" "X-VibeTV-Token:<redacted-token>" "${field}=@${file}" "$(redact_token "$url")"
-    else
-      printf 'dry-run: curl -fsS --connect-timeout 5 --max-time %q -X POST -F %q %q\n' \
-        "$timeout_secs" "${field}=@${file}" "$url"
-    fi
+    printf 'dry-run: curl -fsS --connect-timeout 5 --max-time %q -X POST -F %q %q\n' \
+      "$timeout_secs" "${field}=@${file}" "$url"
     last_upload_result="dry-run"
     return 0
   fi
 
   set +e
-  "${curl_args[@]}" \
+  curl -fsS --connect-timeout 5 --max-time "$timeout_secs" \
     -X POST -F "${field}=@${file};filename=$(basename "$file")" "$url" \
     >"$response_file" 2>"$error_file"
   local status=$?
@@ -647,25 +616,17 @@ send_frame() {
   local url="$2"
   local payload="$3"
   local response_file="/tmp/vibetv-provision-frame.$$"
-  local curl_args=(curl -fsS --connect-timeout 5 --max-time "$curl_timeout_secs" -H "Content-Type: application/json")
   local attempt
   log "smoke: sending ${label} frame"
-  if [[ -n "$device_token" ]]; then
-    curl_args+=(-H "X-VibeTV-Token:${device_token}")
-  fi
   if [[ "$dry_run" == "1" ]]; then
-    if [[ -n "$device_token" ]]; then
-      run_or_print curl -fsS --connect-timeout 5 --max-time "$curl_timeout_secs" \
-        -H "Content-Type: application/json" -H "X-VibeTV-Token:<redacted-token>" --data-binary "$payload" "$(redact_token "$url")"
-    else
-      run_or_print curl -fsS --connect-timeout 5 --max-time "$curl_timeout_secs" \
-        -H "Content-Type: application/json" --data-binary "$payload" "$url"
-    fi
+    run_or_print curl -fsS --connect-timeout 5 --max-time "$curl_timeout_secs" \
+      -H "Content-Type: application/json" --data-binary "$payload" "$url"
     return 0
   fi
 
   for attempt in 1 2 3; do
-    if "${curl_args[@]}" --data-binary "$payload" "$url" >"$response_file"; then
+    if curl -fsS --connect-timeout 5 --max-time "$curl_timeout_secs" \
+      -H "Content-Type: application/json" --data-binary "$payload" "$url" >"$response_file"; then
       if [[ "$(tr -d '\r\n' <"$response_file")" == "ok" ]]; then
         rm -f "$response_file"
         log "smoke: ${label} accepted"
@@ -709,7 +670,7 @@ check_post_smoke_gif_state() {
   current_stage="post-smoke GIF state"
   for attempt in 1 2 3 4 5 6 7 8; do
     if curl_get "$health_url" >"$body_file"; then
-      if jq -e '.display.activeTheme == "mini-classic" and .display.themeSpec.active == true and .display.themeSpec.path == "/themes/u/mini-cl-1-410a37.json" and .display.themeSpec.renderOk == true and .display.gif.activePath == "/themes/mini/mini.gif" and .display.gif.filePresent == true and .display.gif.decoderOpen == true and .display.gif.lastError == null' "$body_file" >/dev/null 2>&1; then
+      if jq -e '.display.activeTheme == "mini-classic" and .display.themeSpec.active == true and .display.themeSpec.id == "mini-classic" and .display.themeSpec.renderOk == true and .display.gif.activePath == "/themes/mini/mini.gif" and .display.gif.filePresent == true and .display.gif.decoderOpen == true and .display.gif.lastError == null' "$body_file" >/dev/null 2>&1; then
         log "smoke: mini-classic ThemeSpec GIF decoder healthy"
         rm -f "$body_file"
         return 0
@@ -840,10 +801,6 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     --assets-path)
       assets_path="${2:-}"
-      shift 2
-      ;;
-    --device-token)
-      device_token="${2:-}"
       shift 2
       ;;
     --frame-path)

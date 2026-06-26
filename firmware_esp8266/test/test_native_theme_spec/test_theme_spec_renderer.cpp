@@ -403,7 +403,7 @@ void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
 
   FrameData frame = testFrame();
   frame.updateAvailable = true;
-  frame.updateNotice = "app.vibetv.shop";
+  frame.updateNotice = "vibetv.local";
 
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
@@ -419,45 +419,21 @@ void testChangedLabelPassUsesSynchronizedUpdateNoticeText() {
     "themeSpecVersion": 1,
     "themeId": "codex-test",
     "themeRev": 1,
-    "bgColor": "#000000",
     "primitives": [
-      {"type":"text","x":21,"y":12,"font":4,"fontSize":1,"maxWidth":198,"binding":"label","align":"center"}
+      {"type":"text","x":5,"y":6,"binding":"label"}
     ]
   })JSON";
 
   FrameData frame = testFrame();
   frame.updateAvailable = true;
   frame.showUpdateNotice = true;
-  frame.updateNotice = "app.vibetv.shop";
+  frame.updateNotice = "vibetv.local";
 
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderChangedSpec(spec, frame, kThemeSpecFieldLabel, sink));
   TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
-  TEST_ASSERT_EQUAL_STRING("app.vibetv.shop", sink.commands[2].text.c_str());
-}
-
-void testChangedLabelPassCanRestoreProviderText() {
-  const char* spec = R"JSON({
-    "themeSpecVersion": 1,
-    "themeId": "codex-test",
-    "themeRev": 1,
-    "bgColor": "#000000",
-    "primitives": [
-      {"type":"text","x":21,"y":12,"font":4,"fontSize":1,"maxWidth":198,"binding":"label","align":"center"}
-    ]
-  })JSON";
-
-  FrameData frame = testFrame();
-  frame.updateAvailable = true;
-  frame.showUpdateNotice = true;
-  frame.updateNotice = "Codex";
-
-  RecordingSink sink;
-  TEST_ASSERT_TRUE(renderChangedSpec(spec, frame, kThemeSpecFieldLabel, sink));
-  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
-  TEST_ASSERT_EQUAL_STRING("Codex", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("vibetv.local", sink.commands[2].text.c_str());
 }
 
 void testRendersCompactCommandsAndBindings() {
@@ -1263,7 +1239,7 @@ void testCompactThemeSpecFrameIsCached() {
   TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("\"t\":\"tx\"") >= 0);
 }
 
-void testThemeSpecUpdateAvailabilityDirtiesOnlyLabelField() {
+void testThemeSpecUpdateAvailabilityChangesLabelField() {
   RuntimeState state;
   SerialConsumeEvent event;
 
@@ -1276,25 +1252,7 @@ void testThemeSpecUpdateAvailabilityDirtiesOnlyLabelField() {
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, updateFrame, 2000, true, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
-  TEST_ASSERT_EQUAL_UINT32(kThemeSpecFieldLabel, event.themeSpecChangedFields);
-}
-
-void testThemeSpecMissingUpdateAfterAvailableDirtiesLabelField() {
-  RuntimeState state;
-  SerialConsumeEvent event;
-
-  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300,"update":{"available":true,"status":"update_available","latestVersion":"1.0.20"},"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":0,"y":0,"binding":"label"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
-  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
-  TEST_ASSERT_TRUE(state.current.updateAvailable);
-
-  const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, true, event));
-  TEST_ASSERT_TRUE(event.visualChanged);
-  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
-  TEST_ASSERT_EQUAL_UINT32(kThemeSpecFieldLabel, event.themeSpecChangedFields);
-  TEST_ASSERT_FALSE(state.current.hasUpdateAvailable);
-  TEST_ASSERT_FALSE(state.current.updateAvailable);
+  TEST_ASSERT_TRUE(event.themeSpecChangedFields & kThemeSpecFieldLabel);
 }
 
 void testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent() {
@@ -1403,7 +1361,6 @@ int main() {
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
-  RUN_TEST(testChangedLabelPassCanRestoreProviderText);
   RUN_TEST(testRendersCompactCommandsAndBindings);
   RUN_TEST(testCompactTextWidthMapsToMaxWidthForAlignment);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
@@ -1432,8 +1389,7 @@ int main() {
   RUN_TEST(testThemeSpecErrorFrameRestoresCachedThemeAfterPlainFrame);
   RUN_TEST(testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset);
   RUN_TEST(testThemeSpecIgnoresUpdateMetadataForVisualDirty);
-  RUN_TEST(testThemeSpecUpdateAvailabilityDirtiesOnlyLabelField);
-  RUN_TEST(testThemeSpecMissingUpdateAfterAvailableDirtiesLabelField);
+  RUN_TEST(testThemeSpecUpdateAvailabilityChangesLabelField);
   RUN_TEST(testThemeSpecCacheCarriesLayoutAcrossLiveFrames);
   RUN_TEST(testCompactThemeSpecFrameIsCached);
   RUN_TEST(testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent);

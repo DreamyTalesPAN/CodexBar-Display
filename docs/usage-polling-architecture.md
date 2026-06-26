@@ -22,7 +22,7 @@ Primary commands used by companion:
 
 ### 1) Daemon cadence
 
-- LaunchAgent runs `codexbar-display daemon --interval 30s` for WiFi devices.
+- LaunchAgent runs `codexbar-display daemon --interval 2s`.
 - Daemon starts a background collector (`mode=fetch-all`).
 - Render cycle reads collector snapshots and sends one serial frame to device.
 
