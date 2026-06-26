@@ -47,7 +47,7 @@ Options:
   --theme-id ID          Public free theme used for deep-link checks. Default: synthwave.
   --skip-local           Skip local app/UI tests.
   --skip-live            Skip hosted app and Shopify catalog checks.
-  --skip-release         Skip release package checks.
+  --skip-release         Skip release asset checks.
   --automated-only       Do not require manual Clean-Mac or hardware evidence.
                          Release checks still run; combine with --skip-release
                          for no-release feature-branch development checks.
@@ -55,7 +55,7 @@ Options:
   --hardware-tested      Assert a user-approved hardware write test passed.
   -h, --help             Show this help.
 
-This script never merges, tags, releases, installs packages, starts services,
+This script never merges, tags, releases, installs apps, starts services,
 discovers devices, or writes to VibeTV hardware.
 EOF
 }
@@ -238,16 +238,6 @@ run_local_checks() {
     "${ROOT}/scripts/test-control-center-companion-customer-readiness.sh"
   run_step "Control Center release workflow test" \
     "${ROOT}/scripts/test-control-center-release-workflow.sh"
-  run_step "Control Center candidate package workflow test" \
-    "${ROOT}/scripts/test-control-center-candidate-pkg-workflow.sh"
-  run_step "Control Center candidate package artifact checker test" \
-    "${ROOT}/scripts/test-control-center-candidate-pkg-artifact.sh"
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    run_step "Mac App package smoke test" \
-      "${ROOT}/scripts/test-control-center-companion-pkg-build.sh"
-  else
-    log "SKIP: Mac App package smoke test requires macOS"
-  fi
   run_step "Terminal Mac setup installer tests" \
     "${ROOT}/scripts/test-control-center-companion-legacy-installer.sh"
 }
@@ -270,7 +260,7 @@ run_live_checks() {
 run_release_checks() {
   local tag
   [[ "$SKIP_RELEASE" -eq 0 ]] || {
-    log "SKIP: release package checks"
+    log "SKIP: release asset checks"
     return
   }
 

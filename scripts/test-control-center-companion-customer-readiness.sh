@@ -133,39 +133,23 @@ write_complete_release_json() {
       "browser_download_url": "https://downloads.example.test/install-control-center-companion.sh"
     },
     {
-      "name": "VibeTV-Companion-API-arm64-v1.2.3.pkg",
-      "browser_download_url": "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.2.3.pkg"
+      "name": "codexbar-display-darwin-arm64-v1.2.3",
+      "browser_download_url": "https://downloads.example.test/codexbar-display-darwin-arm64-v1.2.3"
     },
     {
-      "name": "VibeTV-Companion-API-amd64-v1.2.3.pkg",
-      "browser_download_url": "https://downloads.example.test/VibeTV-Companion-API-amd64-v1.2.3.pkg"
+      "name": "codexbar-display-darwin-amd64-v1.2.3",
+      "browser_download_url": "https://downloads.example.test/codexbar-display-darwin-amd64-v1.2.3"
+    },
+    {
+      "name": "checksums-v1.2.3.txt",
+      "browser_download_url": "https://downloads.example.test/checksums-v1.2.3.txt"
     }
   ]
 }
 JSON
 }
 
-write_package_only_release_json() {
-  local path
-  path="$1"
-  cat > "$path" <<'JSON'
-{
-  "tag_name": "v1.2.3",
-  "assets": [
-    {
-      "name": "VibeTV-Companion-API-arm64-v1.2.3.pkg",
-      "browser_download_url": "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.2.3.pkg"
-    },
-    {
-      "name": "VibeTV-Companion-API-amd64-v1.2.3.pkg",
-      "browser_download_url": "https://downloads.example.test/VibeTV-Companion-API-amd64-v1.2.3.pkg"
-    }
-  ]
-}
-JSON
-}
-
-write_missing_package_release_json() {
+write_release_with_package_json() {
   local path
   path="$1"
   cat > "$path" <<'JSON'
@@ -177,8 +161,44 @@ write_missing_package_release_json() {
       "browser_download_url": "https://downloads.example.test/install-control-center-companion.sh"
     },
     {
+      "name": "codexbar-display-darwin-arm64-v1.2.3",
+      "browser_download_url": "https://downloads.example.test/codexbar-display-darwin-arm64-v1.2.3"
+    },
+    {
+      "name": "codexbar-display-darwin-amd64-v1.2.3",
+      "browser_download_url": "https://downloads.example.test/codexbar-display-darwin-amd64-v1.2.3"
+    },
+    {
+      "name": "checksums-v1.2.3.txt",
+      "browser_download_url": "https://downloads.example.test/checksums-v1.2.3.txt"
+    },
+    {
       "name": "VibeTV-Companion-API-arm64-v1.2.3.pkg",
       "browser_download_url": "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.2.3.pkg"
+    }
+  ]
+}
+JSON
+}
+
+write_missing_binary_release_json() {
+  local path
+  path="$1"
+  cat > "$path" <<'JSON'
+{
+  "tag_name": "v1.2.3",
+  "assets": [
+    {
+      "name": "install-control-center-companion.sh",
+      "browser_download_url": "https://downloads.example.test/install-control-center-companion.sh"
+    },
+    {
+      "name": "codexbar-display-darwin-arm64-v1.2.3",
+      "browser_download_url": "https://downloads.example.test/codexbar-display-darwin-arm64-v1.2.3"
+    },
+    {
+      "name": "checksums-v1.2.3.txt",
+      "browser_download_url": "https://downloads.example.test/checksums-v1.2.3.txt"
     }
   ]
 }
@@ -199,32 +219,14 @@ run_expect_release_assets_success() {
     die "expected complete release assets check to pass"
   }
 
-  assert_contains "$output" "release assets ok for v1.2.3; support script available"
+  assert_contains "$output" "release assets ok for v1.2.3; terminal setup assets available"
   assert_contains "$output" "customer-readiness checks passed"
 }
 
-run_expect_release_package_only_success() {
-  local output release_json
-  release_json="${TMP_WORK_DIR}/package-only-release.json"
-  write_package_only_release_json "$release_json"
-
-  output="$(
-    "$READINESS" \
-      --release-json "$release_json" \
-      2>&1
-  )" || {
-    printf '%s\n' "$output" >&2
-    die "expected package-only release assets check to pass"
-  }
-
-  assert_contains "$output" "release assets ok for v1.2.3; support script omitted"
-  assert_contains "$output" "customer-readiness checks passed"
-}
-
-run_expect_release_missing_package_failure() {
+run_expect_release_with_package_failure() {
   local output release_json status
-  release_json="${TMP_WORK_DIR}/missing-package-release.json"
-  write_missing_package_release_json "$release_json"
+  release_json="${TMP_WORK_DIR}/release-with-package.json"
+  write_release_with_package_json "$release_json"
 
   set +e
   output="$(
@@ -235,32 +237,49 @@ run_expect_release_missing_package_failure() {
   status=$?
   set -e
 
-  [[ "$status" -ne 0 ]] || die "expected missing release package asset check to fail"
-  assert_contains "$output" "missing release package assets: VibeTV-Companion-API-amd64-v1.2.3.pkg"
+  [[ "$status" -ne 0 ]] || die "expected release with package asset check to fail"
+  assert_contains "$output" "unexpected release package assets: VibeTV-Companion-API-arm64-v1.2.3.pkg"
 }
 
-run_expect_app_release_package_only_success() {
+run_expect_release_missing_binary_failure() {
+  local output release_json status
+  release_json="${TMP_WORK_DIR}/missing-binary-release.json"
+  write_missing_binary_release_json "$release_json"
+
+  set +e
+  output="$(
+    "$READINESS" \
+      --release-json "$release_json" \
+      2>&1
+  )"
+  status=$?
+  set -e
+
+  [[ "$status" -ne 0 ]] || die "expected missing release binary asset check to fail"
+  assert_contains "$output" "missing release assets: codexbar-display-darwin-amd64-v1.2.3"
+}
+
+run_expect_app_release_success() {
   local output release_json
-  release_json="${TMP_WORK_DIR}/package-only-release-for-app.json"
-  write_package_only_release_json "$release_json"
+  release_json="${TMP_WORK_DIR}/complete-release-for-app.json"
+  write_complete_release_json "$release_json"
 
   output="$(
     CONTROL_CENTER_READINESS_CURL="$FAKE_CURL" \
-      FAKE_CURL_MODE="app-release-package-only" \
       "$READINESS" \
         --release-json "$release_json" \
         --app-url https://app.example.test \
         2>&1
   )" || {
     printf '%s\n' "$output" >&2
-    die "expected package-only hosted app release API check to pass"
+    die "expected hosted app release API check to pass"
   }
 
   assert_contains "$output" "hosted app Companion release API ok for v1.2.3"
   assert_contains "$output" "customer-readiness checks passed"
 }
 
-run_expect_app_release_missing_package_failure() {
+run_expect_app_release_package_urls_failure() {
   local output release_json status
   release_json="${TMP_WORK_DIR}/complete-release-for-app.json"
   write_complete_release_json "$release_json"
@@ -268,7 +287,7 @@ run_expect_app_release_missing_package_failure() {
   set +e
   output="$(
     CONTROL_CENTER_READINESS_CURL="$FAKE_CURL" \
-      FAKE_CURL_MODE="app-release-missing-package" \
+      FAKE_CURL_MODE="app-release-package-urls" \
       "$READINESS" \
         --release-json "$release_json" \
         --app-url https://app.example.test \
@@ -277,9 +296,8 @@ run_expect_app_release_missing_package_failure() {
   status=$?
   set -e
 
-  [[ "$status" -ne 0 ]] || die "expected hosted app missing package URL check to fail"
-  assert_contains "$output" "packageDownloadUrls.macosAmd64 missing"
-  assert_contains "$output" "installerDownloadUrl must stay hidden from the customer API"
+  [[ "$status" -ne 0 ]] || die "expected hosted app package URL check to fail"
+  assert_contains "$output" "packageDownloadUrls must stay hidden from the customer API"
 }
 
 run_expect_local_companion_success() {
@@ -317,177 +335,6 @@ run_expect_local_companion_pna_failure() {
   [[ "$status" -ne 0 ]] || die "expected local Companion PNA preflight check to fail"
   assert_contains "$output" "local Companion hosted-app preflight missing"
   assert_contains "$output" "Access-Control-Allow-Private-Network"
-}
-
-write_installed_package_fixture() {
-  local root bin_dir plist_dir fake_bin_dir
-  root="$1"
-  bin_dir="${root}/Library/Application Support/VibeTV/bin"
-  plist_dir="${root}/Library/LaunchAgents"
-  fake_bin_dir="${root}/fake-bin"
-  mkdir -p "$bin_dir" "$plist_dir" "$fake_bin_dir" "${root}/home/Library/LaunchAgents"
-  printf '#!/usr/bin/env bash\nexit 0\n' > "${bin_dir}/codexbar-display"
-  chmod +x "${bin_dir}/codexbar-display"
-  write_installed_package_plist "${plist_dir}/com.codexbar-display.companion-api.plist" "${bin_dir}/codexbar-display"
-
-  cat > "${fake_bin_dir}/uname" <<'EOF'
-#!/usr/bin/env bash
-printf 'Darwin\n'
-EOF
-  cat > "${fake_bin_dir}/pkgutil" <<'EOF'
-#!/usr/bin/env bash
-if [[ "${1:-}" == "--pkg-info" ]]; then
-  cat <<'INFO'
-package-id: shop.vibetv.companion-api
-version: 1.2.3
-volume: /
-location: /
-install-time: 1780000000
-INFO
-  exit 0
-fi
-exit 1
-EOF
-  cat > "${fake_bin_dir}/id" <<'EOF'
-#!/usr/bin/env bash
-if [[ "${1:-}" == "-u" ]]; then
-  printf '501\n'
-  exit 0
-fi
-command id "$@"
-EOF
-  cat > "${fake_bin_dir}/launchctl" <<EOF
-#!/usr/bin/env bash
-if [[ "\${1:-}" == "print" ]]; then
-  printf 'program = %s\n' "${bin_dir}/codexbar-display"
-  exit 0
-fi
-exit 1
-EOF
-  chmod +x "${fake_bin_dir}/uname" "${fake_bin_dir}/pkgutil" "${fake_bin_dir}/id" "${fake_bin_dir}/launchctl"
-}
-
-write_installed_package_plist() {
-  local plist bin
-  plist="$1"
-  bin="$2"
-  cat > "$plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-  <dict>
-    <key>Label</key>
-    <string>com.codexbar-display.companion-api</string>
-    <key>ProgramArguments</key>
-    <array>
-      <string>${bin}</string>
-      <string>api</string>
-      <string>--addr</string>
-      <string>127.0.0.1:47832</string>
-    </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-      <key>PATH</key>
-      <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-  </dict>
-</plist>
-EOF
-}
-
-run_installed_package_check() {
-  local root output status
-  root="$1"
-  shift
-  set +e
-  output="$(
-    PATH="${root}/fake-bin:${PATH}" \
-      HOME="${root}/home" \
-      VIBETV_READINESS_INSTALLED_BIN="${root}/Library/Application Support/VibeTV/bin/codexbar-display" \
-      VIBETV_READINESS_INSTALLED_PLIST="${root}/Library/LaunchAgents/com.codexbar-display.companion-api.plist" \
-      "$READINESS" \
-        --installed-package \
-        --expect-version 1.2.3 \
-        "$@" \
-        2>&1
-  )"
-  status=$?
-  set -e
-  printf '%s\n' "$output"
-  return "$status"
-}
-
-run_expect_installed_package_success() {
-  local root output
-  root="${TMP_WORK_DIR}/installed-package-ok"
-  write_installed_package_fixture "$root"
-
-  output="$(run_installed_package_check "$root")" || {
-    printf '%s\n' "$output" >&2
-    die "expected installed package check to pass"
-  }
-  assert_contains "$output" "installed package ok: version 1.2.3"
-  assert_contains "$output" "customer-readiness checks passed"
-}
-
-run_expect_installed_package_dev_origin_failure() {
-  local root output status plist
-  root="${TMP_WORK_DIR}/installed-package-dev-origin"
-  write_installed_package_fixture "$root"
-  plist="${root}/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
-  python3 - "$plist" <<'PY'
-import plistlib
-import sys
-
-path = sys.argv[1]
-with open(path, "rb") as f:
-    payload = plistlib.load(f)
-payload["ProgramArguments"].extend(["--dev-origin", "http://localhost:3000"])
-with open(path, "wb") as f:
-    plistlib.dump(payload, f)
-PY
-
-  set +e
-  output="$(run_installed_package_check "$root")"
-  status=$?
-  set -e
-  [[ "$status" -ne 0 ]] || die "expected installed package dev-origin check to fail"
-  assert_contains "$output" "customer package LaunchAgent must use production origin only"
-}
-
-run_expect_installed_package_wrong_binary_failure() {
-  local root output status plist
-  root="${TMP_WORK_DIR}/installed-package-wrong-bin"
-  write_installed_package_fixture "$root"
-  plist="${root}/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
-  write_installed_package_plist "$plist" "${root}/home/Library/Application Support/codexbar-display/bin/codexbar-display"
-
-  set +e
-  output="$(run_installed_package_check "$root")"
-  status=$?
-  set -e
-  [[ "$status" -ne 0 ]] || die "expected installed package wrong binary check to fail"
-  assert_contains "$output" "installed LaunchAgent plist mismatch"
-  assert_contains "$output" "ProgramArguments prefix"
-}
-
-run_expect_installed_package_legacy_plist_failure() {
-  local root output status legacy
-  root="${TMP_WORK_DIR}/installed-package-legacy-plist"
-  write_installed_package_fixture "$root"
-  legacy="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
-  printf '<plist version="1.0"><dict></dict></plist>\n' > "$legacy"
-
-  set +e
-  output="$(run_installed_package_check "$root")"
-  status=$?
-  set -e
-  [[ "$status" -ne 0 ]] || die "expected installed package legacy plist check to fail"
-  assert_contains "$output" "legacy script LaunchAgent still exists"
 }
 
 FAKE_CURL="${TMP_WORK_DIR}/fake-curl"
@@ -555,7 +402,7 @@ case "$url" in
 JSON
     ;;
   https://app.example.test/api/companion/latest)
-    if [[ "$mode" == "app-release-package-only" ]]; then
+    if [[ "$mode" == "app-release-package-urls" ]]; then
       cat <<'JSON'
 {
   "status": "available",
@@ -563,19 +410,6 @@ JSON
   "packageDownloadUrls": {
     "macosArm64": "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.2.3.pkg",
     "macosAmd64": "https://downloads.example.test/VibeTV-Companion-API-amd64-v1.2.3.pkg"
-  }
-}
-JSON
-      exit 0
-    fi
-    if [[ "$mode" == "app-release-missing-package" ]]; then
-      cat <<'JSON'
-{
-  "status": "available",
-  "latestVersion": "1.2.3",
-  "installerDownloadUrl": "https://downloads.example.test/install-control-center-companion.sh",
-  "packageDownloadUrls": {
-    "macosArm64": "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.2.3.pkg"
   }
 }
 JSON
@@ -584,11 +418,7 @@ JSON
     cat <<'JSON'
 {
   "status": "available",
-  "latestVersion": "1.2.3",
-  "packageDownloadUrls": {
-    "macosArm64": "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.2.3.pkg",
-    "macosAmd64": "https://downloads.example.test/VibeTV-Companion-API-amd64-v1.2.3.pkg"
-  }
+  "latestVersion": "1.2.3"
 }
 JSON
     ;;
@@ -692,15 +522,11 @@ run_expect_local_url_guard_failure
 run_expect_missing_free_pack_url_failure
 run_expect_invalid_free_pack_url_failure
 run_expect_release_assets_success
-run_expect_release_package_only_success
-run_expect_release_missing_package_failure
-run_expect_app_release_package_only_success
-run_expect_app_release_missing_package_failure
+run_expect_release_with_package_failure
+run_expect_release_missing_binary_failure
+run_expect_app_release_success
+run_expect_app_release_package_urls_failure
 run_expect_local_companion_success
 run_expect_local_companion_pna_failure
-run_expect_installed_package_success
-run_expect_installed_package_dev_origin_failure
-run_expect_installed_package_wrong_binary_failure
-run_expect_installed_package_legacy_plist_failure
 
 printf 'customer-readiness checker tests passed\n'

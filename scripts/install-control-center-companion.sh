@@ -10,7 +10,9 @@ RUN_DIR="$APP_SUPPORT_DIR/run"
 PID_PATH="$RUN_DIR/companion-api.pid"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST_PATH="$PLIST_DIR/com.codexbar-display.companion-api.plist"
-SERVICE="gui/$(id -u)/com.codexbar-display.companion-api"
+SERVICE_LABEL="com.codexbar-display.companion-api"
+SERVICE="gui/$(id -u)/${SERVICE_LABEL}"
+GLOBAL_PLIST_PATH="${VIBETV_COMPANION_GLOBAL_PLIST:-/Library/LaunchAgents/${SERVICE_LABEL}.plist}"
 LOG_OUT="/tmp/codexbar-display-companion-api.out.log"
 LOG_ERR="/tmp/codexbar-display-companion-api.err.log"
 ADDR="${VIBETV_COMPANION_ADDR:-127.0.0.1:47832}"
@@ -30,6 +32,10 @@ fi
 stop_launchagent() {
   if command -v launchctl >/dev/null 2>&1; then
     launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
+    if [[ -f "$GLOBAL_PLIST_PATH" ]]; then
+      launchctl disable "$SERVICE" >/dev/null 2>&1 || true
+      echo "old Mac setup service disabled for this user"
+    fi
   fi
   rm -f "$PLIST_PATH"
 }

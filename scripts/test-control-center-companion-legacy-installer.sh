@@ -158,6 +158,7 @@ run_installer() {
       FAKE_API_LOG="${root}/api.log" \
       FAKE_LAUNCHCTL_LOG="${root}/launchctl.log" \
       FAKE_CURL_LOG="${root}/curl.log" \
+      VIBETV_COMPANION_GLOBAL_PLIST="${root}/global/Library/LaunchAgents/com.codexbar-display.companion-api.plist" \
       "$INSTALLER" "$@" \
       2>&1
   )"
@@ -260,7 +261,44 @@ run_install_refreshes_existing_display_stream() {
   assert_contains "$(cat "$api_log")" "api --addr 127.0.0.1:47832"
 }
 
+run_install_disables_global_legacy_launchagent() {
+  local root output pid_file pid launch_log api_log global_plist
+  root="${TMP_WORK_DIR}/global-legacy"
+  write_fake_commands "${root}/fake-bin"
+  prepare_home "${root}/home"
+  global_plist="${root}/global/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
+  mkdir -p "$(dirname "$global_plist")"
+  printf '<plist version="1.0"><dict></dict></plist>\n' > "$global_plist"
+  : > "${root}/launchctl.log"
+  : > "${root}/curl.log"
+  : > "${root}/api.log"
+
+  output="$(run_installer "$root" --version 9.9.9 --terminal-session)" || {
+    printf '%s\n' "$output" >&2
+    die "expected install with global legacy LaunchAgent to pass"
+  }
+
+  pid_file="${root}/home/Library/Application Support/codexbar-display/run/companion-api.pid"
+  launch_log="$(cat "${root}/launchctl.log")"
+  api_log="${root}/api.log"
+
+  assert_contains "$output" "old Mac setup service disabled for this user"
+  assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
+  assert_contains "$launch_log" "disable gui/$(id -u)/com.codexbar-display.companion-api"
+  [[ -f "$pid_file" ]] || die "install did not write terminal service pid"
+  pid="$(cat "$pid_file")"
+  kill -0 "$pid" >/dev/null 2>&1 || die "terminal-started service is not running"
+  for _ in $(seq 1 20); do
+    if [[ -s "$api_log" ]]; then
+      break
+    fi
+    sleep 0.1
+  done
+  assert_contains "$(cat "$api_log")" "api --addr 127.0.0.1:47832"
+}
+
 run_install_refreshes_existing_display_stream
+run_install_disables_global_legacy_launchagent
 run_restart_uses_terminal_started_service
 run_uninstall_stops_terminal_service_and_legacy_launchagent
 

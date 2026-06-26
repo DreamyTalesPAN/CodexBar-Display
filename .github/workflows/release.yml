@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   build-and-release:
-    needs: build-companion-pkgs
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -141,12 +140,6 @@ jobs:
                   f.write("\n")
           PY
 
-      - name: Download validated Mac App PKGs
-        uses: actions/download-artifact@v4
-        with:
-          name: companion-pkgs
-          path: dist/companion-pkg
-
       - name: Build release checksums
         env:
           VERSION: ${{ github.ref_name }}
@@ -167,68 +160,8 @@ jobs:
             dist/install.sh
             dist/install-control-center-companion.sh
             dist/companion/*
-            dist/companion-pkg/*.pkg
             dist/firmware/*.bin
             dist/firmware/*.bin.gz
             dist/firmware/firmware-manifest.json
             dist/firmware/firmware-manifest-*.json
             dist/checksums-*.txt
-
-  build-companion-pkgs:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: companion/go.mod
-          cache-dependency-path: companion/go.sum
-
-      - name: Build Mac App PKGs
-        env:
-          VERSION: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          VERSION="${VERSION#v}"
-          mkdir -p dist/companion dist/companion-pkg
-
-          cd companion
-          for ARCH in amd64 arm64; do
-            OUT="../dist/companion/codexbar-display-darwin-${ARCH}-v${VERSION}"
-            GOOS=darwin GOARCH="${ARCH}" CGO_ENABLED=0 \
-              go build \
-              -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${VERSION} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              -o "${OUT}" ./cmd/codexbar-display
-          done
-          cd ..
-
-          for ARCH in amd64 arm64; do
-            scripts/build-control-center-companion-pkg.sh \
-              --version "${VERSION}" \
-              --arch "${ARCH}" \
-              --binary "dist/companion/codexbar-display-darwin-${ARCH}-v${VERSION}" \
-              --out "dist/companion-pkg"
-          done
-
-      - name: Validate Mac App PKG payloads
-        env:
-          VERSION: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          VERSION="${VERSION#v}"
-          for PKG in dist/companion-pkg/*.pkg; do
-            scripts/check-control-center-companion-customer-readiness.sh \
-              --pkg "${PKG}" \
-              --expect-version "${VERSION}"
-          done
-
-      - name: Upload validated unsigned Mac App PKGs
-        uses: actions/upload-artifact@v4
-        with:
-          name: companion-pkgs
-          path: dist/companion-pkg/*.pkg
-          if-no-files-found: error

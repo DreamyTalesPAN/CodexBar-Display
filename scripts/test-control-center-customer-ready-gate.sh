@@ -40,27 +40,6 @@ assert_gate_runs_ui_review_gate_test() {
     || die "customer-ready gate must call test-control-center-ui-review-gate.sh"
 }
 
-assert_gate_runs_candidate_package_workflow_test() {
-  grep -F 'run_step "Control Center candidate package workflow test"' "$GATE" >/dev/null \
-    || die "customer-ready gate must run the Control Center candidate package workflow test"
-  grep -F 'test-control-center-candidate-pkg-workflow.sh' "$GATE" >/dev/null \
-    || die "customer-ready gate must call test-control-center-candidate-pkg-workflow.sh"
-}
-
-assert_gate_runs_candidate_artifact_checker_test() {
-  grep -F 'run_step "Control Center candidate package artifact checker test"' "$GATE" >/dev/null \
-    || die "customer-ready gate must run the Control Center candidate package artifact checker test"
-  grep -F 'test-control-center-candidate-pkg-artifact.sh' "$GATE" >/dev/null \
-    || die "customer-ready gate must call test-control-center-candidate-pkg-artifact.sh"
-}
-
-assert_gate_runs_package_smoke_test() {
-  grep -F 'run_step "Mac App package smoke test"' "$GATE" >/dev/null \
-    || die "customer-ready gate must run the Mac App package smoke test on macOS"
-  grep -F 'test-control-center-companion-pkg-build.sh' "$GATE" >/dev/null \
-    || die "customer-ready gate must call test-control-center-companion-pkg-build.sh"
-}
-
 assert_gate_runs_customer_docs_guard() {
   grep -F 'run_step "Control Center customer docs guard"' "$GATE" >/dev/null \
     || die "customer-ready gate must run the Control Center customer docs guard"
@@ -93,11 +72,7 @@ case "$url" in
     cat <<JSON
 {
   "status": "available",
-  "latestVersion": "${version}",
-  "packageDownloadUrls": {
-    "macosArm64": "https://downloads.example.test/VibeTV-Companion-API-arm64-v${version}.pkg",
-    "macosAmd64": "https://downloads.example.test/VibeTV-Companion-API-amd64-v${version}.pkg"
-  }
+  "latestVersion": "${version}"
 }
 JSON
     ;;
@@ -122,19 +97,23 @@ write_complete_release_json() {
       "browser_download_url": "https://downloads.example.test/install-control-center-companion.sh"
     },
     {
-      "name": "VibeTV-Companion-API-arm64-v1.2.3.pkg",
-      "browser_download_url": "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.2.3.pkg"
+      "name": "codexbar-display-darwin-arm64-v1.2.3",
+      "browser_download_url": "https://downloads.example.test/codexbar-display-darwin-arm64-v1.2.3"
     },
     {
-      "name": "VibeTV-Companion-API-amd64-v1.2.3.pkg",
-      "browser_download_url": "https://downloads.example.test/VibeTV-Companion-API-amd64-v1.2.3.pkg"
+      "name": "codexbar-display-darwin-amd64-v1.2.3",
+      "browser_download_url": "https://downloads.example.test/codexbar-display-darwin-amd64-v1.2.3"
+    },
+    {
+      "name": "checksums-v1.2.3.txt",
+      "browser_download_url": "https://downloads.example.test/checksums-v1.2.3.txt"
     }
   ]
 }
 JSON
 }
 
-write_missing_package_release_json() {
+write_missing_binary_release_json() {
   local path
   path="$1"
   cat > "$path" <<'JSON'
@@ -146,8 +125,12 @@ write_missing_package_release_json() {
       "browser_download_url": "https://downloads.example.test/install-control-center-companion.sh"
     },
     {
-      "name": "VibeTV-Companion-API-arm64-v1.2.3.pkg",
-      "browser_download_url": "https://downloads.example.test/VibeTV-Companion-API-arm64-v1.2.3.pkg"
+      "name": "codexbar-display-darwin-arm64-v1.2.3",
+      "browser_download_url": "https://downloads.example.test/codexbar-display-darwin-arm64-v1.2.3"
+    },
+    {
+      "name": "checksums-v1.2.3.txt",
+      "browser_download_url": "https://downloads.example.test/checksums-v1.2.3.txt"
     }
   ]
 }
@@ -174,7 +157,7 @@ run_expect_automated_success() {
   assert_contains "$output" "PASS: Control Center customer-ready gate passed"
 }
 
-run_expect_missing_release_failure() {
+run_expect_missing_release_asset_failure() {
   local output status
   set +e
   output="$(
@@ -190,8 +173,8 @@ run_expect_missing_release_failure() {
   status=$?
   set -e
 
-  [[ "$status" -ne 0 ]] || die "expected missing release package fixture to fail"
-  assert_contains "$output" "missing release package assets: VibeTV-Companion-API-amd64-v1.2.3.pkg"
+  [[ "$status" -ne 0 ]] || die "expected missing release asset fixture to fail"
+  assert_contains "$output" "missing release assets: codexbar-display-darwin-amd64-v1.2.3"
   assert_contains "$output" "BLOCKED: Control Center is not customer-ready yet"
 }
 
@@ -243,17 +226,14 @@ MISSING_RELEASE="${TMP_WORK_DIR}/missing-release.json"
 
 write_fake_curl "$FAKE_CURL"
 write_complete_release_json "$COMPLETE_RELEASE"
-write_missing_package_release_json "$MISSING_RELEASE"
+write_missing_binary_release_json "$MISSING_RELEASE"
 
 assert_gate_runs_ui_review_gate_test
 assert_gate_runs_release_workflow_test
-assert_gate_runs_candidate_package_workflow_test
-assert_gate_runs_candidate_artifact_checker_test
-assert_gate_runs_package_smoke_test
 assert_gate_runs_customer_docs_guard
 assert_gate_runs_customer_ui_copy_guard
 run_expect_automated_success
-run_expect_missing_release_failure
+run_expect_missing_release_asset_failure
 run_expect_manual_gate_failure
 run_expect_manual_gate_success
 

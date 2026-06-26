@@ -1,8 +1,8 @@
 # Control Center Hardware Test Evidence
 
 This file records user-approved hardware write tests for the hosted Control Center path.
-It is evidence for the manual `--hardware-tested` gate only. It does not replace signed
-Mac App package validation, Clean-Mac validation, merge review, or release checks.
+It is evidence for the manual `--hardware-tested` gate only. It does not replace
+Clean-Mac validation, merge review, or release checks.
 
 ## 2026-06-22 - WiFi Theme Install Gate
 

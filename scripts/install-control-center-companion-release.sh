@@ -14,6 +14,7 @@ PLIST_DIR="${HOME}/Library/LaunchAgents"
 PLIST_PATH="${PLIST_DIR}/com.codexbar-display.companion-api.plist"
 SERVICE_LABEL="com.codexbar-display.companion-api"
 SERVICE="gui/$(id -u)/${SERVICE_LABEL}"
+GLOBAL_PLIST_PATH="${VIBETV_COMPANION_GLOBAL_PLIST:-/Library/LaunchAgents/${SERVICE_LABEL}.plist}"
 DISPLAY_DAEMON_LABEL="com.codexbar-display.daemon"
 DISPLAY_DAEMON_PLIST="${PLIST_DIR}/${DISPLAY_DAEMON_LABEL}.plist"
 DISPLAY_DAEMON_SERVICE="gui/$(id -u)/${DISPLAY_DAEMON_LABEL}"
@@ -277,6 +278,10 @@ uninstall_service() {
 stop_launchagent() {
   if command -v launchctl >/dev/null 2>&1; then
     launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
+    if [[ -f "$GLOBAL_PLIST_PATH" ]]; then
+      launchctl disable "$SERVICE" >/dev/null 2>&1 || true
+      log "vibetv: old Mac setup service disabled for this user"
+    fi
   fi
 }
 

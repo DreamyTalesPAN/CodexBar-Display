@@ -44,12 +44,13 @@ That script performs these steps:
 - verifies the release SHA-256 checksum,
 - installs the binary to `~/Library/Application Support/codexbar-display/bin/codexbar-display`,
 - stops and removes the old user LaunchAgent for this API service if it exists,
+- disables an old global LaunchAgent for the current user if one is present,
 - refreshes the older display-stream LaunchAgent if it exists, so existing customers do not keep sending frames from an old binary,
 - starts `codexbar-display api --addr 127.0.0.1:47832` in the background from the Terminal session,
 - stores the started process id in `~/Library/Application Support/codexbar-display/run/companion-api.pid`,
 - verifies `http://127.0.0.1:47832/v1/status`.
 
-This is intentional for v1. In hardware testing, the Terminal-started process could reach the customer's LAN/VibeTV, while the same ad-hoc binary launched by the user LaunchAgent could get stuck in a macOS local-network permission state. So the normal customer path starts from the agent/Terminal context and removes the stale user LaunchAgent instead of recreating it.
+This is intentional for v1. In hardware testing, the Terminal-started process could reach the customer's LAN/VibeTV, while the same ad-hoc binary launched by the user LaunchAgent could get stuck in a macOS local-network permission state. So the normal customer path starts from the agent/Terminal context, removes the stale user LaunchAgent, and disables stale global LaunchAgent entries for the current user instead of recreating them.
 
 Support restart:
 
@@ -63,7 +64,7 @@ Support uninstall:
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --uninstall
 ```
 
-Uninstall stops the PID-file process and removes the old user LaunchAgent plist if it exists.
+Uninstall stops the PID-file process, removes the old user LaunchAgent plist if it exists, and disables any old global LaunchAgent for the current user.
 
 The repository-level development installer remains available:
 
@@ -76,6 +77,7 @@ It performs these steps without downloading from GitHub Releases:
 - builds `companion/cmd/codexbar-display`,
 - installs the binary to `~/Library/Application Support/codexbar-display/bin/codexbar-display`,
 - removes the old user LaunchAgent plist if present,
+- disables an old global LaunchAgent for the current user if present,
 - starts `codexbar-display api --addr 127.0.0.1:47832` in the background from Terminal,
 - verifies `http://127.0.0.1:47832/v1/status`.
 
@@ -87,7 +89,7 @@ VIBETV_COMPANION_DEV_ORIGIN=http://localhost:3002 ./scripts/install-control-cent
 
 The local API service is separate from the older frame-sending daemon LaunchAgent. Existing customer Macs may still have that daemon. The release installer refreshes it once after installing the new binary, so the old display stream picks up the new `codexbar-display` binary instead of continuing with the previous build.
 
-The Control Center Updates screen checks `/api/companion/latest`. That route still reads the latest GitHub Release for version information, but the v1 setup path does not require macOS package assets. New customer setup should prefer the Agentic prompt and Terminal command above.
+The Control Center Updates screen checks `/api/companion/latest`. That route still reads the latest GitHub Release for version information, but the v1 setup path uses the Agentic prompt and Terminal command above.
 
 The `install-control-center-companion.sh` asset is part of the hosted customer setup. The app exposes it through the Agentic prompt rather than as a raw download button.
 
@@ -155,8 +157,6 @@ Hardware write evidence is recorded in `docs/control-center-hardware-test-eviden
 The current PR has a user-approved WiFi theme install result there for the Control Center
 write path, and further device writes still require fresh approval.
 
-On macOS, older package smoke coverage may still run as legacy migration coverage. It is not the v1 customer setup path.
-
 Use an exact tag when validating a specific release:
 
 ```bash
@@ -188,38 +188,20 @@ Keep the script behavior covered in CI with:
 ```bash
 scripts/test-control-center-companion-customer-readiness.sh
 scripts/test-control-center-release-workflow.sh
-scripts/test-control-center-candidate-pkg-workflow.sh
-scripts/test-control-center-candidate-pkg-artifact.sh
 scripts/test-control-center-companion-legacy-installer.sh
 ```
 
-The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Mac App service, or VibeTV hardware. The release workflow and package workflow tests remain as legacy migration coverage. The terminal installer test uses fake `launchctl`, `curl`, and a temporary `HOME`; it proves the shell installer removes the old user LaunchAgent path and starts the local service from the Terminal context.
-
-Keep the legacy macOS package builder covered with:
-
-```bash
-scripts/test-control-center-companion-pkg-build.sh
-```
-
-That smoke test runs on macOS, builds temporary legacy `arm64` and `amd64` package artifacts, then validates both with the same read-only readiness checker. It does not install packages, start services, discover devices, or write to VibeTV hardware.
-
-The `companion-pkg-smoke` CI job may upload validated package artifacts for internal legacy testing. It is not the current customer setup artifact.
+The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Mac App service, or VibeTV hardware. The release workflow test keeps the public GitHub Release package-free. The terminal installer test uses fake `launchctl`, `curl`, and a temporary `HOME`; it proves the shell installer removes the old user LaunchAgent path, disables old global LaunchAgent state for the current user, and starts the local service from the Terminal context.
 
 What it checks:
 
-- release may contain the legacy support script without exposing it through the customer API,
-- release contains both macOS package assets,
-- package metadata uses the expected package identifier, version, and `/` install location,
-- package payload includes the Companion binary and LaunchAgent plist,
-- package binary architecture matches the package filename, for example `arm64` or `amd64`,
-- package LaunchAgent points to `/Library/Application Support/VibeTV/bin/codexbar-display api --addr 127.0.0.1:47832`, has `RunAtLoad`/`KeepAlive`, and does not include a development origin,
-- package includes executable `preinstall` and `postinstall` scripts for migration/repair,
-- package `preinstall`/`postinstall` scripts unload the old user LaunchAgent, remove the legacy `~/Library/LaunchAgents/com.codexbar-display.companion-api.plist`, and load the package LaunchAgent from `/Library/LaunchAgents`,
-- package payload has no AppleDouble files,
-- optional Developer ID Installer signature,
-- optional notarization staple,
+- release may contain the older `install.sh` support script without exposing it through the customer API,
+- release contains `install-control-center-companion.sh`,
+- release contains both Darwin companion binaries,
+- release contains `checksums-v<version>.txt`,
+- release does not contain Mac App `.pkg` assets,
 - hosted app HTTP reachability,
-- hosted app `/api/companion/latest` status and exact installer/package asset names when `--app-url` is combined with `--release` or `--release-json`,
+- hosted app `/api/companion/latest` version status without installer or package URLs when `--app-url` is combined with `--release` or `--release-json`,
 - optional hosted app `/api/themes` source, selected free theme readiness, concrete `/install/<theme_id>` route reachability, and all visible free theme readiness when `--expect-catalog-source`, `--expect-theme-id`, or `--expect-all-free-themes-installable` is provided.
 - optional public Shopify product page readiness when `--expect-shopify-product-pages` or `--shopify-product-page <url> <theme_id>` is provided: each checked product page must show `Copy install command` and the direct command `codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local`, and must not expose the unavailable hosted app CTA such as `https://app.vibetv.shop/install/<theme_id>`, `Check compatibility in the app`, or `Opens the hosted Control Center`. `--expect-shopify-product-pages` reads `productUrl` from `/api/themes`, or derives it from `handle` plus `--shopify-store-url` while older deployments are still rolling forward, and checks every free Shopify catalog item.
 
@@ -229,14 +211,13 @@ After installing on a clean Mac, run:
 
 ```bash
 scripts/check-control-center-companion-customer-readiness.sh \
-  --installed-package \
   --local-companion \
   --expect-version <version>
 ```
 
-The clean-Mac installed-package check verifies the macOS package receipt, installed Companion binary, installed package LaunchAgent plist metadata, absence of the legacy user LaunchAgent plist, whether the loaded LaunchAgent points to the package binary, local Companion `/v1/status`, and the hosted-app Private Network Access preflight. The installed plist must point to `/Library/Application Support/VibeTV/bin/codexbar-display api --addr 127.0.0.1:47832`, keep `RunAtLoad`/`KeepAlive` enabled, and must not contain `--dev-origin`. The validation script is read-only. It does not install packages, start services, discover devices, or write to VibeTV hardware.
+The clean-Mac check verifies local Companion `/v1/status` and the hosted-app Private Network Access preflight. The validation script is read-only. It does not install apps, start services, discover devices, or write to VibeTV hardware.
 
-By default, local Companion checks use `127.0.0.1:47832`. If a test package was intentionally built with a different `VIBETV_COMPANION_ADDR`, run the readiness script with the same environment value so package metadata, `/v1/status`, and Private Network Access preflight checks all validate the same address.
+By default, local Companion checks use `127.0.0.1:47832`. If the Terminal setup was intentionally run with a different `VIBETV_COMPANION_ADDR`, run the readiness script with the same environment value so `/v1/status` and Private Network Access preflight checks validate the same address.
 
 ## Support Checks
 

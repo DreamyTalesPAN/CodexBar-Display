@@ -43,7 +43,7 @@ To reset the gate:
 - Simplifications accepted: no new visible UI and no new explanatory text; the primary setup action now searches automatically instead of forcing a stale saved address, while the manual address field still works when a customer deliberately submits it.
 - Verification: `check:customer-ui-copy`, `lint`, `test:customer-flows`, and `git diff --check` passed locally; the new browser regression test confirms a saved stale address such as `http://192.168.178.163` does not get sent during automatic discovery.
 
-- Reviewed scope: hosted Preview local-network access, connected-state navigation locks, Theme Library catalog loading, customer Mac App package theme-install enablement, and Theme Library hero copy after setup is complete.
+- Reviewed scope: hosted Preview local-network access, connected-state navigation locks, Theme Library catalog loading, customer Mac App theme-install enablement, and Theme Library hero copy after setup is complete.
 - Customer rule: once VibeTV is connected, the Theme Library should show only the theme choices and their direct install state; it should not repeat “selected” or “active” status text above the list.
 - Simplifications accepted: the Theme Library status subtitle was deleted instead of replaced; Theme Library remains gated until the Mac App, VibeTV connection, pairing, and theme-install flag are ready; Preview uses the same Shopify catalog envs as production.
 - Verification: `lint`, `check:customer-ui-copy`, `test:customer-flows`, and `git diff --check` passed locally; Preview browser check confirmed the subtitle is gone and Synthwave, Clippy, and Claude Creature themes still render.
