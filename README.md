@@ -22,23 +22,12 @@ important changes before they interrupt your work.
 
 ## Themes
 
-VibeTV ships with four ready-to-use themes: Mini, Claude Creature, Clippy, and
-Synthwave. They all show the same live usage signal, but each one presents it
-with a different layout and visual style.
-
 | Mini | Claude Creature | Clippy | Synthwave |
 | --- | --- | --- | --- |
 | <img src="docs/assets/vibetv-theme-mini.png" alt="VibeTV Mini theme" width="160"> | <img src="docs/assets/vibetv-theme-claude.png" alt="VibeTV Claude Creature theme" width="160"> | <img src="docs/assets/vibetv-theme-clippy.png" alt="VibeTV Clippy theme" width="160"> | <img src="docs/assets/vibetv-theme-synthwave.png" alt="VibeTV Synthwave theme" width="160"> |
 
-You can switch themes in the Control Center Theme Library. You can also build
-your own themes: VibeTV themes are defined as ThemeSpec layouts with optional
-sprites, GIFs, and live data bindings for provider, usage, tokens, reset time,
-and activity state. Theme Studio helps design and package custom themes so they
-can be installed on the device as theme packs.
-
-Start with [docs/themes.md](docs/themes.md), then use
-[docs/theme-dev-guide.md](docs/theme-dev-guide.md) for hardware-safe theme
-development rules.
+See [docs/themes.md](docs/themes.md) for included themes and custom theme
+development.
 
 ## Providers
 
