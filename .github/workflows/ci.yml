@@ -57,6 +57,9 @@ jobs:
       - name: Check companion benchmark budgets
         run: ./scripts/check-companion-bench-budget.sh
 
+      - name: Test agent git guardrails
+        run: ./scripts/test-agent-git-guardrails.sh
+
       - name: Check ESP8266 soak gate
         run: ./scripts/check-esp8266-soak-gate.sh
 
