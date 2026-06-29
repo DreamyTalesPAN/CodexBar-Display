@@ -20,6 +20,7 @@ DISPLAY_DAEMON_PLIST="${PLIST_DIR}/${DISPLAY_DAEMON_LABEL}.plist"
 DISPLAY_DAEMON_SERVICE="gui/$(id -u)/${DISPLAY_DAEMON_LABEL}"
 DISPLAY_DAEMON_LOG_OUT="/tmp/codexbar-display-daemon.out.log"
 DISPLAY_DAEMON_LOG_ERR="/tmp/codexbar-display-daemon.err.log"
+CONFIG_PATH="${APP_SUPPORT_DIR}/config.json"
 
 REPO="${VIBETV_COMPANION_REPO:-$DEFAULT_REPO}"
 RELEASE_VERSION="${VIBETV_COMPANION_VERSION:-}"
@@ -30,6 +31,8 @@ TARGET_EXPLICIT=0
 if [[ -n "${VIBETV_COMPANION_TARGET:-}" ]]; then
   TARGET_EXPLICIT=1
 fi
+REPAIR_MAX_ATTEMPTS="${VIBETV_COMPANION_REPAIR_ATTEMPTS:-45}"
+REPAIR_RETRY_DELAY="${VIBETV_COMPANION_REPAIR_RETRY_DELAY:-2}"
 MODE="install"
 START_MODE="${VIBETV_COMPANION_START_MODE:-terminal}"
 TMPDIR_INSTALL=""
@@ -151,8 +154,27 @@ xml_escape() {
   printf '%s' "$value"
 }
 
+runtime_config_target() {
+  [[ -f "$CONFIG_PATH" ]] || return 0
+  sed -n 's/.*"deviceTarget"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG_PATH" | head -n 1
+}
+
+daemon_target_for_plist() {
+  if [[ -n "$TARGET" ]]; then
+    printf '%s\n' "$TARGET"
+    return 0
+  fi
+  runtime_config_target
+}
+
 write_plist() {
-  local daemon_args=("$BIN_PATH" "daemon" "--interval" "30s" "--transport" "wifi" "--target" "$TARGET" "--api-addr" "$ADDR")
+  local daemon_target
+  daemon_target="$(daemon_target_for_plist)"
+
+  local daemon_args=("$BIN_PATH" "daemon" "--interval" "30s" "--transport" "wifi" "--api-addr" "$ADDR")
+  if [[ -n "$daemon_target" ]]; then
+    daemon_args+=("--target" "$daemon_target")
+  fi
   if [[ -n "$DEV_ORIGIN" ]]; then
     daemon_args+=("--api-dev-origin" "$DEV_ORIGIN")
   fi
@@ -349,8 +371,22 @@ retryable_repair_failure() {
   return 1
 }
 
+recover_connected_device_from_status() {
+  local response connected paired known_target
+  response="$(local_api_json GET "/v1/status")" || return 1
+  connected="$(printf '%s' "$response" | status_bool_field "device" "connected")"
+  paired="$(printf '%s' "$response" | status_bool_field "device" "paired")"
+  known_target="$(printf '%s' "$response" | json_device_target)"
+  if [[ "$connected" == "true" && "$paired" == "true" && -n "$known_target" ]]; then
+    TARGET="$known_target"
+    log "vibetv: VibeTV is already connected at ${TARGET}"
+    return 0
+  fi
+  return 1
+}
+
 connect_vibetv() {
-  local payload response discovered_target
+  local payload response discovered_target saved_response saved_status saved_stderr
   if [[ "$TARGET_EXPLICIT" == "1" ]]; then
     payload="{\"target\":\"$(json_escape "$TARGET")\",\"forcePair\":true}"
     log "vibetv: connecting VibeTV at ${TARGET}"
@@ -359,16 +395,25 @@ connect_vibetv() {
     log "vibetv: discovering VibeTV on this WiFi"
   fi
 
-  for attempt in 1 2 3; do
+  for attempt in $(seq 1 "$REPAIR_MAX_ATTEMPTS"); do
     if response="$(local_api_json POST "/v1/device/repair" "$payload")"; then
       break
     fi
-    if [[ "$attempt" == "3" ]] || ! retryable_repair_failure; then
+    if [[ "$attempt" == "$REPAIR_MAX_ATTEMPTS" ]] || ! retryable_repair_failure; then
+      saved_response="$(cat "${TMPDIR_INSTALL}/api-response.json" 2>/dev/null || true)"
+      saved_status="$(cat "${TMPDIR_INSTALL}/api-status.txt" 2>/dev/null || true)"
+      saved_stderr="$(cat "${TMPDIR_INSTALL}/api-stderr.txt" 2>/dev/null || true)"
+      if recover_connected_device_from_status; then
+        return 0
+      fi
+      printf '%s' "$saved_response" > "${TMPDIR_INSTALL}/api-response.json"
+      printf '%s' "$saved_status" > "${TMPDIR_INSTALL}/api-status.txt"
+      printf '%s' "$saved_stderr" > "${TMPDIR_INSTALL}/api-stderr.txt"
       print_local_api_error POST "/v1/device/repair"
       die "VibeTV could not connect. Keep VibeTV powered on and on the same WiFi, then rerun setup."
     fi
-    log "vibetv: VibeTV did not answer yet; retrying (${attempt}/3)"
-    sleep 2
+    log "vibetv: VibeTV did not answer yet; retrying (${attempt}/${REPAIR_MAX_ATTEMPTS})"
+    sleep "$REPAIR_RETRY_DELAY"
   done
 
   discovered_target="$(printf '%s' "$response" | json_device_target)"
@@ -378,6 +423,14 @@ connect_vibetv() {
     die "VibeTV connected, but the Mac App did not return the device address. Rerun setup or use --target http://<device-ip>."
   fi
   log "vibetv: VibeTV is connected at ${TARGET}"
+}
+
+restart_service_with_discovered_target() {
+  [[ -n "$TARGET" ]] || return 0
+  log "vibetv: saving VibeTV address ${TARGET} for the background service"
+  restart_service
+  wait_for_api
+  verify_companion_version
 }
 
 update_vibetv_firmware() {
@@ -440,6 +493,7 @@ verify_final_status() {
 
 finish_device_setup() {
   connect_vibetv
+  restart_service_with_discovered_target
   update_vibetv_firmware
   verify_final_status
 }
