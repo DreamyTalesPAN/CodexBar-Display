@@ -232,7 +232,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (!quiet) {
         setLastError(normalized);
         addEvent({
-          label: "Mac App is not running",
+          label: "Mac App needs setup",
           detail: normalized.nextAction,
           tone: "attention",
         });
@@ -255,7 +255,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setBusyAction(null);
       setLastError({
         code: "COMPANION_UNREACHABLE",
-        message: "Mac App is not running.",
+        message: "Mac App needs setup.",
         nextAction: "Run setup again, then try again.",
       });
     }
@@ -1703,16 +1703,15 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
   return {
     code: "CLIENT_ERROR",
     message: fallbackMessage,
-    nextAction: "Open the Mac App, then connect VibeTV.",
+    nextAction: "Run setup again, then connect VibeTV.",
   };
 }
 
 function companionUnavailableError(): ApiError {
   return {
     code: "COMPANION_UNREACHABLE",
-    message: "Mac App is not running.",
-    nextAction:
-      "Run Agentic setup again, then click Mac App is installed.",
+    message: "Mac App needs setup.",
+    nextAction: "Run setup again, then click Mac App is installed.",
   };
 }
 

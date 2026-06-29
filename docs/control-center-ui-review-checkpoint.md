@@ -67,3 +67,8 @@ To reset the gate:
 - Customer rule: customers should still see one Mac App install/update command and should not need to understand the internal daemon/API split. Setup copy says the Mac App starts in the background and avoids daemon, API, LaunchAgent, Companion, package, or release internals.
 - Simplifications accepted: the `--terminal-session` workaround was removed from the visible command; no new visible setup controls or customer choices were added; installer output uses Mac App/background-service wording while the implementation runs one background process.
 - Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `check:customer-ui-copy`, `lint`, `test:customer-flows`, and the customer-ready gate passed except for this deterministic checkpoint before the review note was updated.
+
+- Reviewed scope: old-architecture upgrade error states, local Mac App proxy failure copy, Setup missing-Mac-App notice, Usage unavailable state, Support log masking, and the offline `Fix connection` customer-flow assertion.
+- Customer rule: when a customer's VibeTV may still show frames from an old background process, Control Center must not say the Mac App is simply not running. The next step is setup recovery, not explaining daemon/API/process state.
+- Simplifications accepted: no new controls, sections, or explanations were added; the wording now uses one recovery action (`Run setup again`) and keeps the same technical error code internally.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `check:customer-ui-copy`, `lint`, `test:customer-flows`, legacy installer migration tests, daemon installer tests, and targeted companion Go tests passed locally.

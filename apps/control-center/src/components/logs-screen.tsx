@@ -293,7 +293,7 @@ function formatCustomerSupportText(value: string): string {
     .replace(/\btarget\b/gi, "VibeTV address")
     .replace(/\bpack\s*URL\b/gi, "theme download")
     .replace(/\bpackUrl\b/g, "theme download")
-    .replace(/\bCOMPANION_UNREACHABLE\b/g, "Mac App is not running")
+    .replace(/\bCOMPANION_UNREACHABLE\b/g, "Mac App needs setup")
     .replace(/\bCLIENT_ERROR\b/g, "Something needs attention")
     .replace(/\bHTTP_\d+\b/g, "Connection failed")
     .replace(/\bVibeTV-Companion-API-\S+/g, "Mac App installer")

@@ -399,7 +399,7 @@ async function testFixConnectionDoesNotRepairWhenMacAppIsOffline(
   });
   await page.getByRole("button", { name: "Fix connection" }).click();
   await page
-    .getByText("Mac App is not running.", { exact: false })
+    .getByText("Mac App needs setup.", { exact: false })
     .waitFor({ timeout: 10_000 });
   assert(
     !companionRequests.includes("/v1/device/repair"),

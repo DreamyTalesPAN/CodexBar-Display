@@ -602,11 +602,11 @@ function UsageEmptyState({
       ? refreshing
         ? "Loading provider usage."
         : "No provider usage is available yet."
-      : "Mac App is not connected.";
+      : "Mac App needs setup.";
   const action =
     companionStatus === "online"
       ? "Open CodexBar and make sure at least one provider is enabled."
-      : "Open the Mac App, then refresh usage.";
+      : "Run setup again, then refresh usage.";
 
   return (
     <div className="border border-[#747A60] bg-[#EEEEEE] p-6 text-sm leading-6 text-[#444933]">

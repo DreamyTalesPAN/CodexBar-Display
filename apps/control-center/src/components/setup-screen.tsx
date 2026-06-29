@@ -386,7 +386,7 @@ export function SetupScreen({
 
                 {macAppMissing ? (
                   <StatusNote icon={<RefreshCw size={16} aria-hidden />}>
-                    Mac App is not running. Run Agentic setup or Manual setup
+                    Mac App needs setup. Run Agentic setup or Manual setup
                     again, then click Mac App is installed.
                   </StatusNote>
                 ) : null}
