@@ -707,12 +707,14 @@ async function testUsageShowsCodexCostHistory(browser, appUrl) {
     timeout: 10_000,
   });
   await page.getByText("3 manual resets available").waitFor({ timeout: 10_000 });
-  await page.getByText("Next expires Jul 12").waitFor({ timeout: 10_000 });
-  await page.getByText("$72.42").waitFor({ timeout: 10_000 });
+  await page.getByText("Manual resets expire Jul 12").waitFor({ timeout: 10_000 });
+  await page.getByText("$72.42", { exact: true }).first().waitFor({ timeout: 10_000 });
   await page.getByText("$3,694.16").waitFor({ timeout: 10_000 });
   await page.getByText("4.3B").first().waitFor({ timeout: 10_000 });
   await page.getByText("77M").first().waitFor({ timeout: 10_000 });
   await page.getByText("Top model: gpt-5.5").waitFor({ timeout: 10_000 });
+  await page.getByLabel("Jun 29 · $72.42 · 77M").hover();
+  await page.getByText("Jun 29 · $72.42 · 77M").waitFor({ timeout: 10_000 });
   await page.getByRole("heading", { name: "Codex" }).waitFor({
     timeout: 10_000,
   });

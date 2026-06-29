@@ -5,7 +5,6 @@ import {
   BarChart3,
   Clock,
   RefreshCw,
-  Server,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type {
@@ -57,14 +56,6 @@ export function UsageScreen({
                 icon={<Clock size={16} aria-hidden />}
                 label={formatUsageTime(usage?.generatedAt)}
               />
-              <UsageMeta
-                icon={<Server size={16} aria-hidden />}
-                label={usage?.source || labelForCompanion(companionStatus)}
-              />
-              <UsageMeta
-                icon={<BarChart3 size={16} aria-hidden />}
-                label={usageModeLabel(usage?.usageMode)}
-              />
             </div>
           </div>
 
@@ -105,10 +96,7 @@ export function UsageScreen({
           <ol className="grid gap-5 lg:grid-cols-2">
             {providers.map((provider) => (
               <li key={provider.id}>
-                <UsageProviderTile
-                  current={usage?.currentProvider === provider.id}
-                  provider={provider}
-                />
+                <UsageProviderTile provider={provider} />
               </li>
             ))}
           </ol>
@@ -155,7 +143,7 @@ function CodexCostPanel({ provider }: { provider: UsageProviderInfo }) {
           </h4>
           {resetCredits?.nextExpiresAt ? (
             <p className="mt-1 text-sm font-semibold text-[#444933]">
-              Next expires {formatExpiryDate(resetCredits.nextExpiresAt)}
+              Manual resets expire {formatExpiryDate(resetCredits.nextExpiresAt)}
             </p>
           ) : null}
         </div>
@@ -203,9 +191,6 @@ function CodexCostPanel({ provider }: { provider: UsageProviderInfo }) {
             Top model: <span className="font-bold text-[#1B1B1B]">{topModel}</span>
           </div>
         ) : null}
-        <div className="mt-2 leading-6">
-          Estimated from local Codex logs for the selected account.
-        </div>
       </div>
     </section>
   );
@@ -233,17 +218,24 @@ function CostHistoryBar({
 }) {
   const value = day.totalCostUSD || 0;
   const height = maxCost > 0 ? Math.max((value / maxCost) * 100, 5) : 0;
+  const tooltip = `${formatDayLabel(day.day)} · ${formatCurrency(
+    value,
+    currencyCode,
+  )} · ${formatTokenCount(day.totalTokens || 0)}`;
 
   return (
     <div
-      aria-label={`${formatDayLabel(day.day)}: ${formatCurrency(value, currencyCode)}`}
-      className="flex h-full min-w-0 flex-1 items-end"
-      title={`${formatDayLabel(day.day)}: ${formatCurrency(value, currencyCode)}`}
+      aria-label={tooltip}
+      className="group relative flex h-full min-w-0 flex-1 items-end"
+      tabIndex={0}
     >
       <span
         className="block w-full min-w-[5px] border border-[#747A60] bg-[#CCFF00]"
         style={{ height: `${height}%` }}
       />
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap border border-[#747A60] bg-[#F9F9F9] px-2 py-1 text-xs font-bold text-[#1B1B1B] shadow-[3px_3px_0_#CCFF00] group-focus:block group-hover:block">
+        {tooltip}
+      </span>
     </div>
   );
 }
@@ -383,10 +375,8 @@ function UsageOverTimeBar({
 }
 
 function UsageProviderTile({
-  current,
   provider,
 }: {
-  current: boolean;
   provider: UsageProviderInfo;
 }) {
   return (
@@ -400,9 +390,7 @@ function UsageProviderTile({
           <h4 className="break-words text-xl font-black text-[#1B1B1B]">
             {provider.label || provider.id}
           </h4>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#444933]">
-            {provider.source ? <span>{provider.source}</span> : null}
-            {current ? <StatusPill>Current</StatusPill> : null}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#444933]">
             {provider.stale ? <StatusPill>Stale</StatusPill> : null}
             {provider.status ? (
               <StatusPill>{providerStatusLabel(provider.status.description)}</StatusPill>
@@ -810,12 +798,6 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function usageModeLabel(mode?: string): string {
-  return usageModeShortLabel(mode) === "remaining"
-    ? "Showing remaining"
-    : "Showing used";
-}
-
 function usageModeShortLabel(mode?: string): string {
   return mode === "remaining" ? "remaining" : "used";
 }
@@ -970,14 +952,4 @@ function paceFallbackSummary(item: UsagePaceInfo): string {
     return `${stage} · expected ${item.expectedUsedPercent}% used`;
   }
   return stage;
-}
-
-function labelForCompanion(status: CompanionStatus): string {
-  if (status === "online") {
-    return "Mac App online";
-  }
-  if (status === "missing") {
-    return "Mac App missing";
-  }
-  return "Waiting for Mac App";
 }
