@@ -880,6 +880,97 @@ func TestRunInstallUpdatePausesLaunchAgentDuringOTAAndRestarts(t *testing.T) {
 	}
 }
 
+func TestRunInstallUpdateCanSkipLaunchAgentPauseForLocalAPI(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousUpload := uploadFirmwareOTAFn
+	previousStop := upgradeStopLaunchAgentFn
+	previousRestart := upgradeRestartLaunchAgentFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		uploadFirmwareOTAFn = previousUpload
+		upgradeStopLaunchAgentFn = previousStop
+		upgradeRestartLaunchAgentFn = previousRestart
+	})
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	imageBody := "firmware image"
+	imageSHA := sha256String(imageBody)
+	firmwareVersion := "1.0.0"
+	serverURL := ""
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"` + firmwareVersion + `","features":["theme"],"maxFrameBytes":1024}`))
+		case "/manifest.json":
+			_, _ = w.Write([]byte(`{
+  "schemaVersion": 1,
+  "release": "v1.0.1",
+  "artifacts": [{
+    "firmwareEnv": "esp8266_smalltv_st7789",
+    "board": "esp8266-smalltv-st7789",
+    "firmwareVersion": "1.0.1",
+    "asset": "firmware.bin",
+    "firmwareUrl": "` + serverURL + `/firmware.bin",
+    "sha256": "` + imageSHA + `"
+  }]
+}`))
+		case "/firmware.bin":
+			_, _ = w.Write([]byte(imageBody))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	serverURL = server.URL
+	releaseHTTPClient = server.Client()
+
+	stopCalls := 0
+	restartCalls := 0
+	upgradeStopLaunchAgentFn = func() {
+		stopCalls++
+	}
+	upgradeRestartLaunchAgentFn = func(string) error {
+		restartCalls++
+		return nil
+	}
+	uploadFirmwareOTAFn = func(_ context.Context, _ string, _ string, token string) error {
+		if stopCalls != 0 {
+			t.Fatalf("local API update must not stop launch agent, got %d stop calls", stopCalls)
+		}
+		if token != "pair-token" {
+			t.Fatalf("unexpected token %q", token)
+		}
+		firmwareVersion = "1.0.1"
+		return nil
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", server.URL,
+			"--manifest-url", server.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err != nil {
+		t.Fatalf("install update: %v", err)
+	}
+	if stopCalls != 0 {
+		t.Fatalf("expected no stop call, got %d", stopCalls)
+	}
+	if restartCalls != 0 {
+		t.Fatalf("expected no restart call, got %d", restartCalls)
+	}
+	if strings.Contains(output, "Pausing Mac App during firmware update") {
+		t.Fatalf("local API update should not claim it paused the Mac App, got:\n%s", output)
+	}
+}
+
 func TestRunInstallUpdateRequiresLiveManifestConfirmation(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {

@@ -429,6 +429,7 @@ func runInstallUpdate(args []string) (retErr error) {
 	manifestURL := fs.String("manifest-url", vibeTVFirmwareManifestURL, "firmware manifest URL")
 	force := fs.Bool("force", false, "install even when the device already reports the latest firmware")
 	confirmLiveUpdate := fs.Bool("confirm-live-update", false, "allow installing from the default live Shopify firmware manifest")
+	skipLaunchAgentPause := fs.Bool("skip-launchagent-pause", false, "internal: keep the Mac App running while updating firmware")
 	verbose := fs.Bool("verbose", false, "show manifest, asset, and local firmware file details")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -518,9 +519,11 @@ func runInstallUpdate(args []string) (retErr error) {
 		}
 	}
 
-	fmt.Println("Pausing Mac App during firmware update...")
-	cleanupLaunchAgent := beginUpgradeLaunchAgentRecovery(home, &retErr)
-	defer cleanupLaunchAgent()
+	if !*skipLaunchAgentPause {
+		fmt.Println("Pausing Mac App during firmware update...")
+		cleanupLaunchAgent := beginUpgradeLaunchAgentRecovery(home, &retErr)
+		defer cleanupLaunchAgent()
+	}
 
 	fmt.Println("Uploading firmware...")
 	uploadErr := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken)

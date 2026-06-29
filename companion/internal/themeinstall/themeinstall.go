@@ -33,6 +33,8 @@ const (
 var (
 	renderHealthAttempts = 8
 	renderHealthDelay    = 500 * time.Millisecond
+	activationAttempts   = 3
+	activationRetryDelay = 1500 * time.Millisecond
 )
 
 var installingThemeSpec = json.RawMessage(`{"v":1,"id":"installing","rev":1,"fb":"mini","p":[{"t":"r","x":0,"y":0,"w":240,"h":240,"c":"#111111"},{"t":"tx","x":28,"y":58,"v":"INSTALLING","s":2,"c":"#B6FF00"},{"t":"tx","x":36,"y":94,"v":"NEW THEME","s":2,"c":"#FFFFFF"},{"t":"p","x":34,"y":150,"w":172,"h":18,"b":"s","c":"#B6FF00","bg":"#303030"}]}`)
@@ -300,42 +302,32 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	fmt.Fprintln(out, "Activating theme...")
-	if err := activateThemeWithPairRetry(wifi, &resolvedTarget, pack.ThemeSpecFile.Entry.Path, opts.PairTokenStore); err != nil {
-		return Result{}, &InstallError{
-			Op:   "theme-pack/activate",
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
-		}
-	}
-	if err := sendLiveThemeFrame(ctx, wifi, resolvedTarget, caps, opts.FetchLiveFrame); err != nil {
-		if authRequired(err) {
-			pairedTarget, pairErr := pairThemeInstallTarget(wifi, resolvedTarget, opts.PairTokenStore)
-			if pairErr != nil {
-				return Result{}, &InstallError{
-					Op:   "theme-pack/pair",
-					Code: errcode.UpgradeFlashFirmware,
-					Err:  pairErr,
-					Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
-				}
+	if err := activateAndVerifyTheme(
+		ctx,
+		wifi,
+		&resolvedTarget,
+		caps,
+		pack.ThemeSpecFile.Entry.Path,
+		requiredGIFAssets(pack.ThemeSpec),
+		opts.PairTokenStore,
+		opts.FetchLiveFrame,
+		out,
+	); err != nil {
+		op := "theme-pack/activate"
+		hint := "keep VibeTV powered and on the same WiFi, then retry theme install"
+		var phaseErr *themeActivationError
+		if errors.As(err, &phaseErr) {
+			op = phaseErr.op
+			err = phaseErr.err
+			if op == "theme-pack/render-health" {
+				hint = "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output"
 			}
-			resolvedTarget = pairedTarget
-			err = sendLiveThemeFrame(ctx, wifi, resolvedTarget, caps, opts.FetchLiveFrame)
 		}
-		if err != nil {
-			fmt.Fprintf(out, "Live usage frame: skipped (%v)\n", err)
-		} else {
-			fmt.Fprintln(out, "Live usage frame: refreshed")
-		}
-	} else {
-		fmt.Fprintln(out, "Live usage frame: refreshed")
-	}
-	if err := verifyThemeInstallHealth(wifi, resolvedTarget, pack.ThemeSpecFile.Entry.Path, requiredGIFAssets(pack.ThemeSpec)); err != nil {
 		return Result{}, &InstallError{
-			Op:   "theme-pack/render-health",
+			Op:   op,
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  err,
-			Hint: "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output",
+			Hint: hint,
 		}
 	}
 
@@ -440,6 +432,120 @@ func sendLiveThemeFrame(ctx context.Context, wifi transportlayer.WiFiTransport, 
 	return nil
 }
 
+type themeActivationError struct {
+	op  string
+	err error
+}
+
+func (e *themeActivationError) Error() string {
+	if e == nil || e.err == nil {
+		return ""
+	}
+	return e.err.Error()
+}
+
+func (e *themeActivationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func activateAndVerifyTheme(
+	ctx context.Context,
+	wifi transportlayer.WiFiTransport,
+	target *string,
+	caps protocol.DeviceCapabilities,
+	activePath string,
+	gifAssets []string,
+	store PairTokenStore,
+	fetchFrame func(context.Context) (protocol.Frame, error),
+	out io.Writer,
+) error {
+	attempts := activationAttempts
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	lastOp := "theme-pack/activate"
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if attempt > 1 {
+			fmt.Fprintf(out, "Theme activation retry %d/%d.\n", attempt, attempts)
+		}
+		if err := activateThemeWithPairRetry(wifi, target, activePath, store); err != nil {
+			lastErr = err
+			lastOp = "theme-pack/activate"
+			if !themeInstallRetryableError(err) || attempt == attempts {
+				return &themeActivationError{op: lastOp, err: lastErr}
+			}
+			fmt.Fprintln(out, "Theme activation interrupted, retrying...")
+			if err := sleepActivationRetry(ctx); err != nil {
+				return &themeActivationError{op: lastOp, err: err}
+			}
+			continue
+		}
+
+		sendLiveThemeFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame, out)
+		if err := verifyThemeInstallHealth(wifi, *target, activePath, gifAssets); err != nil {
+			lastErr = err
+			lastOp = "theme-pack/render-health"
+			if attempt == attempts {
+				return &themeActivationError{op: lastOp, err: lastErr}
+			}
+			fmt.Fprintln(out, "Theme activation did not settle, retrying...")
+			if err := sleepActivationRetry(ctx); err != nil {
+				return &themeActivationError{op: lastOp, err: err}
+			}
+			continue
+		}
+		return nil
+	}
+	if lastErr == nil {
+		lastErr = errors.New("theme activation did not complete")
+	}
+	return &themeActivationError{op: lastOp, err: lastErr}
+}
+
+func sendLiveThemeFrameWithPairRetry(
+	ctx context.Context,
+	wifi transportlayer.WiFiTransport,
+	target *string,
+	caps protocol.DeviceCapabilities,
+	store PairTokenStore,
+	fetchFrame func(context.Context) (protocol.Frame, error),
+	out io.Writer,
+) {
+	err := sendLiveThemeFrame(ctx, wifi, *target, caps, fetchFrame)
+	if err != nil && authRequired(err) {
+		pairedTarget, pairErr := pairThemeInstallTarget(wifi, *target, store)
+		if pairErr == nil {
+			*target = pairedTarget
+			err = sendLiveThemeFrame(ctx, wifi, *target, caps, fetchFrame)
+		} else {
+			err = pairErr
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(out, "Live usage frame: skipped (%v)\n", err)
+		return
+	}
+	fmt.Fprintln(out, "Live usage frame: refreshed")
+}
+
+func sleepActivationRetry(ctx context.Context) error {
+	if activationRetryDelay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(activationRetryDelay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 func uploadAssetWithPairRetry(wifi transportlayer.WiFiTransport, target *string, devicePath, filename string, data []byte, store PairTokenStore) error {
 	err := wifi.UploadAsset(*target, devicePath, filename, data)
 	if err == nil || !authRequired(err) {
@@ -526,6 +632,36 @@ func authRequired(err error) bool {
 	return strings.Contains(msg, "status=401") ||
 		strings.Contains(msg, "pairing token required") ||
 		strings.Contains(msg, "unauthorized")
+}
+
+func themeInstallRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "status=408") ||
+		strings.Contains(msg, "status=429") ||
+		strings.Contains(msg, "status=500") ||
+		strings.Contains(msg, "status=502") ||
+		strings.Contains(msg, "status=503") ||
+		strings.Contains(msg, "status=504") {
+		return true
+	}
+	for _, part := range []string{
+		"timeout",
+		"context deadline exceeded",
+		"connection reset",
+		"connection refused",
+		"broken pipe",
+		"server closed idle connection",
+		"eof",
+		"temporary",
+	} {
+		if strings.Contains(msg, part) {
+			return true
+		}
+	}
+	return false
 }
 
 func verifyThemeInstallHealth(wifi transportlayer.WiFiTransport, target, activePath string, gifAssets []string) error {

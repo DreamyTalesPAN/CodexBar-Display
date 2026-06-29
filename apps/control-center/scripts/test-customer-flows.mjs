@@ -186,6 +186,10 @@ async function main() {
     );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
+    await testOverviewSeparatesMacAppAndFirmwareVersions(
+      browser,
+      appContext.appUrl,
+    );
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
     await testSupportReportExportsAppearAfterReportLoads(browser, appContext.appUrl);
     await testVibeTVAddressCopyStaysCustomerOnly(browser, appContext.appUrl);
@@ -1106,6 +1110,34 @@ async function testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
   await page.close();
 }
 
+async function testOverviewSeparatesMacAppAndFirmwareVersions(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.33",
+    device: {
+      ...companionDevice,
+      firmware: "1.0.32",
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
+  await page.getByText("Mac App").waitFor({ timeout: 10_000 });
+  await page.getByText("Online 1.0.33").waitFor({ timeout: 10_000 });
+  await page.getByText("VibeTV firmware").waitFor({ timeout: 10_000 });
+  await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
 async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
@@ -1722,6 +1754,7 @@ async function routeCompanionOnline(
   onSettings = () => {},
   {
     companionFeatures = { themeInstallEnabled: true },
+    companionVersion = "1.0.32",
     device = companionDevice,
     onDiscover,
     onPair,
@@ -1981,7 +2014,7 @@ async function routeCompanionOnline(
         body: JSON.stringify({
           ok: true,
           companion: {
-            version: "1.0.32",
+            version: companionVersion,
             features: companionFeatures,
           },
           device: currentDevice,
@@ -2008,7 +2041,7 @@ async function routeCompanionOnline(
         body: JSON.stringify({
           ok: true,
           companion: {
-            version: "1.0.32",
+            version: companionVersion,
             features: companionFeatures,
           },
           device: currentDevice,
@@ -2045,7 +2078,7 @@ async function routeCompanionOnline(
           ok: true,
           generatedAt: "2026-06-19T12:00:00.000Z",
           companion: {
-            version: "1.0.32",
+            version: companionVersion,
             features: companionFeatures,
           },
           device: currentDevice,
@@ -2358,6 +2391,11 @@ async function assertMacAppSetupUsesTerminalCommand(page) {
   assert(
     prompt.includes("start it in the background"),
     "agent setup prompt should describe the background Mac App",
+  );
+  assert(
+    prompt.includes("connect VibeTV") &&
+      prompt.includes("latest firmware"),
+    "agent setup prompt should say the terminal command connects VibeTV and updates firmware",
   );
   assert(
     !prompt.includes("LaunchAgent"),

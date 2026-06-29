@@ -54,7 +54,7 @@ Run this Terminal command:
 
 ${terminalCommand}
 
-This command should install or update the VibeTV Mac App and start it in the background. Do not install a signed package or a macOS package.
+This command should install or update the VibeTV Mac App, start it in the background, connect VibeTV, and update VibeTV to the latest firmware. Do not install a signed package or a macOS package.
 
 After the command finishes, verify it with:
 
@@ -64,9 +64,11 @@ Then tell me:
 - what was installed
 - whether any dependencies were installed
 - whether the status check worked
+- whether VibeTV connected
+- whether the VibeTV firmware update completed, was already current, or failed
 - the next step: return to app.vibetv.shop, choose Allow when the browser asks for access, and continue setup
 
-Normal usage frames may update the VibeTV display. Do not flash firmware, install themes, reset WiFi, upload assets, or change WiFi settings. Only install and verify the Mac App.`;
+Normal usage frames may update the VibeTV display. Do not install themes, reset WiFi, upload theme assets, or change WiFi settings. Only run the setup command and verify its result.`;
 }
 
 type SetupScreenProps = {
@@ -532,11 +534,16 @@ function FinishSetupContent({
   }
 
   return (
-    <StatusNote
-      icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
-    >
-      Connecting VibeTV...
-    </StatusNote>
+    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <p className="text-sm leading-6 text-[#444933]">
+        Make sure VibeTV is powered on and connected to the same WiFi.
+      </p>
+      <PrimaryButton
+        icon={<RefreshCw size={18} aria-hidden />}
+        label="Connect VibeTV"
+        onClick={() => onRepairConnection?.()}
+      />
+    </div>
   );
 }
 
