@@ -147,22 +147,24 @@ function CodexCostPanel({ provider }: { provider: UsageProviderInfo }) {
   const topModel = cost.topModel?.trim();
 
   return (
-    <section className="mb-6 border border-[#242424] bg-[#1B1B1B] p-5 text-[#E7E7E7]">
+    <section className="mb-6 border border-[#747A60] bg-[#F9F9F9] p-5 text-[#1B1B1B]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h4 className="break-words text-xl font-black">Limit Reset Credits</h4>
+          <h4 className="break-words text-base font-black text-[#1B1B1B]">
+            Limit Reset Credits
+          </h4>
           {resetCredits?.nextExpiresAt ? (
-            <p className="mt-2 text-base font-bold text-[#A5A5A5]">
+            <p className="mt-1 text-sm font-semibold text-[#444933]">
               Next expires {formatExpiryDate(resetCredits.nextExpiresAt)}
             </p>
           ) : null}
         </div>
-        <div className="max-w-full text-right text-base font-bold text-[#A5A5A5]">
+        <div className="inline-flex min-h-6 max-w-full items-center border border-[#747A60] bg-[#EEEEEE] px-2 text-right text-xs font-bold uppercase text-[#1B1B1B]">
           {formatResetCreditCount(resetCredits?.availableCount)}
         </div>
       </div>
 
-      <dl className="mt-6 grid gap-x-10 gap-y-4 sm:grid-cols-2">
+      <dl className="mt-5 grid gap-4 border-t border-[#747A60] pt-4 sm:grid-cols-2 lg:grid-cols-4">
         <UsageCostMetric label="Today" value={formatCurrency(todayCost, cost.currencyCode)} />
         <UsageCostMetric
           label="30d cost"
@@ -178,7 +180,7 @@ function CodexCostPanel({ provider }: { provider: UsageProviderInfo }) {
           className="mt-6"
           role="img"
         >
-          <div className="flex h-32 items-end gap-1 border-b border-[#3A3A3A] pb-1">
+          <div className="flex h-32 items-end gap-1 border-b border-[#747A60] pb-1">
             {days.map((day) => (
               <CostHistoryBar
                 currencyCode={cost.currencyCode}
@@ -188,20 +190,20 @@ function CodexCostPanel({ provider }: { provider: UsageProviderInfo }) {
               />
             ))}
           </div>
-          <div className="mt-2 flex justify-between gap-3 text-xs font-semibold text-[#A5A5A5]">
+          <div className="mt-2 flex justify-between gap-3 text-xs font-semibold text-[#444933]">
             <span>{formatDayLabel(days[0].day)}</span>
             <span>{formatDayLabel(days[days.length - 1].day)}</span>
           </div>
         </div>
       ) : null}
 
-      <div className="mt-5 border-t border-[#3A3A3A] pt-4 text-base font-bold text-[#A5A5A5]">
+      <div className="mt-5 border-t border-[#747A60] pt-4 text-sm font-semibold text-[#444933]">
         {topModel ? (
           <div className="break-words">
-            Top model: <span className="text-[#E7E7E7]">{topModel}</span>
+            Top model: <span className="font-bold text-[#1B1B1B]">{topModel}</span>
           </div>
         ) : null}
-        <div className="mt-2 text-sm leading-6">
+        <div className="mt-2 leading-6">
           Estimated from local Codex logs for the selected account.
         </div>
       </div>
@@ -212,8 +214,8 @@ function CodexCostPanel({ provider }: { provider: UsageProviderInfo }) {
 function UsageCostMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-base font-bold text-[#A5A5A5]">{label}</dt>
-      <dd className="mt-1 break-words text-2xl font-black text-[#E7E7E7]">
+      <dt className="text-xs font-bold uppercase text-[#506600]">{label}</dt>
+      <dd className="mt-1 break-words text-xl font-black text-[#1B1B1B]">
         {value}
       </dd>
     </div>
@@ -239,7 +241,7 @@ function CostHistoryBar({
       title={`${formatDayLabel(day.day)}: ${formatCurrency(value, currencyCode)}`}
     >
       <span
-        className="block w-full min-w-[5px] bg-[#4FA6B1]"
+        className="block w-full min-w-[5px] border border-[#747A60] bg-[#CCFF00]"
         style={{ height: `${height}%` }}
       />
     </div>
