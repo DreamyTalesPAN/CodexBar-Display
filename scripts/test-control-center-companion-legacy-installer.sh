@@ -93,6 +93,14 @@ case "$*" in
     [[ -n "$out" ]] || exit 22
     cat > "$out" <<'BIN'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "daemon" && "${2:-}" == "--help" ]]; then
+  if [[ "${FAKE_LEGACY_BINARY:-0}" == "1" ]]; then
+    printf 'usage: codexbar-display daemon [--target http://vibetv.local]\n'
+  else
+    printf 'usage: codexbar-display daemon [--api-addr 127.0.0.1:47832]\n'
+  fi
+  exit 0
+fi
 printf '%s\n' "$*" >> "${FAKE_API_LOG:?}"
 while true; do
   sleep 60
@@ -143,6 +151,14 @@ prepare_home() {
 
   cat > "$bin_path" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "daemon" && "${2:-}" == "--help" ]]; then
+  if [[ "${FAKE_LEGACY_BINARY:-0}" == "1" ]]; then
+    printf 'usage: codexbar-display daemon [--target http://vibetv.local]\n'
+  else
+    printf 'usage: codexbar-display daemon [--api-addr 127.0.0.1:47832]\n'
+  fi
+  exit 0
+fi
 printf '%s\n' "$*" >> "${FAKE_API_LOG:?}"
 while true; do
   sleep 60
@@ -167,6 +183,7 @@ run_installer() {
       FAKE_API_LOG="${root}/api.log" \
       FAKE_LAUNCHCTL_LOG="${root}/launchctl.log" \
       FAKE_CURL_LOG="${root}/curl.log" \
+      FAKE_LEGACY_BINARY="${FAKE_LEGACY_BINARY:-0}" \
       VIBETV_COMPANION_GLOBAL_PLIST="${root}/global/Library/LaunchAgents/com.codexbar-display.companion-api.plist" \
       "$INSTALLER" "$@" \
       2>&1
@@ -291,8 +308,38 @@ run_install_disables_global_legacy_launchagent() {
   assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
 }
 
+run_install_falls_back_for_release_binary_without_integrated_api() {
+  local root output launch_log api_plist api_plist_body daemon_plist_body
+  root="${TMP_WORK_DIR}/legacy-binary"
+  write_fake_commands "${root}/fake-bin"
+  prepare_home "${root}/home"
+  : > "${root}/launchctl.log"
+  : > "${root}/curl.log"
+  : > "${root}/api.log"
+
+  output="$(FAKE_LEGACY_BINARY=1 run_installer "$root" --version 9.9.9 --terminal-session)" || {
+    printf '%s\n' "$output" >&2
+    die "expected install with legacy binary to pass"
+  }
+
+  launch_log="$(cat "${root}/launchctl.log")"
+  api_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
+  api_plist_body="$(cat "$api_plist")"
+  daemon_plist_body="$(cat "${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist")"
+
+  assert_contains "$output" "using compatibility Mac setup service"
+  assert_contains "$daemon_plist_body" "<string>daemon</string>"
+  assert_not_contains "$daemon_plist_body" "<string>--api-addr</string>"
+  assert_contains "$api_plist_body" "<string>api</string>"
+  assert_contains "$api_plist_body" "<string>--addr</string>"
+  assert_contains "$api_plist_body" "<string>127.0.0.1:47832</string>"
+  assert_contains "$launch_log" "bootstrap gui/$(id -u) $api_plist"
+  assert_contains "$launch_log" "kickstart -k gui/$(id -u)/com.codexbar-display.companion-api"
+}
+
 run_install_writes_integrated_daemon_launchagent
 run_install_disables_global_legacy_launchagent
+run_install_falls_back_for_release_binary_without_integrated_api
 run_restart_updates_daemon_launchagent
 run_uninstall_stops_terminal_service_and_legacy_launchagent
 
