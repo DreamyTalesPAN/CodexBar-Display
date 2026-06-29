@@ -156,7 +156,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<FirmwareUpdateStatus | null>(null);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [usageError, setUsageError] = useState<ApiError | null>(null);
-  const setupPreviewStep = useMemo(() => readLocalSetupPreviewStep(), []);
+  const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
+    readLocalSetupPreviewStep,
+  );
   const [setupResetVersion, setSetupResetVersion] = useState(0);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
@@ -495,6 +497,28 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
+      if (!quiet) {
+        try {
+          await runCompanion<unknown>("/v1/usage", undefined, {
+            preserveLastError: true,
+          });
+        } catch (error) {
+          const usageError = normalizeUsageError(
+            normalizeCaughtError(error, "Mac App needs attention."),
+          );
+          if (usageError.code === "MAC_APP_UPDATE_REQUIRED") {
+            setSetupPreviewStep("mac-app");
+            setLastError(usageError);
+            addEvent({
+              label: "Mac App update needed",
+              detail: usageError.nextAction,
+              tone: "attention",
+            });
+            return;
+          }
+        }
+        setSetupPreviewStep(null);
+      }
       if (payload.device?.target) {
         setDevice(payload.device);
         setDeviceTarget(payload.device.target);
@@ -772,6 +796,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     didRunAutoRepair.current = false;
     didRunAutoDisplayReload.current = false;
     didRouteAfterSetupComplete.current = false;
+    setSetupPreviewStep("mac-app");
     setActiveTab("setup");
     try {
       const payload = await runCompanion<{
@@ -1306,6 +1331,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           markCompanionAccessBlocked();
         } else if (isCompanionMissingError(normalized)) {
           markCompanionUnavailable();
+        } else if (normalized.code === "MAC_APP_UPDATE_REQUIRED") {
+          setSetupPreviewStep("mac-app");
         }
         setUsageError(normalized);
         if (!quiet) {
@@ -1422,7 +1449,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       companionStatus === "online" &&
       deviceSetupIsUsable(device),
   );
-  const usageAvailable = !setupPreviewStep && companionStatus === "online";
+  const usageAvailable = companionStatus === "online";
   useEffect(() => {
     if (!setupComplete || didRouteAfterSetupComplete.current) {
       return;

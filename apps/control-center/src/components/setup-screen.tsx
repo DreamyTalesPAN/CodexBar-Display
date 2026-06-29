@@ -113,8 +113,11 @@ export function SetupScreen({
   const macAppMissing = isCompanionMissingError(lastError);
   const macAppReady = companionStatus === "online";
   const macAppCheckFailed = macAppMissing && macAppConfirmedState;
+  const forceMacAppStep = previewStep === "mac-app";
   const macAppConfirmed =
-    !macAppMissing && (macAppConfirmedState || macAppReady || setupComplete);
+    !forceMacAppStep &&
+    !macAppMissing &&
+    (macAppConfirmedState || macAppReady || setupComplete);
   const connected = Boolean(device?.connected && device.paired);
   const wifiConfirmed =
     wifiConfirmedState || setupComplete || previewStep === "mac-app";
@@ -179,12 +182,20 @@ export function SetupScreen({
     () =>
       buildStepStates({
         activeStep,
+        forceMacAppStep,
         macAppConfirmed,
         macAppReady,
         setupComplete,
         wifiConfirmed,
       }),
-    [activeStep, macAppConfirmed, macAppReady, setupComplete, wifiConfirmed],
+    [
+      activeStep,
+      forceMacAppStep,
+      macAppConfirmed,
+      macAppReady,
+      setupComplete,
+      wifiConfirmed,
+    ],
   );
 
   function confirmWifi() {
@@ -717,12 +728,14 @@ function buildActiveStep({
 
 function buildStepStates({
   activeStep,
+  forceMacAppStep,
   macAppConfirmed,
   macAppReady,
   setupComplete,
   wifiConfirmed,
 }: {
   activeStep: StepId;
+  forceMacAppStep: boolean;
   macAppConfirmed: boolean;
   macAppReady: boolean;
   setupComplete: boolean;
@@ -735,23 +748,29 @@ function buildStepStates({
         : activeStep === "wifi"
           ? "active"
           : "blocked",
-    "mac-app": macAppConfirmed || macAppReady || setupComplete
-      ? "complete"
-      : activeStep === "mac-app"
-        ? "active"
-        : wifiConfirmed
-          ? "pending"
+    "mac-app": forceMacAppStep
+      ? "active"
+      : macAppConfirmed || macAppReady || setupComplete
+        ? "complete"
+        : activeStep === "mac-app"
+          ? "active"
+          : wifiConfirmed
+            ? "pending"
+            : "blocked",
+    "browser-access": forceMacAppStep
+      ? "blocked"
+      : macAppReady
+        ? "complete"
+        : activeStep === "browser-access"
+          ? "active"
           : "blocked",
-    "browser-access": macAppReady
-      ? "complete"
-      : activeStep === "browser-access"
-        ? "active"
-        : "blocked",
-    finish: setupComplete
-      ? "complete"
-      : activeStep === "finish"
-        ? "active"
-        : "blocked",
+    finish: forceMacAppStep
+      ? "blocked"
+      : setupComplete
+        ? "complete"
+        : activeStep === "finish"
+          ? "active"
+          : "blocked",
   };
 }
 

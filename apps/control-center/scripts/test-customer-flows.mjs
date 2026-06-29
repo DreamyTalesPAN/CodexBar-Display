@@ -180,6 +180,10 @@ async function main() {
     );
     await testUsageShowsCodexCostHistory(browser, appContext.appUrl);
     await testUsageShowsMacAppUpdateForOldMacApp(browser, appContext.appUrl);
+    await testRunSetupAgainOpensMacAppInstallStepForOldMacApp(
+      browser,
+      appContext.appUrl,
+    );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
@@ -764,6 +768,40 @@ async function testUsageShowsMacAppUpdateForOldMacApp(browser, appUrl) {
     (await page.getByText("No provider usage is available yet.").count()) === 0,
     "Usage must not show empty provider copy when the Mac App is too old",
   );
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testRunSetupAgainOpensMacAppInstallStepForOldMacApp(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    usageStatus: 404,
+    usageResponse: "404 page not found",
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Usage" }).click();
+  await page.getByText("Mac App update needed.").waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Setup" }).click();
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await page.getByRole("heading", { name: "Install Mac App" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Copy prompt" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Mac App is installed" }).click();
+  await page.getByText("Mac App update needed.").waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Copy prompt" }).waitFor({
+    timeout: 10_000,
+  });
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
