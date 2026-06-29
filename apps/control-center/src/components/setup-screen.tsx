@@ -396,13 +396,6 @@ export function SetupScreen({
                   </div>
                 ) : null}
 
-                {macAppMissing ? (
-                  <StatusNote icon={<RefreshCw size={16} aria-hidden />}>
-                    Mac App needs setup. Run Agentic setup or Manual setup
-                    again, then click Mac App is installed.
-                  </StatusNote>
-                ) : null}
-
                 <div className="flex flex-wrap gap-3">
                   <PrimaryButton
                     busy={busyAction === "status"}
