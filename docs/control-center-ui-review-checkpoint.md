@@ -72,3 +72,8 @@ To reset the gate:
 - Customer rule: when a customer's VibeTV may still show frames from an old background process, Control Center must not say the Mac App is simply not running. The next step is setup recovery, not explaining daemon/API/process state.
 - Simplifications accepted: no new controls, sections, or explanations were added; the wording now uses one recovery action (`Run setup again`) and keeps the same technical error code internally.
 - Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `check:customer-ui-copy`, `lint`, `test:customer-flows`, legacy installer migration tests, daemon installer tests, and targeted companion Go tests passed locally.
+
+- Reviewed scope: first-run Mac App setup state, failed `Mac App is installed` check, hidden recovery actions before setup has been attempted, and redundant setup notices.
+- Customer rule: a first-time customer should see the install step, not a failure state. `Run setup again` and `Fix connection` stay hidden until the Mac App is reachable or the customer has actually attempted setup; a failed Mac App check explains the immediate next action inside the Mac App step.
+- Simplifications accepted: removed the duplicate Mac App setup notice, removed the top-level first-run error, and kept one primary action in the initial Mac App step.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `check:customer-ui-copy`, `lint`, `test:customer-flows`, Go companion tests, install.sh migration test, and daemon installer tests passed locally before this checkpoint update.
