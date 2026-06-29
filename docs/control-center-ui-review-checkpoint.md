@@ -13,6 +13,11 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: hosted Mac App installer script as a public Control Center asset, setup recovery when VibeTV briefly disappears from WiFi, and final background-service target persistence after automatic discovery.
+- Customer rule: no new visible Control Center UI, buttons, tabs, or customer decisions were added; setup remains one Mac App install/update action that should recover the VibeTV connection automatically instead of asking customers to understand IP discovery, pairing, LaunchAgents, or local targets.
+- Simplifications accepted: the customer-facing app stays unchanged; installer output keeps using Mac App and VibeTV wording while preserving detailed support commands only for diagnostics.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `scripts/test-control-center-companion-legacy-installer.sh`, targeted Companion Go tests, release-workflow tests, customer-ready gate tests, install.sh migration tests, installer sync check, and `git diff --check` passed locally.
+
 - Reviewed scope: setup prompt copy for Mac App install/update, setup step 4 stuck-state fallback, Overview version labels, Mac App release/update request timeout handling, and Theme Library activation retry progress copy.
 - Customer rule: setup remains one guided customer action; the prompt may ask the agent to update VibeTV firmware, but the visible UI must still say Mac App, VibeTV, Connect, and Update instead of daemon/API/LaunchAgent/release internals. Version rows must distinguish Mac App from VibeTV firmware so customers do not compare unrelated numbers.
 - Simplifications accepted: no new customer setup decision was added; the endless `Connecting VibeTV...` state now falls back to one `Connect VibeTV` action; Theme Library retries are shown as passive progress, not extra troubleshooting buttons.
