@@ -965,6 +965,47 @@ func TestDeviceRepairFallsBackToSubnetAndRefreshesDisplayStream(t *testing.T) {
 	}
 }
 
+func TestDeviceRepairExplicitVibetvLocalFallsBackToSubnet(t *testing.T) {
+	device := newRepairableDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: "http://vibetv.local"})
+	server.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if strings.EqualFold(strings.TrimSuffix(req.URL.Hostname(), "."), "vibetv.local") {
+			return nil, errors.New("mdns lookup failed")
+		}
+		return http.DefaultTransport.RoundTrip(req)
+	})
+	server.subnetTargets = func() []string {
+		return []string{device.URL}
+	}
+	var setupCalls []setup.Options
+	server.runSetup = func(_ context.Context, opts setup.Options) error {
+		setupCalls = append(setupCalls, opts)
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{"target":"http://vibetv.local","forcePair":true}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || got.Device.Target != device.URL || !got.Device.Paired {
+		t.Fatalf("expected subnet repair target %q, got %+v", device.URL, got)
+	}
+	if len(setupCalls) == 0 || setupCalls[len(setupCalls)-1].Target != device.URL {
+		t.Fatalf("expected display stream refreshed with discovered target, got %+v", setupCalls)
+	}
+}
+
 func TestDeviceRepairForcePairRotatesToken(t *testing.T) {
 	device := newRepairableDeviceServer(t)
 	defer device.Close()
@@ -1993,6 +2034,12 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	server.streamStatus = healthyStream
 	server.waitStream = healthyStream
 	return server
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }
 
 func newHelloDeviceServer(t *testing.T) *httptest.Server {

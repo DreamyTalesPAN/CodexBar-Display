@@ -19,6 +19,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
 func TestReleaseStateRoundTrip(t *testing.T) {
@@ -619,6 +620,129 @@ func TestRunInstallUpdateFallsBackToSavedTargetWhenVibeTVLocalFails(t *testing.T
 	}
 	if !strings.Contains(output, "Using saved VibeTV address: "+server.URL) {
 		t.Fatalf("expected saved target message, got:\n%s", output)
+	}
+}
+
+func TestRunInstallUpdateRediscoverAfterFirmwareRebootIPChange(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousUpload := uploadFirmwareOTAFn
+	previousDiscover := discoverWiFiDeviceFn
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousRediscoveryAfter := firmwareUpdateRediscoveryAfter
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		uploadFirmwareOTAFn = previousUpload
+		discoverWiFiDeviceFn = previousDiscover
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareUpdateRediscoveryAfter = previousRediscoveryAfter
+	})
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareUpdateRediscoveryAfter = time.Millisecond
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	imageBody := "firmware image"
+	imageSHA := sha256String(imageBody)
+	oldOffline := false
+	oldServerURL := ""
+	newServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.1","features":["theme"],"maxFrameBytes":1024}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer newServer.Close()
+
+	oldServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			if oldOffline {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.0","features":["theme"],"maxFrameBytes":1024}`))
+		case "/manifest.json":
+			_, _ = w.Write([]byte(`{
+  "schemaVersion": 1,
+  "release": "v1.0.1",
+  "artifacts": [{
+    "firmwareEnv": "esp8266_smalltv_st7789",
+    "board": "esp8266-smalltv-st7789",
+    "firmwareVersion": "1.0.1",
+    "asset": "firmware.bin",
+    "firmwareUrl": "` + oldServerURL + `/firmware.bin",
+    "sha256": "` + imageSHA + `"
+  }]
+}`))
+		case "/firmware.bin":
+			_, _ = w.Write([]byte(imageBody))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer oldServer.Close()
+	oldServerURL = oldServer.URL
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		DeviceTarget: oldServer.URL,
+		DeviceToken:  "pair-token",
+	}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	releaseHTTPClient = oldServer.Client()
+	uploadFirmwareOTAFn = func(_ context.Context, base string, _ string, token string) error {
+		if base != oldServer.URL {
+			t.Fatalf("expected OTA upload to use old target %q, got %q", oldServer.URL, base)
+		}
+		if token != "pair-token" {
+			t.Fatalf("expected stored token, got %q", token)
+		}
+		oldOffline = true
+		return nil
+	}
+	var discoveryCandidates []string
+	discoverWiFiDeviceFn = func(_ context.Context, opts transportlayer.WiFiDiscoveryOptions) (transportlayer.WiFiDiscoveryResult, error) {
+		discoveryCandidates = append(discoveryCandidates, opts.Candidates...)
+		if !opts.IncludeNetworkScan {
+			t.Fatal("expected install-update rediscovery to include network scan")
+		}
+		return transportlayer.WiFiDiscoveryResult{
+			Target: newServer.URL,
+			Hello: protocol.DeviceHello{
+				Kind:            "hello",
+				ProtocolVersion: 2,
+				Board:           "esp8266-smalltv-st7789",
+				Firmware:        "1.0.1",
+			},
+			Source: "network-scan",
+		}, nil
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", oldServer.URL,
+			"--manifest-url", oldServer.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err != nil {
+		t.Fatalf("install update: %v", err)
+	}
+	if !strings.Contains(output, "Using rediscovered VibeTV address: "+newServer.URL) {
+		t.Fatalf("expected rediscovery output, got:\n%s", output)
+	}
+	if !strings.Contains(strings.Join(discoveryCandidates, ","), oldServer.URL) {
+		t.Fatalf("expected old target in discovery candidates, got %v", discoveryCandidates)
+	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if cfg.DeviceTarget != newServer.URL || cfg.DeviceToken != "pair-token" {
+		t.Fatalf("expected rediscovered target saved with existing token, got %+v", cfg)
 	}
 }
 
