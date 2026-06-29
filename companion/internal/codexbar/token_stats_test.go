@@ -13,8 +13,12 @@ func TestParseProviderTokenStats(t *testing.T) {
 		{
 			"provider":"codex",
 			"source":"local",
+			"currencyCode":"USD",
 			"updatedAt":"2026-03-07T15:53:03Z",
 			"sessionTokens":1437166,
+			"sessionCostUSD":12.34,
+			"last30DaysCostUSD":456.78,
+			"last30DaysTokens":1078397605,
 			"daily":[
 				{"date":"2026-02-28","totalTokens":183838686},
 				{"date":"2026-03-01","totalTokens":180438698},
@@ -23,7 +27,7 @@ func TestParseProviderTokenStats(t *testing.T) {
 				{"date":"2026-03-04","totalTokens":56780749},
 				{"date":"2026-03-05","totalTokens":426535},
 				{"date":"2026-03-06","totalTokens":9535091},
-				{"date":"2026-03-07","totalTokens":1437166}
+				{"date":"2026-03-07","totalTokens":1437166,"totalCost":12.34,"modelBreakdowns":[{"modelName":"gpt-5.5","totalTokens":1437166,"cost":12.34}]}
 			],
 			"totals":{"totalTokens":1078397605}
 		}
@@ -50,6 +54,21 @@ func TestParseProviderTokenStats(t *testing.T) {
 	if codex.Source != "local" {
 		t.Fatalf("unexpected source %q", codex.Source)
 	}
+	if codex.Cost == nil {
+		t.Fatalf("expected cost usage metadata")
+	}
+	if codex.Cost.TodayCostUSD != 12.34 || codex.Cost.Last30DaysCostUSD != 456.78 {
+		t.Fatalf("unexpected cost summary: %+v", codex.Cost)
+	}
+	if codex.Cost.Last30DaysTokens != 1078397605 || codex.Cost.LatestTokens != 1437166 {
+		t.Fatalf("unexpected cost tokens: %+v", codex.Cost)
+	}
+	if codex.Cost.TopModel != "gpt-5.5" {
+		t.Fatalf("expected top model gpt-5.5, got %+v", codex.Cost)
+	}
+	if len(codex.Cost.Daily) != 8 || codex.Cost.Daily[7].Day != "2026-03-07" || codex.Cost.Daily[7].TotalCostUSD != 12.34 {
+		t.Fatalf("unexpected daily cost history: %+v", codex.Cost.Daily)
+	}
 }
 
 func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
@@ -60,8 +79,10 @@ func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
 		return []byte(`[
 			{
 				"provider":"codex",
+				"currencyCode":"USD",
 				"updatedAt":"2026-03-07T15:53:03Z",
 				"sessionTokens":1437166,
+				"last30DaysCostUSD":456.78,
 				"daily":[
 					{"date":"2026-03-01","totalTokens":180438698},
 					{"date":"2026-03-02","totalTokens":87387409},
@@ -69,7 +90,7 @@ func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
 					{"date":"2026-03-04","totalTokens":56780749},
 					{"date":"2026-03-05","totalTokens":426535},
 					{"date":"2026-03-06","totalTokens":9535091},
-					{"date":"2026-03-07","totalTokens":1437166}
+					{"date":"2026-03-07","totalTokens":1437166,"totalCost":12.34,"modelBreakdowns":[{"modelName":"gpt-5.5","totalTokens":1437166,"cost":12.34}]}
 				],
 				"totals":{"totalTokens":1078397605}
 			}
@@ -109,6 +130,9 @@ func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
 	}
 	if merged[0].ActivityObservedAt.IsZero() || !merged[0].ActivityObservedAt.Equal(time.Date(2026, 3, 7, 15, 53, 3, 0, time.UTC)) {
 		t.Fatalf("expected codex activity observed timestamp from cost updatedAt, got %s", merged[0].ActivityObservedAt)
+	}
+	if merged[0].Meta.Cost == nil || merged[0].Meta.Cost.TopModel != "gpt-5.5" {
+		t.Fatalf("expected cost usage metadata to merge into frame, got %+v", merged[0].Meta.Cost)
 	}
 	if merged[1].Frame.SessionTokens != 0 || merged[1].Frame.WeekTokens != 0 || merged[1].Frame.TotalTokens != 0 {
 		t.Fatalf("expected unmatched provider to remain unchanged, got %+v", merged[1].Frame)

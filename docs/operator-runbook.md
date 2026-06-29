@@ -62,9 +62,19 @@ cd companion
 This installs the companion runtime, persists the Mini theme on fresh installs, and writes a WiFi LaunchAgent.
 It does not require USB serial.
 
-### USB development flash path
+### WiFi firmware update path
 
-Use only when a device is physically attached with a working data-capable USB serial connection:
+Use this for normal devices. It downloads the latest published firmware manifest and installs the matching release asset over WiFi:
+
+```bash
+codexbar-display install-update \
+  --target http://vibetv.local \
+  --confirm-live-update
+```
+
+### USB recovery flash path
+
+Use only when a device is physically attached with a working data-capable USB serial connection and WiFi OTA is not available. This path flashes release firmware, not a local source build:
 
 ```bash
 cd companion
@@ -103,6 +113,7 @@ Use these rules when selecting `--firmware-env`:
 - Legacy compile-theme/GIF/probe env names are unsupported; use only the runtime envs above.
 - `lilygo_t_display_s3` is an experimental fallback and does not block v0 release decisions.
 - MVP release go/no-go is gated only by `esp8266_smalltv_st7789`.
+- Do not use `pio run -t upload` for published firmware. Direct source uploads require `CODEXBAR_DISPLAY_ALLOW_SOURCE_UPLOAD=1` and are only for intentional development tests.
 
 During setup, runtime assets are installed to:
 - Binary: `~/Library/Application Support/codexbar-display/bin/codexbar-display`
@@ -185,13 +196,14 @@ Per device:
 
 During normal operation the display uses explicit support states:
 - `Starting`: boot is running before WiFi mode is known.
-- `VIBE TV SETUP` with `VibeTV-Setup` and the setup IP: setup AP is active; customer should join the setup WiFi and open the shown address.
+- `SETUP WIFI` with `VibeTV-Setup` and the setup IP: setup AP is active; customer should join the setup WiFi and open the shown address.
 - `Connecting WiFi`: station mode is connecting to the saved or imported SSID.
-- `Open Setup`: WiFi is connected and the device is waiting for the Mac Companion setup command. `vibetv.local` and the fallback IP are shown on-screen; the local Web UI also shows the fallback IP.
+- `WiFi connected!` with `Now go to:` and `app.vibetv.shop`: WiFi is connected and the device gives the customer the hosted Control Center URL.
 - Live usage: a valid USB or WiFi frame is rendering; provider/usage data is shown, not theme asset names.
-- `Check Mac App`: the device previously had data, but no fresh frame arrived for more than two minutes.
-- `Update Mac App`: the Companion reported an incompatible usage app version or payload format.
-- `Update Available:` / `vibetv.local`: a firmware update is available. Built-in themes show the system notice. ThemeSpec themes receive the same alternating text through their provider-label binding.
+- `Open App` / `app.vibetv.shop`: the device previously had data, but no fresh frame arrived for more than two minutes, or the Mac App reported a recoverable runtime problem.
+- `Install Mac App` / `app.vibetv.shop`: the device received a runtime frame saying the Mac App binary is missing.
+- `Update Mac App` / `app.vibetv.shop`: the Mac App reported an incompatible usage app version or payload format.
+- `Update available` / `app.vibetv.shop`: a firmware update is available. ThemeSpec themes receive the same alternating text through their provider-label binding.
 - `Update running`: firmware, filesystem, or display asset upload is in progress. The display intentionally does not show internal paths such as GIF or theme asset filenames.
 - `WiFi reset`: saved WiFi credentials are being cleared before setup mode restarts.
 
@@ -203,12 +215,12 @@ Smoke checklist for #53:
 - Boot device and confirm the first screen says `Starting`.
 - Clear WiFi and confirm setup AP screen shows `VibeTV-Setup` plus the setup IP.
 - Save WiFi and confirm the connecting screen shows `Connecting WiFi` plus the SSID.
-- After WiFi connects, confirm the waiting screen shows `Open Setup`, `vibetv.local`, and the fallback IP.
+- After WiFi connects, confirm the waiting screen shows only `WiFi connected!`, `Now go to:`, and `app.vibetv.shop`.
 - Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.
-- Send a frame with `update.available=true` while Mini is active and confirm the bottom notice alternates between `Update Available:` and `vibetv.local`.
-- Apply one stored ThemeSpec with a provider-label primitive, send the same update frame again, and confirm the provider-label area alternates between `Update Available:` and `vibetv.local` without drawing the bottom system notice.
-- Stop the Companion for more than two minutes after a frame and confirm `Check Mac App`.
-- Send a runtime error frame and confirm the display shows a customer-friendly CodexBar action, not an internal error code.
+- Send a frame with `update.available=true` and confirm the customer-facing update text alternates between `Update available` and `app.vibetv.shop`.
+- Apply one stored ThemeSpec with a provider-label primitive, send the same update frame again, and confirm the provider-label area alternates between `Update available` and `app.vibetv.shop`.
+- Stop the Mac App service for more than two minutes after a frame and confirm `Open App` / `app.vibetv.shop`.
+- Send a runtime error frame and confirm the display shows a customer-friendly action, not an internal error code.
 - Start firmware/filesystem/asset upload and confirm the display says `Update running` without asset paths.
 
 Full flow and endpoint overrides are documented in `docs/firmware-provisioning.md`.
@@ -232,11 +244,11 @@ Runtime behavior:
 - If capabilities are known and explicitly do not support theme, companion omits `theme`.
 - Companion negotiates protocol `v2` first and falls back to `v1` when device support is legacy/missing.
 
-For an ad-hoc run:
+For an ad-hoc WiFi run:
 
 ```bash
 cd companion
-CODEXBAR_DISPLAY_THEME=mini ../codexbar-display daemon --interval 2s
+CODEXBAR_DISPLAY_THEME=mini ../codexbar-display daemon --transport wifi --interval 30s
 ```
 
 Preferred persistent config:
@@ -370,7 +382,14 @@ Run this list before every v0 release decision.
 ### Build + Artifacts
 - [ ] `go test ./...` in `companion` is green.
 - [ ] `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789` is green.
-- [ ] Release artifacts include companion binaries, firmware binaries, checksums.
+- [ ] Clean-Mac validation was confirmed by running the Mac setup prompt from `app.vibetv.shop` and checking `http://127.0.0.1:47832/v1/status`.
+- [ ] Release artifacts include the Mac setup script, both Darwin companion binaries, firmware binaries, manifests, and checksums.
+- [ ] GitHub Release includes the customer Mac setup assets for the release tag:
+  `install-control-center-companion.sh`,
+  `codexbar-display-darwin-arm64-v<version>`,
+  `codexbar-display-darwin-amd64-v<version>`,
+  and `checksums-v<version>.txt`.
+- [ ] GitHub Release does not include Mac App `.pkg` assets.
 - [ ] Firmware artifact reports expected `CODEXBAR_DISPLAY_FW_VERSION` for the release tag.
 
 ### Functional Gate (release-gated env)
@@ -463,4 +482,6 @@ Firmware bench envs:
 - Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
 - Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
-- GitHub release artifacts include companion binaries, firmware binaries, and checksums.
+- GitHub release artifacts include companion binaries, firmware binaries, checksums, manifests, and `install-control-center-companion.sh`.
+- The customer Mac setup path is the setup prompt from `app.vibetv.shop`. Current customer releases must not publish Mac App `.pkg` assets.
+- A customer release is not ready until the Mac setup script, both Darwin companion binaries, and the checksum file exist on the GitHub Release and match the tag version.

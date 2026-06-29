@@ -24,6 +24,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
@@ -422,7 +423,7 @@ func runUpgrade(args []string) (retErr error) {
 	return nil
 }
 
-func runInstallUpdate(args []string) error {
+func runInstallUpdate(args []string) (retErr error) {
 	fs := flag.NewFlagSet("install-update", flag.ContinueOnError)
 	target := fs.String("target", setup.DefaultWiFiTarget(), "VibeTV URL, for example http://vibetv.local")
 	manifestURL := fs.String("manifest-url", vibeTVFirmwareManifestURL, "firmware manifest URL")
@@ -443,12 +444,16 @@ func runInstallUpdate(args []string) error {
 	}
 
 	ctx := context.Background()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return &commandError{Op: "resolve-home", Code: errcode.UpgradeStateWrite, Err: err}
+	}
 	base, err := normalizeHTTPBaseURL(*target)
 	if err != nil {
 		return &commandError{Op: "resolve-target", Code: errcode.UpgradeFlashFirmware, Err: err}
 	}
 
-	hello, err := fetchDeviceHelloHTTP(ctx, base)
+	hello, base, err := fetchDeviceHelloHTTPWithSavedTargetFallback(ctx, home, base)
 	if err != nil {
 		return &commandError{
 			Op:   "device-hello",
@@ -490,10 +495,6 @@ func runInstallUpdate(args []string) error {
 		fmt.Printf("Firmware asset: %s\n", strings.TrimSpace(artifact.Asset))
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return &commandError{Op: "resolve-home", Code: errcode.UpgradeStateWrite, Err: err}
-	}
 	imagePath, err := downloadManifestFirmwareArtifact(ctx, home, manifest, artifact)
 	if err != nil {
 		return &commandError{
@@ -507,12 +508,38 @@ func runInstallUpdate(args []string) error {
 		fmt.Printf("Firmware downloaded: %s sha256=%s\n", imagePath, strings.TrimSpace(artifact.SHA256))
 	}
 
-	if err := uploadFirmwareOTAFn(ctx, base, imagePath); err != nil {
+	deviceToken, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, false)
+	if err != nil {
 		return &commandError{
-			Op:   "ota-upload",
+			Op:   "pair-device",
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  err,
 			Hint: "keep VibeTV powered and on the same WiFi, then retry",
+		}
+	}
+
+	fmt.Println("Pausing Mac App during firmware update...")
+	cleanupLaunchAgent := beginUpgradeLaunchAgentRecovery(home, &retErr)
+	defer cleanupLaunchAgent()
+
+	fmt.Println("Uploading firmware...")
+	uploadErr := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken)
+	if uploadErr != nil {
+		if firmwareOTAAuthError(uploadErr) {
+			refreshedToken, pairErr := ensureFirmwareUpdateDeviceToken(ctx, home, base, true)
+			if pairErr == nil {
+				uploadErr = uploadFirmwareOTAFn(ctx, base, imagePath, refreshedToken)
+			} else {
+				uploadErr = fmt.Errorf("%w; repair pairing failed: %v", uploadErr, pairErr)
+			}
+		}
+		if uploadErr != nil {
+			return &commandError{
+				Op:   "ota-upload",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  uploadErr,
+				Hint: "keep VibeTV powered and on the same WiFi, then retry",
+			}
 		}
 	}
 	fmt.Println("Restarting VibeTV...")
@@ -527,6 +554,143 @@ func runInstallUpdate(args []string) error {
 	}
 	fmt.Printf("Done: firmware %s installed\n", targetVersion)
 	return nil
+}
+
+func fetchDeviceHelloHTTPWithSavedTargetFallback(ctx context.Context, home, base string) (protocol.DeviceHello, string, error) {
+	hello, err := fetchDeviceHelloHTTP(ctx, base)
+	if err == nil {
+		return hello, base, nil
+	}
+
+	fallback, ok := savedInstallUpdateFallbackBase(home, base)
+	if !ok {
+		return protocol.DeviceHello{}, base, err
+	}
+	fallbackHello, fallbackErr := fetchDeviceHelloHTTP(ctx, fallback)
+	if fallbackErr != nil {
+		return protocol.DeviceHello{}, base, fmt.Errorf("%w; saved target %s also failed: %v", err, fallback, fallbackErr)
+	}
+	fmt.Printf("Using saved VibeTV address: %s\n", fallback)
+	return fallbackHello, fallback, nil
+}
+
+func savedInstallUpdateFallbackBase(home, base string) (string, bool) {
+	if !isVibeTVLocalBase(base) {
+		return "", false
+	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return "", false
+	}
+	fallback, err := normalizeHTTPBaseURL(cfg.DeviceTarget)
+	if err != nil || strings.TrimSpace(fallback) == "" {
+		return "", false
+	}
+	if strings.TrimRight(fallback, "/") == strings.TrimRight(base, "/") {
+		return "", false
+	}
+	return fallback, true
+}
+
+func isVibeTVLocalBase(base string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(base))
+	if err != nil {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(parsed.Hostname())), ".")
+	return host == "vibetv.local"
+}
+
+func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base string, forcePair bool) (string, error) {
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return "", err
+	}
+
+	changed := false
+	if shouldStoreFirmwareUpdateTarget(cfg.DeviceTarget, base) {
+		cfg.DeviceTarget = strings.TrimSpace(base)
+		changed = true
+	}
+
+	token := strings.TrimSpace(cfg.DeviceToken)
+	if token == "" || forcePair {
+		token, err = pairFirmwareUpdateDevice(ctx, base)
+		if err != nil {
+			return "", err
+		}
+		cfg.DeviceToken = token
+		changed = true
+	}
+
+	if changed {
+		if err := runtimeconfig.Save(home, cfg); err != nil {
+			return "", err
+		}
+	}
+	return token, nil
+}
+
+func shouldStoreFirmwareUpdateTarget(current, next string) bool {
+	next = strings.TrimSpace(next)
+	if next == "" || strings.TrimSpace(current) == next {
+		return false
+	}
+	if isVibeTVLocalBase(next) {
+		currentBase, err := normalizeHTTPBaseURL(current)
+		if err == nil && strings.TrimSpace(currentBase) != "" && !isVibeTVLocalBase(currentBase) {
+			return false
+		}
+	}
+	return true
+}
+
+func pairFirmwareUpdateDevice(ctx context.Context, base string) (string, error) {
+	form := url.Values{}
+	form.Set("api", "1")
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		strings.TrimRight(base, "/")+"/api/pair",
+		strings.NewReader(form.Encode()),
+	)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "codexbar-display-update")
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", fmt.Errorf("POST /api/pair returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	var payload struct {
+		OK    bool   `json:"ok"`
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&payload); err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(payload.Token)
+	if !payload.OK || token == "" {
+		return "", errors.New("pairing response did not include token")
+	}
+	return token, nil
+}
+
+func firmwareOTAAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "401") ||
+		strings.Contains(msg, "unauthorized") ||
+		strings.Contains(msg, "pairing token required")
 }
 
 type releaseHTTPDoer interface {
@@ -1017,8 +1181,8 @@ func fetchDeviceHelloHTTP(ctx context.Context, base string) (protocol.DeviceHell
 	return hello.Normalize(), nil
 }
 
-func uploadFirmwareOTA(ctx context.Context, base, imagePath string) error {
-	if err := uploadFirmwareOTARaw(ctx, base, imagePath); err == nil {
+func uploadFirmwareOTA(ctx context.Context, base, imagePath, token string) error {
+	if err := uploadFirmwareOTARaw(ctx, base, imagePath, token); err == nil {
 		return nil
 	} else if !rawFirmwareUploadUnavailable(err) {
 		return err
@@ -1052,6 +1216,7 @@ func uploadFirmwareOTA(ctx context.Context, base, imagePath string) error {
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("User-Agent", "codexbar-display-update")
+	applyFirmwareUpdateToken(req, token)
 	req.ContentLength = int64(body.Len())
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
@@ -1065,7 +1230,7 @@ func uploadFirmwareOTA(ctx context.Context, base, imagePath string) error {
 	return nil
 }
 
-func uploadFirmwareOTARaw(ctx context.Context, base, imagePath string) error {
+func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) error {
 	endpoint, err := rawFirmwareEndpoint(base)
 	if err != nil {
 		return err
@@ -1086,6 +1251,7 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath string) error {
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("User-Agent", "codexbar-display-update")
+	applyFirmwareUpdateToken(req, token)
 	req.ContentLength = info.Size()
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
@@ -1097,6 +1263,13 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath string) error {
 		return fmt.Errorf("POST /update/firmware.raw returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+func applyFirmwareUpdateToken(req *http.Request, token string) {
+	token = strings.TrimSpace(token)
+	if token != "" {
+		req.Header.Set("X-VibeTV-Token", token)
+	}
 }
 
 func rawFirmwareEndpoint(base string) (string, error) {

@@ -11,11 +11,12 @@ import (
 )
 
 type providerSnapshot struct {
-	Provider           string         `json:"provider"`
-	Frame              protocol.Frame `json:"frame"`
-	Source             string         `json:"source,omitempty"`
-	Collected          time.Time      `json:"collectedAt"`
-	ActivityObservedAt time.Time      `json:"activityObservedAt,omitempty"`
+	Provider           string                     `json:"provider"`
+	Frame              protocol.Frame             `json:"frame"`
+	Source             string                     `json:"source,omitempty"`
+	Meta               codexbar.ProviderUsageMeta `json:"meta,omitempty"`
+	Collected          time.Time                  `json:"collectedAt"`
+	ActivityObservedAt time.Time                  `json:"activityObservedAt,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -166,6 +167,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			Provider:           key,
 			Frame:              frame,
 			Source:             strings.TrimSpace(parsed.Source),
+			Meta:               parsed.Meta,
 			Collected:          now.UTC(),
 			ActivityObservedAt: parsed.ActivityObservedAt,
 		}
@@ -223,9 +225,19 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		if strings.TrimSpace(frame.Label) == "" {
 			frame.Label = key
 		}
-		frame.SessionTokens = stats.SessionTokens
-		frame.WeekTokens = stats.WeekTokens
-		frame.TotalTokens = stats.TotalTokens
+		if stats.SessionTokens > 0 {
+			frame.SessionTokens = stats.SessionTokens
+		}
+		if stats.WeekTokens > 0 {
+			frame.WeekTokens = stats.WeekTokens
+		}
+		if stats.TotalTokens > 0 {
+			frame.TotalTokens = stats.TotalTokens
+		}
+		meta := snapshot.Meta
+		if stats.Cost != nil {
+			meta.Cost = stats.Cost
+		}
 
 		source := strings.TrimSpace(snapshot.Source)
 		if source == "" {
@@ -244,6 +256,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			Provider:           key,
 			Frame:              frame,
 			Source:             source,
+			Meta:               meta,
 			Collected:          now,
 			ActivityObservedAt: activityObservedAt,
 		}
@@ -291,6 +304,7 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			Frame:              frame,
 			Provider:           key,
 			Source:             snapshot.Source,
+			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
 			Stale:              !c.snapshotIsFresh(snapshot, now),

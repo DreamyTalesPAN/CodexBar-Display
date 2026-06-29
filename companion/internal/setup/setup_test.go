@@ -21,6 +21,26 @@ type commandCall struct {
 	args []string
 }
 
+func TestDaemonIntervalForSetupTransport(t *testing.T) {
+	tests := []struct {
+		name      string
+		transport string
+		want      string
+	}{
+		{name: "wifi", transport: "wifi", want: defaultWiFiDaemonInterval},
+		{name: "default", transport: "", want: defaultWiFiDaemonInterval},
+		{name: "serial", transport: "serial", want: defaultDaemonInterval},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := daemonIntervalForSetupTransport(tt.transport); got != tt.want {
+				t.Fatalf("daemonIntervalForSetupTransport(%q)=%q, expected %q", tt.transport, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
@@ -96,8 +116,8 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 		t.Fatalf("expected brew install call, got %#v", calls)
 	}
 
-	if !commandSeen(calls, "pio", []string{"run", "-e", firmwareEnvironment, "-t", "upload", "--upload-port", "/dev/cu.usbserial42"}) {
-		t.Fatalf("expected firmware flash call with selected port, got %#v", calls)
+	if !commandSeen(calls, execPath, []string{"upgrade", "--port", "/dev/cu.usbserial42", "--firmware-env", firmwareEnvironment}) {
+		t.Fatalf("expected release firmware upgrade call with selected port, got %#v", calls)
 	}
 
 	if !commandSeen(calls, "launchctl", []string{"bootstrap", "gui/501", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")}) {
@@ -253,7 +273,9 @@ func TestRunWithDepsConfiguresWiFiLaunchAgentTarget(t *testing.T) {
 	if !strings.Contains(plist, "<string>--transport</string>") ||
 		!strings.Contains(plist, "<string>wifi</string>") ||
 		!strings.Contains(plist, "<string>--target</string>") ||
-		!strings.Contains(plist, "<string>http://192.168.178.66</string>") {
+		!strings.Contains(plist, "<string>http://192.168.178.66</string>") ||
+		!strings.Contains(plist, "<string>--api-addr</string>") ||
+		!strings.Contains(plist, "<string>127.0.0.1:47832</string>") {
 		t.Fatalf("expected WiFi launch agent target in plist, got:\n%s", plist)
 	}
 	if strings.Contains(plist, "<string>--port</string>") {
@@ -682,6 +704,78 @@ func TestRunWithDepsKeepsExistingThemeWhenUnset(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsPersistsWiFiTargetInRuntimeConfig(t *testing.T) {
+	home := t.TempDir()
+	execPath := mustCreateExecutable(t)
+
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		Theme:        "crt",
+		DeviceTarget: "http://192.168.178.163",
+		DeviceToken:  "pair-token",
+	}); err != nil {
+		t.Fatalf("seed runtime config: %v", err)
+	}
+
+	err := runWithDeps(context.Background(), Options{
+		Transport: "wifi",
+		Target:    "http://192.168.178.72",
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdin:  strings.NewReader(""),
+		stdout: &bytes.Buffer{},
+		executablePath: func() (string, error) {
+			return execPath, nil
+		},
+		homeDir: func() (string, error) {
+			return home, nil
+		},
+		uid:          func() int { return 501 },
+		discoverWiFi: noSetupWiFiDiscovery(t),
+		findCodexbar: func() (string, error) {
+			return "/opt/homebrew/bin/codexbar", nil
+		},
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected setup success, got %v", err)
+	}
+
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.72" {
+		t.Fatalf("expected runtime config target to follow setup target, got %q", cfg.DeviceTarget)
+	}
+	if cfg.Theme != "crt" {
+		t.Fatalf("expected existing theme override to stay crt, got %q", cfg.Theme)
+	}
+	if cfg.DeviceToken != "pair-token" {
+		t.Fatalf("expected device token to be preserved, got %q", cfg.DeviceToken)
+	}
+
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	plistData, readErr := os.ReadFile(plistPath)
+	if readErr != nil {
+		t.Fatalf("read plist: %v", readErr)
+	}
+	if !strings.Contains(string(plistData), "<string>http://192.168.178.72</string>") {
+		t.Fatalf("expected launch agent target to match runtime config, got:\n%s", string(plistData))
+	}
+}
+
 func TestRunWithDepsContinuesWhenSkipFlashAndProbeFails(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
@@ -795,7 +889,7 @@ func TestRunWithDepsFailsPreflightWhenPlatformIOMissingForUSBFlash(t *testing.T)
 	if !strings.Contains(msg, "missing dependency \"pio\"") {
 		t.Fatalf("expected pio dependency message, got %q", msg)
 	}
-	if !strings.Contains(msg, "USB flashing is requested") {
+	if !strings.Contains(msg, "release firmware over USB") {
 		t.Fatalf("expected why-it-is-needed text, got %q", msg)
 	}
 	if !strings.Contains(msg, "python3 -m pip install --user platformio") {
@@ -936,7 +1030,7 @@ func TestRunWithDepsReportsFlashFailureWithConcreteHint(t *testing.T) {
 			}
 		},
 		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
-			if name == "pio" {
+			if name == execPath {
 				return "Failed to connect to ESP32-S3: Resource busy", errors.New("exit status 1")
 			}
 			return "", nil
@@ -1268,7 +1362,7 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 	}
 }
 
-func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T) {
+func TestRunWithDepsUsesReleaseUpgradeForEsp8266FirmwareEnvironment(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	repo := filepath.Join(tmp, "repo")
@@ -1279,7 +1373,7 @@ func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T
 	mustWriteFile(t, filepath.Join(repo, "companion", "go.mod"), []byte("module test"), 0o644)
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
 
-	var pioCall *commandCall
+	var upgradeCall *commandCall
 	err := runWithDeps(context.Background(), Options{
 		Transport:   "usb",
 		AssumeYes:   true,
@@ -1316,9 +1410,9 @@ func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T
 			}
 		},
 		runCommand: func(_ context.Context, dir string, name string, args ...string) (string, error) {
-			if name == "pio" {
+			if name == execPath {
 				c := commandCall{dir: dir, name: name, args: append([]string(nil), args...)}
-				pioCall = &c
+				upgradeCall = &c
 			}
 			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
 				return "state = running", nil
@@ -1329,15 +1423,14 @@ func TestRunWithDepsUsesEsp8266FirmwareProjectForEsp8266Environment(t *testing.T
 	if err != nil {
 		t.Fatalf("expected setup success, got %v", err)
 	}
-	if pioCall == nil {
-		t.Fatalf("expected firmware flash call")
+	if upgradeCall == nil {
+		t.Fatalf("expected release firmware upgrade call")
 	}
-	expectedDir := filepath.Join(repo, "firmware_esp8266")
-	if pioCall.dir != expectedDir {
-		t.Fatalf("expected esp8266 firmware dir %q, got %q", expectedDir, pioCall.dir)
+	if upgradeCall.dir != "" {
+		t.Fatalf("expected release upgrade to run outside the repo, got dir %q", upgradeCall.dir)
 	}
-	if !commandSeen([]commandCall{*pioCall}, "pio", []string{"run", "-e", "esp8266_smalltv_st7789", "-t", "upload", "--upload-port", "/dev/cu.usbserial42"}) {
-		t.Fatalf("unexpected pio args: %#v", pioCall.args)
+	if !commandSeen([]commandCall{*upgradeCall}, execPath, []string{"upgrade", "--port", "/dev/cu.usbserial42", "--firmware-env", "esp8266_smalltv_st7789"}) {
+		t.Fatalf("unexpected release upgrade args: %#v", upgradeCall.args)
 	}
 }
 

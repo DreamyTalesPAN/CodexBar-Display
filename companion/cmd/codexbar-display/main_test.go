@@ -48,6 +48,29 @@ func TestParseDaemonOptionsDefaultsToWiFi(t *testing.T) {
 	if opts.Target != "http://vibetv.local" {
 		t.Fatalf("expected default WiFi target, got %q", opts.Target)
 	}
+	if opts.Interval != 0 {
+		t.Fatalf("expected daemon runtime to choose default interval, got %s", opts.Interval)
+	}
+}
+
+func TestParseDaemonCommandOptionsSupportsEmbeddedAPI(t *testing.T) {
+	opts, err := parseDaemonCommandOptions([]string{
+		"--transport", "wifi",
+		"--api-addr", "127.0.0.1:47832",
+		"--api-dev-origin", "http://localhost:3002",
+	})
+	if err != nil {
+		t.Fatalf("parseDaemonCommandOptions returned error: %v", err)
+	}
+	if opts.Daemon.Transport != "wifi" {
+		t.Fatalf("expected wifi transport, got %q", opts.Daemon.Transport)
+	}
+	if opts.APIAddr != "127.0.0.1:47832" {
+		t.Fatalf("unexpected api addr %q", opts.APIAddr)
+	}
+	if opts.APIDevOrigin != "http://localhost:3002" {
+		t.Fatalf("unexpected dev origin %q", opts.APIDevOrigin)
+	}
 }
 
 func TestResolveThemeSpecTransportNamePreservesPortOnlyUSBFlow(t *testing.T) {

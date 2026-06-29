@@ -3,6 +3,7 @@ package codexbar
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -97,6 +98,184 @@ func TestParseAllProvidersSkipsProviderErrorPayloads(t *testing.T) {
 	}
 	if got := providerKey(parsed[0]); got != "codex" {
 		t.Fatalf("expected codex provider after filtering error payloads, got %q", got)
+	}
+}
+
+func TestParseProviderPayloadKeepsCodexBarUsageMeta(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"openai-web",
+			"status":{"indicator":"none","description":"Operational","updatedAt":"2026-06-26T10:00:00Z","url":"https://status.openai.com/"},
+			"usage":{
+				"primary":{"usedPercent":28,"windowMinutes":300,"resetsAt":"2099-01-01T01:00:00Z"},
+				"secondary":{"usedPercent":59,"windowMinutes":10080,"resetsAt":"2099-01-02T01:00:00Z"},
+				"tertiary":{"usedPercent":12,"windowMinutes":43200},
+				"extra":[{"id":"codeReview","label":"Code review","usedPercent":7,"windowMinutes":10080}]
+			},
+			"pace":{
+				"primary":{"stage":"ahead","deltaPercent":12,"expectedUsedPercent":16,"willLastToReset":false,"etaSeconds":9000,"summary":"12% in deficit | Expected 16% used | Projected empty in 2h 30m"}
+			},
+			"openaiDashboard":{
+				"usageBreakdown":[
+					{"day":"2026-06-24","services":[{"service":"CLI","creditsUsed":8.5},{"service":"Code review","creditsUsed":3.5}],"totalCreditsUsed":12},
+					{"day":"2026-06-25","services":[{"service":"CLI","creditsUsed":10}],"totalCreditsUsed":10}
+				]
+			},
+			"credits":{"remaining":112.4,"updatedAt":"2026-06-26T10:01:00Z"}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected one provider, got %d", len(parsed))
+	}
+	meta := parsed[0].Meta
+	if meta.Status == nil || meta.Status.Indicator != "none" || meta.Status.Description != "Operational" || meta.Status.URL == "" {
+		t.Fatalf("expected status metadata, got %+v", meta.Status)
+	}
+	if meta.Credits == nil || meta.Credits.Remaining != 112.4 {
+		t.Fatalf("expected credits metadata, got %+v", meta.Credits)
+	}
+	if len(meta.Pace) != 1 || meta.Pace[0].Window != "primary" || meta.Pace[0].Summary == "" || meta.Pace[0].ETASeconds != 9000 {
+		t.Fatalf("expected pace metadata, got %+v", meta.Pace)
+	}
+	if len(meta.Windows) != 4 {
+		t.Fatalf("expected primary, secondary, tertiary, extra windows, got %+v", meta.Windows)
+	}
+	if len(meta.OverTime) != 2 || meta.OverTime[0].Day != "2026-06-24" || meta.OverTime[0].TotalCreditsUsed != 12 {
+		t.Fatalf("expected usage-over-time metadata, got %+v", meta.OverTime)
+	}
+	if len(meta.OverTime[0].Services) != 2 || meta.OverTime[0].Services[0].Service != "CLI" {
+		t.Fatalf("expected usage-over-time services, got %+v", meta.OverTime[0].Services)
+	}
+	if meta.Windows[2].ID != "tertiary" || meta.Windows[2].UsedPercent != 12 {
+		t.Fatalf("expected tertiary window, got %+v", meta.Windows[2])
+	}
+	if meta.Windows[3].ID != "codereview" || meta.Windows[3].Label != "Code review" || meta.Windows[3].UsedPercent != 7 {
+		t.Fatalf("expected extra code review window, got %+v", meta.Windows[3])
+	}
+}
+
+func TestParseProviderPayloadReadsCodexDailyBreakdown(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"oauth",
+			"usage":{
+				"primary":{"usedPercent":0,"windowMinutes":300,"resetsAt":"2099-01-01T01:00:00Z"},
+				"secondary":{"usedPercent":6,"windowMinutes":10080,"resetsAt":"2099-01-02T01:00:00Z"}
+			},
+			"openaiDashboard":{
+				"usageBreakdown":[],
+				"dailyBreakdown":[
+					{"day":"2026-06-08","totalCreditsUsed":1008.691,"services":[{"service":"Desktop App","creditsUsed":1008.691}]}
+				]
+			},
+			"credits":{"remaining":0,"updatedAt":"2026-06-29T10:47:46Z"}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected one provider, got %d", len(parsed))
+	}
+	overTime := parsed[0].Meta.OverTime
+	if len(overTime) != 1 {
+		t.Fatalf("expected dailyBreakdown usage-over-time point, got %+v", overTime)
+	}
+	if overTime[0].Day != "2026-06-08" || math.Abs(overTime[0].TotalCreditsUsed-1008.691) > 0.0001 {
+		t.Fatalf("unexpected dailyBreakdown point: %+v", overTime[0])
+	}
+	if len(overTime[0].Services) != 1 || overTime[0].Services[0].Service != "Desktop App" || math.Abs(overTime[0].Services[0].CreditsUsed-1008.691) > 0.0001 {
+		t.Fatalf("unexpected dailyBreakdown services: %+v", overTime[0].Services)
+	}
+}
+
+func TestParseProviderPayloadAggregatesCodexCreditEvents(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"oauth",
+			"usage":{
+				"primary":{"usedPercent":1},
+				"secondary":{"usedPercent":21}
+			},
+			"openaiDashboard":{
+				"creditEvents":[
+					{"id":"a","service":"Desktop App","creditsUsed":610.148,"date":"2026-06-07T22:00:00Z"},
+					{"id":"b","service":"Desktop App","creditsUsed":351.03,"date":"2026-06-07T23:00:00Z"},
+					{"id":"c","service":"Code review","creditsUsed":7.296,"date":"2026-06-07T23:30:00Z"}
+				]
+			}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected one provider, got %d", len(parsed))
+	}
+	overTime := parsed[0].Meta.OverTime
+	if len(overTime) != 1 {
+		t.Fatalf("expected aggregated credit event day, got %+v", overTime)
+	}
+	if overTime[0].Day != "2026-06-07" || math.Abs(overTime[0].TotalCreditsUsed-968.474) > 0.0001 {
+		t.Fatalf("unexpected aggregated credit event total: %+v", overTime[0])
+	}
+	if len(overTime[0].Services) != 2 {
+		t.Fatalf("expected two aggregated services, got %+v", overTime[0].Services)
+	}
+	if overTime[0].Services[0].Service != "Desktop App" || math.Abs(overTime[0].Services[0].CreditsUsed-961.178) > 0.0001 {
+		t.Fatalf("unexpected primary aggregated service: %+v", overTime[0].Services)
+	}
+}
+
+func TestParseProviderPayloadReadsCodexResetCredits(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"oauth",
+			"usage":{
+				"primary":{"usedPercent":1},
+				"secondary":{"usedPercent":21},
+				"codexResetCredits":{
+					"updatedAt":"2026-06-29T11:09:22Z",
+					"availableCount":3,
+					"credits":[
+						{"status":"used","expires_at":"2026-07-01T01:42:57Z"},
+						{"status":"available","expires_at":"2026-07-12T01:42:57Z"},
+						{"status":"available","expires_at":"2026-07-18T00:33:27Z"}
+					]
+				}
+			}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected one provider, got %d", len(parsed))
+	}
+	resetCredits := parsed[0].Meta.ResetCredits
+	if resetCredits == nil {
+		t.Fatalf("expected reset credits metadata")
+	}
+	if resetCredits.AvailableCount != 3 {
+		t.Fatalf("expected three available reset credits, got %+v", resetCredits)
+	}
+	if got := resetCredits.NextExpiresAt.Format(time.RFC3339); got != "2026-07-12T01:42:57Z" {
+		t.Fatalf("expected earliest available reset credit expiry, got %s", got)
 	}
 }
 

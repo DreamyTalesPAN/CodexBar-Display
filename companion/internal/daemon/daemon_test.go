@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,27 @@ func TestRunCycleWithDepsSendsErrorFrameWhenNoLastGood(t *testing.T) {
 	frame := decodeFrameLine(t, sentLine)
 	if frame.Error != string(runtimeErrorCodexbarParse) {
 		t.Fatalf("expected runtime error frame code %q, got %q", runtimeErrorCodexbarParse, frame.Error)
+	}
+}
+
+func TestDefaultIntervalForTransport(t *testing.T) {
+	tests := []struct {
+		name      string
+		transport string
+		want      time.Duration
+	}{
+		{name: "wifi", transport: "wifi", want: defaultWiFiInterval},
+		{name: "wifi uppercase", transport: "WIFI", want: defaultWiFiInterval},
+		{name: "usb", transport: "usb", want: defaultInterval},
+		{name: "empty", transport: "", want: defaultInterval},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := defaultIntervalForTransport(tt.transport); got != tt.want {
+				t.Fatalf("defaultIntervalForTransport(%q)=%s, expected %s", tt.transport, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -175,6 +197,20 @@ func TestRunCycleWithDepsUsesRuntimeConfigTargetOverStaleLaunchAgentTarget(t *te
 	}
 }
 
+func TestEffectiveCycleTargetUsesRuntimeConfigOverInMemoryTarget(t *testing.T) {
+	state := &runtimeState{deviceTarget: "http://192.168.178.10"}
+	got := effectiveCycleTarget("http://vibetv.local", state, runtimeDeps{
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{DeviceTarget: "http://192.168.178.99"}, nil
+		},
+	})
+	if got != "http://192.168.178.99" {
+		t.Fatalf("expected runtime config target to win, got %q", got)
+	}
+}
+
 func TestRunCycleWithDepsSendsRuntimeConfigDeviceTokenWithoutLoggingIt(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -230,6 +266,137 @@ func TestRunCycleWithDepsSendsRuntimeConfigDeviceTokenWithoutLoggingIt(t *testin
 	}
 	if !strings.Contains(logged.String(), "sent frame -> http://192.168.178.159") {
 		t.Fatalf("expected public target in log, got %q", logged.String())
+	}
+}
+
+func TestRunCycleWithDepsRuntimeConfigDeviceTokenReplacesStaleTargetToken(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+	var sentTarget string
+
+	err := runCycleWithDeps(context.Background(), "http://192.168.178.159?token=stale-token", state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{
+				DeviceTarget: "http://192.168.178.159",
+				DeviceToken:  "fresh-token",
+			}, nil
+		},
+		resolvePort: func(target string) (string, error) {
+			return target, nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				Board:                     "esp8266-smalltv-st7789",
+				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+				MaxFrameBytes:             2048,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 12, 30, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(target string, _ []byte) error {
+			sentTarget = target
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success, got %v", err)
+	}
+	if sentTarget != "http://192.168.178.159?token=fresh-token" {
+		t.Fatalf("expected fresh runtime-config token to replace stale target token, got %q", sentTarget)
+	}
+}
+
+func TestRunCycleWithDepsRepairsStaleDeviceTokenOnUnauthorizedSend(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+	cfg := runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.159",
+		DeviceToken:  "old-token",
+	}
+	var sentTargets []string
+	var pairedTarget string
+	var logged strings.Builder
+
+	err := runCycleWithDeps(context.Background(), "http://192.168.178.159", state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return cfg, nil
+		},
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			cfg = next
+			return nil
+		},
+		resolvePort: func(target string) (string, error) {
+			return target, nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				Board:                     "esp8266-smalltv-st7789",
+				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+				MaxFrameBytes:             2048,
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 12, 30, 3600),
+			}, nil
+		},
+		pairDevice: func(_ context.Context, target string) (string, error) {
+			pairedTarget = target
+			return "new-token", nil
+		},
+		logf: func(format string, args ...any) {
+			logged.WriteString(fmt.Sprintf(format, args...))
+		},
+		sendLine: func(target string, _ []byte) error {
+			sentTargets = append(sentTargets, target)
+			if strings.Contains(target, "old-token") {
+				return errors.New(`post frame: status=401 body="pairing token required"`)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected cycle success after token repair, got %v", err)
+	}
+	wantTargets := []string{
+		"http://192.168.178.159?token=old-token",
+		"http://192.168.178.159?token=new-token",
+	}
+	if !reflect.DeepEqual(sentTargets, wantTargets) {
+		t.Fatalf("unexpected send targets: got %#v want %#v", sentTargets, wantTargets)
+	}
+	if pairedTarget != "http://192.168.178.159" {
+		t.Fatalf("expected public pairing target, got %q", pairedTarget)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.159" || cfg.DeviceToken != "new-token" {
+		t.Fatalf("expected persisted new token, got %+v", cfg)
+	}
+	log := logged.String()
+	if !strings.Contains(log, "device-token-repaired") {
+		t.Fatalf("expected repair log, got %q", log)
+	}
+	if strings.Contains(log, "old-token") || strings.Contains(log, "new-token") {
+		t.Fatalf("daemon log leaked token: %q", log)
 	}
 }
 
@@ -1369,6 +1536,32 @@ func TestSelectFirmwareUpdateComparesBoardRelease(t *testing.T) {
 	if current.Available || current.Status != "current" {
 		t.Fatalf("expected current state, got %+v", current)
 	}
+
+	devCurrent, err := selectFirmwareUpdate(protocol.DeviceCapabilities{
+		Board:    "esp8266-smalltv-st7789",
+		Firmware: "1.0.1-dev",
+	}, firmwareManifest{Artifacts: []firmwareArtifact{
+		{Board: "esp8266-smalltv-st7789", FirmwareVersion: "1.0.1"},
+	}})
+	if err != nil {
+		t.Fatalf("select dev current: %v", err)
+	}
+	if devCurrent.Available || devCurrent.Status != "current" {
+		t.Fatalf("expected dev build for same release to be current, got %+v", devCurrent)
+	}
+
+	nextRelease, err := selectFirmwareUpdate(protocol.DeviceCapabilities{
+		Board:    "esp8266-smalltv-st7789",
+		Firmware: "1.0.1-dev",
+	}, firmwareManifest{Artifacts: []firmwareArtifact{
+		{Board: "esp8266-smalltv-st7789", FirmwareVersion: "1.0.2"},
+	}})
+	if err != nil {
+		t.Fatalf("select next release for dev build: %v", err)
+	}
+	if !nextRelease.Available || nextRelease.Status != "update_available" {
+		t.Fatalf("expected newer release to update dev build, got %+v", nextRelease)
+	}
 }
 
 func TestMarshalFrameWithinLimitDropsTokenStatsBeforeFallback(t *testing.T) {
@@ -1490,6 +1683,91 @@ func TestConfiguredThemeCLIOverridesEnvAndRuntimeConfig(t *testing.T) {
 
 	if got := configuredTheme("crt"); got != "crt" {
 		t.Fatalf("expected cli theme override, got %q", got)
+	}
+}
+
+func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	now := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
+	if err := persistProviderSnapshots(map[string]providerSnapshot{
+		"claude": {
+			Provider:  "claude",
+			Source:    "web",
+			Collected: now.Add(-2 * time.Minute),
+			Frame: protocol.Frame{
+				Provider: "claude",
+				Label:    "Claude",
+				Session:  20,
+				Weekly:   40,
+				ResetSec: 7200,
+			},
+		},
+		"codex": {
+			Provider:  "codex",
+			Source:    "openai-web",
+			Collected: now.Add(-20 * time.Second),
+			Frame: protocol.Frame{
+				Provider:      "codex",
+				Label:         "Codex",
+				Session:       10,
+				Weekly:        30,
+				ResetSec:      3600,
+				SessionTokens: 500,
+			},
+			Meta: codexbar.ProviderUsageMeta{
+				Credits: &codexbar.ProviderCredits{Remaining: 42.5},
+				Status:  &codexbar.ProviderStatus{Indicator: "none", Description: "Operational"},
+				OverTime: []codexbar.UsageOverTimePoint{
+					{
+						Day:              "2026-06-24",
+						TotalCreditsUsed: 12,
+						Services:         []codexbar.UsageServiceUsage{{Service: "CLI", CreditsUsed: 12}},
+					},
+				},
+			},
+		},
+	}, now); err != nil {
+		t.Fatalf("persist provider snapshots: %v", err)
+	}
+	if err := persistLastGood(protocol.Frame{Provider: "claude", Label: "Claude"}, now); err != nil {
+		t.Fatalf("persist last good: %v", err)
+	}
+
+	usage, ok := LoadPersistedUsage(now)
+	if !ok {
+		t.Fatal("expected persisted usage")
+	}
+	if usage.CurrentProvider != "claude" {
+		t.Fatalf("expected current provider from last good, got %q", usage.CurrentProvider)
+	}
+	if len(usage.Providers) != 2 {
+		t.Fatalf("expected two providers, got %+v", usage.Providers)
+	}
+	if usage.Providers[0].Provider != "codex" || usage.Providers[1].Provider != "claude" {
+		t.Fatalf("expected collector order codex, claude; got %+v", usage.Providers)
+	}
+	if usage.Providers[0].Stale {
+		t.Fatalf("expected fresh codex snapshot, got %+v", usage.Providers[0])
+	}
+	if !usage.Providers[1].Stale {
+		t.Fatalf("expected stale claude snapshot, got %+v", usage.Providers[1])
+	}
+	if usage.Providers[0].Frame.UsageMode != "used" {
+		t.Fatalf("expected default usage mode used, got %q", usage.Providers[0].Frame.UsageMode)
+	}
+	if usage.Providers[0].Frame.SessionTokens != 500 {
+		t.Fatalf("expected token stats to survive, got %+v", usage.Providers[0].Frame)
+	}
+	if usage.Providers[0].Meta.Credits == nil || usage.Providers[0].Meta.Credits.Remaining != 42.5 {
+		t.Fatalf("expected credits metadata to survive, got %+v", usage.Providers[0].Meta.Credits)
+	}
+	if usage.Providers[0].Meta.Status == nil || usage.Providers[0].Meta.Status.Description != "Operational" {
+		t.Fatalf("expected status metadata to survive, got %+v", usage.Providers[0].Meta.Status)
+	}
+	if len(usage.Providers[0].Meta.OverTime) != 1 || usage.Providers[0].Meta.OverTime[0].Day != "2026-06-24" {
+		t.Fatalf("expected usage-over-time metadata to survive, got %+v", usage.Providers[0].Meta.OverTime)
 	}
 }
 
@@ -1629,7 +1907,7 @@ func TestRunCycleWithDepsDoesNotFallbackWhenRequestedPortDisappears(t *testing.T
 	}
 }
 
-func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
+func TestRunCycleWithDepsDiscoversNewWiFiIPWhenStoredIPStales(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -1638,14 +1916,23 @@ func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
 	}
 
 	const staleTarget = "http://192.168.178.163"
-	const recoveredTarget = "http://vibetv.local"
+	const recoveredTarget = "http://192.168.178.72"
 	var resolved []string
 	var sentPort string
 	var logged strings.Builder
+	savedConfig := runtimeconfig.Config{DeviceTarget: staleTarget}
 
 	err := runCycleWithDeps(context.Background(), staleTarget, state, runtimeDeps{
 		now:           func() time.Time { return now },
 		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return savedConfig, nil
+		},
+		saveConfig: func(_ string, cfg runtimeconfig.Config) error {
+			savedConfig = cfg
+			return nil
+		},
 		resolvePort: func(target string) (string, error) {
 			resolved = append(resolved, target)
 			return target, nil
@@ -1654,14 +1941,26 @@ func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
 			if target == staleTarget {
 				return protocol.DeviceCapabilities{}, errors.New("host is down")
 			}
-			if target != recoveredTarget {
-				return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected target %s", target)
+			return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected direct fallback target %s", target)
+		},
+		discoverWiFi: func(candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
+			if !containsString(candidates, staleTarget) {
+				t.Fatalf("expected stale IP candidate, got %#v", candidates)
 			}
-			return protocol.DeviceCapabilities{
-				Known:                     true,
-				Board:                     "esp8266-smalltv-st7789",
-				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
-				MaxFrameBytes:             2048,
+			if containsString(candidates, defaultWiFiTarget) {
+				t.Fatalf("did not expect default mDNS candidate before network scan for stale IP, got %#v", candidates)
+			}
+			return transportlayer.WiFiDiscoveryResult{
+				Target: recoveredTarget,
+				Hello: protocol.DeviceHello{
+					Kind:            "hello",
+					ProtocolVersion: 2,
+					Board:           "esp8266-smalltv-st7789",
+					Capabilities: protocol.CapabilityBlock{
+						Transport: protocol.TransportCapabilities{Active: "wifi"},
+					},
+				},
+				Source: "network-scan",
 			}, nil
 		},
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
@@ -1680,38 +1979,43 @@ func TestRunCycleWithDepsRecoversStaleWiFiIPViaLocalTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runCycleWithDeps returned error: %v", err)
 	}
-	if got := strings.Join(resolved, ","); got != staleTarget+","+recoveredTarget {
+	if got := strings.Join(resolved, ","); got != staleTarget {
 		t.Fatalf("unexpected resolve order %q", got)
 	}
 	if sentPort != recoveredTarget {
-		t.Fatalf("expected frame sent to recovered target, got %q", sentPort)
+		t.Fatalf("expected frame sent to discovered target, got %q", sentPort)
 	}
-	if !strings.Contains(logged.String(), "wifi-target-recovered") {
-		t.Fatalf("expected recovery log, got %q", logged.String())
+	if !strings.Contains(logged.String(), "wifi-target-discovered") {
+		t.Fatalf("expected discovery log, got %q", logged.String())
 	}
-}
-
-func TestRunCycleWithDepsRecoversUnknownWiFiTargetViaLocalTarget(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	state := &runtimeState{
-		selector: codexbar.NewProviderSelector(),
+	if savedConfig.DeviceTarget != recoveredTarget {
+		t.Fatalf("expected discovered target to be persisted, got %+v", savedConfig)
+	}
+	if state.deviceTarget != recoveredTarget {
+		t.Fatalf("expected discovered target in runtime state, got %q", state.deviceTarget)
 	}
 
-	const staleTarget = "http://192.168.178.163"
-	const recoveredTarget = "http://vibetv.local"
-	var sentPort string
-
-	err := runCycleWithDeps(context.Background(), staleTarget, state, runtimeDeps{
+	resolved = nil
+	sentPort = ""
+	now = now.Add(time.Second)
+	err = runCycleWithDeps(context.Background(), staleTarget, state, runtimeDeps{
 		now:           func() time.Time { return now },
 		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return savedConfig, nil
+		},
+		saveConfig: func(_ string, cfg runtimeconfig.Config) error {
+			savedConfig = cfg
+			return nil
+		},
 		resolvePort: func(target string) (string, error) {
+			resolved = append(resolved, target)
 			return target, nil
 		},
 		deviceCaps: func(target string) (protocol.DeviceCapabilities, error) {
-			if target == staleTarget {
-				return protocol.UnknownDeviceCapabilities(), nil
+			if target != recoveredTarget {
+				return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected target after recovery %s", target)
 			}
 			return protocol.DeviceCapabilities{
 				Known:                     true,
@@ -1730,10 +2034,74 @@ func TestRunCycleWithDepsRecoversUnknownWiFiTargetViaLocalTarget(t *testing.T) {
 		logf: func(string, ...any) {},
 	})
 	if err != nil {
+		t.Fatalf("second runCycleWithDeps returned error: %v", err)
+	}
+	if got := strings.Join(resolved, ","); got != recoveredTarget {
+		t.Fatalf("expected second cycle to use recovered target only, got %q", got)
+	}
+	if sentPort != recoveredTarget {
+		t.Fatalf("expected second frame sent to recovered target, got %q", sentPort)
+	}
+}
+
+func TestRunCycleWithDepsDiscoversWiFiIPWhenStoredIPCapabilitiesAreUnknown(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	const staleTarget = "http://192.168.178.163"
+	const recoveredTarget = "http://192.168.178.72"
+	var sentPort string
+
+	err := runCycleWithDeps(context.Background(), staleTarget, state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		resolvePort: func(target string) (string, error) {
+			return target, nil
+		},
+		deviceCaps: func(target string) (protocol.DeviceCapabilities, error) {
+			if target == staleTarget {
+				return protocol.UnknownDeviceCapabilities(), nil
+			}
+			return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected direct fallback target %s", target)
+		},
+		discoverWiFi: func(candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
+			if !containsString(candidates, staleTarget) {
+				t.Fatalf("expected stale IP candidate, got %#v", candidates)
+			}
+			if containsString(candidates, defaultWiFiTarget) {
+				t.Fatalf("did not expect default mDNS candidate before network scan for stale IP, got %#v", candidates)
+			}
+			return transportlayer.WiFiDiscoveryResult{
+				Target: recoveredTarget,
+				Hello: protocol.DeviceHello{
+					Kind:            "hello",
+					ProtocolVersion: 2,
+					Board:           "esp8266-smalltv-st7789",
+					Capabilities: protocol.CapabilityBlock{
+						Transport: protocol.TransportCapabilities{Active: "wifi"},
+					},
+				},
+				Source: "network-scan",
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+		},
+		sendLine: func(port string, line []byte) error {
+			sentPort = port
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
 		t.Fatalf("runCycleWithDeps returned error: %v", err)
 	}
 	if sentPort != recoveredTarget {
-		t.Fatalf("expected frame sent to recovered target, got %q", sentPort)
+		t.Fatalf("expected frame sent to discovered target, got %q", sentPort)
 	}
 }
 
@@ -2180,6 +2548,9 @@ func TestRunCycleFromCollectorUsesStaleLastGoodWhenCollectorEmpty(t *testing.T) 
 	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
 		now:         func() time.Time { return now },
 		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProvider: func(context.Context, string) (codexbar.ParsedFrame, error) {
+			return codexbar.ParsedFrame{}, codexbar.ErrNoProviders
+		},
 		sendLine: func(_ string, line []byte) error {
 			sentLine = append([]byte(nil), line...)
 			return nil

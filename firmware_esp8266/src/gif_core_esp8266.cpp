@@ -64,6 +64,11 @@ void GifCoreESP8266::Stop() {
   backgroundColor_ = 0x0000;
 }
 
+void GifCoreESP8266::ReleaseMemory() {
+  Stop();
+  ReleaseDecoder();
+}
+
 bool GifCoreESP8266::EnsureDecoder() {
   if (decoder_ != nullptr) {
     return true;

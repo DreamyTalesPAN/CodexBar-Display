@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,10 +24,11 @@ type ProviderTokenStats struct {
 	TotalTokens   int64
 	UpdatedAt     time.Time
 	Source        string
+	Cost          *ProviderCostUsage
 }
 
 func (s ProviderTokenStats) HasAny() bool {
-	return s.SessionTokens > 0 || s.WeekTokens > 0 || s.TotalTokens > 0
+	return s.SessionTokens > 0 || s.WeekTokens > 0 || s.TotalTokens > 0 || s.Cost != nil
 }
 
 type providerTokenStatsCache struct {
@@ -66,6 +68,9 @@ func mergeTokenStats(ctx context.Context, parsed []ParsedFrame, bin string) []Pa
 			continue
 		}
 		applyTokenStatsToFrame(&out[i].Frame, stats)
+		if stats.Cost != nil {
+			out[i].Meta.Cost = stats.Cost
+		}
 		if !stats.UpdatedAt.IsZero() {
 			out[i].ActivityObservedAt = stats.UpdatedAt.UTC()
 		}
@@ -89,6 +94,9 @@ func mergeProviderTokenStats(ctx context.Context, parsed ParsedFrame, bin string
 	}
 
 	applyTokenStatsToFrame(&parsed.Frame, stats)
+	if stats.Cost != nil {
+		parsed.Meta.Cost = stats.Cost
+	}
 	if !stats.UpdatedAt.IsZero() {
 		parsed.ActivityObservedAt = stats.UpdatedAt.UTC()
 	}
@@ -96,9 +104,15 @@ func mergeProviderTokenStats(ctx context.Context, parsed ParsedFrame, bin string
 }
 
 func applyTokenStatsToFrame(frame *protocol.Frame, stats ProviderTokenStats) {
-	frame.SessionTokens = stats.SessionTokens
-	frame.WeekTokens = stats.WeekTokens
-	frame.TotalTokens = stats.TotalTokens
+	if stats.SessionTokens > 0 {
+		frame.SessionTokens = stats.SessionTokens
+	}
+	if stats.WeekTokens > 0 {
+		frame.WeekTokens = stats.WeekTokens
+	}
+	if stats.TotalTokens > 0 {
+		frame.TotalTokens = stats.TotalTokens
+	}
 }
 
 func fetchProviderTokenStats(ctx context.Context, bin string) (map[string]ProviderTokenStats, bool) {
@@ -212,11 +226,205 @@ func parseProviderTokenStatsPayload(payload map[string]any) (string, ProviderTok
 		}
 	}
 	stats.WeekTokens = weekTokenTotal(payload, stats.UpdatedAt)
+	if cost, ok := parseProviderCostUsagePayload(payload, stats.SessionTokens, stats.UpdatedAt); ok {
+		stats.Cost = &cost
+	}
 	if !stats.HasAny() {
 		return "", ProviderTokenStats{}, false
 	}
 
 	return key, stats, true
+}
+
+func parseProviderCostUsagePayload(payload map[string]any, fallbackLatestTokens int64, fallbackUpdatedAt time.Time) (ProviderCostUsage, bool) {
+	daily := parseProviderCostDays(payload["daily"])
+	cost := ProviderCostUsage{
+		CurrencyCode: strings.TrimSpace(firstString(payload, "currencyCode", "currency")),
+		Daily:        daily,
+	}
+	if cost.CurrencyCode == "" {
+		cost.CurrencyCode = "USD"
+	}
+	if updatedAt := firstRFC3339AtPaths(payload, "updatedAt", "updated_at"); !updatedAt.IsZero() {
+		cost.UpdatedAt = updatedAt.UTC()
+	} else if !fallbackUpdatedAt.IsZero() {
+		cost.UpdatedAt = fallbackUpdatedAt.UTC()
+	}
+
+	if value, ok := floatAtPaths(payload, "last30DaysCostUSD", "totals.totalCost", "totalCost"); ok {
+		cost.Last30DaysCostUSD = value
+	}
+	cost.Last30DaysTokens = int64AtPaths(payload, "last30DaysTokens", "totals.totalTokens", "totalTokens")
+	cost.LatestTokens = int64AtPaths(payload, "latestTokens", "sessionTokens")
+	if cost.LatestTokens == 0 {
+		cost.LatestTokens = fallbackLatestTokens
+	}
+	cost.TopModel = strings.TrimSpace(firstString(payload, "topModel"))
+	if cost.TopModel == "" {
+		cost.TopModel = topModelFromCostDays(daily)
+	}
+
+	if cost.Last30DaysCostUSD <= 0 {
+		for _, day := range daily {
+			cost.Last30DaysCostUSD += day.TotalCostUSD
+		}
+	}
+	if cost.Last30DaysTokens <= 0 {
+		for _, day := range daily {
+			cost.Last30DaysTokens += day.TotalTokens
+		}
+	}
+
+	anchor := cost.UpdatedAt
+	if anchor.IsZero() {
+		anchor = time.Now().UTC()
+	}
+	today := anchor.UTC().Format("2006-01-02")
+	for _, day := range daily {
+		if day.Day == today {
+			cost.TodayCostUSD = day.TotalCostUSD
+			break
+		}
+	}
+	if cost.TodayCostUSD <= 0 {
+		if value, ok := floatAtPaths(payload, "todayCostUSD", "sessionCostUSD"); ok {
+			cost.TodayCostUSD = value
+		}
+	}
+
+	if len(cost.Daily) == 0 &&
+		cost.TodayCostUSD <= 0 &&
+		cost.Last30DaysCostUSD <= 0 &&
+		cost.Last30DaysTokens <= 0 &&
+		cost.LatestTokens <= 0 &&
+		cost.TopModel == "" {
+		return ProviderCostUsage{}, false
+	}
+	return cost, true
+}
+
+func parseProviderCostDays(raw any) []ProviderCostDay {
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+
+	days := make([]ProviderCostDay, 0, len(items))
+	for _, item := range items {
+		dayMap, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		day := usageDayKey(firstString(dayMap, "date", "day", "dayKey"))
+		if day == "" {
+			continue
+		}
+		totalCost, _ := floatAtPaths(dayMap, "totalCostUSD", "totalCost", "cost")
+		totalTokens := tokenTotalAtPaths(dayMap, "totalTokens")
+		models := parseProviderCostModels(dayMap["modelBreakdowns"])
+		if totalCost <= 0 && totalTokens <= 0 && len(models) == 0 {
+			continue
+		}
+		days = append(days, ProviderCostDay{
+			Day:          day,
+			TotalCostUSD: totalCost,
+			TotalTokens:  totalTokens,
+			Models:       models,
+		})
+	}
+	if len(days) == 0 {
+		return nil
+	}
+	sort.Slice(days, func(i, j int) bool {
+		return days[i].Day < days[j].Day
+	})
+	const maxCostHistoryDays = 30
+	if len(days) > maxCostHistoryDays {
+		days = days[len(days)-maxCostHistoryDays:]
+	}
+	return days
+}
+
+func parseProviderCostModels(raw any) []ProviderCostModel {
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+
+	models := make([]ProviderCostModel, 0, len(items))
+	for _, item := range items {
+		modelMap, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(firstString(modelMap, "modelName", "name", "model"))
+		if name == "" {
+			continue
+		}
+		cost, _ := floatAtPaths(modelMap, "costUSD", "cost", "totalCost")
+		models = append(models, ProviderCostModel{
+			Name:        name,
+			TotalTokens: tokenTotalAtPaths(modelMap, "totalTokens"),
+			CostUSD:     cost,
+		})
+	}
+	if len(models) == 0 {
+		return nil
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		if models[i].TotalTokens == models[j].TotalTokens {
+			if models[i].CostUSD == models[j].CostUSD {
+				return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
+			}
+			return models[i].CostUSD > models[j].CostUSD
+		}
+		return models[i].TotalTokens > models[j].TotalTokens
+	})
+	const maxModelsPerCostDay = 8
+	if len(models) > maxModelsPerCostDay {
+		models = models[:maxModelsPerCostDay]
+	}
+	return models
+}
+
+func topModelFromCostDays(days []ProviderCostDay) string {
+	type modelTotal struct {
+		tokens int64
+		cost   float64
+	}
+	totals := map[string]modelTotal{}
+	for _, day := range days {
+		for _, model := range day.Models {
+			name := strings.TrimSpace(model.Name)
+			if name == "" {
+				continue
+			}
+			total := totals[name]
+			total.tokens += model.TotalTokens
+			total.cost += model.CostUSD
+			totals[name] = total
+		}
+	}
+	if len(totals) == 0 {
+		return ""
+	}
+
+	names := make([]string, 0, len(totals))
+	for name := range totals {
+		names = append(names, name)
+	}
+	sort.SliceStable(names, func(i, j int) bool {
+		left := totals[names[i]]
+		right := totals[names[j]]
+		if left.tokens == right.tokens {
+			if left.cost == right.cost {
+				return strings.ToLower(names[i]) < strings.ToLower(names[j])
+			}
+			return left.cost > right.cost
+		}
+		return left.tokens > right.tokens
+	})
+	return names[0]
 }
 
 func weekTokenTotal(payload map[string]any, updatedAt time.Time) int64 {

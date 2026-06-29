@@ -33,10 +33,12 @@ type Options struct {
 	Once                   bool
 	Theme                  string
 	DisableStartupFastPoll bool
+	Wake                   <-chan struct{}
 }
 
 const (
 	defaultInterval            = 2 * time.Second
+	defaultWiFiInterval        = 30 * time.Second
 	defaultCycleTimeout        = 180 * time.Second
 	startupFastPollWindow      = 2 * time.Minute
 	startupFastPollInterval    = 30 * time.Second
@@ -136,6 +138,7 @@ type runtimeDeps struct {
 	loadConfig        func(string) (runtimeconfig.Config, error)
 	saveConfig        func(string, runtimeconfig.Config) error
 	discoverWiFi      func([]string) (transportlayer.WiFiDiscoveryResult, error)
+	pairDevice        func(context.Context, string) (string, error)
 	transportName     string
 }
 
@@ -199,6 +202,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 			})
 		}
 	}
+	if d.pairDevice == nil {
+		d.pairDevice = pairWiFiDevice
+	}
 	return d
 }
 
@@ -252,6 +258,22 @@ type persistedLastGood struct {
 	Frame   protocol.Frame `json:"frame"`
 }
 
+type PersistedUsage struct {
+	SavedAt         time.Time
+	CurrentProvider string
+	Providers       []ProviderUsageSnapshot
+}
+
+type ProviderUsageSnapshot struct {
+	Provider           string
+	Frame              protocol.Frame
+	Source             string
+	Meta               codexbar.ProviderUsageMeta
+	CollectedAt        time.Time
+	ActivityObservedAt time.Time
+	Stale              bool
+}
+
 func Run(ctx context.Context, opts Options) error {
 	transportName := normalizeTransportName(opts.Transport)
 	if transportName == "" {
@@ -280,7 +302,7 @@ func Run(ctx context.Context, opts Options) error {
 
 func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
-		opts.Interval = defaultInterval
+		opts.Interval = defaultIntervalForTransport(deps.transportName)
 	}
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
@@ -423,6 +445,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-opts.Wake:
 		case <-deps.after(waitFor):
 		}
 	}
@@ -464,6 +487,13 @@ func runCycleWithTimeout(parent context.Context, timeout time.Duration, runCycle
 		}
 		return parent.Err()
 	}
+}
+
+func defaultIntervalForTransport(transportName string) time.Duration {
+	if strings.EqualFold(strings.TrimSpace(transportName), "wifi") {
+		return defaultWiFiInterval
+	}
+	return defaultInterval
 }
 
 func startupInterval(normal, uptime time.Duration) time.Duration {
@@ -517,11 +547,11 @@ func effectiveCycleTarget(requestedTarget string, state *runtimeState, deps runt
 	if deps.transportName != "wifi" {
 		return requestedTarget
 	}
-	if state != nil && strings.TrimSpace(state.deviceTarget) != "" {
-		return strings.TrimSpace(state.deviceTarget)
-	}
 	if cfg, ok := loadRuntimeConfig(deps); ok && strings.TrimSpace(cfg.DeviceTarget) != "" {
 		return strings.TrimSpace(cfg.DeviceTarget)
+	}
+	if state != nil && strings.TrimSpace(state.deviceTarget) != "" {
+		return strings.TrimSpace(state.deviceTarget)
 	}
 	return requestedTarget
 }
@@ -622,27 +652,68 @@ func saveRuntimeConfig(cfg runtimeconfig.Config, deps runtimeDeps) error {
 	return deps.saveConfig(home, cfg)
 }
 
+func persistRuntimeDeviceToken(target, token string, deps runtimeDeps) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return errors.New("device token is empty")
+	}
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok {
+		cfg = runtimeconfig.Config{}
+	}
+	cfg.DeviceTarget = publicDeviceTarget(target)
+	cfg.DeviceToken = token
+	return saveRuntimeConfig(cfg, deps)
+}
+
+func pairWiFiDevice(ctx context.Context, target string) (string, error) {
+	target = publicDeviceTarget(target)
+	parsed, ok := parseDeviceTarget(target)
+	if !ok {
+		return "", fmt.Errorf("invalid device target %q", target)
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/api/pair"
+	form := url.Values{}
+	form.Set("api", "1")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, parsed.String(), strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("build pair request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Close = true
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("post pair: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", fmt.Errorf("post pair: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var payload struct {
+		OK    bool   `json:"ok"`
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", fmt.Errorf("decode pair response: %w", err)
+	}
+	token := strings.TrimSpace(payload.Token)
+	if !payload.OK || token == "" {
+		return "", errors.New("pair response did not include token")
+	}
+	return token, nil
+}
+
 func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) (string, protocol.DeviceCapabilities, bool) {
 	if deps.transportName != "wifi" {
 		return "", protocol.DeviceCapabilities{}, false
 	}
-	if !isDefaultWiFiTarget(stalePort) {
-		fallbackPort, resolveErr := deps.resolvePort(defaultWiFiTarget)
-		if resolveErr == nil && !isSameTarget(stalePort, fallbackPort) {
-			caps, capsErr := deps.deviceCaps(fallbackPort)
-			if capsErr == nil && caps.Known {
-				deps.logf(
-					"runtime event=wifi-target-recovered from=%s to=%s staleErr=%v\n",
-					stalePort,
-					fallbackPort,
-					staleErr,
-				)
-				return fallbackPort, caps, true
-			}
-		}
+	candidates := []string{stalePort}
+	if isDefaultWiFiTarget(stalePort) {
+		candidates = append(candidates, defaultWiFiTarget)
 	}
-
-	result, discoverErr := deps.discoverWiFi([]string{stalePort, defaultWiFiTarget})
+	result, discoverErr := deps.discoverWiFi(candidates)
 	if discoverErr != nil {
 		return "", protocol.DeviceCapabilities{}, false
 	}
@@ -792,7 +863,7 @@ func selectFirmwareUpdate(caps protocol.DeviceCapabilities, manifest firmwareMan
 		return protocol.UpdateState{Available: false, Status: "no_board_release"}, nil
 	}
 	update := protocol.UpdateState{
-		Available:     latest.Compare(current) > 0,
+		Available:     firmwareReleaseNewerThanCurrent(*latest, current),
 		LatestVersion: latestRaw,
 		Severity:      latestArtifact.Severity,
 		Message:       latestArtifact.Message,
@@ -800,12 +871,25 @@ func selectFirmwareUpdate(caps protocol.DeviceCapabilities, manifest firmwareMan
 		FilesystemURL: latestArtifact.FilesystemURL,
 		SHA256:        latestArtifact.SHA256,
 	}
-	if latest.Compare(current) <= 0 {
+	if !update.Available {
 		update.Status = "current"
 		return update, nil
 	}
 	update.Status = "update_available"
 	return update, nil
+}
+
+func firmwareReleaseNewerThanCurrent(latest, current versioning.SemVer) bool {
+	if latest.Major != current.Major {
+		return latest.Major > current.Major
+	}
+	if latest.Minor != current.Minor {
+		return latest.Minor > current.Minor
+	}
+	if latest.Patch != current.Patch {
+		return latest.Patch > current.Patch
+	}
+	return false
 }
 
 func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
@@ -962,7 +1046,7 @@ func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
 	return now.Sub(lastCodingAt) <= activityHoldDuration()
 }
 
-func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
+func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
@@ -992,10 +1076,23 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 
 	sendTarget := sendTargetWithRuntimeAuth(port, deps)
 	if err := deps.sendLine(sendTarget, line); err != nil {
+		if repairedTarget, repaired := repairWiFiAuthAndRetry(ctx, port, line, deps, err); repaired {
+			sendTarget = repairedTarget
+		} else {
+			return &RuntimeError{
+				Kind: runtimeErrorSerialWrite,
+				Op:   "send-line",
+				Err:  err,
+				Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
+			}
+		}
+	}
+
+	if sendTarget == "" {
 		return &RuntimeError{
 			Kind: runtimeErrorSerialWrite,
 			Op:   "send-line",
-			Err:  err,
+			Err:  errors.New("send target empty after auth repair"),
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
@@ -1016,6 +1113,39 @@ func sendCycleResult(port string, caps protocol.DeviceCapabilities, maxFrameByte
 	}
 
 	return nil
+}
+
+func repairWiFiAuthAndRetry(ctx context.Context, target string, line []byte, deps runtimeDeps, sendErr error) (string, bool) {
+	if deps.transportName != "wifi" || !deviceAuthFailed(sendErr) {
+		return "", false
+	}
+	publicTarget := publicDeviceTarget(target)
+	token, err := deps.pairDevice(ctx, publicTarget)
+	if err != nil {
+		deps.logf("runtime event=device-token-repair-failed target=%s err=%v\n", publicTarget, err)
+		return "", false
+	}
+	if err := persistRuntimeDeviceToken(publicTarget, token, deps); err != nil {
+		deps.logf("runtime event=device-token-persist-failed target=%s err=%v\n", publicTarget, err)
+		return "", false
+	}
+	repairedTarget := targetWithDeviceToken(publicTarget, token)
+	if err := deps.sendLine(repairedTarget, line); err != nil {
+		deps.logf("runtime event=device-token-retry-failed target=%s err=%v\n", publicTarget, err)
+		return "", false
+	}
+	deps.logf("runtime event=device-token-repaired target=%s\n", publicTarget)
+	return repairedTarget, true
+}
+
+func deviceAuthFailed(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "status=401") ||
+		strings.Contains(msg, "pairing token required") ||
+		strings.Contains(msg, "unauthorized")
 }
 
 func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) string {
@@ -1039,9 +1169,6 @@ func targetWithDeviceToken(target, token string) string {
 		return target
 	}
 	query := parsed.Query()
-	if strings.TrimSpace(query.Get("token")) != "" {
-		return target
-	}
 	query.Set("token", token)
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
@@ -1125,7 +1252,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 	}
 
 	attachFirmwareUpdateState(ctx, state, deps, caps, &result)
-	return sendCycleResult(port, caps, maxFrameBytes, state, deps, result)
+	return sendCycleResult(ctx, port, caps, maxFrameBytes, state, deps, result)
 }
 
 func runCycleFromCollector(ctx context.Context, requestedPort string, state *runtimeState, collector *providerCollector, deps runtimeDeps) error {
@@ -1154,7 +1281,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	)
 
 	attachFirmwareUpdateState(ctx, state, deps, caps, &result)
-	return sendCycleResult(port, caps, maxFrameBytes, state, deps, result)
+	return sendCycleResult(ctx, port, caps, maxFrameBytes, state, deps, result)
 }
 
 func probeProvidersDirectly(parent context.Context, order []string, deps runtimeDeps) []codexbar.ParsedFrame {
@@ -1649,6 +1776,94 @@ func loadPersistedProviderSnapshotsAnyAge() (map[string]providerSnapshot, time.T
 		return nil, time.Time{}, false
 	}
 	return out, saved.SavedAt, true
+}
+
+func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
+	snapshots, savedAt, ok := loadPersistedProviderSnapshotsAnyAge()
+	if !ok || len(snapshots) == 0 {
+		return PersistedUsage{}, false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	usage := PersistedUsage{
+		SavedAt: savedAt.UTC(),
+	}
+	if frame, _, ok := loadPersistedLastGoodAnyAge(); ok {
+		usage.CurrentProvider = normalizeProviderKey(frame.Provider)
+	}
+
+	for _, key := range orderedProviderUsageKeys(snapshots) {
+		snapshot, ok := snapshots[key]
+		if !ok {
+			continue
+		}
+		frame := snapshot.Frame.Normalize()
+		frame.Provider = normalizeProviderKey(frame.Provider)
+		if frame.Provider == "" {
+			frame.Provider = key
+		}
+		if frame.UsageMode == "" {
+			frame.UsageMode = "used"
+		}
+		usage.Providers = append(usage.Providers, ProviderUsageSnapshot{
+			Provider:           key,
+			Frame:              frame,
+			Source:             strings.TrimSpace(snapshot.Source),
+			Meta:               snapshot.Meta,
+			CollectedAt:        snapshot.Collected.UTC(),
+			ActivityObservedAt: snapshot.ActivityObservedAt.UTC(),
+			Stale:              providerUsageSnapshotIsStale(snapshot, now),
+		})
+	}
+	if len(usage.Providers) == 0 {
+		return PersistedUsage{}, false
+	}
+	if usage.CurrentProvider == "" {
+		usage.CurrentProvider = usage.Providers[0].Provider
+	}
+	return usage, true
+}
+
+func orderedProviderUsageKeys(snapshots map[string]providerSnapshot) []string {
+	if len(snapshots) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(snapshots))
+	keys := make([]string, 0, len(snapshots))
+	for _, key := range collectorProviderOrder() {
+		key = normalizeProviderKey(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := snapshots[key]; !ok {
+			continue
+		}
+		keys = append(keys, key)
+		seen[key] = struct{}{}
+	}
+	remaining := make([]string, 0, len(snapshots)-len(keys))
+	for key := range snapshots {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		remaining = append(remaining, key)
+	}
+	sort.Strings(remaining)
+	return append(keys, remaining...)
+}
+
+func providerUsageSnapshotIsStale(snapshot providerSnapshot, now time.Time) bool {
+	if snapshot.Collected.IsZero() || now.IsZero() {
+		return true
+	}
+	age := now.Sub(snapshot.Collected)
+	if age < 0 {
+		return false
+	}
+	freshFor := collectorInterval(0) + 5*time.Second
+	return age > freshFor
 }
 
 func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) string {

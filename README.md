@@ -1,101 +1,191 @@
-# Vibe TV for Mac
+# VibeTV
 
-This repository ships the firmware, macOS companion, and release artifacts for [Vibe TV](https://vibetv.shop/).
-Vibe TV is the hardware. CodexBar provides the usage signal. `codexbar-display` sends that signal to the screen over WiFi so usage stays off-screen and on-desk. USB-C is only required for power in the standard setup flow.
+VibeTV is a physical desk display for AI builders. It keeps usage, limits,
+tokens, reset times, and workflow status visible on your desk so you can see
+important changes before they interrupt your work.
+
+<p align="center">
+  <a href="https://vibetv.shop/products/vibe-tv">
+    <img src="docs/assets/vibetv-hardware-detail.png" alt="VibeTV hardware showing an AI usage screen" width="560">
+  </a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/vibetv-four-themes.png" alt="VibeTV showing four included themes" width="560">
+</p>
+
+**Start here:** [Buy the hardware](https://vibetv.shop/products/vibe-tv) ·
+[Open Control Center](https://app.vibetv.shop) ·
+[Setup guide](docs/customer-setup.md) ·
+[Themes](docs/themes.md) ·
+[Provider support](docs/providers.md)
+
+## Themes
+
+| Mini | Claude Creature | Clippy | Synthwave |
+| --- | --- | --- | --- |
+| <img src="docs/assets/vibetv-theme-mini.png" alt="VibeTV Mini theme" width="160"> | <img src="docs/assets/vibetv-theme-claude.png" alt="VibeTV Claude Creature theme" width="160"> | <img src="docs/assets/vibetv-theme-clippy.png" alt="VibeTV Clippy theme" width="160"> | <img src="docs/assets/vibetv-theme-synthwave.png" alt="VibeTV Synthwave theme" width="160"> |
+
+See [docs/themes.md](docs/themes.md) for included themes and custom theme
+development.
+
+## Providers
+
+VibeTV can show provider usage surfaced by CodexBar. Common examples include:
+
+- Codex
+- Claude / Claude Code
+- Cursor
+- Gemini
+- Antigravity
+- Kimi and Kimi K2
+- Copilot
+- z.ai
+- Kiro
+- Augment
+- Amp
+- JetBrains AI
+- OpenRouter
+- OpenAI / Azure OpenAI
+- Mistral, DeepSeek, Moonshot, AWS Bedrock, LiteLLM, and [more](https://github.com/steipete/CodexBar/blob/main/docs/providers.md)
+
+## What It Is
+
+VibeTV is a physical device that sits on your desk and shows your AI usage at
+a glance: provider, limits, tokens, reset time, and status. It gives the usage
+signal a place outside your laptop screen, so you can see where you stand while
+you work.
+
+The Mac App sends the local usage signal to the device. Control Center at
+[`app.vibetv.shop`](https://app.vibetv.shop) is where you set up VibeTV, switch
+themes, change display settings, install updates, and view support information.
+
+VibeTV is built on top of [CodexBar](https://github.com/steipete/CodexBar) for
+AI provider usage data. CodexBar knows how to read usage and quota information
+from many AI tools. VibeTV turns that signal into a dedicated physical display.
+
+VibeTV does not generate new provider data in the cloud. It shows the usage
+signal that already exists on your Mac: CodexBar reads provider usage locally,
+the Mac App turns it into display frames, and those frames go to VibeTV over
+your local WiFi. Control Center loads the app, theme catalog, and update
+metadata from the web, but normal provider usage is not uploaded to a VibeTV
+backend. Support reports are only created when you ask for them.
+
+## What It Shows
+
+- session usage and remaining room
+- weekly usage and reset windows
+- token counts when the provider exposes them
+- active provider and account state
+- provider health or stale-data status
+- firmware and Mac App update state
+- the active theme running on the device
+
+## How It Works
+
+```text
+CodexBar on the Mac
+  -> VibeTV Mac App on 127.0.0.1:47832
+  -> app.vibetv.shop in the browser
+  -> VibeTV on the local WiFi
+```
+
+1. CodexBar reads provider usage, quotas, tokens, and reset windows.
+2. The VibeTV Mac App (`codexbar-display`) reads that data locally.
+3. The hosted Control Center talks to the Mac App through the browser.
+4. The Mac App sends display frames to VibeTV over local WiFi.
+5. VibeTV renders the selected theme on the 240x240 screen.
+
+The normal customer path does not require USB flashing. USB-C powers the device.
 
 ## Setup
 
-Vibe TV ships ready for WiFi setup.
+1. Buy the hardware from [vibetv.shop](https://vibetv.shop/products/vibe-tv).
+2. Power VibeTV with USB-C.
+3. Join the `VibeTV-Setup` WiFi hotspot and connect VibeTV to your home WiFi.
+4. Open [`app.vibetv.shop`](https://app.vibetv.shop) on your Mac.
+5. Follow the Control Center setup steps.
+6. Install the Mac App through the Agentic setup prompt or the shown Terminal
+   command.
+7. Allow browser access when prompted, then connect VibeTV.
 
-1. Plug Vibe TV into power.
-2. Join the `VibeTV-Setup` WiFi hotspot from your Mac or phone.
-3. If your device opens a setup browser automatically, use it. Otherwise open `http://vibetv.local`. If that does not load, open `http://192.168.4.1`.
-4. Choose your home WiFi, enter the password, and save.
-5. After Vibe TV restarts, the display shows `vibetv.local` plus a fallback IP address.
-6. Open `http://vibetv.local` in your browser. If that does not load, use the fallback IP shown on the display. Then select `Copy Mac Setup Command`.
-7. Open Terminal (on Mac: Cmd + Space, type Terminal, hit enter), paste the copied command, and press Enter.
+The customer setup guide is [docs/customer-setup.md](docs/customer-setup.md).
 
-```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
-```
-
-The installer defaults to WiFi, `http://vibetv.local`, and the Mini theme.
-
-Or copy this prompt into any AI:
-
-```text
-I plugged in my Vibe TV and connected it to my home WiFi through the VibeTV-Setup hotspot. Please help me set up the Mac Companion end-to-end over WiFi.
-
-Your job:
-- Assume I want the standard setup flow on macOS.
-- If you have terminal or tool access, do the setup yourself instead of asking me to copy commands.
-- Use the official installer:
-  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
-- After running it, verify that the setup worked.
-- Only if you cannot run commands yourself, explain exactly what I should do in simple ELI5 language, one small step at a time.
-
-Success means:
-- setup completes without errors
-- the Vibe TV no longer stays on the Open Setup screen
-- usage appears automatically on the display
-
-If something fails, troubleshoot in this order:
-- confirm the Vibe TV IP address
-- confirm the Mac is on the same WiFi
-- rerun the installer
-- check that the daemon target is http://vibetv.local
-
-If you cannot act directly, do not dump a long checklist. Give me only the next action, wait for the result, and then continue.
-```
-
-The installer:
-
-- checks that you are on macOS
-- downloads the matching `codexbar-display` build for your Mac
-- verifies the checksum
-- installs CodexBar if it is missing
-- sets up the background service
-- warms up CodexBar on fresh installs
-- runs a health check at the end
-
-To stop the background service for good until you explicitly re-enable it:
+Useful support commands:
 
 ```bash
-codexbar-display service stop
+# install or update the Mac App from Control Center
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
+
+# check whether the Mac App is running
+curl -fsS http://127.0.0.1:47832/v1/status
+
+# stop the Mac App
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --uninstall
 ```
-
-To start it again:
-
-```bash
-codexbar-display service start
-```
-
-If the device shows `Open Setup`, the hardware is usually fine. It means Vibe TV is on WiFi and is waiting for the Mac Companion setup command.
-
-To reset WiFi setup, open the Vibe TV setup page in a browser and use `Reset WiFi Setup`. If the device is not reachable, unplug power during early boot three times in a row; on the next boot, Vibe TV clears saved WiFi credentials and starts the `VibeTV-Setup` hotspot.
-
-The full setup guide is in [docs/customer-setup.md](docs/customer-setup.md).
 
 ## What This Repo Contains
 
-- ESP8266 firmware for the current Vibe TV target
-- the macOS companion `codexbar-display`
-- release artifacts such as companion binaries, firmware binaries, and checksums
+- ESP8266 firmware for the current VibeTV hardware target
+- the macOS Mac App / Companion binary `codexbar-display`
+- the hosted Control Center app in `apps/control-center`
+- the local Companion API used by Control Center
+- Theme Studio and theme-pack tooling
+- release scripts, firmware manifests, and validation gates
+- hardware, setup, provider, architecture, and operator docs
 
-## Technical References
+## Documentation
 
-These docs are for development, support, and operations:
+Start with [docs/README.md](docs/README.md).
 
+Important entry points:
+
+- Customer setup: [docs/customer-setup.md](docs/customer-setup.md)
+- Architecture: [docs/architecture.md](docs/architecture.md)
+- Providers: [docs/providers.md](docs/providers.md)
+- Themes: [docs/themes.md](docs/themes.md)
+- Theme development: [docs/theme-dev-guide.md](docs/theme-dev-guide.md)
+- Control Center readiness: [docs/control-center-customer-readiness.md](docs/control-center-customer-readiness.md)
 - Hardware contract: [docs/hardware-contract.md](docs/hardware-contract.md)
 - Operator runbook: [docs/operator-runbook.md](docs/operator-runbook.md)
-- Firmware provisioning: [docs/firmware-provisioning.md](docs/firmware-provisioning.md)
 - Protocol: [protocol/PROTOCOL.md](protocol/PROTOCOL.md)
 
 ## Local Development
 
+Control Center:
+
+```bash
+cd apps/control-center
+npm install
+npm run dev
+```
+
+Mac App / Companion:
+
+```bash
+cd companion
+go test ./...
+go run ./cmd/codexbar-display api --dev-origin http://localhost:3000
+```
+
+Customer-flow checks:
+
+```bash
+cd apps/control-center
+npm run check:customer-ui-copy
+npm run test:customer-smoke
+```
+
+The full customer-ready gate is:
+
+```bash
+scripts/check-control-center-customer-ready-gate.sh
+```
+
 ### Live Device Safety
 
-The attached Vibe TV is not a routine test target. Local development must use unit tests, mocks, and read-only device checks first.
+The attached VibeTV is not a routine test target. Use unit tests, mocks, and
+read-only checks first.
 
 Allowed read-only checks:
 
@@ -105,17 +195,9 @@ curl http://vibetv.local/health
 curl http://vibetv.local/assets
 ```
 
-Do not run firmware updates, theme-pack installs, asset uploads, frame posts, or WiFi resets against `vibetv.local` or a device IP unless a human has explicitly approved that exact hardware test. After one failed hardware write test, stop and debug with code/tests before touching the device again.
-
-```bash
-cd companion
-go test ./...
-go vet ./...
-
-cd ..
-./scripts/check-esp8266-soak-gate.sh
-pio run -d firmware_esp8266 -e esp8266_smalltv_st7789
-```
+Do not run firmware updates, theme installs, asset uploads, frame posts, or WiFi
+resets against `vibetv.local` or a device IP unless a human explicitly approved
+that exact hardware test.
 
 ## License
 

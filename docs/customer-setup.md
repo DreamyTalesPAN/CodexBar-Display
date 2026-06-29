@@ -1,166 +1,195 @@
-# Vibe TV Setup on Mac
+# VibeTV Setup On Mac
 
-This guide covers the standard macOS setup flow: connect Vibe TV to WiFi, install the Mac Companion, and point it at the Vibe TV IP.
+This is the normal customer setup for the Control Center launch flow.
 
-## What You Need
+You use:
 
-- a Vibe TV
-- USB-C power for Vibe TV
-- a Mac with internet access
+- VibeTV hardware
+- USB-C power
+- your home WiFi
+- a Mac
+- [app.vibetv.shop](https://app.vibetv.shop)
 
-## Connect Vibe TV to WiFi
+You do not need USB flashing, PlatformIO, firmware source builds, or a signed
+macOS package for normal setup.
 
-Vibe TV ships with firmware installed. USB debugging and manual firmware flashing are not part of the standard setup flow.
+<p align="center">
+  <img src="assets/vibetv-hardware-detail.png" alt="VibeTV hardware on a desk" width="520">
+</p>
 
-1. Plug Vibe TV into power.
-2. Wait for the `VibeTV-Setup` hotspot.
-3. Join `VibeTV-Setup` from your Mac or phone.
-4. If your device opens a setup browser automatically, use it. Otherwise open `http://vibetv.local`. If that does not load, open `http://192.168.4.1`.
-5. Select your home WiFi, enter the password, and save.
-6. Vibe TV restarts and connects to your WiFi. The display shows `vibetv.local` plus a fallback IP address.
+## What You Are Setting Up
 
-## Install the Mac Companion
+VibeTV has two setup parts:
 
-Choose one path.
+1. **Put VibeTV on WiFi.** The device needs to be on the same local network as
+   your Mac.
+2. **Install the Mac App.** The Mac App reads CodexBar usage locally and sends
+   display updates to VibeTV.
 
-### AI-native path
+The Control Center website guides both parts.
 
-Copy this prompt into any AI:
+## 1. Connect VibeTV To WiFi
+
+1. Plug VibeTV into power.
+2. Wait until the display shows `VibeTV-Setup`.
+3. On your phone or Mac, open WiFi settings.
+4. Join the `VibeTV-Setup` WiFi network.
+5. If the setup page opens automatically, use it.
+6. If it does not open, go to `http://192.168.4.1`.
+7. Choose your home WiFi and save.
+8. Wait until VibeTV restarts and shows that WiFi is connected.
+
+When this is done, VibeTV should point you to:
 
 ```text
-I connected my Vibe TV to home WiFi through the VibeTV-Setup hotspot. Please help me set up the Mac Companion end-to-end over WiFi.
-
-Your job:
-- Assume I want the standard setup flow on macOS.
-- If you have terminal or tool access, do the setup yourself instead of asking me to copy commands.
-- Use the official installer:
-  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
-- After running it, verify that the setup worked.
-- Only if you cannot run commands yourself, explain exactly what I should do in simple ELI5 language, one small step at a time.
-
-Success means:
-- setup completes without errors
-- the Vibe TV no longer stays on the Open Setup screen
-- usage appears automatically on the display
-
-If something fails, troubleshoot in this order:
-- confirm the Vibe TV IP address
-- confirm the Mac is on the same WiFi
-- rerun the installer
-- check that the daemon target is http://vibetv.local
-
-If you cannot act directly, do not dump a long checklist. Give me only the next action, wait for the result, and then continue.
+app.vibetv.shop
 ```
 
-### Alternative: run the installer directly
+## 2. Open Control Center
 
-Open `http://vibetv.local` in your browser. If that does not load, use the fallback IP shown on the Vibe TV display. Then select `Copy Mac Setup Command`.
-Then open Terminal and paste the copied command. It looks like this:
+On your Mac, open:
+
+```text
+https://app.vibetv.shop
+```
+
+Control Center checks whether the Mac App is running on this computer.
+
+If the Mac App is missing, Control Center shows two setup paths:
+
+- **Agentic setup:** copy the prompt into Codex, Claude Code, or another local
+  coding agent with Terminal access.
+- **Manual setup:** copy the Terminal command and run it yourself.
+
+Both paths install or update the same Mac App.
+
+## 3. Install The Mac App
+
+The normal Terminal command looks like this:
 
 ```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
 ```
 
-The installer defaults to WiFi, `http://vibetv.local`, and the Mini theme. The Web UI also shows the fallback IP if `.local` does not resolve.
+The command:
 
-### Update path
+- downloads the current Mac App release,
+- verifies the checksum,
+- installs `codexbar-display` for your user account,
+- starts the local Mac App service,
+- verifies `http://127.0.0.1:47832/v1/status`.
 
-If support asks you to update the Mac Companion, rerun:
+After the command finishes, return to Control Center. The page should move
+forward automatically once the Mac App is available.
 
-```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
+## 4. Allow Browser Access
+
+Your browser may ask whether `app.vibetv.shop` can access devices on your local
+network. Allow it.
+
+That permission lets the website talk to the Mac App on:
+
+```text
+127.0.0.1:47832
 ```
 
-If support asks you to update firmware, open `http://vibetv.local/update` and copy the update command. It looks like this:
+It does not give the website your WiFi password or provider credentials.
 
-```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --target http://vibetv.local && codexbar-display install-update --confirm-live-update --target http://vibetv.local
+## 5. Connect VibeTV
+
+Control Center will try to find VibeTV on the same WiFi.
+
+If it finds exactly one device, it connects automatically.
+
+If it cannot find the device, enter the address shown on VibeTV, for example:
+
+```text
+vibetv.local
 ```
 
-That command refreshes the Mac Companion first, then installs firmware if a newer release exists. USB flashing is not part of the customer flow.
+or:
 
-## Theme Studio Pairing
+```text
+192.168.178.123
+```
 
-Theme Studio can change the Vibe TV layout and display settings over the local network.
-
-1. Open `http://vibetv.local`.
-2. In the Pairing section, create a token if one is not shown yet.
-3. Open Theme Studio.
-4. Set the Vibe TV field to `http://vibetv.local` or the IP shown on the display.
-5. Paste the token into the Pairing token field, or select `Pair Device` to let Theme Studio create a new token.
-
-After pairing, Vibe TV accepts layout, brightness, asset, and firmware write requests only when that token is included. Status pages such as `/health` still work without a token.
-
-If the token is lost, open `http://vibetv.local` again and create/rotate the token. Do not reset WiFi just to fix pairing.
-
-## What the Installer Does
-
-The installer handles everything automatically:
-
-1. It detects your Mac architecture.
-2. It downloads the matching `codexbar-display` version from the latest GitHub release.
-3. It verifies the checksum.
-4. It installs CodexBar if CodexBar is missing.
-5. It runs `codexbar-display setup --yes --skip-flash`.
-6. It starts the background service that sends frames to the Vibe TV IP.
-7. It runs a health check at the end.
-
-## Setup Dependency Checks
-
-The installer checks required tools before setup changes anything important. If something is missing, it stops with the dependency name, why it is needed, and the next command or action.
-
-| Dependency | Why it is needed | What to do if missing |
-| --- | --- | --- |
-| `curl` | Downloads the VibeTV installer files from GitHub. | Use a standard macOS Terminal with `curl` available, then rerun the installer. |
-| `shasum`, `awk`, `sed`, `grep`, `uname`, `mktemp` | Verifies the release and detects the right Mac binary. | Install the macOS command line tools, then rerun the installer. |
-| `launchctl` | Starts the background service that sends frames to Vibe TV. | Run setup on macOS as your normal logged-in user, then rerun `codexbar-display setup`. |
-| CodexBar CLI | Provides the usage data shown on Vibe TV. | The setup tries Homebrew automatically. If that fails, run `brew install --cask steipete/tap/codexbar`, then rerun setup. |
-| `pio` | Only needed for manual USB firmware flashing. | Standard WiFi setup does not need this. For USB flashing, install PlatformIO with `python3 -m pip install --user platformio`, then rerun setup. |
-
-Setup is safe to rerun after fixing a missing dependency.
+Then select `Connect VibeTV`.
 
 ## What Success Looks Like
 
-- Terminal prints a successful setup message.
-- The device no longer stays on the Open Setup screen.
-- Usage appears automatically on the display.
+- Control Center says VibeTV is connected.
+- VibeTV stops waiting on the setup screen.
+- Usage appears on the display.
+- Overview, Usage, Theme Library, Settings, Updates, and Support are available
+  in Control Center.
+
+## What The Mac App Does
+
+The Mac App is the `codexbar-display` binary from this repository.
+
+It exists because:
+
+- CodexBar reads AI provider usage on your Mac.
+- The Mac App reads that usage from CodexBar.
+- Control Center talks to the Mac App locally.
+- The Mac App sends screen updates to VibeTV over local WiFi.
+
+Useful support commands:
+
+```bash
+# Check whether the Mac App is running.
+curl -fsS http://127.0.0.1:47832/v1/status
+
+# Install or update the Mac App.
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
+
+# Restart the Mac App.
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --restart
+
+# Stop the Mac App.
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --uninstall
+```
 
 ## Display Messages
 
-The small display uses short English status messages:
-
 | Display | Meaning | What to do |
 | --- | --- | --- |
-| `Starting` | Vibe TV is booting. | Wait. |
-| `Join WiFi` / `VibeTV-Setup` | Vibe TV is in setup mode. | Join the `VibeTV-Setup` WiFi and open the browser address shown on the display. |
-| `Connecting WiFi` | Vibe TV is joining your home WiFi. | Wait. |
-| `Open Setup` | WiFi works; Vibe TV is waiting for the Mac Companion setup. | Open the shown browser address or run the Mac setup command. |
-| `Check Mac App` | Vibe TV had data before, but no fresh data arrived. | Check that the Mac is on, CodexBar is running, and the Mac is on the same WiFi. |
-| `Update Mac App` | The Mac app reached Vibe TV, but the app is too old or sent an old format. | Rerun the installer. |
-| `Update Available:` / `vibetv.local` | A firmware update is available while any theme is active. | Open `http://vibetv.local/update`. |
-| `Update running` | Firmware or display assets are being updated. | Do not unplug power. |
+| `Starting` | VibeTV is booting. | Wait. |
+| `SETUP WIFI` / `VibeTV-Setup` | VibeTV needs WiFi setup. | Join `VibeTV-Setup` and open the setup page. |
+| `Connecting WiFi` | VibeTV is joining your home WiFi. | Wait. |
+| `WiFi connected!` / `app.vibetv.shop` | VibeTV is on WiFi. | Open Control Center on your Mac. |
+| `Open App` / `app.vibetv.shop` | VibeTV is waiting for fresh Mac data. | Open Control Center and connect VibeTV. |
+| `Install Mac App` | The Mac App is missing. | Use the setup step in Control Center. |
+| `Update Mac App` | The Mac App needs an update. | Use the update step in Control Center. |
+| `Update available` | A device update is available. | Open Control Center and follow the update step. |
+| `Update running` | VibeTV is updating. | Do not unplug power. |
 | `WiFi reset` | Saved WiFi settings are being cleared. | Wait for `VibeTV-Setup` to appear again. |
-
-The setup screen shows the setup IP. The waiting screen shows `vibetv.local` and the fallback IP, so support can ask for the address directly from the display.
 
 ## If Something Does Not Work
 
-- `Open Setup` means Vibe TV is on WiFi and is waiting for the Mac Companion setup command.
-- `Check Mac App` means Vibe TV had data before, but no fresh frame arrived for more than two minutes.
-- `Update Mac App` means the Mac Companion can reach Vibe TV, but the usage app needs an update.
-- `Reconnecting WiFi` means Vibe TV lost WiFi and is retrying. If WiFi does not recover, it starts the `VibeTV-Setup` hotspot again.
-- If WiFi sending fails, verify `http://vibetv.local` opens from the Mac. The API check is `http://vibetv.local/hello`.
-- If the IP changed, rerun the installer with the new `--target`.
-- If CodexBar is missing or does not start, run the installer again.
+- If Control Center says the Mac App is not running, run Agentic setup or Manual
+  setup again.
+- If Control Center cannot find VibeTV, make sure your Mac and VibeTV are on
+  the same WiFi.
+- If `.local` does not work, use the IP address shown on VibeTV.
+- If VibeTV is still on `VibeTV-Setup`, finish WiFi setup first.
+- If the app shows one clear action, use that action before trying support
+  commands.
 
-## Reset WiFi Setup
+## Reset WiFi
 
-If Vibe TV is reachable in the browser, open its setup page and select `Reset WiFi Setup`. The device clears saved WiFi credentials, restarts, and opens the `VibeTV-Setup` hotspot again.
+If VibeTV is reachable in the browser, open the local device page and use
+`Reset WiFi Setup`.
 
-If the device is not reachable, unplug power during early boot three times in a row. On the next boot, Vibe TV clears saved WiFi credentials and starts `VibeTV-Setup`.
+If the device is not reachable, unplug power during early boot three times in a
+row. On the next boot, VibeTV clears saved WiFi credentials and starts
+`VibeTV-Setup`.
 
 ## Important
 
-- The standard setup flow is for macOS.
-- You do not need to flash firmware manually in the standard setup flow.
-- USB-C is used for power in the standard setup flow. USB serial is only for development and support.
+- Normal setup is macOS-first.
+- USB-C is only for power in normal setup.
+- USB flashing is only for support and development.
+- Firmware updates, theme installs, WiFi resets, and asset uploads are hardware
+  write actions. They should happen only through the intended Control Center
+  flow or during an approved support test.

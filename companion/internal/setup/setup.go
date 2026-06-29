@@ -26,13 +26,15 @@ import (
 )
 
 const (
-	launchAgentLabel      = "com.codexbar-display.daemon"
-	defaultDaemonInterval = "2s"
-	defaultLastGoodMaxAge = "168h"
-	defaultTransport      = "wifi"
-	defaultWiFiTarget     = "http://vibetv.local"
-	codexbarInstallURL    = "https://codexbar.app/"
-	codexbarBrewCask      = "steipete/tap/codexbar"
+	launchAgentLabel          = "com.codexbar-display.daemon"
+	defaultDaemonInterval     = "2s"
+	defaultWiFiDaemonInterval = "30s"
+	defaultCompanionAPIAddr   = "127.0.0.1:47832"
+	defaultLastGoodMaxAge     = "168h"
+	defaultTransport          = "wifi"
+	defaultWiFiTarget         = "http://vibetv.local"
+	codexbarInstallURL        = "https://codexbar.app/"
+	codexbarBrewCask          = "steipete/tap/codexbar"
 )
 
 type Options struct {
@@ -392,46 +394,25 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		}
 	}
 
-	var repoRoot string
+	repoRoot, _ := locateRepository(d)
 	if !opts.SkipFlash && transportName == "usb" {
-		repoRoot, err = locateRepository(d)
-		if err != nil {
-			return &StepError{
-				Step: "locate-repository",
-				Err:  err,
-				Hint: "run setup from the repository root or pass --skip-flash if firmware is already flashed",
-			}
+		if strings.TrimSpace(repoRoot) != "" {
+			fmt.Fprintf(d.stdout, "Repository: %s\n", repoRoot)
+		} else {
+			fmt.Fprintln(d.stdout, "Repository: not found (release firmware flash does not require it)")
 		}
-
-		fmt.Fprintf(d.stdout, "Repository: %s\n", repoRoot)
 		fmt.Fprintf(d.stdout, "Firmware environment: %s\n", firmwareEnv)
 		if opts.ValidateOnly || opts.DryRun {
-			if _, err := d.lookPath("pio"); err != nil {
-				return &StepError{
-					Step: "flash-firmware-validate",
-					Err:  err,
-					Hint: "install PlatformIO CLI (`python3 -m pip install --user platformio`) and ensure `pio` is in PATH",
-				}
-			}
-			firmwareDir := firmwareProjectDirForEnvironment(repoRoot, firmwareEnv)
-			if !fileExists(filepath.Join(firmwareDir, "platformio.ini")) {
-				return &StepError{
-					Step: "flash-firmware-validate",
-					Err:  fmt.Errorf("platformio project not found for env %q in %s", firmwareEnv, firmwareDir),
-					Hint: "verify repository layout and firmware environment selection",
-				}
-			}
-			fmt.Fprintf(d.stdout, "Firmware flash: validated (%s)\n", mode)
+			fmt.Fprintf(d.stdout, "Release firmware flash: validated (%s)\n", mode)
 		} else {
-			fmt.Fprintln(d.stdout, "Flashing firmware ...")
-			if err := flashFirmware(ctx, d, repoRoot, port, firmwareEnv); err != nil {
+			fmt.Fprintln(d.stdout, "Flashing release firmware ...")
+			if err := flashFirmware(ctx, d, execPath, port, firmwareEnv); err != nil {
 				return err
 			}
 			fmt.Fprintln(d.stdout, "Firmware flash: ok")
 		}
 	} else {
 		fmt.Fprintln(d.stdout, "Firmware flash: skipped (--skip-flash)")
-		repoRoot, _ = locateRepository(d)
 	}
 
 	if opts.ValidateOnly {
@@ -615,7 +596,7 @@ func runDependencyPreflight(opts Options, transportName string, d deps) error {
 
 	if normalizeSetupTransport(transportName) == "usb" && !opts.SkipFlash {
 		if err := requireSetupCommand(d, "pio",
-			"builds and uploads VibeTV firmware when USB flashing is requested",
+			"flashes downloaded VibeTV release firmware over USB",
 			"install PlatformIO CLI with `python3 -m pip install --user platformio`, ensure `pio` is in PATH, then rerun setup",
 		); err != nil {
 			return err
@@ -813,20 +794,20 @@ func fileExists(path string) bool {
 	return !info.IsDir()
 }
 
-func flashFirmware(ctx context.Context, d deps, repoRoot, port, firmwareEnv string) error {
-	if _, err := d.lookPath("pio"); err != nil {
+func flashFirmware(ctx context.Context, d deps, executablePath, port, firmwareEnv string) error {
+	executablePath = strings.TrimSpace(executablePath)
+	if executablePath == "" {
 		return &StepError{
 			Step: "flash-firmware",
-			Err:  err,
-			Hint: "install PlatformIO CLI (`python3 -m pip install --user platformio`) and ensure `pio` is in PATH",
+			Err:  errors.New("codexbar-display executable path is empty"),
+			Hint: "rerun setup from the installed codexbar-display binary or pass --skip-flash and run `codexbar-display upgrade`",
 		}
 	}
 
 	service := launchServiceTarget(d.uid())
 	_, _ = d.runCommand(ctx, "", "launchctl", "bootout", service)
 
-	firmwareDir := firmwareProjectDirForEnvironment(repoRoot, firmwareEnv)
-	output, err := d.runCommand(ctx, firmwareDir, "pio", "run", "-e", firmwareEnv, "-t", "upload", "--upload-port", port)
+	output, err := d.runCommand(ctx, "", executablePath, "upgrade", "--port", port, "--firmware-env", firmwareEnv)
 	if err != nil {
 		return &StepError{
 			Step:   "flash-firmware",
@@ -954,7 +935,7 @@ func writeLaunchAgentPlist(home, binaryPath, transportName, target, port string)
 }
 
 func renderLaunchAgentPlist(binaryPath, transportName, target, port string) []byte {
-	args := []string{binaryPath, "daemon", "--interval", defaultDaemonInterval}
+	args := []string{binaryPath, "daemon", "--interval", daemonIntervalForSetupTransport(transportName), "--api-addr", defaultCompanionAPIAddr}
 	if normalizeSetupTransport(transportName) == "wifi" {
 		args = append(args, "--transport", "wifi", "--target", normalizeSetupTarget(target))
 	} else if strings.TrimSpace(port) != "" {
@@ -992,6 +973,17 @@ func renderLaunchAgentPlist(binaryPath, transportName, target, port string) []by
 	b.WriteString("  </dict>\n")
 	b.WriteString("</plist>\n")
 	return []byte(b.String())
+}
+
+func daemonIntervalForSetupTransport(transportName string) string {
+	normalized := normalizeSetupTransport(transportName)
+	if normalized == "" {
+		normalized = defaultTransport
+	}
+	if normalized == "wifi" {
+		return defaultWiFiDaemonInterval
+	}
+	return defaultDaemonInterval
 }
 
 func xmlEscape(value string) string {

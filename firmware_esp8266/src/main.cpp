@@ -66,18 +66,17 @@ const char kSetupApSsid[] = "VibeTV-Setup";
 const char kSetupHost[] = "vibetv.local";
 const char kMdnsName[] = "vibetv";
 const char kMdnsHost[] = "vibetv.local";
+const char kCustomerAppHost[] = "app.vibetv.shop";
+const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
 const char kDeviceAuthTokenPath[] = "/auth";
 const char kActiveThemeSpecPathFile[] = "/theme-active";
 const char kDeviceAuthHeader[] = "X-VibeTV-Token";
 const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
-const char* const kFirmwareUpdateNoticeTexts[] = {
-    "",
-    "Update Available:",
-    kMdnsHost,
-};
-constexpr uint8_t kFirmwareUpdateNoticeTextCount =
-    sizeof(kFirmwareUpdateNoticeTexts) / sizeof(kFirmwareUpdateNoticeTexts[0]);
+constexpr uint8_t kFirmwareUpdateNoticeTextCount = 3;
+constexpr uint8_t kFirmwareUpdateNoticeProviderPhase = 0;
+constexpr uint8_t kFirmwareUpdateNoticeAvailablePhase = 1;
+constexpr uint8_t kFirmwareUpdateNoticeAppPhase = 2;
 
 String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
@@ -475,7 +474,24 @@ const char* currentFirmwareUpdateNoticeText() {
   if (firmwareUpdate.noticePhase >= kFirmwareUpdateNoticeTextCount) {
     firmwareUpdate.noticePhase = 0;
   }
-  return kFirmwareUpdateNoticeTexts[firmwareUpdate.noticePhase];
+  if (firmwareUpdate.noticePhase == kFirmwareUpdateNoticeAvailablePhase) {
+    return "Update available";
+  }
+  if (firmwareUpdate.noticePhase == kFirmwareUpdateNoticeAppPhase) {
+    return kCustomerAppHost;
+  }
+
+  const codexbar_display::core::Frame& frame = codexbar_display::app::CurrentFrame(runtimeCtx);
+  if (runtimeCtx.topLineOverride.length()) {
+    return runtimeCtx.topLineOverride.c_str();
+  }
+  if (frame.label.length()) {
+    return frame.label.c_str();
+  }
+  if (frame.provider.length()) {
+    return frame.provider.c_str();
+  }
+  return "Provider";
 }
 
 void drawFirmwareUpdateNotice() {
@@ -641,15 +657,15 @@ String displayErrorMessage(const String& message) {
     return "Install Mac App";
   }
   if (message == "runtime/no-providers") {
-    return "Open Mac App";
+    return "Open App";
   }
   if (message == "runtime/codexbar-cmd") {
-    return "Check Mac App";
+    return "Open App";
   }
   if (message == "runtime/cycle-timeout") {
-    return "Check Mac App";
+    return "Open App";
   }
-  return "Check Mac App";
+  return "Open App";
 }
 
 void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, const char* transport) {
@@ -1040,8 +1056,8 @@ String setupPageHTML() {
   html += "main{max-width:460px;margin:0 auto;padding:32px 20px}label{display:block;margin:18px 0 6px}";
   html += "select,input,button{box-sizing:border-box;width:100%;font:inherit;padding:12px;border-radius:8px;border:1px solid #555;background:#181a1d;color:#fff}";
   html += "button{margin-top:22px;background:#c7ff00;color:#111;border:0;font-weight:700}.muted{color:#aaa;line-height:1.4}";
-  html += "</style></head><body><main><h1>VibeTV Setup</h1>";
-  html += "<p class='muted'>Choose your home WiFi and save the connection. Vibe TV restarts after saving.</p>";
+  html += "</style></head><body><main><h1>VibeTV WiFi</h1>";
+  html += "<p class='muted'>Choose your home WiFi and save. Keep your Mac on its normal WiFi. After restart, VibeTV shows the app address for your Mac.</p>";
   html += "<form method='post' action='/save'><label>Choose WiFi</label><select name='ssid'>";
   html += setupWifiOptionsHTML.length() > 0 ? setupWifiOptionsHTML : "<option value=''>No networks found</option>";
   html += "</select><label>Enter SSID manually</label><input name='custom_ssid' maxlength='32' autocomplete='off' placeholder='WiFi name'>";
@@ -1056,7 +1072,6 @@ String setupPageHTML() {
 String connectedPageHTML() {
   const String ip = WiFi.localIP().toString();
   const bool hasFrame = codexbar_display::app::HasFrame(runtimeCtx);
-  const String setupCommand = hasFrame ? String() : macInstallerCommand();
 
   String html;
   html.reserve(1500);
@@ -1073,9 +1088,11 @@ String connectedPageHTML() {
   if (hasFrame) {
     html += F("<p>Live.</p>");
   } else {
-    html += F("<section><h2>Mac setup</h2><pre>");
-    html += htmlEscape(setupCommand);
-    html += F("</pre></section>");
+    html += F("<section><h2>Next step</h2><p>Open <a href='");
+    html += kCustomerAppUrl;
+    html += F("'>");
+    html += kCustomerAppHost;
+    html += F("</a> on your Mac and follow the main button.</p></section>");
   }
   html += F("<p><a href='/health'>Status</a> <a href='/update'>Update</a></p>");
   const String tokenQuery = deviceAuthConfigured() ? String("?token=") + deviceAuthToken : String();
@@ -1090,7 +1107,7 @@ String connectedPageHTML() {
   if (deviceAuthConfigured()) {
     html += F("<p>Token</p><code>");
     html += htmlEscape(deviceAuthToken);
-    html += F("</code><p class='muted'>Use this in Theme Studio or as CODEXBAR_DISPLAY_DEVICE_TOKEN for the Mac Companion.</p>");
+    html += F("</code><p class='muted'>Use this only when support asks for a pairing token.</p>");
     html += F("<form method='post' action='/api/pair'><button>Rotate token</button></form>");
   } else {
     html += F("<p class='muted'>Create a token before exposing theme controls to other devices on your network.</p>");
@@ -1306,11 +1323,15 @@ void handleHealth() {
   const codexbar_display::esp8266::RendererHealthSnapshot snapshot = renderer.HealthSnapshot();
 
   String out;
-  out.reserve(640);
+  out.reserve(768);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
   out += String(ESP.getFreeHeap());
+  out += ",\"maxFreeBlock\":";
+  out += String(ESP.getMaxFreeBlockSize());
+  out += ",\"heapFragmentationPercent\":";
+  out += String(ESP.getHeapFragmentation());
   out += ",\"resetReason\":";
   out += bootResetReasonJSON;
   out += "},";
@@ -1325,6 +1346,8 @@ void handleHealth() {
   appendJSONNullableString(out, activeThemeSpecHash);
   out += ",\"renderOk\":";
   out += snapshot.themeSpecRenderOk ? "true" : "false";
+  out += ",\"renderError\":";
+  appendJSONNullableString(out, snapshot.themeSpecRenderError);
   out += ",\"renderFailures\":";
   out += String(snapshot.themeSpecRenderFailures);
   out += "},\"gif\":{\"activePath\":\"";
@@ -1775,10 +1798,6 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
   const codexbar_display::core::Frame previous = runtimeCtx.runtime.current;
   codexbar_display::core::Frame next = hadFrame ? previous : codexbar_display::core::Frame{};
 
-  if (!hadFrame) {
-    next.provider = "codex";
-    next.label = "Codex";
-  }
   next.hasError = false;
   next.error = "";
   next.clearThemeSpec = false;
@@ -2217,6 +2236,7 @@ void handleRawOtaClient() {
 
   drawUpdateStatus("Loading firmware");
   waitStatusRendered = true;
+  markBootRecoveryUploadActive(true);
   enterOtaSafeMode(U_FLASH);
 
   if (!Update.begin(maxSize, U_FLASH)) {
@@ -2608,7 +2628,7 @@ void loop() {
       lastFrameAcceptedAtMs > 0 &&
       (millis() - lastFrameAcceptedAtMs) > kFrameStaleWarningMs) {
     const unsigned long renderStartUs = micros();
-    renderer.DrawStatus(runtimeCtx, "VIBE TV", "Check Mac App", "No fresh data");
+    renderer.DrawStatus(runtimeCtx, "VIBE TV", "Open App", kCustomerAppHost);
     recordRenderFull("status", micros() - renderStartUs);
     frameStaleStatusRendered = true;
   }
@@ -2617,9 +2637,10 @@ void loop() {
     renderer.TickSplash(runtimeCtx);
   }
 
-  if (runtimeCtx.screenDirty && !waitStatusRendered) {
+  if (runtimeCtx.screenDirty && !waitStatusRendered && !renderer.ShouldDeferDirtyRender(runtimeCtx)) {
     const unsigned long renderStartUs = micros();
     const char* fullKind = "usage";
+    bool keepDirty = false;
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
     renderer.DrawUsage(runtimeCtx);
 #else
@@ -2632,10 +2653,14 @@ void loop() {
           runtimeCtx,
           "VIBE TV",
           displayErrorMessage(codexbar_display::app::CurrentFrame(runtimeCtx).error),
-          "On your Mac");
+          kCustomerAppHost);
     } else {
       fullKind = codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec ? "theme_spec_usage" : "usage";
       renderer.DrawUsage(runtimeCtx);
+      if (codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec &&
+          !renderer.DebugSnapshot().themeSpecRenderOk) {
+        keepDirty = true;
+      }
     }
 #endif
     rendered = true;
@@ -2643,8 +2668,10 @@ void loop() {
     drawFirmwareUpdateNotice();
     renderDurationUs = micros() - renderStartUs;
     recordRenderFull(fullKind, renderDurationUs);
-    runtimeCtx.screenDirty = false;
-    firmwareUpdateNoticeDirty = false;
+    if (!keepDirty) {
+      runtimeCtx.screenDirty = false;
+      firmwareUpdateNoticeDirty = false;
+    }
   }
 
 #ifdef CODEXBAR_DISPLAY_RUNTIME_BENCH
