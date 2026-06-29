@@ -350,11 +350,12 @@ async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
     timeout: 10_000,
   });
   await page
-    .getByRole("button", { name: "Fix connection" })
-    .waitFor({ timeout: 10_000 });
-  await page
     .getByRole("button", { name: "Run setup again" })
     .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
+    "Fix connection should stay hidden while the Mac App needs setup",
+  );
   await page
     .getByRole("button", { name: "VibeTV is on WiFi" })
     .waitFor({ timeout: 10_000 });
@@ -397,13 +398,16 @@ async function testFixConnectionDoesNotRepairWhenMacAppIsOffline(
   await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Fix connection" }).click();
   await page
     .getByText("Mac App needs setup.", { exact: false })
     .waitFor({ timeout: 10_000 });
   assert(
+    (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
+    "Fix connection should stay hidden when the Mac App is offline",
+  );
+  assert(
     !companionRequests.includes("/v1/device/repair"),
-    "Fix connection must not call device repair when the Mac App is offline",
+    "Mac App offline setup must not call device repair",
   );
 
   assertNoInstallRequests(installRequests);

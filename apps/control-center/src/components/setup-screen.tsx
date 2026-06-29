@@ -221,20 +221,32 @@ export function SetupScreen({
               {setupComplete ? "Setup complete" : "Set up your VibeTV"}
             </h2>
             <div className="mt-6 flex flex-wrap gap-3">
-              <PrimaryButton
-                busy={busyAction === "repair"}
-                busyLabel="Reconnecting"
-                icon={<RefreshCw size={18} aria-hidden />}
-                label="Fix connection"
-                onClick={() => onRepairConnection?.()}
-              />
-              <SecondaryButton
-                busy={busyAction === "reset-setup"}
-                busyLabel="Resetting"
-                icon={<Clipboard size={16} aria-hidden />}
-                label="Run setup again"
-                onClick={onResetSetup}
-              />
+              {!macAppReady ? (
+                <PrimaryButton
+                  busy={busyAction === "reset-setup"}
+                  busyLabel="Resetting"
+                  icon={<Clipboard size={18} aria-hidden />}
+                  label="Run setup again"
+                  onClick={onResetSetup}
+                />
+              ) : (
+                <>
+                  <PrimaryButton
+                    busy={busyAction === "repair"}
+                    busyLabel="Reconnecting"
+                    icon={<RefreshCw size={18} aria-hidden />}
+                    label="Fix connection"
+                    onClick={() => onRepairConnection?.()}
+                  />
+                  <SecondaryButton
+                    busy={busyAction === "reset-setup"}
+                    busyLabel="Resetting"
+                    icon={<Clipboard size={16} aria-hidden />}
+                    label="Run setup again"
+                    onClick={onResetSetup}
+                  />
+                </>
+              )}
             </div>
             {lastError ? <ErrorNote error={lastError} /> : null}
           </div>
