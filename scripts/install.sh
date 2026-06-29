@@ -237,11 +237,25 @@ run_privileged() {
 }
 
 install_global_command() {
+  local existing_target
+
   mkdir -p "$INSTALL_ROOT"
 
   if [[ ! -d "$GLOBAL_BIN_DIR" ]]; then
     run_privileged mkdir -p "$GLOBAL_BIN_DIR" ||
       die "could not create ${GLOBAL_BIN_DIR}"
+  fi
+
+  if [[ -L "$GLOBAL_BIN_PATH" ]]; then
+    existing_target="$(readlink "$GLOBAL_BIN_PATH" 2>/dev/null || true)"
+    if [[ "$existing_target" == "$INSTALL_PATH" ]]; then
+      hash -r 2>/dev/null || true
+      if command -v "$INSTALL_NAME" >/dev/null 2>&1 &&
+        "$INSTALL_NAME" version --short >/dev/null 2>&1; then
+        log "vibetv: Terminal command ready: ${INSTALL_NAME}"
+        return 0
+      fi
+    fi
   fi
 
   if [[ -L "$GLOBAL_BIN_PATH" || ! -e "$GLOBAL_BIN_PATH" ]]; then

@@ -180,6 +180,7 @@ run_installer() {
       FAKE_CODEXBAR_DISPLAY_LOG="${root}/codexbar-display.log" \
       FAKE_CURL_LOG="${root}/curl.log" \
       FAKE_LAUNCHCTL_LOG="${root}/launchctl.log" \
+      FAKE_LN_LOG="${root}/ln.log" \
       VIBETV_COMPANION_GLOBAL_PLIST="${root}/global/Library/LaunchAgents/com.codexbar-display.companion-api.plist" \
       "$INSTALLER" "$@" \
       2>&1
@@ -287,8 +288,39 @@ run_install_sh_does_not_block_when_codexbar_usage_is_missing() {
   assert_not_contains "$output" "CodexBar is returning provider data"
 }
 
+run_existing_global_symlink_does_not_require_relink() {
+  local root output global_link app_bin
+  root="${TMP_WORK_DIR}/existing-global-symlink"
+  write_fake_commands "${root}/fake-bin"
+  mkdir -p "${root}/home" "${root}/global-bin" "${root}/global/Library/LaunchAgents"
+  write_existing_install "${root}/home"
+  app_bin="${root}/home/Library/Application Support/codexbar-display/bin/codexbar-display"
+  global_link="${root}/global-bin/codexbar-display"
+  ln -s "$app_bin" "$global_link"
+  : > "${root}/codexbar-display.log"
+  : > "${root}/curl.log"
+  : > "${root}/launchctl.log"
+  : > "${root}/ln.log"
+
+  cat > "${root}/fake-bin/ln" <<'EOF'
+#!/usr/bin/env bash
+printf 'ln called: %s\n' "$*" >> "${FAKE_LN_LOG:?}"
+exit 55
+EOF
+  chmod +x "${root}/fake-bin/ln"
+
+  output="$(run_installer "$root" --version 9.9.9 -- --target http://vibetv.local)" || {
+    printf '%s\n' "$output" >&2
+    die "expected install.sh to keep the existing global command symlink"
+  }
+
+  assert_contains "$output" "Terminal command ready: codexbar-display"
+  assert_not_contains "$(cat "${root}/ln.log")" "ln called"
+}
+
 run_install_sh_enables_control_center_in_daemon
 run_fresh_install_keeps_default_theme_pack
 run_install_sh_does_not_block_when_codexbar_usage_is_missing
+run_existing_global_symlink_does_not_require_relink
 
 printf 'install.sh Control Center migration test passed\n'

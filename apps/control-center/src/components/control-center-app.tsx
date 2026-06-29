@@ -244,15 +244,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     async function handleBlockedBrowserFetch() {
       const accessState = await readLocalNetworkAccessState();
-      if (accessState === "denied") {
+      if (localNetworkAccessNeedsUserAction(accessState)) {
+        const normalized = localNetworkAccessError(accessState);
         markCompanionAccessBlocked();
         setBusyAction(null);
-        setLastError({
-          code: "LOCAL_NETWORK_ACCESS_REQUIRED",
-          message: "Browser access is blocked.",
-          nextAction:
-            "Allow local network access for this site, then try again.",
-        });
+        setLastError(normalized);
         return;
       }
       markCompanionUnavailable();
@@ -335,13 +331,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       } catch (error) {
         if (error instanceof Error && isCompanionConnectionError(error)) {
           const accessState = await readLocalNetworkAccessState();
-          if (accessState === "denied") {
-            throw {
-              code: "LOCAL_NETWORK_ACCESS_REQUIRED",
-              message: "Browser access is blocked.",
-              nextAction:
-                "Allow local network access for this site, then try again.",
-            } satisfies ApiError;
+          if (localNetworkAccessNeedsUserAction(accessState)) {
+            throw localNetworkAccessError(accessState);
           }
         }
         throw error;
@@ -1761,6 +1752,30 @@ function isCompanionMissingError(error: ApiError): boolean {
 
 function isLocalNetworkAccessError(error?: ApiError | null): boolean {
   return error?.code === "LOCAL_NETWORK_ACCESS_REQUIRED";
+}
+
+function localNetworkAccessNeedsUserAction(
+  state: PermissionState | "unsupported",
+): boolean {
+  return state === "prompt" || state === "denied";
+}
+
+function localNetworkAccessError(
+  state: PermissionState | "unsupported",
+): ApiError {
+  if (state === "denied") {
+    return {
+      code: "LOCAL_NETWORK_ACCESS_REQUIRED",
+      message: "Browser access is blocked.",
+      nextAction: "Allow local network access for this site, then try again.",
+    };
+  }
+  return {
+    code: "LOCAL_NETWORK_ACCESS_REQUIRED",
+    message: "Browser permission needed.",
+    nextAction:
+      "Click Allow access and approve the browser prompt so this site can talk to the Mac App.",
+  };
 }
 
 async function readLocalNetworkAccessState(): Promise<
