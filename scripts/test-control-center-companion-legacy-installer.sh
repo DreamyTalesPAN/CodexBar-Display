@@ -74,23 +74,71 @@ EOF
 printf '%s\n' "$*" >> "${FAKE_CURL_LOG:?}"
 out=""
 previous=""
+write_status=0
 for arg in "$@"; do
   if [[ "$previous" == "-o" ]]; then
     out="$arg"
     previous=""
     continue
   fi
+  if [[ "$arg" == "%{http_code}" ]]; then
+    write_status=1
+  fi
   previous="$arg"
 done
+
+respond() {
+  local body="$1"
+  if [[ -n "$out" ]]; then
+    printf '%s\n' "$body" > "$out"
+  else
+    printf '%s\n' "$body"
+  fi
+  if [[ "$write_status" == "1" ]]; then
+    printf '200'
+  fi
+}
+
 case "$*" in
   *"/v1/status"*)
-    exit 0
+    if [[ -n "${FAKE_STATUS_OLD_ONCE:-}" && "$write_status" == "1" && ! -f "$FAKE_STATUS_OLD_ONCE" ]]; then
+      touch "$FAKE_STATUS_OLD_ONCE"
+      respond '{"ok":true,"companion":{"status":"ready","version":"9.9.8","features":{"themeInstallEnabled":true}},"device":{"target":"http://192.168.178.72","connected":true,"paired":true}}'
+      exit 0
+    fi
+    respond '{"ok":true,"companion":{"status":"ready","version":"9.9.9","features":{"themeInstallEnabled":true}},"device":{"target":"http://192.168.178.72","connected":true,"paired":true}}'
     ;;
   *"/v1/device/repair"*)
-    printf '{"ok":true,"device":{"connected":true,"paired":true,"target":"http://192.168.178.72"}}\n'
+    if [[ -n "${FAKE_REPAIR_ALWAYS_FAIL:-}" ]]; then
+      if [[ -n "$out" ]]; then
+        printf '%s\n' '{"ok":false,"error":{"code":"device_not_found","message":"No VibeTV device was found.","nextAction":"Make sure VibeTV is powered on and run device discovery again."}}' > "$out"
+      else
+        printf '%s\n' '{"ok":false,"error":{"code":"device_not_found","message":"No VibeTV device was found.","nextAction":"Make sure VibeTV is powered on and run device discovery again."}}'
+      fi
+      if [[ "$write_status" == "1" ]]; then
+        printf '404'
+      fi
+      exit 0
+    fi
+    if [[ -n "${FAKE_REPAIR_FAIL_ONCE:-}" && ! -f "$FAKE_REPAIR_FAIL_ONCE" ]]; then
+      touch "$FAKE_REPAIR_FAIL_ONCE"
+      if [[ -n "$out" ]]; then
+        printf '%s\n' '{"ok":false,"error":{"code":"device_not_found","message":"No VibeTV device was found.","nextAction":"Make sure VibeTV is powered on and run device discovery again."}}' > "$out"
+      else
+        printf '%s\n' '{"ok":false,"error":{"code":"device_not_found","message":"No VibeTV device was found.","nextAction":"Make sure VibeTV is powered on and run device discovery again."}}'
+      fi
+      if [[ "$write_status" == "1" ]]; then
+        printf '404'
+      fi
+      exit 0
+    fi
+    respond '{"ok":true,"device":{"connected":true,"paired":true,"target":"http://192.168.178.72"}}'
+    ;;
+  *"/v1/device"*)
+    respond '{"ok":true,"device":{"connected":true,"paired":true,"target":"http://192.168.178.72","firmware":"9.9.9"}}'
     ;;
   *"/releases/latest"*)
-    printf '{"tag_name":"v9.9.9"}\n'
+    respond '{"tag_name":"v9.9.9"}'
     ;;
   *"/codexbar-display-darwin-arm64-v9.9.9"*)
     [[ -n "$out" ]] || exit 22
@@ -182,6 +230,9 @@ run_installer() {
       FAKE_API_LOG="${root}/api.log" \
       FAKE_LAUNCHCTL_LOG="${root}/launchctl.log" \
       FAKE_CURL_LOG="${root}/curl.log" \
+      FAKE_REPAIR_FAIL_ONCE="${FAKE_REPAIR_FAIL_ONCE:-}" \
+      FAKE_REPAIR_ALWAYS_FAIL="${FAKE_REPAIR_ALWAYS_FAIL:-}" \
+      FAKE_STATUS_OLD_ONCE="${FAKE_STATUS_OLD_ONCE:-}" \
       VIBETV_COMPANION_GLOBAL_PLIST="${root}/global/Library/LaunchAgents/com.codexbar-display.companion-api.plist" \
       "$INSTALLER" "$@" \
       2>&1
@@ -321,8 +372,76 @@ run_install_disables_global_legacy_launchagent() {
   assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
 }
 
+run_install_retries_transient_repair_failure() {
+  local root output repair_calls
+  root="${TMP_WORK_DIR}/repair-retry"
+  write_fake_commands "${root}/fake-bin"
+  prepare_home "${root}/home"
+  : > "${root}/launchctl.log"
+  : > "${root}/curl.log"
+  : > "${root}/api.log"
+
+  output="$(FAKE_REPAIR_FAIL_ONCE="${root}/repair-fail-once" run_installer "$root" --version 9.9.9 --terminal-session)" || {
+    printf '%s\n' "$output" >&2
+    die "expected install to pass after repair retry"
+  }
+
+  repair_calls="$(grep -c "/v1/device/repair" "${root}/curl.log")"
+  [[ "$repair_calls" == "2" ]] || die "expected two repair calls, got ${repair_calls}"
+  assert_not_contains "$output" "Mac App API POST /v1/device/repair failed"
+  assert_contains "$output" "VibeTV did not answer yet; retrying (1/3)"
+  assert_contains "$output" "setup verified; Mac App ready, VibeTV connected, firmware 9.9.9"
+}
+
+run_install_prints_repair_failure_details() {
+  local root output status repair_calls
+  root="${TMP_WORK_DIR}/repair-fail"
+  write_fake_commands "${root}/fake-bin"
+  prepare_home "${root}/home"
+  : > "${root}/launchctl.log"
+  : > "${root}/curl.log"
+  : > "${root}/api.log"
+
+  set +e
+  output="$(FAKE_REPAIR_ALWAYS_FAIL=1 run_installer "$root" --version 9.9.9 --terminal-session)"
+  status=$?
+  set -e
+  [[ "$status" != "0" ]] || die "expected install to fail when repair never succeeds"
+
+  repair_calls="$(grep -c "/v1/device/repair" "${root}/curl.log")"
+  [[ "$repair_calls" == "3" ]] || die "expected three repair calls, got ${repair_calls}"
+  assert_contains "$output" "Mac App API POST /v1/device/repair failed with HTTP 404"
+  assert_contains "$output" "error code: device_not_found"
+  assert_contains "$output" "detail: No VibeTV device was found."
+  assert_contains "$output" "next step: Make sure VibeTV is powered on and run device discovery again."
+  assert_contains "$output" "support: report: curl -fsS http://127.0.0.1:47832/v1/diagnostics"
+}
+
+run_install_restarts_when_old_api_version_answers() {
+  local root output kickstarts
+  root="${TMP_WORK_DIR}/old-api-version"
+  write_fake_commands "${root}/fake-bin"
+  prepare_home "${root}/home"
+  : > "${root}/launchctl.log"
+  : > "${root}/curl.log"
+  : > "${root}/api.log"
+
+  output="$(FAKE_STATUS_OLD_ONCE="${root}/status-old-once" run_installer "$root" --version 9.9.9 --terminal-session)" || {
+    printf '%s\n' "$output" >&2
+    die "expected install to pass after old API restart"
+  }
+
+  assert_contains "$output" "Mac App answered with version 9.9.8; restarting once"
+  assert_contains "$output" "setup verified; Mac App ready, VibeTV connected, firmware 9.9.9"
+  kickstarts="$(grep -c "kickstart -k gui/$(id -u)/com.codexbar-display.daemon" "${root}/launchctl.log")"
+  [[ "$kickstarts" == "2" ]] || die "expected initial start plus one restart, got ${kickstarts}"
+}
+
 run_install_writes_integrated_daemon_launchagent
 run_install_disables_global_legacy_launchagent
+run_install_retries_transient_repair_failure
+run_install_prints_repair_failure_details
+run_install_restarts_when_old_api_version_answers
 run_restart_updates_daemon_launchagent
 run_uninstall_stops_terminal_service_and_legacy_launchagent
 

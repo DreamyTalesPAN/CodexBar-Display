@@ -70,6 +70,9 @@ log() {
 
 die() {
   printf 'error: %s\n' "$*" >&2
+  printf 'support: status: curl -fsS http://%s/v1/status\n' "$ADDR" >&2
+  printf 'support: report: curl -fsS http://%s/v1/diagnostics\n' "$ADDR" >&2
+  printf 'support: logs: %s / %s\n' "$DISPLAY_DAEMON_LOG_OUT" "$DISPLAY_DAEMON_LOG_ERR" >&2
   exit 1
 }
 
@@ -245,6 +248,107 @@ json_device_target() {
   sed -n 's/.*"device"[^{]*{[^}]*"target"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
 }
 
+json_api_field() {
+  local field="$1"
+  sed -n "s/.*\"${field}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
+}
+
+status_field() {
+  local object="$1"
+  local field="$2"
+  sed -n "s/.*\"${object}\"[^{]*{[^}]*\"${field}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
+}
+
+status_bool_field() {
+  local object="$1"
+  local field="$2"
+  sed -n \
+    -e "s/.*\"${object}\"[^{]*{[^}]*\"${field}\"[[:space:]]*:[[:space:]]*true.*/true/p" \
+    -e "s/.*\"${object}\"[^{]*{[^}]*\"${field}\"[[:space:]]*:[[:space:]]*false.*/false/p" \
+    | head -n 1
+}
+
+local_api_json() {
+  local method="$1"
+  local path="$2"
+  local payload="${3:-}"
+  local response_file status_file stderr_file status curl_status
+  response_file="${TMPDIR_INSTALL}/api-response.json"
+  status_file="${TMPDIR_INSTALL}/api-status.txt"
+  stderr_file="${TMPDIR_INSTALL}/api-stderr.txt"
+  : > "$response_file"
+  : > "$status_file"
+  : > "$stderr_file"
+
+  set +e
+  if [[ -n "$payload" ]]; then
+    curl -sS --connect-timeout 10 --max-time 90 \
+      -o "$response_file" \
+      -w "%{http_code}" \
+      -X "$method" "http://${ADDR}${path}" \
+      -H "Content-Type: application/json" \
+      -d "$payload" \
+      > "$status_file" 2> "$stderr_file"
+  else
+    curl -sS --connect-timeout 10 --max-time 30 \
+      -o "$response_file" \
+      -w "%{http_code}" \
+      -X "$method" "http://${ADDR}${path}" \
+      > "$status_file" 2> "$stderr_file"
+  fi
+  curl_status=$?
+  set -e
+
+  status="$(cat "$status_file" 2>/dev/null || true)"
+  if [[ "$curl_status" == "0" && "$status" =~ ^2[0-9][0-9]$ ]]; then
+    cat "$response_file"
+    return 0
+  fi
+
+  return 1
+}
+
+print_local_api_error() {
+  local method="$1"
+  local path="$2"
+  local response_file="${TMPDIR_INSTALL}/api-response.json"
+  local status_file="${TMPDIR_INSTALL}/api-status.txt"
+  local stderr_file="${TMPDIR_INSTALL}/api-stderr.txt"
+  local message next_action code stderr_text status
+  status="$(cat "$status_file" 2>/dev/null || true)"
+  message="$(json_api_field "message" < "$response_file")"
+  next_action="$(json_api_field "nextAction" < "$response_file")"
+  code="$(json_api_field "code" < "$response_file")"
+  stderr_text="$(tr '\n' ' ' < "$stderr_file" | sed 's/[[:space:]]*$//')"
+
+  printf 'error: Mac App API %s %s failed' "$method" "$path" >&2
+  if [[ -n "$status" && "$status" != "000" ]]; then
+    printf ' with HTTP %s' "$status" >&2
+  fi
+  printf '.\n' >&2
+  [[ -z "$code" ]] || printf 'error code: %s\n' "$code" >&2
+  [[ -z "$message" ]] || printf 'detail: %s\n' "$message" >&2
+  [[ -z "$next_action" ]] || printf 'next step: %s\n' "$next_action" >&2
+  [[ -z "$stderr_text" ]] || printf 'curl: %s\n' "$stderr_text" >&2
+}
+
+retryable_repair_failure() {
+  local response_file="${TMPDIR_INSTALL}/api-response.json"
+  local status_file="${TMPDIR_INSTALL}/api-status.txt"
+  local stderr_file="${TMPDIR_INSTALL}/api-stderr.txt"
+  local code status stderr_text
+  status="$(cat "$status_file" 2>/dev/null || true)"
+  code="$(json_api_field "code" < "$response_file")"
+  stderr_text="$(tr '\n' ' ' < "$stderr_file" | tr '[:upper:]' '[:lower:]' || true)"
+
+  [[ "$status" == "000" ]] && return 0
+  [[ "$status" == "408" || "$status" == "429" ]] && return 0
+  [[ "$status" =~ ^5[0-9][0-9]$ ]] && return 0
+  [[ "$code" == "device_not_found" ]] && return 0
+  [[ "$stderr_text" == *"timed out"* || "$stderr_text" == *"connection reset"* || "$stderr_text" == *"connection refused"* ]] && return 0
+  return 1
+}
+
 connect_vibetv() {
   local payload response discovered_target
   if [[ "$TARGET_EXPLICIT" == "1" ]]; then
@@ -255,11 +359,17 @@ connect_vibetv() {
     log "vibetv: discovering VibeTV on this WiFi"
   fi
 
-  response="$(curl -fsS --connect-timeout 10 --max-time 90 \
-    -X POST "http://${ADDR}/v1/device/repair" \
-    -H "Content-Type: application/json" \
-    -d "$payload")" \
-    || die "VibeTV could not connect. Keep VibeTV powered on and on the same WiFi, then rerun setup."
+  for attempt in 1 2 3; do
+    if response="$(local_api_json POST "/v1/device/repair" "$payload")"; then
+      break
+    fi
+    if [[ "$attempt" == "3" ]] || ! retryable_repair_failure; then
+      print_local_api_error POST "/v1/device/repair"
+      die "VibeTV could not connect. Keep VibeTV powered on and on the same WiFi, then rerun setup."
+    fi
+    log "vibetv: VibeTV did not answer yet; retrying (${attempt}/3)"
+    sleep 2
+  done
 
   discovered_target="$(printf '%s' "$response" | json_device_target)"
   if [[ -n "$discovered_target" ]]; then
@@ -281,9 +391,57 @@ update_vibetv_firmware() {
   log "vibetv: VibeTV firmware update complete"
 }
 
+verify_companion_version() {
+  local response version
+  if ! response="$(local_api_json GET "/v1/status")"; then
+    print_local_api_error GET "/v1/status"
+    die "Mac setup service did not answer on http://${ADDR}/v1/status. Inspect ${DISPLAY_DAEMON_LOG_ERR}."
+  fi
+  version="$(printf '%s' "$response" | status_field "companion" "version")"
+  if [[ "$version" == "$RELEASE_VERSION" ]]; then
+    return 0
+  fi
+
+  log "vibetv: Mac App answered with version ${version:-unknown}; restarting once"
+  restart_service
+  wait_for_api
+  if ! response="$(local_api_json GET "/v1/status")"; then
+    print_local_api_error GET "/v1/status"
+    die "Mac setup service did not answer on http://${ADDR}/v1/status after restart. Inspect ${DISPLAY_DAEMON_LOG_ERR}."
+  fi
+  version="$(printf '%s' "$response" | status_field "companion" "version")"
+  [[ "$version" == "$RELEASE_VERSION" ]] \
+    || die "Mac App version mismatch after restart: expected ${RELEASE_VERSION}, got ${version:-unknown}. Inspect ${DISPLAY_DAEMON_LOG_ERR}."
+}
+
+verify_final_status() {
+  local response device_response status connected paired firmware
+  if ! response="$(local_api_json GET "/v1/status")"; then
+    print_local_api_error GET "/v1/status"
+    die "Mac setup service did not answer for the final status check. Inspect ${DISPLAY_DAEMON_LOG_ERR}."
+  fi
+  status="$(printf '%s' "$response" | status_field "companion" "status")"
+  [[ "$status" == "ready" ]] \
+    || die "Mac App is not ready after setup. Inspect ${DISPLAY_DAEMON_LOG_ERR}."
+
+  if ! device_response="$(local_api_json GET "/v1/device")"; then
+    print_local_api_error GET "/v1/device"
+    die "VibeTV is not reachable after setup. Run: curl http://${ADDR}/v1/status"
+  fi
+  connected="$(printf '%s' "$response" | status_bool_field "device" "connected")"
+  paired="$(printf '%s' "$device_response" | status_bool_field "device" "paired")"
+  firmware="$(printf '%s' "$device_response" | status_field "device" "firmware")"
+  [[ "$connected" == "true" && "$paired" == "true" ]] \
+    || die "VibeTV is not connected after setup. Run: curl http://${ADDR}/v1/status"
+  [[ -n "$firmware" ]] \
+    || die "VibeTV firmware version was not available after setup. Run: curl http://${ADDR}/v1/device"
+  log "vibetv: setup verified; Mac App ready, VibeTV connected, firmware ${firmware}"
+}
+
 finish_device_setup() {
   connect_vibetv
   update_vibetv_firmware
+  verify_final_status
 }
 
 install_binary() {
@@ -513,6 +671,7 @@ main() {
   install_binary
   restart_service
   wait_for_api
+  verify_companion_version
 
   log "vibetv: Mac setup binary installed at ${BIN_PATH}"
   log "vibetv: background service installed at ${DISPLAY_DAEMON_PLIST}"
