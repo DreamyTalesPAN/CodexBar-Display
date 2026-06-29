@@ -701,9 +701,14 @@ func parseProviderUsageMeta(payload map[string]any) ProviderUsageMeta {
 func parseUsageOverTime(payload map[string]any) []UsageOverTimePoint {
 	for _, path := range []string{
 		"openaiDashboard.usageBreakdown",
+		"openaiDashboard.dailyBreakdown",
+		"openaiDashboard.creditEvents",
 		"usageBreakdown",
+		"dailyBreakdown",
+		"creditEvents",
 		"usage.overTime",
 		"usage.history",
+		"credits.events",
 	} {
 		raw, ok := getPath(payload, path)
 		if !ok {
@@ -736,6 +741,7 @@ func parseUsageOverTimePoints(raw any) []UsageOverTimePoint {
 	if len(points) == 0 {
 		return nil
 	}
+	points = mergeUsageOverTimePoints(points)
 	sort.Slice(points, func(i, j int) bool {
 		return points[i].Day < points[j].Day
 	})
@@ -754,6 +760,14 @@ func parseUsageOverTimePoint(item map[string]any) (UsageOverTimePoint, bool) {
 
 	services := parseUsageServiceUsageList(item["services"])
 	total, ok := floatAtPaths(item, "totalCreditsUsed", "total", "creditsUsed")
+	if len(services) == 0 {
+		if service := firstString(item, "service", "label", "name"); service != "" && ok {
+			services = append(services, UsageServiceUsage{
+				Service:     service,
+				CreditsUsed: total,
+			})
+		}
+	}
 	if !ok {
 		for _, service := range services {
 			total += service.CreditsUsed
@@ -773,9 +787,78 @@ func parseUsageOverTimePoint(item map[string]any) (UsageOverTimePoint, bool) {
 	}, true
 }
 
-func parseUsageServiceUsageList(raw any) []UsageServiceUsage {
-	const maxUsageOverTimeServices = 8
+func mergeUsageOverTimePoints(points []UsageOverTimePoint) []UsageOverTimePoint {
+	type dayUsage struct {
+		total    float64
+		services map[string]float64
+	}
 
+	byDay := map[string]*dayUsage{}
+	for _, point := range points {
+		day := strings.TrimSpace(point.Day)
+		if day == "" {
+			continue
+		}
+		usage := byDay[day]
+		if usage == nil {
+			usage = &dayUsage{services: map[string]float64{}}
+			byDay[day] = usage
+		}
+		if point.TotalCreditsUsed > 0 {
+			usage.total += point.TotalCreditsUsed
+		}
+		for _, service := range point.Services {
+			name := strings.TrimSpace(service.Service)
+			if name == "" || service.CreditsUsed <= 0 {
+				continue
+			}
+			usage.services[name] += service.CreditsUsed
+		}
+	}
+	if len(byDay) == 0 {
+		return nil
+	}
+
+	days := make([]string, 0, len(byDay))
+	for day := range byDay {
+		days = append(days, day)
+	}
+	sort.Strings(days)
+
+	merged := make([]UsageOverTimePoint, 0, len(days))
+	for _, day := range days {
+		usage := byDay[day]
+		services := make([]UsageServiceUsage, 0, len(usage.services))
+		for name, credits := range usage.services {
+			if credits <= 0 {
+				continue
+			}
+			services = append(services, UsageServiceUsage{
+				Service:     name,
+				CreditsUsed: credits,
+			})
+		}
+		sort.SliceStable(services, func(i, j int) bool {
+			if services[i].CreditsUsed == services[j].CreditsUsed {
+				return strings.ToLower(services[i].Service) < strings.ToLower(services[j].Service)
+			}
+			return services[i].CreditsUsed > services[j].CreditsUsed
+		})
+		if len(services) > maxUsageOverTimeServices {
+			services = services[:maxUsageOverTimeServices]
+		}
+		merged = append(merged, UsageOverTimePoint{
+			Day:              day,
+			TotalCreditsUsed: usage.total,
+			Services:         services,
+		})
+	}
+	return merged
+}
+
+const maxUsageOverTimeServices = 8
+
+func parseUsageServiceUsageList(raw any) []UsageServiceUsage {
 	appendService := func(out []UsageServiceUsage, service string, credits float64) []UsageServiceUsage {
 		service = strings.TrimSpace(service)
 		if service == "" || credits <= 0 {

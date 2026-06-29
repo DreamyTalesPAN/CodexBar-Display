@@ -3,6 +3,7 @@ package codexbar
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -156,6 +157,85 @@ func TestParseProviderPayloadKeepsCodexBarUsageMeta(t *testing.T) {
 	}
 	if meta.Windows[3].ID != "codereview" || meta.Windows[3].Label != "Code review" || meta.Windows[3].UsedPercent != 7 {
 		t.Fatalf("expected extra code review window, got %+v", meta.Windows[3])
+	}
+}
+
+func TestParseProviderPayloadReadsCodexDailyBreakdown(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"oauth",
+			"usage":{
+				"primary":{"usedPercent":0,"windowMinutes":300,"resetsAt":"2099-01-01T01:00:00Z"},
+				"secondary":{"usedPercent":6,"windowMinutes":10080,"resetsAt":"2099-01-02T01:00:00Z"}
+			},
+			"openaiDashboard":{
+				"usageBreakdown":[],
+				"dailyBreakdown":[
+					{"day":"2026-06-08","totalCreditsUsed":1008.691,"services":[{"service":"Desktop App","creditsUsed":1008.691}]}
+				]
+			},
+			"credits":{"remaining":0,"updatedAt":"2026-06-29T10:47:46Z"}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected one provider, got %d", len(parsed))
+	}
+	overTime := parsed[0].Meta.OverTime
+	if len(overTime) != 1 {
+		t.Fatalf("expected dailyBreakdown usage-over-time point, got %+v", overTime)
+	}
+	if overTime[0].Day != "2026-06-08" || math.Abs(overTime[0].TotalCreditsUsed-1008.691) > 0.0001 {
+		t.Fatalf("unexpected dailyBreakdown point: %+v", overTime[0])
+	}
+	if len(overTime[0].Services) != 1 || overTime[0].Services[0].Service != "Desktop App" || math.Abs(overTime[0].Services[0].CreditsUsed-1008.691) > 0.0001 {
+		t.Fatalf("unexpected dailyBreakdown services: %+v", overTime[0].Services)
+	}
+}
+
+func TestParseProviderPayloadAggregatesCodexCreditEvents(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"oauth",
+			"usage":{
+				"primary":{"usedPercent":1},
+				"secondary":{"usedPercent":21}
+			},
+			"openaiDashboard":{
+				"creditEvents":[
+					{"id":"a","service":"Desktop App","creditsUsed":610.148,"date":"2026-06-07T22:00:00Z"},
+					{"id":"b","service":"Desktop App","creditsUsed":351.03,"date":"2026-06-07T23:00:00Z"},
+					{"id":"c","service":"Code review","creditsUsed":7.296,"date":"2026-06-07T23:30:00Z"}
+				]
+			}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected one provider, got %d", len(parsed))
+	}
+	overTime := parsed[0].Meta.OverTime
+	if len(overTime) != 1 {
+		t.Fatalf("expected aggregated credit event day, got %+v", overTime)
+	}
+	if overTime[0].Day != "2026-06-07" || math.Abs(overTime[0].TotalCreditsUsed-968.474) > 0.0001 {
+		t.Fatalf("unexpected aggregated credit event total: %+v", overTime[0])
+	}
+	if len(overTime[0].Services) != 2 {
+		t.Fatalf("expected two aggregated services, got %+v", overTime[0].Services)
+	}
+	if overTime[0].Services[0].Service != "Desktop App" || math.Abs(overTime[0].Services[0].CreditsUsed-961.178) > 0.0001 {
+		t.Fatalf("unexpected primary aggregated service: %+v", overTime[0].Services)
 	}
 }
 

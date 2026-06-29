@@ -178,6 +178,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testUsageShowsCodexDailyBreakdown(browser, appContext.appUrl);
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
@@ -613,6 +614,58 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
       `Settings should not show setup/debug text: ${text}`,
     );
   }
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testUsageShowsCodexDailyBreakdown(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    usageResponse: {
+      ok: true,
+      generatedAt: "2026-06-29T10:47:46Z",
+      source: "codexbar-display",
+      usageMode: "used",
+      currentProvider: "codex",
+      providers: [
+        {
+          id: "codex",
+          label: "Codex",
+          source: "oauth",
+          session: 0,
+          weekly: 6,
+          resetSecs: 17839,
+          usageMode: "used",
+          sessionTokens: 77_355_732,
+          weekTokens: 1_170_913_100,
+          totalTokens: 4_289_266_786,
+          credits: { remaining: 0, updatedAt: "2026-06-29T10:47:46Z" },
+          usageOverTime: [
+            {
+              day: "2026-06-08",
+              totalCreditsUsed: 1008.691,
+              services: [{ service: "Desktop App", creditsUsed: 1008.691 }],
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Usage" }).click();
+  await page.getByRole("heading", { name: "Usage over time" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByText("Desktop App").waitFor({ timeout: 10_000 });
+  await page.getByText("1,009 credits").first().waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "Codex" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByText("77.4M").waitFor({ timeout: 10_000 });
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1541,6 +1594,7 @@ async function routeCompanionOnline(
     onUpdate,
     installStatusSequence,
     updateStatusSequence,
+    usageResponse,
     repairError = false,
   } = {},
 ) {
@@ -1686,6 +1740,32 @@ async function routeCompanionOnline(
         status: 500,
         contentType: "application/json",
         body: JSON.stringify({ ok: false }),
+      });
+      return;
+    }
+    if (pathname === "/v1/usage") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          usageResponse || {
+            ok: true,
+            generatedAt: "2026-06-29T10:47:46Z",
+            source: "codexbar-display",
+            usageMode: "used",
+            currentProvider: "codex",
+            providers: [
+              {
+                id: "codex",
+                label: "Codex",
+                source: "oauth",
+                session: 12,
+                weekly: 34,
+                usageMode: "used",
+              },
+            ],
+          },
+        ),
       });
       return;
     }
