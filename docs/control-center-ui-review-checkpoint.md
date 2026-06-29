@@ -13,6 +13,11 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: setup prompt copy for Mac App install/update, setup step 4 stuck-state fallback, Overview version labels, Mac App release/update request timeout handling, and Theme Library activation retry progress copy.
+- Customer rule: setup remains one guided customer action; the prompt may ask the agent to update VibeTV firmware, but the visible UI must still say Mac App, VibeTV, Connect, and Update instead of daemon/API/LaunchAgent/release internals. Version rows must distinguish Mac App from VibeTV firmware so customers do not compare unrelated numbers.
+- Simplifications accepted: no new customer setup decision was added; the endless `Connecting VibeTV...` state now falls back to one `Connect VibeTV` action; Theme Library retries are shown as passive progress, not extra troubleshooting buttons.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`; PR CI passed `check:customer-ui-copy`, `lint`, `test:customer-flows`, theme-pack build, companion tests, and firmware builds before merge. Live VibeTV Synthwave install smoke test passed; only the deterministic checkpoint needed this note.
+
 - Reviewed scope: Updates screen firmware install action, async update progress, retry/report actions, and support-report update status.
 - Customer rule: when an update is available, the primary action must install it from Control Center; progress uses plain states (`Checking VibeTV`, `Updating VibeTV`, `Restarting VibeTV`, `Update complete`) and never exposes firmware URLs, hashes, API, daemon, package, or release internals.
 - Simplifications accepted: firmware update uses the existing local Mac App update engine; Mac App self-update remains a separate download/install path because macOS installation cannot be treated like a silent device OTA update.
