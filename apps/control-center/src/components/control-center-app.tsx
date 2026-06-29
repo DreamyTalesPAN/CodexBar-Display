@@ -1299,9 +1299,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           });
         }
       } catch (error) {
-        const normalized = normalizeCaughtError(
-          error,
-          "Usage needs attention.",
+        const normalized = normalizeUsageError(
+          normalizeCaughtError(error, "Usage needs attention."),
         );
         if (isLocalNetworkAccessError(normalized)) {
           markCompanionAccessBlocked();
@@ -1705,6 +1704,17 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
     message: fallbackMessage,
     nextAction: "Run setup again, then connect VibeTV.",
   };
+}
+
+function normalizeUsageError(error: ApiError): ApiError {
+  if (error.code === "HTTP_404") {
+    return {
+      code: "MAC_APP_UPDATE_REQUIRED",
+      message: "Mac App update needed.",
+      nextAction: "Run setup again, then refresh usage.",
+    };
+  }
+  return error;
 }
 
 function companionUnavailableError(): ApiError {

@@ -100,7 +100,7 @@ export function UsageScreen({
               </li>
             ))}
           </ol>
-        ) : (
+        ) : usageError ? null : (
           <UsageEmptyState
             companionStatus={companionStatus}
             refreshing={refreshing}

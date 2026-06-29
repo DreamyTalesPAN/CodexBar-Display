@@ -179,6 +179,7 @@ async function main() {
       appContext.appUrl,
     );
     await testUsageShowsCodexCostHistory(browser, appContext.appUrl);
+    await testUsageShowsMacAppUpdateForOldMacApp(browser, appContext.appUrl);
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
@@ -737,6 +738,32 @@ async function testUsageShowsCodexCostHistory(browser, appUrl) {
   await page.getByRole("heading", { name: "Codex" }).waitFor({
     timeout: 10_000,
   });
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testUsageShowsMacAppUpdateForOldMacApp(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    usageStatus: 404,
+    usageResponse: "404 page not found",
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Usage" }).click();
+  await page.getByText("Mac App update needed.").waitFor({
+    timeout: 10_000,
+  });
+  await page
+    .getByText("Run setup again, then refresh usage.")
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("No provider usage is available yet.").count()) === 0,
+    "Usage must not show empty provider copy when the Mac App is too old",
+  );
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1666,6 +1693,7 @@ async function routeCompanionOnline(
     installStatusSequence,
     updateStatusSequence,
     usageResponse,
+    usageStatus = 200,
     repairError = false,
   } = {},
 ) {
@@ -1815,6 +1843,20 @@ async function routeCompanionOnline(
       return;
     }
     if (pathname === "/v1/usage") {
+      if (usageStatus !== 200) {
+        await route.fulfill({
+          status: usageStatus,
+          contentType:
+            typeof usageResponse === "string"
+              ? "text/plain"
+              : "application/json",
+          body:
+            typeof usageResponse === "string"
+              ? usageResponse
+              : JSON.stringify(usageResponse || { ok: false }),
+        });
+        return;
+      }
       await route.fulfill({
         status: 200,
         contentType: "application/json",
