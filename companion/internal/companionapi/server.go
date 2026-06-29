@@ -308,6 +308,8 @@ type usageProviderInfo struct {
 	Windows            []usageWindowInfo        `json:"windows,omitempty"`
 	Status             *usageStatusInfo         `json:"status,omitempty"`
 	Credits            *usageCreditsInfo        `json:"credits,omitempty"`
+	ResetCredits       *usageResetCreditsInfo   `json:"resetCredits,omitempty"`
+	Cost               *usageCostInfo           `json:"cost,omitempty"`
 	Pace               []usagePaceInfo          `json:"pace,omitempty"`
 	UsageOverTime      []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
 }
@@ -330,6 +332,36 @@ type usageStatusInfo struct {
 type usageCreditsInfo struct {
 	Remaining float64 `json:"remaining"`
 	UpdatedAt string  `json:"updatedAt,omitempty"`
+}
+
+type usageResetCreditsInfo struct {
+	AvailableCount int    `json:"availableCount"`
+	NextExpiresAt  string `json:"nextExpiresAt,omitempty"`
+	UpdatedAt      string `json:"updatedAt,omitempty"`
+}
+
+type usageCostInfo struct {
+	CurrencyCode      string             `json:"currencyCode,omitempty"`
+	UpdatedAt         string             `json:"updatedAt,omitempty"`
+	TodayCostUSD      float64            `json:"todayCostUSD,omitempty"`
+	Last30DaysCostUSD float64            `json:"last30DaysCostUSD,omitempty"`
+	Last30DaysTokens  int64              `json:"last30DaysTokens,omitempty"`
+	LatestTokens      int64              `json:"latestTokens,omitempty"`
+	TopModel          string             `json:"topModel,omitempty"`
+	Daily             []usageCostDayInfo `json:"daily,omitempty"`
+}
+
+type usageCostDayInfo struct {
+	Day          string               `json:"day"`
+	TotalCostUSD float64              `json:"totalCostUSD,omitempty"`
+	TotalTokens  int64                `json:"totalTokens,omitempty"`
+	Models       []usageCostModelInfo `json:"models,omitempty"`
+}
+
+type usageCostModelInfo struct {
+	Name        string  `json:"name"`
+	TotalTokens int64   `json:"totalTokens,omitempty"`
+	CostUSD     float64 `json:"costUSD,omitempty"`
 }
 
 type usagePaceInfo struct {
@@ -827,6 +859,8 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		Windows:            usageWindowsFromMeta(snapshot.Meta),
 		Status:             usageStatusFromMeta(snapshot.Meta),
 		Credits:            usageCreditsFromMeta(snapshot.Meta),
+		ResetCredits:       usageResetCreditsFromMeta(snapshot.Meta),
+		Cost:               usageCostFromMeta(snapshot.Meta),
 		Pace:               usagePaceFromMeta(snapshot.Meta),
 		UsageOverTime:      usageOverTimeFromMeta(snapshot.Meta),
 	}, true
@@ -859,6 +893,8 @@ func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bo
 		Windows:            usageWindowsFromMeta(parsed.Meta),
 		Status:             usageStatusFromMeta(parsed.Meta),
 		Credits:            usageCreditsFromMeta(parsed.Meta),
+		ResetCredits:       usageResetCreditsFromMeta(parsed.Meta),
+		Cost:               usageCostFromMeta(parsed.Meta),
 		Pace:               usagePaceFromMeta(parsed.Meta),
 		UsageOverTime:      usageOverTimeFromMeta(parsed.Meta),
 	}, true
@@ -913,6 +949,84 @@ func usageCreditsFromMeta(meta codexbar.ProviderUsageMeta) *usageCreditsInfo {
 		Remaining: meta.Credits.Remaining,
 		UpdatedAt: formatOptionalTime(meta.Credits.UpdatedAt),
 	}
+}
+
+func usageResetCreditsFromMeta(meta codexbar.ProviderUsageMeta) *usageResetCreditsInfo {
+	if meta.ResetCredits == nil {
+		return nil
+	}
+	info := usageResetCreditsInfo{
+		AvailableCount: meta.ResetCredits.AvailableCount,
+		NextExpiresAt:  formatOptionalTime(meta.ResetCredits.NextExpiresAt),
+		UpdatedAt:      formatOptionalTime(meta.ResetCredits.UpdatedAt),
+	}
+	if info.AvailableCount == 0 && info.NextExpiresAt == "" && info.UpdatedAt == "" {
+		return nil
+	}
+	return &info
+}
+
+func usageCostFromMeta(meta codexbar.ProviderUsageMeta) *usageCostInfo {
+	if meta.Cost == nil {
+		return nil
+	}
+	cost := usageCostInfo{
+		CurrencyCode:      strings.TrimSpace(meta.Cost.CurrencyCode),
+		UpdatedAt:         formatOptionalTime(meta.Cost.UpdatedAt),
+		TodayCostUSD:      meta.Cost.TodayCostUSD,
+		Last30DaysCostUSD: meta.Cost.Last30DaysCostUSD,
+		Last30DaysTokens:  meta.Cost.Last30DaysTokens,
+		LatestTokens:      meta.Cost.LatestTokens,
+		TopModel:          strings.TrimSpace(meta.Cost.TopModel),
+		Daily:             usageCostDaysFromMeta(meta.Cost.Daily),
+	}
+	if cost.CurrencyCode == "" {
+		cost.CurrencyCode = "USD"
+	}
+	if cost.TodayCostUSD <= 0 &&
+		cost.Last30DaysCostUSD <= 0 &&
+		cost.Last30DaysTokens <= 0 &&
+		cost.LatestTokens <= 0 &&
+		cost.TopModel == "" &&
+		len(cost.Daily) == 0 {
+		return nil
+	}
+	return &cost
+}
+
+func usageCostDaysFromMeta(days []codexbar.ProviderCostDay) []usageCostDayInfo {
+	if len(days) == 0 {
+		return nil
+	}
+	out := make([]usageCostDayInfo, 0, len(days))
+	for _, day := range days {
+		key := strings.TrimSpace(day.Day)
+		if key == "" {
+			continue
+		}
+		models := make([]usageCostModelInfo, 0, len(day.Models))
+		for _, model := range day.Models {
+			name := strings.TrimSpace(model.Name)
+			if name == "" {
+				continue
+			}
+			models = append(models, usageCostModelInfo{
+				Name:        name,
+				TotalTokens: model.TotalTokens,
+				CostUSD:     model.CostUSD,
+			})
+		}
+		out = append(out, usageCostDayInfo{
+			Day:          key,
+			TotalCostUSD: day.TotalCostUSD,
+			TotalTokens:  day.TotalTokens,
+			Models:       models,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func usagePaceFromMeta(meta codexbar.ProviderUsageMeta) []usagePaceInfo {

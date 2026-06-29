@@ -225,9 +225,19 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		if strings.TrimSpace(frame.Label) == "" {
 			frame.Label = key
 		}
-		frame.SessionTokens = stats.SessionTokens
-		frame.WeekTokens = stats.WeekTokens
-		frame.TotalTokens = stats.TotalTokens
+		if stats.SessionTokens > 0 {
+			frame.SessionTokens = stats.SessionTokens
+		}
+		if stats.WeekTokens > 0 {
+			frame.WeekTokens = stats.WeekTokens
+		}
+		if stats.TotalTokens > 0 {
+			frame.TotalTokens = stats.TotalTokens
+		}
+		meta := snapshot.Meta
+		if stats.Cost != nil {
+			meta.Cost = stats.Cost
+		}
 
 		source := strings.TrimSpace(snapshot.Source)
 		if source == "" {
@@ -246,7 +256,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			Provider:           key,
 			Frame:              frame,
 			Source:             source,
-			Meta:               snapshot.Meta,
+			Meta:               meta,
 			Collected:          now,
 			ActivityObservedAt: activityObservedAt,
 		}

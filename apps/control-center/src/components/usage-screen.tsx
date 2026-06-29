@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import type {
   ApiError,
   CompanionStatus,
+  UsageCostDay,
   UsagePaceInfo,
   UsageProviderInfo,
   UsageOverTimePoint,
@@ -43,6 +44,7 @@ export function UsageScreen({
     providers,
     usage?.currentProvider,
   );
+  const costProvider = pickCodexCostProvider(providers, usage?.currentProvider);
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -93,7 +95,9 @@ export function UsageScreen({
           </div>
         ) : null}
 
-        {overTimeProvider ? (
+        {costProvider ? (
+          <CodexCostPanel provider={costProvider} />
+        ) : overTimeProvider ? (
           <UsageOverTimePanel provider={overTimeProvider} />
         ) : null}
 
@@ -115,6 +119,129 @@ export function UsageScreen({
           />
         )}
       </section>
+    </div>
+  );
+}
+
+function CodexCostPanel({ provider }: { provider: UsageProviderInfo }) {
+  const cost = provider.cost;
+  if (!cost) {
+    return null;
+  }
+
+  const days = normalizeCostDays(cost.daily || []);
+  const maxCost = Math.max(...days.map((day) => day.totalCostUSD || 0), 0);
+  const todayCost = finiteNumber(cost.todayCostUSD)
+    ? cost.todayCostUSD
+    : latestCostDay(days)?.totalCostUSD;
+  const last30DaysCost = finiteNumber(cost.last30DaysCostUSD)
+    ? cost.last30DaysCostUSD
+    : days.reduce((sum, day) => sum + (day.totalCostUSD || 0), 0);
+  const last30DaysTokens = finiteNumber(cost.last30DaysTokens)
+    ? cost.last30DaysTokens
+    : days.reduce((sum, day) => sum + (day.totalTokens || 0), 0);
+  const latestTokens = finiteNumber(cost.latestTokens)
+    ? cost.latestTokens
+    : provider.sessionTokens || 0;
+  const resetCredits = provider.resetCredits;
+  const topModel = cost.topModel?.trim();
+
+  return (
+    <section className="mb-6 border border-[#242424] bg-[#1B1B1B] p-5 text-[#E7E7E7]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="break-words text-xl font-black">Limit Reset Credits</h4>
+          {resetCredits?.nextExpiresAt ? (
+            <p className="mt-2 text-base font-bold text-[#A5A5A5]">
+              Next expires {formatExpiryDate(resetCredits.nextExpiresAt)}
+            </p>
+          ) : null}
+        </div>
+        <div className="max-w-full text-right text-base font-bold text-[#A5A5A5]">
+          {formatResetCreditCount(resetCredits?.availableCount)}
+        </div>
+      </div>
+
+      <dl className="mt-6 grid gap-x-10 gap-y-4 sm:grid-cols-2">
+        <UsageCostMetric label="Today" value={formatCurrency(todayCost, cost.currencyCode)} />
+        <UsageCostMetric
+          label="30d cost"
+          value={formatCurrency(last30DaysCost, cost.currencyCode)}
+        />
+        <UsageCostMetric label="30d tokens" value={formatTokenCount(last30DaysTokens)} />
+        <UsageCostMetric label="Latest tokens" value={formatTokenCount(latestTokens)} />
+      </dl>
+
+      {days.length > 0 ? (
+        <div
+          aria-label={`Codex cost over time for ${provider.label || provider.id}`}
+          className="mt-6"
+          role="img"
+        >
+          <div className="flex h-32 items-end gap-1 border-b border-[#3A3A3A] pb-1">
+            {days.map((day) => (
+              <CostHistoryBar
+                currencyCode={cost.currencyCode}
+                day={day}
+                key={day.day}
+                maxCost={maxCost}
+              />
+            ))}
+          </div>
+          <div className="mt-2 flex justify-between gap-3 text-xs font-semibold text-[#A5A5A5]">
+            <span>{formatDayLabel(days[0].day)}</span>
+            <span>{formatDayLabel(days[days.length - 1].day)}</span>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-5 border-t border-[#3A3A3A] pt-4 text-base font-bold text-[#A5A5A5]">
+        {topModel ? (
+          <div className="break-words">
+            Top model: <span className="text-[#E7E7E7]">{topModel}</span>
+          </div>
+        ) : null}
+        <div className="mt-2 text-sm leading-6">
+          Estimated from local Codex logs for the selected account.
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function UsageCostMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-base font-bold text-[#A5A5A5]">{label}</dt>
+      <dd className="mt-1 break-words text-2xl font-black text-[#E7E7E7]">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function CostHistoryBar({
+  currencyCode,
+  day,
+  maxCost,
+}: {
+  currencyCode?: string;
+  day: UsageCostDay;
+  maxCost: number;
+}) {
+  const value = day.totalCostUSD || 0;
+  const height = maxCost > 0 ? Math.max((value / maxCost) * 100, 5) : 0;
+
+  return (
+    <div
+      aria-label={`${formatDayLabel(day.day)}: ${formatCurrency(value, currencyCode)}`}
+      className="flex h-full min-w-0 flex-1 items-end"
+      title={`${formatDayLabel(day.day)}: ${formatCurrency(value, currencyCode)}`}
+    >
+      <span
+        className="block w-full min-w-[5px] bg-[#4FA6B1]"
+        style={{ height: `${height}%` }}
+      />
     </div>
   );
 }
@@ -523,6 +650,25 @@ function pickUsageOverTimeProvider(
   );
 }
 
+function pickCodexCostProvider(
+  providers: UsageProviderInfo[],
+  currentProvider?: string,
+): UsageProviderInfo | null {
+  const current = providers.find(
+    (provider) => provider.id === currentProvider && providerHasCost(provider),
+  );
+  if (current) {
+    return current;
+  }
+  return (
+    providers.find(
+      (provider) => provider.id === "codex" && providerHasCost(provider),
+    ) ||
+    providers.find((provider) => providerHasCost(provider)) ||
+    null
+  );
+}
+
 function filterVisibleProviders(
   providers: UsageProviderInfo[],
   currentProvider?: string,
@@ -545,6 +691,9 @@ function shouldShowProvider(
   if (providerHasTokens(provider)) {
     return true;
   }
+  if (providerHasCost(provider)) {
+    return true;
+  }
   return (provider.usageOverTime || []).some(
     (point) => point.totalCreditsUsed > 0,
   );
@@ -565,6 +714,21 @@ function providerHasTokens(provider: UsageProviderInfo): boolean {
     (provider.sessionTokens || 0) > 0 ||
     (provider.weekTokens || 0) > 0 ||
     (provider.totalTokens || 0) > 0
+  );
+}
+
+function providerHasCost(provider: UsageProviderInfo): boolean {
+  const cost = provider.cost;
+  if (!cost) {
+    return false;
+  }
+  return (
+    (cost.daily || []).length > 0 ||
+    (cost.todayCostUSD || 0) > 0 ||
+    (cost.last30DaysCostUSD || 0) > 0 ||
+    (cost.last30DaysTokens || 0) > 0 ||
+    (cost.latestTokens || 0) > 0 ||
+    Boolean(cost.topModel?.trim())
   );
 }
 
@@ -600,6 +764,24 @@ function usageOverTimeServices(points: UsageOverTimePoint[]): string[] {
     })
     .slice(0, 6)
     .map(([service]) => service);
+}
+
+function normalizeCostDays(days: UsageCostDay[]) {
+  return days
+    .filter(
+      (day) =>
+        Boolean(day.day) &&
+        (finiteNumber(day.totalCostUSD) || finiteNumber(day.totalTokens)),
+    )
+    .sort((a, b) => a.day.localeCompare(b.day))
+    .slice(-30);
+}
+
+function latestCostDay(days: UsageCostDay[]): UsageCostDay | undefined {
+  if (days.length === 0) {
+    return undefined;
+  }
+  return days[days.length - 1];
 }
 
 function UsageMeta({ icon, label }: { icon: ReactNode; label: string }) {
@@ -672,7 +854,50 @@ function formatTokenCount(value: number): string {
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: value >= 1_000_000 ? 1 : 0,
     notation: value >= 10_000 ? "compact" : "standard",
+    }).format(value);
+}
+
+function formatCurrency(value?: number, currencyCode?: string): string {
+  if (!finiteNumber(value)) {
+    return "Not available";
+  }
+  return new Intl.NumberFormat("en-US", {
+    currency: currencyCode || "USD",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    style: "currency",
   }).format(value);
+}
+
+function formatResetCreditCount(value?: number): string {
+  const count = finiteNumber(value) ? Math.max(0, Math.round(value)) : 0;
+  if (count === 1) {
+    return "1 manual reset available";
+  }
+  if (count === 0) {
+    return "No manual resets available";
+  }
+  return `${count} manual resets available`;
+}
+
+function formatExpiryDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "date unknown";
+  }
+  const day = new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+  }).format(date);
+  const time = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+  return `${day} at ${time}`;
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function providerStatusLabel(description?: string): string {

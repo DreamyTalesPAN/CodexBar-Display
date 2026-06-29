@@ -355,11 +355,13 @@ type ParsedFrame struct {
 }
 
 type ProviderUsageMeta struct {
-	Windows  []UsageWindow
-	Status   *ProviderStatus
-	Credits  *ProviderCredits
-	Pace     []ProviderPace
-	OverTime []UsageOverTimePoint
+	Windows      []UsageWindow
+	Status       *ProviderStatus
+	Credits      *ProviderCredits
+	ResetCredits *ProviderResetCredits
+	Cost         *ProviderCostUsage
+	Pace         []ProviderPace
+	OverTime     []UsageOverTimePoint
 }
 
 type UsageWindow struct {
@@ -380,6 +382,36 @@ type ProviderStatus struct {
 type ProviderCredits struct {
 	Remaining float64
 	UpdatedAt time.Time
+}
+
+type ProviderResetCredits struct {
+	AvailableCount int
+	NextExpiresAt  time.Time
+	UpdatedAt      time.Time
+}
+
+type ProviderCostUsage struct {
+	CurrencyCode      string
+	UpdatedAt         time.Time
+	TodayCostUSD      float64
+	Last30DaysCostUSD float64
+	Last30DaysTokens  int64
+	LatestTokens      int64
+	TopModel          string
+	Daily             []ProviderCostDay
+}
+
+type ProviderCostDay struct {
+	Day          string
+	TotalCostUSD float64
+	TotalTokens  int64
+	Models       []ProviderCostModel
+}
+
+type ProviderCostModel struct {
+	Name        string
+	TotalTokens int64
+	CostUSD     float64
 }
 
 type ProviderPace struct {
@@ -694,6 +726,9 @@ func parseProviderUsageMeta(payload map[string]any) ProviderUsageMeta {
 	}
 	if credits, ok := parseProviderCredits(payload); ok {
 		meta.Credits = &credits
+	}
+	if resetCredits, ok := parseProviderResetCredits(payload); ok {
+		meta.ResetCredits = &resetCredits
 	}
 	return meta
 }
@@ -1095,6 +1130,64 @@ func parseProviderCredits(payload map[string]any) (ProviderCredits, bool) {
 		credits.UpdatedAt = updatedAt
 	}
 	return credits, true
+}
+
+func parseProviderResetCredits(payload map[string]any) (ProviderResetCredits, bool) {
+	resetAny, ok := getPath(payload, "usage.codexResetCredits")
+	if !ok {
+		resetAny, ok = getPath(payload, "codexResetCredits")
+	}
+	if !ok {
+		return ProviderResetCredits{}, false
+	}
+	resetMap, ok := resetAny.(map[string]any)
+	if !ok {
+		return ProviderResetCredits{}, false
+	}
+
+	availableCount := intAtPaths(resetMap, "availableCount", "available_count")
+	if availableCount < 0 {
+		availableCount = 0
+	}
+
+	var nextExpiresAt time.Time
+	if creditsAny, ok := resetMap["credits"]; ok {
+		if credits, ok := creditsAny.([]any); ok {
+			counted := 0
+			for _, creditAny := range credits {
+				credit, ok := creditAny.(map[string]any)
+				if !ok {
+					continue
+				}
+				status := strings.TrimSpace(strings.ToLower(firstString(credit, "status")))
+				if status != "" && status != "available" {
+					continue
+				}
+				counted++
+				expiresAt := firstRFC3339AtPaths(credit, "expires_at", "expiresAt")
+				if expiresAt.IsZero() {
+					continue
+				}
+				if nextExpiresAt.IsZero() || expiresAt.Before(nextExpiresAt) {
+					nextExpiresAt = expiresAt.UTC()
+				}
+			}
+			if availableCount == 0 {
+				availableCount = counted
+			}
+		}
+	}
+
+	updatedAt := firstRFC3339AtPaths(resetMap, "updatedAt", "updated_at")
+	if availableCount == 0 && nextExpiresAt.IsZero() && updatedAt.IsZero() {
+		return ProviderResetCredits{}, false
+	}
+
+	return ProviderResetCredits{
+		AvailableCount: availableCount,
+		NextExpiresAt:  nextExpiresAt,
+		UpdatedAt:      updatedAt,
+	}, true
 }
 
 func parseProviderPace(payload map[string]any) []ProviderPace {

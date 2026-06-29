@@ -239,6 +239,46 @@ func TestParseProviderPayloadAggregatesCodexCreditEvents(t *testing.T) {
 	}
 }
 
+func TestParseProviderPayloadReadsCodexResetCredits(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"source":"oauth",
+			"usage":{
+				"primary":{"usedPercent":1},
+				"secondary":{"usedPercent":21},
+				"codexResetCredits":{
+					"updatedAt":"2026-06-29T11:09:22Z",
+					"availableCount":3,
+					"credits":[
+						{"status":"used","expires_at":"2026-07-01T01:42:57Z"},
+						{"status":"available","expires_at":"2026-07-12T01:42:57Z"},
+						{"status":"available","expires_at":"2026-07-18T00:33:27Z"}
+					]
+				}
+			}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected one provider, got %d", len(parsed))
+	}
+	resetCredits := parsed[0].Meta.ResetCredits
+	if resetCredits == nil {
+		t.Fatalf("expected reset credits metadata")
+	}
+	if resetCredits.AvailableCount != 3 {
+		t.Fatalf("expected three available reset credits, got %+v", resetCredits)
+	}
+	if got := resetCredits.NextExpiresAt.Format(time.RFC3339); got != "2026-07-12T01:42:57Z" {
+		t.Fatalf("expected earliest available reset credit expiry, got %s", got)
+	}
+}
+
 func TestUsageBarsShowUsedFromEnv(t *testing.T) {
 	t.Setenv(usageModeEnvVar, "")
 	if _, ok := usageBarsShowUsedFromEnv(); ok {

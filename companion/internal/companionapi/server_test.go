@@ -94,8 +94,23 @@ func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
 							{ID: "secondary", Label: "Weekly", UsedPercent: 59, ResetSec: 86400, WindowMinutes: 10080},
 							{ID: "codeReview", Label: "Code review", UsedPercent: 7, WindowMinutes: 10080},
 						},
-						Status:  &codexbar.ProviderStatus{Indicator: "none", Description: "Operational", UpdatedAt: collectedAt, URL: "https://status.openai.com/"},
-						Credits: &codexbar.ProviderCredits{Remaining: 112.4, UpdatedAt: collectedAt},
+						Status:       &codexbar.ProviderStatus{Indicator: "none", Description: "Operational", UpdatedAt: collectedAt, URL: "https://status.openai.com/"},
+						Credits:      &codexbar.ProviderCredits{Remaining: 112.4, UpdatedAt: collectedAt},
+						ResetCredits: &codexbar.ProviderResetCredits{AvailableCount: 3, NextExpiresAt: time.Date(2026, 7, 12, 1, 42, 57, 0, time.UTC), UpdatedAt: collectedAt},
+						Cost: &codexbar.ProviderCostUsage{
+							CurrencyCode:      "USD",
+							UpdatedAt:         collectedAt,
+							TodayCostUSD:      72.42,
+							Last30DaysCostUSD: 3694.16,
+							Last30DaysTokens:  4300000000,
+							LatestTokens:      77000000,
+							TopModel:          "gpt-5.5",
+							Daily: []codexbar.ProviderCostDay{
+								{Day: "2026-06-27", TotalCostUSD: 12.3, TotalTokens: 1000},
+								{Day: "2026-06-28", TotalCostUSD: 24.6, TotalTokens: 2000},
+								{Day: "2026-06-29", TotalCostUSD: 72.42, TotalTokens: 77000000, Models: []codexbar.ProviderCostModel{{Name: "gpt-5.5", TotalTokens: 77000000, CostUSD: 72.42}}},
+							},
+						},
 						Pace: []codexbar.ProviderPace{
 							{Window: "primary", Stage: "ahead", DeltaPercent: 12, ExpectedUsedPercent: 16, ETASeconds: 9000, Summary: "12% in deficit | Expected 16% used | Projected empty in 2h 30m"},
 						},
@@ -159,6 +174,15 @@ func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
 	}
 	if provider.Credits == nil || provider.Credits.Remaining != 112.4 {
 		t.Fatalf("expected credits metadata, got %+v", provider.Credits)
+	}
+	if provider.ResetCredits == nil || provider.ResetCredits.AvailableCount != 3 || provider.ResetCredits.NextExpiresAt != "2026-07-12T01:42:57Z" {
+		t.Fatalf("expected reset credits metadata, got %+v", provider.ResetCredits)
+	}
+	if provider.Cost == nil || provider.Cost.TodayCostUSD != 72.42 || provider.Cost.Last30DaysCostUSD != 3694.16 || provider.Cost.TopModel != "gpt-5.5" {
+		t.Fatalf("expected cost metadata, got %+v", provider.Cost)
+	}
+	if len(provider.Cost.Daily) != 3 || provider.Cost.Daily[2].Models[0].Name != "gpt-5.5" {
+		t.Fatalf("expected cost history metadata, got %+v", provider.Cost.Daily)
 	}
 	if len(provider.Pace) != 1 || provider.Pace[0].Window != "primary" || provider.Pace[0].Summary == "" {
 		t.Fatalf("expected pace metadata, got %+v", provider.Pace)

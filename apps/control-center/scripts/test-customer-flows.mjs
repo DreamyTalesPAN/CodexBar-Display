@@ -178,7 +178,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testUsageShowsCodexDailyBreakdown(browser, appContext.appUrl);
+    await testUsageShowsCodexCostHistory(browser, appContext.appUrl);
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
@@ -620,7 +620,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
   await page.close();
 }
 
-async function testUsageShowsCodexDailyBreakdown(browser, appUrl) {
+async function testUsageShowsCodexCostHistory(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
@@ -639,10 +639,56 @@ async function testUsageShowsCodexDailyBreakdown(browser, appUrl) {
           weekly: 6,
           resetSecs: 17839,
           usageMode: "used",
-          sessionTokens: 77_355_732,
+          sessionTokens: 77_000_000,
           weekTokens: 1_170_913_100,
           totalTokens: 4_289_266_786,
           credits: { remaining: 0, updatedAt: "2026-06-29T10:47:46Z" },
+          resetCredits: {
+            availableCount: 3,
+            nextExpiresAt: "2026-07-12T01:42:57Z",
+            updatedAt: "2026-06-29T10:47:46Z",
+          },
+          cost: {
+            currencyCode: "USD",
+            updatedAt: "2026-06-29T10:47:46Z",
+            todayCostUSD: 72.42,
+            last30DaysCostUSD: 3694.16,
+            last30DaysTokens: 4_300_000_000,
+            latestTokens: 77_000_000,
+            topModel: "gpt-5.5",
+            daily: [
+              {
+                day: "2026-06-25",
+                totalCostUSD: 210.11,
+                totalTokens: 230_000_000,
+                models: [{ name: "gpt-5.5", totalTokens: 230_000_000, costUSD: 210.11 }],
+              },
+              {
+                day: "2026-06-26",
+                totalCostUSD: 165.52,
+                totalTokens: 184_000_000,
+                models: [{ name: "gpt-5.5", totalTokens: 184_000_000, costUSD: 165.52 }],
+              },
+              {
+                day: "2026-06-27",
+                totalCostUSD: 1.82,
+                totalTokens: 1_800_000,
+                models: [{ name: "gpt-5.5", totalTokens: 1_800_000, costUSD: 1.82 }],
+              },
+              {
+                day: "2026-06-28",
+                totalCostUSD: 1.71,
+                totalTokens: 813_455,
+                models: [{ name: "gpt-5.5", totalTokens: 813_455, costUSD: 1.71 }],
+              },
+              {
+                day: "2026-06-29",
+                totalCostUSD: 72.42,
+                totalTokens: 77_000_000,
+                models: [{ name: "gpt-5.5", totalTokens: 77_000_000, costUSD: 72.42 }],
+              },
+            ],
+          },
           usageOverTime: [
             {
               day: "2026-06-08",
@@ -657,15 +703,19 @@ async function testUsageShowsCodexDailyBreakdown(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Usage" }).click();
-  await page.getByRole("heading", { name: "Usage over time" }).waitFor({
+  await page.getByRole("heading", { name: "Limit Reset Credits" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Desktop App").waitFor({ timeout: 10_000 });
-  await page.getByText("1,009 credits").first().waitFor({ timeout: 10_000 });
+  await page.getByText("3 manual resets available").waitFor({ timeout: 10_000 });
+  await page.getByText("Next expires Jul 12").waitFor({ timeout: 10_000 });
+  await page.getByText("$72.42").waitFor({ timeout: 10_000 });
+  await page.getByText("$3,694.16").waitFor({ timeout: 10_000 });
+  await page.getByText("4.3B").first().waitFor({ timeout: 10_000 });
+  await page.getByText("77M").first().waitFor({ timeout: 10_000 });
+  await page.getByText("Top model: gpt-5.5").waitFor({ timeout: 10_000 });
   await page.getByRole("heading", { name: "Codex" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("77.4M").waitFor({ timeout: 10_000 });
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);

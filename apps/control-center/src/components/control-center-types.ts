@@ -138,6 +138,8 @@ export type UsageProviderInfo = {
   windows?: UsageWindowInfo[];
   status?: UsageStatusInfo;
   credits?: UsageCreditsInfo;
+  resetCredits?: UsageResetCreditsInfo;
+  cost?: UsageCostInfo;
   pace?: UsagePaceInfo[];
   usageOverTime?: UsageOverTimePoint[];
 };
@@ -160,6 +162,36 @@ export type UsageStatusInfo = {
 export type UsageCreditsInfo = {
   remaining: number;
   updatedAt?: string;
+};
+
+export type UsageResetCreditsInfo = {
+  availableCount: number;
+  nextExpiresAt?: string;
+  updatedAt?: string;
+};
+
+export type UsageCostInfo = {
+  currencyCode?: string;
+  updatedAt?: string;
+  todayCostUSD?: number;
+  last30DaysCostUSD?: number;
+  last30DaysTokens?: number;
+  latestTokens?: number;
+  topModel?: string;
+  daily?: UsageCostDay[];
+};
+
+export type UsageCostDay = {
+  day: string;
+  totalCostUSD?: number;
+  totalTokens?: number;
+  models?: UsageCostModel[];
+};
+
+export type UsageCostModel = {
+  name: string;
+  totalTokens?: number;
+  costUSD?: number;
 };
 
 export type UsagePaceInfo = {
