@@ -2281,6 +2281,7 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 
 func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) (string, protocol.DeviceHello, error) {
 	explicitTarget = strings.TrimSpace(explicitTarget)
+	var lastErr error
 	if explicitTarget != "" {
 		target, targetErr := normalizeExplicitDeviceTarget(explicitTarget)
 		if targetErr != nil {
@@ -2288,19 +2289,22 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		}
 		hello, err := s.getHelloProbe(ctx, target, cfg.DeviceToken, discoveryProbeTime)
 		if err != nil {
-			return "", protocol.DeviceHello{}, err
+			if !isVibeTVLocalTarget(target) {
+				return "", protocol.DeviceHello{}, err
+			}
+			lastErr = err
+		} else {
+			return target, hello, nil
 		}
-		return target, hello, nil
-	}
-
-	candidates := uniqueStrings(cfg.DeviceTarget, setup.DefaultWiFiTarget())
-	var lastErr error
-	for _, candidate := range candidates {
-		hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, discoveryProbeTime)
-		if err == nil {
-			return normalizeTarget(candidate), hello, nil
+	} else {
+		candidates := uniqueStrings(cfg.DeviceTarget, setup.DefaultWiFiTarget())
+		for _, candidate := range candidates {
+			hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, discoveryProbeTime)
+			if err == nil {
+				return normalizeTarget(candidate), hello, nil
+			}
+			lastErr = err
 		}
-		lastErr = err
 	}
 	if target, hello, err := s.discoverSubnet(ctx, cfg); err == nil {
 		return target, hello, nil
@@ -2311,6 +2315,15 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		lastErr = errors.New("no device candidates")
 	}
 	return "", protocol.DeviceHello{}, lastErr
+}
+
+func isVibeTVLocalTarget(target string) bool {
+	parsed, err := url.Parse(normalizeTarget(target))
+	if err != nil {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(parsed.Hostname())), ".")
+	return host == "vibetv.local"
 }
 
 func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (string, protocol.DeviceHello, error) {

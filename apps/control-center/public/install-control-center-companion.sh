@@ -25,7 +25,11 @@ REPO="${VIBETV_COMPANION_REPO:-$DEFAULT_REPO}"
 RELEASE_VERSION="${VIBETV_COMPANION_VERSION:-}"
 ADDR="${VIBETV_COMPANION_ADDR:-127.0.0.1:47832}"
 DEV_ORIGIN="${VIBETV_COMPANION_DEV_ORIGIN:-}"
-TARGET="${VIBETV_COMPANION_TARGET:-http://vibetv.local}"
+TARGET="${VIBETV_COMPANION_TARGET:-}"
+TARGET_EXPLICIT=0
+if [[ -n "${VIBETV_COMPANION_TARGET:-}" ]]; then
+  TARGET_EXPLICIT=1
+fi
 MODE="install"
 START_MODE="${VIBETV_COMPANION_START_MODE:-terminal}"
 TMPDIR_INSTALL=""
@@ -38,7 +42,7 @@ RELEASE_TAG=""
 usage() {
   cat <<'EOF'
 Usage:
-  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://vibetv.local]
+  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://<device-ip>]
   install-control-center-companion.sh --restart
   install-control-center-companion.sh --uninstall
 
@@ -237,20 +241,39 @@ json_escape() {
   printf '%s' "$value"
 }
 
-connect_vibetv() {
-  local payload
-  payload="{\"target\":\"$(json_escape "$TARGET")\",\"forcePair\":true}"
+json_device_target() {
+  sed -n 's/.*"device"[^{]*{[^}]*"target"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+}
 
-  log "vibetv: connecting VibeTV at ${TARGET}"
-  curl -fsS --connect-timeout 10 --max-time 90 \
+connect_vibetv() {
+  local payload response discovered_target
+  if [[ "$TARGET_EXPLICIT" == "1" ]]; then
+    payload="{\"target\":\"$(json_escape "$TARGET")\",\"forcePair\":true}"
+    log "vibetv: connecting VibeTV at ${TARGET}"
+  else
+    payload="{\"forcePair\":true}"
+    log "vibetv: discovering VibeTV on this WiFi"
+  fi
+
+  response="$(curl -fsS --connect-timeout 10 --max-time 90 \
     -X POST "http://${ADDR}/v1/device/repair" \
     -H "Content-Type: application/json" \
-    -d "$payload" >/dev/null \
+    -d "$payload")" \
     || die "VibeTV could not connect. Keep VibeTV powered on and on the same WiFi, then rerun setup."
-  log "vibetv: VibeTV is connected"
+
+  discovered_target="$(printf '%s' "$response" | json_device_target)"
+  if [[ -n "$discovered_target" ]]; then
+    TARGET="$discovered_target"
+  elif [[ -z "$TARGET" ]]; then
+    die "VibeTV connected, but the Mac App did not return the device address. Rerun setup or use --target http://<device-ip>."
+  fi
+  log "vibetv: VibeTV is connected at ${TARGET}"
 }
 
 update_vibetv_firmware() {
+  if [[ -z "$TARGET" ]]; then
+    die "VibeTV firmware update needs a device address. Rerun setup or use --target http://<device-ip>."
+  fi
   log "vibetv: starting VibeTV firmware update"
   "$BIN_PATH" install-update --target "$TARGET" --confirm-live-update \
     || die "VibeTV firmware update failed. Keep VibeTV powered on, then rerun setup."
@@ -400,10 +423,12 @@ parse_args() {
       --target)
         [[ $# -ge 2 ]] || die "--target requires a value"
         TARGET="$2"
+        TARGET_EXPLICIT=1
         shift 2
         ;;
       --target=*)
         TARGET="${1#*=}"
+        TARGET_EXPLICIT=1
         shift
         ;;
       --restart)

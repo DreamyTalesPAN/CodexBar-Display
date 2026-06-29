@@ -87,7 +87,7 @@ case "$*" in
     exit 0
     ;;
   *"/v1/device/repair"*)
-    printf '{"ok":true,"device":{"connected":true,"paired":true}}\n'
+    printf '{"ok":true,"device":{"connected":true,"paired":true,"target":"http://192.168.178.72"}}\n'
     ;;
   *"/releases/latest"*)
     printf '{"tag_name":"v9.9.9"}\n'
@@ -271,11 +271,12 @@ run_install_writes_integrated_daemon_launchagent() {
   daemon_plist_body="$(cat "$daemon_plist")"
 
   assert_contains "$output" "background service installed at ${daemon_plist}"
-  assert_contains "$output" "VibeTV is connected"
+  assert_contains "$output" "VibeTV is connected at http://192.168.178.72"
   assert_contains "$output" "Done: firmware 9.9.9 installed"
   assert_contains "$output" "VibeTV firmware update complete"
   assert_contains "$curl_log" "/v1/device/repair"
-  assert_contains "$(cat "${root}/api.log")" "install-update --target http://vibetv.local --confirm-live-update"
+  assert_contains "$curl_log" '{"forcePair":true}'
+  assert_contains "$(cat "${root}/api.log")" "install-update --target http://192.168.178.72 --confirm-live-update"
   assert_not_contains "$curl_log" "/v1/updates/install"
   assert_contains "$daemon_plist_body" "<string>daemon</string>"
   assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
@@ -312,7 +313,8 @@ run_install_disables_global_legacy_launchagent() {
   assert_contains "$output" "Done: firmware 9.9.9 installed"
   assert_contains "$output" "VibeTV firmware update complete"
   assert_contains "$curl_log" "/v1/device/repair"
-  assert_contains "$(cat "${root}/api.log")" "install-update --target http://vibetv.local --confirm-live-update"
+  assert_contains "$curl_log" '{"forcePair":true}'
+  assert_contains "$(cat "${root}/api.log")" "install-update --target http://192.168.178.72 --confirm-live-update"
   assert_not_contains "$curl_log" "/v1/updates/install"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
   assert_contains "$launch_log" "disable gui/$(id -u)/com.codexbar-display.companion-api"
