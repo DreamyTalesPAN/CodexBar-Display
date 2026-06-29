@@ -1033,7 +1033,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     didRunInitialConnectionCheck.current = true;
 
     const timer = window.setTimeout(() => {
-      void checkCompanion();
+      void checkCompanion({ quiet: true });
     }, 0);
     return () => window.clearTimeout(timer);
   }, [checkCompanion, setupPreviewStep]);
@@ -1710,8 +1710,9 @@ function normalizeCaughtError(error: unknown, fallbackMessage: string): ApiError
 function companionUnavailableError(): ApiError {
   return {
     code: "COMPANION_UNREACHABLE",
-    message: "Mac App needs setup.",
-    nextAction: "Run setup again, then click Mac App is installed.",
+    message: "Mac App did not answer.",
+    nextAction:
+      "Copy the prompt or terminal command, run setup, then click Mac App is installed again.",
   };
 }
 

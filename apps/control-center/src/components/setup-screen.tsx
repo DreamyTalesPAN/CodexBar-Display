@@ -112,6 +112,7 @@ export function SetupScreen({
   const localAccessNeeded = isLocalNetworkAccessError(lastError);
   const macAppMissing = isCompanionMissingError(lastError);
   const macAppReady = companionStatus === "online";
+  const macAppCheckFailed = macAppMissing && macAppConfirmedState;
   const macAppConfirmed =
     !macAppMissing && (macAppConfirmedState || macAppReady || setupComplete);
   const connected = Boolean(device?.connected && device.paired);
@@ -220,35 +221,27 @@ export function SetupScreen({
             <h2 className="max-w-[520px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
               {setupComplete ? "Setup complete" : "Set up your VibeTV"}
             </h2>
-            <div className="mt-6 flex flex-wrap gap-3">
-              {!macAppReady ? (
+            {macAppReady ? (
+              <div className="mt-6 flex flex-wrap gap-3">
                 <PrimaryButton
+                  busy={busyAction === "repair"}
+                  busyLabel="Reconnecting"
+                  icon={<RefreshCw size={18} aria-hidden />}
+                  label="Fix connection"
+                  onClick={() => onRepairConnection?.()}
+                />
+                <SecondaryButton
                   busy={busyAction === "reset-setup"}
                   busyLabel="Resetting"
-                  icon={<Clipboard size={18} aria-hidden />}
+                  icon={<Clipboard size={16} aria-hidden />}
                   label="Run setup again"
                   onClick={onResetSetup}
                 />
-              ) : (
-                <>
-                  <PrimaryButton
-                    busy={busyAction === "repair"}
-                    busyLabel="Reconnecting"
-                    icon={<RefreshCw size={18} aria-hidden />}
-                    label="Fix connection"
-                    onClick={() => onRepairConnection?.()}
-                  />
-                  <SecondaryButton
-                    busy={busyAction === "reset-setup"}
-                    busyLabel="Resetting"
-                    icon={<Clipboard size={16} aria-hidden />}
-                    label="Run setup again"
-                    onClick={onResetSetup}
-                  />
-                </>
-              )}
-            </div>
-            {lastError ? <ErrorNote error={lastError} /> : null}
+              </div>
+            ) : null}
+            {lastError && !macAppCheckFailed ? (
+              <ErrorNote error={lastError} />
+            ) : null}
           </div>
         </div>
       </section>
@@ -394,6 +387,13 @@ export function SetupScreen({
                       }}
                     />
                   </div>
+                ) : null}
+
+                {macAppCheckFailed ? (
+                  <StatusNote icon={<RefreshCw size={16} aria-hidden />}>
+                    Mac App did not answer. Copy the prompt or terminal command
+                    above, run setup, then click Mac App is installed again.
+                  </StatusNote>
                 ) : null}
 
                 <div className="flex flex-wrap gap-3">

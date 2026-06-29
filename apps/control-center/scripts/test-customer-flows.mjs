@@ -349,12 +349,18 @@ async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
   await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  await page
-    .getByRole("button", { name: "Run setup again" })
-    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByRole("button", { name: "Run setup again" }).count()) ===
+      0,
+    "Run setup again should stay hidden before setup has been tried",
+  );
   assert(
     (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
     "Fix connection should stay hidden while the Mac App needs setup",
+  );
+  assert(
+    (await page.getByText("Mac App did not answer.").count()) === 0,
+    "Mac App errors should stay hidden before the customer checks the Mac App",
   );
   await page
     .getByRole("button", { name: "VibeTV is on WiFi" })
@@ -398,8 +404,17 @@ async function testFixConnectionDoesNotRepairWhenMacAppIsOffline(
   await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await page.getByText("Mac App did not answer.").count()) === 0,
+    "Mac App offline setup should not show an error before the customer checks it",
+  );
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
+  await page.getByRole("button", { name: "Mac App is installed" }).click();
   await page
-    .getByText("Mac App needs setup.", { exact: false })
+    .getByText("Mac App did not answer.", { exact: false })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Copy the prompt or terminal command above", { exact: false })
     .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
