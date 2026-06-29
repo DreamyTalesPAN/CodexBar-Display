@@ -259,8 +259,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setBusyAction(null);
       setLastError({
         code: "COMPANION_UNREACHABLE",
-        message: "Mac App is not open.",
-        nextAction: "Install or repair the Mac App, open it, then try again.",
+        message: "Mac App is not running.",
+        nextAction: "Run setup again, then try again.",
       });
     }
 

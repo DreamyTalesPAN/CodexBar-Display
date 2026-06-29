@@ -2109,8 +2109,8 @@ async function assertMacAppSetupUsesTerminalCommand(page) {
     `Terminal command should install through the hosted script, got ${command}`,
   );
   assert(
-    command.includes("--terminal-session"),
-    `Terminal command should use Terminal session mode, got ${command}`,
+    !command.includes("--terminal-session"),
+    `Terminal command should use the default Mac App mode, got ${command}`,
   );
   assert(
     !command.includes("--launchagent"),
@@ -2125,8 +2125,8 @@ async function assertMacAppSetupUsesTerminalCommand(page) {
   await page.getByRole("button", { name: /Prompt preview/ }).click();
   const prompt = (await page.locator("pre").textContent()) || "";
   assert(
-    prompt.includes("--terminal-session"),
-    "agent setup prompt should include the Terminal session command",
+    prompt.includes("start it in the background"),
+    "agent setup prompt should describe the background Mac App",
   );
   assert(
     !prompt.includes("LaunchAgent"),

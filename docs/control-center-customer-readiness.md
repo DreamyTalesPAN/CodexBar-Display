@@ -23,7 +23,7 @@ The local Mac App service responds to Chrome Private Network Access preflights f
 2. App checks the local Mac App service at `127.0.0.1:47832`.
 3. If the Mac App is missing, the app shows one primary Mac App install/repair action.
 4. Customer installs or starts the Mac App.
-5. The Mac App service runs from the Agentic Terminal setup context.
+5. The Mac App service runs inside the normal VibeTV Mac App background service.
 6. App searches for VibeTV on the same WiFi/LAN.
 7. If exactly one VibeTV is found, the Mac App stores that address for later checks.
 8. If multiple VibeTV devices are found, the Mac App refuses to auto-pick one. The customer must enter the exact VibeTV address, for example `vibetv.local` or `192.168.178.163`, then use `Connect VibeTV` again. A manually entered address is strict: if that exact VibeTV does not answer, the Mac App reports a device error instead of falling back to another discovered VibeTV.
@@ -35,7 +35,7 @@ The local Mac App service responds to Chrome Private Network Access preflights f
 The current v1 setup does not depend on a packaged macOS installer. The Setup tab gives the customer an Agentic setup prompt and a manual Terminal fallback. Both use the release shell installer:
 
 ```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --terminal-session
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
 ```
 
 That script performs these steps:
@@ -43,19 +43,19 @@ That script performs these steps:
 - downloads the matching `codexbar-display` macOS release binary,
 - verifies the release SHA-256 checksum,
 - installs the binary to `~/Library/Application Support/codexbar-display/bin/codexbar-display`,
-- stops and removes the old user LaunchAgent for this API service if it exists,
+- stops and removes the old standalone API LaunchAgent if it exists,
 - disables an old global LaunchAgent for the current user if one is present,
-- refreshes the older display-stream LaunchAgent if it exists, so existing customers do not keep sending frames from an old binary,
-- starts `codexbar-display api --addr 127.0.0.1:47832` in the background from the Terminal session,
-- stores the started process id in `~/Library/Application Support/codexbar-display/run/companion-api.pid`,
+- writes the normal `com.codexbar-display.daemon` LaunchAgent with `--api-addr 127.0.0.1:47832`,
+- starts one Mac App background service for both VibeTV frames and Control Center,
 - verifies `http://127.0.0.1:47832/v1/status`.
 
-This is intentional for v1. In hardware testing, the Terminal-started process could reach the customer's LAN/VibeTV, while the same ad-hoc binary launched by the user LaunchAgent could get stuck in a macOS local-network permission state. So the normal customer path starts from the agent/Terminal context, removes the stale user LaunchAgent, and disables stale global LaunchAgent entries for the current user instead of recreating them.
+This is intentional for launch. Customers should have one Mac App process: the
+Mac App background service sends display frames and answers the local Control Center API.
 
 Support restart:
 
 ```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --restart --terminal-session
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --restart
 ```
 
 Support uninstall:
@@ -64,7 +64,7 @@ Support uninstall:
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --uninstall
 ```
 
-Uninstall stops the PID-file process, removes the old user LaunchAgent plist if it exists, and disables any old global LaunchAgent for the current user.
+Uninstall stops the daemon LaunchAgent, removes old standalone API state if it exists, and keeps the installed binary on disk.
 
 The repository-level development installer remains available:
 
@@ -76,9 +76,9 @@ It performs these steps without downloading from GitHub Releases:
 
 - builds `companion/cmd/codexbar-display`,
 - installs the binary to `~/Library/Application Support/codexbar-display/bin/codexbar-display`,
-- removes the old user LaunchAgent plist if present,
+- removes the old standalone API LaunchAgent plist if present,
 - disables an old global LaunchAgent for the current user if present,
-- starts `codexbar-display api --addr 127.0.0.1:47832` in the background from Terminal,
+- writes and starts `com.codexbar-display.daemon` with `--api-addr 127.0.0.1:47832`,
 - verifies `http://127.0.0.1:47832/v1/status`.
 
 Optional local development origin:
@@ -87,7 +87,38 @@ Optional local development origin:
 VIBETV_COMPANION_DEV_ORIGIN=http://localhost:3002 ./scripts/install-control-center-companion.sh
 ```
 
-The local API service is separate from the older frame-sending daemon LaunchAgent. Existing customer Macs may still have that daemon. The release installer refreshes it once after installing the new binary, so the old display stream picks up the new `codexbar-display` binary instead of continuing with the previous build.
+The local API service is part of the frame-sending daemon. Existing customer
+Macs may already have that daemon; the installer rewrites and restarts it so the
+same process also answers Control Center.
+
+## Existing Customer Update Bridge
+
+Existing customers may enter the launch through the older VibeTV update page,
+which still copies a command based on the legacy release `install.sh`:
+
+```bash
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --target http://vibetv.local && codexbar-display install-update --confirm-live-update --target http://vibetv.local
+```
+
+For the Control Center launch, `install.sh` is also a migration bridge. After it
+installs the current release binary, refreshes the older display-stream daemon,
+tries to warm up CodexBar, preserves an existing device theme by skipping the
+default theme-pack install on existing Mac installs, and runs the health check,
+it verifies the integrated daemon API on `127.0.0.1:47832` when possible. It
+removes stale standalone API LaunchAgent state and disables any old global API
+LaunchAgent for the current user before the daemon is started.
+
+The bridge is best-effort by design. A Control Center service verification failure must
+not prevent the firmware update command after `&&` from running. The same is
+true when CodexBar provider data is not ready yet: the installer warns, but it
+continues so the customer can still update the VibeTV and finish provider setup
+later in Control Center. If the bridge cannot start or verify the service, the
+installer tells the customer or support to run setup again from
+`app.vibetv.shop`.
+
+The firmware update step preserves a concrete saved device URL such as
+`http://192.168.178.72` instead of replacing it with `http://vibetv.local`. That
+keeps the fallback path available when `.local` name resolution is unreliable.
 
 The Control Center Updates screen checks `/api/companion/latest`. That route still reads the latest GitHub Release for version information, but the v1 setup path uses the Agentic prompt and Terminal command above.
 
@@ -131,7 +162,7 @@ The top-level README, customer setup guide, Control Center README, and this read
 - why CodexBar is installed or required,
 - how usage data moves from CodexBar to the Mac App service to VibeTV,
 - customer commands: install/update, status check, uninstall,
-- support commands and flags: `--terminal-session`, `--restart`, `--uninstall`, `--dev-origin`, `--version`, `--addr`,
+- support commands and flags: `--restart`, `--uninstall`, `--dev-origin`, `--version`, `--addr`, `--target`,
 - what data is local, what reaches `app.vibetv.shop`, and what is sent to the device,
 - update flow and failure-report flow.
 
@@ -193,10 +224,11 @@ Keep the script behavior covered in CI with:
 ```bash
 scripts/test-control-center-companion-customer-readiness.sh
 scripts/test-control-center-release-workflow.sh
+scripts/test-install-sh-control-center-migration.sh
 scripts/test-control-center-companion-legacy-installer.sh
 ```
 
-The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Mac App service, or VibeTV hardware. The release workflow test keeps the public GitHub Release package-free. The terminal installer test uses fake `launchctl`, `curl`, and a temporary `HOME`; it proves the shell installer removes the old user LaunchAgent path, disables old global LaunchAgent state for the current user, and starts the local service from the Terminal context.
+The readiness checker test uses a fake `curl` binary through `CONTROL_CENTER_READINESS_CURL`, so it does not hit the hosted app, Shopify, local Mac App service, or VibeTV hardware. The release workflow test keeps the public GitHub Release package-free. The legacy `install.sh` migration test uses fake release downloads, fake CodexBar, fake `launchctl`, and a temporary `HOME`; it proves the old customer installer starts the local Control Center service without touching a real Mac install. The terminal installer test uses fake `launchctl`, `curl`, and a temporary `HOME`; it proves the shell installer removes the old user LaunchAgent path, disables old global LaunchAgent state for the current user, and starts the local service from the Terminal context.
 
 What it checks:
 
@@ -222,7 +254,7 @@ scripts/check-control-center-companion-customer-readiness.sh \
 
 The clean-Mac check verifies local Companion `/v1/status` and the hosted-app Private Network Access preflight. The validation script is read-only. It does not install apps, start services, discover devices, or write to VibeTV hardware.
 
-By default, local Companion checks use `127.0.0.1:47832`. If the Terminal setup was intentionally run with a different `VIBETV_COMPANION_ADDR`, run the readiness script with the same environment value so `/v1/status` and Private Network Access preflight checks validate the same address.
+By default, local Companion checks use `127.0.0.1:47832`. If setup was intentionally run with a different `VIBETV_COMPANION_ADDR`, run the readiness script with the same environment value so `/v1/status` and Private Network Access preflight checks validate the same address.
 
 ## Support Checks
 
@@ -263,26 +295,26 @@ If discovery returns `multiple_devices_found`, do not guess. Ask the customer wh
 Inspect service state:
 
 ```bash
-launchctl print gui/$(id -u)/com.codexbar-display.companion-api
+launchctl print gui/$(id -u)/com.codexbar-display.daemon
 ```
 
 Logs:
 
 ```text
-/tmp/codexbar-display-companion-api.out.log
-/tmp/codexbar-display-companion-api.err.log
+/tmp/codexbar-display-daemon.out.log
+/tmp/codexbar-display-daemon.err.log
 ```
 
 Restart service:
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.codexbar-display.companion-api
+launchctl kickstart -k gui/$(id -u)/com.codexbar-display.daemon
 ```
 
 Unload service:
 
 ```bash
-launchctl bootout gui/$(id -u)/com.codexbar-display.companion-api
+launchctl bootout gui/$(id -u)/com.codexbar-display.daemon
 ```
 
 ## Release Gate

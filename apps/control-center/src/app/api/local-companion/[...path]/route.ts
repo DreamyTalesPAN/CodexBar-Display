@@ -52,8 +52,8 @@ async function proxyLocalMacApp(request: NextRequest, context: RouteContext) {
         ok: false,
         error: {
           code: "COMPANION_UNREACHABLE",
-          message: "Mac App is not open.",
-          nextAction: "Open the Mac App, then try again.",
+          message: "Mac App is not running.",
+          nextAction: "Run setup again, then try again.",
         },
       },
       { status: 503 },

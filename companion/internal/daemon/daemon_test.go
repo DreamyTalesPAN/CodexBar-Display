@@ -197,6 +197,20 @@ func TestRunCycleWithDepsUsesRuntimeConfigTargetOverStaleLaunchAgentTarget(t *te
 	}
 }
 
+func TestEffectiveCycleTargetUsesRuntimeConfigOverInMemoryTarget(t *testing.T) {
+	state := &runtimeState{deviceTarget: "http://192.168.178.10"}
+	got := effectiveCycleTarget("http://vibetv.local", state, runtimeDeps{
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{DeviceTarget: "http://192.168.178.99"}, nil
+		},
+	})
+	if got != "http://192.168.178.99" {
+		t.Fatalf("expected runtime config target to win, got %q", got)
+	}
+}
+
 func TestRunCycleWithDepsSendsRuntimeConfigDeviceTokenWithoutLoggingIt(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -2534,6 +2548,9 @@ func TestRunCycleFromCollectorUsesStaleLastGoodWhenCollectorEmpty(t *testing.T) 
 	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
 		now:         func() time.Time { return now },
 		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProvider: func(context.Context, string) (codexbar.ParsedFrame, error) {
+			return codexbar.ParsedFrame{}, codexbar.ErrNoProviders
+		},
 		sendLine: func(_ string, line []byte) error {
 			sentLine = append([]byte(nil), line...)
 			return nil

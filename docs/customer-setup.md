@@ -68,7 +68,7 @@ Both paths install or update the same Mac App.
 The normal Terminal command looks like this:
 
 ```bash
-curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --terminal-session
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
 ```
 
 The command:
@@ -141,10 +141,10 @@ Useful support commands:
 curl -fsS http://127.0.0.1:47832/v1/status
 
 # Install or update the Mac App.
-curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --terminal-session
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
 
 # Restart the Mac App.
-curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --restart --terminal-session
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --restart
 
 # Stop the Mac App.
 curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --uninstall

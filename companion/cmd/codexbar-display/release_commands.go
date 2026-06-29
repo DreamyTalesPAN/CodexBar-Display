@@ -444,12 +444,16 @@ func runInstallUpdate(args []string) (retErr error) {
 	}
 
 	ctx := context.Background()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return &commandError{Op: "resolve-home", Code: errcode.UpgradeStateWrite, Err: err}
+	}
 	base, err := normalizeHTTPBaseURL(*target)
 	if err != nil {
 		return &commandError{Op: "resolve-target", Code: errcode.UpgradeFlashFirmware, Err: err}
 	}
 
-	hello, err := fetchDeviceHelloHTTP(ctx, base)
+	hello, base, err := fetchDeviceHelloHTTPWithSavedTargetFallback(ctx, home, base)
 	if err != nil {
 		return &commandError{
 			Op:   "device-hello",
@@ -491,10 +495,6 @@ func runInstallUpdate(args []string) (retErr error) {
 		fmt.Printf("Firmware asset: %s\n", strings.TrimSpace(artifact.Asset))
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return &commandError{Op: "resolve-home", Code: errcode.UpgradeStateWrite, Err: err}
-	}
 	imagePath, err := downloadManifestFirmwareArtifact(ctx, home, manifest, artifact)
 	if err != nil {
 		return &commandError{
@@ -556,6 +556,51 @@ func runInstallUpdate(args []string) (retErr error) {
 	return nil
 }
 
+func fetchDeviceHelloHTTPWithSavedTargetFallback(ctx context.Context, home, base string) (protocol.DeviceHello, string, error) {
+	hello, err := fetchDeviceHelloHTTP(ctx, base)
+	if err == nil {
+		return hello, base, nil
+	}
+
+	fallback, ok := savedInstallUpdateFallbackBase(home, base)
+	if !ok {
+		return protocol.DeviceHello{}, base, err
+	}
+	fallbackHello, fallbackErr := fetchDeviceHelloHTTP(ctx, fallback)
+	if fallbackErr != nil {
+		return protocol.DeviceHello{}, base, fmt.Errorf("%w; saved target %s also failed: %v", err, fallback, fallbackErr)
+	}
+	fmt.Printf("Using saved VibeTV address: %s\n", fallback)
+	return fallbackHello, fallback, nil
+}
+
+func savedInstallUpdateFallbackBase(home, base string) (string, bool) {
+	if !isVibeTVLocalBase(base) {
+		return "", false
+	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return "", false
+	}
+	fallback, err := normalizeHTTPBaseURL(cfg.DeviceTarget)
+	if err != nil || strings.TrimSpace(fallback) == "" {
+		return "", false
+	}
+	if strings.TrimRight(fallback, "/") == strings.TrimRight(base, "/") {
+		return "", false
+	}
+	return fallback, true
+}
+
+func isVibeTVLocalBase(base string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(base))
+	if err != nil {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(parsed.Hostname())), ".")
+	return host == "vibetv.local"
+}
+
 func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base string, forcePair bool) (string, error) {
 	cfg, err := runtimeconfig.Load(home)
 	if err != nil {
@@ -563,7 +608,7 @@ func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base string, for
 	}
 
 	changed := false
-	if strings.TrimSpace(base) != "" && strings.TrimSpace(cfg.DeviceTarget) != strings.TrimSpace(base) {
+	if shouldStoreFirmwareUpdateTarget(cfg.DeviceTarget, base) {
 		cfg.DeviceTarget = strings.TrimSpace(base)
 		changed = true
 	}
@@ -584,6 +629,20 @@ func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base string, for
 		}
 	}
 	return token, nil
+}
+
+func shouldStoreFirmwareUpdateTarget(current, next string) bool {
+	next = strings.TrimSpace(next)
+	if next == "" || strings.TrimSpace(current) == next {
+		return false
+	}
+	if isVibeTVLocalBase(next) {
+		currentBase, err := normalizeHTTPBaseURL(current)
+		if err == nil && strings.TrimSpace(currentBase) != "" && !isVibeTVLocalBase(currentBase) {
+			return false
+		}
+	}
+	return true
 }
 
 func pairFirmwareUpdateDevice(ctx context.Context, base string) (string, error) {

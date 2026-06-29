@@ -29,6 +29,7 @@ const (
 	launchAgentLabel          = "com.codexbar-display.daemon"
 	defaultDaemonInterval     = "2s"
 	defaultWiFiDaemonInterval = "30s"
+	defaultCompanionAPIAddr   = "127.0.0.1:47832"
 	defaultLastGoodMaxAge     = "168h"
 	defaultTransport          = "wifi"
 	defaultWiFiTarget         = "http://vibetv.local"
@@ -934,7 +935,7 @@ func writeLaunchAgentPlist(home, binaryPath, transportName, target, port string)
 }
 
 func renderLaunchAgentPlist(binaryPath, transportName, target, port string) []byte {
-	args := []string{binaryPath, "daemon", "--interval", daemonIntervalForSetupTransport(transportName)}
+	args := []string{binaryPath, "daemon", "--interval", daemonIntervalForSetupTransport(transportName), "--api-addr", defaultCompanionAPIAddr}
 	if normalizeSetupTransport(transportName) == "wifi" {
 		args = append(args, "--transport", "wifi", "--target", normalizeSetupTarget(target))
 	} else if strings.TrimSpace(port) != "" {

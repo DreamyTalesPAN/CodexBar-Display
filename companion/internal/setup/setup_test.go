@@ -273,7 +273,9 @@ func TestRunWithDepsConfiguresWiFiLaunchAgentTarget(t *testing.T) {
 	if !strings.Contains(plist, "<string>--transport</string>") ||
 		!strings.Contains(plist, "<string>wifi</string>") ||
 		!strings.Contains(plist, "<string>--target</string>") ||
-		!strings.Contains(plist, "<string>http://192.168.178.66</string>") {
+		!strings.Contains(plist, "<string>http://192.168.178.66</string>") ||
+		!strings.Contains(plist, "<string>--api-addr</string>") ||
+		!strings.Contains(plist, "<string>127.0.0.1:47832</string>") {
 		t.Fatalf("expected WiFi launch agent target in plist, got:\n%s", plist)
 	}
 	if strings.Contains(plist, "<string>--port</string>") {

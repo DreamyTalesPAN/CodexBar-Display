@@ -526,6 +526,129 @@ func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
 	}
 }
 
+func TestRunInstallUpdateFallsBackToSavedTargetWhenVibeTVLocalFails(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousUpload := uploadFirmwareOTAFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		uploadFirmwareOTAFn = previousUpload
+	})
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	imageBody := "firmware image"
+	imageSHA := sha256String(imageBody)
+	firmwareVersion := "1.0.0"
+	serverURL := ""
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"` + firmwareVersion + `","features":["theme"],"maxFrameBytes":1024}`))
+		case "/manifest.json":
+			_, _ = w.Write([]byte(`{
+  "schemaVersion": 1,
+  "release": "v1.0.1",
+  "artifacts": [{
+    "firmwareEnv": "esp8266_smalltv_st7789",
+    "board": "esp8266-smalltv-st7789",
+    "firmwareVersion": "1.0.1",
+    "asset": "firmware.bin",
+    "firmwareUrl": "` + serverURL + `/firmware.bin",
+    "sha256": "` + imageSHA + `"
+  }]
+}`))
+		case "/firmware.bin":
+			_, _ = w.Write([]byte(imageBody))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	serverURL = server.URL
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		DeviceTarget: server.URL,
+		DeviceToken:  "pair-token",
+	}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	serverClient := server.Client()
+	localHelloCalls := 0
+	releaseHTTPClient = releaseHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+		if strings.EqualFold(req.URL.Hostname(), "vibetv.local") {
+			localHelloCalls++
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Status:     "404 Not Found",
+				Body:       io.NopCloser(strings.NewReader("not found")),
+				Header:     make(http.Header),
+			}, nil
+		}
+		return serverClient.Do(req)
+	})
+
+	uploaded := false
+	uploadFirmwareOTAFn = func(_ context.Context, base string, _ string, token string) error {
+		if base != server.URL {
+			t.Fatalf("expected OTA upload to use saved target %q, got %q", server.URL, base)
+		}
+		if token != "pair-token" {
+			t.Fatalf("expected stored token, got %q", token)
+		}
+		uploaded = true
+		firmwareVersion = "1.0.1"
+		return nil
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", "http://vibetv.local",
+			"--manifest-url", server.URL + "/manifest.json",
+		})
+	})
+	if err != nil {
+		t.Fatalf("install update: %v", err)
+	}
+	if !uploaded {
+		t.Fatal("expected OTA upload")
+	}
+	if localHelloCalls == 0 {
+		t.Fatal("expected initial vibetv.local hello attempt")
+	}
+	if !strings.Contains(output, "Using saved VibeTV address: "+server.URL) {
+		t.Fatalf("expected saved target message, got:\n%s", output)
+	}
+}
+
+func TestEnsureFirmwareUpdateDeviceTokenPreservesSavedConcreteTarget(t *testing.T) {
+	home := t.TempDir()
+	savedTarget := "http://192.168.178.72"
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		DeviceTarget: savedTarget,
+		DeviceToken:  "pair-token",
+	}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	token, err := ensureFirmwareUpdateDeviceToken(context.Background(), home, "http://vibetv.local", false)
+	if err != nil {
+		t.Fatalf("ensure token: %v", err)
+	}
+	if token != "pair-token" {
+		t.Fatalf("expected stored token, got %q", token)
+	}
+
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if cfg.DeviceTarget != savedTarget {
+		t.Fatalf("expected saved concrete target to stay %q, got %q", savedTarget, cfg.DeviceTarget)
+	}
+}
+
 func TestRunInstallUpdateUsesStoredDeviceTokenForOTA(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
@@ -1154,6 +1277,12 @@ func repoRoot(t *testing.T) string {
 
 type fakeReleaseHTTPClient struct {
 	responses map[string]string
+}
+
+type releaseHTTPDoerFunc func(*http.Request) (*http.Response, error)
+
+func (f releaseHTTPDoerFunc) Do(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func (f fakeReleaseHTTPClient) Do(req *http.Request) (*http.Response, error) {

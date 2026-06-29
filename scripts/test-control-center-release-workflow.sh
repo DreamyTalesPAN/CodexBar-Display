@@ -46,7 +46,7 @@ main() {
   assert_contains "$release_job" "Build release checksums" \
     "build-and-release must build release checksums"
   assert_contains "$release_job" "dist/install-control-center-companion.sh" \
-    "GitHub Release must include the Terminal setup script"
+    "GitHub Release must include the Mac setup script"
   assert_contains "$release_job" "dist/companion/*" \
     "GitHub Release must include the Mac companion binaries"
   assert_not_contains "$release_job" "needs: build-companion-pkgs" \

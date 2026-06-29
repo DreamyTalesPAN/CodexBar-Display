@@ -33,6 +33,13 @@ assert_gate_runs_release_workflow_test() {
     || die "customer-ready gate must call test-control-center-release-workflow.sh"
 }
 
+assert_gate_runs_legacy_install_migration_test() {
+  grep -F 'run_step "Legacy install.sh Control Center migration test"' "$GATE" >/dev/null \
+    || die "customer-ready gate must run the legacy install.sh migration test"
+  grep -F 'test-install-sh-control-center-migration.sh' "$GATE" >/dev/null \
+    || die "customer-ready gate must call test-install-sh-control-center-migration.sh"
+}
+
 assert_gate_runs_ui_review_gate_test() {
   grep -F 'run_step "Control Center UI review gate tests"' "$GATE" >/dev/null \
     || die "customer-ready gate must run the Control Center UI review gate tests"
@@ -230,6 +237,7 @@ write_missing_binary_release_json "$MISSING_RELEASE"
 
 assert_gate_runs_ui_review_gate_test
 assert_gate_runs_release_workflow_test
+assert_gate_runs_legacy_install_migration_test
 assert_gate_runs_customer_docs_guard
 assert_gate_runs_customer_ui_copy_guard
 run_expect_automated_success

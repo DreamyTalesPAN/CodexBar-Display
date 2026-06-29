@@ -38,7 +38,7 @@ Read-only checks for the hosted Control Center customer Mac App path.
 
 Options:
   --repo owner/name                 GitHub repo. Default: DreamyTalesPAN/CodexBar-Display
-  --release v1.2.3                 Check expected Terminal setup release asset names.
+  --release v1.2.3                 Check expected Mac setup release asset names.
   --release-json path              Use a local GitHub release JSON fixture instead of GitHub API.
   --app-url https://app.vibetv.shop Check hosted app HTTP reachability. With --release/--release-json, also check /api/companion/latest version state.
   --expect-catalog-source source     With --app-url, require /api/themes source, for example shopify.

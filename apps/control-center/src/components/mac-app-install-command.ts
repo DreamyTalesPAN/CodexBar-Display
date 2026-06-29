@@ -3,11 +3,12 @@ export const INSTALLER_SCRIPT_PATH = "/install-control-center-companion.sh";
 
 export function buildMacAppTerminalCommand(origin: string) {
   const installerUrl = `${origin}${INSTALLER_SCRIPT_PATH}`;
-  const args = ["--terminal-session"];
+  const args: string[] = [];
   if (origin !== DEFAULT_CONTROL_CENTER_ORIGIN) {
     args.push("--dev-origin", shellQuote(origin));
   }
-  return `curl -fsSL ${installerUrl} | bash -s -- ${args.join(" ")}`;
+  const suffix = args.length > 0 ? ` -s -- ${args.join(" ")}` : "";
+  return `curl -fsSL ${installerUrl} | bash${suffix}`;
 }
 
 export function currentControlCenterOrigin() {

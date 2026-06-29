@@ -67,15 +67,15 @@ For local development, install the Mac App service from the repository root:
 ./scripts/install-control-center-companion.sh
 ```
 
-That starts the local service in the background from the Terminal context. The
-hosted v1 setup uses the same Terminal-started service path through the Agentic
-prompt. The older frame-sending daemon LaunchAgent is separate. See
-`docs/control-center-customer-readiness.md` for the support flow.
+That starts the normal VibeTV Mac App background service with the local Control
+Center API built in. The hosted setup uses the same one-process Mac App path
+through the Agentic prompt. See `docs/control-center-customer-readiness.md` for
+the support flow.
 
 The hosted customer command is:
 
 ```bash
-curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --terminal-session
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
 ```
 
 This path is intentional while there are no signed/notarized Apple packages.

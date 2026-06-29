@@ -50,10 +50,11 @@ const (
 )
 
 type Options struct {
-	Addr           string
-	Home           string
-	AllowedOrigins []string
-	HTTPClient     *http.Client
+	Addr                 string
+	Home                 string
+	AllowedOrigins       []string
+	HTTPClient           *http.Client
+	RefreshDisplayStream func(context.Context, string) error
 }
 
 type Server struct {
@@ -68,6 +69,7 @@ type Server struct {
 	subnetTargets  func() []string
 	streamStatus   func(context.Context, string) displayStreamInfo
 	waitStream     func(context.Context, string) displayStreamInfo
+	refreshStream  func(context.Context, string) error
 	loadUsage      func(time.Time) (daemon.PersistedUsage, bool)
 	fetchUsage     func(context.Context) ([]codexbar.ParsedFrame, error)
 	updateFirmware func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
@@ -396,6 +398,7 @@ func New(opts Options) (*Server, error) {
 		subnetTargets:  localSubnetTargets,
 		streamStatus:   inspectDisplayStream,
 		waitStream:     waitForDisplayStream,
+		refreshStream:  opts.RefreshDisplayStream,
 		loadUsage:      daemon.LoadPersistedUsage,
 		fetchUsage:     codexbar.FetchAllProviders,
 		updateFirmware: runFirmwareUpdateCommand,
@@ -2381,6 +2384,9 @@ func (s *Server) startDisplayStream(ctx context.Context, target string) error {
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return errors.New("device target is empty")
+	}
+	if s.refreshStream != nil {
+		return s.refreshStream(ctx, target)
 	}
 	opts := setup.Options{
 		Transport: "wifi",

@@ -18,13 +18,14 @@ GLOBAL_PLIST_PATH="${VIBETV_COMPANION_GLOBAL_PLIST:-/Library/LaunchAgents/${SERV
 DISPLAY_DAEMON_LABEL="com.codexbar-display.daemon"
 DISPLAY_DAEMON_PLIST="${PLIST_DIR}/${DISPLAY_DAEMON_LABEL}.plist"
 DISPLAY_DAEMON_SERVICE="gui/$(id -u)/${DISPLAY_DAEMON_LABEL}"
-LOG_OUT="/tmp/codexbar-display-companion-api.out.log"
-LOG_ERR="/tmp/codexbar-display-companion-api.err.log"
+DISPLAY_DAEMON_LOG_OUT="/tmp/codexbar-display-daemon.out.log"
+DISPLAY_DAEMON_LOG_ERR="/tmp/codexbar-display-daemon.err.log"
 
 REPO="${VIBETV_COMPANION_REPO:-$DEFAULT_REPO}"
 RELEASE_VERSION="${VIBETV_COMPANION_VERSION:-}"
 ADDR="${VIBETV_COMPANION_ADDR:-127.0.0.1:47832}"
 DEV_ORIGIN="${VIBETV_COMPANION_DEV_ORIGIN:-}"
+TARGET="${VIBETV_COMPANION_TARGET:-http://vibetv.local}"
 MODE="install"
 START_MODE="${VIBETV_COMPANION_START_MODE:-terminal}"
 TMPDIR_INSTALL=""
@@ -37,7 +38,7 @@ RELEASE_TAG=""
 usage() {
   cat <<'EOF'
 Usage:
-  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832]
+  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://vibetv.local]
   install-control-center-companion.sh --restart
   install-control-center-companion.sh --uninstall
 
@@ -45,17 +46,16 @@ What it does:
   - downloads the matching codexbar-display macOS release binary
   - verifies the release checksum
   - installs the binary under ~/Library/Application Support/codexbar-display/bin
-  - stops the old background service if it exists
-  - restarts the older display stream if it exists
-  - starts the local Mac setup service from this Terminal session
+  - stops the old standalone Mac setup service if it exists
+  - starts the normal VibeTV Mac App background service
   - verifies http://127.0.0.1:47832/v1/status
 
 Examples:
-  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --terminal-session
+  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --restart
 
-By default the service is started from this Terminal context. This avoids
-unsigned package and background-service setup during the first customer rollout.
+The Mac setup service runs inside the normal VibeTV Mac App background service
+so the customer has one local Mac App process.
 EOF
 }
 
@@ -144,9 +144,9 @@ xml_escape() {
 }
 
 write_plist() {
-  local api_args=("$BIN_PATH" "api" "--addr" "$ADDR")
+  local daemon_args=("$BIN_PATH" "daemon" "--interval" "30s" "--transport" "wifi" "--target" "$TARGET" "--api-addr" "$ADDR")
   if [[ -n "$DEV_ORIGIN" ]]; then
-    api_args+=("--dev-origin" "$DEV_ORIGIN")
+    daemon_args+=("--api-dev-origin" "$DEV_ORIGIN")
   fi
 
   mkdir -p "$PLIST_DIR"
@@ -157,13 +157,13 @@ write_plist() {
 <plist version="1.0">
   <dict>
     <key>Label</key>
-    <string>${SERVICE_LABEL}</string>
+    <string>${DISPLAY_DAEMON_LABEL}</string>
 
     <key>ProgramArguments</key>
     <array>
 PLIST_HEAD
 
-    for arg in "${api_args[@]}"; do
+    for arg in "${daemon_args[@]}"; do
       printf '      <string>%s</string>\n' "$(xml_escape "$arg")"
     done
 
@@ -183,37 +183,36 @@ PLIST_HEAD
     <true/>
 
     <key>StandardOutPath</key>
-    <string>${LOG_OUT}</string>
+    <string>${DISPLAY_DAEMON_LOG_OUT}</string>
 
     <key>StandardErrorPath</key>
-    <string>${LOG_ERR}</string>
+    <string>${DISPLAY_DAEMON_LOG_ERR}</string>
   </dict>
 </plist>
 PLIST_TAIL
-  } > "$PLIST_PATH"
+  } > "$DISPLAY_DAEMON_PLIST"
 
-  chmod 644 "$PLIST_PATH"
+  chmod 644 "$DISPLAY_DAEMON_PLIST"
 }
 
 restart_service() {
-  if [[ "$START_MODE" == "launchagent" ]]; then
-    if [[ ! -f "$PLIST_PATH" ]]; then
-      die "LaunchAgent is missing: ${PLIST_PATH}. Run install first."
-    fi
-
-    require_cmd_for launchctl "start the macOS user LaunchAgent mode" "rerun with --terminal-session."
-    launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
-    launchctl enable "$SERVICE" >/dev/null 2>&1 || true
-    if ! launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH" >/dev/null 2>&1; then
-      if ! launchctl print "$SERVICE" >/dev/null 2>&1; then
-        die "failed to load the background service. Rerun with --terminal-session."
-      fi
-    fi
-    launchctl kickstart -k "$SERVICE" >/dev/null
-    return 0
+  if [[ ! -x "$BIN_PATH" ]]; then
+    die "Mac setup binary is missing: ${BIN_PATH}. Run install first."
   fi
 
-  start_terminal_service
+  require_cmd_for launchctl "start the VibeTV Mac App background service" "rerun from a standard macOS Terminal."
+  stop_launchagent
+  stop_terminal_service
+  stop_existing_listener
+  write_plist
+  launchctl bootout "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
+  launchctl enable "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
+  if ! launchctl bootstrap "gui/$(id -u)" "$DISPLAY_DAEMON_PLIST" >/dev/null 2>&1; then
+    if ! launchctl print "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1; then
+      die "failed to load the VibeTV Mac App background service."
+    fi
+  fi
+  launchctl kickstart -k "$DISPLAY_DAEMON_SERVICE" >/dev/null
 }
 
 wait_for_api() {
@@ -221,17 +220,13 @@ wait_for_api() {
   for _ in $(seq 1 20); do
     if curl -fsS "http://${ADDR}/v1/status" >/dev/null 2>&1; then
       log "vibetv: Mac setup service is running"
-      if [[ "$START_MODE" == "launchagent" ]]; then
-        log "vibetv: service=${SERVICE}"
-      elif [[ -f "$PID_PATH" ]]; then
-        log "vibetv: pid=$(cat "$PID_PATH")"
-      fi
-      log "vibetv: logs=${LOG_OUT} / ${LOG_ERR}"
+      log "vibetv: service=${DISPLAY_DAEMON_SERVICE}"
+      log "vibetv: logs=${DISPLAY_DAEMON_LOG_OUT} / ${DISPLAY_DAEMON_LOG_ERR}"
       return 0
     fi
     sleep 0.5
   done
-  die "Mac setup service did not answer on http://${ADDR}/v1/status. Inspect ${LOG_ERR}."
+  die "Mac setup service did not answer on http://${ADDR}/v1/status. Inspect ${DISPLAY_DAEMON_LOG_ERR}."
 }
 
 install_binary() {
@@ -247,30 +242,13 @@ install_binary() {
   fi
 }
 
-restart_display_stream_if_present() {
-  if [[ ! -f "$DISPLAY_DAEMON_PLIST" ]]; then
-    return 0
-  fi
-  if ! command -v launchctl >/dev/null 2>&1; then
-    log "vibetv: display stream refresh skipped because launchctl is unavailable"
-    return 0
-  fi
-
-  if launchctl print "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1; then
-    launchctl kickstart -k "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
-    log "vibetv: display stream refreshed"
-    return 0
-  fi
-
-  launchctl bootstrap "gui/$(id -u)" "$DISPLAY_DAEMON_PLIST" >/dev/null 2>&1 || true
-  launchctl kickstart -k "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
-  log "vibetv: display stream refreshed"
-}
-
 uninstall_service() {
   stop_terminal_service
   stop_launchagent
-  rm -f "$PLIST_PATH"
+  if command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
+  fi
+  rm -f "$PLIST_PATH" "$DISPLAY_DAEMON_PLIST"
   log "vibetv: Mac setup service stopped"
   log "vibetv: installed binary kept at ${BIN_PATH}"
 }
@@ -283,6 +261,7 @@ stop_launchagent() {
       log "vibetv: old Mac setup service disabled for this user"
     fi
   fi
+  rm -f "$PLIST_PATH"
 }
 
 stop_terminal_service() {
@@ -324,29 +303,6 @@ stop_existing_listener() {
       kill "$pid" >/dev/null 2>&1 || true
     fi
   done
-}
-
-start_terminal_service() {
-  if [[ ! -x "$BIN_PATH" ]]; then
-    die "Mac setup binary is missing: ${BIN_PATH}. Run install first."
-  fi
-
-  stop_launchagent
-  rm -f "$PLIST_PATH"
-  stop_terminal_service
-  stop_existing_listener
-
-  local api_args=("$BIN_PATH" "api" "--addr" "$ADDR")
-  if [[ -n "$DEV_ORIGIN" ]]; then
-    api_args+=("--dev-origin" "$DEV_ORIGIN")
-  fi
-
-  mkdir -p "$RUN_DIR"
-  : > "$LOG_OUT"
-  : > "$LOG_ERR"
-  nohup "${api_args[@]}" >>"$LOG_OUT" 2>>"$LOG_ERR" &
-  printf '%s\n' "$!" > "$PID_PATH"
-  disown "$!" >/dev/null 2>&1 || true
 }
 
 detect_arch() {
@@ -405,6 +361,15 @@ parse_args() {
         ;;
       --dev-origin=*)
         DEV_ORIGIN="${1#*=}"
+        shift
+        ;;
+      --target)
+        [[ $# -ge 2 ]] || die "--target requires a value"
+        TARGET="$2"
+        shift 2
+        ;;
+      --target=*)
+        TARGET="${1#*=}"
         shift
         ;;
       --restart)
@@ -487,19 +452,11 @@ main() {
   verify_checksum
 
   install_binary
-  restart_display_stream_if_present
-  if [[ "$START_MODE" == "launchagent" ]]; then
-    write_plist
-  fi
   restart_service
   wait_for_api
 
   log "vibetv: Mac setup binary installed at ${BIN_PATH}"
-  if [[ "$START_MODE" == "launchagent" ]]; then
-    log "vibetv: background service installed at ${PLIST_PATH}"
-  else
-    log "vibetv: started from this Terminal session"
-  fi
+  log "vibetv: background service installed at ${DISPLAY_DAEMON_PLIST}"
 }
 
 main "$@"

@@ -115,7 +115,7 @@ Useful support commands:
 
 ```bash
 # install or update the Mac App from Control Center
-curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --terminal-session
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
 
 # check whether the Mac App is running
 curl -fsS http://127.0.0.1:47832/v1/status

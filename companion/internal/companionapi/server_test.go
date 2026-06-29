@@ -277,6 +277,26 @@ func TestUsageRefreshesStaleProviderSnapshots(t *testing.T) {
 	}
 }
 
+func TestStartDisplayStreamUsesInjectedRefresh(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	var refreshedTarget string
+	server.refreshStream = func(_ context.Context, target string) error {
+		refreshedTarget = target
+		return nil
+	}
+	server.runSetup = func(context.Context, setup.Options) error {
+		t.Fatal("runSetup should not be called when refreshStream is injected")
+		return nil
+	}
+
+	if err := server.startDisplayStream(context.Background(), "http://192.168.178.99"); err != nil {
+		t.Fatalf("startDisplayStream returned error: %v", err)
+	}
+	if refreshedTarget != "http://192.168.178.99" {
+		t.Fatalf("expected refresh target, got %q", refreshedTarget)
+	}
+}
+
 func TestUsageReturnsStaleProviderSnapshotsWhenRefreshFails(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC)

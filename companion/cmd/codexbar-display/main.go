@@ -91,7 +91,7 @@ func main() {
 func printUsage() {
 	fmt.Println("codexbar-display commands:")
 	fmt.Println("  codexbar-display api [--addr 127.0.0.1:47832] [--dev-origin http://localhost:3000]")
-	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 30s] [--once] [--theme classic|crt|mini]")
+	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 30s] [--once] [--theme classic|crt|mini] [--api-addr 127.0.0.1:47832]")
 	fmt.Println("  codexbar-display doctor")
 	fmt.Println("  codexbar-display health")
 	fmt.Println("  codexbar-display service <start|stop|status>")
@@ -127,14 +127,28 @@ func runCompanionAPI(args []string) error {
 }
 
 func runDaemon(args []string) error {
-	opts, err := parseDaemonOptions(args)
+	opts, err := parseDaemonCommandOptions(args)
 	if err != nil {
 		return err
 	}
-	return daemon.Run(context.Background(), opts)
+	if opts.APIAddr == "" {
+		return daemon.Run(context.Background(), opts.Daemon)
+	}
+	return runDaemonWithCompanionAPI(context.Background(), opts)
+}
+
+type daemonCommandOptions struct {
+	Daemon       daemon.Options
+	APIAddr      string
+	APIDevOrigin string
 }
 
 func parseDaemonOptions(args []string) (daemon.Options, error) {
+	opts, err := parseDaemonCommandOptions(args)
+	return opts.Daemon, err
+}
+
+func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
 	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
@@ -142,8 +156,10 @@ func parseDaemonOptions(args []string) (daemon.Options, error) {
 	interval := fs.Duration("interval", 0, "poll interval")
 	once := fs.Bool("once", false, "run one cycle and exit")
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|mini")
+	apiAddr := fs.String("api-addr", "", "optional local companion API bind address")
+	apiDevOrigin := fs.String("api-dev-origin", "http://localhost:3000", "additional allowed local dev origin for --api-addr")
 	if err := fs.Parse(args); err != nil {
-		return daemon.Options{}, err
+		return daemonCommandOptions{}, err
 	}
 
 	normalizedTransport := strings.TrimSpace(strings.ToLower(*transportName))
@@ -151,17 +167,66 @@ func parseDaemonOptions(args []string) (daemon.Options, error) {
 		normalizedTransport = setup.DefaultTransport()
 	}
 	if normalizedTransport != "usb" && normalizedTransport != "wifi" {
-		return daemon.Options{}, fmt.Errorf("unsupported transport %q", *transportName)
+		return daemonCommandOptions{}, fmt.Errorf("unsupported transport %q", *transportName)
 	}
 
-	return daemon.Options{
-		Port:      strings.TrimSpace(*port),
-		Transport: normalizedTransport,
-		Target:    strings.TrimSpace(*target),
-		Interval:  *interval,
-		Once:      *once,
-		Theme:     strings.TrimSpace(*theme),
+	return daemonCommandOptions{
+		Daemon: daemon.Options{
+			Port:      strings.TrimSpace(*port),
+			Transport: normalizedTransport,
+			Target:    strings.TrimSpace(*target),
+			Interval:  *interval,
+			Once:      *once,
+			Theme:     strings.TrimSpace(*theme),
+		},
+		APIAddr:      strings.TrimSpace(*apiAddr),
+		APIDevOrigin: strings.TrimSpace(*apiDevOrigin),
 	}, nil
+}
+
+func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) error {
+	wake := make(chan struct{}, 1)
+	server, err := companionapi.New(companionapi.Options{
+		Addr:           opts.APIAddr,
+		AllowedOrigins: []string{opts.APIDevOrigin},
+		RefreshDisplayStream: func(context.Context, string) error {
+			select {
+			case wake <- struct{}{}:
+			default:
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	daemonOpts := opts.Daemon
+	daemonOpts.Wake = wake
+
+	errc := make(chan error, 2)
+	go func() {
+		errc <- server.ListenAndServe(ctx)
+	}()
+	go func() {
+		errc <- daemon.Run(ctx, daemonOpts)
+	}()
+
+	fmt.Printf("VibeTV companion API listening on http://%s\n", opts.APIAddr)
+	err = <-errc
+	cancel()
+
+	select {
+	case otherErr := <-errc:
+		if err == nil {
+			return otherErr
+		}
+	case <-time.After(5 * time.Second):
+	}
+	return err
 }
 
 func runDoctor() error {

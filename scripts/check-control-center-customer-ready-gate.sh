@@ -238,7 +238,9 @@ run_local_checks() {
     "${ROOT}/scripts/test-control-center-companion-customer-readiness.sh"
   run_step "Control Center release workflow test" \
     "${ROOT}/scripts/test-control-center-release-workflow.sh"
-  run_step "Terminal Mac setup installer tests" \
+  run_step "Legacy install.sh Control Center migration test" \
+    "${ROOT}/scripts/test-install-sh-control-center-migration.sh"
+  run_step "Daemon Mac setup installer tests" \
     "${ROOT}/scripts/test-control-center-companion-legacy-installer.sh"
 }
 

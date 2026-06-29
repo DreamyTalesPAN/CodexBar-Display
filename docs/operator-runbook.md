@@ -382,8 +382,8 @@ Run this list before every v0 release decision.
 ### Build + Artifacts
 - [ ] `go test ./...` in `companion` is green.
 - [ ] `pio run -d firmware_esp8266 -e esp8266_smalltv_st7789` is green.
-- [ ] Clean-Mac validation was confirmed by running the Terminal prompt from `app.vibetv.shop` and checking `http://127.0.0.1:47832/v1/status`.
-- [ ] Release artifacts include the Terminal setup script, both Darwin companion binaries, firmware binaries, manifests, and checksums.
+- [ ] Clean-Mac validation was confirmed by running the Mac setup prompt from `app.vibetv.shop` and checking `http://127.0.0.1:47832/v1/status`.
+- [ ] Release artifacts include the Mac setup script, both Darwin companion binaries, firmware binaries, manifests, and checksums.
 - [ ] GitHub Release includes the customer Mac setup assets for the release tag:
   `install-control-center-companion.sh`,
   `codexbar-display-darwin-arm64-v<version>`,
@@ -483,5 +483,5 @@ Firmware bench envs:
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
 - Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
 - GitHub release artifacts include companion binaries, firmware binaries, checksums, manifests, and `install-control-center-companion.sh`.
-- The customer Mac setup path is the Terminal prompt from `app.vibetv.shop`. Current customer releases must not publish Mac App `.pkg` assets.
-- A customer release is not ready until the Terminal setup script, both Darwin companion binaries, and the checksum file exist on the GitHub Release and match the tag version.
+- The customer Mac setup path is the setup prompt from `app.vibetv.shop`. Current customer releases must not publish Mac App `.pkg` assets.
+- A customer release is not ready until the Mac setup script, both Darwin companion binaries, and the checksum file exist on the GitHub Release and match the tag version.

@@ -62,3 +62,8 @@ To reset the gate:
 - Customer rule: `Fix connection` may be visible as the emergency action, but it must first verify the Mac App and guide the customer back to setup instead of firing a VibeTV repair request that cannot work. The default setup path remains Agentic setup; Terminal stays a fallback.
 - Simplifications accepted: signed-package language was removed from the installer path; setup keeps two visible recovery actions only, with `Fix connection` primary and `Run setup again` secondary; the Mac App missing state now uses customer language and keeps the customer on the setup step.
 - Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `check:customer-ui-copy` and `test:customer-flows` passed locally.
+
+- Reviewed scope: one-process Mac App setup command, Agentic setup prompt wording, hosted installer script copy, and the customer-flow assertion for the manual setup command.
+- Customer rule: customers should still see one Mac App install/update command and should not need to understand the internal daemon/API split. Setup copy says the Mac App starts in the background and avoids daemon, API, LaunchAgent, Companion, package, or release internals.
+- Simplifications accepted: the `--terminal-session` workaround was removed from the visible command; no new visible setup controls or customer choices were added; installer output uses Mac App/background-service wording while the implementation runs one background process.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `check:customer-ui-copy`, `lint`, `test:customer-flows`, and the customer-ready gate passed except for this deterministic checkpoint before the review note was updated.

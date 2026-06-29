@@ -33,6 +33,7 @@ type Options struct {
 	Once                   bool
 	Theme                  string
 	DisableStartupFastPoll bool
+	Wake                   <-chan struct{}
 }
 
 const (
@@ -444,6 +445,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-opts.Wake:
 		case <-deps.after(waitFor):
 		}
 	}
@@ -545,11 +547,11 @@ func effectiveCycleTarget(requestedTarget string, state *runtimeState, deps runt
 	if deps.transportName != "wifi" {
 		return requestedTarget
 	}
-	if state != nil && strings.TrimSpace(state.deviceTarget) != "" {
-		return strings.TrimSpace(state.deviceTarget)
-	}
 	if cfg, ok := loadRuntimeConfig(deps); ok && strings.TrimSpace(cfg.DeviceTarget) != "" {
 		return strings.TrimSpace(cfg.DeviceTarget)
+	}
+	if state != nil && strings.TrimSpace(state.deviceTarget) != "" {
+		return strings.TrimSpace(state.deviceTarget)
 	}
 	return requestedTarget
 }

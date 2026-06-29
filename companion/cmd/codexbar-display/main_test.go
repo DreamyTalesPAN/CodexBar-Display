@@ -53,6 +53,26 @@ func TestParseDaemonOptionsDefaultsToWiFi(t *testing.T) {
 	}
 }
 
+func TestParseDaemonCommandOptionsSupportsEmbeddedAPI(t *testing.T) {
+	opts, err := parseDaemonCommandOptions([]string{
+		"--transport", "wifi",
+		"--api-addr", "127.0.0.1:47832",
+		"--api-dev-origin", "http://localhost:3002",
+	})
+	if err != nil {
+		t.Fatalf("parseDaemonCommandOptions returned error: %v", err)
+	}
+	if opts.Daemon.Transport != "wifi" {
+		t.Fatalf("expected wifi transport, got %q", opts.Daemon.Transport)
+	}
+	if opts.APIAddr != "127.0.0.1:47832" {
+		t.Fatalf("unexpected api addr %q", opts.APIAddr)
+	}
+	if opts.APIDevOrigin != "http://localhost:3002" {
+		t.Fatalf("unexpected dev origin %q", opts.APIDevOrigin)
+	}
+}
+
 func TestResolveThemeSpecTransportNamePreservesPortOnlyUSBFlow(t *testing.T) {
 	got := resolveThemeSpecTransportName("wifi", "/dev/cu.usbserial-10", false)
 	if got != "usb" {

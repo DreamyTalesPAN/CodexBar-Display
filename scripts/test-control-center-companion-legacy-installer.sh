@@ -34,6 +34,15 @@ assert_contains() {
     || die "expected output to contain: ${needle}"
 }
 
+assert_not_contains() {
+  local haystack needle
+  haystack="$1"
+  needle="$2"
+  if printf '%s\n' "$haystack" | grep -F "$needle" >/dev/null; then
+    die "expected output not to contain: ${needle}"
+  fi
+}
+
 write_fake_commands() {
   local fake_bin
   fake_bin="$1"
@@ -168,8 +177,8 @@ run_installer() {
   return "$status"
 }
 
-run_restart_uses_terminal_started_service() {
-  local root output pid_file pid plist api_log
+run_restart_updates_daemon_launchagent() {
+  local root output legacy_plist daemon_plist daemon_plist_body launch_log
   root="${TMP_WORK_DIR}/restart"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -182,23 +191,22 @@ run_restart_uses_terminal_started_service() {
     die "expected restart to pass"
   }
 
-  pid_file="${root}/home/Library/Application Support/codexbar-display/run/companion-api.pid"
-  plist="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
-  api_log="${root}/api.log"
+  legacy_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
+  daemon_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist"
+  daemon_plist_body="$(cat "$daemon_plist")"
+  launch_log="$(cat "${root}/launchctl.log")"
 
   assert_contains "$output" "Mac setup service is running"
-  [[ -f "$pid_file" ]] || die "restart did not write terminal service pid"
-  pid="$(cat "$pid_file")"
-  kill -0 "$pid" >/dev/null 2>&1 || die "terminal-started service is not running"
-  [[ ! -f "$plist" ]] || die "legacy LaunchAgent plist should be removed"
-  assert_contains "$(cat "${root}/launchctl.log")" "bootout"
-  for _ in $(seq 1 20); do
-    if [[ -s "$api_log" ]]; then
-      break
-    fi
-    sleep 0.1
-  done
-  assert_contains "$(cat "$api_log")" "api --addr 127.0.0.1:47832"
+  [[ ! -f "$legacy_plist" ]] || die "legacy LaunchAgent plist should be removed"
+  [[ -f "$daemon_plist" ]] || die "daemon LaunchAgent plist should exist"
+  assert_contains "$daemon_plist_body" "<string>daemon</string>"
+  assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
+  assert_contains "$daemon_plist_body" "<string>127.0.0.1:47832</string>"
+  assert_not_contains "$daemon_plist_body" "<string>api</string>"
+  assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
+  assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.daemon"
+  assert_contains "$launch_log" "bootstrap gui/$(id -u) $daemon_plist"
+  assert_contains "$launch_log" "kickstart -k gui/$(id -u)/com.codexbar-display.daemon"
 }
 
 run_uninstall_stops_terminal_service_and_legacy_launchagent() {
@@ -222,14 +230,14 @@ run_uninstall_stops_terminal_service_and_legacy_launchagent() {
   }
 
   assert_contains "$output" "Mac setup service stopped"
-  [[ ! -f "$pid_file" ]] || die "uninstall did not remove terminal service pid"
-  ! kill -0 "$pid" >/dev/null 2>&1 || die "uninstall did not stop terminal service"
+  [[ ! -f "$pid_file" ]] || die "uninstall did not remove legacy API pid"
+  ! kill -0 "$pid" >/dev/null 2>&1 || die "uninstall did not stop legacy API process"
   [[ ! -f "$plist" ]] || die "uninstall did not remove legacy LaunchAgent plist"
   assert_contains "$(cat "${root}/launchctl.log")" "bootout"
 }
 
-run_install_refreshes_existing_display_stream() {
-  local root output pid_file pid launch_log api_log
+run_install_writes_integrated_daemon_launchagent() {
+  local root output launch_log daemon_plist daemon_plist_body
   root="${TMP_WORK_DIR}/install"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -242,27 +250,23 @@ run_install_refreshes_existing_display_stream() {
     die "expected install to pass"
   }
 
-  pid_file="${root}/home/Library/Application Support/codexbar-display/run/companion-api.pid"
   launch_log="$(cat "${root}/launchctl.log")"
-  api_log="${root}/api.log"
+  daemon_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist"
+  daemon_plist_body="$(cat "$daemon_plist")"
 
-  assert_contains "$output" "display stream refreshed"
-  assert_contains "$launch_log" "print gui/$(id -u)/com.codexbar-display.daemon"
+  assert_contains "$output" "background service installed at ${daemon_plist}"
+  assert_contains "$daemon_plist_body" "<string>daemon</string>"
+  assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
+  assert_contains "$daemon_plist_body" "<string>127.0.0.1:47832</string>"
+  assert_not_contains "$daemon_plist_body" "<string>api</string>"
+  assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
+  assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.daemon"
+  assert_contains "$launch_log" "bootstrap gui/$(id -u) $daemon_plist"
   assert_contains "$launch_log" "kickstart -k gui/$(id -u)/com.codexbar-display.daemon"
-  [[ -f "$pid_file" ]] || die "install did not write terminal service pid"
-  pid="$(cat "$pid_file")"
-  kill -0 "$pid" >/dev/null 2>&1 || die "terminal-started service is not running"
-  for _ in $(seq 1 20); do
-    if [[ -s "$api_log" ]]; then
-      break
-    fi
-    sleep 0.1
-  done
-  assert_contains "$(cat "$api_log")" "api --addr 127.0.0.1:47832"
 }
 
 run_install_disables_global_legacy_launchagent() {
-  local root output pid_file pid launch_log api_log global_plist
+  local root output launch_log global_plist daemon_plist_body
   root="${TMP_WORK_DIR}/global-legacy"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -278,28 +282,18 @@ run_install_disables_global_legacy_launchagent() {
     die "expected install with global legacy LaunchAgent to pass"
   }
 
-  pid_file="${root}/home/Library/Application Support/codexbar-display/run/companion-api.pid"
   launch_log="$(cat "${root}/launchctl.log")"
-  api_log="${root}/api.log"
+  daemon_plist_body="$(cat "${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist")"
 
   assert_contains "$output" "old Mac setup service disabled for this user"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
   assert_contains "$launch_log" "disable gui/$(id -u)/com.codexbar-display.companion-api"
-  [[ -f "$pid_file" ]] || die "install did not write terminal service pid"
-  pid="$(cat "$pid_file")"
-  kill -0 "$pid" >/dev/null 2>&1 || die "terminal-started service is not running"
-  for _ in $(seq 1 20); do
-    if [[ -s "$api_log" ]]; then
-      break
-    fi
-    sleep 0.1
-  done
-  assert_contains "$(cat "$api_log")" "api --addr 127.0.0.1:47832"
+  assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
 }
 
-run_install_refreshes_existing_display_stream
+run_install_writes_integrated_daemon_launchagent
 run_install_disables_global_legacy_launchagent
-run_restart_uses_terminal_started_service
+run_restart_updates_daemon_launchagent
 run_uninstall_stops_terminal_service_and_legacy_launchagent
 
-printf 'terminal Mac setup installer tests passed\n'
+printf 'daemon Mac setup installer tests passed\n'

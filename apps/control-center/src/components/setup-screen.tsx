@@ -54,7 +54,7 @@ Run this Terminal command:
 
 ${terminalCommand}
 
-This command should install or update the VibeTV Mac App and start it from this Terminal session. Do not install a signed package or a macOS package.
+This command should install or update the VibeTV Mac App and start it in the background. Do not install a signed package or a macOS package.
 
 After the command finishes, verify it with:
 
@@ -66,7 +66,7 @@ Then tell me:
 - whether the status check worked
 - the next step: return to app.vibetv.shop, choose Allow when the browser asks for access, and continue setup
 
-Do not flash firmware, install themes, reset WiFi, or write to my VibeTV. Only install and verify the Mac App.`;
+Normal usage frames may update the VibeTV display. Do not flash firmware, install themes, reset WiFi, upload assets, or change WiFi settings. Only install and verify the Mac App.`;
 }
 
 type SetupScreenProps = {
