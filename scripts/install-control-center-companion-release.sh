@@ -20,8 +20,6 @@ DISPLAY_DAEMON_PLIST="${PLIST_DIR}/${DISPLAY_DAEMON_LABEL}.plist"
 DISPLAY_DAEMON_SERVICE="gui/$(id -u)/${DISPLAY_DAEMON_LABEL}"
 DISPLAY_DAEMON_LOG_OUT="/tmp/codexbar-display-daemon.out.log"
 DISPLAY_DAEMON_LOG_ERR="/tmp/codexbar-display-daemon.err.log"
-API_LOG_OUT="/tmp/codexbar-display-companion-api.out.log"
-API_LOG_ERR="/tmp/codexbar-display-companion-api.err.log"
 
 REPO="${VIBETV_COMPANION_REPO:-$DEFAULT_REPO}"
 RELEASE_VERSION="${VIBETV_COMPANION_VERSION:-}"
@@ -146,11 +144,8 @@ xml_escape() {
 }
 
 write_plist() {
-  local daemon_args=("$BIN_PATH" "daemon" "--interval" "30s" "--transport" "wifi" "--target" "$TARGET")
-  if binary_supports_integrated_api; then
-    daemon_args+=("--api-addr" "$ADDR")
-  fi
-  if [[ -n "$DEV_ORIGIN" && "${daemon_args[*]}" == *"--api-addr"* ]]; then
+  local daemon_args=("$BIN_PATH" "daemon" "--interval" "30s" "--transport" "wifi" "--target" "$TARGET" "--api-addr" "$ADDR")
+  if [[ -n "$DEV_ORIGIN" ]]; then
     daemon_args+=("--api-dev-origin" "$DEV_ORIGIN")
   fi
 
@@ -200,62 +195,6 @@ PLIST_TAIL
   chmod 644 "$DISPLAY_DAEMON_PLIST"
 }
 
-write_api_plist() {
-  local api_args=("$BIN_PATH" "api" "--addr" "$ADDR")
-  if [[ -n "$DEV_ORIGIN" ]]; then
-    api_args+=("--dev-origin" "$DEV_ORIGIN")
-  fi
-
-  mkdir -p "$PLIST_DIR"
-  {
-    cat <<PLIST_HEAD
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-  <dict>
-    <key>Label</key>
-    <string>${SERVICE_LABEL}</string>
-
-    <key>ProgramArguments</key>
-    <array>
-PLIST_HEAD
-
-    for arg in "${api_args[@]}"; do
-      printf '      <string>%s</string>\n' "$(xml_escape "$arg")"
-    done
-
-    cat <<PLIST_TAIL
-    </array>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-      <key>PATH</key>
-      <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
-
-    <key>RunAtLoad</key>
-    <true/>
-
-    <key>KeepAlive</key>
-    <true/>
-
-    <key>StandardOutPath</key>
-    <string>${API_LOG_OUT}</string>
-
-    <key>StandardErrorPath</key>
-    <string>${API_LOG_ERR}</string>
-  </dict>
-</plist>
-PLIST_TAIL
-  } > "$PLIST_PATH"
-
-  chmod 644 "$PLIST_PATH"
-}
-
-binary_supports_integrated_api() {
-  "$BIN_PATH" daemon --help 2>&1 | grep -F -- "--api-addr" >/dev/null
-}
-
 restart_service() {
   if [[ ! -x "$BIN_PATH" ]]; then
     die "Mac setup binary is missing: ${BIN_PATH}. Run install first."
@@ -265,15 +204,7 @@ restart_service() {
   stop_launchagent
   stop_terminal_service
   stop_existing_listener
-  local integrated_api=0
-  if binary_supports_integrated_api; then
-    integrated_api=1
-  fi
   write_plist
-  if [[ "$integrated_api" != "1" ]]; then
-    write_api_plist
-    log "vibetv: using compatibility Mac setup service for this installed version"
-  fi
   launchctl bootout "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
   launchctl enable "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
   if ! launchctl bootstrap "gui/$(id -u)" "$DISPLAY_DAEMON_PLIST" >/dev/null 2>&1; then
@@ -282,15 +213,6 @@ restart_service() {
     fi
   fi
   launchctl kickstart -k "$DISPLAY_DAEMON_SERVICE" >/dev/null
-  if [[ "$integrated_api" != "1" ]]; then
-    launchctl enable "$SERVICE" >/dev/null 2>&1 || true
-    if ! launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH" >/dev/null 2>&1; then
-      if ! launchctl print "$SERVICE" >/dev/null 2>&1; then
-        die "failed to load the VibeTV Mac setup service."
-      fi
-    fi
-    launchctl kickstart -k "$SERVICE" >/dev/null
-  fi
 }
 
 wait_for_api() {
