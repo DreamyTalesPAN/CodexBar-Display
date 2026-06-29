@@ -49,6 +49,7 @@ What it does:
   - stops the old standalone Mac setup service if it exists
   - starts the normal VibeTV Mac App background service
   - verifies http://127.0.0.1:47832/v1/status
+  - connects VibeTV and installs the latest firmware when available
 
 Examples:
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
@@ -227,6 +228,39 @@ wait_for_api() {
     sleep 0.5
   done
   die "Mac setup service did not answer on http://${ADDR}/v1/status. Inspect ${DISPLAY_DAEMON_LOG_ERR}."
+}
+
+json_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '%s' "$value"
+}
+
+connect_vibetv() {
+  local payload
+  payload="{\"target\":\"$(json_escape "$TARGET")\",\"forcePair\":true}"
+
+  log "vibetv: connecting VibeTV at ${TARGET}"
+  curl -fsS --connect-timeout 10 --max-time 90 \
+    -X POST "http://${ADDR}/v1/device/repair" \
+    -H "Content-Type: application/json" \
+    -d "$payload" >/dev/null \
+    || die "VibeTV could not connect. Keep VibeTV powered on and on the same WiFi, then rerun setup."
+  log "vibetv: VibeTV is connected"
+}
+
+update_vibetv_firmware() {
+  log "vibetv: starting VibeTV firmware update"
+  "$BIN_PATH" install-update --target "$TARGET" --confirm-live-update \
+    || die "VibeTV firmware update failed. Keep VibeTV powered on, then rerun setup."
+  wait_for_api
+  log "vibetv: VibeTV firmware update complete"
+}
+
+finish_device_setup() {
+  connect_vibetv
+  update_vibetv_firmware
 }
 
 install_binary() {
@@ -457,6 +491,7 @@ main() {
 
   log "vibetv: Mac setup binary installed at ${BIN_PATH}"
   log "vibetv: background service installed at ${DISPLAY_DAEMON_PLIST}"
+  finish_device_setup
 }
 
 main "$@"

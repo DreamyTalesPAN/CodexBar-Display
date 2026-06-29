@@ -1460,6 +1460,9 @@ func TestThemeInstallAsyncReportsCustomerProgress(t *testing.T) {
 		_, _ = io.WriteString(opts.Out, "Uploading theme files...\n")
 		_, _ = io.WriteString(opts.Out, "Uploaded asset: /themes/u/clippy.cbi bytes=123\n")
 		_, _ = io.WriteString(opts.Out, "Activating theme...\n")
+		_, _ = io.WriteString(opts.Out, "Theme activation interrupted, retrying...\n")
+		_, _ = io.WriteString(opts.Out, "Theme activation retry 2/3.\n")
+		_, _ = io.WriteString(opts.Out, "Theme activation did not settle, retrying...\n")
 		return themeinstall.Result{
 			ThemeID:       opts.ThemeID,
 			PackID:        "clippy",
@@ -1510,7 +1513,15 @@ func TestThemeInstallAsyncReportsCustomerProgress(t *testing.T) {
 		t.Fatalf("expected result in completed job, got %+v", got.Job)
 	}
 	joinedLogs := strings.Join(got.Job.Logs, "\n")
-	for _, want := range []string{"Preparing theme files.", "Uploading theme files.", "Uploaded theme file 1.", "Theme is active on VibeTV."} {
+	for _, want := range []string{
+		"Preparing theme files.",
+		"Uploading theme files.",
+		"Uploaded theme file 1.",
+		"Theme activation interrupted. Retrying.",
+		"Retrying theme activation.",
+		"Waiting for VibeTV to apply theme.",
+		"Theme is active on VibeTV.",
+	} {
 		if !strings.Contains(joinedLogs, want) {
 			t.Fatalf("expected customer progress log %q in %q", want, joinedLogs)
 		}

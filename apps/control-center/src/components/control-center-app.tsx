@@ -27,6 +27,7 @@ import { UsageScreen } from "./usage-screen";
 
 const COMPANION_URL = "http://127.0.0.1:47832";
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
+const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 
 type LocalNetworkRequestInit = RequestInit & {
@@ -312,9 +313,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         headers.set("Content-Type", "application/json");
       }
       const useLocalProxy = shouldUseLocalCompanionProxy();
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => {
+        controller.abort();
+      }, COMPANION_REQUEST_TIMEOUT_MS);
       const requestInit: LocalNetworkRequestInit = {
         ...init,
         headers,
+        signal: controller.signal,
       };
       if (!useLocalProxy) {
         requestInit.targetAddressSpace = "loopback";
@@ -337,7 +343,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             throw localNetworkAccessError(accessState);
           }
         }
+        if (error instanceof DOMException && error.name === "AbortError") {
+          throw {
+            code: "COMPANION_TIMEOUT",
+            message: "Mac App took too long to answer.",
+            nextAction: "Run setup again, then try again.",
+          } satisfies ApiError;
+        }
         throw error;
+      } finally {
+        window.clearTimeout(timeout);
       }
     },
     [],
@@ -1528,6 +1543,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       {activeShellTab === "overview" ? (
         <OverviewScreen
           busyAction={busyAction}
+          companionVersion={companionInfo?.version}
           companionStatus={companionStatus}
           device={device}
           deviceState={deviceState}

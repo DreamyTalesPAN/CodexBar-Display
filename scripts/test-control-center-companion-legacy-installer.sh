@@ -86,6 +86,9 @@ case "$*" in
   *"/v1/status"*)
     exit 0
     ;;
+  *"/v1/device/repair"*)
+    printf '{"ok":true,"device":{"connected":true,"paired":true}}\n'
+    ;;
   *"/releases/latest"*)
     printf '{"tag_name":"v9.9.9"}\n'
     ;;
@@ -94,6 +97,12 @@ case "$*" in
     cat > "$out" <<'BIN'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${FAKE_API_LOG:?}"
+if [[ "${1:-}" == "install-update" ]]; then
+  printf 'Checking device...\n'
+  printf 'Checking firmware...\n'
+  printf 'Done: firmware 9.9.9 installed\n'
+  exit 0
+fi
 while true; do
   sleep 60
 done
@@ -144,6 +153,12 @@ prepare_home() {
   cat > "$bin_path" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${FAKE_API_LOG:?}"
+if [[ "${1:-}" == "install-update" ]]; then
+  printf 'Checking device...\n'
+  printf 'Checking firmware...\n'
+  printf 'Done: firmware 9.9.9 installed\n'
+  exit 0
+fi
 while true; do
   sleep 60
 done
@@ -237,7 +252,7 @@ run_uninstall_stops_terminal_service_and_legacy_launchagent() {
 }
 
 run_install_writes_integrated_daemon_launchagent() {
-  local root output launch_log daemon_plist daemon_plist_body
+  local root output launch_log daemon_plist daemon_plist_body curl_log
   root="${TMP_WORK_DIR}/install"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -251,10 +266,17 @@ run_install_writes_integrated_daemon_launchagent() {
   }
 
   launch_log="$(cat "${root}/launchctl.log")"
+  curl_log="$(cat "${root}/curl.log")"
   daemon_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist"
   daemon_plist_body="$(cat "$daemon_plist")"
 
   assert_contains "$output" "background service installed at ${daemon_plist}"
+  assert_contains "$output" "VibeTV is connected"
+  assert_contains "$output" "Done: firmware 9.9.9 installed"
+  assert_contains "$output" "VibeTV firmware update complete"
+  assert_contains "$curl_log" "/v1/device/repair"
+  assert_contains "$(cat "${root}/api.log")" "install-update --target http://vibetv.local --confirm-live-update"
+  assert_not_contains "$curl_log" "/v1/updates/install"
   assert_contains "$daemon_plist_body" "<string>daemon</string>"
   assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
   assert_contains "$daemon_plist_body" "<string>127.0.0.1:47832</string>"
@@ -266,7 +288,7 @@ run_install_writes_integrated_daemon_launchagent() {
 }
 
 run_install_disables_global_legacy_launchagent() {
-  local root output launch_log global_plist daemon_plist_body
+  local root output launch_log global_plist daemon_plist_body curl_log
   root="${TMP_WORK_DIR}/global-legacy"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -283,9 +305,15 @@ run_install_disables_global_legacy_launchagent() {
   }
 
   launch_log="$(cat "${root}/launchctl.log")"
+  curl_log="$(cat "${root}/curl.log")"
   daemon_plist_body="$(cat "${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist")"
 
   assert_contains "$output" "old Mac setup service disabled for this user"
+  assert_contains "$output" "Done: firmware 9.9.9 installed"
+  assert_contains "$output" "VibeTV firmware update complete"
+  assert_contains "$curl_log" "/v1/device/repair"
+  assert_contains "$(cat "${root}/api.log")" "install-update --target http://vibetv.local --confirm-live-update"
+  assert_not_contains "$curl_log" "/v1/updates/install"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
   assert_contains "$launch_log" "disable gui/$(id -u)/com.codexbar-display.companion-api"
   assert_contains "$daemon_plist_body" "<string>--api-addr</string>"

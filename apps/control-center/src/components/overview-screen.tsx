@@ -21,6 +21,7 @@ import {
 } from "./control-center-types";
 
 type OverviewScreenProps = {
+  companionVersion?: string;
   companionStatus: CompanionStatus;
   deviceState: DeviceState;
   device: DeviceInfo | null;
@@ -31,6 +32,7 @@ type OverviewScreenProps = {
 
 export function OverviewScreen({
   busyAction,
+  companionVersion,
   companionStatus,
   deviceState,
   device,
@@ -65,7 +67,7 @@ export function OverviewScreen({
             <StatusRow
               icon={<Wifi size={18} aria-hidden />}
               label="Mac App"
-              value={labelForCompanion(companionStatus)}
+              value={labelForCompanion(companionStatus, companionVersion)}
             />
             <StatusRow
               icon={<Monitor size={18} aria-hidden />}
@@ -76,7 +78,7 @@ export function OverviewScreen({
             <StatusRow
               badge={firmwareUpdateAvailable ? "Update" : undefined}
               icon={<ArrowUpFromLine size={18} aria-hidden />}
-              label="Firmware"
+              label="VibeTV firmware"
               value={device?.firmware || "Waiting for VibeTV"}
             />
           </dl>
@@ -207,9 +209,12 @@ function buildHeroCopy({
   };
 }
 
-function labelForCompanion(status: CompanionStatus): string {
+function labelForCompanion(
+  status: CompanionStatus,
+  companionVersion?: string,
+): string {
   if (status === "online") {
-    return "Online";
+    return companionVersion ? `Online ${companionVersion}` : "Online";
   }
   if (status === "missing") {
     return "Needs install";

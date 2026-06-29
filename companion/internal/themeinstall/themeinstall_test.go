@@ -1,12 +1,19 @@
 package themeinstall
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
@@ -132,6 +139,94 @@ func TestVerifyThemeInstallHealthIgnoresGIFStatusForNonGIFThemes(t *testing.T) {
 	}
 }
 
+func TestInstallRetriesTransientThemeActivationFailure(t *testing.T) {
+	withFastActivationRetries(t)
+	packDir := writeMinimalThemePack(t)
+	const activePath = "/themes/u/synth.json"
+	var activationAttempts int
+	currentActivePath := "/themes/u/claude.json"
+	server := themeInstallDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/theme/active":
+			activationAttempts++
+			if activationAttempts == 1 {
+				http.Error(w, "try again", http.StatusServiceUnavailable)
+				return
+			}
+			currentActivePath = activePath
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			writeThemeHealth(t, w, currentActivePath)
+		}
+	})
+	defer server.Close()
+
+	var out bytes.Buffer
+	result, err := Install(context.Background(), Options{
+		PackURL:            packDir,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		Out:                &out,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame:     testLiveFrame,
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
+	}
+	if result.ThemeID != "synthwave" {
+		t.Fatalf("unexpected theme result: %+v", result)
+	}
+	if activationAttempts != 2 {
+		t.Fatalf("expected activation retry, got attempts=%d", activationAttempts)
+	}
+	if !strings.Contains(out.String(), "Theme activation interrupted, retrying") ||
+		!strings.Contains(out.String(), "Theme activation retry 2/3") {
+		t.Fatalf("missing retry log:\n%s", out.String())
+	}
+}
+
+func TestInstallReactivatesWhenHealthStillShowsPreviousTheme(t *testing.T) {
+	withFastActivationRetries(t)
+	packDir := writeMinimalThemePack(t)
+	const activePath = "/themes/u/synth.json"
+	var activationAttempts int
+	currentActivePath := "/themes/u/claude.json"
+	server := themeInstallDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/theme/active":
+			activationAttempts++
+			if activationAttempts >= 2 {
+				currentActivePath = activePath
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			writeThemeHealth(t, w, currentActivePath)
+		}
+	})
+	defer server.Close()
+
+	var out bytes.Buffer
+	_, err := Install(context.Background(), Options{
+		PackURL:            packDir,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		Out:                &out,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame:     testLiveFrame,
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
+	}
+	if activationAttempts != 2 {
+		t.Fatalf("expected activation to be retried after stale health, got attempts=%d", activationAttempts)
+	}
+	if !strings.Contains(out.String(), "Theme activation did not settle, retrying") {
+		t.Fatalf("missing stale-health retry log:\n%s", out.String())
+	}
+}
+
 func withFastRenderHealthCheck(t *testing.T) {
 	t.Helper()
 	oldAttempts := renderHealthAttempts
@@ -144,6 +239,24 @@ func withFastRenderHealthCheck(t *testing.T) {
 	})
 }
 
+func withFastActivationRetries(t *testing.T) {
+	t.Helper()
+	oldRenderAttempts := renderHealthAttempts
+	oldRenderDelay := renderHealthDelay
+	oldActivationAttempts := activationAttempts
+	oldActivationDelay := activationRetryDelay
+	renderHealthAttempts = 1
+	renderHealthDelay = 0
+	activationAttempts = 3
+	activationRetryDelay = 0
+	t.Cleanup(func() {
+		renderHealthAttempts = oldRenderAttempts
+		renderHealthDelay = oldRenderDelay
+		activationAttempts = oldActivationAttempts
+		activationRetryDelay = oldActivationDelay
+	})
+}
+
 func healthServer(t *testing.T, body string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -153,4 +266,93 @@ func healthServer(t *testing.T, body string) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(body))
 	}))
+}
+
+func writeMinimalThemePack(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	spec := `{"v":1,"id":"synthwave","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":"OK","s":1}]}`
+	manifest := `{
+		"kind":"vibetv-theme-pack",
+		"schemaVersion":1,
+		"id":"synthwave",
+		"name":"Synthwave",
+		"themeSpec":{"path":"/themes/u/synth.json","file":"theme.json"}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "theme.json"), []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func themeInstallDeviceServer(t *testing.T, handle func(http.ResponseWriter, *http.Request)) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"kind":"hello",
+				"protocolVersion":2,
+				"board":"esp8266-smalltv-st7789",
+				"firmware":"1.0.33",
+				"features":["theme","theme-spec-v1"],
+				"maxFrameBytes":1024,
+				"capabilities":{
+					"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":4096,"maxThemePrimitives":32},
+					"transport":{"active":"wifi"}
+				}
+			}`))
+		case "/assets":
+			if r.URL.Query().Get("path") != "/themes/u/synth.json" {
+				t.Fatalf("unexpected asset path %q", r.URL.Query().Get("path"))
+			}
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.WriteHeader(http.StatusOK)
+		case "/frame":
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.WriteHeader(http.StatusOK)
+		case "/theme/active", "/health":
+			handle(w, r)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+}
+
+func writeThemeHealth(t *testing.T, w http.ResponseWriter, activePath string) {
+	t.Helper()
+	activeTheme := "claude-creature"
+	if activePath == "/themes/u/synth.json" {
+		activeTheme = "synthwave"
+	}
+	payload := map[string]any{
+		"ok": true,
+		"display": map[string]any{
+			"activeTheme": activeTheme,
+			"themeSpec": map[string]any{
+				"active":   true,
+				"path":     activePath,
+				"renderOk": true,
+			},
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testLiveFrame(context.Context) (protocol.Frame, error) {
+	return protocol.Frame{
+		V:         protocol.ProtocolVersionV2,
+		Provider:  "codex",
+		Label:     "Codex",
+		Session:   74,
+		Weekly:    80,
+		UsageMode: "remaining",
+	}, nil
 }

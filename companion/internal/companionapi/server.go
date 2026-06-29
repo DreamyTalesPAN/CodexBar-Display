@@ -1649,6 +1649,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		SkipFirmwareUpdate: skipFirmwareUpdate,
 		Verbose:            true,
 		Out:                out,
+		HTTPClient:         s.client,
 		PairTokenStore: func(target, token string) error {
 			target = normalizeTarget(target)
 			if target != "" {
@@ -1840,6 +1841,12 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 		return "Uploaded theme layout.", 76, true
 	case strings.HasPrefix(line, "Activating theme"):
 		return "Activating theme.", 84, true
+	case strings.HasPrefix(line, "Theme activation interrupted"):
+		return "Theme activation interrupted. Retrying.", maxInt(job.Progress, 84), true
+	case strings.HasPrefix(line, "Theme activation retry"):
+		return "Retrying theme activation.", maxInt(job.Progress, 84), true
+	case strings.HasPrefix(line, "Theme activation did not settle"):
+		return "Waiting for VibeTV to apply theme.", maxInt(job.Progress, 86), true
 	case strings.HasPrefix(line, "Live usage frame: refreshed"):
 		return "Refreshing live usage.", 90, true
 	case strings.HasPrefix(line, "Live usage frame: skipped"):
@@ -2158,7 +2165,13 @@ func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfi
 	if target == "" {
 		return errors.New("device target is empty")
 	}
-	args := []string{"install-update", "--target", target, "--confirm-live-update"}
+	args := []string{
+		"install-update",
+		"--target",
+		target,
+		"--confirm-live-update",
+		"--skip-launchagent-pause",
+	}
 	if req.Force {
 		args = append(args, "--force")
 	}
