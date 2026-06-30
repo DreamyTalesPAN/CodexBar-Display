@@ -21,6 +21,7 @@ type RawDisplayFrame = {
   sessionTokens?: unknown;
   weekTokens?: unknown;
   totalTokens?: unknown;
+  themeSpec?: unknown;
 };
 
 type DisplayFrame = {
@@ -34,6 +35,7 @@ type DisplayFrame = {
   sessionTokens?: number;
   weekTokens?: number;
   totalTokens?: number;
+  themeSpec?: Record<string, unknown>;
 };
 
 export async function GET() {
@@ -86,6 +88,7 @@ function sanitizeFrame(raw: RawDisplayFrame | undefined): DisplayFrame | null {
   const sessionTokens = nonNegativeInteger(raw.sessionTokens);
   const weekTokens = nonNegativeInteger(raw.weekTokens);
   const totalTokens = nonNegativeInteger(raw.totalTokens);
+  const themeSpec = sanitizedThemeSpec(raw.themeSpec);
 
   if (defaultedToRemaining) {
     // Legacy Companion frames stored used percents, while the device renders them as remaining.
@@ -120,6 +123,9 @@ function sanitizeFrame(raw: RawDisplayFrame | undefined): DisplayFrame | null {
   if (totalTokens != null) {
     frame.totalTokens = totalTokens;
   }
+  if (themeSpec) {
+    frame.themeSpec = themeSpec;
+  }
 
   return frame;
 }
@@ -148,4 +154,24 @@ function nonNegativeInteger(value: unknown): number | null {
     return null;
   }
   return Math.round(value);
+}
+
+function sanitizedThemeSpec(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  try {
+    const raw = JSON.stringify(value);
+    if (!raw || raw.length > 4096) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
