@@ -1246,6 +1246,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.33",
+    displayFrameStatus: 404,
     device: {
       ...companionDevice,
       activeTheme: "synthwave",
@@ -2034,6 +2035,7 @@ async function routeCompanionOnline(
     dropBoardAfterFirmwareUpdate = false,
     usageResponse,
     usageStatus = 200,
+    displayFrameStatus = 200,
     repairError = false,
   } = {},
 ) {
@@ -2248,6 +2250,14 @@ async function routeCompanionOnline(
       return;
     }
     if (pathname === "/v1/display-frame/latest") {
+      if (displayFrameStatus !== 200) {
+        await route.fulfill({
+          status: displayFrameStatus,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false }),
+        });
+        return;
+      }
       const frame = displayFrameFromUsageResponse(usageResponse);
       if (!frame) {
         await route.fulfill({
