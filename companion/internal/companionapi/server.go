@@ -46,7 +46,9 @@ const (
 	displayStreamWaitTime   = 12 * time.Second
 	displayRenderWaitTime   = 20 * time.Second
 	firmwareUpdateJobTime   = 10 * time.Minute
+	macAppUpdateJobTime     = 8 * time.Minute
 	usageFallbackFetchTime  = 15 * time.Second
+	macAppInstallerURL      = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
 )
 
 type Options struct {
@@ -58,27 +60,31 @@ type Options struct {
 }
 
 type Server struct {
-	addr           string
-	home           string
-	allowedOrigins map[string]struct{}
-	client         *http.Client
-	loadConfig     func(string) (runtimeconfig.Config, error)
-	saveConfig     func(string, runtimeconfig.Config) error
-	installTheme   func(context.Context, themeinstall.Options) (themeinstall.Result, error)
-	runSetup       func(context.Context, setup.Options) error
-	subnetTargets  func() []string
-	streamStatus   func(context.Context, string) displayStreamInfo
-	waitStream     func(context.Context, string) displayStreamInfo
-	refreshStream  func(context.Context, string) error
-	loadUsage      func(time.Time) (daemon.PersistedUsage, bool)
-	fetchUsage     func(context.Context) ([]codexbar.ParsedFrame, error)
-	updateFirmware func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
-	installJobsMu  sync.Mutex
-	installJobs    map[string]*themeInstallJob
-	nextInstallJob uint64
-	updateJobsMu   sync.Mutex
-	updateJobs     map[string]*firmwareUpdateJob
-	nextUpdateJob  uint64
+	addr             string
+	home             string
+	allowedOrigins   map[string]struct{}
+	client           *http.Client
+	loadConfig       func(string) (runtimeconfig.Config, error)
+	saveConfig       func(string, runtimeconfig.Config) error
+	installTheme     func(context.Context, themeinstall.Options) (themeinstall.Result, error)
+	runSetup         func(context.Context, setup.Options) error
+	subnetTargets    func() []string
+	streamStatus     func(context.Context, string) displayStreamInfo
+	waitStream       func(context.Context, string) displayStreamInfo
+	refreshStream    func(context.Context, string) error
+	loadUsage        func(time.Time) (daemon.PersistedUsage, bool)
+	fetchUsage       func(context.Context) ([]codexbar.ParsedFrame, error)
+	updateFirmware   func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
+	updateMacApp     func(context.Context, string, string, macAppUpdateRequest, io.Writer) error
+	installJobsMu    sync.Mutex
+	installJobs      map[string]*themeInstallJob
+	nextInstallJob   uint64
+	updateJobsMu     sync.Mutex
+	updateJobs       map[string]*firmwareUpdateJob
+	nextUpdateJob    uint64
+	macAppUpdateMu   sync.Mutex
+	macAppUpdateJobs map[string]*macAppUpdateJob
+	nextMacAppUpdate uint64
 }
 
 type apiError struct {
@@ -229,6 +235,32 @@ type firmwareUpdateJobResponse struct {
 	Job firmwareUpdateJob `json:"job"`
 }
 
+type macAppUpdateRequest struct {
+	Version string `json:"version,omitempty"`
+}
+
+type macAppUpdateResult struct {
+	Version string `json:"version,omitempty"`
+}
+
+type macAppUpdateJob struct {
+	ID         string              `json:"id"`
+	Phase      string              `json:"phase"`
+	Message    string              `json:"message"`
+	Progress   int                 `json:"progress"`
+	StartedAt  time.Time           `json:"startedAt"`
+	FinishedAt *time.Time          `json:"finishedAt,omitempty"`
+	Logs       []string            `json:"logs,omitempty"`
+	Result     *macAppUpdateResult `json:"result,omitempty"`
+	Error      *apiError           `json:"error,omitempty"`
+	version    string
+}
+
+type macAppUpdateJobResponse struct {
+	OK  bool            `json:"ok"`
+	Job macAppUpdateJob `json:"job"`
+}
+
 type statusAPIError struct {
 	status int
 	api    apiError
@@ -264,7 +296,8 @@ type companion struct {
 }
 
 type companionFeatures struct {
-	ThemeInstallEnabled bool `json:"themeInstallEnabled"`
+	ThemeInstallEnabled     bool `json:"themeInstallEnabled"`
+	MacAppSelfUpdateEnabled bool `json:"macAppSelfUpdateEnabled"`
 }
 
 type settingsResponse struct {
@@ -419,23 +452,25 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 	return &Server{
-		addr:           addr,
-		home:           home,
-		allowedOrigins: origins,
-		client:         client,
-		loadConfig:     runtimeconfig.Load,
-		saveConfig:     runtimeconfig.Save,
-		installTheme:   themeinstall.Install,
-		runSetup:       setup.Run,
-		subnetTargets:  localSubnetTargets,
-		streamStatus:   inspectDisplayStream,
-		waitStream:     waitForDisplayStream,
-		refreshStream:  opts.RefreshDisplayStream,
-		loadUsage:      daemon.LoadPersistedUsage,
-		fetchUsage:     codexbar.FetchAllProviders,
-		updateFirmware: runFirmwareUpdateCommand,
-		installJobs:    make(map[string]*themeInstallJob),
-		updateJobs:     make(map[string]*firmwareUpdateJob),
+		addr:             addr,
+		home:             home,
+		allowedOrigins:   origins,
+		client:           client,
+		loadConfig:       runtimeconfig.Load,
+		saveConfig:       runtimeconfig.Save,
+		installTheme:     themeinstall.Install,
+		runSetup:         setup.Run,
+		subnetTargets:    localSubnetTargets,
+		streamStatus:     inspectDisplayStream,
+		waitStream:       waitForDisplayStream,
+		refreshStream:    opts.RefreshDisplayStream,
+		loadUsage:        daemon.LoadPersistedUsage,
+		fetchUsage:       codexbar.FetchAllProviders,
+		updateFirmware:   runFirmwareUpdateCommand,
+		updateMacApp:     runMacAppUpdateCommand,
+		installJobs:      make(map[string]*themeInstallJob),
+		updateJobs:       make(map[string]*firmwareUpdateJob),
+		macAppUpdateJobs: make(map[string]*macAppUpdateJob),
 	}, nil
 }
 
@@ -482,6 +517,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/themes/install/status", s.handleThemeInstallStatus)
 	mux.HandleFunc("/v1/updates/install", s.handleFirmwareUpdateInstall)
 	mux.HandleFunc("/v1/updates/install/status", s.handleFirmwareUpdateStatus)
+	mux.HandleFunc("/v1/mac-app/update", s.handleMacAppUpdateInstall)
+	mux.HandleFunc("/v1/mac-app/update/status", s.handleMacAppUpdateStatus)
 	return s.withCORS(mux)
 }
 
@@ -772,7 +809,8 @@ func (s *Server) companionInfo() companion {
 		Status:  "ready",
 		Version: buildinfo.NormalizedVersion(),
 		Features: companionFeatures{
-			ThemeInstallEnabled: themeInstallEnabled(),
+			ThemeInstallEnabled:     themeInstallEnabled(),
+			MacAppSelfUpdateEnabled: true,
 		},
 	}
 }
@@ -1636,6 +1674,52 @@ func (s *Server) handleFirmwareUpdateStatus(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, firmwareUpdateJobResponse{OK: true, Job: job})
 }
 
+func (s *Server) handleMacAppUpdateInstall(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req macAppUpdateRequest
+	if !decodeOptionalJSON(w, r, &req) {
+		return
+	}
+	version, ok := normalizeMacAppUpdateVersion(req.Version)
+	if !ok {
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"invalid_mac_app_update_version",
+			"Mac App update version is invalid.",
+			"Check for updates again, then retry.",
+		)
+		return
+	}
+	req.Version = version
+	if active, ok := s.activeMacAppUpdateJob(); ok {
+		writeJSON(w, http.StatusAccepted, macAppUpdateJobResponse{OK: true, Job: active})
+		return
+	}
+	job := s.createMacAppUpdateJob(req)
+	s.startMacAppUpdateJob(r.Context(), job.ID, req)
+	writeJSON(w, http.StatusAccepted, macAppUpdateJobResponse{OK: true, Job: job})
+}
+
+func (s *Server) handleMacAppUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	jobID := strings.TrimSpace(r.URL.Query().Get("jobId"))
+	if jobID == "" {
+		writeError(w, http.StatusBadRequest, "missing_mac_app_update_job", "Mac App update status is missing.", "Start the Mac App update again.")
+		return
+	}
+	job, ok := s.macAppUpdateJobSnapshot(jobID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "mac_app_update_job_not_found", "Mac App update status was not found.", "Check the Mac App version again.")
+		return
+	}
+	writeJSON(w, http.StatusOK, macAppUpdateJobResponse{OK: true, Job: job})
+}
+
 func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, req themeInstallRequest, out io.Writer) (themeinstall.Result, error) {
 	skipFirmwareUpdate := true
 	if req.SkipFirmwareUpdate != nil {
@@ -2099,6 +2183,240 @@ func appendFirmwareUpdateJobLog(job *firmwareUpdateJob, message string) {
 	}
 }
 
+func (s *Server) activeMacAppUpdateJob() (macAppUpdateJob, bool) {
+	s.macAppUpdateMu.Lock()
+	defer s.macAppUpdateMu.Unlock()
+	for _, job := range s.macAppUpdateJobs {
+		if job != nil && job.Phase == "installing" {
+			return cloneMacAppUpdateJob(job), true
+		}
+	}
+	return macAppUpdateJob{}, false
+}
+
+func (s *Server) createMacAppUpdateJob(req macAppUpdateRequest) macAppUpdateJob {
+	s.macAppUpdateMu.Lock()
+	defer s.macAppUpdateMu.Unlock()
+	if s.macAppUpdateJobs == nil {
+		s.macAppUpdateJobs = make(map[string]*macAppUpdateJob)
+	}
+	s.nextMacAppUpdate++
+	id := fmt.Sprintf("mac-app-update-%d-%d", time.Now().UnixNano(), s.nextMacAppUpdate)
+	job := &macAppUpdateJob{
+		ID:        id,
+		Phase:     "installing",
+		Message:   "Preparing Mac App update.",
+		Progress:  5,
+		StartedAt: time.Now().UTC(),
+		Logs:      []string{"Preparing Mac App update."},
+		version:   strings.TrimSpace(req.Version),
+	}
+	s.macAppUpdateJobs[id] = job
+	return cloneMacAppUpdateJob(job)
+}
+
+func (s *Server) startMacAppUpdateJob(_ context.Context, jobID string, req macAppUpdateRequest) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), macAppUpdateJobTime)
+		defer cancel()
+		writer := &macAppUpdateProgressWriter{server: s, jobID: jobID}
+		err := s.updateMacApp(ctx, s.home, s.addr, req, writer)
+		finishedAt := time.Now().UTC()
+		if err != nil {
+			apiErr := macAppUpdateErrorPayload(err)
+			s.updateMacAppUpdateJob(jobID, func(job *macAppUpdateJob) {
+				job.Phase = "error"
+				job.Message = "Mac App update failed."
+				job.Progress = 100
+				job.FinishedAt = &finishedAt
+				job.Error = &apiErr
+				appendMacAppUpdateJobLog(job, "Mac App update failed.")
+			})
+			return
+		}
+		s.updateMacAppUpdateJob(jobID, func(job *macAppUpdateJob) {
+			job.Phase = "complete"
+			job.Message = "Mac App updated."
+			job.Progress = 100
+			job.FinishedAt = &finishedAt
+			job.Result = &macAppUpdateResult{
+				Version: strings.TrimSpace(job.version),
+			}
+			appendMacAppUpdateJobLog(job, "Mac App updated.")
+		})
+	}()
+}
+
+func (s *Server) updateMacAppUpdateJob(jobID string, update func(*macAppUpdateJob)) {
+	s.macAppUpdateMu.Lock()
+	defer s.macAppUpdateMu.Unlock()
+	if s.macAppUpdateJobs == nil {
+		return
+	}
+	job := s.macAppUpdateJobs[jobID]
+	if job == nil {
+		return
+	}
+	update(job)
+}
+
+func (s *Server) macAppUpdateJobSnapshot(jobID string) (macAppUpdateJob, bool) {
+	s.macAppUpdateMu.Lock()
+	defer s.macAppUpdateMu.Unlock()
+	job := s.macAppUpdateJobs[jobID]
+	if job == nil {
+		return macAppUpdateJob{}, false
+	}
+	return cloneMacAppUpdateJob(job), true
+}
+
+func cloneMacAppUpdateJob(job *macAppUpdateJob) macAppUpdateJob {
+	if job == nil {
+		return macAppUpdateJob{}
+	}
+	clone := *job
+	clone.Logs = append([]string(nil), job.Logs...)
+	if job.Result != nil {
+		result := *job.Result
+		clone.Result = &result
+	}
+	if job.Error != nil {
+		apiErr := *job.Error
+		clone.Error = &apiErr
+	}
+	if job.FinishedAt != nil {
+		finishedAt := *job.FinishedAt
+		clone.FinishedAt = &finishedAt
+	}
+	return clone
+}
+
+type macAppUpdateProgressWriter struct {
+	server  *Server
+	jobID   string
+	pending string
+}
+
+func (w *macAppUpdateProgressWriter) Write(p []byte) (int, error) {
+	text := w.pending + string(p)
+	lines := strings.Split(text, "\n")
+	if !strings.HasSuffix(text, "\n") {
+		w.pending = lines[len(lines)-1]
+		lines = lines[:len(lines)-1]
+	} else {
+		w.pending = ""
+	}
+	for _, line := range lines {
+		w.noteLine(line)
+	}
+	return len(p), nil
+}
+
+func (w *macAppUpdateProgressWriter) noteLine(line string) {
+	line = strings.TrimSpace(line)
+	if line == "" || w.server == nil {
+		return
+	}
+	w.server.updateMacAppUpdateJob(w.jobID, func(job *macAppUpdateJob) {
+		message, progress, ok := customerMacAppUpdateProgress(line, job)
+		if !ok {
+			return
+		}
+		job.Message = message
+		if progress > job.Progress {
+			job.Progress = progress
+		}
+		appendMacAppUpdateJobLog(job, message)
+	})
+}
+
+func customerMacAppUpdateProgress(line string, job *macAppUpdateJob) (string, int, bool) {
+	switch {
+	case strings.HasPrefix(line, "vibetv: release="):
+		job.version = macAppVersionFromReleaseLine(line)
+		return "Downloading Mac App update.", 20, true
+	case strings.HasPrefix(line, "vibetv: arch="):
+		return "Preparing this Mac.", 25, true
+	case strings.Contains(line, "Mac setup binary installed"):
+		return "Installing Mac App.", 70, true
+	case strings.Contains(line, "background service installed"):
+		return "Restarting Mac App.", 85, true
+	case strings.Contains(line, "Mac App answered with version"):
+		if version := macAppVersionFromAnsweredLine(line); version != "" {
+			job.version = version
+		}
+		return "Checking Mac App.", 90, true
+	case strings.Contains(line, "Mac App update verified"):
+		return "Mac App is ready.", 96, true
+	default:
+		return "", 0, false
+	}
+}
+
+func macAppVersionFromReleaseLine(line string) string {
+	version := strings.TrimSpace(strings.TrimPrefix(line, "vibetv: release="))
+	version = strings.TrimPrefix(version, "v")
+	normalized, ok := normalizeMacAppUpdateVersion(version)
+	if !ok {
+		return ""
+	}
+	return normalized
+}
+
+func macAppVersionFromAnsweredLine(line string) string {
+	const marker = "Mac App answered with version"
+	idx := strings.Index(line, marker)
+	if idx < 0 {
+		return ""
+	}
+	version := strings.TrimSpace(line[idx+len(marker):])
+	if fields := strings.Fields(version); len(fields) > 0 {
+		version = fields[0]
+	}
+	version = strings.Trim(version, ".;")
+	normalized, ok := normalizeMacAppUpdateVersion(version)
+	if !ok {
+		return ""
+	}
+	return normalized
+}
+
+func appendMacAppUpdateJobLog(job *macAppUpdateJob, message string) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return
+	}
+	if len(job.Logs) > 0 && job.Logs[len(job.Logs)-1] == message {
+		return
+	}
+	job.Logs = append(job.Logs, message)
+	if len(job.Logs) > 12 {
+		job.Logs = append([]string(nil), job.Logs[len(job.Logs)-12:]...)
+	}
+}
+
+func macAppUpdateErrorPayload(_ error) apiError {
+	return apiError{
+		Code:       "mac_app_update_failed",
+		Message:    "Mac App update failed.",
+		NextAction: "Copy the update command and run it in Terminal, then try again.",
+	}
+}
+
+var macAppUpdateVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z._-]*)?$`)
+
+func normalizeMacAppUpdateVersion(raw string) (string, bool) {
+	version := strings.TrimSpace(raw)
+	version = strings.TrimPrefix(version, "v")
+	if version == "" {
+		return "", true
+	}
+	if !macAppUpdateVersionPattern.MatchString(version) {
+		return "", false
+	}
+	return version, true
+}
+
 func firmwareUpdateErrorPayload(err error) apiError {
 	if errcode.Of(err) == errcode.UpgradeVersionGuard {
 		return apiError{
@@ -2183,6 +2501,32 @@ func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfi
 	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("firmware update command failed: %w", err)
+	}
+	return nil
+}
+
+func runMacAppUpdateCommand(ctx context.Context, home string, addr string, req macAppUpdateRequest, out io.Writer) error {
+	args := []string{"--skip-device-setup"}
+	if version := strings.TrimSpace(req.Version); version != "" {
+		args = append(args, "--version", version)
+	}
+	if addr = strings.TrimSpace(addr); addr != "" {
+		args = append(args, "--addr", addr)
+	}
+	script := `set -euo pipefail
+installer_url="$1"
+shift
+curl -fsSL "$installer_url" | bash -s -- "$@"
+`
+	cmdArgs := append([]string{"-c", script, "vibetv-mac-app-update", macAppInstallerURL}, args...)
+	cmd := exec.CommandContext(ctx, "/bin/bash", cmdArgs...)
+	cmd.Stdout = out
+	cmd.Stderr = out
+	if strings.TrimSpace(home) != "" {
+		cmd.Env = append(os.Environ(), "HOME="+home)
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("mac app update command failed: %w", err)
 	}
 	return nil
 }

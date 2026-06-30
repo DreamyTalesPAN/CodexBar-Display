@@ -417,6 +417,59 @@ func TestDownloadReleaseFirmwareDecompressesGzipForSerialFlash(t *testing.T) {
 	}
 }
 
+func TestDownloadReleaseFirmwareUsesLatestManifestWhenTargetVersionEmpty(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	home := t.TempDir()
+	imageBody := "firmware image"
+	imageSHA := sha256String(imageBody)
+	manifestBody := `{
+  "schemaVersion": 1,
+  "release": "v1.0.4",
+  "protocolVersion": 1,
+  "artifacts": [
+    {
+      "firmwareEnv": "esp8266_smalltv_st7789",
+      "board": "esp8266-smalltv-st7789",
+      "firmwareVersion": "1.0.3",
+      "asset": "codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.3.bin",
+      "sha256": "` + imageSHA + `"
+    }
+  ]
+}`
+
+	releaseHTTPClient = fakeReleaseHTTPClient{
+		responses: map[string]string{
+			"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.4/firmware-manifest.json":                                      manifestBody,
+			"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.4/codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.3.bin": imageBody,
+		},
+	}
+
+	imagePath, manifestPath, artifact, err := downloadReleaseFirmware(
+		context.Background(),
+		home,
+		"DreamyTalesPAN/CodexBar-Display",
+		"v1.0.4",
+		"",
+		"esp8266_smalltv_st7789",
+	)
+	if err != nil {
+		t.Fatalf("download release firmware: %v", err)
+	}
+	if artifact.FirmwareVersion != "1.0.3" {
+		t.Fatalf("unexpected firmware version %q", artifact.FirmwareVersion)
+	}
+	if !strings.HasSuffix(manifestPath, "firmware-manifest.json") {
+		t.Fatalf("expected latest manifest path, got %s", manifestPath)
+	}
+	if data, err := os.ReadFile(imagePath); err != nil || string(data) != imageBody {
+		t.Fatalf("unexpected image data data=%q err=%v", string(data), err)
+	}
+}
+
 func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {

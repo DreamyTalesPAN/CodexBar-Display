@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { once } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -10,6 +12,7 @@ const nextBin = join(root, "node_modules", "next", "dist", "bin", "next");
 const viewport = { width: 390, height: 844 };
 const desktopViewport = { width: 1280, height: 900 };
 const smokeOnly = process.argv.includes("--smoke");
+let displayStateDir = "";
 
 const catalogFixture = {
   themes: [
@@ -124,7 +127,28 @@ async function main() {
   let browser;
 
   try {
-    await runNextBuild({ catalogUrl, firmwareUrl, releaseUrl: completeReleaseUrl });
+    displayStateDir = await mkdtemp(
+      join(tmpdir(), "control-center-display-state-"),
+    );
+    await writeFile(
+      join(displayStateDir, "last-good-frame.json"),
+      JSON.stringify({
+        savedAt: new Date().toISOString(),
+        frame: {
+          v: 1,
+          provider: "codex",
+          label: "Codex",
+          session: 27,
+          weekly: 63,
+          resetSecs: 5400,
+        },
+      }),
+    );
+    await runNextBuild({
+      catalogUrl,
+      firmwareUrl,
+      releaseUrl: completeReleaseUrl,
+    });
     assert(
       fixtureServer.catalogRequestCount > 0,
       "customer flow build did not read the local catalog fixture",
@@ -166,10 +190,7 @@ async function main() {
       appContext.appUrl,
       fixtureServer,
     );
-    await testSetupTabsAreLockedUntilSetupComplete(
-      browser,
-      appContext.appUrl,
-    );
+    await testSetupTabsAreLockedUntilSetupComplete(browser, appContext.appUrl);
     await testSetupUnlocksWhenThemeInstallGateDisabled(
       browser,
       appContext.appUrl,
@@ -190,8 +211,12 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
-    await testSupportReportExportsAppearAfterReportLoads(browser, appContext.appUrl);
+    await testSupportReportExportsAppearAfterReportLoads(
+      browser,
+      appContext.appUrl,
+    );
     await testVibeTVAddressCopyStaysCustomerOnly(browser, appContext.appUrl);
     await testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
       browser,
@@ -199,10 +224,7 @@ async function main() {
     );
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testThemeInstallStatusStaysCustomerOnly(browser, appContext.appUrl);
-    await testThemeInstallShowsIntermediateProgress(
-      browser,
-      appContext.appUrl,
-    );
+    await testThemeInstallShowsIntermediateProgress(browser, appContext.appUrl);
     await testCustomerLogsStayCustomerOnly(browser, appContext.appUrl);
     await testUnpairedThemeDeepLinkAutoRepairs(browser, appContext.appUrl);
     await testThemeWithoutPackUrlStaysLocked(browser, appContext.appUrl);
@@ -325,6 +347,9 @@ async function main() {
     await browser?.close();
     await stopProcess(app?.process);
     await fixtureServer.close();
+    if (displayStateDir) {
+      await rm(displayStateDir, { force: true, recursive: true });
+    }
   }
 }
 
@@ -359,8 +384,7 @@ async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
     timeout: 10_000,
   });
   assert(
-    (await page.getByRole("button", { name: "Run setup again" }).count()) ===
-      0,
+    (await page.getByRole("button", { name: "Run setup again" }).count()) === 0,
     "Run setup again should stay hidden before setup has been tried",
   );
   assert(
@@ -374,9 +398,7 @@ async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
   await page
     .getByRole("button", { name: "VibeTV is on WiFi" })
     .waitFor({ timeout: 10_000 });
-  await page
-    .getByText("Plug VibeTV into power.")
-    .waitFor({ timeout: 10_000 });
+  await page.getByText("Plug VibeTV into power.").waitFor({ timeout: 10_000 });
   await page
     .getByText("Wait until VibeTV shows VibeTV-Setup.")
     .waitFor({ timeout: 10_000 });
@@ -455,9 +477,7 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
-  await page
-    .getByRole("button", { name: "VibeTV is on WiFi" })
-    .click();
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
   await page
     .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
@@ -588,7 +608,9 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
 }
 
 async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
-  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
 
@@ -649,7 +671,9 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
 }
 
 async function testUsageShowsCodexCostHistory(browser, appUrl) {
-  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     usageResponse: {
@@ -689,31 +713,49 @@ async function testUsageShowsCodexCostHistory(browser, appUrl) {
                 day: "2026-06-25",
                 totalCostUSD: 210.11,
                 totalTokens: 230_000_000,
-                models: [{ name: "gpt-5.5", totalTokens: 230_000_000, costUSD: 210.11 }],
+                models: [
+                  {
+                    name: "gpt-5.5",
+                    totalTokens: 230_000_000,
+                    costUSD: 210.11,
+                  },
+                ],
               },
               {
                 day: "2026-06-26",
                 totalCostUSD: 165.52,
                 totalTokens: 184_000_000,
-                models: [{ name: "gpt-5.5", totalTokens: 184_000_000, costUSD: 165.52 }],
+                models: [
+                  {
+                    name: "gpt-5.5",
+                    totalTokens: 184_000_000,
+                    costUSD: 165.52,
+                  },
+                ],
               },
               {
                 day: "2026-06-27",
                 totalCostUSD: 1.82,
                 totalTokens: 1_800_000,
-                models: [{ name: "gpt-5.5", totalTokens: 1_800_000, costUSD: 1.82 }],
+                models: [
+                  { name: "gpt-5.5", totalTokens: 1_800_000, costUSD: 1.82 },
+                ],
               },
               {
                 day: "2026-06-28",
                 totalCostUSD: 1.71,
                 totalTokens: 813_455,
-                models: [{ name: "gpt-5.5", totalTokens: 813_455, costUSD: 1.71 }],
+                models: [
+                  { name: "gpt-5.5", totalTokens: 813_455, costUSD: 1.71 },
+                ],
               },
               {
                 day: "2026-06-29",
                 totalCostUSD: 72.42,
                 totalTokens: 77_000_000,
-                models: [{ name: "gpt-5.5", totalTokens: 77_000_000, costUSD: 72.42 }],
+                models: [
+                  { name: "gpt-5.5", totalTokens: 77_000_000, costUSD: 72.42 },
+                ],
               },
             ],
           },
@@ -734,9 +776,16 @@ async function testUsageShowsCodexCostHistory(browser, appUrl) {
   await page.getByRole("heading", { name: "Limit Reset Credits" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("3 manual resets available").waitFor({ timeout: 10_000 });
-  await page.getByText("Manual resets expire Jul 12").waitFor({ timeout: 10_000 });
-  await page.getByText("$72.42", { exact: true }).first().waitFor({ timeout: 10_000 });
+  await page
+    .getByText("3 manual resets available")
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Manual resets expire Jul 12")
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText("$72.42", { exact: true })
+    .first()
+    .waitFor({ timeout: 10_000 });
   await page.getByText("$3,694.16").waitFor({ timeout: 10_000 });
   await page.getByText("4.3B").first().waitFor({ timeout: 10_000 });
   await page.getByText("77M").first().waitFor({ timeout: 10_000 });
@@ -753,7 +802,9 @@ async function testUsageShowsCodexCostHistory(browser, appUrl) {
 }
 
 async function testUsageShowsMacAppUpdateForOldMacApp(browser, appUrl) {
-  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     usageStatus: 404,
@@ -778,8 +829,13 @@ async function testUsageShowsMacAppUpdateForOldMacApp(browser, appUrl) {
   await page.close();
 }
 
-async function testRunSetupAgainOpensMacAppInstallStepForOldMacApp(browser, appUrl) {
-  const page = await newCustomerPage(browser, appUrl, { viewport: desktopViewport });
+async function testRunSetupAgainOpensMacAppInstallStepForOldMacApp(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     usageStatus: 404,
@@ -815,11 +871,54 @@ async function testRunSetupAgainOpensMacAppInstallStepForOldMacApp(browser, appU
 async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  await routeCompanionOnline(page, installRequests);
+  const macAppUpdateRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { ...companionDevice, firmware: "1.0.33" },
+    onMacAppUpdate: (postData) => {
+      macAppUpdateRequests.push(postData);
+    },
+    macAppUpdateStatusSequence: [
+      {
+        phase: "installing",
+        message: "Installing Mac App.",
+        progress: 70,
+        logs: [
+          "Preparing Mac App update.",
+          "Downloading Mac App update.",
+          "Installing Mac App.",
+        ],
+      },
+      {
+        phase: "complete",
+        message: "Mac App updated.",
+        progress: 100,
+        logs: [
+          "Preparing Mac App update.",
+          "Downloading Mac App update.",
+          "Installing Mac App.",
+          "Restarting Mac App.",
+          "Mac App updated.",
+        ],
+        result: { version: "1.0.99" },
+      },
+    ],
+  });
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Updates" }).click();
-  await page.getByRole("button", { name: "Copy update command" }).waitFor({
+  await page.getByRole("button", { name: "Update now" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByRole("button", { name: "Update now" }).count()) === 1,
+    "Updates should show one primary Update now button",
+  );
+  await page.getByRole("button", { name: "Update now" }).click();
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Mac App updated" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByText("Mac App 1.0.99 is installed.").waitFor({
     timeout: 10_000,
   });
   await page.getByText("Installed version").waitFor({ timeout: 10_000 });
@@ -837,6 +936,11 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
     );
   }
 
+  assert(macAppUpdateRequests.length === 1, "Mac App update should start once");
+  assert(
+    parseJSON(macAppUpdateRequests[0])?.version === "1.0.99",
+    `Mac App update should request latest version, got ${macAppUpdateRequests[0]}`,
+  );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -847,9 +951,11 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   const installRequests = [];
   const updateRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.99",
     onUpdate: (postData) => {
       updateRequests.push(postData);
     },
+    dropBoardAfterFirmwareUpdate: true,
     updateStatusSequence: [
       {
         phase: "installing",
@@ -883,9 +989,16 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Updates" }).click();
+  const firmwareSection = page.locator("section.border-b").filter({
+    has: page.getByRole("heading", { name: "Firmware update" }),
+  });
   await page.getByRole("button", { name: "Update now" }).waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await page.getByRole("button", { name: "Update now" }).count()) === 1,
+    "Updates should show one primary Update now button",
+  );
   await page.getByRole("button", { name: "Update now" }).click();
   await page
     .getByRole("status")
@@ -898,6 +1011,20 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   await page.getByText("Firmware 1.0.33 is installed.").waitFor({
     timeout: 10_000,
   });
+  await firmwareSection.getByText("Up to date").waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Check for updates" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByRole("button", { name: "Checking updates" }).count()) ===
+      0,
+    "firmware update button should not stay in checking state after success",
+  );
+  assert(
+    (await firmwareSection.getByText("Checking", { exact: true }).count()) ===
+      0,
+    "firmware rows should not stay in checking state after success",
+  );
   assert(updateRequests.length === 1, "firmware update should start once");
 
   for (const text of ["sha256", "/update/firmware", "firmwareUrl"]) {
@@ -918,7 +1045,9 @@ async function testUpdatesShowTerminalCommandWithoutPackageAssets(
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  await routeCompanionOnline(page, installRequests);
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: { themeInstallEnabled: true },
+  });
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Updates" }).click();
@@ -1110,10 +1239,7 @@ async function testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
   await page.close();
 }
 
-async function testOverviewSeparatesMacAppAndFirmwareVersions(
-  browser,
-  appUrl,
-) {
+async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -1122,7 +1248,28 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(
     companionVersion: "1.0.33",
     device: {
       ...companionDevice,
+      activeTheme: "synthwave",
       firmware: "1.0.32",
+    },
+    usageResponse: {
+      ok: true,
+      generatedAt: "2026-06-29T10:47:46Z",
+      source: "codexbar-display",
+      usageMode: "used",
+      currentProvider: "codex",
+      providers: [
+        {
+          id: "codex",
+          label: "Codex",
+          source: "oauth",
+          session: 27,
+          weekly: 63,
+          resetSecs: 5400,
+          usageMode: "used",
+          activity: "coding",
+          sessionTokens: 77_000_000,
+        },
+      ],
     },
   });
 
@@ -1132,10 +1279,143 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(
   await page.getByText("Online 1.0.33").waitFor({ timeout: 10_000 });
   await page.getByText("VibeTV firmware").waitFor({ timeout: 10_000 });
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
+  await page
+    .getByRole("img", {
+      name: /Rendered VibeTV theme synthwave showing Codex, 73% session remaining, 37% weekly remaining/,
+    })
+    .waitFor({ timeout: 10_000 });
+  const renderedTheme = page.getByRole("img", {
+    name: /Rendered VibeTV theme synthwave/,
+  });
+  await renderedTheme.getByText("USAGE").waitFor({ timeout: 10_000 });
+  await renderedTheme
+    .getByText("SESSION remaining")
+    .waitFor({ timeout: 10_000 });
+  await renderedTheme
+    .getByText("WEEKLY remaining")
+    .waitFor({ timeout: 10_000 });
+  await renderedTheme.getByText("73%").waitFor({ timeout: 10_000 });
+  await renderedTheme.getByText("37%").waitFor({ timeout: 10_000 });
+  const previewFigure = page.locator("figure").filter({ has: renderedTheme });
+  assert(
+    (await previewFigure.locator('[data-testid="vibetv-case"]').count()) === 1,
+    "Overview preview should render the VibeTV case shell",
+  );
+  assert(
+    (await previewFigure.getByText("VIBETV", { exact: true }).count()) === 0,
+    "Overview preview should render the theme without device chrome",
+  );
+  assert(
+    (await page
+      .getByAltText("VibeTV device showing the current usage theme")
+      .count()) === 0,
+    "Overview should not render the old static VibeTV image",
+  );
+  assert(
+    (await page.locator("figcaption").count()) === 0,
+    "Overview preview should not render the theme caption",
+  );
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
+}
+
+async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
+  const cases = [
+    { id: "mini-classic", kind: "gif" },
+    { id: "clippy", kind: "animated-sprite" },
+    { id: "cozy-meadow", kind: "static-sprite" },
+    { id: "synthwave", kind: "static-sprite" },
+    { id: "claude-creature", kind: "animated-sprite" },
+  ];
+
+  for (const theme of cases) {
+    const page = await newCustomerPage(browser, appUrl, {
+      viewport: desktopViewport,
+    });
+    const installRequests = [];
+    await routeCompanionOnline(page, installRequests, () => {}, {
+      companionVersion: "1.0.33",
+      device: {
+        ...companionDevice,
+        activeTheme: theme.id,
+        firmware: "1.0.32",
+        stream: {
+          healthy: true,
+          running: true,
+        },
+        display: {
+          themeSpec: {
+            active: true,
+            renderOk: true,
+          },
+        },
+      },
+      usageResponse: {
+        ok: true,
+        generatedAt: "2026-06-29T10:47:46Z",
+        source: "codexbar-display",
+        usageMode: "used",
+        currentProvider: "codex",
+        providers: [
+          {
+            id: "codex",
+            label: "Codex",
+            source: "oauth",
+            session: 27,
+            weekly: 63,
+            resetSecs: 5400,
+            usageMode: "used",
+            activity: "coding",
+          },
+        ],
+      },
+    });
+
+    await page.goto(appUrl, { waitUntil: "networkidle" });
+    const renderedTheme = page.getByRole("img", {
+      name: new RegExp(
+        `Rendered VibeTV theme ${theme.id} showing Codex, 73% session remaining, 37% weekly remaining`,
+      ),
+    });
+    await renderedTheme.waitFor({ timeout: 10_000 });
+    await renderedTheme.getByText("Codex").waitFor({ timeout: 10_000 });
+    assert(
+      (await page.getByText("ThemeSpec not available").count()) === 0,
+      `${theme.id} preview should load its ThemeSpec`,
+    );
+
+    if (theme.kind === "gif") {
+      assert(
+        (await renderedTheme.locator("image").count()) >= 1,
+        `${theme.id} preview should render GIF assets`,
+      );
+    } else {
+      assert(
+        (await renderedTheme.locator("rect").count()) > 10,
+        `${theme.id} preview should render sprite primitives`,
+      );
+    }
+
+    if (theme.kind === "animated-sprite") {
+      const firstRender = await renderedTheme.evaluate(
+        (node) => node.innerHTML,
+      );
+      await page.waitForTimeout(650);
+      const secondRender = await renderedTheme.evaluate(
+        (node) => node.innerHTML,
+      );
+      assert(
+        firstRender !== secondRender,
+        `${theme.id} animated sprite should advance frames`,
+      );
+    }
+
+    assertNoInstallRequests(installRequests);
+    await assertNoMobileOverflow(page);
+    await page.close();
+  }
 }
 
 async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
@@ -1369,7 +1649,10 @@ async function testUnpairedThemeDeepLinkAutoRepairs(browser, appUrl) {
     .filter({ hasText: "Fixture Synthwave Theme" })
     .getByRole("button", { name: "Install" });
   await installButton.waitFor({ timeout: 10_000 });
-  assert(await installButton.isEnabled(), "paired VibeTV should unlock install");
+  assert(
+    await installButton.isEnabled(),
+    "paired VibeTV should unlock install",
+  );
   assert(pairRequests.length === 1, "pairing should call Companion once");
   assert(
     pairRequests[0]?.includes('"forcePair":true'),
@@ -1467,10 +1750,7 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   await page.close();
 }
 
-async function testScriptOnlyReleaseShowsSupportFallback(
-  browser,
-  appUrl,
-) {
+async function testScriptOnlyReleaseShowsSupportFallback(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
@@ -1493,10 +1773,7 @@ async function testScriptOnlyReleaseShowsSupportFallback(
   await page.close();
 }
 
-async function testReleaseCheckFailureShowsNoDownloadActions(
-  browser,
-  appUrl,
-) {
+async function testReleaseCheckFailureShowsNoDownloadActions(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
@@ -1519,10 +1796,7 @@ async function testReleaseCheckFailureShowsNoDownloadActions(
   await page.close();
 }
 
-async function testMissingAssetReleaseShowsNoDownloadActions(
-  browser,
-  appUrl,
-) {
+async function testMissingAssetReleaseShowsNoDownloadActions(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
@@ -1546,12 +1820,7 @@ async function testMissingAssetReleaseShowsNoDownloadActions(
 
 async function assertCompanionReleaseApi(
   appUrl,
-  {
-    installerAsset,
-    latestVersion,
-    status,
-    updateAvailable,
-  },
+  { installerAsset, latestVersion, status, updateAvailable },
 ) {
   const response = await fetch(`${appUrl}/api/companion/latest?version=1.0.32`);
   assert(
@@ -1602,21 +1871,11 @@ async function assertCompanionReleaseApi(
 
 async function assertFirmwareUpdateApi(
   appUrl,
-  {
-    board,
-    firmware,
-    latestFirmware,
-    message,
-    status,
-    updateAvailable,
-  },
+  { board, firmware, latestFirmware, message, status, updateAvailable },
 ) {
   const params = new URLSearchParams({ board, firmware });
   const response = await fetch(`${appUrl}/api/firmware/latest?${params}`);
-  assert(
-    response.ok,
-    `expected firmware API HTTP 200, got ${response.status}`,
-  );
+  assert(response.ok, `expected firmware API HTTP 200, got ${response.status}`);
   const payload = await response.json();
 
   assert(
@@ -1736,7 +1995,11 @@ function assertCustomerThemeCatalogIssue(issue) {
   }
 }
 
-async function routeCompanionMissing(page, installRequests, onRequest = () => {}) {
+async function routeCompanionMissing(
+  page,
+  installRequests,
+  onRequest = () => {},
+) {
   const handler = async (route) => {
     const pathname = companionPath(route);
     onRequest(pathname);
@@ -1753,7 +2016,10 @@ async function routeCompanionOnline(
   installRequests,
   onSettings = () => {},
   {
-    companionFeatures = { themeInstallEnabled: true },
+    companionFeatures = {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: true,
+    },
     companionVersion = "1.0.32",
     device = companionDevice,
     onDiscover,
@@ -1761,20 +2027,87 @@ async function routeCompanionOnline(
     onRepair,
     onReset,
     onUpdate,
+    onMacAppUpdate,
     installStatusSequence,
     updateStatusSequence,
+    macAppUpdateStatusSequence,
+    dropBoardAfterFirmwareUpdate = false,
     usageResponse,
     usageStatus = 200,
     repairError = false,
   } = {},
 ) {
   let currentDevice = device;
+  let currentCompanionVersion = companionVersion;
   let activeInstallJobId = "";
   let installStatusIndex = 0;
   let activeUpdateJobId = "";
   let updateStatusIndex = 0;
+  let activeMacAppUpdateJobId = "";
+  let macAppUpdateStatusIndex = 0;
   const handler = async (route) => {
     const pathname = companionPath(route);
+    if (pathname === "/v1/mac-app/update/status") {
+      const fallbackStatus = {
+        phase: "complete",
+        message: "Mac App updated.",
+        progress: 100,
+        logs: [
+          "Preparing Mac App update.",
+          "Downloading Mac App update.",
+          "Installing Mac App.",
+          "Restarting Mac App.",
+          "Mac App updated.",
+        ],
+        result: { version: "1.0.99" },
+      };
+      const sequence =
+        Array.isArray(macAppUpdateStatusSequence) &&
+        macAppUpdateStatusSequence.length > 0
+          ? macAppUpdateStatusSequence
+          : [fallbackStatus];
+      const nextStatus =
+        sequence[Math.min(macAppUpdateStatusIndex, sequence.length - 1)] ||
+        fallbackStatus;
+      macAppUpdateStatusIndex += 1;
+      if (nextStatus.phase === "complete" && nextStatus.result?.version) {
+        currentCompanionVersion = nextStatus.result.version;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          job: {
+            id: activeMacAppUpdateJobId || "mac-app-update-job-1",
+            startedAt: "2026-06-23T12:00:00.000Z",
+            ...nextStatus,
+          },
+        }),
+      });
+      return;
+    }
+    if (pathname === "/v1/mac-app/update") {
+      const postData = route.request().postData() || "";
+      onMacAppUpdate?.(postData);
+      activeMacAppUpdateJobId = "mac-app-update-job-1";
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          job: {
+            id: activeMacAppUpdateJobId,
+            phase: "installing",
+            message: "Preparing Mac App update.",
+            progress: 5,
+            startedAt: "2026-06-23T12:00:00.000Z",
+            logs: ["Preparing Mac App update."],
+          },
+        }),
+      });
+      return;
+    }
     if (pathname === "/v1/updates/install/status") {
       const fallbackStatus = {
         phase: "complete",
@@ -1789,8 +2122,7 @@ async function routeCompanionOnline(
         result: { firmware: "1.0.33" },
       };
       const sequence =
-        Array.isArray(updateStatusSequence) &&
-        updateStatusSequence.length > 0
+        Array.isArray(updateStatusSequence) && updateStatusSequence.length > 0
           ? updateStatusSequence
           : [fallbackStatus];
       const nextStatus =
@@ -1802,6 +2134,9 @@ async function routeCompanionOnline(
           ...currentDevice,
           firmware: nextStatus.result.firmware,
         };
+        if (dropBoardAfterFirmwareUpdate) {
+          currentDevice = { ...currentDevice, board: undefined };
+        }
       }
       await route.fulfill({
         status: 200,
@@ -1855,8 +2190,7 @@ async function routeCompanionOnline(
         },
       };
       const sequence =
-        Array.isArray(installStatusSequence) &&
-        installStatusSequence.length > 0
+        Array.isArray(installStatusSequence) && installStatusSequence.length > 0
           ? installStatusSequence
           : [fallbackStatus];
       const nextStatus =
@@ -1976,7 +2310,8 @@ async function routeCompanionOnline(
             error: {
               code: "device_not_found",
               message: "No VibeTV device was found.",
-              nextAction: "Make sure VibeTV is powered on and run Fix connection again.",
+              nextAction:
+                "Make sure VibeTV is powered on and run Fix connection again.",
             },
           }),
         });
@@ -2014,7 +2349,7 @@ async function routeCompanionOnline(
         body: JSON.stringify({
           ok: true,
           companion: {
-            version: companionVersion,
+            version: currentCompanionVersion,
             features: companionFeatures,
           },
           device: currentDevice,
@@ -2041,7 +2376,7 @@ async function routeCompanionOnline(
         body: JSON.stringify({
           ok: true,
           companion: {
-            version: companionVersion,
+            version: currentCompanionVersion,
             features: companionFeatures,
           },
           device: currentDevice,
@@ -2078,7 +2413,7 @@ async function routeCompanionOnline(
           ok: true,
           generatedAt: "2026-06-19T12:00:00.000Z",
           companion: {
-            version: companionVersion,
+            version: currentCompanionVersion,
             features: companionFeatures,
           },
           device: currentDevice,
@@ -2283,6 +2618,7 @@ function testEnv(catalogUrl, firmwareUrl, releaseUrl) {
     SHOPIFY_SHOP_DOMAIN: "",
     SHOPIFY_STOREFRONT_ACCESS_TOKEN: "",
     SHOPIFY_STOREFRONT_PRIVATE_TOKEN: "",
+    CONTROL_CENTER_DISPLAY_STATE_DIR: displayStateDir,
     THEME_PACK_CATALOG_URL: catalogUrl,
   };
 }
@@ -2393,8 +2729,7 @@ async function assertMacAppSetupUsesTerminalCommand(page) {
     "agent setup prompt should describe the background Mac App",
   );
   assert(
-    prompt.includes("connect VibeTV") &&
-      prompt.includes("latest firmware"),
+    prompt.includes("connect VibeTV") && prompt.includes("latest firmware"),
     "agent setup prompt should say the terminal command connects VibeTV and updates firmware",
   );
   assert(
@@ -2514,9 +2849,10 @@ async function assertNoLegacyCompanionDownloadActions(page) {
   ];
 
   for (const label of legacyActions) {
-    const role = label === "Mac package pending" || label === "Check failed"
-      ? "button"
-      : "link";
+    const role =
+      label === "Mac package pending" || label === "Check failed"
+        ? "button"
+        : "link";
     assert(
       (await page.getByRole(role, { name: label }).count()) === 0,
       `Theme Library should not show legacy Companion action: ${label}`,

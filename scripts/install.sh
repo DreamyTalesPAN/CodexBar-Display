@@ -149,7 +149,7 @@ build_firmware_upgrade_args() {
   local args=("$@")
   local i arg next
 
-  FIRMWARE_UPGRADE_ARGS=(--repo "$REPO" --target-firmware-version "$RELEASE_VERSION")
+  FIRMWARE_UPGRADE_ARGS=(--repo "$REPO")
 
   i=0
   while [[ "$i" -lt "${#args[@]}" ]]; do

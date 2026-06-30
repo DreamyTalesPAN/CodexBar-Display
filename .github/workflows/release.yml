@@ -57,15 +57,45 @@ jobs:
           done
           cd ..
 
-          declare -a TARGETS=(
-            "firmware_esp8266 esp8266_smalltv_st7789 esp8266-smalltv-st7789"
-            "firmware_esp32 lilygo_t_display_s3 esp32-lilygo-t-display-s3"
-          )
+          if [[ ! -f release/firmware-versions.json ]]; then
+            echo "error: release/firmware-versions.json is missing" >&2
+            exit 1
+          fi
 
-          for SPEC in "${TARGETS[@]}"; do
-            set -- ${SPEC}
-            DIR="$1"
-            ENV_NAME="$2"
+          python3 - "$VERSION" release/firmware-versions.json > dist/firmware/targets.tsv <<'PY'
+          import json
+          import sys
+
+          release_version = sys.argv[1].strip().lstrip("v")
+          config_path = sys.argv[2]
+
+          with open(config_path, encoding="utf-8") as f:
+              config = json.load(f)
+
+          seen = set()
+          for artifact in config.get("artifacts", []):
+              env_name = str(artifact.get("firmwareEnv", "")).strip()
+              board = str(artifact.get("board", "")).strip()
+              firmware_version = str(artifact.get("firmwareVersion", "")).strip().lstrip("v")
+              if not env_name or not board or not firmware_version:
+                  raise SystemExit("firmware artifacts need firmwareEnv, board, and firmwareVersion")
+              if env_name in seen:
+                  raise SystemExit(f"duplicate firmware env: {env_name}")
+              seen.add(env_name)
+              if firmware_version == release_version:
+                  print(f"notice: firmware {env_name} is intentionally bumped to app release {release_version}", file=sys.stderr)
+              if env_name == "esp8266_smalltv_st7789":
+                  directory = "firmware_esp8266"
+                  asset = f"codexbar-display-firmware-{env_name}-v{firmware_version}.bin.gz"
+              elif env_name == "lilygo_t_display_s3":
+                  directory = "firmware_esp32"
+                  asset = f"codexbar-display-firmware-{env_name}-v{firmware_version}.bin"
+              else:
+                  raise SystemExit(f"unsupported firmware env: {env_name}")
+              print("\t".join([directory, env_name, board, firmware_version, asset]))
+          PY
+
+          while IFS=$'\t' read -r DIR ENV_NAME BOARD FW_VERSION ASSET; do
             MAX_FLASH_PCT="46"
             MAX_RAM_PCT="82"
             MAX_BIN_BYTES="0"
@@ -75,7 +105,7 @@ jobs:
               MAX_GZIP_BYTES="350000"
             fi
 
-            CODEXBAR_DISPLAY_FW_VERSION="${VERSION}" ./scripts/check-firmware-size-budget.sh \
+            CODEXBAR_DISPLAY_FW_VERSION="${FW_VERSION}" ./scripts/check-firmware-size-budget.sh \
               "${DIR}" \
               "${ENV_NAME}" \
               "${MAX_FLASH_PCT}" \
@@ -84,37 +114,44 @@ jobs:
               "${MAX_GZIP_BYTES}"
 
             SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
-            DEST="dist/firmware/codexbar-display-firmware-${ENV_NAME}-v${VERSION}.bin"
-            cp "${SRC}" "${DEST}"
+            DEST="dist/firmware/${ASSET}"
             if [[ "${ENV_NAME}" == esp8266_* ]]; then
-              gzip -c -9 "${SRC}" > "${DEST}.gz"
+              gzip -c -9 "${SRC}" > "${DEST}"
+            else
+              cp "${SRC}" "${DEST}"
             fi
-          done
+          done < dist/firmware/targets.tsv
 
-          VERSION="${VERSION}" python3 - <<'PY'
+          VERSION="${VERSION}" python3 - release/firmware-versions.json <<'PY'
           import hashlib
           import json
           import os
+          import sys
 
           version = os.environ["VERSION"]
           repo = os.environ.get("GITHUB_REPOSITORY", "DreamyTalesPAN/CodexBar-Display")
-          targets = [
-              ("esp8266_smalltv_st7789", "esp8266-smalltv-st7789"),
-              ("lilygo_t_display_s3", "esp32-lilygo-t-display-s3"),
-          ]
+          config_path = sys.argv[1]
+
+          with open(config_path, encoding="utf-8") as f:
+              config = json.load(f)
 
           manifest = {
               "schemaVersion": 1,
               "release": f"v{version}",
-              "protocolVersion": 1,
+              "protocolVersion": config.get("protocolVersion", 1),
               "artifacts": [],
           }
 
-          for env_name, board in targets:
-              path = f"dist/firmware/codexbar-display-firmware-{env_name}-v{version}.bin"
+          for artifact in config.get("artifacts", []):
+              env_name = str(artifact.get("firmwareEnv", "")).strip()
+              board = str(artifact.get("board", "")).strip()
+              firmware_version = str(artifact.get("firmwareVersion", "")).strip().lstrip("v")
+              if not env_name or not board or not firmware_version:
+                  raise SystemExit("firmware artifacts need firmwareEnv, board, and firmwareVersion")
+              asset = f"codexbar-display-firmware-{env_name}-v{firmware_version}.bin"
               if env_name.startswith("esp8266_"):
-                  path = path + ".gz"
-              asset = os.path.basename(path)
+                  asset += ".gz"
+              path = f"dist/firmware/{asset}"
               with open(path, "rb") as f:
                   sha = hashlib.sha256(f.read()).hexdigest()
 
@@ -122,11 +159,11 @@ jobs:
                   {
                       "firmwareEnv": env_name,
                       "board": board,
-                      "firmwareVersion": version,
+                      "firmwareVersion": firmware_version,
                       "asset": asset,
                       "sha256": sha,
-                      "severity": "recommended",
-                      "message": "Firmware update available. Open vibetv.local.",
+                      "severity": str(artifact.get("severity") or "recommended"),
+                      "message": str(artifact.get("message") or "Firmware update available. Open vibetv.local."),
                       "firmwareUrl": f"https://github.com/{repo}/releases/download/v{version}/{asset}",
                   }
               )

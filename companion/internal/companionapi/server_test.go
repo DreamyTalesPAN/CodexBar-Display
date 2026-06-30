@@ -1699,6 +1699,130 @@ func TestFirmwareUpdateAsyncReportsCustomerError(t *testing.T) {
 	}
 }
 
+func TestMacAppUpdateAsyncReportsCustomerProgress(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.updateMacApp = func(_ context.Context, home string, addr string, req macAppUpdateRequest, out io.Writer) error {
+		if strings.TrimSpace(home) == "" {
+			t.Fatalf("expected update to receive home directory")
+		}
+		if addr != DefaultAddr {
+			t.Fatalf("unexpected update addr: %q", addr)
+		}
+		if req.Version != "1.0.36" {
+			t.Fatalf("unexpected update request: %+v", req)
+		}
+		for _, line := range []string{
+			"vibetv: repo=DreamyTalesPAN/CodexBar-Display",
+			"vibetv: release=v1.0.36",
+			"vibetv: arch=arm64",
+			"vibetv: Mac setup binary installed at /private/tmp/codexbar-display",
+			"vibetv: background service installed at /Users/customer/Library/LaunchAgents/com.codexbar-display.daemon.plist",
+			"vibetv: Mac App answered with version 1.0.36; restarting once",
+			"vibetv: Mac App update verified",
+		} {
+			_, _ = io.WriteString(out, line+"\n")
+		}
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/mac-app/update", strings.NewReader(`{"version":"1.0.36"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started macAppUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+	if started.Job.ID == "" || started.Job.Phase != "installing" {
+		t.Fatalf("unexpected started job: %+v", started.Job)
+	}
+
+	var got macAppUpdateJobResponse
+	for attempt := 0; attempt < 50; attempt++ {
+		rec = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/v1/mac-app/update/status?jobId="+started.Job.ID, nil)
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status response: %v", err)
+		}
+		if got.Job.Phase == "complete" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got.Job.Phase != "complete" || got.Job.Progress != 100 {
+		t.Fatalf("expected completed Mac App update job, got %+v", got.Job)
+	}
+	if got.Job.Result == nil || got.Job.Result.Version != "1.0.36" {
+		t.Fatalf("expected Mac App version result, got %+v", got.Job.Result)
+	}
+	joinedLogs := strings.Join(got.Job.Logs, "\n")
+	for _, want := range []string{"Downloading Mac App update.", "Preparing this Mac.", "Installing Mac App.", "Restarting Mac App.", "Checking Mac App.", "Mac App updated."} {
+		if !strings.Contains(joinedLogs, want) {
+			t.Fatalf("expected customer Mac App update log %q in %q", want, joinedLogs)
+		}
+	}
+	for _, hidden := range []string{"/private", "LaunchAgents", "DreamyTalesPAN/CodexBar-Display"} {
+		if strings.Contains(joinedLogs, hidden) {
+			t.Fatalf("Mac App update progress leaked technical detail %q in %q", hidden, joinedLogs)
+		}
+	}
+}
+
+func TestMacAppUpdateAsyncReportsCustomerError(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.updateMacApp = func(_ context.Context, _ string, _ string, _ macAppUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, "vibetv: release=v1.0.36\nvibetv: arch=arm64\n")
+		return errors.New("curl https://token@example.com/private failed")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/mac-app/update", strings.NewReader(`{"version":"1.0.36"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started macAppUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+
+	var got macAppUpdateJobResponse
+	for attempt := 0; attempt < 50; attempt++ {
+		rec = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/v1/mac-app/update/status?jobId="+started.Job.ID, nil)
+		server.Handler().ServeHTTP(rec, req)
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status response: %v", err)
+		}
+		if got.Job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got.Job.Phase != "error" || got.Job.Error == nil {
+		t.Fatalf("expected failed Mac App update job, got %+v", got.Job)
+	}
+	if got.Job.Error.Code != "mac_app_update_failed" {
+		t.Fatalf("unexpected Mac App update error: %+v", got.Job.Error)
+	}
+	joinedLogs := strings.Join(got.Job.Logs, "\n")
+	for _, hidden := range []string{"token@example.com", "/private"} {
+		if strings.Contains(joinedLogs, hidden) {
+			t.Fatalf("failed Mac App update leaked technical detail in logs: %q", joinedLogs)
+		}
+	}
+}
+
 func TestThemeInstallErrorIncludesSanitizedDetail(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -2016,6 +2140,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		return nil
 	}
 	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+		return nil
+	}
+	server.updateMacApp = func(context.Context, string, string, macAppUpdateRequest, io.Writer) error {
 		return nil
 	}
 	server.subnetTargets = func() []string {

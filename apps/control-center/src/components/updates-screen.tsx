@@ -41,15 +41,31 @@ export type FirmwareUpdateStatus = {
   error?: string;
 };
 
+export type MacAppUpdateStatus = {
+  phase: "installing" | "complete" | "error";
+  startedAt: string;
+  finishedAt?: string;
+  message?: string;
+  progress?: number;
+  logs: string[];
+  result?: {
+    version?: string;
+  };
+  error?: string;
+};
+
 export type UpdatesScreenProps = {
   companionStatus: UpdatesCompanionStatus;
   device: UpdatesDeviceInfo | null;
   companionVersion?: string;
+  macAppSelfUpdateEnabled?: boolean;
   firmwareUpdate?: FirmwareUpdateInfo | null;
-  onCheckUpdates?: () => void;
+  onCheckUpdates?: () => Promise<void> | void;
   onCreateReport?: () => void;
-  onInstallUpdate?: () => void;
+  onInstallMacAppUpdate?: (version?: string) => Promise<boolean> | boolean | void;
+  onInstallUpdate?: () => Promise<boolean> | boolean | void;
   busyAction?: string | null;
+  macAppUpdateStatus?: MacAppUpdateStatus | null;
   updateStatus?: FirmwareUpdateStatus | null;
 };
 
@@ -57,11 +73,14 @@ export function UpdatesScreen({
   companionStatus,
   device,
   companionVersion,
+  macAppSelfUpdateEnabled = false,
   firmwareUpdate,
   onCheckUpdates,
   onCreateReport,
+  onInstallMacAppUpdate,
   onInstallUpdate,
   busyAction,
+  macAppUpdateStatus,
   updateStatus,
 }: UpdatesScreenProps) {
   const {
@@ -76,17 +95,32 @@ export function UpdatesScreen({
   );
   const installedFirmware =
     firmwareUpdate?.installedFirmware || device?.firmware || "Unknown";
-  const latestFirmware = firmwareUpdate?.latestFirmware || "Checking";
+  const canCheckFirmware = Boolean(device?.board && device?.firmware);
+  const checking = Boolean(canCheckFirmware && !firmwareUpdate);
+  const macAppRunning = companionStatus === "online";
+  const checkingMacApp = Boolean(macAppRunning && !companionRelease);
+  const checkingUpdates = checking || checkingMacApp || companionCheckBusy;
+  const latestFirmware =
+    firmwareUpdate?.latestFirmware || (checking ? "Checking" : "Not available");
   const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
-  const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
+  const macAppUpdateComplete = macAppUpdateStatus?.phase === "complete";
+  const macAppUpdateAvailable = Boolean(
+    companionRelease?.updateAvailable && !macAppUpdateComplete,
+  );
+  const manualMacAppUpdate = Boolean(
+    companionRelease?.updateAvailable && !macAppSelfUpdateEnabled,
+  );
   const anyUpdateAvailable = updateAvailable || macAppUpdateAvailable;
-  const checking = Boolean(device?.firmware && !firmwareUpdate);
   const refreshing = busyAction === "firmware-check";
-  const installingUpdate = busyAction === "firmware-update" ||
-    updateStatus?.phase === "installing";
+  const installingUpdate =
+    busyAction === "firmware-update" || updateStatus?.phase === "installing";
+  const installingMacAppUpdate =
+    busyAction === "mac-app-update" ||
+    macAppUpdateStatus?.phase === "installing";
+  const installingAnyUpdate = installingUpdate || installingMacAppUpdate;
   const creatingReport = busyAction === "diagnostics";
   const checkFailed = firmwareUpdate?.status === "check_failed";
-  const title = checking
+  const title = checkingUpdates
     ? "Checking updates"
     : checkFailed
       ? "Update check failed"
@@ -97,84 +131,140 @@ export function UpdatesScreen({
     ? "Checking"
     : checkFailed
       ? "Check failed"
-      : updateAvailable
-        ? "Update available"
-        : "Up to date";
-  const macAppRunning = companionStatus === "online";
+      : !canCheckFirmware && !firmwareUpdate
+        ? "Not available"
+        : updateAvailable
+          ? "Update available"
+          : "Up to date";
   const companionReleaseStatus = companionReleaseLabel({
     macAppRunning,
     release: companionRelease,
+    updateStatus: macAppUpdateStatus,
   });
   const companionInstalled =
     companionStatus === "missing"
       ? "Not running"
       : companionVersion || "Unknown";
   const companionAvailable =
-    companionRelease?.latestVersion || companionRelease?.release || "Checking";
+    macAppUpdateStatus?.phase === "complete" &&
+    macAppUpdateStatus.result?.version
+      ? macAppUpdateStatus.result.version
+      : companionRelease?.latestVersion ||
+        companionRelease?.release ||
+        "Checking";
   const companionAction = companionInstallerAction({
     companionStatus,
     release: companionRelease,
   });
+  const primaryCopyCommand = Boolean(
+    companionStatus === "missing" || manualMacAppUpdate,
+  );
+
   async function copyMacAppCommand() {
     await copyText(macAppTerminalCommand);
     setMacAppCommandCopied(true);
   }
 
+  async function runPrimaryUpdate() {
+    if (primaryCopyCommand) {
+      await copyMacAppCommand();
+      return;
+    }
+
+    if (!anyUpdateAvailable) {
+      await Promise.all([
+        refreshCompanionRelease(),
+        onCheckUpdates ? Promise.resolve(onCheckUpdates()) : Promise.resolve(),
+      ]);
+      return;
+    }
+
+    if (macAppUpdateAvailable) {
+      const macAppUpdated = await onInstallMacAppUpdate?.(
+        companionRelease?.latestVersion,
+      );
+      if (macAppUpdated === false) {
+        return;
+      }
+    }
+
+    if (updateAvailable) {
+      await onInstallUpdate?.();
+    }
+  }
+
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="min-h-[330px] border-b border-[#747A60] py-10">
-        <div className="flex items-start gap-5">
-          <HeroIcon active={!anyUpdateAvailable}>
-            {anyUpdateAvailable ? (
-              <RefreshCw size={36} aria-hidden />
-            ) : (
-              <Check size={38} aria-hidden />
-            )}
-          </HeroIcon>
-          <div className="min-w-0">
-            <h2 className="max-w-[560px] text-[clamp(3rem,5vw,5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-              {title}
-            </h2>
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 items-start gap-5">
+            <HeroIcon active={!anyUpdateAvailable}>
+              {anyUpdateAvailable ? (
+                <RefreshCw size={36} aria-hidden />
+              ) : (
+                <Check size={38} aria-hidden />
+              )}
+            </HeroIcon>
+            <div className="min-w-0">
+              <h2 className="max-w-[560px] text-[clamp(3rem,5vw,5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
+                {title}
+              </h2>
+            </div>
           </div>
+          <PrimaryUpdateAction
+            checking={checkingUpdates || refreshing}
+            commandCopied={macAppCommandCopied}
+            copyCommand={primaryCopyCommand}
+            copyLabel={companionActionLabel(companionAction)}
+            disabled={
+              installingAnyUpdate ||
+              Boolean(busyAction && busyAction !== "firmware-check")
+            }
+            installingFirmware={installingUpdate}
+            installingMacApp={installingMacAppUpdate}
+            onClick={runPrimaryUpdate}
+            updateAvailable={anyUpdateAvailable}
+            updateReady={Boolean(
+              primaryCopyCommand ||
+                anyUpdateAvailable ||
+                onCheckUpdates ||
+                refreshCompanionRelease,
+            )}
+          />
         </div>
       </section>
 
       <section className="border-b border-[#747A60] py-8">
-        <h3 className="mb-6 text-base font-bold text-[#1B1B1B]">
-          Mac App
-        </h3>
+        <h3 className="mb-6 text-base font-bold text-[#1B1B1B]">Mac App</h3>
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
-          <dl className="grid gap-0 border-y border-[#747A60]">
-            <FirmwareRow
-              icon={<Server size={20} aria-hidden />}
-              label="Installed version"
-              value={companionInstalled}
-            />
-            <FirmwareRow
-              icon={<Download size={20} aria-hidden />}
-              label="Latest version"
-              value={companionAvailable}
-            />
-            <FirmwareRow
-              icon={<Check size={20} aria-hidden />}
-              label="Status"
-              value={companionReleaseStatus}
-            />
-          </dl>
+        <dl className="grid gap-0 border-y border-[#747A60]">
+          <FirmwareRow
+            icon={<Server size={20} aria-hidden />}
+            label="Installed version"
+            value={companionInstalled}
+          />
+          <FirmwareRow
+            icon={<Download size={20} aria-hidden />}
+            label="Latest version"
+            value={companionAvailable}
+          />
+          <FirmwareRow
+            icon={<Check size={20} aria-hidden />}
+            label="Status"
+            value={companionReleaseStatus}
+          />
+        </dl>
 
-          <div className="flex items-start lg:justify-end">
-            <CompanionUpdateAction
-              action={companionAction}
-              busy={companionCheckBusy}
-              commandCopied={macAppCommandCopied}
-              companionStatus={companionStatus}
-              onCheckInstaller={refreshCompanionRelease}
-              onCopyCommand={copyMacAppCommand}
-              release={companionRelease}
-            />
-          </div>
-        </div>
+        {macAppUpdateStatus ? (
+          <InlineMacAppUpdateProgress
+            commandCopied={macAppCommandCopied}
+            onCopyCommand={copyMacAppCommand}
+            onRetry={() =>
+              onInstallMacAppUpdate?.(companionRelease?.latestVersion)
+            }
+            status={macAppUpdateStatus}
+          />
+        ) : null}
       </section>
 
       <section className="border-b border-[#747A60] py-8">
@@ -182,37 +272,23 @@ export function UpdatesScreen({
           Firmware update
         </h3>
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
-          <dl className="grid gap-0 border-y border-[#747A60]">
-            <FirmwareRow
-              icon={<Monitor size={20} aria-hidden />}
-              label="Installed firmware"
-              value={installedFirmware}
-            />
-            <FirmwareRow
-              icon={<RefreshCw size={20} aria-hidden />}
-              label="Available firmware"
-              value={latestFirmware}
-            />
-            <FirmwareRow
-              icon={<Check size={20} aria-hidden />}
-              label="Status"
-              value={status}
-            />
-          </dl>
-
-          <div className="flex items-start lg:justify-end">
-            <FirmwareUpdateAction
-              checking={checking}
-              installing={installingUpdate}
-              onCheckUpdates={onCheckUpdates}
-              onInstallUpdate={onInstallUpdate}
-              refreshing={refreshing}
-              updateAvailable={updateAvailable}
-              updateReady={Boolean(device?.firmware)}
-            />
-          </div>
-        </div>
+        <dl className="grid gap-0 border-y border-[#747A60]">
+          <FirmwareRow
+            icon={<Monitor size={20} aria-hidden />}
+            label="Installed firmware"
+            value={installedFirmware}
+          />
+          <FirmwareRow
+            icon={<RefreshCw size={20} aria-hidden />}
+            label="Available firmware"
+            value={latestFirmware}
+          />
+          <FirmwareRow
+            icon={<Check size={20} aria-hidden />}
+            label="Status"
+            value={status}
+          />
+        </dl>
 
         {updateStatus ? (
           <InlineUpdateProgress
@@ -227,56 +303,66 @@ export function UpdatesScreen({
   );
 }
 
-function FirmwareUpdateAction({
+function PrimaryUpdateAction({
   checking,
-  installing,
-  onCheckUpdates,
-  onInstallUpdate,
-  refreshing,
+  commandCopied,
+  copyCommand,
+  copyLabel,
+  disabled,
+  installingFirmware,
+  installingMacApp,
+  onClick,
   updateAvailable,
   updateReady,
 }: {
   checking: boolean;
-  installing: boolean;
-  onCheckUpdates?: () => void;
-  onInstallUpdate?: () => void;
-  refreshing: boolean;
+  commandCopied: boolean;
+  copyCommand: boolean;
+  copyLabel: string;
+  disabled: boolean;
+  installingFirmware: boolean;
+  installingMacApp: boolean;
+  onClick: () => void | Promise<void>;
   updateAvailable: boolean;
   updateReady: boolean;
 }) {
-  if (updateAvailable) {
-    return (
-      <button
-        className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-4 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-80"
-        disabled={installing || !updateReady}
-        onClick={onInstallUpdate}
-        type="button"
-      >
-        {installing ? (
-          <RefreshCw className="animate-spin" size={18} aria-hidden />
-        ) : (
-          <Download size={18} aria-hidden />
-        )}
-        <span>{installing ? "Updating VibeTV" : "Update now"}</span>
-      </button>
-    );
-  }
+  const installing = installingFirmware || installingMacApp;
+  const label = installingMacApp
+    ? "Updating Mac App"
+    : installingFirmware
+      ? "Updating VibeTV"
+      : copyCommand
+        ? commandCopied
+          ? "Command copied"
+          : copyLabel
+        : updateAvailable
+          ? "Update now"
+          : checking
+            ? "Checking updates"
+            : "Check for updates";
+  const icon = installing || checking ? (
+    <RefreshCw className="animate-spin" size={20} aria-hidden />
+  ) : copyCommand ? (
+    <Copy size={20} aria-hidden />
+  ) : updateAvailable ? (
+    <Download size={20} aria-hidden />
+  ) : (
+    <RefreshCw size={20} aria-hidden />
+  );
 
   return (
     <button
-      className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#CCFF00] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#ABD600] disabled:bg-[#F9F9F9] disabled:text-[#444933] disabled:opacity-80"
-      disabled={checking || refreshing || !updateReady}
-      onClick={onCheckUpdates}
+      className={`inline-flex h-14 w-full items-center justify-center gap-3 border px-6 text-base font-black transition disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-80 sm:w-auto sm:min-w-[240px] ${
+        updateAvailable || copyCommand
+          ? "border-[#1B1B1B] bg-[#1B1B1B] text-[#EDEDED] hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
+          : "border-[#747A60] bg-[#CCFF00] text-[#1B1B1B] hover:bg-[#ABD600]"
+      }`}
+      disabled={disabled || checking || !updateReady}
+      onClick={onClick}
       type="button"
     >
-      {checking || refreshing ? (
-        <RefreshCw className="animate-spin" size={18} aria-hidden />
-      ) : (
-        <RefreshCw size={18} aria-hidden />
-      )}
-      <span>
-        {checking || refreshing ? "Checking updates" : "Check for updates"}
-      </span>
+      {icon}
+      <span>{label}</span>
     </button>
   );
 }
@@ -375,76 +461,101 @@ function InlineUpdateProgress({
   );
 }
 
-function CompanionUpdateAction({
-  action,
-  busy,
+function InlineMacAppUpdateProgress({
   commandCopied,
-  companionStatus,
-  onCheckInstaller,
   onCopyCommand,
-  release,
+  onRetry,
+  status,
 }: {
-  action: "install" | "repair" | "update";
-  busy: boolean;
   commandCopied: boolean;
-  companionStatus: UpdatesCompanionStatus;
-  onCheckInstaller: () => void;
   onCopyCommand: () => void | Promise<void>;
-  release: CompanionReleaseInfo | null;
+  onRetry?: () => void;
+  status: MacAppUpdateStatus;
 }) {
-  if (companionStatus === "missing" || release?.updateAvailable) {
-    return (
-      <div className="grid gap-2">
-        <button
-          className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
-          onClick={onCopyCommand}
-          type="button"
-        >
-          <Copy size={18} aria-hidden />
-          <span>
-            {commandCopied ? "Command copied" : companionActionLabel(action)}
-          </span>
-        </button>
-        {commandCopied ? (
-          <p
-            className="max-w-[260px] border border-[#747A60] bg-[#F9F9F9] px-3 py-2 text-xs font-semibold leading-5 text-[#444933]"
-            role="status"
-          >
-            Paste it into Terminal. This page will move on when the Mac App
-            restarts.
-          </p>
+  const failed = status.phase === "error";
+  const complete = status.phase === "complete";
+  const progress = clampUpdateProgress(
+    failed || complete ? 100 : status.progress,
+  );
+  const title = failed
+    ? "Mac App update failed"
+    : complete
+      ? "Mac App updated"
+      : "Updating Mac App";
+  const detail = failed
+    ? status.error ||
+      "Copy the update command and run it in Terminal, then try again."
+    : complete
+      ? status.result?.version
+        ? `Mac App ${status.result.version} is installed.`
+        : "Mac App is up to date."
+      : status.message ||
+        status.logs[status.logs.length - 1] ||
+        "Preparing Mac App update.";
+  const previousSteps = failed || complete ? [] : status.logs.slice(-4, -1);
+
+  return (
+    <div className="mt-6" role="status" aria-live="polite">
+      <div className="h-2 overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
+        <div
+          className={`h-full bg-[#CCFF00] transition-[width] duration-300 ${
+            failed || complete ? "" : "animate-pulse"
+          }`}
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="mt-3 flex flex-col gap-3 border border-[#747A60] bg-[#F9F9F9] p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2">
+          {failed ? (
+            <X className="mt-0.5 shrink-0" size={16} aria-hidden />
+          ) : complete ? (
+            <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden />
+          ) : (
+            <RefreshCw
+              className="mt-0.5 shrink-0 animate-spin"
+              size={16}
+              aria-hidden
+            />
+          )}
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-[#1B1B1B]">{title}</div>
+            <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
+              {detail}
+            </div>
+            {previousSteps.length > 0 ? (
+              <ol className="mt-2 space-y-1 text-xs leading-5 text-[#5D634F]">
+                {previousSteps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            ) : null}
+          </div>
+        </div>
+        {failed ? (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              className="h-10 min-w-[120px] border border-[#747A60] bg-[#F9F9F9] px-3 text-sm font-semibold text-[#1B1B1B] hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!onRetry}
+              onClick={onRetry}
+              type="button"
+            >
+              Try again
+            </button>
+            <button
+              className="inline-flex h-10 min-w-[160px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-3 text-sm font-semibold text-[#EDEDED] hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
+              onClick={onCopyCommand}
+              type="button"
+            >
+              <Copy size={16} aria-hidden />
+              <span>
+                {commandCopied ? "Command copied" : "Copy update command"}
+              </span>
+            </button>
+          </div>
         ) : null}
       </div>
-    );
-  }
-
-  if (!release) {
-    return <ActionStatus label="Checking" busy />;
-  }
-
-  if (release.status === "check_failed") {
-    return (
-      <button
-        className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-5 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={busy}
-        onClick={onCheckInstaller}
-        type="button"
-      >
-        <RefreshCw
-          className={busy ? "animate-spin" : undefined}
-          size={18}
-          aria-hidden
-        />
-        <span>{busy ? "Checking" : "Try again"}</span>
-      </button>
-    );
-  }
-
-  if (companionStatus === "online") {
-    return null;
-  }
-
-  return <ActionStatus label="Ready" />;
+    </div>
+  );
 }
 
 function companionActionLabel(action: "install" | "repair" | "update"): string {
@@ -476,10 +587,21 @@ function companionInstallerAction({
 function companionReleaseLabel({
   macAppRunning,
   release,
+  updateStatus,
 }: {
   macAppRunning: boolean;
   release: CompanionReleaseInfo | null;
+  updateStatus?: MacAppUpdateStatus | null;
 }): string {
+  if (updateStatus?.phase === "installing") {
+    return "Updating";
+  }
+  if (updateStatus?.phase === "complete") {
+    return "Ready";
+  }
+  if (updateStatus?.phase === "error") {
+    return "Needs attention";
+  }
   if (macAppRunning) {
     if (release?.updateAvailable) {
       return "Update available";
@@ -496,15 +618,6 @@ function companionReleaseLabel({
     return "Setup needed";
   }
   return "Check failed";
-}
-
-function ActionStatus({ busy, label }: { busy?: boolean; label: string }) {
-  return (
-    <div className="inline-flex h-12 min-w-[220px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-5 text-sm font-semibold text-[#444933]">
-      {busy ? <RefreshCw className="animate-spin" size={18} aria-hidden /> : null}
-      <span>{label}</span>
-    </div>
-  );
 }
 
 async function copyText(text: string) {

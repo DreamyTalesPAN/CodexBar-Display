@@ -186,7 +186,7 @@ func runUpgrade(args []string) (retErr error) {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
 	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "PlatformIO environment to flash")
-	targetFirmwareVersion := fs.String("target-firmware-version", "", "target firmware semver/release version (default: latest GitHub release)")
+	targetFirmwareVersion := fs.String("target-firmware-version", "", "target firmware semver/release version (default: latest firmware manifest)")
 	repo := fs.String("repo", defaultReleaseRepo, "GitHub repository for release firmware assets")
 	skipVersionGuard := fs.Bool("skip-version-guard", false, "skip companion/firmware compatibility guard")
 	if err := fs.Parse(args); err != nil {
@@ -250,8 +250,9 @@ func runUpgrade(args []string) (retErr error) {
 	}
 
 	targetVersion := strings.TrimSpace(*targetFirmwareVersion)
+	targetVersionExplicit := targetVersion != ""
 	releaseTag := ""
-	if targetVersion == "" {
+	if !targetVersionExplicit {
 		latestTag, latestVersion, err := fetchLatestReleaseVersion(ctx, releaseRepo)
 		if err != nil {
 			return &commandError{
@@ -261,40 +262,14 @@ func runUpgrade(args []string) (retErr error) {
 				Hint: "check network access or pass --target-firmware-version for a known release",
 			}
 		}
-		targetVersion = latestVersion
 		releaseTag = latestTag
+		fmt.Printf("latest release: %s\n", latestVersion)
 	} else {
 		targetVersion = normalizeReleaseVersion(targetVersion)
 		releaseTag = "v" + targetVersion
 	}
 
 	companionVersion := buildinfo.NormalizedVersion()
-	if !*skipVersionGuard {
-		compatible, rule, err := versioning.IsCompatible(companionVersion, targetVersion, protocolVersionV1)
-		if err != nil {
-			return &commandError{
-				Op:   "version-guard-parse",
-				Code: errcode.UpgradeVersionGuard,
-				Err:  err,
-			}
-		}
-		if !compatible {
-			return &commandError{
-				Op:   "version-guard",
-				Code: errcode.UpgradeVersionGuard,
-				Err: fmt.Errorf(
-					"companion %s is incompatible with target firmware %s (env=%s)",
-					companionVersion,
-					targetVersion,
-					selectedEnv,
-				),
-				Hint: "pick a compatible firmware target/version or install matching companion version",
-			}
-		}
-		fmt.Printf("version guard: ok (rule=%s companion=%s firmware=%s protocol=%d)\n", rule, companionVersion, targetVersion, protocolVersionV1)
-	} else {
-		fmt.Println("version guard: skipped (--skip-version-guard)")
-	}
 
 	hello, helloErr := readDeviceHelloFn(resolvedPort)
 	closeDefaultSenderFn()
@@ -348,6 +323,33 @@ func runUpgrade(args []string) (retErr error) {
 			Err:  err,
 			Hint: "verify the GitHub release contains firmware artifacts and checksums, then retry upgrade",
 		}
+	}
+	targetVersion = normalizeReleaseVersion(artifact.FirmwareVersion)
+	if !*skipVersionGuard {
+		compatible, rule, err := versioning.IsCompatible(companionVersion, targetVersion, protocolVersionV1)
+		if err != nil {
+			return &commandError{
+				Op:   "version-guard-parse",
+				Code: errcode.UpgradeVersionGuard,
+				Err:  err,
+			}
+		}
+		if !compatible {
+			return &commandError{
+				Op:   "version-guard",
+				Code: errcode.UpgradeVersionGuard,
+				Err: fmt.Errorf(
+					"companion %s is incompatible with target firmware %s (env=%s)",
+					companionVersion,
+					targetVersion,
+					selectedEnv,
+				),
+				Hint: "pick a compatible firmware target/version or install matching companion version",
+			}
+		}
+		fmt.Printf("version guard: ok (rule=%s companion=%s firmware=%s protocol=%d)\n", rule, companionVersion, targetVersion, protocolVersionV1)
+	} else {
+		fmt.Println("version guard: skipped (--skip-version-guard)")
 	}
 	fmt.Printf("release firmware: %s manifest=%s sha256=%s\n", imagePath, manifestPath, artifact.SHA256)
 	if helloErr == nil {
@@ -861,10 +863,10 @@ func fetchLatestReleaseVersion(ctx context.Context, repo string) (tag, version s
 
 func downloadReleaseFirmware(ctx context.Context, home, repo, releaseTag, version, firmwareEnv string) (imagePath, manifestPath string, artifact releaseFirmwareArtifact, err error) {
 	version = normalizeReleaseVersion(version)
-	if version == "" {
-		return "", "", releaseFirmwareArtifact{}, errors.New("release version cannot be empty")
-	}
 	releaseTag = strings.TrimSpace(releaseTag)
+	if version == "" && releaseTag == "" {
+		return "", "", releaseFirmwareArtifact{}, errors.New("release tag or firmware version cannot be empty")
+	}
 	if releaseTag == "" {
 		releaseTag = "v" + version
 	}
@@ -882,7 +884,10 @@ func downloadReleaseFirmware(ctx context.Context, home, repo, releaseTag, versio
 		return "", "", releaseFirmwareArtifact{}, err
 	}
 
-	manifestAsset := fmt.Sprintf("firmware-manifest-v%s.json", version)
+	manifestAsset := "firmware-manifest.json"
+	if version != "" {
+		manifestAsset = fmt.Sprintf("firmware-manifest-v%s.json", version)
+	}
 	manifestPath = filepath.Join(releaseDir, manifestAsset)
 	manifestURL := githubReleaseAssetURL(repo, releaseTag, manifestAsset)
 	if err := downloadURLToFile(ctx, manifestURL, manifestPath, 0o644); err != nil {
@@ -904,7 +909,10 @@ func downloadReleaseFirmware(ctx context.Context, home, repo, releaseTag, versio
 	}
 
 	imagePath = filepath.Join(releaseDir, artifact.Asset)
-	imageURL := githubReleaseAssetURL(repo, releaseTag, artifact.Asset)
+	imageURL := strings.TrimSpace(artifact.FirmwareURL)
+	if imageURL == "" {
+		imageURL = githubReleaseAssetURL(repo, releaseTag, artifact.Asset)
+	}
 	if err := downloadURLToFile(ctx, imageURL, imagePath, 0o644); err != nil {
 		return "", "", releaseFirmwareArtifact{}, fmt.Errorf("download firmware image: %w", err)
 	}
