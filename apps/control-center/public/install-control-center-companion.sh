@@ -512,6 +512,35 @@ install_binary() {
   fi
 }
 
+install_release_binary() {
+  detect_arch
+
+  if [[ -z "$RELEASE_VERSION" ]]; then
+    RELEASE_TAG="$(fetch_latest_release_tag)"
+    RELEASE_VERSION="$(normalize_version "$RELEASE_TAG")"
+  else
+    RELEASE_TAG="v${RELEASE_VERSION}"
+  fi
+
+  TMPDIR_INSTALL="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-companion-install.XXXXXX")"
+  trap cleanup EXIT INT TERM
+
+  DOWNLOAD_BIN="${TMPDIR_INSTALL}/${INSTALL_NAME}-darwin-${BINARY_ARCH}-v${RELEASE_VERSION}"
+  CHECKSUMS_FILE="${TMPDIR_INSTALL}/checksums-v${RELEASE_VERSION}.txt"
+
+  log "vibetv: repo=${REPO}"
+  log "vibetv: release=${RELEASE_TAG}"
+  log "vibetv: arch=${ARCH}"
+
+  download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/releases/download/${RELEASE_TAG}/${DOWNLOAD_BIN##*/}" "$DOWNLOAD_BIN"
+  chmod 755 "$DOWNLOAD_BIN"
+
+  download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/releases/download/${RELEASE_TAG}/checksums-v${RELEASE_VERSION}.txt" "$CHECKSUMS_FILE"
+  verify_checksum
+
+  install_binary
+}
+
 uninstall_service() {
   stop_terminal_service
   stop_launchagent
@@ -697,37 +726,15 @@ main() {
   fi
 
   if [[ "$MODE" == "restart" ]]; then
+    install_release_binary
     restart_service
     wait_for_api
+    verify_companion_version
+    log "vibetv: Mac App restart verified"
     exit 0
   fi
 
-  detect_arch
-
-  if [[ -z "$RELEASE_VERSION" ]]; then
-    RELEASE_TAG="$(fetch_latest_release_tag)"
-    RELEASE_VERSION="$(normalize_version "$RELEASE_TAG")"
-  else
-    RELEASE_TAG="v${RELEASE_VERSION}"
-  fi
-
-  TMPDIR_INSTALL="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-companion-install.XXXXXX")"
-  trap cleanup EXIT INT TERM
-
-  DOWNLOAD_BIN="${TMPDIR_INSTALL}/${INSTALL_NAME}-darwin-${BINARY_ARCH}-v${RELEASE_VERSION}"
-  CHECKSUMS_FILE="${TMPDIR_INSTALL}/checksums-v${RELEASE_VERSION}.txt"
-
-  log "vibetv: repo=${REPO}"
-  log "vibetv: release=${RELEASE_TAG}"
-  log "vibetv: arch=${ARCH}"
-
-  download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/releases/download/${RELEASE_TAG}/${DOWNLOAD_BIN##*/}" "$DOWNLOAD_BIN"
-  chmod 755 "$DOWNLOAD_BIN"
-
-  download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/releases/download/${RELEASE_TAG}/checksums-v${RELEASE_VERSION}.txt" "$CHECKSUMS_FILE"
-  verify_checksum
-
-  install_binary
+  install_release_binary
   restart_service
   wait_for_api
   verify_companion_version

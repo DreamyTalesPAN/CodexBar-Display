@@ -260,8 +260,8 @@ run_installer() {
   return "$status"
 }
 
-run_restart_updates_daemon_launchagent() {
-  local root output legacy_plist daemon_plist daemon_plist_body launch_log
+run_restart_updates_binary_before_daemon_launchagent() {
+  local root output legacy_plist daemon_plist daemon_plist_body launch_log curl_log
   root="${TMP_WORK_DIR}/restart"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -278,8 +278,14 @@ run_restart_updates_daemon_launchagent() {
   daemon_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist"
   daemon_plist_body="$(cat "$daemon_plist")"
   launch_log="$(cat "${root}/launchctl.log")"
+  curl_log="$(cat "${root}/curl.log")"
 
+  assert_contains "$output" "release=v9.9.9"
   assert_contains "$output" "Mac setup service is running"
+  assert_contains "$output" "Mac App restart verified"
+  assert_contains "$curl_log" "/releases/latest"
+  assert_contains "$curl_log" "codexbar-display-darwin-arm64-v9.9.9"
+  assert_contains "$curl_log" "checksums-v9.9.9.txt"
   [[ ! -f "$legacy_plist" ]] || die "legacy LaunchAgent plist should be removed"
   [[ -f "$daemon_plist" ]] || die "daemon LaunchAgent plist should exist"
   assert_contains "$daemon_plist_body" "<string>daemon</string>"
@@ -536,7 +542,7 @@ run_install_waits_for_slow_repair_recovery
 run_install_uses_connected_status_after_repair_timeout
 run_install_prints_repair_failure_details
 run_install_restarts_when_old_api_version_answers
-run_restart_updates_daemon_launchagent
+run_restart_updates_binary_before_daemon_launchagent
 run_uninstall_stops_terminal_service_and_legacy_launchagent
 
 printf 'daemon Mac setup installer tests passed\n'
