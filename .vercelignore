@@ -1,0 +1,7 @@
+.env*
+.vercel
+**/.next
+**/node_modules
+firmware_esp8266/.pio
+tmp
+tools/theme-studio/dist
