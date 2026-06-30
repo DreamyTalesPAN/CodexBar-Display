@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "artifacts": [
+    {
+      "firmwareEnv": "esp8266_smalltv_st7789",
+      "board": "esp8266-smalltv-st7789",
+      "firmwareVersion": "1.0.35",
+      "severity": "recommended",
+      "message": "Firmware update available. Open vibetv.local."
+    },
+    {
+      "firmwareEnv": "lilygo_t_display_s3",
+      "board": "esp32-lilygo-t-display-s3",
+      "firmwareVersion": "1.0.35",
+      "severity": "recommended",
+      "message": "Firmware update available. Open vibetv.local."
+    }
+  ]
+}

@@ -9,7 +9,6 @@ import {
   SlidersHorizontal,
   Wifi,
 } from "lucide-react";
-import Image from "next/image";
 import type { ReactNode } from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import {
@@ -18,7 +17,9 @@ import {
   type DeviceInfo,
   type DeviceState,
   type ReadinessTone,
+  type UsageSnapshot,
 } from "./control-center-types";
+import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
   companionVersion?: string;
@@ -26,6 +27,7 @@ type OverviewScreenProps = {
   deviceState: DeviceState;
   device: DeviceInfo | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
+  usage?: UsageSnapshot | null;
   busyAction?: string | null;
   onReloadImage?: () => void;
 };
@@ -37,6 +39,7 @@ export function OverviewScreen({
   deviceState,
   device,
   firmwareUpdate,
+  usage,
   onReloadImage,
 }: OverviewScreenProps) {
   const imageStuck = deviceImageIsStuck(device);
@@ -102,14 +105,7 @@ export function OverviewScreen({
         </div>
 
         <div className="flex justify-center lg:justify-end">
-          <Image
-            alt="VibeTV device showing the current usage theme"
-            className="h-auto w-full max-w-[520px]"
-            height={510}
-            priority
-            src="/images/vibetv-device-overview.png"
-            width={570}
-          />
+          <LiveVibeTVPreview device={device} usage={usage || null} />
         </div>
       </section>
     </div>

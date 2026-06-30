@@ -26,6 +26,7 @@ export type CompanionInfo = {
   version?: string;
   features?: {
     themeInstallEnabled?: boolean;
+    macAppSelfUpdateEnabled?: boolean;
   };
 };
 
@@ -234,5 +235,7 @@ export function deviceStreamIsReady(device: DeviceInfo | null | undefined) {
 }
 
 export function deviceSetupIsUsable(device: DeviceInfo | null | undefined) {
-  return Boolean(device?.paired && (device.connected || deviceStreamIsReady(device)));
+  return Boolean(
+    device?.paired && (device.connected || deviceStreamIsReady(device)),
+  );
 }

@@ -18,6 +18,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
+  outputFileTracingIncludes: {
+    "/api/theme-pack/[themeId]": ["../../theme-packs/**/*"],
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "cdn.shopify.com" },

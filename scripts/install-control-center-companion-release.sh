@@ -31,6 +31,7 @@ TARGET_EXPLICIT=0
 if [[ -n "${VIBETV_COMPANION_TARGET:-}" ]]; then
   TARGET_EXPLICIT=1
 fi
+SKIP_DEVICE_SETUP=0
 REPAIR_MAX_ATTEMPTS="${VIBETV_COMPANION_REPAIR_ATTEMPTS:-45}"
 REPAIR_RETRY_DELAY="${VIBETV_COMPANION_REPAIR_RETRY_DELAY:-2}"
 MODE="install"
@@ -45,7 +46,7 @@ RELEASE_TAG=""
 usage() {
   cat <<'EOF'
 Usage:
-  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://<device-ip>]
+  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://<device-ip>] [--skip-device-setup]
   install-control-center-companion.sh --restart
   install-control-center-companion.sh --uninstall
 
@@ -659,6 +660,10 @@ parse_args() {
         START_MODE="launchagent"
         shift
         ;;
+      --skip-device-setup)
+        SKIP_DEVICE_SETUP=1
+        shift
+        ;;
       --force-legacy-script)
         # Kept as a no-op so older support commands do not fail.
         shift
@@ -729,6 +734,10 @@ main() {
 
   log "vibetv: Mac setup binary installed at ${BIN_PATH}"
   log "vibetv: background service installed at ${DISPLAY_DAEMON_PLIST}"
+  if [[ "$SKIP_DEVICE_SETUP" == "1" ]]; then
+    log "vibetv: Mac App update verified"
+    exit 0
+  fi
   finish_device_setup
 }
 

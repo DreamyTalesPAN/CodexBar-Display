@@ -45,10 +45,18 @@ main() {
 
   assert_contains "$release_job" "Build release checksums" \
     "build-and-release must build release checksums"
+  assert_contains "$release_job" "release/firmware-versions.json" \
+    "release workflow must read explicit firmware versions"
   assert_contains "$release_job" "dist/install-control-center-companion.sh" \
     "GitHub Release must include the Mac setup script"
   assert_contains "$release_job" "dist/companion/*" \
     "GitHub Release must include the Mac companion binaries"
+  assert_contains "$release_job" 'CODEXBAR_DISPLAY_FW_VERSION="${FW_VERSION}"' \
+    "firmware builds must use the explicit firmware version"
+  assert_not_contains "$release_job" 'CODEXBAR_DISPLAY_FW_VERSION="${VERSION}"' \
+    "firmware version must not be derived from the app release tag"
+  assert_not_contains "$release_job" '"firmwareVersion": version' \
+    "firmware manifest versions must not be derived from the app release tag"
   assert_not_contains "$release_job" "needs: build-companion-pkgs" \
     "build-and-release must not wait for Mac App PKGs"
   assert_not_contains "$release_job" "actions/download-artifact" \

@@ -360,6 +360,30 @@ run_install_writes_integrated_daemon_launchagent() {
   assert_contains "$launch_log" "kickstart -k gui/$(id -u)/com.codexbar-display.daemon"
 }
 
+run_install_can_skip_device_setup_for_mac_app_update() {
+  local root output curl_log api_log
+  root="${TMP_WORK_DIR}/mac-app-only"
+  write_fake_commands "${root}/fake-bin"
+  prepare_home "${root}/home"
+  : > "${root}/launchctl.log"
+  : > "${root}/curl.log"
+  : > "${root}/api.log"
+
+  output="$(run_installer "$root" --version 9.9.9 --terminal-session --skip-device-setup)" || {
+    printf '%s\n' "$output" >&2
+    die "expected Mac App only install to pass"
+  }
+
+  curl_log="$(cat "${root}/curl.log")"
+  api_log="$(cat "${root}/api.log")"
+  assert_contains "$output" "Mac App update verified"
+  assert_contains "$output" "background service installed"
+  assert_not_contains "$curl_log" "/v1/device/repair"
+  assert_not_contains "$curl_log" "/v1/device\""
+  assert_not_contains "$api_log" "install-update"
+  assert_not_contains "$output" "VibeTV firmware update complete"
+}
+
 run_install_disables_global_legacy_launchagent() {
   local root output launch_log global_plist daemon_plist_body curl_log
   root="${TMP_WORK_DIR}/global-legacy"
@@ -505,6 +529,7 @@ run_install_restarts_when_old_api_version_answers() {
 }
 
 run_install_writes_integrated_daemon_launchagent
+run_install_can_skip_device_setup_for_mac_app_update
 run_install_disables_global_legacy_launchagent
 run_install_retries_transient_repair_failure
 run_install_waits_for_slow_repair_recovery
