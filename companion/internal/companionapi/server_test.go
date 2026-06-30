@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -192,6 +194,78 @@ func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
 	}
 	if len(provider.UsageOverTime[0].Services) != 2 || provider.UsageOverTime[0].Services[0].Service != "CLI" {
 		t.Fatalf("expected usage-over-time services, got %+v", provider.UsageOverTime[0].Services)
+	}
+}
+
+func TestDisplayFrameLatestReturnsPersistedLastGoodFrame(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	savedAt := time.Date(2026, 6, 30, 14, 10, 35, 893363000, time.UTC)
+	path := server.lastGoodDisplayFramePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create display state dir: %v", err)
+	}
+	raw := []byte(`{
+		"savedAt":"` + savedAt.Format(time.RFC3339Nano) + `",
+		"frame":{
+			"v":1,
+			"provider":"codex",
+			"label":"Codex",
+			"session":24,
+			"weekly":13,
+			"resetSecs":6634,
+			"sessionTokens":124627584,
+			"weekTokens":1063961137,
+			"totalTokens":4557592436
+		}
+	}`)
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatalf("write display frame: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got displayFrameResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || got.Source != "last-good-frame" {
+		t.Fatalf("unexpected display frame response metadata: %+v", got)
+	}
+	if got.SavedAt != savedAt.Format(time.RFC3339Nano) {
+		t.Fatalf("expected savedAt %s, got %s", savedAt.Format(time.RFC3339Nano), got.SavedAt)
+	}
+	if got.Frame.Provider != "codex" || got.Frame.Label != "Codex" {
+		t.Fatalf("unexpected frame identity: %+v", got.Frame)
+	}
+	if got.Frame.Session != 24 || got.Frame.Weekly != 13 || got.Frame.ResetSec != 6634 {
+		t.Fatalf("unexpected frame values: %+v", got.Frame)
+	}
+	if got.Frame.UsageMode != "" {
+		t.Fatalf("expected legacy frame usage mode to stay empty, got %q", got.Frame.UsageMode)
+	}
+}
+
+func TestDisplayFrameLatestReturnsNotFoundWithoutLastGoodFrame(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil)
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "display_frame_unavailable" {
+		t.Fatalf("unexpected error response: %+v", got)
 	}
 }
 

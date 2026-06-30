@@ -1246,6 +1246,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.33",
+    displayFrameStatus: 404,
     device: {
       ...companionDevice,
       activeTheme: "synthwave",
@@ -2034,6 +2035,7 @@ async function routeCompanionOnline(
     dropBoardAfterFirmwareUpdate = false,
     usageResponse,
     usageStatus = 200,
+    displayFrameStatus = 200,
     repairError = false,
   } = {},
 ) {
@@ -2247,6 +2249,36 @@ async function routeCompanionOnline(
       });
       return;
     }
+    if (pathname === "/v1/display-frame/latest") {
+      if (displayFrameStatus !== 200) {
+        await route.fulfill({
+          status: displayFrameStatus,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false }),
+        });
+        return;
+      }
+      const frame = displayFrameFromUsageResponse(usageResponse);
+      if (!frame) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          savedAt: usageResponse?.generatedAt || "2026-06-29T10:47:46Z",
+          source: "last-good-frame",
+          frame,
+        }),
+      });
+      return;
+    }
     if (pathname === "/v1/usage") {
       if (usageStatus !== 200) {
         await route.fulfill({
@@ -2446,6 +2478,69 @@ async function routeCompanionOnline(
 async function routeCompanionPaths(page, handler) {
   await page.route("http://127.0.0.1:47832/v1/**", handler);
   await page.route("**/api/local-companion/v1/**", handler);
+}
+
+function displayFrameFromUsageResponse(usageResponse) {
+  const fallback = {
+    ok: true,
+    generatedAt: "2026-06-29T10:47:46Z",
+    source: "codexbar-display",
+    usageMode: "used",
+    currentProvider: "codex",
+    providers: [
+      {
+        id: "codex",
+        label: "Codex",
+        source: "oauth",
+        session: 12,
+        weekly: 34,
+        usageMode: "used",
+      },
+    ],
+  };
+  const usage =
+    usageResponse && typeof usageResponse === "object" ? usageResponse : fallback;
+  const providers = Array.isArray(usage.providers) ? usage.providers : [];
+  const provider =
+    providers.find((entry) => entry?.id === usage.currentProvider) ||
+    providers[0];
+  if (!provider) {
+    return null;
+  }
+  const usageMode = provider.usageMode || usage.usageMode;
+  const remaining = usageMode === "remaining";
+  return {
+    provider: provider.id,
+    label: provider.label || provider.id,
+    session: remaining
+      ? clampPercent(provider.session)
+      : invertPercent(provider.session),
+    weekly: remaining
+      ? clampPercent(provider.weekly)
+      : invertPercent(provider.weekly),
+    resetSecs: nonNegativeInteger(provider.resetSecs),
+    usageMode: "remaining",
+    activity: provider.activity || "idle",
+    sessionTokens: nonNegativeInteger(provider.sessionTokens),
+    weekTokens: nonNegativeInteger(provider.weekTokens),
+    totalTokens: nonNegativeInteger(provider.totalTokens),
+  };
+}
+
+function clampPercent(value) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, Math.round(value)))
+    : 0;
+}
+
+function invertPercent(value) {
+  return 100 - clampPercent(value);
+}
+
+function nonNegativeInteger(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : undefined;
 }
 
 function parseJSON(raw) {

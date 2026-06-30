@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -323,6 +324,18 @@ type usageResponse struct {
 	Providers       []usageProviderInfo `json:"providers"`
 }
 
+type displayFrameResponse struct {
+	OK      bool           `json:"ok"`
+	SavedAt string         `json:"savedAt,omitempty"`
+	Source  string         `json:"source,omitempty"`
+	Frame   protocol.Frame `json:"frame"`
+}
+
+type persistedDisplayFrame struct {
+	SavedAt time.Time      `json:"savedAt"`
+	Frame   protocol.Frame `json:"frame"`
+}
+
 type usageProviderInfo struct {
 	ID                 string                   `json:"id"`
 	Label              string                   `json:"label"`
@@ -505,6 +518,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
+	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/repair", s.handleDeviceRepair)
@@ -647,6 +661,62 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	saved, ok := s.loadLastGoodDisplayFrame()
+	if !ok {
+		writeError(
+			w,
+			http.StatusNotFound,
+			"display_frame_unavailable",
+			"Display frame is not available.",
+			"Keep the Mac App running until VibeTV receives a usage frame.",
+		)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, displayFrameResponse{
+		OK:      true,
+		SavedAt: saved.SavedAt.UTC().Format(time.RFC3339Nano),
+		Source:  "last-good-frame",
+		Frame:   saved.Frame.Normalize(),
+	})
+}
+
+func (s *Server) loadLastGoodDisplayFrame() (persistedDisplayFrame, bool) {
+	path := s.lastGoodDisplayFramePath()
+	if path == "" {
+		return persistedDisplayFrame{}, false
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return persistedDisplayFrame{}, false
+	}
+
+	var saved persistedDisplayFrame
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		return persistedDisplayFrame{}, false
+	}
+	frame := saved.Frame.Normalize()
+	if saved.SavedAt.IsZero() || strings.TrimSpace(frame.Error) != "" {
+		return persistedDisplayFrame{}, false
+	}
+	saved.Frame = frame
+	return saved, true
+}
+
+func (s *Server) lastGoodDisplayFramePath() string {
+	home := strings.TrimSpace(s.home)
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "last-good-frame.json")
 }
 
 func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {

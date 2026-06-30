@@ -32,3 +32,5 @@ build/
 # Temporary
 tmp/
 temp/
+.vercel
+.env.local
