@@ -2194,24 +2194,6 @@ func (s *Server) activeMacAppUpdateJob() (macAppUpdateJob, bool) {
 	return macAppUpdateJob{}, false
 }
 
-func (s *Server) latestMacAppUpdateJob() (macAppUpdateJob, bool) {
-	s.macAppUpdateMu.Lock()
-	defer s.macAppUpdateMu.Unlock()
-	var latest *macAppUpdateJob
-	for _, job := range s.macAppUpdateJobs {
-		if job == nil {
-			continue
-		}
-		if latest == nil || job.StartedAt.After(latest.StartedAt) {
-			latest = job
-		}
-	}
-	if latest == nil {
-		return macAppUpdateJob{}, false
-	}
-	return cloneMacAppUpdateJob(latest), true
-}
-
 func (s *Server) createMacAppUpdateJob(req macAppUpdateRequest) macAppUpdateJob {
 	s.macAppUpdateMu.Lock()
 	defer s.macAppUpdateMu.Unlock()
