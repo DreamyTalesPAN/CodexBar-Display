@@ -235,6 +235,41 @@ func TestUsageFallsBackToCodexBarFetchWhenSnapshotsMissing(t *testing.T) {
 	}
 }
 
+func TestDisplayFrameLatestReturnsSentDisplayFrame(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	savedAt := time.Date(2026, 6, 30, 12, 15, 0, 123, time.UTC)
+	server.loadDisplayFrame = func(time.Time) (protocol.Frame, time.Time, bool) {
+		return protocol.Frame{
+			Provider:  "codex",
+			Label:     "Codex",
+			Session:   93,
+			Weekly:    90,
+			UsageMode: "remaining",
+		}, savedAt, true
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got displayFrameResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || got.Source != "last-display-frame" || got.SavedAt == "" {
+		t.Fatalf("unexpected display frame metadata: %+v", got)
+	}
+	if got.Frame.Provider != "codex" || got.Frame.Label != "Codex" {
+		t.Fatalf("unexpected display frame identity: %+v", got.Frame)
+	}
+	if got.Frame.UsageMode != "remaining" || got.Frame.Session != 93 || got.Frame.Weekly != 90 {
+		t.Fatalf("expected remaining frame 93/90, got %+v", got.Frame)
+	}
+}
+
 func TestUsageRefreshesStaleProviderSnapshots(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC)

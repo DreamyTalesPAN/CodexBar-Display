@@ -17,7 +17,6 @@ import {
   type DeviceInfo,
   type DeviceState,
   type ReadinessTone,
-  type UsageSnapshot,
 } from "./control-center-types";
 import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
@@ -27,7 +26,6 @@ type OverviewScreenProps = {
   deviceState: DeviceState;
   device: DeviceInfo | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
-  usage?: UsageSnapshot | null;
   busyAction?: string | null;
   onReloadImage?: () => void;
 };
@@ -39,7 +37,6 @@ export function OverviewScreen({
   deviceState,
   device,
   firmwareUpdate,
-  usage,
   onReloadImage,
 }: OverviewScreenProps) {
   const imageStuck = deviceImageIsStuck(device);
@@ -105,7 +102,7 @@ export function OverviewScreen({
         </div>
 
         <div className="flex justify-center lg:justify-end">
-          <LiveVibeTVPreview device={device} usage={usage || null} />
+          <LiveVibeTVPreview device={device} />
         </div>
       </section>
     </div>

@@ -73,6 +73,7 @@ type Server struct {
 	waitStream       func(context.Context, string) displayStreamInfo
 	refreshStream    func(context.Context, string) error
 	loadUsage        func(time.Time) (daemon.PersistedUsage, bool)
+	loadDisplayFrame func(time.Time) (protocol.Frame, time.Time, bool)
 	fetchUsage       func(context.Context) ([]codexbar.ParsedFrame, error)
 	updateFirmware   func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
 	updateMacApp     func(context.Context, string, string, macAppUpdateRequest, io.Writer) error
@@ -323,6 +324,27 @@ type usageResponse struct {
 	Providers       []usageProviderInfo `json:"providers"`
 }
 
+type displayFrameResponse struct {
+	OK      bool             `json:"ok"`
+	SavedAt string           `json:"savedAt,omitempty"`
+	Source  string           `json:"source"`
+	Frame   displayFrameInfo `json:"frame"`
+}
+
+type displayFrameInfo struct {
+	Provider      string `json:"provider,omitempty"`
+	Label         string `json:"label,omitempty"`
+	Session       int    `json:"session"`
+	Weekly        int    `json:"weekly"`
+	ResetSec      int64  `json:"resetSecs,omitempty"`
+	UsageMode     string `json:"usageMode"`
+	Activity      string `json:"activity,omitempty"`
+	Theme         string `json:"theme,omitempty"`
+	SessionTokens int64  `json:"sessionTokens,omitempty"`
+	WeekTokens    int64  `json:"weekTokens,omitempty"`
+	TotalTokens   int64  `json:"totalTokens,omitempty"`
+}
+
 type usageProviderInfo struct {
 	ID                 string                   `json:"id"`
 	Label              string                   `json:"label"`
@@ -465,6 +487,7 @@ func New(opts Options) (*Server, error) {
 		waitStream:       waitForDisplayStream,
 		refreshStream:    opts.RefreshDisplayStream,
 		loadUsage:        daemon.LoadPersistedUsage,
+		loadDisplayFrame: daemon.LoadPersistedDisplayFrame,
 		fetchUsage:       codexbar.FetchAllProviders,
 		updateFirmware:   runFirmwareUpdateCommand,
 		updateMacApp:     runMacAppUpdateCommand,
@@ -505,6 +528,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
+	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/repair", s.handleDeviceRepair)
@@ -647,6 +671,30 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if s.loadDisplayFrame == nil {
+		writeError(w, http.StatusNotFound, "display_frame_unavailable", "Display frame is not available.", "Wait until VibeTV has received a fresh frame.")
+		return
+	}
+	frame, savedAt, ok := s.loadDisplayFrame(time.Now().UTC())
+	if !ok {
+		writeError(w, http.StatusNotFound, "display_frame_unavailable", "Display frame is not available.", "Wait until VibeTV has received a fresh frame.")
+		return
+	}
+	response := displayFrameResponse{
+		OK:     true,
+		Source: "last-display-frame",
+		Frame:  displayFrameFromProtocol(frame),
+	}
+	if !savedAt.IsZero() {
+		response.SavedAt = savedAt.UTC().Format(time.RFC3339Nano)
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
@@ -1145,6 +1193,23 @@ func usageProviderLabel(id string, label string) string {
 		return "Provider"
 	}
 	return strings.ToUpper(id[:1]) + id[1:]
+}
+
+func displayFrameFromProtocol(frame protocol.Frame) displayFrameInfo {
+	frame = frame.Normalize()
+	return displayFrameInfo{
+		Provider:      strings.TrimSpace(frame.Provider),
+		Label:         strings.TrimSpace(frame.Label),
+		Session:       clampUsagePercent(frame.Session),
+		Weekly:        clampUsagePercent(frame.Weekly),
+		ResetSec:      frame.ResetSec,
+		UsageMode:     frame.UsageMode,
+		Activity:      strings.TrimSpace(frame.Activity),
+		Theme:         strings.TrimSpace(frame.Theme),
+		SessionTokens: frame.SessionTokens,
+		WeekTokens:    frame.WeekTokens,
+		TotalTokens:   frame.TotalTokens,
+	}
 }
 
 func usageModeOrDefault(mode string) string {
