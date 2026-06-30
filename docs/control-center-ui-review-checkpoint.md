@@ -13,6 +13,11 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: Overview VibeTV device preview data source, local Mac App `display-frame/latest` read path, Preview deployment inputs, and customer-flow browser coverage for the rendered ThemeSpec preview.
+- Customer rule: the existing preview should show the same frame customers see on VibeTV without adding setup choices, diagnostics text, or server-side file errors. The browser asks the local Mac App for the last good frame; when that frame is unavailable, the preview still falls back to usage data instead of surfacing internal file-state wording.
+- Simplifications accepted: no new visible UI, buttons, tabs, or explanatory text were added; the stale Vercel-side display-frame dependency was removed from the browser flow, and the test mock now follows the same local Mac App contract.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `lint`, `test:customer-flows`, `go test ./internal/companionapi`, `next build`, `git diff --check`, and Vercel Preview browser verification passed locally. Preview `codex-vibetv-control-center-3k1inlsbw-paul-anduschus-projects.vercel.app` rendered Synthwave from `/v1/display-frame/latest` without calling `/api/display-frame/latest`.
+
 - Reviewed scope: hosted Mac App installer script as a public Control Center asset, setup recovery when VibeTV briefly disappears from WiFi, and final background-service target persistence after automatic discovery.
 - Customer rule: no new visible Control Center UI, buttons, tabs, or customer decisions were added; setup remains one Mac App install/update action that should recover the VibeTV connection automatically instead of asking customers to understand IP discovery, pairing, LaunchAgents, or local targets.
 - Simplifications accepted: the customer-facing app stays unchanged; installer output keeps using Mac App and VibeTV wording while preserving detailed support commands only for diagnostics.
