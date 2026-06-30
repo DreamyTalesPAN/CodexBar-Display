@@ -223,6 +223,9 @@ type runtimeState struct {
 	lastPersistedGood      protocol.Frame
 	lastPersistedAt        time.Time
 	hasPersistedGood       bool
+	lastPersistedDisplay   protocol.Frame
+	lastDisplayPersistedAt time.Time
+	hasPersistedDisplay    bool
 	cliTheme               string
 	firmwareUpdate         protocol.UpdateState
 	hasFirmwareUpdate      bool
@@ -1103,9 +1106,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		}
 	}
 
-	if err := persistDisplayFrame(frame, sentAt); err != nil {
-		deps.logf("runtime event=display-frame-persist-failed err=%v\n", err)
-	}
+	updateDisplayFrameState(state, frame, sentAt, deps)
 
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
 		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
@@ -1365,6 +1366,32 @@ func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Tim
 
 func framesEqual(a, b protocol.Frame) bool {
 	return reflect.DeepEqual(a.Normalize(), b.Normalize())
+}
+
+func updateDisplayFrameState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {
+	if state == nil {
+		if err := persistDisplayFrame(frame, now); err != nil {
+			deps.logf("runtime event=display-frame-persist-failed err=%v\n", err)
+		}
+		return
+	}
+
+	normalized := frame.Normalize()
+	shouldPersist := !state.hasPersistedDisplay ||
+		!framesEqual(state.lastPersistedDisplay, normalized) ||
+		state.lastDisplayPersistedAt.IsZero() ||
+		now.Sub(state.lastDisplayPersistedAt) >= lastGoodPersistInterval
+	if !shouldPersist {
+		return
+	}
+
+	if err := persistDisplayFrame(normalized, now); err != nil {
+		deps.logf("runtime event=display-frame-persist-failed err=%v\n", err)
+		return
+	}
+	state.lastPersistedDisplay = normalized
+	state.lastDisplayPersistedAt = now
+	state.hasPersistedDisplay = true
 }
 
 func usageDataRuntimeError(kind runtimeErrorKind, op string, err error) *RuntimeError {
