@@ -13,6 +13,11 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: live VibeTV preview in Overview, one primary Updates action for Mac App plus VibeTV updates, Mac App self-update progress, firmware-version decoupling, and the hosted installer restart recovery after the `v1.0.36` release.
+- Customer rule: customers should see one update action and one setup recovery path; they should not need to understand release tags, firmware manifests, LaunchAgents, local ports, daemon flags, or why an old Mac App binary cannot read a new plist.
+- Simplifications accepted: separate Mac App and firmware buttons were collapsed into one Update action; device preview now mirrors the streamed display frame instead of a separate approximation; installer `--restart` updates the Mac App binary before restarting so setup recovery stays a customer-level Mac App action.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`; PR #139 CI passed; `app.vibetv.shop` deploy succeeded; `git diff --check`, daemon installer tests, release-workflow tests, and `npm run build` passed locally for this follow-up installer fix.
+
 - Reviewed scope: hosted Mac App installer script as a public Control Center asset, setup recovery when VibeTV briefly disappears from WiFi, and final background-service target persistence after automatic discovery.
 - Customer rule: no new visible Control Center UI, buttons, tabs, or customer decisions were added; setup remains one Mac App install/update action that should recover the VibeTV connection automatically instead of asking customers to understand IP discovery, pairing, LaunchAgents, or local targets.
 - Simplifications accepted: the customer-facing app stays unchanged; installer output keeps using Mac App and VibeTV wording while preserving detailed support commands only for diagnostics.

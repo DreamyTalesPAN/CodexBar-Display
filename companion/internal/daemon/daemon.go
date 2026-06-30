@@ -223,6 +223,9 @@ type runtimeState struct {
 	lastPersistedGood      protocol.Frame
 	lastPersistedAt        time.Time
 	hasPersistedGood       bool
+	lastPersistedDisplay   protocol.Frame
+	lastDisplayPersistedAt time.Time
+	hasPersistedDisplay    bool
 	cliTheme               string
 	firmwareUpdate         protocol.UpdateState
 	hasFirmwareUpdate      bool
@@ -254,6 +257,11 @@ type cycleResult struct {
 }
 
 type persistedLastGood struct {
+	SavedAt time.Time      `json:"savedAt"`
+	Frame   protocol.Frame `json:"frame"`
+}
+
+type persistedDisplayFrame struct {
 	SavedAt time.Time      `json:"savedAt"`
 	Frame   protocol.Frame `json:"frame"`
 }
@@ -1050,7 +1058,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	publicPort := publicDeviceTarget(port)
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
-	frame = attachClockFields(frame, deps.now())
+	sentAt := deps.now()
+	frame = attachClockFields(frame, sentAt)
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
 		var applied bool
@@ -1096,6 +1105,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
+
+	updateDisplayFrameState(state, frame, sentAt, deps)
 
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
 		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
@@ -1357,6 +1368,32 @@ func framesEqual(a, b protocol.Frame) bool {
 	return reflect.DeepEqual(a.Normalize(), b.Normalize())
 }
 
+func updateDisplayFrameState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {
+	if state == nil {
+		if err := persistDisplayFrame(frame, now); err != nil {
+			deps.logf("runtime event=display-frame-persist-failed err=%v\n", err)
+		}
+		return
+	}
+
+	normalized := frame.Normalize()
+	shouldPersist := !state.hasPersistedDisplay ||
+		!framesEqual(state.lastPersistedDisplay, normalized) ||
+		state.lastDisplayPersistedAt.IsZero() ||
+		now.Sub(state.lastDisplayPersistedAt) >= lastGoodPersistInterval
+	if !shouldPersist {
+		return
+	}
+
+	if err := persistDisplayFrame(normalized, now); err != nil {
+		deps.logf("runtime event=display-frame-persist-failed err=%v\n", err)
+		return
+	}
+	state.lastPersistedDisplay = normalized
+	state.lastDisplayPersistedAt = now
+	state.hasPersistedDisplay = true
+}
+
 func usageDataRuntimeError(kind runtimeErrorKind, op string, err error) *RuntimeError {
 	if kind == "" {
 		kind = runtimeErrorUnknown
@@ -1471,6 +1508,32 @@ func loadPersistedLastGoodAnyAge() (protocol.Frame, time.Time, bool) {
 	return frame, saved.SavedAt, true
 }
 
+func loadPersistedDisplayFrameAnyAge() (protocol.Frame, time.Time, bool) {
+	path := displayFrameSnapshotPath()
+	if path == "" {
+		return protocol.Frame{}, time.Time{}, false
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return protocol.Frame{}, time.Time{}, false
+	}
+
+	var saved persistedDisplayFrame
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		return protocol.Frame{}, time.Time{}, false
+	}
+
+	frame := saved.Frame.Normalize()
+	if strings.TrimSpace(frame.Error) != "" {
+		return protocol.Frame{}, time.Time{}, false
+	}
+	if frame.UsageMode != "used" && frame.UsageMode != "remaining" {
+		return protocol.Frame{}, time.Time{}, false
+	}
+	return frame, saved.SavedAt, true
+}
+
 func persistLastGood(frame protocol.Frame, savedAt time.Time) error {
 	if strings.TrimSpace(frame.Error) != "" || savedAt.IsZero() {
 		return nil
@@ -1495,12 +1558,44 @@ func persistLastGood(frame protocol.Frame, savedAt time.Time) error {
 	return os.WriteFile(path, raw, 0o644)
 }
 
+func persistDisplayFrame(frame protocol.Frame, savedAt time.Time) error {
+	if strings.TrimSpace(frame.Error) != "" || savedAt.IsZero() {
+		return nil
+	}
+
+	path := displayFrameSnapshotPath()
+	if path == "" {
+		return nil
+	}
+
+	payload := persistedDisplayFrame{
+		SavedAt: savedAt.UTC(),
+		Frame:   frame.Normalize(),
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, raw, 0o644)
+}
+
 func lastGoodSnapshotPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return ""
 	}
 	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "last-good-frame.json")
+}
+
+func displayFrameSnapshotPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
+	}
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "last-display-frame.json")
 }
 
 func collectorInterval(renderInterval time.Duration) time.Duration {
@@ -1824,6 +1919,20 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 		usage.CurrentProvider = usage.Providers[0].Provider
 	}
 	return usage, true
+}
+
+func LoadPersistedDisplayFrame(now time.Time) (protocol.Frame, time.Time, bool) {
+	frame, savedAt, ok := loadPersistedDisplayFrameAnyAge()
+	if !ok {
+		return protocol.Frame{}, time.Time{}, false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if !isLastGoodFreshAt(savedAt, now, lastGoodMaxAge()) {
+		return protocol.Frame{}, time.Time{}, false
+	}
+	return frame, savedAt.UTC(), true
 }
 
 func orderedProviderUsageKeys(snapshots map[string]providerSnapshot) []string {

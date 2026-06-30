@@ -579,14 +579,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }
           setSetupPreviewStep(null);
         }
-        if (payload.device?.target) {
-          setDevice(payload.device);
-          setDeviceTarget(payload.device.target);
-          rememberDeviceTarget(payload.device.target);
+        const statusDevice = payload.device;
+        if (statusDevice?.target) {
+          setDevice((current) => mergeStatusDeviceInfo(current, statusDevice));
+          setDeviceTarget(statusDevice.target);
+          rememberDeviceTarget(statusDevice.target);
           setDeviceState(
-            payload.device.paired
+            statusDevice.paired
               ? "paired"
-              : payload.device.connected
+              : statusDevice.connected
                 ? "online"
                 : "unknown",
           );
@@ -601,7 +602,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (!quiet || wasMissing) {
           addEvent({
             label: wasMissing ? "Mac App reconnected" : "Mac App checked",
-            detail: payload.device?.target
+            detail: statusDevice?.target
               ? "Mac App is ready."
               : "VibeTV still needs to be connected.",
             at: checkedAt,
@@ -671,14 +672,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             setThemeInstallEnabled(
               Boolean(statusPayload.companion?.features?.themeInstallEnabled),
             );
-            if (statusPayload.device?.target) {
-              setDevice(statusPayload.device);
-              setDeviceTarget(statusPayload.device.target);
-              rememberDeviceTarget(statusPayload.device.target);
+            const statusDevice = statusPayload.device;
+            if (statusDevice?.target) {
+              setDevice((current) =>
+                mergeStatusDeviceInfo(current, statusDevice),
+              );
+              setDeviceTarget(statusDevice.target);
+              rememberDeviceTarget(statusDevice.target);
               setDeviceState(
-                statusPayload.device.paired
+                statusDevice.paired
                   ? "paired"
-                  : statusPayload.device.connected
+                  : statusDevice.connected
                     ? "online"
                     : "unknown",
               );
@@ -1758,7 +1762,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           deviceState={deviceState}
           firmwareUpdate={effectiveFirmwareUpdate}
           onReloadImage={() => reloadDisplay()}
-          usage={usage}
         />
       ) : null}
 
@@ -1836,6 +1839,40 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ) : null}
     </ControlCenterShell>
   );
+}
+
+function mergeStatusDeviceInfo(
+  current: DeviceInfo | null,
+  incoming: DeviceInfo,
+): DeviceInfo {
+  if (!current || !isSameDeviceTarget(current, incoming)) {
+    return incoming;
+  }
+
+  return {
+    ...current,
+    ...incoming,
+    board: nonEmpty(incoming.board) || current.board,
+    firmware: nonEmpty(incoming.firmware) || current.firmware,
+    activeTheme: nonEmpty(incoming.activeTheme) || current.activeTheme,
+    stream:
+      current.stream || incoming.stream
+        ? { ...current.stream, ...incoming.stream }
+        : undefined,
+    display: incoming.display || current.display,
+    capabilities: incoming.capabilities || current.capabilities,
+  };
+}
+
+function isSameDeviceTarget(current: DeviceInfo, incoming: DeviceInfo): boolean {
+  const currentTarget = current.target?.trim();
+  const incomingTarget = incoming.target?.trim();
+  return !currentTarget || !incomingTarget || currentTarget === incomingTarget;
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
 }
 
 function normalizeError(error: unknown, status: number): ApiError {
