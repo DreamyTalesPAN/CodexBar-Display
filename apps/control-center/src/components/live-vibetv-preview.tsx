@@ -51,6 +51,7 @@ type DisplayFrame = {
   sessionTokens?: number;
   weekTokens?: number;
   totalTokens?: number;
+  themeSpec?: ThemeSpec | null;
 };
 
 type LocalDisplayFrameRequestInit = RequestInit & {
@@ -141,10 +142,11 @@ type SpriteRect = {
 
 export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   const provider = currentUsageProvider(usage);
-  const themeId = activeThemeId(device);
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
   );
+  const frameSpec = displayFrame?.frame?.themeSpec || null;
+  const themeId = activeThemeId(device) || themeIdFromSpec(frameSpec);
   const frame = buildFrameData(
     provider,
     displayFrame?.savedAt || usage?.generatedAt,
@@ -157,6 +159,9 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
     : packState?.themeId === themeId
       ? packState.status
       : "loading";
+  const renderedSpec = frameSpec || pack?.spec || null;
+  const renderedThemeId =
+    themeIdFromSpec(frameSpec) || pack?.themeId || themeId;
 
   useEffect(() => {
     if (!themeId) {
@@ -228,12 +233,12 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   return (
     <figure className="w-full max-w-[540px]">
       <VibeTVCaseShell>
-        {pack?.spec ? (
+        {renderedSpec ? (
           <ThemeSpecSVG
-            assets={pack.assets || {}}
+            assets={pack?.assets || {}}
             frame={frame}
-            spec={pack.spec}
-            themeId={pack.themeId || themeId}
+            spec={renderedSpec}
+            themeId={renderedThemeId}
           />
         ) : (
           <ThemeSpecLoading status={packStatus} themeId={themeId} />
@@ -701,6 +706,16 @@ function activeThemeId(device: DeviceInfo | null): string {
     return theme;
   }
   return "";
+}
+
+function themeIdFromSpec(spec: ThemeSpec | null | undefined): string {
+  const rawId =
+    typeof spec?.themeId === "string"
+      ? spec.themeId
+      : typeof spec?.id === "string"
+        ? spec.id
+        : "";
+  return rawId.trim().toLowerCase();
 }
 
 function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): string {

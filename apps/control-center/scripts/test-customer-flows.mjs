@@ -1417,6 +1417,87 @@ async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
     await assertNoMobileOverflow(page);
     await page.close();
   }
+
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.33",
+    device: {
+      ...companionDevice,
+      activeTheme: "mini-classic",
+      firmware: "1.0.32",
+      stream: {
+        healthy: true,
+        running: true,
+      },
+      display: {
+        themeSpec: {
+          active: true,
+          renderOk: true,
+        },
+      },
+    },
+    displayFrameOverride: {
+      provider: "codex",
+      label: "Codex",
+      session: 73,
+      weekly: 37,
+      resetSecs: 5400,
+      usageMode: "remaining",
+      activity: "coding",
+      themeSpec: {
+        v: 1,
+        id: "frame-spec",
+        rev: 9,
+        bg: "#000000",
+        p: [
+          {
+            t: "tx",
+            x: 20,
+            y: 18,
+            w: 200,
+            v: "FRAME SPEC",
+            s: 2,
+            al: "center",
+            c: "#CCFF00",
+          },
+          {
+            t: "tx",
+            x: 20,
+            y: 58,
+            v: "{session}% {usageMode}",
+            s: 2,
+            c: "#FFFFFF",
+          },
+          {
+            t: "p",
+            x: 20,
+            y: 96,
+            w: 160,
+            h: 14,
+            b: "session",
+            c: "#CCFF00",
+            bg: "#111111",
+          },
+        ],
+      },
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  const renderedFrameSpec = page.getByRole("img", {
+    name: /Rendered VibeTV theme frame-spec showing Codex, 73% session remaining, 37% weekly remaining/,
+  });
+  await renderedFrameSpec.waitFor({ timeout: 10_000 });
+  await renderedFrameSpec.getByText("FRAME SPEC").waitFor({ timeout: 10_000 });
+  await renderedFrameSpec
+    .getByText("73% remaining")
+    .waitFor({ timeout: 10_000 });
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
 }
 
 async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
@@ -2036,6 +2117,7 @@ async function routeCompanionOnline(
     usageResponse,
     usageStatus = 200,
     displayFrameStatus = 200,
+    displayFrameOverride,
     repairError = false,
   } = {},
 ) {
@@ -2258,7 +2340,7 @@ async function routeCompanionOnline(
         });
         return;
       }
-      const frame = displayFrameFromUsageResponse(usageResponse);
+      const frame = displayFrameOverride || displayFrameFromUsageResponse(usageResponse);
       if (!frame) {
         await route.fulfill({
           status: 404,
