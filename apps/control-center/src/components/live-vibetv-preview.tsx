@@ -53,6 +53,10 @@ type DisplayFrame = {
   totalTokens?: number;
 };
 
+type LocalDisplayFrameRequestInit = RequestInit & {
+  targetAddressSpace?: "loopback";
+};
+
 type ThemeSpec = {
   id?: string;
   themeId?: string;
@@ -191,10 +195,15 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
 
     const refreshDisplayFrame = async () => {
       try {
-        const response = await fetch("/api/display-frame/latest", {
+        const requestInit: LocalDisplayFrameRequestInit = {
           cache: "no-store",
           signal: controller.signal,
-        });
+        };
+        const url = displayFrameUrl();
+        if (url.startsWith("http://127.0.0.1:47832/")) {
+          requestInit.targetAddressSpace = "loopback";
+        }
+        const response = await fetch(url, requestInit);
         if (!response.ok) {
           throw new Error("display frame unavailable");
         }
@@ -232,6 +241,16 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
       </VibeTVCaseShell>
     </figure>
   );
+}
+
+function displayFrameUrl(): string {
+  if (typeof window === "undefined") {
+    return "http://127.0.0.1:47832/v1/display-frame/latest";
+  }
+  if (["127.0.0.1", "localhost", "::1"].includes(window.location.hostname)) {
+    return "/api/local-companion/v1/display-frame/latest";
+  }
+  return "http://127.0.0.1:47832/v1/display-frame/latest";
 }
 
 function VibeTVCaseShell({ children }: { children: ReactNode }) {
