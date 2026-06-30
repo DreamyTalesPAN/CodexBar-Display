@@ -1,4 +1,7 @@
+import path from "node:path";
 import type { NextConfig } from "next";
+
+const repoRoot = path.resolve(process.cwd(), "../..");
 
 const nextConfig: NextConfig = {
   async headers() {
@@ -16,8 +19,9 @@ const nextConfig: NextConfig = {
     ];
   },
   turbopack: {
-    root: process.cwd(),
+    root: repoRoot,
   },
+  outputFileTracingRoot: repoRoot,
   outputFileTracingIncludes: {
     "/api/theme-pack/[themeId]": ["../../theme-packs/**/*"],
   },
