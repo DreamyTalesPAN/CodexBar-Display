@@ -2032,6 +2032,8 @@ async function routeCompanionOnline(
     updateStatusSequence,
     macAppUpdateStatusSequence,
     dropBoardAfterFirmwareUpdate = false,
+    displayFrameResponse,
+    displayFrameStatus = 200,
     usageResponse,
     usageStatus = 200,
     repairError = false,
@@ -2282,6 +2284,29 @@ async function routeCompanionOnline(
                 usageMode: "used",
               },
             ],
+          },
+        ),
+      });
+      return;
+    }
+    if (pathname === "/v1/display-frame/latest") {
+      await route.fulfill({
+        status: displayFrameStatus,
+        contentType: "application/json",
+        body: JSON.stringify(
+          displayFrameResponse || {
+            ok: true,
+            savedAt: "2026-06-29T10:47:46Z",
+            source: "last-display-frame",
+            frame: {
+              provider: "codex",
+              label: "Codex",
+              session: 73,
+              weekly: 37,
+              resetSecs: 5400,
+              usageMode: "remaining",
+              activity: "coding",
+            },
           },
         ),
       });
