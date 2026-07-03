@@ -20,6 +20,7 @@ import {
   type ReadinessTone,
   type UsageSnapshot,
 } from "./control-center-types";
+import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
@@ -124,13 +125,10 @@ function StatusBadge({
   children: ReactNode;
   tone: ReadinessTone;
 }) {
-  const fill = tone === "ready" ? "bg-[#CCFF00]" : "bg-[#EEEEEE]";
   return (
-    <div
-      className={`grid size-16 shrink-0 place-items-center rounded-full border border-[#747A60] text-[#1B1B1B] ${fill}`}
-    >
+    <ControlCenterStatusIcon variant={tone === "ready" ? "complete" : "neutral"}>
       {children}
-    </div>
+    </ControlCenterStatusIcon>
   );
 }
 

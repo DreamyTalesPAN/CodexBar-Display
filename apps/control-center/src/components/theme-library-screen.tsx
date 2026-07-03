@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
 import type { ThemeProduct } from "@/lib/themes";
 import { ControlCenterButton } from "./control-center-button";
+import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import { themeRenderPackUrl } from "./control-center-runtime";
 import {
   ThemeSpecPreview,
@@ -833,9 +834,9 @@ function parseVersion(value: string): number[] {
 
 function HeroIcon({ children }: { children: ReactNode }) {
   return (
-    <div className="grid size-16 shrink-0 place-items-center rounded-full border border-[#747A60] bg-[#EEEEEE] text-[#1B1B1B]">
+    <ControlCenterStatusIcon variant="neutral">
       {children}
-    </div>
+    </ControlCenterStatusIcon>
   );
 }
 

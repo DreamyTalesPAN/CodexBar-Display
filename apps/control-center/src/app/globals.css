@@ -101,3 +101,48 @@ input {
   cursor: not-allowed;
   opacity: 0.7;
 }
+
+.vibetv-status-icon {
+  align-items: center;
+  border-radius: 9999px;
+  border-style: solid;
+  border-width: 1px;
+  display: grid;
+  flex-shrink: 0;
+  justify-items: center;
+  place-items: center;
+}
+
+.vibetv-status-icon--hero {
+  height: 4rem;
+  width: 4rem;
+}
+
+.vibetv-status-icon--step {
+  height: 2.75rem;
+  width: 2.75rem;
+}
+
+.vibetv-status-icon--complete {
+  background: #1B1B1B;
+  border-color: #1B1B1B;
+  color: #EDEDED;
+}
+
+.vibetv-status-icon--active {
+  background: #1B1B1B;
+  border-color: #1B1B1B;
+  color: #CCFF00;
+}
+
+.vibetv-status-icon--neutral {
+  background: #EEEEEE;
+  border-color: #747A60;
+  color: #1B1B1B;
+}
+
+.vibetv-status-icon--pending {
+  background: #F9F9F9;
+  border-color: #747A60;
+  color: #506600;
+}

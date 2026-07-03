@@ -14,6 +14,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { ControlCenterButton } from "./control-center-button";
+import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import {
   buildMacAppTerminalCommand,
   currentControlCenterOrigin,
@@ -194,7 +195,7 @@ export function UpdatesScreen({
       <section className="min-h-[330px] border-b border-[#747A60] py-10">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 items-start gap-5">
-            <HeroIcon active={!anyUpdateAvailable}>
+            <HeroIcon variant={anyUpdateAvailable ? "neutral" : "complete"}>
               {anyUpdateAvailable ? (
                 <RefreshCw size={36} aria-hidden />
               ) : (
@@ -618,20 +619,16 @@ function clampUpdateProgress(value: number | undefined): number {
 }
 
 function HeroIcon({
-  active,
   children,
+  variant = "neutral",
 }: {
-  active?: boolean;
   children: ReactNode;
+  variant?: "complete" | "neutral";
 }) {
   return (
-    <div
-      className={`grid size-16 shrink-0 place-items-center rounded-full border border-[#747A60] text-[#1B1B1B] ${
-        active ? "bg-[#CCFF00]" : "bg-[#EEEEEE]"
-      }`}
-    >
+    <ControlCenterStatusIcon variant={variant}>
       {children}
-    </div>
+    </ControlCenterStatusIcon>
   );
 }
 

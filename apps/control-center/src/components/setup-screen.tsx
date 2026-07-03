@@ -23,6 +23,7 @@ import {
   buildMacAppTerminalCommand,
   currentControlCenterOrigin,
 } from "./mac-app-install-command";
+import { ControlCenterStatusIcon } from "./control-center-status-icon";
 
 function buildAgentPrompt(terminalCommand: string) {
   return `Please install the VibeTV Mac App on this Mac.
@@ -234,13 +235,15 @@ export function SetupScreen({
       {showIntro ? (
         <section className="border-b border-[#747A60] py-8 lg:min-h-[330px] lg:py-12">
           <div className="flex items-start gap-5">
-            <div className="grid size-16 shrink-0 place-items-center rounded-full border border-[#747A60] bg-[#EEEEEE] text-[#1B1B1B]">
+            <ControlCenterStatusIcon
+              variant={setupComplete ? "complete" : "neutral"}
+            >
               {setupComplete ? (
                 <Check size={38} aria-hidden />
               ) : (
                 <Clipboard size={34} aria-hidden />
               )}
-            </div>
+            </ControlCenterStatusIcon>
             <div className="min-w-0">
               <h2 className="max-w-[520px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
                 {setupComplete ? "Setup complete" : "Set up your VibeTV"}
@@ -607,17 +610,12 @@ function SetupStep({
         state === "blocked" ? "opacity-45" : ""
       }`}
     >
-      <div
-        className={`grid size-11 place-items-center rounded-full border ${
-          complete
-            ? "border-[#1B1B1B] bg-[#1B1B1B] text-[#EDEDED]"
-            : active
-              ? "border-[#1B1B1B] bg-[#1B1B1B] text-[#CCFF00]"
-              : "border-[#747A60] bg-[#F9F9F9] text-[#506600]"
-        }`}
+      <ControlCenterStatusIcon
+        size="step"
+        variant={complete ? "complete" : active ? "active" : "pending"}
       >
         {complete ? <Check size={22} aria-hidden /> : icon}
-      </div>
+      </ControlCenterStatusIcon>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm font-bold uppercase text-[#506600]">
