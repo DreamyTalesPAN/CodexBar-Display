@@ -5,6 +5,11 @@ import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type { ThemeCatalogResponse } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
+  companionRequestUrl,
+  isLocalCompanionOrigin,
+  needsLoopbackTargetAddressSpace,
+} from "./control-center-runtime";
+import {
   deviceImageIsStuck,
   deviceSetupIsUsable,
   type ActiveTab,
@@ -26,7 +31,6 @@ import { ThemeLibraryScreen } from "./theme-library-screen";
 import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
 
-const COMPANION_URL = "http://127.0.0.1:47832";
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
@@ -354,7 +358,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (init?.body && !headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
       }
-      const useLocalProxy = shouldUseLocalCompanionProxy();
+      const requestUrl = companionRequestUrl(path);
       const controller = new AbortController();
       const timeout = window.setTimeout(() => {
         controller.abort();
@@ -364,15 +368,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         headers,
         signal: controller.signal,
       };
-      if (!useLocalProxy) {
+      if (needsLoopbackTargetAddressSpace(requestUrl)) {
         requestInit.targetAddressSpace = "loopback";
       }
       lastCompanionRequestAt.current = Date.now();
       try {
-        const response = await fetch(
-          companionRequestUrl(path, useLocalProxy),
-          requestInit,
-        );
+        const response = await fetch(requestUrl, requestInit);
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.ok === false) {
           throw normalizeError(payload?.error, response.status);
@@ -1202,16 +1203,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       });
 
       try {
-        const response = await fetch(
-          `/api/firmware/latest?${params.toString()}`,
-          {
-            signal: options.signal,
-          },
-        );
-        if (!response.ok) {
-          throw new Error(`firmware check failed: ${response.status}`);
+        if (isLocalCompanionOrigin()) {
+          const payload = await runCompanion<FirmwareUpdateInfo>(
+            `/v1/updates/latest?${params.toString()}`,
+            { signal: options.signal },
+          );
+          setFirmwareUpdate(payload);
+        } else {
+          const response = await fetch(
+            `/api/firmware/latest?${params.toString()}`,
+            {
+              signal: options.signal,
+            },
+          );
+          if (!response.ok) {
+            throw new Error(`firmware check failed: ${response.status}`);
+          }
+          setFirmwareUpdate((await response.json()) as FirmwareUpdateInfo);
         }
-        setFirmwareUpdate((await response.json()) as FirmwareUpdateInfo);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
@@ -1225,7 +1234,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
       }
     },
-    [deviceBoard, deviceFirmware],
+    [deviceBoard, deviceFirmware, runCompanion],
   );
   const hasCompanionReleaseInfo = Boolean(companionInfo?.update);
   const shouldUseLegacyCompanionRelease = Boolean(
@@ -2149,21 +2158,6 @@ function isCompanionConnectionError(error: Error): boolean {
   return /failed to fetch|fetch failed|load failed|networkerror|connection refused|err_connection_refused|couldn'?t connect/i.test(
     error.message,
   );
-}
-
-function companionRequestUrl(path: string, useLocalProxy: boolean): string {
-  if (!useLocalProxy) {
-    return `${COMPANION_URL}${path}`;
-  }
-  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-  return `/api/local-companion/${normalizedPath}`;
-}
-
-function shouldUseLocalCompanionProxy(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  return ["127.0.0.1", "localhost", "::1"].includes(window.location.hostname);
 }
 
 function isLocalCompanionFetchFailureReason(reason: unknown): boolean {

@@ -8,6 +8,11 @@ import type {
   UsageProviderInfo,
   UsageSnapshot,
 } from "./control-center-types";
+import {
+  companionRequestUrl,
+  needsLoopbackTargetAddressSpace,
+  themeRenderPackUrl,
+} from "./control-center-runtime";
 
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
@@ -164,7 +169,7 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
     }
 
     const controller = new AbortController();
-    fetch(`/api/theme-pack/${encodeURIComponent(themeId)}`, {
+    fetch(themeRenderPackUrl(themeId), {
       signal: controller.signal,
     })
       .then((response) => {
@@ -199,8 +204,8 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
           cache: "no-store",
           signal: controller.signal,
         };
-        const url = displayFrameUrl();
-        if (url.startsWith("http://127.0.0.1:47832/")) {
+        const url = companionRequestUrl("/v1/display-frame/latest");
+        if (needsLoopbackTargetAddressSpace(url)) {
           requestInit.targetAddressSpace = "loopback";
         }
         const response = await fetch(url, requestInit);
@@ -241,16 +246,6 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
       </VibeTVCaseShell>
     </figure>
   );
-}
-
-function displayFrameUrl(): string {
-  if (typeof window === "undefined") {
-    return "http://127.0.0.1:47832/v1/display-frame/latest";
-  }
-  if (["127.0.0.1", "localhost", "::1"].includes(window.location.hostname)) {
-    return "/api/local-companion/v1/display-frame/latest";
-  }
-  return "http://127.0.0.1:47832/v1/display-frame/latest";
 }
 
 function VibeTVCaseShell({ children }: { children: ReactNode }) {

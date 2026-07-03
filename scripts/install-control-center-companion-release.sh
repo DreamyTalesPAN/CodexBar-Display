@@ -36,6 +36,7 @@ REPAIR_MAX_ATTEMPTS="${VIBETV_COMPANION_REPAIR_ATTEMPTS:-45}"
 REPAIR_RETRY_DELAY="${VIBETV_COMPANION_REPAIR_RETRY_DELAY:-2}"
 MODE="install"
 START_MODE="${VIBETV_COMPANION_START_MODE:-terminal}"
+OPEN_CONTROL_CENTER="${VIBETV_COMPANION_OPEN_CONTROL_CENTER:-1}"
 TMPDIR_INSTALL=""
 DOWNLOAD_BIN=""
 CHECKSUMS_FILE=""
@@ -58,6 +59,7 @@ What it does:
   - starts the normal VibeTV Mac App background service
   - verifies http://127.0.0.1:47832/v1/status
   - connects VibeTV and installs the latest firmware when available
+  - opens the local Control Center at http://127.0.0.1:47832/control-center
 
 Examples:
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
@@ -258,6 +260,25 @@ wait_for_api() {
     sleep 0.5
   done
   die "Mac setup service did not answer on http://${ADDR}/v1/status. Inspect ${DISPLAY_DAEMON_LOG_ERR}."
+}
+
+control_center_url() {
+  printf 'http://%s/control-center\n' "$ADDR"
+}
+
+open_control_center() {
+  local url
+  url="$(control_center_url)"
+  if [[ "$OPEN_CONTROL_CENTER" != "1" ]]; then
+    log "vibetv: Control Center is ready at ${url}"
+    return 0
+  fi
+  log "vibetv: opening Control Center at ${url}"
+  if command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1 || log "vibetv: open ${url}"
+  else
+    log "vibetv: open ${url}"
+  fi
 }
 
 json_escape() {
@@ -699,6 +720,7 @@ main() {
   if [[ "$MODE" == "restart" ]]; then
     restart_service
     wait_for_api
+    open_control_center
     exit 0
   fi
 
@@ -736,9 +758,11 @@ main() {
   log "vibetv: background service installed at ${DISPLAY_DAEMON_PLIST}"
   if [[ "$SKIP_DEVICE_SETUP" == "1" ]]; then
     log "vibetv: Mac App update verified"
+    open_control_center
     exit 0
   fi
   finish_device_setup
+  open_control_center
 }
 
 main "$@"

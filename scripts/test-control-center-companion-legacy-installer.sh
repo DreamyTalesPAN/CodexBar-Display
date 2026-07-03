@@ -193,10 +193,17 @@ EOF
 exit 0
 EOF
 
+  cat > "${fake_bin}/open" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FAKE_OPEN_LOG:?}"
+exit 0
+EOF
+
   chmod +x \
     "${fake_bin}/codesign" \
     "${fake_bin}/curl" \
     "${fake_bin}/launchctl" \
+    "${fake_bin}/open" \
     "${fake_bin}/shasum" \
     "${fake_bin}/uname" \
     "${fake_bin}/xattr"
@@ -242,6 +249,7 @@ run_installer() {
       FAKE_API_LOG="${root}/api.log" \
       FAKE_LAUNCHCTL_LOG="${root}/launchctl.log" \
       FAKE_CURL_LOG="${root}/curl.log" \
+      FAKE_OPEN_LOG="${root}/open.log" \
       FAKE_REPAIR_FAIL_ONCE="${FAKE_REPAIR_FAIL_ONCE:-}" \
       FAKE_REPAIR_ALWAYS_FAIL="${FAKE_REPAIR_ALWAYS_FAIL:-}" \
       FAKE_REPAIR_FAIL_COUNT="${FAKE_REPAIR_FAIL_COUNT:-}" \
@@ -280,6 +288,8 @@ run_restart_updates_daemon_launchagent() {
   launch_log="$(cat "${root}/launchctl.log")"
 
   assert_contains "$output" "Mac setup service is running"
+  assert_contains "$output" "opening Control Center at http://127.0.0.1:47832/control-center"
+  assert_contains "$(cat "${root}/open.log")" "http://127.0.0.1:47832/control-center"
   [[ ! -f "$legacy_plist" ]] || die "legacy LaunchAgent plist should be removed"
   [[ -f "$daemon_plist" ]] || die "daemon LaunchAgent plist should exist"
   assert_contains "$daemon_plist_body" "<string>daemon</string>"
@@ -340,6 +350,7 @@ run_install_writes_integrated_daemon_launchagent() {
   daemon_plist_body="$(cat "$daemon_plist")"
 
   assert_contains "$output" "background service installed at ${daemon_plist}"
+  assert_contains "$output" "opening Control Center at http://127.0.0.1:47832/control-center"
   assert_contains "$output" "VibeTV is connected at http://192.168.178.72"
   assert_contains "$output" "Done: firmware 9.9.9 installed"
   assert_contains "$output" "VibeTV firmware update complete"
@@ -358,6 +369,7 @@ run_install_writes_integrated_daemon_launchagent() {
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.daemon"
   assert_contains "$launch_log" "bootstrap gui/$(id -u) $daemon_plist"
   assert_contains "$launch_log" "kickstart -k gui/$(id -u)/com.codexbar-display.daemon"
+  assert_contains "$(cat "${root}/open.log")" "http://127.0.0.1:47832/control-center"
 }
 
 run_install_can_skip_device_setup_for_mac_app_update() {
@@ -378,6 +390,8 @@ run_install_can_skip_device_setup_for_mac_app_update() {
   api_log="$(cat "${root}/api.log")"
   assert_contains "$output" "Mac App update verified"
   assert_contains "$output" "background service installed"
+  assert_contains "$output" "opening Control Center at http://127.0.0.1:47832/control-center"
+  assert_contains "$(cat "${root}/open.log")" "http://127.0.0.1:47832/control-center"
   assert_not_contains "$curl_log" "/v1/device/repair"
   assert_not_contains "$curl_log" "/v1/device\""
   assert_not_contains "$api_log" "install-update"

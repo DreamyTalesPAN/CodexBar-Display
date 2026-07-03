@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:local": "node scripts/build-local-static.mjs",
     "start": "next start",
     "lint": "eslint",
     "check:customer-ui-copy": "node scripts/check-customer-ui-copy.mjs",

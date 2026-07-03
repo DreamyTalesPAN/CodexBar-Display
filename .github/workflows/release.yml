@@ -21,6 +21,13 @@ jobs:
           go-version-file: companion/go.mod
           cache-dependency-path: companion/go.sum
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/control-center/package-lock.json
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -46,6 +53,15 @@ jobs:
           chmod +x dist/install.sh
           cp scripts/install-control-center-companion-release.sh dist/install-control-center-companion.sh
           chmod +x dist/install-control-center-companion.sh
+
+          (
+            cd apps/control-center
+            npm ci
+            npm run build:local
+          )
+          rm -rf companion/internal/companionapi/controlcenter_static
+          mkdir -p companion/internal/companionapi/controlcenter_static
+          cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
 
           cd companion
           for ARCH in amd64 arm64; do

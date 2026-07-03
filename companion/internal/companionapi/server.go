@@ -3,15 +3,18 @@ package companionapi
 import (
 	"bytes"
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -28,7 +31,11 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
 )
+
+//go:embed all:controlcenter_static
+var embeddedControlCenterStatic embed.FS
 
 const (
 	DefaultAddr             = "127.0.0.1:47832"
@@ -54,12 +61,15 @@ const (
 	macAppReleaseAPIURL     = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
 	macAppReleaseCheckGap   = 6 * time.Hour
 	macAppReleaseTimeout    = 5 * time.Second
+	firmwareManifestEnvVar  = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareReleaseTimeout  = 5 * time.Second
 )
 
 type Options struct {
 	Addr                 string
 	Home                 string
 	AllowedOrigins       []string
+	ControlCenterFS      fs.FS
 	HTTPClient           *http.Client
 	RefreshDisplayStream func(context.Context, string) error
 }
@@ -68,6 +78,7 @@ type Server struct {
 	addr                   string
 	home                   string
 	allowedOrigins         map[string]struct{}
+	controlCenterFS        fs.FS
 	client                 *http.Client
 	loadConfig             func(string) (runtimeconfig.Config, error)
 	saveConfig             func(string, runtimeconfig.Config) error
@@ -219,6 +230,28 @@ type themeInstallJobResponse struct {
 
 type firmwareUpdateRequest struct {
 	Force bool `json:"force,omitempty"`
+}
+
+type firmwareLatestResponse struct {
+	CheckedAt         string `json:"checkedAt"`
+	InstalledFirmware string `json:"installedFirmware,omitempty"`
+	LatestFirmware    string `json:"latestFirmware,omitempty"`
+	Release           string `json:"release,omitempty"`
+	UpdateAvailable   bool   `json:"updateAvailable"`
+	Status            string `json:"status"`
+	Message           string `json:"message,omitempty"`
+}
+
+type firmwareReleaseManifest struct {
+	Release   string                    `json:"release"`
+	Artifacts []firmwareReleaseArtifact `json:"artifacts"`
+}
+
+type firmwareReleaseArtifact struct {
+	Board           string `json:"board"`
+	FirmwareVersion string `json:"firmwareVersion"`
+	Severity        string `json:"severity"`
+	Message         string `json:"message"`
 }
 
 type firmwareUpdateResult struct {
@@ -488,10 +521,18 @@ func New(opts Options) (*Server, error) {
 			origins[origin] = struct{}{}
 		}
 	}
+	controlCenterFS := opts.ControlCenterFS
+	if controlCenterFS == nil {
+		controlCenterFS, err = fs.Sub(embeddedControlCenterStatic, "controlcenter_static")
+		if err != nil {
+			return nil, fmt.Errorf("load embedded control center: %w", err)
+		}
+	}
 	return &Server{
 		addr:               addr,
 		home:               home,
 		allowedOrigins:     origins,
+		controlCenterFS:    controlCenterFS,
 		client:             client,
 		loadConfig:         runtimeconfig.Load,
 		saveConfig:         runtimeconfig.Save,
@@ -541,6 +582,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.registerControlCenterRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
@@ -554,11 +596,73 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/settings", s.handleSettings)
 	mux.HandleFunc("/v1/themes/install", s.handleThemeInstall)
 	mux.HandleFunc("/v1/themes/install/status", s.handleThemeInstallStatus)
+	mux.HandleFunc("/v1/updates/latest", s.handleFirmwareLatest)
 	mux.HandleFunc("/v1/updates/install", s.handleFirmwareUpdateInstall)
 	mux.HandleFunc("/v1/updates/install/status", s.handleFirmwareUpdateStatus)
 	mux.HandleFunc("/v1/mac-app/update", s.handleMacAppUpdateInstall)
 	mux.HandleFunc("/v1/mac-app/update/status", s.handleMacAppUpdateStatus)
 	return s.withCORS(mux)
+}
+
+func (s *Server) registerControlCenterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/control-center", s.handleControlCenter)
+	mux.HandleFunc("/control-center/", s.handleControlCenter)
+	mux.HandleFunc("/_next/", s.handleControlCenterAsset)
+	mux.HandleFunc("/images/", s.handleControlCenterAsset)
+	mux.HandleFunc("/theme-packs/", s.handleControlCenterAsset)
+	mux.HandleFunc("/favicon.ico", s.handleControlCenterAsset)
+	mux.HandleFunc("/install-control-center-companion.sh", s.handleControlCenterAsset)
+}
+
+func (s *Server) handleControlCenter(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet, http.MethodHead) {
+		return
+	}
+	assetPath := strings.TrimPrefix(r.URL.Path, "/control-center")
+	assetPath = strings.TrimPrefix(assetPath, "/")
+	if assetPath == "" {
+		assetPath = "index.html"
+	}
+	if strings.Contains(path.Base(assetPath), ".") {
+		s.serveControlCenterFile(w, r, assetPath)
+		return
+	}
+	s.serveControlCenterFile(w, r, "index.html")
+}
+
+func (s *Server) handleControlCenterAsset(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet, http.MethodHead) {
+		return
+	}
+	assetPath := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+	if assetPath == "." || strings.HasPrefix(assetPath, "../") {
+		http.NotFound(w, r)
+		return
+	}
+	s.serveControlCenterFile(w, r, assetPath)
+}
+
+func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, assetPath string) bool {
+	assetPath = strings.TrimPrefix(path.Clean("/"+assetPath), "/")
+	if assetPath == "." || !fs.ValidPath(assetPath) {
+		http.NotFound(w, r)
+		return false
+	}
+	data, err := fs.ReadFile(s.controlCenterFS, assetPath)
+	if err != nil {
+		if assetPath == "index.html" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			if r.Method != http.MethodHead {
+				_, _ = io.WriteString(w, "<!doctype html><title>VibeTV Control Center unavailable</title><p>VibeTV Control Center is not bundled with this Mac App. Run setup again.</p>")
+			}
+			return false
+		}
+		http.NotFound(w, r)
+		return false
+	}
+	http.ServeContent(w, r, path.Base(assetPath), time.Time{}, bytes.NewReader(data))
+	return true
 }
 
 func (s *Server) withCORS(next http.Handler) http.Handler {
@@ -1869,6 +1973,120 @@ func (s *Server) handleThemeInstallStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, themeInstallJobResponse{OK: true, Job: job})
+}
+
+func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	board := strings.TrimSpace(r.URL.Query().Get("board"))
+	installedFirmware := strings.TrimSpace(r.URL.Query().Get("firmware"))
+	checkedAt := time.Now().UTC().Format(time.RFC3339)
+	if board == "" || installedFirmware == "" {
+		writeJSON(w, http.StatusOK, firmwareLatestResponse{
+			CheckedAt:         checkedAt,
+			InstalledFirmware: installedFirmware,
+			UpdateAvailable:   false,
+			Status:            "missing_device_info",
+			Message:           "VibeTV update info is not available yet.",
+		})
+		return
+	}
+
+	manifest, err := s.fetchFirmwareReleaseManifest(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusOK, firmwareLatestResponse{
+			CheckedAt:         checkedAt,
+			InstalledFirmware: installedFirmware,
+			UpdateAvailable:   false,
+			Status:            "check_failed",
+			Message:           "Firmware check failed.",
+		})
+		return
+	}
+	artifact := latestFirmwareArtifactForBoard(manifest, board)
+	if strings.TrimSpace(artifact.FirmwareVersion) == "" {
+		writeJSON(w, http.StatusOK, firmwareLatestResponse{
+			CheckedAt:         checkedAt,
+			InstalledFirmware: installedFirmware,
+			Release:           manifest.Release,
+			UpdateAvailable:   false,
+			Status:            "no_board_release",
+			Message:           "No update is available for this VibeTV.",
+		})
+		return
+	}
+
+	updateAvailable := firmwareVersionCompare(artifact.FirmwareVersion, installedFirmware) > 0
+	message := "Firmware is up to date."
+	status := "current"
+	if updateAvailable {
+		status = "update_available"
+		message = strings.TrimSpace(artifact.Message)
+		if message == "" {
+			message = "Firmware update available."
+		}
+	}
+	writeJSON(w, http.StatusOK, firmwareLatestResponse{
+		CheckedAt:         checkedAt,
+		InstalledFirmware: installedFirmware,
+		LatestFirmware:    strings.TrimSpace(artifact.FirmwareVersion),
+		Release:           manifest.Release,
+		UpdateAvailable:   updateAvailable,
+		Status:            status,
+		Message:           message,
+	})
+}
+
+func (s *Server) fetchFirmwareReleaseManifest(ctx context.Context) (firmwareReleaseManifest, error) {
+	manifestURL := strings.TrimSpace(os.Getenv(firmwareManifestEnvVar))
+	if manifestURL == "" {
+		manifestURL = themeinstall.DefaultFirmwareManifestURL
+	}
+	ctx, cancel := context.WithTimeout(ctx, firmwareReleaseTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, manifestURL, nil)
+	if err != nil {
+		return firmwareReleaseManifest{}, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return firmwareReleaseManifest{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return firmwareReleaseManifest{}, fmt.Errorf("firmware manifest status %d", resp.StatusCode)
+	}
+	var manifest firmwareReleaseManifest
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&manifest); err != nil {
+		return firmwareReleaseManifest{}, err
+	}
+	return manifest, nil
+}
+
+func latestFirmwareArtifactForBoard(manifest firmwareReleaseManifest, board string) firmwareReleaseArtifact {
+	normalizedBoard := strings.ToLower(strings.TrimSpace(board))
+	var latest firmwareReleaseArtifact
+	for _, artifact := range manifest.Artifacts {
+		if strings.ToLower(strings.TrimSpace(artifact.Board)) != normalizedBoard {
+			continue
+		}
+		if strings.TrimSpace(latest.FirmwareVersion) == "" ||
+			firmwareVersionCompare(artifact.FirmwareVersion, latest.FirmwareVersion) > 0 {
+			latest = artifact
+		}
+	}
+	return latest
+}
+
+func firmwareVersionCompare(left, right string) int {
+	leftVersion, leftErr := versioning.ParseSemVer(left)
+	rightVersion, rightErr := versioning.ParseSemVer(right)
+	if leftErr != nil || rightErr != nil {
+		return strings.Compare(strings.TrimSpace(left), strings.TrimSpace(right))
+	}
+	return leftVersion.Compare(rightVersion)
 }
 
 func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Request) {
@@ -3188,9 +3406,11 @@ func (s *Server) do(req *http.Request, out any) error {
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {
-	if r.Method == method {
-		return true
+func requireMethod(w http.ResponseWriter, r *http.Request, methods ...string) bool {
+	for _, method := range methods {
+		if r.Method == method {
+			return true
+		}
 	}
 	writeMethodNotAllowed(w)
 	return false

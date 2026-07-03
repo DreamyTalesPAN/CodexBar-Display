@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
@@ -631,6 +632,105 @@ func TestPrivateNetworkAccessPreflightForAllowedOrigin(t *testing.T) {
 	}
 	if got := foreign.Header().Get("Access-Control-Allow-Private-Network"); got != "" {
 		t.Fatalf("expected no private network allow header for foreign origin, got %q", got)
+	}
+}
+
+func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.controlCenterFS = fstest.MapFS{
+		"index.html": {
+			Data: []byte(`<!doctype html><div id="root">VibeTV Control Center</div>`),
+		},
+		"_next/static/app.js": {
+			Data: []byte(`console.log("control-center")`),
+		},
+		"theme-packs/render/synthwave.json": {
+			Data: []byte(`{"ok":true,"themeId":"synthwave"}`),
+		},
+	}
+
+	for _, path := range []string{"/control-center", "/control-center/", "/control-center/usage"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected %s status 200, got %d body=%s", path, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "VibeTV Control Center") {
+			t.Fatalf("expected %s to serve index, got %q", path, rec.Body.String())
+		}
+	}
+
+	asset := httptest.NewRecorder()
+	assetReq := httptest.NewRequest(http.MethodGet, "/_next/static/app.js", nil)
+	server.Handler().ServeHTTP(asset, assetReq)
+	if asset.Code != http.StatusOK || !strings.Contains(asset.Body.String(), "control-center") {
+		t.Fatalf("expected embedded static asset, got %d body=%s", asset.Code, asset.Body.String())
+	}
+
+	theme := httptest.NewRecorder()
+	themeReq := httptest.NewRequest(http.MethodGet, "/theme-packs/render/synthwave.json", nil)
+	server.Handler().ServeHTTP(theme, themeReq)
+	if theme.Code != http.StatusOK || !strings.Contains(theme.Body.String(), "synthwave") {
+		t.Fatalf("expected embedded theme render pack, got %d body=%s", theme.Code, theme.Body.String())
+	}
+}
+
+func TestControlCenterStaticUnavailableWithoutIndex(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.controlCenterFS = fstest.MapFS{}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/control-center", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Run setup again") {
+		t.Fatalf("expected customer recovery copy, got %q", rec.Body.String())
+	}
+}
+
+func TestFirmwareLatestUsesReleaseManifest(t *testing.T) {
+	manifest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/firmware-manifest.json" {
+			t.Fatalf("unexpected manifest path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"release":"v1.0.99","artifacts":[{"board":"esp8266_smalltv_st7789","firmwareVersion":"1.0.33","message":"Firmware update available."},{"board":"esp8266_smalltv_st7789","firmwareVersion":"1.0.31"}]}`))
+	}))
+	defer manifest.Close()
+	t.Setenv(firmwareManifestEnvVar, manifest.URL+"/firmware-manifest.json")
+	server := newTestServer(t, runtimeconfig.Config{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266_smalltv_st7789&firmware=1.0.32", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.UpdateAvailable || got.LatestFirmware != "1.0.33" || got.Status != "update_available" {
+		t.Fatalf("unexpected firmware latest response: %+v", got)
+	}
+
+	none := httptest.NewRecorder()
+	noneReq := httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=unknown&firmware=1.0.32", nil)
+	server.Handler().ServeHTTP(none, noneReq)
+	if none.Code != http.StatusOK {
+		t.Fatalf("expected unknown board status 200, got %d body=%s", none.Code, none.Body.String())
+	}
+	var missing firmwareLatestResponse
+	if err := json.Unmarshal(none.Body.Bytes(), &missing); err != nil {
+		t.Fatalf("decode unknown board response: %v", err)
+	}
+	if missing.Status != "no_board_release" || missing.UpdateAvailable {
+		t.Fatalf("unexpected unknown board response: %+v", missing)
 	}
 }
 

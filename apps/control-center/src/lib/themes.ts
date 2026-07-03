@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { isRemoteThemePackUrl } from "./theme-pack-url";
 
 export type ThemeSource = "shopify" | "github-catalog" | "fallback";
@@ -39,6 +41,8 @@ const GITHUB_CATALOG_URL =
   "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json";
 const ALLOW_CATALOG_FALLBACK =
   process.env.CONTROL_CENTER_ALLOW_CATALOG_FALLBACK === "1";
+const LOCAL_STATIC_EXPORT =
+  process.env.VIBETV_CONTROL_CENTER_LOCAL_EXPORT === "1";
 const CUSTOMER_THEME_CATALOG_ISSUE = "Themes could not be loaded right now.";
 const CUSTOMER_THEME_CATALOG_UNAVAILABLE =
   "Themes are not available right now.";
@@ -98,6 +102,10 @@ type ThemePackCatalog = {
 };
 
 export async function getThemeCatalog(): Promise<ThemeCatalogResponse> {
+  if (LOCAL_STATIC_EXPORT) {
+    return fetchLocalStaticCatalog();
+  }
+
   const shopDomain = normalizeShopDomain(
     process.env.SHOPIFY_STORE_DOMAIN || process.env.SHOPIFY_SHOP_DOMAIN,
   );
@@ -137,6 +145,17 @@ export async function getThemeCatalog(): Promise<ThemeCatalogResponse> {
     return fetchGitHubCatalog(issue);
   }
   return emptyCatalog(issue, false);
+}
+
+export async function getStaticThemeIds(): Promise<string[]> {
+  try {
+    const catalog = await readLocalThemePackCatalog();
+    return (catalog.themes || [])
+      .map((theme) => theme.id?.trim())
+      .filter((themeId): themeId is string => Boolean(themeId));
+  } catch {
+    return [];
+  }
 }
 
 async function fetchShopifyThemes(
@@ -271,6 +290,20 @@ async function fetchGitHubCatalog(
   }
 }
 
+async function fetchLocalStaticCatalog(): Promise<ThemeCatalogResponse> {
+  try {
+    const catalog = await readLocalThemePackCatalog();
+    const themes = mapThemePackCatalog(catalog);
+    return {
+      themes,
+      source: "github-catalog",
+      storefrontConfigured: false,
+    };
+  } catch {
+    return emptyCatalog(CUSTOMER_THEME_CATALOG_UNAVAILABLE, false);
+  }
+}
+
 async function fetchGitHubCatalogThemes(): Promise<ThemeProduct[]> {
   const response = await fetch(GITHUB_CATALOG_URL, {
     next: { revalidate: 300 },
@@ -281,32 +314,59 @@ async function fetchGitHubCatalogThemes(): Promise<ThemeProduct[]> {
 
   const catalog = (await response.json()) as ThemePackCatalog;
   return (catalog.themes || [])
-    .map((theme): ThemeProduct | null => {
-      const themeId = theme.id?.trim();
-      if (!themeId) {
-        return null;
-      }
-      const packUrl = resolveCatalogUrl(
-        theme.downloadUrl || theme.packUrl || theme.downloadAsset,
-      );
-      return {
-        id: themeId,
-        title: theme.title || theme.name || titleFromThemeId(themeId),
-        description: theme.description,
-        priceLabel: "Kostenlos",
-        isFree: true,
-        themeId,
-        themeVersion:
-          theme.version ||
-          (theme.themeRev ? `rev ${theme.themeRev}` : undefined),
-        manifestUrl: theme.manifestUrl,
-        packUrl,
-        compatibleBoards: theme.compatibleBoards,
-        requiresFirmware: theme.requiresFirmware,
-        source: "github-catalog",
-      };
-    })
+    .map(mapThemePackCatalogEntry)
     .filter((theme): theme is ThemeProduct => Boolean(theme));
+}
+
+function mapThemePackCatalog(catalog: ThemePackCatalog): ThemeProduct[] {
+  return (catalog.themes || [])
+    .map(mapThemePackCatalogEntry)
+    .filter((theme): theme is ThemeProduct => Boolean(theme));
+}
+
+function mapThemePackCatalogEntry(
+  theme: NonNullable<ThemePackCatalog["themes"]>[number],
+): ThemeProduct | null {
+  const themeId = theme.id?.trim();
+  if (!themeId) {
+    return null;
+  }
+  const packUrl = resolveCatalogUrl(
+    theme.downloadUrl || theme.packUrl || theme.downloadAsset,
+  );
+  return {
+    id: themeId,
+    title: theme.title || theme.name || titleFromThemeId(themeId),
+    description: theme.description,
+    priceLabel: "Kostenlos",
+    isFree: true,
+    themeId,
+    themeVersion:
+      theme.version || (theme.themeRev ? `rev ${theme.themeRev}` : undefined),
+    manifestUrl: theme.manifestUrl,
+    packUrl,
+    compatibleBoards: theme.compatibleBoards,
+    requiresFirmware: theme.requiresFirmware,
+    source: "github-catalog",
+  };
+}
+
+async function readLocalThemePackCatalog(): Promise<ThemePackCatalog> {
+  if (LOCAL_STATIC_EXPORT) {
+    return JSON.parse(
+      await readFile(path.join(process.cwd(), "local-theme-packs.json"), "utf8"),
+    ) as ThemePackCatalog;
+  }
+  const repoRoot = process.env.VIBETV_REPO_ROOT
+    ? path.resolve(process.env.VIBETV_REPO_ROOT)
+    : path.resolve(process.cwd(), "../..");
+  const catalogPath = path.join(
+    repoRoot,
+    "dist",
+    "theme-packs",
+    "vibetv-theme-packs.json",
+  );
+  return JSON.parse(await readFile(catalogPath, "utf8")) as ThemePackCatalog;
 }
 
 async function enrichThemesWithGitHubCatalog(

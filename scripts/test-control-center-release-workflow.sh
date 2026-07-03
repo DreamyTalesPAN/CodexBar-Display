@@ -49,6 +49,10 @@ main() {
     "release workflow must read explicit firmware versions"
   assert_contains "$release_job" "dist/install-control-center-companion.sh" \
     "GitHub Release must include the Mac setup script"
+  assert_contains "$release_job" "npm run build:local" \
+    "release workflow must build the local Control Center static export"
+  assert_contains "$release_job" "companion/internal/companionapi/controlcenter_static" \
+    "release workflow must embed the local Control Center static export"
   assert_contains "$release_job" "dist/companion/*" \
     "GitHub Release must include the Mac companion binaries"
   assert_contains "$release_job" 'CODEXBAR_DISPLAY_FW_VERSION="${FW_VERSION}"' \
@@ -76,10 +80,16 @@ main() {
 
   checksum_line="$(line_number "Build release checksums")"
   release_line="$(line_number "Create GitHub Release")"
+  local_build_line="$(line_number "npm run build:local")"
+  companion_build_line="$(line_number "go build")"
   [[ -n "$checksum_line" && -n "$release_line" ]] \
     || die "release workflow must build checksums before creating the release"
   (( checksum_line < release_line )) \
     || die "release checksums must be built before creating the release"
+  [[ -n "$local_build_line" && -n "$companion_build_line" ]] \
+    || die "release workflow must build local Control Center before companion binaries"
+  (( local_build_line < companion_build_line )) \
+    || die "local Control Center static export must be embedded before Go binaries are built"
 
   printf 'control-center release workflow test passed\n'
 }

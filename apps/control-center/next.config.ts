@@ -1,23 +1,34 @@
 import path from "node:path";
 import type { NextConfig } from "next";
 
-const repoRoot = path.resolve(process.cwd(), "../..");
+const localStaticExport =
+  process.env.VIBETV_CONTROL_CENTER_LOCAL_EXPORT === "1";
+const configuredRepoRoot = process.env.VIBETV_REPO_ROOT;
+const repoRoot = localStaticExport
+  ? process.cwd()
+  : configuredRepoRoot
+    ? path.resolve(configuredRepoRoot)
+    : path.resolve(process.cwd(), "../..");
 
 const nextConfig: NextConfig = {
-  async headers() {
-    return [
-      {
-        source: "/:path*",
-        headers: [
-          {
-            key: "Permissions-Policy",
-            value:
-              "local-network-access=(self), loopback-network=(self), local-network=(self)",
-          },
-        ],
-      },
-    ];
-  },
+  ...(localStaticExport
+    ? { output: "export" as const }
+    : {
+        async headers() {
+          return [
+            {
+              source: "/:path*",
+              headers: [
+                {
+                  key: "Permissions-Policy",
+                  value:
+                    "local-network-access=(self), loopback-network=(self), local-network=(self)",
+                },
+              ],
+            },
+          ];
+        },
+      }),
   turbopack: {
     root: repoRoot,
   },
@@ -26,6 +37,7 @@ const nextConfig: NextConfig = {
     "/api/theme-pack/[themeId]": ["../../theme-packs/**/*"],
   },
   images: {
+    unoptimized: localStaticExport,
     remotePatterns: [
       { protocol: "https", hostname: "cdn.shopify.com" },
       { protocol: "https", hostname: "vibetv.shop" },

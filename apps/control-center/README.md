@@ -1,6 +1,6 @@
 # VibeTV Control Center
 
-Hosted customer app for `https://app.vibetv.shop`.
+Hosted setup app and local Mac App Control Center for VibeTV.
 
 ## Local Development
 
@@ -33,6 +33,18 @@ npm run test:customer-smoke
 ```
 
 Run `npm run test:customer-flows` for state changes, navigation/action changes, API behavior changes, or before claiming merge readiness.
+
+Build the static Control Center bundle that gets embedded into the Mac App release binary:
+
+```bash
+npm run build:local
+```
+
+That command writes `out-local/`. The release workflow copies those files into
+`companion/internal/companionapi/controlcenter_static/` before building the
+macOS Companion binary. The local Mac App then serves the customer app at
+`http://127.0.0.1:47832/control-center` and keeps private device/usage actions
+on the local `/v1/*` API.
 
 Before claiming the Control Center is customer-ready, run the repository-level gate:
 
