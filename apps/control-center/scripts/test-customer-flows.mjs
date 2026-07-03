@@ -625,6 +625,30 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     (await page.getByText("needs an update before themes").count()) === 0,
     "setup must not require theme install availability",
   );
+  await page.getByRole("button", { name: "Setup" }).click();
+  await page.getByRole("heading", { name: "Setup complete" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Open Control Center" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByText("Connect VibeTV to WiFi").count()) === 0,
+    "completed setup should not show the setup checklist",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Run setup again" }).count()) ===
+      0,
+    "completed setup should not show secondary setup actions",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
+    "completed setup should not show repair actions while healthy",
+  );
+  await page.getByRole("button", { name: "Open Control Center" }).click();
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
   await page.getByRole("button", { name: "Theme Library" }).click();
   await page
     .getByRole("heading", { name: "Choose a theme" })

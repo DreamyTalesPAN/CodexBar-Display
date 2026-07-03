@@ -83,6 +83,7 @@ type SetupScreenProps = {
   lastError?: ApiError | null;
   onCheckCompanion?: () => void | Promise<void>;
   onDeviceTargetChange?: (target: string) => void;
+  onOpenControlCenter?: () => void | Promise<void>;
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
   hostedMode?: boolean;
@@ -105,6 +106,7 @@ export function SetupScreen({
   lastError,
   onCheckCompanion,
   onDeviceTargetChange,
+  onOpenControlCenter,
   onRepairConnection,
   onResetSetup,
   hostedMode = false,
@@ -139,6 +141,11 @@ export function SetupScreen({
   const controlCenterOrigin = currentControlCenterOrigin();
   const terminalCommand = buildMacAppTerminalCommand(controlCenterOrigin);
   const setupInstructionsCopied = agentPromptCopied || terminalCommandCopied;
+  const showControlCenterLauncher =
+    showIntro &&
+    !previewStep &&
+    !lastError &&
+    (setupComplete || (hostedMode && macAppReady));
   const agentPrompt = useMemo(
     () => buildAgentPrompt(terminalCommand),
     [terminalCommand],
@@ -225,9 +232,40 @@ export function SetupScreen({
     void Promise.resolve(onCheckCompanion?.()).catch(() => undefined);
   }
 
+  function openControlCenter() {
+    void Promise.resolve(onOpenControlCenter?.()).catch(() => undefined);
+  }
+
   function retryConnect() {
     autoConnectStarted.current = true;
     onRepairConnection?.();
+  }
+
+  if (showControlCenterLauncher) {
+    return (
+      <div className="mx-auto max-w-[980px]">
+        <section className="border-b border-[#747A60] py-8 lg:min-h-[330px] lg:py-12">
+          <div className="flex items-start gap-5">
+            <ControlCenterStatusIcon variant="complete">
+              <Check size={38} aria-hidden />
+            </ControlCenterStatusIcon>
+            <div className="min-w-0">
+              <h2 className="max-w-[520px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
+                {setupComplete ? "Setup complete" : "Open Control Center"}
+              </h2>
+              <div className="mt-6">
+                <PrimaryButton
+                  icon={<Monitor size={18} aria-hidden />}
+                  label="Open Control Center"
+                  onClick={openControlCenter}
+                  size="large"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
   }
 
   return (

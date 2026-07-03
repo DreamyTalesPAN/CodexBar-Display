@@ -1813,6 +1813,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setupComplete={setupComplete}
       onCheckCompanion={hostedSetup ? openLocalControlCenter : checkCompanion}
       onDeviceTargetChange={handleDeviceTargetChange}
+      onOpenControlCenter={
+        hostedSetup ? openLocalControlCenter : () => setActiveTab("overview")
+      }
       onRepairConnection={(targetOverride) =>
         repairConnection({ targetOverride, forcePair: true })
       }
