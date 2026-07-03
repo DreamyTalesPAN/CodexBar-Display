@@ -2287,15 +2287,14 @@ function localNetworkAccessError(
   if (state === "denied") {
     return {
       code: "LOCAL_NETWORK_ACCESS_REQUIRED",
-      message: "Browser access is blocked.",
-      nextAction: "Allow local network access for this site, then try again.",
+      message: "Local Control Center is blocked.",
+      nextAction: "Open the local Control Center again, then retry.",
     };
   }
   return {
     code: "LOCAL_NETWORK_ACCESS_REQUIRED",
-    message: "Browser permission needed.",
-    nextAction:
-      "Click Allow access and approve the browser prompt so this site can talk to the Mac App.",
+    message: "Local Control Center could not be reached.",
+    nextAction: "Open the local Control Center again, then retry.",
   };
 }
 

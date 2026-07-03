@@ -92,7 +92,7 @@ type SetupScreenProps = {
   setupComplete: boolean;
 };
 
-type StepId = "wifi" | "mac-app" | "browser-access" | "finish";
+type StepId = "wifi" | "mac-app" | "finish";
 type SetupMode = "agentic" | "manual";
 type StepState = "active" | "blocked" | "complete" | "pending";
 
@@ -121,7 +121,6 @@ export function SetupScreen({
   const [terminalCommandCopied, setTerminalCommandCopied] = useState(false);
   const [setupMode, setSetupMode] = useState<SetupMode>("agentic");
   const autoConnectStarted = useRef(false);
-  const localAccessNeeded = isLocalNetworkAccessError(lastError);
   const macAppMissing = isCompanionMissingError(lastError);
   const macAppReady = companionStatus === "online";
   const macAppCheckFailed = macAppMissing && macAppConfirmedState;
@@ -158,7 +157,6 @@ export function SetupScreen({
       setupComplete ||
       connected ||
       connecting ||
-      localAccessNeeded ||
       autoConnectStarted.current
     ) {
       return;
@@ -168,7 +166,6 @@ export function SetupScreen({
   }, [
     connected,
     connecting,
-    localAccessNeeded,
     macAppReady,
     onRepairConnection,
     setupComplete,
@@ -180,7 +177,6 @@ export function SetupScreen({
       previewStep ||
       buildActiveStep({
         companionStatus,
-        localAccessNeeded,
         macAppConfirmed,
         macAppReady,
         setupComplete,
@@ -188,7 +184,6 @@ export function SetupScreen({
       }),
     [
       companionStatus,
-      localAccessNeeded,
       macAppConfirmed,
       macAppReady,
       previewStep,
@@ -494,36 +489,9 @@ export function SetupScreen({
             ) : null}
           </SetupStep>
 
-          {!hostedMode ? (
-            <SetupStep
-              icon={<Wifi size={22} aria-hidden />}
-              index={3}
-              state={stepStates["browser-access"]}
-              title="Allow browser access"
-            >
-              {activeStep === "browser-access" ? (
-                <div className="grid gap-4">
-                  <p className="text-sm leading-6 text-[#444933]">
-                    Chrome needs permission so this website can talk to the Mac
-                    App on this computer.
-                  </p>
-                  <PrimaryButton
-                    busy={busyAction === "status"}
-                    busyLabel="Checking"
-                    fullWidth
-                    icon={<Wifi size={18} aria-hidden />}
-                    label="Allow access"
-                    onClick={runCheckCompanion}
-                    size="large"
-                  />
-                </div>
-              ) : null}
-            </SetupStep>
-          ) : null}
-
           <SetupStep
             icon={<Monitor size={22} aria-hidden />}
-            index={hostedMode ? 3 : 4}
+            index={3}
             state={stepStates.finish}
             title={hostedMode ? "Open local Control Center" : "Finish setup"}
           >
@@ -793,14 +761,12 @@ function ErrorNote({ error }: { error: ApiError }) {
 
 function buildActiveStep({
   companionStatus,
-  localAccessNeeded,
   macAppConfirmed,
   macAppReady,
   setupComplete,
   wifiConfirmed,
 }: {
   companionStatus: CompanionStatus;
-  localAccessNeeded: boolean;
   macAppConfirmed: boolean;
   macAppReady: boolean;
   setupComplete: boolean;
@@ -814,9 +780,6 @@ function buildActiveStep({
   }
   if (!macAppReady && !macAppConfirmed) {
     return "mac-app";
-  }
-  if (localAccessNeeded) {
-    return "browser-access";
   }
   if (!macAppReady && companionStatus !== "online") {
     return "mac-app";
@@ -855,13 +818,6 @@ function buildStepStates({
           : wifiConfirmed
             ? "pending"
             : "blocked",
-    "browser-access": forceMacAppStep
-      ? "blocked"
-      : macAppReady
-        ? "complete"
-        : activeStep === "browser-access"
-          ? "active"
-          : "blocked",
     finish: forceMacAppStep
       ? "blocked"
       : setupComplete
@@ -870,10 +826,6 @@ function buildStepStates({
           ? "active"
           : "blocked",
   };
-}
-
-function isLocalNetworkAccessError(error?: ApiError | null): boolean {
-  return error?.code === "LOCAL_NETWORK_ACCESS_REQUIRED";
 }
 
 function isCompanionMissingError(error?: ApiError | null): boolean {

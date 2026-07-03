@@ -177,10 +177,7 @@ async function main() {
       console.log("control-center customer smoke tests passed");
       return;
     }
-    await testLocalNetworkPermissionComesAfterPhoneWifiStep(
-      browser,
-      appContext.appUrl,
-    );
+    await testSetupDoesNotRequestBrowserPermission(browser, appContext.appUrl);
     await testFixConnectionDoesNotRepairWhenMacAppIsOffline(
       browser,
       appContext.appUrl,
@@ -381,10 +378,7 @@ async function newCustomerPage(browser, appUrl, options) {
   return page;
 }
 
-async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
-  browser,
-  appUrl,
-) {
+async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
   const page = await browser.newPage({ viewport });
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
@@ -424,7 +418,15 @@ async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
   await page.getByText("192.168.4.1").waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("button", { name: "Allow access" }).count()) === 0,
-    "browser permission should not be requested before the WiFi step",
+    "setup should not request browser permission",
+  );
+  assert(
+    (await page.getByText("Allow browser access").count()) === 0,
+    "setup should not show browser access as a setup step",
+  );
+  assert(
+    (await page.getByText("Browser permission needed.").count()) === 0,
+    "setup should not show browser permission copy",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
