@@ -610,7 +610,7 @@ function SetupStep({
       <div
         className={`grid size-11 place-items-center rounded-full border ${
           complete
-            ? "border-[#1B1B1B] bg-[#CCFF00] text-[#1B1B1B]"
+            ? "border-[#1B1B1B] bg-[#1B1B1B] text-[#EDEDED]"
             : active
               ? "border-[#1B1B1B] bg-[#1B1B1B] text-[#CCFF00]"
               : "border-[#747A60] bg-[#F9F9F9] text-[#506600]"
