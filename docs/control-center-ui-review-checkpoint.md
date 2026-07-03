@@ -13,6 +13,25 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: hosted Setup-only entrypoint, local Setup CTA hierarchy,
+  shared Control Center primary/secondary buttons, Updates primary action, and
+  Theme Library rendered theme previews.
+- Customer rule: each setup step must expose one obvious next customer action;
+  `Open local Control Center`/`Mac App is installed` stays disabled until the
+  customer has copied either the Agentic prompt or Terminal command, and primary
+  customer actions use the VibeTV neon action style instead of black buttons.
+- Simplifications accepted: hosted and local setup continue to share the same
+  Setup screen implementation; the separate black Agentic copy CTA was replaced
+  with the same secondary copy button pattern as Manual setup; no new tabs,
+  setup decisions, or explanatory sections were added; Theme Library previews
+  now render the catalog ThemeSpec instead of showing generic placeholders.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  `check:customer-ui-copy`, `lint`, `test:customer-flows`, `build:local`, and
+  `git diff --check` passed locally; Playwright against
+  `127.0.0.1:47832/control-center` verified disabled-before-copy setup gating,
+  neon full-width setup CTA after copy, rendered Synthwave ThemeSpec preview,
+  and neon Updates primary action.
+
 - Reviewed scope: hosted VibeTV setup launcher, local Control Center handoff,
   removal of hosted Overview/Usage/Settings/Theme Library/Updates/Support
   navigation, and the Chrome Local Network Access fallback.
