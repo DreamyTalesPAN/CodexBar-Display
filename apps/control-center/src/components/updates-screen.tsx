@@ -13,6 +13,7 @@ import {
 import { useMemo, useState, type ReactNode } from "react";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
+import { ControlCenterButton } from "./control-center-button";
 import {
   buildMacAppTerminalCommand,
   currentControlCenterOrigin,
@@ -343,19 +344,15 @@ function PrimaryUpdateAction({
   );
 
   return (
-    <button
-      className={`inline-flex h-14 w-full items-center justify-center gap-3 border px-6 text-base font-black transition disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-80 sm:w-auto sm:min-w-[240px] ${
-        updateAvailable || copyCommand
-          ? "border-[#1B1B1B] bg-[#1B1B1B] text-[#EDEDED] hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
-          : "border-[#747A60] bg-[#CCFF00] text-[#1B1B1B] hover:bg-[#ABD600]"
-      }`}
+    <ControlCenterButton
+      className="w-full sm:w-auto sm:min-w-[240px]"
       disabled={disabled || checking || !updateReady}
+      icon={icon}
+      label={label}
       onClick={onClick}
-      type="button"
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
+      size="large"
+      variant="primary"
+    />
   );
 }
 
@@ -430,22 +427,20 @@ function InlineUpdateProgress({
         </div>
         {failed ? (
           <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              className="h-10 min-w-[120px] border border-[#747A60] bg-[#F9F9F9] px-3 text-sm font-semibold text-[#1B1B1B] hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:opacity-60"
+            <ControlCenterButton
               disabled={!onRetry}
+              label="Try again"
               onClick={onRetry}
-              type="button"
-            >
-              Try again
-            </button>
-            <button
-              className="h-10 min-w-[120px] border border-[#1B1B1B] bg-[#1B1B1B] px-3 text-sm font-semibold text-[#EDEDED] hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+              size="compact"
+              variant="secondary"
+            />
+            <ControlCenterButton
+              label={creatingReport ? "Creating report" : "Create report"}
               disabled={!onCreateReport || creatingReport}
               onClick={onCreateReport}
-              type="button"
-            >
-              {creatingReport ? "Creating report" : "Create report"}
-            </button>
+              size="compact"
+              variant="primary"
+            />
           </div>
         ) : null}
       </div>
@@ -525,24 +520,20 @@ function InlineMacAppUpdateProgress({
         </div>
         {failed ? (
           <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              className="h-10 min-w-[120px] border border-[#747A60] bg-[#F9F9F9] px-3 text-sm font-semibold text-[#1B1B1B] hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:opacity-60"
+            <ControlCenterButton
               disabled={!onRetry}
+              label="Try again"
               onClick={onRetry}
-              type="button"
-            >
-              Try again
-            </button>
-            <button
-              className="inline-flex h-10 min-w-[160px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-3 text-sm font-semibold text-[#EDEDED] hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
+              size="compact"
+              variant="secondary"
+            />
+            <ControlCenterButton
+              icon={<Copy size={16} aria-hidden />}
+              label={commandCopied ? "Command copied" : "Copy update command"}
               onClick={onCopyCommand}
-              type="button"
-            >
-              <Copy size={16} aria-hidden />
-              <span>
-                {commandCopied ? "Command copied" : "Copy update command"}
-              </span>
-            </button>
+              size="compact"
+              variant="secondary"
+            />
           </div>
         ) : null}
       </div>

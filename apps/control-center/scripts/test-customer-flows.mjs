@@ -220,6 +220,10 @@ async function main() {
       appContext.appUrl,
     );
     await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
+    await testThemeLibraryRendersThemeSpecPreviews(
+      browser,
+      appContext.appUrl,
+    );
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
     await testSupportReportExportsAppearAfterReportLoads(
       browser,
@@ -448,7 +452,23 @@ async function testFixConnectionDoesNotRepairWhenMacAppIsOffline(
     "Mac App offline setup should not show an error before the customer checks it",
   );
   await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
-  await page.getByRole("button", { name: "Mac App is installed" }).click();
+  const macAppInstalledButton = page.getByRole("button", {
+    name: "Mac App is installed",
+  });
+  await macAppInstalledButton.waitFor({ timeout: 10_000 });
+  assert(
+    await macAppInstalledButton.isDisabled(),
+    "Mac App continue button should stay disabled until setup instructions are copied",
+  );
+  await page.getByRole("button", { name: "Copy prompt" }).click();
+  await page
+    .getByRole("button", { name: "Prompt copied" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    !(await macAppInstalledButton.isDisabled()),
+    "Mac App continue button should enable after setup instructions are copied",
+  );
+  await macAppInstalledButton.click();
   await page
     .getByText("Mac App did not answer.", { exact: false })
     .waitFor({ timeout: 10_000 });
@@ -863,11 +883,12 @@ async function testRunSetupAgainOpensMacAppInstallStepForOldMacApp(
   await page.getByRole("button", { name: "Copy prompt" }).waitFor({
     timeout: 10_000,
   });
+  await page.getByRole("button", { name: "Copy prompt" }).click();
   await page.getByRole("button", { name: "Mac App is installed" }).click();
   await page.getByText("Mac App update needed.").waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Copy prompt" }).waitFor({
+  await page.getByRole("button", { name: /Copy prompt|Prompt copied/ }).waitFor({
     timeout: 10_000,
   });
 
@@ -1507,6 +1528,35 @@ async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
     await assertNoMobileOverflow(page);
     await page.close();
   }
+}
+
+async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.33",
+    device: {
+      ...companionDevice,
+      firmware: "1.0.32",
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Theme Library" }).click();
+  const synthwavePreview = page.getByRole("img", {
+    name: /Rendered VibeTV theme synthwave showing VibeTV, 62% session remaining, 62% weekly remaining/,
+  });
+  await synthwavePreview.waitFor({ timeout: 10_000 });
+  assert(
+    (await synthwavePreview.locator("rect").count()) > 10,
+    "Theme Library preview should render sprite primitives",
+  );
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
 }
 
 async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {

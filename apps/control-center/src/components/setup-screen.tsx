@@ -17,6 +17,7 @@ import type {
   DeviceInfo,
   DeviceState,
 } from "./control-center-types";
+import { ControlCenterButton } from "./control-center-button";
 import { DeviceTargetForm } from "./device-target-form";
 import {
   buildMacAppTerminalCommand,
@@ -136,6 +137,7 @@ export function SetupScreen({
     busyAction === "repair";
   const controlCenterOrigin = currentControlCenterOrigin();
   const terminalCommand = buildMacAppTerminalCommand(controlCenterOrigin);
+  const setupInstructionsCopied = agentPromptCopied || terminalCommandCopied;
   const agentPrompt = useMemo(
     () => buildAgentPrompt(terminalCommand),
     [terminalCommand],
@@ -284,7 +286,7 @@ export function SetupScreen({
             title="Connect VibeTV to WiFi"
           >
             {activeStep === "wifi" ? (
-              <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+              <div className="grid gap-5">
                 <ol className="grid gap-2 text-sm leading-6 text-[#444933]">
                   <li>1. Plug VibeTV into power.</li>
                   <li>2. Wait until VibeTV shows VibeTV-Setup.</li>
@@ -310,9 +312,11 @@ export function SetupScreen({
                   </li>
                 </ol>
                 <PrimaryButton
+                  fullWidth
                   icon={<Check size={18} aria-hidden />}
                   label="VibeTV is on WiFi"
                   onClick={confirmWifi}
+                  size="large"
                 />
               </div>
             ) : null}
@@ -345,7 +349,7 @@ export function SetupScreen({
 
                 {setupMode === "agentic" ? (
                   <div className="grid min-w-0 gap-4">
-                    <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                    <div className="grid min-w-0 gap-3">
                       <div className="min-w-0 max-w-full overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
                         <button
                           aria-expanded={promptPreviewOpen}
@@ -373,8 +377,8 @@ export function SetupScreen({
                           </pre>
                         ) : null}
                       </div>
-                      <PrimaryButton
-                        icon={<Copy size={18} aria-hidden />}
+                      <SecondaryButton
+                        icon={<Copy size={16} aria-hidden />}
                         label={agentPromptCopied ? "Prompt copied" : "Copy prompt"}
                         onClick={async () => {
                           await copyText(agentPrompt);
@@ -429,6 +433,8 @@ export function SetupScreen({
                   <PrimaryButton
                     busy={busyAction === "status"}
                     busyLabel="Checking"
+                    disabled={!setupInstructionsCopied}
+                    fullWidth
                     icon={<RefreshCw size={18} aria-hidden />}
                     label={
                       hostedMode
@@ -436,6 +442,7 @@ export function SetupScreen({
                         : "Mac App is installed"
                     }
                     onClick={confirmMacApp}
+                    size="large"
                   />
                 </div>
               </div>
@@ -450,7 +457,7 @@ export function SetupScreen({
               title="Allow browser access"
             >
               {activeStep === "browser-access" ? (
-                <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                <div className="grid gap-4">
                   <p className="text-sm leading-6 text-[#444933]">
                     Chrome needs permission so this website can talk to the Mac
                     App on this computer.
@@ -458,9 +465,11 @@ export function SetupScreen({
                   <PrimaryButton
                     busy={busyAction === "status"}
                     busyLabel="Checking"
+                    fullWidth
                     icon={<Wifi size={18} aria-hidden />}
                     label="Allow access"
                     onClick={runCheckCompanion}
+                    size="large"
                   />
                 </div>
               ) : null}
@@ -515,14 +524,16 @@ function FinishSetupContent({
   if (deviceState === "offline") {
     return (
       <div className="grid gap-5">
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+        <div className="grid gap-4">
           <p className="text-sm leading-6 text-[#444933]">
             Make sure VibeTV is powered on and connected to the same WiFi.
           </p>
           <PrimaryButton
+            fullWidth
             icon={<RefreshCw size={18} aria-hidden />}
             label="Fix connection"
             onClick={() => onRepairConnection?.()}
+            size="large"
           />
         </div>
         <DeviceTargetForm
@@ -556,14 +567,16 @@ function FinishSetupContent({
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+    <div className="grid gap-4">
       <p className="text-sm leading-6 text-[#444933]">
         Make sure VibeTV is powered on and connected to the same WiFi.
       </p>
       <PrimaryButton
+        fullWidth
         icon={<RefreshCw size={18} aria-hidden />}
         label="Connect VibeTV"
         onClick={() => onRepairConnection?.()}
+        size="large"
       />
     </div>
   );
@@ -643,52 +656,68 @@ function SetupModeTab({
 function PrimaryButton({
   busy,
   busyLabel,
+  disabled,
+  fullWidth,
   icon,
   label,
   onClick,
+  size,
 }: {
   busy?: boolean;
   busyLabel?: string;
+  disabled?: boolean;
+  fullWidth?: boolean;
   icon?: ReactNode;
   label: string;
   onClick?: () => void;
+  size?: "default" | "large" | "compact";
 }) {
   return (
-    <button
-      className="inline-flex min-h-12 min-w-[220px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-5 py-2 text-sm font-bold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:border-[#747A60] disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-      disabled={busy}
+    <ControlCenterButton
+      busy={busy}
+      busyLabel={busyLabel}
+      disabled={disabled}
+      fullWidth={fullWidth}
+      icon={icon}
+      label={label}
       onClick={onClick}
-      type="button"
-    >
-      {busy ? <Loader2 className="animate-spin" size={18} aria-hidden /> : icon}
-      <span>{busy ? busyLabel || label : label}</span>
-    </button>
+      size={size}
+      variant="primary"
+    />
   );
 }
 
 function SecondaryButton({
   busy,
   busyLabel,
+  disabled,
+  fullWidth,
   icon,
   label,
   onClick,
+  size,
 }: {
   busy?: boolean;
   busyLabel?: string;
+  disabled?: boolean;
+  fullWidth?: boolean;
   icon?: ReactNode;
   label: string;
   onClick?: () => void;
+  size?: "default" | "large" | "compact";
 }) {
   return (
-    <button
-      className="inline-flex min-h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-5 py-2 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
-      disabled={busy}
+    <ControlCenterButton
+      busy={busy}
+      busyLabel={busyLabel}
+      disabled={disabled}
+      fullWidth={fullWidth}
+      icon={icon}
+      label={label}
       onClick={onClick}
-      type="button"
-    >
-      {busy ? <Loader2 className="animate-spin" size={16} aria-hidden /> : icon}
-      <span>{busy ? busyLabel || label : label}</span>
-    </button>
+      size={size}
+      variant="secondary"
+    />
   );
 }
 
@@ -812,5 +841,18 @@ function isCompanionMissingError(error?: ApiError | null): boolean {
 }
 
 async function copyText(text: string) {
-  await navigator.clipboard.writeText(text);
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+  }
 }

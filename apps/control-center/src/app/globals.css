@@ -31,3 +31,73 @@ button,
 input {
   letter-spacing: 0;
 }
+
+.vibetv-button {
+  align-items: center;
+  border-style: solid;
+  border-width: 1px;
+  display: inline-flex;
+  font-weight: 700;
+  gap: 0.5rem;
+  justify-content: center;
+  min-width: 190px;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease;
+}
+
+.vibetv-button--default {
+  font-size: 0.875rem;
+  min-height: 3rem;
+}
+
+.vibetv-button--large {
+  font-size: 1rem;
+  min-height: 3.5rem;
+}
+
+.vibetv-button--compact {
+  font-size: 0.875rem;
+  min-height: 2.5rem;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+.vibetv-button--full {
+  min-width: 0;
+  width: 100%;
+}
+
+.vibetv-button--primary {
+  background: #CCFF00;
+  border-color: #CCFF00;
+  color: #1B1B1B;
+}
+
+.vibetv-button--primary:hover {
+  background: #ABD600;
+  border-color: #ABD600;
+}
+
+.vibetv-button--secondary {
+  background: #F9F9F9;
+  border-color: #747A60;
+  color: #1B1B1B;
+}
+
+.vibetv-button--secondary:hover {
+  background: #EEEEEE;
+}
+
+.vibetv-button--disabled,
+.vibetv-button--disabled:hover {
+  background: #EEEEEE;
+  border-color: #747A60;
+  color: #444933;
+  cursor: not-allowed;
+  opacity: 0.7;
+}

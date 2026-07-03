@@ -19,13 +19,13 @@ type LiveVibeTVPreviewProps = {
   usage: UsageSnapshot | null;
 };
 
-type ThemePackAsset = {
+export type ThemePackAsset = {
   contentType: string;
   data: string;
   encoding: "base64" | "text";
 };
 
-type ThemeRenderPack = {
+export type ThemeRenderPack = {
   ok?: boolean;
   themeId?: string;
   name?: string;
@@ -62,7 +62,7 @@ type LocalDisplayFrameRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
 };
 
-type ThemeSpec = {
+export type ThemeSpec = {
   id?: string;
   themeId?: string;
   bg?: string;
@@ -71,7 +71,7 @@ type ThemeSpec = {
   primitives?: ThemePrimitive[];
 };
 
-type ThemePrimitive = {
+export type ThemePrimitive = {
   type?: string;
   t?: string;
   x?: number;
@@ -127,6 +127,21 @@ type FrameData = {
   totalTokens: number;
   time: string;
   date: string;
+};
+
+const THEME_LIBRARY_PREVIEW_FRAME: FrameData = {
+  provider: "vibetv",
+  label: "VibeTV",
+  session: 62,
+  weekly: 62,
+  resetSecs: 3600,
+  usageMode: "remaining",
+  activity: "preview",
+  sessionTokens: 0,
+  weekTokens: 0,
+  totalTokens: 0,
+  time: "12:00",
+  date: "03.07",
 };
 
 type DecodedSprite = {
@@ -256,6 +271,29 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
       </VibeTVCaseShell>
     </figure>
   );
+}
+
+export function ThemeSpecPreview({
+  pack,
+  status,
+  themeId,
+}: {
+  pack: ThemeRenderPack | null;
+  status: "idle" | "loading" | "ready" | "error";
+  themeId: string;
+}) {
+  if (pack?.spec) {
+    return (
+      <ThemeSpecSVG
+        assets={pack.assets || {}}
+        frame={THEME_LIBRARY_PREVIEW_FRAME}
+        spec={pack.spec}
+        themeId={pack.themeId || themeId}
+      />
+    );
+  }
+
+  return <ThemeSpecLoading status={status} themeId={themeId} />;
 }
 
 function VibeTVCaseShell({ children }: { children: ReactNode }) {
