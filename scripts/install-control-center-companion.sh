@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPANION_DIR="$ROOT_DIR/companion"
+CONTROL_CENTER_DIR="$ROOT_DIR/apps/control-center"
+CONTROL_CENTER_STATIC_DIR="$COMPANION_DIR/internal/companionapi/controlcenter_static"
 APP_SUPPORT_DIR="$HOME/Library/Application Support/codexbar-display"
 BIN_DIR="$APP_SUPPORT_DIR/bin"
 BIN_PATH="$BIN_DIR/codexbar-display"
@@ -32,6 +34,32 @@ if ! command -v go >/dev/null 2>&1; then
   echo "hint: install Go, then rerun this script" >&2
   exit 1
 fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "error: npm is required to build the local Control Center" >&2
+  echo "hint: install Node.js, then rerun this script" >&2
+  exit 1
+fi
+
+build_control_center_static() {
+  echo "building local Control Center"
+
+  if [[ ! -x "$CONTROL_CENTER_DIR/node_modules/.bin/next" ]]; then
+    echo "installing Control Center dependencies"
+    (cd "$CONTROL_CENTER_DIR" && npm ci)
+  fi
+
+  (cd "$CONTROL_CENTER_DIR" && npm run build:local)
+
+  mkdir -p "$CONTROL_CENTER_STATIC_DIR"
+  find "$CONTROL_CENTER_STATIC_DIR" -mindepth 1 ! -name .gitkeep -exec rm -rf {} +
+  cp -R "$CONTROL_CENTER_DIR/out-local/." "$CONTROL_CENTER_STATIC_DIR/"
+
+  if [[ ! -f "$CONTROL_CENTER_STATIC_DIR/index.html" ]]; then
+    echo "error: local Control Center build did not produce index.html" >&2
+    exit 1
+  fi
+}
 
 stop_launchagent() {
   if command -v launchctl >/dev/null 2>&1; then
@@ -83,6 +111,26 @@ stop_existing_listener() {
       kill "$pid" >/dev/null 2>&1 || true
     fi
   done
+}
+
+wait_for_api_port_release() {
+  command -v lsof >/dev/null 2>&1 || return 0
+
+  local port pids
+  port="${ADDR##*:}"
+  [[ "$port" =~ ^[0-9]+$ ]] || return 0
+
+  for _ in $(seq 1 40); do
+    pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    if [[ -z "$pids" ]]; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  echo "error: API port $port is still in use" >&2
+  lsof -nP -iTCP:"$port" -sTCP:LISTEN >&2 || true
+  exit 1
 }
 
 xml_escape() {
@@ -148,6 +196,8 @@ PLIST_TAIL
 
 mkdir -p "$BIN_DIR"
 
+build_control_center_static
+
 echo "building Companion binary"
 (cd "$COMPANION_DIR" && go build -o "$BIN_PATH" ./cmd/codexbar-display)
 chmod 755 "$BIN_PATH"
@@ -163,14 +213,31 @@ fi
 
 write_daemon_plist
 launchctl bootout "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
+stop_existing_listener
+wait_for_api_port_release
 launchctl enable "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
-if ! launchctl bootstrap "gui/$(id -u)" "$DISPLAY_DAEMON_PLIST" >/dev/null 2>&1; then
+bootstrap_error="$(launchctl bootstrap "gui/$(id -u)" "$DISPLAY_DAEMON_PLIST" 2>&1)" || {
   if ! launchctl print "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1; then
     echo "error: failed to load the VibeTV Mac App background service" >&2
+    if [[ -n "$bootstrap_error" ]]; then
+      echo "$bootstrap_error" >&2
+    fi
     exit 1
   fi
+}
+set +e
+launchctl kickstart -k "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1
+kickstart_status=$?
+set -e
+if [[ "$kickstart_status" -ne 0 ]]; then
+  if launchctl print "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1; then
+    echo "Mac setup service is already starting"
+  else
+    echo "error: failed to start the VibeTV Mac App background service" >&2
+    launchctl error "$kickstart_status" >&2 || true
+    exit "$kickstart_status"
+  fi
 fi
-launchctl kickstart -k "$DISPLAY_DAEMON_SERVICE" >/dev/null
 
 echo "waiting for Mac setup service at http://$ADDR/v1/status"
 for _ in $(seq 1 20); do

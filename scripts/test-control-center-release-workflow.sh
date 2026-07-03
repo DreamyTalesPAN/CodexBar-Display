@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKFLOW="${ROOT}/.github/workflows/release.yml"
+LOCAL_INSTALLER="${ROOT}/scripts/install-control-center-companion.sh"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -37,11 +38,21 @@ line_number() {
   grep -nF "$needle" "$WORKFLOW" | head -n1 | cut -d: -f1
 }
 
+installer_line_number() {
+  local needle="$1"
+  grep -nF "$needle" "$LOCAL_INSTALLER" | head -n1 | cut -d: -f1
+}
+
 main() {
   [[ -f "$WORKFLOW" ]] || die "release workflow is missing"
+  [[ -f "$LOCAL_INSTALLER" ]] || die "local Control Center installer is missing"
 
   local release_job release_count checksum_line release_line
+  local local_installer local_installer_build_line local_installer_go_build_line
+  local local_static_builder
   release_job="$(job_block "build-and-release")"
+  local_installer="$(cat "$LOCAL_INSTALLER")"
+  local_static_builder="$(cat "$ROOT/apps/control-center/scripts/build-local-static.mjs")"
 
   assert_contains "$release_job" "Build release checksums" \
     "build-and-release must build release checksums"
@@ -90,6 +101,21 @@ main() {
     || die "release workflow must build local Control Center before companion binaries"
   (( local_build_line < companion_build_line )) \
     || die "local Control Center static export must be embedded before Go binaries are built"
+
+  assert_contains "$local_installer" "npm run build:local" \
+    "local installer must build the local Control Center static export"
+  assert_contains "$local_installer" "controlcenter_static" \
+    "local installer must embed the local Control Center static export"
+  local_installer_build_line="$(installer_line_number "npm run build:local")"
+  local_installer_go_build_line="$(installer_line_number "go build")"
+  [[ -n "$local_installer_build_line" && -n "$local_installer_go_build_line" ]] \
+    || die "local installer must build local Control Center before companion binary"
+  (( local_installer_build_line < local_installer_go_build_line )) \
+    || die "local installer must embed local Control Center before Go binary is built"
+  assert_contains "$local_static_builder" "http://127.0.0.1:47832/theme-packs/vibetv-theme-packs.json" \
+    "local static Control Center must resolve theme packs from the local Companion"
+  assert_contains "$local_static_builder" "dist\", \"theme-packs" \
+    "local static Control Center must embed built theme-pack downloads"
 
   printf 'control-center release workflow test passed\n'
 }

@@ -19,6 +19,8 @@ const workRoot = path.join(repoRoot, "tmp", "control-center-local-export");
 const buildRoot = path.join(workRoot, "app");
 const outRoot = path.join(appRoot, "out-local");
 const nextBin = path.join(appRoot, "node_modules", "next", "dist", "bin", "next");
+const localCompanionThemeCatalogUrl =
+  "http://127.0.0.1:47832/theme-packs/vibetv-theme-packs.json";
 
 async function main() {
   await ensureNodeModules();
@@ -50,10 +52,12 @@ async function main() {
       SHOPIFY_STORE_DOMAIN: "",
       SHOPIFY_STOREFRONT_ACCESS_TOKEN: "",
       SHOPIFY_STOREFRONT_PRIVATE_TOKEN: "",
+      THEME_PACK_CATALOG_URL: localCompanionThemeCatalogUrl,
       VIBETV_CONTROL_CENTER_LOCAL_EXPORT: "1",
     },
   });
 
+  await copyLocalThemePackDownloads(path.join(buildRoot, "out"));
   await writeLocalThemeRenderPacks(path.join(buildRoot, "out"));
   await cp(path.join(buildRoot, "out"), outRoot, { recursive: true });
   await rm(workRoot, { force: true, recursive: true });
@@ -134,6 +138,13 @@ async function readThemeRenderPack(themeDir, fallbackThemeId) {
     specPath: manifest.themeSpec?.path,
     assets,
   };
+}
+
+async function copyLocalThemePackDownloads(exportRoot) {
+  const source = path.join(repoRoot, "dist", "theme-packs");
+  const target = path.join(exportRoot, "theme-packs");
+  await mkdir(target, { recursive: true });
+  await cp(source, target, { force: true, recursive: true });
 }
 
 function cleanRelativeFile(value) {

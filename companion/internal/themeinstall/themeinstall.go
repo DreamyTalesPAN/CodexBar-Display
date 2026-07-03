@@ -257,6 +257,8 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		fmt.Fprintln(out, "Install screen: showing on VibeTV")
 	}
 
+	cleanupThemeUserAssets(wifi, &resolvedTarget, opts.PairTokenStore, out)
+
 	retryNoted := false
 	wifi = wifi.WithAssetUploadRetryObserver(func(retry transportlayer.AssetUploadRetry) {
 		if !retryNoted {
@@ -619,6 +621,38 @@ func sendClearThemeSpecFrameWithPairRetry(
 	}
 	*target = pairedTarget
 	return sendClearThemeSpecFrame(ctx, wifi, *target, caps, fetchFrame)
+}
+
+func cleanupThemeUserAssets(wifi transportlayer.WiFiTransport, target *string, store PairTokenStore, out io.Writer) {
+	assets, err := wifi.DeviceAssets(*target)
+	if err != nil {
+		fmt.Fprintf(out, "Theme file cleanup: skipped (%v)\n", err)
+		return
+	}
+	paths := assets.PathsWithPrefix("/themes/u/")
+	if len(paths) == 0 {
+		return
+	}
+	sort.Strings(paths)
+	fmt.Fprintln(out, "Cleaning old theme files...")
+	for _, devicePath := range paths {
+		if err := deleteAssetWithPairRetry(wifi, target, devicePath, store); err != nil {
+			fmt.Fprintf(out, "Theme file cleanup: skipped %s (%v)\n", devicePath, err)
+		}
+	}
+}
+
+func deleteAssetWithPairRetry(wifi transportlayer.WiFiTransport, target *string, devicePath string, store PairTokenStore) error {
+	err := wifi.DeleteAsset(*target, devicePath)
+	if err == nil || !authRequired(err) {
+		return err
+	}
+	pairedTarget, pairErr := pairThemeInstallTarget(wifi, *target, store)
+	if pairErr != nil {
+		return pairErr
+	}
+	*target = pairedTarget
+	return wifi.DeleteAsset(*target, devicePath)
 }
 
 func sleepActivationRetry(ctx context.Context) error {

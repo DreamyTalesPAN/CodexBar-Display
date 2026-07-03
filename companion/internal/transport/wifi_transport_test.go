@@ -1,12 +1,15 @@
 package transport
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWiFiTransportDeviceCapabilitiesReadsHello(t *testing.T) {
@@ -128,6 +131,38 @@ func TestWiFiTransportDeviceAssetsReadsAssetSizes(t *testing.T) {
 	if _, ok := assets.AssetSize("/missing"); ok {
 		t.Fatal("unexpected asset match for missing path")
 	}
+	paths := assets.PathsWithPrefix("/themes/u/")
+	if len(paths) != 1 || paths[0] != "/themes/u/cp-i.cba" {
+		t.Fatalf("unexpected prefixed paths: %v", paths)
+	}
+}
+
+func TestWiFiTransportDeleteAssetSendsDELETE(t *testing.T) {
+	var gotPath string
+	var gotToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/assets" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if r.Method != http.MethodDelete {
+			t.Fatalf("expected DELETE /assets, got %s", r.Method)
+		}
+		gotToken = r.Header.Get(deviceAuthHeader)
+		gotPath = r.URL.Query().Get("path")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	if err := transport.DeleteAsset(server.URL+"?token=pair-token-123", "/themes/u/old.cba"); err != nil {
+		t.Fatalf("DeleteAsset returned error: %v", err)
+	}
+	if gotPath != "/themes/u/old.cba" {
+		t.Fatalf("unexpected delete path %q", gotPath)
+	}
+	if gotToken != "pair-token-123" {
+		t.Fatalf("unexpected auth token %q", gotToken)
+	}
 }
 
 func TestWiFiTransportPairDevicePostsPairingAPI(t *testing.T) {
@@ -226,6 +261,69 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 	}
 	if gotToken != "env-token-456" {
 		t.Fatalf("unexpected auth token %q", gotToken)
+	}
+}
+
+func TestWiFiTransportUploadAssetRetriesTimeout(t *testing.T) {
+	oldDelay := assetUploadRetryDelay
+	assetUploadRetryDelay = 0
+	defer func() {
+		assetUploadRetryDelay = oldDelay
+	}()
+
+	var attempts int
+	var retries int
+	transport := NewWiFiTransportWithClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts == 1 {
+				return nil, context.DeadlineExceeded
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}),
+	}).WithAssetUploadRetryObserver(func(retry AssetUploadRetry) {
+		retries++
+		if retry.DevicePath != "/themes/u/cm.cbi" || retry.Attempt != 1 || retry.MaxAttempts != assetUploadAttempts || retry.Err == nil {
+			t.Fatalf("unexpected retry event: %+v", retry)
+		}
+	})
+
+	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
+		t.Fatalf("UploadAsset returned error: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected retry after timeout, got attempts=%d", attempts)
+	}
+	if retries != 1 {
+		t.Fatalf("expected one retry event, got %d", retries)
+	}
+}
+
+func TestWiFiTransportUploadAssetExtendsTimeoutForRateLimitedUploads(t *testing.T) {
+	var gotDeadline time.Time
+	transport := NewWiFiTransportWithClient(&http.Client{
+		Timeout: defaultWiFiTimeout,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			deadline, ok := req.Context().Deadline()
+			if !ok {
+				t.Fatal("expected upload request context deadline")
+			}
+			gotDeadline = deadline
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}),
+	})
+
+	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/big.cba", "big.cba", bytes.Repeat([]byte("x"), 20*1024)); err != nil {
+		t.Fatalf("UploadAsset returned error: %v", err)
+	}
+	if remaining := time.Until(gotDeadline); remaining < 25*time.Second {
+		t.Fatalf("expected extended upload timeout, remaining=%s", remaining)
 	}
 }
 

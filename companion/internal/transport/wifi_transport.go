@@ -2,10 +2,13 @@ package transport
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,6 +25,9 @@ const (
 	assetUploadRetryMaxBody = 512
 	assetUploadBytesPerSec  = 1024
 	assetUploadReadChunk    = 512
+	assetUploadMinTimeout   = 30 * time.Second
+	assetUploadTimeoutGrace = 15 * time.Second
+	assetUploadMaxTimeout   = 5 * time.Minute
 	deviceAuthHeader        = "X-VibeTV-Token"
 	deviceAuthEnv           = "CODEXBAR_DISPLAY_DEVICE_TOKEN"
 )
@@ -83,6 +89,20 @@ func (s DeviceAssetsSnapshot) AssetSize(devicePath string) (int64, bool) {
 		}
 	}
 	return 0, false
+}
+
+func (s DeviceAssetsSnapshot) PathsWithPrefix(prefix string) []string {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return nil
+	}
+	var paths []string
+	for _, asset := range s.Assets {
+		if strings.HasPrefix(asset.Path, prefix) {
+			paths = append(paths, asset.Path)
+		}
+	}
+	return paths
 }
 
 func NewWiFiTransport() DeviceTransport {
@@ -167,6 +187,36 @@ func (t WiFiTransport) DeviceAssets(target string) (DeviceAssetsSnapshot, error)
 		return DeviceAssetsSnapshot{}, fmt.Errorf("decode device assets: %w", err)
 	}
 	return assets, nil
+}
+
+func (t WiFiTransport) DeleteAsset(target, devicePath string) error {
+	base, err := normalizeWiFiTarget(target)
+	if err != nil {
+		return err
+	}
+	devicePath = strings.TrimSpace(devicePath)
+	if devicePath == "" {
+		return fmt.Errorf("asset path required")
+	}
+	req, err := http.NewRequest(http.MethodDelete, base+"/assets?path="+url.QueryEscape(devicePath), nil)
+	if err != nil {
+		return fmt.Errorf("build delete asset request: %w", err)
+	}
+	req.Close = true
+	applyDeviceAuth(req, target)
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("delete asset %s: %w", devicePath, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, assetUploadRetryMaxBody))
+	return fmt.Errorf("delete asset %s: status=%d body=%q", devicePath, resp.StatusCode, strings.TrimSpace(string(body)))
 }
 
 func (t WiFiTransport) DeviceHealthSnapshot(target string) (DeviceHealthSnapshot, error) {
@@ -284,6 +334,7 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 	endpoint := base + "/assets?path=" + url.QueryEscape(devicePath)
 	contentType := writer.FormDataContentType()
 	bodyBytes := body.Bytes()
+	uploadClient := t.assetUploadClient(len(bodyBytes))
 	var lastErr error
 	for attempt := 1; attempt <= assetUploadAttempts; attempt++ {
 		req, err := http.NewRequest(http.MethodPost, endpoint, newRateLimitedAssetReader(bodyBytes))
@@ -294,9 +345,20 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 		req.Close = true
 		req.ContentLength = int64(len(bodyBytes))
 		applyDeviceAuth(req, target)
-		resp, err := t.client.Do(req)
+		resp, err := uploadClient.Do(req)
 		if err != nil {
-			return fmt.Errorf("post asset %s: %w", devicePath, err)
+			lastErr = fmt.Errorf("post asset %s: %w", devicePath, err)
+			if !retryableAssetError(err) || attempt >= assetUploadAttempts {
+				return lastErr
+			}
+			t.noteAssetUploadRetry(AssetUploadRetry{
+				DevicePath:  devicePath,
+				Attempt:     attempt,
+				MaxAttempts: assetUploadAttempts,
+				Err:         err,
+			})
+			time.Sleep(assetUploadRetryDelay)
+			continue
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			_ = resp.Body.Close()
@@ -317,6 +379,40 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 		time.Sleep(assetUploadRetryDelay)
 	}
 	return lastErr
+}
+
+func (t WiFiTransport) assetUploadClient(bodyBytes int) *http.Client {
+	client := *t.client
+	timeout := assetUploadTimeoutForBytes(bodyBytes)
+	if client.Timeout == 0 || client.Timeout < timeout {
+		client.Timeout = timeout
+	}
+	return &client
+}
+
+func assetUploadTimeoutForBytes(bodyBytes int) time.Duration {
+	if bodyBytes <= 0 {
+		return assetUploadMinTimeout
+	}
+	timeout := time.Duration(bodyBytes)*time.Second/time.Duration(assetUploadBytesPerSec) + assetUploadTimeoutGrace
+	if timeout < assetUploadMinTimeout {
+		return assetUploadMinTimeout
+	}
+	if timeout > assetUploadMaxTimeout {
+		return assetUploadMaxTimeout
+	}
+	return timeout
+}
+
+func retryableAssetError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 type rateLimitedAssetReader struct {
