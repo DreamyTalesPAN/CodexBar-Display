@@ -83,6 +83,7 @@ type SetupScreenProps = {
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
   previewStep?: "mac-app" | null;
+  showIntro?: boolean;
   setupComplete: boolean;
 };
 
@@ -102,6 +103,7 @@ export function SetupScreen({
   onRepairConnection,
   onResetSetup,
   previewStep,
+  showIntro = true,
   setupComplete,
 }: SetupScreenProps) {
   const [wifiConfirmedState, setWifiConfirmedState] = useState(false);
@@ -221,43 +223,51 @@ export function SetupScreen({
 
   return (
     <div className="mx-auto max-w-[980px]">
-      <section className="border-b border-[#747A60] py-8 lg:min-h-[330px] lg:py-12">
-        <div className="flex items-start gap-5">
-          <div className="grid size-16 shrink-0 place-items-center rounded-full border border-[#747A60] bg-[#EEEEEE] text-[#1B1B1B]">
-            {setupComplete ? (
-              <Check size={38} aria-hidden />
-            ) : (
-              <Clipboard size={34} aria-hidden />
-            )}
+      {showIntro ? (
+        <section className="border-b border-[#747A60] py-8 lg:min-h-[330px] lg:py-12">
+          <div className="flex items-start gap-5">
+            <div className="grid size-16 shrink-0 place-items-center rounded-full border border-[#747A60] bg-[#EEEEEE] text-[#1B1B1B]">
+              {setupComplete ? (
+                <Check size={38} aria-hidden />
+              ) : (
+                <Clipboard size={34} aria-hidden />
+              )}
+            </div>
+            <div className="min-w-0">
+              <h2 className="max-w-[520px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
+                {setupComplete ? "Setup complete" : "Set up your VibeTV"}
+              </h2>
+              {macAppReady ? (
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <PrimaryButton
+                    busy={busyAction === "repair"}
+                    busyLabel="Reconnecting"
+                    icon={<RefreshCw size={18} aria-hidden />}
+                    label="Fix connection"
+                    onClick={() => onRepairConnection?.()}
+                  />
+                  <SecondaryButton
+                    busy={busyAction === "reset-setup"}
+                    busyLabel="Resetting"
+                    icon={<Clipboard size={16} aria-hidden />}
+                    label="Run setup again"
+                    onClick={onResetSetup}
+                  />
+                </div>
+              ) : null}
+              {lastError && !macAppCheckFailed ? (
+                <ErrorNote error={lastError} />
+              ) : null}
+            </div>
           </div>
-          <div className="min-w-0">
-            <h2 className="max-w-[520px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-              {setupComplete ? "Setup complete" : "Set up your VibeTV"}
-            </h2>
-            {macAppReady ? (
-              <div className="mt-6 flex flex-wrap gap-3">
-                <PrimaryButton
-                  busy={busyAction === "repair"}
-                  busyLabel="Reconnecting"
-                  icon={<RefreshCw size={18} aria-hidden />}
-                  label="Fix connection"
-                  onClick={() => onRepairConnection?.()}
-                />
-                <SecondaryButton
-                  busy={busyAction === "reset-setup"}
-                  busyLabel="Resetting"
-                  icon={<Clipboard size={16} aria-hidden />}
-                  label="Run setup again"
-                  onClick={onResetSetup}
-                />
-              </div>
-            ) : null}
-            {lastError && !macAppCheckFailed ? (
-              <ErrorNote error={lastError} />
-            ) : null}
-          </div>
+        </section>
+      ) : null}
+
+      {!showIntro && lastError && !macAppCheckFailed ? (
+        <div className="pt-5">
+          <ErrorNote error={lastError} />
         </div>
-      </section>
+      ) : null}
 
       <section className="py-6">
         <ol className="grid gap-0 border-y border-[#747A60]">

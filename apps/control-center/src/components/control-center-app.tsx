@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type { ThemeCatalogResponse } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
@@ -10,6 +17,7 @@ import {
   localControlCenterUrl,
   needsLoopbackTargetAddressSpace,
   shouldRedirectToLocalControlCenter,
+  shouldUseHostedSetupShell,
 } from "./control-center-runtime";
 import {
   deviceImageIsStuck,
@@ -25,6 +33,7 @@ import {
   type UsageSnapshot,
 } from "./control-center-types";
 import { useCompanionRelease } from "./companion-installer-actions";
+import { HostedSetupShell } from "./hosted-setup-shell";
 import { LogsScreen } from "./logs-screen";
 import { OverviewScreen } from "./overview-screen";
 import { SetupScreen } from "./setup-screen";
@@ -169,6 +178,8 @@ type FirmwareCheckOptions = {
   signal?: AbortSignal;
 };
 
+type RuntimeSurface = "unknown" | "hosted-setup" | "local-control-center";
+
 export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const initialTheme = useMemo(
     () =>
@@ -181,6 +192,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     initialTheme?.themeId || initialThemeId || "",
   );
   const [activeTab, setActiveTab] = useState<ActiveTab>("setup");
+  const runtimeSurface = useSyncExternalStore(
+    subscribeRuntimeSurface,
+    getRuntimeSurfaceSnapshot,
+    getRuntimeSurfaceServerSnapshot,
+  );
   const [companionStatus, setCompanionStatus] =
     useState<CompanionStatus>("unknown");
   const [companionInfo, setCompanionInfo] = useState<CompanionInfo | null>(
@@ -1761,6 +1777,43 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     };
   }, [activeShellTab, companionStatus, refreshUsage]);
 
+  const renderSetupScreen = (showIntro: boolean) => (
+    <SetupScreen
+      key={setupResetVersion}
+      companionStatus={companionStatus}
+      device={device}
+      deviceState={deviceState}
+      deviceTarget={deviceTarget}
+      lastError={lastError}
+      busyAction={busyAction}
+      previewStep={setupPreviewStep}
+      showIntro={showIntro}
+      setupComplete={setupComplete}
+      onCheckCompanion={checkCompanion}
+      onDeviceTargetChange={handleDeviceTargetChange}
+      onRepairConnection={(targetOverride) =>
+        repairConnection({ targetOverride, forcePair: true })
+      }
+      onResetSetup={resetSetup}
+    />
+  );
+
+  if (runtimeSurface === "unknown") {
+    return <ControlCenterBootScreen />;
+  }
+
+  if (runtimeSurface === "hosted-setup") {
+    return (
+      <HostedSetupShell
+        companionStatus={companionStatus}
+        selectedThemeTitle={initialTheme?.title}
+        setupComplete={setupComplete}
+      >
+        {renderSetupScreen(false)}
+      </HostedSetupShell>
+    );
+  }
+
   return (
     <ControlCenterShell
       activeTab={activeShellTab}
@@ -1774,25 +1827,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setActiveTab(tab);
       }}
     >
-      {activeShellTab === "setup" ? (
-        <SetupScreen
-          key={setupResetVersion}
-          companionStatus={companionStatus}
-          device={device}
-          deviceState={deviceState}
-          deviceTarget={deviceTarget}
-          lastError={lastError}
-          busyAction={busyAction}
-          previewStep={setupPreviewStep}
-          setupComplete={setupComplete}
-          onCheckCompanion={checkCompanion}
-          onDeviceTargetChange={handleDeviceTargetChange}
-          onRepairConnection={(targetOverride) =>
-            repairConnection({ targetOverride, forcePair: true })
-          }
-          onResetSetup={resetSetup}
-        />
-      ) : null}
+      {activeShellTab === "setup" ? renderSetupScreen(true) : null}
 
       {activeShellTab === "overview" ? (
         <OverviewScreen
@@ -1883,6 +1918,39 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ) : null}
     </ControlCenterShell>
   );
+}
+
+function ControlCenterBootScreen() {
+  return (
+    <main className="grid min-h-screen place-items-center bg-[#1B1B1B] px-5 text-[#EDEDED]">
+      <div className="text-center">
+        <div className="text-[40px] font-black uppercase leading-none tracking-normal">
+          VIBE<span className="text-[#CCFF00]">TV</span>
+        </div>
+        <p className="mt-4 text-sm font-black uppercase text-[#CCFF00]">
+          Loading
+        </p>
+      </div>
+    </main>
+  );
+}
+
+function getRuntimeSurfaceSnapshot(): RuntimeSurface {
+  return shouldUseHostedSetupShell()
+    ? "hosted-setup"
+    : "local-control-center";
+}
+
+function getRuntimeSurfaceServerSnapshot(): RuntimeSurface {
+  return "unknown";
+}
+
+function subscribeRuntimeSurface(onStoreChange: () => void) {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+  const timer = window.setTimeout(onStoreChange, 0);
+  return () => window.clearTimeout(timer);
 }
 
 function normalizeError(error: unknown, status: number): ApiError {

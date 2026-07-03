@@ -56,9 +56,10 @@ a glance: provider, limits, tokens, reset time, and status. It gives the usage
 signal a place outside your laptop screen, so you can see where you stand while
 you work.
 
-The Mac App sends the local usage signal to the device. Control Center at
-[`app.vibetv.shop`](https://app.vibetv.shop) is where you set up VibeTV, switch
-themes, change display settings, install updates, and view support information.
+The Mac App sends the local usage signal to the device. The hosted setup page at
+[`app.vibetv.shop`](https://app.vibetv.shop) starts setup and installs the Mac
+App. After installation, the Mac App opens the local Control Center on this Mac
+for themes, display settings, updates, and support.
 
 VibeTV is built on top of [CodexBar](https://github.com/steipete/CodexBar) for
 AI provider usage data. CodexBar knows how to read usage and quota information
@@ -86,13 +87,13 @@ backend. Support reports are only created when you ask for them.
 ```text
 CodexBar on the Mac
   -> VibeTV Mac App on 127.0.0.1:47832
-  -> app.vibetv.shop in the browser
+  -> local Control Center in the browser
   -> VibeTV on the local WiFi
 ```
 
 1. CodexBar reads provider usage, quotas, tokens, and reset windows.
 2. The VibeTV Mac App (`codexbar-display`) reads that data locally.
-3. The hosted Control Center talks to the Mac App through the browser.
+3. The local Control Center talks to the Mac App through the browser.
 4. The Mac App sends display frames to VibeTV over local WiFi.
 5. VibeTV renders the selected theme on the 240x240 screen.
 
@@ -104,10 +105,10 @@ The normal customer path does not require USB flashing. USB-C powers the device.
 2. Power VibeTV with USB-C.
 3. Join the `VibeTV-Setup` WiFi hotspot and connect VibeTV to your home WiFi.
 4. Open [`app.vibetv.shop`](https://app.vibetv.shop) on your Mac.
-5. Follow the Control Center setup steps.
+5. Follow the hosted setup steps.
 6. Install the Mac App through the Agentic setup prompt or the shown Terminal
    command.
-7. Allow browser access when prompted, then connect VibeTV.
+7. The Mac App opens the local Control Center, then connect VibeTV there.
 
 The customer setup guide is [docs/customer-setup.md](docs/customer-setup.md).
 

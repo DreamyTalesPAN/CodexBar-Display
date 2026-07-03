@@ -121,8 +121,11 @@ Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `S
 
 ## Flow
 
-- `/` opens the Control Center overview with Mac App, VibeTV and update state.
-- `/install/[themeId]` opens the same app with a theme preselected.
+- On HTTPS hosted origins, `/` opens the VibeTV setup launcher.
+- On HTTPS hosted origins, `/install/[themeId]` opens setup with the theme context
+  preserved, then hands off to the local Control Center once the Mac App answers.
+- On the local Mac App origin, `/control-center` opens the full Control Center
+  with Overview, Usage, Settings, Theme Library, Updates, and Support.
 - Browser talks directly to the local Mac App service at `http://127.0.0.1:47832`.
 - The server reads Shopify product data through the Storefront API and only sends normalized public theme data to the browser.
 

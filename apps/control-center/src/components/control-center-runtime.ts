@@ -34,6 +34,10 @@ export function shouldRedirectToLocalControlCenter(): boolean {
   return window.location.protocol === "https:";
 }
 
+export function shouldUseHostedSetupShell(): boolean {
+  return shouldRedirectToLocalControlCenter();
+}
+
 export function companionRequestUrl(path: string): string {
   if (isLocalCompanionOrigin()) {
     return path;
