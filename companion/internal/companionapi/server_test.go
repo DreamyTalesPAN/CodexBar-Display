@@ -255,6 +255,7 @@ func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
 }
 
 func TestDisplayFrameLatestReturnsPersistedLastGoodFrame(t *testing.T) {
+	t.Setenv(displayStreamOutLogEnv, filepath.Join(t.TempDir(), "missing.log"))
 	server := newTestServer(t, runtimeconfig.Config{})
 	savedAt := time.Date(2026, 6, 30, 14, 10, 35, 893363000, time.UTC)
 	path := server.lastGoodDisplayFramePath()
@@ -307,7 +308,60 @@ func TestDisplayFrameLatestReturnsPersistedLastGoodFrame(t *testing.T) {
 	}
 }
 
+func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=73 weekly=58 reset=2733s activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
+		0o644,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+	server := newTestServer(t, runtimeconfig.Config{})
+	savedAt := time.Date(2026, 6, 30, 14, 10, 35, 893363000, time.UTC)
+	path := server.lastGoodDisplayFramePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create display state dir: %v", err)
+	}
+	if err := os.WriteFile(
+		path,
+		[]byte(`{"savedAt":"`+savedAt.Format(time.RFC3339Nano)+`","frame":{"v":1,"provider":"codex","label":"Codex","session":24,"weekly":13}}`),
+		0o644,
+	); err != nil {
+		t.Fatalf("write persisted display frame: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got displayFrameResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || got.Source != "last-sent-frame" {
+		t.Fatalf("unexpected display frame response metadata: %+v", got)
+	}
+	if got.SavedAt != "2026-07-03T14:36:54Z" {
+		t.Fatalf("expected sent timestamp, got %q", got.SavedAt)
+	}
+	if got.Frame.Provider != "codex" || got.Frame.Label != "Vibe TV" {
+		t.Fatalf("unexpected frame identity: %+v", got.Frame)
+	}
+	if got.Frame.Session != 73 || got.Frame.Weekly != 58 || got.Frame.ResetSec != 2733 {
+		t.Fatalf("unexpected sent frame values: %+v", got.Frame)
+	}
+	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
+		t.Fatalf("unexpected sent frame state: %+v", got.Frame)
+	}
+}
+
 func TestDisplayFrameLatestReturnsNotFoundWithoutLastGoodFrame(t *testing.T) {
+	t.Setenv(displayStreamOutLogEnv, filepath.Join(t.TempDir(), "missing.log"))
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil)

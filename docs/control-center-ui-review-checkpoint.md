@@ -13,6 +13,25 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: Overview VibeTV device preview source, local Mac App
+  `/v1/display-frame/latest`, and active ThemeSpec preview resolution when the
+  VibeTV reports a temporary install state.
+- Customer rule: the Overview preview must mirror the last screen the local Mac
+  App sent to VibeTV. It must not mix live usage data with an older display
+  frame, and it must not expose technical frame, log, API, or ThemeSpec wording
+  to the customer.
+- Simplifications accepted: no new visible UI, buttons, tabs, labels, or
+  troubleshooting choices were added; the existing preview now reads the
+  last-sent display frame and falls back from temporary device theme names to
+  the active ThemeSpec path.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  `lint`, `check:customer-ui-copy`, `test:customer-flows`, `build:local`,
+  `go test ./...` in `companion`, and `git diff --check` passed locally.
+  Playwright against `127.0.0.1:47832/control-center` verified that the
+  Overview preview rendered `claude-creature` with the same `session`,
+  `weekly`, and `usageMode` values returned by local
+  `/v1/display-frame/latest`.
+
 - Reviewed scope: hosted Setup-only entrypoint, local Setup CTA hierarchy,
   shared Control Center primary/secondary buttons, Updates primary action, and
   Theme Library rendered theme previews.

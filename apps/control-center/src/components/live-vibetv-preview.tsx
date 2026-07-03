@@ -144,6 +144,18 @@ const THEME_LIBRARY_PREVIEW_FRAME: FrameData = {
   date: "03.07",
 };
 
+const DEVICE_THEME_ALIASES: Record<string, string> = {
+  claude: "claude-creature",
+  "claude-creature": "claude-creature",
+  clippy: "clippy",
+  cozy: "cozy-meadow",
+  "cozy-meadow": "cozy-meadow",
+  mini: "mini-classic",
+  "mini-classic": "mini-classic",
+  synth: "synthwave",
+  synthwave: "synthwave",
+};
+
 type DecodedSprite = {
   width: number;
   height: number;
@@ -778,11 +790,29 @@ function frameUsageMode(
 }
 
 function activeThemeId(device: DeviceInfo | null): string {
-  const theme = device?.activeTheme?.trim().toLowerCase();
-  if (theme) {
+  const theme = normalizeThemeAlias(device?.activeTheme);
+  if (theme && theme !== "installing") {
     return theme;
   }
-  return "";
+  return themeFromThemeSpecPath(device?.display?.themeSpec?.path);
+}
+
+function themeFromThemeSpecPath(path: string | undefined): string {
+  const basename = (path || "").split("/").pop() || "";
+  const slug = basename
+    .replace(/\.json$/i, "")
+    .replace(/--.*$/, "")
+    .trim()
+    .toLowerCase();
+  return normalizeThemeAlias(slug);
+}
+
+function normalizeThemeAlias(theme: string | undefined): string {
+  const normalized = (theme || "").trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  return DEVICE_THEME_ALIASES[normalized] || normalized;
 }
 
 function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): string {

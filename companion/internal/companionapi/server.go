@@ -50,6 +50,7 @@ const (
 	themeInstallDisableEnv  = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
 	displayStreamLabel      = "com.codexbar-display.daemon"
 	displayStreamOutLog     = "/tmp/codexbar-display-daemon.out.log"
+	displayStreamOutLogEnv  = "CODEXBAR_DISPLAY_STREAM_OUT_LOG"
 	displayStreamReadyAge   = 2 * time.Minute
 	displayStreamWaitTime   = 12 * time.Second
 	displayRenderWaitTime   = 20 * time.Second
@@ -64,6 +65,25 @@ const (
 	firmwareManifestEnvVar  = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
 	firmwareReleaseTimeout  = 5 * time.Second
 )
+
+var displayStreamLogKeys = []string{
+	"transport",
+	"source",
+	"fresh",
+	"usageMode",
+	"provider",
+	"label",
+	"session",
+	"weekly",
+	"reset",
+	"activity",
+	"time",
+	"date",
+	"error",
+	"reason",
+	"detail",
+	"activityDetail",
+}
 
 type Options struct {
 	Addr                 string
@@ -794,6 +814,16 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	if sentAt, frame, ok := lastDisplayStreamFrameSnapshot(displayStreamOutLogPath()); ok {
+		writeJSON(w, http.StatusOK, displayFrameResponse{
+			OK:      true,
+			SavedAt: sentAt.UTC().Format(time.RFC3339Nano),
+			Source:  "last-sent-frame",
+			Frame:   frame.Normalize(),
+		})
 		return
 	}
 
@@ -3684,7 +3714,7 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 		return stream
 	}
 
-	lastSentAt, lastTarget := lastDisplayStreamFrame(displayStreamOutLog)
+	lastSentAt, lastTarget := lastDisplayStreamFrame(displayStreamOutLogPath())
 	if lastSentAt.IsZero() {
 		stream.Detail = "Display stream has not sent usage yet."
 		return stream
@@ -3743,9 +3773,29 @@ func displayStreamLaunchStateRunning(state string) bool {
 }
 
 func lastDisplayStreamFrame(path string) (time.Time, string) {
+	when, target, _, ok := lastDisplayStreamFrameLine(path)
+	if !ok {
+		return time.Time{}, ""
+	}
+	return when, target
+}
+
+func lastDisplayStreamFrameSnapshot(path string) (time.Time, protocol.Frame, bool) {
+	when, _, line, ok := lastDisplayStreamFrameLine(path)
+	if !ok {
+		return time.Time{}, protocol.Frame{}, false
+	}
+	frame, ok := frameFromDisplayStreamLogLine(line)
+	if !ok {
+		return time.Time{}, protocol.Frame{}, false
+	}
+	return when, frame, true
+}
+
+func lastDisplayStreamFrameLine(path string) (time.Time, string, string, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return time.Time{}, ""
+		return time.Time{}, "", "", false
 	}
 	lines := strings.Split(string(data), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -3766,9 +3816,77 @@ func lastDisplayStreamFrame(path string) (time.Time, string) {
 		if fields := strings.Fields(after); len(fields) > 0 {
 			target = fields[0]
 		}
-		return when, target
+		return when, target, line, true
 	}
-	return time.Time{}, ""
+	return time.Time{}, "", "", false
+}
+
+func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
+	session, hasSession := intFieldFromDisplayStreamLog(line, "session")
+	weekly, hasWeekly := intFieldFromDisplayStreamLog(line, "weekly")
+	if !hasSession || !hasWeekly {
+		return protocol.Frame{}, false
+	}
+
+	frame := protocol.Frame{
+		V:         protocol.ProtocolVersionV1,
+		Provider:  displayStreamLogValue(line, "provider"),
+		Label:     displayStreamLogValue(line, "label"),
+		Session:   session,
+		Weekly:    weekly,
+		UsageMode: displayStreamLogValue(line, "usageMode"),
+		Activity:  displayStreamLogValue(line, "activity"),
+		Time:      displayStreamLogValue(line, "time"),
+		Date:      displayStreamLogValue(line, "date"),
+		Error:     displayStreamLogValue(line, "error"),
+	}
+	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
+		frame.ResetSec = reset
+	}
+	return frame.Normalize(), true
+}
+
+func intFieldFromDisplayStreamLog(line, key string) (int, bool) {
+	value := strings.TrimSuffix(displayStreamLogValue(line, key), "s")
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func int64FieldFromDisplayStreamLog(line, key string) (int64, bool) {
+	value := strings.TrimSuffix(displayStreamLogValue(line, key), "s")
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func displayStreamLogValue(line, key string) string {
+	marker := key + "="
+	start := strings.Index(line, marker)
+	if start < 0 {
+		return ""
+	}
+	start += len(marker)
+	rest := line[start:]
+	end := len(rest)
+	for _, nextKey := range displayStreamLogKeys {
+		nextMarker := " " + nextKey + "="
+		if idx := strings.Index(rest, nextMarker); idx >= 0 && idx < end {
+			end = idx
+		}
+	}
+	return strings.Trim(strings.TrimSpace(rest[:end]), `"`)
+}
+
+func displayStreamOutLogPath() string {
+	if path := strings.TrimSpace(os.Getenv(displayStreamOutLogEnv)); path != "" {
+		return path
+	}
+	return displayStreamOutLog
 }
 
 func samePublicTarget(left, right string) bool {
