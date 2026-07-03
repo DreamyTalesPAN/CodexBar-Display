@@ -1012,7 +1012,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           progress: clampProgress(job.progress),
           logs,
           result: job.result,
-          error: job.error?.nextAction,
+          error: job.error ? themeInstallErrorText(job.error) : undefined,
         });
       };
       setThemeInstallStatus({
@@ -1116,7 +1116,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           message: normalized.nextAction,
           progress: 100,
           logs: [...initialLogs, normalized.message, normalized.nextAction],
-          error: normalized.nextAction,
+          error: themeInstallErrorText(normalized),
         });
         addEvent({
           label: "Theme install needs attention",
@@ -2135,6 +2135,18 @@ function customerInstallLogs(
     .filter(Boolean)
     .filter((line, index, all) => all.indexOf(line) === index);
   return cleaned.length > 0 ? cleaned : fallback;
+}
+
+function themeInstallErrorText(error: ApiError): string {
+  const message = error.message?.trim();
+  const nextAction = error.nextAction?.trim();
+  if (!message) {
+    return nextAction || "Theme install failed. Try again.";
+  }
+  if (!nextAction || nextAction === message) {
+    return message;
+  }
+  return `${message} ${nextAction}`;
 }
 
 function customerUpdateLogs(

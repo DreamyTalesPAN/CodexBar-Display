@@ -107,6 +107,29 @@ func TestWiFiTransportDeviceHealthSnapshotReadsGIFLastError(t *testing.T) {
 	}
 }
 
+func TestWiFiTransportDeviceAssetsReadsAssetSizes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/assets" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"assets":[{"path":"/themes/u/cp-i.cba","sizeBytes":14336}]}`))
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	assets, err := transport.DeviceAssets(server.URL)
+	if err != nil {
+		t.Fatalf("DeviceAssets returned error: %v", err)
+	}
+	if got, ok := assets.AssetSize("/themes/u/cp-i.cba"); !ok || got != 14336 {
+		t.Fatalf("unexpected asset size got=%d ok=%t", got, ok)
+	}
+	if _, ok := assets.AssetSize("/missing"); ok {
+		t.Fatal("unexpected asset match for missing path")
+	}
+}
+
 func TestWiFiTransportPairDevicePostsPairingAPI(t *testing.T) {
 	var gotBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

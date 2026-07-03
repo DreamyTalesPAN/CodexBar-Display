@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -227,6 +228,76 @@ func TestInstallReactivatesWhenHealthStillShowsPreviousTheme(t *testing.T) {
 	}
 }
 
+func TestInstallRejectsTruncatedUploadedAsset(t *testing.T) {
+	withFastUploadVerification(t)
+	packDir := writeMinimalThemePack(t)
+	const previousPath = "/themes/u/claude.json"
+	uploadedAssets := make(map[string]int)
+	var uploadAttempts int
+	var restoredPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			writeThemeHello(t, w)
+		case "/health":
+			writeThemeHealth(t, w, previousPath)
+		case "/frame":
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.WriteHeader(http.StatusOK)
+		case "/assets":
+			switch r.Method {
+			case http.MethodPost:
+				uploadAttempts++
+				size := readUploadedAssetSize(t, r)
+				uploadedAssets[r.URL.Query().Get("path")] = size - 1
+				w.WriteHeader(http.StatusOK)
+			case http.MethodGet:
+				writeAssetList(t, w, uploadedAssets)
+			default:
+				t.Fatalf("unexpected assets method %s", r.Method)
+			}
+		case "/theme/active":
+			var payload struct {
+				Path string `json:"path"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode activation: %v", err)
+			}
+			restoredPath = payload.Path
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var out bytes.Buffer
+	_, err := Install(context.Background(), Options{
+		PackURL:            packDir,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		Out:                &out,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame:     testLiveFrame,
+	})
+	if err == nil {
+		t.Fatal("expected truncated asset install error")
+	}
+	if !strings.Contains(err.Error(), "has size") || !strings.Contains(err.Error(), "expected") {
+		t.Fatalf("expected asset size mismatch error, got %v", err)
+	}
+	if uploadAttempts != uploadVerifyAttempts {
+		t.Fatalf("expected upload verification retries, got %d", uploadAttempts)
+	}
+	if restoredPath != previousPath {
+		t.Fatalf("expected previous theme restore %q, got %q", previousPath, restoredPath)
+	}
+	if !strings.Contains(out.String(), "Upload verification failed, retrying") {
+		t.Fatalf("missing upload verification retry log:\n%s", out.String())
+	}
+}
+
 func TestInstallRestoresPreviousThemeWhenUploadFailsAfterInstallScreen(t *testing.T) {
 	packDir := writeMinimalThemePack(t)
 	const previousPath = "/themes/u/claude.json"
@@ -388,6 +459,15 @@ func withFastActivationRetries(t *testing.T) {
 	})
 }
 
+func withFastUploadVerification(t *testing.T) {
+	t.Helper()
+	oldDelay := uploadVerifyRetryDelay
+	uploadVerifyRetryDelay = 0
+	t.Cleanup(func() {
+		uploadVerifyRetryDelay = oldDelay
+	})
+}
+
 func healthServer(t *testing.T, body string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -421,16 +501,25 @@ func writeMinimalThemePack(t *testing.T) string {
 
 func themeInstallDeviceServer(t *testing.T, handle func(http.ResponseWriter, *http.Request)) *httptest.Server {
 	t.Helper()
+	uploadedAssets := make(map[string]int)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
 			writeThemeHello(t, w)
 		case "/assets":
-			if r.URL.Query().Get("path") != "/themes/u/synth.json" {
-				t.Fatalf("unexpected asset path %q", r.URL.Query().Get("path"))
+			switch r.Method {
+			case http.MethodGet:
+				writeAssetList(t, w, uploadedAssets)
+			case http.MethodPost:
+				if r.URL.Query().Get("path") != "/themes/u/synth.json" {
+					t.Fatalf("unexpected asset path %q", r.URL.Query().Get("path"))
+				}
+				size := readUploadedAssetSize(t, r)
+				uploadedAssets[r.URL.Query().Get("path")] = size
+				w.WriteHeader(http.StatusOK)
+			default:
+				t.Fatalf("unexpected assets method %s", r.Method)
 			}
-			_, _ = io.Copy(io.Discard, r.Body)
-			w.WriteHeader(http.StatusOK)
 		case "/frame":
 			_, _ = io.Copy(io.Discard, r.Body)
 			w.WriteHeader(http.StatusOK)
@@ -440,6 +529,51 @@ func themeInstallDeviceServer(t *testing.T, handle func(http.ResponseWriter, *ht
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 	}))
+}
+
+func writeAssetList(t *testing.T, w http.ResponseWriter, assets map[string]int) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	var out strings.Builder
+	out.WriteString(`{"assets":[`)
+	first := true
+	for path, size := range assets {
+		if !first {
+			out.WriteByte(',')
+		}
+		first = false
+		out.WriteString(`{"path":`)
+		encoded, err := json.Marshal(path)
+		if err != nil {
+			t.Fatalf("encode asset path: %v", err)
+		}
+		out.Write(encoded)
+		out.WriteString(`,"sizeBytes":`)
+		out.WriteString(fmt.Sprintf("%d", size))
+		out.WriteByte('}')
+	}
+	out.WriteString(`]}`)
+	_, _ = w.Write([]byte(out.String()))
+}
+
+func readUploadedAssetSize(t *testing.T, r *http.Request) int {
+	t.Helper()
+	reader, err := r.MultipartReader()
+	if err != nil {
+		t.Fatalf("MultipartReader returned error: %v", err)
+	}
+	part, err := reader.NextPart()
+	if err != nil {
+		t.Fatalf("NextPart returned error: %v", err)
+	}
+	if part.FormName() != "asset" {
+		t.Fatalf("unexpected form field %s", part.FormName())
+	}
+	body, err := io.ReadAll(part)
+	if err != nil {
+		t.Fatalf("read asset part: %v", err)
+	}
+	return len(body)
 }
 
 func writeThemeHello(t *testing.T, w http.ResponseWriter) {

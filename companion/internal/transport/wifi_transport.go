@@ -66,6 +66,25 @@ type DeviceHealthSnapshot struct {
 	} `json:"display"`
 }
 
+type DeviceAsset struct {
+	Path      string `json:"path"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
+
+type DeviceAssetsSnapshot struct {
+	Assets []DeviceAsset `json:"assets"`
+}
+
+func (s DeviceAssetsSnapshot) AssetSize(devicePath string) (int64, bool) {
+	devicePath = strings.TrimSpace(devicePath)
+	for _, asset := range s.Assets {
+		if asset.Path == devicePath {
+			return asset.SizeBytes, true
+		}
+	}
+	return 0, false
+}
+
 func NewWiFiTransport() DeviceTransport {
 	return WiFiTransport{
 		client: &http.Client{Timeout: defaultWiFiTimeout},
@@ -122,6 +141,32 @@ func (t WiFiTransport) DeviceCapabilities(target string) (protocol.DeviceCapabil
 func (t WiFiTransport) DeviceHealth(target string) error {
 	_, err := t.DeviceHealthSnapshot(target)
 	return err
+}
+
+func (t WiFiTransport) DeviceAssets(target string) (DeviceAssetsSnapshot, error) {
+	base, err := normalizeWiFiTarget(target)
+	if err != nil {
+		return DeviceAssetsSnapshot{}, err
+	}
+	req, err := http.NewRequest(http.MethodGet, base+"/assets", nil)
+	if err != nil {
+		return DeviceAssetsSnapshot{}, fmt.Errorf("build device assets request: %w", err)
+	}
+	req.Close = true
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return DeviceAssetsSnapshot{}, fmt.Errorf("get device assets: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return DeviceAssetsSnapshot{}, fmt.Errorf("get device assets: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var assets DeviceAssetsSnapshot
+	if err := json.NewDecoder(resp.Body).Decode(&assets); err != nil {
+		return DeviceAssetsSnapshot{}, fmt.Errorf("decode device assets: %w", err)
+	}
+	return assets, nil
 }
 
 func (t WiFiTransport) DeviceHealthSnapshot(target string) (DeviceHealthSnapshot, error) {
