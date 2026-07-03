@@ -152,11 +152,13 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
     null,
   );
   const effectiveDisplayFrame = displayStreamReady ? displayFrame : null;
-  const frame = buildFrameData(
-    provider,
-    effectiveDisplayFrame?.savedAt || usage?.generatedAt,
-    effectiveDisplayFrame?.frame,
-  );
+  const frame = hasRenderableUsage(effectiveDisplayFrame?.frame, provider)
+    ? buildFrameData(
+        provider,
+        effectiveDisplayFrame?.savedAt || usage?.generatedAt,
+        effectiveDisplayFrame?.frame,
+      )
+    : null;
   const [packState, setPackState] = useState<ThemePackState | null>(null);
   const pack = packState?.themeId === themeId ? packState.pack : null;
   const packStatus: "idle" | "loading" | "ready" | "error" = !themeId
@@ -239,13 +241,15 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   return (
     <figure className="w-full max-w-[540px]">
       <VibeTVCaseShell>
-        {pack?.spec ? (
+        {pack?.spec && frame ? (
           <ThemeSpecSVG
             assets={pack.assets || {}}
             frame={frame}
             spec={pack.spec}
             themeId={pack.themeId || themeId}
           />
+        ) : pack?.spec ? (
+          <ThemeUsageLoading />
         ) : (
           <ThemeSpecLoading status={packStatus} themeId={themeId} />
         )}
@@ -627,6 +631,26 @@ function ThemeSpecLoading({
   );
 }
 
+function ThemeUsageLoading() {
+  return (
+    <div
+      aria-label="Loading VibeTV usage preview"
+      className="grid aspect-square w-full place-items-center bg-[#050505] p-4 text-center font-mono text-[11px] font-bold uppercase tracking-normal text-[#CCFF00]"
+      role="img"
+    >
+      <div>
+        <div className="mb-3 text-[#FF4FC3]">Usage</div>
+        <div className="flex items-center justify-center gap-1.5" aria-hidden>
+          <span className="block h-2 w-2 animate-pulse bg-[#CCFF00]" />
+          <span className="block h-2 w-2 animate-pulse bg-[#32D5FF] [animation-delay:150ms]" />
+          <span className="block h-2 w-2 animate-pulse bg-[#FF4FC3] [animation-delay:300ms]" />
+        </div>
+        <div className="mt-3">Loading usage</div>
+      </div>
+    </div>
+  );
+}
+
 function currentUsageProvider(
   usage: UsageSnapshot | null,
 ): UsageProviderInfo | null {
@@ -637,6 +661,25 @@ function currentUsageProvider(
   return (
     providers.find((provider) => provider.id === usage?.currentProvider) ||
     providers[0]
+  );
+}
+
+function hasRenderableUsage(
+  displayFrame: DisplayFrame | undefined,
+  provider: UsageProviderInfo | null,
+): boolean {
+  return (
+    hasUsagePercentPair(displayFrame?.session, displayFrame?.weekly) ||
+    hasUsagePercentPair(provider?.session, provider?.weekly)
+  );
+}
+
+function hasUsagePercentPair(session: unknown, weekly: unknown): boolean {
+  return (
+    typeof session === "number" &&
+    Number.isFinite(session) &&
+    typeof weekly === "number" &&
+    Number.isFinite(weekly)
   );
 }
 

@@ -215,6 +215,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testOverviewShowsUsageLoadingUntilRealUsage(
+      browser,
+      appContext.appUrl,
+    );
     await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
     await testSupportReportExportsAppearAfterReportLoads(
@@ -1346,6 +1350,61 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   assert(
     (await page.locator("figcaption").count()) === 0,
     "Overview preview should not render the theme caption",
+  );
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testOverviewShowsUsageLoadingUntilRealUsage(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.33",
+    displayFrameStatus: 404,
+    device: {
+      ...companionDevice,
+      activeTheme: "synthwave",
+      firmware: "1.0.32",
+      stream: {
+        healthy: true,
+        running: true,
+      },
+      display: {
+        themeSpec: {
+          active: true,
+          renderOk: true,
+        },
+      },
+    },
+    usageResponse: {
+      ok: true,
+      generatedAt: "2026-06-29T10:47:46Z",
+      source: "codexbar-display",
+      usageMode: "used",
+      providers: [],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
+  const loadingPreview = page.getByRole("img", {
+    name: "Loading VibeTV usage preview",
+  });
+  await loadingPreview.waitFor({ timeout: 10_000 });
+  await loadingPreview.getByText("Loading usage").waitFor({ timeout: 10_000 });
+  assert(
+    (await page
+      .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
+      .count()) === 0,
+    "Overview preview should not render fake theme usage before real usage arrives",
+  );
+  assert(
+    !(await page.locator("figure").innerText()).includes("100%"),
+    "Overview preview should not show fake 100% usage while usage is loading",
   );
 
   assertNoInstallRequests(installRequests);
