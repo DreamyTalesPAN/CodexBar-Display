@@ -227,6 +227,137 @@ func TestInstallReactivatesWhenHealthStillShowsPreviousTheme(t *testing.T) {
 	}
 }
 
+func TestInstallRestoresPreviousThemeWhenUploadFailsAfterInstallScreen(t *testing.T) {
+	packDir := writeMinimalThemePack(t)
+	const previousPath = "/themes/u/claude.json"
+	var frames []protocol.Frame
+	var activatedPaths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			writeThemeHello(t, w)
+		case "/health":
+			writeThemeHealth(t, w, previousPath)
+		case "/frame":
+			var frame protocol.Frame
+			if err := json.NewDecoder(r.Body).Decode(&frame); err != nil {
+				t.Fatalf("decode frame: %v", err)
+			}
+			frames = append(frames, frame)
+			w.WriteHeader(http.StatusOK)
+		case "/assets":
+			_, _ = io.Copy(io.Discard, r.Body)
+			http.Error(w, "upload failed", http.StatusBadRequest)
+		case "/theme/active":
+			var payload struct {
+				Path string `json:"path"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode activation: %v", err)
+			}
+			activatedPaths = append(activatedPaths, payload.Path)
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var out bytes.Buffer
+	_, err := Install(context.Background(), Options{
+		PackURL:            packDir,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		Out:                &out,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame:     testLiveFrame,
+	})
+	if err == nil {
+		t.Fatal("expected install error")
+	}
+	if len(frames) < 2 {
+		t.Fatalf("expected install screen and restore live frame, got %d frames", len(frames))
+	}
+	if !strings.Contains(string(frames[0].ThemeSpec), `"id":"installing"`) {
+		t.Fatalf("expected first frame to show install screen, got themeSpec=%s", string(frames[0].ThemeSpec))
+	}
+	if got := frames[len(frames)-1].ThemeSpec; len(got) != 0 {
+		t.Fatalf("expected restored live frame without inline theme spec, got %s", string(got))
+	}
+	if len(activatedPaths) != 1 || activatedPaths[0] != previousPath {
+		t.Fatalf("expected previous theme activation %q, got %#v", previousPath, activatedPaths)
+	}
+	if !strings.Contains(out.String(), "Restoring previous theme") ||
+		!strings.Contains(out.String(), "Restore previous theme: activated") {
+		t.Fatalf("missing restore logs:\n%s", out.String())
+	}
+}
+
+func TestInstallClearsInstallScreenWhenNoPreviousThemePath(t *testing.T) {
+	packDir := writeMinimalThemePack(t)
+	var frames []protocol.Frame
+	var activatedPaths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			writeThemeHello(t, w)
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"installing","themeSpec":{"active":true,"path":"","renderOk":true}}}`))
+		case "/frame":
+			var frame protocol.Frame
+			if err := json.NewDecoder(r.Body).Decode(&frame); err != nil {
+				t.Fatalf("decode frame: %v", err)
+			}
+			frames = append(frames, frame)
+			w.WriteHeader(http.StatusOK)
+		case "/assets":
+			_, _ = io.Copy(io.Discard, r.Body)
+			http.Error(w, "upload failed", http.StatusBadRequest)
+		case "/theme/active":
+			var payload struct {
+				Path string `json:"path"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode activation: %v", err)
+			}
+			activatedPaths = append(activatedPaths, payload.Path)
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var out bytes.Buffer
+	_, err := Install(context.Background(), Options{
+		PackURL:            packDir,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		Out:                &out,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame:     testLiveFrame,
+	})
+	if err == nil {
+		t.Fatal("expected install error")
+	}
+	if len(activatedPaths) != 0 {
+		t.Fatalf("expected no stored theme activation, got %#v", activatedPaths)
+	}
+	if len(frames) < 2 {
+		t.Fatalf("expected install screen and clear frame, got %d frames", len(frames))
+	}
+	clearFrame := frames[len(frames)-1]
+	if strings.TrimSpace(string(clearFrame.ThemeSpec)) != "null" || !clearFrame.ConfirmClearThemeSpec {
+		t.Fatalf("expected confirmed themeSpec clear, got themeSpec=%s confirm=%t", string(clearFrame.ThemeSpec), clearFrame.ConfirmClearThemeSpec)
+	}
+	if !strings.Contains(out.String(), "Clear install screen: refreshed") {
+		t.Fatalf("missing clear log:\n%s", out.String())
+	}
+}
+
 func withFastRenderHealthCheck(t *testing.T) {
 	t.Helper()
 	oldAttempts := renderHealthAttempts
@@ -293,19 +424,7 @@ func themeInstallDeviceServer(t *testing.T, handle func(http.ResponseWriter, *ht
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{
-				"kind":"hello",
-				"protocolVersion":2,
-				"board":"esp8266-smalltv-st7789",
-				"firmware":"1.0.33",
-				"features":["theme","theme-spec-v1"],
-				"maxFrameBytes":1024,
-				"capabilities":{
-					"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":4096,"maxThemePrimitives":32},
-					"transport":{"active":"wifi"}
-				}
-			}`))
+			writeThemeHello(t, w)
 		case "/assets":
 			if r.URL.Query().Get("path") != "/themes/u/synth.json" {
 				t.Fatalf("unexpected asset path %q", r.URL.Query().Get("path"))
@@ -321,6 +440,23 @@ func themeInstallDeviceServer(t *testing.T, handle func(http.ResponseWriter, *ht
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 	}))
+}
+
+func writeThemeHello(t *testing.T, w http.ResponseWriter) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{
+		"kind":"hello",
+		"protocolVersion":2,
+		"board":"esp8266-smalltv-st7789",
+		"firmware":"1.0.33",
+		"features":["theme","theme-spec-v1"],
+		"maxFrameBytes":1024,
+		"capabilities":{
+			"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":4096,"maxThemePrimitives":32},
+			"transport":{"active":"wifi"}
+		}
+	}`))
 }
 
 func writeThemeHealth(t *testing.T, w http.ResponseWriter, activePath string) {

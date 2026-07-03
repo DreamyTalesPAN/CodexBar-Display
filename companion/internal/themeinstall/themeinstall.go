@@ -111,7 +111,7 @@ func (e *InstallError) RecoveryAction() string {
 	return errcode.DefaultRecovery(e.Code)
 }
 
-func Install(ctx context.Context, opts Options) (Result, error) {
+func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -219,6 +219,17 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 			Err:  err,
 		}
 	}
+	previousThemePath, previousThemePathErr := currentStoredThemePath(wifi, resolvedTarget)
+	if previousThemePathErr != nil && opts.Verbose {
+		fmt.Fprintf(out, "Restore snapshot: skipped (%v)\n", previousThemePathErr)
+	}
+	installScreenShown := false
+	defer func() {
+		if retErr == nil || !installScreenShown {
+			return
+		}
+		restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
+	}()
 	if err := sendInstallingThemeFrame(wifi, resolvedTarget, caps); err != nil {
 		if authRequired(err) {
 			pairedTarget, pairErr := pairThemeInstallTarget(wifi, resolvedTarget, opts.PairTokenStore)
@@ -236,9 +247,11 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			fmt.Fprintf(out, "Install screen: skipped (%v)\n", err)
 		} else {
+			installScreenShown = true
 			fmt.Fprintln(out, "Install screen: showing on VibeTV")
 		}
 	} else {
+		installScreenShown = true
 		fmt.Fprintln(out, "Install screen: showing on VibeTV")
 	}
 
@@ -432,6 +445,76 @@ func sendLiveThemeFrame(ctx context.Context, wifi transportlayer.WiFiTransport, 
 	return nil
 }
 
+func sendClearThemeSpecFrame(ctx context.Context, wifi transportlayer.WiFiTransport, target string, caps protocol.DeviceCapabilities, fetchFrame func(context.Context) (protocol.Frame, error)) error {
+	if fetchFrame == nil {
+		fetchFrame = codexbar.FetchFirstFrame
+	}
+	frame, err := fetchFrame(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch current usage: %w", err)
+	}
+	frame = frame.Normalize()
+	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
+	frame.Theme = ""
+	frame.ThemeSpec = json.RawMessage("null")
+	frame.ConfirmClearThemeSpec = true
+	line, err := frame.MarshalLine()
+	if err != nil {
+		return fmt.Errorf("build clear-theme frame: %w", err)
+	}
+	maxFrameBytes := caps.MaxFrameBytes
+	if maxFrameBytes <= 0 {
+		maxFrameBytes = protocol.DefaultMaxFrameBytes
+	}
+	if len(bytes.TrimSpace(line)) > maxFrameBytes {
+		return fmt.Errorf("clear-theme frame exceeds device limit: size=%d limit=%d", len(bytes.TrimSpace(line)), maxFrameBytes)
+	}
+	if err := wifi.SendLine(target, line); err != nil {
+		return fmt.Errorf("send clear-theme frame: %w", err)
+	}
+	return nil
+}
+
+func currentStoredThemePath(wifi transportlayer.WiFiTransport, target string) (string, error) {
+	health, err := wifi.DeviceHealthSnapshot(target)
+	if err != nil {
+		return "", err
+	}
+	path := strings.TrimSpace(health.Display.ThemeSpec.Path)
+	if !health.Display.ThemeSpec.Active || path == "" || strings.EqualFold(strings.TrimSpace(health.Display.ActiveTheme), "installing") {
+		return "", nil
+	}
+	return path, nil
+}
+
+func restoreThemeInstallScreen(
+	ctx context.Context,
+	wifi transportlayer.WiFiTransport,
+	target *string,
+	caps protocol.DeviceCapabilities,
+	previousThemePath string,
+	store PairTokenStore,
+	fetchFrame func(context.Context) (protocol.Frame, error),
+	out io.Writer,
+) {
+	previousThemePath = strings.TrimSpace(previousThemePath)
+	if previousThemePath != "" {
+		fmt.Fprintln(out, "Restoring previous theme...")
+		if err := activateThemeWithPairRetry(wifi, target, previousThemePath, store); err != nil {
+			fmt.Fprintf(out, "Restore previous theme: skipped (%v)\n", err)
+		} else {
+			fmt.Fprintln(out, "Restore previous theme: activated")
+			sendLiveThemeFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame, out)
+			return
+		}
+	}
+	if err := sendClearThemeSpecFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame); err != nil {
+		fmt.Fprintf(out, "Clear install screen: skipped (%v)\n", err)
+		return
+	}
+	fmt.Fprintln(out, "Clear install screen: refreshed")
+}
+
 type themeActivationError struct {
 	op  string
 	err error
@@ -530,6 +613,26 @@ func sendLiveThemeFrameWithPairRetry(
 		return
 	}
 	fmt.Fprintln(out, "Live usage frame: refreshed")
+}
+
+func sendClearThemeSpecFrameWithPairRetry(
+	ctx context.Context,
+	wifi transportlayer.WiFiTransport,
+	target *string,
+	caps protocol.DeviceCapabilities,
+	store PairTokenStore,
+	fetchFrame func(context.Context) (protocol.Frame, error),
+) error {
+	err := sendClearThemeSpecFrame(ctx, wifi, *target, caps, fetchFrame)
+	if err == nil || !authRequired(err) {
+		return err
+	}
+	pairedTarget, pairErr := pairThemeInstallTarget(wifi, *target, store)
+	if pairErr != nil {
+		return pairErr
+	}
+	*target = pairedTarget
+	return sendClearThemeSpecFrame(ctx, wifi, *target, caps, fetchFrame)
 }
 
 func sleepActivationRetry(ctx context.Context) error {
