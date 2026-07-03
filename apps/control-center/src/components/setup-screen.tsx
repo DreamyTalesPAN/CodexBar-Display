@@ -397,28 +397,32 @@ export function SetupScreen({
                 ) : null}
 
                 {setupMode === "manual" ? (
-                  <div className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4">
-                    <p className="text-sm leading-6 text-[#444933]">
-                      Open Terminal, paste this command, then press Enter.
-                    </p>
-                    <code
-                      className="block overflow-x-auto border border-[#747A60] bg-[#EEEEEE] p-3 text-xs text-[#1B1B1B]"
-                      suppressHydrationWarning
-                    >
-                      {terminalCommand}
-                    </code>
-                    <SecondaryButton
-                      icon={<Copy size={16} aria-hidden />}
-                      label={
-                        terminalCommandCopied
-                          ? "Command copied"
-                          : "Copy terminal command"
-                      }
-                      onClick={async () => {
-                        await copyText(terminalCommand);
-                        setTerminalCommandCopied(true);
-                      }}
-                    />
+                  <div className="grid min-w-0 gap-4">
+                    <div className="grid min-w-0 gap-3">
+                      <div className="min-w-0 max-w-full overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
+                        <p className="px-4 py-3 text-sm leading-6 text-[#444933]">
+                          Open Terminal, paste this command, then press Enter.
+                        </p>
+                        <code
+                          className="block max-h-[280px] w-full max-w-full overflow-auto whitespace-pre-wrap border-t border-[#747A60] bg-[#EEEEEE] p-4 text-xs leading-5 text-[#1B1B1B] [overflow-wrap:anywhere]"
+                          suppressHydrationWarning
+                        >
+                          {terminalCommand}
+                        </code>
+                      </div>
+                      <SecondaryButton
+                        icon={<Copy size={16} aria-hidden />}
+                        label={
+                          terminalCommandCopied
+                            ? "Command copied"
+                            : "Copy terminal command"
+                        }
+                        onClick={async () => {
+                          await copyText(terminalCommand);
+                          setTerminalCommandCopied(true);
+                        }}
+                      />
+                    </div>
                   </div>
                 ) : null}
 
