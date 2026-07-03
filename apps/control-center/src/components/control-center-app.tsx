@@ -7,7 +7,9 @@ import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
   isLocalCompanionOrigin,
+  localControlCenterUrl,
   needsLoopbackTargetAddressSpace,
+  shouldRedirectToLocalControlCenter,
 } from "./control-center-runtime";
 import {
   deviceImageIsStuck,
@@ -559,6 +561,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
+        if (shouldRedirectToLocalControlCenter()) {
+          window.location.assign(localControlCenterUrl());
+          return;
+        }
         if (!quiet) {
           try {
             await runCompanion<unknown>("/v1/usage", undefined, {

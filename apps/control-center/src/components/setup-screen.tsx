@@ -66,7 +66,7 @@ Then tell me:
 - whether the status check worked
 - whether VibeTV connected
 - whether the VibeTV firmware update completed, was already current, or failed
-- the next step: return to app.vibetv.shop, choose Allow when the browser asks for access, and continue setup
+- the next step: open http://127.0.0.1:47832/control-center and continue setup there
 
 Normal usage frames may update the VibeTV display. Do not install themes, reset WiFi, upload theme assets, or change WiFi settings. Only run the setup command and verify its result.`;
 }

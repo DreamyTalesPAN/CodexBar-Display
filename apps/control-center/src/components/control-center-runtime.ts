@@ -23,6 +23,17 @@ export function shouldUseNextLocalCompanionProxy(): boolean {
   return isLoopbackHostname(window.location.hostname) && !isLocalCompanionOrigin();
 }
 
+export function localControlCenterUrl(): string {
+  return `${COMPANION_URL}/control-center`;
+}
+
+export function shouldRedirectToLocalControlCenter(): boolean {
+  if (typeof window === "undefined" || isLocalCompanionOrigin()) {
+    return false;
+  }
+  return window.location.protocol === "https:";
+}
+
 export function companionRequestUrl(path: string): string {
   if (isLocalCompanionOrigin()) {
     return path;
