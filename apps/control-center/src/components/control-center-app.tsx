@@ -197,6 +197,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     getRuntimeSurfaceSnapshot,
     getRuntimeSurfaceServerSnapshot,
   );
+  const hostedSetup = runtimeSurface === "hosted-setup";
   const [companionStatus, setCompanionStatus] =
     useState<CompanionStatus>("unknown");
   const [companionInfo, setCompanionInfo] = useState<CompanionInfo | null>(
@@ -1137,6 +1138,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   useEffect(() => {
+    if (hostedSetup) {
+      return;
+    }
     if (setupPreviewStep) {
       return;
     }
@@ -1149,10 +1153,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       void checkCompanion({ quiet: true });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [checkCompanion, setupPreviewStep]);
+  }, [checkCompanion, hostedSetup, setupPreviewStep]);
 
   useEffect(() => {
     if (
+      hostedSetup ||
       setupPreviewStep ||
       didRunAutoRepair.current ||
       busyAction ||
@@ -1169,12 +1174,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     busyAction,
     companionStatus,
     device,
+    hostedSetup,
     lastError,
     repairConnection,
     setupPreviewStep,
   ]);
 
   useEffect(() => {
+    if (hostedSetup) {
+      return;
+    }
     if (!deviceImageIsStuck(device)) {
       didRunAutoDisplayReload.current = false;
       return;
@@ -1189,10 +1198,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
     didRunAutoDisplayReload.current = true;
     void reloadDisplay({ quiet: true });
-  }, [busyAction, companionStatus, device, reloadDisplay, setupPreviewStep]);
+  }, [
+    busyAction,
+    companionStatus,
+    device,
+    hostedSetup,
+    reloadDisplay,
+    setupPreviewStep,
+  ]);
 
   useEffect(() => {
-    if (companionStatus !== "missing") {
+    if (hostedSetup || companionStatus !== "missing") {
       return;
     }
 
@@ -1204,7 +1220,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }, 5000);
 
     return () => window.clearInterval(timer);
-  }, [busyAction, checkCompanion, companionStatus]);
+  }, [busyAction, checkCompanion, companionStatus, hostedSetup]);
 
   const deviceBoard = device?.board;
   const deviceFirmware = device?.firmware;
@@ -1732,6 +1748,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     deviceSetupIsUsable(device),
   );
   const usageAvailable = companionStatus === "online";
+  const openLocalControlCenter = useCallback(() => {
+    window.location.assign(localControlCenterUrl());
+  }, []);
+
   useEffect(() => {
     if (!setupComplete || didRouteAfterSetupComplete.current) {
       return;
@@ -1780,16 +1800,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const renderSetupScreen = (showIntro: boolean) => (
     <SetupScreen
       key={setupResetVersion}
+      checkAfterWifi={!hostedSetup}
       companionStatus={companionStatus}
       device={device}
       deviceState={deviceState}
       deviceTarget={deviceTarget}
       lastError={lastError}
       busyAction={busyAction}
+      hostedMode={hostedSetup}
       previewStep={setupPreviewStep}
       showIntro={showIntro}
       setupComplete={setupComplete}
-      onCheckCompanion={checkCompanion}
+      onCheckCompanion={hostedSetup ? openLocalControlCenter : checkCompanion}
       onDeviceTargetChange={handleDeviceTargetChange}
       onRepairConnection={(targetOverride) =>
         repairConnection({ targetOverride, forcePair: true })

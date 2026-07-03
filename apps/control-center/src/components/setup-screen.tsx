@@ -73,6 +73,7 @@ Normal usage frames may update the VibeTV display. Do not install themes, reset 
 
 type SetupScreenProps = {
   busyAction?: string | null;
+  checkAfterWifi?: boolean;
   companionStatus: CompanionStatus;
   device: DeviceInfo | null;
   deviceState: DeviceState;
@@ -82,6 +83,7 @@ type SetupScreenProps = {
   onDeviceTargetChange?: (target: string) => void;
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
+  hostedMode?: boolean;
   previewStep?: "mac-app" | null;
   showIntro?: boolean;
   setupComplete: boolean;
@@ -93,6 +95,7 @@ type StepState = "active" | "blocked" | "complete" | "pending";
 
 export function SetupScreen({
   busyAction,
+  checkAfterWifi = true,
   companionStatus,
   device,
   deviceState,
@@ -102,6 +105,7 @@ export function SetupScreen({
   onDeviceTargetChange,
   onRepairConnection,
   onResetSetup,
+  hostedMode = false,
   previewStep,
   showIntro = true,
   setupComplete,
@@ -204,7 +208,9 @@ export function SetupScreen({
 
   function confirmWifi() {
     setWifiConfirmedState(true);
-    runCheckCompanion();
+    if (checkAfterWifi) {
+      runCheckCompanion();
+    }
   }
 
   function confirmMacApp() {
@@ -424,7 +430,11 @@ export function SetupScreen({
                     busy={busyAction === "status"}
                     busyLabel="Checking"
                     icon={<RefreshCw size={18} aria-hidden />}
-                    label="Mac App is installed"
+                    label={
+                      hostedMode
+                        ? "Open local Control Center"
+                        : "Mac App is installed"
+                    }
                     onClick={confirmMacApp}
                   />
                 </div>
@@ -432,36 +442,38 @@ export function SetupScreen({
             ) : null}
           </SetupStep>
 
-          <SetupStep
-            icon={<Wifi size={22} aria-hidden />}
-            index={3}
-            state={stepStates["browser-access"]}
-            title="Allow browser access"
-          >
-            {activeStep === "browser-access" ? (
-              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                <p className="text-sm leading-6 text-[#444933]">
-                  Chrome needs permission so this website can talk to the Mac
-                  App on this computer.
-                </p>
-                <PrimaryButton
-                  busy={busyAction === "status"}
-                  busyLabel="Checking"
-                  icon={<Wifi size={18} aria-hidden />}
-                  label="Allow access"
-                  onClick={runCheckCompanion}
-                />
-              </div>
-            ) : null}
-          </SetupStep>
+          {!hostedMode ? (
+            <SetupStep
+              icon={<Wifi size={22} aria-hidden />}
+              index={3}
+              state={stepStates["browser-access"]}
+              title="Allow browser access"
+            >
+              {activeStep === "browser-access" ? (
+                <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                  <p className="text-sm leading-6 text-[#444933]">
+                    Chrome needs permission so this website can talk to the Mac
+                    App on this computer.
+                  </p>
+                  <PrimaryButton
+                    busy={busyAction === "status"}
+                    busyLabel="Checking"
+                    icon={<Wifi size={18} aria-hidden />}
+                    label="Allow access"
+                    onClick={runCheckCompanion}
+                  />
+                </div>
+              ) : null}
+            </SetupStep>
+          ) : null}
 
           <SetupStep
             icon={<Monitor size={22} aria-hidden />}
-            index={4}
+            index={hostedMode ? 3 : 4}
             state={stepStates.finish}
-            title="Finish setup"
+            title={hostedMode ? "Open local Control Center" : "Finish setup"}
           >
-            {activeStep === "finish" ? (
+            {activeStep === "finish" && !hostedMode ? (
               <FinishSetupContent
                 busyAction={busyAction}
                 deviceState={deviceState}
