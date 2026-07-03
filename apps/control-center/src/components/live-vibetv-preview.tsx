@@ -147,13 +147,15 @@ type SpriteRect = {
 export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   const provider = currentUsageProvider(usage);
   const themeId = activeThemeId(device);
+  const displayStreamReady = Boolean(device?.stream?.healthy);
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
   );
+  const effectiveDisplayFrame = displayStreamReady ? displayFrame : null;
   const frame = buildFrameData(
     provider,
-    displayFrame?.savedAt || usage?.generatedAt,
-    displayFrame?.frame,
+    effectiveDisplayFrame?.savedAt || usage?.generatedAt,
+    effectiveDisplayFrame?.frame,
   );
   const [packState, setPackState] = useState<ThemePackState | null>(null);
   const pack = packState?.themeId === themeId ? packState.pack : null;
@@ -196,6 +198,10 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   }, [themeId]);
 
   useEffect(() => {
+    if (!displayStreamReady) {
+      return;
+    }
+
     const controller = new AbortController();
 
     const refreshDisplayFrame = async () => {
@@ -228,7 +234,7 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, []);
+  }, [displayStreamReady]);
 
   return (
     <figure className="w-full max-w-[540px]">

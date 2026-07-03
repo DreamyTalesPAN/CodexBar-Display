@@ -753,7 +753,53 @@ func TestDeviceNotFoundErrorFormat(t *testing.T) {
 	}
 }
 
-func TestDeviceReachableButDisplayStreamNotReadyReportsDisconnected(t *testing.T) {
+func TestDeviceGetRediscoversWhenSavedTargetIsStale(t *testing.T) {
+	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gone", http.StatusServiceUnavailable)
+	}))
+	defer stale.Close()
+
+	device := newHelloDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: stale.URL, DeviceToken: "pair-token"})
+	server.subnetTargets = func() []string {
+		return []string{device.URL}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/device", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Device deviceInfo `json:"device"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.Device.Connected || got.Device.Target != device.URL {
+		t.Fatalf("expected rediscovered device target %q, got %+v", device.URL, got.Device)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var status statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.Device.Target != device.URL {
+		t.Fatalf("expected rediscovered target to be persisted, got %+v", status.Device)
+	}
+}
+
+func TestDeviceReachableButDisplayStreamNotReadyStaysConnected(t *testing.T) {
 	device := newHelloDeviceServer(t)
 	defer device.Close()
 
@@ -780,15 +826,15 @@ func TestDeviceReachableButDisplayStreamNotReadyReportsDisconnected(t *testing.T
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Device.Connected {
-		t.Fatalf("expected reachable device to stay disconnected until display stream is ready, got %+v", got.Device)
+	if !got.Device.Connected {
+		t.Fatalf("expected reachable device to stay connected while display stream is not ready, got %+v", got.Device)
 	}
 	if got.Device.Stream == nil || got.Device.Stream.Healthy {
 		t.Fatalf("expected unhealthy stream detail, got %+v", got.Device.Stream)
 	}
 }
 
-func TestDeviceReachableButRenderFailedReportsDisconnected(t *testing.T) {
+func TestDeviceReachableButRenderFailedStaysConnected(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
@@ -818,8 +864,8 @@ func TestDeviceReachableButRenderFailedReportsDisconnected(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Device.Connected {
-		t.Fatalf("expected render failure to report disconnected image, got %+v", got.Device)
+	if !got.Device.Connected {
+		t.Fatalf("expected render failure to keep reachable device connected, got %+v", got.Device)
 	}
 	if got.Device.Stream == nil || !got.Device.Stream.Healthy {
 		t.Fatalf("expected healthy stream detail, got %+v", got.Device.Stream)
@@ -2405,11 +2451,16 @@ func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 func newHelloDeviceServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/hello" {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
 	}))
 }
 

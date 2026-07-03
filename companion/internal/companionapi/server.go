@@ -1662,25 +1662,13 @@ func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	cfg, err := s.config()
-	if err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	if strings.TrimSpace(cfg.DeviceTarget) == "" {
-		writeDeviceNotFound(w)
-		return
-	}
-	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
-	if err != nil {
-		writeDeviceNotFound(w)
+	cfg, hello, ok := s.requireDevice(w, r)
+	if !ok {
 		return
 	}
 	device := s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello))
-	if device.Stream != nil && device.Stream.Healthy {
-		if health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err == nil {
-			device = withDeviceHealth(device, health)
-		}
+	if health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err == nil {
+		device = withDeviceHealth(device, health)
 	}
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool       `json:"ok"`
@@ -3091,8 +3079,17 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 	}
 	hello, err := s.getHello(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
 	if err != nil {
-		writeDeviceNotFound(w)
-		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		target, discoveredHello, discoverErr := s.discover(r.Context(), cfg, "")
+		if discoverErr != nil {
+			writeDeviceNotFound(w)
+			return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		}
+		cfg.DeviceTarget = target
+		if err := s.saveConfig(s.home, cfg); err != nil {
+			writeInternalError(w, err)
+			return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		}
+		return cfg, discoveredHello, true
 	}
 	return cfg, hello, true
 }
@@ -3623,7 +3620,6 @@ func withDisplayStreamInfo(device deviceInfo, stream displayStreamInfo) deviceIn
 		stream.Target = device.Target
 	}
 	device.Stream = streamPointer(stream)
-	device.Connected = device.Connected && device.Paired && stream.Healthy
 	return device
 }
 
@@ -3640,9 +3636,6 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 				RenderFailures: health.Display.ThemeSpec.RenderFailures,
 			},
 		}
-	}
-	if !deviceRenderHealthy(device) {
-		device.Connected = false
 	}
 	return device
 }
