@@ -13,7 +13,6 @@ import {
 import { useMemo, useState, type ReactNode } from "react";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import { useCompanionRelease } from "./companion-installer-actions";
 import {
   buildMacAppTerminalCommand,
   currentControlCenterOrigin,
@@ -58,6 +57,7 @@ export type UpdatesScreenProps = {
   companionStatus: UpdatesCompanionStatus;
   device: UpdatesDeviceInfo | null;
   companionVersion?: string;
+  companionRelease?: CompanionReleaseInfo | null;
   macAppSelfUpdateEnabled?: boolean;
   firmwareUpdate?: FirmwareUpdateInfo | null;
   onCheckUpdates?: () => Promise<void> | void;
@@ -73,6 +73,7 @@ export function UpdatesScreen({
   companionStatus,
   device,
   companionVersion,
+  companionRelease = null,
   macAppSelfUpdateEnabled = false,
   firmwareUpdate,
   onCheckUpdates,
@@ -83,11 +84,6 @@ export function UpdatesScreen({
   macAppUpdateStatus,
   updateStatus,
 }: UpdatesScreenProps) {
-  const {
-    busy: companionCheckBusy,
-    refresh: refreshCompanionRelease,
-    release: companionRelease,
-  } = useCompanionRelease(companionVersion);
   const [macAppCommandCopied, setMacAppCommandCopied] = useState(false);
   const macAppTerminalCommand = useMemo(
     () => buildMacAppTerminalCommand(currentControlCenterOrigin()),
@@ -99,7 +95,7 @@ export function UpdatesScreen({
   const checking = Boolean(canCheckFirmware && !firmwareUpdate);
   const macAppRunning = companionStatus === "online";
   const checkingMacApp = Boolean(macAppRunning && !companionRelease);
-  const checkingUpdates = checking || checkingMacApp || companionCheckBusy;
+  const checkingUpdates = checking || checkingMacApp;
   const latestFirmware =
     firmwareUpdate?.latestFirmware || (checking ? "Checking" : "Not available");
   const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
@@ -119,7 +115,9 @@ export function UpdatesScreen({
     macAppUpdateStatus?.phase === "installing";
   const installingAnyUpdate = installingUpdate || installingMacAppUpdate;
   const creatingReport = busyAction === "diagnostics";
-  const checkFailed = firmwareUpdate?.status === "check_failed";
+  const macAppCheckFailed =
+    macAppRunning && companionRelease?.status === "check_failed";
+  const checkFailed = firmwareUpdate?.status === "check_failed" || macAppCheckFailed;
   const title = checkingUpdates
     ? "Checking updates"
     : checkFailed
@@ -172,10 +170,7 @@ export function UpdatesScreen({
     }
 
     if (!anyUpdateAvailable) {
-      await Promise.all([
-        refreshCompanionRelease(),
-        onCheckUpdates ? Promise.resolve(onCheckUpdates()) : Promise.resolve(),
-      ]);
+      await onCheckUpdates?.();
       return;
     }
 
@@ -225,10 +220,7 @@ export function UpdatesScreen({
             onClick={runPrimaryUpdate}
             updateAvailable={anyUpdateAvailable}
             updateReady={Boolean(
-              primaryCopyCommand ||
-                anyUpdateAvailable ||
-                onCheckUpdates ||
-                refreshCompanionRelease,
+              primaryCopyCommand || anyUpdateAvailable || onCheckUpdates,
             )}
           />
         </div>
@@ -605,6 +597,9 @@ function companionReleaseLabel({
   if (macAppRunning) {
     if (release?.updateAvailable) {
       return "Update available";
+    }
+    if (release?.status === "check_failed") {
+      return "Check failed";
     }
     return "Ready";
   }

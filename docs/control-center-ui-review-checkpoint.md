@@ -13,6 +13,11 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: Mac App release status in Companion `/v1/status`, Overview and Updates Mac App update indicators, the navigation update badge, legacy hosted release fallback, and Vercel Preview monorepo root configuration.
+- Customer rule: Mac App update availability can appear as a short `Update` badge, `Update available`, or one primary update action, but the UI must not expose GitHub releases, local API details, daemon wording, package assets, or separate technical check steps.
+- Simplifications accepted: no new tab, setup branch, diagnostic panel, or customer troubleshooting choice was added; the Updates primary action now checks Mac App and VibeTV firmware together, while old Mac Apps keep the existing hosted fallback invisibly.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `check:customer-ui-copy`, `vercel build --yes` from the monorepo root with Vercel Root Directory `apps/control-center`, and PR checks for Vercel Preview, Companion, Control Center, firmware, theme pack, and Theme Studio passed before this checkpoint update.
+
 - Reviewed scope: Overview VibeTV device preview data source, local Mac App `display-frame/latest` read path, Preview deployment inputs, and customer-flow browser coverage for the rendered ThemeSpec preview.
 - Customer rule: the existing preview should show the same frame customers see on VibeTV without adding setup choices, diagnostics text, or server-side file errors. The browser asks the local Mac App for the last good frame; when that frame is unavailable, the preview still falls back to usage data instead of surfacing internal file-state wording.
 - Simplifications accepted: no new visible UI, buttons, tabs, or explanatory text were added; the stale Vercel-side display-frame dependency was removed from the browser flow, and the test mock now follows the same local Mac App contract.

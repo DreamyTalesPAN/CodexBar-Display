@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { CompanionReleaseInfo } from "@/lib/companion-release";
 export type { ThemeProduct } from "@/lib/themes";
 
 export const VIBETV_COLORS = {
@@ -24,6 +25,7 @@ export type CompanionStatus = "unknown" | "online" | "missing";
 export type CompanionInfo = {
   status?: string;
   version?: string;
+  update?: CompanionReleaseInfo;
   features?: {
     themeInstallEnabled?: boolean;
     macAppSelfUpdateEnabled?: boolean;

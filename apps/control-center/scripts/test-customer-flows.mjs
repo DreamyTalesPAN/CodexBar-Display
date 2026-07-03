@@ -207,6 +207,10 @@ async function main() {
     );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
+    await testUpdatesShowLegacyCompanionReleaseFallback(
+      browser,
+      appContext.appUrl,
+    );
     await testOverviewSeparatesMacAppAndFirmwareVersions(
       browser,
       appContext.appUrl,
@@ -941,6 +945,33 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
     parseJSON(macAppUpdateRequests[0])?.version === "1.0.99",
     `Mac App update should request latest version, got ${macAppUpdateRequests[0]}`,
   );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    legacyCompanionRelease: true,
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page.getByRole("button", { name: "Update now" }).waitFor({
+    timeout: 10_000,
+  });
+  const macAppSection = page.locator("section.border-b").filter({
+    has: page.getByRole("heading", { name: "Mac App" }),
+  });
+  await macAppSection
+    .getByText("1.0.32", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  await macAppSection
+    .getByText("1.0.99", { exact: true })
+    .waitFor({ timeout: 10_000 });
+
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -2022,6 +2053,7 @@ async function routeCompanionOnline(
       macAppSelfUpdateEnabled: true,
     },
     companionVersion = "1.0.32",
+    legacyCompanionRelease = false,
     device = companionDevice,
     onDiscover,
     onPair,
@@ -2380,10 +2412,11 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify({
           ok: true,
-          companion: {
-            version: currentCompanionVersion,
-            features: companionFeatures,
-          },
+          companion: companionPayload(
+            currentCompanionVersion,
+            companionFeatures,
+            legacyCompanionRelease,
+          ),
           device: currentDevice,
         }),
       });
@@ -2407,10 +2440,11 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify({
           ok: true,
-          companion: {
-            version: currentCompanionVersion,
-            features: companionFeatures,
-          },
+          companion: companionPayload(
+            currentCompanionVersion,
+            companionFeatures,
+            legacyCompanionRelease,
+          ),
           device: currentDevice,
         }),
       });
@@ -2444,10 +2478,11 @@ async function routeCompanionOnline(
         body: JSON.stringify({
           ok: true,
           generatedAt: "2026-06-19T12:00:00.000Z",
-          companion: {
-            version: currentCompanionVersion,
-            features: companionFeatures,
-          },
+          companion: companionPayload(
+            currentCompanionVersion,
+            companionFeatures,
+            legacyCompanionRelease,
+          ),
           device: currentDevice,
           checks: [
             {
@@ -2558,6 +2593,56 @@ function companionPath(route) {
     return `/${pathname.slice(proxyPrefix.length)}`;
   }
   return pathname;
+}
+
+function companionPayload(version, features, legacyRelease = false) {
+  const payload = {
+    version,
+    features,
+  };
+  if (!legacyRelease) {
+    payload.update = macAppReleaseInfo(version);
+  }
+  return payload;
+}
+
+function macAppReleaseInfo(installedVersion) {
+  const latestVersion = "1.0.99";
+  const updateAvailable = compareSemver(latestVersion, installedVersion) > 0;
+  return {
+    checkedAt: "2026-06-23T12:00:00.000Z",
+    status: "available",
+    release: `v${latestVersion}`,
+    latestVersion,
+    installedVersion,
+    updateAvailable,
+    message: updateAvailable
+      ? "Mac App update is available."
+      : "Mac App is up to date.",
+  };
+}
+
+function compareSemver(left, right) {
+  const leftParts = parseSemver(left);
+  const rightParts = parseSemver(right);
+  for (let index = 0; index < 3; index += 1) {
+    const diff = leftParts[index] - rightParts[index];
+    if (diff !== 0) {
+      return diff;
+    }
+  }
+  return 0;
+}
+
+function parseSemver(version) {
+  const match = String(version || "")
+    .trim()
+    .replace(/^v/i, "")
+    .match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!match) {
+    return [0, 0, 0];
+  }
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
 async function startFixtureServer() {

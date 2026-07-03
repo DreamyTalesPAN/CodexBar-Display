@@ -50,6 +50,10 @@ const (
 	macAppUpdateJobTime     = 8 * time.Minute
 	usageFallbackFetchTime  = 15 * time.Second
 	macAppInstallerURL      = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
+	macAppReleaseAPIEnvVar  = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
+	macAppReleaseAPIURL     = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
+	macAppReleaseCheckGap   = 6 * time.Hour
+	macAppReleaseTimeout    = 5 * time.Second
 )
 
 type Options struct {
@@ -61,31 +65,36 @@ type Options struct {
 }
 
 type Server struct {
-	addr             string
-	home             string
-	allowedOrigins   map[string]struct{}
-	client           *http.Client
-	loadConfig       func(string) (runtimeconfig.Config, error)
-	saveConfig       func(string, runtimeconfig.Config) error
-	installTheme     func(context.Context, themeinstall.Options) (themeinstall.Result, error)
-	runSetup         func(context.Context, setup.Options) error
-	subnetTargets    func() []string
-	streamStatus     func(context.Context, string) displayStreamInfo
-	waitStream       func(context.Context, string) displayStreamInfo
-	refreshStream    func(context.Context, string) error
-	loadUsage        func(time.Time) (daemon.PersistedUsage, bool)
-	fetchUsage       func(context.Context) ([]codexbar.ParsedFrame, error)
-	updateFirmware   func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
-	updateMacApp     func(context.Context, string, string, macAppUpdateRequest, io.Writer) error
-	installJobsMu    sync.Mutex
-	installJobs      map[string]*themeInstallJob
-	nextInstallJob   uint64
-	updateJobsMu     sync.Mutex
-	updateJobs       map[string]*firmwareUpdateJob
-	nextUpdateJob    uint64
-	macAppUpdateMu   sync.Mutex
-	macAppUpdateJobs map[string]*macAppUpdateJob
-	nextMacAppUpdate uint64
+	addr                   string
+	home                   string
+	allowedOrigins         map[string]struct{}
+	client                 *http.Client
+	loadConfig             func(string) (runtimeconfig.Config, error)
+	saveConfig             func(string, runtimeconfig.Config) error
+	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
+	runSetup               func(context.Context, setup.Options) error
+	subnetTargets          func() []string
+	streamStatus           func(context.Context, string) displayStreamInfo
+	waitStream             func(context.Context, string) displayStreamInfo
+	refreshStream          func(context.Context, string) error
+	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
+	fetchUsage             func(context.Context) ([]codexbar.ParsedFrame, error)
+	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
+	updateMacApp           func(context.Context, string, string, macAppUpdateRequest, io.Writer) error
+	fetchMacAppRelease     func(context.Context) (githubRelease, error)
+	installJobsMu          sync.Mutex
+	installJobs            map[string]*themeInstallJob
+	nextInstallJob         uint64
+	updateJobsMu           sync.Mutex
+	updateJobs             map[string]*firmwareUpdateJob
+	nextUpdateJob          uint64
+	macAppUpdateMu         sync.Mutex
+	macAppUpdateJobs       map[string]*macAppUpdateJob
+	nextMacAppUpdate       uint64
+	macAppReleaseMu        sync.Mutex
+	macAppReleaseChecked   bool
+	macAppReleaseCheckedAt time.Time
+	macAppReleaseCache     companionReleaseInfo
 }
 
 type apiError struct {
@@ -291,14 +300,29 @@ type diagnosticCheck struct {
 }
 
 type companion struct {
-	Status   string            `json:"status"`
-	Version  string            `json:"version"`
-	Features companionFeatures `json:"features"`
+	Status   string               `json:"status"`
+	Version  string               `json:"version"`
+	Update   companionReleaseInfo `json:"update"`
+	Features companionFeatures    `json:"features"`
 }
 
 type companionFeatures struct {
 	ThemeInstallEnabled     bool `json:"themeInstallEnabled"`
 	MacAppSelfUpdateEnabled bool `json:"macAppSelfUpdateEnabled"`
+}
+
+type companionReleaseInfo struct {
+	CheckedAt        string `json:"checkedAt"`
+	Status           string `json:"status"`
+	Release          string `json:"release,omitempty"`
+	LatestVersion    string `json:"latestVersion,omitempty"`
+	InstalledVersion string `json:"installedVersion,omitempty"`
+	UpdateAvailable  bool   `json:"updateAvailable"`
+	Message          string `json:"message"`
+}
+
+type githubRelease struct {
+	TagName string `json:"tag_name"`
 }
 
 type settingsResponse struct {
@@ -465,25 +489,26 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 	return &Server{
-		addr:             addr,
-		home:             home,
-		allowedOrigins:   origins,
-		client:           client,
-		loadConfig:       runtimeconfig.Load,
-		saveConfig:       runtimeconfig.Save,
-		installTheme:     themeinstall.Install,
-		runSetup:         setup.Run,
-		subnetTargets:    localSubnetTargets,
-		streamStatus:     inspectDisplayStream,
-		waitStream:       waitForDisplayStream,
-		refreshStream:    opts.RefreshDisplayStream,
-		loadUsage:        daemon.LoadPersistedUsage,
-		fetchUsage:       codexbar.FetchAllProviders,
-		updateFirmware:   runFirmwareUpdateCommand,
-		updateMacApp:     runMacAppUpdateCommand,
-		installJobs:      make(map[string]*themeInstallJob),
-		updateJobs:       make(map[string]*firmwareUpdateJob),
-		macAppUpdateJobs: make(map[string]*macAppUpdateJob),
+		addr:               addr,
+		home:               home,
+		allowedOrigins:     origins,
+		client:             client,
+		loadConfig:         runtimeconfig.Load,
+		saveConfig:         runtimeconfig.Save,
+		installTheme:       themeinstall.Install,
+		runSetup:           setup.Run,
+		subnetTargets:      localSubnetTargets,
+		streamStatus:       inspectDisplayStream,
+		waitStream:         waitForDisplayStream,
+		refreshStream:      opts.RefreshDisplayStream,
+		loadUsage:          daemon.LoadPersistedUsage,
+		fetchUsage:         codexbar.FetchAllProviders,
+		updateFirmware:     runFirmwareUpdateCommand,
+		updateMacApp:       runMacAppUpdateCommand,
+		fetchMacAppRelease: fetchLatestMacAppRelease,
+		installJobs:        make(map[string]*themeInstallJob),
+		updateJobs:         make(map[string]*firmwareUpdateJob),
+		macAppUpdateJobs:   make(map[string]*macAppUpdateJob),
 	}, nil
 }
 
@@ -605,7 +630,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, statusResponse{
 		OK:        true,
-		Companion: s.companionInfo(),
+		Companion: s.companionInfo(r.Context()),
 		Device:    device,
 	})
 }
@@ -768,7 +793,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, diagnosticsResponse{
 			OK:          true,
 			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			Companion:   s.companionInfo(),
+			Companion:   s.companionInfo(r.Context()),
 			Device:      device,
 			Checks:      checks,
 		})
@@ -792,7 +817,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, diagnosticsResponse{
 			OK:          true,
 			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			Companion:   s.companionInfo(),
+			Companion:   s.companionInfo(r.Context()),
 			Device:      device,
 			Checks:      checks,
 		})
@@ -868,21 +893,182 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, diagnosticsResponse{
 		OK:          true,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Companion:   s.companionInfo(),
+		Companion:   s.companionInfo(r.Context()),
 		Device:      device,
 		Checks:      checks,
 	})
 }
 
-func (s *Server) companionInfo() companion {
+func (s *Server) companionInfo(ctx context.Context) companion {
 	return companion{
 		Status:  "ready",
 		Version: buildinfo.NormalizedVersion(),
+		Update:  s.macAppReleaseInfo(ctx),
 		Features: companionFeatures{
 			ThemeInstallEnabled:     themeInstallEnabled(),
 			MacAppSelfUpdateEnabled: true,
 		},
 	}
+}
+
+func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
+	installedVersion := normalizeMacAppReleaseVersion(buildinfo.NormalizedVersion())
+	now := time.Now().UTC()
+
+	s.macAppReleaseMu.Lock()
+	if s.macAppReleaseChecked &&
+		s.macAppReleaseCache.InstalledVersion == installedVersion &&
+		now.Sub(s.macAppReleaseCheckedAt) >= 0 &&
+		now.Sub(s.macAppReleaseCheckedAt) < macAppReleaseCheckGap {
+		cached := s.macAppReleaseCache
+		s.macAppReleaseMu.Unlock()
+		return cached
+	}
+	s.macAppReleaseMu.Unlock()
+
+	checkedAt := now.Format(time.RFC3339)
+	info := companionReleaseInfo{
+		CheckedAt:        checkedAt,
+		Status:           "check_failed",
+		InstalledVersion: installedVersion,
+		UpdateAvailable:  false,
+		Message:          "Mac App check failed.",
+	}
+
+	if macAppReleaseCheckDisabled() {
+		info.Status = "disabled"
+		info.Message = "Mac App update check is disabled."
+		s.cacheMacAppReleaseInfo(now, info)
+		return info
+	}
+
+	fetch := s.fetchMacAppRelease
+	if fetch == nil {
+		fetch = fetchLatestMacAppRelease
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, macAppReleaseTimeout)
+	defer cancel()
+	release, err := fetch(checkCtx)
+	if err != nil {
+		s.cacheMacAppReleaseInfo(now, info)
+		return info
+	}
+
+	releaseTag := strings.TrimSpace(release.TagName)
+	latestVersion := normalizeMacAppReleaseVersion(releaseTag)
+	if latestVersion == "" {
+		info.Release = releaseTag
+		s.cacheMacAppReleaseInfo(now, info)
+		return info
+	}
+
+	updateAvailable := installedVersion != "" && compareMacAppReleaseVersions(latestVersion, installedVersion) > 0
+	info = companionReleaseInfo{
+		CheckedAt:        checkedAt,
+		Status:           "available",
+		Release:          releaseTag,
+		LatestVersion:    latestVersion,
+		InstalledVersion: installedVersion,
+		UpdateAvailable:  updateAvailable,
+		Message:          "Mac App is up to date.",
+	}
+	if updateAvailable {
+		info.Message = "Mac App update is available."
+	}
+	s.cacheMacAppReleaseInfo(now, info)
+	return info
+}
+
+func (s *Server) cacheMacAppReleaseInfo(checkedAt time.Time, info companionReleaseInfo) {
+	s.macAppReleaseMu.Lock()
+	defer s.macAppReleaseMu.Unlock()
+	s.macAppReleaseChecked = true
+	s.macAppReleaseCheckedAt = checkedAt
+	s.macAppReleaseCache = info
+}
+
+func macAppReleaseCheckDisabled() bool {
+	value := strings.TrimSpace(os.Getenv(macAppReleaseAPIEnvVar))
+	return value == "-" || strings.EqualFold(value, "off") || strings.EqualFold(value, "disabled")
+}
+
+func fetchLatestMacAppRelease(ctx context.Context) (githubRelease, error) {
+	releaseURL := strings.TrimSpace(os.Getenv(macAppReleaseAPIEnvVar))
+	if releaseURL == "" {
+		releaseURL = macAppReleaseAPIURL
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
+	if err != nil {
+		return githubRelease{}, fmt.Errorf("build mac app release request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "vibetv-mac-app")
+
+	client := http.Client{Timeout: macAppReleaseTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return githubRelease{}, fmt.Errorf("fetch mac app release: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return githubRelease{}, fmt.Errorf("fetch mac app release: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var release githubRelease
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 128*1024)).Decode(&release); err != nil {
+		return githubRelease{}, fmt.Errorf("decode mac app release: %w", err)
+	}
+	return release, nil
+}
+
+func normalizeMacAppReleaseVersion(raw string) string {
+	version := strings.TrimSpace(raw)
+	version = strings.TrimPrefix(version, "v")
+	version = strings.TrimPrefix(version, "V")
+	if !macAppUpdateVersionPattern.MatchString(version) {
+		return ""
+	}
+	return version
+}
+
+func compareMacAppReleaseVersions(left, right string) int {
+	leftParts, leftOK := parseMacAppReleaseVersion(left)
+	rightParts, rightOK := parseMacAppReleaseVersion(right)
+	if !leftOK || !rightOK {
+		return 0
+	}
+	for i := 0; i < 3; i++ {
+		if leftParts[i] > rightParts[i] {
+			return 1
+		}
+		if leftParts[i] < rightParts[i] {
+			return -1
+		}
+	}
+	return 0
+}
+
+func parseMacAppReleaseVersion(version string) ([3]int, bool) {
+	var parts [3]int
+	normalized := normalizeMacAppReleaseVersion(version)
+	if normalized == "" {
+		return parts, false
+	}
+	core := strings.SplitN(normalized, "-", 2)[0]
+	segments := strings.Split(core, ".")
+	if len(segments) != 3 {
+		return parts, false
+	}
+	for i, segment := range segments {
+		value, err := strconv.Atoi(segment)
+		if err != nil {
+			return parts, false
+		}
+		parts[i] = value
+	}
+	return parts, true
 }
 
 func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usageResponse {
@@ -1363,7 +1549,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, statusResponse{
 		OK:        true,
-		Companion: s.companionInfo(),
+		Companion: s.companionInfo(r.Context()),
 		Device:    deviceInfo{Connected: false},
 	})
 }

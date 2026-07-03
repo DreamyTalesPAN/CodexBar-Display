@@ -24,7 +24,7 @@ type ControlCenterShellProps = {
   children: ReactNode;
   device: DeviceInfo | null;
   disabledTabs?: ActiveTab[];
-  firmwareUpdateAvailable?: boolean;
+  updateAvailable?: boolean;
 };
 
 const NAV_ITEMS: ShellNavItem[] = [
@@ -71,7 +71,7 @@ export function ControlCenterShell({
   children,
   device,
   disabledTabs = [],
-  firmwareUpdateAvailable = false,
+  updateAvailable = false,
 }: ControlCenterShellProps) {
   const imageStuck = deviceImageIsStuck(device);
   const setupConnected = deviceSetupIsUsable(device);
@@ -104,7 +104,7 @@ export function ControlCenterShell({
                 disabled={isTabDisabled(item.id)}
                 item={item}
                 key={item.id}
-                notify={item.id === "updates" && firmwareUpdateAvailable}
+                notify={item.id === "updates" && updateAvailable}
                 onClick={() => onTabChange(item.id)}
               />
             ))}
@@ -152,7 +152,7 @@ export function ControlCenterShell({
                   <span className="sr-only min-[560px]:not-sr-only">
                     {item.label}
                   </span>
-                  {item.id === "updates" && firmwareUpdateAvailable ? (
+                  {item.id === "updates" && updateAvailable ? (
                     <span
                       aria-label="Update available"
                       className={`size-2.5 rounded-full ${

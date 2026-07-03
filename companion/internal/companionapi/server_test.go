@@ -67,6 +67,62 @@ func TestStatusReportsThemeInstallDisableFlag(t *testing.T) {
 	}
 }
 
+func TestStatusReportsCachedMacAppUpdateState(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	calls := 0
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		calls++
+		return githubRelease{TagName: "v1.0.99"}, nil
+	}
+
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if !got.Companion.Update.UpdateAvailable {
+			t.Fatalf("expected Mac App update available, got %+v", got.Companion.Update)
+		}
+		if got.Companion.Update.LatestVersion != "1.0.99" || got.Companion.Update.InstalledVersion != "1.0.0" {
+			t.Fatalf("unexpected Mac App update versions: %+v", got.Companion.Update)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("expected cached Mac App release check, got %d calls", calls)
+	}
+}
+
+func TestStatusReportsMacAppUpdateCheckFailure(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{}, errors.New("release api unavailable")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Companion.Update.Status != "check_failed" || got.Companion.Update.UpdateAvailable {
+		t.Fatalf("expected Mac App check failure without update, got %+v", got.Companion.Update)
+	}
+	if got.Companion.Update.Message != "Mac App check failed." {
+		t.Fatalf("unexpected Mac App check failure message: %+v", got.Companion.Update)
+	}
+}
+
 func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	collectedAt := time.Date(2026, 6, 26, 11, 59, 0, 0, time.UTC)
@@ -2218,6 +2274,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	}
 	server.updateMacApp = func(context.Context, string, string, macAppUpdateRequest, io.Writer) error {
 		return nil
+	}
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{TagName: "v1.0.0"}, nil
 	}
 	server.subnetTargets = func() []string {
 		return nil
