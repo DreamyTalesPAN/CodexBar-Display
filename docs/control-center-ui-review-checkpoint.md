@@ -13,6 +13,26 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: hosted VibeTV setup launcher, local Control Center handoff,
+  removal of hosted Overview/Usage/Settings/Theme Library/Updates/Support
+  navigation, and the Chrome Local Network Access fallback.
+- Customer rule: `app.vibetv.shop` is only the setup entrypoint. It should show
+  one guided setup path and then open the local Control Center on this Mac;
+  daily Usage, Themes, Settings, Updates, and Support live only in the local
+  Control Center.
+- Simplifications accepted: hosted setup no longer runs background loopback
+  fetches that can trigger Chrome local-network permission failures; the
+  customer action after Mac App setup is one direct `Open local Control Center`
+  navigation. The hosted browser-access step is hidden because the local app is
+  same-origin once opened.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  desktop/mobile Vercel Preview screenshots show the branded setup launcher with
+  no old app tabs; `/install/synthwave` preserves theme context; a local PR
+  Companion on `127.0.0.1:47832` opens `/control-center`; `lint`, `next build`,
+  `test:customer-smoke`, `test:customer-flows`, `build:local`, and PR checks
+  passed before this checkpoint update except for the deterministic checkpoint
+  gate requiring this note.
+
 - Reviewed scope: Mac App release status in Companion `/v1/status`, Overview and Updates Mac App update indicators, the navigation update badge, legacy hosted release fallback, and Vercel Preview monorepo root configuration.
 - Customer rule: Mac App update availability can appear as a short `Update` badge, `Update available`, or one primary update action, but the UI must not expose GitHub releases, local API details, daemon wording, package assets, or separate technical check steps.
 - Simplifications accepted: no new tab, setup branch, diagnostic panel, or customer troubleshooting choice was added; the Updates primary action now checks Mac App and VibeTV firmware together, while old Mac Apps keep the existing hosted fallback invisibly.
