@@ -3640,17 +3640,6 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 	return device
 }
 
-func deviceRenderHealthy(device deviceInfo) bool {
-	if device.Display == nil || device.Display.ThemeSpec == nil {
-		return true
-	}
-	spec := device.Display.ThemeSpec
-	if !spec.Active || spec.RenderOK == nil {
-		return true
-	}
-	return *spec.RenderOK
-}
-
 func renderHealthDiagnosticDetail(spec *themeSpecHealth) string {
 	if spec == nil {
 		return "VibeTV render health is unavailable."
