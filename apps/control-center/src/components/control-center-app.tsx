@@ -17,6 +17,7 @@ import {
   type SupportDiagnostics,
   type UsageSnapshot,
 } from "./control-center-types";
+import { useCompanionRelease } from "./companion-installer-actions";
 import { LogsScreen } from "./logs-screen";
 import { OverviewScreen } from "./overview-screen";
 import { SetupScreen } from "./setup-screen";
@@ -1226,15 +1227,39 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [deviceBoard, deviceFirmware],
   );
+  const hasCompanionReleaseInfo = Boolean(companionInfo?.update);
+  const shouldUseLegacyCompanionRelease = Boolean(
+    companionStatus === "online" &&
+      companionInfo?.version &&
+      !hasCompanionReleaseInfo,
+  );
+  const {
+    refresh: refreshLegacyCompanionRelease,
+    release: legacyCompanionRelease,
+  } = useCompanionRelease(companionInfo?.version, {
+    enabled: shouldUseLegacyCompanionRelease,
+  });
 
-  const checkFirmwareUpdates = useCallback(async () => {
+  const checkUpdates = useCallback(async () => {
     setBusyAction("firmware-check");
     try {
-      await refreshFirmwareUpdate();
+      const checks: Array<Promise<unknown>> = [
+        checkCompanion({ quiet: true }),
+        refreshFirmwareUpdate(),
+      ];
+      if (shouldUseLegacyCompanionRelease) {
+        checks.push(refreshLegacyCompanionRelease());
+      }
+      await Promise.all(checks);
     } finally {
       setBusyAction(null);
     }
-  }, [refreshFirmwareUpdate]);
+  }, [
+    checkCompanion,
+    refreshFirmwareUpdate,
+    refreshLegacyCompanionRelease,
+    shouldUseLegacyCompanionRelease,
+  ]);
 
   const installMacAppUpdate = useCallback(
     async (version?: string) => {
@@ -1664,6 +1689,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? firmwareUpdate
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
+  const companionRelease = companionInfo?.update || legacyCompanionRelease || null;
+  const macAppUpdateAvailable = Boolean(
+    companionRelease?.updateAvailable && macAppUpdateStatus?.phase !== "complete",
+  );
+  const anyUpdateAvailable = firmwareUpdateAvailable || macAppUpdateAvailable;
   const imageNeedsReload = deviceImageIsStuck(device);
   const setupComplete = Boolean(
     !setupPreviewStep &&
@@ -1721,7 +1751,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       activeTab={activeShellTab}
       disabledTabs={disabledTabs}
       device={device}
-      firmwareUpdateAvailable={firmwareUpdateAvailable}
+      updateAvailable={anyUpdateAvailable}
       onTabChange={(tab) => {
         if (disabledTabs.includes(tab)) {
           return;
@@ -1752,6 +1782,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       {activeShellTab === "overview" ? (
         <OverviewScreen
           busyAction={busyAction}
+          companionRelease={companionRelease}
           companionVersion={companionInfo?.version}
           companionStatus={companionStatus}
           device={device}
@@ -1805,6 +1836,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       {activeShellTab === "updates" ? (
         <UpdatesScreen
           busyAction={busyAction}
+          companionRelease={companionRelease}
           companionStatus={companionStatus}
           companionVersion={companionInfo?.version}
           device={device}
@@ -1813,7 +1845,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             companionInfo?.features?.macAppSelfUpdateEnabled,
           )}
           macAppUpdateStatus={macAppUpdateStatus}
-          onCheckUpdates={checkFirmwareUpdates}
+          onCheckUpdates={checkUpdates}
           onCreateReport={() => {
             setActiveTab("logs");
             void loadSupportDiagnostics();

@@ -10,6 +10,7 @@ import {
   Wifi,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import type { CompanionReleaseInfo } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import {
   deviceImageIsStuck,
@@ -23,6 +24,7 @@ import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
   companionVersion?: string;
+  companionRelease?: CompanionReleaseInfo | null;
   companionStatus: CompanionStatus;
   deviceState: DeviceState;
   device: DeviceInfo | null;
@@ -35,6 +37,7 @@ type OverviewScreenProps = {
 export function OverviewScreen({
   busyAction,
   companionVersion,
+  companionRelease,
   companionStatus,
   deviceState,
   device,
@@ -52,6 +55,7 @@ export function OverviewScreen({
     reloadingImage,
   });
   const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
+  const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -68,6 +72,7 @@ export function OverviewScreen({
 
           <dl className="mt-9 max-w-[420px]">
             <StatusRow
+              badge={macAppUpdateAvailable ? "Update" : undefined}
               icon={<Wifi size={18} aria-hidden />}
               label="Mac App"
               value={labelForCompanion(companionStatus, companionVersion)}

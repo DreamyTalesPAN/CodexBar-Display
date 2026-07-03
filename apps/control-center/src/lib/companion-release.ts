@@ -1,6 +1,7 @@
 export type CompanionReleaseStatus =
   | "available"
   | "missing_asset"
+  | "disabled"
   | "check_failed";
 
 export type CompanionReleaseInfo = {
