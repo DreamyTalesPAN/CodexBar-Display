@@ -369,9 +369,6 @@ function ThemeListItem({
           <div className="truncate text-lg font-bold text-[#1B1B1B]">
             {theme.title}
           </div>
-          <div className="mt-1 line-clamp-1 text-sm leading-6 text-[#444933]">
-            {theme.description || "Theme from the VibeTV catalog."}
-          </div>
         </div>
         <button
           className="col-span-2 h-11 min-w-[96px] border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-70 sm:col-span-1 sm:mr-3 sm:h-10"
