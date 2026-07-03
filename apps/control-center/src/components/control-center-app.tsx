@@ -1828,10 +1828,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return (
       <HostedSetupShell
         companionStatus={companionStatus}
-        selectedThemeTitle={initialTheme?.title}
         setupComplete={setupComplete}
       >
-        {renderSetupScreen(false)}
+        {renderSetupScreen(true)}
       </HostedSetupShell>
     );
   }
