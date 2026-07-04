@@ -10,6 +10,8 @@ BIN_DIR="${APP_SUPPORT_DIR}/bin"
 BIN_PATH="${BIN_DIR}/${INSTALL_NAME}"
 RUN_DIR="${APP_SUPPORT_DIR}/run"
 PID_PATH="${RUN_DIR}/companion-api.pid"
+INSTALL_LOG_DIR="${APP_SUPPORT_DIR}/logs"
+INSTALL_LOG_PATH="${VIBETV_INSTALL_LOG_PATH:-${INSTALL_LOG_DIR}/install.log}"
 PLIST_DIR="${HOME}/Library/LaunchAgents"
 PLIST_PATH="${PLIST_DIR}/com.codexbar-display.companion-api.plist"
 SERVICE_LABEL="com.codexbar-display.companion-api"
@@ -39,6 +41,13 @@ MODE="install"
 START_MODE="${VIBETV_COMPANION_START_MODE:-terminal}"
 OPEN_CONTROL_CENTER="${VIBETV_COMPANION_OPEN_CONTROL_CENTER:-1}"
 CONTROL_CENTER_PATH="${VIBETV_COMPANION_CONTROL_CENTER_PATH:-/control-center}"
+VERBOSE="${VIBETV_VERBOSE:-0}"
+INSTALL_LOG_READY=0
+STEP_TOTAL=0
+STEP_CURRENT=0
+STEP_ACTIVE=0
+STEP_LABEL=""
+INTRO_PRINTED=0
 TMPDIR_INSTALL=""
 DOWNLOAD_BIN=""
 CHECKSUMS_FILE=""
@@ -49,7 +58,7 @@ RELEASE_TAG=""
 usage() {
   cat <<'EOF'
 Usage:
-  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://<device-ip>] [--source-ref <commit>] [--control-center-path /control-center] [--skip-device-setup]
+  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://<device-ip>] [--source-ref <commit>] [--control-center-path /control-center] [--skip-device-setup] [--verbose]
   install-control-center-companion.sh --restart
   install-control-center-companion.sh --uninstall
 
@@ -62,25 +71,157 @@ What it does:
   - verifies http://127.0.0.1:47832/v1/status
   - connects VibeTV and installs the latest firmware when available
   - opens the local Control Center at http://127.0.0.1:47832/control-center
+  - writes technical setup details to:
+    ~/Library/Application Support/codexbar-display/logs/install.log
 
 Examples:
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --restart
+  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash -s -- --verbose
+
+Debugging:
+  Pass --verbose or set VIBETV_VERBOSE=1 to print full technical logs.
 
 The Mac setup service runs inside the normal VibeTV Mac App background service
 so the customer has one local Mac App process.
 EOF
 }
 
-log() {
+truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+is_verbose() {
+  truthy "$VERBOSE"
+}
+
+say() {
   printf '%s\n' "$*"
 }
 
+log() {
+  if [[ "$INSTALL_LOG_READY" == "1" ]]; then
+    printf '%s\n' "$*" >> "$INSTALL_LOG_PATH"
+  fi
+  if is_verbose; then
+    printf '%s\n' "$*" >&2
+  fi
+}
+
+setup_install_log() {
+  if ! mkdir -p "$INSTALL_LOG_DIR"; then
+    printf 'VIBETV setup could not create the support log folder: %s\n' "$INSTALL_LOG_DIR" >&2
+    exit 1
+  fi
+  if ! : > "$INSTALL_LOG_PATH"; then
+    printf 'VIBETV setup could not write the support log: %s\n' "$INSTALL_LOG_PATH" >&2
+    exit 1
+  fi
+  INSTALL_LOG_READY=1
+  log "vibetv: setup log=${INSTALL_LOG_PATH}"
+}
+
+print_intro() {
+  local title="$1"
+  [[ "$INTRO_PRINTED" == "1" ]] && return 0
+  say "VIBETV"
+  say ""
+  say "$title"
+  say ""
+  INTRO_PRINTED=1
+}
+
+step_start() {
+  local label="$1"
+  STEP_CURRENT=$((STEP_CURRENT + 1))
+  STEP_LABEL="$label"
+  STEP_ACTIVE=1
+  log "vibetv: step start: ${label}"
+  if is_verbose; then
+    say "[${STEP_CURRENT}/${STEP_TOTAL}] ${label}"
+  else
+    printf '[%d/%d] %-30s' "$STEP_CURRENT" "$STEP_TOTAL" "$label"
+  fi
+}
+
+step_done() {
+  local label="${1:-$STEP_LABEL}"
+  log "vibetv: step done: ${label}"
+  if [[ "$STEP_ACTIVE" == "1" ]]; then
+    if is_verbose; then
+      say "[${STEP_CURRENT}/${STEP_TOTAL}] ${label}: OK"
+    else
+      printf 'OK\n'
+    fi
+  fi
+  STEP_ACTIVE=0
+  STEP_LABEL=""
+}
+
+step_fail() {
+  local label="${STEP_LABEL:-Current step}"
+  if [[ "$STEP_ACTIVE" == "1" ]]; then
+    log "vibetv: step failed: ${label}"
+    if is_verbose; then
+      say "[${STEP_CURRENT}/${STEP_TOTAL}] ${label}: FAILED"
+    else
+      printf 'FAILED\n'
+    fi
+  fi
+  STEP_ACTIVE=0
+  STEP_LABEL=""
+}
+
+run_quiet() {
+  local status
+  log "vibetv: run: $*"
+  set +e
+  if is_verbose; then
+    "$@" 2>&1 | tee -a "$INSTALL_LOG_PATH" >&2
+    status=${PIPESTATUS[0]}
+  else
+    "$@" >> "$INSTALL_LOG_PATH" 2>&1
+    status=$?
+  fi
+  set -e
+  log "vibetv: exit ${status}: $*"
+  return "$status"
+}
+
+finish_success() {
+  local url
+  url="$(control_center_url)"
+  say ""
+  if [[ "$OPEN_CONTROL_CENTER" == "1" ]]; then
+    say "Done. Your Control Center is opening now."
+  else
+    say "Done. Your Control Center is ready."
+  fi
+  say "Open manually: ${url}"
+  say "Support log: ${INSTALL_LOG_PATH}"
+}
+
 die() {
-  printf 'error: %s\n' "$*" >&2
-  printf 'support: status: curl -fsS http://%s/v1/status\n' "$ADDR" >&2
-  printf 'support: report: curl -fsS http://%s/v1/diagnostics\n' "$ADDR" >&2
-  printf 'support: logs: %s / %s\n' "$DISPLAY_DAEMON_LOG_OUT" "$DISPLAY_DAEMON_LOG_ERR" >&2
+  log "vibetv: error: $*"
+  step_fail
+  printf '\nVIBETV setup needs attention.\n' >&2
+  printf '%s\n' "$*" >&2
+  printf '\nTry running setup again from the VibeTV setup page.\n' >&2
+  printf 'Support log: %s\n' "$INSTALL_LOG_PATH" >&2
+  if is_verbose; then
+    printf 'Status check: curl -fsS http://%s/v1/status\n' "$ADDR" >&2
+    printf 'Diagnostics: curl -fsS http://%s/v1/diagnostics\n' "$ADDR" >&2
+    printf 'Daemon logs: %s / %s\n' "$DISPLAY_DAEMON_LOG_OUT" "$DISPLAY_DAEMON_LOG_ERR" >&2
+  else
+    printf 'For full details, rerun with --verbose.\n' >&2
+  fi
   exit 1
 }
 
@@ -90,10 +231,8 @@ require_cmd_for() {
   local action="$3"
 
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    printf 'error: missing dependency: %s\n' "$cmd" >&2
-    printf 'needed for: %s\n' "$why" >&2
-    printf 'next step: %s\n' "$action" >&2
-    exit 1
+    log "vibetv: missing dependency: ${cmd}; needed for: ${why}; next step: ${action}"
+    die "Missing dependency: ${cmd}. ${action}"
   fi
 }
 
@@ -151,14 +290,16 @@ json_text_field() {
 }
 
 fetch_latest_release_tag() {
-  local response tag
-  response="$(
-    curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 \
-      -H "Accept: application/vnd.github+json" \
-      -H "X-GitHub-Api-Version: 2022-11-28" \
-      -H "User-Agent: vibetv-companion-install" \
-      "${GITHUB_API_BASE}/repos/${REPO}/releases/latest"
-  )"
+  local response_file response tag
+  response_file="${TMPDIR_INSTALL}/latest-release.json"
+  run_quiet curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    -H "User-Agent: vibetv-companion-install" \
+    -o "$response_file" \
+    "${GITHUB_API_BASE}/repos/${REPO}/releases/latest" \
+    || die "Could not check the latest VibeTV release. Check your internet connection, then rerun setup."
+  response="$(cat "$response_file")"
   tag="$(printf '%s' "$response" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
   if [[ -z "$tag" ]]; then
     die "could not determine latest release tag for ${REPO}"
@@ -169,13 +310,15 @@ fetch_latest_release_tag() {
 fetch_dev_source_ref() {
   [[ -n "$DEV_ORIGIN" ]] || return 1
 
-  local metadata_url response source_ref repo
+  local metadata_url response_file response source_ref repo
   metadata_url="${DEV_ORIGIN%/}/api/deployment"
-  response="$(
-    curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 30 \
-      -H "Accept: application/json" \
-      "$metadata_url"
-  )" || return 1
+  response_file="${TMPDIR_INSTALL}/deployment.json"
+  run_quiet curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 30 \
+    -H "Accept: application/json" \
+    -o "$response_file" \
+    "$metadata_url" \
+    || return 1
+  response="$(cat "$response_file")"
 
   source_ref="$(printf '%s' "$response" | json_text_field "sourceRef")"
   repo="$(printf '%s' "$response" | json_text_field "repo")"
@@ -190,9 +333,10 @@ download_file() {
   local url="$1"
   local out="$2"
 
-  curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 600 \
+  run_quiet curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 600 \
     -o "$out" \
-    "$url"
+    "$url" \
+    || die "Could not download a required VibeTV setup file. Check your internet connection, then rerun setup."
 }
 
 verify_checksum() {
@@ -223,12 +367,15 @@ build_source_binary() {
   log "vibetv: source=${SOURCE_REF}"
   download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/archive/${SOURCE_REF}.tar.gz" "$source_archive"
   mkdir -p "$source_dir"
-  tar -xzf "$source_archive" -C "$source_dir" --strip-components 1
+  run_quiet tar -xzf "$source_archive" -C "$source_dir" --strip-components 1 \
+    || die "Could not unpack the Preview setup files. Rerun setup from the latest VibeTV setup page."
 
   (
     cd "$source_dir/apps/control-center"
-    npm ci
-    npm run build:local
+    run_quiet npm ci \
+      || die "Could not prepare the local Control Center files. Rerun setup with --verbose and send the support log."
+    run_quiet npm run build:local \
+      || die "Could not build the local Control Center. Rerun setup with --verbose and send the support log."
   )
   rm -rf "$source_dir/companion/internal/companionapi/controlcenter_static"
   mkdir -p "$source_dir/companion/internal/companionapi/controlcenter_static"
@@ -236,10 +383,11 @@ build_source_binary() {
 
   (
     cd "$source_dir/companion"
-    GOOS=darwin GOARCH="${BINARY_ARCH}" CGO_ENABLED=0 \
+    run_quiet env GOOS=darwin GOARCH="${BINARY_ARCH}" CGO_ENABLED=0 \
       go build \
       -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${RELEASE_VERSION} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${SOURCE_REF} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Date=${build_date}" \
-      -o "$DOWNLOAD_BIN" ./cmd/codexbar-display
+      -o "$DOWNLOAD_BIN" ./cmd/codexbar-display \
+      || die "Could not build the VibeTV Mac App. Rerun setup with --verbose and send the support log."
   )
   chmod 755 "$DOWNLOAD_BIN"
 }
@@ -472,15 +620,12 @@ print_local_api_error() {
   code="$(json_api_field "code" < "$response_file")"
   stderr_text="$(tr '\n' ' ' < "$stderr_file" | sed 's/[[:space:]]*$//')"
 
-  printf 'error: Mac App API %s %s failed' "$method" "$path" >&2
-  if [[ -n "$status" && "$status" != "000" ]]; then
-    printf ' with HTTP %s' "$status" >&2
-  fi
-  printf '.\n' >&2
-  [[ -z "$code" ]] || printf 'error code: %s\n' "$code" >&2
-  [[ -z "$message" ]] || printf 'detail: %s\n' "$message" >&2
-  [[ -z "$next_action" ]] || printf 'next step: %s\n' "$next_action" >&2
-  [[ -z "$stderr_text" ]] || printf 'curl: %s\n' "$stderr_text" >&2
+  log "vibetv: Mac App API ${method} ${path} failed"
+  [[ -z "$status" || "$status" == "000" ]] || log "vibetv: api status=${status}"
+  [[ -z "$code" ]] || log "vibetv: api code=${code}"
+  [[ -z "$message" ]] || log "vibetv: api detail=${message}"
+  [[ -z "$next_action" ]] || log "vibetv: api next step=${next_action}"
+  [[ -z "$stderr_text" ]] || log "vibetv: api curl=${stderr_text}"
 }
 
 retryable_repair_failure() {
@@ -567,7 +712,7 @@ update_vibetv_firmware() {
     die "VibeTV firmware update needs a device address. Rerun setup or use --target http://<device-ip>."
   fi
   log "vibetv: starting VibeTV firmware update"
-  "$BIN_PATH" install-update --target "$TARGET" --confirm-live-update \
+  run_quiet "$BIN_PATH" install-update --target "$TARGET" --confirm-live-update \
     || die "VibeTV firmware update failed. Keep VibeTV powered on, then rerun setup."
   wait_for_api
   log "vibetv: VibeTV firmware update complete"
@@ -810,6 +955,14 @@ parse_args() {
         SKIP_DEVICE_SETUP=1
         shift
         ;;
+      --verbose)
+        VERBOSE=1
+        shift
+        ;;
+      --quiet)
+        VERBOSE=0
+        shift
+        ;;
       --force-legacy-script)
         # Kept as a no-op so older support commands do not fail.
         shift
@@ -823,37 +976,68 @@ parse_args() {
 
 main() {
   parse_args "$@"
+  setup_install_log
   CONTROL_CENTER_PATH="$(normalize_control_center_path "$CONTROL_CENTER_PATH")"
   if [[ -n "$SOURCE_REF" ]]; then
     SOURCE_REF="$(normalize_source_ref "$SOURCE_REF")"
   fi
 
+  if [[ "$MODE" == "uninstall" ]]; then
+    STEP_TOTAL=2
+    print_intro "Removing your local Control Center"
+  elif [[ "$MODE" == "restart" ]]; then
+    STEP_TOTAL=3
+    print_intro "Starting your local Control Center"
+  elif [[ "$SKIP_DEVICE_SETUP" == "1" ]]; then
+    STEP_TOTAL=5
+    print_intro "Installing your local Control Center"
+  else
+    STEP_TOTAL=7
+    print_intro "Installing your local Control Center"
+  fi
+
+  step_start "Preparing Mac app"
   require_cmd_for uname "detect your Mac CPU architecture" "use a standard macOS Terminal, then rerun the installer."
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
     die "this installer currently supports macOS only"
   fi
 
-  require_cmd_for curl "download the VibeTV Companion release files" "use a standard macOS Terminal with curl available, then rerun the installer."
-  require_cmd_for shasum "verify the downloaded Companion binary checksum" "install the macOS command line tools, then rerun the installer."
-  require_cmd_for awk "read the expected checksum from the release file" "install the macOS command line tools, then rerun the installer."
-  require_cmd_for sed "read the latest GitHub release version" "install the macOS command line tools, then rerun the installer."
-  require_cmd_for grep "find the matching checksum entry" "install the macOS command line tools, then rerun the installer."
-  require_cmd_for mktemp "create a temporary download folder" "use a standard macOS Terminal, then rerun the installer."
-
   if [[ "$MODE" == "uninstall" ]]; then
+    step_done "Preparing Mac app"
+    step_start "Stopping Control Center"
     uninstall_service
+    step_done "Stopping Control Center"
+    say ""
+    say "Done. Local Control Center service stopped."
+    say "Support log: ${INSTALL_LOG_PATH}"
     exit 0
   fi
 
   if [[ "$MODE" == "restart" ]]; then
+    require_cmd_for curl "check the local Control Center status" "use a standard macOS Terminal with curl available, then rerun setup."
+    step_done "Preparing Mac app"
+    step_start "Starting Control Center"
     restart_service
     wait_for_api
+    step_done "Starting Control Center"
+    step_start "Opening Control Center"
     open_control_center
+    step_done "Opening Control Center"
+    finish_success
     exit 0
   fi
 
+  require_cmd_for curl "download the VibeTV Companion release files" "use a standard macOS Terminal with curl available, then rerun setup."
+  require_cmd_for shasum "verify the downloaded Companion binary checksum" "install the macOS command line tools, then rerun setup."
+  require_cmd_for awk "read the expected checksum from the release file" "install the macOS command line tools, then rerun setup."
+  require_cmd_for sed "read the latest GitHub release version" "install the macOS command line tools, then rerun setup."
+  require_cmd_for grep "find the matching checksum entry" "install the macOS command line tools, then rerun setup."
+  require_cmd_for mktemp "create a temporary download folder" "use a standard macOS Terminal, then rerun setup."
+
   detect_arch
+  TMPDIR_INSTALL="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-companion-install.XXXXXX")"
+  trap cleanup EXIT INT TERM
 
   if [[ -n "$DEV_ORIGIN" && -z "$RELEASE_VERSION" && -z "$SOURCE_REF" ]]; then
     SOURCE_REF="$(fetch_dev_source_ref)" \
@@ -870,9 +1054,6 @@ main() {
     RELEASE_TAG="v${RELEASE_VERSION}"
   fi
 
-  TMPDIR_INSTALL="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-companion-install.XXXXXX")"
-  trap cleanup EXIT INT TERM
-
   DOWNLOAD_BIN="${TMPDIR_INSTALL}/${INSTALL_NAME}-darwin-${BINARY_ARCH}-v${RELEASE_VERSION}"
   CHECKSUMS_FILE="${TMPDIR_INSTALL}/checksums-v${RELEASE_VERSION}.txt"
 
@@ -883,31 +1064,57 @@ main() {
     log "vibetv: release=${RELEASE_TAG}"
   fi
   log "vibetv: arch=${ARCH}"
+  step_done "Preparing Mac app"
 
   if [[ -n "$SOURCE_REF" ]]; then
+    step_start "Preparing Preview app"
     build_source_binary
+    step_done "Preparing Preview app"
   else
+    step_start "Downloading Mac app"
     download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/releases/download/${RELEASE_TAG}/${DOWNLOAD_BIN##*/}" "$DOWNLOAD_BIN"
     chmod 755 "$DOWNLOAD_BIN"
 
     download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/releases/download/${RELEASE_TAG}/checksums-v${RELEASE_VERSION}.txt" "$CHECKSUMS_FILE"
     verify_checksum
+    step_done "Downloading Mac app"
   fi
 
+  step_start "Installing Mac app"
   install_binary
+  step_done "Installing Mac app"
+
+  step_start "Starting Control Center"
   restart_service
   wait_for_api
   verify_companion_version
+  step_done "Starting Control Center"
 
   log "vibetv: Mac setup binary installed at ${BIN_PATH}"
   log "vibetv: background service installed at ${DISPLAY_DAEMON_PLIST}"
   if [[ "$SKIP_DEVICE_SETUP" == "1" ]]; then
     log "vibetv: Mac App update verified"
+    step_start "Opening Control Center"
     open_control_center
+    step_done "Opening Control Center"
+    finish_success
     exit 0
   fi
-  finish_device_setup
+
+  step_start "Finding VibeTV"
+  connect_vibetv
+  restart_service_with_discovered_target
+  step_done "Finding VibeTV"
+
+  step_start "Checking VibeTV update"
+  update_vibetv_firmware
+  verify_final_status
+  step_done "Checking VibeTV update"
+
+  step_start "Opening Control Center"
   open_control_center
+  step_done "Opening Control Center"
+  finish_success
 }
 
 main "$@"

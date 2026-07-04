@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKFLOW="${ROOT}/.github/workflows/release.yml"
 LOCAL_INSTALLER="${ROOT}/scripts/install-control-center-companion.sh"
 RELEASE_INSTALLER="${ROOT}/scripts/install-control-center-companion-release.sh"
+PUBLIC_INSTALLER="${ROOT}/apps/control-center/public/install-control-center-companion.sh"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -48,6 +49,9 @@ main() {
   [[ -f "$WORKFLOW" ]] || die "release workflow is missing"
   [[ -f "$LOCAL_INSTALLER" ]] || die "local Control Center installer is missing"
   [[ -f "$RELEASE_INSTALLER" ]] || die "release Control Center installer is missing"
+  [[ -f "$PUBLIC_INSTALLER" ]] || die "public Control Center installer is missing"
+  cmp -s "$RELEASE_INSTALLER" "$PUBLIC_INSTALLER" \
+    || die "public Control Center installer must match the release installer"
 
   local release_job release_count checksum_line release_line
   local local_installer release_installer local_installer_build_line local_installer_go_build_line
@@ -127,6 +131,26 @@ main() {
     "Preview setup must read deployment metadata from the hosted app"
   assert_contains "$release_installer" "verify_control_center_available" \
     "installer must verify the local Control Center before opening it"
+  assert_contains "$release_installer" "VIBETV" \
+    "installer must show a simple VIBETV customer-facing heading"
+  assert_contains "$release_installer" "INSTALL_LOG_PATH" \
+    "installer must write technical details to a support log"
+  assert_contains "$release_installer" "Support log:" \
+    "installer must tell customers where the support log is"
+  assert_contains "$release_installer" "--verbose" \
+    "installer must offer a verbose debug mode"
+  assert_contains "$release_installer" "VIBETV_VERBOSE" \
+    "installer must support verbose mode through the environment"
+  assert_contains "$release_installer" "step_start" \
+    "installer must show customer-friendly setup steps"
+  assert_contains "$release_installer" "run_quiet" \
+    "installer must hide noisy command output by default"
+  assert_contains "$release_installer" "run_quiet npm ci" \
+    "Preview setup must hide npm install output by default"
+  assert_contains "$release_installer" "run_quiet npm run build:local" \
+    "Preview setup must hide Control Center build output by default"
+  assert_contains "$release_installer" 'run_quiet "$BIN_PATH" install-update' \
+    "installer must hide firmware update command output by default"
 
   printf 'control-center release workflow test passed\n'
 }
