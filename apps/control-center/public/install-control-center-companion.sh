@@ -20,8 +20,8 @@ GLOBAL_PLIST_PATH="${VIBETV_COMPANION_GLOBAL_PLIST:-/Library/LaunchAgents/${SERV
 DISPLAY_DAEMON_LABEL="com.codexbar-display.daemon"
 DISPLAY_DAEMON_PLIST="${PLIST_DIR}/${DISPLAY_DAEMON_LABEL}.plist"
 DISPLAY_DAEMON_SERVICE="gui/$(id -u)/${DISPLAY_DAEMON_LABEL}"
-DISPLAY_DAEMON_LOG_OUT="/tmp/codexbar-display-daemon.out.log"
-DISPLAY_DAEMON_LOG_ERR="/tmp/codexbar-display-daemon.err.log"
+DISPLAY_DAEMON_LOG_OUT="${INSTALL_LOG_DIR}/daemon.out.log"
+DISPLAY_DAEMON_LOG_ERR="${INSTALL_LOG_DIR}/daemon.err.log"
 CONFIG_PATH="${APP_SUPPORT_DIR}/config.json"
 
 REPO="${VIBETV_COMPANION_REPO:-$DEFAULT_REPO}"
@@ -37,6 +37,7 @@ fi
 SKIP_DEVICE_SETUP=0
 REPAIR_MAX_ATTEMPTS="${VIBETV_COMPANION_REPAIR_ATTEMPTS:-45}"
 REPAIR_RETRY_DELAY="${VIBETV_COMPANION_REPAIR_RETRY_DELAY:-2}"
+SERVICE_STABLE_RETRY_DELAY="${VIBETV_COMPANION_STABLE_RETRY_DELAY:-1}"
 MODE="install"
 START_MODE="${VIBETV_COMPANION_START_MODE:-terminal}"
 OPEN_CONTROL_CENTER="${VIBETV_COMPANION_OPEN_CONTROL_CENTER:-1}"
@@ -427,6 +428,7 @@ write_plist() {
   fi
 
   mkdir -p "$PLIST_DIR"
+  mkdir -p "$INSTALL_LOG_DIR" || die "could not create log folder: ${INSTALL_LOG_DIR}"
   {
     cat <<PLIST_HEAD
 <?xml version="1.0" encoding="UTF-8"?>
@@ -459,6 +461,9 @@ PLIST_HEAD
     <key>KeepAlive</key>
     <true/>
 
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
     <key>StandardOutPath</key>
     <string>${DISPLAY_DAEMON_LOG_OUT}</string>
 
@@ -473,6 +478,7 @@ PLIST_TAIL
 }
 
 restart_service() {
+  local kickstart_status
   if [[ ! -x "$BIN_PATH" ]]; then
     die "Mac setup binary is missing: ${BIN_PATH}. Run install first."
   fi
@@ -489,7 +495,22 @@ restart_service() {
       die "failed to load the VibeTV Mac App background service."
     fi
   fi
-  launchctl kickstart -k "$DISPLAY_DAEMON_SERVICE" >/dev/null
+  set +e
+  launchctl kickstart -k "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1
+  kickstart_status=$?
+  set -e
+  if [[ "$kickstart_status" -ne 0 ]] && ! launchctl print "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1; then
+    die "failed to start the VibeTV Mac App background service."
+  fi
+  verify_launchagent_loaded
+}
+
+verify_launchagent_loaded() {
+  if launchctl print "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1; then
+    log "vibetv: background service loaded at ${DISPLAY_DAEMON_SERVICE}"
+    return 0
+  fi
+  die "VibeTV Mac App background service is not loaded. Rerun setup from a standard macOS Terminal."
 }
 
 wait_for_api() {
@@ -520,10 +541,29 @@ verify_control_center_available() {
   die "Local Control Center did not answer at ${url} (HTTP ${status:-000}). Rerun setup from the latest VibeTV setup page."
 }
 
+verify_local_service_stable() {
+  local status_url url status
+  status_url="http://${ADDR}/v1/status"
+  url="$(control_center_url)"
+  log "vibetv: verifying local Control Center stays available"
+  for attempt in 1 2 3; do
+    curl -fsS "$status_url" >/dev/null 2>&1 \
+      || die "Mac setup service stopped responding during verification. Inspect ${DISPLAY_DAEMON_LOG_ERR}."
+    status="$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true)"
+    [[ "$status" =~ ^2[0-9][0-9]$ ]] \
+      || die "Local Control Center stopped responding at ${url} (HTTP ${status:-000}). Inspect ${DISPLAY_DAEMON_LOG_ERR}."
+    if [[ "$attempt" != "3" ]]; then
+      sleep "$SERVICE_STABLE_RETRY_DELAY"
+    fi
+  done
+  log "vibetv: local Control Center stayed available"
+}
+
 open_control_center() {
   local url
   url="$(control_center_url)"
   verify_control_center_available
+  verify_local_service_stable
   if [[ "$OPEN_CONTROL_CENTER" != "1" ]]; then
     log "vibetv: Control Center is ready at ${url}"
     return 0

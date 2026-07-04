@@ -261,6 +261,7 @@ run_installer() {
       FAKE_STATUS_DEVICE_DISCONNECTED="${FAKE_STATUS_DEVICE_DISCONNECTED:-}" \
       VIBETV_COMPANION_REPAIR_ATTEMPTS="${VIBETV_COMPANION_REPAIR_ATTEMPTS:-3}" \
       VIBETV_COMPANION_REPAIR_RETRY_DELAY="${VIBETV_COMPANION_REPAIR_RETRY_DELAY:-0}" \
+      VIBETV_COMPANION_STABLE_RETRY_DELAY="${VIBETV_COMPANION_STABLE_RETRY_DELAY:-0}" \
       VIBETV_COMPANION_GLOBAL_PLIST="${root}/global/Library/LaunchAgents/com.codexbar-display.companion-api.plist" \
       "$INSTALLER" "$@" \
       2>&1
@@ -307,6 +308,8 @@ run_restart_updates_daemon_launchagent() {
   assert_contains "$daemon_plist_body" "<string>daemon</string>"
   assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
   assert_contains "$daemon_plist_body" "<string>127.0.0.1:47832</string>"
+  assert_contains "$daemon_plist_body" "<key>ThrottleInterval</key>"
+  assert_contains "$daemon_plist_body" "${root}/home/Library/Application Support/codexbar-display/logs/daemon.err.log"
   assert_not_contains "$daemon_plist_body" "<string></string>"
   assert_not_contains "$daemon_plist_body" "<string>api</string>"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
@@ -384,6 +387,8 @@ run_install_writes_integrated_daemon_launchagent() {
   assert_contains "$daemon_plist_body" "<string>127.0.0.1:47832</string>"
   assert_contains "$daemon_plist_body" "<string>--target</string>"
   assert_contains "$daemon_plist_body" "<string>http://192.168.178.72</string>"
+  assert_contains "$daemon_plist_body" "<key>ThrottleInterval</key>"
+  assert_contains "$daemon_plist_body" "${root}/home/Library/Application Support/codexbar-display/logs/daemon.err.log"
   assert_not_contains "$daemon_plist_body" "<string></string>"
   assert_not_contains "$daemon_plist_body" "<string>api</string>"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"

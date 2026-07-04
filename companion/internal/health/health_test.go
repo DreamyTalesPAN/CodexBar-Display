@@ -65,6 +65,8 @@ func TestParseLaunchAgentConfig(t *testing.T) {
 func TestRunWithDepsReportsWiFiLaunchAgentWithoutUSBPortError(t *testing.T) {
 	home := t.TempDir()
 	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	outLogPath := filepath.Join(home, appSupportLogSubdir, defaultOutLogName)
+	errLogPath := filepath.Join(home, appSupportLogSubdir, defaultErrLogName)
 	outLog := strings.Join([]string{
 		`2026-05-03T15:19:35Z cycle error: code=runtime/serial-write op=send-line err=post frame timeout`,
 		`2026-05-03T15:29:49Z sent frame -> http://192.168.178.66 transport=wifi source=codexbar provider=codex label=Vibe TV`,
@@ -101,9 +103,9 @@ func TestRunWithDepsReportsWiFiLaunchAgentWithoutUSBPortError(t *testing.T) {
 			switch path {
 			case plistPath:
 				return plist, nil
-			case defaultOutLog:
+			case outLogPath:
 				return []byte(outLog), nil
-			case defaultErrLog:
+			case errLogPath:
 				return nil, errors.New("missing")
 			default:
 				return nil, errors.New("unexpected path")

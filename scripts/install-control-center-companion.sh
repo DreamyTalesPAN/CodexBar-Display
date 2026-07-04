@@ -18,8 +18,8 @@ GLOBAL_PLIST_PATH="${VIBETV_COMPANION_GLOBAL_PLIST:-/Library/LaunchAgents/${SERV
 DISPLAY_DAEMON_LABEL="com.codexbar-display.daemon"
 DISPLAY_DAEMON_PLIST="$PLIST_DIR/${DISPLAY_DAEMON_LABEL}.plist"
 DISPLAY_DAEMON_SERVICE="gui/$(id -u)/${DISPLAY_DAEMON_LABEL}"
-DISPLAY_DAEMON_LOG_OUT="/tmp/codexbar-display-daemon.out.log"
-DISPLAY_DAEMON_LOG_ERR="/tmp/codexbar-display-daemon.err.log"
+DISPLAY_DAEMON_LOG_OUT="${APP_SUPPORT_DIR}/logs/daemon.out.log"
+DISPLAY_DAEMON_LOG_ERR="${APP_SUPPORT_DIR}/logs/daemon.err.log"
 ADDR="${VIBETV_COMPANION_ADDR:-127.0.0.1:47832}"
 DEV_ORIGIN="${VIBETV_COMPANION_DEV_ORIGIN:-}"
 TARGET="${VIBETV_COMPANION_TARGET:-http://vibetv.local}"
@@ -149,6 +149,7 @@ write_daemon_plist() {
   fi
 
   mkdir -p "$PLIST_DIR"
+  mkdir -p "${APP_SUPPORT_DIR}/logs"
   {
     cat <<PLIST_HEAD
 <?xml version="1.0" encoding="UTF-8"?>
@@ -180,6 +181,9 @@ PLIST_HEAD
 
     <key>KeepAlive</key>
     <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
 
     <key>StandardOutPath</key>
     <string>${DISPLAY_DAEMON_LOG_OUT}</string>
@@ -237,6 +241,10 @@ if [[ "$kickstart_status" -ne 0 ]]; then
     launchctl error "$kickstart_status" >&2 || true
     exit "$kickstart_status"
   fi
+fi
+if ! launchctl print "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1; then
+  echo "error: VibeTV Mac App background service is not loaded" >&2
+  exit 1
 fi
 
 echo "waiting for Mac setup service at http://$ADDR/v1/status"

@@ -51,6 +51,7 @@ const (
 	collectorIntervalEnvVar    = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
 	activityPollEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS"
 	activityHoldEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS"
+	activityCodingMaxAgeEnvVar = "CODEXBAR_DISPLAY_ACTIVITY_MAX_SECS"
 	activityIdleEvidenceEnvVar = "CODEXBAR_DISPLAY_ACTIVITY_IDLE_EVIDENCE"
 	collectorTimeoutEnvVar     = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
 	collectorOrderEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
@@ -981,15 +982,17 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	if activityObservedAt.IsZero() {
 		activityObservedAt = collectedAt
 	}
+	codingExpired := state.lastActivity == "coding" && codingMaxAgeExpired(state.lastCodingAt, now)
 	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
 		!activityObservedAt.IsZero() &&
 		activityObservedAt.Equal(state.lastActivityObservedAt) &&
-		state.lastActivity != "" {
+		state.lastActivity != "" &&
+		!codingExpired {
 		state.lastActivityAt = collectedAt
 		frame.Activity = state.lastActivity
 		return frame, fmt.Sprintf("activity=%s reason=unchanged-codexbar-activity detail=%s observedAt=%s", frame.Activity, state.lastActivityCause, activityObservedAt.Format(time.RFC3339))
 	}
-	if !collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" {
+	if !collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" && !codingExpired {
 		frame.Activity = state.lastActivity
 		return frame, fmt.Sprintf("activity=%s reason=unchanged-usage-frame detail=%s", frame.Activity, state.lastActivityCause)
 	}
@@ -1005,17 +1008,24 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 		state.idleEvidenceCount = 0
 	default:
 		if state.lastActivity == "coding" {
-			if !activityObservedAt.IsZero() && activityObservedAt.After(state.lastActivityObservedAt) && !activityObservedAt.Equal(state.lastIdleEvidenceAt) {
-				state.lastIdleEvidenceAt = activityObservedAt
-				state.idleEvidenceCount++
-			}
-			if codingHoldActive(state.lastCodingAt, now) || state.idleEvidenceCount < activityIdleEvidenceRequired() {
-				activity = "coding"
-				signalReason = "coding-waiting-for-idle-evidence"
-				signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s idle_evidence=%d/%d observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), state.idleEvidenceCount, activityIdleEvidenceRequired(), activityObservedAt.Format(time.RFC3339))
-			} else {
+			if codingMaxAgeExpired(state.lastCodingAt, now) {
 				state.lastIdleEvidenceAt = time.Time{}
 				state.idleEvidenceCount = 0
+				signalReason = "coding-max-age-expired"
+				signalDetail = fmt.Sprintf("last_delta_age=%s max=%s observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityCodingMaxAge(), activityObservedAt.Format(time.RFC3339))
+			} else {
+				if !activityObservedAt.IsZero() && activityObservedAt.After(state.lastActivityObservedAt) && !activityObservedAt.Equal(state.lastIdleEvidenceAt) {
+					state.lastIdleEvidenceAt = activityObservedAt
+					state.idleEvidenceCount++
+				}
+				if codingHoldActive(state.lastCodingAt, now) || state.idleEvidenceCount < activityIdleEvidenceRequired() {
+					activity = "coding"
+					signalReason = "coding-waiting-for-idle-evidence"
+					signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s max=%s idle_evidence=%d/%d observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), activityCodingMaxAge(), state.idleEvidenceCount, activityIdleEvidenceRequired(), activityObservedAt.Format(time.RFC3339))
+				} else {
+					state.lastIdleEvidenceAt = time.Time{}
+					state.idleEvidenceCount = 0
+				}
 			}
 		}
 	}
@@ -1047,6 +1057,16 @@ func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
 		return true
 	}
 	return now.Sub(lastCodingAt) <= activityHoldDuration()
+}
+
+func codingMaxAgeExpired(lastCodingAt time.Time, now time.Time) bool {
+	if lastCodingAt.IsZero() {
+		return false
+	}
+	if now.Before(lastCodingAt) {
+		return false
+	}
+	return now.Sub(lastCodingAt) > activityCodingMaxAge()
 }
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
@@ -1559,6 +1579,23 @@ func activityHoldDuration() time.Duration {
 	)
 
 	override := parseSecondsEnv(activityHoldEnvVar, int(def.Seconds()))
+	if override < min {
+		return min
+	}
+	if override > max {
+		return max
+	}
+	return override
+}
+
+func activityCodingMaxAge() time.Duration {
+	const (
+		def = 5 * time.Minute
+		min = 30 * time.Second
+		max = 30 * time.Minute
+	)
+
+	override := parseSecondsEnv(activityCodingMaxAgeEnvVar, int(def.Seconds()))
 	if override < min {
 		return min
 	}

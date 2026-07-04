@@ -921,9 +921,13 @@ func writeLaunchAgentPlist(home, binaryPath, transportName, target, port string)
 	if err := os.MkdirAll(launchAgentDir, 0o755); err != nil {
 		return "", err
 	}
+	logDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return "", err
+	}
 
 	plistPath := filepath.Join(launchAgentDir, launchAgentLabel+".plist")
-	plistData := renderLaunchAgentPlist(binaryPath, transportName, target, port)
+	plistData := renderLaunchAgentPlist(home, binaryPath, transportName, target, port)
 	existing, err := os.ReadFile(plistPath)
 	if err == nil && bytes.Equal(existing, plistData) {
 		return plistPath, nil
@@ -934,13 +938,16 @@ func writeLaunchAgentPlist(home, binaryPath, transportName, target, port string)
 	return plistPath, nil
 }
 
-func renderLaunchAgentPlist(binaryPath, transportName, target, port string) []byte {
+func renderLaunchAgentPlist(home, binaryPath, transportName, target, port string) []byte {
 	args := []string{binaryPath, "daemon", "--interval", daemonIntervalForSetupTransport(transportName), "--api-addr", defaultCompanionAPIAddr}
 	if normalizeSetupTransport(transportName) == "wifi" {
 		args = append(args, "--transport", "wifi", "--target", normalizeSetupTarget(target))
 	} else if strings.TrimSpace(port) != "" {
 		args = append(args, "--port", strings.TrimSpace(port))
 	}
+	logDir := filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs")
+	outLog := filepath.Join(logDir, "daemon.out.log")
+	errLog := filepath.Join(logDir, "daemon.err.log")
 
 	var b strings.Builder
 	b.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
@@ -966,10 +973,12 @@ func renderLaunchAgentPlist(binaryPath, transportName, target, port string) []by
 	b.WriteString("    <true/>\n")
 	b.WriteString("    <key>KeepAlive</key>\n")
 	b.WriteString("    <true/>\n")
+	b.WriteString("    <key>ThrottleInterval</key>\n")
+	b.WriteString("    <integer>10</integer>\n")
 	b.WriteString("    <key>StandardOutPath</key>\n")
-	b.WriteString("    <string>/tmp/codexbar-display-daemon.out.log</string>\n")
+	b.WriteString("    <string>" + xmlEscape(outLog) + "</string>\n")
 	b.WriteString("    <key>StandardErrorPath</key>\n")
-	b.WriteString("    <string>/tmp/codexbar-display-daemon.err.log</string>\n")
+	b.WriteString("    <string>" + xmlEscape(errLog) + "</string>\n")
 	b.WriteString("  </dict>\n")
 	b.WriteString("</plist>\n")
 	return []byte(b.String())
@@ -1026,7 +1035,7 @@ func reloadLaunchAgent(ctx context.Context, d deps, plistPath string) error {
 		return &StepError{
 			Step:   "launchagent-kickstart",
 			Err:    err,
-			Hint:   "run `launchctl print " + service + "` and inspect /tmp/codexbar-display-daemon.err.log",
+			Hint:   "run `launchctl print " + service + "` and inspect ~/Library/Application Support/codexbar-display/logs/daemon.err.log",
 			Output: tailLines(output, 20),
 		}
 	}
@@ -1044,7 +1053,7 @@ func reloadLaunchAgent(ctx context.Context, d deps, plistPath string) error {
 		return &StepError{
 			Step:   "launchagent-verify",
 			Err:    errors.New("launch agent not in running/waiting state"),
-			Hint:   "inspect /tmp/codexbar-display-daemon.err.log and run `launchctl kickstart -k " + service + "`",
+			Hint:   "inspect ~/Library/Application Support/codexbar-display/logs/daemon.err.log and run `launchctl kickstart -k " + service + "`",
 			Output: tailLines(status, 20),
 		}
 	}

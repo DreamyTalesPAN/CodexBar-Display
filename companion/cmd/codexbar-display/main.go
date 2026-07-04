@@ -33,6 +33,7 @@ const defaultThemeCatalogURL = themeinstall.DefaultCatalogURL
 
 var themePackUploadSettleDelay = 750 * time.Millisecond
 var themePackInstallFetchLiveFrameFn = codexbar.FetchFirstFrame
+var displayWorkerRestartDelay = 5 * time.Second
 
 func main() {
 	if len(os.Args) < 2 {
@@ -207,26 +208,66 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	daemonOpts := opts.Daemon
 	daemonOpts.Wake = wake
 
-	errc := make(chan error, 2)
+	errc := make(chan error, 1)
 	go func() {
 		errc <- server.ListenAndServe(ctx)
 	}()
-	go func() {
-		errc <- daemon.Run(ctx, daemonOpts)
-	}()
+	go superviseDisplayWorker(ctx, daemonOpts, daemon.Run, time.After, func(format string, args ...any) {
+		fmt.Printf(format, args...)
+	})
 
 	fmt.Printf("VibeTV companion API listening on http://%s\n", opts.APIAddr)
 	err = <-errc
 	cancel()
-
-	select {
-	case otherErr := <-errc:
-		if err == nil {
-			return otherErr
-		}
-	case <-time.After(5 * time.Second):
-	}
 	return err
+}
+
+type displayWorkerRunFunc func(context.Context, daemon.Options) error
+type displayWorkerAfterFunc func(time.Duration) <-chan time.Time
+type displayWorkerLogFunc func(string, ...any)
+
+func superviseDisplayWorker(ctx context.Context, opts daemon.Options, run displayWorkerRunFunc, after displayWorkerAfterFunc, logf displayWorkerLogFunc) {
+	if run == nil {
+		run = daemon.Run
+	}
+	if after == nil {
+		after = time.After
+	}
+	if logf == nil {
+		logf = func(string, ...any) {}
+	}
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		err := runDisplayWorkerOnce(ctx, opts, run)
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			return
+		}
+		if err == nil {
+			if opts.Once {
+				return
+			}
+			logf("VibeTV display worker exited; restarting in %s\n", displayWorkerRestartDelay)
+		} else {
+			logf("VibeTV display worker stopped; restarting in %s: %v\n", displayWorkerRestartDelay, err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-after(displayWorkerRestartDelay):
+		}
+	}
+}
+
+func runDisplayWorkerOnce(ctx context.Context, opts daemon.Options, run displayWorkerRunFunc) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("display worker panic: %v", recovered)
+		}
+	}()
+	return run(ctx, opts)
 }
 
 func runDoctor() error {

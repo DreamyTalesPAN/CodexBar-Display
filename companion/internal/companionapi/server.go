@@ -49,7 +49,8 @@ const (
 	subnetProbeTime         = 450 * time.Millisecond
 	themeInstallDisableEnv  = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
 	displayStreamLabel      = "com.codexbar-display.daemon"
-	displayStreamOutLog     = "/tmp/codexbar-display-daemon.out.log"
+	displayStreamOutLog     = "daemon.out.log"
+	displayStreamLegacyLog  = "/tmp/codexbar-display-daemon.out.log"
 	displayStreamOutLogEnv  = "CODEXBAR_DISPLAY_STREAM_OUT_LOG"
 	displayStreamReadyAge   = 2 * time.Minute
 	displayStreamWaitTime   = 12 * time.Second
@@ -3944,7 +3945,11 @@ func displayStreamOutLogPath() string {
 	if path := strings.TrimSpace(os.Getenv(displayStreamOutLogEnv)); path != "" {
 		return path
 	}
-	return displayStreamOutLog
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return displayStreamLegacyLog
+	}
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", displayStreamOutLog)
 }
 
 func samePublicTarget(left, right string) bool {

@@ -893,6 +893,43 @@ func TestApplySelectionActivityTreatsCachedCodexBarSnapshotAsNotFreshIdleEvidenc
 	}
 }
 
+func TestApplySelectionActivityExpiresCodingAfterMaxAgeWithoutIdleEvidence(t *testing.T) {
+	prepareFastTestEnv(t)
+	t.Setenv(activityHoldEnvVar, "600")
+	t.Setenv(activityCodingMaxAgeEnvVar, "45")
+	t.Setenv(activityIdleEvidenceEnvVar, "10")
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	observedAt := now.Add(-5 * time.Second)
+	state := &runtimeState{}
+
+	frame, detail := applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected: codexbar.ParsedFrame{
+			CollectedAt:        now,
+			ActivityObservedAt: observedAt,
+		},
+		ActivitySignalReason: codexbar.SelectionReasonUsageDelta,
+		ActivityDetail:       "source=usage-delta",
+	}, state, now)
+	if frame.Activity != "coding" {
+		t.Fatalf("expected token delta to show coding, got %q detail=%q", frame.Activity, detail)
+	}
+
+	frame, detail = applySelectionActivity(protocol.Frame{Provider: "codex"}, codexbar.SelectionDecision{
+		Selected: codexbar.ParsedFrame{
+			CollectedAt:        now.Add(46 * time.Second),
+			ActivityObservedAt: observedAt,
+		},
+		Reason: codexbar.SelectionReasonStickyCurrent,
+	}, state, now.Add(46*time.Second))
+	if frame.Activity != "idle" {
+		t.Fatalf("expected stale coding to expire without fresh idle evidence, got %q detail=%q", frame.Activity, detail)
+	}
+	if !strings.Contains(detail, "coding-max-age-expired") {
+		t.Fatalf("expected max-age detail, got %q", detail)
+	}
+}
+
 func TestApplySelectionActivityRequiresFreshNoDeltaEvidenceBeforeIdle(t *testing.T) {
 	prepareFastTestEnv(t)
 	t.Setenv(activityHoldEnvVar, "20")

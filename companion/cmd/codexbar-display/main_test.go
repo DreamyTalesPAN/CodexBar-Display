@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
@@ -71,6 +74,113 @@ func TestParseDaemonCommandOptionsSupportsEmbeddedAPI(t *testing.T) {
 	}
 	if opts.APIDevOrigin != "http://localhost:3002" {
 		t.Fatalf("unexpected dev origin %q", opts.APIDevOrigin)
+	}
+}
+
+func TestSuperviseDisplayWorkerRestartsAfterError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var logs bytes.Buffer
+	calls := 0
+	afterCalls := 0
+	superviseDisplayWorker(ctx, daemon.Options{}, func(ctx context.Context, _ daemon.Options) error {
+		calls++
+		if calls == 1 {
+			return errors.New("display offline")
+		}
+		cancel()
+		<-ctx.Done()
+		return ctx.Err()
+	}, func(time.Duration) <-chan time.Time {
+		afterCalls++
+		ch := make(chan time.Time, 1)
+		ch <- time.Now()
+		return ch
+	}, func(format string, args ...any) {
+		_, _ = fmt.Fprintf(&logs, format, args...)
+	})
+
+	if calls != 2 {
+		t.Fatalf("expected worker restart after error, got %d calls", calls)
+	}
+	if afterCalls != 1 {
+		t.Fatalf("expected one restart delay, got %d", afterCalls)
+	}
+	if !strings.Contains(logs.String(), "display offline") {
+		t.Fatalf("expected restart log to include worker error, got %q", logs.String())
+	}
+}
+
+func TestSuperviseDisplayWorkerRestartsAfterPanic(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var logs bytes.Buffer
+	calls := 0
+	superviseDisplayWorker(ctx, daemon.Options{}, func(ctx context.Context, _ daemon.Options) error {
+		calls++
+		if calls == 1 {
+			panic("bad frame sender")
+		}
+		cancel()
+		<-ctx.Done()
+		return ctx.Err()
+	}, func(time.Duration) <-chan time.Time {
+		ch := make(chan time.Time, 1)
+		ch <- time.Now()
+		return ch
+	}, func(format string, args ...any) {
+		_, _ = fmt.Fprintf(&logs, format, args...)
+	})
+
+	if calls != 2 {
+		t.Fatalf("expected worker restart after panic, got %d calls", calls)
+	}
+	if !strings.Contains(logs.String(), "display worker panic") {
+		t.Fatalf("expected restart log to include panic, got %q", logs.String())
+	}
+}
+
+func TestSuperviseDisplayWorkerRestartsAfterUnexpectedExit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	calls := 0
+	superviseDisplayWorker(ctx, daemon.Options{}, func(ctx context.Context, _ daemon.Options) error {
+		calls++
+		if calls == 1 {
+			return nil
+		}
+		cancel()
+		<-ctx.Done()
+		return ctx.Err()
+	}, func(time.Duration) <-chan time.Time {
+		ch := make(chan time.Time, 1)
+		ch <- time.Now()
+		return ch
+	}, func(string, ...any) {})
+
+	if calls != 2 {
+		t.Fatalf("expected worker restart after unexpected exit, got %d calls", calls)
+	}
+}
+
+func TestSuperviseDisplayWorkerLetsOnceModeExit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	calls := 0
+	superviseDisplayWorker(ctx, daemon.Options{Once: true}, func(context.Context, daemon.Options) error {
+		calls++
+		return nil
+	}, func(time.Duration) <-chan time.Time {
+		t.Fatalf("once mode should not wait for restart")
+		return nil
+	}, func(string, ...any) {})
+
+	if calls != 1 {
+		t.Fatalf("expected once mode to exit after one call, got %d calls", calls)
 	}
 }
 

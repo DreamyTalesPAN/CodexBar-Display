@@ -131,6 +131,12 @@ main() {
     "Preview setup must read deployment metadata from the hosted app"
   assert_contains "$release_installer" "verify_control_center_available" \
     "installer must verify the local Control Center before opening it"
+  assert_contains "$release_installer" "verify_local_service_stable" \
+    "installer must verify the local service stays stable before opening it"
+  assert_contains "$release_installer" "ThrottleInterval" \
+    "installer LaunchAgent must throttle crash restart loops"
+  assert_contains "$release_installer" 'DISPLAY_DAEMON_LOG_ERR="${INSTALL_LOG_DIR}/daemon.err.log"' \
+    "installer must keep daemon logs in the customer support log folder"
   assert_contains "$release_installer" "VIBETV" \
     "installer must show a simple VIBETV customer-facing heading"
   assert_contains "$release_installer" "INSTALL_LOG_PATH" \
