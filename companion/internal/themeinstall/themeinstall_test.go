@@ -104,13 +104,45 @@ func TestCleanupThemeUserAssetsDeletesOnlyUserThemeFiles(t *testing.T) {
 	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
 	target := server.URL
 	var out bytes.Buffer
-	cleanupThemeUserAssets(wifi, &target, nil, &out)
+	cleanupThemeUserAssets(wifi, &target, nil, &out, nil)
 
 	if strings.Join(deleted, ",") != "/themes/u/old.cba,/themes/u/old.json" {
 		t.Fatalf("unexpected deleted paths: %v", deleted)
 	}
 	if !strings.Contains(out.String(), "Cleaning old theme files") {
 		t.Fatalf("missing cleanup log: %s", out.String())
+	}
+}
+
+func TestCleanupThemeUserAssetsKeepsInstalledThemeFiles(t *testing.T) {
+	var deleted []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/assets" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		switch r.Method {
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"assets":[{"path":"/themes/u/new.json","sizeBytes":900},{"path":"/themes/u/new.cbi","sizeBytes":12000},{"path":"/themes/u/old.json","sizeBytes":900}]}`))
+		case http.MethodDelete:
+			deleted = append(deleted, r.URL.Query().Get("path"))
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected assets method %s", r.Method)
+		}
+	}))
+	defer server.Close()
+
+	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
+	target := server.URL
+	var out bytes.Buffer
+	cleanupThemeUserAssets(wifi, &target, nil, &out, map[string]bool{
+		"/themes/u/new.json": true,
+		"/themes/u/new.cbi":  true,
+	})
+
+	if strings.Join(deleted, ",") != "/themes/u/old.json" {
+		t.Fatalf("unexpected deleted paths: %v", deleted)
 	}
 }
 
@@ -335,6 +367,7 @@ func TestInstallRestoresPreviousThemeWhenUploadFailsAfterInstallScreen(t *testin
 	const previousPath = "/themes/u/claude.json"
 	var frames []protocol.Frame
 	var activatedPaths []string
+	var deletedPaths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
@@ -349,8 +382,21 @@ func TestInstallRestoresPreviousThemeWhenUploadFailsAfterInstallScreen(t *testin
 			frames = append(frames, frame)
 			w.WriteHeader(http.StatusOK)
 		case "/assets":
-			_, _ = io.Copy(io.Discard, r.Body)
-			http.Error(w, "upload failed", http.StatusBadRequest)
+			switch r.Method {
+			case http.MethodGet:
+				writeAssetList(t, w, map[string]int{
+					previousPath:           900,
+					"/themes/u/claude.cbi": 12000,
+				})
+			case http.MethodDelete:
+				deletedPaths = append(deletedPaths, r.URL.Query().Get("path"))
+				w.WriteHeader(http.StatusOK)
+			case http.MethodPost:
+				_, _ = io.Copy(io.Discard, r.Body)
+				http.Error(w, "upload failed", http.StatusBadRequest)
+			default:
+				t.Fatalf("unexpected assets method %s", r.Method)
+			}
 		case "/theme/active":
 			var payload struct {
 				Path string `json:"path"`
@@ -390,6 +436,9 @@ func TestInstallRestoresPreviousThemeWhenUploadFailsAfterInstallScreen(t *testin
 	}
 	if len(activatedPaths) != 1 || activatedPaths[0] != previousPath {
 		t.Fatalf("expected previous theme activation %q, got %#v", previousPath, activatedPaths)
+	}
+	if len(deletedPaths) != 0 {
+		t.Fatalf("install failure should not delete previous theme files, deleted %#v", deletedPaths)
 	}
 	if !strings.Contains(out.String(), "Restoring previous theme") ||
 		!strings.Contains(out.String(), "Restore previous theme: activated") {

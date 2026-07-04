@@ -698,6 +698,9 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 		"_next/static/app.js": {
 			Data: []byte(`console.log("control-center")`),
 		},
+		"install/synthwave.html": {
+			Data: []byte(`<!doctype html><div id="root">Install Synthwave</div>`),
+		},
 		"theme-packs/render/synthwave.json": {
 			Data: []byte(`{"ok":true,"themeId":"synthwave"}`),
 		},
@@ -720,6 +723,13 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 	server.Handler().ServeHTTP(asset, assetReq)
 	if asset.Code != http.StatusOK || !strings.Contains(asset.Body.String(), "control-center") {
 		t.Fatalf("expected embedded static asset, got %d body=%s", asset.Code, asset.Body.String())
+	}
+
+	install := httptest.NewRecorder()
+	installReq := httptest.NewRequest(http.MethodGet, "/control-center/install/synthwave", nil)
+	server.Handler().ServeHTTP(install, installReq)
+	if install.Code != http.StatusOK || !strings.Contains(install.Body.String(), "Install Synthwave") {
+		t.Fatalf("expected exported install route, got %d body=%s", install.Code, install.Body.String())
 	}
 
 	theme := httptest.NewRecorder()

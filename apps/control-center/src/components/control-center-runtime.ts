@@ -4,11 +4,22 @@ export function isLoopbackHostname(hostname: string): boolean {
   return ["127.0.0.1", "localhost", "::1"].includes(hostname);
 }
 
+export function companionOrigin(): string {
+  if (
+    typeof window !== "undefined" &&
+    isLoopbackHostname(window.location.hostname) &&
+    window.location.pathname.startsWith("/control-center")
+  ) {
+    return window.location.origin;
+  }
+  return COMPANION_URL;
+}
+
 export function isLocalCompanionOrigin(): boolean {
   if (typeof window === "undefined") {
     return false;
   }
-  const companion = new URL(COMPANION_URL);
+  const companion = new URL(companionOrigin());
   return (
     window.location.protocol === companion.protocol &&
     isLoopbackHostname(window.location.hostname) &&
@@ -23,8 +34,13 @@ export function shouldUseNextLocalCompanionProxy(): boolean {
   return isLoopbackHostname(window.location.hostname) && !isLocalCompanionOrigin();
 }
 
-export function localControlCenterUrl(): string {
-  return `${COMPANION_URL}/control-center`;
+export function localControlCenterUrl(themeId?: string): string {
+  const base = `${companionOrigin()}/control-center`;
+  const normalizedThemeId = themeId?.trim();
+  if (!normalizedThemeId) {
+    return base;
+  }
+  return `${base}/install/${encodeURIComponent(normalizedThemeId)}`;
 }
 
 export function shouldRedirectToLocalControlCenter(): boolean {
@@ -46,7 +62,7 @@ export function companionRequestUrl(path: string): string {
     const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
     return `/api/local-companion/${normalizedPath}`;
   }
-  return `${COMPANION_URL}${path}`;
+  return `${companionOrigin()}${path}`;
 }
 
 export function needsLoopbackTargetAddressSpace(requestUrl: string): boolean {
@@ -54,10 +70,35 @@ export function needsLoopbackTargetAddressSpace(requestUrl: string): boolean {
     return false;
   }
   try {
-    return new URL(requestUrl, window.location.origin).origin === COMPANION_URL;
+    return (
+      new URL(requestUrl, window.location.origin).origin === companionOrigin()
+    );
   } catch {
     return false;
   }
+}
+
+export function localizeCompanionAssetUrl(
+  rawUrl: string | undefined,
+): string | undefined {
+  if (!rawUrl) {
+    return rawUrl;
+  }
+  if (typeof window === "undefined" || !isLocalCompanionOrigin()) {
+    return rawUrl;
+  }
+  try {
+    const url = new URL(rawUrl);
+    if (
+      url.origin === COMPANION_URL &&
+      url.pathname.startsWith("/theme-packs/")
+    ) {
+      return `${window.location.origin}${url.pathname}${url.search}${url.hash}`;
+    }
+  } catch {
+    return rawUrl;
+  }
+  return rawUrl;
 }
 
 export function localThemeRenderPackUrl(themeId: string): string {

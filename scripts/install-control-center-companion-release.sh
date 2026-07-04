@@ -37,6 +37,7 @@ REPAIR_RETRY_DELAY="${VIBETV_COMPANION_REPAIR_RETRY_DELAY:-2}"
 MODE="install"
 START_MODE="${VIBETV_COMPANION_START_MODE:-terminal}"
 OPEN_CONTROL_CENTER="${VIBETV_COMPANION_OPEN_CONTROL_CENTER:-1}"
+CONTROL_CENTER_PATH="${VIBETV_COMPANION_CONTROL_CENTER_PATH:-/control-center}"
 TMPDIR_INSTALL=""
 DOWNLOAD_BIN=""
 CHECKSUMS_FILE=""
@@ -47,7 +48,7 @@ RELEASE_TAG=""
 usage() {
   cat <<'EOF'
 Usage:
-  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://<device-ip>] [--skip-device-setup]
+  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://<device-ip>] [--control-center-path /control-center] [--skip-device-setup]
   install-control-center-companion.sh --restart
   install-control-center-companion.sh --uninstall
 
@@ -108,6 +109,21 @@ normalize_version() {
     die "version cannot be empty"
   fi
   printf '%s\n' "$version"
+}
+
+normalize_control_center_path() {
+  local path="$1"
+  if [[ -z "$path" ]]; then
+    path="/control-center"
+  fi
+  case "$path" in
+    /control-center|/control-center/*)
+      printf '%s\n' "$path"
+      ;;
+    *)
+      die "invalid control center path: $path"
+      ;;
+  esac
 }
 
 fetch_latest_release_tag() {
@@ -263,7 +279,7 @@ wait_for_api() {
 }
 
 control_center_url() {
-  printf 'http://%s/control-center\n' "$ADDR"
+  printf 'http://%s%s\n' "$ADDR" "$CONTROL_CENTER_PATH"
 }
 
 open_control_center() {
@@ -654,6 +670,15 @@ parse_args() {
         DEV_ORIGIN="${1#*=}"
         shift
         ;;
+      --control-center-path)
+        [[ $# -ge 2 ]] || die "--control-center-path requires a value"
+        CONTROL_CENTER_PATH="$(normalize_control_center_path "$2")"
+        shift 2
+        ;;
+      --control-center-path=*)
+        CONTROL_CENTER_PATH="$(normalize_control_center_path "${1#*=}")"
+        shift
+        ;;
       --target)
         [[ $# -ge 2 ]] || die "--target requires a value"
         TARGET="$2"
@@ -698,6 +723,7 @@ parse_args() {
 
 main() {
   parse_args "$@"
+  CONTROL_CENTER_PATH="$(normalize_control_center_path "$CONTROL_CENTER_PATH")"
 
   require_cmd_for uname "detect your Mac CPU architecture" "use a standard macOS Terminal, then rerun the installer."
 

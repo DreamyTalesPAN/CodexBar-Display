@@ -14,6 +14,7 @@ import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
   isLocalCompanionOrigin,
+  localizeCompanionAssetUrl,
   localControlCenterUrl,
   needsLoopbackTargetAddressSpace,
   shouldRedirectToLocalControlCenter,
@@ -579,7 +580,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
         if (shouldRedirectToLocalControlCenter()) {
-          window.location.assign(localControlCenterUrl());
+          window.location.assign(localControlCenterUrl(initialThemeId));
           return;
         }
         if (!quiet) {
@@ -660,6 +661,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [
       addEvent,
       companionStatus,
+      initialThemeId,
       loadSettings,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
@@ -1037,7 +1039,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             method: "POST",
             body: JSON.stringify({
               themeId: theme.themeId,
-              packUrl: theme.packUrl,
+              packUrl: localizeCompanionAssetUrl(theme.packUrl),
               skipFirmwareUpdate: true,
               async: true,
             }),
@@ -1749,8 +1751,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const usageAvailable = companionStatus === "online";
   const openLocalControlCenter = useCallback(() => {
-    window.location.assign(localControlCenterUrl());
-  }, []);
+    window.location.assign(localControlCenterUrl(initialThemeId));
+  }, [initialThemeId]);
 
   useEffect(() => {
     if (!setupComplete || didRouteAfterSetupComplete.current) {
@@ -1809,6 +1811,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       busyAction={busyAction}
       hostedMode={hostedSetup}
       previewStep={setupPreviewStep}
+      requestedThemeId={initialThemeId}
       showIntro={showIntro}
       setupComplete={setupComplete}
       onCheckCompanion={hostedSetup ? openLocalControlCenter : checkCompanion}

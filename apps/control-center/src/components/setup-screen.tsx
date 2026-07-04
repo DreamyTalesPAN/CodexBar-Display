@@ -25,7 +25,10 @@ import {
 } from "./mac-app-install-command";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
 
-function buildAgentPrompt(terminalCommand: string) {
+function buildAgentPrompt(
+  terminalCommand: string,
+  localControlCenterPath: string,
+) {
   return `Please install the VibeTV Mac App on this Mac.
 
 VibeTV is a small WiFi desk display for showing usage and theme screens. Its firmware and Mac App source are open source here:
@@ -68,7 +71,7 @@ Then tell me:
 - whether the status check worked
 - whether VibeTV connected
 - whether the VibeTV firmware update completed, was already current, or failed
-- the next step: open http://127.0.0.1:47832/control-center and continue setup there
+- the next step: open http://127.0.0.1:47832${localControlCenterPath} and continue setup there
 
 Normal usage frames may update the VibeTV display. Do not install themes, reset WiFi, upload theme assets, or change WiFi settings. Only run the setup command and verify its result.`;
 }
@@ -88,6 +91,7 @@ type SetupScreenProps = {
   onResetSetup?: () => void;
   hostedMode?: boolean;
   previewStep?: "mac-app" | null;
+  requestedThemeId?: string;
   showIntro?: boolean;
   setupComplete: boolean;
 };
@@ -111,6 +115,7 @@ export function SetupScreen({
   onResetSetup,
   hostedMode = false,
   previewStep,
+  requestedThemeId,
   showIntro = true,
   setupComplete,
 }: SetupScreenProps) {
@@ -138,7 +143,13 @@ export function SetupScreen({
     busyAction === "discover" ||
     busyAction === "repair";
   const controlCenterOrigin = currentControlCenterOrigin();
-  const terminalCommand = buildMacAppTerminalCommand(controlCenterOrigin);
+  const localControlCenterPath = requestedThemeId
+    ? `/control-center/install/${encodeURIComponent(requestedThemeId)}`
+    : "/control-center";
+  const terminalCommand = buildMacAppTerminalCommand(
+    controlCenterOrigin,
+    localControlCenterPath,
+  );
   const setupInstructionsCopied = agentPromptCopied || terminalCommandCopied;
   const showControlCenterLauncher =
     showIntro &&
@@ -146,8 +157,8 @@ export function SetupScreen({
     !lastError &&
     (setupComplete || (hostedMode && macAppReady));
   const agentPrompt = useMemo(
-    () => buildAgentPrompt(terminalCommand),
-    [terminalCommand],
+    () => buildAgentPrompt(terminalCommand, localControlCenterPath),
+    [localControlCenterPath, terminalCommand],
   );
 
   useEffect(() => {

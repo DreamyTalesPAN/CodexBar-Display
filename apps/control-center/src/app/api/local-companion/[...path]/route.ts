@@ -3,7 +3,9 @@ import type { NextRequest } from "next/server";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const LOCAL_MAC_APP_ORIGIN = "http://127.0.0.1:47832";
+const LOCAL_MAC_APP_ORIGIN =
+  process.env.VIBETV_LOCAL_MAC_APP_ORIGIN?.trim() ||
+  "http://127.0.0.1:47832";
 
 type RouteContext = {
   params: Promise<{ path?: string[] }> | { path?: string[] };

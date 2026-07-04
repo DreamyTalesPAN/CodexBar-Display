@@ -257,8 +257,6 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		fmt.Fprintln(out, "Install screen: showing on VibeTV")
 	}
 
-	cleanupThemeUserAssets(wifi, &resolvedTarget, opts.PairTokenStore, out)
-
 	retryNoted := false
 	wifi = wifi.WithAssetUploadRetryObserver(func(retry transportlayer.AssetUploadRetry) {
 		if !retryNoted {
@@ -331,6 +329,8 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			Hint: hint,
 		}
 	}
+
+	cleanupThemeUserAssets(wifi, &resolvedTarget, opts.PairTokenStore, out, themePackDevicePaths(pack))
 
 	fmt.Fprintf(out, "Done: theme %s installed on %s\n", pack.Manifest.ID, displayTarget)
 	if opts.Verbose {
@@ -623,22 +623,53 @@ func sendClearThemeSpecFrameWithPairRetry(
 	return sendClearThemeSpecFrame(ctx, wifi, *target, caps, fetchFrame)
 }
 
-func cleanupThemeUserAssets(wifi transportlayer.WiFiTransport, target *string, store PairTokenStore, out io.Writer) {
+func cleanupThemeUserAssets(wifi transportlayer.WiFiTransport, target *string, store PairTokenStore, out io.Writer, keepPaths map[string]bool) {
 	assets, err := wifi.DeviceAssets(*target)
 	if err != nil {
 		fmt.Fprintf(out, "Theme file cleanup: skipped (%v)\n", err)
 		return
 	}
-	paths := assets.PathsWithPrefix("/themes/u/")
+	paths := cleanupThemeUserAssetPaths(assets, keepPaths)
 	if len(paths) == 0 {
 		return
 	}
-	sort.Strings(paths)
 	fmt.Fprintln(out, "Cleaning old theme files...")
 	for _, devicePath := range paths {
 		if err := deleteAssetWithPairRetry(wifi, target, devicePath, store); err != nil {
 			fmt.Fprintf(out, "Theme file cleanup: skipped %s (%v)\n", devicePath, err)
 		}
+	}
+}
+
+func cleanupThemeUserAssetPaths(assets transportlayer.DeviceAssetsSnapshot, keepPaths map[string]bool) []string {
+	paths := assets.PathsWithPrefix("/themes/u/")
+	filtered := paths[:0]
+	for _, devicePath := range paths {
+		if keepPaths[strings.TrimSpace(devicePath)] {
+			continue
+		}
+		filtered = append(filtered, devicePath)
+	}
+	sort.Strings(filtered)
+	return filtered
+}
+
+func themePackDevicePaths(pack *themepack.Pack) map[string]bool {
+	if pack == nil {
+		return nil
+	}
+	paths := make(map[string]bool, len(pack.Assets)+1)
+	addThemeDevicePath(paths, pack.ThemeSpecFile.Entry.Path)
+	for _, asset := range pack.Assets {
+		addThemeDevicePath(paths, asset.Entry.Path)
+	}
+	return paths
+}
+
+func addThemeDevicePath(paths map[string]bool, devicePath string) {
+	devicePath = strings.TrimSpace(devicePath)
+	if devicePath != "" {
+		paths[devicePath] = true
 	}
 }
 

@@ -647,6 +647,14 @@ func (s *Server) handleControlCenter(w http.ResponseWriter, r *http.Request) {
 		s.serveControlCenterFile(w, r, assetPath)
 		return
 	}
+	if routeFile := assetPath + ".html"; s.controlCenterFileExists(routeFile) {
+		s.serveControlCenterFile(w, r, routeFile)
+		return
+	}
+	if routeIndex := path.Join(assetPath, "index.html"); s.controlCenterFileExists(routeIndex) {
+		s.serveControlCenterFile(w, r, routeIndex)
+		return
+	}
 	s.serveControlCenterFile(w, r, "index.html")
 }
 
@@ -663,8 +671,8 @@ func (s *Server) handleControlCenterAsset(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, assetPath string) bool {
-	assetPath = strings.TrimPrefix(path.Clean("/"+assetPath), "/")
-	if assetPath == "." || !fs.ValidPath(assetPath) {
+	assetPath, ok := normalizeControlCenterAssetPath(assetPath)
+	if !ok {
 		http.NotFound(w, r)
 		return false
 	}
@@ -683,6 +691,23 @@ func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, 
 	}
 	http.ServeContent(w, r, path.Base(assetPath), time.Time{}, bytes.NewReader(data))
 	return true
+}
+
+func (s *Server) controlCenterFileExists(assetPath string) bool {
+	assetPath, ok := normalizeControlCenterAssetPath(assetPath)
+	if !ok {
+		return false
+	}
+	info, err := fs.Stat(s.controlCenterFS, assetPath)
+	return err == nil && !info.IsDir()
+}
+
+func normalizeControlCenterAssetPath(assetPath string) (string, bool) {
+	assetPath = strings.TrimPrefix(path.Clean("/"+assetPath), "/")
+	if assetPath == "." || !fs.ValidPath(assetPath) {
+		return "", false
+	}
+	return assetPath, true
 }
 
 func (s *Server) withCORS(next http.Handler) http.Handler {

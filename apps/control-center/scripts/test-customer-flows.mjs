@@ -169,6 +169,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
+        browser,
+        appContext.appUrl,
+      );
       await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
       await testUpdatesShowTerminalCommandWithoutPackageAssets(
         browser,
@@ -511,7 +515,10 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   await page
     .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
-  await assertMacAppSetupUsesTerminalCommand(page);
+  await assertMacAppSetupUsesTerminalCommand(
+    page,
+    "/control-center/install/does-not-exist",
+  );
 
   assert(
     (await page.getByText("Shopify theme link was not found").count()) === 0,
@@ -1626,7 +1633,9 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
     .getByRole("button", { name: "Install" });
   await installButton.waitFor({ timeout: 10_000 });
   await installButton.click();
-  await page.getByText("Install failed").waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Install failed", { exact: true })
+    .waitFor({ timeout: 10_000 });
   await page.getByRole("button", { name: "Try again" }).waitFor({
     timeout: 10_000,
   });
@@ -1752,7 +1761,9 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
     .getByRole("button", { name: "Install" });
   await installButton.waitFor({ timeout: 10_000 });
   await installButton.click();
-  await page.getByText("Install failed").waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Install failed", { exact: true })
+    .waitFor({ timeout: 10_000 });
 
   await page.getByRole("button", { name: "Support" }).click();
   await page.getByRole("heading", { name: "Recent activity" }).waitFor({
@@ -3016,13 +3027,19 @@ async function assertNoCompanionInstallLink(page) {
   );
 }
 
-async function assertMacAppSetupUsesTerminalCommand(page) {
+async function assertMacAppSetupUsesTerminalCommand(page, expectedLocalPath) {
   await page.getByRole("tab", { name: "Manual setup" }).click();
   const command = (await page.locator("code").textContent()) || "";
   assert(
     command.includes("install-control-center-companion.sh"),
     `Terminal command should install through the hosted script, got ${command}`,
   );
+  if (expectedLocalPath) {
+    assert(
+      command.includes(`--control-center-path '${expectedLocalPath}'`),
+      `Terminal command should preserve the local Control Center path, got ${command}`,
+    );
+  }
   assert(
     !command.includes("--terminal-session"),
     `Terminal command should use the default Mac App mode, got ${command}`,
@@ -3047,6 +3064,12 @@ async function assertMacAppSetupUsesTerminalCommand(page) {
     prompt.includes("connect VibeTV") && prompt.includes("latest firmware"),
     "agent setup prompt should say the terminal command connects VibeTV and updates firmware",
   );
+  if (expectedLocalPath) {
+    assert(
+      prompt.includes(`http://127.0.0.1:47832${expectedLocalPath}`),
+      `agent setup prompt should preserve the local Control Center path, got ${prompt}`,
+    );
+  }
   assert(
     !prompt.includes("LaunchAgent"),
     "agent setup prompt should not ask for LaunchAgent setup",
