@@ -26,6 +26,7 @@ REPO="${VIBETV_COMPANION_REPO:-$DEFAULT_REPO}"
 RELEASE_VERSION="${VIBETV_COMPANION_VERSION:-}"
 ADDR="${VIBETV_COMPANION_ADDR:-127.0.0.1:47832}"
 DEV_ORIGIN="${VIBETV_COMPANION_DEV_ORIGIN:-}"
+SOURCE_REF="${VIBETV_COMPANION_SOURCE_REF:-}"
 TARGET="${VIBETV_COMPANION_TARGET:-}"
 TARGET_EXPLICIT=0
 if [[ -n "${VIBETV_COMPANION_TARGET:-}" ]]; then
@@ -48,7 +49,7 @@ RELEASE_TAG=""
 usage() {
   cat <<'EOF'
 Usage:
-  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://<device-ip>] [--control-center-path /control-center] [--skip-device-setup]
+  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://<device-ip>] [--source-ref <commit>] [--control-center-path /control-center] [--skip-device-setup]
   install-control-center-companion.sh --restart
   install-control-center-companion.sh --uninstall
 
@@ -126,6 +127,29 @@ normalize_control_center_path() {
   esac
 }
 
+normalize_source_ref() {
+  local ref="$1"
+  ref="${ref#refs/heads/}"
+  if [[ -z "$ref" ]]; then
+    die "source ref cannot be empty"
+  fi
+  if [[ "$ref" == /* || "$ref" == *".."* || "$ref" == *"//"* || ! "$ref" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+    die "invalid source ref: $ref"
+  fi
+  printf '%s\n' "$ref"
+}
+
+source_build_version() {
+  local ref="$1"
+  ref="${ref//\//-}"
+  printf 'preview-%s\n' "${ref:0:24}"
+}
+
+json_text_field() {
+  local field="$1"
+  sed -n "s/.*\"${field}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
+}
+
 fetch_latest_release_tag() {
   local response tag
   response="$(
@@ -140,6 +164,26 @@ fetch_latest_release_tag() {
     die "could not determine latest release tag for ${REPO}"
   fi
   printf '%s\n' "$tag"
+}
+
+fetch_dev_source_ref() {
+  [[ -n "$DEV_ORIGIN" ]] || return 1
+
+  local metadata_url response source_ref repo
+  metadata_url="${DEV_ORIGIN%/}/api/deployment"
+  response="$(
+    curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 30 \
+      -H "Accept: application/json" \
+      "$metadata_url"
+  )" || return 1
+
+  source_ref="$(printf '%s' "$response" | json_text_field "sourceRef")"
+  repo="$(printf '%s' "$response" | json_text_field "repo")"
+  if [[ -n "$repo" && "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+    REPO="$repo"
+  fi
+  [[ -n "$source_ref" ]] || return 1
+  normalize_source_ref "$source_ref"
 }
 
 download_file() {
@@ -162,6 +206,42 @@ verify_checksum() {
   if [[ "$actual" != "$expected" ]]; then
     die "checksum mismatch for ${DOWNLOAD_BIN##*/}"
   fi
+}
+
+build_source_binary() {
+  require_cmd_for go "build the Preview Mac App from source" "install Go, then rerun this Preview setup command."
+  require_cmd_for npm "build the local Control Center from source" "install Node.js, then rerun this Preview setup command."
+  require_cmd_for tar "unpack the Preview source archive" "use a standard macOS Terminal, then rerun this Preview setup command."
+  require_cmd_for date "stamp the Preview Mac App build" "use a standard macOS Terminal, then rerun this Preview setup command."
+
+  local source_archive source_dir short_ref build_date
+  source_archive="${TMPDIR_INSTALL}/source-${SOURCE_REF//\//-}.tar.gz"
+  source_dir="${TMPDIR_INSTALL}/source"
+  short_ref="${SOURCE_REF:0:12}"
+  build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  log "vibetv: source=${SOURCE_REF}"
+  download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/archive/${SOURCE_REF}.tar.gz" "$source_archive"
+  mkdir -p "$source_dir"
+  tar -xzf "$source_archive" -C "$source_dir" --strip-components 1
+
+  (
+    cd "$source_dir/apps/control-center"
+    npm ci
+    npm run build:local
+  )
+  rm -rf "$source_dir/companion/internal/companionapi/controlcenter_static"
+  mkdir -p "$source_dir/companion/internal/companionapi/controlcenter_static"
+  cp -R "$source_dir/apps/control-center/out-local/." "$source_dir/companion/internal/companionapi/controlcenter_static/"
+
+  (
+    cd "$source_dir/companion"
+    GOOS=darwin GOARCH="${BINARY_ARCH}" CGO_ENABLED=0 \
+      go build \
+      -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${RELEASE_VERSION} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${SOURCE_REF} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Date=${build_date}" \
+      -o "$DOWNLOAD_BIN" ./cmd/codexbar-display
+  )
+  chmod 755 "$DOWNLOAD_BIN"
 }
 
 xml_escape() {
@@ -282,9 +362,20 @@ control_center_url() {
   printf 'http://%s%s\n' "$ADDR" "$CONTROL_CENTER_PATH"
 }
 
+verify_control_center_available() {
+  local url status
+  url="$(control_center_url)"
+  status="$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true)"
+  if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then
+    return 0
+  fi
+  die "Local Control Center did not answer at ${url} (HTTP ${status:-000}). Rerun setup from the latest VibeTV setup page."
+}
+
 open_control_center() {
   local url
   url="$(control_center_url)"
+  verify_control_center_available
   if [[ "$OPEN_CONTROL_CENTER" != "1" ]]; then
     log "vibetv: Control Center is ready at ${url}"
     return 0
@@ -670,6 +761,15 @@ parse_args() {
         DEV_ORIGIN="${1#*=}"
         shift
         ;;
+      --source-ref)
+        [[ $# -ge 2 ]] || die "--source-ref requires a value"
+        SOURCE_REF="$(normalize_source_ref "$2")"
+        shift 2
+        ;;
+      --source-ref=*)
+        SOURCE_REF="$(normalize_source_ref "${1#*=}")"
+        shift
+        ;;
       --control-center-path)
         [[ $# -ge 2 ]] || die "--control-center-path requires a value"
         CONTROL_CENTER_PATH="$(normalize_control_center_path "$2")"
@@ -724,6 +824,9 @@ parse_args() {
 main() {
   parse_args "$@"
   CONTROL_CENTER_PATH="$(normalize_control_center_path "$CONTROL_CENTER_PATH")"
+  if [[ -n "$SOURCE_REF" ]]; then
+    SOURCE_REF="$(normalize_source_ref "$SOURCE_REF")"
+  fi
 
   require_cmd_for uname "detect your Mac CPU architecture" "use a standard macOS Terminal, then rerun the installer."
 
@@ -752,7 +855,15 @@ main() {
 
   detect_arch
 
-  if [[ -z "$RELEASE_VERSION" ]]; then
+  if [[ -n "$DEV_ORIGIN" && -z "$RELEASE_VERSION" && -z "$SOURCE_REF" ]]; then
+    SOURCE_REF="$(fetch_dev_source_ref)" \
+      || die "Preview build metadata was not available from ${DEV_ORIGIN}. Rerun setup from the latest Preview, or pass --source-ref <commit>."
+  fi
+
+  if [[ -n "$SOURCE_REF" && -z "$RELEASE_VERSION" ]]; then
+    RELEASE_VERSION="$(source_build_version "$SOURCE_REF")"
+    RELEASE_TAG="$SOURCE_REF"
+  elif [[ -z "$RELEASE_VERSION" ]]; then
     RELEASE_TAG="$(fetch_latest_release_tag)"
     RELEASE_VERSION="$(normalize_version "$RELEASE_TAG")"
   else
@@ -766,14 +877,22 @@ main() {
   CHECKSUMS_FILE="${TMPDIR_INSTALL}/checksums-v${RELEASE_VERSION}.txt"
 
   log "vibetv: repo=${REPO}"
-  log "vibetv: release=${RELEASE_TAG}"
+  if [[ -n "$SOURCE_REF" ]]; then
+    log "vibetv: build=${RELEASE_VERSION}"
+  else
+    log "vibetv: release=${RELEASE_TAG}"
+  fi
   log "vibetv: arch=${ARCH}"
 
-  download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/releases/download/${RELEASE_TAG}/${DOWNLOAD_BIN##*/}" "$DOWNLOAD_BIN"
-  chmod 755 "$DOWNLOAD_BIN"
+  if [[ -n "$SOURCE_REF" ]]; then
+    build_source_binary
+  else
+    download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/releases/download/${RELEASE_TAG}/${DOWNLOAD_BIN##*/}" "$DOWNLOAD_BIN"
+    chmod 755 "$DOWNLOAD_BIN"
 
-  download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/releases/download/${RELEASE_TAG}/checksums-v${RELEASE_VERSION}.txt" "$CHECKSUMS_FILE"
-  verify_checksum
+    download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/releases/download/${RELEASE_TAG}/checksums-v${RELEASE_VERSION}.txt" "$CHECKSUMS_FILE"
+    verify_checksum
+  fi
 
   install_binary
   restart_service

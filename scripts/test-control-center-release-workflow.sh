@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKFLOW="${ROOT}/.github/workflows/release.yml"
 LOCAL_INSTALLER="${ROOT}/scripts/install-control-center-companion.sh"
+RELEASE_INSTALLER="${ROOT}/scripts/install-control-center-companion-release.sh"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -46,12 +47,14 @@ installer_line_number() {
 main() {
   [[ -f "$WORKFLOW" ]] || die "release workflow is missing"
   [[ -f "$LOCAL_INSTALLER" ]] || die "local Control Center installer is missing"
+  [[ -f "$RELEASE_INSTALLER" ]] || die "release Control Center installer is missing"
 
   local release_job release_count checksum_line release_line
-  local local_installer local_installer_build_line local_installer_go_build_line
+  local local_installer release_installer local_installer_build_line local_installer_go_build_line
   local local_static_builder
   release_job="$(job_block "build-and-release")"
   local_installer="$(cat "$LOCAL_INSTALLER")"
+  release_installer="$(cat "$RELEASE_INSTALLER")"
   local_static_builder="$(cat "$ROOT/apps/control-center/scripts/build-local-static.mjs")"
 
   assert_contains "$release_job" "Build release checksums" \
@@ -116,6 +119,14 @@ main() {
     "local static Control Center must resolve theme packs from the local Companion"
   assert_contains "$local_static_builder" "dist\", \"theme-packs" \
     "local static Control Center must embed built theme-pack downloads"
+  assert_contains "$release_installer" "fetch_dev_source_ref" \
+    "Preview setup must discover the deployed commit instead of installing the latest release"
+  assert_contains "$release_installer" "build_source_binary" \
+    "Preview setup must build the Mac App from the deployed source ref"
+  assert_contains "$release_installer" "/api/deployment" \
+    "Preview setup must read deployment metadata from the hosted app"
+  assert_contains "$release_installer" "verify_control_center_available" \
+    "installer must verify the local Control Center before opening it"
 
   printf 'control-center release workflow test passed\n'
 }
