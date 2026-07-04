@@ -13,6 +13,23 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: local Mac App service lifecycle, Display-Worker restart
+  behavior, installer service verification, support log paths, and stale
+  `coding` activity fallback.
+- Customer rule: customers should always be able to open the local Control
+  Center while device/display problems are shown as status or retried in the
+  background. Installer output stays simple and customer-facing; technical
+  daemon/API details stay in support logs.
+- Simplifications accepted: no new visible Control Center screens, tabs,
+  buttons, or setup decisions were added. The existing Mac App setup path now
+  verifies that the local Control Center stays available before opening it,
+  while display sending is isolated from the HTTP Control Center.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  `git diff --check`, targeted Companion Go tests, release-workflow test, daemon
+  installer tests, and CI jobs for Companion, Control Center, firmware, theme
+  pack, and Theme Studio passed locally or on the PR before this checkpoint
+  update; the deterministic UI review gate required this note.
+
 - Reviewed scope: hosted Setup-only entrypoint, local Control Center handoff,
   Mac App setup command, and local exported Control Center routes.
 - Customer rule: `app.vibetv.shop`/Vercel Preview remains only the setup
