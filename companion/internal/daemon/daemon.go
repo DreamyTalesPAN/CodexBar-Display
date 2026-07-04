@@ -419,21 +419,24 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		if err != nil {
 			runtimeErr := asRuntimeError(err)
 			if runtimeErr.Kind == runtimeErrorCycleTimeout {
-				deps.logf("fatal cycle timeout: code=%s op=%s timeout=%s action=exit-for-launchd-restart\n",
+				waitFor = backoff.Next()
+				deps.logf("cycle timeout: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
 					runtimeErr.Op,
-					cycleTimeout,
+					waitFor,
+					runtimeErr.RecoveryAction(),
+					err,
 				)
-				return runtimeErr
+			} else {
+				waitFor = backoff.Next()
+				deps.logf("cycle error: code=%s op=%s retry=%s recovery=%q err=%v\n",
+					runtimeErr.ErrorCode(),
+					runtimeErr.Op,
+					waitFor,
+					runtimeErr.RecoveryAction(),
+					err,
+				)
 			}
-			waitFor = backoff.Next()
-			deps.logf("cycle error: code=%s op=%s retry=%s recovery=%q err=%v\n",
-				runtimeErr.ErrorCode(),
-				runtimeErr.Op,
-				waitFor,
-				runtimeErr.RecoveryAction(),
-				err,
-			)
 		} else {
 			backoff.Reset()
 			uptime := cycleStart.Sub(startedAt)

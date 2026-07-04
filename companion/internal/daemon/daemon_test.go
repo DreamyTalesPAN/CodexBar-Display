@@ -2642,6 +2642,54 @@ func TestRunCycleWithTimeoutReturnsRuntimeCycleTimeout(t *testing.T) {
 	}
 }
 
+func TestRunDaemonLoopRetriesAfterCycleTimeout(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var logged strings.Builder
+	afterCalls := 0
+	cycleCalls := 0
+	err := runDaemonLoop(ctx, Options{Interval: time.Second}, runtimeDeps{
+		now: func() time.Time {
+			return time.Date(2026, 2, 23, 12, 0, cycleCalls, 0, time.UTC)
+		},
+		after: func(time.Duration) <-chan time.Time {
+			afterCalls++
+			cancel()
+			return make(chan time.Time)
+		},
+		logf: func(format string, args ...any) {
+			logged.WriteString(fmt.Sprintf(format, args...))
+		},
+	}, func(context.Context) error {
+		cycleCalls++
+		return &RuntimeError{
+			Kind: runtimeErrorCycleTimeout,
+			Op:   "run-cycle-timeout",
+			Err:  errors.New("cycle exceeded timeout"),
+		}
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected loop to stay alive until context cancel, got %v", err)
+	}
+	if cycleCalls != 1 {
+		t.Fatalf("expected one cycle before cancellation, got %d", cycleCalls)
+	}
+	if afterCalls != 1 {
+		t.Fatalf("expected retry wait after timeout, got %d", afterCalls)
+	}
+	log := logged.String()
+	if !strings.Contains(log, "cycle timeout:") {
+		t.Fatalf("expected recoverable timeout log, got %q", log)
+	}
+	if strings.Contains(log, "fatal") || strings.Contains(log, "exit-for-launchd-restart") {
+		t.Fatalf("timeout should not be logged as fatal, got %q", log)
+	}
+}
+
 func TestCycleRunTimeoutHonorsBounds(t *testing.T) {
 	prepareFastTestEnv(t)
 

@@ -125,7 +125,7 @@ func DefaultRecovery(code Code) string {
 	case RuntimeSerialWrite:
 		return "Check cable/device power; daemon will retry automatically."
 	case RuntimeCycleTimeout:
-		return "Daemon cycle timed out; restart daemon (LaunchAgent KeepAlive will auto-restart) and run `codexbar-display doctor` to verify USB serial health."
+		return "Daemon cycle timed out; Control Center stays online while the daemon retries. If persistent, run `codexbar-display doctor` to verify device health."
 	case RuntimeFrameEncode, RuntimeFrameTooLarge:
 		return "Inspect payload size and optional fields; reduce frame footprint."
 	case RuntimeCodexbarBinary:
