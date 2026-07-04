@@ -254,6 +254,68 @@ func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
 	}
 }
 
+func TestUsageHonorsCodexBarRemainingPreference(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "remaining")
+
+	collectedAt := time.Date(2026, 6, 26, 11, 59, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         collectedAt,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
+					Provider: "codex",
+					Frame: protocol.Frame{
+						Provider:  "codex",
+						Label:     "Codex",
+						Session:   28,
+						Weekly:    59,
+						ResetSec:  5400,
+						UsageMode: "used",
+					},
+					Meta: codexbar.ProviderUsageMeta{
+						Windows: []codexbar.UsageWindow{
+							{ID: "primary", Label: "Session", UsedPercent: 28, ResetSec: 5400},
+							{ID: "secondary", Label: "Weekly", UsedPercent: 59, ResetSec: 86400},
+							{ID: "extra", Label: "Extra", UsedPercent: 7},
+						},
+					},
+					CollectedAt: collectedAt,
+				},
+			},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.UsageMode != "remaining" {
+		t.Fatalf("expected remaining response mode, got %+v", got)
+	}
+	if len(got.Providers) != 1 {
+		t.Fatalf("expected one provider, got %+v", got.Providers)
+	}
+	provider := got.Providers[0]
+	if provider.UsageMode != "remaining" || provider.Session != 72 || provider.Weekly != 41 {
+		t.Fatalf("expected remaining provider values, got %+v", provider)
+	}
+	if len(provider.Windows) != 3 ||
+		provider.Windows[0].UsedPercent != 72 ||
+		provider.Windows[1].UsedPercent != 41 ||
+		provider.Windows[2].UsedPercent != 93 {
+		t.Fatalf("expected remaining window values, got %+v", provider.Windows)
+	}
+}
+
 func TestDisplayFrameLatestReturnsPersistedLastGoodFrame(t *testing.T) {
 	t.Setenv(displayStreamOutLogEnv, filepath.Join(t.TempDir(), "missing.log"))
 	server := newTestServer(t, runtimeconfig.Config{})
@@ -2464,6 +2526,7 @@ func TestSettingsValidatesAndForwardsBrightness(t *testing.T) {
 
 func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	t.Helper()
+	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "used")
 	server, err := New(Options{Home: t.TempDir()})
 	if err != nil {
 		t.Fatalf("new server: %v", err)

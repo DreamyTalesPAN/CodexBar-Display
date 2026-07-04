@@ -749,16 +749,10 @@ function buildFrameData(
       displayFrame?.provider ||
       provider?.id ||
       "",
-    session: previewUsagePercent(
-      displayFrame?.session ?? provider?.session,
-      sourceUsageMode,
-    ),
-    weekly: previewUsagePercent(
-      displayFrame?.weekly ?? provider?.weekly,
-      sourceUsageMode,
-    ),
+    session: clampPercent(displayFrame?.session ?? provider?.session),
+    weekly: clampPercent(displayFrame?.weekly ?? provider?.weekly),
     resetSecs: displayFrame?.resetSecs ?? provider?.resetSecs ?? 0,
-    usageMode: "remaining",
+    usageMode: sourceUsageMode,
     activity: displayFrame?.activity || provider?.activity || "idle",
     sessionTokens: displayFrame?.sessionTokens ?? provider?.sessionTokens ?? 0,
     weekTokens: displayFrame?.weekTokens ?? provider?.weekTokens ?? 0,
@@ -772,11 +766,6 @@ function buildFrameData(
       month: "2-digit",
     }).format(usableDate),
   };
-}
-
-function previewUsagePercent(value: number | undefined, sourceUsageMode: string): number {
-  const percent = clampPercent(value);
-  return sourceUsageMode === "remaining" ? percent : 100 - percent;
 }
 
 function frameUsageMode(

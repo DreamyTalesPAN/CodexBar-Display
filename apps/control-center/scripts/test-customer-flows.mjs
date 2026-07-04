@@ -1368,7 +1368,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
   await page
     .getByRole("img", {
-      name: /Rendered VibeTV theme synthwave showing Codex, 73% session remaining, 37% weekly remaining/,
+      name: /Rendered VibeTV theme synthwave showing Codex, 27% session used, 63% weekly used/,
     })
     .waitFor({ timeout: 10_000 });
   const renderedTheme = page.getByRole("img", {
@@ -1376,13 +1376,13 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   });
   await renderedTheme.getByText("USAGE").waitFor({ timeout: 10_000 });
   await renderedTheme
-    .getByText("SESSION remaining")
+    .getByText("SESSION used")
     .waitFor({ timeout: 10_000 });
   await renderedTheme
-    .getByText("WEEKLY remaining")
+    .getByText("WEEKLY used")
     .waitFor({ timeout: 10_000 });
-  await renderedTheme.getByText("73%").waitFor({ timeout: 10_000 });
-  await renderedTheme.getByText("37%").waitFor({ timeout: 10_000 });
+  await renderedTheme.getByText("27%").waitFor({ timeout: 10_000 });
+  await renderedTheme.getByText("63%").waitFor({ timeout: 10_000 });
   const previewFigure = page.locator("figure").filter({ has: renderedTheme });
   assert(
     (await previewFigure.locator('[data-testid="vibetv-case"]').count()) === 1,
@@ -1518,7 +1518,7 @@ async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
     await page.goto(appUrl, { waitUntil: "networkidle" });
     const renderedTheme = page.getByRole("img", {
       name: new RegExp(
-        `Rendered VibeTV theme ${theme.id} showing Codex, 73% session remaining, 37% weekly remaining`,
+        `Rendered VibeTV theme ${theme.id} showing Codex, 27% session used, 63% weekly used`,
       ),
     });
     await renderedTheme.waitFor({ timeout: 10_000 });
@@ -2685,19 +2685,17 @@ function displayFrameFromUsageResponse(usageResponse) {
   if (!provider) {
     return null;
   }
-  const usageMode = provider.usageMode || usage.usageMode;
-  const remaining = usageMode === "remaining";
+  const usageMode =
+    provider.usageMode === "remaining" || usage.usageMode === "remaining"
+      ? "remaining"
+      : "used";
   return {
     provider: provider.id,
     label: provider.label || provider.id,
-    session: remaining
-      ? clampPercent(provider.session)
-      : invertPercent(provider.session),
-    weekly: remaining
-      ? clampPercent(provider.weekly)
-      : invertPercent(provider.weekly),
+    session: clampPercent(provider.session),
+    weekly: clampPercent(provider.weekly),
     resetSecs: nonNegativeInteger(provider.resetSecs),
-    usageMode: "remaining",
+    usageMode,
     activity: provider.activity || "idle",
     sessionTokens: nonNegativeInteger(provider.sessionTokens),
     weekTokens: nonNegativeInteger(provider.weekTokens),
@@ -2709,10 +2707,6 @@ function clampPercent(value) {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.max(0, Math.min(100, Math.round(value)))
     : 0;
-}
-
-function invertPercent(value) {
-  return 100 - clampPercent(value);
 }
 
 function nonNegativeInteger(value) {

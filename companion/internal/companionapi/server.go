@@ -790,6 +790,10 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
+	showUsed := codexbar.UsageBarsShowUsed()
+	writeUsage := func(resp usageResponse) {
+		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
+	}
 	var persisted usageResponse
 	havePersisted := false
 	if s.loadUsage != nil {
@@ -797,7 +801,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			persisted = usageResponseFromPersisted(now, usage)
 			havePersisted = len(persisted.Providers) > 0
 			if usageResponseHasFreshProvider(persisted) {
-				writeJSON(w, http.StatusOK, persisted)
+				writeUsage(persisted)
 				return
 			}
 		}
@@ -805,10 +809,10 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 
 	if s.fetchUsage == nil {
 		if havePersisted {
-			writeJSON(w, http.StatusOK, persisted)
+			writeUsage(persisted)
 			return
 		}
-		writeJSON(w, http.StatusOK, emptyUsageResponse(now, "codexbar-display"))
+		writeUsage(emptyUsageResponse(now, "codexbar-display"))
 		return
 	}
 
@@ -817,7 +821,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	providers, err := s.fetchUsage(ctx)
 	if err != nil {
 		if havePersisted {
-			writeJSON(w, http.StatusOK, persisted)
+			writeUsage(persisted)
 			return
 		}
 		writeError(
@@ -831,10 +835,10 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := usageResponseFromParsed(now, providers)
 	if len(resp.Providers) == 0 && havePersisted {
-		writeJSON(w, http.StatusOK, persisted)
+		writeUsage(persisted)
 		return
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeUsage(resp)
 }
 
 func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request) {
@@ -1577,6 +1581,35 @@ func usageModeForProviders(providers []usageProviderInfo) string {
 		}
 	}
 	return "used"
+}
+
+func usageResponseForDisplayMode(resp usageResponse, showUsed bool) usageResponse {
+	targetMode := "used"
+	if !showUsed {
+		targetMode = "remaining"
+	}
+	for i := range resp.Providers {
+		resp.Providers[i] = usageProviderForDisplayMode(resp.Providers[i], targetMode)
+	}
+	if len(resp.Providers) == 0 {
+		resp.UsageMode = targetMode
+	} else {
+		resp.UsageMode = usageModeForProviders(resp.Providers)
+	}
+	return resp
+}
+
+func usageProviderForDisplayMode(provider usageProviderInfo, targetMode string) usageProviderInfo {
+	currentMode := usageModeOrDefault(provider.UsageMode)
+	if currentMode != targetMode {
+		provider.Session = 100 - clampUsagePercent(provider.Session)
+		provider.Weekly = 100 - clampUsagePercent(provider.Weekly)
+		for i := range provider.Windows {
+			provider.Windows[i].UsedPercent = 100 - clampUsagePercent(provider.Windows[i].UsedPercent)
+		}
+	}
+	provider.UsageMode = usageModeOrDefault(targetMode)
+	return provider
 }
 
 func clampUsagePercent(value int) int {

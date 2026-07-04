@@ -669,6 +669,45 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ],
   );
 
+  const syncLocalStatus = useCallback(async () => {
+    try {
+      const payload = await runCompanion<{
+        companion?: CompanionInfo;
+        device?: DeviceInfo;
+      }>("/v1/status", undefined, { preserveLastError: true });
+      setCompanionStatus("online");
+      setCompanionInfo(payload.companion || null);
+      setThemeInstallEnabled(
+        Boolean(payload.companion?.features?.themeInstallEnabled),
+      );
+      if (payload.device?.target) {
+        setDevice(payload.device);
+        setDeviceTarget(payload.device.target);
+        rememberDeviceTarget(payload.device.target);
+        setDeviceState(
+          payload.device.paired
+            ? "paired"
+            : payload.device.connected
+              ? "online"
+              : "unknown",
+        );
+      } else {
+        setDevice(null);
+        setDeviceState("unknown");
+      }
+    } catch (error) {
+      const normalized = normalizeCaughtError(
+        error,
+        "Mac App needs attention.",
+      );
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else {
+        markCompanionUnavailable();
+      }
+    }
+  }, [markCompanionAccessBlocked, markCompanionUnavailable, runCompanion]);
+
   const repairConnection = useCallback(
     async (options?: {
       targetOverride?: string;
@@ -1773,6 +1812,39 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? "overview"
       : "setup"
     : activeTab;
+
+  useEffect(() => {
+    if (
+      hostedSetup ||
+      setupPreviewStep ||
+      companionStatus !== "online" ||
+      (activeShellTab !== "usage" && activeShellTab !== "overview")
+    ) {
+      return;
+    }
+
+    const refreshStatus = () => {
+      if (document.visibilityState === "hidden" || busyAction) {
+        return;
+      }
+      void syncLocalStatus();
+    };
+
+    const initialTimer = window.setTimeout(refreshStatus, 0);
+    const timer = window.setInterval(refreshStatus, 5000);
+
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
+  }, [
+    activeShellTab,
+    busyAction,
+    companionStatus,
+    hostedSetup,
+    setupPreviewStep,
+    syncLocalStatus,
+  ]);
 
   useEffect(() => {
     if (
