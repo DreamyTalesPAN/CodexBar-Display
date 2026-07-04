@@ -34,13 +34,8 @@ export function shouldUseNextLocalCompanionProxy(): boolean {
   return isLoopbackHostname(window.location.hostname) && !isLocalCompanionOrigin();
 }
 
-export function localControlCenterUrl(themeId?: string): string {
-  const base = `${companionOrigin()}/control-center`;
-  const normalizedThemeId = themeId?.trim();
-  if (!normalizedThemeId) {
-    return base;
-  }
-  return `${base}/install/${encodeURIComponent(normalizedThemeId)}`;
+export function localControlCenterUrl(): string {
+  return `${companionOrigin()}/control-center`;
 }
 
 export function shouldRedirectToLocalControlCenter(): boolean {

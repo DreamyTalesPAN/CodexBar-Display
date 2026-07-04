@@ -13,23 +13,20 @@ To reset the gate:
 
 ## Last Review Notes
 
-- Reviewed scope: hosted Setup-only entrypoint, local Control Center handoff
-  path, Mac App setup command path preservation, and local exported
-  `/control-center/install/<theme>` deep links.
+- Reviewed scope: hosted Setup-only entrypoint, local Control Center handoff,
+  Mac App setup command, and local exported Control Center routes.
 - Customer rule: `app.vibetv.shop`/Vercel Preview remains only the setup
   entrypoint. It must not expose Overview, Usage, Theme Library, Settings,
   Updates, or Support on the hosted origin; after setup it opens the local
-  Control Center on this Mac, preserving any requested local path only as a
-  handoff target.
+  Control Center Overview on this Mac.
 - Simplifications accepted: no hosted management UI, tabs, troubleshooting
   sections, or customer decisions were added. The visible hosted flow still has
-  one setup path; the Theme ID is carried only into the local URL and installer
-  `--control-center-path`.
+  one setup path; theme-specific links do not get a special hosted handoff.
 - Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
-  Vercel Preview `/` and `/install/synthwave` show the setup launcher with no
+  Vercel Preview root and theme install routes show the setup launcher with no
   old app tabs; `Open local Control Center` navigates to
-  `127.0.0.1:47832/control-center/install/synthwave`; `lint`,
-  `test:customer-smoke`, `test:customer-flows`, `build:local`, `go test ./...`
+  `127.0.0.1:47832/control-center`; `lint`, `test:customer-smoke`,
+  `test:customer-flows`, `build:local`, `go test ./...`
   in `companion`, `check-theme-pack-dist`, release-workflow test, shell syntax
   checks, and `git diff --check` passed locally before this checkpoint update.
 
@@ -85,7 +82,7 @@ To reset the gate:
   same-origin once opened.
 - Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
   desktop/mobile Vercel Preview screenshots show the branded setup launcher with
-  no old app tabs; `/install/synthwave` preserves theme context; a local PR
+  no old app tabs; theme install routes stay in hosted setup; a local PR
   Companion on `127.0.0.1:47832` opens `/control-center`; `lint`, `next build`,
   `test:customer-smoke`, `test:customer-flows`, `build:local`, and PR checks
   passed before this checkpoint update except for the deterministic checkpoint

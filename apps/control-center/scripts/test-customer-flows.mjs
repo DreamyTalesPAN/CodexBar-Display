@@ -515,10 +515,7 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   await page
     .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
-  await assertMacAppSetupUsesTerminalCommand(
-    page,
-    "/control-center/install/does-not-exist",
-  );
+  await assertMacAppSetupUsesTerminalCommand(page);
 
   assert(
     (await page.getByText("Shopify theme link was not found").count()) === 0,
@@ -3027,19 +3024,21 @@ async function assertNoCompanionInstallLink(page) {
   );
 }
 
-async function assertMacAppSetupUsesTerminalCommand(page, expectedLocalPath) {
+async function assertMacAppSetupUsesTerminalCommand(page) {
   await page.getByRole("tab", { name: "Manual setup" }).click();
   const command = (await page.locator("code").textContent()) || "";
   assert(
     command.includes("install-control-center-companion.sh"),
     `Terminal command should install through the hosted script, got ${command}`,
   );
-  if (expectedLocalPath) {
-    assert(
-      command.includes(`--control-center-path '${expectedLocalPath}'`),
-      `Terminal command should preserve the local Control Center path, got ${command}`,
-    );
-  }
+  assert(
+    !command.includes("--control-center-path"),
+    `Terminal command should open the local Overview, got ${command}`,
+  );
+  assert(
+    !command.includes("/control-center/install/"),
+    `Terminal command should not open a theme-specific local route, got ${command}`,
+  );
   assert(
     !command.includes("--terminal-session"),
     `Terminal command should use the default Mac App mode, got ${command}`,
@@ -3064,12 +3063,14 @@ async function assertMacAppSetupUsesTerminalCommand(page, expectedLocalPath) {
     prompt.includes("connect VibeTV") && prompt.includes("latest firmware"),
     "agent setup prompt should say the terminal command connects VibeTV and updates firmware",
   );
-  if (expectedLocalPath) {
-    assert(
-      prompt.includes(`http://127.0.0.1:47832${expectedLocalPath}`),
-      `agent setup prompt should preserve the local Control Center path, got ${prompt}`,
-    );
-  }
+  assert(
+    prompt.includes("http://127.0.0.1:47832/control-center"),
+    `agent setup prompt should open the local Overview, got ${prompt}`,
+  );
+  assert(
+    !prompt.includes("/control-center/install/"),
+    `agent setup prompt should not open a theme-specific local route, got ${prompt}`,
+  );
   assert(
     !prompt.includes("LaunchAgent"),
     "agent setup prompt should not ask for LaunchAgent setup",

@@ -580,7 +580,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
         if (shouldRedirectToLocalControlCenter()) {
-          window.location.assign(localControlCenterUrl(initialThemeId));
+          window.location.assign(localControlCenterUrl());
           return;
         }
         if (!quiet) {
@@ -661,7 +661,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [
       addEvent,
       companionStatus,
-      initialThemeId,
       loadSettings,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
@@ -1751,8 +1750,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const usageAvailable = companionStatus === "online";
   const openLocalControlCenter = useCallback(() => {
-    window.location.assign(localControlCenterUrl(initialThemeId));
-  }, [initialThemeId]);
+    window.location.assign(localControlCenterUrl());
+  }, []);
 
   useEffect(() => {
     if (!setupComplete || didRouteAfterSetupComplete.current) {
@@ -1811,7 +1810,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       busyAction={busyAction}
       hostedMode={hostedSetup}
       previewStep={setupPreviewStep}
-      requestedThemeId={initialThemeId}
       showIntro={showIntro}
       setupComplete={setupComplete}
       onCheckCompanion={hostedSetup ? openLocalControlCenter : checkCompanion}

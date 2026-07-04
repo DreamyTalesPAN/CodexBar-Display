@@ -91,7 +91,6 @@ type SetupScreenProps = {
   onResetSetup?: () => void;
   hostedMode?: boolean;
   previewStep?: "mac-app" | null;
-  requestedThemeId?: string;
   showIntro?: boolean;
   setupComplete: boolean;
 };
@@ -115,7 +114,6 @@ export function SetupScreen({
   onResetSetup,
   hostedMode = false,
   previewStep,
-  requestedThemeId,
   showIntro = true,
   setupComplete,
 }: SetupScreenProps) {
@@ -143,13 +141,8 @@ export function SetupScreen({
     busyAction === "discover" ||
     busyAction === "repair";
   const controlCenterOrigin = currentControlCenterOrigin();
-  const localControlCenterPath = requestedThemeId
-    ? `/control-center/install/${encodeURIComponent(requestedThemeId)}`
-    : "/control-center";
-  const terminalCommand = buildMacAppTerminalCommand(
-    controlCenterOrigin,
-    localControlCenterPath,
-  );
+  const localControlCenterPath = "/control-center";
+  const terminalCommand = buildMacAppTerminalCommand(controlCenterOrigin);
   const setupInstructionsCopied = agentPromptCopied || terminalCommandCopied;
   const showControlCenterLauncher =
     showIntro &&
