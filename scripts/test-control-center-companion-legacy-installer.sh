@@ -111,6 +111,12 @@ repair_not_found() {
 }
 
 case "$*" in
+  *"192.168.178.72/hello"*)
+    if [[ -n "${FAKE_HELLO_FAIL:-}" ]]; then
+      exit 7
+    fi
+    respond '{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"9.9.9","capabilities":{"transport":{"active":"wifi"}}}'
+    ;;
   *"/control-center"*)
     respond '<html><body>VibeTV Control Center</body></html>'
     ;;
@@ -120,7 +126,8 @@ case "$*" in
       respond '{"ok":true,"companion":{"status":"ready","version":"9.9.8","update":{"status":"available","release":"v9.9.9"},"features":{"themeInstallEnabled":true}},"device":{"target":"http://192.168.178.72","connected":true,"paired":true}}'
       exit 0
     fi
-    if [[ -n "${FAKE_STATUS_DEVICE_DISCONNECTED:-}" ]]; then
+    fallback_pid="${HOME}/Library/Application Support/codexbar-display/run/companion-api.pid"
+    if [[ -n "${FAKE_STATUS_DEVICE_DISCONNECTED:-}" && ! -f "$fallback_pid" ]]; then
       respond '{"ok":true,"companion":{"status":"ready","version":"9.9.9","update":{"status":"available","release":"v9.9.9"},"features":{"themeInstallEnabled":true}},"device":{"target":"http://192.168.178.72","connected":false,"paired":true}}'
       exit 0
     fi
@@ -257,11 +264,13 @@ run_installer() {
       FAKE_REPAIR_ALWAYS_FAIL="${FAKE_REPAIR_ALWAYS_FAIL:-}" \
       FAKE_REPAIR_FAIL_COUNT="${FAKE_REPAIR_FAIL_COUNT:-}" \
       FAKE_REPAIR_COUNTER="${FAKE_REPAIR_COUNTER:-}" \
+      FAKE_HELLO_FAIL="${FAKE_HELLO_FAIL:-}" \
       FAKE_STATUS_OLD_ONCE="${FAKE_STATUS_OLD_ONCE:-}" \
       FAKE_STATUS_DEVICE_DISCONNECTED="${FAKE_STATUS_DEVICE_DISCONNECTED:-}" \
       VIBETV_COMPANION_REPAIR_ATTEMPTS="${VIBETV_COMPANION_REPAIR_ATTEMPTS:-3}" \
       VIBETV_COMPANION_REPAIR_RETRY_DELAY="${VIBETV_COMPANION_REPAIR_RETRY_DELAY:-0}" \
       VIBETV_COMPANION_STABLE_RETRY_DELAY="${VIBETV_COMPANION_STABLE_RETRY_DELAY:-0}" \
+      VIBETV_DISABLE_SCREEN_FALLBACK=1 \
       VIBETV_COMPANION_GLOBAL_PLIST="${root}/global/Library/LaunchAgents/com.codexbar-display.companion-api.plist" \
       "$INSTALLER" "$@" \
       2>&1
@@ -278,7 +287,7 @@ support_log() {
 }
 
 run_restart_updates_daemon_launchagent() {
-  local root output legacy_plist daemon_plist daemon_plist_body launch_log setup_log
+  local root output legacy_plist daemon_plist daemon_plist_body launch_log setup_log app_info
   root="${TMP_WORK_DIR}/restart"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -294,6 +303,7 @@ run_restart_updates_daemon_launchagent() {
   legacy_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
   daemon_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist"
   daemon_plist_body="$(cat "$daemon_plist")"
+  app_info="${root}/home/Library/Application Support/codexbar-display/VibeTV Control Center.app/Contents/Info.plist"
   launch_log="$(cat "${root}/launchctl.log")"
   setup_log="$(support_log "$root")"
 
@@ -306,12 +316,14 @@ run_restart_updates_daemon_launchagent() {
   [[ ! -f "$legacy_plist" ]] || die "legacy LaunchAgent plist should be removed"
   [[ -f "$daemon_plist" ]] || die "daemon LaunchAgent plist should exist"
   assert_contains "$daemon_plist_body" "<string>daemon</string>"
+  assert_contains "$daemon_plist_body" "VibeTV Control Center.app/Contents/MacOS/codexbar-display"
   assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
   assert_contains "$daemon_plist_body" "<string>127.0.0.1:47832</string>"
   assert_contains "$daemon_plist_body" "<key>ThrottleInterval</key>"
   assert_contains "$daemon_plist_body" "${root}/home/Library/Application Support/codexbar-display/logs/daemon.err.log"
   assert_not_contains "$daemon_plist_body" "<string></string>"
   assert_not_contains "$daemon_plist_body" "<string>api</string>"
+  assert_contains "$(cat "$app_info")" "NSLocalNetworkUsageDescription"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.daemon"
   assert_contains "$launch_log" "bootstrap gui/$(id -u) $daemon_plist"
@@ -319,7 +331,7 @@ run_restart_updates_daemon_launchagent() {
 }
 
 run_uninstall_stops_terminal_service_and_legacy_launchagent() {
-  local root output pid_file pid plist setup_log
+  local root output pid_file pid plist setup_log app_bundle
   root="${TMP_WORK_DIR}/uninstall"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -328,6 +340,7 @@ run_uninstall_stops_terminal_service_and_legacy_launchagent() {
   : > "${root}/api.log"
 
   pid_file="${root}/home/Library/Application Support/codexbar-display/run/companion-api.pid"
+  app_bundle="${root}/home/Library/Application Support/codexbar-display/VibeTV Control Center.app"
   plist="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
   sleep 60 &
   pid="$!"
@@ -343,13 +356,14 @@ run_uninstall_stops_terminal_service_and_legacy_launchagent() {
   assert_contains "$output" "Done. Local Control Center service stopped."
   assert_contains "$setup_log" "Mac setup service stopped"
   [[ ! -f "$pid_file" ]] || die "uninstall did not remove legacy API pid"
+  [[ ! -d "$app_bundle" ]] || die "uninstall did not remove app bundle"
   ! kill -0 "$pid" >/dev/null 2>&1 || die "uninstall did not stop legacy API process"
   [[ ! -f "$plist" ]] || die "uninstall did not remove legacy LaunchAgent plist"
   assert_contains "$(cat "${root}/launchctl.log")" "bootout"
 }
 
 run_install_writes_integrated_daemon_launchagent() {
-  local root output launch_log daemon_plist daemon_plist_body curl_log setup_log
+  local root output launch_log daemon_plist daemon_plist_body curl_log setup_log app_info
   root="${TMP_WORK_DIR}/install"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -367,6 +381,7 @@ run_install_writes_integrated_daemon_launchagent() {
   setup_log="$(support_log "$root")"
   daemon_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist"
   daemon_plist_body="$(cat "$daemon_plist")"
+  app_info="${root}/home/Library/Application Support/codexbar-display/VibeTV Control Center.app/Contents/Info.plist"
 
   assert_contains "$output" "Installing your local Control Center"
   assert_contains "$output" "[5/7] Finding VibeTV"
@@ -382,6 +397,7 @@ run_install_writes_integrated_daemon_launchagent() {
   assert_contains "$curl_log" '{"forcePair":true}'
   assert_contains "$(cat "${root}/api.log")" "install-update --target http://192.168.178.72 --confirm-live-update"
   assert_not_contains "$curl_log" "/v1/updates/install"
+  assert_contains "$daemon_plist_body" "VibeTV Control Center.app/Contents/MacOS/codexbar-display"
   assert_contains "$daemon_plist_body" "<string>daemon</string>"
   assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
   assert_contains "$daemon_plist_body" "<string>127.0.0.1:47832</string>"
@@ -391,6 +407,7 @@ run_install_writes_integrated_daemon_launchagent() {
   assert_contains "$daemon_plist_body" "${root}/home/Library/Application Support/codexbar-display/logs/daemon.err.log"
   assert_not_contains "$daemon_plist_body" "<string></string>"
   assert_not_contains "$daemon_plist_body" "<string>api</string>"
+  assert_contains "$(cat "$app_info")" "NSLocalNetworkUsageDescription"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.daemon"
   assert_contains "$launch_log" "bootstrap gui/$(id -u) $daemon_plist"
@@ -543,7 +560,7 @@ run_install_prints_repair_failure_details() {
   : > "${root}/api.log"
 
   set +e
-  output="$(FAKE_REPAIR_ALWAYS_FAIL=1 FAKE_STATUS_DEVICE_DISCONNECTED=1 run_installer "$root" --version 9.9.9 --terminal-session)"
+  output="$(FAKE_REPAIR_ALWAYS_FAIL=1 FAKE_STATUS_DEVICE_DISCONNECTED=1 FAKE_HELLO_FAIL=1 run_installer "$root" --version 9.9.9 --terminal-session)"
   status=$?
   set -e
   [[ "$status" != "0" ]] || die "expected install to fail when repair never succeeds"
@@ -561,6 +578,32 @@ run_install_prints_repair_failure_details() {
   assert_contains "$setup_log" "api code=device_not_found"
   assert_contains "$setup_log" "api detail=No VibeTV device was found."
   assert_contains "$setup_log" "api next step=Make sure VibeTV is powered on and run device discovery again."
+}
+
+run_install_uses_terminal_fallback_when_launchagent_lacks_local_network() {
+  local root output repair_calls setup_log curl_log pid_file
+  root="${TMP_WORK_DIR}/terminal-fallback"
+  write_fake_commands "${root}/fake-bin"
+  prepare_home "${root}/home"
+  : > "${root}/launchctl.log"
+  : > "${root}/curl.log"
+  : > "${root}/api.log"
+
+  output="$(FAKE_REPAIR_FAIL_COUNT=3 FAKE_REPAIR_COUNTER="${root}/repair-counter" FAKE_STATUS_DEVICE_DISCONNECTED=1 run_installer "$root" --version 9.9.9 --terminal-session)" || {
+    printf '%s\n' "$output" >&2
+    die "expected install to pass with terminal fallback"
+  }
+
+  curl_log="$(cat "${root}/curl.log")"
+  setup_log="$(support_log "$root")"
+  pid_file="${root}/home/Library/Application Support/codexbar-display/run/companion-api.pid"
+  repair_calls="$(grep -c "/v1/device/repair" "${root}/curl.log")"
+  [[ "$repair_calls" == "4" ]] || die "expected four repair calls, got ${repair_calls}"
+  [[ -f "$pid_file" ]] || die "expected terminal fallback pid file"
+  assert_contains "$curl_log" "192.168.178.72/hello"
+  assert_contains "$setup_log" "LaunchAgent could not reach VibeTV; using Terminal-seeded Mac App fallback"
+  assert_contains "$setup_log" "terminal-seeded Mac App fallback started"
+  assert_contains "$setup_log" "setup verified; Mac App ready, VibeTV connected, firmware 9.9.9"
 }
 
 run_install_restarts_when_old_api_version_answers() {
@@ -591,6 +634,7 @@ run_install_retries_transient_repair_failure
 run_install_waits_for_slow_repair_recovery
 run_install_uses_connected_status_after_repair_timeout
 run_install_prints_repair_failure_details
+run_install_uses_terminal_fallback_when_launchagent_lacks_local_network
 run_install_restarts_when_old_api_version_answers
 run_restart_updates_daemon_launchagent
 run_uninstall_stops_terminal_service_and_legacy_launchagent

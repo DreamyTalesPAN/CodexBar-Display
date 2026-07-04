@@ -8,8 +8,15 @@ INSTALL_NAME="codexbar-display"
 APP_SUPPORT_DIR="${HOME}/Library/Application Support/codexbar-display"
 BIN_DIR="${APP_SUPPORT_DIR}/bin"
 BIN_PATH="${BIN_DIR}/${INSTALL_NAME}"
+APP_BUNDLE_DIR="${APP_SUPPORT_DIR}/VibeTV Control Center.app"
+APP_BUNDLE_CONTENTS_DIR="${APP_BUNDLE_DIR}/Contents"
+APP_BUNDLE_BIN_DIR="${APP_BUNDLE_CONTENTS_DIR}/MacOS"
+APP_BUNDLE_BIN_PATH="${APP_BUNDLE_BIN_DIR}/${INSTALL_NAME}"
+APP_BUNDLE_INFO_PLIST="${APP_BUNDLE_CONTENTS_DIR}/Info.plist"
 RUN_DIR="${APP_SUPPORT_DIR}/run"
 PID_PATH="${RUN_DIR}/companion-api.pid"
+TERMINAL_FALLBACK_MARKER="${RUN_DIR}/terminal-fallback.active"
+SCREEN_SESSION_LABEL="vibetv-control-center"
 INSTALL_LOG_DIR="${APP_SUPPORT_DIR}/logs"
 INSTALL_LOG_PATH="${VIBETV_INSTALL_LOG_PATH:-${INSTALL_LOG_DIR}/install.log}"
 PLIST_DIR="${HOME}/Library/LaunchAgents"
@@ -55,6 +62,7 @@ CHECKSUMS_FILE=""
 ARCH=""
 BINARY_ARCH=""
 RELEASE_TAG=""
+TERMINAL_FALLBACK_ACTIVE=0
 
 usage() {
   cat <<'EOF'
@@ -416,10 +424,11 @@ daemon_target_for_plist() {
 }
 
 write_plist() {
-  local daemon_target
+  local daemon_target daemon_binary
   daemon_target="$(daemon_target_for_plist)"
+  daemon_binary="$(daemon_binary_for_plist)"
 
-  local daemon_args=("$BIN_PATH" "daemon" "--interval" "30s" "--transport" "wifi" "--api-addr" "$ADDR")
+  local daemon_args=("$daemon_binary" "daemon" "--interval" "30s" "--transport" "wifi" "--api-addr" "$ADDR")
   if [[ -n "$daemon_target" ]]; then
     daemon_args+=("--target" "$daemon_target")
   fi
@@ -477,6 +486,14 @@ PLIST_TAIL
   chmod 644 "$DISPLAY_DAEMON_PLIST"
 }
 
+daemon_binary_for_plist() {
+  if [[ -x "$APP_BUNDLE_BIN_PATH" ]]; then
+    printf '%s\n' "$APP_BUNDLE_BIN_PATH"
+    return 0
+  fi
+  printf '%s\n' "$BIN_PATH"
+}
+
 restart_service() {
   local kickstart_status
   if [[ ! -x "$BIN_PATH" ]]; then
@@ -484,6 +501,7 @@ restart_service() {
   fi
 
   require_cmd_for launchctl "start the VibeTV Mac App background service" "rerun from a standard macOS Terminal."
+  install_app_bundle
   stop_launchagent
   stop_terminal_service
   stop_existing_listener
@@ -747,6 +765,65 @@ recover_connected_device_from_status() {
   return 1
 }
 
+probe_known_target_from_terminal() {
+  local target="$1"
+  [[ -n "$target" ]] || return 1
+  curl -fsS --connect-timeout 3 --max-time 5 "${target%/}/hello" >/dev/null 2>&1
+}
+
+start_terminal_daemon_fallback() {
+  local target="$1"
+  [[ -n "$target" ]] || return 1
+  mkdir -p "$RUN_DIR" "$INSTALL_LOG_DIR"
+  if command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
+  fi
+  stop_terminal_service
+  stop_existing_listener
+
+  local daemon_args=("$BIN_PATH" "daemon" "--interval" "30s" "--transport" "wifi" "--api-addr" "$ADDR" "--target" "$target")
+  if [[ -n "$DEV_ORIGIN" ]]; then
+    daemon_args+=("--api-dev-origin" "$DEV_ORIGIN")
+  fi
+
+  if command -v screen >/dev/null 2>&1 && ! truthy "${VIBETV_DISABLE_SCREEN_FALLBACK:-0}"; then
+    screen -S "$SCREEN_SESSION_LABEL" -X quit >/dev/null 2>&1 || true
+    screen -dmS "$SCREEN_SESSION_LABEL" /bin/sh -c 'out="$1"; err="$2"; shift 2; exec "$@" >> "$out" 2>> "$err"' sh "$DISPLAY_DAEMON_LOG_OUT" "$DISPLAY_DAEMON_LOG_ERR" "${daemon_args[@]}"
+    printf 'screen:%s\n' "$SCREEN_SESSION_LABEL" > "$PID_PATH"
+  else
+    nohup "${daemon_args[@]}" >> "$DISPLAY_DAEMON_LOG_OUT" 2>> "$DISPLAY_DAEMON_LOG_ERR" &
+    printf '%s\n' "$!" > "$PID_PATH"
+  fi
+  : > "$TERMINAL_FALLBACK_MARKER"
+  TERMINAL_FALLBACK_ACTIVE=1
+  log "vibetv: terminal-seeded Mac App fallback started with pid $(cat "$PID_PATH" 2>/dev/null || true)"
+  wait_for_api
+  verify_companion_version
+}
+
+try_terminal_network_fallback() {
+  local fallback_target payload response
+  fallback_target="$TARGET"
+  if [[ -z "$fallback_target" ]]; then
+    fallback_target="$(runtime_config_target)"
+  fi
+  if [[ -z "$fallback_target" ]]; then
+    local status_response
+    if status_response="$(local_api_json GET "/v1/status")"; then
+      fallback_target="$(printf '%s' "$status_response" | json_device_target)"
+    fi
+  fi
+  [[ -n "$fallback_target" ]] || return 1
+  probe_known_target_from_terminal "$fallback_target" || return 1
+
+  log "vibetv: LaunchAgent could not reach VibeTV; using Terminal-seeded Mac App fallback"
+  TARGET="$fallback_target"
+  start_terminal_daemon_fallback "$TARGET"
+  payload="{\"target\":\"$(json_escape "$TARGET")\",\"forcePair\":true}"
+  response="$(local_api_json POST "/v1/device/repair" "$payload")" || return 1
+  printf '%s\n' "$response"
+}
+
 connect_vibetv() {
   local payload response discovered_target saved_response saved_status saved_stderr
   if [[ "$TARGET_EXPLICIT" == "1" ]]; then
@@ -767,6 +844,9 @@ connect_vibetv() {
       saved_stderr="$(cat "${TMPDIR_INSTALL}/api-stderr.txt" 2>/dev/null || true)"
       if recover_connected_device_from_status; then
         return 0
+      fi
+      if response="$(try_terminal_network_fallback)"; then
+        break
       fi
       printf '%s' "$saved_response" > "${TMPDIR_INSTALL}/api-response.json"
       printf '%s' "$saved_status" > "${TMPDIR_INSTALL}/api-status.txt"
@@ -789,6 +869,10 @@ connect_vibetv() {
 
 restart_service_with_discovered_target() {
   [[ -n "$TARGET" ]] || return 0
+  if [[ "$TERMINAL_FALLBACK_ACTIVE" == "1" || -f "$TERMINAL_FALLBACK_MARKER" ]]; then
+    log "vibetv: keeping Terminal-seeded Mac App fallback active"
+    return 0
+  fi
   log "vibetv: saving VibeTV address ${TARGET} for the background service"
   restart_service
   wait_for_api
@@ -871,6 +955,50 @@ install_binary() {
     codesign --force --sign - "$BIN_PATH" >/dev/null 2>&1 \
       || die "macOS could not prepare the Companion binary for launch. Open System Settings > Privacy & Security, allow VibeTV if prompted, then rerun this installer."
   fi
+  install_app_bundle
+}
+
+install_app_bundle() {
+  if [[ ! -x "$BIN_PATH" ]]; then
+    die "Mac setup binary is missing: ${BIN_PATH}. Run install first."
+  fi
+
+  mkdir -p "$APP_BUNDLE_BIN_DIR"
+  cp "$BIN_PATH" "$APP_BUNDLE_BIN_PATH"
+  chmod 755 "$APP_BUNDLE_BIN_PATH"
+  cat > "$APP_BUNDLE_INFO_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>${INSTALL_NAME}</string>
+    <key>CFBundleIdentifier</key>
+    <string>shop.vibetv.control-center</string>
+    <key>CFBundleName</key>
+    <string>VibeTV Control Center</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>$(xml_escape "$RELEASE_VERSION")</string>
+    <key>LSBackgroundOnly</key>
+    <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>VibeTV needs local network access to connect to your VibeTV display.</string>
+  </dict>
+</plist>
+PLIST
+  if command -v xattr >/dev/null 2>&1; then
+    xattr -cr "$APP_BUNDLE_DIR" >/dev/null 2>&1 || true
+  fi
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --deep --sign - "$APP_BUNDLE_DIR" >/dev/null 2>&1 \
+      || log "vibetv: warning: ad-hoc codesign failed for ${APP_BUNDLE_DIR}"
+  fi
 }
 
 uninstall_service() {
@@ -880,6 +1008,7 @@ uninstall_service() {
     launchctl bootout "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
   fi
   rm -f "$PLIST_PATH" "$DISPLAY_DAEMON_PLIST"
+  rm -rf "$APP_BUNDLE_DIR"
   log "vibetv: Mac setup service stopped"
   log "vibetv: installed binary kept at ${BIN_PATH}"
 }
@@ -903,7 +1032,14 @@ stop_terminal_service() {
   local pid
   pid="$(cat "$PID_PATH" 2>/dev/null || true)"
   rm -f "$PID_PATH"
+  rm -f "$TERMINAL_FALLBACK_MARKER"
   if [[ -z "$pid" ]]; then
+    return 0
+  fi
+  if [[ "$pid" == screen:* ]]; then
+    if command -v screen >/dev/null 2>&1; then
+      screen -S "${pid#screen:}" -X quit >/dev/null 2>&1 || true
+    fi
     return 0
   fi
 
