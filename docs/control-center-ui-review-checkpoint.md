@@ -13,6 +13,26 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: hosted Setup-only entrypoint, local Control Center handoff
+  path, Mac App setup command path preservation, and local exported
+  `/control-center/install/<theme>` deep links.
+- Customer rule: `app.vibetv.shop`/Vercel Preview remains only the setup
+  entrypoint. It must not expose Overview, Usage, Theme Library, Settings,
+  Updates, or Support on the hosted origin; after setup it opens the local
+  Control Center on this Mac, preserving any requested local path only as a
+  handoff target.
+- Simplifications accepted: no hosted management UI, tabs, troubleshooting
+  sections, or customer decisions were added. The visible hosted flow still has
+  one setup path; the Theme ID is carried only into the local URL and installer
+  `--control-center-path`.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  Vercel Preview `/` and `/install/synthwave` show the setup launcher with no
+  old app tabs; `Open local Control Center` navigates to
+  `127.0.0.1:47832/control-center/install/synthwave`; `lint`,
+  `test:customer-smoke`, `test:customer-flows`, `build:local`, `go test ./...`
+  in `companion`, `check-theme-pack-dist`, release-workflow test, shell syntax
+  checks, and `git diff --check` passed locally before this checkpoint update.
+
 - Reviewed scope: Overview VibeTV device preview source, local Mac App
   `/v1/display-frame/latest`, and active ThemeSpec preview resolution when the
   VibeTV reports a temporary install state.
