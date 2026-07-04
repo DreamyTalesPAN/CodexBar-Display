@@ -117,14 +117,14 @@ case "$*" in
   *"/v1/status"*)
     if [[ -n "${FAKE_STATUS_OLD_ONCE:-}" && "$write_status" == "1" && ! -f "$FAKE_STATUS_OLD_ONCE" ]]; then
       touch "$FAKE_STATUS_OLD_ONCE"
-      respond '{"ok":true,"companion":{"status":"ready","version":"9.9.8","features":{"themeInstallEnabled":true}},"device":{"target":"http://192.168.178.72","connected":true,"paired":true}}'
+      respond '{"ok":true,"companion":{"status":"ready","version":"9.9.8","update":{"status":"available","release":"v9.9.9"},"features":{"themeInstallEnabled":true}},"device":{"target":"http://192.168.178.72","connected":true,"paired":true}}'
       exit 0
     fi
     if [[ -n "${FAKE_STATUS_DEVICE_DISCONNECTED:-}" ]]; then
-      respond '{"ok":true,"companion":{"status":"ready","version":"9.9.9","features":{"themeInstallEnabled":true}},"device":{"target":"http://192.168.178.72","connected":false,"paired":true}}'
+      respond '{"ok":true,"companion":{"status":"ready","version":"9.9.9","update":{"status":"available","release":"v9.9.9"},"features":{"themeInstallEnabled":true}},"device":{"target":"http://192.168.178.72","connected":false,"paired":true}}'
       exit 0
     fi
-    respond '{"ok":true,"companion":{"status":"ready","version":"9.9.9","features":{"themeInstallEnabled":true}},"device":{"target":"http://192.168.178.72","connected":true,"paired":true}}'
+    respond '{"ok":true,"companion":{"status":"ready","version":"9.9.9","update":{"status":"available","release":"v9.9.9"},"features":{"themeInstallEnabled":true}},"device":{"target":"http://192.168.178.72","connected":true,"paired":true}}'
     ;;
   *"/v1/device/repair"*)
     if [[ -n "${FAKE_REPAIR_ALWAYS_FAIL:-}" ]]; then

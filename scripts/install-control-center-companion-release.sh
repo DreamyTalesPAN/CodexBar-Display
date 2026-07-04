@@ -583,25 +583,73 @@ json_escape() {
   printf '%s' "$value"
 }
 
+json_path_raw() {
+  local path="$1"
+  local json
+  json="$(cat)"
+  if command -v plutil >/dev/null 2>&1; then
+    printf '%s' "$json" | plutil -extract "$path" raw -o - - 2>/dev/null | head -n 1
+    return "${PIPESTATUS[1]}"
+  fi
+  if command -v node >/dev/null 2>&1; then
+    JSON_PATH="$path" JSON_BODY="$json" node -e '
+const path = process.env.JSON_PATH.split(".");
+let value = JSON.parse(process.env.JSON_BODY);
+for (const part of path) {
+  if (value == null || !Object.prototype.hasOwnProperty.call(value, part)) process.exit(1);
+  value = value[part];
+}
+if (value == null) process.exit(1);
+process.stdout.write(typeof value === "object" ? JSON.stringify(value) : String(value));
+' 2>/dev/null
+    return $?
+  fi
+  return 1
+}
+
 json_device_target() {
-  sed -n 's/.*"device"[^{]*{[^}]*"target"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+  local json value
+  json="$(cat)"
+  if value="$(printf '%s' "$json" | json_path_raw "device.target")"; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  printf '%s' "$json" | sed -n 's/.*"device"[^{]*{[^}]*"target"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
 }
 
 json_api_field() {
   local field="$1"
-  sed -n "s/.*\"${field}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
+  local json value
+  json="$(cat)"
+  if value="$(printf '%s' "$json" | json_path_raw "error.${field}")"; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  printf '%s' "$json" | sed -n "s/.*\"${field}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
 }
 
 status_field() {
   local object="$1"
   local field="$2"
-  sed -n "s/.*\"${object}\"[^{]*{[^}]*\"${field}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
+  local json value
+  json="$(cat)"
+  if value="$(printf '%s' "$json" | json_path_raw "${object}.${field}")"; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  printf '%s' "$json" | sed -n "s/.*\"${object}\"[^{]*{[^}]*\"${field}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
 }
 
 status_bool_field() {
   local object="$1"
   local field="$2"
-  sed -n \
+  local json value
+  json="$(cat)"
+  if value="$(printf '%s' "$json" | json_path_raw "${object}.${field}")"; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  printf '%s' "$json" | sed -n \
     -e "s/.*\"${object}\"[^{]*{[^}]*\"${field}\"[[:space:]]*:[[:space:]]*true.*/true/p" \
     -e "s/.*\"${object}\"[^{]*{[^}]*\"${field}\"[[:space:]]*:[[:space:]]*false.*/false/p" \
     | head -n 1
