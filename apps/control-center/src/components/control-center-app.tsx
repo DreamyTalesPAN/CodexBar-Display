@@ -255,6 +255,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, []);
 
+  const mergeDevice = useCallback((next: DeviceInfo) => {
+    setDevice((current) => mergeDeviceInfo(current, next));
+  }, []);
+
   const addEvent = useCallback(
     (event: Omit<ControlCenterEvent, "id" | "at"> & { at?: string }) => {
       setEvents((current) =>
@@ -450,7 +454,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const payload = await runCompanion<{ device: DeviceInfo }>(
           "/v1/device",
         );
-        setDevice(payload.device);
+        mergeDevice(payload.device);
         if (payload.device.target) {
           setDeviceTarget(payload.device.target);
           rememberDeviceTarget(payload.device.target);
@@ -496,6 +500,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      mergeDevice,
       runCompanion,
     ],
   );
@@ -508,7 +513,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         payload.settings?.display?.brightnessPercent ?? null;
       setBrightness(loadedBrightness);
       if (payload.device) {
-        setDevice(payload.device);
+        mergeDevice(payload.device);
         setDeviceState(payload.device.paired ? "paired" : "online");
         if (
           !initialThemeId &&
@@ -557,6 +562,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     initialThemeId,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
+    mergeDevice,
     runCompanion,
   ]);
 
@@ -606,7 +612,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setSetupPreviewStep(null);
         }
         if (payload.device?.target) {
-          setDevice(payload.device);
+          mergeDevice(payload.device);
           setDeviceTarget(payload.device.target);
           rememberDeviceTarget(payload.device.target);
           setDeviceState(
@@ -664,6 +670,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       loadSettings,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      mergeDevice,
       refreshDevice,
       runCompanion,
     ],
@@ -681,7 +688,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
       if (payload.device?.target) {
-        setDevice(payload.device);
+        mergeDevice(payload.device);
         setDeviceTarget(payload.device.target);
         rememberDeviceTarget(payload.device.target);
         setDeviceState(
@@ -706,7 +713,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         markCompanionUnavailable();
       }
     }
-  }, [markCompanionAccessBlocked, markCompanionUnavailable, runCompanion]);
+  }, [
+    markCompanionAccessBlocked,
+    markCompanionUnavailable,
+    mergeDevice,
+    runCompanion,
+  ]);
 
   const repairConnection = useCallback(
     async (options?: {
@@ -737,7 +749,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               Boolean(statusPayload.companion?.features?.themeInstallEnabled),
             );
             if (statusPayload.device?.target) {
-              setDevice(statusPayload.device);
+              mergeDevice(statusPayload.device);
               setDeviceTarget(statusPayload.device.target);
               rememberDeviceTarget(statusPayload.device.target);
               setDeviceState(
@@ -783,7 +795,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setCompanionStatus("online");
         void refreshCompanionFeatures();
         setLastError(null);
-        setDevice(payload.device);
+        mergeDevice(payload.device);
         setDeviceState(
           payload.device.paired
             ? "paired"
@@ -839,6 +851,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       loadSettings,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      mergeDevice,
       refreshCompanionFeatures,
       runCompanion,
     ],
@@ -856,7 +869,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         );
         setCompanionStatus("online");
         setLastError(null);
-        setDevice(payload.device);
+        mergeDevice(payload.device);
         setDeviceState(
           payload.device.paired
             ? "paired"
@@ -902,6 +915,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      mergeDevice,
       runCompanion,
     ],
   );
@@ -980,7 +994,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           payload.settings?.display?.brightnessPercent ?? value;
         setBrightness(savedValue);
         if (payload.device) {
-          setDevice(payload.device);
+          mergeDevice(payload.device);
           setDeviceState(payload.device.paired ? "paired" : "online");
           if (payload.device.target) {
             setDeviceTarget(payload.device.target);
@@ -1016,6 +1030,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      mergeDevice,
       runCompanion,
     ],
   );
@@ -1621,9 +1636,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       });
       addEvent({
         label: "VibeTV update failed",
-          detail: normalized.nextAction,
-          tone: "attention",
-        });
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
       return false;
     } finally {
       setBusyAction(null);
@@ -1705,7 +1720,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
       if (payload.device) {
-        setDevice(payload.device);
+        mergeDevice(payload.device);
         if (payload.device.target) {
           setDeviceTarget(payload.device.target);
           rememberDeviceTarget(payload.device.target);
@@ -1746,6 +1761,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
+    mergeDevice,
     runCompanion,
   ]);
 
@@ -1776,16 +1792,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? firmwareUpdate
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
-  const companionRelease = companionInfo?.update || legacyCompanionRelease || null;
+  const companionRelease =
+    companionInfo?.update || legacyCompanionRelease || null;
   const macAppUpdateAvailable = Boolean(
-    companionRelease?.updateAvailable && macAppUpdateStatus?.phase !== "complete",
+    companionRelease?.updateAvailable &&
+      macAppUpdateStatus?.phase !== "complete",
   );
   const anyUpdateAvailable = firmwareUpdateAvailable || macAppUpdateAvailable;
   const imageNeedsReload = deviceImageIsStuck(device);
   const setupComplete = Boolean(
     !setupPreviewStep &&
-    companionStatus === "online" &&
-    deviceSetupIsUsable(device),
+      companionStatus === "online" &&
+      deviceSetupIsUsable(device),
   );
   const usageAvailable = companionStatus === "online";
   const openLocalControlCenter = useCallback(() => {
@@ -2033,9 +2051,7 @@ function ControlCenterBootScreen() {
 }
 
 function getRuntimeSurfaceSnapshot(): RuntimeSurface {
-  return shouldUseHostedSetupShell()
-    ? "hosted-setup"
-    : "local-control-center";
+  return shouldUseHostedSetupShell() ? "hosted-setup" : "local-control-center";
 }
 
 function getRuntimeSurfaceServerSnapshot(): RuntimeSurface {
@@ -2401,6 +2417,83 @@ async function readLocalNetworkAccessState(): Promise<
     }
   }
   return "unsupported";
+}
+
+function mergeDeviceInfo(
+  current: DeviceInfo | null,
+  next: DeviceInfo,
+): DeviceInfo {
+  if (!current) {
+    return next;
+  }
+
+  const currentTarget = normalizeDeviceTarget(current.target || "");
+  const nextTarget = normalizeDeviceTarget(next.target || "");
+  if (currentTarget && nextTarget && currentTarget !== nextTarget) {
+    return next;
+  }
+
+  return {
+    ...current,
+    ...next,
+    board: next.board ?? current.board,
+    firmware: next.firmware ?? current.firmware,
+    activeTheme: next.activeTheme ?? current.activeTheme,
+    capabilities: mergeDeviceCapabilities(
+      current.capabilities,
+      next.capabilities,
+    ),
+    display: mergeDeviceDisplay(current.display, next.display),
+    stream: next.stream ?? current.stream,
+  };
+}
+
+function mergeDeviceDisplay(
+  current: DeviceInfo["display"],
+  next: DeviceInfo["display"],
+): DeviceInfo["display"] {
+  if (!current) {
+    return next;
+  }
+  if (!next) {
+    return current;
+  }
+  return {
+    ...current,
+    ...next,
+    themeSpec: next.themeSpec
+      ? { ...current.themeSpec, ...next.themeSpec }
+      : current.themeSpec,
+  };
+}
+
+function mergeDeviceCapabilities(
+  current: DeviceInfo["capabilities"],
+  next: DeviceInfo["capabilities"],
+): DeviceInfo["capabilities"] {
+  if (!current) {
+    return next;
+  }
+  if (!next) {
+    return current;
+  }
+  return {
+    ...current,
+    ...next,
+    display: next.display
+      ? {
+          ...current.display,
+          ...next.display,
+          brightness: next.display.brightness
+            ? { ...current.display?.brightness, ...next.display.brightness }
+            : current.display?.brightness,
+        }
+      : current.display,
+    theme: next.theme ? { ...current.theme, ...next.theme } : current.theme,
+    transport: next.transport
+      ? { ...current.transport, ...next.transport }
+      : current.transport,
+  };
 }
 
 function readInitialDeviceTarget(): string {

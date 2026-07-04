@@ -1223,11 +1223,16 @@ func TestDeviceDiscoverFallsBackToSubnetCandidateAndPersistsTarget(t *testing.T)
 	defer stale.Close()
 
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/hello" {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"claude-creature","themeSpec":{"active":true,"path":"/themes/u/claude--1-12ab01.json","renderOk":true}},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
 	}))
 	defer device.Close()
 
@@ -1268,6 +1273,13 @@ func TestDeviceDiscoverFallsBackToSubnetCandidateAndPersistsTarget(t *testing.T)
 	}
 	if status.Device.Target != device.URL {
 		t.Fatalf("expected persisted device target %q, got %+v", device.URL, status.Device)
+	}
+	if status.Device.Firmware != "1.0.31" || status.Device.ActiveTheme != "claude-creature" {
+		t.Fatalf("expected status to include live device details, got %+v", status.Device)
+	}
+	if status.Device.Display == nil || status.Device.Display.ThemeSpec == nil ||
+		!status.Device.Display.ThemeSpec.Active {
+		t.Fatalf("expected status to include theme render health, got %+v", status.Device.Display)
 	}
 }
 

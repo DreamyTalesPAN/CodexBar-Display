@@ -778,6 +778,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Paired:    strings.TrimSpace(cfg.DeviceToken) != "",
 		Stream:    streamPointer(stream),
 	}
+	if strings.TrimSpace(cfg.DeviceTarget) != "" {
+		if hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
+			device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
+			if health, healthErr := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); healthErr == nil {
+				device = withDeviceHealth(device, health)
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, statusResponse{
 		OK:        true,
 		Companion: s.companionInfo(r.Context()),
