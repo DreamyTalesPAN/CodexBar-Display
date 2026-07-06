@@ -171,6 +171,8 @@ File assetUploadFile;
 String activeThemeSpecPath;
 String activeThemeSpecHash;
 String setupWifiOptionsHTML;
+int setupWifiScanNetworkCount = -2;
+unsigned long setupWifiLastScanAtMs = 0;
 bool rebootPending = false;
 unsigned long rebootAtMs = 0;
 bool bootRecoveryCounterNeedsClear = false;
@@ -1025,10 +1027,22 @@ bool connectToSdkWifiConfig() {
 
 void scanSetupNetworks() {
   String options;
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
+  int networks = -2;
+  WiFi.mode(setupMode ? WIFI_AP_STA : WIFI_STA);
+  WiFi.disconnect(false);
   delay(150);
-  const int networks = WiFi.scanNetworks();
+
+  for (int attempt = 1; attempt <= 3; ++attempt) {
+    networks = WiFi.scanNetworks(false, true);
+    if (networks > 0) {
+      break;
+    }
+    Serial.printf("wifi_setup_scan_empty attempt=%d networks=%d\n", attempt, networks);
+    WiFi.scanDelete();
+    delay(250);
+    yield();
+  }
+
   for (int i = 0; i < networks; ++i) {
     const String ssid = WiFi.SSID(i);
     if (ssid.length() == 0) {
@@ -1044,6 +1058,8 @@ void scanSetupNetworks() {
   }
   WiFi.scanDelete();
   setupWifiOptionsHTML = options;
+  setupWifiScanNetworkCount = networks;
+  setupWifiLastScanAtMs = millis();
   Serial.printf("wifi_setup_scan networks=%d options=%u\n", networks, setupWifiOptionsHTML.length());
 }
 
@@ -1058,8 +1074,15 @@ String setupPageHTML() {
   html += "button{margin-top:22px;background:#c7ff00;color:#111;border:0;font-weight:700}.muted{color:#aaa;line-height:1.4}";
   html += "</style></head><body><main><h1>VibeTV WiFi</h1>";
   html += "<p class='muted'>Choose your home WiFi and save. Keep your Mac on its normal WiFi. After restart, VibeTV shows the app address for your Mac.</p>";
+  html += "<form method='post' action='/scan'><button type='submit'>Refresh networks</button></form>";
   html += "<form method='post' action='/save'><label>Choose WiFi</label><select name='ssid'>";
-  html += setupWifiOptionsHTML.length() > 0 ? setupWifiOptionsHTML : "<option value=''>No networks found</option>";
+  if (setupWifiOptionsHTML.length() > 0) {
+    html += setupWifiOptionsHTML;
+  } else if (setupWifiScanNetworkCount < 0) {
+    html += "<option value=''>Scan failed - refresh or type WiFi name</option>";
+  } else {
+    html += "<option value=''>No networks found - refresh or type WiFi name</option>";
+  }
   html += "</select><label>Enter SSID manually</label><input name='custom_ssid' maxlength='32' autocomplete='off' placeholder='WiFi name'>";
   html += "<label>Password</label><input name='password' type='password' maxlength='64' autocomplete='current-password'>";
   html += "<button type='submit'>Save</button></form>";
@@ -1121,6 +1144,10 @@ String connectedPageHTML() {
 void handleRoot() {
   webServer.keepAlive(false);
   if (setupMode) {
+    if (setupWifiOptionsHTML.length() == 0 &&
+        (setupWifiLastScanAtMs == 0 || static_cast<long>(millis() - setupWifiLastScanAtMs) > 5000)) {
+      scanSetupNetworks();
+    }
     webServer.send(200, "text/html; charset=utf-8", setupPageHTML());
     return;
   }
@@ -1183,6 +1210,18 @@ void handleResetWifi() {
   clearBootRecoveryCounter();
   delay(250);
   ESP.restart();
+}
+
+void handleSetupWifiScan() {
+  webServer.keepAlive(false);
+  if (!setupMode) {
+    redirectToSetupRoot();
+    return;
+  }
+
+  scanSetupNetworks();
+  webServer.sendHeader("Location", "/", true);
+  webServer.send(303, "text/plain; charset=utf-8", "");
 }
 
 void addCorsHeaders() {
@@ -2346,6 +2385,8 @@ void startHttpServer() {
   webServer.on("/connecttest.txt", HTTP_GET, handleCaptivePortalProbe);
   webServer.on("/ncsi.txt", HTTP_GET, handleCaptivePortalProbe);
   webServer.on("/save", HTTP_POST, handleSaveWifi);
+  webServer.on("/scan", HTTP_GET, handleSetupWifiScan);
+  webServer.on("/scan", HTTP_POST, handleSetupWifiScan);
   webServer.on("/reset-wifi", HTTP_POST, handleResetWifi);
   webServer.on("/hello", HTTP_GET, handleHello);
   webServer.on("/health", HTTP_GET, handleHealth);
@@ -2404,10 +2445,10 @@ void startHttpServer() {
 void startSetupAccessPoint() {
   setupMode = true;
   resetWifiReconnectState();
-  scanSetupNetworks();
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(kSetupApSsid);
   Serial.printf("wifi_setup_ap ssid=VibeTV-Setup ip=%s\n", WiFi.softAPIP().toString().c_str());
+  scanSetupNetworks();
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
   captiveDnsStarted = true;
   Serial.printf("captive_dns_started port=%u host=%s ip=%s\n", kDnsPort, kSetupHost, WiFi.softAPIP().toString().c_str());
