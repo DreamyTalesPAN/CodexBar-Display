@@ -62,6 +62,8 @@ constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxTheme
 constexpr uint8_t kDefaultBrightnessPercent = 100;
 constexpr uint8_t kMinBrightnessPercent = 10;
 constexpr uint8_t kMaxBrightnessPercent = 100;
+constexpr size_t kSetupWifiOptionsMaxBytes = 900;
+constexpr uint8_t kSetupWifiMaxOptions = 10;
 const char kSetupApSsid[] = "VibeTV-Setup";
 const char kSetupHost[] = "vibetv.local";
 const char kMdnsName[] = "vibetv";
@@ -171,8 +173,6 @@ File assetUploadFile;
 String activeThemeSpecPath;
 String activeThemeSpecHash;
 String setupWifiOptionsHTML;
-int setupWifiScanNetworkCount = -2;
-unsigned long setupWifiLastScanAtMs = 0;
 bool rebootPending = false;
 unsigned long rebootAtMs = 0;
 bool bootRecoveryCounterNeedsClear = false;
@@ -1032,7 +1032,7 @@ void scanSetupNetworks() {
   WiFi.disconnect(false);
   delay(150);
 
-  for (int attempt = 1; attempt <= 3; ++attempt) {
+  for (int attempt = 1; attempt <= 2; ++attempt) {
     networks = WiFi.scanNetworks(false, true);
     if (networks > 0) {
       break;
@@ -1043,29 +1043,39 @@ void scanSetupNetworks() {
     yield();
   }
 
+  uint8_t optionCount = 0;
   for (int i = 0; i < networks; ++i) {
     const String ssid = WiFi.SSID(i);
     if (ssid.length() == 0) {
       continue;
     }
-    options += "<option value=\"";
-    options += htmlEscape(ssid);
-    options += "\">";
-    options += htmlEscape(ssid);
-    options += " (";
-    options += String(WiFi.RSSI(i));
-    options += " dBm)</option>";
+    String option;
+    const String escapedSsid = htmlEscape(ssid);
+    option.reserve(escapedSsid.length() + 40);
+    option += "<option value=\"";
+    option += escapedSsid;
+    option += "\">";
+    option += escapedSsid;
+    option += " (";
+    option += String(WiFi.RSSI(i));
+    option += " dBm)</option>";
+    if (options.length() + option.length() > kSetupWifiOptionsMaxBytes) {
+      break;
+    }
+    options += option;
+    ++optionCount;
+    if (optionCount >= kSetupWifiMaxOptions) {
+      break;
+    }
   }
   WiFi.scanDelete();
   setupWifiOptionsHTML = options;
-  setupWifiScanNetworkCount = networks;
-  setupWifiLastScanAtMs = millis();
-  Serial.printf("wifi_setup_scan networks=%d options=%u\n", networks, setupWifiOptionsHTML.length());
+  Serial.printf("wifi_setup_scan networks=%d options=%u option_count=%u\n", networks, setupWifiOptionsHTML.length(), optionCount);
 }
 
 String setupPageHTML() {
   String html;
-  html.reserve(1600);
+  html.reserve(2400);
   html += "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
   html += "<title>VibeTV Setup</title><style>";
   html += "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:#101113;color:#f7f7f2}";
@@ -1074,14 +1084,11 @@ String setupPageHTML() {
   html += "button{margin-top:22px;background:#c7ff00;color:#111;border:0;font-weight:700}.muted{color:#aaa;line-height:1.4}";
   html += "</style></head><body><main><h1>VibeTV WiFi</h1>";
   html += "<p class='muted'>Choose your home WiFi and save. Keep your Mac on its normal WiFi. After restart, VibeTV shows the app address for your Mac.</p>";
-  html += "<form method='post' action='/scan'><button type='submit'>Refresh networks</button></form>";
   html += "<form method='post' action='/save'><label>Choose WiFi</label><select name='ssid'>";
   if (setupWifiOptionsHTML.length() > 0) {
     html += setupWifiOptionsHTML;
-  } else if (setupWifiScanNetworkCount < 0) {
-    html += "<option value=''>Scan failed - refresh or type WiFi name</option>";
   } else {
-    html += "<option value=''>No networks found - refresh or type WiFi name</option>";
+    html += "<option value=''>No networks found</option>";
   }
   html += "</select><label>Enter SSID manually</label><input name='custom_ssid' maxlength='32' autocomplete='off' placeholder='WiFi name'>";
   html += "<label>Password</label><input name='password' type='password' maxlength='64' autocomplete='current-password'>";
@@ -1144,8 +1151,7 @@ String connectedPageHTML() {
 void handleRoot() {
   webServer.keepAlive(false);
   if (setupMode) {
-    if (setupWifiOptionsHTML.length() == 0 &&
-        (setupWifiLastScanAtMs == 0 || static_cast<long>(millis() - setupWifiLastScanAtMs) > 5000)) {
+    if (setupWifiOptionsHTML.length() == 0) {
       scanSetupNetworks();
     }
     webServer.send(200, "text/html; charset=utf-8", setupPageHTML());
@@ -1210,18 +1216,6 @@ void handleResetWifi() {
   clearBootRecoveryCounter();
   delay(250);
   ESP.restart();
-}
-
-void handleSetupWifiScan() {
-  webServer.keepAlive(false);
-  if (!setupMode) {
-    redirectToSetupRoot();
-    return;
-  }
-
-  scanSetupNetworks();
-  webServer.sendHeader("Location", "/", true);
-  webServer.send(303, "text/plain; charset=utf-8", "");
 }
 
 void addCorsHeaders() {
@@ -2385,8 +2379,6 @@ void startHttpServer() {
   webServer.on("/connecttest.txt", HTTP_GET, handleCaptivePortalProbe);
   webServer.on("/ncsi.txt", HTTP_GET, handleCaptivePortalProbe);
   webServer.on("/save", HTTP_POST, handleSaveWifi);
-  webServer.on("/scan", HTTP_GET, handleSetupWifiScan);
-  webServer.on("/scan", HTTP_POST, handleSetupWifiScan);
   webServer.on("/reset-wifi", HTTP_POST, handleResetWifi);
   webServer.on("/hello", HTTP_GET, handleHello);
   webServer.on("/health", HTTP_GET, handleHealth);

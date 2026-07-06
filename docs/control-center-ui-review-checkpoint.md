@@ -13,6 +13,21 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: VibeTV setup captive portal WiFi list rendering, setup
+  scan retry fallback, and the Control Center setup/installer changes already
+  present on this branch.
+- Customer rule: setup must remain one simple WiFi selection and save action;
+  customers should not see scan internals, retries, heap limits, firmware
+  memory wording, or multiple technical recovery choices.
+- Simplifications accepted: the temporary visible refresh action was removed
+  again; WiFi rescans happen automatically when the list is empty, and the
+  firmware caps the rendered network options so the existing dropdown stays
+  reliable on ESP8266 memory.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  the local hardware setup log after USB debug flash showed
+  `wifi_setup_scan networks=15 options=718 option_count=10`, confirming the
+  setup dropdown has options again without adding customer-facing decisions.
+
 - Reviewed scope: local Mac App service lifecycle, Display-Worker restart
   behavior, installer service verification, support log paths, and stale
   `coding` activity fallback.
