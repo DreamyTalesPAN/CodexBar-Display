@@ -5,14 +5,19 @@ VibeTV has four visible pieces:
 1. **VibeTV hardware**: the physical WiFi display on the desk.
 2. **CodexBar**: the upstream usage collector for AI providers.
 3. **VibeTV Mac App**: the local `codexbar-display` process on the customer's Mac.
-4. **Control Center**: the hosted customer app at `https://app.vibetv.shop`.
+4. **Control Center**: the local browser app served by the Mac App at
+   `http://127.0.0.1:47832/control-center`.
+
+The hosted page at `https://app.vibetv.shop` is the setup launcher. It helps
+customers install or update the Mac App, then hands off to the local Control
+Center on the same Mac.
 
 Simple version:
 
 ```text
 CodexBar reads AI usage on the Mac
   -> VibeTV Mac App normalizes it
-  -> Control Center manages setup and actions
+  -> local Control Center manages actions
   -> VibeTV renders it over local WiFi
 ```
 
@@ -21,15 +26,16 @@ CodexBar reads AI usage on the Mac
 ```text
 AI provider state
   -> CodexBar
-  -> codexbar-display api on 127.0.0.1:47832
-  -> browser running app.vibetv.shop
+  -> VibeTV Mac App on 127.0.0.1:47832
+  -> browser running the local Control Center
   -> codexbar-display sends frames to VibeTV over LAN
   -> VibeTV screen
 ```
 
-The Control Center browser talks to the local Mac App service using Chrome
-Private Network Access. The Mac App then talks to the device on the customer's
-local network. VibeTV does not need a cloud backend to receive display frames.
+The hosted setup page may check whether the local Mac App is reachable. After
+setup, the full Control Center is served locally by the Mac App, and private
+device actions stay on the customer's Mac and LAN. VibeTV does not need a cloud
+backend to receive display frames.
 
 ## Responsibilities
 
@@ -76,11 +82,12 @@ daemon. API language belongs in developer and operator docs.
 1. Customer powers VibeTV.
 2. Customer joins `VibeTV-Setup` and puts the device on home WiFi.
 3. VibeTV shows `app.vibetv.shop`.
-4. Customer opens Control Center on the Mac.
-5. Control Center asks the customer to install/start the Mac App when needed.
+4. Customer opens the hosted setup launcher on the Mac.
+5. Setup asks the customer to install or update the Mac App when needed.
 6. The Mac App discovers or connects to VibeTV.
-7. Control Center unlocks Overview, Usage, Theme Library, Settings, Updates,
-   and Support once setup is complete.
+7. The Mac App opens the local Control Center.
+8. Local Control Center unlocks Overview, Usage, Theme Library, Settings,
+   Updates, and Support once setup is complete.
 
 ## Theme Flow
 
@@ -97,8 +104,9 @@ silently flash firmware.
 
 - Provider usage is read on the customer's Mac through CodexBar and the Mac App.
 - The Mac App sends display frames to VibeTV over local WiFi.
-- Control Center fetches the public app, release metadata, and Shopify theme
-  catalog data from the web.
+- The hosted setup page, release metadata, and Shopify theme catalog data come
+  from the web.
+- The full Control Center app is served from the local Mac App after setup.
 - In the normal product flow, provider usage is displayed in the browser and on
   VibeTV; it is not stored as a VibeTV cloud account dataset.
 - Support diagnostics are created only when requested. They include device/app

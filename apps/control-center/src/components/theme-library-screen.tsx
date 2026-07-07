@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import {
   Library,
   Lock,
@@ -11,9 +10,16 @@ import {
   X,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
 import type { ThemeProduct } from "@/lib/themes";
+import { ControlCenterButton } from "./control-center-button";
+import { ControlCenterStatusIcon } from "./control-center-status-icon";
+import { themeRenderPackUrl } from "./control-center-runtime";
+import {
+  ThemeSpecPreview,
+  type ThemeRenderPack,
+} from "./live-vibetv-preview";
 
 export type ThemeLibraryCompanionStatus = "unknown" | "online" | "missing";
 
@@ -252,14 +258,12 @@ function CatalogEmptyState({
           <Library size={18} aria-hidden />
           <span>Open theme shop</span>
         </a>
-        <button
-          className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-4 text-sm font-semibold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B]"
+        <ControlCenterButton
+          icon={<RefreshCw size={18} aria-hidden />}
+          label="Reload catalog"
           onClick={() => window.location.reload()}
-          type="button"
-        >
-          <RefreshCw size={18} aria-hidden />
-          <span>Reload catalog</span>
-        </button>
+          variant="primary"
+        />
       </div>
     </div>
   );
@@ -364,9 +368,6 @@ function ThemeListItem({
         <div className="min-w-0">
           <div className="truncate text-lg font-bold text-[#1B1B1B]">
             {theme.title}
-          </div>
-          <div className="mt-1 line-clamp-1 text-sm leading-6 text-[#444933]">
-            {theme.description || "Theme from the VibeTV catalog."}
           </div>
         </div>
         <button
@@ -830,9 +831,9 @@ function parseVersion(value: string): number[] {
 
 function HeroIcon({ children }: { children: ReactNode }) {
   return (
-    <div className="grid size-16 shrink-0 place-items-center rounded-full border border-[#747A60] bg-[#EEEEEE] text-[#1B1B1B]">
+    <ControlCenterStatusIcon variant="neutral">
       {children}
-    </div>
+    </ControlCenterStatusIcon>
   );
 }
 
@@ -843,25 +844,59 @@ function ThemePreview({
   large?: boolean;
   theme: ThemeProduct;
 }) {
+  const [packState, setPackState] = useState<{
+    pack: ThemeRenderPack | null;
+    status: "idle" | "loading" | "ready" | "error";
+    themeId: string;
+  }>({
+    pack: null,
+    status: "idle",
+    themeId: "",
+  });
   const className = large
     ? "relative block aspect-square w-full overflow-hidden border border-[#747A60] bg-[#EEEEEE]"
     : "relative block size-24 overflow-hidden border border-[#747A60] bg-[#EEEEEE]";
+  const themeId = theme.themeId;
+  const pack =
+    packState.themeId === themeId && packState.status === "ready"
+      ? packState.pack
+      : null;
+  const status =
+    packState.themeId === themeId ? packState.status : "loading";
+
+  useEffect(() => {
+    if (!themeId) {
+      return;
+    }
+
+    const controller = new AbortController();
+    fetch(themeRenderPackUrl(themeId), { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("theme preview unavailable");
+        }
+        return response.json() as Promise<ThemeRenderPack>;
+      })
+      .then((payload) => {
+        setPackState({
+          pack: payload,
+          status: payload?.spec ? "ready" : "error",
+          themeId,
+        });
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        setPackState({ pack: null, status: "error", themeId });
+      });
+
+    return () => controller.abort();
+  }, [themeId]);
 
   return (
     <span className={className}>
-      {theme.imageUrl ? (
-        <Image
-          alt={theme.imageAlt || theme.title}
-          className="object-cover"
-          fill
-          sizes={large ? "320px" : "(min-width: 1280px) 300px, 50vw"}
-          src={theme.imageUrl}
-        />
-      ) : (
-        <span className="grid h-full place-items-center bg-[#1B1B1B] text-center text-sm font-semibold text-[#EDEDED]">
-          <Monitor size={large ? 36 : 24} aria-hidden />
-        </span>
-      )}
+      <ThemeSpecPreview pack={pack} status={status} themeId={themeId} />
     </span>
   );
 }

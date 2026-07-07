@@ -28,13 +28,15 @@ const (
 	DefaultWiFiTimeout         = 60 * time.Second
 	DefaultUploadSettleDelay   = 750 * time.Millisecond
 	DefaultFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
+	uploadVerifyAttempts       = 3
 )
 
 var (
-	renderHealthAttempts = 8
-	renderHealthDelay    = 500 * time.Millisecond
-	activationAttempts   = 3
-	activationRetryDelay = 1500 * time.Millisecond
+	renderHealthAttempts   = 8
+	renderHealthDelay      = 500 * time.Millisecond
+	activationAttempts     = 3
+	activationRetryDelay   = 1500 * time.Millisecond
+	uploadVerifyRetryDelay = 1500 * time.Millisecond
 )
 
 var installingThemeSpec = json.RawMessage(`{"v":1,"id":"installing","rev":1,"fb":"mini","p":[{"t":"r","x":0,"y":0,"w":240,"h":240,"c":"#111111"},{"t":"tx","x":28,"y":58,"v":"INSTALLING","s":2,"c":"#B6FF00"},{"t":"tx","x":36,"y":94,"v":"NEW THEME","s":2,"c":"#FFFFFF"},{"t":"p","x":34,"y":150,"w":172,"h":18,"b":"s","c":"#B6FF00","bg":"#303030"}]}`)
@@ -111,7 +113,7 @@ func (e *InstallError) RecoveryAction() string {
 	return errcode.DefaultRecovery(e.Code)
 }
 
-func Install(ctx context.Context, opts Options) (Result, error) {
+func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -219,6 +221,17 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 			Err:  err,
 		}
 	}
+	previousThemePath, previousThemePathErr := currentStoredThemePath(wifi, resolvedTarget)
+	if previousThemePathErr != nil && opts.Verbose {
+		fmt.Fprintf(out, "Restore snapshot: skipped (%v)\n", previousThemePathErr)
+	}
+	installScreenShown := false
+	defer func() {
+		if retErr == nil || !installScreenShown {
+			return
+		}
+		restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
+	}()
 	if err := sendInstallingThemeFrame(wifi, resolvedTarget, caps); err != nil {
 		if authRequired(err) {
 			pairedTarget, pairErr := pairThemeInstallTarget(wifi, resolvedTarget, opts.PairTokenStore)
@@ -236,9 +249,11 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			fmt.Fprintf(out, "Install screen: skipped (%v)\n", err)
 		} else {
+			installScreenShown = true
 			fmt.Fprintln(out, "Install screen: showing on VibeTV")
 		}
 	} else {
+		installScreenShown = true
 		fmt.Fprintln(out, "Install screen: showing on VibeTV")
 	}
 
@@ -261,7 +276,7 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 
 	fmt.Fprintln(out, "Uploading theme files...")
 	for _, asset := range pack.Assets {
-		if err := uploadAssetWithPairRetry(wifi, &resolvedTarget, asset.Entry.Path, filepath.Base(asset.Entry.File), asset.Data, opts.PairTokenStore); err != nil {
+		if err := uploadAssetAndVerifyWithPairRetry(wifi, &resolvedTarget, asset.Entry.Path, filepath.Base(asset.Entry.File), asset.Data, opts.PairTokenStore, uploadSettleDelay, opts.Verbose, out); err != nil {
 			return Result{}, &InstallError{
 				Op:   "theme-pack/upload",
 				Code: errcode.UpgradeFlashFirmware,
@@ -272,16 +287,8 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 		if opts.Verbose {
 			fmt.Fprintf(out, "Uploaded asset: %s bytes=%d\n", asset.Entry.Path, len(asset.Data))
 		}
-		if err := settleUpload(wifi, resolvedTarget, asset.Entry.Path, uploadSettleDelay, opts.Verbose, out); err != nil {
-			return Result{}, &InstallError{
-				Op:   "theme-pack/upload",
-				Code: errcode.UpgradeFlashFirmware,
-				Err:  uploadError(asset.Entry.Path, err, opts.Verbose),
-				Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
-			}
-		}
 	}
-	if err := uploadAssetWithPairRetry(wifi, &resolvedTarget, pack.ThemeSpecFile.Entry.Path, filepath.Base(pack.ThemeSpecFile.Entry.File), pack.ThemeSpecRaw, opts.PairTokenStore); err != nil {
+	if err := uploadAssetAndVerifyWithPairRetry(wifi, &resolvedTarget, pack.ThemeSpecFile.Entry.Path, filepath.Base(pack.ThemeSpecFile.Entry.File), pack.ThemeSpecRaw, opts.PairTokenStore, uploadSettleDelay, opts.Verbose, out); err != nil {
 		return Result{}, &InstallError{
 			Op:   "theme-pack/upload",
 			Code: errcode.UpgradeFlashFirmware,
@@ -291,14 +298,6 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	}
 	if opts.Verbose {
 		fmt.Fprintf(out, "Uploaded theme spec: %s bytes=%d\n", pack.ThemeSpecFile.Entry.Path, len(pack.ThemeSpecRaw))
-	}
-	if err := settleUpload(wifi, resolvedTarget, pack.ThemeSpecFile.Entry.Path, uploadSettleDelay, opts.Verbose, out); err != nil {
-		return Result{}, &InstallError{
-			Op:   "theme-pack/upload",
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  uploadError(pack.ThemeSpecFile.Entry.Path, err, opts.Verbose),
-			Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
-		}
 	}
 
 	fmt.Fprintln(out, "Activating theme...")
@@ -330,6 +329,8 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 			Hint: hint,
 		}
 	}
+
+	cleanupThemeUserAssets(wifi, &resolvedTarget, opts.PairTokenStore, out, themePackDevicePaths(pack))
 
 	fmt.Fprintf(out, "Done: theme %s installed on %s\n", pack.Manifest.ID, displayTarget)
 	if opts.Verbose {
@@ -432,6 +433,76 @@ func sendLiveThemeFrame(ctx context.Context, wifi transportlayer.WiFiTransport, 
 	return nil
 }
 
+func sendClearThemeSpecFrame(ctx context.Context, wifi transportlayer.WiFiTransport, target string, caps protocol.DeviceCapabilities, fetchFrame func(context.Context) (protocol.Frame, error)) error {
+	if fetchFrame == nil {
+		fetchFrame = codexbar.FetchFirstFrame
+	}
+	frame, err := fetchFrame(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch current usage: %w", err)
+	}
+	frame = frame.Normalize()
+	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
+	frame.Theme = ""
+	frame.ThemeSpec = json.RawMessage("null")
+	frame.ConfirmClearThemeSpec = true
+	line, err := frame.MarshalLine()
+	if err != nil {
+		return fmt.Errorf("build clear-theme frame: %w", err)
+	}
+	maxFrameBytes := caps.MaxFrameBytes
+	if maxFrameBytes <= 0 {
+		maxFrameBytes = protocol.DefaultMaxFrameBytes
+	}
+	if len(bytes.TrimSpace(line)) > maxFrameBytes {
+		return fmt.Errorf("clear-theme frame exceeds device limit: size=%d limit=%d", len(bytes.TrimSpace(line)), maxFrameBytes)
+	}
+	if err := wifi.SendLine(target, line); err != nil {
+		return fmt.Errorf("send clear-theme frame: %w", err)
+	}
+	return nil
+}
+
+func currentStoredThemePath(wifi transportlayer.WiFiTransport, target string) (string, error) {
+	health, err := wifi.DeviceHealthSnapshot(target)
+	if err != nil {
+		return "", err
+	}
+	path := strings.TrimSpace(health.Display.ThemeSpec.Path)
+	if !health.Display.ThemeSpec.Active || path == "" || strings.EqualFold(strings.TrimSpace(health.Display.ActiveTheme), "installing") {
+		return "", nil
+	}
+	return path, nil
+}
+
+func restoreThemeInstallScreen(
+	ctx context.Context,
+	wifi transportlayer.WiFiTransport,
+	target *string,
+	caps protocol.DeviceCapabilities,
+	previousThemePath string,
+	store PairTokenStore,
+	fetchFrame func(context.Context) (protocol.Frame, error),
+	out io.Writer,
+) {
+	previousThemePath = strings.TrimSpace(previousThemePath)
+	if previousThemePath != "" {
+		fmt.Fprintln(out, "Restoring previous theme...")
+		if err := activateThemeWithPairRetry(wifi, target, previousThemePath, store); err != nil {
+			fmt.Fprintf(out, "Restore previous theme: skipped (%v)\n", err)
+		} else {
+			fmt.Fprintln(out, "Restore previous theme: activated")
+			sendLiveThemeFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame, out)
+			return
+		}
+	}
+	if err := sendClearThemeSpecFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame); err != nil {
+		fmt.Fprintf(out, "Clear install screen: skipped (%v)\n", err)
+		return
+	}
+	fmt.Fprintln(out, "Clear install screen: refreshed")
+}
+
 type themeActivationError struct {
 	op  string
 	err error
@@ -532,6 +603,89 @@ func sendLiveThemeFrameWithPairRetry(
 	fmt.Fprintln(out, "Live usage frame: refreshed")
 }
 
+func sendClearThemeSpecFrameWithPairRetry(
+	ctx context.Context,
+	wifi transportlayer.WiFiTransport,
+	target *string,
+	caps protocol.DeviceCapabilities,
+	store PairTokenStore,
+	fetchFrame func(context.Context) (protocol.Frame, error),
+) error {
+	err := sendClearThemeSpecFrame(ctx, wifi, *target, caps, fetchFrame)
+	if err == nil || !authRequired(err) {
+		return err
+	}
+	pairedTarget, pairErr := pairThemeInstallTarget(wifi, *target, store)
+	if pairErr != nil {
+		return pairErr
+	}
+	*target = pairedTarget
+	return sendClearThemeSpecFrame(ctx, wifi, *target, caps, fetchFrame)
+}
+
+func cleanupThemeUserAssets(wifi transportlayer.WiFiTransport, target *string, store PairTokenStore, out io.Writer, keepPaths map[string]bool) {
+	assets, err := wifi.DeviceAssets(*target)
+	if err != nil {
+		fmt.Fprintf(out, "Theme file cleanup: skipped (%v)\n", err)
+		return
+	}
+	paths := cleanupThemeUserAssetPaths(assets, keepPaths)
+	if len(paths) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "Cleaning old theme files...")
+	for _, devicePath := range paths {
+		if err := deleteAssetWithPairRetry(wifi, target, devicePath, store); err != nil {
+			fmt.Fprintf(out, "Theme file cleanup: skipped %s (%v)\n", devicePath, err)
+		}
+	}
+}
+
+func cleanupThemeUserAssetPaths(assets transportlayer.DeviceAssetsSnapshot, keepPaths map[string]bool) []string {
+	paths := assets.PathsWithPrefix("/themes/u/")
+	filtered := paths[:0]
+	for _, devicePath := range paths {
+		if keepPaths[strings.TrimSpace(devicePath)] {
+			continue
+		}
+		filtered = append(filtered, devicePath)
+	}
+	sort.Strings(filtered)
+	return filtered
+}
+
+func themePackDevicePaths(pack *themepack.Pack) map[string]bool {
+	if pack == nil {
+		return nil
+	}
+	paths := make(map[string]bool, len(pack.Assets)+1)
+	addThemeDevicePath(paths, pack.ThemeSpecFile.Entry.Path)
+	for _, asset := range pack.Assets {
+		addThemeDevicePath(paths, asset.Entry.Path)
+	}
+	return paths
+}
+
+func addThemeDevicePath(paths map[string]bool, devicePath string) {
+	devicePath = strings.TrimSpace(devicePath)
+	if devicePath != "" {
+		paths[devicePath] = true
+	}
+}
+
+func deleteAssetWithPairRetry(wifi transportlayer.WiFiTransport, target *string, devicePath string, store PairTokenStore) error {
+	err := wifi.DeleteAsset(*target, devicePath)
+	if err == nil || !authRequired(err) {
+		return err
+	}
+	pairedTarget, pairErr := pairThemeInstallTarget(wifi, *target, store)
+	if pairErr != nil {
+		return pairErr
+	}
+	*target = pairedTarget
+	return wifi.DeleteAsset(*target, devicePath)
+}
+
 func sleepActivationRetry(ctx context.Context) error {
 	if activationRetryDelay <= 0 {
 		return nil
@@ -557,6 +711,39 @@ func uploadAssetWithPairRetry(wifi transportlayer.WiFiTransport, target *string,
 	}
 	*target = pairedTarget
 	return wifi.UploadAsset(*target, devicePath, filename, data)
+}
+
+func uploadAssetAndVerifyWithPairRetry(
+	wifi transportlayer.WiFiTransport,
+	target *string,
+	devicePath,
+	filename string,
+	data []byte,
+	store PairTokenStore,
+	settleDelay time.Duration,
+	verbose bool,
+	out io.Writer,
+) error {
+	var lastErr error
+	for attempt := 1; attempt <= uploadVerifyAttempts; attempt++ {
+		if err := uploadAssetWithPairRetry(wifi, target, devicePath, filename, data, store); err != nil {
+			return err
+		} else if err := settleUpload(wifi, *target, devicePath, len(data), settleDelay, verbose, out); err != nil {
+			lastErr = err
+		} else {
+			return nil
+		}
+
+		if attempt >= uploadVerifyAttempts {
+			return lastErr
+		}
+		fmt.Fprintln(out, "Upload verification failed, retrying...")
+		if verbose {
+			fmt.Fprintf(out, "Upload retry %d/%d: %s (%v)\n", attempt+1, uploadVerifyAttempts, devicePath, lastErr)
+		}
+		time.Sleep(uploadVerifyRetryDelay)
+	}
+	return lastErr
 }
 
 func activateThemeWithPairRetry(wifi transportlayer.WiFiTransport, target *string, devicePath string, store PairTokenStore) error {
@@ -814,15 +1001,31 @@ func FallbackThemeSpecCapabilities() protocol.DeviceCapabilities {
 	}
 }
 
-func settleUpload(wifi transportlayer.WiFiTransport, target, devicePath string, delay time.Duration, verbose bool, out io.Writer) error {
+func settleUpload(wifi transportlayer.WiFiTransport, target, devicePath string, expectedBytes int, delay time.Duration, verbose bool, out io.Writer) error {
 	if delay > 0 {
 		time.Sleep(delay)
 	}
 	if err := wifi.DeviceHealth(target); err != nil {
 		return &uploadHealthError{devicePath: devicePath, err: err}
 	}
+	assets, err := wifi.DeviceAssets(target)
+	if err != nil {
+		return &uploadAssetVerifyError{devicePath: devicePath, expectedBytes: expectedBytes, err: err}
+	}
+	actualBytes, ok := assets.AssetSize(devicePath)
+	if !ok {
+		return &uploadAssetVerifyError{devicePath: devicePath, expectedBytes: expectedBytes}
+	}
+	if actualBytes != int64(expectedBytes) {
+		return &uploadAssetVerifyError{
+			devicePath:    devicePath,
+			expectedBytes: expectedBytes,
+			actualBytes:   actualBytes,
+			found:         true,
+		}
+	}
 	if verbose {
-		fmt.Fprintf(out, "Upload verified: %s\n", devicePath)
+		fmt.Fprintf(out, "Upload verified: %s bytes=%d\n", devicePath, expectedBytes)
 	}
 	return nil
 }
@@ -840,9 +1043,35 @@ func (e *uploadHealthError) Unwrap() error {
 	return e.err
 }
 
+type uploadAssetVerifyError struct {
+	devicePath    string
+	expectedBytes int
+	actualBytes   int64
+	found         bool
+	err           error
+}
+
+func (e *uploadAssetVerifyError) Error() string {
+	if e.err != nil {
+		return fmt.Sprintf("device asset list failed after uploading %s: %v", e.devicePath, e.err)
+	}
+	if !e.found {
+		return fmt.Sprintf("uploaded asset %s is missing on VibeTV", e.devicePath)
+	}
+	return fmt.Sprintf("uploaded asset %s has size %d bytes, expected %d", e.devicePath, e.actualBytes, e.expectedBytes)
+}
+
+func (e *uploadAssetVerifyError) Unwrap() error {
+	return e.err
+}
+
 func uploadError(devicePath string, err error, verbose bool) error {
 	if verbose {
 		return fmt.Errorf("upload failed for %s: %w", devicePath, err)
+	}
+	var verifyErr *uploadAssetVerifyError
+	if errors.As(err, &verifyErr) {
+		return fmt.Errorf("theme upload did not finish for %s: %v", devicePath, verifyErr)
 	}
 	var healthErr *uploadHealthError
 	if errors.As(err, &healthErr) {

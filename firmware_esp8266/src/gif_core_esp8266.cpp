@@ -90,7 +90,7 @@ void GifCoreESP8266::ResetFrameSchedule() {
 }
 
 void GifCoreESP8266::ResetForAssetUpdate() {
-  Stop();
+  ReleaseMemory();
   fsMounted_ = false;
   filePresent_ = false;
   assetPath_ = "";

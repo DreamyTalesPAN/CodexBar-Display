@@ -2,6 +2,11 @@
 .vercel
 **/.next
 **/node_modules
+apps/control-center/.local-export-work
+apps/control-center/out
+apps/control-center/out-local
+apps/control-center/tsconfig.tsbuildinfo
+codexbar-display
 /companion
 /dist
 /docs

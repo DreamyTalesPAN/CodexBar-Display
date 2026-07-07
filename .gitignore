@@ -14,6 +14,8 @@ node_modules/
 /dist/*
 !/dist/theme-packs/
 !/dist/theme-packs/**
+apps/control-center/.local-export-work/
+apps/control-center/out-local/
 tools/theme-studio/dist/
 coverage/
 
@@ -23,6 +25,8 @@ bin/
 *.out
 companion/vibeblock
 codexbar-display
+companion/internal/companionapi/controlcenter_static/*
+!companion/internal/companionapi/controlcenter_static/.gitkeep
 
 # Firmware / PlatformIO / Arduino
 .pio/

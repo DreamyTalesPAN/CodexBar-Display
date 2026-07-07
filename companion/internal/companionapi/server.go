@@ -3,15 +3,18 @@ package companionapi
 import (
 	"bytes"
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -28,7 +31,11 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
 )
+
+//go:embed all:controlcenter_static
+var embeddedControlCenterStatic embed.FS
 
 const (
 	DefaultAddr             = "127.0.0.1:47832"
@@ -38,11 +45,15 @@ const (
 	previewOriginHostSuffix = "-paul-anduschus-projects.vercel.app"
 	deviceTimeout           = 15 * time.Second
 	discoveryProbeTime      = 1500 * time.Millisecond
+	repairDiscoveryAttempts = 3
+	repairDiscoveryRetryGap = 1200 * time.Millisecond
 	subnetProbeLimit        = 32
 	subnetProbeTime         = 450 * time.Millisecond
 	themeInstallDisableEnv  = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
 	displayStreamLabel      = "com.codexbar-display.daemon"
-	displayStreamOutLog     = "/tmp/codexbar-display-daemon.out.log"
+	displayStreamOutLog     = "daemon.out.log"
+	displayStreamLegacyLog  = "/tmp/codexbar-display-daemon.out.log"
+	displayStreamOutLogEnv  = "CODEXBAR_DISPLAY_STREAM_OUT_LOG"
 	displayStreamReadyAge   = 2 * time.Minute
 	displayStreamWaitTime   = 12 * time.Second
 	displayRenderWaitTime   = 20 * time.Second
@@ -54,12 +65,41 @@ const (
 	macAppReleaseAPIURL     = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
 	macAppReleaseCheckGap   = 6 * time.Hour
 	macAppReleaseTimeout    = 5 * time.Second
+	firmwareManifestEnvVar  = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareReleaseTimeout  = 5 * time.Second
 )
+
+var deviceHealthProbeTime = 2 * time.Second
+
+var displayStreamLogKeys = []string{
+	"code",
+	"op",
+	"retry",
+	"recovery",
+	"err",
+	"transport",
+	"source",
+	"fresh",
+	"usageMode",
+	"provider",
+	"label",
+	"session",
+	"weekly",
+	"reset",
+	"activity",
+	"time",
+	"date",
+	"error",
+	"reason",
+	"detail",
+	"activityDetail",
+}
 
 type Options struct {
 	Addr                 string
 	Home                 string
 	AllowedOrigins       []string
+	ControlCenterFS      fs.FS
 	HTTPClient           *http.Client
 	RefreshDisplayStream func(context.Context, string) error
 }
@@ -68,6 +108,7 @@ type Server struct {
 	addr                   string
 	home                   string
 	allowedOrigins         map[string]struct{}
+	controlCenterFS        fs.FS
 	client                 *http.Client
 	loadConfig             func(string) (runtimeconfig.Config, error)
 	saveConfig             func(string, runtimeconfig.Config) error
@@ -156,6 +197,7 @@ type deviceInfo struct {
 	Capabilities *protocol.CapabilityBlock `json:"capabilities,omitempty"`
 	Stream       *displayStreamInfo        `json:"stream,omitempty"`
 	Display      *deviceDisplayInfo        `json:"display,omitempty"`
+	Health       *deviceHealthInfo         `json:"health,omitempty"`
 }
 
 type displayStreamInfo struct {
@@ -169,6 +211,12 @@ type displayStreamInfo struct {
 
 type deviceDisplayInfo struct {
 	ThemeSpec *themeSpecHealth `json:"themeSpec,omitempty"`
+}
+
+type deviceHealthInfo struct {
+	OK          bool   `json:"ok"`
+	ResetReason string `json:"resetReason,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 type themeSpecHealth struct {
@@ -219,6 +267,28 @@ type themeInstallJobResponse struct {
 
 type firmwareUpdateRequest struct {
 	Force bool `json:"force,omitempty"`
+}
+
+type firmwareLatestResponse struct {
+	CheckedAt         string `json:"checkedAt"`
+	InstalledFirmware string `json:"installedFirmware,omitempty"`
+	LatestFirmware    string `json:"latestFirmware,omitempty"`
+	Release           string `json:"release,omitempty"`
+	UpdateAvailable   bool   `json:"updateAvailable"`
+	Status            string `json:"status"`
+	Message           string `json:"message,omitempty"`
+}
+
+type firmwareReleaseManifest struct {
+	Release   string                    `json:"release"`
+	Artifacts []firmwareReleaseArtifact `json:"artifacts"`
+}
+
+type firmwareReleaseArtifact struct {
+	Board           string `json:"board"`
+	FirmwareVersion string `json:"firmwareVersion"`
+	Severity        string `json:"severity"`
+	Message         string `json:"message"`
 }
 
 type firmwareUpdateResult struct {
@@ -488,10 +558,18 @@ func New(opts Options) (*Server, error) {
 			origins[origin] = struct{}{}
 		}
 	}
+	controlCenterFS := opts.ControlCenterFS
+	if controlCenterFS == nil {
+		controlCenterFS, err = fs.Sub(embeddedControlCenterStatic, "controlcenter_static")
+		if err != nil {
+			return nil, fmt.Errorf("load embedded control center: %w", err)
+		}
+	}
 	return &Server{
 		addr:               addr,
 		home:               home,
 		allowedOrigins:     origins,
+		controlCenterFS:    controlCenterFS,
 		client:             client,
 		loadConfig:         runtimeconfig.Load,
 		saveConfig:         runtimeconfig.Save,
@@ -541,6 +619,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.registerControlCenterRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
@@ -554,11 +633,98 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/settings", s.handleSettings)
 	mux.HandleFunc("/v1/themes/install", s.handleThemeInstall)
 	mux.HandleFunc("/v1/themes/install/status", s.handleThemeInstallStatus)
+	mux.HandleFunc("/v1/updates/latest", s.handleFirmwareLatest)
 	mux.HandleFunc("/v1/updates/install", s.handleFirmwareUpdateInstall)
 	mux.HandleFunc("/v1/updates/install/status", s.handleFirmwareUpdateStatus)
 	mux.HandleFunc("/v1/mac-app/update", s.handleMacAppUpdateInstall)
 	mux.HandleFunc("/v1/mac-app/update/status", s.handleMacAppUpdateStatus)
 	return s.withCORS(mux)
+}
+
+func (s *Server) registerControlCenterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/control-center", s.handleControlCenter)
+	mux.HandleFunc("/control-center/", s.handleControlCenter)
+	mux.HandleFunc("/_next/", s.handleControlCenterAsset)
+	mux.HandleFunc("/images/", s.handleControlCenterAsset)
+	mux.HandleFunc("/theme-packs/", s.handleControlCenterAsset)
+	mux.HandleFunc("/favicon.ico", s.handleControlCenterAsset)
+	mux.HandleFunc("/install-control-center-companion.sh", s.handleControlCenterAsset)
+}
+
+func (s *Server) handleControlCenter(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet, http.MethodHead) {
+		return
+	}
+	assetPath := strings.TrimPrefix(r.URL.Path, "/control-center")
+	assetPath = strings.TrimPrefix(assetPath, "/")
+	if assetPath == "" {
+		assetPath = "index.html"
+	}
+	if strings.Contains(path.Base(assetPath), ".") {
+		s.serveControlCenterFile(w, r, assetPath)
+		return
+	}
+	if routeFile := assetPath + ".html"; s.controlCenterFileExists(routeFile) {
+		s.serveControlCenterFile(w, r, routeFile)
+		return
+	}
+	if routeIndex := path.Join(assetPath, "index.html"); s.controlCenterFileExists(routeIndex) {
+		s.serveControlCenterFile(w, r, routeIndex)
+		return
+	}
+	s.serveControlCenterFile(w, r, "index.html")
+}
+
+func (s *Server) handleControlCenterAsset(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet, http.MethodHead) {
+		return
+	}
+	assetPath := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+	if assetPath == "." || strings.HasPrefix(assetPath, "../") {
+		http.NotFound(w, r)
+		return
+	}
+	s.serveControlCenterFile(w, r, assetPath)
+}
+
+func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, assetPath string) bool {
+	assetPath, ok := normalizeControlCenterAssetPath(assetPath)
+	if !ok {
+		http.NotFound(w, r)
+		return false
+	}
+	data, err := fs.ReadFile(s.controlCenterFS, assetPath)
+	if err != nil {
+		if assetPath == "index.html" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			if r.Method != http.MethodHead {
+				_, _ = io.WriteString(w, "<!doctype html><title>VibeTV Control Center unavailable</title><p>VibeTV Control Center is not bundled with this Mac App. Run setup again.</p>")
+			}
+			return false
+		}
+		http.NotFound(w, r)
+		return false
+	}
+	http.ServeContent(w, r, path.Base(assetPath), time.Time{}, bytes.NewReader(data))
+	return true
+}
+
+func (s *Server) controlCenterFileExists(assetPath string) bool {
+	assetPath, ok := normalizeControlCenterAssetPath(assetPath)
+	if !ok {
+		return false
+	}
+	info, err := fs.Stat(s.controlCenterFS, assetPath)
+	return err == nil && !info.IsDir()
+}
+
+func normalizeControlCenterAssetPath(assetPath string) (string, bool) {
+	assetPath = strings.TrimPrefix(path.Clean("/"+assetPath), "/")
+	if assetPath == "." || !fs.ValidPath(assetPath) {
+		return "", false
+	}
+	return assetPath, true
 }
 
 func (s *Server) withCORS(next http.Handler) http.Handler {
@@ -628,6 +794,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Paired:    strings.TrimSpace(cfg.DeviceToken) != "",
 		Stream:    streamPointer(stream),
 	}
+	if strings.TrimSpace(cfg.DeviceTarget) != "" {
+		if hello, probeToken, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
+			device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
+			if health, healthErr := s.getHealthProbe(r.Context(), cfg.DeviceTarget, probeToken, deviceHealthProbeTime); healthErr == nil {
+				device = withDeviceHealth(device, health)
+			} else {
+				device = withDeviceHealthProbeError(device, healthErr)
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, statusResponse{
 		OK:        true,
 		Companion: s.companionInfo(r.Context()),
@@ -641,6 +817,10 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
+	showUsed := codexbar.UsageBarsShowUsed()
+	writeUsage := func(resp usageResponse) {
+		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
+	}
 	var persisted usageResponse
 	havePersisted := false
 	if s.loadUsage != nil {
@@ -648,7 +828,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			persisted = usageResponseFromPersisted(now, usage)
 			havePersisted = len(persisted.Providers) > 0
 			if usageResponseHasFreshProvider(persisted) {
-				writeJSON(w, http.StatusOK, persisted)
+				writeUsage(persisted)
 				return
 			}
 		}
@@ -656,10 +836,10 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 
 	if s.fetchUsage == nil {
 		if havePersisted {
-			writeJSON(w, http.StatusOK, persisted)
+			writeUsage(persisted)
 			return
 		}
-		writeJSON(w, http.StatusOK, emptyUsageResponse(now, "codexbar-display"))
+		writeUsage(emptyUsageResponse(now, "codexbar-display"))
 		return
 	}
 
@@ -668,7 +848,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	providers, err := s.fetchUsage(ctx)
 	if err != nil {
 		if havePersisted {
-			writeJSON(w, http.StatusOK, persisted)
+			writeUsage(persisted)
 			return
 		}
 		writeError(
@@ -682,14 +862,24 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := usageResponseFromParsed(now, providers)
 	if len(resp.Providers) == 0 && havePersisted {
-		writeJSON(w, http.StatusOK, persisted)
+		writeUsage(persisted)
 		return
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeUsage(resp)
 }
 
 func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	if sentAt, frame, ok := lastDisplayStreamFrameSnapshot(displayStreamOutLogPath()); ok {
+		writeJSON(w, http.StatusOK, displayFrameResponse{
+			OK:      true,
+			SavedAt: sentAt.UTC().Format(time.RFC3339Nano),
+			Source:  "last-sent-frame",
+			Frame:   frame.Normalize(),
+		})
 		return
 	}
 
@@ -805,7 +995,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		Status: "pass",
 		Detail: publicTarget(cfg.DeviceTarget),
 	})
-	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+	hello, probeToken, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
 	if err != nil {
 		checks = append(checks, diagnosticCheck{
 			Name:       "device_hello",
@@ -845,8 +1035,9 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			NextAction: "Click Fix connection to restart the display stream.",
 		})
 	}
-	health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
+	health, err := s.getHealthProbe(r.Context(), cfg.DeviceTarget, probeToken, deviceHealthProbeTime)
 	if err != nil {
+		device = withDeviceHealthProbeError(device, err)
 		checks = append(checks, diagnosticCheck{
 			Name:       "device_health",
 			Status:     "attention",
@@ -1420,6 +1611,35 @@ func usageModeForProviders(providers []usageProviderInfo) string {
 	return "used"
 }
 
+func usageResponseForDisplayMode(resp usageResponse, showUsed bool) usageResponse {
+	targetMode := "used"
+	if !showUsed {
+		targetMode = "remaining"
+	}
+	for i := range resp.Providers {
+		resp.Providers[i] = usageProviderForDisplayMode(resp.Providers[i], targetMode)
+	}
+	if len(resp.Providers) == 0 {
+		resp.UsageMode = targetMode
+	} else {
+		resp.UsageMode = usageModeForProviders(resp.Providers)
+	}
+	return resp
+}
+
+func usageProviderForDisplayMode(provider usageProviderInfo, targetMode string) usageProviderInfo {
+	currentMode := usageModeOrDefault(provider.UsageMode)
+	if currentMode != targetMode {
+		provider.Session = 100 - clampUsagePercent(provider.Session)
+		provider.Weekly = 100 - clampUsagePercent(provider.Weekly)
+		for i := range provider.Windows {
+			provider.Windows[i].UsedPercent = 100 - clampUsagePercent(provider.Windows[i].UsedPercent)
+		}
+	}
+	provider.UsageMode = usageModeOrDefault(targetMode)
+	return provider
+}
+
 func clampUsagePercent(value int) int {
 	if value < 0 {
 		return 0
@@ -1452,7 +1672,9 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	target, hello, err := s.discover(r.Context(), cfg, req.Target)
+	discoveryCfg := cfg
+	discoveryCfg.DeviceToken = ""
+	target, hello, err := s.discover(r.Context(), discoveryCfg, req.Target)
 	if err != nil {
 		writeDiscoveryError(w, err)
 		return
@@ -1558,25 +1780,15 @@ func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	cfg, err := s.config()
-	if err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	if strings.TrimSpace(cfg.DeviceTarget) == "" {
-		writeDeviceNotFound(w)
-		return
-	}
-	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
-	if err != nil {
-		writeDeviceNotFound(w)
+	cfg, hello, ok := s.requireDevice(w, r)
+	if !ok {
 		return
 	}
 	device := s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello))
-	if device.Stream != nil && device.Stream.Healthy {
-		if health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err == nil {
-			device = withDeviceHealth(device, health)
-		}
+	if health, err := s.getHealthProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, deviceHealthProbeTime); err == nil {
+		device = withDeviceHealth(device, health)
+	} else {
+		device = withDeviceHealthProbeError(device, err)
 	}
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool       `json:"ok"`
@@ -1673,12 +1885,12 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	if forcePair {
 		discoveryCfg.DeviceToken = ""
 	}
-	target, hello, err := s.discover(ctx, discoveryCfg, requestedTarget)
+	target, hello, err := s.discoverForRepair(ctx, discoveryCfg, requestedTarget)
 	tokenStale := false
 	if err != nil && !forcePair && strings.TrimSpace(cfg.DeviceToken) != "" {
 		discoveryCfg = cfg
 		discoveryCfg.DeviceToken = ""
-		target, hello, err = s.discover(ctx, discoveryCfg, requestedTarget)
+		target, hello, err = s.discoverForRepair(ctx, discoveryCfg, requestedTarget)
 		if err == nil {
 			tokenStale = true
 		}
@@ -1712,6 +1924,44 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 		device = withDeviceHealth(device, health)
 	}
 	return device, nil
+}
+
+func (s *Server) discoverForRepair(ctx context.Context, cfg runtimeconfig.Config, requestedTarget string) (string, protocol.DeviceHello, error) {
+	requestedTarget = strings.TrimSpace(requestedTarget)
+	attempts := 1
+	if requestedTarget == "" && strings.TrimSpace(cfg.DeviceToken) == "" {
+		attempts = repairDiscoveryAttempts
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		target, hello, err := s.discover(ctx, cfg, requestedTarget)
+		if err == nil {
+			return target, hello, nil
+		}
+		lastErr = err
+		if !repairDiscoveryErrorIsRetryable(err) || attempt == attempts-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", protocol.DeviceHello{}, ctx.Err()
+		case <-time.After(repairDiscoveryRetryGap):
+		}
+	}
+	return "", protocol.DeviceHello{}, lastErr
+}
+
+func repairDiscoveryErrorIsRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var invalidTarget *invalidTargetError
+	if errors.As(err, &invalidTarget) {
+		return false
+	}
+	var multiple *multipleDevicesError
+	return !errors.As(err, &multiple)
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -1869,6 +2119,120 @@ func (s *Server) handleThemeInstallStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, themeInstallJobResponse{OK: true, Job: job})
+}
+
+func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	board := strings.TrimSpace(r.URL.Query().Get("board"))
+	installedFirmware := strings.TrimSpace(r.URL.Query().Get("firmware"))
+	checkedAt := time.Now().UTC().Format(time.RFC3339)
+	if board == "" || installedFirmware == "" {
+		writeJSON(w, http.StatusOK, firmwareLatestResponse{
+			CheckedAt:         checkedAt,
+			InstalledFirmware: installedFirmware,
+			UpdateAvailable:   false,
+			Status:            "missing_device_info",
+			Message:           "VibeTV update info is not available yet.",
+		})
+		return
+	}
+
+	manifest, err := s.fetchFirmwareReleaseManifest(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusOK, firmwareLatestResponse{
+			CheckedAt:         checkedAt,
+			InstalledFirmware: installedFirmware,
+			UpdateAvailable:   false,
+			Status:            "check_failed",
+			Message:           "Firmware check failed.",
+		})
+		return
+	}
+	artifact := latestFirmwareArtifactForBoard(manifest, board)
+	if strings.TrimSpace(artifact.FirmwareVersion) == "" {
+		writeJSON(w, http.StatusOK, firmwareLatestResponse{
+			CheckedAt:         checkedAt,
+			InstalledFirmware: installedFirmware,
+			Release:           manifest.Release,
+			UpdateAvailable:   false,
+			Status:            "no_board_release",
+			Message:           "No update is available for this VibeTV.",
+		})
+		return
+	}
+
+	updateAvailable := firmwareVersionCompare(artifact.FirmwareVersion, installedFirmware) > 0
+	message := "Firmware is up to date."
+	status := "current"
+	if updateAvailable {
+		status = "update_available"
+		message = strings.TrimSpace(artifact.Message)
+		if message == "" {
+			message = "Firmware update available."
+		}
+	}
+	writeJSON(w, http.StatusOK, firmwareLatestResponse{
+		CheckedAt:         checkedAt,
+		InstalledFirmware: installedFirmware,
+		LatestFirmware:    strings.TrimSpace(artifact.FirmwareVersion),
+		Release:           manifest.Release,
+		UpdateAvailable:   updateAvailable,
+		Status:            status,
+		Message:           message,
+	})
+}
+
+func (s *Server) fetchFirmwareReleaseManifest(ctx context.Context) (firmwareReleaseManifest, error) {
+	manifestURL := strings.TrimSpace(os.Getenv(firmwareManifestEnvVar))
+	if manifestURL == "" {
+		manifestURL = themeinstall.DefaultFirmwareManifestURL
+	}
+	ctx, cancel := context.WithTimeout(ctx, firmwareReleaseTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, manifestURL, nil)
+	if err != nil {
+		return firmwareReleaseManifest{}, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return firmwareReleaseManifest{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return firmwareReleaseManifest{}, fmt.Errorf("firmware manifest status %d", resp.StatusCode)
+	}
+	var manifest firmwareReleaseManifest
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&manifest); err != nil {
+		return firmwareReleaseManifest{}, err
+	}
+	return manifest, nil
+}
+
+func latestFirmwareArtifactForBoard(manifest firmwareReleaseManifest, board string) firmwareReleaseArtifact {
+	normalizedBoard := strings.ToLower(strings.TrimSpace(board))
+	var latest firmwareReleaseArtifact
+	for _, artifact := range manifest.Artifacts {
+		if strings.ToLower(strings.TrimSpace(artifact.Board)) != normalizedBoard {
+			continue
+		}
+		if strings.TrimSpace(latest.FirmwareVersion) == "" ||
+			firmwareVersionCompare(artifact.FirmwareVersion, latest.FirmwareVersion) > 0 {
+			latest = artifact
+		}
+	}
+	return latest
+}
+
+func firmwareVersionCompare(left, right string) int {
+	leftVersion, leftErr := versioning.ParseSemVer(left)
+	rightVersion, rightErr := versioning.ParseSemVer(right)
+	if leftErr != nil || rightErr != nil {
+		return strings.Compare(strings.TrimSpace(left), strings.TrimSpace(right))
+	}
+	return leftVersion.Compare(rightVersion)
 }
 
 func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Request) {
@@ -2873,8 +3237,17 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 	}
 	hello, err := s.getHello(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
 	if err != nil {
-		writeDeviceNotFound(w)
-		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		target, discoveredHello, discoverErr := s.discover(r.Context(), cfg, "")
+		if discoverErr != nil {
+			writeDeviceNotFound(w)
+			return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		}
+		cfg.DeviceTarget = target
+		if err := s.saveConfig(s.home, cfg); err != nil {
+			writeInternalError(w, err)
+			return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+		}
+		return cfg, discoveredHello, true
 	}
 	return cfg, hello, true
 }
@@ -3027,9 +3400,25 @@ func (s *Server) getHelloProbe(ctx context.Context, target, token string, timeou
 	return s.getHello(probeCtx, target, token)
 }
 
+func (s *Server) getHelloProbeWithTokenFallback(ctx context.Context, target, token string, timeout time.Duration) (protocol.DeviceHello, string, error) {
+	hello, err := s.getHelloProbe(ctx, target, token, timeout)
+	if err == nil || strings.TrimSpace(token) == "" {
+		return hello, strings.TrimSpace(token), err
+	}
+	tokenlessHello, tokenlessErr := s.getHelloProbe(ctx, target, "", timeout)
+	if tokenlessErr == nil {
+		return tokenlessHello, "", nil
+	}
+	return protocol.DeviceHello{}, strings.TrimSpace(token), err
+}
+
 type deviceHealth struct {
+	OK       bool           `json:"ok"`
 	Settings deviceSettings `json:"settings"`
-	Display  struct {
+	System   struct {
+		ResetReason string `json:"resetReason"`
+	} `json:"system"`
+	Display struct {
 		ActiveTheme string `json:"activeTheme"`
 		ThemeSpec   struct {
 			Active         bool   `json:"active"`
@@ -3048,6 +3437,15 @@ func (s *Server) getHealth(ctx context.Context, target, token string) (deviceHea
 		return deviceHealth{}, err
 	}
 	return health, nil
+}
+
+func (s *Server) getHealthProbe(ctx context.Context, target, token string, timeout time.Duration) (deviceHealth, error) {
+	if timeout <= 0 {
+		return s.getHealth(ctx, target, token)
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return s.getHealth(probeCtx, target, token)
 }
 
 func (s *Server) waitForDisplayRender(ctx context.Context, target, token string) (deviceHealth, error) {
@@ -3188,9 +3586,11 @@ func (s *Server) do(req *http.Request, out any) error {
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {
-	if r.Method == method {
-		return true
+func requireMethod(w http.ResponseWriter, r *http.Request, methods ...string) bool {
+	for _, method := range methods {
+		if r.Method == method {
+			return true
+		}
 	}
 	writeMethodNotAllowed(w)
 	return false
@@ -3403,11 +3803,14 @@ func withDisplayStreamInfo(device deviceInfo, stream displayStreamInfo) deviceIn
 		stream.Target = device.Target
 	}
 	device.Stream = streamPointer(stream)
-	device.Connected = device.Connected && device.Paired && stream.Healthy
 	return device
 }
 
 func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
+	device.Health = &deviceHealthInfo{
+		OK:          health.OK,
+		ResetReason: strings.TrimSpace(health.System.ResetReason),
+	}
 	device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)
 	if health.Display.ThemeSpec.Active || health.Display.ThemeSpec.RenderOK != nil {
 		device.Display = &deviceDisplayInfo{
@@ -3421,21 +3824,18 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 			},
 		}
 	}
-	if !deviceRenderHealthy(device) {
-		device.Connected = false
-	}
 	return device
 }
 
-func deviceRenderHealthy(device deviceInfo) bool {
-	if device.Display == nil || device.Display.ThemeSpec == nil {
-		return true
+func withDeviceHealthProbeError(device deviceInfo, err error) deviceInfo {
+	if err == nil {
+		return device
 	}
-	spec := device.Display.ThemeSpec
-	if !spec.Active || spec.RenderOK == nil {
-		return true
+	device.Health = &deviceHealthInfo{
+		OK:    false,
+		Error: sanitizeErrorDetail(err),
 	}
-	return *spec.RenderOK
+	return device
 }
 
 func renderHealthDiagnosticDetail(spec *themeSpecHealth) string {
@@ -3482,7 +3882,7 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 		return stream
 	}
 
-	lastSentAt, lastTarget := lastDisplayStreamFrame(displayStreamOutLog)
+	lastSentAt, lastTarget := lastDisplayStreamFrame(displayStreamOutLogPath())
 	if lastSentAt.IsZero() {
 		stream.Detail = "Display stream has not sent usage yet."
 		return stream
@@ -3492,6 +3892,10 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 
 	if stream.LastTarget != "" && !samePublicTarget(target, stream.LastTarget) {
 		stream.Detail = "Display stream is sending to another VibeTV."
+		return stream
+	}
+	if errorAt, detail, ok := lastDisplayStreamError(displayStreamOutLogPath()); ok && errorAt.After(lastSentAt) && time.Since(errorAt) <= displayStreamReadyAge {
+		stream.Detail = detail
 		return stream
 	}
 	if time.Since(lastSentAt) > displayStreamReadyAge {
@@ -3541,9 +3945,29 @@ func displayStreamLaunchStateRunning(state string) bool {
 }
 
 func lastDisplayStreamFrame(path string) (time.Time, string) {
+	when, target, _, ok := lastDisplayStreamFrameLine(path)
+	if !ok {
+		return time.Time{}, ""
+	}
+	return when, target
+}
+
+func lastDisplayStreamFrameSnapshot(path string) (time.Time, protocol.Frame, bool) {
+	when, _, line, ok := lastDisplayStreamFrameLine(path)
+	if !ok {
+		return time.Time{}, protocol.Frame{}, false
+	}
+	frame, ok := frameFromDisplayStreamLogLine(line)
+	if !ok {
+		return time.Time{}, protocol.Frame{}, false
+	}
+	return when, frame, true
+}
+
+func lastDisplayStreamFrameLine(path string) (time.Time, string, string, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return time.Time{}, ""
+		return time.Time{}, "", "", false
 	}
 	lines := strings.Split(string(data), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -3564,9 +3988,114 @@ func lastDisplayStreamFrame(path string) (time.Time, string) {
 		if fields := strings.Fields(after); len(fields) > 0 {
 			target = fields[0]
 		}
-		return when, target
+		return when, target, line, true
 	}
-	return time.Time{}, ""
+	return time.Time{}, "", "", false
+}
+
+func lastDisplayStreamError(path string) (time.Time, string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return time.Time{}, "", false
+	}
+	lines := strings.Split(string(data), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if !strings.Contains(line, "cycle error:") && !strings.Contains(line, "cycle timeout:") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) == 0 {
+			continue
+		}
+		when, err := time.Parse(time.RFC3339, parts[0])
+		if err != nil {
+			continue
+		}
+		op := displayStreamLogValue(line, "op")
+		detail := "Display stream hit an error after the last frame and is reconnecting."
+		if op == "send-line" {
+			detail = "Display stream could not send to VibeTV and is reconnecting."
+		} else if op == "resolve-target" {
+			detail = "Display stream could not find VibeTV and is reconnecting."
+		} else if strings.Contains(line, "cycle timeout:") {
+			detail = "Display stream timed out and is reconnecting."
+		}
+		return when, detail, true
+	}
+	return time.Time{}, "", false
+}
+
+func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
+	session, hasSession := intFieldFromDisplayStreamLog(line, "session")
+	weekly, hasWeekly := intFieldFromDisplayStreamLog(line, "weekly")
+	if !hasSession || !hasWeekly {
+		return protocol.Frame{}, false
+	}
+
+	frame := protocol.Frame{
+		V:         protocol.ProtocolVersionV1,
+		Provider:  displayStreamLogValue(line, "provider"),
+		Label:     displayStreamLogValue(line, "label"),
+		Session:   session,
+		Weekly:    weekly,
+		UsageMode: displayStreamLogValue(line, "usageMode"),
+		Activity:  displayStreamLogValue(line, "activity"),
+		Time:      displayStreamLogValue(line, "time"),
+		Date:      displayStreamLogValue(line, "date"),
+		Error:     displayStreamLogValue(line, "error"),
+	}
+	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
+		frame.ResetSec = reset
+	}
+	return frame.Normalize(), true
+}
+
+func intFieldFromDisplayStreamLog(line, key string) (int, bool) {
+	value := strings.TrimSuffix(displayStreamLogValue(line, key), "s")
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func int64FieldFromDisplayStreamLog(line, key string) (int64, bool) {
+	value := strings.TrimSuffix(displayStreamLogValue(line, key), "s")
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func displayStreamLogValue(line, key string) string {
+	marker := key + "="
+	start := strings.Index(line, marker)
+	if start < 0 {
+		return ""
+	}
+	start += len(marker)
+	rest := line[start:]
+	end := len(rest)
+	for _, nextKey := range displayStreamLogKeys {
+		nextMarker := " " + nextKey + "="
+		if idx := strings.Index(rest, nextMarker); idx >= 0 && idx < end {
+			end = idx
+		}
+	}
+	return strings.Trim(strings.TrimSpace(rest[:end]), `"`)
+}
+
+func displayStreamOutLogPath() string {
+	if path := strings.TrimSpace(os.Getenv(displayStreamOutLogEnv)); path != "" {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return displayStreamLegacyLog
+	}
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", displayStreamOutLog)
 }
 
 func samePublicTarget(left, right string) bool {

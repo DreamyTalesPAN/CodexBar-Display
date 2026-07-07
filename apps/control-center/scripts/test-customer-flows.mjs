@@ -161,11 +161,31 @@ async function main() {
     });
     app = appContext.app;
     if (smokeOnly) {
+      await testHostedSetupRoutesOldMacAppToSetupCommand(
+        browser,
+        appContext.appUrl,
+      );
+      await testHostedThemeSetupPreservesLocalThemePath(
+        browser,
+        appContext.appUrl,
+      );
+      await testHostedSetupReturnsToLocalControlCenter(
+        browser,
+        appContext.appUrl,
+      );
+      await testLocalSetupSkipsWifiWhenMacAppAlreadyRunsWithoutDevice(
+        browser,
+        appContext.appUrl,
+      );
       await testSetupTabsAreLockedUntilSetupComplete(
         browser,
         appContext.appUrl,
       );
       await testSetupUnlocksWhenThemeInstallGateDisabled(
+        browser,
+        appContext.appUrl,
+      );
+      await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
         browser,
         appContext.appUrl,
       );
@@ -177,7 +197,20 @@ async function main() {
       console.log("control-center customer smoke tests passed");
       return;
     }
-    await testLocalNetworkPermissionComesAfterPhoneWifiStep(
+    await testSetupDoesNotRequestBrowserPermission(browser, appContext.appUrl);
+    await testHostedSetupRoutesOldMacAppToSetupCommand(
+      browser,
+      appContext.appUrl,
+    );
+    await testHostedThemeSetupPreservesLocalThemePath(
+      browser,
+      appContext.appUrl,
+    );
+    await testHostedSetupReturnsToLocalControlCenter(
+      browser,
+      appContext.appUrl,
+    );
+    await testLocalSetupSkipsWifiWhenMacAppAlreadyRunsWithoutDevice(
       browser,
       appContext.appUrl,
     );
@@ -215,7 +248,15 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testOverviewShowsUsageLoadingUntilRealUsage(
+      browser,
+      appContext.appUrl,
+    );
     await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
+    await testThemeLibraryRendersThemeSpecPreviews(
+      browser,
+      appContext.appUrl,
+    );
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
     await testSupportReportExportsAppearAfterReportLoads(
       browser,
@@ -373,10 +414,7 @@ async function newCustomerPage(browser, appUrl, options) {
   return page;
 }
 
-async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
-  browser,
-  appUrl,
-) {
+async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
   const page = await browser.newPage({ viewport });
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
@@ -416,7 +454,15 @@ async function testLocalNetworkPermissionComesAfterPhoneWifiStep(
   await page.getByText("192.168.4.1").waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("button", { name: "Allow access" }).count()) === 0,
-    "browser permission should not be requested before the WiFi step",
+    "setup should not request browser permission",
+  );
+  assert(
+    (await page.getByText("Allow browser access").count()) === 0,
+    "setup should not show browser access as a setup step",
+  );
+  assert(
+    (await page.getByText("Browser permission needed.").count()) === 0,
+    "setup should not show browser permission copy",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -444,7 +490,23 @@ async function testFixConnectionDoesNotRepairWhenMacAppIsOffline(
     "Mac App offline setup should not show an error before the customer checks it",
   );
   await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
-  await page.getByRole("button", { name: "Mac App is installed" }).click();
+  const macAppInstalledButton = page.getByRole("button", {
+    name: "Mac App is installed",
+  });
+  await macAppInstalledButton.waitFor({ timeout: 10_000 });
+  assert(
+    await macAppInstalledButton.isDisabled(),
+    "Mac App continue button should stay disabled until setup instructions are copied",
+  );
+  await page.getByRole("button", { name: "Copy prompt" }).click();
+  await page
+    .getByRole("button", { name: "Prompt copied" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    !(await macAppInstalledButton.isDisabled()),
+    "Mac App continue button should enable after setup instructions are copied",
+  );
+  await macAppInstalledButton.click();
   await page
     .getByText("Mac App did not answer.", { exact: false })
     .waitFor({ timeout: 10_000 });
@@ -460,6 +522,196 @@ async function testFixConnectionDoesNotRepairWhenMacAppIsOffline(
     "Mac App offline setup must not call device repair",
   );
 
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testHostedSetupRoutesOldMacAppToSetupCommand(
+  browser,
+  appUrl,
+) {
+  const page = await browser.newPage({ viewport });
+  await page.context().grantPermissions(["local-network-access"], {
+    origin: "https://app.vibetv.shop",
+  });
+  const installRequests = [];
+  const macAppUpdateRequests = [];
+  await routeHostedAppThroughLocalNext(page, appUrl);
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.36",
+    onMacAppUpdate: (postData) => {
+      macAppUpdateRequests.push(postData);
+    },
+  });
+  await page.route("http://127.0.0.1:47832/control-center", async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: "text/plain",
+      body: "404 page not found",
+    });
+  });
+
+  await page.goto("https://app.vibetv.shop/", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
+  await page.getByText("Mac App update needed.").waitFor({
+    timeout: 10_000,
+  });
+  await page
+    .getByRole("heading", { name: "Install or update Mac App" })
+    .waitFor({
+      timeout: 10_000,
+    });
+  assert(
+    (await page.getByRole("button", { name: "Update Mac App" }).count()) === 0,
+    "Hosted setup should not show a browser Mac App update button",
+  );
+  await assertMacAppSetupUsesTerminalCommand(page, {
+    expectedOrigin: "https://app.vibetv.shop",
+  });
+  assert(
+    (await page.getByRole("button", { name: "Open VibeTV App" }).count()) ===
+      0,
+    "Hosted setup should expose one Control Center open action",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Open Control Center" }).count()) ===
+      0,
+    "First hosted setup should not show the relaunch action before local Control Center was opened",
+  );
+  const macAppInstalledButton = page.getByRole("button", {
+    name: "Mac App is installed",
+  });
+  await macAppInstalledButton.waitFor({ timeout: 10_000 });
+  assert(
+    await macAppInstalledButton.isDisabled(),
+    "First hosted setup should keep Mac App confirmation disabled until setup instructions are copied",
+  );
+  await page.getByRole("button", { name: "Copy prompt" }).click();
+  await page
+    .getByRole("button", { name: "Prompt copied" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    !(await macAppInstalledButton.isDisabled()),
+    "First hosted setup should enable Mac App confirmation after setup instructions are copied",
+  );
+  await page
+    .getByRole("button", { name: "Mac App is installed" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByRole("tab", { name: "Manual setup" }).click();
+  await page.getByRole("button", { name: "Copy terminal command" }).click();
+  await page.getByRole("button", { name: "Mac App is installed" }).click();
+  await page.getByText("Mac App update needed.").waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    macAppUpdateRequests.length === 0,
+    "Hosted setup should route old Mac Apps to setup commands instead of browser self-update",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testHostedThemeSetupPreservesLocalThemePath(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  await page.context().grantPermissions(["local-network-access"], {
+    origin: "https://app.vibetv.shop",
+  });
+  const installRequests = [];
+  await routeHostedAppThroughLocalNext(page, appUrl);
+  await routeCompanionOnline(page, installRequests);
+  await page.route(
+    "http://127.0.0.1:47832/control-center/install/synthwave",
+    async (route) => {
+      await route.fulfill({
+        status: 404,
+        contentType: "text/plain",
+        body: "404 page not found",
+      });
+    },
+  );
+
+  await page.goto("https://app.vibetv.shop/install/synthwave", {
+    waitUntil: "networkidle",
+  });
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
+  await page.getByText("Mac App update needed.").waitFor({
+    timeout: 10_000,
+  });
+  await assertMacAppSetupUsesTerminalCommand(page, {
+    expectedOrigin: "https://app.vibetv.shop",
+    expectedLocalPath: "/control-center/install/synthwave",
+  });
+
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testHostedSetupReturnsToLocalControlCenter(
+  browser,
+  appUrl,
+) {
+  const page = await browser.newPage({ viewport });
+  await page.context().grantPermissions(["local-network-access"], {
+    origin: "https://app.vibetv.shop",
+  });
+  const installRequests = [];
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "vibetv.controlCenter.localControlCenterOpened",
+      "1",
+    );
+  });
+  await routeHostedAppThroughLocalNext(page, appUrl);
+  await routeCompanionMissing(page, installRequests);
+
+  await page.goto("https://app.vibetv.shop/", { waitUntil: "networkidle" });
+  await page
+    .getByRole("heading", { name: "Install or update Mac App" })
+    .waitFor({ timeout: 10_000 });
+  const openButton = page.getByRole("button", {
+    name: "Open Control Center",
+  });
+  await openButton.waitFor({ timeout: 10_000 });
+  assert(
+    !(await openButton.isDisabled()),
+    "Returning hosted setup should allow opening Control Center without copying setup instructions again",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Mac App is installed" }).count()) ===
+      0,
+    "Returning hosted setup should not show first-install confirmation copy",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testLocalSetupSkipsWifiWhenMacAppAlreadyRunsWithoutDevice(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { connected: false },
+    repairError: true,
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("heading", { name: "Finish setup" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Fix connection" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByRole("button", { name: "VibeTV is on WiFi" }).count()) ===
+      0,
+    "Local Control Center should not send customers back to WiFi setup when the Mac App is already running",
+  );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -485,7 +737,9 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   await page
     .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
-  await assertMacAppSetupUsesTerminalCommand(page);
+  await assertMacAppSetupUsesTerminalCommand(page, {
+    expectedLocalPath: "/control-center/install/does-not-exist",
+  });
 
   assert(
     (await page.getByText("Shopify theme link was not found").count()) === 0,
@@ -601,6 +855,30 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     (await page.getByText("needs an update before themes").count()) === 0,
     "setup must not require theme install availability",
   );
+  await page.getByRole("button", { name: "Setup" }).click();
+  await page.getByRole("heading", { name: "Setup complete" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Open Control Center" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByText("Connect VibeTV to WiFi").count()) === 0,
+    "completed setup should not show the setup checklist",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Run setup again" }).count()) ===
+      0,
+    "completed setup should not show secondary setup actions",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
+    "completed setup should not show repair actions while healthy",
+  );
+  await page.getByRole("button", { name: "Open Control Center" }).click();
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
   await page.getByRole("button", { name: "Theme Library" }).click();
   await page
     .getByRole("heading", { name: "Choose a theme" })
@@ -859,11 +1137,12 @@ async function testRunSetupAgainOpensMacAppInstallStepForOldMacApp(
   await page.getByRole("button", { name: "Copy prompt" }).waitFor({
     timeout: 10_000,
   });
+  await page.getByRole("button", { name: "Copy prompt" }).click();
   await page.getByRole("button", { name: "Mac App is installed" }).click();
   await page.getByText("Mac App update needed.").waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Copy prompt" }).waitFor({
+  await page.getByRole("button", { name: /Copy prompt|Prompt copied/ }).waitFor({
     timeout: 10_000,
   });
 
@@ -1176,13 +1455,37 @@ async function testVibeTVAddressCopyStaysCustomerOnly(browser, appUrl) {
     },
     repairError: true,
   });
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "vibetv.controlCenter.deviceTarget",
+      "http://192.168.178.163",
+    );
+  });
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
-  await page.getByLabel("VibeTV address").waitFor({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Fix this address" }).waitFor({
+  const addressField = page.getByLabel("VibeTV address");
+  await addressField.waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByRole("button", { name: "VibeTV is on WiFi" }).count()) ===
+      0,
+    "VibeTV address setup should skip WiFi onboarding when the Mac App is already running",
+  );
+  assert(
+    (await addressField.inputValue()) === "",
+    "VibeTV address setup should clear stale browser-saved addresses when the Mac App has no saved target",
+  );
+  await page.getByRole("button", { name: "Fix connection" }).waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await page.getByRole("button", { name: "Fix connection" }).count()) === 1,
+    "VibeTV address setup should show exactly one fix connection action",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Fix this address" }).count()) ===
+      0,
+    "VibeTV address setup should not show a second fix address action",
+  );
 
   const hiddenAddressText = [
     "VibeTV target",
@@ -1313,7 +1616,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
   await page
     .getByRole("img", {
-      name: /Rendered VibeTV theme synthwave showing Codex, 73% session remaining, 37% weekly remaining/,
+      name: /Rendered VibeTV theme synthwave showing Codex, 27% session used, 63% weekly used/,
     })
     .waitFor({ timeout: 10_000 });
   const renderedTheme = page.getByRole("img", {
@@ -1321,13 +1624,13 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   });
   await renderedTheme.getByText("USAGE").waitFor({ timeout: 10_000 });
   await renderedTheme
-    .getByText("SESSION remaining")
+    .getByText("SESSION used")
     .waitFor({ timeout: 10_000 });
   await renderedTheme
-    .getByText("WEEKLY remaining")
+    .getByText("WEEKLY used")
     .waitFor({ timeout: 10_000 });
-  await renderedTheme.getByText("73%").waitFor({ timeout: 10_000 });
-  await renderedTheme.getByText("37%").waitFor({ timeout: 10_000 });
+  await renderedTheme.getByText("27%").waitFor({ timeout: 10_000 });
+  await renderedTheme.getByText("63%").waitFor({ timeout: 10_000 });
   const previewFigure = page.locator("figure").filter({ has: renderedTheme });
   assert(
     (await previewFigure.locator('[data-testid="vibetv-case"]').count()) === 1,
@@ -1346,6 +1649,61 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   assert(
     (await page.locator("figcaption").count()) === 0,
     "Overview preview should not render the theme caption",
+  );
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testOverviewShowsUsageLoadingUntilRealUsage(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.33",
+    displayFrameStatus: 404,
+    device: {
+      ...companionDevice,
+      activeTheme: "synthwave",
+      firmware: "1.0.32",
+      stream: {
+        healthy: true,
+        running: true,
+      },
+      display: {
+        themeSpec: {
+          active: true,
+          renderOk: true,
+        },
+      },
+    },
+    usageResponse: {
+      ok: true,
+      generatedAt: "2026-06-29T10:47:46Z",
+      source: "codexbar-display",
+      usageMode: "used",
+      providers: [],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
+  const loadingPreview = page.getByRole("img", {
+    name: "Loading VibeTV usage preview",
+  });
+  await loadingPreview.waitFor({ timeout: 10_000 });
+  await loadingPreview.getByText("Loading usage").waitFor({ timeout: 10_000 });
+  assert(
+    (await page
+      .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
+      .count()) === 0,
+    "Overview preview should not render fake theme usage before real usage arrives",
+  );
+  assert(
+    !(await page.locator("figure").innerText()).includes("100%"),
+    "Overview preview should not show fake 100% usage while usage is loading",
   );
 
   assertNoInstallRequests(installRequests);
@@ -1408,7 +1766,7 @@ async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
     await page.goto(appUrl, { waitUntil: "networkidle" });
     const renderedTheme = page.getByRole("img", {
       name: new RegExp(
-        `Rendered VibeTV theme ${theme.id} showing Codex, 73% session remaining, 37% weekly remaining`,
+        `Rendered VibeTV theme ${theme.id} showing Codex, 27% session used, 63% weekly used`,
       ),
     });
     await renderedTheme.waitFor({ timeout: 10_000 });
@@ -1448,6 +1806,35 @@ async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
     await assertNoMobileOverflow(page);
     await page.close();
   }
+}
+
+async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.33",
+    device: {
+      ...companionDevice,
+      firmware: "1.0.32",
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Theme Library" }).click();
+  const synthwavePreview = page.getByRole("img", {
+    name: /Rendered VibeTV theme synthwave showing VibeTV, 62% session remaining, 62% weekly remaining/,
+  });
+  await synthwavePreview.waitFor({ timeout: 10_000 });
+  assert(
+    (await synthwavePreview.locator("rect").count()) > 10,
+    "Theme Library preview should render sprite primitives",
+  );
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
 }
 
 async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
@@ -1491,7 +1878,9 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
     .getByRole("button", { name: "Install" });
   await installButton.waitFor({ timeout: 10_000 });
   await installButton.click();
-  await page.getByText("Install failed").waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Install failed", { exact: true })
+    .waitFor({ timeout: 10_000 });
   await page.getByRole("button", { name: "Try again" }).waitFor({
     timeout: 10_000,
   });
@@ -1617,7 +2006,9 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
     .getByRole("button", { name: "Install" });
   await installButton.waitFor({ timeout: 10_000 });
   await installButton.click();
-  await page.getByText("Install failed").waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Install failed", { exact: true })
+    .waitFor({ timeout: 10_000 });
 
   await page.getByRole("button", { name: "Support" }).click();
   await page.getByRole("heading", { name: "Recent activity" }).waitFor({
@@ -2515,6 +2906,34 @@ async function routeCompanionPaths(page, handler) {
   await page.route("**/api/local-companion/v1/**", handler);
 }
 
+async function routeHostedAppThroughLocalNext(page, appUrl) {
+  await page.route("https://app.vibetv.shop/**", async (route) => {
+    const request = route.request();
+    const sourceUrl = new URL(request.url());
+    const targetUrl = `${appUrl}${sourceUrl.pathname}${sourceUrl.search}`;
+    const response = await fetch(targetUrl, {
+      method: request.method(),
+      headers: request.headers(),
+      body: request.method() === "GET" ? undefined : request.postDataBuffer(),
+    });
+    const headers = {};
+    response.headers.forEach((value, key) => {
+      if (
+        !["content-encoding", "content-length", "transfer-encoding"].includes(
+          key,
+        )
+      ) {
+        headers[key] = value;
+      }
+    });
+    await route.fulfill({
+      status: response.status,
+      headers,
+      body: Buffer.from(await response.arrayBuffer()),
+    });
+  });
+}
+
 function displayFrameFromUsageResponse(usageResponse) {
   const fallback = {
     ok: true,
@@ -2542,19 +2961,17 @@ function displayFrameFromUsageResponse(usageResponse) {
   if (!provider) {
     return null;
   }
-  const usageMode = provider.usageMode || usage.usageMode;
-  const remaining = usageMode === "remaining";
+  const usageMode =
+    provider.usageMode === "remaining" || usage.usageMode === "remaining"
+      ? "remaining"
+      : "used";
   return {
     provider: provider.id,
     label: provider.label || provider.id,
-    session: remaining
-      ? clampPercent(provider.session)
-      : invertPercent(provider.session),
-    weekly: remaining
-      ? clampPercent(provider.weekly)
-      : invertPercent(provider.weekly),
+    session: clampPercent(provider.session),
+    weekly: clampPercent(provider.weekly),
     resetSecs: nonNegativeInteger(provider.resetSecs),
-    usageMode: "remaining",
+    usageMode,
     activity: provider.activity || "idle",
     sessionTokens: nonNegativeInteger(provider.sessionTokens),
     weekTokens: nonNegativeInteger(provider.weekTokens),
@@ -2566,10 +2983,6 @@ function clampPercent(value) {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.max(0, Math.min(100, Math.round(value)))
     : 0;
-}
-
-function invertPercent(value) {
-  return 100 - clampPercent(value);
 }
 
 function nonNegativeInteger(value) {
@@ -2881,13 +3294,46 @@ async function assertNoCompanionInstallLink(page) {
   );
 }
 
-async function assertMacAppSetupUsesTerminalCommand(page) {
+async function assertMacAppSetupUsesTerminalCommand(page, options = {}) {
   await page.getByRole("tab", { name: "Manual setup" }).click();
   const command = (await page.locator("code").textContent()) || "";
+  const manualCopy = (await page.locator("body").innerText()) || "";
+  const expectedLocalPath = options.expectedLocalPath || "/control-center";
   assert(
     command.includes("install-control-center-companion.sh"),
     `Terminal command should install through the hosted script, got ${command}`,
   );
+  assert(
+    manualCopy.includes("updates the latest VibeTV Mac App"),
+    "manual setup copy should explain that the command installs or updates the latest Mac App",
+  );
+  if (options.expectedOrigin) {
+    assert(
+      command.includes(
+        `${options.expectedOrigin}/install-control-center-companion.sh`,
+      ),
+      `Terminal command should use ${options.expectedOrigin}, got ${command}`,
+    );
+  }
+  if (expectedLocalPath === "/control-center") {
+    assert(
+      !command.includes("--control-center-path"),
+      `Terminal command should open the local Overview, got ${command}`,
+    );
+    assert(
+      !command.includes("/control-center/install/"),
+      `Terminal command should not open a theme-specific local route, got ${command}`,
+    );
+  } else {
+    assert(
+      command.includes("--control-center-path"),
+      `Terminal command should pass the local Control Center path, got ${command}`,
+    );
+    assert(
+      command.includes(expectedLocalPath),
+      `Terminal command should preserve ${expectedLocalPath}, got ${command}`,
+    );
+  }
   assert(
     !command.includes("--terminal-session"),
     `Terminal command should use the default Mac App mode, got ${command}`,
@@ -2905,6 +3351,10 @@ async function assertMacAppSetupUsesTerminalCommand(page) {
   await page.getByRole("button", { name: /Prompt preview/ }).click();
   const prompt = (await page.locator("pre").textContent()) || "";
   assert(
+    prompt.includes("latest VibeTV Mac App"),
+    "agent setup prompt should explicitly install or update the latest Mac App",
+  );
+  assert(
     prompt.includes("start it in the background"),
     "agent setup prompt should describe the background Mac App",
   );
@@ -2912,6 +3362,16 @@ async function assertMacAppSetupUsesTerminalCommand(page) {
     prompt.includes("connect VibeTV") && prompt.includes("latest firmware"),
     "agent setup prompt should say the terminal command connects VibeTV and updates firmware",
   );
+  assert(
+    prompt.includes(`http://127.0.0.1:47832${expectedLocalPath}`),
+    `agent setup prompt should open the expected local route, got ${prompt}`,
+  );
+  if (expectedLocalPath === "/control-center") {
+    assert(
+      !prompt.includes("/control-center/install/"),
+      `agent setup prompt should not open a theme-specific local route, got ${prompt}`,
+    );
+  }
   assert(
     !prompt.includes("LaunchAgent"),
     "agent setup prompt should not ask for LaunchAgent setup",

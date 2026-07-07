@@ -17,9 +17,12 @@ import (
 )
 
 const (
-	launchAgentLabel = "com.codexbar-display.daemon"
-	defaultOutLog    = "/tmp/codexbar-display-daemon.out.log"
-	defaultErrLog    = "/tmp/codexbar-display-daemon.err.log"
+	launchAgentLabel    = "com.codexbar-display.daemon"
+	legacyOutLog        = "/tmp/codexbar-display-daemon.out.log"
+	legacyErrLog        = "/tmp/codexbar-display-daemon.err.log"
+	defaultOutLogName   = "daemon.out.log"
+	defaultErrLogName   = "daemon.err.log"
+	appSupportLogSubdir = "Library/Application Support/codexbar-display/logs"
 )
 
 type deps struct {
@@ -79,9 +82,11 @@ func runWithDeps(ctx context.Context, d deps) error {
 	}
 
 	config := readLaunchAgentConfig(d)
-	lastSent := findLastSentFrameEvent(defaultOutLog, d.readFile)
-	lastOutError := findLastOutErrorEvent(defaultOutLog, d.readFile)
-	lastErrLogLine := findLastNonEmptyEvent(defaultErrLog, d.readFile)
+	outLogPath := daemonLogPath(d, defaultOutLogName, legacyOutLog)
+	errLogPath := daemonLogPath(d, defaultErrLogName, legacyErrLog)
+	lastSent := findLastSentFrameEvent(outLogPath, d.readFile)
+	lastOutError := findLastOutErrorEvent(outLogPath, d.readFile)
+	lastErrLogLine := findLastNonEmptyEvent(errLogPath, d.readFile)
 	lastError := latestEvent(lastOutError, lastErrLogLine)
 	errorRecovered := eventIsNotAfter(lastError, lastSent)
 	if errorRecovered {
@@ -116,7 +121,7 @@ func runWithDeps(ctx context.Context, d deps) error {
 	}
 
 	if lastSent.Line == "" {
-		fmt.Fprintf(d.stdout, "last sent frame: none (%s)\n", defaultOutLog)
+		fmt.Fprintf(d.stdout, "last sent frame: none (%s)\n", outLogPath)
 	} else {
 		when := formatTimestamp(lastSent.Timestamp)
 		port := extractSentFramePort(lastSent.Line)
@@ -146,6 +151,14 @@ func runSystemCommand(ctx context.Context, name string, args ...string) (string,
 	cmd := exec.CommandContext(ctx, name, args...)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
+}
+
+func daemonLogPath(d deps, name, fallback string) string {
+	home, err := d.homeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return fallback
+	}
+	return filepath.Join(home, appSupportLogSubdir, name)
 }
 
 func readLaunchAgentConfig(d deps) launchAgentConfig {

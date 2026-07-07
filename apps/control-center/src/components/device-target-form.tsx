@@ -2,6 +2,7 @@
 
 import { Monitor, RefreshCw } from "lucide-react";
 import type { FormEvent } from "react";
+import { ControlCenterButton } from "./control-center-button";
 import type { ApiError } from "./control-center-types";
 import {
   DEVICE_TARGET_PLACEHOLDER,
@@ -60,18 +61,19 @@ export function DeviceTargetForm({
           value={value}
         />
       </div>
-      <button
-        className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#1B1B1B] bg-[#1B1B1B] px-4 text-sm font-semibold text-[#EDEDED] transition hover:bg-[#CCFF00] hover:text-[#1B1B1B] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+      <ControlCenterButton
         disabled={formDisabled}
+        icon={
+          busy ? (
+            <RefreshCw className="animate-spin" size={18} aria-hidden />
+          ) : (
+            <Monitor size={18} aria-hidden />
+          )
+        }
+        label={busy ? searchingLabel : buttonLabel}
         type="submit"
-      >
-        {busy ? (
-          <RefreshCw className="animate-spin" size={18} aria-hidden />
-        ) : (
-          <Monitor size={18} aria-hidden />
-        )}
-        <span>{busy ? searchingLabel : buttonLabel}</span>
-      </button>
+        variant="primary"
+      />
     </form>
   );
 }

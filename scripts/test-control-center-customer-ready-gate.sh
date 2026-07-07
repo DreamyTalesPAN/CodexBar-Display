@@ -61,6 +61,13 @@ assert_gate_runs_customer_ui_copy_guard() {
     || die "customer-ready gate must call npm run check:customer-ui-copy"
 }
 
+assert_gate_runs_local_static_companion_test() {
+  grep -F 'run_step "Local static Control Center Companion serve test"' "$GATE" >/dev/null \
+    || die "customer-ready gate must run the local static Companion serve test"
+  grep -F 'test-control-center-local-static-companion.sh' "$GATE" >/dev/null \
+    || die "customer-ready gate must call test-control-center-local-static-companion.sh"
+}
+
 write_fake_curl() {
   local path
   path="$1"
@@ -240,6 +247,7 @@ assert_gate_runs_release_workflow_test
 assert_gate_runs_legacy_install_migration_test
 assert_gate_runs_customer_docs_guard
 assert_gate_runs_customer_ui_copy_guard
+assert_gate_runs_local_static_companion_test
 run_expect_automated_success
 run_expect_missing_release_asset_failure
 run_expect_manual_gate_failure

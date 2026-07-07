@@ -51,6 +51,7 @@ const (
 	collectorIntervalEnvVar    = "CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS"
 	activityPollEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS"
 	activityHoldEnvVar         = "CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS"
+	activityCodingMaxAgeEnvVar = "CODEXBAR_DISPLAY_ACTIVITY_MAX_SECS"
 	activityIdleEvidenceEnvVar = "CODEXBAR_DISPLAY_ACTIVITY_IDLE_EVIDENCE"
 	collectorTimeoutEnvVar     = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
 	collectorOrderEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
@@ -419,21 +420,24 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		if err != nil {
 			runtimeErr := asRuntimeError(err)
 			if runtimeErr.Kind == runtimeErrorCycleTimeout {
-				deps.logf("fatal cycle timeout: code=%s op=%s timeout=%s action=exit-for-launchd-restart\n",
+				waitFor = backoff.Next()
+				deps.logf("cycle timeout: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
 					runtimeErr.Op,
-					cycleTimeout,
+					waitFor,
+					runtimeErr.RecoveryAction(),
+					err,
 				)
-				return runtimeErr
+			} else {
+				waitFor = backoff.Next()
+				deps.logf("cycle error: code=%s op=%s retry=%s recovery=%q err=%v\n",
+					runtimeErr.ErrorCode(),
+					runtimeErr.Op,
+					waitFor,
+					runtimeErr.RecoveryAction(),
+					err,
+				)
 			}
-			waitFor = backoff.Next()
-			deps.logf("cycle error: code=%s op=%s retry=%s recovery=%q err=%v\n",
-				runtimeErr.ErrorCode(),
-				runtimeErr.Op,
-				waitFor,
-				runtimeErr.RecoveryAction(),
-				err,
-			)
 		} else {
 			backoff.Reset()
 			uptime := cycleStart.Sub(startedAt)
@@ -616,6 +620,17 @@ func rememberRecoveredWiFiTarget(target string, state *runtimeState, deps runtim
 	}
 	if state != nil {
 		state.deviceTarget = target
+	}
+	deps.logf("runtime event=wifi-target-selected target=%s\n", target)
+}
+
+func persistSuccessfulWiFiTarget(target string, deps runtimeDeps) {
+	if deps.transportName != "wifi" {
+		return
+	}
+	target = publicDeviceTarget(target)
+	if strings.TrimSpace(target) == "" {
+		return
 	}
 	cfg, ok := loadRuntimeConfig(deps)
 	if !ok {
@@ -978,15 +993,17 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 	if activityObservedAt.IsZero() {
 		activityObservedAt = collectedAt
 	}
+	codingExpired := state.lastActivity == "coding" && codingMaxAgeExpired(state.lastCodingAt, now)
 	if decision.ActivitySignalReason != codexbar.SelectionReasonUsageDelta &&
 		!activityObservedAt.IsZero() &&
 		activityObservedAt.Equal(state.lastActivityObservedAt) &&
-		state.lastActivity != "" {
+		state.lastActivity != "" &&
+		!codingExpired {
 		state.lastActivityAt = collectedAt
 		frame.Activity = state.lastActivity
 		return frame, fmt.Sprintf("activity=%s reason=unchanged-codexbar-activity detail=%s observedAt=%s", frame.Activity, state.lastActivityCause, activityObservedAt.Format(time.RFC3339))
 	}
-	if !collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" {
+	if !collectedAt.IsZero() && collectedAt.Equal(state.lastActivityAt) && state.lastActivity != "" && !codingExpired {
 		frame.Activity = state.lastActivity
 		return frame, fmt.Sprintf("activity=%s reason=unchanged-usage-frame detail=%s", frame.Activity, state.lastActivityCause)
 	}
@@ -1002,17 +1019,24 @@ func applySelectionActivity(frame protocol.Frame, decision codexbar.SelectionDec
 		state.idleEvidenceCount = 0
 	default:
 		if state.lastActivity == "coding" {
-			if !activityObservedAt.IsZero() && activityObservedAt.After(state.lastActivityObservedAt) && !activityObservedAt.Equal(state.lastIdleEvidenceAt) {
-				state.lastIdleEvidenceAt = activityObservedAt
-				state.idleEvidenceCount++
-			}
-			if codingHoldActive(state.lastCodingAt, now) || state.idleEvidenceCount < activityIdleEvidenceRequired() {
-				activity = "coding"
-				signalReason = "coding-waiting-for-idle-evidence"
-				signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s idle_evidence=%d/%d observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), state.idleEvidenceCount, activityIdleEvidenceRequired(), activityObservedAt.Format(time.RFC3339))
-			} else {
+			if codingMaxAgeExpired(state.lastCodingAt, now) {
 				state.lastIdleEvidenceAt = time.Time{}
 				state.idleEvidenceCount = 0
+				signalReason = "coding-max-age-expired"
+				signalDetail = fmt.Sprintf("last_delta_age=%s max=%s observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityCodingMaxAge(), activityObservedAt.Format(time.RFC3339))
+			} else {
+				if !activityObservedAt.IsZero() && activityObservedAt.After(state.lastActivityObservedAt) && !activityObservedAt.Equal(state.lastIdleEvidenceAt) {
+					state.lastIdleEvidenceAt = activityObservedAt
+					state.idleEvidenceCount++
+				}
+				if codingHoldActive(state.lastCodingAt, now) || state.idleEvidenceCount < activityIdleEvidenceRequired() {
+					activity = "coding"
+					signalReason = "coding-waiting-for-idle-evidence"
+					signalDetail = fmt.Sprintf("last_delta_age=%s hold=%s max=%s idle_evidence=%d/%d observedAt=%s", now.Sub(state.lastCodingAt).Round(time.Second), activityHoldDuration(), activityCodingMaxAge(), state.idleEvidenceCount, activityIdleEvidenceRequired(), activityObservedAt.Format(time.RFC3339))
+				} else {
+					state.lastIdleEvidenceAt = time.Time{}
+					state.idleEvidenceCount = 0
+				}
 			}
 		}
 	}
@@ -1044,6 +1068,16 @@ func codingHoldActive(lastCodingAt time.Time, now time.Time) bool {
 		return true
 	}
 	return now.Sub(lastCodingAt) <= activityHoldDuration()
+}
+
+func codingMaxAgeExpired(lastCodingAt time.Time, now time.Time) bool {
+	if lastCodingAt.IsZero() {
+		return false
+	}
+	if now.Before(lastCodingAt) {
+		return false
+	}
+	return now.Sub(lastCodingAt) > activityCodingMaxAge()
 }
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
@@ -1096,6 +1130,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
+	persistSuccessfulWiFiTarget(publicPort, deps)
 
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
 		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
@@ -1556,6 +1591,23 @@ func activityHoldDuration() time.Duration {
 	)
 
 	override := parseSecondsEnv(activityHoldEnvVar, int(def.Seconds()))
+	if override < min {
+		return min
+	}
+	if override > max {
+		return max
+	}
+	return override
+}
+
+func activityCodingMaxAge() time.Duration {
+	const (
+		def = 5 * time.Minute
+		min = 30 * time.Second
+		max = 30 * time.Minute
+	)
+
+	override := parseSecondsEnv(activityCodingMaxAgeEnvVar, int(def.Seconds()))
 	if override < min {
 		return min
 	}

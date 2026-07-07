@@ -8,19 +8,24 @@ import type {
   UsageProviderInfo,
   UsageSnapshot,
 } from "./control-center-types";
+import {
+  companionRequestUrl,
+  needsLoopbackTargetAddressSpace,
+  themeRenderPackUrl,
+} from "./control-center-runtime";
 
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
   usage: UsageSnapshot | null;
 };
 
-type ThemePackAsset = {
+export type ThemePackAsset = {
   contentType: string;
   data: string;
   encoding: "base64" | "text";
 };
 
-type ThemeRenderPack = {
+export type ThemeRenderPack = {
   ok?: boolean;
   themeId?: string;
   name?: string;
@@ -57,7 +62,7 @@ type LocalDisplayFrameRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
 };
 
-type ThemeSpec = {
+export type ThemeSpec = {
   id?: string;
   themeId?: string;
   bg?: string;
@@ -66,7 +71,7 @@ type ThemeSpec = {
   primitives?: ThemePrimitive[];
 };
 
-type ThemePrimitive = {
+export type ThemePrimitive = {
   type?: string;
   t?: string;
   x?: number;
@@ -124,6 +129,33 @@ type FrameData = {
   date: string;
 };
 
+const THEME_LIBRARY_PREVIEW_FRAME: FrameData = {
+  provider: "vibetv",
+  label: "VibeTV",
+  session: 62,
+  weekly: 62,
+  resetSecs: 3600,
+  usageMode: "remaining",
+  activity: "preview",
+  sessionTokens: 0,
+  weekTokens: 0,
+  totalTokens: 0,
+  time: "12:00",
+  date: "03.07",
+};
+
+const DEVICE_THEME_ALIASES: Record<string, string> = {
+  claude: "claude-creature",
+  "claude-creature": "claude-creature",
+  clippy: "clippy",
+  cozy: "cozy-meadow",
+  "cozy-meadow": "cozy-meadow",
+  mini: "mini-classic",
+  "mini-classic": "mini-classic",
+  synth: "synthwave",
+  synthwave: "synthwave",
+};
+
 type DecodedSprite = {
   width: number;
   height: number;
@@ -142,14 +174,18 @@ type SpriteRect = {
 export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   const provider = currentUsageProvider(usage);
   const themeId = activeThemeId(device);
+  const displayStreamReady = Boolean(device?.stream?.healthy);
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
   );
-  const frame = buildFrameData(
-    provider,
-    displayFrame?.savedAt || usage?.generatedAt,
-    displayFrame?.frame,
-  );
+  const effectiveDisplayFrame = displayStreamReady ? displayFrame : null;
+  const frame = hasRenderableUsage(effectiveDisplayFrame?.frame, provider)
+    ? buildFrameData(
+        provider,
+        effectiveDisplayFrame?.savedAt || usage?.generatedAt,
+        effectiveDisplayFrame?.frame,
+      )
+    : null;
   const [packState, setPackState] = useState<ThemePackState | null>(null);
   const pack = packState?.themeId === themeId ? packState.pack : null;
   const packStatus: "idle" | "loading" | "ready" | "error" = !themeId
@@ -164,7 +200,7 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
     }
 
     const controller = new AbortController();
-    fetch(`/api/theme-pack/${encodeURIComponent(themeId)}`, {
+    fetch(themeRenderPackUrl(themeId), {
       signal: controller.signal,
     })
       .then((response) => {
@@ -191,6 +227,10 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   }, [themeId]);
 
   useEffect(() => {
+    if (!displayStreamReady) {
+      return;
+    }
+
     const controller = new AbortController();
 
     const refreshDisplayFrame = async () => {
@@ -199,8 +239,8 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
           cache: "no-store",
           signal: controller.signal,
         };
-        const url = displayFrameUrl();
-        if (url.startsWith("http://127.0.0.1:47832/")) {
+        const url = companionRequestUrl("/v1/display-frame/latest");
+        if (needsLoopbackTargetAddressSpace(url)) {
           requestInit.targetAddressSpace = "loopback";
         }
         const response = await fetch(url, requestInit);
@@ -223,18 +263,20 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, []);
+  }, [displayStreamReady]);
 
   return (
     <figure className="w-full max-w-[540px]">
       <VibeTVCaseShell>
-        {pack?.spec ? (
+        {pack?.spec && frame ? (
           <ThemeSpecSVG
             assets={pack.assets || {}}
             frame={frame}
             spec={pack.spec}
             themeId={pack.themeId || themeId}
           />
+        ) : pack?.spec ? (
+          <ThemeUsageLoading />
         ) : (
           <ThemeSpecLoading status={packStatus} themeId={themeId} />
         )}
@@ -243,14 +285,27 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   );
 }
 
-function displayFrameUrl(): string {
-  if (typeof window === "undefined") {
-    return "http://127.0.0.1:47832/v1/display-frame/latest";
+export function ThemeSpecPreview({
+  pack,
+  status,
+  themeId,
+}: {
+  pack: ThemeRenderPack | null;
+  status: "idle" | "loading" | "ready" | "error";
+  themeId: string;
+}) {
+  if (pack?.spec) {
+    return (
+      <ThemeSpecSVG
+        assets={pack.assets || {}}
+        frame={THEME_LIBRARY_PREVIEW_FRAME}
+        spec={pack.spec}
+        themeId={pack.themeId || themeId}
+      />
+    );
   }
-  if (["127.0.0.1", "localhost", "::1"].includes(window.location.hostname)) {
-    return "/api/local-companion/v1/display-frame/latest";
-  }
-  return "http://127.0.0.1:47832/v1/display-frame/latest";
+
+  return <ThemeSpecLoading status={status} themeId={themeId} />;
 }
 
 function VibeTVCaseShell({ children }: { children: ReactNode }) {
@@ -626,6 +681,26 @@ function ThemeSpecLoading({
   );
 }
 
+function ThemeUsageLoading() {
+  return (
+    <div
+      aria-label="Loading VibeTV usage preview"
+      className="grid aspect-square w-full place-items-center bg-[#050505] p-4 text-center font-mono text-[11px] font-bold uppercase tracking-normal text-[#CCFF00]"
+      role="img"
+    >
+      <div>
+        <div className="mb-3 text-[#FF4FC3]">Usage</div>
+        <div className="flex items-center justify-center gap-1.5" aria-hidden>
+          <span className="block h-2 w-2 animate-pulse bg-[#CCFF00]" />
+          <span className="block h-2 w-2 animate-pulse bg-[#32D5FF] [animation-delay:150ms]" />
+          <span className="block h-2 w-2 animate-pulse bg-[#FF4FC3] [animation-delay:300ms]" />
+        </div>
+        <div className="mt-3">Loading usage</div>
+      </div>
+    </div>
+  );
+}
+
 function currentUsageProvider(
   usage: UsageSnapshot | null,
 ): UsageProviderInfo | null {
@@ -636,6 +711,25 @@ function currentUsageProvider(
   return (
     providers.find((provider) => provider.id === usage?.currentProvider) ||
     providers[0]
+  );
+}
+
+function hasRenderableUsage(
+  displayFrame: DisplayFrame | undefined,
+  provider: UsageProviderInfo | null,
+): boolean {
+  return (
+    hasUsagePercentPair(displayFrame?.session, displayFrame?.weekly) ||
+    hasUsagePercentPair(provider?.session, provider?.weekly)
+  );
+}
+
+function hasUsagePercentPair(session: unknown, weekly: unknown): boolean {
+  return (
+    typeof session === "number" &&
+    Number.isFinite(session) &&
+    typeof weekly === "number" &&
+    Number.isFinite(weekly)
   );
 }
 
@@ -655,16 +749,10 @@ function buildFrameData(
       displayFrame?.provider ||
       provider?.id ||
       "",
-    session: previewUsagePercent(
-      displayFrame?.session ?? provider?.session,
-      sourceUsageMode,
-    ),
-    weekly: previewUsagePercent(
-      displayFrame?.weekly ?? provider?.weekly,
-      sourceUsageMode,
-    ),
+    session: clampPercent(displayFrame?.session ?? provider?.session),
+    weekly: clampPercent(displayFrame?.weekly ?? provider?.weekly),
     resetSecs: displayFrame?.resetSecs ?? provider?.resetSecs ?? 0,
-    usageMode: "remaining",
+    usageMode: sourceUsageMode,
     activity: displayFrame?.activity || provider?.activity || "idle",
     sessionTokens: displayFrame?.sessionTokens ?? provider?.sessionTokens ?? 0,
     weekTokens: displayFrame?.weekTokens ?? provider?.weekTokens ?? 0,
@@ -680,11 +768,6 @@ function buildFrameData(
   };
 }
 
-function previewUsagePercent(value: number | undefined, sourceUsageMode: string): number {
-  const percent = clampPercent(value);
-  return sourceUsageMode === "remaining" ? percent : 100 - percent;
-}
-
 function frameUsageMode(
   displayFrame: DisplayFrame | undefined,
   provider: UsageProviderInfo | null,
@@ -696,11 +779,29 @@ function frameUsageMode(
 }
 
 function activeThemeId(device: DeviceInfo | null): string {
-  const theme = device?.activeTheme?.trim().toLowerCase();
-  if (theme) {
+  const theme = normalizeThemeAlias(device?.activeTheme);
+  if (theme && theme !== "installing") {
     return theme;
   }
-  return "";
+  return themeFromThemeSpecPath(device?.display?.themeSpec?.path);
+}
+
+function themeFromThemeSpecPath(path: string | undefined): string {
+  const basename = (path || "").split("/").pop() || "";
+  const slug = basename
+    .replace(/\.json$/i, "")
+    .replace(/--.*$/, "")
+    .trim()
+    .toLowerCase();
+  return normalizeThemeAlias(slug);
+}
+
+function normalizeThemeAlias(theme: string | undefined): string {
+  const normalized = (theme || "").trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  return DEVICE_THEME_ALIASES[normalized] || normalized;
 }
 
 function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): string {

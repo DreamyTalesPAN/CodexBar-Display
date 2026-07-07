@@ -5,15 +5,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
@@ -45,8 +49,8 @@ func TestParseDaemonOptionsDefaultsToWiFi(t *testing.T) {
 	if opts.Transport != "wifi" {
 		t.Fatalf("expected wifi transport default, got %q", opts.Transport)
 	}
-	if opts.Target != "http://vibetv.local" {
-		t.Fatalf("expected default WiFi target, got %q", opts.Target)
+	if opts.Target != "" {
+		t.Fatalf("expected empty default WiFi target, got %q", opts.Target)
 	}
 	if opts.Interval != 0 {
 		t.Fatalf("expected daemon runtime to choose default interval, got %s", opts.Interval)
@@ -70,6 +74,198 @@ func TestParseDaemonCommandOptionsSupportsEmbeddedAPI(t *testing.T) {
 	}
 	if opts.APIDevOrigin != "http://localhost:3002" {
 		t.Fatalf("unexpected dev origin %q", opts.APIDevOrigin)
+	}
+}
+
+func TestRunOpenControlCenterStartsServiceAndOpensLocalURL(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	var requestedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		if r.URL.Path != "/control-center" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	oldStart := openControlCenterStartLaunchAgentFn
+	oldOpen := openControlCenterOpenURLFn
+	oldClient := openControlCenterHTTPClient
+	t.Cleanup(func() {
+		openControlCenterStartLaunchAgentFn = oldStart
+		openControlCenterOpenURLFn = oldOpen
+		openControlCenterHTTPClient = oldClient
+	})
+
+	var startedHome string
+	openControlCenterStartLaunchAgentFn = func(home string) error {
+		startedHome = home
+		return nil
+	}
+	var openedURL string
+	openControlCenterOpenURLFn = func(url string) error {
+		openedURL = url
+		return nil
+	}
+	openControlCenterHTTPClient = server.Client()
+
+	addr := strings.TrimPrefix(server.URL, "http://")
+	if err := runOpenControlCenter([]string{"--addr", addr, "--path", "/control-center"}); err != nil {
+		t.Fatalf("runOpenControlCenter returned error: %v", err)
+	}
+	if startedHome != home {
+		t.Fatalf("expected startLaunchAgent home %q, got %q", home, startedHome)
+	}
+	if requestedPath != "/control-center" {
+		t.Fatalf("expected /control-center probe, got %q", requestedPath)
+	}
+	wantURL := server.URL + "/control-center"
+	if openedURL != wantURL {
+		t.Fatalf("expected opened URL %q, got %q", wantURL, openedURL)
+	}
+}
+
+func TestRunOpenControlCenterFailsWhenLocalControlCenterUnavailable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	oldStart := openControlCenterStartLaunchAgentFn
+	oldOpen := openControlCenterOpenURLFn
+	oldClient := openControlCenterHTTPClient
+	t.Cleanup(func() {
+		openControlCenterStartLaunchAgentFn = oldStart
+		openControlCenterOpenURLFn = oldOpen
+		openControlCenterHTTPClient = oldClient
+	})
+
+	openControlCenterStartLaunchAgentFn = func(string) error { return nil }
+	openControlCenterOpenURLFn = func(url string) error {
+		t.Fatalf("browser should not open when Control Center is unavailable: %s", url)
+		return nil
+	}
+	openControlCenterHTTPClient = server.Client()
+
+	addr := strings.TrimPrefix(server.URL, "http://")
+	err := runOpenControlCenter([]string{"--addr", addr, "--path", "/control-center", "--timeout", "20ms"})
+	if err == nil {
+		t.Fatalf("expected unavailable Control Center error")
+	}
+	if !strings.Contains(err.Error(), "last HTTP 404") {
+		t.Fatalf("expected last HTTP 404 error, got %v", err)
+	}
+}
+
+func TestSuperviseDisplayWorkerRestartsAfterError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var logs bytes.Buffer
+	calls := 0
+	afterCalls := 0
+	superviseDisplayWorker(ctx, daemon.Options{}, func(ctx context.Context, _ daemon.Options) error {
+		calls++
+		if calls == 1 {
+			return errors.New("display offline")
+		}
+		cancel()
+		<-ctx.Done()
+		return ctx.Err()
+	}, func(time.Duration) <-chan time.Time {
+		afterCalls++
+		ch := make(chan time.Time, 1)
+		ch <- time.Now()
+		return ch
+	}, func(format string, args ...any) {
+		_, _ = fmt.Fprintf(&logs, format, args...)
+	})
+
+	if calls != 2 {
+		t.Fatalf("expected worker restart after error, got %d calls", calls)
+	}
+	if afterCalls != 1 {
+		t.Fatalf("expected one restart delay, got %d", afterCalls)
+	}
+	if !strings.Contains(logs.String(), "display offline") {
+		t.Fatalf("expected restart log to include worker error, got %q", logs.String())
+	}
+}
+
+func TestSuperviseDisplayWorkerRestartsAfterPanic(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var logs bytes.Buffer
+	calls := 0
+	superviseDisplayWorker(ctx, daemon.Options{}, func(ctx context.Context, _ daemon.Options) error {
+		calls++
+		if calls == 1 {
+			panic("bad frame sender")
+		}
+		cancel()
+		<-ctx.Done()
+		return ctx.Err()
+	}, func(time.Duration) <-chan time.Time {
+		ch := make(chan time.Time, 1)
+		ch <- time.Now()
+		return ch
+	}, func(format string, args ...any) {
+		_, _ = fmt.Fprintf(&logs, format, args...)
+	})
+
+	if calls != 2 {
+		t.Fatalf("expected worker restart after panic, got %d calls", calls)
+	}
+	if !strings.Contains(logs.String(), "display worker panic") {
+		t.Fatalf("expected restart log to include panic, got %q", logs.String())
+	}
+}
+
+func TestSuperviseDisplayWorkerRestartsAfterUnexpectedExit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	calls := 0
+	superviseDisplayWorker(ctx, daemon.Options{}, func(ctx context.Context, _ daemon.Options) error {
+		calls++
+		if calls == 1 {
+			return nil
+		}
+		cancel()
+		<-ctx.Done()
+		return ctx.Err()
+	}, func(time.Duration) <-chan time.Time {
+		ch := make(chan time.Time, 1)
+		ch <- time.Now()
+		return ch
+	}, func(string, ...any) {})
+
+	if calls != 2 {
+		t.Fatalf("expected worker restart after unexpected exit, got %d calls", calls)
+	}
+}
+
+func TestSuperviseDisplayWorkerLetsOnceModeExit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	calls := 0
+	superviseDisplayWorker(ctx, daemon.Options{Once: true}, func(context.Context, daemon.Options) error {
+		calls++
+		return nil
+	}, func(time.Duration) <-chan time.Time {
+		t.Fatalf("once mode should not wait for restart")
+		return nil
+	}, func(string, ...any) {})
+
+	if calls != 1 {
+		t.Fatalf("expected once mode to exit after one call, got %d calls", calls)
 	}
 }
 
@@ -158,7 +354,7 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 	packZip := buildTestThemePackZip(t)
 	downloadedPack := false
 	firmwareUpdated := false
-	uploaded := map[string]bool{}
+	uploaded := map[string]int{}
 	activated := false
 	previousFirmwareUpdate := themePackInstallFirmwareUpdateFn
 	t.Cleanup(func() {
@@ -184,18 +380,10 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 			if !firmwareUpdated {
 				t.Fatalf("expected firmware update before theme asset upload")
 			}
-			if r.Method != http.MethodPost {
-				t.Fatalf("expected POST /assets, got %s", r.Method)
-			}
 			if len(uploaded) == 0 {
 				time.Sleep(6 * time.Second)
 			}
-			devicePath := r.URL.Query().Get("path")
-			if devicePath == "" {
-				t.Fatalf("missing asset path query")
-			}
-			uploaded[devicePath] = true
-			w.WriteHeader(http.StatusOK)
+			handleTestThemePackAssets(t, w, r, uploaded)
 		case "/theme/active":
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -246,7 +434,7 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 	if !firmwareUpdated {
 		t.Fatalf("expected firmware update before theme pack install")
 	}
-	if !uploaded["/themes/u/cm.cbi"] || !uploaded["/themes/u/cm.json"] {
+	if uploaded["/themes/u/cm.cbi"] == 0 || uploaded["/themes/u/cm.json"] == 0 {
 		t.Fatalf("expected asset and theme spec uploads, got %#v", uploaded)
 	}
 	if !activated {
@@ -258,6 +446,7 @@ func TestThemePackInstallLogsConciseRetry(t *testing.T) {
 	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
 	assetAttempts := 0
+	uploaded := map[string]int{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -270,7 +459,7 @@ func TestThemePackInstallLogsConciseRetry(t *testing.T) {
 		case "/frame":
 			handleThemePackFrame(t, w, r)
 		case "/assets":
-			if r.URL.Query().Get("path") == "/themes/u/cm.cbi" {
+			if r.Method == http.MethodPost && r.URL.Query().Get("path") == "/themes/u/cm.cbi" {
 				assetAttempts++
 				if assetAttempts == 1 {
 					w.WriteHeader(http.StatusServiceUnavailable)
@@ -278,7 +467,7 @@ func TestThemePackInstallLogsConciseRetry(t *testing.T) {
 					return
 				}
 			}
-			w.WriteHeader(http.StatusOK)
+			handleTestThemePackAssets(t, w, r, uploaded)
 		case "/theme/active":
 			w.WriteHeader(http.StatusOK)
 		case "/health":
@@ -327,6 +516,9 @@ func TestThemePackInstallWrapsUploadFailureForCustomers(t *testing.T) {
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
 		case "/frame":
 			handleThemePackFrame(t, w, r)
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"installing","themeSpec":{"active":true,"path":"","renderOk":true}}}`))
 		case "/assets":
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("raw device failure"))
@@ -363,6 +555,7 @@ func TestThemePackInstallWrapsUploadFailureForCustomers(t *testing.T) {
 func TestThemePackInstallVerboseShowsDetails(t *testing.T) {
 	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
+	uploaded := map[string]int{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -374,7 +567,9 @@ func TestThemePackInstallVerboseShowsDetails(t *testing.T) {
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
 		case "/frame":
 			handleThemePackFrame(t, w, r)
-		case "/assets", "/theme/active":
+		case "/assets":
+			handleTestThemePackAssets(t, w, r, uploaded)
+		case "/theme/active":
 			w.WriteHeader(http.StatusOK)
 		case "/health":
 			writeHealthyThemePackHealth(w)
@@ -417,7 +612,7 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 	downloadedCatalog := false
 	downloadedPack := false
 	firmwareUpdated := false
-	uploaded := map[string]bool{}
+	uploaded := map[string]int{}
 	activated := false
 	previousFirmwareUpdate := themePackInstallFirmwareUpdateFn
 	t.Cleanup(func() {
@@ -447,8 +642,7 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 			if !firmwareUpdated {
 				t.Fatalf("expected firmware update before theme asset upload")
 			}
-			uploaded[r.URL.Query().Get("path")] = true
-			w.WriteHeader(http.StatusOK)
+			handleTestThemePackAssets(t, w, r, uploaded)
 		case "/theme/active":
 			activated = true
 			w.WriteHeader(http.StatusOK)
@@ -474,7 +668,7 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 	if !firmwareUpdated {
 		t.Fatalf("expected firmware update before theme pack install")
 	}
-	if !uploaded["/themes/u/cm.cbi"] || !uploaded["/themes/u/cm.json"] {
+	if uploaded["/themes/u/cm.cbi"] == 0 || uploaded["/themes/u/cm.json"] == 0 {
 		t.Fatalf("expected asset and theme spec uploads, got %#v", uploaded)
 	}
 	if !activated {
@@ -612,6 +806,68 @@ func handleThemePackFrame(t *testing.T, w http.ResponseWriter, r *http.Request) 
 		t.Fatalf("unexpected frame body %q", string(body))
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func handleTestThemePackAssets(t *testing.T, w http.ResponseWriter, r *http.Request, uploaded map[string]int) {
+	t.Helper()
+	switch r.Method {
+	case http.MethodGet:
+		writeTestThemePackAssetList(t, w, uploaded)
+	case http.MethodPost:
+		devicePath := r.URL.Query().Get("path")
+		if devicePath == "" {
+			t.Fatalf("missing asset path query")
+		}
+		uploaded[devicePath] = readTestThemePackUploadedAssetSize(t, r)
+		w.WriteHeader(http.StatusOK)
+	default:
+		t.Fatalf("unexpected assets method %s", r.Method)
+	}
+}
+
+func writeTestThemePackAssetList(t *testing.T, w http.ResponseWriter, uploaded map[string]int) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	var out strings.Builder
+	out.WriteString(`{"assets":[`)
+	first := true
+	for path, size := range uploaded {
+		if !first {
+			out.WriteByte(',')
+		}
+		first = false
+		encoded, err := json.Marshal(path)
+		if err != nil {
+			t.Fatalf("encode asset path: %v", err)
+		}
+		out.WriteString(`{"path":`)
+		out.Write(encoded)
+		out.WriteString(`,"sizeBytes":`)
+		out.WriteString(strconv.Itoa(size))
+		out.WriteByte('}')
+	}
+	out.WriteString(`]}`)
+	_, _ = w.Write([]byte(out.String()))
+}
+
+func readTestThemePackUploadedAssetSize(t *testing.T, r *http.Request) int {
+	t.Helper()
+	reader, err := r.MultipartReader()
+	if err != nil {
+		t.Fatalf("MultipartReader returned error: %v", err)
+	}
+	part, err := reader.NextPart()
+	if err != nil {
+		t.Fatalf("NextPart returned error: %v", err)
+	}
+	if part.FormName() != "asset" {
+		t.Fatalf("unexpected form field %s", part.FormName())
+	}
+	body, err := io.ReadAll(part)
+	if err != nil {
+		t.Fatalf("read uploaded asset: %v", err)
+	}
+	return len(body)
 }
 
 func writeHealthyThemePackHealth(w http.ResponseWriter) {

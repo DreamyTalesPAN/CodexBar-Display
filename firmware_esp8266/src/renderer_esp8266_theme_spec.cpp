@@ -781,7 +781,7 @@ bool DrawThemeSpecUsage() {
   }
 
   if (!themespec::CompiledThemeSpecHasGifAssets(cachedThemeSpecScene)) {
-    GifCore().Stop();
+    GifCore().ReleaseMemory();
   }
 
   const auto frameData = currentThemeSpecFrameData();

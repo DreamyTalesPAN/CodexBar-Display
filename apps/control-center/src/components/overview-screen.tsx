@@ -20,6 +20,7 @@ import {
   type ReadinessTone,
   type UsageSnapshot,
 } from "./control-center-types";
+import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
@@ -48,6 +49,7 @@ export function OverviewScreen({
   const imageStuck = deviceImageIsStuck(device);
   const reloadingImage = busyAction === "reload-display";
   const connected = Boolean(device?.connected && !imageStuck);
+  const healthDetail = deviceHealthDetail(device);
   const hero = buildHeroCopy({
     companionStatus,
     connected,
@@ -80,7 +82,7 @@ export function OverviewScreen({
             <StatusRow
               icon={<Monitor size={18} aria-hidden />}
               label="VibeTV"
-              detail={imageStuck ? imageStuckDetail(device) : undefined}
+              detail={imageStuck ? imageStuckDetail(device) : healthDetail}
               value={labelForDevice(deviceState, device, reloadingImage)}
             />
             <StatusRow
@@ -124,13 +126,10 @@ function StatusBadge({
   children: ReactNode;
   tone: ReadinessTone;
 }) {
-  const fill = tone === "ready" ? "bg-[#CCFF00]" : "bg-[#EEEEEE]";
   return (
-    <div
-      className={`grid size-16 shrink-0 place-items-center rounded-full border border-[#747A60] text-[#1B1B1B] ${fill}`}
-    >
+    <ControlCenterStatusIcon variant={tone === "ready" ? "complete" : "neutral"}>
       {children}
-    </div>
+    </ControlCenterStatusIcon>
   );
 }
 
@@ -249,4 +248,15 @@ function imageStuckDetail(device: DeviceInfo | null): string {
     return "The connection works. VibeTV is freeing memory and redrawing the image.";
   }
   return "The connection works, but VibeTV could not redraw the current screen.";
+}
+
+function deviceHealthDetail(device: DeviceInfo | null): string | undefined {
+  const resetReason = device?.health?.resetReason?.trim();
+  if (resetReason && resetReason.toLowerCase() === "exception") {
+    return "VibeTV restarted after a firmware exception. If this keeps happening, reconnect power and run setup again.";
+  }
+  if (device?.connected && device.health?.error) {
+    return "VibeTV is reachable, but health details are temporarily unavailable.";
+  }
+  return undefined;
 }

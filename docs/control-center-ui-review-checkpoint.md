@@ -13,6 +13,113 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: VibeTV setup captive portal WiFi list rendering, setup
+  scan retry fallback, and the Control Center setup/installer changes already
+  present on this branch.
+- Customer rule: setup must remain one simple WiFi selection and save action;
+  customers should not see scan internals, retries, heap limits, firmware
+  memory wording, or multiple technical recovery choices.
+- Simplifications accepted: the temporary visible refresh action was removed
+  again; WiFi rescans happen automatically when the list is empty, and the
+  firmware caps the rendered network options so the existing dropdown stays
+  reliable on ESP8266 memory.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  the local hardware setup log after USB debug flash showed
+  `wifi_setup_scan networks=15 options=718 option_count=10`, confirming the
+  setup dropdown has options again without adding customer-facing decisions.
+
+- Reviewed scope: local Mac App service lifecycle, Display-Worker restart
+  behavior, installer service verification, support log paths, and stale
+  `coding` activity fallback.
+- Customer rule: customers should always be able to open the local Control
+  Center while device/display problems are shown as status or retried in the
+  background. Installer output stays simple and customer-facing; technical
+  daemon/API details stay in support logs.
+- Simplifications accepted: no new visible Control Center screens, tabs,
+  buttons, or setup decisions were added. The existing Mac App setup path now
+  verifies that the local Control Center stays available before opening it,
+  while display sending is isolated from the HTTP Control Center.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  `git diff --check`, targeted Companion Go tests, release-workflow test, daemon
+  installer tests, and CI jobs for Companion, Control Center, firmware, theme
+  pack, and Theme Studio passed locally or on the PR before this checkpoint
+  update; the deterministic UI review gate required this note.
+
+- Reviewed scope: hosted Setup-only entrypoint, local Control Center handoff,
+  Mac App setup command, and local exported Control Center routes.
+- Customer rule: `app.vibetv.shop`/Vercel Preview remains only the setup
+  entrypoint. It must not expose Overview, Usage, Theme Library, Settings,
+  Updates, or Support on the hosted origin; after setup it opens the local
+  Control Center Overview on this Mac.
+- Simplifications accepted: no hosted management UI, tabs, troubleshooting
+  sections, or customer decisions were added. The visible hosted flow still has
+  one setup path; theme-specific links do not get a special hosted handoff.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  Vercel Preview root and theme install routes show the setup launcher with no
+  old app tabs; `Open local Control Center` navigates to
+  `127.0.0.1:47832/control-center`; `lint`, `test:customer-smoke`,
+  `test:customer-flows`, `build:local`, `go test ./...`
+  in `companion`, `check-theme-pack-dist`, release-workflow test, shell syntax
+  checks, and `git diff --check` passed locally before this checkpoint update.
+
+- Reviewed scope: Overview VibeTV device preview source, local Mac App
+  `/v1/display-frame/latest`, and active ThemeSpec preview resolution when the
+  VibeTV reports a temporary install state.
+- Customer rule: the Overview preview must mirror the last screen the local Mac
+  App sent to VibeTV. It must not mix live usage data with an older display
+  frame, and it must not expose technical frame, log, API, or ThemeSpec wording
+  to the customer.
+- Simplifications accepted: no new visible UI, buttons, tabs, labels, or
+  troubleshooting choices were added; the existing preview now reads the
+  last-sent display frame and falls back from temporary device theme names to
+  the active ThemeSpec path.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  `lint`, `check:customer-ui-copy`, `test:customer-flows`, `build:local`,
+  `go test ./...` in `companion`, and `git diff --check` passed locally.
+  Playwright against `127.0.0.1:47832/control-center` verified that the
+  Overview preview rendered `claude-creature` with the same `session`,
+  `weekly`, and `usageMode` values returned by local
+  `/v1/display-frame/latest`.
+
+- Reviewed scope: hosted Setup-only entrypoint, local Setup CTA hierarchy,
+  shared Control Center primary/secondary buttons, Updates primary action, and
+  Theme Library rendered theme previews.
+- Customer rule: each setup step must expose one obvious next customer action;
+  `Open local Control Center`/`Mac App is installed` stays disabled until the
+  customer has copied either the Agentic prompt or Terminal command, and primary
+  customer actions use the VibeTV neon action style instead of black buttons.
+- Simplifications accepted: hosted and local setup continue to share the same
+  Setup screen implementation; the separate black Agentic copy CTA was replaced
+  with the same secondary copy button pattern as Manual setup; no new tabs,
+  setup decisions, or explanatory sections were added; Theme Library previews
+  now render the catalog ThemeSpec instead of showing generic placeholders.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  `check:customer-ui-copy`, `lint`, `test:customer-flows`, `build:local`, and
+  `git diff --check` passed locally; Playwright against
+  `127.0.0.1:47832/control-center` verified disabled-before-copy setup gating,
+  neon full-width setup CTA after copy, rendered Synthwave ThemeSpec preview,
+  and neon Updates primary action.
+
+- Reviewed scope: hosted VibeTV setup launcher, local Control Center handoff,
+  removal of hosted Overview/Usage/Settings/Theme Library/Updates/Support
+  navigation, and the Chrome Local Network Access fallback.
+- Customer rule: `app.vibetv.shop` is only the setup entrypoint. It should show
+  one guided setup path and then open the local Control Center on this Mac;
+  daily Usage, Themes, Settings, Updates, and Support live only in the local
+  Control Center.
+- Simplifications accepted: hosted setup no longer runs background loopback
+  fetches that can trigger Chrome local-network permission failures; the
+  customer action after Mac App setup is one direct `Open local Control Center`
+  navigation. The hosted browser-access step is hidden because the local app is
+  same-origin once opened.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  desktop/mobile Vercel Preview screenshots show the branded setup launcher with
+  no old app tabs; theme install routes stay in hosted setup; a local PR
+  Companion on `127.0.0.1:47832` opens `/control-center`; `lint`, `next build`,
+  `test:customer-smoke`, `test:customer-flows`, `build:local`, and PR checks
+  passed before this checkpoint update except for the deterministic checkpoint
+  gate requiring this note.
+
 - Reviewed scope: Mac App release status in Companion `/v1/status`, Overview and Updates Mac App update indicators, the navigation update badge, legacy hosted release fallback, and Vercel Preview monorepo root configuration.
 - Customer rule: Mac App update availability can appear as a short `Update` badge, `Update available`, or one primary update action, but the UI must not expose GitHub releases, local API details, daemon wording, package assets, or separate technical check steps.
 - Simplifications accepted: no new tab, setup branch, diagnostic panel, or customer troubleshooting choice was added; the Updates primary action now checks Mac App and VibeTV firmware together, while old Mac Apps keep the existing hosted fallback invisibly.

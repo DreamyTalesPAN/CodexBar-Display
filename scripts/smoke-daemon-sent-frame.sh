@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PLIST_PATH="${1:-$HOME/Library/LaunchAgents/com.codexbar-display.daemon.plist}"
-LOG_PATH="${2:-/tmp/codexbar-display-daemon.out.log}"
+LOG_PATH="${2:-$HOME/Library/Application Support/codexbar-display/logs/daemon.out.log}"
 TIMEOUT_SECS="${3:-90}"
 POLL_SECS=3
 

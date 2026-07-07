@@ -1,6 +1,6 @@
 # VibeTV Control Center
 
-Hosted customer app for `https://app.vibetv.shop`.
+Hosted setup app and local Mac App Control Center for VibeTV.
 
 ## Local Development
 
@@ -33,6 +33,18 @@ npm run test:customer-smoke
 ```
 
 Run `npm run test:customer-flows` for state changes, navigation/action changes, API behavior changes, or before claiming merge readiness.
+
+Build the static Control Center bundle that gets embedded into the Mac App release binary:
+
+```bash
+npm run build:local
+```
+
+That command writes `out-local/`. The release workflow copies those files into
+`companion/internal/companionapi/controlcenter_static/` before building the
+macOS Companion binary. The local Mac App then serves the customer app at
+`http://127.0.0.1:47832/control-center` and keeps private device/usage actions
+on the local `/v1/*` API.
 
 Before claiming the Control Center is customer-ready, run the repository-level gate:
 
@@ -109,8 +121,11 @@ Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `S
 
 ## Flow
 
-- `/` opens the Control Center overview with Mac App, VibeTV and update state.
-- `/install/[themeId]` opens the same app with a theme preselected.
+- On HTTPS hosted origins, `/` opens the VibeTV setup launcher.
+- On HTTPS hosted origins, `/install/[themeId]` opens setup with the theme context
+  preserved, then hands off to the local Control Center once the Mac App answers.
+- On the local Mac App origin, `/control-center` opens the full Control Center
+  with Overview, Usage, Settings, Theme Library, Updates, and Support.
 - Browser talks directly to the local Mac App service at `http://127.0.0.1:47832`.
 - The server reads Shopify product data through the Storefront API and only sends normalized public theme data to the browser.
 

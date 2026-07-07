@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -33,43 +34,53 @@ const defaultThemeCatalogURL = themeinstall.DefaultCatalogURL
 
 var themePackUploadSettleDelay = 750 * time.Millisecond
 var themePackInstallFetchLiveFrameFn = codexbar.FetchFirstFrame
+var displayWorkerRestartDelay = 5 * time.Second
+var openControlCenterStartLaunchAgentFn = startLaunchAgent
+var openControlCenterOpenURLFn = openURLWithMacOpen
+var openControlCenterHTTPClient = &http.Client{}
 
 func main() {
-	if len(os.Args) < 2 {
+	args := os.Args[1:]
+	if len(args) == 0 && launchedFromAppBundle() {
+		args = []string{"open-control-center"}
+	}
+	if len(args) < 1 {
 		printUsage()
 		os.Exit(2)
 	}
 
 	var err error
-	switch os.Args[1] {
+	switch args[0] {
 	case "daemon":
-		err = runDaemon(os.Args[2:])
+		err = runDaemon(args[1:])
 	case "api":
-		err = runCompanionAPI(os.Args[2:])
+		err = runCompanionAPI(args[1:])
 	case "doctor":
 		err = runDoctor()
 	case "health":
 		err = health.Run(context.Background())
+	case "open-control-center":
+		err = runOpenControlCenter(args[1:])
 	case "service":
-		err = runService(os.Args[2:])
+		err = runService(args[1:])
 	case "version":
-		err = runVersion(os.Args[2:])
+		err = runVersion(args[1:])
 	case "upgrade":
-		err = runUpgrade(os.Args[2:])
+		err = runUpgrade(args[1:])
 	case "install-update":
-		err = runInstallUpdate(os.Args[2:])
+		err = runInstallUpdate(args[1:])
 	case "rollback":
-		err = runRollback(os.Args[2:])
+		err = runRollback(args[1:])
 	case "restore-known-good":
-		err = runRestoreKnownGood(os.Args[2:])
+		err = runRestoreKnownGood(args[1:])
 	case "theme-validate":
-		err = runThemeValidate(os.Args[2:])
+		err = runThemeValidate(args[1:])
 	case "theme-apply":
-		err = runThemeApply(os.Args[2:])
+		err = runThemeApply(args[1:])
 	case "theme-pack":
-		err = runThemePack(os.Args[2:])
+		err = runThemePack(args[1:])
 	case "setup":
-		err = runSetup(os.Args[2:])
+		err = runSetup(args[1:])
 	default:
 		printUsage()
 		os.Exit(2)
@@ -94,6 +105,7 @@ func printUsage() {
 	fmt.Println("  codexbar-display daemon [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--interval 30s] [--once] [--theme classic|crt|mini] [--api-addr 127.0.0.1:47832]")
 	fmt.Println("  codexbar-display doctor")
 	fmt.Println("  codexbar-display health")
+	fmt.Println("  codexbar-display open-control-center [--addr 127.0.0.1:47832] [--path /control-center] [--no-open]")
 	fmt.Println("  codexbar-display service <start|stop|status>")
 	fmt.Println("  codexbar-display version [--short] [--json]")
 	fmt.Println("  codexbar-display upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--repo owner/name] [--skip-version-guard]")
@@ -106,6 +118,15 @@ func printUsage() {
 	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip-or-url")
 	fmt.Println("  codexbar-display theme-pack install (--pack path/to/theme-pack-dir-or.zip-or-url | --catalog url --theme theme-id) [--target http://vibetv.local] [--firmware-manifest-url url] [--skip-firmware-update] [--allow-unknown-capabilities] [--verbose]")
 	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://vibetv.local] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
+}
+
+func launchedFromAppBundle() bool {
+	executable, err := os.Executable()
+	if err != nil {
+		executable = os.Args[0]
+	}
+	executable = filepath.ToSlash(filepath.Clean(executable))
+	return strings.Contains(executable, ".app/Contents/MacOS/")
 }
 
 func runCompanionAPI(args []string) error {
@@ -137,6 +158,85 @@ func runDaemon(args []string) error {
 	return runDaemonWithCompanionAPI(context.Background(), opts)
 }
 
+func runOpenControlCenter(args []string) error {
+	fs := flag.NewFlagSet("open-control-center", flag.ContinueOnError)
+	addr := fs.String("addr", companionapi.DefaultAddr, "local companion API address")
+	path := fs.String("path", "/control-center", "local Control Center path")
+	timeout := fs.Duration("timeout", 15*time.Second, "maximum time to wait for the local Control Center")
+	noOpen := fs.Bool("no-open", false, "verify the local Control Center without opening the browser")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve home directory: %w", err)
+	}
+	if err := openControlCenterStartLaunchAgentFn(home); err != nil {
+		return fmt.Errorf("start local Control Center service: %w", err)
+	}
+
+	url := localControlCenterURL(strings.TrimSpace(*addr), strings.TrimSpace(*path))
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	if err := waitForLocalControlCenter(ctx, url); err != nil {
+		return err
+	}
+	if *noOpen {
+		fmt.Printf("Control Center ready: %s\n", url)
+		return nil
+	}
+	if err := openControlCenterOpenURLFn(url); err != nil {
+		return fmt.Errorf("open local Control Center: %w", err)
+	}
+	fmt.Printf("Control Center opened: %s\n", url)
+	return nil
+}
+
+func localControlCenterURL(addr, path string) string {
+	if addr == "" {
+		addr = companionapi.DefaultAddr
+	}
+	if path == "" {
+		path = "/control-center"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return "http://" + addr + path
+}
+
+func waitForLocalControlCenter(ctx context.Context, url string) error {
+	var lastStatus int
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return fmt.Errorf("prepare local Control Center request: %w", err)
+		}
+		resp, err := openControlCenterHTTPClient.Do(req)
+		if err == nil {
+			lastStatus = resp.StatusCode
+			_ = resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return nil
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			if lastStatus > 0 {
+				return fmt.Errorf("local Control Center did not become ready at %s (last HTTP %d)", url, lastStatus)
+			}
+			return fmt.Errorf("local Control Center did not become ready at %s: %w", url, ctx.Err())
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}
+
+func openURLWithMacOpen(url string) error {
+	return exec.Command("open", url).Run()
+}
+
 type daemonCommandOptions struct {
 	Daemon       daemon.Options
 	APIAddr      string
@@ -152,7 +252,7 @@ func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
 	port := fs.String("port", "", "serial port (auto-detect when empty)")
 	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
-	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://vibetv.local")
+	target := fs.String("target", "", "WiFi target base URL, for example http://vibetv.local")
 	interval := fs.Duration("interval", 0, "poll interval")
 	once := fs.Bool("once", false, "run one cycle and exit")
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|mini")
@@ -207,26 +307,66 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	daemonOpts := opts.Daemon
 	daemonOpts.Wake = wake
 
-	errc := make(chan error, 2)
+	errc := make(chan error, 1)
 	go func() {
 		errc <- server.ListenAndServe(ctx)
 	}()
-	go func() {
-		errc <- daemon.Run(ctx, daemonOpts)
-	}()
+	go superviseDisplayWorker(ctx, daemonOpts, daemon.Run, time.After, func(format string, args ...any) {
+		fmt.Printf(format, args...)
+	})
 
 	fmt.Printf("VibeTV companion API listening on http://%s\n", opts.APIAddr)
 	err = <-errc
 	cancel()
-
-	select {
-	case otherErr := <-errc:
-		if err == nil {
-			return otherErr
-		}
-	case <-time.After(5 * time.Second):
-	}
 	return err
+}
+
+type displayWorkerRunFunc func(context.Context, daemon.Options) error
+type displayWorkerAfterFunc func(time.Duration) <-chan time.Time
+type displayWorkerLogFunc func(string, ...any)
+
+func superviseDisplayWorker(ctx context.Context, opts daemon.Options, run displayWorkerRunFunc, after displayWorkerAfterFunc, logf displayWorkerLogFunc) {
+	if run == nil {
+		run = daemon.Run
+	}
+	if after == nil {
+		after = time.After
+	}
+	if logf == nil {
+		logf = func(string, ...any) {}
+	}
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		err := runDisplayWorkerOnce(ctx, opts, run)
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			return
+		}
+		if err == nil {
+			if opts.Once {
+				return
+			}
+			logf("VibeTV display worker exited; restarting in %s\n", displayWorkerRestartDelay)
+		} else {
+			logf("VibeTV display worker stopped; restarting in %s: %v\n", displayWorkerRestartDelay, err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-after(displayWorkerRestartDelay):
+		}
+	}
+}
+
+func runDisplayWorkerOnce(ctx context.Context, opts daemon.Options, run displayWorkerRunFunc) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("display worker panic: %v", recovered)
+		}
+	}()
+	return run(ctx, opts)
 }
 
 func runDoctor() error {

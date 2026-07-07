@@ -4,8 +4,9 @@ This document is the current Shopify rollout plan for customer-visible VibeTV th
 
 ## Current Decision
 
-The launch flow uses normal Shopify products as the visible theme catalog and
-Control Center as the install surface:
+The launch flow uses normal Shopify products as the visible theme catalog, the
+hosted app as the setup launcher, and the local Control Center as the install
+surface:
 
 - Shop domain: `vibetv.shop`
 - Theme collection handle: `themes-2`
@@ -16,10 +17,11 @@ Control Center as the install surface:
 
 The Control Center reads products from Shopify Storefront API through `apps/control-center/src/lib/themes.ts`. App-owned Shopify Metaobjects can still be revisited later, but they are not the current source of truth.
 
-Treat the hosted Control Center path as the state of the art. Theme product
-pages should point customers into Control Center once the launch cutover is
-approved. The direct Terminal command remains useful as a rollback or support
-fallback, not as the preferred product journey.
+Treat the hosted app path as the customer entrypoint, not as the full customer
+app. Theme product pages should point customers into hosted setup once the
+launch cutover is approved. From there, the Mac App opens the local Control
+Center for install and management. The direct Terminal command remains useful as
+a rollback or support fallback, not as the preferred product journey.
 
 ## Product Model
 
@@ -46,14 +48,15 @@ Shopify is the catalog and preview surface. The installable ZIPs stay in GitHub 
 
 ## Product Button
 
-The preferred launch action opens Control Center with the selected theme:
+The preferred launch action opens hosted setup with the selected theme:
 
 ```text
 https://app.vibetv.shop/install/<theme_id>
 ```
 
-Control Center then handles the next available step: install/repair the Mac App,
-connect VibeTV, unlock Theme Library, and install the selected theme.
+Hosted setup then handles the next available step: install/repair the Mac App,
+open the local Control Center, connect VibeTV, and install the selected theme
+locally.
 
 During staged rollout or support fallback, use the Custom Liquid block stored in
 `docs/vibetv-theme-product-custom-liquid.liquid` on VibeTV theme product pages.
@@ -71,9 +74,10 @@ The Liquid derives `<theme_id>` from `vibetv.theme_id` or `theme.theme_id`.
 1. Customer visits `https://vibetv.shop/collections/themes-2`.
 2. Customer opens a VibeTV theme product.
 3. Product page opens `https://app.vibetv.shop/install/<theme_id>`.
-4. Control Center checks Mac App, browser access, VibeTV connection, pairing, and theme-install readiness.
-5. If setup is incomplete, Control Center shows only the next setup action.
-6. Once setup is ready, Control Center installs the selected theme.
+4. Hosted setup checks whether the Mac App answers on this Mac.
+5. If setup is incomplete, hosted setup shows only the next setup action.
+6. Once the Mac App answers, the browser opens the local Control Center.
+7. The local Control Center handles VibeTV connection, pairing, and theme install.
 
 Fallback flow:
 

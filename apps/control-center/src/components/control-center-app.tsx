@@ -1,9 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type { ThemeCatalogResponse } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
+import {
+  companionRequestUrl,
+  isLocalCompanionOrigin,
+  LOCAL_CONTROL_CENTER_LAUNCHER_URL,
+  localizeCompanionAssetUrl,
+  localControlCenterUrl,
+  needsLoopbackTargetAddressSpace,
+  shouldRedirectToLocalControlCenter,
+  shouldUseHostedSetupShell,
+} from "./control-center-runtime";
 import {
   deviceImageIsStuck,
   deviceSetupIsUsable,
@@ -18,6 +35,7 @@ import {
   type UsageSnapshot,
 } from "./control-center-types";
 import { useCompanionRelease } from "./companion-installer-actions";
+import { HostedSetupShell } from "./hosted-setup-shell";
 import { LogsScreen } from "./logs-screen";
 import { OverviewScreen } from "./overview-screen";
 import { SetupScreen } from "./setup-screen";
@@ -26,10 +44,12 @@ import { ThemeLibraryScreen } from "./theme-library-screen";
 import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
 
-const COMPANION_URL = "http://127.0.0.1:47832";
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
+const LOCAL_CONTROL_CENTER_OPENED_STORAGE_KEY =
+  "vibetv.controlCenter.localControlCenterOpened";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
+const LOCAL_APP_LAUNCH_WAIT_MS = 1500;
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
@@ -163,6 +183,8 @@ type FirmwareCheckOptions = {
   signal?: AbortSignal;
 };
 
+type RuntimeSurface = "unknown" | "hosted-setup" | "local-control-center";
+
 export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const initialTheme = useMemo(
     () =>
@@ -175,6 +197,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     initialTheme?.themeId || initialThemeId || "",
   );
   const [activeTab, setActiveTab] = useState<ActiveTab>("setup");
+  const runtimeSurface = useSyncExternalStore(
+    subscribeRuntimeSurface,
+    getRuntimeSurfaceSnapshot,
+    getRuntimeSurfaceServerSnapshot,
+  );
+  const hostedSetup = runtimeSurface === "hosted-setup";
   const [companionStatus, setCompanionStatus] =
     useState<CompanionStatus>("unknown");
   const [companionInfo, setCompanionInfo] = useState<CompanionInfo | null>(
@@ -200,6 +228,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
+  const [
+    localControlCenterPreviouslyOpened,
+    setLocalControlCenterPreviouslyOpened,
+  ] = useState(readLocalControlCenterPreviouslyOpened);
   const [setupResetVersion, setSetupResetVersion] = useState(0);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
@@ -223,12 +255,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     () => catalog.themes.find((theme) => theme.themeId === selectedThemeId),
     [catalog.themes, selectedThemeId],
   );
+  const localControlCenterPath = useMemo(
+    () => localControlCenterPathForTheme(initialThemeId),
+    [initialThemeId],
+  );
 
   const handleDeviceTargetChange = useCallback((target: string) => {
     setDeviceTarget(target);
     if (target.trim() === "") {
       forgetDeviceTarget();
     }
+  }, []);
+
+  const mergeDevice = useCallback((next: DeviceInfo) => {
+    setDevice((current) => mergeDeviceInfo(current, next));
   }, []);
 
   const addEvent = useCallback(
@@ -354,7 +394,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (init?.body && !headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
       }
-      const useLocalProxy = shouldUseLocalCompanionProxy();
+      const requestUrl = companionRequestUrl(path);
       const controller = new AbortController();
       const timeout = window.setTimeout(() => {
         controller.abort();
@@ -364,15 +404,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         headers,
         signal: controller.signal,
       };
-      if (!useLocalProxy) {
+      if (needsLoopbackTargetAddressSpace(requestUrl)) {
         requestInit.targetAddressSpace = "loopback";
       }
       lastCompanionRequestAt.current = Date.now();
       try {
-        const response = await fetch(
-          companionRequestUrl(path, useLocalProxy),
-          requestInit,
-        );
+        const response = await fetch(requestUrl, requestInit);
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.ok === false) {
           throw normalizeError(payload?.error, response.status);
@@ -429,7 +466,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const payload = await runCompanion<{ device: DeviceInfo }>(
           "/v1/device",
         );
-        setDevice(payload.device);
+        mergeDevice(payload.device);
         if (payload.device.target) {
           setDeviceTarget(payload.device.target);
           rememberDeviceTarget(payload.device.target);
@@ -475,6 +512,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      mergeDevice,
       runCompanion,
     ],
   );
@@ -487,7 +525,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         payload.settings?.display?.brightnessPercent ?? null;
       setBrightness(loadedBrightness);
       if (payload.device) {
-        setDevice(payload.device);
+        mergeDevice(payload.device);
         setDeviceState(payload.device.paired ? "paired" : "online");
         if (
           !initialThemeId &&
@@ -536,8 +574,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     initialThemeId,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
+    mergeDevice,
     runCompanion,
   ]);
+
+  const verifyLocalControlCenterAvailable = useCallback(async () => {
+    const requestUrl = localControlCenterUrl(localControlCenterPath);
+    const requestInit: LocalNetworkRequestInit = {
+      cache: "no-store",
+      method: "GET",
+    };
+    if (needsLoopbackTargetAddressSpace(requestUrl)) {
+      requestInit.targetAddressSpace = "loopback";
+    }
+    const response = await fetch(requestUrl, requestInit);
+    if (!response.ok) {
+      throw localControlCenterUnavailableError();
+    }
+  }, [localControlCenterPath]);
 
   const checkCompanion = useCallback(
     async (options?: { quiet?: boolean }) => {
@@ -558,6 +612,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
+        if (shouldRedirectToLocalControlCenter()) {
+          try {
+            await verifyLocalControlCenterAvailable();
+            window.location.assign(localControlCenterUrl(localControlCenterPath));
+          } catch (error) {
+            const normalized = await normalizeLocalControlCenterError(error);
+            setSetupPreviewStep("mac-app");
+            setLastError(normalized);
+            addEvent({
+              label: "Mac App update needed",
+              detail: normalized.nextAction,
+              tone: "attention",
+            });
+          }
+          return;
+        }
         if (!quiet) {
           try {
             await runCompanion<unknown>("/v1/usage", undefined, {
@@ -581,7 +651,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setSetupPreviewStep(null);
         }
         if (payload.device?.target) {
-          setDevice(payload.device);
+          mergeDevice(payload.device);
           setDeviceTarget(payload.device.target);
           rememberDeviceTarget(payload.device.target);
           setDeviceState(
@@ -596,6 +666,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             void loadSettings();
           }
         } else {
+          forgetDeviceTarget();
+          setDeviceTarget("");
           setDevice(null);
           setDeviceState("unknown");
         }
@@ -637,12 +709,61 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       companionStatus,
       loadSettings,
+      localControlCenterPath,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      mergeDevice,
       refreshDevice,
       runCompanion,
+      verifyLocalControlCenterAvailable,
     ],
   );
+
+  const syncLocalStatus = useCallback(async () => {
+    try {
+      const payload = await runCompanion<{
+        companion?: CompanionInfo;
+        device?: DeviceInfo;
+      }>("/v1/status", undefined, { preserveLastError: true });
+      setCompanionStatus("online");
+      setCompanionInfo(payload.companion || null);
+      setThemeInstallEnabled(
+        Boolean(payload.companion?.features?.themeInstallEnabled),
+      );
+      if (payload.device?.target) {
+        mergeDevice(payload.device);
+        setDeviceTarget(payload.device.target);
+        rememberDeviceTarget(payload.device.target);
+        setDeviceState(
+          payload.device.paired
+            ? "paired"
+            : payload.device.connected
+              ? "online"
+          : "unknown",
+        );
+      } else {
+        forgetDeviceTarget();
+        setDeviceTarget("");
+        setDevice(null);
+        setDeviceState("unknown");
+      }
+    } catch (error) {
+      const normalized = normalizeCaughtError(
+        error,
+        "Mac App needs attention.",
+      );
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else {
+        markCompanionUnavailable();
+      }
+    }
+  }, [
+    markCompanionAccessBlocked,
+    markCompanionUnavailable,
+    mergeDevice,
+    runCompanion,
+  ]);
 
   const repairConnection = useCallback(
     async (options?: {
@@ -673,7 +794,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               Boolean(statusPayload.companion?.features?.themeInstallEnabled),
             );
             if (statusPayload.device?.target) {
-              setDevice(statusPayload.device);
+              mergeDevice(statusPayload.device);
               setDeviceTarget(statusPayload.device.target);
               rememberDeviceTarget(statusPayload.device.target);
               setDeviceState(
@@ -683,6 +804,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                     ? "online"
                     : "unknown",
               );
+            } else {
+              forgetDeviceTarget();
+              setDeviceTarget("");
+              setDevice(null);
+              setDeviceState("unknown");
             }
           } catch (statusError) {
             const normalized = normalizeCaughtError(
@@ -719,7 +845,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setCompanionStatus("online");
         void refreshCompanionFeatures();
         setLastError(null);
-        setDevice(payload.device);
+        mergeDevice(payload.device);
         setDeviceState(
           payload.device.paired
             ? "paired"
@@ -775,6 +901,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       loadSettings,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      mergeDevice,
       refreshCompanionFeatures,
       runCompanion,
     ],
@@ -792,7 +919,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         );
         setCompanionStatus("online");
         setLastError(null);
-        setDevice(payload.device);
+        mergeDevice(payload.device);
         setDeviceState(
           payload.device.paired
             ? "paired"
@@ -838,6 +965,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      mergeDevice,
       runCompanion,
     ],
   );
@@ -916,7 +1044,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           payload.settings?.display?.brightnessPercent ?? value;
         setBrightness(savedValue);
         if (payload.device) {
-          setDevice(payload.device);
+          mergeDevice(payload.device);
           setDeviceState(payload.device.paired ? "paired" : "online");
           if (payload.device.target) {
             setDeviceTarget(payload.device.target);
@@ -952,6 +1080,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      mergeDevice,
       runCompanion,
     ],
   );
@@ -988,7 +1117,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           progress: clampProgress(job.progress),
           logs,
           result: job.result,
-          error: job.error?.nextAction,
+          error: job.error ? themeInstallErrorText(job.error) : undefined,
         });
       };
       setThemeInstallStatus({
@@ -1013,7 +1142,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             method: "POST",
             body: JSON.stringify({
               themeId: theme.themeId,
-              packUrl: theme.packUrl,
+              packUrl: localizeCompanionAssetUrl(theme.packUrl),
               skipFirmwareUpdate: true,
               async: true,
             }),
@@ -1092,7 +1221,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           message: normalized.nextAction,
           progress: 100,
           logs: [...initialLogs, normalized.message, normalized.nextAction],
-          error: normalized.nextAction,
+          error: themeInstallErrorText(normalized),
         });
         addEvent({
           label: "Theme install needs attention",
@@ -1114,6 +1243,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   useEffect(() => {
+    if (hostedSetup) {
+      return;
+    }
     if (setupPreviewStep) {
       return;
     }
@@ -1126,10 +1258,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       void checkCompanion({ quiet: true });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [checkCompanion, setupPreviewStep]);
+  }, [checkCompanion, hostedSetup, setupPreviewStep]);
 
   useEffect(() => {
     if (
+      hostedSetup ||
       setupPreviewStep ||
       didRunAutoRepair.current ||
       busyAction ||
@@ -1146,12 +1279,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     busyAction,
     companionStatus,
     device,
+    hostedSetup,
     lastError,
     repairConnection,
     setupPreviewStep,
   ]);
 
   useEffect(() => {
+    if (hostedSetup) {
+      return;
+    }
     if (!deviceImageIsStuck(device)) {
       didRunAutoDisplayReload.current = false;
       return;
@@ -1166,10 +1303,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
     didRunAutoDisplayReload.current = true;
     void reloadDisplay({ quiet: true });
-  }, [busyAction, companionStatus, device, reloadDisplay, setupPreviewStep]);
+  }, [
+    busyAction,
+    companionStatus,
+    device,
+    hostedSetup,
+    reloadDisplay,
+    setupPreviewStep,
+  ]);
 
   useEffect(() => {
-    if (companionStatus !== "missing") {
+    if (hostedSetup || companionStatus !== "missing") {
       return;
     }
 
@@ -1181,7 +1325,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }, 5000);
 
     return () => window.clearInterval(timer);
-  }, [busyAction, checkCompanion, companionStatus]);
+  }, [busyAction, checkCompanion, companionStatus, hostedSetup]);
 
   const deviceBoard = device?.board;
   const deviceFirmware = device?.firmware;
@@ -1202,16 +1346,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       });
 
       try {
-        const response = await fetch(
-          `/api/firmware/latest?${params.toString()}`,
-          {
-            signal: options.signal,
-          },
-        );
-        if (!response.ok) {
-          throw new Error(`firmware check failed: ${response.status}`);
+        if (isLocalCompanionOrigin()) {
+          const payload = await runCompanion<FirmwareUpdateInfo>(
+            `/v1/updates/latest?${params.toString()}`,
+            { signal: options.signal },
+          );
+          setFirmwareUpdate(payload);
+        } else {
+          const response = await fetch(
+            `/api/firmware/latest?${params.toString()}`,
+            {
+              signal: options.signal,
+            },
+          );
+          if (!response.ok) {
+            throw new Error(`firmware check failed: ${response.status}`);
+          }
+          setFirmwareUpdate((await response.json()) as FirmwareUpdateInfo);
         }
-        setFirmwareUpdate((await response.json()) as FirmwareUpdateInfo);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
@@ -1225,7 +1377,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
       }
     },
-    [deviceBoard, deviceFirmware],
+    [deviceBoard, deviceFirmware, runCompanion],
   );
   const hasCompanionReleaseInfo = Boolean(companionInfo?.update);
   const shouldUseLegacyCompanionRelease = Boolean(
@@ -1534,9 +1686,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       });
       addEvent({
         label: "VibeTV update failed",
-          detail: normalized.nextAction,
-          tone: "attention",
-        });
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
       return false;
     } finally {
       setBusyAction(null);
@@ -1618,7 +1770,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
       if (payload.device) {
-        setDevice(payload.device);
+        mergeDevice(payload.device);
         if (payload.device.target) {
           setDeviceTarget(payload.device.target);
           rememberDeviceTarget(payload.device.target);
@@ -1659,6 +1811,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
+    mergeDevice,
     runCompanion,
   ]);
 
@@ -1689,18 +1842,64 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? firmwareUpdate
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
-  const companionRelease = companionInfo?.update || legacyCompanionRelease || null;
+  const companionRelease =
+    companionInfo?.update || legacyCompanionRelease || null;
   const macAppUpdateAvailable = Boolean(
-    companionRelease?.updateAvailable && macAppUpdateStatus?.phase !== "complete",
+    companionRelease?.updateAvailable &&
+      macAppUpdateStatus?.phase !== "complete",
   );
   const anyUpdateAvailable = firmwareUpdateAvailable || macAppUpdateAvailable;
   const imageNeedsReload = deviceImageIsStuck(device);
   const setupComplete = Boolean(
     !setupPreviewStep &&
-    companionStatus === "online" &&
-    deviceSetupIsUsable(device),
+      companionStatus === "online" &&
+      deviceSetupIsUsable(device),
   );
   const usageAvailable = companionStatus === "online";
+  const openLocalControlCenter = useCallback(async () => {
+    setBusyAction("status");
+    try {
+      if (hostedSetup && companionStatus !== "online") {
+        window.location.href = LOCAL_CONTROL_CENTER_LAUNCHER_URL;
+        await delay(LOCAL_APP_LAUNCH_WAIT_MS);
+      }
+      await verifyLocalControlCenterAvailable();
+      if (hostedSetup) {
+        rememberLocalControlCenterOpened();
+        setLocalControlCenterPreviouslyOpened(true);
+      }
+      window.location.assign(localControlCenterUrl(localControlCenterPath));
+    } catch (error) {
+      const normalized = await normalizeLocalControlCenterError(error);
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else if (isCompanionMissingError(normalized)) {
+        markCompanionUnavailable();
+      } else {
+        setSetupPreviewStep("mac-app");
+      }
+      setLastError(normalized);
+      addEvent({
+        label:
+          normalized.code === "LOCAL_CONTROL_CENTER_UNAVAILABLE"
+            ? "Mac App update needed"
+            : "Local Control Center needs setup",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  }, [
+    addEvent,
+    markCompanionAccessBlocked,
+    markCompanionUnavailable,
+    companionStatus,
+    hostedSetup,
+    localControlCenterPath,
+    verifyLocalControlCenterAvailable,
+  ]);
+
   useEffect(() => {
     if (!setupComplete || didRouteAfterSetupComplete.current) {
       return;
@@ -1721,6 +1920,39 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? "overview"
       : "setup"
     : activeTab;
+
+  useEffect(() => {
+    if (
+      hostedSetup ||
+      setupPreviewStep ||
+      companionStatus !== "online" ||
+      (activeShellTab !== "usage" && activeShellTab !== "overview")
+    ) {
+      return;
+    }
+
+    const refreshStatus = () => {
+      if (document.visibilityState === "hidden" || busyAction) {
+        return;
+      }
+      void syncLocalStatus();
+    };
+
+    const initialTimer = window.setTimeout(refreshStatus, 0);
+    const timer = window.setInterval(refreshStatus, 5000);
+
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
+  }, [
+    activeShellTab,
+    busyAction,
+    companionStatus,
+    hostedSetup,
+    setupPreviewStep,
+    syncLocalStatus,
+  ]);
 
   useEffect(() => {
     if (
@@ -1746,6 +1978,49 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     };
   }, [activeShellTab, companionStatus, refreshUsage]);
 
+  const renderSetupScreen = (showIntro: boolean) => (
+    <SetupScreen
+      key={setupResetVersion}
+      checkAfterWifi
+      companionStatus={companionStatus}
+      device={device}
+      deviceState={deviceState}
+      deviceTarget={deviceTarget}
+      lastError={lastError}
+      busyAction={busyAction}
+      hostedMode={hostedSetup}
+      localControlCenterPreviouslyOpened={localControlCenterPreviouslyOpened}
+      localControlCenterPath={localControlCenterPath}
+      previewStep={setupPreviewStep}
+      showIntro={showIntro}
+      setupComplete={setupComplete}
+      onCheckCompanion={checkCompanion}
+      onDeviceTargetChange={handleDeviceTargetChange}
+      onOpenControlCenter={
+        hostedSetup ? openLocalControlCenter : () => setActiveTab("overview")
+      }
+      onRepairConnection={(targetOverride) =>
+        repairConnection({ targetOverride, forcePair: true })
+      }
+      onResetSetup={resetSetup}
+    />
+  );
+
+  if (runtimeSurface === "unknown") {
+    return <ControlCenterBootScreen />;
+  }
+
+  if (runtimeSurface === "hosted-setup") {
+    return (
+      <HostedSetupShell
+        companionStatus={companionStatus}
+        setupComplete={setupComplete}
+      >
+        {renderSetupScreen(true)}
+      </HostedSetupShell>
+    );
+  }
+
   return (
     <ControlCenterShell
       activeTab={activeShellTab}
@@ -1759,25 +2034,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setActiveTab(tab);
       }}
     >
-      {activeShellTab === "setup" ? (
-        <SetupScreen
-          key={setupResetVersion}
-          companionStatus={companionStatus}
-          device={device}
-          deviceState={deviceState}
-          deviceTarget={deviceTarget}
-          lastError={lastError}
-          busyAction={busyAction}
-          previewStep={setupPreviewStep}
-          setupComplete={setupComplete}
-          onCheckCompanion={checkCompanion}
-          onDeviceTargetChange={handleDeviceTargetChange}
-          onRepairConnection={(targetOverride) =>
-            repairConnection({ targetOverride, forcePair: true })
-          }
-          onResetSetup={resetSetup}
-        />
-      ) : null}
+      {activeShellTab === "setup" ? renderSetupScreen(true) : null}
 
       {activeShellTab === "overview" ? (
         <OverviewScreen
@@ -1868,6 +2125,45 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ) : null}
     </ControlCenterShell>
   );
+}
+
+function ControlCenterBootScreen() {
+  return (
+    <main className="grid min-h-screen place-items-center bg-[#1B1B1B] px-5 text-[#EDEDED]">
+      <div className="text-center">
+        <div className="text-[40px] font-black uppercase leading-none tracking-normal">
+          VIBE<span className="text-[#CCFF00]">TV</span>
+        </div>
+        <p className="mt-4 text-sm font-black uppercase text-[#CCFF00]">
+          Loading
+        </p>
+      </div>
+    </main>
+  );
+}
+
+function getRuntimeSurfaceSnapshot(): RuntimeSurface {
+  return shouldUseHostedSetupShell() ? "hosted-setup" : "local-control-center";
+}
+
+function getRuntimeSurfaceServerSnapshot(): RuntimeSurface {
+  return "unknown";
+}
+
+function subscribeRuntimeSurface(onStoreChange: () => void) {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+  const timer = window.setTimeout(onStoreChange, 0);
+  return () => window.clearTimeout(timer);
+}
+
+function localControlCenterPathForTheme(themeId: string | undefined): string {
+  const cleanThemeId = themeId?.trim();
+  if (!cleanThemeId) {
+    return "/control-center";
+  }
+  return `/control-center/install/${encodeURIComponent(cleanThemeId)}`;
 }
 
 function normalizeError(error: unknown, status: number): ApiError {
@@ -2030,6 +2326,18 @@ function customerInstallLogs(
   return cleaned.length > 0 ? cleaned : fallback;
 }
 
+function themeInstallErrorText(error: ApiError): string {
+  const message = error.message?.trim();
+  const nextAction = error.nextAction?.trim();
+  if (!message) {
+    return nextAction || "Theme install failed. Try again.";
+  }
+  if (!nextAction || nextAction === message) {
+    return message;
+  }
+  return `${message} ${nextAction}`;
+}
+
 function customerUpdateLogs(
   logs: string[] | undefined,
   fallback: string[] = ["Preparing VibeTV update."],
@@ -2136,12 +2444,37 @@ function normalizeUsageError(error: ApiError): ApiError {
   return error;
 }
 
+function localControlCenterUnavailableError(): ApiError {
+  return {
+    code: "LOCAL_CONTROL_CENTER_UNAVAILABLE",
+    message: "Mac App update needed.",
+    nextAction:
+      "Update the Mac App or run setup again, then open Control Center.",
+  };
+}
+
+async function normalizeLocalControlCenterError(
+  error: unknown,
+): Promise<ApiError> {
+  if (error && typeof error === "object" && "code" in error) {
+    return error as ApiError;
+  }
+  if (error instanceof Error && isCompanionConnectionError(error)) {
+    const accessState = await readLocalNetworkAccessState();
+    if (localNetworkAccessNeedsUserAction(accessState)) {
+      return localNetworkAccessError(accessState);
+    }
+    return companionUnavailableError();
+  }
+  return localControlCenterUnavailableError();
+}
+
 function companionUnavailableError(): ApiError {
   return {
     code: "COMPANION_UNREACHABLE",
     message: "Mac App did not answer.",
     nextAction:
-      "Copy the prompt or terminal command, run setup, then click Mac App is installed again.",
+      "Open Control Center again. If it still does not open, copy the prompt or terminal command and run setup.",
   };
 }
 
@@ -2149,21 +2482,6 @@ function isCompanionConnectionError(error: Error): boolean {
   return /failed to fetch|fetch failed|load failed|networkerror|connection refused|err_connection_refused|couldn'?t connect/i.test(
     error.message,
   );
-}
-
-function companionRequestUrl(path: string, useLocalProxy: boolean): string {
-  if (!useLocalProxy) {
-    return `${COMPANION_URL}${path}`;
-  }
-  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-  return `/api/local-companion/${normalizedPath}`;
-}
-
-function shouldUseLocalCompanionProxy(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  return ["127.0.0.1", "localhost", "::1"].includes(window.location.hostname);
 }
 
 function isLocalCompanionFetchFailureReason(reason: unknown): boolean {
@@ -2195,15 +2513,14 @@ function localNetworkAccessError(
   if (state === "denied") {
     return {
       code: "LOCAL_NETWORK_ACCESS_REQUIRED",
-      message: "Browser access is blocked.",
-      nextAction: "Allow local network access for this site, then try again.",
+      message: "Local Control Center is blocked.",
+      nextAction: "Open the local Control Center again, then retry.",
     };
   }
   return {
     code: "LOCAL_NETWORK_ACCESS_REQUIRED",
-    message: "Browser permission needed.",
-    nextAction:
-      "Click Allow access and approve the browser prompt so this site can talk to the Mac App.",
+    message: "Local Control Center could not be reached.",
+    nextAction: "Open the local Control Center again, then retry.",
   };
 }
 
@@ -2225,6 +2542,84 @@ async function readLocalNetworkAccessState(): Promise<
     }
   }
   return "unsupported";
+}
+
+function mergeDeviceInfo(
+  current: DeviceInfo | null,
+  next: DeviceInfo,
+): DeviceInfo {
+  if (!current) {
+    return next;
+  }
+
+  const currentTarget = normalizeDeviceTarget(current.target || "");
+  const nextTarget = normalizeDeviceTarget(next.target || "");
+  if (currentTarget && nextTarget && currentTarget !== nextTarget) {
+    return next;
+  }
+
+  return {
+    ...current,
+    ...next,
+    board: next.board ?? current.board,
+    firmware: next.firmware ?? current.firmware,
+    activeTheme: next.activeTheme ?? current.activeTheme,
+    capabilities: mergeDeviceCapabilities(
+      current.capabilities,
+      next.capabilities,
+    ),
+    display: mergeDeviceDisplay(current.display, next.display),
+    health: next.health ?? current.health,
+    stream: next.stream ?? current.stream,
+  };
+}
+
+function mergeDeviceDisplay(
+  current: DeviceInfo["display"],
+  next: DeviceInfo["display"],
+): DeviceInfo["display"] {
+  if (!current) {
+    return next;
+  }
+  if (!next) {
+    return current;
+  }
+  return {
+    ...current,
+    ...next,
+    themeSpec: next.themeSpec
+      ? { ...current.themeSpec, ...next.themeSpec }
+      : current.themeSpec,
+  };
+}
+
+function mergeDeviceCapabilities(
+  current: DeviceInfo["capabilities"],
+  next: DeviceInfo["capabilities"],
+): DeviceInfo["capabilities"] {
+  if (!current) {
+    return next;
+  }
+  if (!next) {
+    return current;
+  }
+  return {
+    ...current,
+    ...next,
+    display: next.display
+      ? {
+          ...current.display,
+          ...next.display,
+          brightness: next.display.brightness
+            ? { ...current.display?.brightness, ...next.display.brightness }
+            : current.display?.brightness,
+        }
+      : current.display,
+    theme: next.theme ? { ...current.theme, ...next.theme } : current.theme,
+    transport: next.transport
+      ? { ...current.transport, ...next.transport }
+      : current.transport,
+  };
 }
 
 function readInitialDeviceTarget(): string {
@@ -2256,6 +2651,31 @@ function readLocalSetupPreviewStep(): "mac-app" | null {
     return params.get("setupStep") === "mac-app" ? "mac-app" : null;
   } catch {
     return null;
+  }
+}
+
+function readLocalControlCenterPreviouslyOpened(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return (
+      window.localStorage.getItem(LOCAL_CONTROL_CENTER_OPENED_STORAGE_KEY) ===
+      "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function rememberLocalControlCenterOpened() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(LOCAL_CONTROL_CENTER_OPENED_STORAGE_KEY, "1");
+  } catch {
+    // localStorage may be unavailable in private or restricted browser contexts.
   }
 }
 

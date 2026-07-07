@@ -62,6 +62,8 @@ constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxTheme
 constexpr uint8_t kDefaultBrightnessPercent = 100;
 constexpr uint8_t kMinBrightnessPercent = 10;
 constexpr uint8_t kMaxBrightnessPercent = 100;
+constexpr size_t kSetupWifiOptionsMaxBytes = 900;
+constexpr uint8_t kSetupWifiMaxOptions = 10;
 const char kSetupApSsid[] = "VibeTV-Setup";
 const char kSetupHost[] = "vibetv.local";
 const char kMdnsName[] = "vibetv";
@@ -1025,31 +1027,55 @@ bool connectToSdkWifiConfig() {
 
 void scanSetupNetworks() {
   String options;
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
+  int networks = -2;
+  WiFi.mode(setupMode ? WIFI_AP_STA : WIFI_STA);
+  WiFi.disconnect(false);
   delay(150);
-  const int networks = WiFi.scanNetworks();
+
+  for (int attempt = 1; attempt <= 2; ++attempt) {
+    networks = WiFi.scanNetworks(false, true);
+    if (networks > 0) {
+      break;
+    }
+    Serial.printf("wifi_setup_scan_empty attempt=%d networks=%d\n", attempt, networks);
+    WiFi.scanDelete();
+    delay(250);
+    yield();
+  }
+
+  uint8_t optionCount = 0;
   for (int i = 0; i < networks; ++i) {
     const String ssid = WiFi.SSID(i);
     if (ssid.length() == 0) {
       continue;
     }
-    options += "<option value=\"";
-    options += htmlEscape(ssid);
-    options += "\">";
-    options += htmlEscape(ssid);
-    options += " (";
-    options += String(WiFi.RSSI(i));
-    options += " dBm)</option>";
+    String option;
+    const String escapedSsid = htmlEscape(ssid);
+    option.reserve(escapedSsid.length() + 40);
+    option += "<option value=\"";
+    option += escapedSsid;
+    option += "\">";
+    option += escapedSsid;
+    option += " (";
+    option += String(WiFi.RSSI(i));
+    option += " dBm)</option>";
+    if (options.length() + option.length() > kSetupWifiOptionsMaxBytes) {
+      break;
+    }
+    options += option;
+    ++optionCount;
+    if (optionCount >= kSetupWifiMaxOptions) {
+      break;
+    }
   }
   WiFi.scanDelete();
   setupWifiOptionsHTML = options;
-  Serial.printf("wifi_setup_scan networks=%d options=%u\n", networks, setupWifiOptionsHTML.length());
+  Serial.printf("wifi_setup_scan networks=%d options=%u option_count=%u\n", networks, setupWifiOptionsHTML.length(), optionCount);
 }
 
 String setupPageHTML() {
   String html;
-  html.reserve(1600);
+  html.reserve(2400);
   html += "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
   html += "<title>VibeTV Setup</title><style>";
   html += "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:#101113;color:#f7f7f2}";
@@ -1059,7 +1085,11 @@ String setupPageHTML() {
   html += "</style></head><body><main><h1>VibeTV WiFi</h1>";
   html += "<p class='muted'>Choose your home WiFi and save. Keep your Mac on its normal WiFi. After restart, VibeTV shows the app address for your Mac.</p>";
   html += "<form method='post' action='/save'><label>Choose WiFi</label><select name='ssid'>";
-  html += setupWifiOptionsHTML.length() > 0 ? setupWifiOptionsHTML : "<option value=''>No networks found</option>";
+  if (setupWifiOptionsHTML.length() > 0) {
+    html += setupWifiOptionsHTML;
+  } else {
+    html += "<option value=''>No networks found</option>";
+  }
   html += "</select><label>Enter SSID manually</label><input name='custom_ssid' maxlength='32' autocomplete='off' placeholder='WiFi name'>";
   html += "<label>Password</label><input name='password' type='password' maxlength='64' autocomplete='current-password'>";
   html += "<button type='submit'>Save</button></form>";
@@ -1121,6 +1151,9 @@ String connectedPageHTML() {
 void handleRoot() {
   webServer.keepAlive(false);
   if (setupMode) {
+    if (setupWifiOptionsHTML.length() == 0) {
+      scanSetupNetworks();
+    }
     webServer.send(200, "text/html; charset=utf-8", setupPageHTML());
     return;
   }
@@ -2404,10 +2437,10 @@ void startHttpServer() {
 void startSetupAccessPoint() {
   setupMode = true;
   resetWifiReconnectState();
-  scanSetupNetworks();
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(kSetupApSsid);
   Serial.printf("wifi_setup_ap ssid=VibeTV-Setup ip=%s\n", WiFi.softAPIP().toString().c_str());
+  scanSetupNetworks();
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
   captiveDnsStarted = true;
   Serial.printf("captive_dns_started port=%u host=%s ip=%s\n", kDnsPort, kSetupHost, WiFi.softAPIP().toString().c_str());
