@@ -1961,10 +1961,7 @@ func repairDiscoveryErrorIsRetryable(err error) bool {
 		return false
 	}
 	var multiple *multipleDevicesError
-	if errors.As(err, &multiple) {
-		return false
-	}
-	return true
+	return !errors.As(err, &multiple)
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
