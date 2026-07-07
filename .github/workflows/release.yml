@@ -57,6 +57,7 @@ jobs:
           (
             cd apps/control-center
             npm ci
+            npx playwright install --with-deps chromium
             npm run build:local
             npm run test:customer-smoke
           )
