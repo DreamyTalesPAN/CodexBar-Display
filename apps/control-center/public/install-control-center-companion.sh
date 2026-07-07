@@ -8,7 +8,9 @@ INSTALL_NAME="codexbar-display"
 APP_SUPPORT_DIR="${HOME}/Library/Application Support/codexbar-display"
 BIN_DIR="${APP_SUPPORT_DIR}/bin"
 BIN_PATH="${BIN_DIR}/${INSTALL_NAME}"
-APP_BUNDLE_DIR="${APP_SUPPORT_DIR}/VibeTV Control Center.app"
+USER_APPLICATIONS_DIR="${HOME}/Applications"
+APP_BUNDLE_DIR="${USER_APPLICATIONS_DIR}/VibeTV Control Center.app"
+LEGACY_APP_BUNDLE_DIR="${APP_SUPPORT_DIR}/VibeTV Control Center.app"
 APP_BUNDLE_CONTENTS_DIR="${APP_BUNDLE_DIR}/Contents"
 APP_BUNDLE_BIN_DIR="${APP_BUNDLE_CONTENTS_DIR}/MacOS"
 APP_BUNDLE_BIN_PATH="${APP_BUNDLE_BIN_DIR}/${INSTALL_NAME}"
@@ -46,7 +48,6 @@ REPAIR_MAX_ATTEMPTS="${VIBETV_COMPANION_REPAIR_ATTEMPTS:-45}"
 REPAIR_RETRY_DELAY="${VIBETV_COMPANION_REPAIR_RETRY_DELAY:-2}"
 SERVICE_STABLE_RETRY_DELAY="${VIBETV_COMPANION_STABLE_RETRY_DELAY:-1}"
 MODE="install"
-START_MODE="${VIBETV_COMPANION_START_MODE:-terminal}"
 OPEN_CONTROL_CENTER="${VIBETV_COMPANION_OPEN_CONTROL_CENTER:-1}"
 CONTROL_CENTER_PATH="${VIBETV_COMPANION_CONTROL_CENTER_PATH:-/control-center}"
 VERBOSE="${VIBETV_VERBOSE:-0}"
@@ -348,6 +349,18 @@ download_file() {
     || die "Could not download a required VibeTV setup file. Check your internet connection, then rerun setup."
 }
 
+download_preview_source_archive() {
+  [[ -n "$DEV_ORIGIN" ]] || return 1
+
+  local archive_url
+  archive_url="${DEV_ORIGIN%/}/preview-source.tar.gz"
+  run_quiet curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 600 \
+    -o "$source_archive" \
+    "$archive_url" \
+    || return 1
+  return 0
+}
+
 verify_checksum() {
   local expected actual
   expected="$(grep -F "${INSTALL_NAME}-darwin-${BINARY_ARCH}-v${RELEASE_VERSION}" "$CHECKSUMS_FILE" | awk '{print $1}' | head -n 1 || true)"
@@ -374,7 +387,9 @@ build_source_binary() {
   build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   log "vibetv: source=${SOURCE_REF}"
-  download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/archive/${SOURCE_REF}.tar.gz" "$source_archive"
+  if ! download_preview_source_archive; then
+    download_file "${GITHUB_DOWNLOAD_BASE}/${REPO}/archive/${SOURCE_REF}.tar.gz" "$source_archive"
+  fi
   mkdir -p "$source_dir"
   run_quiet tar -xzf "$source_archive" -C "$source_dir" --strip-components 1 \
     || die "Could not unpack the Preview setup files. Rerun setup from the latest VibeTV setup page."
@@ -416,11 +431,9 @@ runtime_config_target() {
 }
 
 daemon_target_for_plist() {
-  if [[ -n "$TARGET" ]]; then
+  if [[ "$TARGET_EXPLICIT" == "1" && -n "$TARGET" ]]; then
     printf '%s\n' "$TARGET"
-    return 0
   fi
-  runtime_config_target
 }
 
 write_plist() {
@@ -495,7 +508,6 @@ daemon_binary_for_plist() {
 }
 
 restart_service() {
-  local kickstart_status
   if [[ ! -x "$BIN_PATH" ]]; then
     die "Mac setup binary is missing: ${BIN_PATH}. Run install first."
   fi
@@ -503,22 +515,15 @@ restart_service() {
   require_cmd_for launchctl "start the VibeTV Mac App background service" "rerun from a standard macOS Terminal."
   install_app_bundle
   stop_launchagent
+  launchctl bootout "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
   stop_terminal_service
   stop_existing_listener
   write_plist
-  launchctl bootout "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
   launchctl enable "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
   if ! launchctl bootstrap "gui/$(id -u)" "$DISPLAY_DAEMON_PLIST" >/dev/null 2>&1; then
     if ! launchctl print "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1; then
       die "failed to load the VibeTV Mac App background service."
     fi
-  fi
-  set +e
-  launchctl kickstart -k "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1
-  kickstart_status=$?
-  set -e
-  if [[ "$kickstart_status" -ne 0 ]] && ! launchctl print "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1; then
-    die "failed to start the VibeTV Mac App background service."
   fi
   verify_launchagent_loaded
 }
@@ -963,6 +968,7 @@ install_app_bundle() {
     die "Mac setup binary is missing: ${BIN_PATH}. Run install first."
   fi
 
+  mkdir -p "$USER_APPLICATIONS_DIR"
   mkdir -p "$APP_BUNDLE_BIN_DIR"
   cp "$BIN_PATH" "$APP_BUNDLE_BIN_PATH"
   chmod 755 "$APP_BUNDLE_BIN_PATH"
@@ -985,8 +991,17 @@ install_app_bundle() {
     <string>1.0</string>
     <key>CFBundleVersion</key>
     <string>$(xml_escape "$RELEASE_VERSION")</string>
-    <key>LSBackgroundOnly</key>
-    <true/>
+    <key>CFBundleURLTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleURLName</key>
+        <string>shop.vibetv.control-center</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>vibetv</string>
+        </array>
+      </dict>
+    </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>VibeTV needs local network access to connect to your VibeTV display.</string>
   </dict>
@@ -999,6 +1014,17 @@ PLIST
     codesign --force --deep --sign - "$APP_BUNDLE_DIR" >/dev/null 2>&1 \
       || log "vibetv: warning: ad-hoc codesign failed for ${APP_BUNDLE_DIR}"
   fi
+  rm -rf "$LEGACY_APP_BUNDLE_DIR"
+  register_app_bundle
+}
+
+register_app_bundle() {
+  local lsregister
+  lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  if [[ -x "$lsregister" ]]; then
+    "$lsregister" -f "$APP_BUNDLE_DIR" >/dev/null 2>&1 \
+      || log "vibetv: warning: could not register ${APP_BUNDLE_DIR} with LaunchServices"
+  fi
 }
 
 uninstall_service() {
@@ -1009,6 +1035,7 @@ uninstall_service() {
   fi
   rm -f "$PLIST_PATH" "$DISPLAY_DAEMON_PLIST"
   rm -rf "$APP_BUNDLE_DIR"
+  rm -rf "$LEGACY_APP_BUNDLE_DIR"
   log "vibetv: Mac setup service stopped"
   log "vibetv: installed binary kept at ${BIN_PATH}"
 }
@@ -1068,6 +1095,26 @@ stop_existing_listener() {
     command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
     if [[ "$command_line" == *"$INSTALL_NAME"* ]]; then
       kill "$pid" >/dev/null 2>&1 || true
+    fi
+  done
+  for _ in $(seq 1 30); do
+    pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    [[ -n "$pids" ]] || return 0
+    local remaining=""
+    for pid in $pids; do
+      command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+      if [[ "$command_line" == *"$INSTALL_NAME"* ]]; then
+        remaining="1"
+      fi
+    done
+    [[ -z "$remaining" ]] && return 0
+    sleep 0.2
+  done
+  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  for pid in $pids; do
+    command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    if [[ "$command_line" == *"$INSTALL_NAME"* ]]; then
+      kill -9 "$pid" >/dev/null 2>&1 || true
     fi
   done
 }
@@ -1167,14 +1214,6 @@ parse_args() {
         MODE="uninstall"
         shift
         ;;
-      --terminal-session)
-        START_MODE="terminal"
-        shift
-        ;;
-      --launchagent)
-        START_MODE="launchagent"
-        shift
-        ;;
       --skip-device-setup)
         SKIP_DEVICE_SETUP=1
         shift
@@ -1263,7 +1302,7 @@ main() {
   TMPDIR_INSTALL="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-companion-install.XXXXXX")"
   trap cleanup EXIT INT TERM
 
-  if [[ -n "$DEV_ORIGIN" && -z "$RELEASE_VERSION" && -z "$SOURCE_REF" ]]; then
+  if [[ -n "$DEV_ORIGIN" && -z "$SOURCE_REF" ]]; then
     SOURCE_REF="$(fetch_dev_source_ref)" \
       || die "Preview build metadata was not available from ${DEV_ORIGIN}. Rerun setup from the latest Preview, or pass --source-ref <commit>."
   fi

@@ -29,7 +29,7 @@ function buildAgentPrompt(
   terminalCommand: string,
   localControlCenterPath: string,
 ) {
-  return `Please install the VibeTV Mac App on this Mac.
+  return `Please install or update the latest VibeTV Mac App on this Mac.
 
 VibeTV is a small WiFi desk display for showing usage and theme screens. Its firmware and Mac App source are open source here:
 https://github.com/DreamyTalesPAN/CodexBar-Display
@@ -59,7 +59,7 @@ Run this Terminal command:
 
 ${terminalCommand}
 
-This command should install or update the VibeTV Mac App, start it in the background, connect VibeTV, and update VibeTV to the latest firmware. Do not install a signed package or a macOS package.
+This command should install or update the latest VibeTV Mac App, start it in the background, connect VibeTV, and update VibeTV to the latest firmware. Do not install a signed package or a macOS package.
 
 After the command finishes, verify it with:
 
@@ -90,6 +90,8 @@ type SetupScreenProps = {
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
   hostedMode?: boolean;
+  localControlCenterPreviouslyOpened?: boolean;
+  localControlCenterPath?: string;
   previewStep?: "mac-app" | null;
   showIntro?: boolean;
   setupComplete: boolean;
@@ -113,6 +115,8 @@ export function SetupScreen({
   onRepairConnection,
   onResetSetup,
   hostedMode = false,
+  localControlCenterPreviouslyOpened = false,
+  localControlCenterPath = "/control-center",
   previewStep,
   showIntro = true,
   setupComplete,
@@ -128,22 +132,32 @@ export function SetupScreen({
   const macAppReady = companionStatus === "online";
   const macAppCheckFailed = macAppMissing && macAppConfirmedState;
   const forceMacAppStep = previewStep === "mac-app";
+  const hostedReturnFlow = hostedMode && localControlCenterPreviouslyOpened;
   const macAppConfirmed =
     !forceMacAppStep &&
     !macAppMissing &&
     (macAppConfirmedState || macAppReady || setupComplete);
   const connected = Boolean(device?.connected && device.paired);
   const wifiConfirmed =
-    wifiConfirmedState || setupComplete || previewStep === "mac-app";
+    wifiConfirmedState ||
+    setupComplete ||
+    previewStep === "mac-app" ||
+    hostedReturnFlow ||
+    (!hostedMode && macAppReady);
   const connecting =
     busyAction === "status" ||
     busyAction === "connect" ||
     busyAction === "discover" ||
     busyAction === "repair";
   const controlCenterOrigin = currentControlCenterOrigin();
-  const localControlCenterPath = "/control-center";
-  const terminalCommand = buildMacAppTerminalCommand(controlCenterOrigin);
+  const terminalCommand = buildMacAppTerminalCommand(
+    controlCenterOrigin,
+    localControlCenterPath,
+  );
   const setupInstructionsCopied = agentPromptCopied || terminalCommandCopied;
+  const macAppStepTitle = hostedMode
+    ? "Install or update Mac App"
+    : "Install Mac App";
   const showControlCenterLauncher =
     showIntro &&
     !previewStep &&
@@ -160,7 +174,9 @@ export function SetupScreen({
       !macAppReady ||
       setupComplete ||
       connected ||
+      device?.target ||
       connecting ||
+      previewStep === "mac-app" ||
       autoConnectStarted.current
     ) {
       return;
@@ -170,8 +186,10 @@ export function SetupScreen({
   }, [
     connected,
     connecting,
+    device?.target,
     macAppReady,
     onRepairConnection,
+    previewStep,
     setupComplete,
     wifiConfirmed,
   ]);
@@ -225,6 +243,11 @@ export function SetupScreen({
   function confirmMacApp() {
     setMacAppConfirmedState(true);
     runCheckCompanion();
+  }
+
+  function confirmHostedMacApp() {
+    setMacAppConfirmedState(true);
+    openControlCenter();
   }
 
   function runCheckCompanion() {
@@ -287,13 +310,6 @@ export function SetupScreen({
               </h2>
               {macAppReady ? (
                 <div className="mt-6 flex flex-wrap gap-3">
-                  <PrimaryButton
-                    busy={busyAction === "repair"}
-                    busyLabel="Reconnecting"
-                    icon={<RefreshCw size={18} aria-hidden />}
-                    label="Fix connection"
-                    onClick={() => onRepairConnection?.()}
-                  />
                   <SecondaryButton
                     busy={busyAction === "reset-setup"}
                     busyLabel="Resetting"
@@ -366,7 +382,7 @@ export function SetupScreen({
             icon={<Download size={22} aria-hidden />}
             index={2}
             state={stepStates["mac-app"]}
-            title="Install Mac App"
+            title={macAppStepTitle}
           >
             {activeStep === "mac-app" ? (
               <div className="grid min-w-0 gap-4">
@@ -406,9 +422,9 @@ export function SetupScreen({
                         </button>
                         {!promptPreviewOpen ? (
                           <p className="border-t border-[#747A60] px-4 py-3 text-xs leading-5 text-[#444933] [overflow-wrap:anywhere]">
-                            Please install the VibeTV Mac App on this Mac.
-                            VibeTV is a small WiFi desk display for showing
-                            usage and theme screens.
+                            Please install or update the latest VibeTV Mac App
+                            on this Mac. VibeTV is a small WiFi desk display for
+                            showing usage and theme screens.
                           </p>
                         ) : null}
                         {promptPreviewOpen ? (
@@ -430,7 +446,7 @@ export function SetupScreen({
                     {agentPromptCopied ? (
                       <StatusNote>
                         Paste the prompt into your coding agent. This page will
-                        move on when the Mac App is running.
+                        move on when the latest Mac App is running.
                       </StatusNote>
                     ) : null}
                   </div>
@@ -442,6 +458,7 @@ export function SetupScreen({
                       <div className="min-w-0 max-w-full overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
                         <p className="px-4 py-3 text-sm leading-6 text-[#444933]">
                           Open Terminal, paste this command, then press Enter.
+                          It installs or updates the latest VibeTV Mac App.
                         </p>
                         <code
                           className="block max-h-[280px] w-full max-w-full overflow-auto whitespace-pre-wrap border-t border-[#747A60] bg-[#EEEEEE] p-4 text-xs leading-5 text-[#1B1B1B] [overflow-wrap:anywhere]"
@@ -468,24 +485,47 @@ export function SetupScreen({
 
                 {macAppCheckFailed ? (
                   <StatusNote icon={<RefreshCw size={16} aria-hidden />}>
-                    Mac App did not answer. Copy the prompt or terminal command
-                    above, run setup, then click Mac App is installed again.
+                    {hostedReturnFlow ? (
+                      <>
+                        Mac App did not answer. Open Control Center again. If it
+                        still does not open, copy the prompt or terminal command
+                        above and run setup.
+                      </>
+                    ) : (
+                      <>
+                        Mac App did not answer. Copy the prompt or terminal
+                        command above, run setup, then click Mac App is
+                        installed again.
+                      </>
+                    )}
                   </StatusNote>
                 ) : null}
 
                 <div className="flex flex-wrap gap-3">
                   <PrimaryButton
                     busy={busyAction === "status"}
-                    busyLabel="Checking"
-                    disabled={!setupInstructionsCopied}
+                    busyLabel={hostedReturnFlow ? "Opening" : "Checking"}
+                    disabled={!setupInstructionsCopied && !hostedReturnFlow}
                     fullWidth
-                    icon={<RefreshCw size={18} aria-hidden />}
+                    icon={
+                      hostedReturnFlow ? (
+                        <Monitor size={18} aria-hidden />
+                      ) : (
+                        <Check size={18} aria-hidden />
+                      )
+                    }
                     label={
-                      hostedMode
-                        ? "Open local Control Center"
+                      hostedReturnFlow
+                        ? "Open Control Center"
                         : "Mac App is installed"
                     }
-                    onClick={confirmMacApp}
+                    onClick={
+                      hostedMode
+                        ? hostedReturnFlow
+                          ? openControlCenter
+                          : confirmHostedMacApp
+                        : confirmMacApp
+                    }
                     size="large"
                   />
                 </div>
@@ -497,7 +537,7 @@ export function SetupScreen({
             icon={<Monitor size={22} aria-hidden />}
             index={3}
             state={stepStates.finish}
-            title={hostedMode ? "Open local Control Center" : "Finish setup"}
+            title={hostedMode ? "Open Control Center" : "Finish setup"}
           >
             {activeStep === "finish" && !hostedMode ? (
               <FinishSetupContent
@@ -541,21 +581,12 @@ function FinishSetupContent({
   if (deviceState === "offline") {
     return (
       <div className="grid gap-5">
-        <div className="grid gap-4">
-          <p className="text-sm leading-6 text-[#444933]">
-            Make sure VibeTV is powered on and connected to the same WiFi.
-          </p>
-          <PrimaryButton
-            fullWidth
-            icon={<RefreshCw size={18} aria-hidden />}
-            label="Fix connection"
-            onClick={() => onRepairConnection?.()}
-            size="large"
-          />
-        </div>
+        <p className="text-sm leading-6 text-[#444933]">
+          Make sure VibeTV is powered on and connected to the same WiFi.
+        </p>
         <DeviceTargetForm
           busy={busyAction === "repair"}
-          buttonLabel="Fix this address"
+          buttonLabel="Fix connection"
           className="grid gap-4"
           disabled={Boolean(busyAction)}
           id="setup-device-target"
@@ -588,12 +619,17 @@ function FinishSetupContent({
       <p className="text-sm leading-6 text-[#444933]">
         Make sure VibeTV is powered on and connected to the same WiFi.
       </p>
-      <PrimaryButton
-        fullWidth
-        icon={<RefreshCw size={18} aria-hidden />}
-        label="Connect VibeTV"
-        onClick={() => onRepairConnection?.()}
-        size="large"
+      <DeviceTargetForm
+        busy={busyAction === "repair"}
+        buttonLabel="Fix connection"
+        className="grid gap-4"
+        disabled={Boolean(busyAction)}
+        id="setup-device-target"
+        lastError={lastError}
+        onChange={onDeviceTargetChange}
+        onSubmit={onRepairConnection}
+        searchingLabel="Reconnecting"
+        value={deviceTarget}
       />
     </div>
   );

@@ -1,4 +1,6 @@
 export const COMPANION_URL = "http://127.0.0.1:47832";
+export const LOCAL_CONTROL_CENTER_LAUNCHER_URL =
+  "vibetv://open-control-center";
 
 export function isLoopbackHostname(hostname: string): boolean {
   return ["127.0.0.1", "localhost", "::1"].includes(hostname);
@@ -34,8 +36,9 @@ export function shouldUseNextLocalCompanionProxy(): boolean {
   return isLoopbackHostname(window.location.hostname) && !isLocalCompanionOrigin();
 }
 
-export function localControlCenterUrl(): string {
-  return `${companionOrigin()}/control-center`;
+export function localControlCenterUrl(path = "/control-center"): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${companionOrigin()}${normalizedPath}`;
 }
 
 export function shouldRedirectToLocalControlCenter(): boolean {

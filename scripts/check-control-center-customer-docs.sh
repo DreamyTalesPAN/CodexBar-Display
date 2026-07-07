@@ -21,6 +21,16 @@ checks = [
         None,
     ),
     (
+        "docs/README.md",
+        (root / "docs/README.md").read_text(encoding="utf-8"),
+        None,
+    ),
+    (
+        "docs/architecture.md",
+        (root / "docs/architecture.md").read_text(encoding="utf-8"),
+        None,
+    ),
+    (
         "apps/control-center/README.md",
         (root / "apps/control-center/README.md").read_text(encoding="utf-8"),
         None,

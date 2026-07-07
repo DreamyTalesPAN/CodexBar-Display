@@ -49,6 +49,7 @@ export function OverviewScreen({
   const imageStuck = deviceImageIsStuck(device);
   const reloadingImage = busyAction === "reload-display";
   const connected = Boolean(device?.connected && !imageStuck);
+  const healthDetail = deviceHealthDetail(device);
   const hero = buildHeroCopy({
     companionStatus,
     connected,
@@ -81,7 +82,7 @@ export function OverviewScreen({
             <StatusRow
               icon={<Monitor size={18} aria-hidden />}
               label="VibeTV"
-              detail={imageStuck ? imageStuckDetail(device) : undefined}
+              detail={imageStuck ? imageStuckDetail(device) : healthDetail}
               value={labelForDevice(deviceState, device, reloadingImage)}
             />
             <StatusRow
@@ -247,4 +248,15 @@ function imageStuckDetail(device: DeviceInfo | null): string {
     return "The connection works. VibeTV is freeing memory and redrawing the image.";
   }
   return "The connection works, but VibeTV could not redraw the current screen.";
+}
+
+function deviceHealthDetail(device: DeviceInfo | null): string | undefined {
+  const resetReason = device?.health?.resetReason?.trim();
+  if (resetReason && resetReason.toLowerCase() === "exception") {
+    return "VibeTV restarted after a firmware exception. If this keeps happening, reconnect power and run setup again.";
+  }
+  if (device?.connected && device.health?.error) {
+    return "VibeTV is reachable, but health details are temporarily unavailable.";
+  }
+  return undefined;
 }

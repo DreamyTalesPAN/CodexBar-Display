@@ -621,6 +621,17 @@ func rememberRecoveredWiFiTarget(target string, state *runtimeState, deps runtim
 	if state != nil {
 		state.deviceTarget = target
 	}
+	deps.logf("runtime event=wifi-target-selected target=%s\n", target)
+}
+
+func persistSuccessfulWiFiTarget(target string, deps runtimeDeps) {
+	if deps.transportName != "wifi" {
+		return
+	}
+	target = publicDeviceTarget(target)
+	if strings.TrimSpace(target) == "" {
+		return
+	}
 	cfg, ok := loadRuntimeConfig(deps)
 	if !ok {
 		return
@@ -1119,6 +1130,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
+	persistSuccessfulWiFiTarget(publicPort, deps)
 
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
 		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)

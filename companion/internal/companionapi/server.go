@@ -45,6 +45,8 @@ const (
 	previewOriginHostSuffix = "-paul-anduschus-projects.vercel.app"
 	deviceTimeout           = 15 * time.Second
 	discoveryProbeTime      = 1500 * time.Millisecond
+	repairDiscoveryAttempts = 3
+	repairDiscoveryRetryGap = 1200 * time.Millisecond
 	subnetProbeLimit        = 32
 	subnetProbeTime         = 450 * time.Millisecond
 	themeInstallDisableEnv  = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
@@ -67,7 +69,14 @@ const (
 	firmwareReleaseTimeout  = 5 * time.Second
 )
 
+var deviceHealthProbeTime = 2 * time.Second
+
 var displayStreamLogKeys = []string{
+	"code",
+	"op",
+	"retry",
+	"recovery",
+	"err",
 	"transport",
 	"source",
 	"fresh",
@@ -188,6 +197,7 @@ type deviceInfo struct {
 	Capabilities *protocol.CapabilityBlock `json:"capabilities,omitempty"`
 	Stream       *displayStreamInfo        `json:"stream,omitempty"`
 	Display      *deviceDisplayInfo        `json:"display,omitempty"`
+	Health       *deviceHealthInfo         `json:"health,omitempty"`
 }
 
 type displayStreamInfo struct {
@@ -201,6 +211,12 @@ type displayStreamInfo struct {
 
 type deviceDisplayInfo struct {
 	ThemeSpec *themeSpecHealth `json:"themeSpec,omitempty"`
+}
+
+type deviceHealthInfo struct {
+	OK          bool   `json:"ok"`
+	ResetReason string `json:"resetReason,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 type themeSpecHealth struct {
@@ -779,10 +795,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Stream:    streamPointer(stream),
 	}
 	if strings.TrimSpace(cfg.DeviceTarget) != "" {
-		if hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
+		if hello, probeToken, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
 			device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
-			if health, healthErr := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); healthErr == nil {
+			if health, healthErr := s.getHealthProbe(r.Context(), cfg.DeviceTarget, probeToken, deviceHealthProbeTime); healthErr == nil {
 				device = withDeviceHealth(device, health)
+			} else {
+				device = withDeviceHealthProbeError(device, healthErr)
 			}
 		}
 	}
@@ -977,7 +995,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		Status: "pass",
 		Detail: publicTarget(cfg.DeviceTarget),
 	})
-	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+	hello, probeToken, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
 	if err != nil {
 		checks = append(checks, diagnosticCheck{
 			Name:       "device_hello",
@@ -1017,8 +1035,9 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			NextAction: "Click Fix connection to restart the display stream.",
 		})
 	}
-	health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
+	health, err := s.getHealthProbe(r.Context(), cfg.DeviceTarget, probeToken, deviceHealthProbeTime)
 	if err != nil {
+		device = withDeviceHealthProbeError(device, err)
 		checks = append(checks, diagnosticCheck{
 			Name:       "device_health",
 			Status:     "attention",
@@ -1653,7 +1672,9 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	target, hello, err := s.discover(r.Context(), cfg, req.Target)
+	discoveryCfg := cfg
+	discoveryCfg.DeviceToken = ""
+	target, hello, err := s.discover(r.Context(), discoveryCfg, req.Target)
 	if err != nil {
 		writeDiscoveryError(w, err)
 		return
@@ -1764,8 +1785,10 @@ func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	device := s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello))
-	if health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err == nil {
+	if health, err := s.getHealthProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, deviceHealthProbeTime); err == nil {
 		device = withDeviceHealth(device, health)
+	} else {
+		device = withDeviceHealthProbeError(device, err)
 	}
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool       `json:"ok"`
@@ -1862,12 +1885,12 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	if forcePair {
 		discoveryCfg.DeviceToken = ""
 	}
-	target, hello, err := s.discover(ctx, discoveryCfg, requestedTarget)
+	target, hello, err := s.discoverForRepair(ctx, discoveryCfg, requestedTarget)
 	tokenStale := false
 	if err != nil && !forcePair && strings.TrimSpace(cfg.DeviceToken) != "" {
 		discoveryCfg = cfg
 		discoveryCfg.DeviceToken = ""
-		target, hello, err = s.discover(ctx, discoveryCfg, requestedTarget)
+		target, hello, err = s.discoverForRepair(ctx, discoveryCfg, requestedTarget)
 		if err == nil {
 			tokenStale = true
 		}
@@ -1901,6 +1924,47 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 		device = withDeviceHealth(device, health)
 	}
 	return device, nil
+}
+
+func (s *Server) discoverForRepair(ctx context.Context, cfg runtimeconfig.Config, requestedTarget string) (string, protocol.DeviceHello, error) {
+	requestedTarget = strings.TrimSpace(requestedTarget)
+	attempts := 1
+	if requestedTarget == "" && strings.TrimSpace(cfg.DeviceToken) == "" {
+		attempts = repairDiscoveryAttempts
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		target, hello, err := s.discover(ctx, cfg, requestedTarget)
+		if err == nil {
+			return target, hello, nil
+		}
+		lastErr = err
+		if !repairDiscoveryErrorIsRetryable(err) || attempt == attempts-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", protocol.DeviceHello{}, ctx.Err()
+		case <-time.After(repairDiscoveryRetryGap):
+		}
+	}
+	return "", protocol.DeviceHello{}, lastErr
+}
+
+func repairDiscoveryErrorIsRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var invalidTarget *invalidTargetError
+	if errors.As(err, &invalidTarget) {
+		return false
+	}
+	var multiple *multipleDevicesError
+	if errors.As(err, &multiple) {
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -3339,9 +3403,25 @@ func (s *Server) getHelloProbe(ctx context.Context, target, token string, timeou
 	return s.getHello(probeCtx, target, token)
 }
 
+func (s *Server) getHelloProbeWithTokenFallback(ctx context.Context, target, token string, timeout time.Duration) (protocol.DeviceHello, string, error) {
+	hello, err := s.getHelloProbe(ctx, target, token, timeout)
+	if err == nil || strings.TrimSpace(token) == "" {
+		return hello, strings.TrimSpace(token), err
+	}
+	tokenlessHello, tokenlessErr := s.getHelloProbe(ctx, target, "", timeout)
+	if tokenlessErr == nil {
+		return tokenlessHello, "", nil
+	}
+	return protocol.DeviceHello{}, strings.TrimSpace(token), err
+}
+
 type deviceHealth struct {
+	OK       bool           `json:"ok"`
 	Settings deviceSettings `json:"settings"`
-	Display  struct {
+	System   struct {
+		ResetReason string `json:"resetReason"`
+	} `json:"system"`
+	Display struct {
 		ActiveTheme string `json:"activeTheme"`
 		ThemeSpec   struct {
 			Active         bool   `json:"active"`
@@ -3360,6 +3440,15 @@ func (s *Server) getHealth(ctx context.Context, target, token string) (deviceHea
 		return deviceHealth{}, err
 	}
 	return health, nil
+}
+
+func (s *Server) getHealthProbe(ctx context.Context, target, token string, timeout time.Duration) (deviceHealth, error) {
+	if timeout <= 0 {
+		return s.getHealth(ctx, target, token)
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return s.getHealth(probeCtx, target, token)
 }
 
 func (s *Server) waitForDisplayRender(ctx context.Context, target, token string) (deviceHealth, error) {
@@ -3721,6 +3810,10 @@ func withDisplayStreamInfo(device deviceInfo, stream displayStreamInfo) deviceIn
 }
 
 func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
+	device.Health = &deviceHealthInfo{
+		OK:          health.OK,
+		ResetReason: strings.TrimSpace(health.System.ResetReason),
+	}
 	device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)
 	if health.Display.ThemeSpec.Active || health.Display.ThemeSpec.RenderOK != nil {
 		device.Display = &deviceDisplayInfo{
@@ -3733,6 +3826,17 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 				RenderFailures: health.Display.ThemeSpec.RenderFailures,
 			},
 		}
+	}
+	return device
+}
+
+func withDeviceHealthProbeError(device deviceInfo, err error) deviceInfo {
+	if err == nil {
+		return device
+	}
+	device.Health = &deviceHealthInfo{
+		OK:    false,
+		Error: sanitizeErrorDetail(err),
 	}
 	return device
 }
@@ -3791,6 +3895,10 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 
 	if stream.LastTarget != "" && !samePublicTarget(target, stream.LastTarget) {
 		stream.Detail = "Display stream is sending to another VibeTV."
+		return stream
+	}
+	if errorAt, detail, ok := lastDisplayStreamError(displayStreamOutLogPath()); ok && errorAt.After(lastSentAt) && time.Since(errorAt) <= displayStreamReadyAge {
+		stream.Detail = detail
 		return stream
 	}
 	if time.Since(lastSentAt) > displayStreamReadyAge {
@@ -3886,6 +3994,39 @@ func lastDisplayStreamFrameLine(path string) (time.Time, string, string, bool) {
 		return when, target, line, true
 	}
 	return time.Time{}, "", "", false
+}
+
+func lastDisplayStreamError(path string) (time.Time, string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return time.Time{}, "", false
+	}
+	lines := strings.Split(string(data), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if !strings.Contains(line, "cycle error:") && !strings.Contains(line, "cycle timeout:") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) == 0 {
+			continue
+		}
+		when, err := time.Parse(time.RFC3339, parts[0])
+		if err != nil {
+			continue
+		}
+		op := displayStreamLogValue(line, "op")
+		detail := "Display stream hit an error after the last frame and is reconnecting."
+		if op == "send-line" {
+			detail = "Display stream could not send to VibeTV and is reconnecting."
+		} else if op == "resolve-target" {
+			detail = "Display stream could not find VibeTV and is reconnecting."
+		} else if strings.Contains(line, "cycle timeout:") {
+			detail = "Display stream timed out and is reconnecting."
+		}
+		return when, detail, true
+	}
+	return time.Time{}, "", false
 }
 
 func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {

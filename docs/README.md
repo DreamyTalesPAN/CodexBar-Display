@@ -1,8 +1,8 @@
 # VibeTV Documentation
 
 This is the documentation map for the Control Center launch flow. Customer
-setup starts at `app.vibetv.shop`, not with the old direct GitHub installer
-flow.
+setup starts at `app.vibetv.shop`, then the Mac App opens the local Control
+Center on the customer's Mac.
 
 ## Customer Docs
 
@@ -42,7 +42,8 @@ Some internal docs still mention legacy LaunchAgent or direct installer details
 because they are useful for migration and support. For customer-facing copy,
 prefer this wording:
 
-- `Control Center` for the hosted app.
+- `Hosted setup` for `app.vibetv.shop`.
+- `Control Center` for the local browser app opened by the Mac App.
 - `Mac App` for the local `codexbar-display` service.
 - `VibeTV` for the physical device.
 - `Theme Library` for customer theme switching.

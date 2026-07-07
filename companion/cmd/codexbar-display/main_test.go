@@ -49,8 +49,8 @@ func TestParseDaemonOptionsDefaultsToWiFi(t *testing.T) {
 	if opts.Transport != "wifi" {
 		t.Fatalf("expected wifi transport default, got %q", opts.Transport)
 	}
-	if opts.Target != "http://vibetv.local" {
-		t.Fatalf("expected default WiFi target, got %q", opts.Target)
+	if opts.Target != "" {
+		t.Fatalf("expected empty default WiFi target, got %q", opts.Target)
 	}
 	if opts.Interval != 0 {
 		t.Fatalf("expected daemon runtime to choose default interval, got %s", opts.Interval)
@@ -74,6 +74,91 @@ func TestParseDaemonCommandOptionsSupportsEmbeddedAPI(t *testing.T) {
 	}
 	if opts.APIDevOrigin != "http://localhost:3002" {
 		t.Fatalf("unexpected dev origin %q", opts.APIDevOrigin)
+	}
+}
+
+func TestRunOpenControlCenterStartsServiceAndOpensLocalURL(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	var requestedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		if r.URL.Path != "/control-center" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	oldStart := openControlCenterStartLaunchAgentFn
+	oldOpen := openControlCenterOpenURLFn
+	oldClient := openControlCenterHTTPClient
+	t.Cleanup(func() {
+		openControlCenterStartLaunchAgentFn = oldStart
+		openControlCenterOpenURLFn = oldOpen
+		openControlCenterHTTPClient = oldClient
+	})
+
+	var startedHome string
+	openControlCenterStartLaunchAgentFn = func(home string) error {
+		startedHome = home
+		return nil
+	}
+	var openedURL string
+	openControlCenterOpenURLFn = func(url string) error {
+		openedURL = url
+		return nil
+	}
+	openControlCenterHTTPClient = server.Client()
+
+	addr := strings.TrimPrefix(server.URL, "http://")
+	if err := runOpenControlCenter([]string{"--addr", addr, "--path", "/control-center"}); err != nil {
+		t.Fatalf("runOpenControlCenter returned error: %v", err)
+	}
+	if startedHome != home {
+		t.Fatalf("expected startLaunchAgent home %q, got %q", home, startedHome)
+	}
+	if requestedPath != "/control-center" {
+		t.Fatalf("expected /control-center probe, got %q", requestedPath)
+	}
+	wantURL := server.URL + "/control-center"
+	if openedURL != wantURL {
+		t.Fatalf("expected opened URL %q, got %q", wantURL, openedURL)
+	}
+}
+
+func TestRunOpenControlCenterFailsWhenLocalControlCenterUnavailable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	oldStart := openControlCenterStartLaunchAgentFn
+	oldOpen := openControlCenterOpenURLFn
+	oldClient := openControlCenterHTTPClient
+	t.Cleanup(func() {
+		openControlCenterStartLaunchAgentFn = oldStart
+		openControlCenterOpenURLFn = oldOpen
+		openControlCenterHTTPClient = oldClient
+	})
+
+	openControlCenterStartLaunchAgentFn = func(string) error { return nil }
+	openControlCenterOpenURLFn = func(url string) error {
+		t.Fatalf("browser should not open when Control Center is unavailable: %s", url)
+		return nil
+	}
+	openControlCenterHTTPClient = server.Client()
+
+	addr := strings.TrimPrefix(server.URL, "http://")
+	err := runOpenControlCenter([]string{"--addr", addr, "--path", "/control-center", "--timeout", "20ms"})
+	if err == nil {
+		t.Fatalf("expected unavailable Control Center error")
+	}
+	if !strings.Contains(err.Error(), "last HTTP 404") {
+		t.Fatalf("expected last HTTP 404 error, got %v", err)
 	}
 }
 

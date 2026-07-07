@@ -14,6 +14,7 @@ import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
   isLocalCompanionOrigin,
+  LOCAL_CONTROL_CENTER_LAUNCHER_URL,
   localizeCompanionAssetUrl,
   localControlCenterUrl,
   needsLoopbackTargetAddressSpace,
@@ -44,8 +45,11 @@ import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
 
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
+const LOCAL_CONTROL_CENTER_OPENED_STORAGE_KEY =
+  "vibetv.controlCenter.localControlCenterOpened";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
+const LOCAL_APP_LAUNCH_WAIT_MS = 1500;
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
@@ -224,6 +228,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
+  const [
+    localControlCenterPreviouslyOpened,
+    setLocalControlCenterPreviouslyOpened,
+  ] = useState(readLocalControlCenterPreviouslyOpened);
   const [setupResetVersion, setSetupResetVersion] = useState(0);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
@@ -246,6 +254,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const selectedTheme = useMemo(
     () => catalog.themes.find((theme) => theme.themeId === selectedThemeId),
     [catalog.themes, selectedThemeId],
+  );
+  const localControlCenterPath = useMemo(
+    () => localControlCenterPathForTheme(initialThemeId),
+    [initialThemeId],
   );
 
   const handleDeviceTargetChange = useCallback((target: string) => {
@@ -566,6 +578,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
   ]);
 
+  const verifyLocalControlCenterAvailable = useCallback(async () => {
+    const requestUrl = localControlCenterUrl(localControlCenterPath);
+    const requestInit: LocalNetworkRequestInit = {
+      cache: "no-store",
+      method: "GET",
+    };
+    if (needsLoopbackTargetAddressSpace(requestUrl)) {
+      requestInit.targetAddressSpace = "loopback";
+    }
+    const response = await fetch(requestUrl, requestInit);
+    if (!response.ok) {
+      throw localControlCenterUnavailableError();
+    }
+  }, [localControlCenterPath]);
+
   const checkCompanion = useCallback(
     async (options?: { quiet?: boolean }) => {
       const quiet = Boolean(options?.quiet);
@@ -586,7 +613,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
         if (shouldRedirectToLocalControlCenter()) {
-          window.location.assign(localControlCenterUrl());
+          try {
+            await verifyLocalControlCenterAvailable();
+            window.location.assign(localControlCenterUrl(localControlCenterPath));
+          } catch (error) {
+            const normalized = await normalizeLocalControlCenterError(error);
+            setSetupPreviewStep("mac-app");
+            setLastError(normalized);
+            addEvent({
+              label: "Mac App update needed",
+              detail: normalized.nextAction,
+              tone: "attention",
+            });
+          }
           return;
         }
         if (!quiet) {
@@ -627,6 +666,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             void loadSettings();
           }
         } else {
+          forgetDeviceTarget();
+          setDeviceTarget("");
           setDevice(null);
           setDeviceState("unknown");
         }
@@ -668,11 +709,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       companionStatus,
       loadSettings,
+      localControlCenterPath,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
       mergeDevice,
       refreshDevice,
       runCompanion,
+      verifyLocalControlCenterAvailable,
     ],
   );
 
@@ -696,9 +739,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             ? "paired"
             : payload.device.connected
               ? "online"
-              : "unknown",
+          : "unknown",
         );
       } else {
+        forgetDeviceTarget();
+        setDeviceTarget("");
         setDevice(null);
         setDeviceState("unknown");
       }
@@ -759,6 +804,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                     ? "online"
                     : "unknown",
               );
+            } else {
+              forgetDeviceTarget();
+              setDeviceTarget("");
+              setDevice(null);
+              setDeviceState("unknown");
             }
           } catch (statusError) {
             const normalized = normalizeCaughtError(
@@ -1806,9 +1856,49 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       deviceSetupIsUsable(device),
   );
   const usageAvailable = companionStatus === "online";
-  const openLocalControlCenter = useCallback(() => {
-    window.location.assign(localControlCenterUrl());
-  }, []);
+  const openLocalControlCenter = useCallback(async () => {
+    setBusyAction("status");
+    try {
+      if (hostedSetup && companionStatus !== "online") {
+        window.location.href = LOCAL_CONTROL_CENTER_LAUNCHER_URL;
+        await delay(LOCAL_APP_LAUNCH_WAIT_MS);
+      }
+      await verifyLocalControlCenterAvailable();
+      if (hostedSetup) {
+        rememberLocalControlCenterOpened();
+        setLocalControlCenterPreviouslyOpened(true);
+      }
+      window.location.assign(localControlCenterUrl(localControlCenterPath));
+    } catch (error) {
+      const normalized = await normalizeLocalControlCenterError(error);
+      if (isLocalNetworkAccessError(normalized)) {
+        markCompanionAccessBlocked();
+      } else if (isCompanionMissingError(normalized)) {
+        markCompanionUnavailable();
+      } else {
+        setSetupPreviewStep("mac-app");
+      }
+      setLastError(normalized);
+      addEvent({
+        label:
+          normalized.code === "LOCAL_CONTROL_CENTER_UNAVAILABLE"
+            ? "Mac App update needed"
+            : "Local Control Center needs setup",
+        detail: normalized.nextAction,
+        tone: "attention",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  }, [
+    addEvent,
+    markCompanionAccessBlocked,
+    markCompanionUnavailable,
+    companionStatus,
+    hostedSetup,
+    localControlCenterPath,
+    verifyLocalControlCenterAvailable,
+  ]);
 
   useEffect(() => {
     if (!setupComplete || didRouteAfterSetupComplete.current) {
@@ -1891,7 +1981,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const renderSetupScreen = (showIntro: boolean) => (
     <SetupScreen
       key={setupResetVersion}
-      checkAfterWifi={!hostedSetup}
+      checkAfterWifi
       companionStatus={companionStatus}
       device={device}
       deviceState={deviceState}
@@ -1899,10 +1989,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       lastError={lastError}
       busyAction={busyAction}
       hostedMode={hostedSetup}
+      localControlCenterPreviouslyOpened={localControlCenterPreviouslyOpened}
+      localControlCenterPath={localControlCenterPath}
       previewStep={setupPreviewStep}
       showIntro={showIntro}
       setupComplete={setupComplete}
-      onCheckCompanion={hostedSetup ? openLocalControlCenter : checkCompanion}
+      onCheckCompanion={checkCompanion}
       onDeviceTargetChange={handleDeviceTargetChange}
       onOpenControlCenter={
         hostedSetup ? openLocalControlCenter : () => setActiveTab("overview")
@@ -2064,6 +2156,14 @@ function subscribeRuntimeSurface(onStoreChange: () => void) {
   }
   const timer = window.setTimeout(onStoreChange, 0);
   return () => window.clearTimeout(timer);
+}
+
+function localControlCenterPathForTheme(themeId: string | undefined): string {
+  const cleanThemeId = themeId?.trim();
+  if (!cleanThemeId) {
+    return "/control-center";
+  }
+  return `/control-center/install/${encodeURIComponent(cleanThemeId)}`;
 }
 
 function normalizeError(error: unknown, status: number): ApiError {
@@ -2344,12 +2444,37 @@ function normalizeUsageError(error: ApiError): ApiError {
   return error;
 }
 
+function localControlCenterUnavailableError(): ApiError {
+  return {
+    code: "LOCAL_CONTROL_CENTER_UNAVAILABLE",
+    message: "Mac App update needed.",
+    nextAction:
+      "Update the Mac App or run setup again, then open Control Center.",
+  };
+}
+
+async function normalizeLocalControlCenterError(
+  error: unknown,
+): Promise<ApiError> {
+  if (error && typeof error === "object" && "code" in error) {
+    return error as ApiError;
+  }
+  if (error instanceof Error && isCompanionConnectionError(error)) {
+    const accessState = await readLocalNetworkAccessState();
+    if (localNetworkAccessNeedsUserAction(accessState)) {
+      return localNetworkAccessError(accessState);
+    }
+    return companionUnavailableError();
+  }
+  return localControlCenterUnavailableError();
+}
+
 function companionUnavailableError(): ApiError {
   return {
     code: "COMPANION_UNREACHABLE",
     message: "Mac App did not answer.",
     nextAction:
-      "Copy the prompt or terminal command, run setup, then click Mac App is installed again.",
+      "Open Control Center again. If it still does not open, copy the prompt or terminal command and run setup.",
   };
 }
 
@@ -2444,6 +2569,7 @@ function mergeDeviceInfo(
       next.capabilities,
     ),
     display: mergeDeviceDisplay(current.display, next.display),
+    health: next.health ?? current.health,
     stream: next.stream ?? current.stream,
   };
 }
@@ -2525,6 +2651,31 @@ function readLocalSetupPreviewStep(): "mac-app" | null {
     return params.get("setupStep") === "mac-app" ? "mac-app" : null;
   } catch {
     return null;
+  }
+}
+
+function readLocalControlCenterPreviouslyOpened(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return (
+      window.localStorage.getItem(LOCAL_CONTROL_CENTER_OPENED_STORAGE_KEY) ===
+      "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function rememberLocalControlCenterOpened() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(LOCAL_CONTROL_CENTER_OPENED_STORAGE_KEY, "1");
+  } catch {
+    // localStorage may be unavailable in private or restricted browser contexts.
   }
 }
 

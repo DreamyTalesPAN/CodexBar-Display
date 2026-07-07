@@ -303,7 +303,7 @@ run_restart_updates_daemon_launchagent() {
   legacy_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
   daemon_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist"
   daemon_plist_body="$(cat "$daemon_plist")"
-  app_info="${root}/home/Library/Application Support/codexbar-display/VibeTV Control Center.app/Contents/Info.plist"
+  app_info="${root}/home/Applications/VibeTV Control Center.app/Contents/Info.plist"
   launch_log="$(cat "${root}/launchctl.log")"
   setup_log="$(support_log "$root")"
 
@@ -324,14 +324,17 @@ run_restart_updates_daemon_launchagent() {
   assert_not_contains "$daemon_plist_body" "<string></string>"
   assert_not_contains "$daemon_plist_body" "<string>api</string>"
   assert_contains "$(cat "$app_info")" "NSLocalNetworkUsageDescription"
+  assert_contains "$(cat "$app_info")" "CFBundleURLSchemes"
+  assert_contains "$(cat "$app_info")" "<string>vibetv</string>"
+  assert_not_contains "$(cat "$app_info")" "LSBackgroundOnly"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.daemon"
   assert_contains "$launch_log" "bootstrap gui/$(id -u) $daemon_plist"
-  assert_contains "$launch_log" "kickstart -k gui/$(id -u)/com.codexbar-display.daemon"
+  assert_not_contains "$launch_log" "kickstart -k gui/$(id -u)/com.codexbar-display.daemon"
 }
 
 run_uninstall_stops_terminal_service_and_legacy_launchagent() {
-  local root output pid_file pid plist setup_log app_bundle
+  local root output pid_file pid plist setup_log app_bundle legacy_app_bundle
   root="${TMP_WORK_DIR}/uninstall"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -340,7 +343,9 @@ run_uninstall_stops_terminal_service_and_legacy_launchagent() {
   : > "${root}/api.log"
 
   pid_file="${root}/home/Library/Application Support/codexbar-display/run/companion-api.pid"
-  app_bundle="${root}/home/Library/Application Support/codexbar-display/VibeTV Control Center.app"
+  app_bundle="${root}/home/Applications/VibeTV Control Center.app"
+  legacy_app_bundle="${root}/home/Library/Application Support/codexbar-display/VibeTV Control Center.app"
+  mkdir -p "$app_bundle" "$legacy_app_bundle"
   plist="${root}/home/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
   sleep 60 &
   pid="$!"
@@ -357,6 +362,7 @@ run_uninstall_stops_terminal_service_and_legacy_launchagent() {
   assert_contains "$setup_log" "Mac setup service stopped"
   [[ ! -f "$pid_file" ]] || die "uninstall did not remove legacy API pid"
   [[ ! -d "$app_bundle" ]] || die "uninstall did not remove app bundle"
+  [[ ! -d "$legacy_app_bundle" ]] || die "uninstall did not remove legacy hidden app bundle"
   ! kill -0 "$pid" >/dev/null 2>&1 || die "uninstall did not stop legacy API process"
   [[ ! -f "$plist" ]] || die "uninstall did not remove legacy LaunchAgent plist"
   assert_contains "$(cat "${root}/launchctl.log")" "bootout"
@@ -371,7 +377,7 @@ run_install_writes_integrated_daemon_launchagent() {
   : > "${root}/curl.log"
   : > "${root}/api.log"
 
-  output="$(run_installer "$root" --version 9.9.9 --terminal-session)" || {
+  output="$(run_installer "$root" --version 9.9.9)" || {
     printf '%s\n' "$output" >&2
     die "expected install to pass"
   }
@@ -381,7 +387,7 @@ run_install_writes_integrated_daemon_launchagent() {
   setup_log="$(support_log "$root")"
   daemon_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist"
   daemon_plist_body="$(cat "$daemon_plist")"
-  app_info="${root}/home/Library/Application Support/codexbar-display/VibeTV Control Center.app/Contents/Info.plist"
+  app_info="${root}/home/Applications/VibeTV Control Center.app/Contents/Info.plist"
 
   assert_contains "$output" "Installing your local Control Center"
   assert_contains "$output" "[5/7] Finding VibeTV"
@@ -401,17 +407,20 @@ run_install_writes_integrated_daemon_launchagent() {
   assert_contains "$daemon_plist_body" "<string>daemon</string>"
   assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
   assert_contains "$daemon_plist_body" "<string>127.0.0.1:47832</string>"
-  assert_contains "$daemon_plist_body" "<string>--target</string>"
-  assert_contains "$daemon_plist_body" "<string>http://192.168.178.72</string>"
+  assert_not_contains "$daemon_plist_body" "<string>--target</string>"
+  assert_not_contains "$daemon_plist_body" "<string>http://192.168.178.72</string>"
   assert_contains "$daemon_plist_body" "<key>ThrottleInterval</key>"
   assert_contains "$daemon_plist_body" "${root}/home/Library/Application Support/codexbar-display/logs/daemon.err.log"
   assert_not_contains "$daemon_plist_body" "<string></string>"
   assert_not_contains "$daemon_plist_body" "<string>api</string>"
   assert_contains "$(cat "$app_info")" "NSLocalNetworkUsageDescription"
+  assert_contains "$(cat "$app_info")" "CFBundleURLSchemes"
+  assert_contains "$(cat "$app_info")" "<string>vibetv</string>"
+  assert_not_contains "$(cat "$app_info")" "LSBackgroundOnly"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.daemon"
   assert_contains "$launch_log" "bootstrap gui/$(id -u) $daemon_plist"
-  assert_contains "$launch_log" "kickstart -k gui/$(id -u)/com.codexbar-display.daemon"
+  assert_not_contains "$launch_log" "kickstart -k gui/$(id -u)/com.codexbar-display.daemon"
   assert_contains "$(cat "${root}/open.log")" "http://127.0.0.1:47832/control-center"
 }
 
@@ -424,7 +433,7 @@ run_install_can_skip_device_setup_for_mac_app_update() {
   : > "${root}/curl.log"
   : > "${root}/api.log"
 
-  output="$(run_installer "$root" --version 9.9.9 --terminal-session --skip-device-setup)" || {
+  output="$(run_installer "$root" --version 9.9.9 --skip-device-setup)" || {
     printf '%s\n' "$output" >&2
     die "expected Mac App only install to pass"
   }
@@ -456,7 +465,7 @@ run_install_disables_global_legacy_launchagent() {
   : > "${root}/curl.log"
   : > "${root}/api.log"
 
-  output="$(run_installer "$root" --version 9.9.9 --terminal-session)" || {
+  output="$(run_installer "$root" --version 9.9.9)" || {
     printf '%s\n' "$output" >&2
     die "expected install with global legacy LaunchAgent to pass"
   }
@@ -478,6 +487,7 @@ run_install_disables_global_legacy_launchagent() {
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
   assert_contains "$launch_log" "disable gui/$(id -u)/com.codexbar-display.companion-api"
   assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
+  assert_not_contains "$daemon_plist_body" "<string>--target</string>"
 }
 
 run_install_retries_transient_repair_failure() {
@@ -489,7 +499,7 @@ run_install_retries_transient_repair_failure() {
   : > "${root}/curl.log"
   : > "${root}/api.log"
 
-  output="$(FAKE_REPAIR_FAIL_ONCE="${root}/repair-fail-once" run_installer "$root" --version 9.9.9 --terminal-session)" || {
+  output="$(FAKE_REPAIR_FAIL_ONCE="${root}/repair-fail-once" run_installer "$root" --version 9.9.9)" || {
     printf '%s\n' "$output" >&2
     die "expected install to pass after repair retry"
   }
@@ -515,7 +525,7 @@ run_install_waits_for_slow_repair_recovery() {
     FAKE_REPAIR_FAIL_COUNT=4 \
       FAKE_REPAIR_COUNTER="${root}/repair-counter" \
       VIBETV_COMPANION_REPAIR_ATTEMPTS=5 \
-      run_installer "$root" --version 9.9.9 --terminal-session
+      run_installer "$root" --version 9.9.9
   )" || {
     printf '%s\n' "$output" >&2
     die "expected install to pass after slow repair recovery"
@@ -538,7 +548,7 @@ run_install_uses_connected_status_after_repair_timeout() {
   : > "${root}/curl.log"
   : > "${root}/api.log"
 
-  output="$(FAKE_REPAIR_ALWAYS_FAIL=1 run_installer "$root" --version 9.9.9 --terminal-session)" || {
+  output="$(FAKE_REPAIR_ALWAYS_FAIL=1 run_installer "$root" --version 9.9.9)" || {
     printf '%s\n' "$output" >&2
     die "expected install to continue when status is already connected"
   }
@@ -560,7 +570,7 @@ run_install_prints_repair_failure_details() {
   : > "${root}/api.log"
 
   set +e
-  output="$(FAKE_REPAIR_ALWAYS_FAIL=1 FAKE_STATUS_DEVICE_DISCONNECTED=1 FAKE_HELLO_FAIL=1 run_installer "$root" --version 9.9.9 --terminal-session)"
+  output="$(FAKE_REPAIR_ALWAYS_FAIL=1 FAKE_STATUS_DEVICE_DISCONNECTED=1 FAKE_HELLO_FAIL=1 run_installer "$root" --version 9.9.9)"
   status=$?
   set -e
   [[ "$status" != "0" ]] || die "expected install to fail when repair never succeeds"
@@ -589,7 +599,7 @@ run_install_uses_terminal_fallback_when_launchagent_lacks_local_network() {
   : > "${root}/curl.log"
   : > "${root}/api.log"
 
-  output="$(FAKE_REPAIR_FAIL_COUNT=3 FAKE_REPAIR_COUNTER="${root}/repair-counter" FAKE_STATUS_DEVICE_DISCONNECTED=1 run_installer "$root" --version 9.9.9 --terminal-session)" || {
+  output="$(FAKE_REPAIR_FAIL_COUNT=3 FAKE_REPAIR_COUNTER="${root}/repair-counter" FAKE_STATUS_DEVICE_DISCONNECTED=1 run_installer "$root" --version 9.9.9)" || {
     printf '%s\n' "$output" >&2
     die "expected install to pass with terminal fallback"
   }
@@ -607,7 +617,7 @@ run_install_uses_terminal_fallback_when_launchagent_lacks_local_network() {
 }
 
 run_install_restarts_when_old_api_version_answers() {
-  local root output kickstarts setup_log
+  local root output bootstraps setup_log
   root="${TMP_WORK_DIR}/old-api-version"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -615,7 +625,7 @@ run_install_restarts_when_old_api_version_answers() {
   : > "${root}/curl.log"
   : > "${root}/api.log"
 
-  output="$(FAKE_STATUS_OLD_ONCE="${root}/status-old-once" run_installer "$root" --version 9.9.9 --terminal-session)" || {
+  output="$(FAKE_STATUS_OLD_ONCE="${root}/status-old-once" run_installer "$root" --version 9.9.9)" || {
     printf '%s\n' "$output" >&2
     die "expected install to pass after old API restart"
   }
@@ -623,8 +633,9 @@ run_install_restarts_when_old_api_version_answers() {
   setup_log="$(support_log "$root")"
   assert_contains "$setup_log" "Mac App answered with version 9.9.8; restarting once"
   assert_contains "$setup_log" "setup verified; Mac App ready, VibeTV connected, firmware 9.9.9"
-  kickstarts="$(grep -c "kickstart -k gui/$(id -u)/com.codexbar-display.daemon" "${root}/launchctl.log")"
-  [[ "$kickstarts" == "3" ]] || die "expected initial start, version restart, and target restart, got ${kickstarts}"
+  assert_not_contains "$(cat "${root}/launchctl.log")" "kickstart -k gui/$(id -u)/com.codexbar-display.daemon"
+  bootstraps="$(grep -c "bootstrap gui/$(id -u)" "${root}/launchctl.log")"
+  [[ "$bootstraps" == "3" ]] || die "expected initial start, version restart, and target restart, got ${bootstraps}"
 }
 
 run_install_writes_integrated_daemon_launchagent

@@ -62,6 +62,11 @@ export type DeviceInfo = {
     lastTarget?: string;
     detail?: string;
   };
+  health?: {
+    ok?: boolean;
+    resetReason?: string;
+    error?: string;
+  };
   display?: {
     themeSpec?: {
       active?: boolean;

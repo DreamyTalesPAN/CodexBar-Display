@@ -2081,6 +2081,85 @@ func TestRunCycleWithDepsDiscoversNewWiFiIPWhenStoredIPStales(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithDepsDoesNotPersistRecoveredWiFiIPBeforeSuccessfulSend(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	const staleTarget = "http://192.168.178.163"
+	const recoveredTarget = "http://192.168.178.72"
+	var logged strings.Builder
+	savedConfig := runtimeconfig.Config{DeviceTarget: staleTarget}
+
+	err := runCycleWithDeps(context.Background(), staleTarget, state, runtimeDeps{
+		now:           func() time.Time { return now },
+		transportName: "wifi",
+		homeDir:       func() (string, error) { return "/tmp/codexbar-test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return savedConfig, nil
+		},
+		saveConfig: func(_ string, cfg runtimeconfig.Config) error {
+			savedConfig = cfg
+			return nil
+		},
+		resolvePort: func(target string) (string, error) {
+			return target, nil
+		},
+		deviceCaps: func(target string) (protocol.DeviceCapabilities, error) {
+			if target == staleTarget {
+				return protocol.DeviceCapabilities{}, errors.New("host is down")
+			}
+			return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected direct fallback target %s", target)
+		},
+		discoverWiFi: func(candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
+			if !containsString(candidates, staleTarget) {
+				t.Fatalf("expected stale IP candidate, got %#v", candidates)
+			}
+			return transportlayer.WiFiDiscoveryResult{
+				Target: recoveredTarget,
+				Hello: protocol.DeviceHello{
+					Kind:            "hello",
+					ProtocolVersion: 2,
+					Board:           "esp8266-smalltv-st7789",
+					Capabilities: protocol.CapabilityBlock{
+						Transport: protocol.TransportCapabilities{Active: "wifi"},
+					},
+				},
+				Source: "network-scan",
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 12, 30, 3600),
+			}, nil
+		},
+		sendLine: func(string, []byte) error {
+			return errors.New(`device status=400 body="empty frame body"`)
+		},
+		logf: func(format string, args ...any) {
+			logged.WriteString(fmt.Sprintf(format, args...))
+		},
+	})
+	if err == nil {
+		t.Fatal("expected send error")
+	}
+	if savedConfig.DeviceTarget != staleTarget {
+		t.Fatalf("expected stale target to remain persisted after failed send, got %+v", savedConfig)
+	}
+	if state.deviceTarget != recoveredTarget {
+		t.Fatalf("expected recovered target to stay in runtime state, got %q", state.deviceTarget)
+	}
+	if !strings.Contains(logged.String(), "wifi-target-selected") {
+		t.Fatalf("expected selected target log, got %q", logged.String())
+	}
+	if strings.Contains(logged.String(), "wifi-target-persisted") {
+		t.Fatalf("did not expect failed send to persist target, got %q", logged.String())
+	}
+}
+
 func TestRunCycleWithDepsDiscoversWiFiIPWhenStoredIPCapabilitiesAreUnknown(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -2556,6 +2635,41 @@ func TestProviderCollectorUsesWiFiTarget(t *testing.T) {
 
 	if resolved != target {
 		t.Fatalf("expected collector to resolve wifi target %q, got %q", target, resolved)
+	}
+	if got := collector.providerFrames(deps.now()); len(got) != 1 {
+		t.Fatalf("expected collector to fetch providers, got %#v", got)
+	}
+}
+
+func TestProviderCollectorUsesRuntimeConfigWiFiTarget(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	const target = "http://192.168.178.72"
+	var resolved string
+	deps := runtimeDeps{
+		transportName: "wifi",
+		now:           func() time.Time { return time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC) },
+		logf:          func(string, ...any) {},
+		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{DeviceTarget: target}, nil
+		},
+		resolvePort: func(requested string) (string, error) {
+			resolved = requested
+			return requested, nil
+		},
+		fetchProviders: func(_ context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600)}, nil
+		},
+	}
+	collector := newProviderCollector(deps, Options{
+		Transport: "wifi",
+		Interval:  60 * time.Second,
+	})
+	collector.collectOnce(context.Background())
+
+	if resolved != target {
+		t.Fatalf("expected collector to resolve runtime config target %q, got %q", target, resolved)
 	}
 	if got := collector.providerFrames(deps.now()); len(got) != 1 {
 		t.Fatalf("expected collector to fetch providers, got %#v", got)

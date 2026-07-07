@@ -32,6 +32,20 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 }
 
 async function proxyLocalMacApp(request: NextRequest, context: RouteContext) {
+  if (!isLoopbackHostname(request.nextUrl.hostname)) {
+    return Response.json(
+      {
+        ok: false,
+        error: {
+          code: "LOCAL_COMPANION_PROXY_DEV_ONLY",
+          message: "Local Mac App proxy is available only in local development.",
+          nextAction: "Open the local Control Center on this Mac.",
+        },
+      },
+      { status: 404 },
+    );
+  }
+
   const params = await context.params;
   const pathname = `/${(params.path || []).map(encodeURIComponent).join("/")}`;
   const targetUrl = new URL(`${LOCAL_MAC_APP_ORIGIN}${pathname}`);
@@ -61,6 +75,10 @@ async function proxyLocalMacApp(request: NextRequest, context: RouteContext) {
       { status: 503 },
     );
   }
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return ["127.0.0.1", "localhost", "::1"].includes(hostname);
 }
 
 function localRequestHeaders(source: Headers): Headers {

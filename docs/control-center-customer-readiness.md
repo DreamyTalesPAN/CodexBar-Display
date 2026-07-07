@@ -175,6 +175,17 @@ Mac and that `/install/<theme_id>` preserves setup gating.
 
 ## Customer Readiness Validation
 
+Release order matters for this migration:
+
+1. Build and publish the GitHub Release for the exact commit.
+2. Verify that release with `--release v<version>`.
+3. Only then deploy or promote the hosted `app.vibetv.shop` setup launcher for
+   that commit.
+
+If the hosted setup launcher goes live before the matching GitHub Release, the
+customer command can still download an older Mac App that does not serve the
+local Control Center. In that case customers can get stuck at the handoff.
+
 Final local gate before telling anyone this is customer-ready:
 
 ```bash

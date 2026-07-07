@@ -37,6 +37,7 @@ type providerCollector struct {
 	fetchTokenStats func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	resolvePort     func(string) (string, error)
 	requestedPort   string
+	requestedPortFn func() string
 	transportName   string
 	order           []string
 	interval        time.Duration
@@ -76,6 +77,11 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		snapshotMaxAge:  providerSnapshotMaxAge(),
 		persistInterval: 1 * time.Minute,
 		providers:       make(map[string]providerSnapshot),
+	}
+	if normalizeTransportName(opts.Transport) == "wifi" || deps.transportName == "wifi" {
+		collector.requestedPortFn = func() string {
+			return effectiveCycleTarget(requestedDeviceTarget(opts), nil, deps)
+		}
 	}
 
 	if loaded, savedAt, ok := loadPersistedProviderSnapshotsAnyAge(); ok {
@@ -122,8 +128,9 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		return
 	}
 	if c.resolvePort != nil {
-		if _, err := c.resolvePort(c.requestedPort); err != nil {
-			c.logf("collector paused reason=no-device transport=%s target=%s err=%v\n", usageSourceOrDefault(c.transportName, "usb"), c.requestedPort, err)
+		requestedPort := c.resolveRequestedPort()
+		if _, err := c.resolvePort(requestedPort); err != nil {
+			c.logf("collector paused reason=no-device transport=%s target=%s err=%v\n", usageSourceOrDefault(c.transportName, "usb"), requestedPort, err)
 			return
 		}
 	}
@@ -188,7 +195,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		return
 	}
 	if c.resolvePort != nil {
-		if _, err := c.resolvePort(c.requestedPort); err != nil {
+		if _, err := c.resolvePort(c.resolveRequestedPort()); err != nil {
 			return
 		}
 	}
@@ -311,6 +318,16 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 		})
 	}
 	return frames
+}
+
+func (c *providerCollector) resolveRequestedPort() string {
+	if c == nil {
+		return ""
+	}
+	if c.requestedPortFn != nil {
+		return strings.TrimSpace(c.requestedPortFn())
+	}
+	return strings.TrimSpace(c.requestedPort)
 }
 
 func (c *providerCollector) snapshotIsFresh(snapshot providerSnapshot, now time.Time) bool {

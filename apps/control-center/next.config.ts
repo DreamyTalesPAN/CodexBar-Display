@@ -11,6 +11,7 @@ const repoRoot = localStaticExport
     : path.resolve(process.cwd(), "../..");
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1"],
   ...(localStaticExport
     ? { output: "export" as const }
     : {
