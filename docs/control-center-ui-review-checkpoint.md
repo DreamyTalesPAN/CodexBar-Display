@@ -13,6 +13,25 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: local Companion-served setup command generation, hosted
+  installer fallback, and migration hardening for the local Control Center
+  install path.
+- Customer rule: the setup screen must still show one simple Mac App
+  install/update command. Customers should not see or need to understand local
+  deployment metadata, Preview origins, Companion API routes, or `127.0.0.1`
+  setup internals.
+- Simplifications accepted: no new visible screen, button, tab, paragraph, or
+  customer decision was added. Local Companion origins now reuse the hosted
+  `app.vibetv.shop` installer command instead of exposing a broken local
+  `--dev-origin`, while real Preview URLs keep the existing Preview command
+  behavior.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  `npm run lint`, `npm run build`, `npm run test:customer-smoke`, and direct
+  command assertions passed locally. Production `app.vibetv.shop` was checked
+  with local Companion requests intercepted and showed
+  `curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash`
+  with no local `--dev-origin`.
+
 - Reviewed scope: VibeTV setup captive portal WiFi list rendering, setup
   scan retry fallback, and the Control Center setup/installer changes already
   present on this branch.
