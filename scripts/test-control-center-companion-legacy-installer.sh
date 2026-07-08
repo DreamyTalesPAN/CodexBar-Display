@@ -101,9 +101,9 @@ respond() {
 
 repair_not_found() {
   if [[ -n "$out" ]]; then
-    printf '%s\n' '{"ok":false,"error":{"code":"device_not_found","message":"No VibeTV device was found.","nextAction":"Make sure VibeTV is powered on and run device discovery again."}}' > "$out"
+    printf '%s\n' '{"ok":false,"error":{"code":"device_not_found","message":"No VibeTV device was found.","nextAction":"Restart VibeTV, wait until it shows WiFi connected, then run setup again."}}' > "$out"
   else
-    printf '%s\n' '{"ok":false,"error":{"code":"device_not_found","message":"No VibeTV device was found.","nextAction":"Make sure VibeTV is powered on and run device discovery again."}}'
+    printf '%s\n' '{"ok":false,"error":{"code":"device_not_found","message":"No VibeTV device was found.","nextAction":"Restart VibeTV, wait until it shows WiFi connected, then run setup again."}}'
   fi
   if [[ "$write_status" == "1" ]]; then
     printf '404'
@@ -579,7 +579,7 @@ run_install_prints_repair_failure_details() {
   setup_log="$(support_log "$root")"
   [[ "$repair_calls" == "3" ]] || die "expected three repair calls, got ${repair_calls}"
   assert_contains "$output" "VIBETV setup needs attention."
-  assert_contains "$output" "VibeTV could not connect. Keep VibeTV powered on and on the same WiFi, then rerun setup."
+  assert_contains "$output" "VibeTV did not answer on this WiFi. Restart VibeTV, wait until it shows WiFi connected, then rerun setup."
   assert_contains "$output" "Support log:"
   assert_contains "$output" "For full details, rerun with --verbose."
   assert_not_contains "$output" "error code: device_not_found"
@@ -587,7 +587,7 @@ run_install_prints_repair_failure_details() {
   assert_contains "$setup_log" "api status=404"
   assert_contains "$setup_log" "api code=device_not_found"
   assert_contains "$setup_log" "api detail=No VibeTV device was found."
-  assert_contains "$setup_log" "api next step=Make sure VibeTV is powered on and run device discovery again."
+  assert_contains "$setup_log" "api next step=Restart VibeTV, wait until it shows WiFi connected, then run setup again."
 }
 
 run_install_uses_terminal_fallback_when_launchagent_lacks_local_network() {
