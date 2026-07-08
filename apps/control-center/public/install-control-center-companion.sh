@@ -857,7 +857,7 @@ connect_vibetv() {
       printf '%s' "$saved_status" > "${TMPDIR_INSTALL}/api-status.txt"
       printf '%s' "$saved_stderr" > "${TMPDIR_INSTALL}/api-stderr.txt"
       print_local_api_error POST "/v1/device/repair"
-      die "VibeTV could not connect. Keep VibeTV powered on and on the same WiFi, then rerun setup."
+      die "VibeTV did not answer on this WiFi. Restart VibeTV, wait until it shows WiFi connected, then rerun setup."
     fi
     log "vibetv: VibeTV did not answer yet; retrying (${attempt}/${REPAIR_MAX_ATTEMPTS})"
     sleep "$REPAIR_RETRY_DELAY"

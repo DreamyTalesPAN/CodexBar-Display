@@ -3628,7 +3628,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 
 func writeDeviceNotFound(w http.ResponseWriter) {
-	writeError(w, http.StatusNotFound, "device_not_found", "No VibeTV device was found.", "Make sure VibeTV is powered on and run device discovery again.")
+	writeError(w, http.StatusNotFound, "device_not_found", "No VibeTV device was found.", "Restart VibeTV, wait until it shows WiFi connected, then run setup again.")
 }
 
 func writeDiscoveryError(w http.ResponseWriter, err error) {
