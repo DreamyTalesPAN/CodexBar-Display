@@ -1885,12 +1885,12 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	if forcePair {
 		discoveryCfg.DeviceToken = ""
 	}
-	target, hello, err := s.discoverForRepair(ctx, discoveryCfg, requestedTarget)
+	target, hello, err := s.discoverRepairTarget(ctx, discoveryCfg, requestedTarget)
 	tokenStale := false
 	if err != nil && !forcePair && strings.TrimSpace(cfg.DeviceToken) != "" {
 		discoveryCfg = cfg
 		discoveryCfg.DeviceToken = ""
-		target, hello, err = s.discoverForRepair(ctx, discoveryCfg, requestedTarget)
+		target, hello, err = s.discoverRepairTarget(ctx, discoveryCfg, requestedTarget)
 		if err == nil {
 			tokenStale = true
 		}
@@ -1926,10 +1926,37 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	return device, nil
 }
 
+func (s *Server) discoverRepairTarget(ctx context.Context, cfg runtimeconfig.Config, requestedTarget string) (string, protocol.DeviceHello, error) {
+	var lastErr error
+	for _, candidate := range s.repairTargetCandidates(cfg, requestedTarget) {
+		target, hello, err := s.discoverForRepair(ctx, cfg, candidate)
+		if err == nil {
+			return target, hello, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = errors.New("no device candidates")
+	}
+	return "", protocol.DeviceHello{}, lastErr
+}
+
+func (s *Server) repairTargetCandidates(cfg runtimeconfig.Config, requestedTarget string) []string {
+	requestedTarget = strings.TrimSpace(requestedTarget)
+	if requestedTarget != "" {
+		return []string{requestedTarget}
+	}
+	candidates := []string{strings.TrimSpace(cfg.DeviceTarget)}
+	if strings.TrimSpace(cfg.DeviceTarget) == "" {
+		candidates = append(candidates, s.recoveredDeviceTargets()...)
+	}
+	return append(uniqueStrings(candidates...), "")
+}
+
 func (s *Server) discoverForRepair(ctx context.Context, cfg runtimeconfig.Config, requestedTarget string) (string, protocol.DeviceHello, error) {
 	requestedTarget = strings.TrimSpace(requestedTarget)
 	attempts := 1
-	if requestedTarget == "" && strings.TrimSpace(cfg.DeviceToken) == "" {
+	if requestedTarget != "" || strings.TrimSpace(cfg.DeviceToken) == "" {
 		attempts = repairDiscoveryAttempts
 	}
 
@@ -1950,6 +1977,86 @@ func (s *Server) discoverForRepair(ctx context.Context, cfg runtimeconfig.Config
 		}
 	}
 	return "", protocol.DeviceHello{}, lastErr
+}
+
+func (s *Server) recoveredDeviceTargets() []string {
+	candidates := []string{}
+	if _, target := lastDisplayStreamFrame(s.recoveryDisplayStreamOutLogPath()); strings.TrimSpace(target) != "" {
+		candidates = append(candidates, target)
+	}
+	candidates = append(candidates, s.recoveredConfigDeviceTargets()...)
+	normalized := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		target, err := normalizeExplicitDeviceTarget(candidate)
+		if err == nil {
+			normalized = append(normalized, target)
+		}
+	}
+	return uniqueStrings(normalized...)
+}
+
+func (s *Server) recoveryDisplayStreamOutLogPath() string {
+	if path := strings.TrimSpace(os.Getenv(displayStreamOutLogEnv)); path != "" {
+		return path
+	}
+	home := strings.TrimSpace(s.home)
+	if home == "" {
+		return displayStreamOutLogPath()
+	}
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", displayStreamOutLog)
+}
+
+func (s *Server) recoveredConfigDeviceTargets() []string {
+	home := strings.TrimSpace(s.home)
+	if home == "" {
+		return nil
+	}
+	configDir := filepath.Dir(runtimeconfig.ConfigPath(home))
+	patterns := []string{
+		"config.before-*.json",
+		"config.backup-*.json",
+		"config.json.backup-*",
+	}
+	type candidateFile struct {
+		path    string
+		modTime time.Time
+	}
+	files := []candidateFile{}
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(filepath.Join(configDir, pattern))
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			info, err := os.Stat(match)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			files = append(files, candidateFile{path: match, modTime: info.ModTime()})
+		}
+	}
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].modTime.Equal(files[j].modTime) {
+			return files[i].path > files[j].path
+		}
+		return files[i].modTime.After(files[j].modTime)
+	})
+
+	targets := make([]string, 0, len(files))
+	for _, file := range files {
+		raw, err := os.ReadFile(file.path)
+		if err != nil {
+			continue
+		}
+		var cfg runtimeconfig.Config
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			continue
+		}
+		if strings.TrimSpace(cfg.DeviceTarget) != "" {
+			targets = append(targets, cfg.DeviceTarget)
+		}
+	}
+	return uniqueStrings(targets...)
 }
 
 func repairDiscoveryErrorIsRetryable(err error) bool {

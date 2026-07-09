@@ -1265,14 +1265,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [checkCompanion, hostedSetup, setupPreviewStep]);
 
   useEffect(() => {
+    const needsKnownTargetRepair =
+      Boolean(device?.target) && !deviceSetupIsUsable(device);
+    const needsMissingTargetRepair =
+      !device?.target &&
+      (deviceState === "unknown" || deviceState === "offline");
     if (
       hostedSetup ||
       setupPreviewStep ||
       didRunAutoRepair.current ||
       busyAction ||
       companionStatus !== "online" ||
-      !device?.target ||
-      deviceSetupIsUsable(device) ||
+      (!needsKnownTargetRepair && !needsMissingTargetRepair) ||
       isLocalNetworkAccessError(lastError)
     ) {
       return;
@@ -1283,6 +1287,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     busyAction,
     companionStatus,
     device,
+    deviceState,
     hostedSetup,
     lastError,
     repairConnection,

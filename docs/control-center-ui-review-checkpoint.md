@@ -13,6 +13,24 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: setup recovery when the Mac App has lost the saved VibeTV
+  address, automatic repair from an empty device target, and Companion recovery
+  from the last display-stream target or saved config backups.
+- Customer rule: setup should recover the VibeTV connection automatically in
+  the background. Customers should not need to understand IP addresses,
+  discovery, pairing, saved targets, display-stream logs, or config backups.
+- Simplifications accepted: no new visible Control Center screen, button,
+  label, paragraph, tab, or customer choice was added. The existing setup
+  repair path now also runs once when no target is saved, while the manual
+  address field remains only a fallback for customers who already have the
+  VibeTV address.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  `go test ./internal/companionapi`, `npm run lint`, `npm run
+  test:customer-flows`, and `git diff --check` passed locally. Vercel Preview
+  for PR #150 loaded without browser errors, and with local-network permission
+  handed off to the local Control Center showing VibeTV connected at
+  `192.168.178.163`.
+
 - Reviewed scope: local Companion-served setup command generation, hosted
   installer fallback, and migration hardening for the local Control Center
   install path.

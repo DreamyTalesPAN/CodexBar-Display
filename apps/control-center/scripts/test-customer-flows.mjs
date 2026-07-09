@@ -267,6 +267,7 @@ async function main() {
       appContext.appUrl,
     );
     await testVibeTVAddressCopyStaysCustomerOnly(browser, appContext.appUrl);
+    await testMissingAddressAutoRepairsInSetup(browser, appContext.appUrl);
     await testSavedAddressDoesNotBlockAutomaticVibeTVSearch(
       browser,
       appContext.appUrl,
@@ -1541,6 +1542,48 @@ async function testVibeTVAddressCopyStaysCustomerOnly(browser, appUrl) {
     );
   }
 
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testMissingAddressAutoRepairsInSetup(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const repairRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      target: "",
+      connected: false,
+      paired: false,
+    },
+    onRepair: (postData) => {
+      repairRequests.push(postData || "");
+      return {
+        ...companionDevice,
+        target: "http://192.168.178.163",
+        connected: true,
+        paired: true,
+      };
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await waitForCondition(
+    () => repairRequests.length >= 1,
+    "expected missing-address setup to auto-repair",
+  );
+  await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
+
+  const repairPayload = JSON.parse(repairRequests[0] || "{}");
+  assert(
+    repairPayload.target == null,
+    `missing-address auto repair should let the Mac App recover the target, got ${repairRequests[0]}`,
+  );
+  assert(
+    repairPayload.forcePair === true,
+    `missing-address auto repair should force pairing, got ${repairRequests[0]}`,
+  );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
