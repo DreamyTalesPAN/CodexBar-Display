@@ -22,6 +22,7 @@ import { DeviceTargetForm } from "./device-target-form";
 import {
   buildMacAppTerminalCommand,
   currentControlCenterOrigin,
+  macAppDmgDownloadUrl,
 } from "./mac-app-install-command";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
 
@@ -123,6 +124,7 @@ export function SetupScreen({
 }: SetupScreenProps) {
   const [wifiConfirmedState, setWifiConfirmedState] = useState(false);
   const [agentPromptCopied, setAgentPromptCopied] = useState(false);
+  const [dmgDownloadStarted, setDmgDownloadStarted] = useState(false);
   const [macAppConfirmedState, setMacAppConfirmedState] = useState(false);
   const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
   const [terminalCommandCopied, setTerminalCommandCopied] = useState(false);
@@ -154,10 +156,12 @@ export function SetupScreen({
     controlCenterOrigin,
     localControlCenterPath,
   );
-  const setupInstructionsCopied = agentPromptCopied || terminalCommandCopied;
+  const dmgUrl = macAppDmgDownloadUrl();
+  const setupInstructionsCopied =
+    dmgDownloadStarted || agentPromptCopied || terminalCommandCopied;
   const macAppStepTitle = hostedMode
-    ? "Install or update Mac App"
-    : "Install Mac App";
+    ? "Download or update Mac App"
+    : "Download Mac App";
   const showControlCenterLauncher =
     showIntro &&
     !previewStep &&
@@ -386,6 +390,22 @@ export function SetupScreen({
           >
             {activeStep === "mac-app" ? (
               <div className="grid min-w-0 gap-4">
+                <div className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4">
+                  <p className="text-sm leading-6 text-[#444933]">
+                    Download VibeTV Control Center, open the DMG, drag the app
+                    into Applications, then open it. Existing setup details stay
+                    on this Mac.
+                  </p>
+                  <a
+                    className="vibetv-button vibetv-button--large vibetv-button--full vibetv-button--primary"
+                    href={dmgUrl}
+                    onClick={() => setDmgDownloadStarted(true)}
+                  >
+                    <Download size={18} aria-hidden />
+                    <span>Download Mac App</span>
+                  </a>
+                </div>
+
                 <div
                   aria-label="Mac App setup method"
                   className="grid max-w-[440px] grid-cols-2 border border-[#747A60]"
@@ -445,8 +465,8 @@ export function SetupScreen({
 
                     {agentPromptCopied ? (
                       <StatusNote>
-                        Paste the prompt into your coding agent. This page will
-                        move on when the latest Mac App is running.
+                        Paste the prompt into your coding agent. Use this
+                        fallback if the Mac App download does not work.
                       </StatusNote>
                     ) : null}
                   </div>
@@ -458,7 +478,8 @@ export function SetupScreen({
                       <div className="min-w-0 max-w-full overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
                         <p className="px-4 py-3 text-sm leading-6 text-[#444933]">
                           Open Terminal, paste this command, then press Enter.
-                          It installs or updates the latest VibeTV Mac App.
+                          Use this support fallback if the Mac App download
+                          does not work.
                         </p>
                         <code
                           className="block max-h-[280px] w-full max-w-full overflow-auto whitespace-pre-wrap border-t border-[#747A60] bg-[#EEEEEE] p-4 text-xs leading-5 text-[#1B1B1B] [overflow-wrap:anywhere]"

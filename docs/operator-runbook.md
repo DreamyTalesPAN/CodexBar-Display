@@ -389,6 +389,15 @@ Run this list before every v0 release decision.
   `codexbar-display-darwin-arm64-v<version>`,
   `codexbar-display-darwin-amd64-v<version>`,
   and `checksums-v<version>.txt`.
+- [ ] DMG-first releases include `VibeTV Control Center.app` inside
+  `VibeTV-Control-Center-v<version>.dmg` with an Applications symlink, and the
+  DMG checksum appears in `checksums-v<version>.txt`.
+- [ ] Hosted setup shows the DMG download as the primary Mac App action and
+  keeps the Terminal setup command only as a support fallback.
+- [ ] Existing Terminal-setup users were validated by launching the DMG app on a
+  Mac with old `com.codexbar-display.*` user LaunchAgents; old plists should be
+  moved to `~/Library/Application Support/codexbar-display/migration-backups/`
+  and the existing config should remain in place.
 - [ ] GitHub Release does not include Mac App `.pkg` assets.
 - [ ] Firmware artifact reports expected `CODEXBAR_DISPLAY_FW_VERSION` for the release tag.
 
@@ -483,5 +492,6 @@ Firmware bench envs:
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
 - Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
 - GitHub release artifacts include companion binaries, firmware binaries, checksums, manifests, and `install-control-center-companion.sh`.
-- The customer Mac setup path is the setup prompt from `app.vibetv.shop`. Current customer releases must not publish Mac App `.pkg` assets.
+- The prepared customer Mac App target is a signed/notarized DMG containing `VibeTV Control Center.app`; until Apple Developer secrets are available, the setup prompt from `app.vibetv.shop` remains the customer support path.
+- Current customer releases must not publish Mac App `.pkg` assets.
 - A customer release is not ready until the Mac setup script, both Darwin companion binaries, and the checksum file exist on the GitHub Release and match the tag version.

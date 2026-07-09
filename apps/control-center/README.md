@@ -90,7 +90,15 @@ The hosted customer command is:
 curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
 ```
 
-This path is intentional while there are no signed/notarized Apple packages.
+This path remains the support path while the signed/notarized DMG-first Mac app
+is being prepared. See `../../docs/macos-dmg-distribution.md` for the future
+`VibeTV Control Center.app` release flow.
+
+When the DMG is available, hosted setup should show that download first. Keep
+the Terminal command as a support fallback for existing customers and failed
+downloads. The native app backs up old user LaunchAgent plists under
+`~/Library/Application Support/codexbar-display/migration-backups/` before it
+starts the bundled local service.
 
 ## Device Write Guardrails
 
@@ -103,6 +111,13 @@ VIBETV_DISABLE_WIFI_THEME_INSTALL=1 go run ./cmd/codexbar-display api --dev-orig
 ```
 
 Use read-only Companion calls and mocked/unit tests before installing themes on shared hardware.
+
+Theme Studio is part of the local Control Center. Opening it, editing a draft,
+validating, and exporting a ZIP must not write to hardware. The **Send to
+VibeTV** button is the explicit write action: it uploads loaded assets, uploads
+the current Theme JSON, activates it, and sends one live frame. Test that path
+with mocked device requests unless the current chat has approved the exact live
+hardware write.
 
 ## Environment
 
@@ -125,7 +140,8 @@ Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `S
 - On HTTPS hosted origins, `/install/[themeId]` opens setup with the theme context
   preserved, then hands off to the local Control Center once the Mac App answers.
 - On the local Mac App origin, `/control-center` opens the full Control Center
-  with Overview, Usage, Settings, Theme Library, Updates, and Support.
+  with Overview, Usage, Settings, Theme Studio, Theme Library, Updates, and
+  Support.
 - Browser talks directly to the local Mac App service at `http://127.0.0.1:47832`.
 - The server reads Shopify product data through the Storefront API and only sends normalized public theme data to the browser.
 

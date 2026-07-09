@@ -9,8 +9,94 @@ permissions:
   contents: write
 
 jobs:
+  build-macos-dmg:
+    runs-on: macos-latest
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
+      APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+      APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+      APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+      APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/control-center/package-lock.json
+
+      - name: Build signed and notarized Mac DMG
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${VERSION#v}"
+          mkdir -p dist/macos tmp/macos-release
+
+          (
+            cd apps/control-center
+            npm ci
+            npm run build:local
+          )
+          rm -rf companion/internal/companionapi/controlcenter_static
+          mkdir -p companion/internal/companionapi/controlcenter_static
+          cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
+
+          cd companion
+          for ARCH in amd64 arm64; do
+            GOOS=darwin GOARCH="${ARCH}" CGO_ENABLED=0 \
+              go build \
+              -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${VERSION} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o "../tmp/macos-release/codexbar-display-${ARCH}" ./cmd/codexbar-display
+          done
+          cd ..
+          lipo -create \
+            -output "tmp/macos-release/codexbar-display" \
+            "tmp/macos-release/codexbar-display-amd64" \
+            "tmp/macos-release/codexbar-display-arm64"
+
+          ./scripts/build-macos-control-center-app.sh \
+            --version "${VERSION}" \
+            --build "${GITHUB_RUN_NUMBER:-0}" \
+            --universal \
+            --companion-binary "tmp/macos-release/codexbar-display" \
+            --output "dist/macos/VibeTV Control Center.app"
+
+          ./scripts/sign-notarize-macos-control-center.sh \
+            --app "dist/macos/VibeTV Control Center.app" \
+            --sign-app-only
+
+          ./scripts/build-macos-control-center-dmg.sh \
+            --app "dist/macos/VibeTV Control Center.app" \
+            --output "dist/macos/VibeTV-Control-Center.dmg" \
+            --staging-dir "tmp/macos-release/dmg-stage"
+
+          ./scripts/sign-notarize-macos-control-center.sh \
+            --app "dist/macos/VibeTV Control Center.app" \
+            --dmg "dist/macos/VibeTV-Control-Center.dmg" \
+            --skip-app-sign
+
+      - name: Upload notarized Mac DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibetv-control-center-dmg
+          path: dist/macos/VibeTV-Control-Center.dmg
+          if-no-files-found: error
+
   build-and-release:
     runs-on: ubuntu-latest
+    needs: build-macos-dmg
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,6 +160,21 @@ jobs:
               -o "${OUT}" ./cmd/codexbar-display
           done
           cd ..
+
+          ./scripts/build-macos-control-center-app.sh \
+            --dry-run \
+            --version "${VERSION}" \
+            --build "${GITHUB_RUN_NUMBER:-0}" \
+            --output "tmp/macos-release-dry-run/VibeTV Control Center.app"
+          ./scripts/build-macos-control-center-dmg.sh \
+            --dry-run \
+            --app "tmp/macos-release-dry-run/VibeTV Control Center.app" \
+            --output "tmp/macos-release-dry-run/VibeTV-Control-Center-v${VERSION}.dmg" \
+            --staging-dir "tmp/macos-release-dry-run/dmg-stage"
+          ./scripts/sign-notarize-macos-control-center.sh \
+            --dry-run \
+            --app "tmp/macos-release-dry-run/VibeTV Control Center.app" \
+            --dmg "tmp/macos-release-dry-run/VibeTV-Control-Center-v${VERSION}.dmg"
 
           if [[ ! -f release/firmware-versions.json ]]; then
             echo "error: release/firmware-versions.json is missing" >&2
@@ -195,6 +296,12 @@ jobs:
                   f.write("\n")
           PY
 
+      - name: Download notarized Mac DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: vibetv-control-center-dmg
+          path: dist/macos
+
       - name: Build release checksums
         env:
           VERSION: ${{ github.ref_name }}
@@ -219,4 +326,5 @@ jobs:
             dist/firmware/*.bin.gz
             dist/firmware/firmware-manifest.json
             dist/firmware/firmware-manifest-*.json
+            dist/macos/*.dmg
             dist/checksums-*.txt

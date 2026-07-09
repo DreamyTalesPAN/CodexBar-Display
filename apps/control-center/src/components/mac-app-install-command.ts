@@ -1,8 +1,12 @@
 export const DEFAULT_CONTROL_CENTER_ORIGIN = "https://app.vibetv.shop";
 export const INSTALLER_SCRIPT_PATH = "/install-control-center-companion.sh";
+export const DEFAULT_MAC_APP_DMG_URL =
+  "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/VibeTV-Control-Center.dmg";
 const LOCAL_COMPANION_PORT = "47832";
 const PREVIEW_INSTALL_VERSION =
   process.env.NEXT_PUBLIC_VIBETV_PREVIEW_INSTALL_VERSION?.trim() || "";
+const MAC_APP_DMG_URL =
+  process.env.NEXT_PUBLIC_VIBETV_MAC_APP_DMG_URL?.trim() || "";
 
 export function buildMacAppTerminalCommand(
   origin: string,
@@ -28,6 +32,10 @@ export function currentControlCenterOrigin() {
   return typeof window === "undefined"
     ? DEFAULT_CONTROL_CENTER_ORIGIN
     : window.location.origin;
+}
+
+export function macAppDmgDownloadUrl() {
+  return MAC_APP_DMG_URL || DEFAULT_MAC_APP_DMG_URL;
 }
 
 function installCommandOrigin(origin: string) {
