@@ -240,6 +240,10 @@ async function main() {
     );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
+    await testUpdatesCompletesMacAppUpdateAfterLocalRestart(
+      browser,
+      appContext.appUrl,
+    );
     await testUpdatesShowLegacyCompanionReleaseFallback(
       browser,
       appContext.appUrl,
@@ -1224,6 +1228,39 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
     parseJSON(macAppUpdateRequests[0])?.version === "1.0.99",
     `Mac App update should request latest version, got ${macAppUpdateRequests[0]}`,
   );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testUpdatesCompletesMacAppUpdateAfterLocalRestart(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const macAppUpdateRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { ...companionDevice, firmware: "1.0.33" },
+    onMacAppUpdate: (postData) => {
+      macAppUpdateRequests.push(postData);
+    },
+    macAppUpdateStatusFailures: 1,
+    macAppUpdateReconnectVersion: "1.0.99",
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page.getByRole("button", { name: "Update now" }).click();
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Mac App updated" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByText("Mac App 1.0.99 is installed.").waitFor({
+    timeout: 10_000,
+  });
+
+  assert(macAppUpdateRequests.length === 1, "Mac App update should start once");
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -2455,6 +2492,8 @@ async function routeCompanionOnline(
     installStatusSequence,
     updateStatusSequence,
     macAppUpdateStatusSequence,
+    macAppUpdateStatusFailures = 0,
+    macAppUpdateReconnectVersion,
     dropBoardAfterFirmwareUpdate = false,
     usageResponse,
     usageStatus = 200,
@@ -2470,9 +2509,18 @@ async function routeCompanionOnline(
   let updateStatusIndex = 0;
   let activeMacAppUpdateJobId = "";
   let macAppUpdateStatusIndex = 0;
+  let macAppUpdateStatusFailuresRemaining = macAppUpdateStatusFailures;
   const handler = async (route) => {
     const pathname = companionPath(route);
     if (pathname === "/v1/mac-app/update/status") {
+      if (macAppUpdateStatusFailuresRemaining > 0) {
+        macAppUpdateStatusFailuresRemaining -= 1;
+        if (macAppUpdateReconnectVersion) {
+          currentCompanionVersion = macAppUpdateReconnectVersion;
+        }
+        await route.abort("failed");
+        return;
+      }
       const fallbackStatus = {
         phase: "complete",
         message: "Mac App updated.",

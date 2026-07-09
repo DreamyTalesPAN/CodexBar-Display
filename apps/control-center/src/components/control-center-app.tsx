@@ -50,6 +50,10 @@ const LOCAL_CONTROL_CENTER_OPENED_STORAGE_KEY =
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const LOCAL_APP_LAUNCH_WAIT_MS = 1500;
+const MAC_APP_UPDATE_POLL_INTERVAL_MS = 500;
+const MAC_APP_UPDATE_MAX_POLLS = 960;
+const MAC_APP_UPDATE_RECONNECT_GRACE_MS = 45_000;
+const MAC_APP_UPDATE_INITIAL_GRACE_MS = 60_000;
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
@@ -2249,20 +2253,20 @@ async function pollMacAppUpdateJob({
   runCompanion: RunCompanion;
   targetVersion?: string;
 }): Promise<MacAppUpdateJob> {
-  for (let attempt = 0; attempt < 960; attempt += 1) {
-    await delay(500);
+  const startedAt = Date.now();
+  let disconnectedAt: number | null = null;
+  for (let attempt = 0; attempt < MAC_APP_UPDATE_MAX_POLLS; attempt += 1) {
+    await delay(MAC_APP_UPDATE_POLL_INTERVAL_MS);
+    let payload: { job: MacAppUpdateJob };
     try {
-      const payload = await runCompanion<{ job: MacAppUpdateJob }>(
+      payload = await runCompanion<{ job: MacAppUpdateJob }>(
         `/v1/mac-app/update/status?jobId=${encodeURIComponent(jobId)}`,
         undefined,
         { preserveLastError: true },
       );
-      applyUpdateJob(payload.job);
-      if (payload.job.phase === "complete" || payload.job.phase === "error") {
-        return payload.job;
-      }
-      continue;
     } catch {
+      disconnectedAt = disconnectedAt ?? Date.now();
+      applyUpdateJob(reconnectingMacAppUpdateJob(jobId));
       const reconnected = await readMacAppVersion(runCompanion);
       if (
         reconnected &&
@@ -2277,14 +2281,68 @@ async function pollMacAppUpdateJob({
           result: { version: normalizeVersion(reconnected) },
         };
       }
+      if (Date.now() - disconnectedAt >= MAC_APP_UPDATE_RECONNECT_GRACE_MS) {
+        throw macAppUpdateManualStepError(
+          "mac_app_update_reconnect_timeout",
+          "Mac App update needs attention.",
+        );
+      }
+      continue;
+    }
+    disconnectedAt = null;
+    applyUpdateJob(payload.job);
+    if (payload.job.phase === "complete" || payload.job.phase === "error") {
+      return payload.job;
+    }
+    if (
+      macAppUpdateStillPreparing(payload.job) &&
+      Date.now() - startedAt >= MAC_APP_UPDATE_INITIAL_GRACE_MS
+    ) {
+      throw macAppUpdateManualStepError(
+        "mac_app_update_start_timeout",
+        "Mac App update did not start.",
+      );
     }
   }
-  throw {
-    code: "mac_app_update_timeout",
-    message: "Mac App update is taking longer than expected.",
+  throw macAppUpdateManualStepError(
+    "mac_app_update_timeout",
+    "Mac App update is taking longer than expected.",
+  );
+}
+
+function reconnectingMacAppUpdateJob(jobId: string): MacAppUpdateJob {
+  return {
+    id: jobId,
+    phase: "installing",
+    message: "Restarting Mac App.",
+    progress: 85,
+    logs: [
+      "Preparing Mac App update.",
+      "Installing Mac App.",
+      "Restarting Mac App.",
+    ],
+  };
+}
+
+function macAppUpdateStillPreparing(job: MacAppUpdateJob): boolean {
+  const logs = customerMacAppUpdateLogs(job.logs);
+  return (
+    clampProgress(job.progress) <= 5 &&
+    logs.length === 1 &&
+    logs[0] === "Preparing Mac App update."
+  );
+}
+
+function macAppUpdateManualStepError(
+  code: string,
+  message: string,
+): ApiError {
+  return {
+    code,
+    message,
     nextAction:
       "Copy the update command and run it in Terminal, then try again.",
-  } satisfies ApiError;
+  };
 }
 
 async function readMacAppVersion(runCompanion: RunCompanion): Promise<string> {
