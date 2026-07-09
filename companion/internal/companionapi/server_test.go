@@ -1627,6 +1627,97 @@ func TestDeviceRepairRetriesTransientDiscoveryMiss(t *testing.T) {
 	}
 }
 
+func TestDeviceRepairRetriesExplicitTargetTransientMiss(t *testing.T) {
+	var helloCalls int
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			helloCalls++
+			if helloCalls < 3 {
+				http.Error(w, "warming up", http.StatusServiceUnavailable)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/api/pair":
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST pair, got %s", r.Method)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"new-token"}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{"target":"`+device.URL+`","forcePair":true}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 after explicit retry, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if helloCalls < 3 {
+		t.Fatalf("expected explicit target retry, got %d hello calls", helloCalls)
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || !got.Device.Connected || !got.Device.Paired || got.Device.Target != device.URL {
+		t.Fatalf("unexpected repair response after explicit retry: %+v", got)
+	}
+}
+
+func TestDeviceRepairRecoversLastLogTargetWhenConfigIsEmpty(t *testing.T) {
+	device := newRepairableDeviceServer(t)
+	defer device.Close()
+
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	if err := os.WriteFile(logPath, []byte("2026-07-09T07:44:45Z sent frame -> "+device.URL+" transport=wifi source=oauth\n"), 0o644); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{"forcePair":true}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 after recovering log target, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || !got.Device.Connected || !got.Device.Paired || got.Device.Target != device.URL {
+		t.Fatalf("unexpected repair response after log target recovery: %+v", got)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	server.Handler().ServeHTTP(rec, req)
+	var status statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.Device.Target != device.URL || !status.Device.Paired {
+		t.Fatalf("expected recovered target to be persisted, got %+v", status.Device)
+	}
+}
+
 func TestDeviceRepairExplicitVibetvLocalFallsBackToSubnet(t *testing.T) {
 	device := newRepairableDeviceServer(t)
 	defer device.Close()
