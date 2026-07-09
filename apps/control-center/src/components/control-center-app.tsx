@@ -41,6 +41,7 @@ import { OverviewScreen } from "./overview-screen";
 import { SetupScreen } from "./setup-screen";
 import { SettingsScreen } from "./settings-screen";
 import { ThemeLibraryScreen } from "./theme-library-screen";
+import { ThemeStudioScreen } from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
 
@@ -122,6 +123,7 @@ type FirmwareUpdateResponse = {
 
 type Props = {
   catalog: ThemeCatalogResponse;
+  initialTab?: ActiveTab;
   initialThemeId?: string;
 };
 
@@ -152,7 +154,7 @@ type FirmwareCheckOptions = {
 
 type RuntimeSurface = "unknown" | "hosted-setup" | "local-control-center";
 
-export function ControlCenterApp({ catalog, initialThemeId }: Props) {
+export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props) {
   const initialTheme = useMemo(
     () =>
       initialThemeId
@@ -163,7 +165,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [selectedThemeId, setSelectedThemeId] = useState(
     initialTheme?.themeId || initialThemeId || "",
   );
-  const [activeTab, setActiveTab] = useState<ActiveTab>("setup");
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab || "setup");
   const runtimeSurface = useSyncExternalStore(
     subscribeRuntimeSurface,
     getRuntimeSurfaceSnapshot,
@@ -1258,6 +1260,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (
       setupPreviewStep ||
       didRunAutoDisplayReload.current ||
+      activeTab === "theme-studio" ||
       busyAction ||
       companionStatus !== "online"
     ) {
@@ -1267,6 +1270,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     void reloadDisplay({ quiet: true });
   }, [
     busyAction,
+    activeTab,
     companionStatus,
     device,
     hostedSetup,
@@ -1704,11 +1708,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const disabledTabs: ActiveTab[] = setupComplete
     ? imageNeedsReload
-      ? ["settings", "theme-library", "updates"]
+      ? ["settings", "updates"]
       : []
     : usageAvailable
-      ? ["overview", "settings", "theme-library", "updates", "logs"]
-      : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
+      ? ["overview", "settings", "updates", "logs"]
+      : ["overview", "usage", "settings", "updates", "logs"];
   const activeShellTab = disabledTabs.includes(activeTab)
     ? setupComplete
       ? "overview"
@@ -1861,6 +1865,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onSaveBrightness={saveBrightness}
         />
       ) : null}
+
+      {activeShellTab === "theme-studio" ? <ThemeStudioScreen /> : null}
 
       {activeShellTab === "theme-library" ? (
         <ThemeLibraryScreen

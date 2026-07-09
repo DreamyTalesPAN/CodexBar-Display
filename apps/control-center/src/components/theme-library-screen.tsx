@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  Edit3,
   Library,
   Lock,
   Monitor,
+  Plus,
   RefreshCw,
   ShieldCheck,
   Wifi,
@@ -12,14 +14,26 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
+import {
+  createBlankThemeSpec,
+  importThemeSpec,
+  normalizeThemeSpec,
+  type ThemeStudioAsset,
+  type ThemeStudioDraft,
+  type ThemeStudioSpec,
+} from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
 import { ControlCenterButton } from "./control-center-button";
-import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import { themeRenderPackUrl } from "./control-center-runtime";
 import {
   ThemeSpecPreview,
   type ThemeRenderPack,
 } from "./live-vibetv-preview";
+import {
+  ThemeStudioScreen,
+  type ThemeStudioEditorTheme,
+  type ThemeStudioSavePayload,
+} from "./theme-studio-screen";
 
 export type ThemeLibraryCompanionStatus = "unknown" | "online" | "missing";
 
@@ -37,6 +51,31 @@ type ThemeInstallBlocker = {
   readinessDetail?: string;
   readinessIcon?: ReactNode;
 };
+
+type UserThemeRecord = {
+  draft: ThemeStudioDraft;
+  id: string;
+  originThemeId?: string;
+  updatedAt: string;
+};
+
+type ThemeLibraryItem =
+  | {
+      kind: "custom";
+      custom: UserThemeRecord;
+      id: string;
+      themeId: string;
+      title: string;
+    }
+  | {
+      kind: "published";
+      id: string;
+      product: ThemeProduct;
+      themeId: string;
+      title: string;
+    };
+
+const USER_THEMES_STORAGE_KEY = "vibetv.controlCenter.userThemes";
 
 export type ThemeInstallResult = {
   themeId: string;
@@ -74,7 +113,7 @@ export type ThemeLibraryScreenProps = {
   requestedThemeId?: string;
   storefrontConfigured: boolean;
   onSelectTheme: (themeId: string) => void;
-  onInstallTheme: (theme: ThemeProduct) => void;
+  onInstallTheme: (theme: ThemeProduct) => Promise<void> | void;
 };
 
 export function ThemeLibraryScreen({
@@ -85,7 +124,6 @@ export function ThemeLibraryScreen({
   catalogIssue,
   device,
   installStatus,
-  installEntry,
   lastInstall,
   requestedThemeId,
   companionStatus,
@@ -95,11 +133,33 @@ export function ThemeLibraryScreen({
   onInstallTheme,
 }: ThemeLibraryScreenProps) {
   const visibleThemes = themes;
-  const [previewTheme, setPreviewTheme] = useState<ThemeProduct | null>(null);
+  const [userThemes, setUserThemes] = useState<UserThemeRecord[]>([]);
+  const [editingTheme, setEditingTheme] =
+    useState<ThemeStudioEditorTheme | null>(null);
+  const [libraryError, setLibraryError] = useState("");
+  const [loadingEditorThemeId, setLoadingEditorThemeId] = useState("");
+  const [preparingInstallThemeId, setPreparingInstallThemeId] = useState("");
+  const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
+  const libraryThemes: ThemeLibraryItem[] = [
+    ...userThemes.map((custom) => ({
+      kind: "custom" as const,
+      custom,
+      id: custom.id,
+      themeId: custom.draft.spec.themeId,
+      title: custom.draft.packName,
+    })),
+    ...visibleThemes.map((product) => ({
+      kind: "published" as const,
+      id: product.id,
+      product,
+      themeId: product.themeId,
+      title: product.title,
+    })),
+  ];
   const displayTheme =
     selectedTheme ||
     visibleThemes.find((theme) => theme.themeId === selectedThemeId);
-  const catalogEmpty = visibleThemes.length === 0;
+  const catalogEmpty = libraryThemes.length === 0;
   const requestedThemeMissing = Boolean(
     requestedThemeId && selectedThemeId === requestedThemeId && !displayTheme,
   );
@@ -117,40 +177,156 @@ export function ThemeLibraryScreen({
         selectedTheme: displayTheme,
         themeInstallEnabled,
       });
-  const setupBlocked =
-    companionStatus !== "online" ||
-    !device?.connected ||
-    !device.paired;
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setUserThemes(readUserThemes());
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function persistUserThemes(next: UserThemeRecord[]) {
+    setUserThemes(next);
+    writeUserThemes(next);
+  }
+
+  function openBlankTheme() {
+    const existingIds = allThemeIds(themes, userThemes);
+    const spec = createBlankThemeSpec();
+    spec.themeId = uniqueThemeId("my-theme", existingIds);
+    setLibraryError("");
+    setEditingTheme({
+      assets: {},
+      packName: "New Theme",
+      source: "blank",
+      spec,
+    });
+  }
+
+  async function openThemeEditor(item: ThemeLibraryItem) {
+    setLibraryError("");
+    if (item.kind === "custom") {
+      setEditingTheme({
+        assets: item.custom.draft.assets || {},
+        libraryId: item.custom.id,
+        packName: item.custom.draft.packName,
+        source: "custom",
+        spec: item.custom.draft.spec,
+      });
+      return;
+    }
+
+    setLoadingEditorThemeId(item.themeId);
+    try {
+      const payload = await fetchThemePackForEditing(item.product.themeId);
+      const spec = importThemeSpec(payload.spec);
+      const existingIds = allThemeIds(themes, userThemes);
+      spec.themeId = uniqueThemeId(`${item.product.themeId}-custom`, existingIds);
+      setEditingTheme({
+        assets: payload.assets || {},
+        libraryId: item.product.themeId,
+        packName: `${payload.name || item.product.title} Custom`,
+        source: "published",
+        spec,
+      });
+    } catch (error) {
+      setLibraryError(
+        error instanceof Error ? error.message : "Theme could not be opened.",
+      );
+    } finally {
+      setLoadingEditorThemeId("");
+    }
+  }
+
+  function saveThemeFromEditor(payload: ThemeStudioSavePayload) {
+    const now = new Date().toISOString();
+    const currentId =
+      payload.source === "custom" && payload.libraryId
+        ? payload.libraryId
+        : undefined;
+    const existingIds = allThemeIds(themes, userThemes, currentId);
+    const spec = normalizeThemeSpec(payload.spec);
+    spec.themeId = uniqueThemeId(spec.themeId, existingIds);
+    const id = currentId || spec.themeId;
+    const nextRecord: UserThemeRecord = {
+      draft: {
+        assets: payload.assets,
+        packName: payload.packName || titleFromThemeId(spec.themeId),
+        savedAt: now,
+        spec,
+      },
+      id,
+      originThemeId:
+        payload.source === "published" ? payload.libraryId || undefined : undefined,
+      updatedAt: now,
+    };
+    const next = [
+      nextRecord,
+      ...userThemes.filter((theme) => theme.id !== id),
+    ];
+    persistUserThemes(next);
+    setEditingTheme(null);
+  }
+
+  async function installLibraryTheme(item: ThemeLibraryItem) {
+    setLibraryError("");
+    onSelectTheme(item.themeId);
+    if (item.kind === "published") {
+      await onInstallTheme(item.product);
+      return;
+    }
+
+    setPreparingInstallThemeId(item.themeId);
+    try {
+      const payload = await prepareCustomThemePack(item.custom);
+      await onInstallTheme({
+        id: `custom:${item.custom.id}`,
+        isFree: true,
+        packUrl: payload.packUrl,
+        priceLabel: "Custom",
+        source: "fallback",
+        themeId: payload.themeId || item.themeId,
+        title: payload.name || item.title,
+      });
+    } catch (error) {
+      setLibraryError(
+        error instanceof Error ? error.message : "Theme could not be prepared.",
+      );
+    } finally {
+      setPreparingInstallThemeId("");
+    }
+  }
+
+  if (editingTheme) {
+    return (
+      <ThemeStudioScreen
+        initialTheme={editingTheme}
+        onBackToLibrary={() => setEditingTheme(null)}
+        onSaveToLibrary={saveThemeFromEditor}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[1180px]">
-      <section className="min-h-[330px] border-b border-[#747A60] py-10">
-        <div className="min-w-0">
-          <div className="flex items-start gap-5">
-            <HeroIcon>
-              <Library size={36} aria-hidden />
-            </HeroIcon>
-            <div className="min-w-0">
-              <h2 className="max-w-[520px] text-[clamp(2.7rem,4.8vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-                {catalogEmpty
-                  ? "Theme catalog unavailable"
-                  : requestedThemeMissing
-                    ? "Theme not available"
-                    : "Choose a theme"}
-              </h2>
-              {installEntry && requestedThemeMissing ? (
-                <p className="mt-4 max-w-[640px] text-base leading-7 text-[#444933]">
-                  This theme is not available right now. Choose another theme
-                  below.
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </div>
+      <section className="grid gap-5 border-b border-[#747A60] py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <h2 className="truncate text-3xl font-black leading-tight text-[#1B1B1B]">
+          Themes
+        </h2>
+        <ControlCenterButton
+          icon={<Plus size={18} aria-hidden />}
+          label="New Theme"
+          onClick={openBlankTheme}
+          variant="primary"
+        />
       </section>
 
-      {!setupBlocked ? (
-        <section className="border-b border-[#747A60] py-8">
+      <section className="border-b border-[#747A60] py-8">
+        {libraryError ? (
+          <div className="mb-5 flex gap-3 border border-[#7D2633] bg-[#FFE3E8] p-4 text-sm text-[#7D2633]">
+            <Lock className="mt-0.5 shrink-0" size={18} aria-hidden />
+            <div>{libraryError}</div>
+          </div>
+        ) : null}
         {catalogEmpty ? (
           <CatalogEmptyState
             catalogIssue={catalogIssue}
@@ -166,19 +342,21 @@ export function ThemeLibraryScreen({
             ) : null}
 
             <ul className="divide-y divide-[#747A60] border-y border-[#747A60]">
-              {visibleThemes.map((theme) => (
+              {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
                   device={device}
                   displayThemeId={displayTheme?.themeId}
+                  item={theme}
                   installStatus={installStatus}
                   key={theme.themeId}
                   lastInstall={lastInstall}
-                  onInstallTheme={onInstallTheme}
+                  loadingEditorThemeId={loadingEditorThemeId}
+                  onEditTheme={openThemeEditor}
+                  onInstallTheme={installLibraryTheme}
                   onPreviewTheme={setPreviewTheme}
-                  onSelectTheme={onSelectTheme}
+                  preparingInstallThemeId={preparingInstallThemeId}
                   selectedThemeId={selectedThemeId}
-                  theme={theme}
                   themeInstallBlockedReason={readiness.buttonReason}
                   themeInstallEnabled={themeInstallEnabled}
                 />
@@ -186,8 +364,7 @@ export function ThemeLibraryScreen({
             </ul>
           </>
         )}
-        </section>
-      ) : null}
+      </section>
 
       {previewTheme ? (
         <div
@@ -301,103 +478,123 @@ function ThemeListItem({
   busyAction,
   device,
   displayThemeId,
+  item,
   installStatus,
   lastInstall,
+  loadingEditorThemeId,
+  onEditTheme,
   onInstallTheme,
   onPreviewTheme,
-  onSelectTheme,
+  preparingInstallThemeId,
   selectedThemeId,
-  theme,
   themeInstallBlockedReason,
   themeInstallEnabled,
 }: {
   busyAction: string | null;
   device: ThemeLibraryDeviceInfo | null;
   displayThemeId?: string;
+  item: ThemeLibraryItem;
   installStatus?: ThemeInstallStatus | null;
   lastInstall?: ThemeInstallResult;
-  onInstallTheme: (theme: ThemeProduct) => void;
-  onPreviewTheme: (theme: ThemeProduct) => void;
-  onSelectTheme: (themeId: string) => void;
+  loadingEditorThemeId: string;
+  onEditTheme: (item: ThemeLibraryItem) => void;
+  onInstallTheme: (item: ThemeLibraryItem) => void;
+  onPreviewTheme: (theme: ThemeLibraryItem) => void;
+  preparingInstallThemeId: string;
   selectedThemeId: string;
-  theme: ThemeProduct;
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
 }) {
+  const theme = item.kind === "published" ? item.product : null;
+  const isCustom = item.kind === "custom";
   const installed =
-    lastInstall?.themeId === theme.themeId ||
-    device?.activeTheme === theme.themeId;
+    lastInstall?.themeId === item.themeId || device?.activeTheme === item.themeId;
   const installInFlight = busyAction === "install";
-  const actionInFlight = Boolean(busyAction);
-  const visibleInstallStatus = installStatus?.themeId === theme.themeId;
-  const blocker = buildThemeInstallBlocker({
-    device,
-    theme,
-    themeInstallBlockedReason,
-    themeInstallEnabled,
-  });
+  const preparingInstall = preparingInstallThemeId === item.themeId;
+  const actionInFlight = Boolean(busyAction || preparingInstallThemeId);
+  const visibleInstallStatus = Boolean(
+    installStatus?.themeId === item.themeId,
+  );
+  const blocker = theme
+    ? buildThemeInstallBlocker({
+        device,
+        theme,
+        themeInstallBlockedReason,
+        themeInstallEnabled,
+      })
+    : buildCustomThemeInstallBlocker({
+        device,
+        themeInstallBlockedReason,
+        themeInstallEnabled,
+      });
   const blockedLabel = labelForInstallBlocker(blocker);
   const disabled = actionInFlight || installed || Boolean(blocker);
-  const canSelectInstead =
-    !actionInFlight &&
-    !installed &&
-    Boolean(blocker) &&
-    theme.themeId !== displayThemeId;
-  const title = canSelectInstead
-    ? `Select ${theme.title}`
-    : disabled
+  const title = disabled
       ? installDisabledReason({
           actionInFlight,
           installInFlight,
           installed,
           blocker,
         })
-      : `Install ${theme.title}`;
+      : `Install ${item.title}`;
+  const loadingEdit = loadingEditorThemeId === item.themeId;
 
   return (
-    <li className={theme.themeId === displayThemeId ? "bg-[#EEEEEE]" : ""}>
+    <li className={item.themeId === displayThemeId ? "bg-[#EEEEEE]" : ""}>
       <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-4 py-4 transition sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:items-center sm:gap-5">
         <button
-          aria-label={`Preview ${theme.title}`}
+          aria-label={`Preview ${item.title}`}
           className="text-left"
-          onClick={() => onPreviewTheme(theme)}
+          onClick={() => onPreviewTheme(item)}
           type="button"
         >
-          <ThemePreview theme={theme} />
+          <ThemePreview theme={item} />
         </button>
         <div className="min-w-0">
           <div className="truncate text-lg font-bold text-[#1B1B1B]">
-            {theme.title}
+            {item.title}
+          </div>
+          <div className="mt-1 text-xs font-black uppercase text-[#5E7200]">
+            {isCustom ? "Custom" : "Published"}
           </div>
         </div>
-        <button
-          className="col-span-2 h-11 min-w-[96px] border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-70 sm:col-span-1 sm:mr-3 sm:h-10"
-          disabled={disabled && !canSelectInstead}
-          onClick={() => {
-            onSelectTheme(theme.themeId);
-            if (!blocker) {
-              onInstallTheme(theme);
-            }
-          }}
-          title={title}
-          type="button"
-        >
-          {labelForInstallButton({
-            actionInFlight,
-            blockedLabel,
-            canSelectInstead,
-            installInFlight,
-            installed,
-            selected: theme.themeId === selectedThemeId,
-            disabled,
-          })}
-        </button>
+        <div className="col-span-2 grid gap-2 sm:col-span-1 sm:mr-3 sm:grid-cols-2">
+          <ControlCenterButton
+            busy={loadingEdit}
+            disabled={Boolean(loadingEditorThemeId) && !loadingEdit}
+            icon={<Edit3 size={16} aria-hidden />}
+            label={loadingEdit ? "Opening" : "Edit"}
+            onClick={() => void onEditTheme(item)}
+            size="compact"
+            variant="secondary"
+          />
+          <button
+            className="h-11 min-w-[96px] border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-70 sm:h-10"
+            disabled={disabled}
+            onClick={() => {
+              if (!blocker) {
+                onInstallTheme(item);
+              }
+            }}
+            title={title}
+            type="button"
+          >
+            {labelForInstallButton({
+              actionInFlight,
+              blockedLabel,
+              installInFlight: installInFlight || preparingInstall,
+              installed,
+              selected: item.themeId === selectedThemeId,
+              disabled,
+            })}
+          </button>
+        </div>
       </div>
       {visibleInstallStatus ? (
         <InlineInstallProgress
           canRetry={!disabled}
-          onRetry={() => onInstallTheme(theme)}
-          status={installStatus}
+          onRetry={() => onInstallTheme(item)}
+          status={installStatus!}
         />
       ) : null}
     </li>
@@ -493,7 +690,6 @@ function clampInstallProgress(value: number | undefined): number {
 function labelForInstallButton({
   actionInFlight,
   blockedLabel,
-  canSelectInstead,
   disabled,
   installInFlight,
   installed,
@@ -501,7 +697,6 @@ function labelForInstallButton({
 }: {
   actionInFlight: boolean;
   blockedLabel: string;
-  canSelectInstead: boolean;
   disabled: boolean;
   installInFlight: boolean;
   installed: boolean;
@@ -516,13 +711,43 @@ function labelForInstallButton({
   if (installed) {
     return "Installed";
   }
-  if (canSelectInstead) {
-    return "Select";
-  }
   if (disabled) {
+    if (blockedLabel === "Setup First" || blockedLabel === "Connect First") {
+      return "Install";
+    }
     return blockedLabel;
   }
   return "Install";
+}
+
+function buildCustomThemeInstallBlocker({
+  device,
+  themeInstallBlockedReason,
+  themeInstallEnabled,
+}: {
+  device: ThemeLibraryDeviceInfo | null;
+  themeInstallBlockedReason: string;
+  themeInstallEnabled: boolean;
+}): ThemeInstallBlocker | null {
+  if (!device?.connected) {
+    return { reason: themeInstallBlockedReason || "Connect VibeTV first." };
+  }
+  if (!device.paired) {
+    return {
+      reason: "Connect VibeTV first.",
+      readinessTitle: "VibeTV connection required",
+      readinessDetail:
+        "This VibeTV is reachable, but theme install requires a completed connection first.",
+      readinessIcon: <Lock size={22} aria-hidden />,
+    };
+  }
+  if (!themeInstallEnabled) {
+    return {
+      reason:
+        themeInstallBlockedReason || "Theme installs are not available right now.",
+    };
+  }
+  return null;
 }
 
 function labelForInstallBlocker(blocker: ThemeInstallBlocker | null): string {
@@ -829,20 +1054,12 @@ function parseVersion(value: string): number[] {
   return matches.map((part) => Number(part));
 }
 
-function HeroIcon({ children }: { children: ReactNode }) {
-  return (
-    <ControlCenterStatusIcon variant="neutral">
-      {children}
-    </ControlCenterStatusIcon>
-  );
-}
-
 function ThemePreview({
   large,
   theme,
 }: {
   large?: boolean;
-  theme: ThemeProduct;
+  theme: ThemeLibraryItem;
 }) {
   const [packState, setPackState] = useState<{
     pack: ThemeRenderPack | null;
@@ -857,14 +1074,28 @@ function ThemePreview({
     ? "relative block aspect-square w-full overflow-hidden border border-[#747A60] bg-[#EEEEEE]"
     : "relative block size-24 overflow-hidden border border-[#747A60] bg-[#EEEEEE]";
   const themeId = theme.themeId;
-  const pack =
-    packState.themeId === themeId && packState.status === "ready"
-      ? packState.pack
+  const customPack =
+    theme.kind === "custom"
+      ? {
+          ok: true,
+          themeId,
+          name: theme.title,
+          spec: theme.custom.draft.spec,
+          assets: theme.custom.draft.assets || {},
+        }
       : null;
+  const pack =
+    customPack ||
+    (packState.themeId === themeId && packState.status === "ready"
+      ? packState.pack
+      : null);
   const status =
-    packState.themeId === themeId ? packState.status : "loading";
+    customPack ? "ready" : packState.themeId === themeId ? packState.status : "loading";
 
   useEffect(() => {
+    if (theme.kind === "custom") {
+      return;
+    }
     if (!themeId) {
       return;
     }
@@ -892,7 +1123,7 @@ function ThemePreview({
       });
 
     return () => controller.abort();
-  }, [themeId]);
+  }, [theme.kind, themeId]);
 
   return (
     <span className={className}>
@@ -904,4 +1135,168 @@ function ThemePreview({
       />
     </span>
   );
+}
+
+function readUserThemes(): UserThemeRecord[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const raw = window.localStorage.getItem(USER_THEMES_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map(readUserTheme)
+      .filter((theme): theme is UserThemeRecord => Boolean(theme));
+  } catch {
+    return [];
+  }
+}
+
+function readUserTheme(value: unknown): UserThemeRecord | null {
+  if (!isRecord(value) || !isRecord(value.draft)) {
+    return null;
+  }
+  const draft = value.draft;
+  if (!isRecord(draft.spec) || typeof draft.packName !== "string") {
+    return null;
+  }
+  return {
+    draft: {
+      assets: isRecord(draft.assets)
+        ? (draft.assets as Record<string, ThemeStudioAsset>)
+        : {},
+      packName: draft.packName,
+      savedAt: typeof draft.savedAt === "string" ? draft.savedAt : "",
+      spec: normalizeThemeSpec(draft.spec as ThemeStudioSpec),
+    },
+    id:
+      typeof value.id === "string" && value.id.trim()
+        ? value.id.trim()
+        : normalizeThemeSpec(draft.spec as ThemeStudioSpec).themeId,
+    originThemeId:
+      typeof value.originThemeId === "string" ? value.originThemeId : undefined,
+    updatedAt:
+      typeof value.updatedAt === "string"
+        ? value.updatedAt
+        : typeof draft.savedAt === "string"
+          ? draft.savedAt
+          : "",
+  };
+}
+
+function writeUserThemes(themes: UserThemeRecord[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(USER_THEMES_STORAGE_KEY, JSON.stringify(themes));
+}
+
+async function fetchThemePackForEditing(themeId: string): Promise<{
+  assets?: Record<string, ThemeStudioAsset>;
+  name?: string;
+  spec: unknown;
+}> {
+  const response = await fetch(`/api/theme-pack/${encodeURIComponent(themeId)}`);
+  if (!response.ok) {
+    throw new Error("Theme could not be opened.");
+  }
+  const payload = (await response.json()) as {
+    assets?: Record<string, ThemeStudioAsset>;
+    name?: string;
+    spec?: unknown;
+  };
+  if (!payload.spec) {
+    throw new Error("Theme could not be opened.");
+  }
+  return { assets: payload.assets || {}, name: payload.name, spec: payload.spec };
+}
+
+async function prepareCustomThemePack(theme: UserThemeRecord): Promise<{
+  name?: string;
+  packUrl: string;
+  themeId?: string;
+}> {
+  const response = await fetch("/api/custom-theme-pack", {
+    body: JSON.stringify({
+      assets: theme.draft.assets || {},
+      packName: theme.draft.packName,
+      spec: theme.draft.spec,
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  const payload = (await response.json()) as {
+    error?: string;
+    name?: string;
+    ok?: boolean;
+    packUrl?: string;
+    themeId?: string;
+  };
+  if (!response.ok || !payload.ok || !payload.packUrl) {
+    throw new Error(payload.error || "Theme could not be prepared.");
+  }
+  return {
+    name: payload.name,
+    packUrl: payload.packUrl,
+    themeId: payload.themeId,
+  };
+}
+
+function allThemeIds(
+  publishedThemes: ThemeProduct[],
+  userThemes: UserThemeRecord[],
+  exceptUserThemeId?: string,
+): string[] {
+  return [
+    ...publishedThemes.map((theme) => theme.themeId),
+    ...userThemes
+      .filter((theme) => theme.id !== exceptUserThemeId)
+      .map((theme) => theme.draft.spec.themeId),
+  ];
+}
+
+function uniqueThemeId(base: string, existingIds: string[]): string {
+  const used = new Set(existingIds.map((id) => slugThemeId(id)));
+  const cleanBase = slugThemeId(base || "my-theme");
+  if (!used.has(cleanBase)) {
+    return cleanBase;
+  }
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${cleanBase}-${index}`;
+    if (!used.has(candidate)) {
+      return candidate;
+    }
+  }
+  return `${cleanBase}-${Date.now()}`;
+}
+
+function slugThemeId(value: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  if (slug.length >= 3 && /^[a-z0-9]/.test(slug)) {
+    return slug;
+  }
+  return "my-theme";
+}
+
+function titleFromThemeId(themeId: string): string {
+  return themeId
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

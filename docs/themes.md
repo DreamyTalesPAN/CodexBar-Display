@@ -60,7 +60,13 @@ See [theme-packs.md](theme-packs.md) for the pack format and CLI commands.
 
 ## Building Themes
 
-Use Theme Studio for visual editing:
+Theme Studio now lives inside the local Control Center served by the Mac App.
+Open Control Center, then choose **Theme Studio**. It can create a local draft,
+open ThemeSpec JSON, edit the 240x240 layout, validate it, export an
+installable theme-pack ZIP, and send the current theme to VibeTV from an
+explicit **Send to VibeTV** action.
+
+The older standalone developer tool is still available for deeper asset work:
 
 ```bash
 ./scripts/theme-studio.sh
@@ -69,10 +75,12 @@ Use Theme Studio for visual editing:
 Theme Studio can:
 
 - edit 240x240 layouts
-- import sprites and GIFs
+- import sprites and GIFs in the standalone developer tool
 - preview live usage bindings
-- send themes to VibeTV during an approved hardware test
-- publish/update theme-pack source files
+- export theme packs from Control Center without an automatic hardware write
+- upload loaded assets, activate the stored ThemeSpec, and send a live frame
+  only after the customer clicks **Send to VibeTV**
+- publish/update theme-pack source files from developer workflows
 
 For reliable hardware themes, keep static visual detail in streamed assets and
 keep ThemeSpec JSON focused on live fields. Start with
