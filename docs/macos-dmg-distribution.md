@@ -207,6 +207,16 @@ The prepared real flow is:
     `syspolicy_check distribution`, and Gatekeeper assessment of the app inside
     the mounted image.
 
+Apple's supported DMG flow staples the ticket to the outermost distributed
+container. On affected macOS versions, `syspolicy_check distribution` can still
+report `Notary Ticket Missing` for the app inside that already validated DMG.
+The verifier treats only that exact JSON report as an outer-container warning:
+exit code 70, empty stderr, one diagnostic for the mounted app, the complete
+known field set, and no additional keys or messages. Every variation remains
+fatal. The following app Gatekeeper assessment is always required to return
+`accepted` with `source=Notarized Developer ID`; the app is not separately
+notarized or stapled a second time.
+
 Important order:
 
 1. Build `VibeTV Control Center.app`.
@@ -260,6 +270,8 @@ Apple references used for this prepared flow:
 - [Customizing the notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
 - [Creating distribution-signed code for macOS](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac)
 - [macOS 14 release notes: `syspolicy_check`](https://developer.apple.com/documentation/macos-release-notes/macos-14-release-notes)
+- [Apple DTS: outer-container ticket diagnostics](https://developer.apple.com/forums/thread/799110)
+- [Apple DTS: stapling the outermost container](https://developer.apple.com/forums/thread/720093)
 - [Installing an Apple certificate on macOS GitHub runners](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)
 - [Using secrets in GitHub Actions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)
 
@@ -272,8 +284,9 @@ Before a customer DMG rollout, release readiness must include:
 - `codesign --verify` passes for the final DMG and its mounted app,
 - Apple notarization status and log both say `Accepted`,
 - the notarization log has no issues,
-- `xcrun stapler validate`, `hdiutil verify`, `syspolicy_check distribution`,
-  and both Gatekeeper assessments pass,
+- `xcrun stapler validate`, `hdiutil verify`, and both Gatekeeper assessments
+  pass; `syspolicy_check distribution` either passes or returns only the exact
+  known outer-DMG ticket diagnostic,
 - DMG checksum appears in `checksums-v<version>.txt`,
 - clean-Mac validation confirms the app opens and shows the React Control Center,
 - no `.pkg`, Homebrew publishing, live-shop changes, Vercel deploys, releases,

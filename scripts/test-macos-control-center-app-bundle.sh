@@ -195,6 +195,220 @@ JSON
   fi
 )
 
+test_outer_dmg_ticket_policy_helper() (
+  set --
+  # shellcheck source=verify-macos-control-center-dmg.sh
+  source "${ROOT}/scripts/verify-macos-control-center-dmg.sh"
+
+  local test_dir
+  test_dir="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-ticket-policy.XXXXXX")"
+  TICKET_TEST_DIR="$test_dir"
+  trap 'rm -rf "$TICKET_TEST_DIR"' EXIT
+  MOUNTED_APP="$test_dir/VibeTV Control Center.app"
+  mkdir -p "$MOUNTED_APP"
+
+  cat > "$test_dir/exact.json" <<'JSON'
+{
+  "output": [
+    {
+      "SyspolicyCheckErrorLevel": "Fatal",
+      "SyspolicyCheckShortError": "Notary Ticket Missing",
+      "SyspolicyCheckAdditionalInformation": "",
+      "SyspolicyCheckDocumentationLink": "https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution.",
+      "SyspolicyCheckAdvice": "If this application has already been uploaded to the Apple notary service, please make sure to attach the ticket with the `stapler staple` command. If not, please upload to the Apple notary service using Xcode or via `notarytool`. ",
+      "SyspolicyCheckLongError": "A Notarization ticket is not stapled to this application.",
+      "SyspolicyCheckErrorFile": "__MOUNTED_APP__"
+    }
+  ]
+}
+JSON
+  python3 - "$test_dir/exact.json" "$test_dir" "$MOUNTED_APP" <<'PY'
+import copy
+import json
+import os
+import sys
+
+source_path, target_dir, mounted_app = sys.argv[1:]
+with open(source_path, encoding="utf-8") as source_file:
+    exact = json.load(source_file)
+
+
+def write(name, value):
+    with open(os.path.join(target_dir, name), "w", encoding="utf-8") as output_file:
+        json.dump(value, output_file)
+
+
+exact["output"][0]["SyspolicyCheckErrorFile"] = mounted_app
+write("exact.json", exact)
+
+basename = copy.deepcopy(exact)
+basename["output"][0]["SyspolicyCheckErrorFile"] = os.path.basename(mounted_app)
+write("basename.json", basename)
+
+combined = copy.deepcopy(exact)
+combined["output"].append(copy.deepcopy(combined["output"][0]))
+write("combined.json", combined)
+
+extra_root = copy.deepcopy(exact)
+extra_root["additionalFailure"] = "must remain fatal"
+write("extra-root.json", extra_root)
+
+extra_field = copy.deepcopy(exact)
+extra_field["output"][0]["UnexpectedField"] = "must remain fatal"
+write("extra-field.json", extra_field)
+
+wrong_type = copy.deepcopy(exact)
+wrong_type["output"][0]["SyspolicyCheckAdditionalInformation"] = {}
+write("wrong-type.json", wrong_type)
+
+wrong_file = copy.deepcopy(exact)
+wrong_file["output"][0]["SyspolicyCheckErrorFile"] = "/tmp/Other.app"
+write("wrong-file.json", wrong_file)
+
+wrong_relative_file = copy.deepcopy(exact)
+wrong_relative_file["output"][0]["SyspolicyCheckErrorFile"] = (
+    "Other/VibeTV Control Center.app"
+)
+write("wrong-relative-file.json", wrong_relative_file)
+
+value_mutations = {
+    "wrong-additional.json": (
+        "SyspolicyCheckAdditionalInformation",
+        "unexpected detail",
+    ),
+    "wrong-advice.json": ("SyspolicyCheckAdvice", "Different advice."),
+    "wrong-documentation.json": (
+        "SyspolicyCheckDocumentationLink",
+        "https://example.invalid/notarization",
+    ),
+    "wrong-level.json": ("SyspolicyCheckErrorLevel", "Warning"),
+    "wrong-long-error.json": ("SyspolicyCheckLongError", "Different error."),
+    "wrong-short-error.json": ("SyspolicyCheckShortError", "Different error"),
+}
+for name, (key, value) in value_mutations.items():
+    mutated = copy.deepcopy(exact)
+    mutated["output"][0][key] = value
+    write(name, mutated)
+
+with open(os.path.join(target_dir, "duplicate-key.json"), "w", encoding="utf-8") as output_file:
+    duplicate = json.dumps(exact)
+    marker = '"SyspolicyCheckErrorLevel": "Fatal"'
+    duplicate = duplicate.replace(marker, f"{marker}, {marker}", 1)
+    output_file.write(f"{duplicate}\n")
+
+with open(os.path.join(target_dir, "malformed.json"), "w", encoding="utf-8") as output_file:
+    output_file.write('{"output":[')
+
+write("success.json", {"output": []})
+PY
+
+  MOCK_POLICY_REPORT="$test_dir/exact.json"
+  MOCK_POLICY_EXIT=70
+  MOCK_POLICY_STDERR=""
+  syspolicy_check() {
+    cat "$MOCK_POLICY_REPORT"
+    [[ -z "$MOCK_POLICY_STDERR" ]] || printf '%s\n' "$MOCK_POLICY_STDERR" >&2
+    return "$MOCK_POLICY_EXIT"
+  }
+
+  SPCTL_LOG="$test_dir/spctl.log"
+  MOCK_SPCTL_EXIT=0
+  MOCK_SPCTL_OUTPUT="${MOUNTED_APP}: accepted
+source=Notarized Developer ID"
+  spctl() {
+    printf 'called\n' >> "$SPCTL_LOG"
+    printf '%s\n' "$MOCK_SPCTL_OUTPUT" >&2
+    return "$MOCK_SPCTL_EXIT"
+  }
+
+  verify_mounted_app_gatekeeper > /dev/null 2> "$test_dir/exact.stderr" \
+    || die "exact outer-DMG ticket diagnostic must continue to mounted-app Gatekeeper"
+  [[ "$(wc -l < "$SPCTL_LOG" | tr -d ' ')" == "1" ]] \
+    || die "mounted-app Gatekeeper must run after the exact ticket diagnostic"
+  grep -qF "already validated outer DMG" "$test_dir/exact.stderr" \
+    || die "outer-DMG ticket diagnostic must emit a narrow warning"
+
+  MOCK_POLICY_REPORT="$test_dir/basename.json"
+  run_mounted_app_distribution_policy_check > /dev/null 2>&1 \
+    || die "the exact app basename from older syspolicy output must remain supported"
+
+  : > "$SPCTL_LOG"
+  MOCK_SPCTL_EXIT=1
+  MOCK_POLICY_REPORT="$test_dir/exact.json"
+  if verify_mounted_app_gatekeeper > /dev/null 2>&1; then
+    die "mounted-app Gatekeeper failure must remain fatal after the ticket warning"
+  fi
+  [[ "$(wc -l < "$SPCTL_LOG" | tr -d ' ')" == "1" ]] \
+    || die "failing mounted-app Gatekeeper assessment must still be executed"
+  MOCK_SPCTL_EXIT=0
+
+  : > "$SPCTL_LOG"
+  MOCK_POLICY_REPORT="$test_dir/extra-field.json"
+  if verify_mounted_app_gatekeeper > /dev/null 2>&1; then
+    die "non-exact ticket diagnostics must fail the complete mounted-app gate"
+  fi
+  [[ ! -s "$SPCTL_LOG" ]] \
+    || die "mounted-app Gatekeeper must not run after a policy-check failure"
+
+  for fixture in \
+    combined \
+    extra-root \
+    extra-field \
+    wrong-type \
+    wrong-file \
+    wrong-relative-file \
+    wrong-additional \
+    wrong-advice \
+    wrong-documentation \
+    wrong-level \
+    wrong-long-error \
+    wrong-short-error \
+    duplicate-key \
+    malformed
+  do
+    MOCK_POLICY_REPORT="$test_dir/${fixture}.json"
+    if run_mounted_app_distribution_policy_check > /dev/null 2>&1; then
+      die "ticket policy fixture ${fixture} must remain fatal"
+    fi
+  done
+
+  MOCK_POLICY_REPORT="$test_dir/exact.json"
+  MOCK_POLICY_STDERR="unexpected secondary diagnostic"
+  if run_mounted_app_distribution_policy_check > /dev/null 2>&1; then
+    die "ticket policy exception must reject non-empty stderr"
+  fi
+  MOCK_POLICY_STDERR=""
+
+  MOCK_POLICY_EXIT=1
+  if run_mounted_app_distribution_policy_check > /dev/null 2>&1; then
+    die "ticket policy exception must require exit 70"
+  fi
+
+  MOCK_POLICY_EXIT=0
+  MOCK_POLICY_REPORT="$test_dir/success.json"
+  : > "$SPCTL_LOG"
+  verify_mounted_app_gatekeeper > /dev/null 2>&1 \
+    || die "successful syspolicy_check must continue to mounted-app Gatekeeper"
+  [[ "$(wc -l < "$SPCTL_LOG" | tr -d ' ')" == "1" ]] \
+    || die "mounted-app Gatekeeper must run after successful syspolicy_check"
+
+  MOCK_SPCTL_OUTPUT="${MOUNTED_APP}: accepted
+source=Developer ID"
+  if verify_mounted_app_gatekeeper > /dev/null 2>&1; then
+    die "mounted app must be accepted specifically as Notarized Developer ID"
+  fi
+
+  : > "$SPCTL_LOG"
+  mktemp() {
+    return 1
+  }
+  if verify_mounted_app_gatekeeper > /dev/null 2>&1; then
+    die "policy work-directory creation failure must remain fatal"
+  fi
+  [[ ! -s "$SPCTL_LOG" ]] \
+    || die "mounted-app Gatekeeper must not run without a policy work directory"
+)
+
 main() {
   local tmp app dmg stage sign_output
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-macos-test.XXXXXX")"
@@ -459,6 +673,7 @@ PY
     || die "operator runbook must include DMG release readiness"
 
   test_signing_safety_helpers
+  test_outer_dmg_ticket_policy_helper
 
   printf 'macOS Control Center app bundle prep test passed\n'
 }
