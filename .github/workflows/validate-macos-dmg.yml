@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CODEX_VALIDATION_SOURCE_SHA: "03d50b8cc2a79a153d856b5e90082a795fbdff4c"
+  CODEX_VALIDATION_SOURCE_SHA: "73eb6461621cf59efc9ab0325999ba3c8f22d61f"
   CODEX_VALIDATION_VERSION: "1.0.42"
 
 jobs:
@@ -187,7 +187,7 @@ jobs:
             fi
           }
 
-          verify_hash 18ce94f778732ddf546cac95c95d5d2c85d6f325a655a900696aea97698b05a1 \
+          verify_hash d2c68b71bbbbb62af41804b8706a48646e4a578c898e8bf6d3496da0fa4de6b2 \
             scripts/sign-notarize-macos-control-center.sh
           verify_hash 7c5237b4cf8c9f43e0b387e3a46b8b11d86403c8a1c922fd73fc1bc6978a7ba9 \
             scripts/build-macos-control-center-app.sh
@@ -250,7 +250,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(shasum -a 256 scripts/sign-notarize-macos-control-center.sh | awk '{print $1}')" = \
-            18ce94f778732ddf546cac95c95d5d2c85d6f325a655a900696aea97698b05a1
+            d2c68b71bbbbb62af41804b8706a48646e4a578c898e8bf6d3496da0fa4de6b2
           test "$(shasum -a 256 scripts/verify-macos-control-center-dmg.sh | awk '{print $1}')" = \
             c67232b586049c6080a4fa992f1aa90054e73817e7500fbf86f2aeefcb135196
 
