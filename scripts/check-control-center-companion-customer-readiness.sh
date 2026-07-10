@@ -51,7 +51,9 @@ Options:
   --shopify-store-url https://vibetv.shop
                                    Public Shopify store origin used to derive product URLs from /api/themes handles. Default: https://vibetv.shop.
   --shopify-product-page url theme_id
-                                   Check a public Shopify product page links to /install/theme_id and no longer exposes the legacy terminal command. Repeatable.
+                                   Require the public product page to link exactly to
+                                   <shopify-app-url>/install/<theme_id> and reject the
+                                   legacy terminal install path. Repeatable.
   --local-companion                Check local Mac App status on VIBETV_COMPANION_ADDR, default 127.0.0.1:47832.
   --expect-version x.y.z           Require local Mac App version where checked.
   -h, --help                       Show this help.
@@ -491,12 +493,16 @@ PY
 urlencode_path_segment() {
   require_cmd python3
   python3 - "$1" <<'PY'
+import re
 import sys
 from urllib.parse import quote
 
-value = sys.argv[1].strip()
-if not value:
-    print("theme id cannot be empty", file=sys.stderr)
+value = sys.argv[1]
+if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{2,63}", value):
+    print(
+        "invalid theme_id: expected 3-64 lowercase letters, numbers, hyphens, or underscores",
+        file=sys.stderr,
+    )
     sys.exit(1)
 print(quote(value, safe=""))
 PY
@@ -643,50 +649,73 @@ PY
 }
 
 check_shopify_product_page() {
-  local url theme_id label html
+  local url theme_id label html encoded_theme_id expected_install_url
   url="$1"
   theme_id="$2"
   label="$3"
   validate_http_url "$url" "$label" 1
+  encoded_theme_id="$(urlencode_path_segment "$theme_id")"
+  expected_install_url="${SHOPIFY_APP_URL%/}/install/${encoded_theme_id}"
 
   html="$(mktemp "${TMP_WORK_DIR}/shopify-product.XXXXXX")"
   curl_cmd -fsSL "$url" > "$html"
-  python3 - "$html" "$url" "$theme_id" "$SHOPIFY_APP_URL" <<'PY'
+  python3 - "$html" "$url" "$expected_install_url" "$SHOPIFY_APP_URL" <<'PY'
+from html import unescape
+from html.parser import HTMLParser
 import sys
-from urllib.parse import quote
+from urllib.parse import urlparse
 
-html_path, product_url, theme_id, app_url = sys.argv[1:]
+html_path, product_url, expected_install_url, app_url = sys.argv[1:]
 with open(html_path, encoding="utf-8", errors="replace") as f:
     html = f.read()
 
-expected_command = (
-    f"codexbar-display theme-pack install --theme {theme_id} "
-    "--target http://vibetv.local"
-)
-required_terminal_copy = [
-    "Copy install command",
-    expected_command,
-]
-forbidden = [
-    f"{app_url.rstrip('/')}/install/{quote(theme_id, safe='')}",
-    "app.vibetv.shop/install",
-    "Check compatibility in the app",
-    "Opens the hosted Control Center",
-    "Theme check unavailable",
-    "Jetzt installieren",
-    "Jetzt Theme installieren",
-    "Install now",
-    "One-click install",
-    "One click install",
+class LinkParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.hrefs = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != "a":
+            return
+        for name, value in attrs:
+            if name.lower() == "href" and value is not None:
+                self.hrefs.append(value.strip())
+
+parser = LinkParser()
+parser.feed(html)
+hrefs = parser.hrefs
+app = urlparse(app_url.rstrip("/"))
+app_install_links = []
+for href in hrefs:
+    parsed = urlparse(href)
+    if (
+        parsed.scheme == app.scheme
+        and parsed.netloc == app.netloc
+        and parsed.path.startswith("/install/")
+    ):
+        app_install_links.append(href)
+
+legacy_copy = unescape(html).lower()
+forbidden_legacy = [
+    "copy install command",
+    "codexbar-display theme-pack install",
+    "--target http://vibetv.local",
 ]
 
 errors = []
-for copy in required_terminal_copy:
-    if copy not in html:
-        errors.append(f"missing terminal install copy: {copy}")
-for needle in forbidden:
-    if needle in html:
-        errors.append(f"unavailable app install copy still present: {needle}")
+if expected_install_url not in hrefs:
+    errors.append(f"missing Control Center install link: {expected_install_url}")
+unexpected_install_links = [
+    href for href in app_install_links if href != expected_install_url
+]
+if unexpected_install_links:
+    errors.append(
+        "wrong Control Center install link: "
+        + ", ".join(sorted(set(unexpected_install_links)))
+    )
+for needle in forbidden_legacy:
+    if needle in legacy_copy:
+        errors.append(f"legacy terminal install path still present: {needle}")
 
 if errors:
     print(
@@ -698,7 +727,7 @@ if errors:
     )
     sys.exit(1)
 PY
-  log "Shopify product page ok: ${url} -> ${theme_id}"
+  log "Shopify product page ok: ${url} -> ${expected_install_url}"
 }
 
 expected_release_version() {

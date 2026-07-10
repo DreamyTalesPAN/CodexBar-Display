@@ -13,15 +13,14 @@ surface:
 - Hosted app: `https://app.vibetv.shop`
 - Product entry surface: `https://vibetv.shop/products/<theme-handle>`
 - Target product action: open `https://app.vibetv.shop/install/<theme_id>`.
-- Fallback product action during staged rollout: visible Terminal install command.
 
 The Control Center reads products from Shopify Storefront API through `apps/control-center/src/lib/themes.ts`. App-owned Shopify Metaobjects can still be revisited later, but they are not the current source of truth.
 
 Treat the hosted app path as the customer entrypoint, not as the full customer
 app. Theme product pages should point customers into hosted setup once the
 launch cutover is approved. From there, the Mac App opens the local Control
-Center for install and management. The direct Terminal command remains useful as
-a rollback or support fallback, not as the preferred product journey.
+Center for install and management. Product pages must not expose the old direct
+Terminal theme-install command.
 
 ## Product Model
 
@@ -58,16 +57,16 @@ Hosted setup then handles the next available step: install/repair the Mac App,
 open the local Control Center, connect VibeTV, and install the selected theme
 locally.
 
-During staged rollout or support fallback, use the Custom Liquid block stored in
+Use the Custom Liquid block stored in
 `docs/vibetv-theme-product-custom-liquid.liquid` on VibeTV theme product pages.
-It renders one primary action, `Copy install command`, then shows the actual
-command:
+It renders one primary action, `Open in Control Center`, which links to:
 
-```liquid
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local
+```text
+https://app.vibetv.shop/install/<theme_id>
 ```
 
-The Liquid derives `<theme_id>` from `vibetv.theme_id` or `theme.theme_id`.
+The Liquid derives `<theme_id>` from `vibetv.theme_id` or `theme.theme_id` and
+URL-encodes it as one path segment.
 
 ## Customer Flow
 
@@ -78,12 +77,6 @@ The Liquid derives `<theme_id>` from `vibetv.theme_id` or `theme.theme_id`.
 5. If setup is incomplete, hosted setup shows only the next setup action.
 6. Once the Mac App answers, the browser opens the local Control Center.
 7. The local Control Center handles VibeTV connection, pairing, and theme install.
-
-Fallback flow:
-
-1. Product page shows `Copy install command`.
-2. Customer opens Terminal, pastes the command, and presses Return while VibeTV is on the same WiFi.
-3. The command installs/updates the CLI helper and runs `codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local`.
 
 ## GitHub Theme Pack Artifacts
 
@@ -142,8 +135,9 @@ selected `theme_id`, returning a paid theme for that ID, missing a free theme
 `http(s)` download URL, exposing any free collection theme that is not
 installable, or if the selected `/install/<theme_id>` route is not reachable.
 
-During staged rollout, the same checker can still assert the fallback Shopify
-product-page command when `--expect-shopify-product-pages` is intentionally used.
+For every free Shopify theme, the same checker requires the exact matching
+`https://app.vibetv.shop/install/<theme_id>` product link and rejects the old
+`Copy install command` / direct terminal theme-install path.
 
 Allowed without extra hardware approval:
 

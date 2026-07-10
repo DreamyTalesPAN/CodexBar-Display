@@ -64,7 +64,96 @@ run_expect_broken_product_page_failure() {
   set -e
 
   [[ "$status" -ne 0 ]] || die "expected broken Shopify product page check to fail"
-  assert_contains "$output" "missing terminal install copy: codexbar-display theme-pack install --theme synthwave --target http://vibetv.local"
+  assert_contains "$output" "missing Control Center install link: https://app.example.test/install/synthwave"
+}
+
+run_expect_legacy_product_command_failure() {
+  local output status
+  set +e
+  output="$(
+    CONTROL_CENTER_READINESS_CURL="$FAKE_CURL" \
+      "$READINESS" \
+        --shopify-app-url https://app.example.test \
+        --shopify-product-page https://vibetv.example.test/products/legacy synthwave \
+        2>&1
+  )"
+  status=$?
+  set -e
+
+  [[ "$status" -ne 0 ]] || die "expected legacy Shopify product command check to fail"
+  assert_contains "$output" "legacy terminal install path still present: copy install command"
+  assert_contains "$output" "legacy terminal install path still present: codexbar-display theme-pack install"
+  assert_contains "$output" "legacy terminal install path still present: --target http://vibetv.local"
+}
+
+run_expect_wrong_theme_link_failure() {
+  local output status
+  set +e
+  output="$(
+    CONTROL_CENTER_READINESS_CURL="$FAKE_CURL" \
+      "$READINESS" \
+        --shopify-app-url https://app.example.test \
+        --shopify-product-page https://vibetv.example.test/products/wrong-theme synthwave \
+        2>&1
+  )"
+  status=$?
+  set -e
+
+  [[ "$status" -ne 0 ]] || die "expected wrong Shopify theme link check to fail"
+  assert_contains "$output" "missing Control Center install link: https://app.example.test/install/synthwave"
+  assert_contains "$output" "wrong Control Center install link: https://app.example.test/install/clippy"
+}
+
+run_expect_noncanonical_install_url_failure() {
+  local output status
+  set +e
+  output="$(
+    CONTROL_CENTER_READINESS_CURL="$FAKE_CURL" \
+      "$READINESS" \
+        --shopify-app-url https://app.example.test \
+        --shopify-product-page https://vibetv.example.test/products/noncanonical synthwave \
+        2>&1
+  )"
+  status=$?
+  set -e
+
+  [[ "$status" -ne 0 ]] || die "expected noncanonical Shopify install URL check to fail"
+  assert_contains "$output" "missing Control Center install link: https://app.example.test/install/synthwave"
+  assert_contains "$output" "wrong Control Center install link: https://app.example.test/install/%73ynthwave"
+}
+
+run_expect_expected_plus_wrong_link_failure() {
+  local output status
+  set +e
+  output="$(
+    CONTROL_CENTER_READINESS_CURL="$FAKE_CURL" \
+      "$READINESS" \
+        --shopify-app-url https://app.example.test \
+        --shopify-product-page https://vibetv.example.test/products/expected-plus-wrong synthwave \
+        2>&1
+  )"
+  status=$?
+  set -e
+
+  [[ "$status" -ne 0 ]] || die "expected extra wrong Shopify install link check to fail"
+  assert_contains "$output" "wrong Control Center install link: https://app.example.test/install/clippy"
+}
+
+run_expect_invalid_theme_id_failure() {
+  local output status
+  set +e
+  output="$(
+    CONTROL_CENTER_READINESS_CURL="$FAKE_CURL" \
+      "$READINESS" \
+        --shopify-app-url https://app.example.test \
+        --shopify-product-page https://vibetv.example.test/products/synthwave 'synthwave/../clippy' \
+        2>&1
+  )"
+  status=$?
+  set -e
+
+  [[ "$status" -ne 0 ]] || die "expected invalid Shopify theme_id check to fail"
+  assert_contains "$output" "invalid theme_id: expected 3-64 lowercase letters, numbers, hyphens, or underscores"
 }
 
 run_expect_local_url_guard_failure() {
@@ -491,21 +580,46 @@ JSON
   https://vibetv.example.test/products/synthwave-theme)
     cat <<'HTML'
 <!doctype html>
-<button>Copy install command</button>
-<code>curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme synthwave --target http://vibetv.local</code>
+<a href="https://app.example.test/install/synthwave">Open in Control Center</a>
 HTML
     ;;
   https://vibetv.example.test/products/clippy-theme)
     cat <<'HTML'
 <!doctype html>
-<button>Copy install command</button>
-<code>curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme clippy --target http://vibetv.local</code>
+<a href="https://app.example.test/install/clippy">Open in Control Center</a>
 HTML
     ;;
   https://vibetv.example.test/products/broken)
     cat <<'HTML'
 <!doctype html>
 <button>Check compatibility in the app</button>
+HTML
+    ;;
+  https://vibetv.example.test/products/legacy)
+    cat <<'HTML'
+<!doctype html>
+<a href="https://app.example.test/install/synthwave">Open in Control Center</a>
+<button>Copy install command</button>
+<code>curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash &amp;&amp; codexbar-display theme-pack install --theme synthwave --target http://vibetv.local</code>
+HTML
+    ;;
+  https://vibetv.example.test/products/wrong-theme)
+    cat <<'HTML'
+<!doctype html>
+<a href="https://app.example.test/install/clippy">Open in Control Center</a>
+HTML
+    ;;
+  https://vibetv.example.test/products/noncanonical)
+    cat <<'HTML'
+<!doctype html>
+<a href="https://app.example.test/install/%73ynthwave">Open in Control Center</a>
+HTML
+    ;;
+  https://vibetv.example.test/products/expected-plus-wrong)
+    cat <<'HTML'
+<!doctype html>
+<a href="https://app.example.test/install/synthwave">Open in Control Center</a>
+<a href="https://app.example.test/install/clippy">Open another theme</a>
 HTML
     ;;
   *)
@@ -518,6 +632,11 @@ chmod +x "$FAKE_CURL"
 
 run_expect_success
 run_expect_broken_product_page_failure
+run_expect_legacy_product_command_failure
+run_expect_wrong_theme_link_failure
+run_expect_noncanonical_install_url_failure
+run_expect_expected_plus_wrong_link_failure
+run_expect_invalid_theme_id_failure
 run_expect_local_url_guard_failure
 run_expect_missing_free_pack_url_failure
 run_expect_invalid_free_pack_url_failure

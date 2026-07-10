@@ -166,12 +166,11 @@ The top-level README, customer setup guide, Control Center README, and this read
 - what data is local, what reaches `app.vibetv.shop`, and what is sent to the device,
 - update flow and failure-report flow.
 
-The intended launch path is the hosted Control Center route:
-`https://app.vibetv.shop/install/<theme_id>`. Shopify theme products may still
-show the direct Terminal install command during staged rollout or rollback, but
-that is a fallback path. Before product pages point customers into Control
-Center, verify that the Agentic setup path works end to end on a customer-like
-Mac and that `/install/<theme_id>` preserves setup gating.
+The Shopify product launch path is the hosted Control Center route:
+`https://app.vibetv.shop/install/<theme_id>`. Every theme product must link to
+the matching URL-encoded theme ID and must not expose the old direct Terminal
+theme-install command. Verify that the Agentic setup path works end to end on a
+customer-like Mac and that `/install/<theme_id>` preserves setup gating.
 
 ## Customer Readiness Validation
 
@@ -251,7 +250,7 @@ What it checks:
 - hosted app HTTP reachability,
 - hosted app `/api/companion/latest` version status without installer or package URLs when `--app-url` is combined with `--release` or `--release-json`,
 - optional hosted app `/api/themes` source, selected free theme readiness, concrete `/install/<theme_id>` route reachability, and all visible free theme readiness when `--expect-catalog-source`, `--expect-theme-id`, or `--expect-all-free-themes-installable` is provided.
-- optional public Shopify product page readiness when `--expect-shopify-product-pages` or `--shopify-product-page <url> <theme_id>` is provided: during staged rollout, each checked product page must show `Copy install command` and the direct command `codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local`. During Control Center cutover, validate that product pages point to the matching `https://app.vibetv.shop/install/<theme_id>` route and that the hosted app route remains reachable and setup-gated. `--expect-shopify-product-pages` reads `productUrl` from `/api/themes`, or derives it from `handle` plus `--shopify-store-url` while deployments are rolling forward, and checks every free Shopify catalog item.
+- optional public Shopify product page readiness when `--expect-shopify-product-pages` or `--shopify-product-page <url> <theme_id>` is provided: each checked product page must contain the exact matching `https://app.vibetv.shop/install/<theme_id>` link. The checker rejects wrong or noncanonical theme links and the legacy `Copy install command` / `codexbar-display theme-pack install` path. `--expect-shopify-product-pages` reads `productUrl` from `/api/themes`, or derives it from `handle` plus `--shopify-store-url` while deployments are rolling forward, and checks every free Shopify catalog item.
 
 Use `--expect-catalog-source shopify` for the production customer app. Use `--expect-theme-id <theme_id>` for at least one public free Shopify theme before linking customers to product pages. That selected theme check requests `/install/<theme_id>` to prove the hosted app route exists. Add `--expect-all-free-themes-installable` before a collection-wide rollout. Those checks fail if a required theme is missing, paid, missing `themeId`, has no resolved `packUrl`, exposes a `packUrl` that is not an `http(s)` download URL, or if any free theme's `/install/<theme_id>` route is not reachable.
 
