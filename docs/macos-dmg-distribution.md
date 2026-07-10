@@ -22,12 +22,12 @@ VibeTV Control Center.app/
     Library/
       LaunchAgents/
         shop.vibetv.control-center.runtime.plist
+    Helpers/
+      codexbar-display
     MacOS/
       VibeTVControlCenter
     Resources/
       control-center/
-      companion/
-        codexbar-display
       VibeTVControlCenter.entitlements
 ```
 
@@ -42,7 +42,7 @@ VibeTV Control Center.app/
   `vibetv://open-control-center` launcher
 
 The Swift shell loads `http://127.0.0.1:47832/control-center` in `WKWebView`.
-When a bundled `Contents/Resources/companion/codexbar-display` exists, the shell
+When a bundled `Contents/Helpers/codexbar-display` exists, the shell
 uses this migration order:
 
 1. Require the signed app to run from `/Applications`, then validate the

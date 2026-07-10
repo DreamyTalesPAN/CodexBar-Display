@@ -189,7 +189,7 @@ dry_run() {
 dry-run: planned real-mode commands:
   curl https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
   security create-keychain / security import Developer ID Application certificate
-  codesign --force --options runtime --timestamp --sign <identity> "${APP_DIR}/Contents/Resources/companion/codexbar-display"
+  codesign --force --options runtime --timestamp --sign <identity> "${APP_DIR}/Contents/Helpers/codexbar-display"
   codesign --force --options runtime --timestamp --entitlements macos/VibeTVControlCenter/VibeTVControlCenter.entitlements --sign <identity> "${APP_DIR}"
   codesign --verify --deep --strict --verbose=2 "${APP_DIR}"
   syspolicy_check notary-submission "${APP_DIR}" (when available)
@@ -229,7 +229,7 @@ import_developer_id_intermediate() {
 
 sign_app_bundle() {
   local identity="$1"
-  local companion_binary="${APP_DIR}/Contents/Resources/companion/codexbar-display"
+  local companion_binary="${APP_DIR}/Contents/Helpers/codexbar-display"
   local authority signature_details signed_team_id
 
   if [[ -x "$companion_binary" ]]; then

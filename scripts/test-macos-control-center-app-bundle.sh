@@ -47,7 +47,10 @@ main() {
     || die "app executable is missing or not executable"
   [[ -d "${app}/Contents/Resources/control-center" ]] \
     || die "Control Center resource folder is missing"
-  assert_file "${app}/Contents/Resources/companion/BUNDLED_COMPANION.md"
+  [[ -x "${app}/Contents/Helpers/codexbar-display" ]] \
+    || die "bundled Companion helper is missing or not executable"
+  [[ ! -e "${app}/Contents/Resources/companion" ]] \
+    || die "Mach-O helpers must not be stored in the Resources directory"
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
   assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
 
@@ -96,7 +99,7 @@ with open(sys.argv[2], "rb") as f:
 
 expected_agent_values = {
     "Label": "shop.vibetv.control-center.runtime",
-    "BundleProgram": "Contents/Resources/companion/codexbar-display",
+    "BundleProgram": "Contents/Helpers/codexbar-display",
     "RunAtLoad": True,
     "KeepAlive": True,
     "ProcessType": "Background",
@@ -260,6 +263,11 @@ PY
 
   assert_contains "$sign_output" "codesign --force --options runtime" \
     "signing dry-run must show hardened-runtime codesign"
+  assert_contains "$sign_output" "${app}/Contents/Helpers/codexbar-display" \
+    "signing dry-run must sign the helper from the standard code directory"
+  if [[ "$sign_output" == *"Contents/Resources/companion"* ]]; then
+    die "signing dry-run must not treat Resources as a Mach-O code directory"
+  fi
   assert_contains "$sign_output" "xcrun notarytool submit" \
     "signing dry-run must show notarytool submission"
   assert_contains "$sign_output" "xcrun stapler staple" \

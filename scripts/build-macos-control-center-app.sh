@@ -200,20 +200,11 @@ copy_companion_binary() {
   fi
 
   if [[ "$DRY_RUN" == "1" ]]; then
-    cat > "${target_dir}/BUNDLED_COMPANION.md" <<EOF
-# Bundled Companion placeholder
-
-Real DMG builds must place the Darwin Companion binary here:
-
-  ${APP_NAME}.app/Contents/Resources/companion/${COMPANION_NAME}
-
-The native WebView shell starts that binary with:
-
-  ${COMPANION_NAME} daemon --transport wifi --target http://vibetv.local --interval 30s --api-addr 127.0.0.1:47832 --api-dev-origin http://127.0.0.1:47832
-
-The app registers this process as an app-managed LaunchAgent so display frames
-continue after the Control Center window or app exits and after future logins.
+    cat > "${target_dir}/${COMPANION_NAME}" <<'EOF'
+#!/usr/bin/env bash
+printf 'VibeTV Control Center dry-run companion\n'
 EOF
+    chmod 755 "${target_dir}/${COMPANION_NAME}"
     return 0
   fi
 
@@ -283,17 +274,18 @@ main() {
 
   local contents="${APP_DIR}/Contents"
   local macos_dir="${contents}/MacOS"
+  local helpers_dir="${contents}/Helpers"
   local resources_dir="${contents}/Resources"
   local launch_agents_dir="${contents}/Library/LaunchAgents"
 
   rm -rf "$APP_DIR"
-  mkdir -p "$macos_dir" "$resources_dir" "$launch_agents_dir"
+  mkdir -p "$macos_dir" "$helpers_dir" "$resources_dir" "$launch_agents_dir"
 
   write_info_plist "${contents}/Info.plist"
   build_executable "${macos_dir}/${EXECUTABLE_NAME}"
   copy_app_icon "$resources_dir"
   copy_control_center_static "${resources_dir}/control-center"
-  copy_companion_binary "${resources_dir}/companion"
+  copy_companion_binary "$helpers_dir"
   [[ -f "$RUNTIME_AGENT_PLIST" ]] || die "runtime LaunchAgent plist not found: ${RUNTIME_AGENT_PLIST}"
   cp "$RUNTIME_AGENT_PLIST" "${launch_agents_dir}/${RUNTIME_AGENT_PLIST_NAME}"
   cp "${ROOT}/macos/VibeTVControlCenter/VibeTVControlCenter.entitlements" "${resources_dir}/VibeTVControlCenter.entitlements"

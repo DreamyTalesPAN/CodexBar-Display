@@ -665,11 +665,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     private func bundledRuntimeResourcesAreValid() -> Bool {
-        guard let resourceURL = Bundle.main.resourceURL else {
-            return false
-        }
-
-        let binaryURL = resourceURL.appendingPathComponent("companion/codexbar-display")
+        let binaryURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers", isDirectory: true)
+            .appendingPathComponent("codexbar-display")
         let plistURL = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Library/LaunchAgents", isDirectory: true)
             .appendingPathComponent(runtimeLaunchAgentPlistName)

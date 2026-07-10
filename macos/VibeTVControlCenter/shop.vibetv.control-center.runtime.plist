@@ -5,7 +5,7 @@
     <key>Label</key>
     <string>shop.vibetv.control-center.runtime</string>
     <key>BundleProgram</key>
-    <string>Contents/Resources/companion/codexbar-display</string>
+    <string>Contents/Helpers/codexbar-display</string>
     <key>ProgramArguments</key>
     <array>
       <string>codexbar-display</string>
