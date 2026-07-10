@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CODEX_VALIDATION_SOURCE_SHA: "73eb6461621cf59efc9ab0325999ba3c8f22d61f"
+  CODEX_VALIDATION_SOURCE_SHA: "5d367e7619e4c13d9d509b75057069d315ef673e"
   CODEX_VALIDATION_VERSION: "1.0.42"
 
 jobs:
@@ -193,7 +193,7 @@ jobs:
             scripts/build-macos-control-center-app.sh
           verify_hash 2cb1c86cb6d45a3b93539861a25ad0298b60abb6138c3a737142a4dcfa724eba \
             scripts/build-macos-control-center-dmg.sh
-          verify_hash c67232b586049c6080a4fa992f1aa90054e73817e7500fbf86f2aeefcb135196 \
+          verify_hash 69eb6aa8d08e3eb6bb88efc6b4cd931a4d2270ac8b3c378b1fdb68e56e1523ee \
             scripts/verify-macos-control-center-dmg.sh
           verify_hash f4cb5afb06a2d0f12377492bb240e5b3edc23f64e106575d5fe8a2197d532ed7 \
             macos/VibeTVControlCenter/VibeTVControlCenter.entitlements
@@ -252,7 +252,7 @@ jobs:
           test "$(shasum -a 256 scripts/sign-notarize-macos-control-center.sh | awk '{print $1}')" = \
             d2c68b71bbbbb62af41804b8706a48646e4a578c898e8bf6d3496da0fa4de6b2
           test "$(shasum -a 256 scripts/verify-macos-control-center-dmg.sh | awk '{print $1}')" = \
-            c67232b586049c6080a4fa992f1aa90054e73817e7500fbf86f2aeefcb135196
+            69eb6aa8d08e3eb6bb88efc6b4cd931a4d2270ac8b3c378b1fdb68e56e1523ee
 
       - name: Sign, notarize, and staple DMG
         env:
