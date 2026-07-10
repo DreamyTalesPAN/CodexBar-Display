@@ -2096,6 +2096,12 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     .filter({ hasText: "Fixture Clippy Theme" });
   await clippyThemeRow.waitFor({ timeout: 10_000 });
   await clippyThemeRow.getByRole("button", { name: "Edit" }).click();
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll("button")).some(
+      (button) =>
+        button.textContent?.trim() === "Send to VibeTV" && !button.disabled,
+    ),
+  );
   assert(
     await page.getByRole("button", { name: "Send to VibeTV" }).isEnabled(),
     "Clippy's validated large static background should remain editable and installable",
