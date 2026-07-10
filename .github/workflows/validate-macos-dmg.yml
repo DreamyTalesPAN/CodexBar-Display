@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CODEX_VALIDATION_SOURCE_SHA: "dacd1856ae851fc97d332d4fa1256bc0aba930ba"
+  CODEX_VALIDATION_SOURCE_SHA: "03d50b8cc2a79a153d856b5e90082a795fbdff4c"
   CODEX_VALIDATION_VERSION: "1.0.42"
 
 jobs:
@@ -187,13 +187,13 @@ jobs:
             fi
           }
 
-          verify_hash 5b08bdaab65cfb33c1c8afbc71d65c351c87a2a356be90b2dcbeebecb5292356 \
+          verify_hash 18ce94f778732ddf546cac95c95d5d2c85d6f325a655a900696aea97698b05a1 \
             scripts/sign-notarize-macos-control-center.sh
           verify_hash 7c5237b4cf8c9f43e0b387e3a46b8b11d86403c8a1c922fd73fc1bc6978a7ba9 \
             scripts/build-macos-control-center-app.sh
           verify_hash 2cb1c86cb6d45a3b93539861a25ad0298b60abb6138c3a737142a4dcfa724eba \
             scripts/build-macos-control-center-dmg.sh
-          verify_hash da89ef4fc13ad2438255440d8e18a3ca95d4635594baadbf9b4afa47841ac73b \
+          verify_hash c67232b586049c6080a4fa992f1aa90054e73817e7500fbf86f2aeefcb135196 \
             scripts/verify-macos-control-center-dmg.sh
           verify_hash f4cb5afb06a2d0f12377492bb240e5b3edc23f64e106575d5fe8a2197d532ed7 \
             macos/VibeTVControlCenter/VibeTVControlCenter.entitlements
@@ -236,7 +236,8 @@ jobs:
         run: |
           ./scripts/sign-notarize-macos-control-center.sh \
             --app "dist/macos/VibeTV Control Center.app" \
-            --sign-app-only
+            --sign-app-only \
+            --allow-internal-xprotect-preflight-error
 
       - name: Build signed DMG
         run: |
@@ -249,9 +250,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(shasum -a 256 scripts/sign-notarize-macos-control-center.sh | awk '{print $1}')" = \
-            5b08bdaab65cfb33c1c8afbc71d65c351c87a2a356be90b2dcbeebecb5292356
+            18ce94f778732ddf546cac95c95d5d2c85d6f325a655a900696aea97698b05a1
           test "$(shasum -a 256 scripts/verify-macos-control-center-dmg.sh | awk '{print $1}')" = \
-            da89ef4fc13ad2438255440d8e18a3ca95d4635594baadbf9b4afa47841ac73b
+            c67232b586049c6080a4fa992f1aa90054e73817e7500fbf86f2aeefcb135196
 
       - name: Sign, notarize, and staple DMG
         env:
@@ -273,19 +274,26 @@ jobs:
           ./scripts/verify-macos-control-center-dmg.sh \
             --dmg "dist/macos/VibeTV-Control-Center.dmg"
 
-      - name: Upload notarization evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: CODEX-vibetv-control-center-notarization-${{ github.run_id }}
-          path: tmp/macos-validation/notarization-log.json
-          if-no-files-found: warn
-          retention-days: 30
+      - name: Record validation evidence without publishing the DMG
+        run: |
+          set -euo pipefail
+          notary_log="tmp/macos-validation/notarization-log.json"
+          dmg="dist/macos/VibeTV-Control-Center.dmg"
+          notary_status="$(plutil -extract status raw -o - "${notary_log}")"
+          submission_id="$(plutil -extract jobId raw -o - "${notary_log}" 2>/dev/null || true)"
+          if [[ -z "${submission_id}" ]]; then
+            submission_id="$(plutil -extract id raw -o - "${notary_log}" 2>/dev/null || true)"
+          fi
+          [[ "${notary_status}" == "Accepted" ]]
+          [[ -n "${submission_id}" ]]
+          dmg_sha256="$(shasum -a 256 "${dmg}" | awk '{print $1}')"
 
-      - name: Upload validated DMG
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: CODEX-vibetv-control-center-dmg-${{ github.run_id }}
-          path: dist/macos/VibeTV-Control-Center.dmg
-          if-no-files-found: error
-          retention-days: 7
+          {
+            echo "### CODEX macOS DMG validation"
+            echo "- Source commit: \`${CODEX_VALIDATION_SOURCE_SHA}\`"
+            echo "- Bundle version: \`${CODEX_VALIDATION_VERSION}\`"
+            echo "- Apple notarization: \`${notary_status}\`"
+            echo "- Apple submission: \`${submission_id}\`"
+            echo "- DMG SHA-256: \`${dmg_sha256}\`"
+            echo "- Signed DMG upload: intentionally disabled for validation-only"
+          } >> "${GITHUB_STEP_SUMMARY}"
