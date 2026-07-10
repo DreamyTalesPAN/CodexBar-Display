@@ -46,6 +46,7 @@ type PairTokenStore func(target, token string) error
 
 type Options struct {
 	PackURL             string
+	PackBytes           []byte
 	CatalogURL          string
 	ThemeID             string
 	Target              string
@@ -121,11 +122,20 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if out == nil {
 		out = io.Discard
 	}
-	resolvedPack, err := ResolveSource(strings.TrimSpace(opts.PackURL), strings.TrimSpace(opts.CatalogURL), strings.TrimSpace(opts.ThemeID))
-	if err != nil {
-		return Result{}, err
+	resolvedPack := "local upload"
+	var pack *themepack.Pack
+	var err error
+	if opts.PackBytes != nil {
+		if strings.TrimSpace(opts.PackURL) != "" || strings.TrimSpace(opts.CatalogURL) != "" {
+			return Result{}, errors.New("use either pack bytes or packUrl/catalogUrl")
+		}
+		pack, err = themepack.LoadZipBytes(opts.PackBytes)
+	} else {
+		resolvedPack, err = ResolveSource(strings.TrimSpace(opts.PackURL), strings.TrimSpace(opts.CatalogURL), strings.TrimSpace(opts.ThemeID))
+		if err == nil {
+			pack, err = themepack.Load(resolvedPack)
+		}
 	}
-	pack, err := themepack.Load(resolvedPack)
 	if err != nil {
 		return Result{}, err
 	}
@@ -135,7 +145,11 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	}
 	fmt.Fprintf(out, "Preparing theme: %s\n", themeName)
 	if opts.Verbose {
-		fmt.Fprintf(out, "Theme source: %s\n", stripTargetCredentials(resolvedPack))
+		themeSource := resolvedPack
+		if opts.PackBytes == nil {
+			themeSource = stripTargetCredentials(resolvedPack)
+		}
+		fmt.Fprintf(out, "Theme source: %s\n", themeSource)
 	}
 
 	client := opts.HTTPClient

@@ -1,6 +1,7 @@
 package themeinstall
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -32,6 +33,65 @@ func TestResolveSourceRejectsPackAndCatalog(t *testing.T) {
 	_, err := ResolveSource("https://example.com/theme.zip", "https://example.com/catalog.json", "")
 	if err == nil {
 		t.Fatal("expected error for packUrl plus catalogUrl")
+	}
+}
+
+func TestInstallLoadsInMemoryPackBytesBeforeDeviceAccess(t *testing.T) {
+	_, err := Install(context.Background(), Options{
+		PackBytes: []byte("not a zip"),
+		Target:    "http://127.0.0.1:1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "open theme pack zip") {
+		t.Fatalf("expected malformed in-memory ZIP error, got %v", err)
+	}
+}
+
+func TestInstallUsesValidInMemoryPackBytes(t *testing.T) {
+	withFastActivationRetries(t)
+	packBytes := zipMinimalThemePack(t, writeMinimalThemePack(t))
+	const activePath = "/themes/u/synth.json"
+	currentActivePath := "/themes/u/claude.json"
+	server := themeInstallDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/theme/active":
+			currentActivePath = activePath
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			writeThemeHealth(t, w, currentActivePath)
+		}
+	})
+	defer server.Close()
+
+	var out bytes.Buffer
+	result, err := Install(context.Background(), Options{
+		PackBytes:          packBytes,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		Out:                &out,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame:     testLiveFrame,
+		Verbose:            true,
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
+	}
+	if result.ThemeID != "synthwave" || result.ActivePath != activePath {
+		t.Fatalf("unexpected in-memory install result: %+v", result)
+	}
+	if !strings.Contains(out.String(), "Theme source: local upload") {
+		t.Fatalf("expected local upload source log, got:\n%s", out.String())
+	}
+}
+
+func TestInstallRejectsAmbiguousInMemoryPackSource(t *testing.T) {
+	_, err := Install(context.Background(), Options{
+		PackBytes: []byte("not a zip"),
+		PackURL:   "https://example.com/theme.zip",
+		Target:    "http://127.0.0.1:1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "either pack bytes") {
+		t.Fatalf("expected ambiguous pack source error, got %v", err)
 	}
 }
 
@@ -578,6 +638,29 @@ func writeMinimalThemePack(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+func zipMinimalThemePack(t *testing.T, dir string) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for _, name := range []string{"manifest.json", "theme.json"} {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return append([]byte(nil), buffer.Bytes()...)
 }
 
 func themeInstallDeviceServer(t *testing.T, handle func(http.ResponseWriter, *http.Request)) *httptest.Server {

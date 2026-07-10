@@ -123,6 +123,8 @@ const MAX_GIF_HEIGHT = 80;
 const MAX_GIF_PIXELS = MAX_GIF_WIDTH * MAX_GIF_HEIGHT;
 const MAX_SPRITE_FRAME_WIDTH = 64;
 const MAX_SPRITE_FRAME_HEIGHT = 64;
+const MAX_STATIC_SPRITE_FRAME_WIDTH = DISPLAY_SIZE;
+const MAX_STATIC_SPRITE_FRAME_HEIGHT = DISPLAY_SIZE;
 const MAX_SPRITE_FRAMES = 32;
 const MAX_SPRITE_TOTAL_PIXELS = 32768;
 const DEFAULT_SPRITE_FPS = 8;
@@ -710,8 +712,18 @@ function validatePrimitive(
       const width = sprite?.width ?? primitive.width ?? 0;
       const height = sprite?.height ?? primitive.height ?? 0;
       const frames = sprite?.frameCount ?? primitive.frameCount ?? 1;
-      if (width > MAX_SPRITE_FRAME_WIDTH || height > MAX_SPRITE_FRAME_HEIGHT) {
-        errors.push(`${prefix}: sprite frames must stay within ${MAX_SPRITE_FRAME_WIDTH}x${MAX_SPRITE_FRAME_HEIGHT}.`);
+      const maxFrameWidth =
+        sprite?.kind === "CBI1"
+          ? MAX_STATIC_SPRITE_FRAME_WIDTH
+          : MAX_SPRITE_FRAME_WIDTH;
+      const maxFrameHeight =
+        sprite?.kind === "CBI1"
+          ? MAX_STATIC_SPRITE_FRAME_HEIGHT
+          : MAX_SPRITE_FRAME_HEIGHT;
+      if (width > maxFrameWidth || height > maxFrameHeight) {
+        errors.push(
+          `${prefix}: sprite frames must stay within ${maxFrameWidth}x${maxFrameHeight}.`,
+        );
       }
       if (width * height * frames > MAX_SPRITE_TOTAL_PIXELS) {
         errors.push(
@@ -736,7 +748,13 @@ function validatePrimitive(
   }
 }
 
-function spriteMetadata(raw: string): { width: number; height: number; frameCount: number; fps: number } | null {
+function spriteMetadata(raw: string): {
+  kind: "CBI1" | "CBA1";
+  width: number;
+  height: number;
+  frameCount: number;
+  fps: number;
+} | null {
   const lines = raw
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -770,7 +788,7 @@ function spriteMetadata(raw: string): { width: number; height: number; frameCoun
   if (rows.length !== frameCount * height) {
     return null;
   }
-  return { width, height, frameCount, fps };
+  return { kind, width, height, frameCount, fps };
 }
 
 export function referencedThemeAssetPaths(spec: ThemeStudioSpec): string[] {

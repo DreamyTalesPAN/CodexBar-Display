@@ -9,7 +9,8 @@ import {
   useSyncExternalStore,
 } from "react";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import type { ThemeCatalogResponse } from "@/lib/themes";
+import { buildThemePack } from "@/lib/theme-studio";
+import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
@@ -41,7 +42,11 @@ import { OverviewScreen } from "./overview-screen";
 import { SetupScreen } from "./setup-screen";
 import { SettingsScreen } from "./settings-screen";
 import { ThemeLibraryScreen } from "./theme-library-screen";
-import { ThemeStudioScreen } from "./theme-studio-screen";
+import {
+  clearRetiredAiThemeStorage,
+  ThemeStudioScreen,
+  type ThemeStudioInstallPayload,
+} from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
 
@@ -51,6 +56,10 @@ const LOCAL_CONTROL_CENTER_OPENED_STORAGE_KEY =
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const LOCAL_APP_LAUNCH_WAIT_MS = 1500;
+const MAC_APP_UPDATE_POLL_INTERVAL_MS = 500;
+const MAC_APP_UPDATE_MAX_POLLS = 960;
+const MAC_APP_UPDATE_RECONNECT_GRACE_MS = 45_000;
+const MAC_APP_UPDATE_INITIAL_GRACE_MS = 60_000;
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
@@ -77,6 +86,10 @@ type InstallResponse = {
   job?: ThemeInstallJob;
   result?: ThemeInstallResult;
   logs?: string[];
+};
+
+type InstallableTheme = Pick<ThemeProduct, "packUrl" | "themeId" | "title"> & {
+  packBytes?: Uint8Array;
 };
 
 type ThemeInstallJob = {
@@ -188,6 +201,10 @@ type FirmwareCheckOptions = {
 type RuntimeSurface = "unknown" | "hosted-setup" | "local-control-center";
 
 export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props) {
+  useEffect(() => {
+    clearRetiredAiThemeStorage();
+  }, []);
+
   const initialTheme = useMemo(
     () =>
       initialThemeId
@@ -1088,9 +1105,11 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
   );
 
   const installTheme = useCallback(
-    async (theme = selectedTheme) => {
+    async (
+      theme: InstallableTheme | undefined = selectedTheme,
+    ): Promise<boolean> => {
       if (!theme) {
-        return;
+        return false;
       }
       setBusyAction("install");
       setLastInstall(undefined);
@@ -1138,9 +1157,20 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
         tone: "unknown",
       });
       try {
-        const payload = await runCompanion<InstallResponse>(
-          "/v1/themes/install",
-          {
+        const uploadedPack = theme.packBytes;
+        let requestPath = "/v1/themes/install";
+        let requestInit: RequestInit;
+        if (uploadedPack) {
+          const body = new ArrayBuffer(uploadedPack.byteLength);
+          new Uint8Array(body).set(uploadedPack);
+          requestPath += "?async=true";
+          requestInit = {
+            method: "POST",
+            body,
+            headers: { "Content-Type": "application/zip" },
+          };
+        } else {
+          requestInit = {
             method: "POST",
             body: JSON.stringify({
               themeId: theme.themeId,
@@ -1148,7 +1178,11 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
               skipFirmwareUpdate: true,
               async: true,
             }),
-          },
+          };
+        }
+        const payload = await runCompanion<InstallResponse>(
+          requestPath,
+          requestInit,
         );
         let result = payload.result;
         let logs = customerInstallLogs(payload.logs, initialLogs);
@@ -1203,6 +1237,7 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
           tone: "ready",
         });
         await loadSettings();
+        return true;
       } catch (error) {
         const normalized = normalizeCaughtError(
           error,
@@ -1230,6 +1265,7 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
           detail: normalized.nextAction,
           tone: "attention",
         });
+        return false;
       } finally {
         setBusyAction(null);
       }
@@ -1242,6 +1278,22 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
       runCompanion,
       selectedTheme,
     ],
+  );
+
+  const installCustomTheme = useCallback(
+    async ({
+      assets,
+      packName,
+      spec,
+    }: ThemeStudioInstallPayload): Promise<boolean> => {
+      const pack = buildThemePack(spec, packName, assets);
+      return installTheme({
+        packBytes: pack.zipBytes,
+        themeId: pack.manifest.id,
+        title: pack.manifest.name,
+      });
+    },
+    [installTheme],
   );
 
   useEffect(() => {
@@ -1263,6 +1315,11 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
   }, [checkCompanion, hostedSetup, setupPreviewStep]);
 
   useEffect(() => {
+    const needsKnownTargetRepair =
+      Boolean(device?.target) && !deviceSetupIsUsable(device);
+    const needsMissingTargetRepair =
+      !device?.target &&
+      (deviceState === "unknown" || deviceState === "offline");
     if (
       hostedSetup ||
       setupPreviewStep ||
@@ -1270,8 +1327,7 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
       activeTab === "theme-studio" ||
       busyAction ||
       companionStatus !== "online" ||
-      !device?.target ||
-      deviceSetupIsUsable(device) ||
+      (!needsKnownTargetRepair && !needsMissingTargetRepair) ||
       isLocalNetworkAccessError(lastError)
     ) {
       return;
@@ -1283,6 +1339,7 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
     activeTab,
     companionStatus,
     device,
+    deviceState,
     hostedSetup,
     lastError,
     repairConnection,
@@ -1916,11 +1973,11 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
 
   const disabledTabs: ActiveTab[] = setupComplete
     ? imageNeedsReload
-      ? ["settings", "updates"]
+      ? ["settings", "theme-library", "updates"]
       : []
     : usageAvailable
-      ? ["overview", "settings", "updates", "logs"]
-      : ["overview", "usage", "settings", "updates", "logs"];
+      ? ["overview", "settings", "theme-library", "updates", "logs"]
+      : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
   const activeShellTab = disabledTabs.includes(activeTab)
     ? setupComplete
       ? "overview"
@@ -2076,7 +2133,9 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
         />
       ) : null}
 
-      {activeShellTab === "theme-studio" ? <ThemeStudioScreen /> : null}
+      {activeShellTab === "theme-studio" ? (
+        <ThemeStudioScreen onInstallTheme={installCustomTheme} />
+      ) : null}
 
       {activeShellTab === "theme-library" ? (
         <ThemeLibraryScreen
@@ -2086,6 +2145,7 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
           installStatus={themeInstallStatus}
           catalogIssue={catalog.issue}
           lastInstall={lastInstall}
+          onInstallCustomTheme={installCustomTheme}
           onInstallTheme={installTheme}
           onSelectTheme={setSelectedThemeId}
           installEntry={Boolean(initialThemeId)}
@@ -2257,20 +2317,20 @@ async function pollMacAppUpdateJob({
   runCompanion: RunCompanion;
   targetVersion?: string;
 }): Promise<MacAppUpdateJob> {
-  for (let attempt = 0; attempt < 960; attempt += 1) {
-    await delay(500);
+  const startedAt = Date.now();
+  let disconnectedAt: number | null = null;
+  for (let attempt = 0; attempt < MAC_APP_UPDATE_MAX_POLLS; attempt += 1) {
+    await delay(MAC_APP_UPDATE_POLL_INTERVAL_MS);
+    let payload: { job: MacAppUpdateJob };
     try {
-      const payload = await runCompanion<{ job: MacAppUpdateJob }>(
+      payload = await runCompanion<{ job: MacAppUpdateJob }>(
         `/v1/mac-app/update/status?jobId=${encodeURIComponent(jobId)}`,
         undefined,
         { preserveLastError: true },
       );
-      applyUpdateJob(payload.job);
-      if (payload.job.phase === "complete" || payload.job.phase === "error") {
-        return payload.job;
-      }
-      continue;
     } catch {
+      disconnectedAt = disconnectedAt ?? Date.now();
+      applyUpdateJob(reconnectingMacAppUpdateJob(jobId));
       const reconnected = await readMacAppVersion(runCompanion);
       if (
         reconnected &&
@@ -2285,14 +2345,68 @@ async function pollMacAppUpdateJob({
           result: { version: normalizeVersion(reconnected) },
         };
       }
+      if (Date.now() - disconnectedAt >= MAC_APP_UPDATE_RECONNECT_GRACE_MS) {
+        throw macAppUpdateManualStepError(
+          "mac_app_update_reconnect_timeout",
+          "Mac App update needs attention.",
+        );
+      }
+      continue;
+    }
+    disconnectedAt = null;
+    applyUpdateJob(payload.job);
+    if (payload.job.phase === "complete" || payload.job.phase === "error") {
+      return payload.job;
+    }
+    if (
+      macAppUpdateStillPreparing(payload.job) &&
+      Date.now() - startedAt >= MAC_APP_UPDATE_INITIAL_GRACE_MS
+    ) {
+      throw macAppUpdateManualStepError(
+        "mac_app_update_start_timeout",
+        "Mac App update did not start.",
+      );
     }
   }
-  throw {
-    code: "mac_app_update_timeout",
-    message: "Mac App update is taking longer than expected.",
+  throw macAppUpdateManualStepError(
+    "mac_app_update_timeout",
+    "Mac App update is taking longer than expected.",
+  );
+}
+
+function reconnectingMacAppUpdateJob(jobId: string): MacAppUpdateJob {
+  return {
+    id: jobId,
+    phase: "installing",
+    message: "Restarting Mac App.",
+    progress: 85,
+    logs: [
+      "Preparing Mac App update.",
+      "Installing Mac App.",
+      "Restarting Mac App.",
+    ],
+  };
+}
+
+function macAppUpdateStillPreparing(job: MacAppUpdateJob): boolean {
+  const logs = customerMacAppUpdateLogs(job.logs);
+  return (
+    clampProgress(job.progress) <= 5 &&
+    logs.length === 1 &&
+    logs[0] === "Preparing Mac App update."
+  );
+}
+
+function macAppUpdateManualStepError(
+  code: string,
+  message: string,
+): ApiError {
+  return {
+    code,
+    message,
     nextAction:
       "Copy the update command and run it in Terminal, then try again.",
-  } satisfies ApiError;
+  };
 }
 
 async function readMacAppVersion(runCompanion: RunCompanion): Promise<string> {

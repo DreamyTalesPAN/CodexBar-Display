@@ -34,6 +34,14 @@ npm run test:customer-smoke
 
 Run `npm run test:customer-flows` for state changes, navigation/action changes, API behavior changes, or before claiming merge readiness.
 
+For Theme Studio changes, the focused safety flow checks the local render-pack
+path, the Companion ZIP install route, the absence of direct VibeTV writes, and
+the disabled AI surface:
+
+```bash
+npm run test:theme-studio-safety
+```
+
 Build the static Control Center bundle that gets embedded into the Mac App release binary:
 
 ```bash

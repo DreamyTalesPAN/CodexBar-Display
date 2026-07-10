@@ -14,7 +14,6 @@ import {
   RefreshCw,
   Save,
   Send,
-  Sparkles,
   Square,
   Trash2,
   Type,
@@ -41,19 +40,11 @@ import {
   type ThemeStudioSpec,
 } from "@/lib/theme-studio";
 import {
-  readReadyAiThemeProviderSession,
-  type AiThemeDraft,
-} from "@/lib/ai-theme";
-import {
   ThemeSpecPreview,
   type ThemeRenderPack,
 } from "./live-vibetv-preview";
 import { ControlCenterButton } from "./control-center-button";
-import {
-  AiThemeChatBox,
-  AiThemePanel,
-  type AiThemeVerifiedSession,
-} from "./ai-theme-panel";
+import { themeRenderPackUrl } from "./control-center-runtime";
 
 type StudioStatus = {
   tone: "ready" | "attention" | "unknown";
@@ -115,7 +106,6 @@ type FieldKey = keyof ThemeStudioPrimitive;
 
 const DISPLAY_SIZE = 240;
 const COLOR_FALLBACK = "#000000";
-const DEFAULT_DEVICE_ADDRESS = "http://vibetv.local";
 const DEFAULT_GIF_SIZE = 80;
 const DEFAULT_SPRITE_FPS = 8;
 const MAX_SPRITE_FRAME_WIDTH = 64;
@@ -139,6 +129,7 @@ const DEFAULT_FRAME = {
   time: "12:00",
   date: "03.07",
 };
+const RETIRED_AI_THEME_STORAGE_PREFIX = "vibetv.controlCenter.aiTheme";
 
 const VARIABLE_TOKENS = [
   { label: "Label", token: "{label}" },
@@ -167,15 +158,23 @@ export type ThemeStudioSavePayload = {
   spec: ThemeStudioSpec;
 };
 
+export type ThemeStudioInstallPayload = {
+  assets: Record<string, ThemeStudioAsset>;
+  packName: string;
+  spec: ThemeStudioSpec;
+};
+
 export type ThemeStudioScreenProps = {
   initialTheme?: ThemeStudioEditorTheme;
   onBackToLibrary?: () => void;
+  onInstallTheme?: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
   onSaveToLibrary?: (payload: ThemeStudioSavePayload) => void;
 };
 
 export function ThemeStudioScreen({
   initialTheme,
   onBackToLibrary,
+  onInstallTheme,
   onSaveToLibrary,
 }: ThemeStudioScreenProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -192,14 +191,8 @@ export function ThemeStudioScreen({
   );
   const [jsonDirty, setJsonDirty] = useState(false);
   const [, setSavedAt] = useState("");
-  const [deviceAddress, setDeviceAddress] = useState(DEFAULT_DEVICE_ADDRESS);
-  const [deviceToken, setDeviceToken] = useState("");
   const [loadingPreset, setLoadingPreset] = useState(false);
   const [sending, setSending] = useState(false);
-  const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
-  const [aiSession, setAiSession] = useState<AiThemeVerifiedSession | null>(() =>
-    aiThemeSessionFromStoredSettings(),
-  );
   const [jsonStatus, setJsonStatus] = useState<StudioStatus>({
     tone: "unknown",
     message: "Draft ready.",
@@ -367,15 +360,6 @@ export function ThemeStudioScreen({
     });
   }
 
-  function applyAiDraft(draft: AiThemeDraft) {
-    replaceLoadedTheme({
-      assets: { ...assets, ...draft.assets },
-      packName: draft.packName,
-      spec: draft.spec,
-      status: { tone: "ready", message: "AI draft applied." },
-    });
-  }
-
   function selectPrimitiveIndex(index: number, additive = false) {
     setSelectedIndices((current) => {
       if (index < 0 || index >= spec.primitives.length) {
@@ -424,7 +408,7 @@ export function ThemeStudioScreen({
   ) {
     setLoadingPreset(true);
     try {
-      const response = await fetch(`/api/theme-pack/${encodeURIComponent(themeId)}`);
+      const response = await fetch(themeRenderPackUrl(themeId));
       if (!response.ok) {
         throw new Error("Theme could not be opened.");
       }
@@ -748,15 +732,10 @@ export function ThemeStudioScreen({
       return;
     }
 
-    let origin: string;
-    try {
-      origin = normalizeDeviceAddress(deviceAddress);
-      setDeviceAddress(origin);
-    } catch (error) {
+    if (!onInstallTheme) {
       setDeviceStatus({
         tone: "attention",
-        message:
-          error instanceof Error ? error.message : "Check the VibeTV address.",
+        message: "Open Theme Studio in the local Mac App to send this theme.",
       });
       return;
     }
@@ -767,44 +746,17 @@ export function ThemeStudioScreen({
       message: "Sending theme after your click.",
     });
     try {
-      for (const assetPath of referencedAssets) {
-        const asset = assets[assetPath];
-        if (!asset) {
-          throw new Error(`${assetPath} is not loaded.`);
-        }
-        await uploadDeviceAsset(origin, deviceToken, assetPath, asset);
-      }
-
-      await uploadDeviceAsset(origin, deviceToken, checked.themeSpecPath, {
-        contentType: "application/json",
-        data: deviceThemeSpecJson(spec),
-        encoding: "text",
+      const installed = await onInstallTheme({
+        assets,
+        packName,
+        spec,
       });
-
-      const activation = await deviceWrite(origin, deviceToken, "/theme/active", {
-        body: JSON.stringify({ path: checked.themeSpecPath }),
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        method: "POST",
-      });
-      if (
-        activation.type !== "opaque" &&
-        [404, 405, 501].includes(activation.status)
-      ) {
-        await postDeviceFrame(origin, deviceToken, {
-          ...buildLiveFramePayload(spec),
-          themeSpec: JSON.parse(deviceThemeSpecJson(spec)) as Record<string, unknown>,
-        });
-        setDeviceStatus({
-          tone: "ready",
-          message: "Theme sent with the older display format.",
-        });
-        return;
+      if (!installed) {
+        throw new Error("Theme install needs attention. Check the install status.");
       }
-      await assertDeviceResponse(activation, "VibeTV did not accept the theme");
-      await postDeviceFrame(origin, deviceToken, buildLiveFramePayload(spec));
       setDeviceStatus({
         tone: "ready",
-        message: "Theme sent to VibeTV.",
+        message: "Theme installed through the Mac App.",
       });
     } catch (error) {
       setDeviceStatus({
@@ -1053,28 +1005,14 @@ export function ThemeStudioScreen({
                   ) : null}
                 </section>
 
-                <section className="grid gap-3">
-                  <PanelTitle icon={<Send size={16} aria-hidden />} title="Device" />
-                  <TextField
-                    label="VibeTV address"
-                    value={deviceAddress}
-                    onChange={setDeviceAddress}
+                {showDeviceStatus ? (
+                  <StatusLine
+                    icon={<Send size={16} aria-hidden />}
+                    tone={deviceStatus.tone}
+                    title="VibeTV"
+                    detail={deviceStatus.message}
                   />
-                  <TextField
-                    label="Pairing code"
-                    type="password"
-                    value={deviceToken}
-                    onChange={setDeviceToken}
-                  />
-                  {showDeviceStatus ? (
-                    <StatusLine
-                      icon={<Send size={16} aria-hidden />}
-                      tone={deviceStatus.tone}
-                      title="VibeTV"
-                      detail={deviceStatus.message}
-                    />
-                  ) : null}
-                </section>
+                ) : null}
 
                 <section className="grid gap-3">
                   <PanelTitle icon={<Code2 size={16} aria-hidden />} title="JSON" />
@@ -1154,26 +1092,6 @@ export function ThemeStudioScreen({
               selectedIndices={visibleSelectedIndices}
               spec={spec}
             />
-            {aiSession ? (
-              <AiThemeChatBox
-                key={aiSession.verifiedAt}
-                baseAssets={assets}
-                basePackName={packName}
-                baseSpec={spec}
-                onApply={applyAiDraft}
-                onChangeKey={() => setAiBuilderOpen(true)}
-                session={aiSession}
-              />
-            ) : (
-              <button
-                className="mt-8 flex min-h-16 w-full max-w-[720px] items-center justify-center gap-3 border border-[#CCFF00] bg-[#CCFF00] px-6 text-base font-black text-[#1B1B1B] transition hover:border-[#ABD600] hover:bg-[#ABD600]"
-                onClick={() => setAiBuilderOpen(true)}
-                type="button"
-              >
-                <Sparkles size={20} aria-hidden />
-                <span>Generate with AI</span>
-              </button>
-            )}
           </main>
 
           <aside className="order-3 grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4">
@@ -1262,13 +1180,6 @@ export function ThemeStudioScreen({
         ref={spriteInputRef}
         type="file"
       />
-      {aiBuilderOpen ? (
-        <AiThemePanel
-          modal
-          onClose={() => setAiBuilderOpen(false)}
-          onVerified={setAiSession}
-        />
-      ) : null}
     </div>
   );
 }
@@ -2079,6 +1990,23 @@ function PanelTitle({ icon, title }: { icon: ReactNode; title: string }) {
   );
 }
 
+export function clearRetiredAiThemeStorage() {
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith(RETIRED_AI_THEME_STORAGE_PREFIX)) {
+        keys.push(key);
+      }
+    }
+    for (const key of keys) {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Storage can be unavailable in hardened browser modes. The AI feature stays absent.
+  }
+}
+
 function readDraft(): ThemeStudioDraft | null {
   try {
     const raw = window.localStorage.getItem(THEME_STUDIO_DRAFT_STORAGE_KEY);
@@ -2767,140 +2695,6 @@ function primitiveTitle(primitive: ThemeStudioPrimitive): string {
     return `${primitive.width ?? 0}x${primitive.height ?? 0}`;
   }
   return primitive.color || "Rect";
-}
-
-function buildLiveFramePayload(spec: ThemeStudioSpec): Record<string, unknown> {
-  const payload: Record<string, unknown> = { ...DEFAULT_FRAME };
-  const bindings = usedBindings(spec);
-  if (!bindings.has("activity")) {
-    delete payload.activity;
-  }
-  if (!bindings.has("sessionTokens")) {
-    delete payload.sessionTokens;
-  }
-  if (!bindings.has("weekTokens")) {
-    delete payload.weekTokens;
-  }
-  if (!bindings.has("totalTokens")) {
-    delete payload.totalTokens;
-  }
-  return payload;
-}
-
-function usedBindings(spec: ThemeStudioSpec): Set<string> {
-  const bindings = new Set<string>();
-  for (const primitive of spec.primitives) {
-    if (primitive.binding) {
-      bindings.add(primitive.binding);
-    }
-    for (const match of (primitive.text || "").matchAll(/\{([a-zA-Z0-9_-]+)\}/g)) {
-      bindings.add(match[1]);
-    }
-  }
-  return bindings;
-}
-
-async function uploadDeviceAsset(
-  origin: string,
-  token: string,
-  path: string,
-  asset: ThemeStudioAsset,
-) {
-  const body = new FormData();
-  body.append("asset", themeStudioAssetBlob(asset), assetFileName(path));
-  const response = await deviceWrite(
-    origin,
-    token,
-    `/assets?path=${encodeURIComponent(path)}`,
-    {
-      body,
-      method: "POST",
-    },
-  );
-  await assertDeviceResponse(response, `${assetFileName(path)} was not accepted`);
-}
-
-async function postDeviceFrame(
-  origin: string,
-  token: string,
-  payload: Record<string, unknown>,
-) {
-  const response = await deviceWrite(origin, token, "/frame", {
-    body: JSON.stringify(payload),
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    method: "POST",
-  });
-  await assertDeviceResponse(response, "VibeTV did not accept the preview frame");
-}
-
-async function deviceWrite(
-  origin: string,
-  token: string,
-  path: string,
-  init: RequestInit,
-): Promise<Response> {
-  const headers = new Headers(init.headers);
-  if (token.trim()) {
-    headers.set("X-VibeTV-Token", token.trim());
-  }
-  return fetchWithCorsFallback(`${origin}${path}`, {
-    ...init,
-    headers,
-  });
-}
-
-async function fetchWithCorsFallback(
-  url: string,
-  init: RequestInit,
-): Promise<Response> {
-  try {
-    return await fetch(url, { ...init, mode: "cors" });
-  } catch {
-    return fetch(url, { ...init, mode: "no-cors" });
-  }
-}
-
-async function assertDeviceResponse(response: Response, fallback: string) {
-  if (response.type === "opaque" || response.ok) {
-    return;
-  }
-  const detail = (await response.text().catch(() => "")).trim();
-  const suffix = detail ? `: ${detail}` : "";
-  if (response.status === 401 || response.status === 403) {
-    throw new Error(`${fallback}. Pairing code may be missing.`);
-  }
-  if (response.status === 413) {
-    throw new Error(`${fallback}. Theme is too large.`);
-  }
-  throw new Error(`${fallback} (${response.status})${suffix}.`);
-}
-
-function themeStudioAssetBlob(asset: ThemeStudioAsset): Blob {
-  if (asset.encoding === "text") {
-    return new Blob([asset.data], { type: asset.contentType });
-  }
-  const binary = window.atob(asset.data);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return new Blob([bytes], { type: asset.contentType });
-}
-
-function normalizeDeviceAddress(value: string): string {
-  const withProtocol = /^https?:\/\//i.test(value.trim())
-    ? value.trim()
-    : `http://${value.trim()}`;
-  const url = new URL(withProtocol);
-  if (!url.hostname) {
-    throw new Error("Check the VibeTV address.");
-  }
-  return url.origin;
-}
-
-function aiThemeSessionFromStoredSettings(): AiThemeVerifiedSession | null {
-  const session = readReadyAiThemeProviderSession();
-  return session ? { ...session, verifiedAt: Date.now() } : null;
 }
 
 function assetFileName(path: string): string {
