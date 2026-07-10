@@ -32,6 +32,7 @@ import {
 import {
   ThemeStudioScreen,
   type ThemeStudioEditorTheme,
+  type ThemeStudioInstallPayload,
   type ThemeStudioSavePayload,
 } from "./theme-studio-screen";
 
@@ -113,7 +114,8 @@ export type ThemeLibraryScreenProps = {
   requestedThemeId?: string;
   storefrontConfigured: boolean;
   onSelectTheme: (themeId: string) => void;
-  onInstallTheme: (theme: ThemeProduct) => Promise<void> | void;
+  onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
+  onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
 };
 
 export function ThemeLibraryScreen({
@@ -129,6 +131,7 @@ export function ThemeLibraryScreen({
   companionStatus,
   storefrontConfigured,
   themeInstallEnabled,
+  onInstallCustomTheme,
   onSelectTheme,
   onInstallTheme,
 }: ThemeLibraryScreenProps) {
@@ -277,15 +280,10 @@ export function ThemeLibraryScreen({
 
     setPreparingInstallThemeId(item.themeId);
     try {
-      const payload = await prepareCustomThemePack(item.custom);
-      await onInstallTheme({
-        id: `custom:${item.custom.id}`,
-        isFree: true,
-        packUrl: payload.packUrl,
-        priceLabel: "Custom",
-        source: "fallback",
-        themeId: payload.themeId || item.themeId,
-        title: payload.name || item.title,
+      await onInstallCustomTheme({
+        assets: item.custom.draft.assets || {},
+        packName: item.custom.draft.packName,
+        spec: item.custom.draft.spec,
       });
     } catch (error) {
       setLibraryError(
@@ -301,6 +299,7 @@ export function ThemeLibraryScreen({
       <ThemeStudioScreen
         initialTheme={editingTheme}
         onBackToLibrary={() => setEditingTheme(null)}
+        onInstallTheme={onInstallCustomTheme}
         onSaveToLibrary={saveThemeFromEditor}
       />
     );
@@ -1202,7 +1201,7 @@ async function fetchThemePackForEditing(themeId: string): Promise<{
   name?: string;
   spec: unknown;
 }> {
-  const response = await fetch(`/api/theme-pack/${encodeURIComponent(themeId)}`);
+  const response = await fetch(themeRenderPackUrl(themeId));
   if (!response.ok) {
     throw new Error("Theme could not be opened.");
   }
@@ -1215,37 +1214,6 @@ async function fetchThemePackForEditing(themeId: string): Promise<{
     throw new Error("Theme could not be opened.");
   }
   return { assets: payload.assets || {}, name: payload.name, spec: payload.spec };
-}
-
-async function prepareCustomThemePack(theme: UserThemeRecord): Promise<{
-  name?: string;
-  packUrl: string;
-  themeId?: string;
-}> {
-  const response = await fetch("/api/custom-theme-pack", {
-    body: JSON.stringify({
-      assets: theme.draft.assets || {},
-      packName: theme.draft.packName,
-      spec: theme.draft.spec,
-    }),
-    headers: { "Content-Type": "application/json" },
-    method: "POST",
-  });
-  const payload = (await response.json()) as {
-    error?: string;
-    name?: string;
-    ok?: boolean;
-    packUrl?: string;
-    themeId?: string;
-  };
-  if (!response.ok || !payload.ok || !payload.packUrl) {
-    throw new Error(payload.error || "Theme could not be prepared.");
-  }
-  return {
-    name: payload.name,
-    packUrl: payload.packUrl,
-    themeId: payload.themeId,
-  };
 }
 
 function allThemeIds(

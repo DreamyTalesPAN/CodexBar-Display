@@ -34,6 +34,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
 )
 
@@ -74,6 +75,7 @@ const (
 	macAppReleaseTimeout      = 5 * time.Second
 	firmwareManifestEnvVar    = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
 	firmwareReleaseTimeout    = 5 * time.Second
+	themePackUploadReadTime  = 30 * time.Second
 )
 
 var deviceHealthProbeTime = 2 * time.Second
@@ -154,6 +156,7 @@ type Server struct {
 	fetchMacAppRelease     func(context.Context) (githubRelease, error)
 	installJobsMu          sync.Mutex
 	installJobs            map[string]*themeInstallJob
+	themeInstallActive     bool
 	nextInstallJob         uint64
 	updateJobsMu           sync.Mutex
 	updateJobs             map[string]*firmwareUpdateJob
@@ -281,6 +284,7 @@ type deviceActionResponse struct {
 type themeInstallRequest struct {
 	ThemeID            string `json:"themeId"`
 	PackURL            string `json:"packUrl"`
+	PackBytes          []byte `json:"-"`
 	CatalogURL         string `json:"catalogUrl"`
 	SkipFirmwareUpdate *bool  `json:"skipFirmwareUpdate"`
 	Async              bool   `json:"async"`
@@ -2413,11 +2417,21 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	var req themeInstallRequest
-	if !decodeJSON(w, r, &req) {
+	if !s.tryStartThemeInstall() {
+		writeError(w, http.StatusConflict, "theme_install_in_progress", "Another theme install is already running.", "Wait for the current theme install to finish, then retry.")
 		return
 	}
-	if strings.TrimSpace(req.ThemeID) == "" && strings.TrimSpace(req.PackURL) == "" {
+	releaseInstall := true
+	defer func() {
+		if releaseInstall {
+			s.finishThemeInstall()
+		}
+	}()
+	req, ok := decodeThemeInstallRequest(w, r)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(req.ThemeID) == "" && strings.TrimSpace(req.PackURL) == "" && req.PackBytes == nil {
 		writeError(w, http.StatusBadRequest, "missing_theme_source", "themeId or packUrl is required.", "Select a theme and retry.")
 		return
 	}
@@ -2451,6 +2465,7 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if req.Async {
 		job := s.createThemeInstallJob()
 		s.startThemeInstallJob(r.Context(), job.ID, cfg, req)
+		releaseInstall = false
 		writeJSON(w, http.StatusAccepted, themeInstallJobResponse{OK: true, Job: job})
 		return
 	}
@@ -2466,6 +2481,85 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		Result themeinstall.Result `json:"result"`
 		Logs   []string            `json:"logs,omitempty"`
 	}{OK: true, Result: result, Logs: splitInstallLog(installLog.String())})
+}
+
+func decodeThemeInstallRequest(w http.ResponseWriter, r *http.Request) (themeInstallRequest, bool) {
+	var req themeInstallRequest
+	contentType := strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0])
+	if !strings.EqualFold(contentType, "application/zip") {
+		return req, decodeJSON(w, r, &req)
+	}
+
+	async := false
+	if raw := strings.TrimSpace(r.URL.Query().Get("async")); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_theme_install_request", "Theme install request is invalid.", "Try the theme install again.")
+			return themeInstallRequest{}, false
+		}
+		async = parsed
+	}
+	if r.ContentLength > themepack.MaxZipBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "theme_pack_too_large", "Theme file is too large.", "Export a smaller theme, then try again.")
+		return themeInstallRequest{}, false
+	}
+	packBytes, ok := readThemePackUpload(w, r)
+	if !ok {
+		return themeInstallRequest{}, false
+	}
+	if len(packBytes) == 0 {
+		writeError(w, http.StatusBadRequest, "empty_theme_pack", "Theme file is empty.", "Export the theme again, then retry.")
+		return themeInstallRequest{}, false
+	}
+	if len(packBytes) > themepack.MaxZipBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "theme_pack_too_large", "Theme file is too large.", "Export a smaller theme, then try again.")
+		return themeInstallRequest{}, false
+	}
+	if _, err := themepack.LoadZipBytes(packBytes); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_theme_pack", "Theme file is invalid.", "Export the theme again, then retry.")
+		return themeInstallRequest{}, false
+	}
+
+	return themeInstallRequest{
+		ThemeID:   strings.TrimSpace(r.URL.Query().Get("themeId")),
+		PackBytes: packBytes,
+		Async:     async,
+	}, true
+}
+
+func readThemePackUpload(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	controller := http.NewResponseController(w)
+	deadlineSet := false
+	if err := controller.SetReadDeadline(time.Now().Add(themePackUploadReadTime)); err != nil {
+		if !errors.Is(err, http.ErrNotSupported) {
+			writeError(w, http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the Mac App, then retry.")
+			return nil, false
+		}
+	} else {
+		deadlineSet = true
+	}
+
+	packBytes, readErr := io.ReadAll(io.LimitReader(r.Body, int64(themepack.MaxZipBytes)+1))
+	var resetErr error
+	if deadlineSet {
+		resetErr = controller.SetReadDeadline(time.Time{})
+	}
+	if readErr != nil {
+		var timeoutErr net.Error
+		if errors.Is(readErr, os.ErrDeadlineExceeded) || (errors.As(readErr, &timeoutErr) && timeoutErr.Timeout()) {
+			w.Header().Set("Connection", "close")
+			writeError(w, http.StatusRequestTimeout, "theme_pack_upload_timeout", "Theme upload took too long.", "Export the theme again, then retry.")
+			return nil, false
+		}
+		writeError(w, http.StatusBadRequest, "invalid_theme_pack", "Theme file could not be read.", "Export the theme again, then retry.")
+		return nil, false
+	}
+	if resetErr != nil {
+		w.Header().Set("Connection", "close")
+		writeError(w, http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the Mac App, then retry.")
+		return nil, false
+	}
+	return packBytes, true
 }
 
 func (s *Server) handleThemeInstallStatus(w http.ResponseWriter, r *http.Request) {
@@ -2760,6 +2854,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	result, err := s.installTheme(ctx, themeinstall.Options{
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
+		PackBytes:          req.PackBytes,
 		CatalogURL:         strings.TrimSpace(req.CatalogURL),
 		Target:             targetWithToken(cfg.DeviceTarget, cfg.DeviceToken),
 		SkipFirmwareUpdate: skipFirmwareUpdate,
@@ -2863,8 +2958,25 @@ func (s *Server) createThemeInstallJob() themeInstallJob {
 	return cloneThemeInstallJob(job)
 }
 
+func (s *Server) tryStartThemeInstall() bool {
+	s.installJobsMu.Lock()
+	defer s.installJobsMu.Unlock()
+	if s.themeInstallActive {
+		return false
+	}
+	s.themeInstallActive = true
+	return true
+}
+
+func (s *Server) finishThemeInstall() {
+	s.installJobsMu.Lock()
+	s.themeInstallActive = false
+	s.installJobsMu.Unlock()
+}
+
 func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req themeInstallRequest) {
 	go func() {
+		defer s.finishThemeInstall()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		writer := &themeInstallProgressWriter{server: s, jobID: jobID}

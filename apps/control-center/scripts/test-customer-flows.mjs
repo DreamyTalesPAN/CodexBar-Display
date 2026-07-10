@@ -14,6 +14,7 @@ const desktopViewport = { width: 1280, height: 900 };
 const smokeOnly = process.argv.includes("--smoke");
 const migrationScreenshotDir =
   process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
+const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
 let displayStateDir = "";
 
 const catalogFixture = {
@@ -200,6 +201,14 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (themeStudioSafetyOnly) {
+      await testThemeStudioUsesLocalRenderAndCompanionInstall(
+        browser,
+        appContext.appUrl,
+      );
+      console.log("control-center Theme Studio safety test passed");
+      return;
+    }
     if (smokeOnly) {
       await testHostedEntryShowsMacAppDownload(
         browser,
@@ -349,6 +358,10 @@ async function main() {
     );
     await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
     await testThemeLibraryRendersThemeSpecPreviews(
+      browser,
+      appContext.appUrl,
+    );
+    await testThemeStudioUsesLocalRenderAndCompanionInstall(
       browser,
       appContext.appUrl,
     );
@@ -1209,7 +1222,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
   });
   await page.getByRole("button", { name: "Theme Library" }).click();
   await page
-    .getByRole("heading", { name: "Choose a theme" })
+    .getByRole("heading", { name: "Themes" })
     .waitFor({ timeout: 10_000 });
   await page.getByText("Fixture Synthwave Theme").waitFor({ timeout: 10_000 });
   await page.getByText("Fixture Clippy Theme").waitFor({ timeout: 10_000 });
@@ -2556,6 +2569,242 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
   await page.close();
 }
 
+async function testThemeStudioUsesLocalRenderAndCompanionInstall(
+  browser,
+  appUrl,
+) {
+  const localAppUrl = "http://127.0.0.1:47832/control-center";
+  const page = await browser.newPage({ viewport: desktopViewport });
+  const installRequests = [];
+  const themeInstallRequests = [];
+  const browserRequests = [];
+  const forbiddenDeviceWrites = [];
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "vibetv.controlCenter.aiThemeSettings",
+      JSON.stringify({ provider: "retired-test-provider", apiKey: "retired" }),
+    );
+  });
+  page.on("request", (request) => {
+    browserRequests.push(request.url());
+  });
+  await routeLocalCompanionAppThroughLocalNext(page, appUrl);
+  for (const themeId of ["synthwave", "clippy"]) {
+    await page.route(
+      `http://127.0.0.1:47832/theme-packs/render/${themeId}.json`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          path: join(
+            root,
+            `../../companion/internal/companionapi/controlcenter_static/theme-packs/render/${themeId}.json`,
+          ),
+        });
+      },
+    );
+  }
+  await page.route("http://vibetv.local/**", async (route) => {
+    forbiddenDeviceWrites.push(route.request().url());
+    await route.fulfill({
+      status: 418,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false }),
+    });
+  });
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.33",
+    device: {
+      ...companionDevice,
+      firmware: "1.0.32",
+    },
+    installStatusSequence: [
+      {
+        phase: "complete",
+        message: "Theme installed.",
+        progress: 100,
+        logs: ["Preparing theme files.", "Theme installed."],
+        result: {
+          themeId: "my-theme",
+          packId: "my-theme-1",
+          name: "New Theme",
+          activePath: "/themes/u/my-theme.json",
+          themeRev: 1,
+        },
+      },
+    ],
+    onThemeInstallRequest: (request) => {
+      themeInstallRequests.push(request);
+    },
+  });
+
+  const aiResponse = await fetch(`${appUrl}/api/ai-theme`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "generate" }),
+  });
+  assert(
+    aiResponse.status === 404,
+    `retired AI theme endpoint should return 404, got ${aiResponse.status}`,
+  );
+
+  await page.goto(localAppUrl, { waitUntil: "networkidle" });
+  await page
+    .getByRole("button", { name: /^(Themes|Theme Library)$/ })
+    .click();
+  const publishedThemeRow = page
+    .locator("li")
+    .filter({ hasText: "Fixture Synthwave Theme" });
+  await publishedThemeRow.waitFor({ timeout: 10_000 });
+  await publishedThemeRow.getByRole("button", { name: "Edit" }).click();
+
+  const sendButton = page.getByRole("button", { name: "Send to VibeTV" });
+  await sendButton.waitFor({ timeout: 10_000 });
+  assert(
+    await sendButton.isEnabled(),
+    "published themes with validated large static sprites should remain editable and installable",
+  );
+  assert(
+    await page.getByRole("button", { name: "Save theme" }).isEnabled(),
+    "published themes with validated large static sprites should remain saveable",
+  );
+  assert(
+    await page.getByRole("button", { name: "Export ZIP" }).isEnabled(),
+    "published themes with validated large static sprites should remain exportable",
+  );
+  assert(
+    browserRequests.some(
+      (url) =>
+        new URL(url).pathname === "/theme-packs/render/synthwave.json",
+    ),
+    "local Theme Studio should open a published theme from the embedded render pack",
+  );
+  assert(
+    !browserRequests.some((url) =>
+      new URL(url).pathname.startsWith("/api/theme-pack/"),
+    ),
+    "local Theme Studio must not depend on the removed Next theme-pack API",
+  );
+  assert(
+    (await page.getByText("Generate with AI", { exact: true }).count()) === 0,
+    "retired AI builder action should stay hidden",
+  );
+  assert(
+    (await page.getByRole("dialog", { name: "AI theme builder" }).count()) ===
+      0,
+    "retired AI builder dialog should stay absent",
+  );
+  assert(
+    (await page.evaluate(() =>
+      window.localStorage.getItem("vibetv.controlCenter.aiThemeSettings"),
+    )) === null,
+    "retired AI provider settings should be removed from local storage",
+  );
+
+  await page.getByText("Advanced", { exact: true }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Synthwave Customer Copy");
+  await page.getByLabel("ID", { exact: true }).fill("synthwave-copy");
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export ZIP" }).click(),
+  ]);
+  assert(
+    download.suggestedFilename() === "vibetv-theme-synthwave-copy.zip",
+    `Theme Studio should export the edited theme ID, got ${download.suggestedFilename()}`,
+  );
+  const downloadPath = await download.path();
+  assert(downloadPath, "Theme Studio export should create a local ZIP download");
+  const downloadedZip = await readFile(downloadPath);
+  assert(
+    downloadedZip.length >= 4 &&
+      downloadedZip[0] === 0x50 &&
+      downloadedZip[1] === 0x4b &&
+      downloadedZip[2] === 0x03 &&
+      downloadedZip[3] === 0x04,
+    "Theme Studio export should start with the ZIP PK signature",
+  );
+  await runCommand("unzip", ["-t", downloadPath], { cwd: root });
+  await page.getByRole("button", { name: "Save theme" }).click();
+  await page.getByText("Synthwave Customer Copy", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
+
+  const clippyThemeRow = page
+    .locator("li")
+    .filter({ hasText: "Fixture Clippy Theme" });
+  await clippyThemeRow.waitFor({ timeout: 10_000 });
+  await clippyThemeRow.getByRole("button", { name: "Edit" }).click();
+  assert(
+    await page.getByRole("button", { name: "Send to VibeTV" }).isEnabled(),
+    "Clippy's validated large static background should remain editable and installable",
+  );
+  assert(
+    await page.getByRole("button", { name: "Save theme" }).isEnabled(),
+    "Clippy's validated large static background should remain saveable",
+  );
+  assert(
+    await page.getByRole("button", { name: "Export ZIP" }).isEnabled(),
+    "Clippy's validated large static background should remain exportable",
+  );
+  await page.getByRole("button", { name: "Library", exact: true }).click();
+  await page.getByRole("button", { name: "New Theme" }).click();
+  const blankThemeSendButton = page.getByRole("button", {
+    name: "Send to VibeTV",
+  });
+  await blankThemeSendButton.waitFor({ timeout: 10_000 });
+  await blankThemeSendButton.click();
+  await waitForCondition(
+    () => themeInstallRequests.length === 1,
+    "expected one Companion ZIP theme install request",
+  );
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll("button")).some(
+      (button) =>
+        button.textContent?.trim() === "Send to VibeTV" && !button.disabled,
+    ),
+  );
+  assert(
+    (await page.getByText("Theme installed through the Mac App.").count()) ===
+      1,
+    "Theme Studio should report the Companion install as complete",
+  );
+
+  assert(
+    themeInstallRequests.length === 1,
+    `Theme Studio should send exactly one install request, got ${themeInstallRequests.length}`,
+  );
+  const installRequest = themeInstallRequests[0];
+  const installUrl = new URL(installRequest.url);
+  assert(
+    installUrl.pathname === "/v1/themes/install" &&
+      installUrl.searchParams.get("async") === "true",
+    `Theme Studio should use the asynchronous Companion install route, got ${installRequest.url}`,
+  );
+  assert(
+    installRequest.headers["content-type"] === "application/zip",
+    `Theme Studio should send application/zip, got ${installRequest.headers["content-type"]}`,
+  );
+  assert(
+    installRequest.body.length >= 4 &&
+      installRequest.body[0] === 0x50 &&
+      installRequest.body[1] === 0x4b &&
+      installRequest.body[2] === 0x03 &&
+      installRequest.body[3] === 0x04,
+    "Theme Studio install body should start with the ZIP PK signature",
+  );
+  const unsafeRequests = browserRequests.filter(isDirectDeviceWriteUrl);
+  assert(
+    forbiddenDeviceWrites.length === 0 && unsafeRequests.length === 0,
+    `Theme Studio must not write directly to VibeTV: ${JSON.stringify([
+      ...forbiddenDeviceWrites,
+      ...unsafeRequests,
+    ])}`,
+  );
+
+  await page.close();
+}
+
 async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
@@ -2729,7 +2978,7 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
     .getByText("Install failed", { exact: true })
     .waitFor({ timeout: 10_000 });
 
-  await page.getByRole("button", { name: "Support" }).click();
+  await page.getByRole("button", { name: "Support", exact: true }).click();
   await page.getByRole("heading", { name: "Recent activity" }).waitFor({
     timeout: 10_000,
   });
@@ -3208,6 +3457,7 @@ async function routeCompanionOnline(
     onReset,
     onUpdate,
     onMacAppUpdate,
+    onThemeInstallRequest,
     installStatusSequence,
     updateStatusSequence,
     macAppUpdateStatusSequence,
@@ -3413,10 +3663,22 @@ async function routeCompanionOnline(
       return;
     }
     if (pathname === "/v1/themes/install") {
-      const postData = route.request().postData() || "";
+      const request = route.request();
+      const requestUrl = new URL(request.url());
+      const postData = request.postData() || "";
+      const postDataBuffer = request.postDataBuffer();
       installRequests.push(postData);
+      onThemeInstallRequest?.({
+        body: postDataBuffer ? Buffer.from(postDataBuffer) : Buffer.alloc(0),
+        headers: request.headers(),
+        method: request.method(),
+        url: request.url(),
+      });
       const parsed = parseJSON(postData);
-      if (parsed?.async) {
+      if (
+        parsed?.async ||
+        requestUrl.searchParams.get("async") === "true"
+      ) {
         activeInstallJobId = "install-job-1";
         await route.fulfill({
           status: 202,
@@ -3695,29 +3957,57 @@ async function routeHostedAppThroughLocalNext(page, appUrl) {
     };
   });
   await page.route("https://app.vibetv.shop/**", async (route) => {
-    const request = route.request();
-    const sourceUrl = new URL(request.url());
-    const targetUrl = `${appUrl}${sourceUrl.pathname}${sourceUrl.search}`;
-    const response = await fetch(targetUrl, {
-      method: request.method(),
-      headers: request.headers(),
-      body: request.method() === "GET" ? undefined : request.postDataBuffer(),
-    });
-    const headers = {};
-    response.headers.forEach((value, key) => {
-      if (
-        !["content-encoding", "content-length", "transfer-encoding"].includes(
-          key,
-        )
-      ) {
-        headers[key] = value;
-      }
-    });
-    await route.fulfill({
-      status: response.status,
-      headers,
-      body: Buffer.from(await response.arrayBuffer()),
-    });
+    const sourceUrl = new URL(route.request().url());
+    await fulfillRouteFromNext(
+      route,
+      `${appUrl}${sourceUrl.pathname}${sourceUrl.search}`,
+    );
+  });
+}
+
+async function routeLocalCompanionAppThroughLocalNext(page, appUrl) {
+  await page.route(
+    "http://127.0.0.1:47832/control-center**",
+    async (route) => {
+      const sourceUrl = new URL(route.request().url());
+      const relativePath = sourceUrl.pathname.slice("/control-center".length);
+      const targetPath = relativePath || "/";
+      await fulfillRouteFromNext(
+        route,
+        `${appUrl}${targetPath}${sourceUrl.search}`,
+      );
+    },
+  );
+  await page.route("http://127.0.0.1:47832/_next/**", async (route) => {
+    const sourceUrl = new URL(route.request().url());
+    await fulfillRouteFromNext(
+      route,
+      `${appUrl}${sourceUrl.pathname}${sourceUrl.search}`,
+    );
+  });
+}
+
+async function fulfillRouteFromNext(route, targetUrl) {
+  const request = route.request();
+  const response = await fetch(targetUrl, {
+    method: request.method(),
+    headers: request.headers(),
+    body: request.method() === "GET" ? undefined : request.postDataBuffer(),
+  });
+  const headers = {};
+  response.headers.forEach((value, key) => {
+    if (
+      !["content-encoding", "content-length", "transfer-encoding"].includes(
+        key,
+      )
+    ) {
+      headers[key] = value;
+    }
+  });
+  await route.fulfill({
+    status: response.status,
+    headers,
+    body: Buffer.from(await response.arrayBuffer()),
   });
 }
 
@@ -3793,6 +4083,16 @@ function companionPath(route) {
     return `/${pathname.slice(proxyPrefix.length)}`;
   }
   return pathname;
+}
+
+function isDirectDeviceWriteUrl(rawUrl) {
+  const url = new URL(rawUrl);
+  return (
+    url.pathname === "/assets" ||
+    url.pathname.startsWith("/assets/") ||
+    url.pathname === "/theme/active" ||
+    url.pathname === "/frame"
+  );
 }
 
 function companionPayload(

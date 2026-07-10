@@ -50,7 +50,7 @@ const NAV_ITEMS: ShellNavItem[] = [
   },
   {
     id: "theme-library",
-    label: "Themes",
+    label: "Theme Library",
     icon: <Grid2X2 size={22} aria-hidden />,
   },
   {

@@ -41,6 +41,77 @@ func TestLoadZipThemePack(t *testing.T) {
 	}
 }
 
+func TestLoadZipBytesThemePack(t *testing.T) {
+	dir := writeThemePack(t, "")
+	zipPath := filepath.Join(t.TempDir(), "cozy-meadow.zip")
+	writeZipFromDir(t, zipPath, dir)
+	zipBytes, err := os.ReadFile(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pack, err := LoadZipBytes(zipBytes)
+	if err != nil {
+		t.Fatalf("LoadZipBytes returned error: %v", err)
+	}
+	if pack.Manifest.ID != "cozy-meadow" || pack.ThemeSpecFile.Entry.Path != "/themes/u/cm.json" {
+		t.Fatalf("unexpected pack: %+v", pack.Manifest)
+	}
+}
+
+func TestLoadZipBytesRejectsEmptyMalformedAndOversizedData(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{name: "empty", data: []byte{}, want: "empty"},
+		{name: "malformed", data: []byte("not a zip"), want: "open theme pack zip"},
+		{name: "oversized", data: make([]byte, MaxZipBytes+1), want: "too large"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := LoadZipBytes(test.data)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q error, got %v", test.want, err)
+			}
+		})
+	}
+}
+
+func TestValidateZipEntriesRejectsUncompressedZipBombs(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []*zip.File
+		want  string
+	}{
+		{
+			name: "single oversized entry",
+			files: []*zip.File{{FileHeader: zip.FileHeader{
+				Name:               "theme.json",
+				UncompressedSize64: 11,
+			}}},
+			want: "entry theme.json is too large",
+		},
+		{
+			name: "cumulative expansion",
+			files: []*zip.File{
+				{FileHeader: zip.FileHeader{Name: "manifest.json", UncompressedSize64: 6}},
+				{FileHeader: zip.FileHeader{Name: "theme.json", UncompressedSize64: 5}},
+			},
+			want: "expands beyond limit",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateZipEntries(test.files, 10)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q error, got %v", test.want, err)
+			}
+		})
+	}
+}
+
 func TestLoadHTTPZipThemePack(t *testing.T) {
 	dir := writeThemePack(t, "")
 	zipPath := filepath.Join(t.TempDir(), "cozy-meadow.zip")

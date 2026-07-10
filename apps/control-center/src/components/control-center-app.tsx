@@ -10,7 +10,8 @@ import {
 } from "react";
 import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import type { ThemeCatalogResponse } from "@/lib/themes";
+import { buildThemePack } from "@/lib/theme-studio";
+import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
@@ -41,7 +42,11 @@ import { OverviewScreen } from "./overview-screen";
 import { SetupScreen } from "./setup-screen";
 import { SettingsScreen } from "./settings-screen";
 import { ThemeLibraryScreen } from "./theme-library-screen";
-import { ThemeStudioScreen } from "./theme-studio-screen";
+import {
+  clearRetiredAiThemeStorage,
+  ThemeStudioScreen,
+  type ThemeStudioInstallPayload,
+} from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
 
@@ -75,6 +80,10 @@ type InstallResponse = {
   job?: ThemeInstallJob;
   result?: ThemeInstallResult;
   logs?: string[];
+};
+
+type InstallableTheme = Pick<ThemeProduct, "packUrl" | "themeId" | "title"> & {
+  packBytes?: Uint8Array;
 };
 
 type ThemeInstallJob = {
@@ -155,6 +164,10 @@ type FirmwareCheckOptions = {
 type RuntimeSurface = "unknown" | "hosted-setup" | "local-control-center";
 
 export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props) {
+  useEffect(() => {
+    clearRetiredAiThemeStorage();
+  }, []);
+
   const initialTheme = useMemo(
     () =>
       initialThemeId
@@ -1075,9 +1088,11 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
   );
 
   const installTheme = useCallback(
-    async (theme = selectedTheme) => {
+    async (
+      theme: InstallableTheme | undefined = selectedTheme,
+    ): Promise<boolean> => {
       if (!theme) {
-        return;
+        return false;
       }
       setBusyAction("install");
       setLastInstall(undefined);
@@ -1125,9 +1140,20 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
         tone: "unknown",
       });
       try {
-        const payload = await runCompanion<InstallResponse>(
-          "/v1/themes/install",
-          {
+        const uploadedPack = theme.packBytes;
+        let requestPath = "/v1/themes/install";
+        let requestInit: RequestInit;
+        if (uploadedPack) {
+          const body = new ArrayBuffer(uploadedPack.byteLength);
+          new Uint8Array(body).set(uploadedPack);
+          requestPath += "?async=true";
+          requestInit = {
+            method: "POST",
+            body,
+            headers: { "Content-Type": "application/zip" },
+          };
+        } else {
+          requestInit = {
             method: "POST",
             body: JSON.stringify({
               themeId: theme.themeId,
@@ -1135,7 +1161,11 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
               skipFirmwareUpdate: true,
               async: true,
             }),
-          },
+          };
+        }
+        const payload = await runCompanion<InstallResponse>(
+          requestPath,
+          requestInit,
         );
         let result = payload.result;
         let logs = customerInstallLogs(payload.logs, initialLogs);
@@ -1190,6 +1220,7 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
           tone: "ready",
         });
         await loadSettings();
+        return true;
       } catch (error) {
         const normalized = normalizeCaughtError(
           error,
@@ -1217,6 +1248,7 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
           detail: normalized.nextAction,
           tone: "attention",
         });
+        return false;
       } finally {
         setBusyAction(null);
       }
@@ -1229,6 +1261,22 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
       runCompanion,
       selectedTheme,
     ],
+  );
+
+  const installCustomTheme = useCallback(
+    async ({
+      assets,
+      packName,
+      spec,
+    }: ThemeStudioInstallPayload): Promise<boolean> => {
+      const pack = buildThemePack(spec, packName, assets);
+      return installTheme({
+        packBytes: pack.zipBytes,
+        themeId: pack.manifest.id,
+        title: pack.manifest.name,
+      });
+    },
+    [installTheme],
   );
 
   useEffect(() => {
@@ -1708,11 +1756,11 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
 
   const disabledTabs: ActiveTab[] = setupComplete
     ? imageNeedsReload
-      ? ["settings", "updates"]
+      ? ["settings", "theme-library", "updates"]
       : []
     : usageAvailable
-      ? ["overview", "settings", "updates", "logs"]
-      : ["overview", "usage", "settings", "updates", "logs"];
+      ? ["overview", "settings", "theme-library", "updates", "logs"]
+      : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
   const activeShellTab = disabledTabs.includes(activeTab)
     ? setupComplete
       ? "overview"
@@ -1866,7 +1914,9 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
         />
       ) : null}
 
-      {activeShellTab === "theme-studio" ? <ThemeStudioScreen /> : null}
+      {activeShellTab === "theme-studio" ? (
+        <ThemeStudioScreen onInstallTheme={installCustomTheme} />
+      ) : null}
 
       {activeShellTab === "theme-library" ? (
         <ThemeLibraryScreen
@@ -1876,6 +1926,7 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
           installStatus={themeInstallStatus}
           catalogIssue={catalog.issue}
           lastInstall={lastInstall}
+          onInstallCustomTheme={installCustomTheme}
           onInstallTheme={installTheme}
           onSelectTheme={setSelectedThemeId}
           installEntry={Boolean(initialThemeId)}
