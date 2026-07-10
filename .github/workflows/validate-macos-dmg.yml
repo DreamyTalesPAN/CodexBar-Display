@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CODEX_VALIDATION_SOURCE_SHA: "07ef7588b0f81c112ac489ca74fd50566e5d657c"
+  CODEX_VALIDATION_SOURCE_SHA: "dacd1856ae851fc97d332d4fa1256bc0aba930ba"
   CODEX_VALIDATION_VERSION: "1.0.42"
 
 jobs:
@@ -167,10 +167,10 @@ jobs:
           mkdir -p dist/macos
           tar -xzf "${artifact_dir}/unsigned-app.tar.gz" -C dist/macos
           test -x "dist/macos/VibeTV Control Center.app/Contents/MacOS/VibeTVControlCenter"
-          test -x "dist/macos/VibeTV Control Center.app/Contents/Resources/companion/codexbar-display"
+          test -x "dist/macos/VibeTV Control Center.app/Contents/Helpers/codexbar-display"
           lipo "dist/macos/VibeTV Control Center.app/Contents/MacOS/VibeTVControlCenter" \
             -verify_arch x86_64 arm64
-          lipo "dist/macos/VibeTV Control Center.app/Contents/Resources/companion/codexbar-display" \
+          lipo "dist/macos/VibeTV Control Center.app/Contents/Helpers/codexbar-display" \
             -verify_arch x86_64 arm64
 
       - name: Verify trusted signing files
@@ -187,9 +187,9 @@ jobs:
             fi
           }
 
-          verify_hash 03b1632e8a7a15d8e16e3631ddbedf8250fcb825dd5b871af3893d68663e95db \
+          verify_hash 5b08bdaab65cfb33c1c8afbc71d65c351c87a2a356be90b2dcbeebecb5292356 \
             scripts/sign-notarize-macos-control-center.sh
-          verify_hash fce7c443993295bc256649797ff328efb1faf0c3190d4f4657802d40c4de1c9a \
+          verify_hash 7c5237b4cf8c9f43e0b387e3a46b8b11d86403c8a1c922fd73fc1bc6978a7ba9 \
             scripts/build-macos-control-center-app.sh
           verify_hash 2cb1c86cb6d45a3b93539861a25ad0298b60abb6138c3a737142a4dcfa724eba \
             scripts/build-macos-control-center-dmg.sh
@@ -249,7 +249,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(shasum -a 256 scripts/sign-notarize-macos-control-center.sh | awk '{print $1}')" = \
-            03b1632e8a7a15d8e16e3631ddbedf8250fcb825dd5b871af3893d68663e95db
+            5b08bdaab65cfb33c1c8afbc71d65c351c87a2a356be90b2dcbeebecb5292356
           test "$(shasum -a 256 scripts/verify-macos-control-center-dmg.sh | awk '{print $1}')" = \
             da89ef4fc13ad2438255440d8e18a3ca95d4635594baadbf9b4afa47841ac73b
 
