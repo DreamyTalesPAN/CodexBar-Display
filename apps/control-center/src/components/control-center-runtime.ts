@@ -2,6 +2,18 @@ export const COMPANION_URL = "http://127.0.0.1:47832";
 export const LOCAL_CONTROL_CENTER_LAUNCHER_URL =
   "vibetv://open-control-center";
 
+export function launchLocalControlCenterApp(): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const launcher = document.createElement("a");
+  launcher.href = LOCAL_CONTROL_CENTER_LAUNCHER_URL;
+  launcher.hidden = true;
+  document.body.appendChild(launcher);
+  launcher.click();
+  launcher.remove();
+}
+
 export function isLoopbackHostname(hostname: string): boolean {
   return ["127.0.0.1", "localhost", "::1"].includes(hostname);
 }

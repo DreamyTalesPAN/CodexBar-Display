@@ -392,8 +392,9 @@ Run this list before every v0 release decision.
 - [ ] DMG-first releases include `VibeTV Control Center.app` inside
   `VibeTV-Control-Center-v<version>.dmg` with an Applications symlink, and the
   DMG checksum appears in `checksums-v<version>.txt`.
-- [ ] Hosted setup shows the DMG download as the primary Mac App action and
-  keeps the Terminal setup command only as a support fallback.
+- [ ] Hosted setup shows only the verified DMG Mac App action after rollout;
+  Agentic/Terminal installers remain visible only while the DMG gate is off or
+  its release asset is unavailable.
 - [ ] Existing Terminal-setup users were validated by launching the DMG app on a
   Mac with old `com.codexbar-display.*` user LaunchAgents; old plists should be
   moved to `~/Library/Application Support/codexbar-display/migration-backups/`
@@ -492,6 +493,6 @@ Firmware bench envs:
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
 - Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
 - GitHub release artifacts include companion binaries, firmware binaries, checksums, manifests, and `install-control-center-companion.sh`.
-- The prepared customer Mac App target is a signed/notarized DMG containing `VibeTV Control Center.app`; until Apple Developer secrets are available, the setup prompt from `app.vibetv.shop` remains the customer support path.
+- The customer Mac App target is a signed/notarized DMG containing `VibeTV Control Center.app`. Keep its hosted download feature flag disabled until the latest release contains the verified DMG asset; the setup prompt remains the support fallback.
 - Current customer releases must not publish Mac App `.pkg` assets.
 - A customer release is not ready until the Mac setup script, both Darwin companion binaries, and the checksum file exist on the GitHub Release and match the tag version.

@@ -8,7 +8,9 @@ BUNDLE_ID="shop.vibetv.control-center"
 EXECUTABLE_NAME="VibeTVControlCenter"
 COMPANION_NAME="codexbar-display"
 ICON_FILE_NAME="VibeTVControlCenter.icns"
+RUNTIME_AGENT_PLIST_NAME="shop.vibetv.control-center.runtime.plist"
 APP_ICON="${ROOT}/macos/VibeTVControlCenter/${ICON_FILE_NAME}"
+RUNTIME_AGENT_PLIST="${ROOT}/macos/VibeTVControlCenter/${RUNTIME_AGENT_PLIST_NAME}"
 VERSION="${VERSION:-0.0.0}"
 BUILD="${BUILD:-0}"
 APP_DIR="${ROOT}/dist/macos/${APP_NAME}.app"
@@ -129,6 +131,19 @@ write_info_plist() {
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>$(xml_escape "${VERSION#v}")</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleURLName</key>
+        <string>$(xml_escape "$BUNDLE_ID")</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>vibetv</string>
+        </array>
+      </dict>
+    </array>
     <key>CFBundleVersion</key>
     <string>$(xml_escape "$BUILD")</string>
     <key>LSApplicationCategoryType</key>
@@ -194,7 +209,10 @@ Real DMG builds must place the Darwin Companion binary here:
 
 The native WebView shell starts that binary with:
 
-  ${COMPANION_NAME} api --addr 127.0.0.1:47832 --dev-origin http://127.0.0.1:47832
+  ${COMPANION_NAME} daemon --transport wifi --target http://vibetv.local --interval 30s --api-addr 127.0.0.1:47832 --api-dev-origin http://127.0.0.1:47832
+
+The app registers this process as an app-managed LaunchAgent so display frames
+continue after the Control Center window or app exits and after future logins.
 EOF
     return 0
   fi
@@ -236,12 +254,14 @@ EOF
       "${ROOT}/macos/VibeTVControlCenter/main.swift" \
       -o "$x86_binary" \
       -framework Cocoa \
+      -framework ServiceManagement \
       -framework WebKit
     swiftc \
       -target arm64-apple-macos13 \
       "${ROOT}/macos/VibeTVControlCenter/main.swift" \
       -o "$arm64_binary" \
       -framework Cocoa \
+      -framework ServiceManagement \
       -framework WebKit
     lipo -create -output "$target" "$x86_binary" "$arm64_binary"
     rm -rf "$build_dir"
@@ -253,6 +273,7 @@ EOF
     "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     -o "$target" \
     -framework Cocoa \
+    -framework ServiceManagement \
     -framework WebKit
   chmod 755 "$target"
 }
@@ -263,15 +284,18 @@ main() {
   local contents="${APP_DIR}/Contents"
   local macos_dir="${contents}/MacOS"
   local resources_dir="${contents}/Resources"
+  local launch_agents_dir="${contents}/Library/LaunchAgents"
 
   rm -rf "$APP_DIR"
-  mkdir -p "$macos_dir" "$resources_dir"
+  mkdir -p "$macos_dir" "$resources_dir" "$launch_agents_dir"
 
   write_info_plist "${contents}/Info.plist"
   build_executable "${macos_dir}/${EXECUTABLE_NAME}"
   copy_app_icon "$resources_dir"
   copy_control_center_static "${resources_dir}/control-center"
   copy_companion_binary "${resources_dir}/companion"
+  [[ -f "$RUNTIME_AGENT_PLIST" ]] || die "runtime LaunchAgent plist not found: ${RUNTIME_AGENT_PLIST}"
+  cp "$RUNTIME_AGENT_PLIST" "${launch_agents_dir}/${RUNTIME_AGENT_PLIST_NAME}"
   cp "${ROOT}/macos/VibeTVControlCenter/VibeTVControlCenter.entitlements" "${resources_dir}/VibeTVControlCenter.entitlements"
 
   if command -v xattr >/dev/null 2>&1; then

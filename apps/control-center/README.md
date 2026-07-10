@@ -90,15 +90,19 @@ The hosted customer command is:
 curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
 ```
 
-This path remains the support path while the signed/notarized DMG-first Mac app
-is being prepared. See `../../docs/macos-dmg-distribution.md` for the future
+This path remains the support fallback for existing customers. See
+`../../docs/macos-dmg-distribution.md` for the signed/notarized
 `VibeTV Control Center.app` release flow.
 
-When the DMG is available, hosted setup should show that download first. Keep
-the Terminal command as a support fallback for existing customers and failed
-downloads. The native app backs up old user LaunchAgent plists under
-`~/Library/Application Support/codexbar-display/migration-backups/` before it
-starts the bundled local service.
+When the verified DMG is available, hosted setup shows only that download and
+hides the old Agentic/Terminal installer so it cannot create a second app under
+`~/Applications`. The Terminal support path remains available only while the
+DMG flag is off or the verified release asset is missing. The native app first
+enables its bundled, persistent local service.
+It then backs up old user LaunchAgent plists under
+`~/Library/Application Support/codexbar-display/migration-backups/`. The
+app-owned service runs the display daemon and local API after the window quits
+and across future logins.
 
 ## Device Write Guardrails
 
@@ -130,9 +134,18 @@ SHOPIFY_STOREFRONT_PRIVATE_TOKEN=...
 SHOPIFY_STOREFRONT_API_VERSION=2026-04
 SHOPIFY_THEME_COLLECTION_HANDLE=themes-2
 CONTROL_CENTER_GITHUB_TOKEN=...
+CONTROL_CENTER_ENABLE_MAC_APP_DMG_DOWNLOAD=0
 ```
 
 Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `SHOPIFY_STOREFRONT_ACCESS_TOKEN` for a public token. `CONTROL_CENTER_GITHUB_TOKEN` is optional, server-side only, and keeps GitHub release version checks away from anonymous rate limits. If Shopify env vars are missing, the app shows a configuration warning and no installable themes. Set `CONTROL_CENTER_ALLOW_CATALOG_FALLBACK=1` only for explicit local development with repo catalog data.
+
+Keep `CONTROL_CENTER_ENABLE_MAC_APP_DMG_DOWNLOAD=0` until the latest GitHub
+release contains a signed, notarized, non-empty
+`VibeTV-Control-Center.dmg` asset. Setting it to `1` only allows the hosted
+release check to expose the exact uploaded asset URL; the Setup and Updates
+screens still stay link-free if that asset is missing or invalid. The embedded
+local UI reads the same result from the absolute hosted endpoint, so it never
+falls back to an unchecked `/latest/download/...` URL.
 
 ## Flow
 

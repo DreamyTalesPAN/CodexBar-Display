@@ -1,9 +1,11 @@
 # VibeTV Control Center macOS DMG Distribution
 
-This is the prepared customer distribution path for the future signed and
-notarized macOS app. The Apple Developer account is still pending, so current
-automation supports dry-run structure checks without requiring real Apple
-certificates or App Store Connect credentials.
+This is the customer distribution path for the signed and notarized macOS app.
+The repository has all six required GitHub Actions secret names. GitHub does
+not expose their values after creation, so the release job still validates that
+each value is available before it spends time building the DMG. Local and pull
+request checks use dry-run structure validation and never require Apple
+credentials.
 
 ## Product Shape
 
@@ -17,6 +19,9 @@ The app bundle layout is:
 VibeTV Control Center.app/
   Contents/
     Info.plist
+    Library/
+      LaunchAgents/
+        shop.vibetv.control-center.runtime.plist
     MacOS/
       VibeTVControlCenter
     Resources/
@@ -33,26 +38,67 @@ VibeTV Control Center.app/
 - `CFBundleExecutable`: `VibeTVControlCenter`
 - `CFBundleShortVersionString`: release version
 - `CFBundleVersion`: CI build number or release build number
+- `CFBundleURLTypes`: registers `vibetv://`, including the hosted
+  `vibetv://open-control-center` launcher
 
 The Swift shell loads `http://127.0.0.1:47832/control-center` in `WKWebView`.
 When a bundled `Contents/Resources/companion/codexbar-display` exists, the shell
 uses this migration order:
 
-1. If old user LaunchAgents exist, stop them and move their plists into
-   `~/Library/Application Support/codexbar-display/migration-backups/`.
-2. If the local Mac App already answers on `127.0.0.1:47832`, connect to it
-   without starting a second process.
-3. Otherwise start the bundled Companion with the local API only:
+1. Require the signed app to run from `/Applications`, then validate the
+   bundled Companion and app-owned LaunchAgent plist.
+2. Register `shop.vibetv.control-center.runtime.plist` with `SMAppService`.
+   The service remains active after the app window quits and starts again on
+   future logins.
+3. When a newer DMG has replaced the app bundle, unregister the previous
+   service version and register the new bundle version once. Normal app opens
+   do not restart an already-current service.
+4. Record which old user LaunchAgents are running, stop them without moving or
+   deleting their plists, then poll `http://127.0.0.1:47832/v1/status`.
+5. Accept the new runtime only when the endpoint returns HTTP 2xx, JSON
+   `ok: true`, `companion.version` exactly matches the DMG app version, and the
+   PID reported for `shop.vibetv.control-center.runtime` by `launchctl` owns the
+   listener on `127.0.0.1:47832`. A timeout, mismatch, or foreign listener
+   unregisters the new service and restores the previously running legacy
+   agents; their plists and old app bundles remain in place. A known or unknown
+   Terminal fallback is never killed speculatively.
+6. After that health gate, make the `/Applications` app the default `vibetv://`
+   handler and move both old LaunchAgent plists and the old Terminal app copies
+   from `~/Applications` or Application Support into
+   `~/Library/Application Support/codexbar-display/migration-backups/`. The old
+   app backups no longer end in `.app`, so LaunchServices does not treat them as
+   competing handlers.
+
+The embedded LaunchAgent runs the integrated display daemon and local API:
 
 ```bash
-codexbar-display api --addr 127.0.0.1:47832 --dev-origin http://127.0.0.1:47832
+codexbar-display daemon \
+  --transport wifi \
+  --target http://vibetv.local \
+  --interval 30s \
+  --api-addr 127.0.0.1:47832 \
+  --api-dev-origin http://127.0.0.1:47832
 ```
 
-That migration/startup path does not perform firmware updates, theme installs, asset
-uploads, `/frame`, `/theme/active`, `/reset-wifi`, or other hardware writes.
+This keeps normal VibeTV usage frames updating in the background. App install
+and migration do not trigger firmware updates, theme installs, asset uploads,
+`/theme/active`, `/reset-wifi`, or similar configuration writes.
+The DMG LaunchAgent also sets `VIBETV_DISABLE_MAC_APP_SELF_UPDATE=1`. Its API
+reports the legacy self-updater as unavailable and does not register
+`/v1/mac-app/update`, so a cached or older UI cannot update the former Terminal
+app under `~/Applications`.
 
-The old Terminal setup remains a support fallback on the hosted setup page. The
-primary customer action is the signed/notarized DMG download.
+Inside the native WebView, only a direct link click matching the verified form
+`https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/<tag>/VibeTV-Control-Center.dmg`
+is handed to the default browser. The WebView cancels that navigation, so the
+Control Center stays open and the browser-owned download continues if the app
+window is closed.
+
+While the DMG gate is disabled or no verified asset exists, the old Terminal
+setup remains the staged support path. Once a verified DMG is enabled, hosted
+setup hides Agentic and Terminal installers so they cannot recreate the old
+`~/Applications/VibeTV Control Center.app`; the signed/notarized DMG is the
+only visible Mac App install/update path.
 
 ## Local Dry Run
 
@@ -67,7 +113,7 @@ That test creates a temporary dry-run `.app`, checks the generated
 an Applications symlink, and checks that the signing script reports missing
 Apple secrets clearly.
 
-## Real App Bundle Build Later
+## Real App Bundle Build
 
 After building the local React export and Darwin Companion binary, a real app
 bundle can be built on macOS:
@@ -85,10 +131,10 @@ scripts/build-macos-control-center-app.sh \
   --output "dist/macos/VibeTV Control Center.app"
 ```
 
-For Intel Macs, pass the amd64 Companion binary instead. A later universal build
-can use `lipo` after both native shell slices exist.
+The release workflow builds both Companion architectures, combines them with
+`lipo`, and asks the app builder for a universal native shell.
 
-## DMG Build Later
+## DMG Build
 
 On macOS, create the customer DMG:
 
@@ -105,7 +151,7 @@ The DMG staging folder contains:
 
 No `.pkg` is introduced.
 
-## Apple Secrets Needed Later
+## GitHub Actions Secrets
 
 The signing/notarization script expects these CI secrets:
 
@@ -120,8 +166,17 @@ Optional:
 
 - `APPLE_SIGNING_IDENTITY`
 
-Without the secrets, dry-run mode prints the missing names and exits without
-using fake certificates or credentials.
+Before the tagged release build begins, the workflow checks every required name
+and stops with a GitHub Actions error if one is unavailable. It never prints a
+secret value. Dry-run mode prints only missing names and exits without using
+fake certificates or credentials.
+
+The same workflow also has a manual validation-only trigger. It accepts an
+explicit `x.y.z` bundle version, runs the real macOS signing, notarization,
+stapling, mounted-app, and Gatekeeper gates, then uploads only the DMG and
+notarization log as private Actions artifacts. The public release job is guarded
+to run only for pushed `v*` tags, so this validation cannot create a GitHub
+Release.
 
 ## Signing and Notarization Flow
 
@@ -130,13 +185,20 @@ The prepared real flow is:
 1. Create a temporary keychain.
 2. Import Apple's Developer ID G2 intermediate certificate.
 3. Import the Developer ID Application `.p12` certificate from CI secret.
-4. Sign `VibeTV Control Center.app` with hardened runtime.
-5. Verify the app with `codesign --verify`.
+4. Sign the nested Companion executable and `VibeTV Control Center.app` with a
+   secure timestamp and hardened runtime.
+5. Verify all signatures, the `Developer ID Application` authority, and the
+   signed Team ID. On supported macOS versions, run
+   `syspolicy_check notary-submission` before uploading anything.
 6. Sign the DMG.
-7. Submit the DMG using `xcrun notarytool submit --wait`.
-8. Staple the notarization ticket with `xcrun stapler staple`.
-9. Verify Gatekeeper behavior with `spctl --assess`; DMG checks use
-   `--context context:primary-signature`.
+7. Submit the DMG using `xcrun notarytool submit --wait --output-format json`.
+8. Require the returned status and the notarization log to both say
+   `Accepted`. Any other result stops the job.
+9. Staple and validate the notarization ticket with `xcrun stapler`.
+10. Run a separate final distribution gate against the exact DMG that will be
+    uploaded: `hdiutil verify`, DMG `codesign`, `stapler validate`, DMG
+    Gatekeeper assessment, read-only mount, then `codesign` and Gatekeeper
+    assessment of the app inside the mounted image.
 
 Important order:
 
@@ -171,17 +233,27 @@ scripts/build-macos-control-center-dmg.sh \
 scripts/sign-notarize-macos-control-center.sh \
   --app "dist/macos/VibeTV Control Center.app" \
   --dmg "dist/macos/VibeTV-Control-Center-v${VERSION}.dmg" \
-  --skip-app-sign
+  --skip-app-sign \
+  --notary-log "tmp/macos-release/notarization-log.json"
+
+scripts/verify-macos-control-center-dmg.sh \
+  --dmg "dist/macos/VibeTV-Control-Center-v${VERSION}.dmg"
 ```
 
-Real mode should only be enabled after the Apple Developer account is approved
-and the secrets above are present.
+The macOS job uploads the DMG artifact only after the final distribution gate
+succeeds. A manual validation run stops there. For a pushed `v*` tag, the
+separately write-enabled public release job requires the stable
+`VibeTV-Control-Center.dmg` file, then builds checksums and runs the single
+GitHub Release publishing step.
 
 Apple references used for this prepared flow:
 
 - [Notarizing macOS software before distribution](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
 - [Customizing the notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
 - [Creating distribution-signed code for macOS](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac)
+- [macOS 14 release notes: `syspolicy_check`](https://developer.apple.com/documentation/macos-release-notes/macos-14-release-notes)
+- [Installing an Apple certificate on macOS GitHub runners](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)
+- [Using secrets in GitHub Actions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)
 
 ## Release Readiness
 
@@ -189,9 +261,15 @@ Before a customer DMG rollout, release readiness must include:
 
 - generated `.app` bundle structure is valid,
 - DMG contains the app and Applications symlink,
-- `codesign --verify` passes,
-- `spctl --assess` passes after stapling,
+- `codesign --verify` passes for the final DMG and its mounted app,
+- Apple notarization status and log both say `Accepted`,
+- `xcrun stapler validate`, `hdiutil verify`, and both Gatekeeper assessments
+  pass,
 - DMG checksum appears in `checksums-v<version>.txt`,
 - clean-Mac validation confirms the app opens and shows the React Control Center,
 - no `.pkg`, Homebrew publishing, live-shop changes, Vercel deploys, releases,
   tags, merges, or hardware writes are part of this task.
+
+Dry-run and local unsigned DMG tests do not prove Developer ID signing,
+notarization, or Gatekeeper acceptance. That evidence exists only after the
+macOS release job has used the real secrets and stored its notarization log.

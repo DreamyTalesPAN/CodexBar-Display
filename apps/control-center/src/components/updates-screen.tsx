@@ -2,7 +2,6 @@
 
 import {
   Check,
-  Copy,
   Download,
   Monitor,
   RefreshCw,
@@ -10,15 +9,11 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { ControlCenterButton } from "./control-center-button";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
-import {
-  buildMacAppTerminalCommand,
-  currentControlCenterOrigin,
-} from "./mac-app-install-command";
 
 export type UpdatesCompanionStatus = "unknown" | "online" | "missing";
 
@@ -42,32 +37,16 @@ export type FirmwareUpdateStatus = {
   error?: string;
 };
 
-export type MacAppUpdateStatus = {
-  phase: "installing" | "complete" | "error";
-  startedAt: string;
-  finishedAt?: string;
-  message?: string;
-  progress?: number;
-  logs: string[];
-  result?: {
-    version?: string;
-  };
-  error?: string;
-};
-
 export type UpdatesScreenProps = {
   companionStatus: UpdatesCompanionStatus;
   device: UpdatesDeviceInfo | null;
   companionVersion?: string;
   companionRelease?: CompanionReleaseInfo | null;
-  macAppSelfUpdateEnabled?: boolean;
   firmwareUpdate?: FirmwareUpdateInfo | null;
   onCheckUpdates?: () => Promise<void> | void;
   onCreateReport?: () => void;
-  onInstallMacAppUpdate?: (version?: string) => Promise<boolean> | boolean | void;
   onInstallUpdate?: () => Promise<boolean> | boolean | void;
   busyAction?: string | null;
-  macAppUpdateStatus?: MacAppUpdateStatus | null;
   updateStatus?: FirmwareUpdateStatus | null;
 };
 
@@ -76,21 +55,14 @@ export function UpdatesScreen({
   device,
   companionVersion,
   companionRelease = null,
-  macAppSelfUpdateEnabled = false,
   firmwareUpdate,
   onCheckUpdates,
   onCreateReport,
-  onInstallMacAppUpdate,
   onInstallUpdate,
   busyAction,
-  macAppUpdateStatus,
   updateStatus,
 }: UpdatesScreenProps) {
-  const [macAppCommandCopied, setMacAppCommandCopied] = useState(false);
-  const macAppTerminalCommand = useMemo(
-    () => buildMacAppTerminalCommand(currentControlCenterOrigin()),
-    [],
-  );
+  const [macAppDownloadStarted, setMacAppDownloadStarted] = useState(false);
   const installedFirmware =
     firmwareUpdate?.installedFirmware || device?.firmware || "Unknown";
   const canCheckFirmware = Boolean(device?.board && device?.firmware);
@@ -101,21 +73,16 @@ export function UpdatesScreen({
   const latestFirmware =
     firmwareUpdate?.latestFirmware || (checking ? "Checking" : "Not available");
   const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
-  const macAppUpdateComplete = macAppUpdateStatus?.phase === "complete";
-  const macAppUpdateAvailable = Boolean(
-    companionRelease?.updateAvailable && !macAppUpdateComplete,
-  );
-  const manualMacAppUpdate = Boolean(
-    companionRelease?.updateAvailable && !macAppSelfUpdateEnabled,
-  );
+  const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
+  const macAppDownloadUrl = macAppUpdateAvailable
+    ? companionRelease?.dmgDownloadUrl
+    : undefined;
+  const macAppDownloadReady = Boolean(macAppDownloadUrl);
   const anyUpdateAvailable = updateAvailable || macAppUpdateAvailable;
   const refreshing = busyAction === "firmware-check";
   const installingUpdate =
     busyAction === "firmware-update" || updateStatus?.phase === "installing";
-  const installingMacAppUpdate =
-    busyAction === "mac-app-update" ||
-    macAppUpdateStatus?.phase === "installing";
-  const installingAnyUpdate = installingUpdate || installingMacAppUpdate;
+  const installingAnyUpdate = installingUpdate;
   const creatingReport = busyAction === "diagnostics";
   const macAppCheckFailed =
     macAppRunning && companionRelease?.status === "check_failed";
@@ -139,50 +106,22 @@ export function UpdatesScreen({
   const companionReleaseStatus = companionReleaseLabel({
     macAppRunning,
     release: companionRelease,
-    updateStatus: macAppUpdateStatus,
   });
   const companionInstalled =
     companionStatus === "missing"
       ? "Not running"
       : companionVersion || "Unknown";
   const companionAvailable =
-    macAppUpdateStatus?.phase === "complete" &&
-    macAppUpdateStatus.result?.version
-      ? macAppUpdateStatus.result.version
-      : companionRelease?.latestVersion ||
-        companionRelease?.release ||
-        "Checking";
-  const companionAction = companionInstallerAction({
-    companionStatus,
-    release: companionRelease,
-  });
-  const primaryCopyCommand = Boolean(
-    companionStatus === "missing" || manualMacAppUpdate,
-  );
-
-  async function copyMacAppCommand() {
-    await copyText(macAppTerminalCommand);
-    setMacAppCommandCopied(true);
-  }
+    companionRelease?.latestVersion || companionRelease?.release || "Checking";
 
   async function runPrimaryUpdate() {
-    if (primaryCopyCommand) {
-      await copyMacAppCommand();
+    if (macAppUpdateAvailable) {
       return;
     }
 
     if (!anyUpdateAvailable) {
       await onCheckUpdates?.();
       return;
-    }
-
-    if (macAppUpdateAvailable) {
-      const macAppUpdated = await onInstallMacAppUpdate?.(
-        companionRelease?.latestVersion,
-      );
-      if (macAppUpdated === false) {
-        return;
-      }
     }
 
     if (updateAvailable) {
@@ -210,19 +149,20 @@ export function UpdatesScreen({
           </div>
           <PrimaryUpdateAction
             checking={checkingUpdates || refreshing}
-            commandCopied={macAppCommandCopied}
-            copyCommand={primaryCopyCommand}
-            copyLabel={companionActionLabel(companionAction)}
             disabled={
               installingAnyUpdate ||
               Boolean(busyAction && busyAction !== "firmware-check")
             }
+            downloadUrl={macAppDownloadUrl}
             installingFirmware={installingUpdate}
-            installingMacApp={installingMacAppUpdate}
+            macAppUpdateAvailable={macAppUpdateAvailable}
+            onDownloadStart={() => setMacAppDownloadStarted(true)}
             onClick={runPrimaryUpdate}
             updateAvailable={anyUpdateAvailable}
             updateReady={Boolean(
-              primaryCopyCommand || anyUpdateAvailable || onCheckUpdates,
+              macAppUpdateAvailable
+                ? macAppDownloadReady
+                : anyUpdateAvailable || onCheckUpdates,
             )}
           />
         </div>
@@ -249,14 +189,10 @@ export function UpdatesScreen({
           />
         </dl>
 
-        {macAppUpdateStatus ? (
-          <InlineMacAppUpdateProgress
-            commandCopied={macAppCommandCopied}
-            onCopyCommand={copyMacAppCommand}
-            onRetry={() =>
-              onInstallMacAppUpdate?.(companionRelease?.latestVersion)
-            }
-            status={macAppUpdateStatus}
+        {macAppUpdateAvailable ? (
+          <MacAppDmgUpdateNote
+            downloadReady={macAppDownloadReady}
+            downloadStarted={macAppDownloadStarted}
           />
         ) : null}
       </section>
@@ -299,45 +235,51 @@ export function UpdatesScreen({
 
 function PrimaryUpdateAction({
   checking,
-  commandCopied,
-  copyCommand,
-  copyLabel,
   disabled,
+  downloadUrl,
   installingFirmware,
-  installingMacApp,
+  macAppUpdateAvailable,
+  onDownloadStart,
   onClick,
   updateAvailable,
   updateReady,
 }: {
   checking: boolean;
-  commandCopied: boolean;
-  copyCommand: boolean;
-  copyLabel: string;
   disabled: boolean;
+  downloadUrl?: string;
   installingFirmware: boolean;
-  installingMacApp: boolean;
+  macAppUpdateAvailable: boolean;
+  onDownloadStart: () => void;
   onClick: () => void | Promise<void>;
   updateAvailable: boolean;
   updateReady: boolean;
 }) {
-  const installing = installingFirmware || installingMacApp;
-  const label = installingMacApp
-    ? "Updating Mac App"
-    : installingFirmware
-      ? "Updating VibeTV"
-      : copyCommand
-        ? commandCopied
-          ? "Command copied"
-          : copyLabel
-        : updateAvailable
-          ? "Update now"
-          : checking
-            ? "Checking updates"
-            : "Check for updates";
-  const icon = installing || checking ? (
+  if (macAppUpdateAvailable && downloadUrl && !disabled && !checking) {
+    return (
+      <a
+        className="vibetv-button vibetv-button--large vibetv-button--primary w-full sm:w-auto sm:min-w-[240px]"
+        href={downloadUrl}
+        onClick={onDownloadStart}
+      >
+        <Download size={20} aria-hidden />
+        <span>Download Mac App update</span>
+      </a>
+    );
+  }
+
+  const label = installingFirmware
+    ? "Updating VibeTV"
+    : macAppUpdateAvailable
+      ? downloadUrl
+        ? "Download Mac App update"
+        : "Mac App update not ready"
+      : updateAvailable
+        ? "Update now"
+        : checking
+          ? "Checking updates"
+          : "Check for updates";
+  const icon = installingFirmware || checking ? (
     <RefreshCw className="animate-spin" size={20} aria-hidden />
-  ) : copyCommand ? (
-    <Copy size={20} aria-hidden />
   ) : updateAvailable ? (
     <Download size={20} aria-hidden />
   ) : (
@@ -347,7 +289,9 @@ function PrimaryUpdateAction({
   return (
     <ControlCenterButton
       className="w-full sm:w-auto sm:min-w-[240px]"
-      disabled={disabled || checking || !updateReady}
+      disabled={
+        disabled || checking || !updateReady || macAppUpdateAvailable
+      }
       icon={icon}
       label={label}
       onClick={onClick}
@@ -449,146 +393,51 @@ function InlineUpdateProgress({
   );
 }
 
-function InlineMacAppUpdateProgress({
-  commandCopied,
-  onCopyCommand,
-  onRetry,
-  status,
+function MacAppDmgUpdateNote({
+  downloadReady,
+  downloadStarted,
 }: {
-  commandCopied: boolean;
-  onCopyCommand: () => void | Promise<void>;
-  onRetry?: () => void;
-  status: MacAppUpdateStatus;
+  downloadReady: boolean;
+  downloadStarted: boolean;
 }) {
-  const failed = status.phase === "error";
-  const complete = status.phase === "complete";
-  const progress = clampUpdateProgress(
-    failed || complete ? 100 : status.progress,
-  );
-  const title = failed
-    ? "Mac App update failed"
-    : complete
-      ? "Mac App updated"
-      : "Updating Mac App";
-  const detail = failed
-    ? status.error ||
-      "Copy the update command and run it in Terminal, then try again."
-    : complete
-      ? status.result?.version
-        ? `Mac App ${status.result.version} is installed.`
-        : "Mac App is up to date."
-      : status.message ||
-        status.logs[status.logs.length - 1] ||
-        "Preparing Mac App update.";
-  const previousSteps = failed || complete ? [] : status.logs.slice(-4, -1);
-
   return (
-    <div className="mt-6" role="status" aria-live="polite">
-      <div className="h-2 overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
-        <div
-          className={`h-full bg-[#CCFF00] transition-[width] duration-300 ${
-            failed || complete ? "" : "animate-pulse"
-          }`}
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-      <div className="mt-3 flex flex-col gap-3 border border-[#747A60] bg-[#F9F9F9] p-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-start gap-2">
-          {failed ? (
-            <X className="mt-0.5 shrink-0" size={16} aria-hidden />
-          ) : complete ? (
-            <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden />
-          ) : (
-            <RefreshCw
-              className="mt-0.5 shrink-0 animate-spin"
-              size={16}
-              aria-hidden
-            />
-          )}
-          <div className="min-w-0">
-            <div className="text-sm font-bold text-[#1B1B1B]">{title}</div>
-            <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-              {detail}
-            </div>
-            {previousSteps.length > 0 ? (
-              <ol className="mt-2 space-y-1 text-xs leading-5 text-[#5D634F]">
-                {previousSteps.map((step) => (
-                  <li key={step}>{step}</li>
-                ))}
-              </ol>
-            ) : null}
-          </div>
-        </div>
-        {failed ? (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <ControlCenterButton
-              disabled={!onRetry}
-              label="Try again"
-              onClick={onRetry}
-              size="compact"
-              variant="secondary"
-            />
-            <ControlCenterButton
-              icon={<Copy size={16} aria-hidden />}
-              label={commandCopied ? "Command copied" : "Copy update command"}
-              onClick={onCopyCommand}
-              size="compact"
-              variant="secondary"
-            />
-          </div>
-        ) : null}
-      </div>
+    <div
+      className="mt-6 border border-[#747A60] bg-[#F9F9F9] p-4 text-sm leading-6 text-[#444933]"
+      role="status"
+    >
+      {downloadReady ? (
+        <>
+          <strong className="font-black text-[#1B1B1B]">
+            {downloadStarted ? "Download started." : "Update with the DMG."}
+          </strong>{" "}
+          Quit VibeTV Control Center, open the downloaded DMG, drag VibeTV
+          Control Center into Applications, and choose Replace. Then open the
+          app from Applications again. This replaces the installed app instead
+          of creating a second Terminal-installed copy.
+        </>
+      ) : (
+        <>
+          <strong className="font-black text-[#1B1B1B]">
+            Mac App update is not ready yet.
+          </strong>{" "}
+          No installer will run. Check again after the signed Mac App download
+          is available.
+        </>
+      )}
     </div>
   );
-}
-
-function companionActionLabel(action: "install" | "repair" | "update"): string {
-  if (action === "update") {
-    return "Copy update command";
-  }
-  if (action === "repair") {
-    return "Copy repair command";
-  }
-  return "Copy install command";
-}
-
-function companionInstallerAction({
-  companionStatus,
-  release,
-}: {
-  companionStatus: UpdatesCompanionStatus;
-  release: CompanionReleaseInfo | null;
-}): "install" | "repair" | "update" {
-  if (companionStatus === "missing") {
-    return "install";
-  }
-  if (release?.updateAvailable) {
-    return "update";
-  }
-  return "repair";
 }
 
 function companionReleaseLabel({
   macAppRunning,
   release,
-  updateStatus,
 }: {
   macAppRunning: boolean;
   release: CompanionReleaseInfo | null;
-  updateStatus?: MacAppUpdateStatus | null;
 }): string {
-  if (updateStatus?.phase === "installing") {
-    return "Updating";
-  }
-  if (updateStatus?.phase === "complete") {
-    return "Ready";
-  }
-  if (updateStatus?.phase === "error") {
-    return "Needs attention";
-  }
   if (macAppRunning) {
     if (release?.updateAvailable) {
-      return "Update available";
+      return release.dmgDownloadUrl ? "Download ready" : "Update waiting";
     }
     if (release?.status === "check_failed") {
       return "Check failed";
@@ -605,10 +454,6 @@ function companionReleaseLabel({
     return "Setup needed";
   }
   return "Check failed";
-}
-
-async function copyText(text: string) {
-  await navigator.clipboard.writeText(text);
 }
 
 function clampUpdateProgress(value: number | undefined): number {

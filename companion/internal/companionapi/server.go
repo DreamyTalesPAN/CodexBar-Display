@@ -50,6 +50,7 @@ const (
 	subnetProbeLimit        = 32
 	subnetProbeTime         = 450 * time.Millisecond
 	themeInstallDisableEnv  = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
+	macAppUpdateDisableEnv  = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
 	displayStreamLabel      = "com.codexbar-display.daemon"
 	displayStreamOutLog     = "daemon.out.log"
 	displayStreamLegacyLog  = "/tmp/codexbar-display-daemon.out.log"
@@ -118,6 +119,7 @@ type Server struct {
 	streamStatus           func(context.Context, string) displayStreamInfo
 	waitStream             func(context.Context, string) displayStreamInfo
 	refreshStream          func(context.Context, string) error
+	allowMacAppSelfUpdate  bool
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
 	fetchUsage             func(context.Context) ([]codexbar.ParsedFrame, error)
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
@@ -566,27 +568,28 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 	return &Server{
-		addr:               addr,
-		home:               home,
-		allowedOrigins:     origins,
-		controlCenterFS:    controlCenterFS,
-		client:             client,
-		loadConfig:         runtimeconfig.Load,
-		saveConfig:         runtimeconfig.Save,
-		installTheme:       themeinstall.Install,
-		runSetup:           setup.Run,
-		subnetTargets:      localSubnetTargets,
-		streamStatus:       inspectDisplayStream,
-		waitStream:         waitForDisplayStream,
-		refreshStream:      opts.RefreshDisplayStream,
-		loadUsage:          daemon.LoadPersistedUsage,
-		fetchUsage:         codexbar.FetchAllProviders,
-		updateFirmware:     runFirmwareUpdateCommand,
-		updateMacApp:       runMacAppUpdateCommand,
-		fetchMacAppRelease: fetchLatestMacAppRelease,
-		installJobs:        make(map[string]*themeInstallJob),
-		updateJobs:         make(map[string]*firmwareUpdateJob),
-		macAppUpdateJobs:   make(map[string]*macAppUpdateJob),
+		addr:                  addr,
+		home:                  home,
+		allowedOrigins:        origins,
+		controlCenterFS:       controlCenterFS,
+		client:                client,
+		loadConfig:            runtimeconfig.Load,
+		saveConfig:            runtimeconfig.Save,
+		installTheme:          themeinstall.Install,
+		runSetup:              setup.Run,
+		subnetTargets:         localSubnetTargets,
+		streamStatus:          inspectDisplayStream,
+		waitStream:            waitForDisplayStream,
+		refreshStream:         opts.RefreshDisplayStream,
+		allowMacAppSelfUpdate: macAppSelfUpdateEnabled(),
+		loadUsage:             daemon.LoadPersistedUsage,
+		fetchUsage:            codexbar.FetchAllProviders,
+		updateFirmware:        runFirmwareUpdateCommand,
+		updateMacApp:          runMacAppUpdateCommand,
+		fetchMacAppRelease:    fetchLatestMacAppRelease,
+		installJobs:           make(map[string]*themeInstallJob),
+		updateJobs:            make(map[string]*firmwareUpdateJob),
+		macAppUpdateJobs:      make(map[string]*macAppUpdateJob),
 	}, nil
 }
 
@@ -636,8 +639,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/updates/latest", s.handleFirmwareLatest)
 	mux.HandleFunc("/v1/updates/install", s.handleFirmwareUpdateInstall)
 	mux.HandleFunc("/v1/updates/install/status", s.handleFirmwareUpdateStatus)
-	mux.HandleFunc("/v1/mac-app/update", s.handleMacAppUpdateInstall)
-	mux.HandleFunc("/v1/mac-app/update/status", s.handleMacAppUpdateStatus)
+	if s.allowMacAppSelfUpdate {
+		mux.HandleFunc("/v1/mac-app/update", s.handleMacAppUpdateInstall)
+		mux.HandleFunc("/v1/mac-app/update/status", s.handleMacAppUpdateStatus)
+	}
 	return s.withCORS(mux)
 }
 
@@ -1097,7 +1102,7 @@ func (s *Server) companionInfo(ctx context.Context) companion {
 		Update:  s.macAppReleaseInfo(ctx),
 		Features: companionFeatures{
 			ThemeInstallEnabled:     themeInstallEnabled(),
-			MacAppSelfUpdateEnabled: true,
+			MacAppSelfUpdateEnabled: s.allowMacAppSelfUpdate,
 		},
 	}
 }
@@ -3863,6 +3868,15 @@ func sanitizeErrorDetail(err error) string {
 
 func themeInstallEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(themeInstallDisableEnv))) {
+	case "1", "true", "yes", "on":
+		return false
+	default:
+		return true
+	}
+}
+
+func macAppSelfUpdateEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(macAppUpdateDisableEnv))) {
 	case "1", "true", "yes", "on":
 		return false
 	default:

@@ -11,6 +11,7 @@ import {
   Wifi,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { CompanionReleaseInfo } from "@/lib/companion-release";
 import type {
   ApiError,
   CompanionStatus,
@@ -22,7 +23,6 @@ import { DeviceTargetForm } from "./device-target-form";
 import {
   buildMacAppTerminalCommand,
   currentControlCenterOrigin,
-  macAppDmgDownloadUrl,
 } from "./mac-app-install-command";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
 
@@ -93,6 +93,7 @@ type SetupScreenProps = {
   hostedMode?: boolean;
   localControlCenterPreviouslyOpened?: boolean;
   localControlCenterPath?: string;
+  macAppRelease?: CompanionReleaseInfo | null;
   previewStep?: "mac-app" | null;
   showIntro?: boolean;
   setupComplete: boolean;
@@ -118,6 +119,7 @@ export function SetupScreen({
   hostedMode = false,
   localControlCenterPreviouslyOpened = false,
   localControlCenterPath = "/control-center",
+  macAppRelease = null,
   previewStep,
   showIntro = true,
   setupComplete,
@@ -156,12 +158,16 @@ export function SetupScreen({
     controlCenterOrigin,
     localControlCenterPath,
   );
-  const dmgUrl = macAppDmgDownloadUrl();
+  const dmgUrl = macAppRelease?.dmgDownloadUrl;
   const setupInstructionsCopied =
     dmgDownloadStarted || agentPromptCopied || terminalCommandCopied;
-  const macAppStepTitle = hostedMode
-    ? "Download or update Mac App"
-    : "Download Mac App";
+  const macAppStepTitle = dmgUrl
+    ? hostedMode
+      ? "Download or update Mac App"
+      : "Download Mac App"
+    : hostedMode
+      ? "Install or update Mac App"
+      : "Install Mac App";
   const showControlCenterLauncher =
     showIntro &&
     !previewStep &&
@@ -390,40 +396,44 @@ export function SetupScreen({
           >
             {activeStep === "mac-app" ? (
               <div className="grid min-w-0 gap-4">
-                <div className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4">
-                  <p className="text-sm leading-6 text-[#444933]">
-                    Download VibeTV Control Center, open the DMG, drag the app
-                    into Applications, then open it. Existing setup details stay
-                    on this Mac.
-                  </p>
-                  <a
-                    className="vibetv-button vibetv-button--large vibetv-button--full vibetv-button--primary"
-                    href={dmgUrl}
-                    onClick={() => setDmgDownloadStarted(true)}
+                {dmgUrl ? (
+                  <div className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4">
+                    <p className="text-sm leading-6 text-[#444933]">
+                      Download VibeTV Control Center, open the DMG, drag the app
+                      into Applications, then open it. If macOS asks, choose
+                      Replace so only one installed Mac App stays on this Mac.
+                    </p>
+                    <a
+                      className="vibetv-button vibetv-button--large vibetv-button--full vibetv-button--primary"
+                      href={dmgUrl}
+                      onClick={() => setDmgDownloadStarted(true)}
+                    >
+                      <Download size={18} aria-hidden />
+                      <span>Download Mac App</span>
+                    </a>
+                  </div>
+                ) : null}
+
+                {!dmgUrl ? (
+                  <div
+                    aria-label="Mac App setup method"
+                    className="grid max-w-[440px] grid-cols-2 border border-[#747A60]"
+                    role="tablist"
                   >
-                    <Download size={18} aria-hidden />
-                    <span>Download Mac App</span>
-                  </a>
-                </div>
+                    <SetupModeTab
+                      active={setupMode === "agentic"}
+                      label="Agentic setup"
+                      onClick={() => setSetupMode("agentic")}
+                    />
+                    <SetupModeTab
+                      active={setupMode === "manual"}
+                      label="Manual setup"
+                      onClick={() => setSetupMode("manual")}
+                    />
+                  </div>
+                ) : null}
 
-                <div
-                  aria-label="Mac App setup method"
-                  className="grid max-w-[440px] grid-cols-2 border border-[#747A60]"
-                  role="tablist"
-                >
-                  <SetupModeTab
-                    active={setupMode === "agentic"}
-                    label="Agentic setup"
-                    onClick={() => setSetupMode("agentic")}
-                  />
-                  <SetupModeTab
-                    active={setupMode === "manual"}
-                    label="Manual setup"
-                    onClick={() => setSetupMode("manual")}
-                  />
-                </div>
-
-                {setupMode === "agentic" ? (
+                {!dmgUrl && setupMode === "agentic" ? (
                   <div className="grid min-w-0 gap-4">
                     <div className="grid min-w-0 gap-3">
                       <div className="min-w-0 max-w-full overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
@@ -465,21 +475,20 @@ export function SetupScreen({
 
                     {agentPromptCopied ? (
                       <StatusNote>
-                        Paste the prompt into your coding agent. Use this
-                        fallback if the Mac App download does not work.
+                        Paste the prompt into your coding agent to install or
+                        update the Mac App.
                       </StatusNote>
                     ) : null}
                   </div>
                 ) : null}
 
-                {setupMode === "manual" ? (
+                {!dmgUrl && setupMode === "manual" ? (
                   <div className="grid min-w-0 gap-4">
                     <div className="grid min-w-0 gap-3">
                       <div className="min-w-0 max-w-full overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
                         <p className="px-4 py-3 text-sm leading-6 text-[#444933]">
                           Open Terminal, paste this command, then press Enter.
-                          Use this support fallback if the Mac App download
-                          does not work.
+                          This installs or updates the latest VibeTV Mac App.
                         </p>
                         <code
                           className="block max-h-[280px] w-full max-w-full overflow-auto whitespace-pre-wrap border-t border-[#747A60] bg-[#EEEEEE] p-4 text-xs leading-5 text-[#1B1B1B] [overflow-wrap:anywhere]"
@@ -506,7 +515,13 @@ export function SetupScreen({
 
                 {macAppCheckFailed ? (
                   <StatusNote icon={<RefreshCw size={16} aria-hidden />}>
-                    {hostedReturnFlow ? (
+                    {dmgUrl ? (
+                      <>
+                        Mac App did not answer. Make sure VibeTV Control Center
+                        replaced the old copy in Applications and is open, then
+                        try again.
+                      </>
+                    ) : hostedReturnFlow ? (
                       <>
                         Mac App did not answer. Open Control Center again. If it
                         still does not open, copy the prompt or terminal command

@@ -76,6 +76,13 @@ const releaseFixture = {
   tag_name: "v1.0.99",
   assets: [
     {
+      name: "VibeTV-Control-Center.dmg",
+      state: "uploaded",
+      size: 12_345_678,
+      browser_download_url:
+        "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.99/VibeTV-Control-Center.dmg",
+    },
+    {
       name: "install-control-center-companion.sh",
       browser_download_url:
         "https://downloads.example.test/install-control-center-companion.sh",
@@ -97,6 +104,13 @@ const scriptOnlyReleaseFixture = {
 const missingAssetReleaseFixture = {
   tag_name: "v1.0.96",
   assets: [
+    {
+      name: "VibeTV-Control-Center.dmg",
+      state: "uploaded",
+      size: 0,
+      browser_download_url:
+        "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.96/VibeTV-Control-Center.dmg",
+    },
     {
       name: "release-notes.txt",
       browser_download_url: "https://downloads.example.test/release-notes.txt",
@@ -164,14 +178,17 @@ async function main() {
       await testHostedSetupRoutesOldMacAppToSetupCommand(
         browser,
         appContext.appUrl,
+        { expectDmg: false },
       );
       await testHostedThemeSetupPreservesLocalThemePath(
         browser,
         appContext.appUrl,
+        { expectDmg: false },
       );
       await testHostedSetupReturnsToLocalControlCenter(
         browser,
         appContext.appUrl,
+        { expectDmg: false },
       );
       await testLocalSetupSkipsWifiWhenMacAppAlreadyRunsWithoutDevice(
         browser,
@@ -188,9 +205,10 @@ async function main() {
       await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
         browser,
         appContext.appUrl,
+        { expectDmg: false },
       );
       await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
-      await testUpdatesShowTerminalCommandWithoutPackageAssets(
+      await testUpdatesKeepDmgHiddenWithoutVerifiedAsset(
         browser,
         appContext.appUrl,
       );
@@ -201,14 +219,17 @@ async function main() {
     await testHostedSetupRoutesOldMacAppToSetupCommand(
       browser,
       appContext.appUrl,
+      { expectDmg: true },
     );
     await testHostedThemeSetupPreservesLocalThemePath(
       browser,
       appContext.appUrl,
+      { expectDmg: true },
     );
     await testHostedSetupReturnsToLocalControlCenter(
       browser,
       appContext.appUrl,
+      { expectDmg: true },
     );
     await testLocalSetupSkipsWifiWhenMacAppAlreadyRunsWithoutDevice(
       browser,
@@ -221,7 +242,7 @@ async function main() {
     await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
       browser,
       appContext.appUrl,
-      fixtureServer,
+      { expectDmg: true },
     );
     await testSetupTabsAreLockedUntilSetupComplete(browser, appContext.appUrl);
     await testSetupUnlocksWhenThemeInstallGateDisabled(
@@ -240,10 +261,6 @@ async function main() {
     );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
-    await testUpdatesCompletesMacAppUpdateAfterLocalRestart(
-      browser,
-      appContext.appUrl,
-    );
     await testUpdatesShowLegacyCompanionReleaseFallback(
       browser,
       appContext.appUrl,
@@ -281,7 +298,8 @@ async function main() {
     await testBoardIncompatibleThemeStaysLocked(browser, appContext.appUrl);
     await testFirmwareIncompatibleThemeStaysLocked(browser, appContext.appUrl);
     await assertCompanionReleaseApi(appContext.appUrl, {
-      installerAsset: null,
+      dmgDownloadAsset: "VibeTV-Control-Center.dmg",
+      dmgDownloadStatus: "available",
       latestVersion: "1.0.99",
       status: "available",
       updateAvailable: true,
@@ -307,6 +325,26 @@ async function main() {
 
     appContext = await startTestApp({
       catalogUrl,
+      dmgDownloadEnabled: false,
+      releaseUrl: completeReleaseUrl,
+    });
+    app = appContext.app;
+    await testDisabledDmgFlagHidesSetupAndUpdateLinks(
+      browser,
+      appContext.appUrl,
+    );
+    await assertCompanionReleaseApi(appContext.appUrl, {
+      dmgDownloadAsset: null,
+      dmgDownloadStatus: "disabled",
+      latestVersion: "1.0.99",
+      status: "available",
+      updateAvailable: true,
+    });
+    await stopProcess(app.process);
+    app = undefined;
+
+    appContext = await startTestApp({
+      catalogUrl,
       releaseUrl: scriptOnlyReleaseUrl,
     });
     app = appContext.app;
@@ -316,7 +354,8 @@ async function main() {
       fixtureServer,
     );
     await assertCompanionReleaseApi(appContext.appUrl, {
-      installerAsset: null,
+      dmgDownloadAsset: null,
+      dmgDownloadStatus: "missing_asset",
       latestVersion: "1.0.98",
       status: "available",
       updateAvailable: true,
@@ -334,12 +373,13 @@ async function main() {
       appContext.appUrl,
       fixtureServer,
     );
-    await testUpdatesShowTerminalCommandWithoutPackageAssets(
+    await testUpdatesKeepDmgHiddenWithoutVerifiedAsset(
       browser,
       appContext.appUrl,
     );
     await assertCompanionReleaseApi(appContext.appUrl, {
-      installerAsset: null,
+      dmgDownloadAsset: null,
+      dmgDownloadStatus: "missing_asset",
       latestVersion: "1.0.96",
       status: "available",
       updateAvailable: true,
@@ -358,7 +398,8 @@ async function main() {
       fixtureServer,
     );
     await assertCompanionReleaseApi(appContext.appUrl, {
-      installerAsset: null,
+      dmgDownloadAsset: null,
+      dmgDownloadStatus: "check_failed",
       latestVersion: null,
       status: "check_failed",
       updateAvailable: false,
@@ -403,10 +444,21 @@ async function main() {
   }
 }
 
-async function startTestApp({ catalogUrl, firmwareUrl, releaseUrl }) {
+async function startTestApp({
+  catalogUrl,
+  dmgDownloadEnabled = true,
+  firmwareUrl,
+  releaseUrl,
+}) {
   const appPort = await findFreePort();
   const appUrl = `http://127.0.0.1:${appPort}`;
-  const app = startNext({ appPort, catalogUrl, firmwareUrl, releaseUrl });
+  const app = startNext({
+    appPort,
+    catalogUrl,
+    dmgDownloadEnabled,
+    firmwareUrl,
+    releaseUrl,
+  });
   await waitForHttp(appUrl);
   return { app, appUrl };
 }
@@ -501,22 +553,19 @@ async function testFixConnectionDoesNotRepairWhenMacAppIsOffline(
   await macAppInstalledButton.waitFor({ timeout: 10_000 });
   assert(
     await macAppInstalledButton.isDisabled(),
-    "Mac App continue button should stay disabled until setup instructions are copied",
+    "Mac App continue button should stay disabled until the verified DMG download starts",
   );
-  await page.getByRole("button", { name: "Copy prompt" }).click();
-  await page
-    .getByRole("button", { name: "Prompt copied" })
-    .waitFor({ timeout: 10_000 });
+  await startVerifiedDmgSetupDownload(page);
   assert(
     !(await macAppInstalledButton.isDisabled()),
-    "Mac App continue button should enable after setup instructions are copied",
+    "Mac App continue button should enable after the verified DMG download starts",
   );
   await macAppInstalledButton.click();
   await page
     .getByText("Mac App did not answer.", { exact: false })
     .waitFor({ timeout: 10_000 });
   await page
-    .getByText("Copy the prompt or terminal command above", { exact: false })
+    .getByText("replaced the old copy in Applications", { exact: false })
     .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
@@ -535,6 +584,7 @@ async function testFixConnectionDoesNotRepairWhenMacAppIsOffline(
 async function testHostedSetupRoutesOldMacAppToSetupCommand(
   browser,
   appUrl,
+  { expectDmg },
 ) {
   const page = await browser.newPage({ viewport });
   await page.context().grantPermissions(["local-network-access"], {
@@ -542,6 +592,11 @@ async function testHostedSetupRoutesOldMacAppToSetupCommand(
   });
   const installRequests = [];
   const macAppUpdateRequests = [];
+  const nativeLaunches = [];
+  let localControlCenterRequests = 0;
+  await page.exposeFunction("__recordVibeTVNativeLaunch", (url) => {
+    nativeLaunches.push(url);
+  });
   await routeHostedAppThroughLocalNext(page, appUrl);
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.36",
@@ -550,6 +605,15 @@ async function testHostedSetupRoutesOldMacAppToSetupCommand(
     },
   });
   await page.route("http://127.0.0.1:47832/control-center", async (route) => {
+    localControlCenterRequests += 1;
+    if (localControlCenterRequests > 1) {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: "<!doctype html><title>Local Control Center</title>",
+      });
+      return;
+    }
     await route.fulfill({
       status: 404,
       contentType: "text/plain",
@@ -563,7 +627,11 @@ async function testHostedSetupRoutesOldMacAppToSetupCommand(
     timeout: 10_000,
   });
   await page
-    .getByRole("heading", { name: "Install or update Mac App" })
+    .getByRole("heading", {
+      name: expectDmg
+        ? "Download or update Mac App"
+        : "Install or update Mac App",
+    })
     .waitFor({
       timeout: 10_000,
     });
@@ -571,9 +639,6 @@ async function testHostedSetupRoutesOldMacAppToSetupCommand(
     (await page.getByRole("button", { name: "Update Mac App" }).count()) === 0,
     "Hosted setup should not show a browser Mac App update button",
   );
-  await assertMacAppSetupUsesTerminalCommand(page, {
-    expectedOrigin: "https://app.vibetv.shop",
-  });
   assert(
     (await page.getByRole("button", { name: "Open VibeTV App" }).count()) ===
       0,
@@ -590,44 +655,68 @@ async function testHostedSetupRoutesOldMacAppToSetupCommand(
   await macAppInstalledButton.waitFor({ timeout: 10_000 });
   assert(
     await macAppInstalledButton.isDisabled(),
-    "First hosted setup should keep Mac App confirmation disabled until setup instructions are copied",
+    "First hosted setup should keep Mac App confirmation disabled until setup starts",
   );
-  await page.getByRole("button", { name: "Copy prompt" }).click();
-  await page
-    .getByRole("button", { name: "Prompt copied" })
-    .waitFor({ timeout: 10_000 });
+  if (expectDmg) {
+    await startVerifiedDmgSetupDownload(page);
+  } else {
+    await startLegacySupportSetup(page);
+  }
   assert(
     !(await macAppInstalledButton.isDisabled()),
-    "First hosted setup should enable Mac App confirmation after setup instructions are copied",
+    "First hosted setup should enable Mac App confirmation after setup starts",
   );
-  await page
-    .getByRole("button", { name: "Mac App is installed" })
-    .waitFor({ timeout: 10_000 });
-  await page.getByRole("tab", { name: "Manual setup" }).click();
-  await page.getByRole("button", { name: "Copy terminal command" }).click();
   await page.getByRole("button", { name: "Mac App is installed" }).click();
   await page.getByText("Mac App update needed.").waitFor({
     timeout: 10_000,
   });
+  await waitForCondition(
+    () => nativeLaunches.length === 1,
+    "Hosted setup should attempt the native app URL scheme",
+  );
+  assert(
+    nativeLaunches.length === 1 &&
+      nativeLaunches[0] === "vibetv://open-control-center",
+    `Hosted setup must launch the native app even while its daemon is online, got ${JSON.stringify(nativeLaunches)}`,
+  );
+  await waitForCondition(
+    () => localControlCenterRequests >= 2,
+    "Hosted setup should verify the local Control Center after launching the app",
+  );
+  await page.waitForTimeout(250);
+  assert(
+    page.url().startsWith("https://app.vibetv.shop/"),
+    `Hosted setup must stay in the hosted page after opening the native app, got ${page.url()}`,
+  );
+  assert(
+    localControlCenterRequests === 2,
+    `Hosted setup must not also navigate the browser to loopback, got ${localControlCenterRequests} local requests`,
+  );
   assert(
     macAppUpdateRequests.length === 0,
-    "Hosted setup should route old Mac Apps to setup commands instead of browser self-update",
+    "Hosted setup should route old Mac Apps to the DMG instead of browser self-update",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
 }
 
-async function testHostedThemeSetupPreservesLocalThemePath(browser, appUrl) {
+async function testHostedThemeSetupPreservesLocalThemePath(
+  browser,
+  appUrl,
+  { expectDmg },
+) {
   const page = await browser.newPage({ viewport });
   await page.context().grantPermissions(["local-network-access"], {
     origin: "https://app.vibetv.shop",
   });
   const installRequests = [];
+  let localThemeRouteRequests = 0;
   await routeHostedAppThroughLocalNext(page, appUrl);
   await routeCompanionOnline(page, installRequests);
   await page.route(
     "http://127.0.0.1:47832/control-center/install/synthwave",
     async (route) => {
+      localThemeRouteRequests += 1;
       await route.fulfill({
         status: 404,
         contentType: "text/plain",
@@ -643,10 +732,18 @@ async function testHostedThemeSetupPreservesLocalThemePath(browser, appUrl) {
   await page.getByText("Mac App update needed.").waitFor({
     timeout: 10_000,
   });
-  await assertMacAppSetupUsesTerminalCommand(page, {
-    expectedOrigin: "https://app.vibetv.shop",
-    expectedLocalPath: "/control-center/install/synthwave",
-  });
+  if (expectDmg) {
+    await startVerifiedDmgSetupDownload(page);
+  } else {
+    await startLegacySupportSetup(page, {
+      expectedLocalPath: "/control-center/install/synthwave",
+    });
+  }
+  await page.getByRole("button", { name: "Mac App is installed" }).click();
+  await waitForCondition(
+    () => localThemeRouteRequests > 0,
+    "Hosted DMG setup should preserve the requested local theme path",
+  );
 
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -655,6 +752,7 @@ async function testHostedThemeSetupPreservesLocalThemePath(browser, appUrl) {
 async function testHostedSetupReturnsToLocalControlCenter(
   browser,
   appUrl,
+  { expectDmg },
 ) {
   const page = await browser.newPage({ viewport });
   await page.context().grantPermissions(["local-network-access"], {
@@ -672,8 +770,17 @@ async function testHostedSetupReturnsToLocalControlCenter(
 
   await page.goto("https://app.vibetv.shop/", { waitUntil: "networkidle" });
   await page
-    .getByRole("heading", { name: "Install or update Mac App" })
+    .getByRole("heading", {
+      name: expectDmg
+        ? "Download or update Mac App"
+        : "Install or update Mac App",
+    })
     .waitFor({ timeout: 10_000 });
+  if (expectDmg) {
+    await startVerifiedDmgSetupDownload(page, { startDownload: false });
+  } else {
+    await assertNoDmgDownloadActions(page);
+  }
   const openButton = page.getByRole("button", {
     name: "Open Control Center",
   });
@@ -725,6 +832,7 @@ async function testLocalSetupSkipsWifiWhenMacAppAlreadyRunsWithoutDevice(
 async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   browser,
   appUrl,
+  { expectDmg },
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
@@ -739,12 +847,14 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
-  await page
-    .getByRole("button", { name: "Copy prompt" })
-    .waitFor({ timeout: 10_000 });
-  await assertMacAppSetupUsesTerminalCommand(page, {
-    expectedLocalPath: "/control-center/install/does-not-exist",
-  });
+  if (expectDmg) {
+    await startVerifiedDmgSetupDownload(page);
+  } else {
+    await page.getByRole("button", { name: "Copy prompt" }).waitFor({
+      timeout: 10_000,
+    });
+    await assertNoDmgDownloadActions(page);
+  }
 
   assert(
     (await page.getByText("Shopify theme link was not found").count()) === 0,
@@ -1136,20 +1246,10 @@ async function testRunSetupAgainOpensMacAppInstallStepForOldMacApp(
   });
   await page.getByRole("button", { name: "Setup" }).click();
   await page.getByRole("button", { name: "Run setup again" }).click();
-  await page.getByRole("heading", { name: "Install Mac App" }).waitFor({
+  await page.getByRole("heading", { name: "Download Mac App" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Copy prompt" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByRole("button", { name: "Copy prompt" }).click();
-  await page.getByRole("button", { name: "Mac App is installed" }).click();
-  await page.getByText("Mac App update needed.").waitFor({
-    timeout: 10_000,
-  });
-  await page.getByRole("button", { name: /Copy prompt|Prompt copied/ }).waitFor({
-    timeout: 10_000,
-  });
+  await startVerifiedDmgSetupDownload(page, { startDownload: false });
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1160,110 +1260,58 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const macAppUpdateRequests = [];
+  const dmgRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { ...companionDevice, firmware: "1.0.33" },
     onMacAppUpdate: (postData) => {
       macAppUpdateRequests.push(postData);
     },
-    macAppUpdateStatusSequence: [
-      {
-        phase: "installing",
-        message: "Installing Mac App.",
-        progress: 70,
-        logs: [
-          "Preparing Mac App update.",
-          "Downloading Mac App update.",
-          "Installing Mac App.",
-        ],
-      },
-      {
-        phase: "complete",
-        message: "Mac App updated.",
-        progress: 100,
-        logs: [
-          "Preparing Mac App update.",
-          "Downloading Mac App update.",
-          "Installing Mac App.",
-          "Restarting Mac App.",
-          "Mac App updated.",
-        ],
-        result: { version: "1.0.99" },
-      },
-    ],
   });
+  await page.route(
+    "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.99/VibeTV-Control-Center.dmg",
+    async (route) => {
+      dmgRequests.push(route.request().url());
+      await route.abort();
+    },
+  );
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Updates" }).click();
-  await page.getByRole("button", { name: "Update now" }).waitFor({
+  const dmgUpdateLink = page.getByRole("link", {
+    name: "Download Mac App update",
+  });
+  await dmgUpdateLink.waitFor({
     timeout: 10_000,
   });
   assert(
-    (await page.getByRole("button", { name: "Update now" }).count()) === 1,
-    "Updates should show one primary Update now button",
+    assetName(await dmgUpdateLink.getAttribute("href")) ===
+      "VibeTV-Control-Center.dmg",
+    "Updates should use the verified DMG release asset",
   );
-  await page.getByRole("button", { name: "Update now" }).click();
-  await page
-    .getByRole("status")
-    .filter({ hasText: "Mac App updated" })
-    .waitFor({ timeout: 10_000 });
-  await page.getByText("Mac App 1.0.99 is installed.").waitFor({
-    timeout: 10_000,
-  });
+  await page.getByText("Update with the DMG.").waitFor({ timeout: 10_000 });
+  await page.getByText(/choose Replace/).waitFor({ timeout: 10_000 });
   await page.getByText("Installed version").waitFor({ timeout: 10_000 });
   await page.getByText("Latest version").waitFor({ timeout: 10_000 });
   assert(
-    (await page.getByText("Mac App download").count()) === 0,
-    "Updates should not show package download state",
+    (await page.getByRole("button", { name: "Copy update command" }).count()) ===
+      0,
+    "DMG update must not offer the Terminal updater",
   );
-
-  const hiddenUpdatesText = ["Release installer", "Mac package", ".pkg"];
-  for (const text of hiddenUpdatesText) {
-    assert(
-      (await page.getByText(text).count()) === 0,
-      `Updates should not show package/release jargon: ${text}`,
-    );
-  }
-
-  assert(macAppUpdateRequests.length === 1, "Mac App update should start once");
+  await assertNoMobileOverflow(page);
+  await dmgUpdateLink.click();
+  await waitForCondition(
+    () => dmgRequests.length === 1,
+    "DMG update should start one verified download",
+  );
   assert(
-    parseJSON(macAppUpdateRequests[0])?.version === "1.0.99",
-    `Mac App update should request latest version, got ${macAppUpdateRequests[0]}`,
+    dmgRequests.length === 1,
+    `DMG update should start one verified download, got ${dmgRequests.length}`,
+  );
+  assert(
+    macAppUpdateRequests.length === 0,
+    "DMG update must never call the legacy /v1/mac-app/update endpoint",
   );
   assertNoInstallRequests(installRequests);
-  await assertNoMobileOverflow(page);
-  await page.close();
-}
-
-async function testUpdatesCompletesMacAppUpdateAfterLocalRestart(
-  browser,
-  appUrl,
-) {
-  const page = await newCustomerPage(browser, appUrl, { viewport });
-  const installRequests = [];
-  const macAppUpdateRequests = [];
-  await routeCompanionOnline(page, installRequests, () => {}, {
-    device: { ...companionDevice, firmware: "1.0.33" },
-    onMacAppUpdate: (postData) => {
-      macAppUpdateRequests.push(postData);
-    },
-    macAppUpdateStatusFailures: 1,
-    macAppUpdateReconnectVersion: "1.0.99",
-  });
-
-  await page.goto(appUrl, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: "Updates" }).click();
-  await page.getByRole("button", { name: "Update now" }).click();
-  await page
-    .getByRole("status")
-    .filter({ hasText: "Mac App updated" })
-    .waitFor({ timeout: 10_000 });
-  await page.getByText("Mac App 1.0.99 is installed.").waitFor({
-    timeout: 10_000,
-  });
-
-  assert(macAppUpdateRequests.length === 1, "Mac App update should start once");
-  assertNoInstallRequests(installRequests);
-  await assertNoMobileOverflow(page);
   await page.close();
 }
 
@@ -1276,9 +1324,9 @@ async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Updates" }).click();
-  await page.getByRole("button", { name: "Update now" }).waitFor({
-    timeout: 10_000,
-  });
+  await page
+    .getByRole("link", { name: "Download Mac App update" })
+    .waitFor({ timeout: 10_000 });
   const macAppSection = page.locator("section.border-b").filter({
     has: page.getByRole("heading", { name: "Mac App" }),
   });
@@ -1387,7 +1435,7 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   await page.close();
 }
 
-async function testUpdatesShowTerminalCommandWithoutPackageAssets(
+async function testUpdatesKeepDmgHiddenWithoutVerifiedAsset(
   browser,
   appUrl,
 ) {
@@ -1399,25 +1447,20 @@ async function testUpdatesShowTerminalCommandWithoutPackageAssets(
 
   await page.goto(appUrl, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Updates" }).click();
-  await page.getByRole("button", { name: "Copy update command" }).waitFor({
-    timeout: 10_000,
+  const unavailableButton = page.getByRole("button", {
+    name: "Mac App update not ready",
   });
+  await unavailableButton.waitFor({ timeout: 10_000 });
+  assert(await unavailableButton.isDisabled(), "Unavailable DMG must stay disabled");
   assert(
-    (await page.getByText("Not ready yet").count()) === 0,
-    "Updates should not show unavailable Mac App package state",
+    (await page.getByRole("link", { name: "Download Mac App update" }).count()) ===
+      0,
+    "Updates must not show a DMG link without a verified asset",
   );
   assert(
-    (await page.getByText("Mac App download").count()) === 0,
-    "Updates should hide Mac App download state",
-  );
-
-  assert(
-    (await page.getByRole("button", { name: "Check again" }).count()) === 0,
-    "Updates should not show a dead Mac App installer retry button",
-  );
-  assert(
-    (await page.getByRole("link", { name: "Update Mac App" }).count()) === 0,
-    "Updates should not show a Mac App package update link",
+    (await page.getByRole("button", { name: "Copy update command" }).count()) ===
+      0,
+    "Updates must not fall back to the Terminal updater",
   );
 
   assertNoInstallRequests(installRequests);
@@ -2253,6 +2296,51 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   await page.close();
 }
 
+async function testDisabledDmgFlagHidesSetupAndUpdateLinks(browser, appUrl) {
+  let page = await newCustomerPage(browser, appUrl, { viewport });
+  const setupInstallRequests = [];
+  await routeCompanionMissing(page, setupInstallRequests);
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
+  await page.getByRole("heading", { name: "Install Mac App" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Copy prompt" }).waitFor({
+    timeout: 10_000,
+  });
+  await assertNoLegacyCompanionDownloadActions(page);
+  await assertNoDmgDownloadActions(page);
+  assertNoInstallRequests(setupInstallRequests);
+  await page.close();
+
+  page = await newCustomerPage(browser, appUrl, { viewport });
+  const updateInstallRequests = [];
+  const macAppUpdateRequests = [];
+  await routeCompanionOnline(page, updateInstallRequests, () => {}, {
+    device: { ...companionDevice, firmware: "1.0.33" },
+    onMacAppUpdate: (postData) => {
+      macAppUpdateRequests.push(postData);
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  const unavailableButton = page.getByRole("button", {
+    name: "Mac App update not ready",
+  });
+  await unavailableButton.waitFor({ timeout: 10_000 });
+  assert(await unavailableButton.isDisabled(), "Disabled DMG flag must stay disabled");
+  await assertNoLegacyCompanionDownloadActions(page);
+  await assertNoDmgDownloadActions(page);
+  assert(
+    macAppUpdateRequests.length === 0,
+    "Disabled DMG flag must not call the legacy Mac App updater",
+  );
+  assertNoInstallRequests(updateInstallRequests);
+  await page.close();
+}
+
 async function testScriptOnlyReleaseShowsSupportFallback(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
@@ -2270,6 +2358,7 @@ async function testScriptOnlyReleaseShowsSupportFallback(browser, appUrl) {
     .waitFor({ timeout: 10_000 });
   await assertNoCompanionInstallLink(page);
   await assertNoLegacyCompanionDownloadActions(page);
+  await assertNoDmgDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -2293,6 +2382,7 @@ async function testReleaseCheckFailureShowsNoDownloadActions(browser, appUrl) {
     .waitFor({ timeout: 10_000 });
 
   await assertNoLegacyCompanionDownloadActions(page);
+  await assertNoDmgDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -2315,6 +2405,7 @@ async function testMissingAssetReleaseShowsNoDownloadActions(browser, appUrl) {
     .getByRole("button", { name: "Copy prompt" })
     .waitFor({ timeout: 10_000 });
   await assertNoLegacyCompanionDownloadActions(page);
+  await assertNoDmgDownloadActions(page);
   await assertNoThemeLibraryReleaseDiagnostics(page);
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -2323,7 +2414,13 @@ async function testMissingAssetReleaseShowsNoDownloadActions(browser, appUrl) {
 
 async function assertCompanionReleaseApi(
   appUrl,
-  { installerAsset, latestVersion, status, updateAvailable },
+  {
+    dmgDownloadAsset,
+    dmgDownloadStatus,
+    latestVersion,
+    status,
+    updateAvailable,
+  },
 ) {
   const response = await fetch(`${appUrl}/api/companion/latest?version=1.0.32`);
   assert(
@@ -2349,27 +2446,28 @@ async function assertCompanionReleaseApi(
     `release API installedVersion=${payload.installedVersion}, expected 1.0.32`,
   );
   assertCustomerApiMessage(payload.message);
+  assert(
+    payload.dmgDownloadStatus === dmgDownloadStatus,
+    `release API dmgDownloadStatus=${payload.dmgDownloadStatus}, expected ${dmgDownloadStatus}`,
+  );
+  assert(
+    response.headers.get("access-control-allow-origin") === "*",
+    "release API must allow the embedded local UI to read the hosted DMG check",
+  );
 
-  if (installerAsset) {
+  if (dmgDownloadAsset) {
     assert(
-      assetName(payload.installerDownloadUrl) === installerAsset,
-      `release API installer asset=${assetName(
-        payload.installerDownloadUrl,
-      )}, expected ${installerAsset}`,
+      assetName(payload.dmgDownloadUrl) === dmgDownloadAsset,
+      `release API DMG asset=${assetName(
+        payload.dmgDownloadUrl,
+      )}, expected ${dmgDownloadAsset}`,
     );
   } else {
     assert(
-      !payload.installerDownloadUrl,
-      `release API should not expose installer URL, got ${payload.installerDownloadUrl}`,
+      !payload.dmgDownloadUrl,
+      `release API should not expose DMG URL, got ${payload.dmgDownloadUrl}`,
     );
   }
-
-  assert(
-    !payload.packageDownloadUrls,
-    `release API should not expose Mac package URLs, got ${JSON.stringify(
-      payload.packageDownloadUrls,
-    )}`,
-  );
 }
 
 async function assertFirmwareUpdateApi(
@@ -2998,6 +3096,16 @@ async function routeCompanionPaths(page, handler) {
 }
 
 async function routeHostedAppThroughLocalNext(page, appUrl) {
+  await page.addInitScript(() => {
+    const originalClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function click() {
+      if (this.href.startsWith("vibetv://")) {
+        globalThis.__recordVibeTVNativeLaunch?.(this.href);
+        return;
+      }
+      return originalClick.call(this);
+    };
+  });
   await page.route("https://app.vibetv.shop/**", async (route) => {
     const request = route.request();
     const sourceUrl = new URL(request.url());
@@ -3247,13 +3355,24 @@ async function startFixtureServer() {
   };
 }
 
-function startNext({ appPort, catalogUrl, firmwareUrl, releaseUrl }) {
+function startNext({
+  appPort,
+  catalogUrl,
+  dmgDownloadEnabled,
+  firmwareUrl,
+  releaseUrl,
+}) {
   const child = spawn(
     process.execPath,
     [nextBin, "start", "--hostname", "127.0.0.1", "--port", String(appPort)],
     {
       cwd: root,
-      env: testEnv(catalogUrl, firmwareUrl, releaseUrl),
+      env: testEnv(
+        catalogUrl,
+        firmwareUrl,
+        releaseUrl,
+        dmgDownloadEnabled,
+      ),
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -3267,7 +3386,7 @@ function startNext({ appPort, catalogUrl, firmwareUrl, releaseUrl }) {
 async function runNextBuild({ catalogUrl, firmwareUrl, releaseUrl }) {
   await runCommand(process.execPath, [nextBin, "build"], {
     cwd: root,
-    env: testEnv(catalogUrl, firmwareUrl, releaseUrl),
+    env: testEnv(catalogUrl, firmwareUrl, releaseUrl, true),
   });
 }
 
@@ -3288,13 +3407,19 @@ async function runCommand(command, args, options) {
   }
 }
 
-function testEnv(catalogUrl, firmwareUrl, releaseUrl) {
+function testEnv(
+  catalogUrl,
+  firmwareUrl,
+  releaseUrl,
+  dmgDownloadEnabled = true,
+) {
   const resolvedFirmwareUrl =
     firmwareUrl || catalogUrl.replace(/\/[^/]+$/, "/firmware-manifest.json");
   return {
     ...process.env,
     CONTROL_CENTER_ALLOW_CATALOG_FALLBACK: "1",
     CONTROL_CENTER_COMPANION_RELEASE_API_URL: releaseUrl,
+    CONTROL_CENTER_ENABLE_MAC_APP_DMG_DOWNLOAD: dmgDownloadEnabled ? "1" : "0",
     CONTROL_CENTER_FIRMWARE_MANIFEST_URL: resolvedFirmwareUrl,
     CONTROL_CENTER_GITHUB_TOKEN: "",
     GITHUB_TOKEN: "",
@@ -3385,92 +3510,75 @@ async function assertNoCompanionInstallLink(page) {
   );
 }
 
-async function assertMacAppSetupUsesTerminalCommand(page, options = {}) {
-  await page.getByRole("tab", { name: "Manual setup" }).click();
-  const command = (await page.locator("code").textContent()) || "";
-  const manualCopy = (await page.locator("body").innerText()) || "";
-  const expectedLocalPath = options.expectedLocalPath || "/control-center";
+async function startVerifiedDmgSetupDownload(
+  page,
+  { startDownload = true } = {},
+) {
+  const dmgDownload = page.getByRole("link", { name: "Download Mac App" });
+  await dmgDownload.waitFor({ timeout: 10_000 });
   assert(
-    command.includes("install-control-center-companion.sh"),
-    `Terminal command should install through the hosted script, got ${command}`,
+    assetName(await dmgDownload.getAttribute("href")) ===
+      "VibeTV-Control-Center.dmg",
+    "Setup should only expose the verified DMG asset",
   );
   assert(
-    manualCopy.includes("updates the latest VibeTV Mac App"),
-    "manual setup copy should explain that the command installs or updates the latest Mac App",
+    (await page.getByRole("tab", { name: "Agentic setup" }).count()) === 0,
+    "Verified DMG setup must hide the Agentic Terminal installer",
   );
-  if (options.expectedOrigin) {
-    assert(
-      command.includes(
-        `${options.expectedOrigin}/install-control-center-companion.sh`,
-      ),
-      `Terminal command should use ${options.expectedOrigin}, got ${command}`,
-    );
+  assert(
+    (await page.getByRole("tab", { name: "Manual setup" }).count()) === 0,
+    "Verified DMG setup must hide the manual Terminal installer",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Copy terminal command" }).count()) ===
+      0,
+    "Verified DMG setup must not expose the Terminal install command",
+  );
+  assert(
+    (await page.locator("code").count()) === 0,
+    "Verified DMG setup must not render a hidden Terminal install command",
+  );
+
+  if (startDownload) {
+    await dmgDownload.evaluate((element) => {
+      element.addEventListener(
+        "click",
+        (event) => event.preventDefault(),
+        { once: true },
+      );
+      element.click();
+    });
+    await page.waitForTimeout(0);
   }
-  if (expectedLocalPath === "/control-center") {
+
+  return dmgDownload;
+}
+
+async function startLegacySupportSetup(page, { expectedLocalPath } = {}) {
+  await assertNoDmgDownloadActions(page);
+  await page.getByRole("tab", { name: "Agentic setup" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("tab", { name: "Manual setup" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Copy prompt" }).click();
+  await page.getByRole("button", { name: "Prompt copied" }).waitFor({
+    timeout: 10_000,
+  });
+
+  if (expectedLocalPath) {
+    await page.getByRole("tab", { name: "Manual setup" }).click();
+    const command = (await page.locator("code").textContent()) || "";
     assert(
-      !command.includes("--control-center-path"),
-      `Terminal command should open the local Overview, got ${command}`,
-    );
-    assert(
-      !command.includes("/control-center/install/"),
-      `Terminal command should not open a theme-specific local route, got ${command}`,
-    );
-  } else {
-    assert(
-      command.includes("--control-center-path"),
-      `Terminal command should pass the local Control Center path, got ${command}`,
+      command.includes("install-control-center-companion.sh"),
+      "Legacy support mode should keep its existing Terminal installer",
     );
     assert(
       command.includes(expectedLocalPath),
-      `Terminal command should preserve ${expectedLocalPath}, got ${command}`,
+      `Legacy support mode should preserve ${expectedLocalPath}, got ${command}`,
     );
   }
-  assert(
-    !command.includes("--terminal-session"),
-    `Terminal command should use the default Mac App mode, got ${command}`,
-  );
-  assert(
-    !command.includes("--launchagent"),
-    `Terminal command should not use LaunchAgent mode, got ${command}`,
-  );
-  assert(
-    !command.includes(".pkg"),
-    `Terminal command should not use Mac package downloads, got ${command}`,
-  );
-
-  await page.getByRole("tab", { name: "Agentic setup" }).click();
-  await page.getByRole("button", { name: /Prompt preview/ }).click();
-  const prompt = (await page.locator("pre").textContent()) || "";
-  assert(
-    prompt.includes("latest VibeTV Mac App"),
-    "agent setup prompt should explicitly install or update the latest Mac App",
-  );
-  assert(
-    prompt.includes("start it in the background"),
-    "agent setup prompt should describe the background Mac App",
-  );
-  assert(
-    prompt.includes("connect VibeTV") && prompt.includes("latest firmware"),
-    "agent setup prompt should say the terminal command connects VibeTV and updates firmware",
-  );
-  assert(
-    prompt.includes(`http://127.0.0.1:47832${expectedLocalPath}`),
-    `agent setup prompt should open the expected local route, got ${prompt}`,
-  );
-  if (expectedLocalPath === "/control-center") {
-    assert(
-      !prompt.includes("/control-center/install/"),
-      `agent setup prompt should not open a theme-specific local route, got ${prompt}`,
-    );
-  }
-  assert(
-    !prompt.includes("LaunchAgent"),
-    "agent setup prompt should not ask for LaunchAgent setup",
-  );
-  assert(
-    !prompt.includes(".pkg"),
-    "agent setup prompt should not ask for Mac package setup",
-  );
 }
 
 async function assertThemeLibraryLockedBehindSetup(page) {
@@ -3589,6 +3697,18 @@ async function assertNoLegacyCompanionDownloadActions(page) {
       `Theme Library should not show legacy Companion action: ${label}`,
     );
   }
+}
+
+async function assertNoDmgDownloadActions(page) {
+  assert(
+    (await page.getByRole("link", { name: "Download Mac App" }).count()) === 0,
+    "Setup must not show a DMG link without an enabled, verified asset",
+  );
+  assert(
+    (await page.getByRole("link", { name: "Download Mac App update" }).count()) ===
+      0,
+    "Updates must not show a DMG link without an enabled, verified asset",
+  );
 }
 
 async function assertNoThemeLibraryReleaseDiagnostics(page) {

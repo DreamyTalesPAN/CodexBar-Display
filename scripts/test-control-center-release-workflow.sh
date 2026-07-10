@@ -7,6 +7,8 @@ CI_WORKFLOW="${ROOT}/.github/workflows/ci.yml"
 LOCAL_INSTALLER="${ROOT}/scripts/install-control-center-companion.sh"
 RELEASE_INSTALLER="${ROOT}/scripts/install-control-center-companion-release.sh"
 PUBLIC_INSTALLER="${ROOT}/apps/control-center/public/install-control-center-companion.sh"
+SIGNING_SCRIPT="${ROOT}/scripts/sign-notarize-macos-control-center.sh"
+VERIFY_DMG_SCRIPT="${ROOT}/scripts/verify-macos-control-center-dmg.sh"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -51,18 +53,33 @@ main() {
   [[ -f "$LOCAL_INSTALLER" ]] || die "local Control Center installer is missing"
   [[ -f "$RELEASE_INSTALLER" ]] || die "release Control Center installer is missing"
   [[ -f "$PUBLIC_INSTALLER" ]] || die "public Control Center installer is missing"
+  [[ -x "$SIGNING_SCRIPT" ]] || die "macOS signing/notarization script is missing or not executable"
+  [[ -x "$VERIFY_DMG_SCRIPT" ]] || die "macOS DMG verification script is missing or not executable"
   cmp -s "$RELEASE_INSTALLER" "$PUBLIC_INSTALLER" \
     || die "public Control Center installer must match the release installer"
 
   local release_job macos_job release_count checksum_line release_line download_dmg_line
+  local build_dmg_line verify_dmg_line upload_dmg_line require_dmg_line
   local local_installer release_installer local_installer_build_line local_installer_go_build_line
-  local local_static_builder ci_workflow
+  local local_static_builder ci_workflow signing_script verify_dmg_plan workflow
   release_job="$(job_block "build-and-release")"
   local_installer="$(cat "$LOCAL_INSTALLER")"
   release_installer="$(cat "$RELEASE_INSTALLER")"
   local_static_builder="$(cat "$ROOT/apps/control-center/scripts/build-local-static.mjs")"
   ci_workflow="$(cat "$CI_WORKFLOW")"
+  workflow="$(cat "$WORKFLOW")"
+  signing_script="$(cat "$SIGNING_SCRIPT")"
+  verify_dmg_plan="$("$VERIFY_DMG_SCRIPT" --dry-run --dmg "/tmp/VibeTV-Control-Center.dmg")"
   macos_job="$(job_block "build-macos-dmg")"
+
+  assert_contains "$workflow" "workflow_dispatch:" \
+    "release workflow must offer a manual validation-only trigger"
+  assert_contains "$workflow" "validation_version:" \
+    "manual DMG validation must use an explicit bundle version"
+  assert_contains "$workflow" "permissions:" \
+    "release workflow must declare least-privilege permissions"
+  assert_contains "$workflow" "contents: read" \
+    "validation-only workflow must not receive repository write access"
 
   assert_contains "$macos_job" "runs-on: macos-latest" \
     "release workflow must build the customer DMG on macOS"
@@ -70,6 +87,25 @@ main() {
     "macOS DMG job must receive the Developer ID signing certificate secret"
   assert_contains "$macos_job" "APPLE_NOTARY_KEY_P8_BASE64" \
     "macOS DMG job must receive the Apple notarization key secret"
+  assert_contains "$macos_job" "Validate Apple release secrets" \
+    "macOS DMG job must fail before building when Apple secrets are absent"
+  assert_contains "$macos_job" "github.event_name == 'workflow_dispatch'" \
+    "macOS DMG job must use the manual validation version on workflow dispatch"
+  assert_contains "$macos_job" "macOS DMG version must be SemVer x.y.z" \
+    "manual DMG validation must reject an invalid bundle version"
+  assert_contains "$macos_job" 'Missing required GitHub Actions secret: ${name}' \
+    "macOS DMG job must report missing Apple secrets without exposing their values"
+  for secret in \
+    APPLE_TEAM_ID \
+    APPLE_SIGNING_CERTIFICATE_P12_BASE64 \
+    APPLE_SIGNING_CERTIFICATE_PASSWORD \
+    APPLE_NOTARY_KEY_ID \
+    APPLE_NOTARY_ISSUER_ID \
+    APPLE_NOTARY_KEY_P8_BASE64
+  do
+    assert_contains "$macos_job" "$secret" \
+      "macOS DMG job must validate ${secret}"
+  done
   assert_contains "$macos_job" "npm run build:local" \
     "macOS DMG job must build the local Control Center static export"
   assert_contains "$macos_job" "companion/internal/companionapi/controlcenter_static" \
@@ -90,6 +126,14 @@ main() {
     "macOS DMG job must build the real DMG"
   assert_contains "$macos_job" "--skip-app-sign" \
     "macOS DMG job must sign and notarize the DMG without re-signing the app copy"
+  assert_contains "$macos_job" "--notary-log" \
+    "macOS DMG job must preserve Apple notarization evidence"
+  assert_contains "$macos_job" "Verify notarized Mac DMG for distribution" \
+    "macOS DMG job must run a separate final distribution gate"
+  assert_contains "$macos_job" "verify-macos-control-center-dmg.sh" \
+    "macOS DMG job must verify the exact DMG that will be uploaded"
+  assert_contains "$macos_job" "Upload notarization evidence" \
+    "macOS DMG job must preserve the Apple notarization log"
   assert_contains "$macos_job" "VibeTV-Control-Center.dmg" \
     "macOS DMG job must produce the stable latest-download DMG asset"
   assert_contains "$macos_job" "actions/upload-artifact@v4" \
@@ -98,6 +142,10 @@ main() {
     "macOS DMG job must run the real signing/notarization path"
   assert_contains "$release_job" "needs: build-macos-dmg" \
     "public release job must wait for the notarized Mac DMG"
+  assert_contains "$release_job" "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')" \
+    "public release job must stay disabled for validation-only dispatches"
+  assert_contains "$release_job" "contents: write" \
+    "only the public tag release job may receive repository write access"
   assert_contains "$release_job" "Build release checksums" \
     "build-and-release must build release checksums"
   assert_contains "$release_job" "release/firmware-versions.json" \
@@ -114,6 +162,8 @@ main() {
     "release workflow must download the notarized DMG before checksums"
   assert_contains "$release_job" "actions/download-artifact@v4" \
     "release workflow must download the notarized DMG artifact"
+  assert_contains "$release_job" "Require verified Mac DMG" \
+    "release workflow must require the exact stable DMG before checksums"
   assert_contains "$release_job" "dist/macos/*.dmg" \
     "GitHub Release must include the notarized Mac DMG"
   assert_contains "$release_job" "build-macos-control-center-app.sh" \
@@ -146,12 +196,48 @@ main() {
     "CI must run the macOS app/DMG dry-run test"
   assert_contains "$ci_workflow" "test-macos-control-center-app-bundle.sh" \
     "CI must run the macOS app/DMG dry-run test script"
-  assert_contains "$(cat "$ROOT/apps/control-center/src/components/mac-app-install-command.ts")" "VibeTV-Control-Center.dmg" \
-    "hosted setup must have a stable DMG-first Mac App download URL"
+  assert_contains "$ci_workflow" "macos-control-center-tests:" \
+    "CI must isolate native Swift checks in a macOS job"
+  assert_contains "$ci_workflow" "runs-on: macos-latest" \
+    "native Swift and URL-scheme checks must run on macOS"
+  assert_contains "$(cat "$ROOT/apps/control-center/src/app/api/companion/latest/route.ts")" "CONTROL_CENTER_ENABLE_MAC_APP_DMG_DOWNLOAD" \
+    "hosted DMG download must stay behind the server-side feature flag"
+  assert_contains "$(cat "$ROOT/apps/control-center/src/app/api/companion/latest/route.ts")" "VibeTV-Control-Center.dmg" \
+    "hosted release check must require the exact stable DMG asset name"
+  assert_contains "$(cat "$ROOT/apps/control-center/src/app/api/companion/latest/route.ts")" "verifiedDmgAsset" \
+    "hosted release check must verify the GitHub asset before returning its URL"
+  assert_not_contains "$(cat "$ROOT/apps/control-center/src/components/mac-app-install-command.ts")" "releases/latest/download/VibeTV-Control-Center.dmg" \
+    "hosted setup must not use an unchecked latest-release DMG fallback"
   assert_contains "$(cat "$ROOT/apps/control-center/src/components/setup-screen.tsx")" "Download Mac App" \
     "hosted setup must present the DMG download as the primary Mac App action"
   assert_contains "$(cat "$ROOT/macos/VibeTVControlCenter/main.swift")" "migration-backups" \
     "native Mac App must preserve old setup LaunchAgents during migration"
+
+  assert_contains "$signing_script" "--output-format json" \
+    "signing script must capture structured notarytool output"
+  assert_contains "$signing_script" 'notary_status" != "Accepted"' \
+    "signing script must reject every notarization result except Accepted"
+  assert_contains "$signing_script" "notarytool log" \
+    "signing script must retrieve the Apple notarization log"
+  assert_contains "$signing_script" "xcrun stapler validate" \
+    "signing script must validate the stapled DMG ticket"
+  assert_contains "$signing_script" "syspolicy_check notary-submission" \
+    "signing script must run Apple's pre-notarization system-policy check when available"
+  assert_contains "$signing_script" "does not match APPLE_TEAM_ID" \
+    "signing script must reject a certificate for the wrong Apple team"
+
+  assert_contains "$verify_dmg_plan" "hdiutil verify" \
+    "DMG distribution gate must verify the disk image container"
+  assert_contains "$verify_dmg_plan" "codesign --verify --strict" \
+    "DMG distribution gate must verify the DMG signature"
+  assert_contains "$verify_dmg_plan" "xcrun stapler validate" \
+    "DMG distribution gate must validate the stapled notarization ticket"
+  assert_contains "$verify_dmg_plan" "spctl --assess --type open" \
+    "DMG distribution gate must ask Gatekeeper to assess the disk image"
+  assert_contains "$verify_dmg_plan" "hdiutil attach -readonly" \
+    "DMG distribution gate must mount the exact final artifact read-only"
+  assert_contains "$verify_dmg_plan" "spctl --assess --type execute" \
+    "DMG distribution gate must ask Gatekeeper to assess the bundled app"
 
   release_count="$(grep -cF "softprops/action-gh-release@v2" "$WORKFLOW")"
   [[ "$release_count" == "1" ]] \
@@ -160,12 +246,20 @@ main() {
   checksum_line="$(line_number "Build release checksums")"
   release_line="$(line_number "Create GitHub Release")"
   download_dmg_line="$(line_number "Download notarized Mac DMG")"
+  build_dmg_line="$(line_number "Build signed and notarized Mac DMG")"
+  verify_dmg_line="$(line_number "Verify notarized Mac DMG for distribution")"
+  upload_dmg_line="$(line_number "Upload notarized Mac DMG")"
+  require_dmg_line="$(line_number "Require verified Mac DMG")"
   local_build_line="$(line_number "npm run build:local")"
   companion_build_line="$(line_number "go build")"
   [[ -n "$checksum_line" && -n "$release_line" && -n "$download_dmg_line" ]] \
     || die "release workflow must build checksums before creating the release"
   (( download_dmg_line < checksum_line )) \
     || die "notarized DMG must be downloaded before release checksums are built"
+  (( build_dmg_line < verify_dmg_line && verify_dmg_line < upload_dmg_line )) \
+    || die "the final DMG must be notarized and verified before artifact upload"
+  (( download_dmg_line < require_dmg_line && require_dmg_line < checksum_line )) \
+    || die "the downloaded verified DMG must be required before release checksums"
   (( checksum_line < release_line )) \
     || die "release checksums must be built before creating the release"
   [[ -n "$local_build_line" && -n "$companion_build_line" ]] \

@@ -4,6 +4,12 @@ export type CompanionReleaseStatus =
   | "disabled"
   | "check_failed";
 
+export type MacAppDmgDownloadStatus =
+  | "available"
+  | "missing_asset"
+  | "disabled"
+  | "check_failed";
+
 export type CompanionReleaseInfo = {
   checkedAt: string;
   status: CompanionReleaseStatus;
@@ -12,4 +18,6 @@ export type CompanionReleaseInfo = {
   installedVersion?: string;
   updateAvailable: boolean;
   message: string;
+  dmgDownloadStatus?: MacAppDmgDownloadStatus;
+  dmgDownloadUrl?: string;
 };

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>shop.vibetv.control-center.runtime</string>
+    <key>BundleProgram</key>
+    <string>Contents/Resources/companion/codexbar-display</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>codexbar-display</string>
+      <string>daemon</string>
+      <string>--transport</string>
+      <string>wifi</string>
+      <string>--target</string>
+      <string>http://vibetv.local</string>
+      <string>--interval</string>
+      <string>30s</string>
+      <string>--api-addr</string>
+      <string>127.0.0.1:47832</string>
+      <string>--api-dev-origin</string>
+      <string>http://127.0.0.1:47832</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+      <key>CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE</key>
+      <string>168h</string>
+      <key>VIBETV_DISABLE_MAC_APP_SELF_UPDATE</key>
+      <string>1</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+  </dict>
+</plist>

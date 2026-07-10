@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
+import {
+  companionReleaseApiUrl,
+  currentControlCenterOrigin,
+} from "./mac-app-install-command";
 
 type UseCompanionReleaseOptions = {
   enabled?: boolean;
@@ -27,7 +31,10 @@ export function useCompanionRelease(
         params.set("version", companionVersion);
       }
       const suffix = params.toString() ? `?${params.toString()}` : "";
-      const response = await fetch(`/api/companion/latest${suffix}`);
+      const endpoint = companionReleaseApiUrl(currentControlCenterOrigin());
+      const response = await fetch(`${endpoint}${suffix}`, {
+        cache: "no-store",
+      });
       if (!response.ok) {
         throw new Error(`Mac App check failed: ${response.status}`);
       }
@@ -39,6 +46,7 @@ export function useCompanionRelease(
         installedVersion: companionVersion,
         updateAvailable: false,
         message: "Mac App check failed.",
+        dmgDownloadStatus: "check_failed",
       });
     } finally {
       setBusy(false);

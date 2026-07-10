@@ -49,8 +49,12 @@ main() {
     || die "Control Center resource folder is missing"
   assert_file "${app}/Contents/Resources/companion/BUNDLED_COMPANION.md"
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
+  assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
 
-  python3 - "${app}/Contents/Info.plist" <<'PY'
+  python3 - \
+    "${app}/Contents/Info.plist" \
+    "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist" \
+    "${ROOT}/macos/VibeTVControlCenter/main.swift" <<'PY'
 import plistlib
 import sys
 
@@ -75,7 +79,153 @@ for key, value in expected.items():
 
 if plist.get("NSAppTransportSecurity", {}).get("NSAllowsLocalNetworking") is not True:
     raise SystemExit("NSAllowsLocalNetworking must be true")
+
+url_types = plist.get("CFBundleURLTypes")
+expected_url_types = [{
+    "CFBundleTypeRole": "Editor",
+    "CFBundleURLName": "shop.vibetv.control-center",
+    "CFBundleURLSchemes": ["vibetv"],
+}]
+if url_types != expected_url_types:
+    raise SystemExit(
+        f"CFBundleURLTypes: expected {expected_url_types!r}, got {url_types!r}"
+    )
+
+with open(sys.argv[2], "rb") as f:
+    agent = plistlib.load(f)
+
+expected_agent_values = {
+    "Label": "shop.vibetv.control-center.runtime",
+    "BundleProgram": "Contents/Resources/companion/codexbar-display",
+    "RunAtLoad": True,
+    "KeepAlive": True,
+    "ProcessType": "Background",
+    "ThrottleInterval": 10,
+}
+for key, value in expected_agent_values.items():
+    actual = agent.get(key)
+    if actual != value:
+        raise SystemExit(f"LaunchAgent {key}: expected {value!r}, got {actual!r}")
+
+expected_arguments = [
+    "codexbar-display",
+    "daemon",
+    "--transport",
+    "wifi",
+    "--target",
+    "http://vibetv.local",
+    "--interval",
+    "30s",
+    "--api-addr",
+    "127.0.0.1:47832",
+    "--api-dev-origin",
+    "http://127.0.0.1:47832",
+]
+if agent.get("ProgramArguments") != expected_arguments:
+    raise SystemExit(
+        "LaunchAgent must run the persistent frame-sending daemon with its local API"
+    )
+
+environment = agent.get("EnvironmentVariables", {})
+if environment.get("VIBETV_DISABLE_MAC_APP_SELF_UPDATE") != "1":
+    raise SystemExit(
+        "DMG runtime must disable the legacy Terminal Mac App updater"
+    )
+
+with open(sys.argv[3], encoding="utf-8") as f:
+    source = f.read()
+
+required_source = [
+    "import ServiceManagement",
+    "SMAppService.agent(plistName: runtimeLaunchAgentPlistName)",
+    "try runtimeService.register()",
+    "runtimeService.unregister(completionHandler:",
+    "runtimeServiceNeedsRefresh(",
+    'runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"',
+    'runtimeStatusURLString = "http://127.0.0.1:47832/v1/status"',
+    "let health = await waitForHealthyRuntime(expectedVersion: expectedVersion)",
+    "let ownership = verifyRuntimeListenerOwnership()",
+    'executable: "/usr/sbin/lsof"',
+    '"-iTCP@127.0.0.1:47832"',
+    '"-sTCP:LISTEN"',
+    "else if !(await unregisterBundledRuntimeService())",
+    "rollbackToLegacyAgents(",
+    "restoreMigrationArtifacts(",
+    'appendingPathComponent("VibeTV Control Center.app"',
+    "setDefaultApplication(",
+    "toOpenURLsWithScheme: controlCenterURLScheme",
+    "func application(_ application: NSApplication, open urls: [URL])",
+    "urlRouter.receive(urls)",
+    "decidePolicyFor navigationAction: WKNavigationAction",
+    "navigationAction.navigationType == .linkActivated",
+    "isApprovedDMGDownloadURL(url)",
+    "decisionHandler(.cancel)",
+    "NSWorkspace.shared.open(url)",
+]
+for snippet in required_source:
+    if snippet not in source:
+        raise SystemExit(f"native app is missing required behavior: {snippet}")
+
+registration = source.find("guard await ensureBundledRuntimeServiceRegistered()")
+stop_legacy = source.find("if !stopLegacyLaunchAgents(legacyStates)")
+health_gate = source.find("let health = await waitForHealthyRuntime")
+legacy_app_migration = source.find(
+    "let migratedLegacyApps = await migrateLegacyAppsAfterHealthyRuntime",
+    health_gate,
+)
+persist_version = source.find("recordCurrentRuntimeBundleVersion()", health_gate)
+if not (
+    0 <= registration < stop_legacy < health_gate < legacy_app_migration < persist_version
+):
+    raise SystemExit(
+        "native app must register, stop legacy, pass health, migrate old apps, then persist"
+    )
+
+health_method = source[
+    source.find("private func waitForHealthyRuntime("):
+    source.find("private func currentCompanionVersion()")
+]
+if health_method.find("evaluateRuntimeHealth(") > health_method.find(
+    "verifyRuntimeListenerOwnership()"
+):
+    raise SystemExit(
+        "HTTP health must be evaluated before listener ownership is accepted"
+    )
+
+register_method = source[
+    source.find("private func registerBundledRuntimeService()"):
+    source.find("private func unregisterBundledRuntimeService()")
+]
+if "recordCurrentRuntimeBundleVersion" in register_method:
+    raise SystemExit(
+        "SMAppService enabled status must not persist a version before the HTTP health gate"
+    )
+
+for forbidden in [
+    "companionProcess",
+    "func applicationShouldTerminate(",
+    "func applicationWillTerminate(",
+]:
+    if forbidden in source:
+        raise SystemExit(
+            f"native app must not tie the persistent runtime to UI termination: {forbidden}"
+        )
 PY
+
+  if [[ "$(uname -s)" == "Darwin" ]] && command -v swiftc >/dev/null 2>&1; then
+    swiftc \
+      -D VIBETV_CONTROL_CENTER_TESTING \
+      -swift-version 6 \
+      -strict-concurrency=complete \
+      -warnings-as-errors \
+      "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+      "${ROOT}/macos/VibeTVControlCenter/URLSchemeTests.swift" \
+      -o "${tmp}/url-scheme-tests" \
+      -framework Cocoa \
+      -framework ServiceManagement \
+      -framework WebKit
+    "${tmp}/url-scheme-tests"
+  fi
 
   "${ROOT}/scripts/build-macos-control-center-dmg.sh" \
     --dry-run \
@@ -121,8 +271,8 @@ PY
     || die "native app shell must detect the old LaunchAgent"
   grep -qF "migration-backups" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must back up old LaunchAgents during migration"
-  grep -qF "/v1/status" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
-    || die "native app shell must check the local Mac App before starting a new one"
+  grep -qF "SMAppService.agent" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native app shell must manage its persistent runtime with SMAppService"
 
   grep -qF "test-macos-control-center-app-bundle.sh" "${ROOT}/.github/workflows/ci.yml" \
     || die "CI must run the macOS app/DMG dry-run test"

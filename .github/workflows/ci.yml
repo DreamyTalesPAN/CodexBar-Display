@@ -78,6 +78,15 @@ jobs:
       - name: Test legacy Mac App support script guard
         run: ./scripts/test-control-center-companion-legacy-installer.sh
 
+  macos-control-center-tests:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test macOS Control Center DMG prep
+        run: ./scripts/test-macos-control-center-app-bundle.sh
+
   theme-studio-tests:
     runs-on: ubuntu-latest
     steps:

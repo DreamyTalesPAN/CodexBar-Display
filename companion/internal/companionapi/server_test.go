@@ -43,6 +43,9 @@ func TestStatusWorksWithoutDevice(t *testing.T) {
 	if !got.Companion.Features.ThemeInstallEnabled {
 		t.Fatalf("expected theme install enabled by default")
 	}
+	if !got.Companion.Features.MacAppSelfUpdateEnabled {
+		t.Fatalf("expected legacy Mac App self-update enabled by default")
+	}
 	if got.Device.Connected {
 		t.Fatalf("expected disconnected device without probing, got %+v", got.Device)
 	}
@@ -123,6 +126,40 @@ func TestStatusReportsThemeInstallDisableFlag(t *testing.T) {
 	}
 	if got.Companion.Features.ThemeInstallEnabled {
 		t.Fatalf("expected theme install disable flag to be honored")
+	}
+}
+
+func TestDMGRuntimeDisablesLegacyMacAppSelfUpdate(t *testing.T) {
+	t.Setenv(macAppUpdateDisableEnv, "1")
+	server := newTestServer(t, runtimeconfig.Config{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Companion.Features.MacAppSelfUpdateEnabled {
+		t.Fatalf("expected DMG runtime to disable legacy Mac App self-update")
+	}
+
+	for _, endpoint := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodPost, path: "/v1/mac-app/update"},
+		{method: http.MethodGet, path: "/v1/mac-app/update/status?jobId=legacy"},
+	} {
+		rec = httptest.NewRecorder()
+		req = httptest.NewRequest(endpoint.method, endpoint.path, strings.NewReader(`{"version":"1.0.41"}`))
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected %s to be unavailable, got %d body=%s", endpoint.path, rec.Code, rec.Body.String())
+		}
 	}
 }
 

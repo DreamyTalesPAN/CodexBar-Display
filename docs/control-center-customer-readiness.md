@@ -250,10 +250,11 @@ What it checks:
   `.dmg` with an Applications symlink and include that DMG in checksums,
 - release contains `checksums-v<version>.txt`,
 - release does not contain Mac App `.pkg` assets,
-- hosted setup presents the DMG as the primary Mac App path and keeps the
-  Terminal command as support fallback,
-- the native Mac App stops and backs up old user LaunchAgents before starting
-  its bundled local service, while preserving
+- hosted setup presents only the verified DMG Mac App path after rollout and
+  exposes the Terminal support path only while the DMG gate is off or its asset
+  is unavailable,
+- the native Mac App enables its bundled persistent service before stopping and
+  backing up old user LaunchAgents, while preserving
   `~/Library/Application Support/codexbar-display/config.json`,
 - hosted app HTTP reachability,
 - hosted app `/api/companion/latest` version status without installer or package URLs when `--app-url` is combined with `--release` or `--release-json`,
