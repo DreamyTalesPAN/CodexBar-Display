@@ -246,3 +246,22 @@ To reset the gate:
 - Customer rule: a first-time customer should see the install step, not a failure state. `Run setup again` and `Fix connection` stay hidden until the Mac App is reachable or the customer has actually attempted setup; a failed Mac App check explains the immediate next action inside the Mac App step.
 - Simplifications accepted: removed the duplicate Mac App setup notice, removed the top-level first-run error, and kept one primary action in the initial Mac App step.
 - Verification: UI was reviewed against `docs/control-center-ui-principles.md`; `check:customer-ui-copy`, `lint`, `test:customer-flows`, Go companion tests, install.sh migration test, and daemon installer tests passed locally before this checkpoint update.
+
+- Reviewed scope: local Theme Library and Theme Studio navigation, published
+  theme editing, local draft saving, ZIP export, explicit VibeTV installation,
+  validation gating, and the advanced project/asset/JSON controls.
+- Customer rule: customers enter through Theme Library, create or edit one
+  theme, see the preview immediately, and choose one intentional outcome.
+  Invalid themes keep Save, Export, and Send disabled, and nothing writes to
+  VibeTV until the customer explicitly selects `Send to VibeTV`.
+- Simplifications accepted: the AI builder is excluded from this release; the
+  editor no longer asks for a VibeTV address or pairing code and exposes no
+  direct asset/frame write controls; technical project, asset, and JSON fields
+  stay collapsed under `Advanced`; Save is the single highlighted editor
+  action while Export and Send remain secondary explicit actions.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`;
+  `check:customer-ui-copy`, `lint`, the full customer-flow suite, a real edited
+  Theme Studio Save + ZIP download validated with `unzip -t`, the local static
+  Mac App build, `go test ./...`, and the automated customer-ready gate passed
+  locally before this checkpoint update. No hardware or live-shop write was
+  performed.
