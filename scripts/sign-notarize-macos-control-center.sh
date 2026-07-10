@@ -242,57 +242,40 @@ import_developer_id_intermediate() {
 
 is_exact_internal_xprotect_preflight_report() {
   local report_path="$1"
-  local output_count report_keys root_keys
-  local expected_keys
-  local additional_information advice documentation_link error_level long_error short_error
 
   [[ -s "$report_path" ]] || return 1
-  root_keys="$(
-    plutil -p "$report_path" 2>/dev/null \
-      | sed -n 's/^  "\([^"]*\)" =>.*/\1/p'
-  )" || return 1
-  [[ "$root_keys" == "output" ]] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
 
-  output_count="$(
-    plutil -extract output raw -expect array -o - "$report_path" 2>/dev/null
-  )" || return 1
-  [[ "$output_count" == "1" ]] || return 1
+  python3 - "$report_path" <<'PY'
+import json
+import sys
 
-  report_keys="$(
-    plutil -extract output.0 raw -expect dictionary -o - "$report_path" 2>/dev/null
-  )" || return 1
-  expected_keys=$'SyspolicyCheckAdditionalInformation\nSyspolicyCheckAdvice\nSyspolicyCheckDocumentationLink\nSyspolicyCheckErrorLevel\nSyspolicyCheckLongError\nSyspolicyCheckShortError'
-  [[ "$report_keys" == "$expected_keys" ]] || return 1
+expected = {
+    "output": [
+        {
+            "SyspolicyCheckAdditionalInformation": "",
+            "SyspolicyCheckAdvice": (
+                "Please take a sysdiagnose and file a Feedback using "
+                "Feedback Assistant.app."
+            ),
+            "SyspolicyCheckDocumentationLink": "",
+            "SyspolicyCheckErrorLevel": "Fatal",
+            "SyspolicyCheckLongError": (
+                "One or more files in your application triggered an Xprotect error."
+            ),
+            "SyspolicyCheckShortError": "Internal Xprotect Error",
+        }
+    ]
+}
 
-  additional_information="$(
-    plutil -extract output.0.SyspolicyCheckAdditionalInformation raw -expect string -o - "$report_path" 2>/dev/null
-  )" || return 1
-  advice="$(
-    plutil -extract output.0.SyspolicyCheckAdvice raw -expect string -o - "$report_path" 2>/dev/null
-  )" || return 1
-  documentation_link="$(
-    plutil -extract output.0.SyspolicyCheckDocumentationLink raw -expect string -o - "$report_path" 2>/dev/null
-  )" || return 1
-  error_level="$(
-    plutil -extract output.0.SyspolicyCheckErrorLevel raw -expect string -o - "$report_path" 2>/dev/null
-  )" || return 1
-  long_error="$(
-    plutil -extract output.0.SyspolicyCheckLongError raw -expect string -o - "$report_path" 2>/dev/null
-  )" || return 1
-  short_error="$(
-    plutil -extract output.0.SyspolicyCheckShortError raw -expect string -o - "$report_path" 2>/dev/null
-  )" || return 1
+try:
+    with open(sys.argv[1], encoding="utf-8") as report_file:
+        report = json.load(report_file)
+except (OSError, UnicodeError, json.JSONDecodeError):
+    raise SystemExit(1)
 
-  [[ "$additional_information" == "" ]] || return 1
-  [[ "$advice" == \
-    "Please take a sysdiagnose and file a Feedback using Feedback Assistant.app." ]] \
-    || return 1
-  [[ "$documentation_link" == "" ]] || return 1
-  [[ "$error_level" == "Fatal" ]] || return 1
-  [[ "$long_error" == \
-    "One or more files in your application triggered an Xprotect error." ]] \
-    || return 1
-  [[ "$short_error" == "Internal Xprotect Error" ]] || return 1
+raise SystemExit(0 if report == expected else 1)
+PY
 }
 
 run_notary_submission_preflight() {

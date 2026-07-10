@@ -40,12 +40,12 @@ test_signing_safety_helpers() (
 {
   "output": [
     {
-      "SyspolicyCheckAdditionalInformation": "",
-      "SyspolicyCheckAdvice": "Please take a sysdiagnose and file a Feedback using Feedback Assistant.app.",
-      "SyspolicyCheckDocumentationLink": "",
       "SyspolicyCheckErrorLevel": "Fatal",
-      "SyspolicyCheckLongError": "One or more files in your application triggered an Xprotect error.",
-      "SyspolicyCheckShortError": "Internal Xprotect Error"
+      "SyspolicyCheckShortError": "Internal Xprotect Error",
+      "SyspolicyCheckAdditionalInformation": "",
+      "SyspolicyCheckDocumentationLink": "",
+      "SyspolicyCheckAdvice": "Please take a sysdiagnose and file a Feedback using Feedback Assistant.app.",
+      "SyspolicyCheckLongError": "One or more files in your application triggered an Xprotect error."
     }
   ]
 }
