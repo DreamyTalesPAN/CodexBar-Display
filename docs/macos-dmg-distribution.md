@@ -171,12 +171,14 @@ and stops with a GitHub Actions error if one is unavailable. It never prints a
 secret value. Dry-run mode prints only missing names and exits without using
 fake certificates or credentials.
 
-The same workflow also has a manual validation-only trigger. It accepts an
-explicit `x.y.z` bundle version, runs the real macOS signing, notarization,
-stapling, mounted-app, and Gatekeeper gates, then uploads only the DMG and
-notarization log as private Actions artifacts. The public release job is guarded
-to run only for pushed `v*` tags, so this validation cannot create a GitHub
-Release.
+The release workflow also has a manual validation-only trigger. In addition, the
+temporary `CODEX Validate macOS DMG` bootstrap on `main` is pinned to one exact
+feature commit and bundle version. It runs the real macOS signing, notarization,
+stapling, mounted-app, and Gatekeeper gates without creating a tag, GitHub
+Release, deployment, or public download. Because this repository is public, the
+bootstrap intentionally does not upload the signed DMG or full notarization log
+as Actions artifacts. It records only the source SHA, DMG SHA-256, Apple
+submission ID, and final status in the job summary.
 
 ## Signing and Notarization Flow
 
@@ -189,16 +191,21 @@ The prepared real flow is:
    secure timestamp and hardened runtime.
 5. Verify all signatures, the `Developer ID Application` authority, and the
    signed Team ID. On supported macOS versions, run
-   `syspolicy_check notary-submission` before uploading anything.
+   `syspolicy_check notary-submission` before uploading anything. The dedicated
+   validation bootstrap may continue only when JSON output contains exactly one
+   known `Internal Xprotect Error`, exits with code 70, and reports no additional
+   diagnostic. The release workflow never enables this exception.
 6. Sign the DMG.
 7. Submit the DMG using `xcrun notarytool submit --wait --output-format json`.
-8. Require the returned status and the notarization log to both say
-   `Accepted`. Any other result stops the job.
+8. Require the returned status and the notarization log to both say `Accepted`,
+   and require the log's `issues` field to be empty or null. Any other result
+   stops the job.
 9. Staple and validate the notarization ticket with `xcrun stapler`.
 10. Run a separate final distribution gate against the exact DMG that will be
     uploaded: `hdiutil verify`, DMG `codesign`, `stapler validate`, DMG
-    Gatekeeper assessment, read-only mount, then `codesign` and Gatekeeper
-    assessment of the app inside the mounted image.
+    Gatekeeper assessment, read-only mount, then `codesign`,
+    `syspolicy_check distribution`, and Gatekeeper assessment of the app inside
+    the mounted image.
 
 Important order:
 
@@ -240,9 +247,10 @@ scripts/verify-macos-control-center-dmg.sh \
   --dmg "dist/macos/VibeTV-Control-Center-v${VERSION}.dmg"
 ```
 
-The macOS job uploads the DMG artifact only after the final distribution gate
-succeeds. A manual validation run stops there. For a pushed `v*` tag, the
-separately write-enabled public release job requires the stable
+The release workflow's macOS job uploads the DMG artifact only after the final
+distribution gate succeeds. The dedicated validation bootstrap does not upload
+its signed DMG. For a pushed `v*` tag, the separately write-enabled public
+release job requires the stable
 `VibeTV-Control-Center.dmg` file, then builds checksums and runs the single
 GitHub Release publishing step.
 
@@ -263,13 +271,16 @@ Before a customer DMG rollout, release readiness must include:
 - DMG contains the app and Applications symlink,
 - `codesign --verify` passes for the final DMG and its mounted app,
 - Apple notarization status and log both say `Accepted`,
-- `xcrun stapler validate`, `hdiutil verify`, and both Gatekeeper assessments
-  pass,
+- the notarization log has no issues,
+- `xcrun stapler validate`, `hdiutil verify`, `syspolicy_check distribution`,
+  and both Gatekeeper assessments pass,
 - DMG checksum appears in `checksums-v<version>.txt`,
 - clean-Mac validation confirms the app opens and shows the React Control Center,
 - no `.pkg`, Homebrew publishing, live-shop changes, Vercel deploys, releases,
   tags, merges, or hardware writes are part of this task.
 
-Dry-run and local unsigned DMG tests do not prove Developer ID signing,
-notarization, or Gatekeeper acceptance. That evidence exists only after the
-macOS release job has used the real secrets and stored its notarization log.
+Dry-run and local unsigned DMG tests do not prove Developer ID signing or
+notarization. The validation workflow proves those only after the real Apple
+service returns `Accepted` with no issues and all runner-side gates pass. A
+fresh Mac or VM must still download the DMG with quarantine metadata and launch
+it before customer Gatekeeper readiness is considered complete.

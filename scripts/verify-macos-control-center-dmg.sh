@@ -68,6 +68,7 @@ dry-run: planned distribution verification for ${DMG_PATH}:
   spctl --assess --type open --context context:primary-signature --verbose=4 "${DMG_PATH}"
   hdiutil attach -readonly -nobrowse -noautoopen "${DMG_PATH}"
   codesign --verify --deep --strict --verbose=2 "<mount>/${APP_NAME}.app"
+  syspolicy_check distribution "<mount>/${APP_NAME}.app" (when available)
   spctl --assess --type execute --verbose=4 "<mount>/${APP_NAME}.app"
 EOF
   exit 0
@@ -106,6 +107,9 @@ MOUNTED_APP="${MOUNT_DIR}/${APP_NAME}.app"
   || die "DMG Applications symlink does not point to /Applications"
 
 codesign --verify --deep --strict --verbose=2 "$MOUNTED_APP"
+if command -v syspolicy_check >/dev/null 2>&1; then
+  syspolicy_check distribution "$MOUNTED_APP"
+fi
 spctl --assess --type execute --verbose=4 "$MOUNTED_APP"
 
-printf 'verified signed, notarized, stapled, Gatekeeper-approved DMG: %s\n' "$DMG_PATH"
+printf 'post-notarization distribution checks passed for DMG: %s\n' "$DMG_PATH"

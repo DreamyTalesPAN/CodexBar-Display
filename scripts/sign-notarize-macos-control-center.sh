@@ -9,6 +9,7 @@ DMG_PATH=""
 DRY_RUN=0
 SIGN_APP_ONLY=0
 SKIP_APP_SIGN=0
+ALLOW_INTERNAL_XPROTECT_PREFLIGHT_ERROR=0
 KEYCHAIN_PATH=""
 KEYCHAIN_PASSWORD=""
 WORK_DIR=""
@@ -29,6 +30,7 @@ usage() {
 Usage:
   sign-notarize-macos-control-center.sh [--app path.app] [--dmg file.dmg] [--dry-run]
   sign-notarize-macos-control-center.sh --app path.app --sign-app-only
+    [--allow-internal-xprotect-preflight-error]
   sign-notarize-macos-control-center.sh --app path.app --dmg file.dmg --skip-app-sign [--notary-log file.json]
 
 Prepares the Developer ID signing and Apple notarization flow for the VibeTV
@@ -46,6 +48,10 @@ Expected CI secrets:
 
 Optional:
   APPLE_SIGNING_IDENTITY
+
+The XProtect preflight exception is validation-only. It accepts exactly one
+known internal syspolicy_check diagnostic, then still requires the real Apple
+notary service and every post-notarization distribution gate to succeed.
 EOF
 }
 
@@ -84,6 +90,10 @@ while [[ $# -gt 0 ]]; do
       SKIP_APP_SIGN=1
       shift
       ;;
+    --allow-internal-xprotect-preflight-error)
+      ALLOW_INTERNAL_XPROTECT_PREFLIGHT_ERROR=1
+      shift
+      ;;
     --notary-log)
       need_value "$1" "${2:-}"
       NOTARY_LOG_PATH="$2"
@@ -104,6 +114,9 @@ if [[ "$SIGN_APP_ONLY" == "1" && "$SKIP_APP_SIGN" == "1" ]]; then
 fi
 if [[ "$SIGN_APP_ONLY" == "1" && -n "$NOTARY_LOG_PATH" ]]; then
   die "--notary-log cannot be used with --sign-app-only"
+fi
+if [[ "$ALLOW_INTERNAL_XPROTECT_PREFLIGHT_ERROR" == "1" && "$SIGN_APP_ONLY" != "1" ]]; then
+  die "--allow-internal-xprotect-preflight-error requires --sign-app-only"
 fi
 
 missing_secrets() {
@@ -227,6 +240,90 @@ import_developer_id_intermediate() {
     -T /usr/bin/security >/dev/null
 }
 
+is_exact_internal_xprotect_preflight_report() {
+  local report_path="$1"
+  local output_count report_keys root_keys
+  local expected_keys
+  local additional_information advice documentation_link error_level long_error short_error
+
+  [[ -s "$report_path" ]] || return 1
+  root_keys="$(
+    plutil -p "$report_path" 2>/dev/null \
+      | sed -n 's/^  "\([^"]*\)" =>.*/\1/p'
+  )" || return 1
+  [[ "$root_keys" == "output" ]] || return 1
+
+  output_count="$(
+    plutil -extract output raw -expect array -o - "$report_path" 2>/dev/null
+  )" || return 1
+  [[ "$output_count" == "1" ]] || return 1
+
+  report_keys="$(
+    plutil -extract output.0 raw -expect dictionary -o - "$report_path" 2>/dev/null
+  )" || return 1
+  expected_keys=$'SyspolicyCheckAdditionalInformation\nSyspolicyCheckAdvice\nSyspolicyCheckDocumentationLink\nSyspolicyCheckErrorLevel\nSyspolicyCheckLongError\nSyspolicyCheckShortError'
+  [[ "$report_keys" == "$expected_keys" ]] || return 1
+
+  additional_information="$(
+    plutil -extract output.0.SyspolicyCheckAdditionalInformation raw -expect string -o - "$report_path" 2>/dev/null
+  )" || return 1
+  advice="$(
+    plutil -extract output.0.SyspolicyCheckAdvice raw -expect string -o - "$report_path" 2>/dev/null
+  )" || return 1
+  documentation_link="$(
+    plutil -extract output.0.SyspolicyCheckDocumentationLink raw -expect string -o - "$report_path" 2>/dev/null
+  )" || return 1
+  error_level="$(
+    plutil -extract output.0.SyspolicyCheckErrorLevel raw -expect string -o - "$report_path" 2>/dev/null
+  )" || return 1
+  long_error="$(
+    plutil -extract output.0.SyspolicyCheckLongError raw -expect string -o - "$report_path" 2>/dev/null
+  )" || return 1
+  short_error="$(
+    plutil -extract output.0.SyspolicyCheckShortError raw -expect string -o - "$report_path" 2>/dev/null
+  )" || return 1
+
+  [[ "$additional_information" == "" ]] || return 1
+  [[ "$advice" == \
+    "Please take a sysdiagnose and file a Feedback using Feedback Assistant.app." ]] \
+    || return 1
+  [[ "$documentation_link" == "" ]] || return 1
+  [[ "$error_level" == "Fatal" ]] || return 1
+  [[ "$long_error" == \
+    "One or more files in your application triggered an Xprotect error." ]] \
+    || return 1
+  [[ "$short_error" == "Internal Xprotect Error" ]] || return 1
+}
+
+run_notary_submission_preflight() {
+  local report_path="${WORK_DIR}/syspolicy-notary-submission.json"
+  local stderr_path="${WORK_DIR}/syspolicy-notary-submission.stderr"
+  local preflight_exit=0
+
+  syspolicy_check notary-submission "$APP_DIR" --json \
+    > "$report_path" 2> "$stderr_path" || preflight_exit=$?
+
+  if [[ "$preflight_exit" == "0" ]]; then
+    [[ ! -s "$stderr_path" ]] || cat "$stderr_path" >&2
+    return 0
+  fi
+
+  if [[ "$ALLOW_INTERNAL_XPROTECT_PREFLIGHT_ERROR" == "1" &&
+        "$preflight_exit" == "70" && ! -s "$stderr_path" ]] &&
+      is_exact_internal_xprotect_preflight_report "$report_path"; then
+    cat "$report_path" >&2
+    printf '%s\n' \
+      'warning: syspolicy_check returned only its internal XProtect diagnostic; continuing this validation-only run to the authoritative Apple notary service.' >&2
+    return 0
+  fi
+
+  [[ ! -s "$report_path" ]] || cat "$report_path" >&2
+  [[ ! -s "$stderr_path" ]] || cat "$stderr_path" >&2
+  printf 'error: syspolicy_check notary-submission failed (exit=%s)\n' \
+    "$preflight_exit" >&2
+  return "$preflight_exit"
+}
+
 sign_app_bundle() {
   local identity="$1"
   local companion_binary="${APP_DIR}/Contents/Helpers/codexbar-display"
@@ -262,7 +359,7 @@ sign_app_bundle() {
     || die "signed app does not have hardened runtime enabled"
 
   if command -v syspolicy_check >/dev/null 2>&1; then
-    syspolicy_check notary-submission "$APP_DIR"
+    run_notary_submission_preflight
   fi
 }
 
@@ -276,6 +373,34 @@ notary_log() {
     --key-id "$APPLE_NOTARY_KEY_ID" \
     --issuer "$APPLE_NOTARY_ISSUER_ID" \
     --team-id "$APPLE_TEAM_ID"
+}
+
+validate_accepted_notary_log() {
+  local log_path="$1"
+  local issues_type issues_count
+
+  [[ -f "$log_path" ]] || die "notarization log was not created"
+  [[ "$(plutil -extract status raw -o - "$log_path" 2>/dev/null || true)" == "Accepted" ]] \
+    || die "notarization log does not report Accepted"
+
+  issues_type="$(plutil -type issues -o - "$log_path" 2>/dev/null || true)"
+  case "$issues_type" in
+    array)
+      issues_count="$(
+        plutil -extract issues raw -expect array -o - "$log_path" 2>/dev/null
+      )" || die "could not read notarization log issues"
+      [[ "$issues_count" == "0" ]] \
+        || die "notarization log contains ${issues_count} issue(s)"
+      ;;
+    "(any)")
+      # JSON null is represented as `(any)` by plutil and means no issues.
+      ;;
+    *)
+      die "notarization log has an invalid or missing issues field"
+      ;;
+  esac
+
+  printf 'notarization log is Accepted with no issues\n'
 }
 
 real_run() {
@@ -363,9 +488,7 @@ real_run() {
     exit 1
   fi
 
-  [[ -f "$NOTARY_LOG_PATH" ]] || die "notarization log was not created"
-  [[ "$(plutil -extract status raw -o - "$NOTARY_LOG_PATH" 2>/dev/null || true)" == "Accepted" ]] \
-    || die "notarization log does not report Accepted"
+  validate_accepted_notary_log "$NOTARY_LOG_PATH"
 
   printf 'Apple notarization accepted: %s\n' "$submission_id"
   xcrun stapler staple "$DMG_PATH"
@@ -376,8 +499,14 @@ real_run() {
   printf 'signed, notarized, stapled, and verified: %s\n' "$DMG_PATH"
 }
 
-if [[ "$DRY_RUN" == "1" ]]; then
-  dry_run
-else
-  real_run
+main() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry_run
+  else
+    real_run
+  fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main
 fi

@@ -62,6 +62,7 @@ main() {
   local build_dmg_line verify_dmg_line upload_dmg_line require_dmg_line
   local local_installer release_installer local_installer_build_line local_installer_go_build_line
   local local_static_builder ci_workflow signing_script verify_dmg_plan workflow
+  local verify_dmg_open_line verify_syspolicy_line verify_app_spctl_line
   release_job="$(job_block "build-and-release")"
   local_installer="$(cat "$LOCAL_INSTALLER")"
   release_installer="$(cat "$RELEASE_INSTALLER")"
@@ -223,6 +224,12 @@ main() {
     "signing script must validate the stapled DMG ticket"
   assert_contains "$signing_script" "syspolicy_check notary-submission" \
     "signing script must run Apple's pre-notarization system-policy check when available"
+  assert_contains "$signing_script" "--allow-internal-xprotect-preflight-error" \
+    "signing script must expose the narrow validation-only XProtect preflight exception"
+  assert_not_contains "$macos_job" "--allow-internal-xprotect-preflight-error" \
+    "release workflow must never enable the validation-only XProtect preflight exception"
+  assert_contains "$signing_script" "notarization log contains" \
+    "signing script must reject Accepted notarization logs that still contain issues"
   assert_contains "$signing_script" "does not match APPLE_TEAM_ID" \
     "signing script must reject a certificate for the wrong Apple team"
 
@@ -238,6 +245,16 @@ main() {
     "DMG distribution gate must mount the exact final artifact read-only"
   assert_contains "$verify_dmg_plan" "spctl --assess --type execute" \
     "DMG distribution gate must ask Gatekeeper to assess the bundled app"
+  assert_contains "$verify_dmg_plan" "syspolicy_check distribution" \
+    "DMG distribution gate must run Apple's modern mounted-app policy check when available"
+
+  verify_dmg_open_line="$(printf '%s\n' "$verify_dmg_plan" | grep -nF "spctl --assess --type open" | cut -d: -f1)"
+  verify_syspolicy_line="$(printf '%s\n' "$verify_dmg_plan" | grep -nF "syspolicy_check distribution" | cut -d: -f1)"
+  verify_app_spctl_line="$(printf '%s\n' "$verify_dmg_plan" | grep -nF "spctl --assess --type execute" | cut -d: -f1)"
+  [[ -n "$verify_dmg_open_line" && -n "$verify_syspolicy_line" && -n "$verify_app_spctl_line" ]] \
+    || die "DMG distribution gate order markers are incomplete"
+  (( verify_dmg_open_line < verify_syspolicy_line && verify_syspolicy_line < verify_app_spctl_line )) \
+    || die "mounted-app syspolicy check must run after DMG assessment and before legacy app assessment"
 
   release_count="$(grep -cF "softprops/action-gh-release@v2" "$WORKFLOW")"
   [[ "$release_count" == "1" ]] \

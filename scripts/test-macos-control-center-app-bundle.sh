@@ -26,6 +26,175 @@ cleanup() {
   fi
 }
 
+test_signing_safety_helpers() (
+  set --
+  # shellcheck source=sign-notarize-macos-control-center.sh
+  source "${ROOT}/scripts/sign-notarize-macos-control-center.sh"
+
+  local test_dir
+  test_dir="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-signing-safety.XXXXXX")"
+  trap 'rm -rf "$test_dir"' EXIT
+  mkdir -p "$test_dir/Test.app"
+
+  cat > "$test_dir/internal-xprotect.json" <<'JSON'
+{
+  "output": [
+    {
+      "SyspolicyCheckAdditionalInformation": "",
+      "SyspolicyCheckAdvice": "Please take a sysdiagnose and file a Feedback using Feedback Assistant.app.",
+      "SyspolicyCheckDocumentationLink": "",
+      "SyspolicyCheckErrorLevel": "Fatal",
+      "SyspolicyCheckLongError": "One or more files in your application triggered an Xprotect error.",
+      "SyspolicyCheckShortError": "Internal Xprotect Error"
+    }
+  ]
+}
+JSON
+  cp "$test_dir/internal-xprotect.json" "$test_dir/internal-extra-root.json"
+  plutil -insert additionalFailure -string "must remain fatal" \
+    "$test_dir/internal-extra-root.json"
+  cp "$test_dir/internal-xprotect.json" "$test_dir/internal-wrong-type.json"
+  plutil -replace output.0.SyspolicyCheckAdditionalInformation -json '{}' \
+    "$test_dir/internal-wrong-type.json"
+  cat > "$test_dir/internal-plus-structure.json" <<'JSON'
+{
+  "output": [
+    {
+      "SyspolicyCheckAdditionalInformation": "",
+      "SyspolicyCheckAdvice": "Please take a sysdiagnose and file a Feedback using Feedback Assistant.app.",
+      "SyspolicyCheckDocumentationLink": "",
+      "SyspolicyCheckErrorLevel": "Fatal",
+      "SyspolicyCheckLongError": "One or more files in your application triggered an Xprotect error.",
+      "SyspolicyCheckShortError": "Internal Xprotect Error"
+    },
+    {
+      "SyspolicyCheckAdditionalInformation": "",
+      "SyspolicyCheckAdvice": "Move executable code out of Resources.",
+      "SyspolicyCheckDocumentationLink": "",
+      "SyspolicyCheckErrorLevel": "Fatal",
+      "SyspolicyCheckLongError": "Resources directory contains Mach-o binaries.",
+      "SyspolicyCheckShortError": "Incorrect Bundle Structure"
+    }
+  ]
+}
+JSON
+  cat > "$test_dir/generic-error.json" <<'JSON'
+{
+  "output": [
+    {
+      "SyspolicyCheckAdditionalInformation": "",
+      "SyspolicyCheckAdvice": "Fix the bundle before submission.",
+      "SyspolicyCheckDocumentationLink": "",
+      "SyspolicyCheckErrorLevel": "Fatal",
+      "SyspolicyCheckLongError": "Resources directory contains Mach-o binaries.",
+      "SyspolicyCheckShortError": "Incorrect Bundle Structure"
+    }
+  ]
+}
+JSON
+  printf '%s\n' '{"output":[]}' > "$test_dir/success.json"
+
+  MOCK_REPORT="$test_dir/internal-xprotect.json"
+  MOCK_EXIT=70
+  MOCK_STDERR=""
+  syspolicy_check() {
+    cat "$MOCK_REPORT"
+    [[ -z "$MOCK_STDERR" ]] || printf '%s\n' "$MOCK_STDERR" >&2
+    return "$MOCK_EXIT"
+  }
+
+  APP_DIR="$test_dir/Test.app"
+  WORK_DIR="$test_dir/work-allowed"
+  ALLOW_INTERNAL_XPROTECT_PREFLIGHT_ERROR=1
+  mkdir -p "$WORK_DIR"
+  run_notary_submission_preflight > /dev/null 2> "$test_dir/allowed.stderr" \
+    || die "exact validation-only internal XProtect report must continue to notarytool"
+  grep -qF "continuing this validation-only run" "$test_dir/allowed.stderr" \
+    || die "allowed internal XProtect report must emit a validation-only warning"
+
+  WORK_DIR="$test_dir/work-disabled"
+  ALLOW_INTERNAL_XPROTECT_PREFLIGHT_ERROR=0
+  mkdir -p "$WORK_DIR"
+  if run_notary_submission_preflight > /dev/null 2>&1; then
+    die "internal XProtect report must stay fatal unless validation-only explicitly enables it"
+  fi
+
+  WORK_DIR="$test_dir/work-combined"
+  ALLOW_INTERNAL_XPROTECT_PREFLIGHT_ERROR=1
+  MOCK_REPORT="$test_dir/internal-plus-structure.json"
+  mkdir -p "$WORK_DIR"
+  if run_notary_submission_preflight > /dev/null 2>&1; then
+    die "internal XProtect report must not hide an additional bundle-structure failure"
+  fi
+
+  WORK_DIR="$test_dir/work-extra-root"
+  MOCK_REPORT="$test_dir/internal-extra-root.json"
+  mkdir -p "$WORK_DIR"
+  if run_notary_submission_preflight > /dev/null 2>&1; then
+    die "internal XProtect exception must reject additional root diagnostics"
+  fi
+
+  WORK_DIR="$test_dir/work-wrong-type"
+  MOCK_REPORT="$test_dir/internal-wrong-type.json"
+  mkdir -p "$WORK_DIR"
+  if run_notary_submission_preflight > /dev/null 2>&1; then
+    die "internal XProtect exception must reject fields with unexpected types"
+  fi
+
+  WORK_DIR="$test_dir/work-stderr"
+  MOCK_REPORT="$test_dir/internal-xprotect.json"
+  MOCK_STDERR="unexpected secondary diagnostic"
+  mkdir -p "$WORK_DIR"
+  if run_notary_submission_preflight > /dev/null 2>&1; then
+    die "internal XProtect exception must reject additional stderr diagnostics"
+  fi
+  MOCK_STDERR=""
+
+  WORK_DIR="$test_dir/work-generic"
+  MOCK_REPORT="$test_dir/generic-error.json"
+  mkdir -p "$WORK_DIR"
+  if run_notary_submission_preflight > /dev/null 2>&1; then
+    die "generic syspolicy_check failures must remain fatal"
+  fi
+
+  WORK_DIR="$test_dir/work-wrong-exit"
+  MOCK_REPORT="$test_dir/internal-xprotect.json"
+  MOCK_EXIT=1
+  mkdir -p "$WORK_DIR"
+  if run_notary_submission_preflight > /dev/null 2>&1; then
+    die "internal XProtect exception must require syspolicy_check exit 70"
+  fi
+
+  WORK_DIR="$test_dir/work-success"
+  MOCK_REPORT="$test_dir/success.json"
+  MOCK_EXIT=0
+  mkdir -p "$WORK_DIR"
+  run_notary_submission_preflight > /dev/null 2>&1 \
+    || die "successful syspolicy_check preflight must remain successful"
+
+  cat > "$test_dir/notary-accepted-empty.json" <<'JSON'
+{"status":"Accepted","issues":[]}
+JSON
+  cat > "$test_dir/notary-accepted-null.json" <<'JSON'
+{"status":"Accepted","issues":null}
+JSON
+  cat > "$test_dir/notary-accepted-warning.json" <<'JSON'
+{"status":"Accepted","issues":[{"severity":"warning","message":"Review this warning."}]}
+JSON
+  cat > "$test_dir/notary-invalid.json" <<'JSON'
+{"status":"Invalid","issues":[]}
+JSON
+
+  validate_accepted_notary_log "$test_dir/notary-accepted-empty.json" > /dev/null
+  validate_accepted_notary_log "$test_dir/notary-accepted-null.json" > /dev/null
+  if (validate_accepted_notary_log "$test_dir/notary-accepted-warning.json" > /dev/null 2>&1); then
+    die "Accepted notarization logs with warnings must remain fatal"
+  fi
+  if (validate_accepted_notary_log "$test_dir/notary-invalid.json" > /dev/null 2>&1); then
+    die "non-Accepted notarization logs must remain fatal"
+  fi
+)
+
 main() {
   local tmp app dmg stage sign_output
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-macos-test.XXXXXX")"
@@ -288,6 +457,8 @@ PY
     || die "release workflow must not publish Homebrew assets"
   grep -qF ".dmg" "${ROOT}/docs/operator-runbook.md" \
     || die "operator runbook must include DMG release readiness"
+
+  test_signing_safety_helpers
 
   printf 'macOS Control Center app bundle prep test passed\n'
 }
