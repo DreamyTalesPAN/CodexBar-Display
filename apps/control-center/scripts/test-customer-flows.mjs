@@ -2591,16 +2591,14 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   });
   await routeLocalCompanionAppThroughLocalNext(page, appUrl);
   for (const themeId of ["synthwave", "clippy"]) {
+    const renderPack = await readTrackedThemeRenderPackFixture(themeId);
     await page.route(
       `http://127.0.0.1:47832/theme-packs/render/${themeId}.json`,
       async (route) => {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          path: join(
-            root,
-            `../../companion/internal/companionapi/controlcenter_static/theme-packs/render/${themeId}.json`,
-          ),
+          body: JSON.stringify(renderPack),
         });
       },
     );
@@ -3991,6 +3989,47 @@ async function routeLocalCompanionAppThroughLocalNext(page, appUrl) {
       `${appUrl}${sourceUrl.pathname}${sourceUrl.search}`,
     );
   });
+}
+
+async function readTrackedThemeRenderPackFixture(themeId) {
+  const themeDir = join(root, "../../theme-packs", themeId);
+  const manifest = JSON.parse(
+    await readFile(join(themeDir, "manifest.json"), "utf8"),
+  );
+  const specFile = String(manifest.themeSpec?.file || "theme.json").trim();
+  assert(
+    specFile && !specFile.startsWith("/") && !specFile.includes(".."),
+    `tracked theme fixture has an unsafe spec path: ${specFile}`,
+  );
+  const spec = JSON.parse(await readFile(join(themeDir, specFile), "utf8"));
+  const assets = {};
+
+  for (const entry of manifest.assets || []) {
+    const devicePath = String(entry.path || "").trim();
+    const file = String(entry.file || "").trim();
+    assert(
+      devicePath && file && !file.startsWith("/") && !file.includes(".."),
+      `tracked theme fixture has an unsafe asset: ${devicePath} -> ${file}`,
+    );
+    const contentType =
+      String(entry.contentType || "").trim() || "application/octet-stream";
+    const data = await readFile(join(themeDir, file));
+    const textAsset = /^text\//i.test(contentType) || /\.(cbi|cba)$/i.test(file);
+    assets[devicePath] = {
+      contentType,
+      data: data.toString(textAsset ? "utf8" : "base64"),
+      encoding: textAsset ? "text" : "base64",
+    };
+  }
+
+  return {
+    ok: true,
+    themeId: manifest.id || themeId,
+    name: manifest.name || themeId,
+    spec,
+    specPath: manifest.themeSpec?.path,
+    assets,
+  };
 }
 
 async function fulfillRouteFromNext(route, targetUrl) {
