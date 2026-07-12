@@ -530,7 +530,7 @@ async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(appUrl, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
   });
   await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
     timeout: 10_000,
@@ -593,7 +593,7 @@ async function testLocalWifiVerificationOpensOverview(
     },
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const wifiReadyButton = page.getByRole("button", {
     name: "VibeTV is on WiFi",
   });
@@ -644,7 +644,7 @@ async function testLocalWifiVerificationFailureStaysInSetup(
     repairError: true,
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const wifiReadyButton = page.getByRole("button", {
     name: "VibeTV is on WiFi",
   });
@@ -688,7 +688,7 @@ async function testHostedEntryShowsMacAppDownload(
   });
 
   await page.goto(`https://app.vibetv.shop${path}`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
   });
   await page.getByRole("heading", { name: "Get the VibeTV Mac App" }).waitFor({
     timeout: 10_000,
@@ -762,7 +762,7 @@ async function testHostedPriorVisitStillShowsMacAppDownload(
     companionRequests.push(pathname);
   });
 
-  await page.goto("https://app.vibetv.shop/", { waitUntil: "networkidle" });
+  await page.goto("https://app.vibetv.shop/", { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Get the VibeTV Mac App" }).waitFor({
     timeout: 10_000,
   });
@@ -809,7 +809,7 @@ async function testLocalFreshAppWaitsForWifiConfirmation(
     },
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
     timeout: 10_000,
   });
@@ -911,7 +911,7 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/does-not-exist`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
   });
   await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
     timeout: 10_000,
@@ -946,7 +946,7 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const settingsButton = page.getByRole("button", {
     name: "Settings",
   });
@@ -1008,7 +1008,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     companionFeatures: { themeInstallEnabled: false },
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
     () =>
       Array.from(document.querySelectorAll("nav button")).some(
@@ -1077,7 +1077,7 @@ async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
   const installRequests = [];
   await routeCompanionMissing(page, installRequests);
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
     timeout: 10_000,
   });
@@ -1100,7 +1100,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     settingsCalls += 1;
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await waitForCondition(
     () => settingsCalls >= 1,
     "expected settings refresh before opening Settings",
@@ -1234,7 +1234,7 @@ async function testUsageShowsCodexCostHistory(browser, appUrl) {
     },
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Usage" }).click();
   await page.getByRole("heading", { name: "Limit Reset Credits" }).waitFor({
     timeout: 10_000,
@@ -1274,7 +1274,7 @@ async function testUsageShowsMacAppUpdateForOldMacApp(browser, appUrl) {
     usageResponse: "404 page not found",
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Usage" }).click();
   await page.getByText("Mac App update needed.").waitFor({
     timeout: 10_000,
@@ -1307,7 +1307,7 @@ async function testRunSetupAgainReturnsToWifiOnboarding(
     },
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Setup" }).click();
   await page.getByRole("button", { name: "Run setup again" }).click();
   await page.getByRole("heading", { name: "Connect VibeTV to WiFi" }).waitFor({
@@ -1347,7 +1347,7 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
     },
   );
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
   const dmgUpdateLink = page.getByRole("link", {
     name: "Download Mac App update",
@@ -1724,7 +1724,7 @@ async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
     legacyCompanionRelease: true,
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
   await page
     .getByRole("link", { name: "Download Mac App update" })
@@ -1785,7 +1785,7 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
     ],
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
   const firmwareSection = page.locator("section.border-b").filter({
     has: page.getByRole("heading", { name: "Firmware update" }),
@@ -1961,7 +1961,7 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   const installRequests = [];
   await routeCompanionOnline(page, installRequests);
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Support" }).click();
   await page.getByRole("heading", { name: "Support report" }).waitFor({
     timeout: 10_000,
@@ -2052,7 +2052,7 @@ async function testSavedAddressDoesNotBlockConfirmedVibeTVSearch(
     );
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const wifiReadyButton = page.getByRole("button", {
     name: "VibeTV is on WiFi",
   });
@@ -2121,7 +2121,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
     },
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
   await page.getByText("Mac App").waitFor({ timeout: 10_000 });
   await page.getByText("Online 1.0.33").waitFor({ timeout: 10_000 });
@@ -2201,7 +2201,7 @@ async function testOverviewShowsUsageLoadingUntilRealUsage(browser, appUrl) {
     },
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
   const loadingPreview = page.getByRole("img", {
     name: "Loading VibeTV usage preview",
@@ -2276,7 +2276,7 @@ async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
       },
     });
 
-    await page.goto(appUrl, { waitUntil: "networkidle" });
+    await page.goto(appUrl, { waitUntil: "domcontentloaded" });
     const renderedTheme = page.getByRole("img", {
       name: new RegExp(
         `Rendered VibeTV theme ${theme.id} showing Codex, 27% session used, 63% weekly used`,
@@ -2334,7 +2334,7 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
     },
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Theme Library" }).click();
   const synthwavePreview = page.getByRole("img", {
     name: /Rendered VibeTV theme synthwave showing VibeTV, 62% session remaining, 62% weekly remaining/,
@@ -2358,7 +2358,7 @@ async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {
     settingsCalls += 1;
   });
 
-  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
+  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "domcontentloaded" });
   await waitForCondition(
     () => settingsCalls >= 1,
     "expected settings refresh during initial connected Companion check",
@@ -2379,7 +2379,7 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
     settingsCalls += 1;
   });
 
-  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
+  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "domcontentloaded" });
   await waitForCondition(
     () => settingsCalls >= 1,
     "expected settings refresh before theme install status check",
@@ -2469,7 +2469,7 @@ async function testThemeInstallShowsIntermediateProgress(browser, appUrl) {
     },
   );
 
-  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
+  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "domcontentloaded" });
   await waitForCondition(
     () => settingsCalls >= 1,
     "expected settings refresh before theme install progress check",
@@ -2507,7 +2507,7 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
     settingsCalls += 1;
   });
 
-  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
+  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "domcontentloaded" });
   await waitForCondition(
     () => settingsCalls >= 1,
     "expected settings refresh before customer log copy check",
@@ -2573,7 +2573,7 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
     },
   );
 
-  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "networkidle" });
+  await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "domcontentloaded" });
   const wifiReadyButton = page.getByRole("button", {
     name: "VibeTV is on WiFi",
   });
@@ -2623,7 +2623,7 @@ async function testThemeWithoutPackUrlStaysLocked(browser, appUrl) {
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(`${appUrl}/install/missing-pack`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
   });
 
   await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
@@ -2649,7 +2649,7 @@ async function testBoardIncompatibleThemeStaysLocked(browser, appUrl) {
   });
 
   await page.goto(`${appUrl}/install/esp32-only`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
   });
   await waitForCondition(
     () => settingsCalls >= 1,
@@ -2681,7 +2681,7 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   });
 
   await page.goto(`${appUrl}/install/future-firmware`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
   });
   await waitForCondition(
     () => settingsCalls >= 1,
@@ -2710,7 +2710,7 @@ async function testDisabledDmgFlagHidesSetupAndUpdateLinks(browser, appUrl) {
   await routeHostedAppThroughLocalNext(page, appUrl);
   await routeCompanionMissing(page, setupInstallRequests);
 
-  await page.goto("https://app.vibetv.shop/", { waitUntil: "networkidle" });
+  await page.goto("https://app.vibetv.shop/", { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Mac App download not ready" }).waitFor({
     timeout: 10_000,
   });
@@ -2736,7 +2736,7 @@ async function testDisabledDmgFlagHidesSetupAndUpdateLinks(browser, appUrl) {
     },
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
   const unavailableButton = page.getByRole("button", {
     name: "Mac App update not ready",
