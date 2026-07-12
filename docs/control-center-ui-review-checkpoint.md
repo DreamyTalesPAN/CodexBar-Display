@@ -13,6 +13,31 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: hosted Mac App download entry, fresh native WiFi onboarding,
+  one-shot VibeTV verification, direct Overview handoff, healthy existing
+  installs, setup retry, and failed device discovery.
+- Customer rule: `app.vibetv.shop` owns only the verified Mac App download.
+  This remains the hosted action on later visits. The installed Mac App never
+  asks customers to download itself; it explains how to connect VibeTV to
+  WiFi, verifies the connection after the customer's confirmation, and opens
+  Overview automatically when the device is usable.
+- Simplifications accepted: the shared three-step hosted/native setup was split
+  by surface; Agentic and Terminal installer fallbacks were removed from the
+  hosted customer path; incomplete devices are no longer repaired or
+  force-paired passively before WiFi confirmation; a late healthy status skips
+  the repair write; `Run setup again` returns to WiFi setup instead of a Mac App
+  download step.
+- Verification: the local browser review covered fresh WiFi setup and direct
+  Overview handoff using the existing Control Center design system. Accepted
+  screenshots are in `tmp/ui-review-native-onboarding/`; the browser DOM also
+  confirmed the connected Overview, navigation, versions, and rendered VibeTV
+  preview. `npm run lint`, `npm run check:customer-ui-copy`, and `npm run
+  test:customer-flows` passed locally. The customer-flow suite covers hosted
+  download-only behavior, unavailable DMG handling, no early native writes,
+  one verification attempt, direct Overview handoff, existing healthy setup,
+  the initial-status race, failed discovery, setup retry, and the 390-pixel
+  layout.
+
 - Reviewed scope: verified DMG setup after WiFi, hosted `vibetv://` handoff,
   missing-asset fallback, Mac App update download, replacement guidance, setup
   locks, and the first failed Mac App check.

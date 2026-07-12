@@ -17,12 +17,20 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 
 ## Setup Flow Rules
 
-1. Overview is the only place for incomplete setup recovery.
-2. Settings, Theme Library, and Updates stay locked until setup is complete.
-3. Setup is complete when the Mac App is running and VibeTV is connected and paired.
-4. Theme Library is additionally locked until theme installs are allowed by the release gate.
-5. Support may stay available because it only creates support reports and shows recent activity, not a setup workflow.
-6. A Shopify theme install deep link must not bypass setup gating.
+1. The hosted website owns exactly one customer action: download the verified
+   Mac App DMG. It never owns VibeTV WiFi, discovery, pairing, or local checks.
+2. The installed Mac App never asks the customer to download itself during
+   normal onboarding. A fresh setup begins with VibeTV WiFi instructions.
+3. Device discovery and verification start only after the customer confirms
+   that VibeTV joined WiFi. Saved but incomplete devices are not repaired
+   passively. A successful check opens Overview automatically.
+4. An existing healthy setup opens Overview without setup writes or extra
+   confirmation.
+5. Settings, Theme Library, and Updates stay locked until setup is complete.
+6. Setup is complete when the Mac App is running and VibeTV is connected and paired.
+7. Theme Library is additionally locked until theme installs are allowed by the release gate.
+8. Support may stay available because it only creates support reports and shows recent activity, not a setup workflow.
+9. A Shopify theme install deep link must not bypass setup gating.
 
 ## Review Checklist
 
