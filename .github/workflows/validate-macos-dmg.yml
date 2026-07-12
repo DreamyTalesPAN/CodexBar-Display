@@ -2,6 +2,12 @@ name: CODEX Validate macOS DMG
 
 on:
   workflow_dispatch:
+    inputs:
+      dmg_recipient_certificate_base64:
+        description: Base64-encoded PEM PUBLIC RSA certificate for an encrypted one-day test artifact
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -17,6 +23,7 @@ env:
 jobs:
   build-unsigned-macos-app:
     if: >-
+      github.event_name == 'workflow_dispatch' &&
       github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
       github.ref == 'refs/heads/main' &&
       github.actor == github.repository_owner &&
@@ -111,6 +118,7 @@ jobs:
   sign-and-notarize-macos-dmg:
     needs: build-unsigned-macos-app
     if: >-
+      github.event_name == 'workflow_dispatch' &&
       needs.build-unsigned-macos-app.result == 'success' &&
       github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
       github.ref == 'refs/heads/main' &&
@@ -295,5 +303,72 @@ jobs:
             echo "- Apple notarization: \`${notary_status}\`"
             echo "- Apple submission: \`${submission_id}\`"
             echo "- DMG SHA-256: \`${dmg_sha256}\`"
-            echo "- Signed DMG upload: intentionally disabled for validation-only"
+            echo "- Plaintext signed DMG upload: disabled"
+            echo "- Notary-log upload: disabled"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Checkout current workflow orchestration
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.dmg_recipient_certificate_base64 != ''
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.sha }}
+          path: tmp/workflow-orchestration
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Encrypt signed DMG test artifact
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.dmg_recipient_certificate_base64 != ''
+        env:
+          CODEX_DMG_RECIPIENT_CERTIFICATE_BASE64: ${{ inputs.dmg_recipient_certificate_base64 }}
+        run: |
+          set -euo pipefail
+          orchestration_dir="tmp/workflow-orchestration"
+          actual_sha="$(git -C "${orchestration_dir}" rev-parse HEAD)"
+          if [[ "${actual_sha}" != "${GITHUB_SHA}" ]]; then
+            echo "error: checked out workflow orchestration ${actual_sha}, expected ${GITHUB_SHA}" >&2
+            exit 1
+          fi
+
+          encryptor="${orchestration_dir}/scripts/encrypt-macos-dmg-test-artifact.sh"
+          expected_encryptor_sha256="7d9af43633794a50762762fa90bd1d79466bb47adbc5461e2a57645c73bbe3c2"
+          actual_encryptor_sha256="$(shasum -a 256 "${encryptor}" | awk '{print $1}')"
+          if [[ "${actual_encryptor_sha256}" != "${expected_encryptor_sha256}" ]]; then
+            echo "error: untrusted encrypted-artifact helper hash ${actual_encryptor_sha256}" >&2
+            exit 1
+          fi
+
+          "${encryptor}" \
+            --dmg "dist/macos/VibeTV-Control-Center.dmg" \
+            --output-dir "tmp/macos-validation/encrypted-artifact"
+
+      - name: Upload encrypted signed DMG test artifact
+        id: upload_encrypted_test_dmg
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.dmg_recipient_certificate_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: CODEX-vibetv-control-center-signed-encrypted-${{ github.run_id }}
+          path: tmp/macos-validation/encrypted-artifact/VibeTV-Control-Center.dmg.cms
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          include-hidden-files: false
+
+      - name: Record encrypted test artifact evidence
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.dmg_recipient_certificate_base64 != ''
+        env:
+          CODEX_ENCRYPTED_ARTIFACT_DIGEST: ${{ steps.upload_encrypted_test_dmg.outputs.artifact-digest }}
+        run: |
+          {
+            echo "- Encrypted signed DMG test artifact: \`CODEX-vibetv-control-center-signed-encrypted-${GITHUB_RUN_ID}\`"
+            echo "- Artifact encryption: \`CMS AES-256-CBC with RSA-OAEP SHA-256\`"
+            echo "- GitHub artifact digest: \`${CODEX_ENCRYPTED_ARTIFACT_DIGEST}\`"
+            echo "- Artifact retention: \`1 day\`"
           } >> "${GITHUB_STEP_SUMMARY}"
