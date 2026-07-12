@@ -17,8 +17,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CODEX_VALIDATION_SOURCE_SHA: "5d367e7619e4c13d9d509b75057069d315ef673e"
-  CODEX_VALIDATION_VERSION: "1.0.42"
+  CODEX_VALIDATION_SOURCE_SHA: "a736044c9a43d888c637ef6504ec5169dc5aca60"
+  CODEX_VALIDATION_VERSION: "1.0.43"
 
 jobs:
   build-unsigned-macos-app:
