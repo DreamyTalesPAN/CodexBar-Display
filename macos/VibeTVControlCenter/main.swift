@@ -378,13 +378,30 @@ private struct ProcessOutput {
     let output: String
 }
 
+enum RuntimePreparationOutcome: Equatable {
+    case nativeRuntimeReady
+    case legacyRuntimeRestored
+    case keepCurrentPage
+
+    var shouldReloadControlCenter: Bool {
+        self == .nativeRuntimeReady || self == .legacyRuntimeRestored
+    }
+}
+
+func shouldRetryControlCenterNavigation(_ error: Error) -> Bool {
+    let error = error as NSError
+    return !(error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled)
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private var window: NSWindow?
     private var webView: WKWebView?
+    private var activeNavigation: WKNavigation?
     private let runtimeService = SMAppService.agent(plistName: runtimeLaunchAgentPlistName)
     private var urlRouter = ControlCenterURLRouter()
     private var reloadAttempts = 0
+    private var scheduledReload: Task<Void, Never>?
     private var installationRequired: Bool {
         requiresApplicationInstallation(Bundle.main.bundleURL)
     }
@@ -397,7 +414,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             return
         }
         Task { [weak self] in
-            await self?.prepareCompanion()
+            guard let self else {
+                return
+            }
+            let outcome = await self.prepareCompanion()
+            if outcome.shouldReloadControlCenter {
+                self.reloadControlCenter()
+            }
         }
         _ = urlRouter.markReady()
         presentControlCenter()
@@ -424,8 +447,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     @objc private func reloadControlCenter() {
+        scheduledReload?.cancel()
+        scheduledReload = nil
         reloadAttempts = 0
-        loadControlCenter()
+        loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)
     }
 
     private func configureMenu() {
@@ -509,36 +534,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         loadControlCenter()
     }
 
-    private func loadControlCenter() {
+    private func loadControlCenter(
+        cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy
+    ) {
         guard let url = URL(string: controlCenterURLString) else {
             return
         }
-        webView?.load(URLRequest(url: url))
+        activeNavigation = webView?.load(
+            URLRequest(
+                url: url,
+                cachePolicy: cachePolicy,
+                timeoutInterval: 30
+            )
+        )
     }
 
-    private func prepareCompanion() async {
+    private func prepareCompanion() async -> RuntimePreparationOutcome {
         guard isInstalledApplicationsBundle(Bundle.main.bundleURL) else {
             NSLog(
                 "VibeTV Control Center runtime migration skipped: move the app to /Applications first"
             )
-            return
+            return .keepCurrentPage
         }
         guard bundledRuntimeResourcesAreValid() else {
             NSLog("VibeTV Control Center app-managed runtime resources are missing")
-            return
+            return .keepCurrentPage
         }
 
         let expectedVersion = currentCompanionVersion()
         guard !expectedVersion.isEmpty else {
             NSLog("VibeTV Control Center bundled Companion version is missing")
-            return
+            return .keepCurrentPage
         }
 
         guard let legacyStates = legacyLaunchAgentStates() else {
             NSLog(
                 "VibeTV Control Center kept legacy services and apps because their launchctl state could not be captured"
             )
-            return
+            return .keepCurrentPage
         }
         let legacyDescriptors = legacyStates.map(\.descriptor)
         let legacyApps = legacyTerminalAppURLs()
@@ -547,15 +580,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             NSLog(
                 "VibeTV Control Center kept legacy services and apps because the app-managed runtime could not be registered"
             )
-            return
+            return .keepCurrentPage
         }
 
         if !stopLegacyLaunchAgents(legacyStates) {
-            await rollbackToLegacyAgents(
+            let restored = await rollbackToLegacyAgents(
                 legacyStates,
                 reason: "one or more legacy LaunchAgents could not be stopped"
             )
-            return
+            return restored ? .legacyRuntimeRestored : .keepCurrentPage
         }
 
         let health = await waitForHealthyRuntime(expectedVersion: expectedVersion)
@@ -564,32 +597,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
                 "VibeTV Control Center runtime health gate failed; legacy artifacts remain untouched: \(health)"
             )
             if !legacyStates.isEmpty {
-                await rollbackToLegacyAgents(legacyStates, reason: health.description)
+                let restored = await rollbackToLegacyAgents(
+                    legacyStates,
+                    reason: health.description
+                )
+                return restored ? .legacyRuntimeRestored : .keepCurrentPage
             } else if !(await unregisterBundledRuntimeService()) {
                 NSLog(
                     "VibeTV Control Center could not unregister the failed app-managed runtime"
                 )
             }
-            return
+            return .keepCurrentPage
         }
 
         if legacyStates.isEmpty {
             let migratedLegacyApps = await migrateLegacyAppsAfterHealthyRuntime(legacyApps)
             guard migratedLegacyApps else {
-                return
+                return .nativeRuntimeReady
             }
             recordCurrentRuntimeBundleVersion()
-            return
+            return .nativeRuntimeReady
         }
 
         if !legacyApps.isEmpty {
             let registeredURLHandler = await registerCurrentAppAsURLHandler()
             if !registeredURLHandler {
-                await rollbackToLegacyAgents(
+                let restored = await rollbackToLegacyAgents(
                     legacyStates,
                     reason: "the current app could not become the vibetv URL handler"
                 )
-                return
+                return restored ? .legacyRuntimeRestored : .keepCurrentPage
             }
         }
 
@@ -600,17 +637,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             backupRoot: backupRoot
         )
         guard moveMigrationArtifacts(artifacts) != nil else {
-            await rollbackToLegacyAgents(
+            let restored = await rollbackToLegacyAgents(
                 legacyStates,
                 reason: "legacy artifacts could not be moved into the migration backup"
             )
-            return
+            return restored ? .legacyRuntimeRestored : .keepCurrentPage
         }
 
         recordCurrentRuntimeBundleVersion()
         NSLog(
             "VibeTV Control Center migration completed with healthy Companion version \(expectedVersion); backup=\(backupRoot.path)"
         )
+        return .nativeRuntimeReady
     }
 
     private func ensureBundledRuntimeServiceRegistered() async -> Bool {
@@ -865,13 +903,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private func rollbackToLegacyAgents(
         _ states: [LegacyLaunchAgentState],
         reason: String
-    ) async {
+    ) async -> Bool {
         NSLog("VibeTV Control Center rolling back to legacy services: \(reason)")
         guard await unregisterBundledRuntimeService() else {
             NSLog(
                 "VibeTV Control Center rollback stopped: app-managed runtime could not be unregistered"
             )
-            return
+            return false
         }
 
         var restored = true
@@ -931,6 +969,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         if restored {
             NSLog("VibeTV Control Center restored the previous legacy services")
         }
+        return restored
     }
 
     private func legacyServiceIsLoaded(label: String) -> Bool {
@@ -1245,6 +1284,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
+        guard let activeNavigation, navigation === activeNavigation else {
+            return
+        }
+        self.activeNavigation = nil
+        guard shouldRetryControlCenterNavigation(error) else {
+            return
+        }
         scheduleReload()
     }
 
@@ -1253,16 +1299,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         didFail navigation: WKNavigation!,
         withError error: Error
     ) {
+        guard let activeNavigation, navigation === activeNavigation else {
+            return
+        }
+        self.activeNavigation = nil
+        guard shouldRetryControlCenterNavigation(error) else {
+            return
+        }
         scheduleReload()
     }
 
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let activeNavigation, navigation === activeNavigation else {
+            return
+        }
+        self.activeNavigation = nil
+        scheduledReload?.cancel()
+        scheduledReload = nil
+        reloadAttempts = 0
+    }
+
     private func scheduleReload() {
-        guard reloadAttempts < 20 else {
+        guard reloadAttempts < 20, scheduledReload == nil else {
             return
         }
         reloadAttempts += 1
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.loadControlCenter()
+        scheduledReload = Task { [weak self] in
+            do {
+                try await Task<Never, Never>.sleep(for: .milliseconds(500))
+            } catch {
+                return
+            }
+            guard !Task<Never, Never>.isCancelled else {
+                return
+            }
+            guard let self else {
+                return
+            }
+            self.scheduledReload = nil
+            self.loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)
         }
     }
 }

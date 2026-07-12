@@ -46,8 +46,11 @@ func TestStatusWorksWithoutDevice(t *testing.T) {
 	if !got.Companion.Features.ThemeInstallEnabled {
 		t.Fatalf("expected theme install enabled by default")
 	}
-	if !got.Companion.Features.MacAppSelfUpdateEnabled {
-		t.Fatalf("expected legacy Mac App self-update enabled by default")
+	if got.Companion.Features.MacAppSelfUpdateEnabled {
+		t.Fatalf("expected the new binary to disable the legacy Mac App updater")
+	}
+	if got.Companion.InstallationMode != "legacy" {
+		t.Fatalf("expected default legacy installation mode, got %q", got.Companion.InstallationMode)
 	}
 	if got.Device.Connected {
 		t.Fatalf("expected disconnected device without probing, got %+v", got.Device)
@@ -149,6 +152,9 @@ func TestDMGRuntimeDisablesLegacyMacAppSelfUpdate(t *testing.T) {
 	if got.Companion.Features.MacAppSelfUpdateEnabled {
 		t.Fatalf("expected DMG runtime to disable legacy Mac App self-update")
 	}
+	if got.Companion.InstallationMode != "dmg" {
+		t.Fatalf("expected DMG runtime installation mode, got %q", got.Companion.InstallationMode)
+	}
 
 	for _, endpoint := range []struct {
 		method string
@@ -162,6 +168,42 @@ func TestDMGRuntimeDisablesLegacyMacAppSelfUpdate(t *testing.T) {
 		server.Handler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected %s to be unavailable, got %d body=%s", endpoint.path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestLegacyRuntimeReportsLegacyInstallationMode(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Companion.Features.MacAppSelfUpdateEnabled {
+		t.Fatalf("expected the bridge binary to disable further legacy self-updates")
+	}
+	if got.Companion.InstallationMode != "legacy" {
+		t.Fatalf("expected legacy runtime installation mode, got %q", got.Companion.InstallationMode)
+	}
+
+	for _, endpoint := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodPost, path: "/v1/mac-app/update"},
+		{method: http.MethodGet, path: "/v1/mac-app/update/status?jobId=legacy"},
+	} {
+		rec = httptest.NewRecorder()
+		req = httptest.NewRequest(endpoint.method, endpoint.path, strings.NewReader(`{"version":"1.0.41"}`))
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected the bridge binary to disable %s, got %d body=%s", endpoint.path, rec.Code, rec.Body.String())
 		}
 	}
 }
@@ -1180,6 +1222,9 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), "VibeTV Control Center") {
 			t.Fatalf("expected %s to serve index, got %q", path, rec.Body.String())
 		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("expected %s HTML to disable caching, got Cache-Control %q", path, got)
+		}
 	}
 
 	asset := httptest.NewRecorder()
@@ -1188,12 +1233,18 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 	if asset.Code != http.StatusOK || !strings.Contains(asset.Body.String(), "control-center") {
 		t.Fatalf("expected embedded static asset, got %d body=%s", asset.Code, asset.Body.String())
 	}
+	if got := asset.Header().Get("Cache-Control"); got != "" {
+		t.Fatalf("expected hashed static asset to retain default caching, got Cache-Control %q", got)
+	}
 
 	install := httptest.NewRecorder()
 	installReq := httptest.NewRequest(http.MethodGet, "/control-center/install/synthwave", nil)
 	server.Handler().ServeHTTP(install, installReq)
 	if install.Code != http.StatusOK || !strings.Contains(install.Body.String(), "Install Synthwave") {
 		t.Fatalf("expected exported install route, got %d body=%s", install.Code, install.Body.String())
+	}
+	if got := install.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("expected exported install HTML to disable caching, got Cache-Control %q", got)
 	}
 
 	theme := httptest.NewRecorder()
@@ -2773,6 +2824,7 @@ func TestFirmwareUpdateAsyncReportsCustomerError(t *testing.T) {
 
 func TestMacAppUpdateAsyncReportsCustomerProgress(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
+	server.allowMacAppSelfUpdate = true
 	server.updateMacApp = func(_ context.Context, home string, addr string, req macAppUpdateRequest, out io.Writer) error {
 		if strings.TrimSpace(home) == "" {
 			t.Fatalf("expected update to receive home directory")
@@ -2850,6 +2902,7 @@ func TestMacAppUpdateAsyncReportsCustomerProgress(t *testing.T) {
 
 func TestMacAppUpdateAsyncReportsCustomerError(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
+	server.allowMacAppSelfUpdate = true
 	server.updateMacApp = func(_ context.Context, _ string, _ string, _ macAppUpdateRequest, out io.Writer) error {
 		_, _ = io.WriteString(out, "vibetv: release=v1.0.36\nvibetv: arch=arm64\n")
 		return errors.New("curl https://token@example.com/private failed")

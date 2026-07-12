@@ -83,10 +83,12 @@ codexbar-display daemon \
 This keeps normal VibeTV usage frames updating in the background. App install
 and migration do not trigger firmware updates, theme installs, asset uploads,
 `/theme/active`, `/reset-wifi`, or similar configuration writes.
-The DMG LaunchAgent also sets `VIBETV_DISABLE_MAC_APP_SELF_UPDATE=1`. Its API
-reports the legacy self-updater as unavailable and does not register
-`/v1/mac-app/update`, so a cached or older UI cannot update the former Terminal
-app under `~/Applications`.
+The DMG LaunchAgent also sets `VIBETV_DISABLE_MAC_APP_SELF_UPDATE=1`. The API
+reports `companion.installationMode=dmg`; the one-time bridge installation
+reports `companion.installationMode=legacy`. Both new runtimes report the old
+self-updater as unavailable and do not register `/v1/mac-app/update`, so a
+cached or older UI cannot keep updating the former Terminal app under
+`~/Applications`.
 
 Inside the native WebView, only a direct link click matching the verified form
 `https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/<tag>/VibeTV-Control-Center.dmg`
@@ -94,8 +96,30 @@ is handed to the default browser. The WebView cancels that navigation, so the
 Control Center stays open and the browser-owned download continues if the app
 window is closed.
 
-While the DMG gate is disabled or no verified asset exists, the old Terminal
-setup remains the staged support path. Once a verified DMG is enabled, hosted
+## Existing Customer Bridge
+
+The already released v1.0.41 binary still owns the old
+`/v1/mac-app/update` endpoint. That endpoint may run exactly once to install the
+new bridge binary and embedded UI into the existing legacy location. When the
+new binary starts, the v1.0.41 page treats the disappearing update-status
+endpoint as a restart, reconnects to `/v1/status`, and confirms the target
+version.
+
+The bridge UI then uses `installationMode=legacy`, not the semantic version, to
+show `Move to the new Mac App`. It exposes the download only when the hosted
+release check returns `status=available`, `dmgDownloadStatus=available`, and a
+non-empty verified DMG URL. This remains true when the bridge binary and DMG
+have the same version. The customer opens the DMG, moves the app to
+`/Applications`, and launches it without uninstalling the legacy app first.
+
+After the native runtime health and listener-ownership gate completes, the
+WebView performs a cache-bypassing reload. A successful rollback reloads the
+restored legacy UI; an uncertain rollback does not claim success or force a
+new page.
+
+While the DMG gate is disabled or no verified asset exists, the existing
+Control Center keeps running and the migration action stays disabled. Operators
+retain the old Terminal setup only as a support path. Once a verified DMG is enabled, hosted
 setup hides Agentic and Terminal installers so they cannot recreate the old
 `~/Applications/VibeTV Control Center.app`; the signed/notarized DMG is the
 only visible Mac App install/update path.

@@ -21,3 +21,17 @@ export type CompanionReleaseInfo = {
   dmgDownloadStatus?: MacAppDmgDownloadStatus;
   dmgDownloadUrl?: string;
 };
+
+export function availableMacAppDmgDownloadUrl(
+  release: CompanionReleaseInfo | null | undefined,
+): string | undefined {
+  const url = release?.dmgDownloadUrl?.trim();
+  if (
+    release?.status !== "available" ||
+    release.dmgDownloadStatus !== "available" ||
+    !url
+  ) {
+    return undefined;
+  }
+  return url;
+}

@@ -559,6 +559,9 @@ required_source = [
     "NSWorkspace.shared.open(url)",
     "requiresApplicationInstallation(Bundle.main.bundleURL)",
     "presentInstallationRequiredAlert()",
+    "RuntimePreparationOutcome",
+    "activeNavigation = webView?.load(",
+    ".reloadIgnoringLocalCacheData",
     'alert.addButton(withTitle: "Open Applications")',
     'alert.addButton(withTitle: "Quit")',
 ]
@@ -579,6 +582,46 @@ if not (
 ):
     raise SystemExit(
         "native app must stop at the install dialog before starting the runtime or WebView"
+    )
+
+prepare_runtime = launch_method.find("let outcome = await self.prepareCompanion()")
+reload_after_prepare = launch_method.find(
+    "if outcome.shouldReloadControlCenter",
+    prepare_runtime,
+)
+reload_call = launch_method.find("self.reloadControlCenter()", reload_after_prepare)
+if not (0 <= prepare_runtime < reload_after_prepare < reload_call):
+    raise SystemExit(
+        "native app must refresh the WebView after a confirmed runtime migration or rollback"
+    )
+
+if "shouldRetryControlCenterNavigation(error)" not in source:
+    raise SystemExit(
+        "native WebView must ignore cancellation errors caused by its own fresh reload"
+    )
+
+if source.count("navigation === activeNavigation") < 3:
+    raise SystemExit(
+        "native WebView must ignore stale success and failure callbacks from replaced navigations"
+    )
+
+schedule_start = source.find("private func scheduleReload()")
+schedule_end = source.find("\n    }\n}", schedule_start)
+schedule_method = source[schedule_start:schedule_end]
+if "Task<Never, Never>.isCancelled" not in schedule_method:
+    raise SystemExit(
+        "cancelled stale WebView retry tasks must stop before starting another load"
+    )
+
+reload_start = source.find("@objc private func reloadControlCenter()")
+reload_end = source.find("private func configureMenu()", reload_start)
+reload_method = source[reload_start:reload_end]
+if (
+    "scheduledReload?.cancel()" not in reload_method
+    or "cachePolicy: .reloadIgnoringLocalCacheData" not in reload_method
+):
+    raise SystemExit(
+        "post-migration reload must cancel stale retries and bypass cached legacy HTML"
     )
 
 present_start = source.find("private func presentControlCenter()")
@@ -603,6 +646,15 @@ if not (
         "native app must register, stop legacy, pass health, migrate old apps, then persist"
     )
 
+prepare_start = source.find("private func prepareCompanion() async")
+prepare_end = source.find("private func ensureBundledRuntimeServiceRegistered()", prepare_start)
+prepare_method = source[prepare_start:prepare_end]
+native_ready = prepare_method.find("return .nativeRuntimeReady")
+if not (0 <= prepare_method.find("let health = await waitForHealthyRuntime") < native_ready):
+    raise SystemExit(
+        "native runtime must pass the health and ownership gate before triggering a fresh WebView load"
+    )
+
 stop_method = source[
     source.find("private func stopLegacyLaunchAgents("):
     source.find("private func rollbackToLegacyAgents(")
@@ -618,6 +670,10 @@ rollback_method = source[
     source.find("private func rollbackToLegacyAgents("):
     source.find("private func legacyServiceIsLoaded(")
 ]
+if ") async -> Bool" not in rollback_method or "return restored" not in rollback_method:
+    raise SystemExit(
+        "legacy rollback must report whether the restored runtime is safe to reload"
+    )
 enable_legacy = rollback_method.find('launchctlExitStatus(["enable", service])')
 restart_legacy = rollback_method.find('"bootstrap"')
 if not (0 <= enable_legacy < restart_legacy):

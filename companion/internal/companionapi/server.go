@@ -124,6 +124,7 @@ type Server struct {
 	waitStream             func(context.Context, string) displayStreamInfo
 	refreshStream          func(context.Context, string) error
 	allowMacAppSelfUpdate  bool
+	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
 	fetchUsage             func(context.Context) ([]codexbar.ParsedFrame, error)
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
@@ -376,10 +377,11 @@ type diagnosticCheck struct {
 }
 
 type companion struct {
-	Status   string               `json:"status"`
-	Version  string               `json:"version"`
-	Update   companionReleaseInfo `json:"update"`
-	Features companionFeatures    `json:"features"`
+	Status           string               `json:"status"`
+	Version          string               `json:"version"`
+	InstallationMode string               `json:"installationMode"`
+	Update           companionReleaseInfo `json:"update"`
+	Features         companionFeatures    `json:"features"`
 }
 
 type companionFeatures struct {
@@ -585,7 +587,8 @@ func New(opts Options) (*Server, error) {
 		streamStatus:          inspectDisplayStream,
 		waitStream:            waitForDisplayStream,
 		refreshStream:         opts.RefreshDisplayStream,
-		allowMacAppSelfUpdate: macAppSelfUpdateEnabled(),
+		allowMacAppSelfUpdate: false,
+		installationMode:      macAppInstallationMode(),
 		loadUsage:             daemon.LoadPersistedUsage,
 		fetchUsage:            codexbar.FetchAllProviders,
 		updateFirmware:        runFirmwareUpdateCommand,
@@ -701,6 +704,9 @@ func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, 
 	if !ok {
 		http.NotFound(w, r)
 		return false
+	}
+	if strings.HasSuffix(assetPath, ".html") {
+		w.Header().Set("Cache-Control", "no-store")
 	}
 	data, err := fs.ReadFile(s.controlCenterFS, assetPath)
 	if err != nil {
@@ -1105,9 +1111,10 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) companionInfo(ctx context.Context) companion {
 	return companion{
-		Status:  "ready",
-		Version: buildinfo.NormalizedVersion(),
-		Update:  s.macAppReleaseInfo(ctx),
+		Status:           "ready",
+		Version:          buildinfo.NormalizedVersion(),
+		InstallationMode: s.installationMode,
+		Update:           s.macAppReleaseInfo(ctx),
 		Features: companionFeatures{
 			ThemeInstallEnabled:     themeInstallEnabled(),
 			MacAppSelfUpdateEnabled: s.allowMacAppSelfUpdate,
@@ -3876,12 +3883,12 @@ func themeInstallEnabled() bool {
 	}
 }
 
-func macAppSelfUpdateEnabled() bool {
+func macAppInstallationMode() string {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(macAppUpdateDisableEnv))) {
 	case "1", "true", "yes", "on":
-		return false
+		return "dmg"
 	default:
-		return true
+		return "legacy"
 	}
 }
 

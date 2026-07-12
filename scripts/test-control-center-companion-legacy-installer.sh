@@ -395,7 +395,7 @@ run_install_writes_integrated_daemon_launchagent() {
   assert_contains "$output" "Done. Your Control Center is opening now."
   assert_not_contains "$output" "Done: firmware 9.9.9 installed"
   assert_contains "$setup_log" "background service installed at ${daemon_plist}"
-  assert_contains "$setup_log" "opening Control Center at http://127.0.0.1:47832/control-center"
+  assert_contains "$setup_log" "opening Control Center at http://127.0.0.1:47832/control-center?migration=9.9.9"
   assert_contains "$setup_log" "VibeTV is connected at http://192.168.178.72"
   assert_contains "$setup_log" "Done: firmware 9.9.9 installed"
   assert_contains "$setup_log" "VibeTV firmware update complete"
@@ -421,7 +421,7 @@ run_install_writes_integrated_daemon_launchagent() {
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.daemon"
   assert_contains "$launch_log" "bootstrap gui/$(id -u) $daemon_plist"
   assert_not_contains "$launch_log" "kickstart -k gui/$(id -u)/com.codexbar-display.daemon"
-  assert_contains "$(cat "${root}/open.log")" "http://127.0.0.1:47832/control-center"
+  assert_contains "$(cat "${root}/open.log")" "http://127.0.0.1:47832/control-center?migration=9.9.9"
 }
 
 run_install_can_skip_device_setup_for_mac_app_update() {
@@ -445,8 +445,8 @@ run_install_can_skip_device_setup_for_mac_app_update() {
   assert_contains "$output" "Done. Your Control Center is opening now."
   assert_contains "$setup_log" "Mac App update verified"
   assert_contains "$setup_log" "background service installed"
-  assert_contains "$setup_log" "opening Control Center at http://127.0.0.1:47832/control-center"
-  assert_contains "$(cat "${root}/open.log")" "http://127.0.0.1:47832/control-center"
+  assert_contains "$setup_log" "opening Control Center at http://127.0.0.1:47832/control-center?migration=9.9.9"
+  assert_contains "$(cat "${root}/open.log")" "http://127.0.0.1:47832/control-center?migration=9.9.9"
   assert_not_contains "$curl_log" "/v1/device/repair"
   assert_not_contains "$curl_log" "/v1/device\""
   assert_not_contains "$api_log" "install-update"

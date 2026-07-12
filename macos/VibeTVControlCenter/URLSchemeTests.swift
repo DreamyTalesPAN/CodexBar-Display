@@ -10,6 +10,30 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 
 func runURLSchemeTests() {
     require(
+        RuntimePreparationOutcome.nativeRuntimeReady.shouldReloadControlCenter,
+        "healthy native runtime must refresh the WebView"
+    )
+    require(
+        RuntimePreparationOutcome.legacyRuntimeRestored.shouldReloadControlCenter,
+        "successful rollback must refresh the WebView to the restored runtime"
+    )
+    require(
+        !RuntimePreparationOutcome.keepCurrentPage.shouldReloadControlCenter,
+        "uncertain runtime state must not force a misleading WebView refresh"
+    )
+    require(
+        !shouldRetryControlCenterNavigation(
+            NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        ),
+        "a navigation replaced by the post-migration reload must not schedule another retry"
+    )
+    require(
+        shouldRetryControlCenterNavigation(
+            NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
+        ),
+        "a real Control Center navigation failure must remain retryable"
+    )
+    require(
         isOpenControlCenterURL(URL(string: "vibetv://open-control-center")!),
         "expected launcher URL to be accepted"
     )

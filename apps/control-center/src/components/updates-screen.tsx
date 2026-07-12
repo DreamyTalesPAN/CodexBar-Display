@@ -10,7 +10,10 @@ import {
   X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import type { CompanionReleaseInfo } from "@/lib/companion-release";
+import {
+  availableMacAppDmgDownloadUrl,
+  type CompanionReleaseInfo,
+} from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { ControlCenterButton } from "./control-center-button";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
@@ -46,6 +49,7 @@ export type UpdatesScreenProps = {
   onCheckUpdates?: () => Promise<void> | void;
   onCreateReport?: () => void;
   onInstallUpdate?: () => Promise<boolean> | boolean | void;
+  requiresMacAppMigration?: boolean;
   busyAction?: string | null;
   updateStatus?: FirmwareUpdateStatus | null;
 };
@@ -59,6 +63,7 @@ export function UpdatesScreen({
   onCheckUpdates,
   onCreateReport,
   onInstallUpdate,
+  requiresMacAppMigration = false,
   busyAction,
   updateStatus,
 }: UpdatesScreenProps) {
@@ -74,29 +79,46 @@ export function UpdatesScreen({
     firmwareUpdate?.latestFirmware || (checking ? "Checking" : "Not available");
   const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
-  const macAppDownloadUrl = macAppUpdateAvailable
-    ? companionRelease?.dmgDownloadUrl
-    : undefined;
+  const verifiedDmgDownloadUrl = availableMacAppDmgDownloadUrl(companionRelease);
+  const macAppMigrationReady = Boolean(
+    requiresMacAppMigration && verifiedDmgDownloadUrl,
+  );
+  const macAppDownloadUrl =
+    macAppMigrationReady || macAppUpdateAvailable
+      ? verifiedDmgDownloadUrl
+      : undefined;
   const macAppDownloadReady = Boolean(macAppDownloadUrl);
-  const anyUpdateAvailable = updateAvailable || macAppUpdateAvailable;
+  const macAppDownloadAction =
+    macAppMigrationReady || macAppUpdateAvailable;
+  const anyUpdateAvailable = updateAvailable || macAppDownloadAction;
+  const needsAttention = anyUpdateAvailable || requiresMacAppMigration;
   const refreshing = busyAction === "firmware-check";
   const installingUpdate =
     busyAction === "firmware-update" || updateStatus?.phase === "installing";
   const installingAnyUpdate = installingUpdate;
   const creatingReport = busyAction === "diagnostics";
   const macAppCheckFailed =
-    macAppRunning && companionRelease?.status === "check_failed";
-  const checkFailed = firmwareUpdate?.status === "check_failed" || macAppCheckFailed;
+    macAppRunning &&
+    (companionRelease?.status === "check_failed" ||
+      companionRelease?.dmgDownloadStatus === "check_failed");
+  const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
+  const checkFailed = firmwareCheckFailed || macAppCheckFailed;
   const title = checkingUpdates
     ? "Checking updates"
-    : checkFailed
-      ? "Update check failed"
-      : anyUpdateAvailable
-        ? "Update available"
-        : "Up to date";
+    : updateAvailable
+      ? "Update available"
+      : checkFailed
+        ? "Update check failed"
+        : macAppMigrationReady
+          ? "Move to the new Mac App"
+          : requiresMacAppMigration
+            ? "New Mac App is being prepared"
+            : anyUpdateAvailable
+              ? "Update available"
+              : "Up to date";
   const status = checking
     ? "Checking"
-    : checkFailed
+    : firmwareCheckFailed
       ? "Check failed"
       : !canCheckFirmware && !firmwareUpdate
         ? "Not available"
@@ -105,6 +127,8 @@ export function UpdatesScreen({
           : "Up to date";
   const companionReleaseStatus = companionReleaseLabel({
     macAppRunning,
+    migrationReady: macAppMigrationReady,
+    migrationRequired: requiresMacAppMigration,
     release: companionRelease,
   });
   const companionInstalled =
@@ -115,17 +139,23 @@ export function UpdatesScreen({
     companionRelease?.latestVersion || companionRelease?.release || "Checking";
 
   async function runPrimaryUpdate() {
-    if (macAppUpdateAvailable) {
+    if (updateAvailable) {
+      await onInstallUpdate?.();
+      return;
+    }
+
+    if (macAppCheckFailed) {
+      await onCheckUpdates?.();
+      return;
+    }
+
+    if (macAppDownloadAction) {
       return;
     }
 
     if (!anyUpdateAvailable) {
       await onCheckUpdates?.();
       return;
-    }
-
-    if (updateAvailable) {
-      await onInstallUpdate?.();
     }
   }
 
@@ -134,8 +164,8 @@ export function UpdatesScreen({
       <section className="min-h-[330px] border-b border-[#747A60] py-10">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 items-start gap-5">
-            <HeroIcon variant={anyUpdateAvailable ? "neutral" : "complete"}>
-              {anyUpdateAvailable ? (
+            <HeroIcon variant={needsAttention ? "neutral" : "complete"}>
+              {needsAttention ? (
                 <RefreshCw size={36} aria-hidden />
               ) : (
                 <Check size={38} aria-hidden />
@@ -155,12 +185,19 @@ export function UpdatesScreen({
             }
             downloadUrl={macAppDownloadUrl}
             installingFirmware={installingUpdate}
+            firmwareUpdateAvailable={updateAvailable}
+            macAppCheckFailed={macAppCheckFailed}
+            macAppMigrationRequired={requiresMacAppMigration}
+            macAppMigrationReady={macAppMigrationReady}
             macAppUpdateAvailable={macAppUpdateAvailable}
             onDownloadStart={() => setMacAppDownloadStarted(true)}
             onClick={runPrimaryUpdate}
-            updateAvailable={anyUpdateAvailable}
             updateReady={Boolean(
-              macAppUpdateAvailable
+              updateAvailable
+                ? onInstallUpdate
+                : macAppCheckFailed
+                ? onCheckUpdates
+                : requiresMacAppMigration || macAppUpdateAvailable
                 ? macAppDownloadReady
                 : anyUpdateAvailable || onCheckUpdates,
             )}
@@ -189,10 +226,14 @@ export function UpdatesScreen({
           />
         </dl>
 
-        {macAppUpdateAvailable ? (
+        {requiresMacAppMigration || macAppUpdateAvailable ? (
           <MacAppDmgUpdateNote
             downloadReady={macAppDownloadReady}
             downloadStarted={macAppDownloadStarted}
+            downloadUrl={macAppDownloadUrl}
+            migration={requiresMacAppMigration}
+            onDownloadStart={() => setMacAppDownloadStarted(true)}
+            showDownloadAction={updateAvailable}
           />
         ) : null}
       </section>
@@ -237,24 +278,36 @@ function PrimaryUpdateAction({
   checking,
   disabled,
   downloadUrl,
+  firmwareUpdateAvailable,
   installingFirmware,
+  macAppCheckFailed,
+  macAppMigrationRequired,
+  macAppMigrationReady,
   macAppUpdateAvailable,
   onDownloadStart,
   onClick,
-  updateAvailable,
   updateReady,
 }: {
   checking: boolean;
   disabled: boolean;
   downloadUrl?: string;
+  firmwareUpdateAvailable: boolean;
   installingFirmware: boolean;
+  macAppCheckFailed: boolean;
+  macAppMigrationRequired: boolean;
+  macAppMigrationReady: boolean;
   macAppUpdateAvailable: boolean;
   onDownloadStart: () => void;
   onClick: () => void | Promise<void>;
-  updateAvailable: boolean;
   updateReady: boolean;
 }) {
-  if (macAppUpdateAvailable && downloadUrl && !disabled && !checking) {
+  if (
+    !firmwareUpdateAvailable &&
+    (macAppMigrationReady || macAppUpdateAvailable) &&
+    downloadUrl &&
+    !disabled &&
+    !checking
+  ) {
     return (
       <a
         className="vibetv-button vibetv-button--large vibetv-button--primary w-full sm:w-auto sm:min-w-[240px]"
@@ -262,25 +315,39 @@ function PrimaryUpdateAction({
         onClick={onDownloadStart}
       >
         <Download size={20} aria-hidden />
-        <span>Download Mac App update</span>
+        <span>
+          {macAppMigrationReady
+            ? "Download new Mac App"
+            : "Download Mac App update"}
+        </span>
       </a>
     );
   }
 
   const label = installingFirmware
     ? "Updating VibeTV"
-    : macAppUpdateAvailable
-      ? downloadUrl
-        ? "Download Mac App update"
-        : "Mac App update not ready"
-      : updateAvailable
-        ? "Update now"
-        : checking
-          ? "Checking updates"
-          : "Check for updates";
+    : firmwareUpdateAvailable
+      ? "Update now"
+      : macAppMigrationRequired
+        ? macAppCheckFailed
+          ? "Check again"
+          : downloadUrl
+            ? "Download new Mac App"
+            : "New Mac App not ready"
+        : macAppUpdateAvailable
+          ? downloadUrl
+            ? "Download Mac App update"
+            : "Mac App update not ready"
+          : checking
+            ? "Checking updates"
+            : "Check for updates";
   const icon = installingFirmware || checking ? (
     <RefreshCw className="animate-spin" size={20} aria-hidden />
-  ) : updateAvailable ? (
+  ) : firmwareUpdateAvailable ? (
+    <Download size={20} aria-hidden />
+  ) : macAppCheckFailed ? (
+    <RefreshCw size={20} aria-hidden />
+  ) : macAppMigrationRequired ? (
     <Download size={20} aria-hidden />
   ) : (
     <RefreshCw size={20} aria-hidden />
@@ -290,7 +357,15 @@ function PrimaryUpdateAction({
     <ControlCenterButton
       className="w-full sm:w-auto sm:min-w-[240px]"
       disabled={
-        disabled || checking || !updateReady || macAppUpdateAvailable
+        disabled ||
+        checking ||
+        !updateReady ||
+        (!firmwareUpdateAvailable &&
+          macAppMigrationRequired &&
+          !macAppCheckFailed) ||
+        (!firmwareUpdateAvailable &&
+          macAppUpdateAvailable &&
+          !macAppCheckFailed)
       }
       icon={icon}
       label={label}
@@ -396,50 +471,98 @@ function InlineUpdateProgress({
 function MacAppDmgUpdateNote({
   downloadReady,
   downloadStarted,
+  downloadUrl,
+  migration,
+  onDownloadStart,
+  showDownloadAction,
 }: {
   downloadReady: boolean;
   downloadStarted: boolean;
+  downloadUrl?: string;
+  migration: boolean;
+  onDownloadStart: () => void;
+  showDownloadAction: boolean;
 }) {
   return (
     <div
       className="mt-6 border border-[#747A60] bg-[#F9F9F9] p-4 text-sm leading-6 text-[#444933]"
       role="status"
     >
-      {downloadReady ? (
-        <>
-          <strong className="font-black text-[#1B1B1B]">
-            {downloadStarted ? "Download started." : "Update with the DMG."}
-          </strong>{" "}
-          Quit VibeTV Control Center, open the downloaded DMG, drag VibeTV
-          Control Center into Applications, and choose Replace. Then open the
-          app from Applications again. This replaces the installed app instead
-          of creating a second Terminal-installed copy.
-        </>
-      ) : (
-        <>
-          <strong className="font-black text-[#1B1B1B]">
-            Mac App update is not ready yet.
-          </strong>{" "}
-          No installer will run. Check again after the signed Mac App download
-          is available.
-        </>
-      )}
+      <div>
+        {downloadReady ? (
+          <>
+            <strong className="font-black text-[#1B1B1B]">
+              {downloadStarted
+                ? "Download started."
+                : migration
+                  ? "Move to the new Mac App."
+                  : "Update with the DMG."}
+            </strong>{" "}
+            Open the downloaded DMG, drag VibeTV Control Center into
+            Applications, and choose Replace if macOS asks. Then open the app
+            from Applications.
+            {migration
+              ? " Your VibeTV settings stay in place, and the new app takes over only after it confirms its background service is working."
+              : " This replaces the installed app instead of creating a second copy."}
+          </>
+        ) : (
+          <>
+            <strong className="font-black text-[#1B1B1B]">
+              {migration
+                ? "New Mac App is not ready yet."
+                : "Mac App update is not ready yet."}
+            </strong>{" "}
+            Your current Control Center keeps working. No installer will run;
+            check again after the signed Mac App download is available.
+          </>
+        )}
+      </div>
+      {showDownloadAction && downloadUrl ? (
+        <a
+          className="vibetv-button vibetv-button--compact vibetv-button--secondary mt-4 w-full sm:w-auto"
+          href={downloadUrl}
+          onClick={onDownloadStart}
+        >
+          <Download size={16} aria-hidden />
+          <span>
+            {migration ? "Download new Mac App" : "Download Mac App update"}
+          </span>
+        </a>
+      ) : null}
     </div>
   );
 }
 
 function companionReleaseLabel({
   macAppRunning,
+  migrationReady,
+  migrationRequired,
   release,
 }: {
   macAppRunning: boolean;
+  migrationReady: boolean;
+  migrationRequired: boolean;
   release: CompanionReleaseInfo | null;
 }): string {
   if (macAppRunning) {
-    if (release?.updateAvailable) {
-      return release.dmgDownloadUrl ? "Download ready" : "Update waiting";
+    if (migrationRequired) {
+      if (
+        release?.status === "check_failed" ||
+        release?.dmgDownloadStatus === "check_failed"
+      ) {
+        return "Check failed";
+      }
+      return migrationReady ? "New Mac App ready" : "New Mac App waiting";
     }
-    if (release?.status === "check_failed") {
+    if (release?.updateAvailable) {
+      return availableMacAppDmgDownloadUrl(release)
+        ? "Download ready"
+        : "Update waiting";
+    }
+    if (
+      release?.status === "check_failed" ||
+      release?.dmgDownloadStatus === "check_failed"
+    ) {
       return "Check failed";
     }
     return "Ready";

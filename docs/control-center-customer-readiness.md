@@ -37,6 +37,20 @@ local-network permission.
 9. An already healthy installation opens Overview without onboarding writes.
 10. Theme install writes stay locked until the hardware-safe release gate is enabled.
 
+Existing customers do not repeat WiFi onboarding:
+
+1. The v1.0.41 Update action installs the bridge binary and embedded UI once.
+2. The bridge reports `installationMode=legacy` while disabling any further
+   Terminal self-update.
+3. Overview and Updates show `Move to the new Mac App` even when the bridge and
+   DMG versions are identical.
+4. The CTA appears only for the verified, feature-flagged DMG. Without it, the
+   current Control Center keeps working and no installer runs.
+5. The customer opens the DMG, moves the app into Applications, and opens it.
+6. The native app keeps the existing VibeTV settings, accepts its new runtime
+   only after health and port-ownership checks, archives the old app and user
+   LaunchAgents, reloads the new local UI, and opens Overview.
+
 ## Legacy Operator Support Path
 
 The customer UI does not expose Agentic or Terminal installation. Operators can
@@ -101,32 +115,16 @@ same process also answers Control Center.
 
 ## Existing Customer Update Bridge
 
-Existing customers may enter the launch through the older VibeTV update page,
-which still copies a command based on the legacy release `install.sh`:
+Existing v1.0.41 customers already have a fixed latest-release call to
+`install-control-center-companion.sh`. The first public DMG release therefore
+publishes that bridge script, its matching Darwin binaries and checksums, and
+the signed DMG together. The old binary uses its existing update endpoint once
+to install the bridge. The new binary does not register that endpoint again.
 
-```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --target http://vibetv.local && codexbar-display install-update --confirm-live-update --target http://vibetv.local
-```
-
-For the Control Center launch, `install.sh` is also a migration bridge. After it
-installs the current release binary, refreshes the older display-stream daemon,
-tries to warm up CodexBar, preserves an existing device theme by skipping the
-default theme-pack install on existing Mac installs, and runs the health check,
-it verifies the integrated daemon API on `127.0.0.1:47832` when possible. It
-removes stale standalone API LaunchAgent state and disables any old global API
-LaunchAgent for the current user before the daemon is started.
-
-The bridge is best-effort by design. A Control Center service verification failure must
-not prevent the firmware update command after `&&` from running. The same is
-true when CodexBar provider data is not ready yet: the installer warns, but it
-continues so the customer can still update the VibeTV and finish provider setup
-later in Control Center. If the bridge cannot start or verify the service, the
-installer tells the customer or support to run setup again from
-`app.vibetv.shop`.
-
-The firmware update step preserves a concrete saved device URL such as
-`http://192.168.178.72` instead of replacing it with `http://vibetv.local`. That
-keeps the fallback path available when `.local` name resolution is unreliable.
+The bridge preserves the existing device URL, pairing token, display daemon,
+and current VibeTV behavior. Its new UI detects `installationMode=legacy`
+independently of `updateAvailable`, so an equal-version DMG remains visible.
+The CTA never calls `/v1/mac-app/update`; it opens only the verified DMG URL.
 
 The hosted entry and local Updates screen check `/api/companion/latest`. The
 route reads the latest GitHub Release and exposes the DMG URL only when the
@@ -166,6 +164,10 @@ If the Shopify theme catalog is empty or the requested `/install/<theme_id>` doe
 
 The Updates screen labels Mac App actions plainly:
 
+- `Download new Mac App` for a verified legacy-to-DMG migration, including an
+  equal-version migration.
+- `New Mac App not ready` when a legacy installation is detected but the exact
+  signed asset cannot be verified.
 - `Download Mac App update` when a newer verified DMG is available.
 - `Mac App update not ready` when the exact signed asset cannot be verified.
 - No Terminal installer or second app location is offered.
@@ -193,7 +195,9 @@ the native WiFi-to-Overview flow on a customer-like Mac.
 
 Release order matters for this migration:
 
-1. Build and publish the GitHub Release for the exact commit.
+1. Build and publish the GitHub Release for the exact commit, including the
+   bridge installer, Darwin binaries, checksums, and signed DMG in that same
+   release.
 2. Verify that release with `--release v<version>`.
 3. Only then deploy or promote the hosted `app.vibetv.shop` setup launcher for
    that commit.

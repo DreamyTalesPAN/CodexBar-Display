@@ -10,7 +10,10 @@ import {
   Wifi,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import type { CompanionReleaseInfo } from "@/lib/companion-release";
+import {
+  availableMacAppDmgDownloadUrl,
+  type CompanionReleaseInfo,
+} from "@/lib/companion-release";
 import type {
   ApiError,
   CompanionStatus,
@@ -27,12 +30,14 @@ type SetupScreenProps = {
   deviceTarget: string;
   lastError?: ApiError | null;
   onCheckCompanion?: () => void | Promise<void>;
+  onCheckUpdates?: () => void | Promise<void>;
   onDeviceTargetChange?: (target: string) => void;
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
   hostedMode?: boolean;
   macAppRelease?: CompanionReleaseInfo | null;
   previewStep?: "mac-app" | null;
+  requiresMacAppMigration?: boolean;
   showIntro?: boolean;
   setupComplete: boolean;
 };
@@ -47,12 +52,14 @@ export function SetupScreen({
   deviceTarget,
   lastError,
   onCheckCompanion,
+  onCheckUpdates,
   onDeviceTargetChange,
   onRepairConnection,
   onResetSetup,
   hostedMode = false,
   macAppRelease = null,
   previewStep,
+  requiresMacAppMigration = false,
   showIntro = true,
   setupComplete,
 }: SetupScreenProps) {
@@ -72,7 +79,11 @@ export function SetupScreen({
     setupComplete ||
     previewStep === "mac-app" ||
     hostedMode;
-  const dmgUrl = macAppRelease?.dmgDownloadUrl;
+  const dmgUrl = availableMacAppDmgDownloadUrl(macAppRelease);
+  const macAppReleaseCheckFailed = Boolean(
+    macAppRelease?.status === "check_failed" ||
+      macAppRelease?.dmgDownloadStatus === "check_failed",
+  );
   const macAppStepTitle = hostedMode
     ? dmgUrl
       ? "Download Mac App"
@@ -86,6 +97,15 @@ export function SetupScreen({
     !previewStep &&
     !lastError &&
     setupComplete;
+  const migrationNotice = requiresMacAppMigration ? (
+    <LegacyMacAppMigrationNotice
+      checkFailed={macAppReleaseCheckFailed}
+      checking={busyAction === "firmware-check"}
+      downloadUrl={dmgUrl}
+      onDownloadStart={() => setDmgDownloadStarted(true)}
+      onRetry={() => void onCheckUpdates?.()}
+    />
+  ) : null;
 
   const activeStep = useMemo(
     () =>
@@ -140,6 +160,7 @@ export function SetupScreen({
   if (showControlCenterLauncher) {
     return (
       <div className="mx-auto max-w-[980px]">
+        {migrationNotice}
         <section className="border-b border-[#747A60] py-8 lg:min-h-[330px] lg:py-12">
           <div className="flex items-start gap-5">
             <ControlCenterStatusIcon variant="complete">
@@ -168,6 +189,7 @@ export function SetupScreen({
 
   return (
     <div className="mx-auto max-w-[980px]">
+      {migrationNotice}
       {showIntro ? (
         <section className="border-b border-[#747A60] py-8 lg:min-h-[330px] lg:py-12">
           <div className="flex items-start gap-5">
@@ -358,6 +380,72 @@ export function SetupScreen({
         </ol>
       </section>
     </div>
+  );
+}
+
+function LegacyMacAppMigrationNotice({
+  checkFailed,
+  checking,
+  downloadUrl,
+  onDownloadStart,
+  onRetry,
+}: {
+  checkFailed: boolean;
+  checking: boolean;
+  downloadUrl?: string;
+  onDownloadStart: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <section className="border-b border-[#747A60] py-6">
+      <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div className="flex min-w-0 items-start gap-4">
+          <ControlCenterStatusIcon size="step" variant="active">
+            <Download size={22} aria-hidden />
+          </ControlCenterStatusIcon>
+          <div className="min-w-0">
+            <h2 className="text-2xl font-black text-[#1B1B1B]">
+              Move to the new Mac App
+            </h2>
+            <p className="mt-2 max-w-[620px] text-sm leading-6 text-[#444933]">
+              {downloadUrl
+                ? "Open the DMG, drag VibeTV Control Center into Applications, then open it there. Keep this Control Center installed until the new app opens; your VibeTV settings stay in place."
+                : checkFailed
+                  ? "The signed Mac App check did not finish. Your current Control Center keeps working; check again when you are ready."
+                  : "The signed Mac App is not ready yet. Your current Control Center keeps working, including VibeTV setup and updates."}
+            </p>
+          </div>
+        </div>
+        {downloadUrl ? (
+          <a
+            className="vibetv-button vibetv-button--large vibetv-button--primary w-full sm:w-auto"
+            href={downloadUrl}
+            onClick={onDownloadStart}
+          >
+            <Download size={18} aria-hidden />
+            <span>Download new Mac App</span>
+          </a>
+        ) : checkFailed ? (
+          <PrimaryButton
+            busy={checking}
+            busyLabel="Checking"
+            fullWidth
+            icon={<RefreshCw size={18} aria-hidden />}
+            label="Check again"
+            onClick={onRetry}
+            size="large"
+          />
+        ) : (
+          <PrimaryButton
+            disabled
+            fullWidth
+            icon={<Download size={18} aria-hidden />}
+            label="New Mac App not ready"
+            size="large"
+          />
+        )}
+      </div>
+    </section>
   );
 }
 

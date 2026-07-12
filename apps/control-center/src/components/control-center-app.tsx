@@ -8,6 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type { ThemeCatalogResponse } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
@@ -1639,11 +1640,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     hostedCompanionRelease?.status === "check_failed" && companionInfo?.update
       ? {
           ...companionInfo.update,
-          dmgDownloadStatus: hostedCompanionRelease.dmgDownloadStatus,
+          ...hostedCompanionRelease,
         }
       : hostedCompanionRelease || companionInfo?.update || null;
+  const companionInstallationMode =
+    companionInfo?.installationMode ||
+    (companionInfo?.features?.macAppSelfUpdateEnabled === true
+      ? "legacy"
+      : undefined);
+  const requiresMacAppMigration = Boolean(
+    companionStatus === "online" && companionInstallationMode === "legacy",
+  );
+  const macAppMigrationAvailable = Boolean(
+    requiresMacAppMigration &&
+      availableMacAppDmgDownloadUrl(companionRelease),
+  );
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
-  const anyUpdateAvailable = firmwareUpdateAvailable || macAppUpdateAvailable;
+  const anyUpdateAvailable =
+    firmwareUpdateAvailable ||
+    macAppUpdateAvailable ||
+    macAppMigrationAvailable;
   const imageNeedsReload = deviceImageIsStuck(device);
   const setupComplete = Boolean(
     !setupPreviewStep &&
@@ -1748,9 +1764,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       hostedMode={hostedSetup}
       macAppRelease={companionRelease}
       previewStep={setupPreviewStep}
+      requiresMacAppMigration={requiresMacAppMigration}
       showIntro={showIntro}
       setupComplete={setupComplete}
       onCheckCompanion={checkCompanion}
+      onCheckUpdates={checkUpdates}
       onDeviceTargetChange={handleDeviceTargetChange}
       onRepairConnection={(targetOverride) => {
         didRunSetupVerification.current = true;
@@ -1800,6 +1818,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           deviceState={deviceState}
           firmwareUpdate={effectiveFirmwareUpdate}
           onReloadImage={() => reloadDisplay()}
+          requiresMacAppMigration={requiresMacAppMigration}
           usage={usage}
         />
       ) : null}
@@ -1858,6 +1877,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             void loadSupportDiagnostics();
           }}
           onInstallUpdate={installFirmwareUpdate}
+          requiresMacAppMigration={requiresMacAppMigration}
           updateStatus={firmwareUpdateStatus}
         />
       ) : null}

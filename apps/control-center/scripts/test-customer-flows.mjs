@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,8 @@ const nextBin = join(root, "node_modules", "next", "dist", "bin", "next");
 const viewport = { width: 390, height: 844 };
 const desktopViewport = { width: 1280, height: 900 };
 const smokeOnly = process.argv.includes("--smoke");
+const migrationScreenshotDir =
+  process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
 let displayStateDir = "";
 
 const catalogFixture = {
@@ -281,6 +283,22 @@ async function main() {
     );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
+    await testLegacyInstallMigratesToDmgAtSameVersion(
+      browser,
+      appContext.appUrl,
+    );
+    await testLegacyMigrationStaysAvailableWhenVibeTVOffline(
+      browser,
+      appContext.appUrl,
+    );
+    await testLegacyFeatureFallbackMigratesAtSameVersion(
+      browser,
+      appContext.appUrl,
+    );
+    await testDmgInstallStaysUpToDateAtSameVersion(
+      browser,
+      appContext.appUrl,
+    );
     await testUpdatesShowLegacyCompanionReleaseFallback(
       browser,
       appContext.appUrl,
@@ -398,6 +416,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testLegacyMigrationDoesNotBlockFirmwareUpdate(
+      browser,
+      appContext.appUrl,
+    );
     await assertCompanionReleaseApi(appContext.appUrl, {
       dmgDownloadAsset: null,
       dmgDownloadStatus: "missing_asset",
@@ -414,6 +436,16 @@ async function main() {
     });
     app = appContext.app;
     await testReleaseCheckFailureShowsNoDownloadActions(
+      browser,
+      appContext.appUrl,
+      fixtureServer,
+    );
+    await testLegacyMigrationCanRetryFailedRelease(
+      browser,
+      appContext.appUrl,
+      fixtureServer,
+    );
+    await testOfflineLegacyMigrationCanRetryFailedRelease(
       browser,
       appContext.appUrl,
       fixtureServer,
@@ -818,7 +850,7 @@ async function testLocalExistingSetupOpensOverviewWithoutRepair(
     },
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
@@ -1355,6 +1387,336 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   await page.close();
 }
 
+async function testLegacyInstallMigratesToDmgAtSameVersion(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const macAppUpdateRequests = [];
+  const dmgRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: false,
+    },
+    companionVersion: "1.0.99",
+    device: { ...companionDevice, firmware: "1.0.33" },
+    installationMode: "legacy",
+    onRequest: (pathname, method) => {
+      if (pathname.startsWith("/v1/mac-app/update")) {
+        macAppUpdateRequests.push(`${method} ${pathname}`);
+      }
+    },
+  });
+  await page.route(
+    "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.99/VibeTV-Control-Center.dmg",
+    async (route) => {
+      dmgRequests.push(route.request().url());
+      await route.abort();
+    },
+  );
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await assertCompanionReleaseApi(appUrl, {
+    dmgDownloadAsset: "VibeTV-Control-Center.dmg",
+    dmgDownloadStatus: "available",
+    installedVersion: "1.0.99",
+    latestVersion: "1.0.99",
+    status: "available",
+    updateAvailable: false,
+  });
+  await page
+    .getByRole("heading", { name: "Move to the new Mac App" })
+    .waitFor({ timeout: 10_000 });
+  const overviewDownload = page.getByRole("link", {
+    name: "Download new Mac App",
+  });
+  await overviewDownload.waitFor({ timeout: 10_000 });
+  assert(
+    assetName(await overviewDownload.getAttribute("href")) ===
+      "VibeTV-Control-Center.dmg",
+    "Legacy Overview must use the verified DMG release asset",
+  );
+  await captureMigrationScreenshot(page, "01-legacy-overview.png");
+
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page
+    .getByRole("heading", { name: "Move to the new Mac App" })
+    .waitFor({ timeout: 10_000 });
+  const updatesDownload = page.getByRole("link", {
+    name: "Download new Mac App",
+  });
+  await updatesDownload.waitFor({ timeout: 10_000 });
+  await page.getByText("Move to the new Mac App.").waitFor({
+    timeout: 10_000,
+  });
+  await captureMigrationScreenshot(page, "02-legacy-updates.png");
+  await updatesDownload.click();
+  await waitForCondition(
+    () => dmgRequests.length === 1,
+    "Legacy migration should start one verified DMG download",
+  );
+  assert(
+    macAppUpdateRequests.length === 0,
+    "Legacy migration must never call /v1/mac-app/update",
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testLegacyMigrationStaysAvailableWhenVibeTVOffline(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const macAppUpdateRequests = [];
+  const repairRequests = [];
+  const companionWriteRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: false,
+    },
+    companionVersion: "1.0.99",
+    device: { connected: false },
+    installationMode: "legacy",
+    onRepair: (postData) => {
+      repairRequests.push(postData || "");
+      return { connected: false };
+    },
+    onRequest: (pathname, method) => {
+      if (method !== "GET") {
+        companionWriteRequests.push(`${method} ${pathname}`);
+      }
+      if (pathname.startsWith("/v1/mac-app/update")) {
+        macAppUpdateRequests.push(`${method} ${pathname}`);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Move to the new Mac App" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByRole("button", { name: "VibeTV is on WiFi" }).count()) ===
+      1,
+    "Legacy migration must keep the existing VibeTV setup flow available",
+  );
+  await page.getByRole("link", { name: "Download new Mac App" }).waitFor({
+    timeout: 10_000,
+  });
+  await captureMigrationScreenshot(page, "03-legacy-offline-setup.png");
+  assert(
+    repairRequests.length === 0,
+    "Legacy migration must stay available without writing to an offline VibeTV",
+  );
+  assert(
+    companionWriteRequests.length === 0,
+    `Opening offline legacy migration must not write to VibeTV: ${companionWriteRequests.join(", ")}`,
+  );
+  assert(
+    macAppUpdateRequests.length === 0,
+    "Offline legacy migration must not call the legacy Mac App updater",
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testLegacyFeatureFallbackMigratesAtSameVersion(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const macAppUpdateRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: true,
+    },
+    companionVersion: "1.0.99",
+    device: { ...companionDevice, firmware: "1.0.33" },
+    installationMode: null,
+    onRequest: (pathname, method) => {
+      if (pathname.startsWith("/v1/mac-app/update")) {
+        macAppUpdateRequests.push(`${method} ${pathname}`);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Move to the new Mac App" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    macAppUpdateRequests.length === 0,
+    "Legacy feature fallback must not call the legacy Mac App updater",
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testDmgInstallStaysUpToDateAtSameVersion(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const macAppUpdateRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: false,
+    },
+    companionVersion: "1.0.99",
+    device: { ...companionDevice, firmware: "1.0.33" },
+    installationMode: "dmg",
+    onRequest: (pathname, method) => {
+      if (pathname.startsWith("/v1/mac-app/update")) {
+        macAppUpdateRequests.push(`${method} ${pathname}`);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByRole("heading", { name: "Move to the new Mac App" }).count()) ===
+      0,
+    "DMG Overview must not show the legacy migration card",
+  );
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page.getByRole("heading", { name: "Up to date" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
+      0,
+    "Current DMG install must not show a migration download",
+  );
+  assert(
+    (await page.getByRole("link", { name: "Download Mac App update" }).count()) ===
+      0,
+    "Current DMG install must not show an update download",
+  );
+  assert(
+    macAppUpdateRequests.length === 0,
+    "Current DMG install must never call /v1/mac-app/update",
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testLegacyMigrationCanRetryFailedRelease(
+  browser,
+  appUrl,
+  fixtureServer,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const macAppUpdateRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: false,
+    },
+    companionVersion: "1.0.41",
+    device: { ...companionDevice, firmware: "1.0.33" },
+    installationMode: "legacy",
+    onRequest: (pathname, method) => {
+      if (pathname.startsWith("/v1/mac-app/update")) {
+        macAppUpdateRequests.push(`${method} ${pathname}`);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page.getByRole("heading", { name: "Update check failed" }).waitFor({
+    timeout: 10_000,
+  });
+  const retry = page.getByRole("button", { name: "Check again" });
+  await retry.waitFor({ timeout: 10_000 });
+  assert(await retry.isEnabled(), "Failed DMG check must offer an active retry");
+  const requestsBeforeRetry = fixtureServer.failedReleaseRequestCount;
+  await retry.click();
+  await waitForCondition(
+    () => fixtureServer.failedReleaseRequestCount > requestsBeforeRetry,
+    "Check again should repeat the hosted DMG release request",
+  );
+  await page.getByRole("heading", { name: "Update check failed" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    await page.getByRole("button", { name: "Check again" }).isEnabled(),
+    "A repeated hosted release failure must leave retry available",
+  );
+  assert(
+    macAppUpdateRequests.length === 0,
+    "DMG release retry must not call the legacy Mac App updater",
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testOfflineLegacyMigrationCanRetryFailedRelease(
+  browser,
+  appUrl,
+  fixtureServer,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const companionWriteRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: false,
+    },
+    companionVersion: "1.0.41",
+    device: { ...companionDevice, connected: false },
+    installationMode: "legacy",
+    onRequest: (pathname, method) => {
+      if (method !== "GET") {
+        companionWriteRequests.push(`${method} ${pathname}`);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Move to the new Mac App" })
+    .waitFor({ timeout: 10_000 });
+  const retry = page.getByRole("button", { name: "Check again" });
+  await retry.waitFor({ timeout: 10_000 });
+  assert(
+    await retry.isEnabled(),
+    "Offline legacy migration must expose the hosted release retry",
+  );
+  const requestsBeforeRetry = fixtureServer.failedReleaseRequestCount;
+  await retry.click();
+  await waitForCondition(
+    () => fixtureServer.failedReleaseRequestCount > requestsBeforeRetry,
+    "Offline Check again should repeat the hosted DMG release request",
+  );
+  await page.getByRole("button", { name: "Check again" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    await page.getByRole("button", { name: "Check again" }).isEnabled(),
+    "Offline hosted release failure must leave retry available",
+  );
+  assert(
+    companionWriteRequests.length === 0,
+    `Offline release retry must not write to VibeTV: ${companionWriteRequests.join(", ")}`,
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
 async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
@@ -1481,19 +1843,50 @@ async function testUpdatesKeepDmgHiddenWithoutVerifiedAsset(
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
+  const macAppUpdateRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
-    companionFeatures: { themeInstallEnabled: true },
+    companionFeatures: {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: false,
+    },
+    companionVersion: "1.0.96",
+    device: { ...companionDevice, firmware: "1.0.33" },
+    installationMode: "legacy",
+    onRequest: (pathname, method) => {
+      if (pathname.startsWith("/v1/mac-app/update")) {
+        macAppUpdateRequests.push(`${method} ${pathname}`);
+      }
+    },
   });
 
-  await page.goto(appUrl, { waitUntil: "networkidle" });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await assertCompanionReleaseApi(appUrl, {
+    dmgDownloadAsset: null,
+    dmgDownloadStatus: "missing_asset",
+    installedVersion: "1.0.96",
+    latestVersion: "1.0.96",
+    status: "available",
+    updateAvailable: false,
+  });
+  await page
+    .getByRole("heading", { name: "New Mac App is being prepared" })
+    .waitFor({ timeout: 10_000 });
+  const overviewUnavailableButton = page.getByRole("button", {
+    name: "New Mac App not ready",
+  });
+  await overviewUnavailableButton.waitFor({ timeout: 10_000 });
+  assert(
+    await overviewUnavailableButton.isDisabled(),
+    "Legacy Overview must keep an unavailable DMG disabled",
+  );
   await page.getByRole("button", { name: "Updates" }).click();
   const unavailableButton = page.getByRole("button", {
-    name: "Mac App update not ready",
+    name: "New Mac App not ready",
   });
   await unavailableButton.waitFor({ timeout: 10_000 });
   assert(await unavailableButton.isDisabled(), "Unavailable DMG must stay disabled");
   assert(
-    (await page.getByRole("link", { name: "Download Mac App update" }).count()) ===
+    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
       0,
     "Updates must not show a DMG link without a verified asset",
   );
@@ -1502,7 +1895,62 @@ async function testUpdatesKeepDmgHiddenWithoutVerifiedAsset(
       0,
     "Updates must not fall back to the Terminal updater",
   );
+  assert(
+    macAppUpdateRequests.length === 0,
+    "Unavailable DMG must never call the legacy Mac App updater",
+  );
 
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testLegacyMigrationDoesNotBlockFirmwareUpdate(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const macAppUpdateRequests = [];
+  const firmwareUpdateRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionFeatures: {
+      themeInstallEnabled: true,
+      macAppSelfUpdateEnabled: false,
+    },
+    companionVersion: "1.0.96",
+    device: { ...companionDevice, firmware: "1.0.32" },
+    installationMode: "legacy",
+    onRequest: (pathname, method) => {
+      if (pathname.startsWith("/v1/mac-app/update")) {
+        macAppUpdateRequests.push(`${method} ${pathname}`);
+      }
+    },
+    onUpdate: (postData) => {
+      firmwareUpdateRequests.push(postData);
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page.getByRole("heading", { name: "Update available" }).waitFor({
+    timeout: 10_000,
+  });
+  const updateNow = page.getByRole("button", { name: "Update now" });
+  await updateNow.waitFor({ timeout: 10_000 });
+  assert(
+    await updateNow.isEnabled(),
+    "Unavailable DMG migration must not disable a VibeTV firmware update",
+  );
+  await page.getByText("New Mac App is not ready yet.").waitFor({
+    timeout: 10_000,
+  });
+  await updateNow.click();
+  await waitForCondition(
+    () => firmwareUpdateRequests.length === 1,
+    "Firmware update should start while the migration DMG is unavailable",
+  );
+  assert(
+    macAppUpdateRequests.length === 0,
+    "Firmware update must not call the legacy Mac App updater",
+  );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -2331,12 +2779,15 @@ async function assertCompanionReleaseApi(
   {
     dmgDownloadAsset,
     dmgDownloadStatus,
+    installedVersion = "1.0.32",
     latestVersion,
     status,
     updateAvailable,
   },
 ) {
-  const response = await fetch(`${appUrl}/api/companion/latest?version=1.0.32`);
+  const response = await fetch(
+    `${appUrl}/api/companion/latest?version=${encodeURIComponent(installedVersion)}`,
+  );
   assert(
     response.ok,
     `expected Companion release API HTTP 200, got ${response.status}`,
@@ -2356,8 +2807,8 @@ async function assertCompanionReleaseApi(
     `release API latestVersion=${payload.latestVersion}, expected ${latestVersion}`,
   );
   assert(
-    payload.installedVersion === "1.0.32",
-    `release API installedVersion=${payload.installedVersion}, expected 1.0.32`,
+    payload.installedVersion === installedVersion,
+    `release API installedVersion=${payload.installedVersion}, expected ${installedVersion}`,
   );
   assertCustomerApiMessage(payload.message);
   assert(
@@ -2533,9 +2984,10 @@ async function routeCompanionOnline(
   {
     companionFeatures = {
       themeInstallEnabled: true,
-      macAppSelfUpdateEnabled: true,
+      macAppSelfUpdateEnabled: false,
     },
     companionVersion = "1.0.32",
+    installationMode = "dmg",
     legacyCompanionRelease = false,
     device = companionDevice,
     onDiscover,
@@ -2914,6 +3366,7 @@ async function routeCompanionOnline(
             currentCompanionVersion,
             companionFeatures,
             legacyCompanionRelease,
+            installationMode,
           ),
           device: currentDevice,
         }),
@@ -2946,6 +3399,7 @@ async function routeCompanionOnline(
             currentCompanionVersion,
             companionFeatures,
             legacyCompanionRelease,
+            installationMode,
           ),
           device: currentDevice,
         }),
@@ -2984,6 +3438,7 @@ async function routeCompanionOnline(
             currentCompanionVersion,
             companionFeatures,
             legacyCompanionRelease,
+            installationMode,
           ),
           device: currentDevice,
           checks: [
@@ -3129,11 +3584,19 @@ function companionPath(route) {
   return pathname;
 }
 
-function companionPayload(version, features, legacyRelease = false) {
+function companionPayload(
+  version,
+  features,
+  legacyRelease = false,
+  installationMode = "dmg",
+) {
   const payload = {
     version,
     features,
   };
+  if (installationMode) {
+    payload.installationMode = installationMode;
+  }
   if (!legacyRelease) {
     payload.update = macAppReleaseInfo(version);
   }
@@ -3594,6 +4057,11 @@ async function assertNoDmgDownloadActions(page) {
       0,
     "Updates must not show a DMG link without an enabled, verified asset",
   );
+  assert(
+    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
+      0,
+    "Legacy migration must not show a DMG link without an enabled, verified asset",
+  );
 }
 
 async function assertNoThemeLibraryReleaseDiagnostics(page) {
@@ -3620,6 +4088,17 @@ async function waitForCondition(predicate, message, timeoutMs = 10_000) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(message);
+}
+
+async function captureMigrationScreenshot(page, name) {
+  if (!migrationScreenshotDir) {
+    return;
+  }
+  await mkdir(migrationScreenshotDir, { recursive: true });
+  await page.screenshot({
+    fullPage: true,
+    path: join(migrationScreenshotDir, name),
+  });
 }
 
 function assert(condition, message) {

@@ -583,19 +583,20 @@ verify_local_service_stable() {
 }
 
 open_control_center() {
-  local url
+  local open_url url
   url="$(control_center_url)"
+  open_url="${url}?migration=${RELEASE_VERSION}"
   verify_control_center_available
   verify_local_service_stable
   if [[ "$OPEN_CONTROL_CENTER" != "1" ]]; then
     log "vibetv: Control Center is ready at ${url}"
     return 0
   fi
-  log "vibetv: opening Control Center at ${url}"
+  log "vibetv: opening Control Center at ${open_url}"
   if command -v open >/dev/null 2>&1; then
-    open "$url" >/dev/null 2>&1 || log "vibetv: open ${url}"
+    open "$open_url" >/dev/null 2>&1 || log "vibetv: open ${open_url}"
   else
-    log "vibetv: open ${url}"
+    log "vibetv: open ${open_url}"
   fi
 }
 

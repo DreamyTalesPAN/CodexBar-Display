@@ -25,6 +25,7 @@ export type CompanionStatus = "unknown" | "online" | "missing";
 export type CompanionInfo = {
   status?: string;
   version?: string;
+  installationMode?: "legacy" | "dmg";
   update?: CompanionReleaseInfo;
   features?: {
     themeInstallEnabled?: boolean;
