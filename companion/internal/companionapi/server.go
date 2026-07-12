@@ -29,6 +29,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
@@ -38,39 +39,42 @@ import (
 var embeddedControlCenterStatic embed.FS
 
 const (
-	DefaultAddr             = "127.0.0.1:47832"
-	appOrigin               = "https://app.vibetv.shop"
-	defaultDevOrigin        = "http://localhost:3000"
-	previewOriginHostPrefix = "codex-vibetv-control-center-"
-	previewOriginHostSuffix = "-paul-anduschus-projects.vercel.app"
-	deviceTimeout           = 15 * time.Second
-	discoveryProbeTime      = 1500 * time.Millisecond
-	repairDiscoveryAttempts = 3
-	repairDiscoveryRetryGap = 1200 * time.Millisecond
-	subnetProbeLimit        = 32
-	subnetProbeTime         = 450 * time.Millisecond
-	themeInstallDisableEnv  = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
-	macAppUpdateDisableEnv  = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
-	displayStreamLabel      = "com.codexbar-display.daemon"
-	displayStreamOutLog     = "daemon.out.log"
-	displayStreamLegacyLog  = "/tmp/codexbar-display-daemon.out.log"
-	displayStreamOutLogEnv  = "CODEXBAR_DISPLAY_STREAM_OUT_LOG"
-	displayStreamReadyAge   = 2 * time.Minute
-	displayStreamWaitTime   = 12 * time.Second
-	displayRenderWaitTime   = 20 * time.Second
-	firmwareUpdateJobTime   = 10 * time.Minute
-	macAppUpdateJobTime     = 8 * time.Minute
-	usageFallbackFetchTime  = 15 * time.Second
-	macAppInstallerURL      = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
-	macAppReleaseAPIEnvVar  = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
-	macAppReleaseAPIURL     = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
-	macAppReleaseCheckGap   = 6 * time.Hour
-	macAppReleaseTimeout    = 5 * time.Second
-	firmwareManifestEnvVar  = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
-	firmwareReleaseTimeout  = 5 * time.Second
+	DefaultAddr              = "127.0.0.1:47832"
+	appOrigin                = "https://app.vibetv.shop"
+	defaultDevOrigin         = "http://localhost:3000"
+	previewOriginHostPrefix  = "codex-vibetv-control-center-"
+	previewOriginHostSuffix  = "-paul-anduschus-projects.vercel.app"
+	deviceTimeout            = 15 * time.Second
+	discoveryProbeTime       = 1500 * time.Millisecond
+	repairDiscoveryAttempts  = 3
+	repairDiscoveryRetryGap  = 1200 * time.Millisecond
+	subnetProbeLimit         = 32
+	subnetProbeTime          = 450 * time.Millisecond
+	themeInstallDisableEnv   = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
+	macAppUpdateDisableEnv   = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
+	displayStreamLegacyLabel = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+	displayStreamLabelEnv    = runtimepaths.DisplayStreamLaunchAgentLabelEnv
+	displayStreamOutLogEnv   = runtimepaths.DisplayStreamOutLogEnv
+	displayStreamReadyAge    = 2 * time.Minute
+	displayStreamWaitTime    = 12 * time.Second
+	displayRenderWaitTime    = 20 * time.Second
+	firmwareUpdateJobTime    = 10 * time.Minute
+	macAppUpdateJobTime      = 8 * time.Minute
+	usageFallbackFetchTime   = 15 * time.Second
+	macAppInstallerURL       = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
+	macAppReleaseAPIEnvVar   = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
+	macAppReleaseAPIURL      = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
+	macAppReleaseCheckGap    = 6 * time.Hour
+	macAppReleaseTimeout     = 5 * time.Second
+	firmwareManifestEnvVar   = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareReleaseTimeout   = 5 * time.Second
 )
 
 var deviceHealthProbeTime = 2 * time.Second
+
+var printDisplayStreamService = func(ctx context.Context, service string) ([]byte, error) {
+	return exec.CommandContext(ctx, "launchctl", "print", service).CombinedOutput()
+}
 
 var displayStreamLogKeys = []string{
 	"code",
@@ -878,18 +882,22 @@ func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if sentAt, frame, ok := lastDisplayStreamFrameSnapshot(displayStreamOutLogPath()); ok {
-		writeJSON(w, http.StatusOK, displayFrameResponse{
-			OK:      true,
-			SavedAt: sentAt.UTC().Format(time.RFC3339Nano),
-			Source:  "last-sent-frame",
-			Frame:   frame.Normalize(),
-		})
-		return
+	logPath := displayStreamOutLogPath()
+	boundary, boundaryOK := displayStreamLogBoundary(logPath)
+	if boundaryOK {
+		if sentAt, frame, ok := lastDisplayStreamFrameSnapshotAfter(logPath, boundary); ok {
+			writeJSON(w, http.StatusOK, displayFrameResponse{
+				OK:      true,
+				SavedAt: sentAt.UTC().Format(time.RFC3339Nano),
+				Source:  "last-sent-frame",
+				Frame:   frame.Normalize(),
+			})
+			return
+		}
 	}
 
 	saved, ok := s.loadLastGoodDisplayFrame()
-	if !ok {
+	if !ok || !boundaryOK || (!boundary.IsZero() && saved.SavedAt.Before(boundary)) {
 		writeError(
 			w,
 			http.StatusNotFound,
@@ -2001,14 +2009,7 @@ func (s *Server) recoveredDeviceTargets() []string {
 }
 
 func (s *Server) recoveryDisplayStreamOutLogPath() string {
-	if path := strings.TrimSpace(os.Getenv(displayStreamOutLogEnv)); path != "" {
-		return path
-	}
-	home := strings.TrimSpace(s.home)
-	if home == "" {
-		return displayStreamOutLogPath()
-	}
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", displayStreamOutLog)
+	return runtimepaths.DisplayStreamOutLog(s.home)
 }
 
 func (s *Server) recoveredConfigDeviceTargets() []string {
@@ -3990,8 +3991,8 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 		return stream
 	}
 
-	service := fmt.Sprintf("gui/%d/%s", os.Getuid(), displayStreamLabel)
-	output, err := exec.CommandContext(ctx, "launchctl", "print", service).CombinedOutput()
+	service := fmt.Sprintf("gui/%d/%s", os.Getuid(), displayStreamLaunchAgentLabel())
+	output, err := printDisplayStreamService(ctx, service)
 	state := parseDisplayStreamLaunchState(string(output))
 	stream.Running = displayStreamLaunchStateRunning(state)
 	if err != nil {
@@ -4003,8 +4004,14 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 		return stream
 	}
 
-	lastSentAt, lastTarget := lastDisplayStreamFrame(displayStreamOutLogPath())
-	if lastSentAt.IsZero() {
+	logPath := displayStreamOutLogPath()
+	boundary, boundaryOK := displayStreamLogBoundary(logPath)
+	if !boundaryOK {
+		stream.Detail = "Display stream is starting."
+		return stream
+	}
+	lastSentAt, lastTarget, _, frameOK := lastDisplayStreamFrameLineAfter(logPath, boundary)
+	if !frameOK || lastSentAt.IsZero() {
 		stream.Detail = "Display stream has not sent usage yet."
 		return stream
 	}
@@ -4015,7 +4022,7 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 		stream.Detail = "Display stream is sending to another VibeTV."
 		return stream
 	}
-	if errorAt, detail, ok := lastDisplayStreamError(displayStreamOutLogPath()); ok && errorAt.After(lastSentAt) && time.Since(errorAt) <= displayStreamReadyAge {
+	if errorAt, detail, ok := lastDisplayStreamErrorAfter(logPath, boundary); ok && errorAt.After(lastSentAt) && time.Since(errorAt) <= displayStreamReadyAge {
 		stream.Detail = detail
 		return stream
 	}
@@ -4065,6 +4072,10 @@ func displayStreamLaunchStateRunning(state string) bool {
 	}
 }
 
+func displayStreamLaunchAgentLabel() string {
+	return runtimepaths.DisplayStreamLaunchAgentLabel()
+}
+
 func lastDisplayStreamFrame(path string) (time.Time, string) {
 	when, target, _, ok := lastDisplayStreamFrameLine(path)
 	if !ok {
@@ -4073,8 +4084,8 @@ func lastDisplayStreamFrame(path string) (time.Time, string) {
 	return when, target
 }
 
-func lastDisplayStreamFrameSnapshot(path string) (time.Time, protocol.Frame, bool) {
-	when, _, line, ok := lastDisplayStreamFrameLine(path)
+func lastDisplayStreamFrameSnapshotAfter(path string, boundary time.Time) (time.Time, protocol.Frame, bool) {
+	when, _, line, ok := lastDisplayStreamFrameLineAfter(path, boundary)
 	if !ok {
 		return time.Time{}, protocol.Frame{}, false
 	}
@@ -4086,65 +4097,168 @@ func lastDisplayStreamFrameSnapshot(path string) (time.Time, protocol.Frame, boo
 }
 
 func lastDisplayStreamFrameLine(path string) (time.Time, string, string, bool) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	boundary, ok := displayStreamLogBoundary(path)
+	if !ok {
 		return time.Time{}, "", "", false
 	}
-	lines := strings.Split(string(data), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if !strings.Contains(line, "sent frame -> ") {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) == 0 {
-			continue
-		}
-		when, err := time.Parse(time.RFC3339, parts[0])
+	return lastDisplayStreamFrameLineAfter(path, boundary)
+}
+
+func lastDisplayStreamFrameLineAfter(path string, boundary time.Time) (time.Time, string, string, bool) {
+	for _, candidate := range displayStreamLogCandidates(path) {
+		data, err := readDisplayStreamLogTail(candidate)
 		if err != nil {
 			continue
 		}
-		after := strings.TrimSpace(strings.SplitN(line, "sent frame -> ", 2)[1])
-		target := ""
-		if fields := strings.Fields(after); len(fields) > 0 {
-			target = fields[0]
+		lines := strings.Split(string(data), "\n")
+		for i := len(lines) - 1; i >= 0; i-- {
+			line := strings.TrimSpace(lines[i])
+			if !strings.Contains(line, "sent frame -> ") {
+				continue
+			}
+			parts := strings.Fields(line)
+			if len(parts) == 0 {
+				continue
+			}
+			when, err := time.Parse(time.RFC3339Nano, parts[0])
+			if err != nil {
+				continue
+			}
+			if !boundary.IsZero() && when.Before(boundary) {
+				continue
+			}
+			after := strings.TrimSpace(strings.SplitN(line, "sent frame -> ", 2)[1])
+			target := ""
+			if fields := strings.Fields(after); len(fields) > 0 {
+				target = fields[0]
+			}
+			return when, target, line, true
 		}
-		return when, target, line, true
 	}
 	return time.Time{}, "", "", false
 }
 
 func lastDisplayStreamError(path string) (time.Time, string, bool) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	boundary, ok := displayStreamLogBoundary(path)
+	if !ok {
 		return time.Time{}, "", false
 	}
-	lines := strings.Split(string(data), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if !strings.Contains(line, "cycle error:") && !strings.Contains(line, "cycle timeout:") {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) == 0 {
-			continue
-		}
-		when, err := time.Parse(time.RFC3339, parts[0])
+	return lastDisplayStreamErrorAfter(path, boundary)
+}
+
+func lastDisplayStreamErrorAfter(path string, boundary time.Time) (time.Time, string, bool) {
+	for _, candidate := range displayStreamLogCandidates(path) {
+		data, err := readDisplayStreamLogTail(candidate)
 		if err != nil {
 			continue
 		}
-		op := displayStreamLogValue(line, "op")
-		detail := "Display stream hit an error after the last frame and is reconnecting."
-		if op == "send-line" {
-			detail = "Display stream could not send to VibeTV and is reconnecting."
-		} else if op == "resolve-target" {
-			detail = "Display stream could not find VibeTV and is reconnecting."
-		} else if strings.Contains(line, "cycle timeout:") {
-			detail = "Display stream timed out and is reconnecting."
+		lines := strings.Split(string(data), "\n")
+		for i := len(lines) - 1; i >= 0; i-- {
+			line := strings.TrimSpace(lines[i])
+			if !strings.Contains(line, "cycle error:") && !strings.Contains(line, "cycle timeout:") {
+				continue
+			}
+			parts := strings.Fields(line)
+			if len(parts) == 0 {
+				continue
+			}
+			when, err := time.Parse(time.RFC3339Nano, parts[0])
+			if err != nil {
+				continue
+			}
+			if !boundary.IsZero() && when.Before(boundary) {
+				continue
+			}
+			op := displayStreamLogValue(line, "op")
+			detail := "Display stream hit an error after the last frame and is reconnecting."
+			if op == "send-line" {
+				detail = "Display stream could not send to VibeTV and is reconnecting."
+			} else if op == "resolve-target" {
+				detail = "Display stream could not find VibeTV and is reconnecting."
+			} else if strings.Contains(line, "cycle timeout:") {
+				detail = "Display stream timed out and is reconnecting."
+			}
+			return when, detail, true
 		}
-		return when, detail, true
 	}
 	return time.Time{}, "", false
+}
+
+func displayStreamLogBoundary(path string) (time.Time, bool) {
+	if !runtimepaths.DisplayStreamRequiresStartMarker() {
+		return time.Time{}, true
+	}
+	return latestDisplayStreamStartMarker(path, displayStreamLaunchAgentLabel())
+}
+
+func latestDisplayStreamStartMarker(path, expectedLabel string) (time.Time, bool) {
+	expectedLabel = strings.TrimSpace(expectedLabel)
+	if expectedLabel == "" {
+		return time.Time{}, false
+	}
+	var latest time.Time
+	for _, candidate := range displayStreamLogCandidates(path) {
+		data, err := readDisplayStreamLogTail(candidate)
+		if err != nil {
+			continue
+		}
+		for _, rawLine := range strings.Split(string(data), "\n") {
+			line := strings.TrimSpace(rawLine)
+			if !strings.Contains(line, "runtime event=stream-start") || displayStreamLogValue(line, "label") != expectedLabel {
+				continue
+			}
+			parts := strings.Fields(line)
+			if len(parts) == 0 {
+				continue
+			}
+			when, err := time.Parse(time.RFC3339Nano, parts[0])
+			if err == nil && when.After(latest) {
+				latest = when
+			}
+		}
+	}
+	return latest, !latest.IsZero()
+}
+
+func displayStreamLogCandidates(path string) []string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	return []string{path, runtimepaths.DisplayStreamOutLogArchive(path)}
+}
+
+func readDisplayStreamLogTail(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	limit := runtimepaths.DisplayStreamLogTailBytes
+	start := info.Size() - limit
+	if start < 0 {
+		start = 0
+	}
+	if _, err := file.Seek(start, io.SeekStart); err != nil {
+		return nil, err
+	}
+	data, err := io.ReadAll(io.LimitReader(file, limit))
+	if err != nil {
+		return nil, err
+	}
+	if start > 0 {
+		if newline := bytes.IndexByte(data, '\n'); newline >= 0 {
+			data = data[newline+1:]
+		} else {
+			data = nil
+		}
+	}
+	return data, nil
 }
 
 func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
@@ -4209,14 +4323,7 @@ func displayStreamLogValue(line, key string) string {
 }
 
 func displayStreamOutLogPath() string {
-	if path := strings.TrimSpace(os.Getenv(displayStreamOutLogEnv)); path != "" {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || strings.TrimSpace(home) == "" {
-		return displayStreamLegacyLog
-	}
-	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", displayStreamOutLog)
+	return runtimepaths.DisplayStreamOutLog("")
 }
 
 func samePublicTarget(left, right string) bool {

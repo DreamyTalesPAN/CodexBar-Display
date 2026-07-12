@@ -270,6 +270,10 @@ func isInstalledApplicationsBundle(_ appURL: URL) -> Bool {
     return path.hasPrefix("/Applications/")
 }
 
+func requiresApplicationInstallation(_ appURL: URL) -> Bool {
+    !isInstalledApplicationsBundle(appURL)
+}
+
 func isLegacyTerminalAppBundle(
     at candidateURL: URL,
     currentAppURL: URL,
@@ -289,14 +293,79 @@ func isLegacyTerminalAppBundle(
     return fileManager.isExecutableFile(atPath: legacyExecutable.path)
 }
 
-private struct LegacyLaunchAgentDescriptor {
+struct LegacyLaunchAgentDescriptor: Equatable {
     let label: String
-    let plistURL: URL
+    let userPlistURL: URL?
+    let systemPlistURL: URL?
+
+    var migrationPlistURL: URL? {
+        userPlistURL
+    }
+
+    var restartPlistURL: URL? {
+        userPlistURL ?? systemPlistURL
+    }
 }
 
 private struct LegacyLaunchAgentState {
     let descriptor: LegacyLaunchAgentDescriptor
     let wasLoaded: Bool
+    let wasDisabled: Bool
+}
+
+func makeLegacyLaunchAgentDescriptor(
+    label: String,
+    userPlistURL: URL,
+    systemPlistURL: URL,
+    userPlistExists: Bool,
+    systemPlistExists: Bool,
+    isLoaded: Bool
+) -> LegacyLaunchAgentDescriptor? {
+    guard userPlistExists || systemPlistExists || isLoaded else {
+        return nil
+    }
+    return LegacyLaunchAgentDescriptor(
+        label: label,
+        userPlistURL: userPlistExists ? userPlistURL : nil,
+        systemPlistURL: systemPlistExists ? systemPlistURL : nil
+    )
+}
+
+func parseLaunchctlDisabledServiceStates(_ output: String) -> [String: Bool] {
+    var states: [String: Bool] = [:]
+    for rawLine in output.split(whereSeparator: \Character.isNewline) {
+        let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard line.first == "\"",
+              let closingQuote = line.dropFirst().firstIndex(of: "\"") else {
+            continue
+        }
+        let label = String(line[line.index(after: line.startIndex)..<closingQuote])
+        let valueStart = line.index(after: closingQuote)
+        let remainder = line[valueStart...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard remainder.hasPrefix("=>") else {
+            continue
+        }
+        let value = remainder.dropFirst(2)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("true") || value.hasPrefix("disabled") {
+            states[label] = true
+        } else if value.hasPrefix("false") || value.hasPrefix("enabled") {
+            states[label] = false
+        }
+    }
+    return states
+}
+
+func launchctlServiceTarget(uid: uid_t, label: String) -> String {
+    "gui/\(uid)/\(label)"
+}
+
+func canSafelyStopLegacyLaunchAgent(
+    isLoaded: Bool,
+    restartPlistURL: URL?
+) -> Bool {
+    !isLoaded || restartPlistURL != nil
 }
 
 private struct MigrationArtifact {
@@ -316,10 +385,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private let runtimeService = SMAppService.agent(plistName: runtimeLaunchAgentPlistName)
     private var urlRouter = ControlCenterURLRouter()
     private var reloadAttempts = 0
+    private var installationRequired: Bool {
+        requiresApplicationInstallation(Bundle.main.bundleURL)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         configureMenu()
+        guard !installationRequired else {
+            presentInstallationRequiredAlert()
+            return
+        }
         Task { [weak self] in
             await self?.prepareCompanion()
         }
@@ -328,6 +404,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        guard !installationRequired else {
+            return
+        }
         if urlRouter.receive(urls) {
             presentControlCenter()
         }
@@ -337,6 +416,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
+        guard !installationRequired else {
+            return false
+        }
         presentControlCenter()
         return true
     }
@@ -373,11 +455,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     private func presentControlCenter() {
+        guard !installationRequired else {
+            return
+        }
         if window == nil {
             createWindow()
         }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func presentInstallationRequiredAlert() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Move VibeTV Control Center to Applications"
+        alert.informativeText = """
+            In Finder, drag VibeTV Control Center into Applications, then open it there again.
+
+            If the app already appears in Applications, move it to another folder and then back to Applications before opening it again.
+            """
+        alert.addButton(withTitle: "Open Applications")
+        alert.addButton(withTitle: "Quit")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let applicationsURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+            if !NSWorkspace.shared.open(applicationsURL) {
+                NSLog("VibeTV Control Center could not open /Applications in Finder")
+            }
+        }
+        NSApp.terminate(nil)
     }
 
     private func createWindow() {
@@ -428,13 +534,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             return
         }
 
-        let legacyDescriptors = legacyLaunchAgentDescriptors()
-        let legacyStates = legacyDescriptors.map {
-            LegacyLaunchAgentState(
-                descriptor: $0,
-                wasLoaded: legacyServiceIsLoaded(label: $0.label)
+        guard let legacyStates = legacyLaunchAgentStates() else {
+            NSLog(
+                "VibeTV Control Center kept legacy services and apps because their launchctl state could not be captured"
             )
+            return
         }
+        let legacyDescriptors = legacyStates.map(\.descriptor)
         let legacyApps = legacyTerminalAppURLs()
 
         guard await ensureBundledRuntimeServiceRegistered() else {
@@ -675,20 +781,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             && FileManager.default.fileExists(atPath: plistURL.path)
     }
 
-    private func legacyLaunchAgentDescriptors() -> [LegacyLaunchAgentDescriptor] {
-        legacyLaunchAgents.compactMap { label, plistName in
-            let plistURL = launchAgentURL(plistName)
-            guard FileManager.default.fileExists(atPath: plistURL.path) else {
+    private func legacyLaunchAgentStates() -> [LegacyLaunchAgentState]? {
+        let fileManager = FileManager.default
+        let candidates = legacyLaunchAgents.compactMap { label, plistName
+            -> (LegacyLaunchAgentDescriptor, Bool)? in
+            let userPlistURL = userLaunchAgentURL(plistName)
+            let systemPlistURL = systemLaunchAgentURL(plistName)
+            let isLoaded = legacyServiceIsLoaded(label: label)
+            guard let descriptor = makeLegacyLaunchAgentDescriptor(
+                label: label,
+                userPlistURL: userPlistURL,
+                systemPlistURL: systemPlistURL,
+                userPlistExists: fileManager.fileExists(atPath: userPlistURL.path),
+                systemPlistExists: fileManager.fileExists(atPath: systemPlistURL.path),
+                isLoaded: isLoaded
+            ) else {
                 return nil
             }
-            return LegacyLaunchAgentDescriptor(label: label, plistURL: plistURL)
+            return (descriptor, isLoaded)
+        }
+        guard !candidates.isEmpty else {
+            return []
+        }
+
+        guard let disabledStates = legacyDisabledServiceStates() else {
+            return nil
+        }
+        return candidates.map { descriptor, isLoaded in
+            LegacyLaunchAgentState(
+                descriptor: descriptor,
+                wasLoaded: isLoaded,
+                wasDisabled: disabledStates[descriptor.label] ?? false
+            )
         }
     }
 
     private func stopLegacyLaunchAgents(_ states: [LegacyLaunchAgentState]) -> Bool {
-        for state in states where state.wasLoaded {
-            let service = "gui/\(getuid())/\(state.descriptor.label)"
-            _ = launchctlExitStatus(["bootout", service])
+        guard states.allSatisfy({
+            canSafelyStopLegacyLaunchAgent(
+                isLoaded: $0.wasLoaded,
+                restartPlistURL: $0.descriptor.restartPlistURL
+            )
+        }) else {
+            NSLog(
+                "VibeTV Control Center kept a loaded legacy LaunchAgent because no rollback plist could be found"
+            )
+            return false
+        }
+
+        for state in states {
+            let service = launchctlServiceTarget(
+                uid: getuid(),
+                label: state.descriptor.label
+            )
+            if !state.wasDisabled {
+                guard launchctlExitStatus(["disable", service]) == 0 else {
+                    NSLog(
+                        "VibeTV Control Center could not disable legacy LaunchAgent \(state.descriptor.label)"
+                    )
+                    return false
+                }
+            }
+            guard legacyServiceIsDisabled(label: state.descriptor.label) == true else {
+                NSLog(
+                    "VibeTV Control Center could not verify disabled legacy LaunchAgent \(state.descriptor.label)"
+                )
+                return false
+            }
+
+            if state.wasLoaded {
+                _ = launchctlExitStatus(["bootout", service])
+            }
             guard !legacyServiceIsLoaded(label: state.descriptor.label) else {
                 NSLog(
                     "VibeTV Control Center could not stop legacy LaunchAgent \(state.descriptor.label)"
@@ -712,25 +875,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         }
 
         var restored = true
-        for state in states where state.wasLoaded {
-            guard FileManager.default.fileExists(atPath: state.descriptor.plistURL.path) else {
-                NSLog(
-                    "VibeTV Control Center rollback is missing \(state.descriptor.plistURL.path)"
-                )
-                restored = false
+        for state in states {
+            let service = launchctlServiceTarget(
+                uid: getuid(),
+                label: state.descriptor.label
+            )
+            if !state.wasDisabled || state.wasLoaded {
+                guard launchctlExitStatus(["enable", service]) == 0,
+                      legacyServiceIsDisabled(label: state.descriptor.label) == false else {
+                    NSLog(
+                        "VibeTV Control Center could not re-enable legacy LaunchAgent \(state.descriptor.label)"
+                    )
+                    restored = false
+                    continue
+                }
+            }
+
+            guard state.wasLoaded else {
                 continue
             }
-            let service = "gui/\(getuid())"
-            _ = launchctlExitStatus([
-                "bootstrap",
-                service,
-                state.descriptor.plistURL.path,
-            ])
             if !legacyServiceIsLoaded(label: state.descriptor.label) {
-                NSLog(
-                    "VibeTV Control Center could not restore legacy LaunchAgent \(state.descriptor.label)"
-                )
-                restored = false
+                guard let restartPlistURL = state.descriptor.restartPlistURL,
+                      FileManager.default.fileExists(atPath: restartPlistURL.path) else {
+                    NSLog(
+                        "VibeTV Control Center rollback has no plist to restart legacy LaunchAgent \(state.descriptor.label)"
+                    )
+                    restored = false
+                    continue
+                }
+                _ = launchctlExitStatus([
+                    "bootstrap",
+                    "gui/\(getuid())",
+                    restartPlistURL.path,
+                ])
+                if !legacyServiceIsLoaded(label: state.descriptor.label) {
+                    NSLog(
+                        "VibeTV Control Center could not restore legacy LaunchAgent \(state.descriptor.label)"
+                    )
+                    restored = false
+                    continue
+                }
+            }
+            if state.wasDisabled {
+                guard launchctlExitStatus(["disable", service]) == 0,
+                      legacyServiceIsDisabled(label: state.descriptor.label) == true else {
+                    NSLog(
+                        "VibeTV Control Center could not restore disabled state for legacy LaunchAgent \(state.descriptor.label)"
+                    )
+                    restored = false
+                    continue
+                }
             }
         }
 
@@ -740,7 +934,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     private func legacyServiceIsLoaded(label: String) -> Bool {
-        launchctlExitStatus(["print", "gui/\(getuid())/\(label)"]) == 0
+        launchctlExitStatus([
+            "print",
+            launchctlServiceTarget(uid: getuid(), label: label),
+        ]) == 0
+    }
+
+    private func legacyDisabledServiceStates() -> [String: Bool]? {
+        let result = runCommandCapturingOutput(
+            executable: "/bin/launchctl",
+            arguments: ["print-disabled", "gui/\(getuid())"]
+        )
+        guard result.exitStatus == 0 else {
+            NSLog("VibeTV Control Center could not read disabled LaunchAgent state")
+            return nil
+        }
+        return parseLaunchctlDisabledServiceStates(result.output)
+    }
+
+    private func legacyServiceIsDisabled(label: String) -> Bool? {
+        guard let states = legacyDisabledServiceStates() else {
+            return nil
+        }
+        return states[label] ?? false
     }
 
     private func verifyRuntimeListenerOwnership() -> RuntimeOwnershipEvaluation {
@@ -878,12 +1094,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         legacyApps: [URL],
         backupRoot: URL
     ) -> [MigrationArtifact] {
-        var artifacts = legacyAgents.map {
-            MigrationArtifact(
-                source: $0.plistURL,
+        var artifacts = legacyAgents.compactMap { descriptor -> MigrationArtifact? in
+            guard let userPlistURL = descriptor.migrationPlistURL else {
+                return nil
+            }
+            return MigrationArtifact(
+                source: userPlistURL,
                 destination: backupRoot
                     .appendingPathComponent("launch-agents", isDirectory: true)
-                    .appendingPathComponent($0.plistURL.lastPathComponent)
+                    .appendingPathComponent(userPlistURL.lastPathComponent)
             )
         }
         artifacts.append(contentsOf: legacyApps.enumerated().map { index, source in
@@ -979,9 +1198,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             )
     }
 
-    private func launchAgentURL(_ plistName: String) -> URL {
+    private func userLaunchAgentURL(_ plistName: String) -> URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+            .appendingPathComponent(plistName)
+    }
+
+    private func systemLaunchAgentURL(_ plistName: String) -> URL {
+        URL(fileURLWithPath: "/Library/LaunchAgents", isDirectory: true)
             .appendingPathComponent(plistName)
     }
 

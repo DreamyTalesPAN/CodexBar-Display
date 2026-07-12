@@ -27,6 +27,8 @@
       <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
       <key>CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE</key>
       <string>168h</string>
+      <key>CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL</key>
+      <string>shop.vibetv.control-center.runtime</string>
       <key>VIBETV_DISABLE_MAC_APP_SELF_UPDATE</key>
       <string>1</string>
     </dict>

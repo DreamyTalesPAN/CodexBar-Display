@@ -225,7 +225,147 @@ func runURLSchemeTests() {
         ),
         "an app opened from a mounted DMG must not migrate persistent services"
     )
+    require(
+        !requiresApplicationInstallation(
+            URL(fileURLWithPath: "/Applications/VibeTV Control Center.app")
+        ),
+        "an app opened from /Applications must continue to the Control Center"
+    )
+    require(
+        requiresApplicationInstallation(
+            URL(fileURLWithPath: "/Volumes/VibeTV/VibeTV Control Center.app")
+        ),
+        "an app opened directly from the DMG must require installation"
+    )
+    require(
+        requiresApplicationInstallation(
+            URL(
+                fileURLWithPath: "/private/var/folders/ab/cd/T/AppTranslocation/1234/d/VibeTV Control Center.app"
+            )
+        ),
+        "an App Translocation launch must require installation"
+    )
+    testLegacyLaunchAgentMigrationPlanning()
     testLegacyTerminalAppDetection()
+}
+
+private func testLegacyLaunchAgentMigrationPlanning() {
+    let userPlist = URL(
+        fileURLWithPath: "/Users/test/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
+    )
+    let systemPlist = URL(
+        fileURLWithPath: "/Library/LaunchAgents/com.codexbar-display.companion-api.plist"
+    )
+
+    let systemOnly = makeLegacyLaunchAgentDescriptor(
+        label: "com.codexbar-display.companion-api",
+        userPlistURL: userPlist,
+        systemPlistURL: systemPlist,
+        userPlistExists: false,
+        systemPlistExists: true,
+        isLoaded: false
+    )
+    require(
+        systemOnly != nil,
+        "a known system LaunchAgent must be selected even without a user plist"
+    )
+    require(
+        systemOnly?.migrationPlistURL == nil,
+        "a system LaunchAgent plist must never be selected for migration"
+    )
+    require(
+        systemOnly?.restartPlistURL == systemPlist,
+        "rollback must be able to restart a system LaunchAgent from its original plist"
+    )
+    require(
+        canSafelyStopLegacyLaunchAgent(
+            isLoaded: true,
+            restartPlistURL: systemOnly?.restartPlistURL
+        ),
+        "a loaded system LaunchAgent with its original plist must be safe to stop"
+    )
+
+    let loadedOnly = makeLegacyLaunchAgentDescriptor(
+        label: "com.codexbar-display.companion-api",
+        userPlistURL: userPlist,
+        systemPlistURL: systemPlist,
+        userPlistExists: false,
+        systemPlistExists: false,
+        isLoaded: true
+    )
+    require(
+        loadedOnly != nil,
+        "a loaded known LaunchAgent must be selected even when no plist can be found"
+    )
+    require(
+        loadedOnly?.migrationPlistURL == nil,
+        "a loaded-only LaunchAgent must not invent a movable plist"
+    )
+    require(
+        !canSafelyStopLegacyLaunchAgent(
+            isLoaded: true,
+            restartPlistURL: loadedOnly?.restartPlistURL
+        ),
+        "migration must not stop a loaded service when rollback could not restart it"
+    )
+    require(
+        makeLegacyLaunchAgentDescriptor(
+            label: "com.codexbar-display.companion-api",
+            userPlistURL: userPlist,
+            systemPlistURL: systemPlist,
+            userPlistExists: false,
+            systemPlistExists: false,
+            isLoaded: false
+        ) == nil,
+        "an absent and unloaded legacy LaunchAgent must not enter migration"
+    )
+
+    let userAgent = makeLegacyLaunchAgentDescriptor(
+        label: "com.codexbar-display.companion-api",
+        userPlistURL: userPlist,
+        systemPlistURL: systemPlist,
+        userPlistExists: true,
+        systemPlistExists: true,
+        isLoaded: true
+    )
+    require(
+        userAgent?.migrationPlistURL == userPlist,
+        "only the user LaunchAgent plist may move into the migration backup"
+    )
+    require(
+        userAgent?.restartPlistURL == userPlist,
+        "rollback must prefer the user plist when it existed before migration"
+    )
+
+    let disabledFixture = """
+    disabled services = {
+        "com.codexbar-display.companion-api" => disabled
+        "com.codexbar-display.daemon" => enabled
+        "legacy.true" => true
+        "legacy.false" => false
+    }
+    """
+    let disabledStates = parseLaunchctlDisabledServiceStates(disabledFixture)
+    require(
+        disabledStates["com.codexbar-display.companion-api"] == true,
+        "launchctl disabled state must be parsed"
+    )
+    require(
+        disabledStates["com.codexbar-display.daemon"] == false,
+        "launchctl enabled state must be parsed"
+    )
+    require(
+        disabledStates["legacy.true"] == true
+            && disabledStates["legacy.false"] == false,
+        "launchctl boolean state output must remain compatible"
+    )
+    require(
+        launchctlServiceTarget(
+            uid: 501,
+            label: "com.codexbar-display.companion-api"
+        ) == "gui/501/com.codexbar-display.companion-api",
+        "legacy operations must target the current user's launchd GUI domain"
+    )
 }
 
 private func testLegacyTerminalAppDetection() {

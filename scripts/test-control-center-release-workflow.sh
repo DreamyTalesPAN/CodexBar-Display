@@ -73,14 +73,14 @@ main() {
   verify_dmg_plan="$("$VERIFY_DMG_SCRIPT" --dry-run --dmg "/tmp/VibeTV-Control-Center.dmg")"
   macos_job="$(job_block "build-macos-dmg")"
 
-  assert_contains "$workflow" "workflow_dispatch:" \
-    "release workflow must offer a manual validation-only trigger"
-  assert_contains "$workflow" "validation_version:" \
-    "manual DMG validation must use an explicit bundle version"
+  assert_not_contains "$workflow" "workflow_dispatch:" \
+    "public release workflow must not expose the validation-only trigger"
+  assert_not_contains "$workflow" "validation_version:" \
+    "public release workflow must not accept a validation bundle version"
   assert_contains "$workflow" "permissions:" \
     "release workflow must declare least-privilege permissions"
   assert_contains "$workflow" "contents: read" \
-    "validation-only workflow must not receive repository write access"
+    "release workflow must keep repository write access out of the build job"
 
   assert_contains "$macos_job" "runs-on: macos-latest" \
     "release workflow must build the customer DMG on macOS"
@@ -90,10 +90,12 @@ main() {
     "macOS DMG job must receive the Apple notarization key secret"
   assert_contains "$macos_job" "Validate Apple release secrets" \
     "macOS DMG job must fail before building when Apple secrets are absent"
-  assert_contains "$macos_job" "github.event_name == 'workflow_dispatch'" \
-    "macOS DMG job must use the manual validation version on workflow dispatch"
+  assert_contains "$macos_job" "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')" \
+    "macOS DMG job must run only for a public release tag"
+  assert_contains "$macos_job" 'VERSION: ${{ github.ref_name }}' \
+    "macOS DMG job must derive its version from the public release tag"
   assert_contains "$macos_job" "macOS DMG version must be SemVer x.y.z" \
-    "manual DMG validation must reject an invalid bundle version"
+    "release DMG build must reject an invalid bundle version"
   assert_contains "$macos_job" 'Missing required GitHub Actions secret: ${name}' \
     "macOS DMG job must report missing Apple secrets without exposing their values"
   for secret in \
@@ -144,7 +146,7 @@ main() {
   assert_contains "$release_job" "needs: build-macos-dmg" \
     "public release job must wait for the notarized Mac DMG"
   assert_contains "$release_job" "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')" \
-    "public release job must stay disabled for validation-only dispatches"
+    "public release job must run only for a release tag"
   assert_contains "$release_job" "contents: write" \
     "only the public tag release job may receive repository write access"
   assert_contains "$release_job" "Build release checksums" \

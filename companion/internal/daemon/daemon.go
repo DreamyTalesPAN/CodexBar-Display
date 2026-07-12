@@ -276,6 +276,12 @@ type ProviderUsageSnapshot struct {
 }
 
 func Run(ctx context.Context, opts Options) error {
+	return RunWithLogger(ctx, opts, nil)
+}
+
+// RunWithLogger runs the display worker with an optional injected logger. A
+// nil logger preserves the legacy stdout behavior used by standalone daemons.
+func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any)) error {
 	transportName := normalizeTransportName(opts.Transport)
 	if transportName == "" {
 		transportName = "usb"
@@ -288,6 +294,7 @@ func Run(ctx context.Context, opts Options) error {
 			transport:         transportlayer.NewWiFiTransport(),
 			transportName:     "wifi",
 			usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+			logf:              logf,
 		})
 	}
 
@@ -298,6 +305,7 @@ func Run(ctx context.Context, opts Options) error {
 		sendLine:          sender.Send,
 		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+		logf:              logf,
 	})
 }
 

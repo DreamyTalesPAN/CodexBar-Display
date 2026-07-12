@@ -329,7 +329,7 @@ export function SetupScreen({
                   />
                 </div>
               ) : null}
-              {lastError && !macAppCheckFailed ? (
+              {lastError && !macAppMissing ? (
                 <ErrorNote error={lastError} />
               ) : null}
             </div>
@@ -337,7 +337,7 @@ export function SetupScreen({
         </section>
       ) : null}
 
-      {!showIntro && lastError && !macAppCheckFailed ? (
+      {!showIntro && lastError && !macAppMissing ? (
         <div className="pt-5">
           <ErrorNote error={lastError} />
         </div>

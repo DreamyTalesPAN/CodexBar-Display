@@ -1,9 +1,11 @@
 package companionapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +21,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 )
@@ -514,6 +517,285 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
 		t.Fatalf("unexpected sent frame state: %+v", got.Frame)
+	}
+}
+
+func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
+	sentAt := time.Now().UTC().Add(-time.Second).Truncate(time.Second)
+	startedAt := sentAt.Add(-time.Second)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(strings.Join([]string{
+			startedAt.Format(time.RFC3339Nano) + ` runtime event=stream-start label="shop.vibetv.control-center.runtime"`,
+			sentAt.Format(time.RFC3339Nano) + ` sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=VibeTV session=73 weekly=58 reset=2733s`,
+		}, "\n")+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	var gotService string
+	printDisplayStreamService = func(_ context.Context, service string) ([]byte, error) {
+		gotService = service
+		return []byte("state = running\n"), nil
+	}
+
+	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
+	wantService := fmt.Sprintf("gui/%d/shop.vibetv.control-center.runtime", os.Getuid())
+	if gotService != wantService {
+		t.Fatalf("expected launchctl service %q, got %q", wantService, gotService)
+	}
+	if !stream.Running || !stream.Healthy {
+		t.Fatalf("expected configured runtime stream to be running and healthy, got %+v", stream)
+	}
+	if stream.LastSentAt != sentAt.Format(time.RFC3339) || stream.LastTarget != "http://192.168.178.72" {
+		t.Fatalf("unexpected configured runtime stream metadata: %+v", stream)
+	}
+}
+
+func TestConfiguredRuntimeRejectsRecentLegacyFrameWithoutStartMarker(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
+	sentAt := time.Now().UTC().Add(-time.Second)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(sentAt.Format(time.RFC3339Nano)+` sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Legacy session=11 weekly=22 reset=2733s`+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write legacy display stream log: %v", err)
+	}
+
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
+	if !stream.Running || stream.Healthy || stream.LastSentAt != "" {
+		t.Fatalf("configured runtime accepted pre-session legacy frame: %+v", stream)
+	}
+	if stream.Detail != "Display stream is starting." {
+		t.Fatalf("unexpected missing-marker detail %q", stream.Detail)
+	}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected latest frame 404 without runtime marker, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestConfiguredRuntimeRejectsMarkerForDifferentServiceLabel(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
+	startedAt := time.Now().UTC().Add(-time.Second)
+	frameAt := startedAt.Add(100 * time.Millisecond)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(strings.Join([]string{
+			startedAt.Format(time.RFC3339Nano) + ` runtime event=stream-start label="com.codexbar-display.daemon"`,
+			frameAt.Format(time.RFC3339Nano) + ` sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Legacy session=11 weekly=22 reset=2733s`,
+		}, "\n")+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write wrong-label display stream log: %v", err)
+	}
+
+	if when, _ := lastDisplayStreamFrame(logPath); !when.IsZero() {
+		t.Fatalf("configured runtime accepted frame after another service marker: %s", when)
+	}
+}
+
+func TestConfiguredRuntimeAcceptsOnlyFrameAfterMatchingStartMarker(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
+	startedAt := time.Now().UTC().Add(-time.Second)
+	legacyAt := startedAt.Add(-100 * time.Millisecond)
+	currentAt := startedAt.Add(100 * time.Millisecond)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(strings.Join([]string{
+			legacyAt.Format(time.RFC3339Nano) + ` sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Legacy session=11 weekly=22 reset=2733s`,
+			startedAt.Format(time.RFC3339Nano) + ` runtime event=stream-start label="shop.vibetv.control-center.runtime"`,
+			currentAt.Format(time.RFC3339Nano) + ` sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Current session=73 weekly=58 reset=2733s`,
+		}, "\n")+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write mixed display stream log: %v", err)
+	}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected latest frame 200 after matching marker, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got displayFrameResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode latest frame: %v", err)
+	}
+	if got.Frame.Label != "Current" || got.Frame.Session != 73 || got.SavedAt != currentAt.Format(time.RFC3339Nano) {
+		t.Fatalf("configured runtime returned wrong session frame: %+v", got)
+	}
+}
+
+func TestConfiguredRuntimeFindsStartMarkerAcrossRotation(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
+	startedAt := time.Now().UTC().Add(-time.Second)
+	frameAt := startedAt.Add(100 * time.Millisecond)
+	if err := os.WriteFile(
+		runtimepaths.DisplayStreamOutLogArchive(logPath),
+		[]byte(startedAt.Format(time.RFC3339Nano)+` runtime event=stream-start label="shop.vibetv.control-center.runtime"`+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write archived runtime marker: %v", err)
+	}
+	if err := os.WriteFile(
+		logPath,
+		[]byte(frameAt.Format(time.RFC3339Nano)+` sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Current session=73 weekly=58 reset=2733s`+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write current runtime frame: %v", err)
+	}
+
+	when, target := lastDisplayStreamFrame(logPath)
+	if !when.Equal(frameAt) || target != "http://192.168.178.72" {
+		t.Fatalf("runtime marker/frame rotation correlation failed: when=%s target=%q", when, target)
+	}
+}
+
+func TestConfiguredRuntimeRejectsPersistedFrameBeforeStartMarker(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
+	startedAt := time.Now().UTC().Add(-time.Second)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(startedAt.Format(time.RFC3339Nano)+` runtime event=stream-start label="shop.vibetv.control-center.runtime"`+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write runtime marker: %v", err)
+	}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	path := server.lastGoodDisplayFramePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create display state dir: %v", err)
+	}
+	if err := os.WriteFile(
+		path,
+		[]byte(`{"savedAt":"`+startedAt.Add(-time.Second).Format(time.RFC3339Nano)+`","frame":{"v":1,"provider":"codex","label":"Legacy","session":11,"weekly":22}}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("write persisted legacy frame: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected persisted pre-session frame 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDisplayStreamLaunchAgentLabelDefaultsToLegacyService(t *testing.T) {
+	t.Setenv(displayStreamLabelEnv, "")
+	if got := displayStreamLaunchAgentLabel(); got != displayStreamLegacyLabel {
+		t.Fatalf("expected legacy LaunchAgent label %q, got %q", displayStreamLegacyLabel, got)
+	}
+}
+
+func TestInspectDisplayStreamDetectsLaterErrorInSameSecond(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
+	second := time.Now().UTC().Truncate(time.Second)
+	startedAt := second.Add(50 * time.Millisecond)
+	frameAt := second.Add(100 * time.Millisecond)
+	errorAt := second.Add(200 * time.Millisecond)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(strings.Join([]string{
+			startedAt.Format(time.RFC3339Nano) + ` runtime event=stream-start label="shop.vibetv.control-center.runtime"`,
+			frameAt.Format(time.RFC3339Nano) + ` sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=VibeTV session=73 weekly=58 reset=2733s`,
+			errorAt.Format(time.RFC3339Nano) + ` cycle error: code=runtime_serial_write op=send-line retry=3s err=device-offline`,
+		}, "\n")+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+
+	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
+	if !stream.Running || stream.Healthy {
+		t.Fatalf("expected later same-second error to make running stream unhealthy, got %+v", stream)
+	}
+	if stream.Detail != "Display stream could not send to VibeTV and is reconnecting." {
+		t.Fatalf("unexpected same-second stream error detail %q", stream.Detail)
+	}
+}
+
+func TestLastDisplayStreamFrameFallsBackToRotatedArchive(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	archivePath := runtimepaths.DisplayStreamOutLogArchive(logPath)
+	if err := os.WriteFile(logPath, []byte("2026-07-12T10:11:13.1Z VibeTV companion API listening\n"), 0o600); err != nil {
+		t.Fatalf("write current display stream log: %v", err)
+	}
+	if err := os.WriteFile(
+		archivePath,
+		[]byte(`2026-07-12T10:11:12.123456789Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=VibeTV session=73 weekly=58 reset=2733s`+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write display stream log archive: %v", err)
+	}
+
+	when, target := lastDisplayStreamFrame(logPath)
+	if got := when.Format(time.RFC3339Nano); got != "2026-07-12T10:11:12.123456789Z" {
+		t.Fatalf("unexpected archived frame timestamp %q", got)
+	}
+	if target != "http://192.168.178.72" {
+		t.Fatalf("unexpected archived frame target %q", target)
+	}
+}
+
+func TestReadDisplayStreamLogTailIsBounded(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	frame := `2026-07-12T10:11:12.123456789Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=VibeTV session=73 weekly=58 reset=2733s`
+	prefix := "BEGIN-SHOULD-NOT-BE-READ " + strings.Repeat("x", int(runtimepaths.DisplayStreamLogTailBytes)) + "\n"
+	if err := os.WriteFile(logPath, []byte(prefix+frame+"\n"), 0o600); err != nil {
+		t.Fatalf("write oversized display stream log: %v", err)
+	}
+
+	tail, err := readDisplayStreamLogTail(logPath)
+	if err != nil {
+		t.Fatalf("read bounded display stream log tail: %v", err)
+	}
+	if int64(len(tail)) > runtimepaths.DisplayStreamLogTailBytes {
+		t.Fatalf("expected tail <= %d bytes, got %d", runtimepaths.DisplayStreamLogTailBytes, len(tail))
+	}
+	if bytes.Contains(tail, []byte("BEGIN-SHOULD-NOT-BE-READ")) {
+		t.Fatalf("bounded tail read included old log prefix")
+	}
+	if !bytes.Contains(tail, []byte("sent frame -> http://192.168.178.72")) {
+		t.Fatalf("bounded tail lost newest frame: %q", tail)
 	}
 }
 

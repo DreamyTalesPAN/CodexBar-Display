@@ -13,6 +13,25 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: verified DMG setup after WiFi, hosted `vibetv://` handoff,
+  missing-asset fallback, Mac App update download, replacement guidance, setup
+  locks, and the first failed Mac App check.
+- Customer rule: the verified DMG is the only primary Mac App action when the
+  exact release asset is available. Customers should not see a Mac App failure
+  before they have downloaded, opened, and checked the installed app, and an
+  update must replace the Applications copy instead of creating a second app.
+- Simplifications accepted: Agentic and Terminal setup choices stay hidden when
+  the verified DMG is available; the premature top-level Mac App error was
+  removed from the download step; the confirmation remains disabled until the
+  download starts; Updates uses one DMG download action and short version rows.
+- Verification: UI was reviewed against `docs/control-center-ui-principles.md`
+  in the local browser at setup start, verified DMG download, and Mac App update
+  states. Accepted screenshots are in `tmp/ui-review-dmg-migration/`.
+  `npm run lint`, `npm run check:customer-ui-copy`, and `npm run
+  test:customer-flows` passed locally; the customer-flow suite covers the
+  390-pixel layout without horizontal overflow and the new pre-check error
+  regression.
+
 - Reviewed scope: setup recovery when the Mac App has lost the saved VibeTV
   address, automatic repair from an empty device target, and Companion recovery
   from the last display-stream target or saved config backups.

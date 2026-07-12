@@ -171,14 +171,15 @@ and stops with a GitHub Actions error if one is unavailable. It never prints a
 secret value. Dry-run mode prints only missing names and exits without using
 fake certificates or credentials.
 
-The release workflow also has a manual validation-only trigger. In addition, the
-temporary `CODEX Validate macOS DMG` bootstrap on `main` is pinned to one exact
-feature commit and bundle version. It runs the real macOS signing, notarization,
-stapling, mounted-app, and Gatekeeper gates without creating a tag, GitHub
-Release, deployment, or public download. Because this repository is public, the
-bootstrap intentionally does not upload the signed DMG or full notarization log
-as Actions artifacts. It records only the source SHA, DMG SHA-256, Apple
-submission ID, and final status in the job summary.
+The public release workflow is tag-only. Manual validation runs exclusively
+through `CODEX Validate macOS DMG` on `main`, pinned to one exact feature commit
+and bundle version. It runs the real macOS signing, notarization, stapling,
+mounted-app, and Gatekeeper gates without creating a tag, GitHub Release,
+deployment, or public download. Because this repository is public, the workflow
+never uploads the plaintext signed DMG or full notarization log. When an operator
+provides a one-time public RSA certificate, it may upload only the CMS-encrypted
+DMG with one-day retention; otherwise it records only the source SHA, DMG
+SHA-256, Apple submission ID, and final status in the job summary.
 
 ## Signing and Notarization Flow
 
@@ -258,8 +259,8 @@ scripts/verify-macos-control-center-dmg.sh \
 ```
 
 The release workflow's macOS job uploads the DMG artifact only after the final
-distribution gate succeeds. The dedicated validation bootstrap does not upload
-its signed DMG. For a pushed `v*` tag, the separately write-enabled public
+distribution gate succeeds. The dedicated validation bootstrap never uploads a
+plaintext signed DMG. For a pushed `v*` tag, the separately write-enabled public
 release job requires the stable
 `VibeTV-Control-Center.dmg` file, then builds checksums and runs the single
 GitHub Release publishing step.

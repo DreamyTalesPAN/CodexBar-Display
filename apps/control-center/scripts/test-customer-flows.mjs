@@ -552,6 +552,10 @@ async function testFixConnectionDoesNotRepairWhenMacAppIsOffline(
   });
   await macAppInstalledButton.waitFor({ timeout: 10_000 });
   assert(
+    (await page.getByText("Mac App did not answer.").count()) === 0,
+    "Mac App download step should not show a failure before the customer checks the installed app",
+  );
+  assert(
     await macAppInstalledButton.isDisabled(),
     "Mac App continue button should stay disabled until the verified DMG download starts",
   );

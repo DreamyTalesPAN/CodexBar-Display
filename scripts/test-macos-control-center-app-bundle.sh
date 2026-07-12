@@ -513,6 +513,10 @@ if agent.get("ProgramArguments") != expected_arguments:
     )
 
 environment = agent.get("EnvironmentVariables", {})
+if environment.get("CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL") != agent.get("Label"):
+    raise SystemExit(
+        "DMG runtime must expose its LaunchAgent label to the Companion API"
+    )
 if environment.get("VIBETV_DISABLE_MAC_APP_SELF_UPDATE") != "1":
     raise SystemExit(
         "DMG runtime must disable the legacy Terminal Mac App updater"
@@ -534,6 +538,12 @@ required_source = [
     'executable: "/usr/sbin/lsof"',
     '"-iTCP@127.0.0.1:47832"',
     '"-sTCP:LISTEN"',
+    'URL(fileURLWithPath: "/Library/LaunchAgents"',
+    'launchctlExitStatus(["disable", service])',
+    'launchctlExitStatus(["bootout", service])',
+    'launchctlExitStatus(["enable", service])',
+    'arguments: ["print-disabled", "gui/\\(getuid())"]',
+    "descriptor.migrationPlistURL",
     "else if !(await unregisterBundledRuntimeService())",
     "rollbackToLegacyAgents(",
     "restoreMigrationArtifacts(",
@@ -547,10 +557,36 @@ required_source = [
     "isApprovedDMGDownloadURL(url)",
     "decisionHandler(.cancel)",
     "NSWorkspace.shared.open(url)",
+    "requiresApplicationInstallation(Bundle.main.bundleURL)",
+    "presentInstallationRequiredAlert()",
+    'alert.addButton(withTitle: "Open Applications")',
+    'alert.addButton(withTitle: "Quit")',
 ]
 for snippet in required_source:
     if snippet not in source:
         raise SystemExit(f"native app is missing required behavior: {snippet}")
+
+launch_start = source.find("func applicationDidFinishLaunching(")
+launch_end = source.find("func application(_ application:", launch_start)
+launch_method = source[launch_start:launch_end]
+install_guard = launch_method.find("guard !installationRequired else")
+install_alert = launch_method.find("presentInstallationRequiredAlert()", install_guard)
+runtime_start = launch_method.find("Task {", install_guard)
+control_center_start = launch_method.find("presentControlCenter()", install_guard)
+if not (
+    0 <= install_guard < install_alert < runtime_start
+    and install_guard < control_center_start
+):
+    raise SystemExit(
+        "native app must stop at the install dialog before starting the runtime or WebView"
+    )
+
+present_start = source.find("private func presentControlCenter()")
+present_end = source.find("private func createWindow()", present_start)
+if "guard !installationRequired else" not in source[present_start:present_end]:
+    raise SystemExit(
+        "native app must prevent every non-Applications launch from creating a WebView"
+    )
 
 registration = source.find("guard await ensureBundledRuntimeServiceRegistered()")
 stop_legacy = source.find("if !stopLegacyLaunchAgents(legacyStates)")
@@ -565,6 +601,39 @@ if not (
 ):
     raise SystemExit(
         "native app must register, stop legacy, pass health, migrate old apps, then persist"
+    )
+
+stop_method = source[
+    source.find("private func stopLegacyLaunchAgents("):
+    source.find("private func rollbackToLegacyAgents(")
+]
+disable_legacy = stop_method.find('launchctlExitStatus(["disable", service])')
+bootout_legacy = stop_method.find('launchctlExitStatus(["bootout", service])')
+if not (0 <= disable_legacy < bootout_legacy):
+    raise SystemExit(
+        "native app must disable legacy LaunchAgents before booting them out"
+    )
+
+rollback_method = source[
+    source.find("private func rollbackToLegacyAgents("):
+    source.find("private func legacyServiceIsLoaded(")
+]
+enable_legacy = rollback_method.find('launchctlExitStatus(["enable", service])')
+restart_legacy = rollback_method.find('"bootstrap"')
+if not (0 <= enable_legacy < restart_legacy):
+    raise SystemExit(
+        "legacy rollback must re-enable services before restoring their loaded state"
+    )
+
+migration_method = source[
+    source.find("private func migrationArtifacts("):
+    source.find("private func moveMigrationArtifacts(")
+]
+if "systemPlistURL" in migration_method or (
+    "guard let userPlistURL = descriptor.migrationPlistURL" not in migration_method
+):
+    raise SystemExit(
+        "migration backup must move only user LaunchAgent plists, never system plists"
     )
 
 health_method = source[
