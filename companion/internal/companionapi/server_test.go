@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -795,6 +796,101 @@ func TestInspectDisplayStreamDetectsLaterErrorInSameSecond(t *testing.T) {
 	}
 }
 
+func TestInspectDisplayStreamReportsPairingErrorBeforeFirstFrame(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
+	startedAt := time.Now().UTC().Add(-time.Second)
+	errorAt := startedAt.Add(100 * time.Millisecond)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(strings.Join([]string{
+			startedAt.Format(time.RFC3339Nano) + ` runtime event=stream-start label="shop.vibetv.control-center.runtime"`,
+			errorAt.Format(time.RFC3339Nano) + ` cycle error: code=runtime_serial_write op=send-line retry=3s err=device status=401 body="pairing token required"`,
+		}, "\n")+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+
+	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
+	if !stream.Running || stream.Healthy {
+		t.Fatalf("expected pairing rejection to keep stream unhealthy, got %+v", stream)
+	}
+	if stream.ErrorCode != "device_pairing_required" {
+		t.Fatalf("pairing error code=%q want device_pairing_required", stream.ErrorCode)
+	}
+	if stream.Detail != "VibeTV rejected the saved pairing token." {
+		t.Fatalf("unexpected pairing error detail %q", stream.Detail)
+	}
+}
+
+func TestWaitForDisplayStreamAfterPairIgnoresTransientPairingError(t *testing.T) {
+	var calls atomic.Int32
+	inspect := func(context.Context, string, time.Time) displayStreamInfo {
+		if calls.Add(1) == 1 {
+			return displayStreamInfo{
+				Running:   true,
+				ErrorCode: "device_pairing_required",
+				Detail:    "old request used the previous token",
+			}
+		}
+		return displayStreamInfo{Running: true, Healthy: true}
+	}
+
+	got := waitForDisplayStreamAfterProbe(context.Background(), "http://vibetv.local", time.Now(), false, inspect)
+	if !got.Healthy || calls.Load() != 2 {
+		t.Fatalf("post-pair wait must ignore one stale auth error, got=%+v calls=%d", got, calls.Load())
+	}
+
+	calls.Store(0)
+	got = waitForDisplayStreamAfterProbe(context.Background(), "http://vibetv.local", time.Now(), true, inspect)
+	if got.Healthy || got.ErrorCode != "device_pairing_required" || calls.Load() != 1 {
+		t.Fatalf("normal wait must surface pairing error immediately, got=%+v calls=%d", got, calls.Load())
+	}
+}
+
+func TestInspectDisplayStreamAfterIgnoresEarlierFrameAndError(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
+	startedAt := time.Now().UTC().Add(-2 * time.Second)
+	frameAt := startedAt.Add(100 * time.Millisecond)
+	errorAt := startedAt.Add(200 * time.Millisecond)
+	notBefore := startedAt.Add(time.Second)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(strings.Join([]string{
+			startedAt.Format(time.RFC3339Nano) + ` runtime event=stream-start label="shop.vibetv.control-center.runtime"`,
+			frameAt.Format(time.RFC3339Nano) + ` sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=VibeTV session=73 weekly=58 reset=2733s`,
+			errorAt.Format(time.RFC3339Nano) + ` cycle error: code=runtime_serial_write op=send-line retry=3s err=device status=401 body="pairing token required"`,
+		}, "\n")+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+
+	stream := inspectDisplayStreamAfter(context.Background(), "http://192.168.178.72", notBefore)
+	if !stream.Running || stream.Healthy || stream.LastSentAt != "" || stream.ErrorCode != "" {
+		t.Fatalf("expected pre-wake frame and error to be ignored, got %+v", stream)
+	}
+	if stream.Detail != "Display stream has not sent usage yet." {
+		t.Fatalf("unexpected fresh-wait detail %q", stream.Detail)
+	}
+}
+
 func TestLastDisplayStreamFrameFallsBackToRotatedArchive(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
 	archivePath := runtimepaths.DisplayStreamOutLogArchive(logPath)
@@ -1408,6 +1504,9 @@ func TestDeviceReachableButDisplayStreamNotReadyStaysConnected(t *testing.T) {
 	if !got.Device.Connected {
 		t.Fatalf("expected reachable device to stay connected while display stream is not ready, got %+v", got.Device)
 	}
+	if got.Device.Ready {
+		t.Fatalf("expected reachable device with an unhealthy display stream to stay not ready, got %+v", got.Device)
+	}
 	if got.Device.Stream == nil || got.Device.Stream.Healthy {
 		t.Fatalf("expected unhealthy stream detail, got %+v", got.Device.Stream)
 	}
@@ -1446,6 +1545,9 @@ func TestDeviceReachableButRenderFailedStaysConnected(t *testing.T) {
 	if !got.Device.Connected {
 		t.Fatalf("expected render failure to keep reachable device connected, got %+v", got.Device)
 	}
+	if got.Device.Ready {
+		t.Fatalf("expected render failure to keep device not ready, got %+v", got.Device)
+	}
 	if got.Device.Stream == nil || !got.Device.Stream.Healthy {
 		t.Fatalf("expected healthy stream detail, got %+v", got.Device.Stream)
 	}
@@ -1454,6 +1556,297 @@ func TestDeviceReachableButRenderFailedStaysConnected(t *testing.T) {
 		*got.Device.Display.ThemeSpec.RenderOK ||
 		got.Device.Display.ThemeSpec.RenderError != "low_heap_full_render" {
 		t.Fatalf("expected render failure health, got %+v", got.Device.Display)
+	}
+}
+
+func TestDeviceReadyRequiresHealthyUsageRender(t *testing.T) {
+	tests := []struct {
+		name          string
+		healthOK      bool
+		streamHealthy bool
+		renderKind    string
+		wantReady     bool
+	}{
+		{name: "usage frame", healthOK: true, streamHealthy: true, renderKind: "usage", wantReady: true},
+		{name: "theme usage frame", healthOK: true, streamHealthy: true, renderKind: "theme_spec_usage", wantReady: true},
+		{name: "missing render kind", healthOK: true, streamHealthy: true, renderKind: "", wantReady: false},
+		{name: "wifi setup screen", healthOK: true, streamHealthy: true, renderKind: "connected_setup", wantReady: false},
+		{name: "stale frame screen", healthOK: true, streamHealthy: true, renderKind: "status", wantReady: false},
+		{name: "unhealthy stream", healthOK: true, streamHealthy: false, renderKind: "usage", wantReady: false},
+		{name: "unhealthy device", healthOK: false, streamHealthy: true, renderKind: "usage", wantReady: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			health := deviceHealth{OK: tt.healthOK}
+			fullCount := uint64(1)
+			partialCount := uint64(0)
+			health.Render.FullCount = &fullCount
+			health.Render.PartialCount = &partialCount
+			health.Render.LastKind = tt.renderKind
+			device := deviceInfo{
+				Connected: true,
+				Paired:    true,
+				Stream: &displayStreamInfo{
+					Healthy: tt.streamHealthy,
+				},
+			}
+
+			got := withDeviceHealth(device, health)
+			if got.Ready != tt.wantReady {
+				t.Fatalf("ready=%v want %v for health=%+v stream=%+v", got.Ready, tt.wantReady, health, device.Stream)
+			}
+		})
+	}
+
+	healthWithoutCounters := deviceHealth{OK: true}
+	healthWithoutCounters.Render.LastKind = "usage"
+	device := deviceInfo{
+		Connected: true,
+		Paired:    true,
+		Stream:    &displayStreamInfo{Healthy: true},
+	}
+	if got := withDeviceHealth(device, healthWithoutCounters); got.Ready {
+		t.Fatalf("device without render counters must not become ready: %+v", got)
+	}
+}
+
+func TestWaitForDisplayRenderRequiresCounterAdvance(t *testing.T) {
+	var calls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		fullCount := 5
+		if calls.Add(1) > 1 {
+			fullCount = 6
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(
+			w,
+			`{"ok":true,"render":{"fullCount":%d,"partialCount":2,"lastKind":"usage"}}`,
+			fullCount,
+		)
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.client = device.Client()
+	baselineFull := uint64(5)
+	baselinePartial := uint64(2)
+	baseline := deviceHealth{OK: true}
+	baseline.Render.FullCount = &baselineFull
+	baseline.Render.PartialCount = &baselinePartial
+	baseline.Render.LastKind = "usage"
+
+	health, err := server.waitForDisplayRender(context.Background(), device.URL, "pair-token", baseline)
+	if err != nil {
+		t.Fatalf("wait for fresh render: %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("health probes=%d want 2 so stale counters are rejected", calls.Load())
+	}
+	if health.Render.FullCount == nil || *health.Render.FullCount != 6 {
+		t.Fatalf("expected advanced full render counter, got %+v", health.Render)
+	}
+}
+
+func TestDisplayRenderAdvancedRequiresMonotonicCounters(t *testing.T) {
+	health := func(full, partial uint64, includeCounters bool) deviceHealth {
+		got := deviceHealth{OK: true}
+		got.Render.LastKind = "usage"
+		if includeCounters {
+			got.Render.FullCount = &full
+			got.Render.PartialCount = &partial
+		}
+		return got
+	}
+	tests := []struct {
+		name     string
+		baseline deviceHealth
+		current  deviceHealth
+		want     bool
+	}{
+		{name: "full render advanced", baseline: health(5, 2, true), current: health(6, 2, true), want: true},
+		{name: "partial render advanced", baseline: health(5, 2, true), current: health(5, 3, true), want: true},
+		{name: "unchanged", baseline: health(5, 2, true), current: health(5, 2, true)},
+		{name: "missing baseline counters", baseline: health(0, 0, false), current: health(1, 0, true)},
+		{name: "missing current counters", baseline: health(1, 0, true), current: health(0, 0, false)},
+		{name: "counter regression", baseline: health(5, 2, true), current: health(4, 3, true)},
+		{name: "device reboot", baseline: health(5, 2, true), current: health(0, 0, true)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := displayRenderAdvanced(tt.baseline, tt.current); got != tt.want {
+				t.Fatalf("displayRenderAdvanced=%v want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderHealthyRequiresCountersAndUsageKind(t *testing.T) {
+	health := deviceHealth{OK: true}
+	health.Render.LastKind = "usage"
+	if renderHealthyFromHealth(health) {
+		t.Fatal("missing counters must not be healthy")
+	}
+	fullCount := uint64(1)
+	partialCount := uint64(0)
+	health.Render.FullCount = &fullCount
+	health.Render.PartialCount = &partialCount
+	if !renderHealthyFromHealth(health) {
+		t.Fatal("usage render with counters should be healthy")
+	}
+	health.Render.LastKind = ""
+	if renderHealthyFromHealth(health) {
+		t.Fatal("empty render kind must not be healthy")
+	}
+	health.Render.LastKind = "connected_setup"
+	if renderHealthyFromHealth(health) {
+		t.Fatal("WiFi setup screen must not be healthy")
+	}
+	for _, localRenderKind := range []string{"reset", "update_notice"} {
+		health.Render.LastKind = localRenderKind
+		if renderHealthyFromHealth(health) {
+			t.Fatalf("local %s render must not prove that the Mac sent a frame", localRenderKind)
+		}
+	}
+}
+
+func TestCorrelatedOverlayProvesFirmware135FirstUsageRender(t *testing.T) {
+	target := "http://192.168.178.72"
+	boolPtr := func(value bool) *bool { return &value }
+	health := func(full, partial uint64, kind string) deviceHealth {
+		got := deviceHealth{OK: true}
+		got.Render.FullCount = &full
+		got.Render.PartialCount = &partial
+		got.Render.LastKind = kind
+		return got
+	}
+	baseline := health(3, 0, "connected_setup")
+	current := health(4, 2, "reset")
+	current.Display.ThemeSpec.Active = true
+	current.Display.ThemeSpec.RenderOK = boolPtr(true)
+	stream := displayStreamInfo{
+		Running:    true,
+		Healthy:    true,
+		LastTarget: target,
+	}
+
+	if !correlatedOverlayProvesUsage(baseline, current, stream, target) {
+		t.Fatal("fresh exact-target frame plus full render and reset tail should prove the first usage render")
+	}
+	current.Render.LastKind = "update_notice"
+	if !correlatedOverlayProvesUsage(baseline, current, stream, target) {
+		t.Fatal("firmware update notice may mask an otherwise proven first usage render")
+	}
+	if !correlatedOverlayProvesUsage(health(3, 0, "usage"), current, stream, target) {
+		t.Fatal("fresh exact-target frame plus a full redraw should also prove reload from a live baseline")
+	}
+
+	tests := []struct {
+		name     string
+		baseline deviceHealth
+		current  deviceHealth
+		stream   displayStreamInfo
+		target   string
+	}{
+		{
+			name:     "reset without full render",
+			baseline: baseline,
+			current: func() deviceHealth {
+				got := current
+				full := uint64(3)
+				got.Render.FullCount = &full
+				return got
+			}(),
+			stream: stream,
+			target: target,
+		},
+		{
+			name:     "partial counter regression",
+			baseline: health(3, 3, "connected_setup"),
+			current:  current,
+			stream:   stream,
+			target:   target,
+		},
+		{
+			name:     "wrong frame target",
+			baseline: baseline,
+			current:  current,
+			stream: func() displayStreamInfo {
+				got := stream
+				got.LastTarget = "http://192.168.178.73"
+				return got
+			}(),
+			target: target,
+		},
+		{
+			name:     "expected launch agent not running",
+			baseline: baseline,
+			current:  current,
+			stream: func() displayStreamInfo {
+				got := stream
+				got.Running = false
+				return got
+			}(),
+			target: target,
+		},
+		{
+			name:     "theme render failed",
+			baseline: baseline,
+			current: func() deviceHealth {
+				got := current
+				got.Display.ThemeSpec.RenderOK = boolPtr(false)
+				return got
+			}(),
+			stream: stream,
+			target: target,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if correlatedOverlayProvesUsage(tt.baseline, tt.current, tt.stream, tt.target) {
+				t.Fatal("ambiguous overlay state must not prove a fresh usage render")
+			}
+		})
+	}
+}
+
+func TestWaitForVerifiedDisplayRenderMarksCorrelatedOverlayProof(t *testing.T) {
+	target := "http://192.168.178.72"
+	baselineFull := uint64(3)
+	baselinePartial := uint64(0)
+	baseline := deviceHealth{OK: true}
+	baseline.Render.FullCount = &baselineFull
+	baseline.Render.PartialCount = &baselinePartial
+	baseline.Render.LastKind = "connected_setup"
+
+	currentFull := uint64(4)
+	currentPartial := uint64(2)
+	renderOK := true
+	current := deviceHealth{OK: true}
+	current.Render.FullCount = &currentFull
+	current.Render.PartialCount = &currentPartial
+	current.Render.LastKind = "reset"
+	current.Display.ThemeSpec.Active = true
+	current.Display.ThemeSpec.RenderOK = &renderOK
+	stream := displayStreamInfo{Running: true, Healthy: true, LastTarget: target}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		return current, errors.New("lastKind=reset")
+	}
+	health, err := server.waitForVerifiedDisplayRender(context.Background(), target, "pair-token", baseline, stream)
+	if err != nil {
+		t.Fatalf("correlated overlay proof returned error: %v", err)
+	}
+	if !health.correlatedFrameProof {
+		t.Fatal("correlated overlay proof marker was not set")
+	}
+	device := deviceInfo{Target: target, Connected: true, Paired: true, Stream: &stream}
+	if got := server.withVerifiedDeviceHealth(device, health, target, "pair-token", true); !got.Ready {
+		t.Fatalf("correlated first-frame proof should make the device ready: %+v", got)
 	}
 }
 
@@ -1554,10 +1947,10 @@ func TestDeviceReloadDisplayWaitsForRenderHealth(t *testing.T) {
 			healthCalls++
 			w.Header().Set("Content-Type", "application/json")
 			if healthCalls == 1 {
-				_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"renderOk":false,"renderError":"low_heap_full_render","renderFailures":1}},"settings":{"display":{"brightnessPercent":40}}}`))
+				_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"renderOk":false,"renderError":"low_heap_full_render","renderFailures":1}},"render":{"fullCount":1,"partialCount":0,"lastKind":"connected_setup"},"settings":{"display":{"brightnessPercent":40}}}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"renderOk":true,"renderFailures":1}},"settings":{"display":{"brightnessPercent":40}}}`))
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"renderOk":true,"renderFailures":1}},"render":{"fullCount":2,"partialCount":0,"lastKind":"usage"},"settings":{"display":{"brightnessPercent":40}}}`))
 		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
@@ -1565,6 +1958,7 @@ func TestDeviceReloadDisplayWaitsForRenderHealth(t *testing.T) {
 	defer device.Close()
 
 	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.waitRender = nil
 	var setupCalls []setup.Options
 	server.runSetup = func(_ context.Context, opts setup.Options) error {
 		setupCalls = append(setupCalls, opts)
@@ -1750,6 +2144,10 @@ func TestSplitInstallLogStripsPrivateURLDetails(t *testing.T) {
 }
 
 func TestDeviceDiscoverFallsBackToSubnetCandidateAndPersistsTarget(t *testing.T) {
+	oldSubnetProbeTime := subnetProbeTime
+	subnetProbeTime = 2 * time.Second
+	t.Cleanup(func() { subnetProbeTime = oldSubnetProbeTime })
+
 	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusServiceUnavailable)
 	}))
@@ -1924,7 +2322,7 @@ func TestDeviceRepairFallsBackToSubnetAndRefreshesDisplayStream(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if !got.OK || !got.Device.Connected || !got.Device.Paired || got.Device.Target != device.URL {
+	if !got.OK || !got.Device.Connected || !got.Device.Paired || !got.Device.Ready || got.Device.Target != device.URL {
 		t.Fatalf("unexpected repair response: %+v", got)
 	}
 	if len(setupCalls) != 2 {
@@ -2293,6 +2691,431 @@ func TestDeviceRepairRepairsStaleTokenWithoutForcePair(t *testing.T) {
 	}
 }
 
+func TestDeviceRepairRepairsTokenRejectedByFrameStream(t *testing.T) {
+	var pairCalls atomic.Int32
+	var sawOldToken atomic.Bool
+	var sawNewToken atomic.Bool
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			switch r.Header.Get("X-VibeTV-Token") {
+			case "old-token":
+				sawOldToken.Store(true)
+			case "new-token":
+				sawNewToken.Store(true)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.35","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/api/pair":
+			pairCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"new-token"}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":1,"partialCount":0,"lastKind":"connected_setup"}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "old-token"})
+	var setupCalls atomic.Int32
+	server.runSetup = func(_ context.Context, opts setup.Options) error {
+		if opts.Target != device.URL {
+			t.Fatalf("display stream target=%q want %q", opts.Target, device.URL)
+		}
+		setupCalls.Add(1)
+		return nil
+	}
+	var streamChecks atomic.Int32
+	server.waitStream = func(context.Context, string) displayStreamInfo {
+		if streamChecks.Add(1) == 1 {
+			return displayStreamInfo{
+				Running:   true,
+				Target:    device.URL,
+				Detail:    "VibeTV rejected the saved pairing token.",
+				ErrorCode: "device_pairing_required",
+			}
+		}
+		return displayStreamInfo{
+			Running:    true,
+			Healthy:    true,
+			Target:     device.URL,
+			LastTarget: device.URL,
+			LastSentAt: time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		fullCount := uint64(2)
+		partialCount := uint64(0)
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "usage"
+		return health, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || !got.Device.Ready {
+		t.Fatalf("expected verified ready device after pairing repair, got %+v", got)
+	}
+	if pairCalls.Load() != 1 || streamChecks.Load() != 2 || setupCalls.Load() != 4 {
+		t.Fatalf("pair=%d streamChecks=%d setupCalls=%d want 1,2,4", pairCalls.Load(), streamChecks.Load(), setupCalls.Load())
+	}
+	if !sawOldToken.Load() || !sawNewToken.Load() {
+		t.Fatalf("expected tokenless-compatible hello to accept old and new tokens; old=%v new=%v", sawOldToken.Load(), sawNewToken.Load())
+	}
+}
+
+func TestDeviceRepairDoesNotRotateTokenForTransientFrameFailure(t *testing.T) {
+	var pairCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.35","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/api/pair":
+			pairCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"rotated-token"}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":1,"partialCount":0,"lastKind":"connected_setup"}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "valid-token"})
+	server.waitStream = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    device.URL,
+			Detail:    "Display stream could not send to VibeTV and is reconnecting.",
+			ErrorCode: "display_send_failed",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		return deviceHealth{}, errors.New("display render did not advance")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected status 502, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if pairCalls.Load() != 0 {
+		t.Fatalf("transient frame failure rotated pairing token %d times", pairCalls.Load())
+	}
+}
+
+func TestDeviceRepairAcceptsCounterProofAfterLostFrameResponseAndStatusStaysReady(t *testing.T) {
+	var healthCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.35","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			call := healthCalls.Add(1)
+			fullCount := 10
+			kind := "connected_setup"
+			if call > 1 {
+				fullCount = 11
+				kind = "usage"
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"ok":true,"render":{"fullCount":%d,"partialCount":0,"lastKind":%q}}`, fullCount, kind)
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	lostResponse := displayStreamInfo{
+		Running:   true,
+		Target:    device.URL,
+		Detail:    "send frame: EOF after VibeTV accepted the body",
+		ErrorCode: "display_send_failed",
+	}
+	server.waitStream = func(context.Context, string) displayStreamInfo { return lostResponse }
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return lostResponse }
+	server.waitRender = func(_ context.Context, _ string, _ string, baseline deviceHealth) (deviceHealth, error) {
+		if baseline.Render.FullCount == nil || *baseline.Render.FullCount != 10 {
+			t.Fatalf("unexpected render baseline: %+v", baseline.Render)
+		}
+		fullCount := uint64(11)
+		partialCount := uint64(0)
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "usage"
+		return health, nil
+	}
+
+	repair := httptest.NewRecorder()
+	repairRequest := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{}`))
+	repairRequest.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(repair, repairRequest)
+	if repair.Code != http.StatusOK {
+		t.Fatalf("expected counter proof to recover lost frame response, got %d body=%s", repair.Code, repair.Body.String())
+	}
+	var repaired deviceActionResponse
+	if err := json.Unmarshal(repair.Body.Bytes(), &repaired); err != nil {
+		t.Fatalf("decode repair response: %v", err)
+	}
+	if !repaired.Device.Ready || repaired.Device.Stream == nil || !repaired.Device.Stream.Healthy {
+		t.Fatalf("expected device-confirmed render to be ready, got %+v", repaired.Device)
+	}
+
+	statusRecorder := httptest.NewRecorder()
+	statusRequest := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	server.Handler().ServeHTTP(statusRecorder, statusRequest)
+	if statusRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", statusRecorder.Code, statusRecorder.Body.String())
+	}
+	var status statusResponse
+	if err := json.Unmarshal(statusRecorder.Body.Bytes(), &status); err != nil {
+		t.Fatalf("decode status response: %v", err)
+	}
+	if !status.Device.Ready || status.Device.Stream == nil || !status.Device.Stream.Healthy {
+		t.Fatalf("short-lived proof must keep status ready after an EOF response, got %+v", status.Device)
+	}
+}
+
+func TestDisplayVerificationRejectsTokenTargetMismatchAndCounterRegression(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	target := "http://192.168.178.72"
+	device := deviceInfo{
+		Target:    target,
+		Connected: true,
+		Paired:    true,
+		Stream: &displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "display_send_failed",
+		},
+	}
+	health := func(full, partial uint64) deviceHealth {
+		got := deviceHealth{OK: true}
+		got.Render.FullCount = &full
+		got.Render.PartialCount = &partial
+		got.Render.LastKind = "usage"
+		return got
+	}
+
+	if got := server.withVerifiedDeviceHealth(device, health(10, 2), target, "token-a", true); !got.Ready {
+		t.Fatalf("explicit proof should be ready, got %+v", got)
+	}
+	if got := server.withVerifiedDeviceHealth(device, health(10, 2), target, "token-b", false); got.Ready {
+		t.Fatalf("different token reused proof: %+v", got)
+	}
+	if got := server.withVerifiedDeviceHealth(device, health(10, 2), "http://192.168.178.73", "token-a", false); got.Ready {
+		t.Fatalf("different target reused proof: %+v", got)
+	}
+	if got := server.withVerifiedDeviceHealth(device, health(9, 2), target, "token-a", false); got.Ready {
+		t.Fatalf("counter regression reused proof: %+v", got)
+	}
+	if got := server.withVerifiedDeviceHealth(device, health(11, 2), target, "token-a", false); got.Ready {
+		t.Fatalf("counter increase after regression recreated proof without explicit verification: %+v", got)
+	}
+}
+
+func TestDisplayVerificationSeparatesHealthyStreamFromLostResponseProof(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	target := "http://192.168.178.72"
+	stream := displayStreamInfo{
+		Running:    true,
+		Healthy:    true,
+		Target:     target,
+		LastTarget: target,
+	}
+	device := deviceInfo{
+		Target:    target,
+		Connected: true,
+		Paired:    true,
+		Stream:    &stream,
+	}
+	health := func(full, partial uint64, kind string) deviceHealth {
+		got := deviceHealth{OK: true}
+		got.Render.FullCount = &full
+		got.Render.PartialCount = &partial
+		got.Render.LastKind = kind
+		return got
+	}
+
+	if got := server.withVerifiedDeviceHealth(device, health(4, 1, "usage"), target, "token-a", true); !got.Ready {
+		t.Fatalf("direct usage proof should be ready: %+v", got)
+	}
+	server.verificationMu.Lock()
+	initial := server.displayVerifications[target]
+	server.verificationMu.Unlock()
+
+	if got := server.withVerifiedDeviceHealth(device, health(4, 2, "reset"), target, "token-a", false); !got.Ready {
+		t.Fatalf("healthy exact-target stream should keep a reset tail ready: %+v", got)
+	}
+	server.verificationMu.Lock()
+	afterReset := server.displayVerifications[target]
+	server.verificationMu.Unlock()
+	if !afterReset.VerifiedAt.Equal(initial.VerifiedAt) || afterReset.PartialCount != initial.PartialCount {
+		t.Fatalf("reset tail renewed proof: before=%+v after=%+v", initial, afterReset)
+	}
+
+	serverWithoutProof := newTestServer(t, runtimeconfig.Config{})
+	if got := serverWithoutProof.withVerifiedDeviceHealth(device, health(4, 2, "reset"), target, "token-a", false); !got.Ready {
+		t.Fatalf("fresh exact-target stream should survive API restart with an empty proof cache: %+v", got)
+	}
+	serverWithoutProof.verificationMu.Lock()
+	proofCount := len(serverWithoutProof.displayVerifications)
+	serverWithoutProof.verificationMu.Unlock()
+	if proofCount != 0 {
+		t.Fatalf("passive reset status minted %d action proofs", proofCount)
+	}
+
+	unhealthyStream := stream
+	unhealthyStream.Healthy = false
+	device.Stream = &unhealthyStream
+	if got := server.withVerifiedDeviceHealth(device, health(4, 2, "reset"), target, "token-a", false); got.Ready {
+		t.Fatalf("reset tail reused proof without an exact healthy stream: %+v", got)
+	}
+	if got := server.withVerifiedDeviceHealth(device, health(4, 2, "usage"), target, "token-a", false); got.Ready {
+		t.Fatalf("running stream without a frame or send-failure proof reused cache: %+v", got)
+	}
+
+	device.Stream = &stream
+	server.verificationMu.Lock()
+	expired := server.displayVerifications[target]
+	expired.VerifiedAt = time.Now().UTC().Add(-displayVerificationAge - time.Second)
+	server.displayVerifications[target] = expired
+	server.verificationMu.Unlock()
+	if got := server.withVerifiedDeviceHealth(device, health(4, 3, "update_notice"), target, "token-a", false); !got.Ready {
+		t.Fatalf("healthy exact-target stream should remain ready independently of expired cache: %+v", got)
+	}
+	server.verificationMu.Lock()
+	afterExpiredOverlay := server.displayVerifications[target]
+	server.verificationMu.Unlock()
+	if !afterExpiredOverlay.VerifiedAt.Equal(expired.VerifiedAt) {
+		t.Fatalf("overlay tail renewed expired proof: before=%+v after=%+v", expired, afterExpiredOverlay)
+	}
+
+	if got := server.withVerifiedDeviceHealth(device, health(5, 3, "theme_spec_usage"), target, "token-a", false); !got.Ready {
+		t.Fatalf("healthy direct stream should remain ready: %+v", got)
+	}
+	server.verificationMu.Lock()
+	afterLocalFullRedraw := server.displayVerifications[target]
+	server.verificationMu.Unlock()
+	if !afterLocalFullRedraw.VerifiedAt.Equal(expired.VerifiedAt) {
+		t.Fatalf("passive full redraw renewed proof: before=%+v after=%+v", expired, afterLocalFullRedraw)
+	}
+
+	wrongTargetStream := stream
+	wrongTargetStream.LastTarget = "http://192.168.178.73"
+	device.Stream = &wrongTargetStream
+	if got := server.withVerifiedDeviceHealth(device, health(5, 3, "theme_spec_usage"), target, "token-a", false); got.Ready {
+		t.Fatalf("wrong-target stream reused proof: %+v", got)
+	}
+
+	pairingErrorStream := stream
+	pairingErrorStream.Healthy = false
+	pairingErrorStream.ErrorCode = "device_pairing_required"
+	device.Stream = &pairingErrorStream
+	if got := server.withVerifiedDeviceHealth(device, health(5, 3, "theme_spec_usage"), target, "token-a", false); got.Ready {
+		t.Fatalf("pairing error reused proof: %+v", got)
+	}
+
+	notRunningStream := stream
+	notRunningStream.Running = false
+	device.Stream = &notRunningStream
+	if got := server.withVerifiedDeviceHealth(device, health(5, 3, "theme_spec_usage"), target, "token-a", false); got.Ready {
+		t.Fatalf("healthy flag bypassed missing persistent LaunchAgent: %+v", got)
+	}
+}
+
+func TestConcurrentDeviceRepairsShareOnePairingTransaction(t *testing.T) {
+	var pairCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.35","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/api/pair":
+			pairCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"new-token"}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":1,"partialCount":0,"lastKind":"connected_setup"}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "old-token"})
+	server.waitStream = func(context.Context, string) displayStreamInfo {
+		if pairCalls.Load() == 0 {
+			return displayStreamInfo{
+				Running:   true,
+				Target:    device.URL,
+				Detail:    "VibeTV rejected the saved pairing token.",
+				ErrorCode: "device_pairing_required",
+			}
+		}
+		return displayStreamInfo{
+			Running:    true,
+			Healthy:    true,
+			Target:     device.URL,
+			LastTarget: device.URL,
+			LastSentAt: time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		fullCount := uint64(2)
+		partialCount := uint64(0)
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "usage"
+		return health, nil
+	}
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			<-start
+			_, err := server.repairDevice(context.Background(), "", false)
+			results <- err
+		}()
+	}
+	close(start)
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatalf("concurrent repair failed: %v", err)
+		}
+	}
+	if pairCalls.Load() != 1 {
+		t.Fatalf("concurrent repairs rotated pairing token %d times, want 1", pairCalls.Load())
+	}
+}
+
 func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		Theme:        "mini",
@@ -2406,6 +3229,39 @@ func TestDeviceDiscoverRejectsInvalidExplicitTarget(t *testing.T) {
 	}
 }
 
+func TestConcurrentConfigUpdatesPreserveTargetAndPairingToken(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	start := make(chan struct{})
+	errorsByUpdate := make(chan error, 2)
+	go func() {
+		<-start
+		_, err := server.updateConfig(func(cfg *runtimeconfig.Config) {
+			cfg.DeviceTarget = "http://192.168.178.72"
+		})
+		errorsByUpdate <- err
+	}()
+	go func() {
+		<-start
+		_, err := server.updateConfig(func(cfg *runtimeconfig.Config) {
+			cfg.DeviceToken = "pair-token"
+		})
+		errorsByUpdate <- err
+	}()
+	close(start)
+	for range 2 {
+		if err := <-errorsByUpdate; err != nil {
+			t.Fatalf("update config: %v", err)
+		}
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.72" || cfg.DeviceToken != "pair-token" {
+		t.Fatalf("concurrent config fields were lost: %+v", cfg)
+	}
+}
+
 func TestDevicePairRejectsInvalidExplicitTarget(t *testing.T) {
 	for _, target := range []string{
 		"http://user:pass@vibetv.local",
@@ -2441,6 +3297,107 @@ func TestDevicePairRejectsInvalidExplicitTarget(t *testing.T) {
 				t.Fatalf("unexpected invalid target response: %+v", got)
 			}
 		})
+	}
+}
+
+func TestPairRetriesLostResponsesWithBoundedEmptyRequests(t *testing.T) {
+	tests := []struct {
+		name      string
+		succeedAt int32
+		wantToken string
+		wantError bool
+	}{
+		{name: "third response succeeds", succeedAt: 3, wantToken: "third-token"},
+		{name: "all responses fail", succeedAt: 0, wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var attempts atomic.Int32
+			device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempt := attempts.Add(1)
+				if r.Method != http.MethodPost {
+					t.Errorf("pair method=%s want POST", r.Method)
+				}
+				if got := r.URL.Query().Get("api"); got != "1" {
+					t.Errorf("pair api query=%q want 1", got)
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("read pair body: %v", err)
+				}
+				if len(body) != 0 {
+					t.Errorf("pair request body=%q want empty", body)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if tt.succeedAt > 0 && attempt == tt.succeedAt {
+					_, _ = w.Write([]byte(`{"ok":true,"token":"third-token"}`))
+					return
+				}
+				_, _ = w.Write([]byte(`{"ok":`))
+			}))
+			defer device.Close()
+
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.pairAttempts = 3
+			server.pairRetryGap = 0
+			token, err := server.pair(context.Background(), device.URL)
+			if tt.wantError {
+				if err == nil || !strings.Contains(err.Error(), "pairing failed after 3 attempts") {
+					t.Fatalf("expected bounded pairing error, got token=%q err=%v", token, err)
+				}
+			} else {
+				if err != nil || token != tt.wantToken {
+					t.Fatalf("pair token=%q err=%v want token=%q", token, err, tt.wantToken)
+				}
+			}
+			if got := attempts.Load(); got != 3 {
+				t.Fatalf("pair attempts=%d want 3", got)
+			}
+		})
+	}
+}
+
+func TestPairAttemptTimeoutBoundsHungResponses(t *testing.T) {
+	var attempts atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		<-r.Context().Done()
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.pairAttempts = 3
+	server.pairAttemptTimeout = 25 * time.Millisecond
+	server.pairRetryGap = 0
+	startedAt := time.Now()
+	token, err := server.pair(context.Background(), device.URL)
+	if err == nil || token != "" {
+		t.Fatalf("expected hung pairing to fail, got token=%q err=%v", token, err)
+	}
+	if attempts.Load() != 3 {
+		t.Fatalf("pair attempts=%d want 3", attempts.Load())
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("bounded pairing took %s", elapsed)
+	}
+}
+
+func TestDefaultRepairDeadlineFitsExtendedUIRequestBudget(t *testing.T) {
+	const uiRequestBudget = 90 * time.Second
+	renderBudget := displayRenderWaitTime
+	if deviceTimeout > renderBudget {
+		renderBudget = deviceTimeout
+	}
+	worstCase := time.Duration(repairDiscoveryAttempts)*discoveryProbeTime +
+		time.Duration(repairDiscoveryAttempts-1)*repairDiscoveryRetryGap +
+		time.Duration(defaultPairAttempts)*defaultPairAttemptTimeout +
+		time.Duration(defaultPairAttempts-1)*defaultPairRetryGap +
+		2*deviceHealthProbeTime +
+		2*displayStreamWaitTime +
+		renderBudget
+	if worstCase >= uiRequestBudget {
+		t.Fatalf("backend repair deadline %s must stay below extended UI request budget %s", worstCase, uiRequestBudget)
 	}
 }
 
@@ -2498,6 +3455,13 @@ func TestDevicePairStartsDisplayStreamWithoutFirmwareFlash(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || !got.Device.Ready {
+		t.Fatalf("expected pairing success only after a verified display render, got %+v", got)
+	}
 	if len(setupCalls) != 2 {
 		t.Fatalf("expected validate and apply setup calls, got %+v", setupCalls)
 	}
@@ -2511,6 +3475,41 @@ func TestDevicePairStartsDisplayStreamWithoutFirmwareFlash(t *testing.T) {
 	}
 	if setupCalls[1].ValidateOnly {
 		t.Fatalf("second setup call should apply launch agent changes, got %+v", setupCalls[1])
+	}
+}
+
+func TestDevicePairDoesNotReportSuccessBeforeFirstDisplayFrame(t *testing.T) {
+	device := newPairableDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL})
+	server.waitStream = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running: true,
+			Healthy: false,
+			Target:  device.URL,
+			Detail:  "Display stream has not sent usage yet.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		return deviceHealth{}, errors.New("render counters did not advance")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/pair", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected status 502, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "display_stream_not_ready" {
+		t.Fatalf("unexpected missing-first-frame response: %+v", got)
 	}
 }
 
@@ -2600,6 +3599,45 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	}
 	if setupCalls[1].ValidateOnly {
 		t.Fatalf("second setup refresh call should apply launch agent changes, got %+v", setupCalls[1])
+	}
+}
+
+func TestThemeInstallCapturesRenderBaselineBeforeActivation(t *testing.T) {
+	var healthCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		healthCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"usage"}}`))
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		if healthCalls.Load() != 1 {
+			t.Fatalf("render baseline must be captured before theme activation, health calls=%d", healthCalls.Load())
+		}
+		return themeinstall.Result{ThemeID: "mini"}, nil
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, baseline deviceHealth) (deviceHealth, error) {
+		if baseline.Render.FullCount == nil || *baseline.Render.FullCount != 7 ||
+			baseline.Render.PartialCount == nil || *baseline.Render.PartialCount != 3 {
+			t.Fatalf("unexpected pre-activation baseline: %+v", baseline.Render)
+		}
+		fullCount := uint64(8)
+		partialCount := uint64(3)
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "usage"
+		return health, nil
+	}
+
+	if _, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, io.Discard); err != nil {
+		t.Fatalf("run theme install: %v", err)
 	}
 }
 
@@ -3289,6 +4327,27 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	}
 	server.streamStatus = healthyStream
 	server.waitStream = healthyStream
+	server.waitStreamAfter = func(ctx context.Context, target string, _ time.Time) displayStreamInfo {
+		return server.waitStream(ctx, target)
+	}
+	server.waitStreamAfterPair = func(ctx context.Context, target string, _ time.Time) displayStreamInfo {
+		return server.waitStream(ctx, target)
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, baseline deviceHealth) (deviceHealth, error) {
+		fullCount := uint64(1)
+		partialCount := uint64(0)
+		if baseline.Render.FullCount != nil {
+			fullCount = *baseline.Render.FullCount + 1
+		}
+		if baseline.Render.PartialCount != nil {
+			partialCount = *baseline.Render.PartialCount
+		}
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "usage"
+		return health, nil
+	}
 	return server
 }
 

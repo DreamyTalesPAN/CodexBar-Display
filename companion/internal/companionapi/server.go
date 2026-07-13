@@ -39,38 +39,42 @@ import (
 var embeddedControlCenterStatic embed.FS
 
 const (
-	DefaultAddr              = "127.0.0.1:47832"
-	appOrigin                = "https://app.vibetv.shop"
-	defaultDevOrigin         = "http://localhost:3000"
-	previewOriginHostPrefix  = "codex-vibetv-control-center-"
-	previewOriginHostSuffix  = "-paul-anduschus-projects.vercel.app"
-	deviceTimeout            = 15 * time.Second
-	discoveryProbeTime       = 1500 * time.Millisecond
-	repairDiscoveryAttempts  = 3
-	repairDiscoveryRetryGap  = 1200 * time.Millisecond
-	subnetProbeLimit         = 32
-	subnetProbeTime          = 450 * time.Millisecond
-	themeInstallDisableEnv   = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
-	macAppUpdateDisableEnv   = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
-	displayStreamLegacyLabel = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
-	displayStreamLabelEnv    = runtimepaths.DisplayStreamLaunchAgentLabelEnv
-	displayStreamOutLogEnv   = runtimepaths.DisplayStreamOutLogEnv
-	displayStreamReadyAge    = 2 * time.Minute
-	displayStreamWaitTime    = 12 * time.Second
-	displayRenderWaitTime    = 20 * time.Second
-	firmwareUpdateJobTime    = 10 * time.Minute
-	macAppUpdateJobTime      = 8 * time.Minute
-	usageFallbackFetchTime   = 15 * time.Second
-	macAppInstallerURL       = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
-	macAppReleaseAPIEnvVar   = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
-	macAppReleaseAPIURL      = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
-	macAppReleaseCheckGap    = 6 * time.Hour
-	macAppReleaseTimeout     = 5 * time.Second
-	firmwareManifestEnvVar   = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
-	firmwareReleaseTimeout   = 5 * time.Second
+	DefaultAddr               = "127.0.0.1:47832"
+	appOrigin                 = "https://app.vibetv.shop"
+	defaultDevOrigin          = "http://localhost:3000"
+	previewOriginHostPrefix   = "codex-vibetv-control-center-"
+	previewOriginHostSuffix   = "-paul-anduschus-projects.vercel.app"
+	deviceTimeout             = 15 * time.Second
+	discoveryProbeTime        = 1500 * time.Millisecond
+	repairDiscoveryAttempts   = 3
+	repairDiscoveryRetryGap   = 1200 * time.Millisecond
+	subnetProbeLimit          = 32
+	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
+	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
+	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+	displayStreamLabelEnv     = runtimepaths.DisplayStreamLaunchAgentLabelEnv
+	displayStreamOutLogEnv    = runtimepaths.DisplayStreamOutLogEnv
+	displayStreamReadyAge     = 2 * time.Minute
+	displayVerificationAge    = 2 * time.Minute
+	displayStreamWaitTime     = 12 * time.Second
+	displayRenderWaitTime     = 12 * time.Second
+	defaultPairAttempts       = 3
+	defaultPairAttemptTimeout = 5 * time.Second
+	defaultPairRetryGap       = 500 * time.Millisecond
+	firmwareUpdateJobTime     = 10 * time.Minute
+	macAppUpdateJobTime       = 8 * time.Minute
+	usageFallbackFetchTime    = 15 * time.Second
+	macAppInstallerURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
+	macAppReleaseAPIEnvVar    = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
+	macAppReleaseAPIURL       = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
+	macAppReleaseCheckGap     = 6 * time.Hour
+	macAppReleaseTimeout      = 5 * time.Second
+	firmwareManifestEnvVar    = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareReleaseTimeout    = 5 * time.Second
 )
 
 var deviceHealthProbeTime = 2 * time.Second
+var subnetProbeTime = 450 * time.Millisecond
 
 var printDisplayStreamService = func(ctx context.Context, service string) ([]byte, error) {
 	return exec.CommandContext(ctx, "launchctl", "print", service).CombinedOutput()
@@ -122,7 +126,18 @@ type Server struct {
 	subnetTargets          func() []string
 	streamStatus           func(context.Context, string) displayStreamInfo
 	waitStream             func(context.Context, string) displayStreamInfo
+	waitStreamAfter        func(context.Context, string, time.Time) displayStreamInfo
+	waitStreamAfterPair    func(context.Context, string, time.Time) displayStreamInfo
+	waitRender             func(context.Context, string, string, deviceHealth) (deviceHealth, error)
 	refreshStream          func(context.Context, string) error
+	configMu               sync.Mutex
+	repairMu               sync.Mutex
+	pairMu                 sync.Mutex
+	verificationMu         sync.Mutex
+	displayVerifications   map[string]displayVerification
+	pairAttempts           int
+	pairAttemptTimeout     time.Duration
+	pairRetryGap           time.Duration
 	allowMacAppSelfUpdate  bool
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
@@ -198,6 +213,7 @@ type deviceInfo struct {
 	Target       string                    `json:"target,omitempty"`
 	Connected    bool                      `json:"connected"`
 	Paired       bool                      `json:"paired,omitempty"`
+	Ready        bool                      `json:"ready"`
 	Board        string                    `json:"board,omitempty"`
 	Firmware     string                    `json:"firmware,omitempty"`
 	ActiveTheme  string                    `json:"activeTheme,omitempty"`
@@ -214,6 +230,14 @@ type displayStreamInfo struct {
 	Target     string `json:"target,omitempty"`
 	LastTarget string `json:"lastTarget,omitempty"`
 	Detail     string `json:"detail,omitempty"`
+	ErrorCode  string `json:"errorCode,omitempty"`
+}
+
+type displayVerification struct {
+	Token        string
+	FullCount    uint64
+	PartialCount uint64
+	VerifiedAt   time.Time
 }
 
 type deviceDisplayInfo struct {
@@ -223,6 +247,7 @@ type deviceDisplayInfo struct {
 type deviceHealthInfo struct {
 	OK          bool   `json:"ok"`
 	ResetReason string `json:"resetReason,omitempty"`
+	RenderKind  string `json:"renderKind,omitempty"`
 	Error       string `json:"error,omitempty"`
 }
 
@@ -586,7 +611,14 @@ func New(opts Options) (*Server, error) {
 		subnetTargets:         localSubnetTargets,
 		streamStatus:          inspectDisplayStream,
 		waitStream:            waitForDisplayStream,
+		waitStreamAfter:       waitForDisplayStreamAfter,
+		waitStreamAfterPair:   waitForDisplayStreamAfterPair,
+		waitRender:            nil,
 		refreshStream:         opts.RefreshDisplayStream,
+		pairAttempts:          defaultPairAttempts,
+		pairAttemptTimeout:    defaultPairAttemptTimeout,
+		pairRetryGap:          defaultPairRetryGap,
+		displayVerifications:  make(map[string]displayVerification),
 		allowMacAppSelfUpdate: false,
 		installationMode:      macAppInstallationMode(),
 		loadUsage:             daemon.LoadPersistedUsage,
@@ -801,7 +833,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	cfg, _ := s.loadConfig(s.home)
+	cfg, _ := s.config()
 	stream := s.streamStatus(r.Context(), cfg.DeviceTarget)
 	device := deviceInfo{
 		Target:    publicTarget(cfg.DeviceTarget),
@@ -813,7 +845,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		if hello, probeToken, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
 			device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
 			if health, healthErr := s.getHealthProbe(r.Context(), cfg.DeviceTarget, probeToken, deviceHealthProbeTime); healthErr == nil {
-				device = withDeviceHealth(device, health)
+				device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, probeToken, false)
 			} else {
 				device = withDeviceHealthProbeError(device, healthErr)
 			}
@@ -1039,21 +1071,6 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		Status: "pass",
 		Detail: "VibeTV /hello is reachable.",
 	})
-	if device.Stream != nil && device.Stream.Healthy {
-		checks = append(checks, diagnosticCheck{
-			Name:   "display_stream",
-			Status: "pass",
-			Detail: "Mac App display stream is sending frames.",
-		})
-	} else {
-		checks = append(checks, diagnosticCheck{
-			Name:       "display_stream",
-			Status:     "fail",
-			Detail:     displayStreamDiagnosticDetail(device.Stream),
-			ErrorCode:  "display_stream_not_ready",
-			NextAction: "Click Fix connection to restart the display stream.",
-		})
-	}
 	health, err := s.getHealthProbe(r.Context(), cfg.DeviceTarget, probeToken, deviceHealthProbeTime)
 	if err != nil {
 		device = withDeviceHealthProbeError(device, err)
@@ -1065,7 +1082,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			NextAction: "Read-only device discovery works; retry settings or check firmware health.",
 		})
 	} else {
-		device = withDeviceHealth(device, health)
+		device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, probeToken, false)
 		checks = append(checks, diagnosticCheck{
 			Name:   "device_health",
 			Status: "pass",
@@ -1089,6 +1106,21 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
+	}
+	if device.Stream != nil && device.Stream.Healthy {
+		checks = append(checks, diagnosticCheck{
+			Name:   "display_stream",
+			Status: "pass",
+			Detail: device.Stream.Detail,
+		})
+	} else {
+		checks = append(checks, diagnosticCheck{
+			Name:       "display_stream",
+			Status:     "fail",
+			Detail:     displayStreamDiagnosticDetail(device.Stream),
+			ErrorCode:  "display_stream_not_ready",
+			NextAction: "Click Fix connection to restart the display stream.",
+		})
 	}
 	if updateJob, ok := s.latestFirmwareUpdateJob(); ok {
 		checks = append(checks, diagnosticCheck{
@@ -1687,6 +1719,8 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
@@ -1699,8 +1733,10 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 		writeDiscoveryError(w, err)
 		return
 	}
-	cfg.DeviceTarget = target
-	if err := s.saveConfig(s.home, cfg); err != nil {
+	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+		current.DeviceTarget = target
+	})
+	if err != nil {
 		writeInternalError(w, err)
 		return
 	}
@@ -1733,6 +1769,8 @@ func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Reques
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
 	cfg, hello, ok := s.requireDevice(w, r)
 	if !ok {
 		return
@@ -1747,6 +1785,19 @@ func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Reques
 		)
 		return
 	}
+	s.clearDisplayVerification(cfg.DeviceTarget)
+	baseline, err := s.captureDisplayRenderBaseline(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
+	if err != nil {
+		writeError(
+			w,
+			http.StatusBadGateway,
+			"display_reload_failed",
+			"Could not read the current VibeTV screen state.",
+			"Keep VibeTV powered on, then press Reload image again.",
+		)
+		return
+	}
+	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(r.Context(), cfg.DeviceTarget); err != nil {
 		writeError(
 			w,
@@ -1757,9 +1808,9 @@ func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Reques
 		)
 		return
 	}
-	stream := s.waitStream(r.Context(), cfg.DeviceTarget)
+	stream := s.waitForFreshDisplayStream(r.Context(), cfg.DeviceTarget, streamStartedAt)
 	device := withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
-	health, err := s.waitForDisplayRender(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
+	health, err := s.waitForVerifiedDisplayRender(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
 	if err != nil {
 		writeError(
 			w,
@@ -1770,7 +1821,17 @@ func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Reques
 		)
 		return
 	}
-	device = withDeviceHealth(device, health)
+	device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, cfg.DeviceToken, true)
+	if !device.Ready {
+		writeError(
+			w,
+			http.StatusBadGateway,
+			"display_reload_failed",
+			"VibeTV did not render a fresh image.",
+			"Keep VibeTV powered on, then press Reload image again.",
+		)
+		return
+	}
 	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
 }
 
@@ -1778,17 +1839,17 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	cfg, err := s.config()
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
+	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
+		cfg.DeviceTarget = ""
+		cfg.DeviceToken = ""
+	})
 	if err != nil {
 		writeInternalError(w, err)
 		return
 	}
-	cfg.DeviceTarget = ""
-	cfg.DeviceToken = ""
-	if err := s.saveConfig(s.home, cfg); err != nil {
-		writeInternalError(w, err)
-		return
-	}
+	s.clearDisplayVerification("")
 	writeJSON(w, http.StatusOK, statusResponse{
 		OK:        true,
 		Companion: s.companionInfo(r.Context()),
@@ -1806,7 +1867,7 @@ func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	device := s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello))
 	if health, err := s.getHealthProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, deviceHealthProbeTime); err == nil {
-		device = withDeviceHealth(device, health)
+		device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, cfg.DeviceToken, false)
 	} else {
 		device = withDeviceHealthProbeError(device, err)
 	}
@@ -1826,6 +1887,8 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)
@@ -1868,12 +1931,27 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", "Keep VibeTV powered on, then retry pairing.")
 		return
 	}
-	cfg.DeviceTarget = target
-	cfg.DeviceToken = token
-	if err := s.saveConfig(s.home, cfg); err != nil {
+	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+		current.DeviceTarget = target
+		current.DeviceToken = token
+	})
+	if err != nil {
 		writeInternalError(w, err)
 		return
 	}
+	s.clearDisplayVerification(target)
+	baseline, err := s.captureDisplayRenderBaseline(r.Context(), target, token)
+	if err != nil {
+		writeError(
+			w,
+			http.StatusBadGateway,
+			"display_render_not_ready",
+			"Mac App could not read the current VibeTV screen state.",
+			"Keep VibeTV powered on, then retry pairing.",
+		)
+		return
+	}
+	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(r.Context(), target); err != nil {
 		writeError(
 			w,
@@ -1884,11 +1962,40 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		)
 		return
 	}
-	stream := s.waitStream(r.Context(), target)
-	hello, _ := s.getHello(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
-	device := withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
-	if health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err == nil {
-		device = withDeviceHealth(device, health)
+	stream := s.waitForFreshDisplayStreamAfterPair(r.Context(), target, streamStartedAt)
+	hello, _ := s.getHello(r.Context(), target, token)
+	device := withDisplayStreamInfo(deviceFromHello(target, token, hello), stream)
+	health, err := s.waitForVerifiedDisplayRender(r.Context(), target, token, baseline, stream)
+	if err != nil {
+		if !stream.Healthy {
+			writeError(
+				w,
+				http.StatusBadGateway,
+				"display_stream_not_ready",
+				"VibeTV has not received its first image yet.",
+				"Keep VibeTV powered on, then retry pairing.",
+			)
+			return
+		}
+		writeError(
+			w,
+			http.StatusBadGateway,
+			"display_render_not_ready",
+			"VibeTV has not rendered its first image yet.",
+			"Keep VibeTV powered on, then retry pairing.",
+		)
+		return
+	}
+	device = s.withVerifiedDeviceHealth(device, health, target, token, true)
+	if !device.Ready {
+		writeError(
+			w,
+			http.StatusBadGateway,
+			"display_render_not_ready",
+			"VibeTV has not rendered its first image yet.",
+			"Keep VibeTV powered on, then retry pairing.",
+		)
+		return
 	}
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool       `json:"ok"`
@@ -1897,6 +2004,9 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) repairDevice(ctx context.Context, requestedTarget string, forcePair bool) (deviceInfo, error) {
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
+
 	cfg, err := s.config()
 	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
@@ -1920,28 +2030,74 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	}
 
 	token := strings.TrimSpace(cfg.DeviceToken)
+	pairedDuringRepair := false
 	if forcePair || token == "" || tokenStale {
 		token, err = s.pair(ctx, target)
 		if err != nil {
 			return deviceInfo{}, &repairStageError{stage: "pair", err: err}
 		}
+		pairedDuringRepair = true
 	}
 
-	cfg.DeviceTarget = target
-	cfg.DeviceToken = token
-	if err := s.saveConfig(s.home, cfg); err != nil {
+	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+		current.DeviceTarget = target
+		current.DeviceToken = token
+	})
+	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
 	}
+	s.clearDisplayVerification(target)
+	baseline, err := s.captureDisplayRenderBaseline(ctx, target, token)
+	if err != nil {
+		return deviceInfo{}, &repairStageError{stage: "display-render", err: err}
+	}
+	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, target); err != nil {
 		return deviceInfo{}, &repairStageError{stage: "display-stream", err: err}
 	}
-	stream := s.waitStream(ctx, target)
+	var stream displayStreamInfo
+	if pairedDuringRepair {
+		stream = s.waitForFreshDisplayStreamAfterPair(ctx, target, streamStartedAt)
+	} else {
+		stream = s.waitForFreshDisplayStream(ctx, target, streamStartedAt)
+	}
+	if !stream.Healthy && stream.ErrorCode == "device_pairing_required" && !pairedDuringRepair {
+		token, err = s.pair(ctx, target)
+		if err != nil {
+			return deviceInfo{}, &repairStageError{stage: "pair", err: err}
+		}
+		cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+			current.DeviceTarget = target
+			current.DeviceToken = token
+		})
+		if err != nil {
+			return deviceInfo{}, &repairStageError{stage: "config", err: err}
+		}
+		baseline, err = s.captureDisplayRenderBaseline(ctx, target, token)
+		if err != nil {
+			return deviceInfo{}, &repairStageError{stage: "display-render", err: err}
+		}
+		streamStartedAt = time.Now().UTC()
+		if err := s.startDisplayStream(ctx, target); err != nil {
+			return deviceInfo{}, &repairStageError{stage: "display-stream", err: err}
+		}
+		stream = s.waitForFreshDisplayStreamAfterPair(ctx, target, streamStartedAt)
+		pairedDuringRepair = true
+	}
 	if refreshedHello, err := s.getHello(ctx, target, token); err == nil {
 		hello = refreshedHello
 	}
 	device := withDisplayStreamInfo(deviceFromHello(target, token, hello), stream)
-	if health, err := s.getHealth(ctx, target, token); err == nil {
-		device = withDeviceHealth(device, health)
+	health, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
+	if err != nil {
+		if !stream.Healthy {
+			return deviceInfo{}, &repairStageError{stage: "display-stream", err: errors.New(displayStreamDiagnosticDetail(streamPointer(stream)))}
+		}
+		return deviceInfo{}, &repairStageError{stage: "display-render", err: err}
+	}
+	device = s.withVerifiedDeviceHealth(device, health, target, token, true)
+	if !device.Ready {
+		return deviceInfo{}, &repairStageError{stage: "display-render", err: errors.New("device is reachable but not ready")}
 	}
 	return device, nil
 }
@@ -2105,9 +2261,12 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "settings_read_failed", "Could not read VibeTV settings.", "Keep VibeTV powered on and retry.")
 		return
 	}
-	device := withDeviceHealth(
+	device := s.withVerifiedDeviceHealth(
 		s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello)),
 		health,
+		cfg.DeviceTarget,
+		cfg.DeviceToken,
+		false,
 	)
 	writeJSON(w, http.StatusOK, settingsResponse{
 		OK:       true,
@@ -2156,7 +2315,7 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 	}
 	device := s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello))
 	if health, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err == nil {
-		device = withDeviceHealth(device, health)
+		device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, cfg.DeviceToken, false)
 	}
 	writeJSON(w, http.StatusOK, settingsResponse{
 		OK:       true,
@@ -2461,10 +2620,41 @@ func (s *Server) handleMacAppUpdateStatus(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, req themeInstallRequest, out io.Writer) (themeinstall.Result, error) {
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
+	latestCfg, err := s.config()
+	if err != nil {
+		return themeinstall.Result{}, err
+	}
+	cfg = latestCfg
+	if strings.TrimSpace(cfg.DeviceTarget) == "" || strings.TrimSpace(cfg.DeviceToken) == "" {
+		return themeinstall.Result{}, &statusAPIError{
+			status: http.StatusForbidden,
+			api: apiError{
+				Code:       "pairing_required",
+				Message:    "VibeTV pairing is required before installing a theme.",
+				NextAction: "Finish VibeTV setup, then retry the theme install.",
+			},
+		}
+	}
+	s.clearDisplayVerification(cfg.DeviceTarget)
+	baseline, err := s.captureDisplayRenderBaseline(ctx, cfg.DeviceTarget, cfg.DeviceToken)
+	if err != nil {
+		return themeinstall.Result{}, &statusAPIError{
+			status: http.StatusBadGateway,
+			api: apiError{
+				Code:       "display_render_failed",
+				Message:    "Mac App could not read the current VibeTV screen state.",
+				NextAction: "Keep VibeTV powered on, then retry the theme install.",
+			},
+		}
+	}
+
 	skipFirmwareUpdate := true
 	if req.SkipFirmwareUpdate != nil {
 		skipFirmwareUpdate = *req.SkipFirmwareUpdate
 	}
+	pairedDuringThemeInstall := false
 	result, err := s.installTheme(ctx, themeinstall.Options{
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
@@ -2475,18 +2665,25 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		Out:                out,
 		HTTPClient:         s.client,
 		PairTokenStore: func(target, token string) error {
+			pairedDuringThemeInstall = true
 			target = normalizeTarget(target)
-			if target != "" {
-				cfg.DeviceTarget = target
+			updated, updateErr := s.updateConfig(func(current *runtimeconfig.Config) {
+				if target != "" {
+					current.DeviceTarget = target
+				}
+				current.DeviceToken = token
+			})
+			if updateErr == nil {
+				cfg = updated
 			}
-			cfg.DeviceToken = strings.TrimSpace(token)
-			return s.saveConfig(s.home, cfg)
+			return updateErr
 		},
 	})
 	if err != nil {
 		return themeinstall.Result{}, err
 	}
 	fmt.Fprintln(out, "Refreshing display stream...")
+	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, cfg.DeviceTarget); err != nil {
 		return themeinstall.Result{}, &statusAPIError{
 			status: http.StatusBadGateway,
@@ -2497,8 +2694,24 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			},
 		}
 	}
-	fmt.Fprintln(out, "Display stream: refreshed")
-	if _, err := s.waitForDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken); err != nil {
+	var stream displayStreamInfo
+	if pairedDuringThemeInstall {
+		stream = s.waitForFreshDisplayStreamAfterPair(ctx, cfg.DeviceTarget, streamStartedAt)
+	} else {
+		stream = s.waitForFreshDisplayStream(ctx, cfg.DeviceTarget, streamStartedAt)
+	}
+	health, err := s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
+	if err != nil {
+		if !stream.Healthy {
+			return themeinstall.Result{}, &statusAPIError{
+				status: http.StatusBadGateway,
+				api: apiError{
+					Code:       "display_stream_refresh_failed",
+					Message:    "Theme installed, but Mac App did not send a fresh image to VibeTV.",
+					NextAction: "Keep VibeTV powered on, then use Reload image in Control Center.",
+				},
+			}
+		}
 		return themeinstall.Result{}, &statusAPIError{
 			status: http.StatusBadGateway,
 			api: apiError{
@@ -2508,6 +2721,22 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			},
 		}
 	}
+	device := withDisplayStreamInfo(deviceInfo{
+		Target:    publicTarget(cfg.DeviceTarget),
+		Connected: true,
+		Paired:    true,
+	}, stream)
+	if !s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, cfg.DeviceToken, true).Ready {
+		return themeinstall.Result{}, &statusAPIError{
+			status: http.StatusBadGateway,
+			api: apiError{
+				Code:       "display_stream_refresh_failed",
+				Message:    "Theme installed, but the continuous VibeTV display stream is not running.",
+				NextAction: "Keep VibeTV powered on, then use Reload image in Control Center.",
+			},
+		}
+	}
+	fmt.Fprintln(out, "Display stream: refreshed and rendered")
 	return result, nil
 }
 
@@ -3336,12 +3565,36 @@ func validRemoteThemePackURL(raw string) bool {
 }
 
 func (s *Server) config() (runtimeconfig.Config, error) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	return s.loadConfigNormalized()
+}
+
+func (s *Server) loadConfigNormalized() (runtimeconfig.Config, error) {
 	cfg, err := s.loadConfig(s.home)
 	if err != nil {
 		return runtimeconfig.Config{}, err
 	}
 	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
 	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
+	return cfg, nil
+}
+
+func (s *Server) updateConfig(mutate func(*runtimeconfig.Config)) (runtimeconfig.Config, error) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	cfg, err := s.loadConfigNormalized()
+	if err != nil {
+		return runtimeconfig.Config{}, err
+	}
+	if mutate != nil {
+		mutate(&cfg)
+	}
+	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
+	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
+	if err := s.saveConfig(s.home, cfg); err != nil {
+		return runtimeconfig.Config{}, err
+	}
 	return cfg, nil
 }
 
@@ -3362,8 +3615,10 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 			writeDeviceNotFound(w)
 			return runtimeconfig.Config{}, protocol.DeviceHello{}, false
 		}
-		cfg.DeviceTarget = target
-		if err := s.saveConfig(s.home, cfg); err != nil {
+		cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+			current.DeviceTarget = target
+		})
+		if err != nil {
 			writeInternalError(w, err)
 			return runtimeconfig.Config{}, protocol.DeviceHello{}, false
 		}
@@ -3535,7 +3790,11 @@ func (s *Server) getHelloProbeWithTokenFallback(ctx context.Context, target, tok
 type deviceHealth struct {
 	OK       bool           `json:"ok"`
 	Settings deviceSettings `json:"settings"`
-	System   struct {
+	// correlatedFrameProof is set only by the companion after it correlates a
+	// fresh, target-matching stream acknowledgement with device render counters.
+	// It is intentionally not populated from device JSON.
+	correlatedFrameProof bool
+	System               struct {
 		ResetReason string `json:"resetReason"`
 	} `json:"system"`
 	Display struct {
@@ -3549,6 +3808,11 @@ type deviceHealth struct {
 			RenderFailures uint64 `json:"renderFailures"`
 		} `json:"themeSpec"`
 	} `json:"display"`
+	Render struct {
+		FullCount    *uint64 `json:"fullCount"`
+		PartialCount *uint64 `json:"partialCount"`
+		LastKind     string  `json:"lastKind"`
+	} `json:"render"`
 }
 
 func (s *Server) getHealth(ctx context.Context, target, token string) (deviceHealth, error) {
@@ -3568,7 +3832,25 @@ func (s *Server) getHealthProbe(ctx context.Context, target, token string, timeo
 	return s.getHealth(probeCtx, target, token)
 }
 
-func (s *Server) waitForDisplayRender(ctx context.Context, target, token string) (deviceHealth, error) {
+func (s *Server) captureDisplayRenderBaseline(ctx context.Context, target, token string) (deviceHealth, error) {
+	health, err := s.getHealthProbe(ctx, target, token, deviceHealthProbeTime)
+	if err == nil || strings.TrimSpace(token) == "" {
+		return health, err
+	}
+	return s.getHealthProbe(ctx, target, "", deviceHealthProbeTime)
+}
+
+func (s *Server) waitForDisplayRender(ctx context.Context, target, token string, baseline deviceHealth) (deviceHealth, error) {
+	return s.waitForDisplayRenderWithStream(ctx, target, token, baseline, displayStreamInfo{})
+}
+
+func (s *Server) waitForDisplayRenderWithStream(
+	ctx context.Context,
+	target string,
+	token string,
+	baseline deviceHealth,
+	stream displayStreamInfo,
+) (deviceHealth, error) {
 	deadline := time.Now().Add(displayRenderWaitTime)
 	var last deviceHealth
 	var lastErr error
@@ -3576,10 +3858,22 @@ func (s *Server) waitForDisplayRender(ctx context.Context, target, token string)
 		health, err := s.getHealth(ctx, target, token)
 		if err == nil {
 			last = health
-			if renderHealthyFromHealth(health) {
+			if health.OK && renderHealthyFromHealth(health) && displayRenderAdvanced(baseline, health) {
 				return health, nil
 			}
-			lastErr = fmt.Errorf("render failed: %s", strings.TrimSpace(health.Display.ThemeSpec.RenderError))
+			if health.OK && correlatedOverlayProvesUsage(baseline, health, stream, target) {
+				health.correlatedFrameProof = true
+				return health, nil
+			}
+			detail := strings.TrimSpace(health.Display.ThemeSpec.RenderError)
+			if detail == "" {
+				if !displayRenderAdvanced(baseline, health) {
+					detail = "render counters did not advance"
+				} else {
+					detail = "lastKind=" + strings.TrimSpace(health.Render.LastKind)
+				}
+			}
+			lastErr = fmt.Errorf("display render not ready: %s", detail)
 		} else {
 			lastErr = err
 		}
@@ -3600,12 +3894,104 @@ func (s *Server) waitForDisplayRender(ctx context.Context, target, token string)
 	}
 }
 
+func displayRenderAdvanced(baseline, current deviceHealth) bool {
+	baselineFull, baselinePartial, baselineOK := displayRenderCounters(baseline)
+	currentFull, currentPartial, currentOK := displayRenderCounters(current)
+	return baselineOK && currentOK &&
+		currentFull >= baselineFull && currentPartial >= baselinePartial &&
+		(currentFull > baselineFull || currentPartial > baselinePartial)
+}
+
+func displayRenderCounters(health deviceHealth) (uint64, uint64, bool) {
+	if health.Render.FullCount == nil || health.Render.PartialCount == nil {
+		return 0, 0, false
+	}
+	return *health.Render.FullCount, *health.Render.PartialCount, true
+}
+
 func renderHealthyFromHealth(health deviceHealth) bool {
+	if !renderSurfaceHealthy(health) {
+		return false
+	}
+	kind := strings.TrimSpace(health.Render.LastKind)
+	if !usageRenderKind(kind) {
+		return false
+	}
+	return true
+}
+
+func renderSurfaceHealthy(health deviceHealth) bool {
+	if _, _, ok := displayRenderCounters(health); !ok {
+		return false
+	}
 	spec := health.Display.ThemeSpec
-	if !spec.Active || spec.RenderOK == nil {
+	if !spec.Active {
 		return true
 	}
-	return *spec.RenderOK
+	return spec.RenderOK != nil && *spec.RenderOK
+}
+
+func usageRenderKind(raw string) bool {
+	switch strings.TrimSpace(raw) {
+	case "usage", "theme_spec_usage", "theme_spec_frame":
+		return true
+	default:
+		return false
+	}
+}
+
+func localOverlayRenderKind(raw string) bool {
+	switch strings.TrimSpace(raw) {
+	case "reset", "update_notice":
+		return true
+	default:
+		return false
+	}
+}
+
+func liveScreenRenderKind(raw string) bool {
+	return usageRenderKind(raw) || localOverlayRenderKind(raw)
+}
+
+func correlatedOverlayProvesUsage(
+	baseline deviceHealth,
+	current deviceHealth,
+	stream displayStreamInfo,
+	target string,
+) bool {
+	baselineFull, baselinePartial, baselineOK := displayRenderCounters(baseline)
+	currentFull, currentPartial, currentOK := displayRenderCounters(current)
+	if !baselineOK || !currentOK {
+		return false
+	}
+	if currentFull <= baselineFull || currentPartial < baselinePartial {
+		return false
+	}
+	if !localOverlayRenderKind(current.Render.LastKind) || !renderSurfaceHealthy(current) {
+		return false
+	}
+	if !displayStreamHealthyForTarget(&stream, target) {
+		return false
+	}
+	return true
+}
+
+func (s *Server) waitForVerifiedDisplayRender(
+	ctx context.Context,
+	target string,
+	token string,
+	baseline deviceHealth,
+	stream displayStreamInfo,
+) (deviceHealth, error) {
+	if s.waitRender != nil {
+		health, err := s.waitRender(ctx, target, token, baseline)
+		if err != nil && health.OK && correlatedOverlayProvesUsage(baseline, health, stream, target) {
+			health.correlatedFrameProof = true
+			return health, nil
+		}
+		return health, err
+	}
+	return s.waitForDisplayRenderWithStream(ctx, target, token, baseline, stream)
 }
 
 func (s *Server) updateBrightness(ctx context.Context, target, token string, brightness int) (deviceSettings, error) {
@@ -3622,13 +4008,59 @@ func (s *Server) updateBrightness(ctx context.Context, target, token string, bri
 }
 
 func (s *Server) pair(ctx context.Context, target string) (string, error) {
-	form := url.Values{}
-	form.Set("api", "1")
+	s.pairMu.Lock()
+	defer s.pairMu.Unlock()
+
+	attempts := s.pairAttempts
+	if attempts <= 0 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		attemptCtx := ctx
+		cancel := func() {}
+		if s.pairAttemptTimeout > 0 {
+			attemptCtx, cancel = context.WithTimeout(ctx, s.pairAttemptTimeout)
+		}
+		token, err := s.pairOnce(attemptCtx, target)
+		cancel()
+		if err == nil {
+			return token, nil
+		}
+		lastErr = err
+		if attempt == attempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(s.pairRetryGap):
+		}
+	}
+	return "", fmt.Errorf("pairing failed after %d attempts: %w", attempts, lastErr)
+}
+
+func (s *Server) pairOnce(ctx context.Context, target string) (string, error) {
+	pairURL, err := url.Parse(endpoint(target, "/api/pair"))
+	if err != nil {
+		return "", err
+	}
+	query := pairURL.Query()
+	query.Set("api", "1")
+	pairURL.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pairURL.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Close = true
 	var response struct {
 		OK    bool   `json:"ok"`
 		Token string `json:"token"`
 	}
-	if err := s.doForm(ctx, target, "/api/pair", "", form, &response); err != nil {
+	if err := s.do(req, &response); err != nil {
 		return "", err
 	}
 	token := strings.TrimSpace(response.Token)
@@ -3794,6 +4226,9 @@ func writeRepairError(w http.ResponseWriter, err error) {
 		case "display-stream":
 			writeError(w, http.StatusBadGateway, "display_stream_repair_failed", "Mac App could not refresh the VibeTV display stream.", "Run setup again or restart the Mac App, then retry Fix connection.")
 			return
+		case "display-render":
+			writeError(w, http.StatusBadGateway, "display_render_repair_failed", "VibeTV did not render a fresh image.", "Keep VibeTV powered on, then retry Fix connection.")
+			return
 		}
 	}
 	writeDeviceNotFound(w)
@@ -3932,6 +4367,9 @@ func withDisplayStreamInfo(device deviceInfo, stream displayStreamInfo) deviceIn
 		stream.Target = device.Target
 	}
 	device.Stream = streamPointer(stream)
+	if !stream.Healthy {
+		device.Ready = false
+	}
 	return device
 }
 
@@ -3939,6 +4377,7 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 	device.Health = &deviceHealthInfo{
 		OK:          health.OK,
 		ResetReason: strings.TrimSpace(health.System.ResetReason),
+		RenderKind:  strings.TrimSpace(health.Render.LastKind),
 	}
 	device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)
 	if health.Display.ThemeSpec.Active || health.Display.ThemeSpec.RenderOK != nil {
@@ -3953,7 +4392,139 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 			},
 		}
 	}
+	device.Ready = device.Paired &&
+		device.Connected &&
+		health.OK &&
+		device.Stream != nil &&
+		device.Stream.Healthy &&
+		renderHealthyFromHealth(health)
 	return device
+}
+
+func (s *Server) withVerifiedDeviceHealth(
+	device deviceInfo,
+	health deviceHealth,
+	target string,
+	token string,
+	explicit bool,
+) deviceInfo {
+	device = withDeviceHealth(device, health)
+	// Recompute readiness below with the stricter target, service, and proof
+	// checks. withDeviceHealth only attaches the raw health fields.
+	device.Ready = false
+	target = publicTarget(target)
+	token = strings.TrimSpace(token)
+	fullCount, partialCount, countersOK := displayRenderCounters(health)
+	directRenderProof := renderHealthyFromHealth(health)
+	overlayTail := localOverlayRenderKind(health.Render.LastKind)
+	liveScreenHealthy := renderSurfaceHealthy(health) && liveScreenRenderKind(health.Render.LastKind)
+	healthyExactStream := displayStreamHealthyForTarget(device.Stream, target)
+	lostResponseStream := displayStreamLostResponseForTarget(device.Stream, target)
+	explicitRenderProof := directRenderProof || (overlayTail && health.correlatedFrameProof)
+	baseReady := target != "" && token != "" && device.Connected && device.Paired &&
+		health.OK && countersOK && liveScreenHealthy && (healthyExactStream || lostResponseStream)
+	if !baseReady || (explicit && !explicitRenderProof) {
+		if explicit {
+			s.clearDisplayVerification(target)
+		}
+		return device
+	}
+
+	now := time.Now().UTC()
+	s.verificationMu.Lock()
+	if s.displayVerifications == nil {
+		s.displayVerifications = make(map[string]displayVerification)
+	}
+	verification, found := s.displayVerifications[target]
+	matchingToken := found && verification.Token == token
+	countersRegressed := matchingToken &&
+		(fullCount < verification.FullCount || partialCount < verification.PartialCount)
+	if countersRegressed {
+		delete(s.displayVerifications, target)
+		matchingToken = false
+	} else if explicit {
+		verification = displayVerification{
+			Token:        token,
+			FullCount:    fullCount,
+			PartialCount: partialCount,
+			VerifiedAt:   now,
+		}
+		s.displayVerifications[target] = verification
+		matchingToken = true
+	}
+	verified := matchingToken && !verification.VerifiedAt.IsZero() &&
+		now.Sub(verification.VerifiedAt) <= displayVerificationAge
+	s.verificationMu.Unlock()
+
+	// A healthy stream is itself a recent, exact-target frame acknowledgement
+	// from the expected persistent LaunchAgent. It can keep a live reset or
+	// update overlay ready even after the API process restarts and loses its
+	// in-memory action proof.
+	if healthyExactStream {
+		device.Ready = true
+		return device
+	}
+	// The short-lived cache only recovers a direct usage render whose HTTP/log
+	// acknowledgement was lost. Local overlay counters never create, renew, or
+	// reuse that fallback.
+	if !verified || !directRenderProof || !lostResponseStream {
+		return device
+	}
+
+	stream := *device.Stream
+	stream.Healthy = true
+	stream.ErrorCode = ""
+	stream.Detail = "VibeTV confirmed a freshly rendered image."
+	if stream.Target == "" {
+		stream.Target = target
+	}
+	if stream.LastTarget == "" {
+		stream.LastTarget = target
+	}
+	if stream.LastSentAt == "" {
+		stream.LastSentAt = verification.VerifiedAt.Format(time.RFC3339)
+	}
+	device.Stream = &stream
+	device.Ready = true
+	return device
+}
+
+func displayStreamSafeForProof(stream *displayStreamInfo, target string) bool {
+	if stream == nil || !stream.Running || strings.TrimSpace(target) == "" {
+		return false
+	}
+	if code := strings.TrimSpace(stream.ErrorCode); code != "" && code != "display_send_failed" {
+		return false
+	}
+	if streamTarget := strings.TrimSpace(stream.Target); streamTarget != "" && !samePublicTarget(target, streamTarget) {
+		return false
+	}
+	if lastTarget := strings.TrimSpace(stream.LastTarget); lastTarget != "" && !samePublicTarget(target, lastTarget) {
+		return false
+	}
+	return true
+}
+
+func displayStreamHealthyForTarget(stream *displayStreamInfo, target string) bool {
+	return displayStreamSafeForProof(stream, target) &&
+		stream.Healthy && strings.TrimSpace(stream.ErrorCode) == "" &&
+		strings.TrimSpace(stream.LastTarget) != "" && samePublicTarget(target, stream.LastTarget)
+}
+
+func displayStreamLostResponseForTarget(stream *displayStreamInfo, target string) bool {
+	return displayStreamSafeForProof(stream, target) &&
+		!stream.Healthy && strings.TrimSpace(stream.ErrorCode) == "display_send_failed"
+}
+
+func (s *Server) clearDisplayVerification(target string) {
+	target = publicTarget(target)
+	s.verificationMu.Lock()
+	defer s.verificationMu.Unlock()
+	if target == "" {
+		clear(s.displayVerifications)
+		return
+	}
+	delete(s.displayVerifications, target)
 }
 
 func withDeviceHealthProbeError(device deviceInfo, err error) deviceInfo {
@@ -3964,6 +4535,7 @@ func withDeviceHealthProbeError(device deviceInfo, err error) deviceInfo {
 		OK:    false,
 		Error: sanitizeErrorDetail(err),
 	}
+	device.Ready = false
 	return device
 }
 
@@ -3991,6 +4563,10 @@ func streamPointer(stream displayStreamInfo) *displayStreamInfo {
 }
 
 func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo {
+	return inspectDisplayStreamAfter(ctx, target, time.Time{})
+}
+
+func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
 	target = publicTarget(target)
 	stream := displayStreamInfo{Target: target}
 	if target == "" {
@@ -4017,8 +4593,17 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 		stream.Detail = "Display stream is starting."
 		return stream
 	}
+	if !notBefore.IsZero() && notBefore.After(boundary) {
+		boundary = notBefore
+	}
 	lastSentAt, lastTarget, _, frameOK := lastDisplayStreamFrameLineAfter(logPath, boundary)
+	errorAt, errorDetail, errorCode, errorOK := lastDisplayStreamErrorRecordAfter(logPath, boundary)
 	if !frameOK || lastSentAt.IsZero() {
+		if errorOK && time.Since(errorAt) <= displayStreamReadyAge {
+			stream.Detail = errorDetail
+			stream.ErrorCode = errorCode
+			return stream
+		}
 		stream.Detail = "Display stream has not sent usage yet."
 		return stream
 	}
@@ -4029,8 +4614,9 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 		stream.Detail = "Display stream is sending to another VibeTV."
 		return stream
 	}
-	if errorAt, detail, ok := lastDisplayStreamErrorAfter(logPath, boundary); ok && errorAt.After(lastSentAt) && time.Since(errorAt) <= displayStreamReadyAge {
-		stream.Detail = detail
+	if errorOK && errorAt.After(lastSentAt) && time.Since(errorAt) <= displayStreamReadyAge {
+		stream.Detail = errorDetail
+		stream.ErrorCode = errorCode
 		return stream
 	}
 	if time.Since(lastSentAt) > displayStreamReadyAge {
@@ -4044,11 +4630,33 @@ func inspectDisplayStream(ctx context.Context, target string) displayStreamInfo 
 }
 
 func waitForDisplayStream(ctx context.Context, target string) displayStreamInfo {
+	return waitForDisplayStreamAfter(ctx, target, time.Time{})
+}
+
+func waitForDisplayStreamAfter(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+	return waitForDisplayStreamAfterMode(ctx, target, notBefore, true)
+}
+
+func waitForDisplayStreamAfterPair(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+	return waitForDisplayStreamAfterMode(ctx, target, notBefore, false)
+}
+
+func waitForDisplayStreamAfterMode(ctx context.Context, target string, notBefore time.Time, stopOnPairingError bool) displayStreamInfo {
+	return waitForDisplayStreamAfterProbe(ctx, target, notBefore, stopOnPairingError, inspectDisplayStreamAfter)
+}
+
+func waitForDisplayStreamAfterProbe(
+	ctx context.Context,
+	target string,
+	notBefore time.Time,
+	stopOnPairingError bool,
+	inspect func(context.Context, string, time.Time) displayStreamInfo,
+) displayStreamInfo {
 	deadline := time.Now().Add(displayStreamWaitTime)
 	var last displayStreamInfo
 	for {
-		last = inspectDisplayStream(ctx, target)
-		if last.Healthy || time.Now().After(deadline) {
+		last = inspect(ctx, target, notBefore)
+		if last.Healthy || (stopOnPairingError && last.ErrorCode == "device_pairing_required") || time.Now().After(deadline) {
 			return last
 		}
 		select {
@@ -4057,6 +4665,20 @@ func waitForDisplayStream(ctx context.Context, target string) displayStreamInfo 
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
+}
+
+func (s *Server) waitForFreshDisplayStream(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+	if s.waitStreamAfter != nil {
+		return s.waitStreamAfter(ctx, target, notBefore)
+	}
+	return s.waitStream(ctx, target)
+}
+
+func (s *Server) waitForFreshDisplayStreamAfterPair(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+	if s.waitStreamAfterPair != nil {
+		return s.waitStreamAfterPair(ctx, target, notBefore)
+	}
+	return s.waitForFreshDisplayStream(ctx, target, notBefore)
 }
 
 func parseDisplayStreamLaunchState(output string) string {
@@ -4154,6 +4776,11 @@ func lastDisplayStreamError(path string) (time.Time, string, bool) {
 }
 
 func lastDisplayStreamErrorAfter(path string, boundary time.Time) (time.Time, string, bool) {
+	when, detail, _, ok := lastDisplayStreamErrorRecordAfter(path, boundary)
+	return when, detail, ok
+}
+
+func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Time, string, string, bool) {
 	for _, candidate := range displayStreamLogCandidates(path) {
 		data, err := readDisplayStreamLogTail(candidate)
 		if err != nil {
@@ -4178,17 +4805,28 @@ func lastDisplayStreamErrorAfter(path string, boundary time.Time) (time.Time, st
 			}
 			op := displayStreamLogValue(line, "op")
 			detail := "Display stream hit an error after the last frame and is reconnecting."
+			code := "display_stream_failed"
 			if op == "send-line" {
 				detail = "Display stream could not send to VibeTV and is reconnecting."
+				code = "display_send_failed"
 			} else if op == "resolve-target" {
 				detail = "Display stream could not find VibeTV and is reconnecting."
+				code = "device_not_found"
 			} else if strings.Contains(line, "cycle timeout:") {
 				detail = "Display stream timed out and is reconnecting."
+				code = "display_stream_timeout"
 			}
-			return when, detail, true
+			lower := strings.ToLower(line)
+			if strings.Contains(lower, "status=401") ||
+				strings.Contains(lower, "pairing token required") ||
+				strings.Contains(lower, "unauthorized") {
+				detail = "VibeTV rejected the saved pairing token."
+				code = "device_pairing_required"
+			}
+			return when, detail, code, true
 		}
 	}
-	return time.Time{}, "", false
+	return time.Time{}, "", "", false
 }
 
 func displayStreamLogBoundary(path string) (time.Time, bool) {

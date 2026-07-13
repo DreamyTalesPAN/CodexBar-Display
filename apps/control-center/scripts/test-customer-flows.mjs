@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -124,12 +124,36 @@ const companionDevice = {
   target: "http://vibetv.local",
   connected: true,
   paired: true,
+  ready: true,
   board: "esp8266_smalltv_st7789",
   firmware: "1.0.32",
   activeTheme: "clippy",
+  stream: {
+    healthy: true,
+    running: true,
+    lastSentAt: "2026-06-29T10:47:46Z",
+  },
+  health: { ok: true },
+  display: {
+    themeSpec: {
+      active: true,
+      renderOk: true,
+    },
+  },
+};
+
+const reachableUnreadyDevice = {
+  ...companionDevice,
+  ready: false,
+  stream: {
+    healthy: false,
+    running: true,
+    detail: "Waiting for the first accepted display frame.",
+  },
 };
 
 async function main() {
+  await assertCompanionRequestTimeoutContract();
   const fixtureServer = await startFixtureServer();
   const catalogUrl = `http://127.0.0.1:${fixtureServer.port}/theme-packs.json`;
   const failedCatalogUrl = `http://127.0.0.1:${fixtureServer.port}/theme-packs-failed.json`;
@@ -196,6 +220,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testLocalReachableWithoutFrameStaysInSetup(
+        browser,
+        appContext.appUrl,
+      );
       await testLocalExistingSetupOpensOverviewWithoutRepair(
         browser,
         appContext.appUrl,
@@ -250,6 +278,14 @@ async function main() {
       appContext.appUrl,
     );
     await testLocalWifiVerificationFailureStaysInSetup(
+      browser,
+      appContext.appUrl,
+    );
+    await testLocalWifiVerificationWithoutFrameStaysInSetup(
+      browser,
+      appContext.appUrl,
+    );
+    await testLocalReachableWithoutFrameStaysInSetup(
       browser,
       appContext.appUrl,
     );
@@ -674,6 +710,54 @@ async function testLocalWifiVerificationFailureStaysInSetup(
   await page.close();
 }
 
+async function testLocalWifiVerificationWithoutFrameStaysInSetup(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const repairRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { connected: false, paired: false, ready: false },
+    onRepair: (postData) => {
+      repairRequests.push(postData || "");
+      return reachableUnreadyDevice;
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const wifiReadyButton = page.getByRole("button", {
+    name: "VibeTV is on WiFi",
+  });
+  await wifiReadyButton.waitFor({ timeout: 10_000 });
+  await wifiReadyButton.click();
+  await page.getByRole("heading", {
+    name: "Verify VibeTV connection",
+  }).waitFor({ timeout: 10_000 });
+  await page.getByText("VibeTV screen is not ready yet.").waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Fix connection" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    repairRequests.length === 1,
+    `A reachable VibeTV without a display frame must not be accepted or retried automatically, got ${repairRequests.length} attempts`,
+  );
+  assert(
+    await page.getByRole("button", { name: "Overview" }).isDisabled(),
+    "Overview must stay locked until the first display frame is rendered",
+  );
+  assert(
+    (await page.getByRole("heading", { name: "VibeTV is connected" }).count()) ===
+      0,
+    "Setup must not show the green connected state without a rendered display frame",
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
 async function testHostedEntryShowsMacAppDownload(
   browser,
   appUrl,
@@ -829,6 +913,44 @@ async function testLocalFreshAppWaitsForWifiConfirmation(
   assert(
     repairRequests.length === 0,
     `Fresh local onboarding must wait for WiFi confirmation, got ${JSON.stringify(repairRequests)}`,
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testLocalReachableWithoutFrameStaysInSetup(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const repairRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: reachableUnreadyDevice,
+    onRepair: (postData) => {
+      repairRequests.push(postData || "");
+      return reachableUnreadyDevice;
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    await page.getByRole("button", { name: "Overview" }).isDisabled(),
+    "A reachable and paired VibeTV must stay in Setup while ready is false",
+  );
+  assert(
+    (await page.getByText("Setup needed", { exact: true }).count()) === 1,
+    "The desktop status must not turn green before a display frame is rendered",
+  );
+  assert(
+    repairRequests.length === 0,
+    "Opening Setup must not automatically retry a reachable but unready VibeTV",
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1036,7 +1158,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     (await page.getByText("needs an update before themes").count()) === 0,
     "setup must not require theme install availability",
   );
-  await page.getByRole("button", { name: "Setup" }).click();
+  await page.getByRole("button", { name: "Setup", exact: true }).click();
   await page.getByRole("heading", { name: "Setup complete" }).waitFor({
     timeout: 10_000,
   });
@@ -1308,7 +1430,7 @@ async function testRunSetupAgainReturnsToWifiOnboarding(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Setup" }).click();
+  await page.getByRole("button", { name: "Setup", exact: true }).click();
   await page.getByRole("button", { name: "Run setup again" }).click();
   await page.getByRole("heading", { name: "Connect VibeTV to WiFi" }).waitFor({
     timeout: 10_000,
@@ -1676,7 +1798,12 @@ async function testOfflineLegacyMigrationCanRetryFailedRelease(
       macAppSelfUpdateEnabled: false,
     },
     companionVersion: "1.0.41",
-    device: { ...companionDevice, connected: false },
+    device: {
+      ...companionDevice,
+      connected: false,
+      ready: false,
+      stream: { healthy: false, running: false },
+    },
     installationMode: "legacy",
     onRequest: (pathname, method) => {
       if (method !== "GET") {
@@ -2033,6 +2160,8 @@ async function testSavedAddressDoesNotBlockConfirmedVibeTVSearch(
         target: "http://192.168.178.163",
         connected: false,
         paired: true,
+        ready: false,
+        stream: { healthy: false, running: true },
       },
       onRepair: (postData) => {
         repairRequests.push(postData || "");
@@ -2093,7 +2222,6 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.33",
-    displayFrameStatus: 404,
     device: {
       ...companionDevice,
       activeTheme: "synthwave",
@@ -2197,7 +2325,18 @@ async function testOverviewShowsUsageLoadingUntilRealUsage(browser, appUrl) {
       generatedAt: "2026-06-29T10:47:46Z",
       source: "codexbar-display",
       usageMode: "used",
-      providers: [],
+      currentProvider: "codex",
+      providers: [
+        {
+          id: "codex",
+          label: "Codex",
+          source: "oauth",
+          session: 27,
+          weekly: 63,
+          resetSecs: 5400,
+          usageMode: "used",
+        },
+      ],
     },
   });
 
@@ -2217,6 +2356,11 @@ async function testOverviewShowsUsageLoadingUntilRealUsage(browser, appUrl) {
   assert(
     !(await page.locator("figure").innerText()).includes("100%"),
     "Overview preview should not show fake 100% usage while usage is loading",
+  );
+  assert(
+    !(await page.locator("figure").innerText()).includes("27%") &&
+      !(await page.locator("figure").innerText()).includes("63%"),
+    "Overview preview must not substitute provider usage when no display frame exists",
   );
 
   assertNoInstallRequests(installRequests);
@@ -2565,10 +2709,15 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
       settingsCalls += 1;
     },
     {
-      device: { ...companionDevice, paired: false },
+      device: {
+        ...companionDevice,
+        paired: false,
+        ready: false,
+        stream: { healthy: false, running: true },
+      },
       onPair: (postData, currentDevice) => {
         pairRequests.push(postData);
-        return { ...currentDevice, paired: true };
+        return { ...currentDevice, ...companionDevice, paired: true };
       },
     },
   );
@@ -2593,7 +2742,7 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
     "Successful verification must open Overview even from a theme link",
   );
   await waitForCondition(
-    () => settingsCalls >= 2,
+    () => settingsCalls >= 1,
     "expected settings refresh after pairing",
   );
   await page.getByRole("button", { name: "Theme Library" }).click();
@@ -4088,6 +4237,31 @@ async function waitForCondition(predicate, message, timeoutMs = 10_000) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(message);
+}
+
+async function assertCompanionRequestTimeoutContract() {
+  const source = await readFile(
+    join(root, "src/components/control-center-app.tsx"),
+    "utf8",
+  );
+  assert(
+    source.includes("const COMPANION_REQUEST_TIMEOUT_MS = 45_000;"),
+    "Ordinary Mac App requests must keep the 45 second timeout",
+  );
+  assert(
+    source.includes("const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 90_000;"),
+    "Device repair requests must allow up to 90 seconds",
+  );
+  assert(
+    source.includes("options?.timeoutMs ?? COMPANION_REQUEST_TIMEOUT_MS"),
+    "Mac App requests must use an explicit timeout override when provided",
+  );
+  const repairTimeoutUses =
+    source.match(/timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS/g) || [];
+  assert(
+    repairTimeoutUses.length === 2,
+    `Exactly repair and reload-display must use the 90 second timeout, got ${repairTimeoutUses.length} uses`,
+  );
 }
 
 async function captureMigrationScreenshot(page, name) {

@@ -52,6 +52,7 @@ export type DeviceInfo = {
   target?: string;
   connected: boolean;
   paired?: boolean;
+  ready?: boolean;
   board?: string;
   firmware?: string;
   activeTheme?: string;
@@ -243,7 +244,5 @@ export function deviceStreamIsReady(device: DeviceInfo | null | undefined) {
 }
 
 export function deviceSetupIsUsable(device: DeviceInfo | null | undefined) {
-  return Boolean(
-    device?.paired && (device.connected || deviceStreamIsReady(device)),
-  );
+  return device?.ready === true;
 }

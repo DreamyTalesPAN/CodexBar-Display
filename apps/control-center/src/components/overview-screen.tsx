@@ -55,11 +55,12 @@ export function OverviewScreen({
 }: OverviewScreenProps) {
   const imageStuck = deviceImageIsStuck(device);
   const reloadingImage = busyAction === "reload-display";
-  const connected = Boolean(device?.connected && !imageStuck);
+  const ready = Boolean(device?.ready && !imageStuck);
   const healthDetail = deviceHealthDetail(device);
   const hero = buildHeroCopy({
     companionStatus,
-    connected,
+    ready,
+    reachable: Boolean(device?.connected),
     imageStuck,
     reloadingImage,
   });
@@ -237,12 +238,14 @@ function StatusRow({
 
 function buildHeroCopy({
   companionStatus,
-  connected,
+  ready,
+  reachable,
   imageStuck,
   reloadingImage,
 }: {
   companionStatus: CompanionStatus;
-  connected: boolean;
+  ready: boolean;
+  reachable: boolean;
   imageStuck: boolean;
   reloadingImage: boolean;
 }) {
@@ -260,11 +263,18 @@ function buildHeroCopy({
       icon: <RefreshCw size={34} aria-hidden />,
     };
   }
-  if (connected) {
+  if (ready) {
     return {
       title: "VibeTV is connected",
       tone: "ready" as ReadinessTone,
       icon: <Check size={38} aria-hidden />,
+    };
+  }
+  if (reachable) {
+    return {
+      title: "VibeTV screen is not ready",
+      tone: "attention" as ReadinessTone,
+      icon: <SlidersHorizontal size={34} aria-hidden />,
     };
   }
   return {
@@ -303,8 +313,11 @@ function labelForDevice(
   if (deviceImageIsStuck(device)) {
     return "Image is stuck";
   }
+  if (device?.ready) {
+    return "Connected";
+  }
   if (device?.connected) {
-    return state === "paired" || device.paired ? "Connected" : "Found";
+    return "Found";
   }
   if (state === "offline") {
     return "Offline";
@@ -327,6 +340,11 @@ function deviceHealthDetail(device: DeviceInfo | null): string | undefined {
   }
   if (device?.connected && device.health?.error) {
     return "VibeTV is reachable, but health details are temporarily unavailable.";
+  }
+  if (device?.connected && !device.ready) {
+    return device.stream?.running && !device.stream.healthy
+      ? "VibeTV is reachable, but the Mac App has not delivered the first image yet."
+      : "VibeTV is reachable, but the first image has not appeared yet.";
   }
   return undefined;
 }

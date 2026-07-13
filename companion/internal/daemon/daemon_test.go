@@ -318,7 +318,7 @@ func TestRunCycleWithDepsRuntimeConfigDeviceTokenReplacesStaleTargetToken(t *tes
 	}
 }
 
-func TestRunCycleWithDepsRepairsStaleDeviceTokenOnUnauthorizedSend(t *testing.T) {
+func TestRunCycleWithDepsDoesNotRotateStaleDeviceTokenOnUnauthorizedSend(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -330,7 +330,6 @@ func TestRunCycleWithDepsRepairsStaleDeviceTokenOnUnauthorizedSend(t *testing.T)
 		DeviceToken:  "old-token",
 	}
 	var sentTargets []string
-	var pairedTarget string
 	var logged strings.Builder
 
 	err := runCycleWithDeps(context.Background(), "http://192.168.178.159", state, runtimeDeps{
@@ -360,10 +359,6 @@ func TestRunCycleWithDepsRepairsStaleDeviceTokenOnUnauthorizedSend(t *testing.T)
 				testParsedFrame("codex", 12, 30, 3600),
 			}, nil
 		},
-		pairDevice: func(_ context.Context, target string) (string, error) {
-			pairedTarget = target
-			return "new-token", nil
-		},
 		logf: func(format string, args ...any) {
 			logged.WriteString(fmt.Sprintf(format, args...))
 		},
@@ -375,27 +370,23 @@ func TestRunCycleWithDepsRepairsStaleDeviceTokenOnUnauthorizedSend(t *testing.T)
 			return nil
 		},
 	})
-	if err != nil {
-		t.Fatalf("expected cycle success after token repair, got %v", err)
+	if err == nil {
+		t.Fatal("expected unauthorized send to stay failed until explicit repair")
 	}
 	wantTargets := []string{
 		"http://192.168.178.159?token=old-token",
-		"http://192.168.178.159?token=new-token",
 	}
 	if !reflect.DeepEqual(sentTargets, wantTargets) {
 		t.Fatalf("unexpected send targets: got %#v want %#v", sentTargets, wantTargets)
 	}
-	if pairedTarget != "http://192.168.178.159" {
-		t.Fatalf("expected public pairing target, got %q", pairedTarget)
-	}
-	if cfg.DeviceTarget != "http://192.168.178.159" || cfg.DeviceToken != "new-token" {
-		t.Fatalf("expected persisted new token, got %+v", cfg)
+	if cfg.DeviceTarget != "http://192.168.178.159" || cfg.DeviceToken != "old-token" {
+		t.Fatalf("expected background runtime to preserve the existing token, got %+v", cfg)
 	}
 	log := logged.String()
-	if !strings.Contains(log, "device-token-repaired") {
-		t.Fatalf("expected repair log, got %q", log)
+	if strings.Contains(log, "device-token-repair") {
+		t.Fatalf("background runtime must not rotate pairing tokens, got %q", log)
 	}
-	if strings.Contains(log, "old-token") || strings.Contains(log, "new-token") {
+	if strings.Contains(log, "old-token") {
 		t.Fatalf("daemon log leaked token: %q", log)
 	}
 }
@@ -1394,14 +1385,22 @@ func TestRunCycleWithDepsAttachesFirmwareUpdateState(t *testing.T) {
 				Board:                     "esp8266-smalltv-st7789",
 				Firmware:                  "1.0.0",
 				NegotiatedProtocolVersion: 2,
-				MaxFrameBytes:             1024,
+				MaxFrameBytes:             2048,
 			}, nil
 		},
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
 			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
 		},
 		fetchUpdateState: func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error) {
-			return protocol.UpdateState{Available: true, LatestVersion: "1.0.1", Status: "update_available"}, nil
+			return protocol.UpdateState{
+				Available:     true,
+				LatestVersion: "1.0.1",
+				Status:        "update_available",
+				Severity:      "recommended",
+				Message:       strings.Repeat("Firmware update available. ", 10),
+				FirmwareURL:   "https://github.com/example/very-long-firmware-download.bin.gz",
+				SHA256:        strings.Repeat("a", 64),
+			}, nil
 		},
 		logf: func(string, ...any) {},
 		sendLine: func(port string, line []byte) error {
@@ -1416,6 +1415,12 @@ func TestRunCycleWithDepsAttachesFirmwareUpdateState(t *testing.T) {
 	frame := decodeFrameLine(t, sentLine)
 	if frame.Update == nil || !frame.Update.Available || frame.Update.LatestVersion != "1.0.1" {
 		t.Fatalf("expected update state in frame, got %+v", frame.Update)
+	}
+	if frame.Update.Message != "" || frame.Update.FirmwareURL != "" || frame.Update.SHA256 != "" {
+		t.Fatalf("expected every device frame to omit unused update metadata, got %+v", frame.Update)
+	}
+	if len(sentLine) > 512 {
+		t.Fatalf("expected low-memory device frame to stay compact, got %d bytes", len(sentLine))
 	}
 }
 
@@ -1944,7 +1949,7 @@ func TestRunCycleWithDepsDoesNotFallbackWhenRequestedPortDisappears(t *testing.T
 	}
 }
 
-func TestRunCycleWithDepsDiscoversNewWiFiIPWhenStoredIPStales(t *testing.T) {
+func TestRunCycleWithDepsKeepsRecoveredWiFiIPInMemoryWithoutRewritingConfig(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -1957,7 +1962,7 @@ func TestRunCycleWithDepsDiscoversNewWiFiIPWhenStoredIPStales(t *testing.T) {
 	var resolved []string
 	var sentPort string
 	var logged strings.Builder
-	savedConfig := runtimeconfig.Config{DeviceTarget: staleTarget}
+	savedConfig := runtimeconfig.Config{DeviceTarget: staleTarget, DeviceToken: "pair-token"}
 
 	err := runCycleWithDeps(context.Background(), staleTarget, state, runtimeDeps{
 		now:           func() time.Time { return now },
@@ -2019,14 +2024,14 @@ func TestRunCycleWithDepsDiscoversNewWiFiIPWhenStoredIPStales(t *testing.T) {
 	if got := strings.Join(resolved, ","); got != staleTarget {
 		t.Fatalf("unexpected resolve order %q", got)
 	}
-	if sentPort != recoveredTarget {
+	if publicDeviceTarget(sentPort) != recoveredTarget {
 		t.Fatalf("expected frame sent to discovered target, got %q", sentPort)
 	}
 	if !strings.Contains(logged.String(), "wifi-target-discovered") {
 		t.Fatalf("expected discovery log, got %q", logged.String())
 	}
-	if savedConfig.DeviceTarget != recoveredTarget {
-		t.Fatalf("expected discovered target to be persisted, got %+v", savedConfig)
+	if savedConfig.DeviceTarget != staleTarget || savedConfig.DeviceToken != "pair-token" {
+		t.Fatalf("runtime must not rewrite shared pairing config, got %+v", savedConfig)
 	}
 	if state.deviceTarget != recoveredTarget {
 		t.Fatalf("expected discovered target in runtime state, got %q", state.deviceTarget)
@@ -2076,7 +2081,7 @@ func TestRunCycleWithDepsDiscoversNewWiFiIPWhenStoredIPStales(t *testing.T) {
 	if got := strings.Join(resolved, ","); got != recoveredTarget {
 		t.Fatalf("expected second cycle to use recovered target only, got %q", got)
 	}
-	if sentPort != recoveredTarget {
+	if publicDeviceTarget(sentPort) != recoveredTarget {
 		t.Fatalf("expected second frame sent to recovered target, got %q", sentPort)
 	}
 }
@@ -2289,8 +2294,8 @@ func TestRunCycleWithDepsDiscoversWiFiIPWhenMDNSFails(t *testing.T) {
 	if sentPort != discoveredTarget {
 		t.Fatalf("expected frame sent to discovered target, got %q", sentPort)
 	}
-	if cfg.DeviceTarget != discoveredTarget {
-		t.Fatalf("expected discovered target persisted, got %+v", cfg)
+	if cfg.DeviceTarget != staleTarget {
+		t.Fatalf("runtime must keep recovered target in memory without rewriting config, got %+v", cfg)
 	}
 	if !strings.Contains(logged.String(), "wifi-target-discovered") {
 		t.Fatalf("expected discovery log, got %q", logged.String())

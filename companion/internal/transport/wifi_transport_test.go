@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -174,6 +175,9 @@ func TestWiFiTransportPairDevicePostsPairingAPI(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("expected POST /api/pair, got %s", r.Method)
 		}
+		if got := r.URL.Query().Get("api"); got != "1" {
+			t.Fatalf("expected api=1 query, got %q", got)
+		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("read request body: %v", err)
@@ -192,8 +196,45 @@ func TestWiFiTransportPairDevicePostsPairingAPI(t *testing.T) {
 	if token != "pair-token-abc" {
 		t.Fatalf("unexpected token %q", token)
 	}
-	if gotBody != "api=1" {
+	if gotBody != "" {
 		t.Fatalf("unexpected pair body %q", gotBody)
+	}
+}
+
+func TestWiFiTransportPairDeviceRetriesLostResponses(t *testing.T) {
+	oldDelay := pairDeviceRetryDelay
+	pairDeviceRetryDelay = 0
+	t.Cleanup(func() { pairDeviceRetryDelay = oldDelay })
+
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt := attempts.Add(1)
+		if r.Method != http.MethodPost || r.URL.Path != "/api/pair" || r.URL.Query().Get("api") != "1" {
+			t.Errorf("unexpected pair request method=%s url=%s", r.Method, r.URL.String())
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read pair body: %v", err)
+		}
+		if len(body) != 0 {
+			t.Errorf("pair body=%q want empty", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if attempt < pairDeviceAttempts {
+			_, _ = w.Write([]byte(`{"ok":`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token-final"}`))
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	token, err := transport.PairDevice(server.URL)
+	if err != nil {
+		t.Fatalf("PairDevice returned error: %v", err)
+	}
+	if token != "pair-token-final" || attempts.Load() != pairDeviceAttempts {
+		t.Fatalf("token=%q attempts=%d want final token after %d attempts", token, attempts.Load(), pairDeviceAttempts)
 	}
 }
 

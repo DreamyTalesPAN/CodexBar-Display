@@ -46,6 +46,7 @@ import { UsageScreen } from "./usage-screen";
 
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
+const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 90_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 
 type LocalNetworkRequestInit = RequestInit & {
@@ -140,7 +141,7 @@ type ThemeInstallStatus = {
 type RunCompanion = <T>(
   path: string,
   init?: RequestInit,
-  options?: { preserveLastError?: boolean },
+  options?: { preserveLastError?: boolean; timeoutMs?: number },
 ) => Promise<T>;
 
 type FirmwareCheckOptions = {
@@ -345,7 +346,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     async <T,>(
       path: string,
       init?: RequestInit,
-      options?: { preserveLastError?: boolean },
+      options?: { preserveLastError?: boolean; timeoutMs?: number },
     ): Promise<T> => {
       if (!options?.preserveLastError) {
         setLastError(null);
@@ -358,7 +359,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const controller = new AbortController();
       const timeout = window.setTimeout(() => {
         controller.abort();
-      }, COMPANION_REQUEST_TIMEOUT_MS);
+      }, options?.timeoutMs ?? COMPANION_REQUEST_TIMEOUT_MS);
       const requestInit: LocalNetworkRequestInit = {
         ...init,
         headers,
@@ -433,12 +434,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         setDeviceState(payload.device.paired ? "paired" : "online");
         if (!quiet) {
+          const ready = deviceSetupIsUsable(payload.device);
           addEvent({
             label: "VibeTV checked",
-            detail: payload.device.connected
-              ? "VibeTV is connected."
-              : "VibeTV is waiting for signal.",
-            tone: payload.device.connected ? "ready" : "attention",
+            detail: ready
+              ? "VibeTV is ready."
+              : payload.device.connected
+                ? "VibeTV was found, but its screen is not ready yet."
+                : "VibeTV is waiting for signal.",
+            tone: ready ? "ready" : "attention",
           });
         }
         return payload.device;
@@ -621,7 +625,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 : "unknown",
           );
           const refreshed = await refreshDevice({ quiet: true });
-          if (refreshed?.connected) {
+          if (deviceSetupIsUsable(refreshed)) {
             void loadSettings();
           }
         } else {
@@ -774,7 +778,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               deviceSetupIsUsable(statusPayload.device)
             ) {
               setLastError(null);
-              if (statusPayload.device.connected) {
+              if (deviceSetupIsUsable(statusPayload.device)) {
                 void loadSettings();
               }
               return;
@@ -809,7 +813,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               ...(options?.forcePair ? { forcePair: true } : {}),
             }),
           },
-          { preserveLastError: quiet },
+          {
+            preserveLastError: quiet,
+            timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS,
+          },
         );
         setCompanionStatus("online");
         void refreshCompanionFeatures();
@@ -826,14 +833,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setDeviceTarget(payload.device.target);
           rememberDeviceTarget(payload.device.target);
         }
+        const ready = deviceSetupIsUsable(payload.device);
+        if (payload.device.connected && !ready) {
+          setLastError(displayNotReadyError());
+        }
         addEvent({
           label: quiet ? "Connection repaired" : "VibeTV connection fixed",
-          detail: payload.device.connected
-            ? "VibeTV is connected."
-            : "VibeTV is waiting for signal.",
-          tone: payload.device.connected ? "ready" : "attention",
+          detail: ready
+            ? "VibeTV is ready."
+            : payload.device.connected
+              ? "VibeTV was found, but its screen is not ready yet."
+              : "VibeTV is waiting for signal.",
+          tone: ready ? "ready" : "attention",
         });
-        if (payload.device.connected) {
+        if (ready) {
           void loadSettings();
         }
       } catch (error) {
@@ -884,7 +897,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const payload = await runCompanion<{ device: DeviceInfo }>(
           "/v1/device/reload-display",
           { method: "POST" },
-          { preserveLastError: quiet },
+          {
+            preserveLastError: quiet,
+            timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS,
+          },
         );
         setCompanionStatus("online");
         setLastError(null);
@@ -2129,6 +2145,15 @@ function companionUnavailableError(): ApiError {
     message: "Mac App did not answer.",
     nextAction:
       "Quit VibeTV Control Center, then open it again from Applications. If it still does not answer, replace it with the latest Mac App from app.vibetv.shop.",
+  };
+}
+
+function displayNotReadyError(): ApiError {
+  return {
+    code: "DISPLAY_NOT_READY",
+    message: "VibeTV screen is not ready yet.",
+    nextAction:
+      "Keep VibeTV powered on and connected to the same WiFi, then run Fix connection again.",
   };
 }
 

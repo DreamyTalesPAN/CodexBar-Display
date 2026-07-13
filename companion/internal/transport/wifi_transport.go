@@ -21,6 +21,7 @@ import (
 
 const (
 	defaultWiFiTimeout      = 5 * time.Second
+	pairDeviceAttempts      = 3
 	assetUploadAttempts     = 3
 	assetUploadRetryMaxBody = 512
 	assetUploadBytesPerSec  = 1024
@@ -33,6 +34,7 @@ const (
 )
 
 var assetUploadRetryDelay = 1500 * time.Millisecond
+var pairDeviceRetryDelay = 500 * time.Millisecond
 
 type WiFiTransport struct {
 	client                   *http.Client
@@ -250,13 +252,34 @@ func (t WiFiTransport) PairDevice(target string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	form := url.Values{}
-	form.Set("api", "1")
-	req, err := http.NewRequest(http.MethodPost, base+"/api/pair", strings.NewReader(form.Encode()))
+	var lastErr error
+	for attempt := 1; attempt <= pairDeviceAttempts; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(context.Background(), defaultWiFiTimeout)
+		token, pairErr := t.pairDeviceOnce(attemptCtx, base)
+		cancel()
+		if pairErr == nil {
+			return token, nil
+		}
+		lastErr = pairErr
+		if attempt < pairDeviceAttempts {
+			time.Sleep(pairDeviceRetryDelay)
+		}
+	}
+	return "", fmt.Errorf("pair device failed after %d attempts: %w", pairDeviceAttempts, lastErr)
+}
+
+func (t WiFiTransport) pairDeviceOnce(ctx context.Context, base string) (string, error) {
+	pairURL, err := url.Parse(base + "/api/pair")
+	if err != nil {
+		return "", fmt.Errorf("build device pair URL: %w", err)
+	}
+	query := pairURL.Query()
+	query.Set("api", "1")
+	pairURL.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pairURL.String(), nil)
 	if err != nil {
 		return "", fmt.Errorf("build device pair request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Close = true
 	resp, err := t.client.Do(req)
 	if err != nil {
