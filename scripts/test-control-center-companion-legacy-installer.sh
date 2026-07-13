@@ -43,6 +43,15 @@ assert_not_contains() {
   fi
 }
 
+assert_not_line() {
+  local haystack line
+  haystack="$1"
+  line="$2"
+  if printf '%s\n' "$haystack" | grep -Fx "$line" >/dev/null; then
+    die "expected output not to contain line: ${line}"
+  fi
+}
+
 write_fake_commands() {
   local fake_bin
   fake_bin="$1"
@@ -267,6 +276,7 @@ run_installer() {
       FAKE_HELLO_FAIL="${FAKE_HELLO_FAIL:-}" \
       FAKE_STATUS_OLD_ONCE="${FAKE_STATUS_OLD_ONCE:-}" \
       FAKE_STATUS_DEVICE_DISCONNECTED="${FAKE_STATUS_DEVICE_DISCONNECTED:-}" \
+      VIBETV_INSTALLER_DISPLAY_DAEMON_PID="${VIBETV_INSTALLER_DISPLAY_DAEMON_PID:-}" \
       VIBETV_COMPANION_REPAIR_ATTEMPTS="${VIBETV_COMPANION_REPAIR_ATTEMPTS:-3}" \
       VIBETV_COMPANION_REPAIR_RETRY_DELAY="${VIBETV_COMPANION_REPAIR_RETRY_DELAY:-0}" \
       VIBETV_COMPANION_STABLE_RETRY_DELAY="${VIBETV_COMPANION_STABLE_RETRY_DELAY:-0}" \
@@ -458,6 +468,46 @@ run_install_can_skip_device_setup_for_mac_app_update() {
   assert_not_contains "$output" "VibeTV firmware update complete"
 }
 
+run_install_handoffs_when_started_inside_display_daemon() {
+  local root output launch_log setup_log daemon_plist handoff_plist handoff_script
+  root="${TMP_WORK_DIR}/in-place-handoff"
+  write_fake_commands "${root}/fake-bin"
+  prepare_home "${root}/home"
+  : > "${root}/launchctl.log"
+  : > "${root}/curl.log"
+  : > "${root}/api.log"
+  : > "${root}/open.log"
+
+  output="$(VIBETV_INSTALLER_DISPLAY_DAEMON_PID="$$" run_installer "$root" --version 9.9.9 --skip-device-setup)" || {
+    printf '%s\n' "$output" >&2
+    die "expected in-place Mac App handoff to pass"
+  }
+
+  daemon_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist"
+  handoff_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.update-handoff.plist"
+  handoff_script="${root}/home/Library/Application Support/codexbar-display/run/mac-app-update-handoff.sh"
+  launch_log="$(cat "${root}/launchctl.log")"
+  setup_log="$(support_log "$root")"
+
+  assert_contains "$output" "[4/5] Starting Control Center"
+  assert_not_contains "$output" "[5/5] Opening Control Center"
+  assert_not_contains "$output" "Done. Your Control Center is opening now."
+  assert_contains "$setup_log" "updated background service handoff scheduled"
+  assert_contains "$setup_log" "background service installed at ${daemon_plist}"
+  assert_contains "$setup_log" "Mac App update verified; handing off to the updated background service"
+  assert_contains "$launch_log" "setenv VIBETV_MIN_SAFE_ESP8266_FIRMWARE 1.0.36"
+  assert_contains "$launch_log" "bootstrap gui/$(id -u) ${handoff_plist}"
+  assert_not_line "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.daemon"
+  assert_not_contains "$launch_log" "bootstrap gui/$(id -u) ${daemon_plist}"
+  assert_contains "$(cat "$handoff_plist")" "gui/$(id -u)/com.codexbar-display.daemon"
+  assert_contains "$(cat "$handoff_plist")" "http://127.0.0.1:47832/control-center?migration=9.9.9"
+  assert_contains "$(cat "$handoff_script")" 'launchctl kickstart -k "$display_service"'
+  assert_contains "$(cat "$handoff_script")" '/usr/bin/open "$open_url"'
+  [[ ! -s "${root}/open.log" ]] || die "main installer must let the handoff open the updated Control Center"
+  assert_not_contains "$(cat "${root}/curl.log")" "/v1/device/repair"
+  assert_not_contains "$(cat "${root}/api.log")" "install-update"
+}
+
 run_install_disables_global_legacy_launchagent() {
   local root output launch_log global_plist daemon_plist_body curl_log setup_log
   root="${TMP_WORK_DIR}/global-legacy"
@@ -645,6 +695,7 @@ run_install_restarts_when_old_api_version_answers() {
 
 run_install_writes_integrated_daemon_launchagent
 run_install_can_skip_device_setup_for_mac_app_update
+run_install_handoffs_when_started_inside_display_daemon
 run_install_disables_global_legacy_launchagent
 run_install_retries_transient_repair_failure
 run_install_waits_for_slow_repair_recovery

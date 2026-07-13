@@ -31,6 +31,10 @@ DISPLAY_DAEMON_PLIST="${PLIST_DIR}/${DISPLAY_DAEMON_LABEL}.plist"
 DISPLAY_DAEMON_SERVICE="gui/$(id -u)/${DISPLAY_DAEMON_LABEL}"
 DISPLAY_DAEMON_LOG_OUT="${INSTALL_LOG_DIR}/daemon.out.log"
 DISPLAY_DAEMON_LOG_ERR="${INSTALL_LOG_DIR}/daemon.err.log"
+UPDATE_HANDOFF_LABEL="${DISPLAY_DAEMON_LABEL}.update-handoff"
+UPDATE_HANDOFF_SERVICE="gui/$(id -u)/${UPDATE_HANDOFF_LABEL}"
+UPDATE_HANDOFF_PLIST="${PLIST_DIR}/${UPDATE_HANDOFF_LABEL}.plist"
+UPDATE_HANDOFF_SCRIPT="${RUN_DIR}/mac-app-update-handoff.sh"
 CONFIG_PATH="${APP_SUPPORT_DIR}/config.json"
 
 REPO="${VIBETV_COMPANION_REPO:-$DEFAULT_REPO}"
@@ -509,6 +513,99 @@ daemon_binary_for_plist() {
   printf '%s\n' "$BIN_PATH"
 }
 
+display_daemon_pid() {
+  local line
+  if [[ -n "${VIBETV_INSTALLER_DISPLAY_DAEMON_PID:-}" ]]; then
+    printf '%s\n' "$VIBETV_INSTALLER_DISPLAY_DAEMON_PID"
+    return 0
+  fi
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*pid[[:space:]]*=[[:space:]]*([0-9]+) ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}"
+      return 0
+    fi
+  done < <(launchctl print "$DISPLAY_DAEMON_SERVICE" 2>/dev/null || true)
+  return 1
+}
+
+running_inside_display_daemon() {
+  local daemon_pid process_pid parent_pid
+  daemon_pid="$(display_daemon_pid)" || return 1
+  [[ "$daemon_pid" =~ ^[0-9]+$ ]] || return 1
+  process_pid="$$"
+  for _ in $(seq 1 12); do
+    if [[ "$process_pid" == "$daemon_pid" ]]; then
+      return 0
+    fi
+    parent_pid="$(/bin/ps -o ppid= -p "$process_pid" 2>/dev/null | tr -d '[:space:]')"
+    [[ "$parent_pid" =~ ^[0-9]+$ && "$parent_pid" != "0" && "$parent_pid" != "$process_pid" ]] || break
+    process_pid="$parent_pid"
+  done
+  return 1
+}
+
+schedule_display_daemon_handoff() {
+  local open_url
+  open_url="$(control_center_url)?migration=${RELEASE_VERSION}"
+
+  mkdir -p "$RUN_DIR" "$PLIST_DIR"
+  launchctl bootout "$UPDATE_HANDOFF_SERVICE" >/dev/null 2>&1 || true
+
+  cat > "$UPDATE_HANDOFF_SCRIPT" <<'HANDOFF_SCRIPT'
+#!/bin/sh
+display_service="$1"
+open_url="$2"
+script_path="$3"
+plist_path="$4"
+handoff_service="$5"
+
+/bin/sleep 2
+/bin/launchctl kickstart -k "$display_service" >/dev/null 2>&1 || exit 1
+/bin/sleep 2
+/usr/bin/open "$open_url" >/dev/null 2>&1 || true
+/bin/rm -f "$script_path" "$plist_path"
+/bin/launchctl bootout "$handoff_service" >/dev/null 2>&1 || true
+HANDOFF_SCRIPT
+  chmod 700 "$UPDATE_HANDOFF_SCRIPT"
+
+  {
+    cat <<PLIST_HEAD
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>${UPDATE_HANDOFF_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+PLIST_HEAD
+    for arg in \
+      "/bin/sh" \
+      "$UPDATE_HANDOFF_SCRIPT" \
+      "$DISPLAY_DAEMON_SERVICE" \
+      "$open_url" \
+      "$UPDATE_HANDOFF_SCRIPT" \
+      "$UPDATE_HANDOFF_PLIST" \
+      "$UPDATE_HANDOFF_SERVICE"; do
+      printf '      <string>%s</string>\n' "$(xml_escape "$arg")"
+    done
+    cat <<'PLIST_TAIL'
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+  </dict>
+</plist>
+PLIST_TAIL
+  } > "$UPDATE_HANDOFF_PLIST"
+  chmod 644 "$UPDATE_HANDOFF_PLIST"
+
+  launchctl setenv VIBETV_MIN_SAFE_ESP8266_FIRMWARE 1.0.36 >/dev/null 2>&1 \
+    || die "failed to prepare the updated VibeTV Mac App environment."
+  launchctl bootstrap "gui/$(id -u)" "$UPDATE_HANDOFF_PLIST" >/dev/null 2>&1 \
+    || die "failed to schedule the updated VibeTV Mac App handoff."
+  log "vibetv: updated background service handoff scheduled"
+}
+
 restart_service() {
   if [[ ! -x "$BIN_PATH" ]]; then
     die "Mac setup binary is missing: ${BIN_PATH}. Run install first."
@@ -517,6 +614,16 @@ restart_service() {
   require_cmd_for launchctl "start the VibeTV Mac App background service" "rerun from a standard macOS Terminal."
   install_app_bundle
   stop_launchagent
+  if running_inside_display_daemon; then
+    stop_terminal_service
+    write_plist
+    launchctl enable "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
+    schedule_display_daemon_handoff
+    log "vibetv: background service installed at ${DISPLAY_DAEMON_PLIST}"
+    log "vibetv: Mac App update verified; handing off to the updated background service"
+    step_done "Starting Control Center"
+    exit 0
+  fi
   launchctl bootout "$DISPLAY_DAEMON_SERVICE" >/dev/null 2>&1 || true
   stop_terminal_service
   stop_existing_listener
