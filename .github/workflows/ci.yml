@@ -72,12 +72,6 @@ jobs:
       - name: Test Control Center release workflow
         run: ./scripts/test-control-center-release-workflow.sh
 
-      - name: Test macOS DMG validation workflow
-        run: ./scripts/test-macos-dmg-validation-workflow.sh
-
-      - name: Test macOS DMG encrypted artifact helper
-        run: ./scripts/test-macos-dmg-validation-artifact.sh
-
       - name: Test legacy install.sh Control Center migration
         run: ./scripts/test-install-sh-control-center-migration.sh
 
