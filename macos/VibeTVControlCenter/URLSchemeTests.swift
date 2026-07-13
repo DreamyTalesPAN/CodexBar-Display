@@ -139,6 +139,47 @@ func runURLSchemeTests() {
         runtimeBundleVersion(shortVersion: nil, buildVersion: nil).isEmpty,
         "missing bundle metadata must stay empty"
     )
+    require(
+        shouldRunRuntimeValidationUnregister(
+            arguments: [
+                "/Applications/VibeTV Control Center.app/Contents/MacOS/VibeTVControlCenter",
+                "--vibetv-validation-unregister-runtime",
+            ],
+            environment: ["VIBETV_RUNTIME_VALIDATION_UNREGISTER": "1"]
+        ),
+        "runtime validation cleanup must require the exact argument and environment opt-in"
+    )
+    require(
+        !shouldRunRuntimeValidationUnregister(
+            arguments: [
+                "/Applications/VibeTV Control Center.app/Contents/MacOS/VibeTVControlCenter",
+                "--vibetv-validation-unregister-runtime",
+            ],
+            environment: [:]
+        ),
+        "runtime validation cleanup must reject a missing environment opt-in"
+    )
+    require(
+        !shouldRunRuntimeValidationUnregister(
+            arguments: [
+                "/Applications/VibeTV Control Center.app/Contents/MacOS/VibeTVControlCenter",
+                "--vibetv-validation-unregister-runtime",
+                "extra",
+            ],
+            environment: ["VIBETV_RUNTIME_VALIDATION_UNREGISTER": "1"]
+        ),
+        "runtime validation cleanup must reject extra arguments"
+    )
+    require(
+        !shouldRunRuntimeValidationUnregister(
+            arguments: [
+                "/Applications/VibeTV Control Center.app/Contents/MacOS/VibeTVControlCenter",
+                "--other-action",
+            ],
+            environment: ["VIBETV_RUNTIME_VALIDATION_UNREGISTER": "1"]
+        ),
+        "runtime validation cleanup must reject any other action"
+    )
 
     let healthyStatus = Data(#"{"ok":true,"companion":{"version":"1.2.3"}}"#.utf8)
     require(
@@ -180,6 +221,43 @@ func runURLSchemeTests() {
             expectedVersion: "1.2.3"
         ) == .invalidPayload,
         "invalid status JSON must fail the health gate"
+    )
+    require(
+        shouldRetryRuntimeRegistration(
+            after: .requestFailed("connection refused"),
+            serviceEnabled: true
+        ),
+        "a missing fresh runtime listener must get one bounded registration refresh"
+    )
+    require(
+        shouldRetryRuntimeRegistration(
+            after: .ownershipFailed(.servicePIDMissing),
+            serviceEnabled: true
+        ),
+        "an enabled SMAppService without a PID must get one bounded registration refresh"
+    )
+    require(
+        !shouldRetryRuntimeRegistration(
+            after: .ownershipFailed(
+                .listenerMismatch(servicePID: 4242, listenerPIDs: [4343])
+            ),
+            serviceEnabled: true
+        ),
+        "a foreign listener must never trigger an automatic registration refresh"
+    )
+    require(
+        !shouldRetryRuntimeRegistration(
+            after: .versionMismatch(expected: "1.2.3", actual: "1.2.2"),
+            serviceEnabled: true
+        ),
+        "a version mismatch must stay visible instead of entering a refresh loop"
+    )
+    require(
+        !shouldRetryRuntimeRegistration(
+            after: .requestFailed("connection refused"),
+            serviceEnabled: false
+        ),
+        "a disabled SMAppService must not trigger a registration refresh"
     )
 
     let launchctlFixture = """

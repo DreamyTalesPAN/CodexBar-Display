@@ -533,7 +533,12 @@ required_source = [
     "runtimeServiceNeedsRefresh(",
     'runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"',
     'runtimeStatusURLString = "http://127.0.0.1:47832/v1/status"',
-    "let health = await waitForHealthyRuntime(expectedVersion: expectedVersion)",
+    "var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)",
+    "shouldRetryRuntimeRegistration(",
+    "shouldRunRuntimeValidationUnregister(",
+    '"--vibetv-validation-unregister-runtime"',
+    '"VIBETV_RUNTIME_VALIDATION_UNREGISTER"',
+    "CODEX_RUNTIME_UNREGISTER_OK label=",
     "let ownership = verifyRuntimeListenerOwnership()",
     'executable: "/usr/sbin/lsof"',
     '"-iTCP@127.0.0.1:47832"',
@@ -633,7 +638,7 @@ if "guard !installationRequired else" not in source[present_start:present_end]:
 
 registration = source.find("guard await ensureBundledRuntimeServiceRegistered()")
 stop_legacy = source.find("if !stopLegacyLaunchAgents(legacyStates)")
-health_gate = source.find("let health = await waitForHealthyRuntime")
+health_gate = source.find("var health = await waitForHealthyRuntime")
 legacy_app_migration = source.find(
     "let migratedLegacyApps = await migrateLegacyAppsAfterHealthyRuntime",
     health_gate,
@@ -650,9 +655,21 @@ prepare_start = source.find("private func prepareCompanion() async")
 prepare_end = source.find("private func ensureBundledRuntimeServiceRegistered()", prepare_start)
 prepare_method = source[prepare_start:prepare_end]
 native_ready = prepare_method.find("return .nativeRuntimeReady")
-if not (0 <= prepare_method.find("let health = await waitForHealthyRuntime") < native_ready):
+if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):
     raise SystemExit(
         "native runtime must pass the health and ownership gate before triggering a fresh WebView load"
+    )
+retry_gate = prepare_method.find("if shouldRetryRuntimeRegistration(")
+retry_unregister = prepare_method.find("await unregisterBundledRuntimeService()", retry_gate)
+retry_register = prepare_method.find("registerBundledRuntimeService()", retry_unregister)
+retry_health = prepare_method.find("health = await waitForHealthyRuntime", retry_register)
+final_health_gate = prepare_method.find("guard case .healthy = health", retry_health)
+if not (
+    prepare_method.count("if shouldRetryRuntimeRegistration(") == 1
+    and 0 <= retry_gate < retry_unregister < retry_register < retry_health < final_health_gate
+):
+    raise SystemExit(
+        "native runtime may perform exactly one unregister/register/health recovery before the final gate"
     )
 
 stop_method = source[
@@ -799,6 +816,7 @@ PY
 
   test_signing_safety_helpers
   test_outer_dmg_ticket_policy_helper
+  "${ROOT}/scripts/test-macos-control-center-runtime-validation.sh"
 
   printf 'macOS Control Center app bundle prep test passed\n'
 }

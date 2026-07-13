@@ -73,6 +73,7 @@ const (
 	runtimeErrorCycleTimeout    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCycleTimeout)
 	runtimeErrorFrameEncode     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameEncode)
 	runtimeErrorFrameTooLarge   runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameTooLarge)
+	runtimeErrorDeviceHello     runtimeErrorKind = runtimeErrorKind(errcode.ProtocolDeviceHelloUnavailable)
 	runtimeErrorCodexbarBinary  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarBinary)
 	runtimeErrorCodexbarVersion runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarVersion)
 	runtimeErrorCodexbarCmd     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarCmd)
@@ -607,6 +608,9 @@ func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeD
 			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
 		}
 		deps.logf("runtime event=device-caps-read-failed target=%s transport=%s err=%v\n", port, deps.transportName, capsErr)
+		if deps.transportName == "wifi" {
+			return "", protocol.DeviceCapabilities{}, 0, wifiDeviceHelloRuntimeError(port, capsErr)
+		}
 		caps = protocol.UnknownDeviceCapabilities()
 	} else if !caps.Known {
 		unknownErr := errors.New("device capabilities unknown")
@@ -614,10 +618,26 @@ func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeD
 			rememberRecoveredWiFiTarget(recoveredPort, state, deps)
 			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
 		}
+		if deps.transportName == "wifi" {
+			deps.logf("runtime event=device-caps-unknown target=%s transport=%s action=skip-frame\n", publicDeviceTarget(port), deps.transportName)
+			return "", protocol.DeviceCapabilities{}, 0, wifiDeviceHelloRuntimeError(port, unknownErr)
+		}
 	}
 
 	rememberActiveWiFiTarget(port, caps, state)
 	return port, caps, maxFrameBytesForCaps(caps), nil
+}
+
+func wifiDeviceHelloRuntimeError(target string, err error) *RuntimeError {
+	if err == nil {
+		err = errors.New("device capabilities unknown")
+	}
+	return &RuntimeError{
+		Kind: runtimeErrorDeviceHello,
+		Op:   "read-device-hello",
+		Err:  fmt.Errorf("read VibeTV /hello from %s: %w", publicDeviceTarget(target), err),
+		Hint: "Wait for VibeTV to finish starting and verify its Wi-Fi connection; the daemon will retry /hello with backoff and will not send frames until the handshake succeeds.",
+	}
 }
 
 func rememberActiveWiFiTarget(target string, caps protocol.DeviceCapabilities, state *runtimeState) {

@@ -2362,9 +2362,11 @@ void handleFrame() {
     return;
   }
 
-  markFrameAccepted(event, "wifi");
+  // Acknowledge before display work so a slow render cannot make the host retry
+  // an already accepted frame.
   addCorsHeaders();
   webServer.send(200, "text/plain; charset=utf-8", "ok");
+  markFrameAccepted(event, "wifi");
 }
 
 void startHttpServer() {

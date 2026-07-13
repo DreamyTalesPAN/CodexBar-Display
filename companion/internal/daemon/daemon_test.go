@@ -149,6 +149,93 @@ func TestRunCycleWithDepsLogsUsageSourceFreshModeAndTransport(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithDepsRequiresKnownWiFiHelloBeforeSend(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	knownCaps := protocol.DeviceCapabilities{
+		Known:                     true,
+		NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+		MaxFrameBytes:             2048,
+	}
+	tests := []struct {
+		name        string
+		deviceCaps  func(string) (protocol.DeviceCapabilities, error)
+		wantError   bool
+		wantSent    int
+		wantFetched int
+	}{
+		{
+			name: "capabilities failure does not send",
+			deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+				return protocol.DeviceCapabilities{}, errors.New("hello connection refused")
+			},
+			wantError: true,
+		},
+		{
+			name: "unknown capabilities do not send",
+			deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+				return protocol.UnknownDeviceCapabilities(), nil
+			},
+			wantError: true,
+		},
+		{
+			name: "known capabilities send",
+			deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+				return knownCaps, nil
+			},
+			wantSent:    1,
+			wantFetched: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := &runtimeState{selector: codexbar.NewProviderSelector()}
+			var sent, fetched int
+			err := runCycleWithDeps(context.Background(), "http://192.168.178.72", state, runtimeDeps{
+				transportName: "wifi",
+				resolvePort: func(target string) (string, error) {
+					return target, nil
+				},
+				deviceCaps: tt.deviceCaps,
+				discoverWiFi: func([]string) (transportlayer.WiFiDiscoveryResult, error) {
+					return transportlayer.WiFiDiscoveryResult{}, errors.New("no alternate VibeTV found")
+				},
+				fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+					fetched++
+					return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+				},
+				logf: func(string, ...any) {},
+				sendLine: func(string, []byte) error {
+					sent++
+					return nil
+				},
+			})
+
+			if tt.wantError {
+				if err == nil {
+					t.Fatal("expected Wi-Fi hello error")
+				}
+				runtimeErr := asRuntimeError(err)
+				if runtimeErr.Kind != runtimeErrorDeviceHello || runtimeErr.Op != "read-device-hello" {
+					t.Fatalf("unexpected runtime error: %+v", runtimeErr)
+				}
+				if !strings.Contains(runtimeErr.RecoveryAction(), "retry /hello with backoff") {
+					t.Fatalf("expected actionable retry recovery, got %q", runtimeErr.RecoveryAction())
+				}
+			} else if err != nil {
+				t.Fatalf("expected cycle success, got %v", err)
+			}
+			if sent != tt.wantSent {
+				t.Fatalf("sent %d frames, expected %d", sent, tt.wantSent)
+			}
+			if fetched != tt.wantFetched {
+				t.Fatalf("fetched providers %d times, expected %d", fetched, tt.wantFetched)
+			}
+		})
+	}
+}
+
 func TestRunCycleWithDepsUsesRuntimeConfigTargetOverStaleLaunchAgentTarget(t *testing.T) {
 	prepareFastTestEnv(t)
 

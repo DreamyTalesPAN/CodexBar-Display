@@ -14,6 +14,11 @@ private let runtimeRegisteredVersionDefaultsKey =
     "shop.vibetv.control-center.runtime.registered-bundle-version"
 private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
+private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
+private let runtimeValidationUnregisterArgument =
+    "--vibetv-validation-unregister-runtime"
+private let runtimeValidationUnregisterEnvironmentKey =
+    "VIBETV_RUNTIME_VALIDATION_UNREGISTER"
 private let legacyLaunchAgents = [
     ("com.codexbar-display.daemon", "com.codexbar-display.daemon.plist"),
     ("com.codexbar-display.companion-api", "com.codexbar-display.companion-api.plist"),
@@ -117,6 +122,89 @@ func normalizedCompanionVersion(_ raw: String) -> String {
         return String(trimmed.dropFirst())
     }
     return trimmed
+}
+
+func shouldRunRuntimeValidationUnregister(
+    arguments: [String],
+    environment: [String: String]
+) -> Bool {
+    arguments.count == 2
+        && arguments[1] == runtimeValidationUnregisterArgument
+        && environment[runtimeValidationUnregisterEnvironmentKey] == "1"
+}
+
+@MainActor
+private func runRuntimeValidationUnregister() async -> Int32 {
+    guard Bundle.main.bundleIdentifier == controlCenterBundleIdentifier,
+          isInstalledApplicationsBundle(Bundle.main.bundleURL) else {
+        FileHandle.standardError.write(
+            Data(
+                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=invalid-installed-app\n".utf8
+            )
+        )
+        return 64
+    }
+
+    let service = SMAppService.agent(plistName: runtimeLaunchAgentPlistName)
+    switch service.status {
+    case .notRegistered, .notFound:
+        FileHandle.standardOutput.write(
+            Data(
+                "CODEX_RUNTIME_UNREGISTER_OK label=\(runtimeLaunchAgentLabel) status=already-unregistered\n".utf8
+            )
+        )
+        return 0
+    case .enabled, .requiresApproval:
+        break
+    @unknown default:
+        FileHandle.standardError.write(
+            Data(
+                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=unknown-status-before-unregister\n".utf8
+            )
+        )
+        return 70
+    }
+
+    let errorDescription: String? = await withCheckedContinuation { continuation in
+        service.unregister(completionHandler: { error in
+            continuation.resume(
+                returning: error.map { ($0 as NSError).localizedDescription }
+            )
+        })
+    }
+    if let errorDescription {
+        FileHandle.standardError.write(
+            Data(
+                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=unregister-failed detail=\(errorDescription)\n".utf8
+            )
+        )
+        return 70
+    }
+
+    try? await Task<Never, Never>.sleep(for: runtimeUnregistrationSettleDelay)
+    switch service.status {
+    case .notRegistered, .notFound:
+        FileHandle.standardOutput.write(
+            Data(
+                "CODEX_RUNTIME_UNREGISTER_OK label=\(runtimeLaunchAgentLabel) status=unregistered\n".utf8
+            )
+        )
+        return 0
+    case .enabled, .requiresApproval:
+        FileHandle.standardError.write(
+            Data(
+                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=service-remained-registered\n".utf8
+            )
+        )
+        return 70
+    @unknown default:
+        FileHandle.standardError.write(
+            Data(
+                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=unknown-status-after-unregister\n".utf8
+            )
+        )
+        return 70
+    }
 }
 
 private struct RuntimeStatusPayload: Decodable {
@@ -263,6 +351,33 @@ func evaluateRuntimeHealth(
         return .versionMismatch(expected: expected, actual: actual)
     }
     return .healthy(version: actual)
+}
+
+func shouldRetryRuntimeRegistration(
+    after health: RuntimeHealthEvaluation,
+    serviceEnabled: Bool
+) -> Bool {
+    guard serviceEnabled else {
+        return false
+    }
+    switch health {
+    case .requestFailed:
+        return true
+    case .ownershipFailed(let ownership):
+        switch ownership {
+        case .serviceUnavailable, .servicePIDMissing, .listenerUnavailable:
+            return true
+        case .owned, .listenerMismatch:
+            return false
+        }
+    case .healthy,
+         .httpStatus,
+         .invalidPayload,
+         .reportedUnhealthy,
+         .expectedVersionMissing,
+         .versionMismatch:
+        return false
+    }
 }
 
 func isInstalledApplicationsBundle(_ appURL: URL) -> Bool {
@@ -591,7 +706,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             return restored ? .legacyRuntimeRestored : .keepCurrentPage
         }
 
-        let health = await waitForHealthyRuntime(expectedVersion: expectedVersion)
+        var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)
+        if shouldRetryRuntimeRegistration(
+            after: health,
+            serviceEnabled: runtimeService.status == .enabled
+        ) {
+            NSLog(
+                "VibeTV Control Center runtime did not become reachable; refreshing its Service Management registration once: \(health)"
+            )
+            if await unregisterBundledRuntimeService(), registerBundledRuntimeService() {
+                health = await waitForHealthyRuntime(expectedVersion: expectedVersion)
+            }
+        }
         guard case .healthy = health, runtimeService.status == .enabled else {
             NSLog(
                 "VibeTV Control Center runtime health gate failed; legacy artifacts remain untouched: \(health)"
@@ -720,6 +846,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
         switch runtimeService.status {
         case .notRegistered, .notFound:
+            try? await Task<Never, Never>.sleep(for: runtimeUnregistrationSettleDelay)
             return true
         case .enabled, .requiresApproval:
             NSLog(
@@ -1345,10 +1472,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 #if VIBETV_CONTROL_CENTER_TESTING
 runURLSchemeTests()
 #else
-MainActor.assumeIsolated {
-    let app = NSApplication.shared
-    let delegate = AppDelegate()
-    app.delegate = delegate
-    app.run()
+if shouldRunRuntimeValidationUnregister(
+    arguments: CommandLine.arguments,
+    environment: ProcessInfo.processInfo.environment
+) {
+    Task { @MainActor in
+        exit(await runRuntimeValidationUnregister())
+    }
+    dispatchMain()
+} else {
+    MainActor.assumeIsolated {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.run()
+    }
 }
 #endif

@@ -13,6 +13,7 @@
 #include <cstdio>
 
 #include "../../firmware_shared/theme_spec_renderer_core.h"
+#include "theme_spec_runtime_policy.h"
 
 namespace codexbar_display {
 namespace esp8266 {
@@ -23,7 +24,6 @@ namespace {
 constexpr unsigned long kThemeSpecAnimatedTickMs = 20UL;
 constexpr unsigned long kThemeSpecFullRenderRetryMs = 750UL;
 constexpr int kAnimatedSpriteCacheSlots = 2;
-constexpr uint32_t kMinThemeSpecRenderHeapBytes = 4096UL;
 constexpr size_t kSpriteLineReserveBytes = 256;
 constexpr size_t kSpriteLineMaxBytes = 512;
 unsigned long nextThemeSpecAnimatedTickAtMs = 0;
@@ -116,8 +116,12 @@ bool currentThemeSpecRenderedSuccessfully() {
          lastSuccessfulThemeSpecRawHash == themeSpecRawHash(currentThemeSpecRaw());
 }
 
-bool hasThemeSpecRenderHeap() {
-  return ESP.getFreeHeap() >= kMinThemeSpecRenderHeapBytes;
+bool hasThemeSpecHeap(bool animation) {
+  const uint32_t freeHeap = ESP.getFreeHeap();
+  const uint32_t maxFreeBlock = ESP.getMaxFreeBlockSize();
+  return animation
+             ? ThemeSpecRuntimePolicy::CanAnimate(freeHeap, maxFreeBlock)
+             : ThemeSpecRuntimePolicy::CanRender(freeHeap, maxFreeBlock);
 }
 
 bool fullRenderRetryPending() {
@@ -146,7 +150,7 @@ void releaseThemeSpecRenderMemory() {
 
 bool recoverThemeSpecRenderHeap() {
   releaseThemeSpecRenderMemory();
-  return hasThemeSpecRenderHeap();
+  return hasThemeSpecHeap(false);
 }
 
 const String& currentThemeSpecRaw() {
@@ -307,6 +311,7 @@ int cachedSpriteFrameIndex(AnimatedSpriteCache& cache, bool forceFrame, bool& sh
   if (cache.frameCount <= 1 || cache.fps <= 0) {
     cache.frameIndex = 0;
     cache.nextFrameAtMs = 0;
+    shouldDraw = true;
     return 0;
   }
 
@@ -314,6 +319,7 @@ int cachedSpriteFrameIndex(AnimatedSpriteCache& cache, bool forceFrame, bool& sh
   const unsigned long frameMs = max(1UL, static_cast<unsigned long>(1000 / cache.fps));
   if (cache.nextFrameAtMs == 0) {
     cache.nextFrameAtMs = now + frameMs;
+    shouldDraw = true;
     return cache.frameIndex;
   }
 
@@ -432,7 +438,7 @@ bool loadAnimatedSpriteCache(File& file, AnimatedSpriteCache& cache) {
 }
 
 void drawAnimatedSpriteAsset(
-    const char* assetPath,
+    AnimatedSpriteCache& cache,
     File& file,
     int x,
     int y,
@@ -441,36 +447,32 @@ void drawAnimatedSpriteAsset(
     bool forceFrame,
     bool hasClearColor,
     uint16_t clearColor) {
-  AnimatedSpriteCache* cache = animatedSpriteCacheForPath(assetPath);
-  if (cache == nullptr) {
-    return;
-  }
-  if (!cache->valid && !loadAnimatedSpriteCache(file, *cache)) {
+  if (!cache.valid && !loadAnimatedSpriteCache(file, cache)) {
     return;
   }
 
   bool shouldDraw = false;
-  const int selectedFrame = cachedSpriteFrameIndex(*cache, forceFrame, shouldDraw);
+  const int selectedFrame = cachedSpriteFrameIndex(cache, forceFrame, shouldDraw);
   if (!shouldDraw) {
     return;
   }
-  if (selectedFrame < 0 || selectedFrame >= cache->frameCount || !file.seek(cache->frameOffsets[selectedFrame], SeekSet)) {
+  if (selectedFrame < 0 || selectedFrame >= cache.frameCount || !file.seek(cache.frameOffsets[selectedFrame], SeekSet)) {
     return;
   }
 
   String line;
 
-  for (int row = 0; row < cache->height; ++row) {
+  for (int row = 0; row < cache.height; ++row) {
     if (!readSpriteLine(file, line) ||
         !drawSpriteRleRow(
             line,
-            cache->palette,
-            cache->paletteSize,
+            cache.palette,
+            cache.paletteSize,
             x,
             y,
-            cache->width,
+            cache.width,
             row,
-            cache->height,
+            cache.height,
             targetWidth,
             targetHeight,
             hasClearColor,
@@ -496,6 +498,20 @@ void drawSpriteAsset(
   if (assetPath == nullptr || assetPath[0] == '\0') {
     return;
   }
+  AnimatedSpriteCache* animatedCache = nullptr;
+  if (mode == SpriteRenderMode::AnimatedOnly) {
+    animatedCache = animatedSpriteCacheForPath(assetPath);
+    if (animatedCache == nullptr ||
+        !ThemeSpecRuntimePolicy::AnimatedAssetDue(
+            forceAnimatedFrame,
+            animatedCache->valid,
+            animatedCache->frameCount,
+            animatedCache->fps,
+            animatedCache->nextFrameAtMs,
+            millis())) {
+      return;
+    }
+  }
   if (!LittleFS.begin()) {
     return;
   }
@@ -511,8 +527,8 @@ void drawSpriteAsset(
         drawStaticSpriteAsset(file, x, y, targetWidth, targetHeight, hasClearColor, clearColor);
       }
     } else if (line == "CBA1") {
-      if (mode != SpriteRenderMode::StaticOnly) {
-        drawAnimatedSpriteAsset(assetPath, file, x, y, targetWidth, targetHeight, forceAnimatedFrame, hasClearColor, clearColor);
+      if (mode != SpriteRenderMode::StaticOnly && animatedCache != nullptr) {
+        drawAnimatedSpriteAsset(*animatedCache, file, x, y, targetWidth, targetHeight, forceAnimatedFrame, hasClearColor, clearColor);
       }
     }
   }
@@ -768,8 +784,8 @@ bool DrawThemeSpecUsage() {
     scheduleFullRenderRetry();
     return false;
   }
-  if (!hasThemeSpecRenderHeap() && !recoverThemeSpecRenderHeap()) {
-    markThemeSpecRenderFailed("low_heap_full_render");
+  if (!hasThemeSpecHeap(false) && !recoverThemeSpecRenderHeap()) {
+    markThemeSpecRenderFailed("low_heap");
     scheduleFullRenderRetry();
     return false;
   }
@@ -791,11 +807,6 @@ bool DrawThemeSpecUsage() {
     scheduleFullRenderRetry();
     return false;
   }
-  if (cachedThemeSpecScene.hasAnimatedAssets) {
-    ThemeSpecSink animatedSink(true, SpriteRenderMode::AnimatedOnly, true);
-    (void)themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, frameData, animatedSink);
-  }
-
   markCurrentThemeSpecRendered();
   clearFullRenderRetry();
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
@@ -821,6 +832,10 @@ bool TickThemeSpecGifs() {
   }
   nextThemeSpecAnimatedTickAtMs = now + kThemeSpecAnimatedTickMs;
 
+  if (!hasThemeSpecHeap(true)) {
+    return true;
+  }
+
   if (!ensureThemeSpecSceneCached(raw)) {
     return false;
   }
@@ -838,6 +853,12 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
     return false;
   }
 
+  if (!hasThemeSpecHeap(false)) {
+    markThemeSpecPartialFailed(changedFields, "low_heap");
+    ScreenDirty() = true;
+    return false;
+  }
+
   if (!ensureThemeSpecSceneCached(raw)) {
     markThemeSpecPartialFailed(changedFields, "parse_fail");
     return false;
@@ -846,22 +867,16 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   const auto frameData = currentThemeSpecFrameData(updateNoticeText);
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly, true);
   const char* partialError = nullptr;
-  bool skippedAnimatedOverlap = false;
   if (!themespec::RenderCompiledThemeSpecChangedPrimitives(
           cachedThemeSpecScene,
           frameData,
           changedFields,
           sink,
           &partialError,
-          &skippedAnimatedOverlap)) {
+          nullptr)) {
     markThemeSpecPartialFailed(changedFields, partialError);
     return false;
   }
-  if (cachedThemeSpecScene.hasAnimatedAssets) {
-    ThemeSpecSink animatedSink(skippedAnimatedOverlap, SpriteRenderMode::AnimatedOnly, true);
-    (void)themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, frameData, animatedSink);
-  }
-
   markThemeSpecPartialOk(changedFields);
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
