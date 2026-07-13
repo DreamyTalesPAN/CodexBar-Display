@@ -431,11 +431,28 @@ func retryableAssetError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
 	var netErr net.Error
-	return errors.As(err, &netErr) && netErr.Timeout()
+	if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	for _, transient := range []string{
+		"connection reset",
+		"connection refused",
+		"broken pipe",
+		"server closed idle connection",
+		"unexpected eof",
+	} {
+		if strings.Contains(message, transient) {
+			return true
+		}
+	}
+	return false
 }
 
 type rateLimitedAssetReader struct {

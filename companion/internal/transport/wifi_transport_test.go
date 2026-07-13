@@ -368,21 +368,61 @@ func TestWiFiTransportUploadAssetExtendsTimeoutForRateLimitedUploads(t *testing.
 	}
 }
 
-func TestWiFiTransportUploadAssetDoesNotRetryConnectionReset(t *testing.T) {
+func TestWiFiTransportUploadAssetRetriesEOF(t *testing.T) {
+	oldDelay := assetUploadRetryDelay
+	assetUploadRetryDelay = 0
+	defer func() {
+		assetUploadRetryDelay = oldDelay
+	}()
+
 	var attempts int
 	transport := NewWiFiTransportWithClient(&http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			attempts++
-			return nil, errors.New("read tcp 192.168.178.172:55149->192.168.178.163:80: read: connection reset by peer")
+			if attempts == 1 {
+				return nil, io.EOF
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
 		}),
 	})
 
-	err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n"))
-	if err == nil || !strings.Contains(err.Error(), "connection reset by peer") {
-		t.Fatalf("expected connection reset error, got %v", err)
+	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
+		t.Fatalf("UploadAsset returned error: %v", err)
 	}
-	if attempts != 1 {
-		t.Fatalf("expected no retry after connection reset, got attempts=%d", attempts)
+	if attempts != 2 {
+		t.Fatalf("expected retry after EOF, got attempts=%d", attempts)
+	}
+}
+
+func TestWiFiTransportUploadAssetRetriesConnectionReset(t *testing.T) {
+	oldDelay := assetUploadRetryDelay
+	assetUploadRetryDelay = 0
+	defer func() {
+		assetUploadRetryDelay = oldDelay
+	}()
+
+	var attempts int
+	transport := NewWiFiTransportWithClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts == 1 {
+				return nil, errors.New("read tcp 192.168.178.172:55149->192.168.178.163:80: read: connection reset by peer")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}),
+	})
+
+	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
+		t.Fatalf("UploadAsset returned error: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected retry after connection reset, got attempts=%d", attempts)
 	}
 }
 
