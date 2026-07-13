@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="VibeTV Control Center"
 BUNDLE_ID="shop.vibetv.control-center"
 RUNTIME_LABEL="shop.vibetv.control-center.runtime"
@@ -261,15 +262,39 @@ WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-runtime-validation.XXXXXX")"
 CLEANUP_ARMED=1
 REQUEST_LOG="$WORK_DIR/fake-device.requests"
 PORT_FILE="$WORK_DIR/fake-device.port"
+FIRMWARE_VERSIONS="$ROOT/release/firmware-versions.json"
+[[ -f "$FIRMWARE_VERSIONS" ]] || die "release firmware versions are missing: $FIRMWARE_VERSIONS"
+FAKE_DEVICE_FIRMWARE="$(python3 - "$FIRMWARE_VERSIONS" <<'PY'
+import json
+import re
+import sys
 
-python3 - "$PORT_FILE" "$REQUEST_LOG" <<'PY' &
+with open(sys.argv[1], encoding="utf-8") as source:
+    manifest = json.load(source)
+
+matches = [
+    artifact
+    for artifact in manifest.get("artifacts", [])
+    if artifact.get("firmwareEnv") == "esp8266_smalltv_st7789"
+    and artifact.get("board") == "esp8266-smalltv-st7789"
+]
+if len(matches) != 1:
+    raise SystemExit("release firmware manifest must contain exactly one ESP8266 VibeTV artifact")
+version = str(matches[0].get("firmwareVersion", "")).strip().removeprefix("v")
+if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+    raise SystemExit(f"release ESP8266 firmware version is invalid: {version!r}")
+print(version)
+PY
+)"
+
+python3 - "$PORT_FILE" "$REQUEST_LOG" "$FAKE_DEVICE_FIRMWARE" <<'PY' &
 import json
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
-port_file, request_log = sys.argv[1:]
+port_file, request_log, firmware = sys.argv[1:]
 
 class Handler(BaseHTTPRequestHandler):
     def record(self, path):
@@ -288,7 +313,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         self.record(path)
         if path == "/hello":
-            self.reply({"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.35","maxFrameBytes":4096,"capabilities":{"transport":{"active":"wifi"}}})
+            self.reply({"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":firmware,"maxFrameBytes":4096,"capabilities":{"transport":{"active":"wifi"}}})
         elif path == "/health":
             self.reply({"status":"ok"})
         else:

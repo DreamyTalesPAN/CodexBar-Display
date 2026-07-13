@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HARNESS="${ROOT}/scripts/validate-macos-control-center-runtime.sh"
 SWIFT_SOURCE="${ROOT}/macos/VibeTVControlCenter/main.swift"
+FIRMWARE_VERSIONS="${ROOT}/release/firmware-versions.json"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-runtime-contract.XXXXXX")"
 trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
 
@@ -17,6 +18,7 @@ assert_contains() {
 }
 
 [[ -x "$HARNESS" ]] || die "runtime validation harness is missing or not executable"
+[[ -f "$FIRMWARE_VERSIONS" ]] || die "release firmware versions are missing"
 
 source_app="$TMP_ROOT/Signed Fixture.app"
 output="$("$HARNESS" --dry-run --app "$source_app" --expected-version v1.2.3)"
@@ -50,13 +52,38 @@ if "$HARNESS" --dry-run --app "$source_app" --expected-version latest \
   die "harness accepted an unpinned expected version"
 fi
 
-python3 - "$HARNESS" "$SWIFT_SOURCE" <<'PY'
+python3 - "$HARNESS" "$SWIFT_SOURCE" "$FIRMWARE_VERSIONS" <<'PY'
+import json
 import sys
 
 harness = open(sys.argv[1], encoding="utf-8").read()
 swift = open(sys.argv[2], encoding="utf-8").read()
+with open(sys.argv[3], encoding="utf-8") as source:
+    firmware_versions = json.load(source)
+
+esp8266_artifacts = [
+    artifact
+    for artifact in firmware_versions.get("artifacts", [])
+    if artifact.get("firmwareEnv") == "esp8266_smalltv_st7789"
+    and artifact.get("board") == "esp8266-smalltv-st7789"
+]
+if len(esp8266_artifacts) != 1:
+    raise SystemExit("release manifest must contain exactly one ESP8266 VibeTV artifact")
+version = str(esp8266_artifacts[0].get("firmwareVersion", "")).removeprefix("v")
+try:
+    version_parts = tuple(int(part) for part in version.split("."))
+except ValueError:
+    raise SystemExit(f"release ESP8266 firmware version is invalid: {version!r}")
+if len(version_parts) != 3 or version_parts < (1, 0, 36):
+    raise SystemExit("runtime validation contract must use repaired ESP8266 firmware 1.0.36 or newer")
 
 required_harness = [
+    'FIRMWARE_VERSIONS="$ROOT/release/firmware-versions.json"',
+    'artifact.get("firmwareEnv") == "esp8266_smalltv_st7789"',
+    'artifact.get("board") == "esp8266-smalltv-st7789"',
+    'python3 - "$PORT_FILE" "$REQUEST_LOG" "$FAKE_DEVICE_FIRMWARE"',
+    'port_file, request_log, firmware = sys.argv[1:]',
+    '"firmware":firmware',
     'RUNTIME_LABEL="shop.vibetv.control-center.runtime"',
     'UNREGISTER_ARGUMENT="--vibetv-validation-unregister-runtime"',
     'UNREGISTER_ENV="VIBETV_RUNTIME_VALIDATION_UNREGISTER"',
@@ -69,6 +96,8 @@ required_harness = [
 for snippet in required_harness:
     if snippet not in harness:
         raise SystemExit(f"runtime harness is missing fail-closed contract: {snippet}")
+if '"firmware":"1.0.35"' in harness:
+    raise SystemExit("runtime harness still hard-codes the blocked ESP8266 firmware")
 for forbidden in ["sfltool", "vibetv.local", "192.168."]:
     if forbidden in harness:
         raise SystemExit(f"runtime harness must stay loopback-only and scoped: {forbidden}")
