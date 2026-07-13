@@ -551,7 +551,7 @@ required_source = [
     'runtimeDeviceRepairURLString = "http://127.0.0.1:47832/v1/device/repair"',
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",
-    "let devicePreparation = await prepareExistingDeviceConnection(",
+    "let devicePreparation = await prepareExistingDeviceConnectionWithRetries(",
     "requireFreshFullFrame: !legacyStates.isEmpty || !legacyApps.isEmpty",
     "var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)",
     "shouldRetryRuntimeRegistration(",
@@ -660,7 +660,7 @@ registration = source.find("guard await ensureBundledRuntimeServiceRegistered()"
 stop_legacy = source.find("if !stopLegacyLaunchAgents(legacyStates)")
 health_gate = source.find("var health = await waitForHealthyRuntime")
 device_preparation = source.find(
-    "let devicePreparation = await prepareExistingDeviceConnection(",
+    "let devicePreparation = await prepareExistingDeviceConnectionWithRetries(",
     health_gate,
 )
 legacy_app_migration = source.find(

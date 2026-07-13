@@ -285,6 +285,30 @@ func runURLSchemeTests() {
         "an incomplete display repair must keep legacy artifacts"
     )
     require(
+        shouldRetryExistingDevicePreparation(
+            .failed("temporary network failure"),
+            attempt: 1,
+            maximumAttempts: 3
+        ),
+        "a transient device preparation failure must get a bounded retry"
+    )
+    require(
+        !shouldRetryExistingDevicePreparation(
+            .failed("persistent network failure"),
+            attempt: 3,
+            maximumAttempts: 3
+        ),
+        "device preparation retries must stop at the configured maximum"
+    )
+    require(
+        !shouldRetryExistingDevicePreparation(
+            .notConfigured,
+            attempt: 1,
+            maximumAttempts: 3
+        ),
+        "a fresh install without a configured VibeTV must not retry migration"
+    )
+    require(
         shouldRetryRuntimeRegistration(
             after: .requestFailed("connection refused"),
             serviceEnabled: true

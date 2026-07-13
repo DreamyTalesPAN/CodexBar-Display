@@ -17,6 +17,8 @@ private let runtimeRegisteredVersionDefaultsKey =
 private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
 private let runtimeDeviceRepairTimeout: TimeInterval = 90
+private let runtimeDeviceRepairMaxAttempts = 3
+private let runtimeDeviceRepairRetryDelay: Duration = .seconds(3)
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
 private let runtimeValidationUnregisterArgument =
     "--vibetv-validation-unregister-runtime"
@@ -317,6 +319,20 @@ func shouldRepairExistingDevice(
     case .notConfigured, .failed:
         return false
     }
+}
+
+func shouldRetryExistingDevicePreparation(
+    _ outcome: ExistingDevicePreparationOutcome,
+    attempt: Int,
+    maximumAttempts: Int
+) -> Bool {
+    guard attempt < maximumAttempts else {
+        return false
+    }
+    if case .failed = outcome {
+        return true
+    }
+    return false
 }
 
 enum RuntimeHealthEvaluation: Equatable, CustomStringConvertible {
@@ -847,7 +863,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             return .keepCurrentPage
         }
 
-        let devicePreparation = await prepareExistingDeviceConnection(
+        let devicePreparation = await prepareExistingDeviceConnectionWithRetries(
             requireFreshFullFrame: !legacyStates.isEmpty || !legacyApps.isEmpty
         )
         if case .failed(let detail) = devicePreparation {
@@ -906,6 +922,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             "VibeTV Control Center migration completed with healthy Companion version \(expectedVersion); backup=\(backupRoot.path)"
         )
         return .nativeRuntimeReady
+    }
+
+    private func prepareExistingDeviceConnectionWithRetries(
+        requireFreshFullFrame: Bool
+    ) async -> ExistingDevicePreparationOutcome {
+        var attempt = 1
+        var outcome = await prepareExistingDeviceConnection(
+            requireFreshFullFrame: requireFreshFullFrame
+        )
+        while shouldRetryExistingDevicePreparation(
+            outcome,
+            attempt: attempt,
+            maximumAttempts: runtimeDeviceRepairMaxAttempts
+        ) {
+            NSLog(
+                "VibeTV Control Center device preparation attempt \(attempt) failed transiently: \(outcome); retrying"
+            )
+            try? await Task<Never, Never>.sleep(for: runtimeDeviceRepairRetryDelay)
+            attempt += 1
+            outcome = await prepareExistingDeviceConnection(
+                requireFreshFullFrame: requireFreshFullFrame
+            )
+        }
+        return outcome
     }
 
     private func prepareExistingDeviceConnection(
