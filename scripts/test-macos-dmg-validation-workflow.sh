@@ -97,11 +97,11 @@ main() {
   runtime_run="$(run_block "Validate installed runtime from notarized DMG")"
 
   assert_contains "$(cat "$WORKFLOW")" \
-    'CODEX_VALIDATION_SOURCE_SHA: "9a211c2c15039fd3b065dc6439fe2a7869b1c7a2"' \
-    "validation 10 must pin the reviewed source commit"
+    'CODEX_VALIDATION_SOURCE_SHA: "732cb4578508be6353262b8a26e02b5661760c96"' \
+    "validation 11 must pin the reviewed source commit"
   assert_contains "$(cat "$WORKFLOW")" \
-    'CODEX_VALIDATION_VERSION: "1.0.46"' \
-    "validation 10 must use the isolated validation version"
+    'CODEX_VALIDATION_VERSION: "1.0.47"' \
+    "validation 11 must use the isolated validation version"
   assert_contains "$trusted_files_step" \
     '416d95644a545c76c2ba8671f8910c5e48f40242a1f58ac35d763a929faedc2f' \
     "runtime validator must be pinned before signing"
