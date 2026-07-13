@@ -316,9 +316,7 @@ function PrimaryUpdateAction({
       >
         <Download size={20} aria-hidden />
         <span>
-          {macAppMigrationReady
-            ? "Download new Mac App"
-            : "Download Mac App update"}
+          Download new Mac App
         </span>
       </a>
     );
@@ -336,8 +334,8 @@ function PrimaryUpdateAction({
             : "New Mac App not ready"
         : macAppUpdateAvailable
           ? downloadUrl
-            ? "Download Mac App update"
-            : "Mac App update not ready"
+            ? "Download new Mac App"
+            : "New Mac App not ready"
           : checking
             ? "Checking updates"
             : "Check for updates";
@@ -496,7 +494,7 @@ function MacAppDmgUpdateNote({
                 ? "Download started."
                 : migration
                   ? "Move to the new Mac App."
-                  : "Update with the DMG."}
+                  : "Install the new Mac App."}
             </strong>{" "}
             Open the downloaded DMG, drag VibeTV Control Center into
             Applications, and choose Replace if macOS asks. Then open the app
@@ -510,7 +508,7 @@ function MacAppDmgUpdateNote({
             <strong className="font-black text-[#1B1B1B]">
               {migration
                 ? "New Mac App is not ready yet."
-                : "Mac App update is not ready yet."}
+                : "New Mac App is not ready yet."}
             </strong>{" "}
             Your current Control Center keeps working. No installer will run;
             check again after the signed Mac App download is available.
@@ -525,7 +523,7 @@ function MacAppDmgUpdateNote({
         >
           <Download size={16} aria-hidden />
           <span>
-            {migration ? "Download new Mac App" : "Download Mac App update"}
+            Download new Mac App
           </span>
         </a>
       ) : null}

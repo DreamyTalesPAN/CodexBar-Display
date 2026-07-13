@@ -168,6 +168,10 @@ case "$*" in
   *"/v1/device"*)
     respond '{"ok":true,"device":{"connected":true,"paired":true,"target":"http://192.168.178.72","firmware":"9.9.9"}}'
     ;;
+  *"VibeTV-Control-Center.dmg"*)
+    [[ -n "$out" ]] || exit 22
+    printf 'fake signed VibeTV DMG\n' > "$out"
+    ;;
   *"/releases/latest"*)
     respond '{"tag_name":"v9.9.9"}'
     ;;
@@ -277,6 +281,7 @@ run_installer() {
       FAKE_STATUS_OLD_ONCE="${FAKE_STATUS_OLD_ONCE:-}" \
       FAKE_STATUS_DEVICE_DISCONNECTED="${FAKE_STATUS_DEVICE_DISCONNECTED:-}" \
       VIBETV_INSTALLER_DISPLAY_DAEMON_PID="${VIBETV_INSTALLER_DISPLAY_DAEMON_PID:-}" \
+      VIBETV_MAC_APP_DMG_URL="${VIBETV_MAC_APP_DMG_URL:-}" \
       VIBETV_COMPANION_REPAIR_ATTEMPTS="${VIBETV_COMPANION_REPAIR_ATTEMPTS:-3}" \
       VIBETV_COMPANION_REPAIR_RETRY_DELAY="${VIBETV_COMPANION_REPAIR_RETRY_DELAY:-0}" \
       VIBETV_COMPANION_STABLE_RETRY_DELAY="${VIBETV_COMPANION_STABLE_RETRY_DELAY:-0}" \
@@ -468,43 +473,45 @@ run_install_can_skip_device_setup_for_mac_app_update() {
   assert_not_contains "$output" "VibeTV firmware update complete"
 }
 
-run_install_handoffs_when_started_inside_display_daemon() {
-  local root output launch_log setup_log daemon_plist handoff_plist handoff_script
-  root="${TMP_WORK_DIR}/in-place-handoff"
+run_install_downloads_dmg_when_started_inside_display_daemon() {
+  local root output setup_log dmg_url dmg_path old_binary old_binary_before
+  root="${TMP_WORK_DIR}/dmg-download"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
   : > "${root}/launchctl.log"
   : > "${root}/curl.log"
   : > "${root}/api.log"
   : > "${root}/open.log"
+  dmg_url="https://preview.example/VibeTV-Control-Center.dmg?token=test"
+  dmg_path="${root}/home/Downloads/VibeTV-Control-Center.dmg"
+  old_binary="${root}/home/Library/Application Support/codexbar-display/bin/codexbar-display"
+  old_binary_before="$(cat "$old_binary")"
 
-  output="$(VIBETV_INSTALLER_DISPLAY_DAEMON_PID="$$" run_installer "$root" --version 9.9.9 --skip-device-setup)" || {
+  output="$(VIBETV_INSTALLER_DISPLAY_DAEMON_PID="$$" VIBETV_MAC_APP_DMG_URL="$dmg_url" run_installer "$root" --version 9.9.9 --skip-device-setup)" || {
     printf '%s\n' "$output" >&2
-    die "expected in-place Mac App handoff to pass"
+    die "expected DMG download to pass"
   }
 
-  daemon_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist"
-  handoff_plist="${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.update-handoff.plist"
-  handoff_script="${root}/home/Library/Application Support/codexbar-display/run/mac-app-update-handoff.sh"
-  launch_log="$(cat "${root}/launchctl.log")"
   setup_log="$(support_log "$root")"
 
-  assert_contains "$output" "[4/5] Starting Control Center"
-  assert_not_contains "$output" "[5/5] Opening Control Center"
-  assert_not_contains "$output" "Done. Your Control Center is opening now."
-  assert_contains "$setup_log" "updated background service handoff scheduled"
-  assert_contains "$setup_log" "background service installed at ${daemon_plist}"
-  assert_contains "$setup_log" "Mac App update verified; handing off to the updated background service"
-  assert_contains "$launch_log" "setenv VIBETV_MIN_SAFE_ESP8266_FIRMWARE 1.0.36"
-  assert_contains "$launch_log" "bootstrap gui/$(id -u) ${handoff_plist}"
-  assert_not_line "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.daemon"
-  assert_not_contains "$launch_log" "bootstrap gui/$(id -u) ${daemon_plist}"
-  assert_contains "$(cat "$handoff_plist")" "gui/$(id -u)/com.codexbar-display.daemon"
-  assert_contains "$(cat "$handoff_plist")" "http://127.0.0.1:47832/control-center?migration=9.9.9"
-  assert_contains "$(cat "$handoff_script")" 'launchctl kickstart -k "$display_service"'
-  assert_contains "$(cat "$handoff_script")" '/usr/bin/open "$open_url"'
-  [[ ! -s "${root}/open.log" ]] || die "main installer must let the handoff open the updated Control Center"
+  assert_contains "$output" "Downloading the new VibeTV Mac App"
+  assert_contains "$output" "[1/1] Downloading Mac App"
+  assert_contains "$output" "Done. The new VibeTV Mac App is ready to install."
+  assert_contains "$output" "Drag VibeTV Control Center to Applications, then open it."
+  assert_not_contains "$output" "Installing your local Control Center"
+  assert_contains "$setup_log" "downloading new Mac App DMG from ${dmg_url}"
+  assert_contains "$setup_log" "new Mac App DMG downloaded to ${dmg_path}"
+  assert_contains "$setup_log" "opened new Mac App DMG"
+  [[ -f "$dmg_path" ]] || die "expected downloaded DMG"
+  assert_contains "$(cat "$dmg_path")" "fake signed VibeTV DMG"
+  assert_contains "$(cat "${root}/curl.log")" "$dmg_url"
+  assert_contains "$(cat "${root}/open.log")" "$dmg_path"
+  [[ ! -s "${root}/launchctl.log" ]] || die "DMG download must not touch LaunchAgents"
+  [[ "$(cat "$old_binary")" == "$old_binary_before" ]] || die "DMG download must not replace the running old binary"
+  [[ ! -d "${root}/home/Applications/VibeTV Control Center.app" ]] || die "DMG download must not install the new app automatically"
   assert_not_contains "$(cat "${root}/curl.log")" "/v1/device/repair"
+  assert_not_contains "$(cat "${root}/curl.log")" "/releases/latest"
+  assert_not_contains "$(cat "${root}/curl.log")" "checksums-"
   assert_not_contains "$(cat "${root}/api.log")" "install-update"
 }
 
@@ -695,7 +702,7 @@ run_install_restarts_when_old_api_version_answers() {
 
 run_install_writes_integrated_daemon_launchagent
 run_install_can_skip_device_setup_for_mac_app_update
-run_install_handoffs_when_started_inside_display_daemon
+run_install_downloads_dmg_when_started_inside_display_daemon
 run_install_disables_global_legacy_launchagent
 run_install_retries_transient_repair_failure
 run_install_waits_for_slow_repair_recovery

@@ -1539,7 +1539,7 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
   const dmgUpdateLink = page.getByRole("link", {
-    name: "Download Mac App update",
+    name: "Download new Mac App",
   });
   await dmgUpdateLink.waitFor({
     timeout: 10_000,
@@ -1549,7 +1549,7 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
       "VibeTV-Control-Center.dmg",
     "Updates should use the verified DMG release asset",
   );
-  await page.getByText("Update with the DMG.").waitFor({ timeout: 10_000 });
+  await page.getByText("Install the new Mac App.").waitFor({ timeout: 10_000 });
   await page.getByText(/choose Replace/).waitFor({ timeout: 10_000 });
   await page.getByText("Installed version").waitFor({ timeout: 10_000 });
   await page.getByText("Latest version").waitFor({ timeout: 10_000 });
@@ -1785,7 +1785,7 @@ async function testDmgInstallStaysUpToDateAtSameVersion(browser, appUrl) {
     "Current DMG install must not show a migration download",
   );
   assert(
-    (await page.getByRole("link", { name: "Download Mac App update" }).count()) ===
+    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
       0,
     "Current DMG install must not show an update download",
   );
@@ -1921,7 +1921,7 @@ async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
   await page
-    .getByRole("link", { name: "Download Mac App update" })
+    .getByRole("link", { name: "Download new Mac App" })
     .waitFor({ timeout: 10_000 });
   const macAppSection = page.locator("section.border-b").filter({
     has: page.getByRole("heading", { name: "Mac App" }),
@@ -2955,7 +2955,7 @@ async function testDisabledDmgFlagHidesSetupAndUpdateLinks(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
   const unavailableButton = page.getByRole("button", {
-    name: "Mac App update not ready",
+    name: "New Mac App not ready",
   });
   await unavailableButton.waitFor({ timeout: 10_000 });
   assert(await unavailableButton.isDisabled(), "Disabled DMG flag must stay disabled");
@@ -4269,7 +4269,7 @@ async function assertNoDmgDownloadActions(page) {
     "Setup must not show a DMG link without an enabled, verified asset",
   );
   assert(
-    (await page.getByRole("link", { name: "Download Mac App update" }).count()) ===
+    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
       0,
     "Updates must not show a DMG link without an enabled, verified asset",
   );

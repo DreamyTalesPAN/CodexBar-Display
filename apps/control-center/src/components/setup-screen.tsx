@@ -89,8 +89,8 @@ export function SetupScreen({
       ? "Download Mac App"
       : "Mac App download not ready"
     : dmgUrl
-      ? "Update Mac App"
-      : "Mac App update not ready";
+      ? "Download new Mac App"
+      : "New Mac App not ready";
   const showControlCenterLauncher =
     !hostedMode &&
     showIntro &&
@@ -307,7 +307,7 @@ export function SetupScreen({
                         <span>
                           {hostedMode
                             ? "Download Mac App"
-                            : "Download Mac App update"}
+                            : "Download new Mac App"}
                         </span>
                       </a>
                     </div>
@@ -324,7 +324,7 @@ export function SetupScreen({
                         label={
                           hostedMode
                             ? "Mac App download not ready"
-                            : "Mac App update not ready"
+                            : "New Mac App not ready"
                         }
                         size="large"
                       />
