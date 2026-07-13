@@ -125,6 +125,13 @@ func TestRunCycleWithDepsLogsUsageSourceFreshModeAndTransport(t *testing.T) {
 		now:           func() time.Time { return now },
 		transportName: "wifi",
 		resolvePort:   func(string) (string, error) { return "http://192.168.178.65", nil },
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+				MaxFrameBytes:             2048,
+			}, nil
+		},
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
 			frame := testParsedFrame("codex", 12, 30, 3600)
 			frame.Source = "web"

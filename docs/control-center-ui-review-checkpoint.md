@@ -13,6 +13,30 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: legacy local-Control-Center migration to the DMG, native
+  VibeTV WiFi verification, first-frame readiness, stuck-image recovery, the
+  connected Overview handoff, and Mac App replacement guidance in Updates.
+- Customer rule: the hosted site owns the verified Mac App download; the
+  installed Mac App owns WiFi and VibeTV verification. Setup must remain
+  visible until a fresh frame is confirmed, while service registration,
+  pairing retries, heap limits, and frame transport stay invisible.
+- Simplifications accepted: no new customer decision was added by the runtime
+  hardening. The initial native state has one primary `VibeTV is on WiFi`
+  action and locks unavailable navigation. The manual address and one `Fix
+  connection` action appear only after the automatic check cannot finish.
+- Verification: the current branch was reviewed in the local browser at the
+  native setup start, failed automatic verification fallback, and a 390-pixel
+  mobile viewport. Accepted screenshots are in
+  `tmp/ui-review-dmg-first-frame/`. The DOM showed semantic headings, one
+  enabled primary action, and disabled unavailable navigation; the mobile
+  setup content and primary action measured 334 pixels inside the 390-pixel
+  viewport. `npm run lint`, `npm run check:customer-ui-copy`, and `npm run
+  test:customer-flows` passed locally. The customer-flow suite covers hosted
+  download-only behavior, legacy DMG replacement, setup locks, bounded repair,
+  first-frame proof, direct Overview handoff, stuck-image recovery, and mobile
+  overflow. Keyboard, screen-reader, and measured contrast checks remain
+  outside this screenshot review.
+
 - Reviewed scope: hosted Mac App download entry, fresh native WiFi onboarding,
   one-shot VibeTV verification, direct Overview handoff, healthy existing
   installs, setup retry, and failed device discovery.
