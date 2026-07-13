@@ -5,6 +5,8 @@ import WebKit
 
 private let controlCenterURLString = "http://127.0.0.1:47832/control-center"
 private let runtimeStatusURLString = "http://127.0.0.1:47832/v1/status"
+private let runtimeDeviceRepairURLString = "http://127.0.0.1:47832/v1/device/repair"
+private let nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"
 private let controlCenterURLScheme = "vibetv"
 private let controlCenterURLHost = "open-control-center"
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
@@ -14,6 +16,7 @@ private let runtimeRegisteredVersionDefaultsKey =
     "shop.vibetv.control-center.runtime.registered-bundle-version"
 private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
+private let runtimeDeviceRepairTimeout: TimeInterval = 90
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
 private let runtimeValidationUnregisterArgument =
     "--vibetv-validation-unregister-runtime"
@@ -116,6 +119,14 @@ func runtimeBundleVersion(shortVersion: String?, buildVersion: String?) -> Strin
     return "\(short)+\(build)"
 }
 
+func nativeControlCenterUserAgent(shortVersion: String?, buildVersion: String?) -> String {
+    let version = runtimeBundleVersion(
+        shortVersion: shortVersion,
+        buildVersion: buildVersion
+    )
+    return nativeControlCenterUserAgentPrefix + (version.isEmpty ? "unknown" : version)
+}
+
 func normalizedCompanionVersion(_ raw: String) -> String {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.lowercased().hasPrefix("v") {
@@ -212,8 +223,100 @@ private struct RuntimeStatusPayload: Decodable {
         let version: String
     }
 
+    struct Device: Decodable {
+        let target: String?
+        let paired: Bool?
+        let ready: Bool
+    }
+
     let ok: Bool
     let companion: Companion
+    let device: Device?
+}
+
+private struct RuntimeDeviceRepairPayload: Decodable {
+    struct Device: Decodable {
+        let ready: Bool
+    }
+
+    let ok: Bool
+    let device: Device
+}
+
+enum ExistingDeviceStatusEvaluation: Equatable {
+    case ready
+    case notConfigured
+    case needsRepair
+    case failed(String)
+}
+
+enum ExistingDevicePreparationOutcome: Equatable, CustomStringConvertible {
+    case ready
+    case notConfigured
+    case failed(String)
+
+    var description: String {
+        switch self {
+        case .ready:
+            return "ready"
+        case .notConfigured:
+            return "not configured"
+        case .failed(let detail):
+            return "failed: \(detail)"
+        }
+    }
+}
+
+func evaluateExistingDeviceStatus(
+    data: Data,
+    httpStatus: Int
+) -> ExistingDeviceStatusEvaluation {
+    guard (200..<300).contains(httpStatus) else {
+        return .failed("unexpected HTTP status \(httpStatus)")
+    }
+    guard let payload = try? JSONDecoder().decode(RuntimeStatusPayload.self, from: data),
+          payload.ok else {
+        return .failed("invalid or unhealthy status JSON")
+    }
+    let target = payload.device?.target?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !target.isEmpty else {
+        return .notConfigured
+    }
+    return payload.device?.ready == true ? .ready : .needsRepair
+}
+
+func evaluateExistingDeviceRepair(
+    data: Data,
+    httpStatus: Int
+) -> ExistingDevicePreparationOutcome {
+    guard (200..<300).contains(httpStatus) else {
+        return .failed("unexpected HTTP status \(httpStatus)")
+    }
+    guard let payload = try? JSONDecoder().decode(
+        RuntimeDeviceRepairPayload.self,
+        from: data
+    ), payload.ok else {
+        return .failed("invalid or unsuccessful repair JSON")
+    }
+    guard payload.device.ready else {
+        return .failed("VibeTV did not confirm a fresh full display frame")
+    }
+    return .ready
+}
+
+func shouldRepairExistingDevice(
+    _ evaluation: ExistingDeviceStatusEvaluation,
+    requireFreshFullFrame: Bool
+) -> Bool {
+    switch evaluation {
+    case .needsRepair:
+        return true
+    case .ready:
+        return requireFreshFullFrame
+    case .notConfigured, .failed:
+        return false
+    }
 }
 
 enum RuntimeHealthEvaluation: Equatable, CustomStringConvertible {
@@ -631,6 +734,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.customUserAgent = nativeControlCenterUserAgent(
+            shortVersion: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String,
+            buildVersion: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleVersion"
+            ) as? String
+        )
         webView.navigationDelegate = self
 
         let window = NSWindow(
@@ -736,6 +847,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             return .keepCurrentPage
         }
 
+        let devicePreparation = await prepareExistingDeviceConnection(
+            requireFreshFullFrame: !legacyStates.isEmpty || !legacyApps.isEmpty
+        )
+        if case .failed(let detail) = devicePreparation {
+            NSLog(
+                "VibeTV Control Center kept legacy artifacts because the existing VibeTV connection could not be repaired automatically: \(detail)"
+            )
+            if !legacyStates.isEmpty {
+                let restored = await rollbackToLegacyAgents(
+                    legacyStates,
+                    reason: "existing VibeTV repair failed: \(detail)"
+                )
+                return restored ? .legacyRuntimeRestored : .keepCurrentPage
+            }
+            return .nativeRuntimeReady
+        }
+        NSLog(
+            "VibeTV Control Center existing device preparation completed: \(devicePreparation)"
+        )
+
         if legacyStates.isEmpty {
             let migratedLegacyApps = await migrateLegacyAppsAfterHealthyRuntime(legacyApps)
             guard migratedLegacyApps else {
@@ -775,6 +906,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             "VibeTV Control Center migration completed with healthy Companion version \(expectedVersion); backup=\(backupRoot.path)"
         )
         return .nativeRuntimeReady
+    }
+
+    private func prepareExistingDeviceConnection(
+        requireFreshFullFrame: Bool
+    ) async -> ExistingDevicePreparationOutcome {
+        guard let statusURL = URL(string: runtimeStatusURLString),
+              let repairURL = URL(string: runtimeDeviceRepairURLString) else {
+            return .failed("invalid local device preparation URL")
+        }
+
+        do {
+            var statusRequest = URLRequest(
+                url: statusURL,
+                cachePolicy: .reloadIgnoringLocalCacheData,
+                timeoutInterval: runtimeHealthRequestTimeout
+            )
+            statusRequest.httpMethod = "GET"
+            let (statusData, statusResponse) = try await URLSession.shared.data(
+                for: statusRequest
+            )
+            guard let statusHTTP = statusResponse as? HTTPURLResponse else {
+                return .failed("local status response was not HTTP")
+            }
+
+            let statusEvaluation = evaluateExistingDeviceStatus(
+                data: statusData,
+                httpStatus: statusHTTP.statusCode
+            )
+            switch statusEvaluation {
+            case .ready:
+                if !shouldRepairExistingDevice(
+                    statusEvaluation,
+                    requireFreshFullFrame: requireFreshFullFrame
+                ) {
+                    return .ready
+                }
+            case .notConfigured:
+                return .notConfigured
+            case .failed(let detail):
+                return .failed(detail)
+            case .needsRepair:
+                break
+            }
+
+            var repairRequest = URLRequest(
+                url: repairURL,
+                cachePolicy: .reloadIgnoringLocalCacheData,
+                timeoutInterval: runtimeDeviceRepairTimeout
+            )
+            repairRequest.httpMethod = "POST"
+            repairRequest.httpBody = Data("{}".utf8)
+            repairRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let (repairData, repairResponse) = try await URLSession.shared.data(
+                for: repairRequest
+            )
+            guard let repairHTTP = repairResponse as? HTTPURLResponse else {
+                return .failed("local repair response was not HTTP")
+            }
+            return evaluateExistingDeviceRepair(
+                data: repairData,
+                httpStatus: repairHTTP.statusCode
+            )
+        } catch {
+            return .failed((error as NSError).localizedDescription)
+        }
     }
 
     private func ensureBundledRuntimeServiceRegistered() async -> Bool {

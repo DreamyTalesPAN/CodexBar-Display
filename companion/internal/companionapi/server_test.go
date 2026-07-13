@@ -1400,6 +1400,51 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 	}
 }
 
+func TestDMGControlCenterRetiresExternalBrowserUI(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.installationMode = "dmg"
+	server.controlCenterFS = fstest.MapFS{
+		"index.html": {
+			Data: []byte(`<!doctype html><div id="root">VibeTV Control Center</div>`),
+		},
+	}
+
+	for _, route := range []string{"/control-center", "/control-center/usage"} {
+		external := httptest.NewRecorder()
+		externalRequest := httptest.NewRequest(http.MethodGet, route, nil)
+		externalRequest.Header.Set("User-Agent", "Mozilla/5.0")
+		server.Handler().ServeHTTP(external, externalRequest)
+		if external.Code != http.StatusGone {
+			t.Fatalf("expected retired browser route %s status 410, got %d body=%s", route, external.Code, external.Body.String())
+		}
+		if !strings.Contains(external.Body.String(), "moved to the Mac App") {
+			t.Fatalf("expected retired browser guidance for %s, got %q", route, external.Body.String())
+		}
+		if got := external.Header().Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("expected retired browser response to disable caching, got %q", got)
+		}
+	}
+
+	native := httptest.NewRecorder()
+	nativeRequest := httptest.NewRequest(http.MethodGet, "/control-center", nil)
+	nativeRequest.Header.Set("User-Agent", nativeControlCenterUA+"99.0.16+163")
+	server.Handler().ServeHTTP(native, nativeRequest)
+	if native.Code != http.StatusOK || !strings.Contains(native.Body.String(), "VibeTV Control Center") {
+		t.Fatalf("expected native Mac App to retain Control Center UI, got %d body=%s", native.Code, native.Body.String())
+	}
+
+	legacy := newTestServer(t, runtimeconfig.Config{})
+	legacy.installationMode = "legacy"
+	legacy.controlCenterFS = server.controlCenterFS
+	legacyBrowser := httptest.NewRecorder()
+	legacyRequest := httptest.NewRequest(http.MethodGet, "/control-center", nil)
+	legacyRequest.Header.Set("User-Agent", "Mozilla/5.0")
+	legacy.Handler().ServeHTTP(legacyBrowser, legacyRequest)
+	if legacyBrowser.Code != http.StatusOK {
+		t.Fatalf("expected pre-DMG legacy browser UI to remain available, got %d body=%s", legacyBrowser.Code, legacyBrowser.Body.String())
+	}
+}
+
 func TestControlCenterStaticUnavailableWithoutIndex(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.controlCenterFS = fstest.MapFS{}
@@ -2905,6 +2950,93 @@ func TestDeviceRepairDoesNotRotateTokenForTransientFrameFailure(t *testing.T) {
 	}
 	if pairCalls.Load() != 0 {
 		t.Fatalf("transient frame failure rotated pairing token %d times", pairCalls.Load())
+	}
+}
+
+func TestDeviceRepairReactivatesCurrentThemeAfterPartialStatusScreen(t *testing.T) {
+	var activationCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"claude-creature","themeSpec":{"active":true,"path":"/themes/u/claude.json","renderOk":true}},"render":{"fullCount":10,"partialCount":2,"lastKind":"update_status"}}`))
+		case "/theme/active":
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST theme activation, got %s", r.Method)
+			}
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Fatalf("expected preserved pairing token, got %q", got)
+			}
+			var body struct {
+				Path string `json:"path"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode theme activation: %v", err)
+			}
+			if body.Path != "/themes/u/claude.json" {
+				t.Fatalf("unexpected active theme path %q", body.Path)
+			}
+			activationCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.runSetup = func(context.Context, setup.Options) error { return nil }
+	server.waitStream = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:    true,
+			Healthy:    true,
+			Target:     device.URL,
+			LastTarget: device.URL,
+			LastSentAt: time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+	var renderCalls atomic.Int32
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		call := renderCalls.Add(1)
+		fullCount := uint64(10)
+		partialCount := uint64(3)
+		lastKind := "theme_spec_frame"
+		if call > 1 {
+			fullCount = 11
+			lastKind = "theme_spec_usage"
+		}
+		health := deviceHealth{OK: true}
+		health.Display.ThemeSpec.Active = true
+		health.Display.ThemeSpec.Path = "/themes/u/claude.json"
+		renderOK := true
+		health.Display.ThemeSpec.RenderOK = &renderOK
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = lastKind
+		return health, nil
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected automatic full-screen recovery, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode repair response: %v", err)
+	}
+	if !got.OK || !got.Device.Ready {
+		t.Fatalf("expected ready device after full redraw, got %+v", got)
+	}
+	if activationCalls.Load() != 1 || renderCalls.Load() != 2 {
+		t.Fatalf("activation=%d renderChecks=%d want 1,2", activationCalls.Load(), renderCalls.Load())
 	}
 }
 

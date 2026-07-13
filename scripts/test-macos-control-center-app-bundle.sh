@@ -548,6 +548,11 @@ required_source = [
     "runtimeServiceNeedsRefresh(",
     'runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"',
     'runtimeStatusURLString = "http://127.0.0.1:47832/v1/status"',
+    'runtimeDeviceRepairURLString = "http://127.0.0.1:47832/v1/device/repair"',
+    'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
+    "webView.customUserAgent = nativeControlCenterUserAgent(",
+    "let devicePreparation = await prepareExistingDeviceConnection(",
+    "requireFreshFullFrame: !legacyStates.isEmpty || !legacyApps.isEmpty",
     "var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)",
     "shouldRetryRuntimeRegistration(",
     "shouldRunRuntimeValidationUnregister(",
@@ -654,16 +659,21 @@ if "guard !installationRequired else" not in source[present_start:present_end]:
 registration = source.find("guard await ensureBundledRuntimeServiceRegistered()")
 stop_legacy = source.find("if !stopLegacyLaunchAgents(legacyStates)")
 health_gate = source.find("var health = await waitForHealthyRuntime")
+device_preparation = source.find(
+    "let devicePreparation = await prepareExistingDeviceConnection(",
+    health_gate,
+)
 legacy_app_migration = source.find(
     "let migratedLegacyApps = await migrateLegacyAppsAfterHealthyRuntime",
     health_gate,
 )
 persist_version = source.find("recordCurrentRuntimeBundleVersion()", health_gate)
 if not (
-    0 <= registration < stop_legacy < health_gate < legacy_app_migration < persist_version
+    0 <= registration < stop_legacy < health_gate < device_preparation
+    < legacy_app_migration < persist_version
 ):
     raise SystemExit(
-        "native app must register, stop legacy, pass health, migrate old apps, then persist"
+        "native app must register, stop legacy, pass health, repair the existing device, migrate old apps, then persist"
     )
 
 prepare_start = source.find("private func prepareCompanion() async")

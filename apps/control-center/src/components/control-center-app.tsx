@@ -576,7 +576,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
-        if (shouldRedirectToLocalControlCenter()) {
+        if (
+          shouldRedirectToLocalControlCenter() &&
+          payload.companion?.installationMode !== "dmg"
+        ) {
           try {
             await verifyLocalControlCenterAvailable();
           } catch (error) {

@@ -44,6 +44,7 @@ const (
 	defaultDevOrigin          = "http://localhost:3000"
 	previewOriginHostPrefix   = "codex-vibetv-control-center-"
 	previewOriginHostSuffix   = "-paul-anduschus-projects.vercel.app"
+	nativeControlCenterUA     = "VibeTVControlCenter/"
 	deviceTimeout             = 15 * time.Second
 	discoveryProbeTime        = 1500 * time.Millisecond
 	repairDiscoveryAttempts   = 3
@@ -697,6 +698,15 @@ func (s *Server) registerControlCenterRoutes(mux *http.ServeMux) {
 
 func (s *Server) handleControlCenter(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet, http.MethodHead) {
+		return
+	}
+	if s.installationMode == "dmg" && !strings.HasPrefix(strings.TrimSpace(r.UserAgent()), nativeControlCenterUA) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusGone)
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>VibeTV Control Center</title><main><h1>VibeTV Control Center moved to the Mac App.</h1><p>Open VibeTV Control Center from Applications.</p></main>`)
+		}
 		return
 	}
 	assetPath := strings.TrimPrefix(r.URL.Path, "/control-center")
@@ -2103,6 +2113,15 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	}
 	device := withDisplayStreamInfo(deviceFromHello(target, token, hello), stream)
 	health, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
+	if activeThemeNeedsFullRepairRender(health) {
+		health, err = s.reactivateCurrentThemeAndWaitForFullRender(
+			ctx,
+			target,
+			token,
+			health,
+			stream,
+		)
+	}
 	if err != nil {
 		if !stream.Healthy {
 			return deviceInfo{}, &repairStageError{stage: "display-stream", err: errors.New(displayStreamDiagnosticDetail(streamPointer(stream)))}
@@ -3938,6 +3957,20 @@ func renderHealthyFromHealth(health deviceHealth) bool {
 	return usageRenderKind(health.Render.LastKind)
 }
 
+func fullUsageRenderKind(raw string) bool {
+	switch strings.TrimSpace(raw) {
+	case "usage", "theme_spec_usage":
+		return true
+	default:
+		return false
+	}
+}
+
+func activeThemeNeedsFullRepairRender(health deviceHealth) bool {
+	spec := health.Display.ThemeSpec
+	return spec.Active && strings.TrimSpace(spec.Path) != "" && !fullUsageRenderKind(health.Render.LastKind)
+}
+
 func renderSurfaceHealthy(health deviceHealth) bool {
 	if _, _, ok := displayRenderCounters(health); !ok {
 		return false
@@ -4013,6 +4046,46 @@ func (s *Server) waitForVerifiedDisplayRender(
 		return health, err
 	}
 	return s.waitForDisplayRenderWithStream(ctx, target, token, baseline, stream)
+}
+
+func (s *Server) reactivateCurrentThemeAndWaitForFullRender(
+	ctx context.Context,
+	target string,
+	token string,
+	baseline deviceHealth,
+	stream displayStreamInfo,
+) (deviceHealth, error) {
+	themePath := strings.TrimSpace(baseline.Display.ThemeSpec.Path)
+	if !baseline.Display.ThemeSpec.Active || themePath == "" {
+		return baseline, errors.New("active VibeTV theme path is unavailable")
+	}
+	var response struct {
+		OK bool `json:"ok"`
+	}
+	if err := s.doJSON(
+		ctx,
+		http.MethodPost,
+		target,
+		"/theme/active",
+		token,
+		struct {
+			Path string `json:"path"`
+		}{Path: themePath},
+		&response,
+	); err != nil {
+		return baseline, fmt.Errorf("reactivate current VibeTV theme: %w", err)
+	}
+	if !response.OK {
+		return baseline, errors.New("VibeTV did not confirm current theme reactivation")
+	}
+	health, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
+	if err != nil {
+		return health, err
+	}
+	if !fullUsageRenderKind(health.Render.LastKind) {
+		return health, fmt.Errorf("VibeTV did not confirm a full display render: lastKind=%s", strings.TrimSpace(health.Render.LastKind))
+	}
+	return health, nil
 }
 
 func (s *Server) updateBrightness(ctx context.Context, target, token string, brightness int) (deviceSettings, error) {

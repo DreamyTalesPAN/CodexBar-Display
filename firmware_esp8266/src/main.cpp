@@ -676,9 +676,15 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     return;
   }
 
-  const bool redrawAfterStaleStatus = frameStaleStatusRendered;
+  const bool redrawAfterStatus = waitStatusRendered || frameStaleStatusRendered;
   waitStatusRendered = false;
   frameStaleStatusRendered = false;
+  if (redrawAfterStatus) {
+    // A setup or OTA status screen covers the whole display. Never apply a
+    // partial ThemeSpec update on top of it; the first accepted frame must
+    // rebuild the complete customer screen.
+    runtimeCtx.screenDirty = true;
+  }
   lastFrameAcceptedAtMs = millis();
   applyFrameUpdateState();
   if (event.themeSpecChanged) {
@@ -708,9 +714,6 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     if (snapshot.themeSpecPartialSuccesses > partialSuccessesBefore && !runtimeCtx.screenDirty) {
       recordRenderPartial("theme_spec_frame", micros() - partialStartUs);
     }
-  }
-  if (redrawAfterStaleStatus) {
-    runtimeCtx.screenDirty = true;
   }
   Serial.printf("frame_received transport=%s\n", transport);
 }

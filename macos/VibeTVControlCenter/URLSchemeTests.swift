@@ -140,6 +140,13 @@ func runURLSchemeTests() {
         "missing bundle metadata must stay empty"
     )
     require(
+        nativeControlCenterUserAgent(
+            shortVersion: "99.0.16",
+            buildVersion: "163"
+        ) == "VibeTVControlCenter/99.0.16+163",
+        "native WebView must identify itself without exposing the browser UI"
+    )
+    require(
         shouldRunRuntimeValidationUnregister(
             arguments: [
                 "/Applications/VibeTV Control Center.app/Contents/MacOS/VibeTVControlCenter",
@@ -221,6 +228,61 @@ func runURLSchemeTests() {
             expectedVersion: "1.2.3"
         ) == .invalidPayload,
         "invalid status JSON must fail the health gate"
+    )
+    require(
+        evaluateExistingDeviceStatus(
+            data: Data(
+                #"{"ok":true,"companion":{"version":"1.2.3"},"device":{"target":"http://192.168.178.72","paired":true,"ready":true}}"#.utf8
+            ),
+            httpStatus: 200
+        ) == .ready,
+        "a verified existing VibeTV must not be repaired again"
+    )
+    require(
+        shouldRepairExistingDevice(
+            .ready,
+            requireFreshFullFrame: true
+        ),
+        "legacy migration must prove one fresh full frame even when old status says ready"
+    )
+    require(
+        !shouldRepairExistingDevice(
+            .ready,
+            requireFreshFullFrame: false
+        ),
+        "normal app starts must not rewrite an already healthy VibeTV"
+    )
+    require(
+        evaluateExistingDeviceStatus(
+            data: Data(
+                #"{"ok":true,"companion":{"version":"1.2.3"},"device":{"target":"http://192.168.178.72","connected":true,"ready":false}}"#.utf8
+            ),
+            httpStatus: 200
+        ) == .needsRepair,
+        "a preserved target without a fresh frame must be repaired automatically"
+    )
+    require(
+        evaluateExistingDeviceStatus(
+            data: Data(
+                #"{"ok":true,"companion":{"version":"1.2.3"},"device":{"connected":false,"ready":false}}"#.utf8
+            ),
+            httpStatus: 200
+        ) == .notConfigured,
+        "a fresh install without a target must continue to onboarding"
+    )
+    require(
+        evaluateExistingDeviceRepair(
+            data: Data(#"{"ok":true,"device":{"ready":true}}"#.utf8),
+            httpStatus: 200
+        ) == .ready,
+        "migration may retire the legacy runtime only after a fresh frame is confirmed"
+    )
+    require(
+        evaluateExistingDeviceRepair(
+            data: Data(#"{"ok":true,"device":{"ready":false}}"#.utf8),
+            httpStatus: 200
+        ) == .failed("VibeTV did not confirm a fresh full display frame"),
+        "an incomplete display repair must keep legacy artifacts"
     )
     require(
         shouldRetryRuntimeRegistration(
