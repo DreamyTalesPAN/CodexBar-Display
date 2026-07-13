@@ -666,6 +666,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.registerControlCenterRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
+	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
@@ -867,6 +868,23 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		OK:        true,
 		Companion: s.companionInfo(r.Context()),
 		Device:    device,
+	})
+}
+
+func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		OK        bool `json:"ok"`
+		Companion struct {
+			Version string `json:"version"`
+		} `json:"companion"`
+	}{
+		OK: true,
+		Companion: struct {
+			Version string `json:"version"`
+		}{Version: buildinfo.NormalizedVersion()},
 	})
 }
 

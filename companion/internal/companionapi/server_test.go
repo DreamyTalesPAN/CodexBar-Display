@@ -58,6 +58,42 @@ func TestStatusWorksWithoutDevice(t *testing.T) {
 	}
 }
 
+func TestRuntimeHealthDoesNotProbeDeviceOrRelease(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("runtime health must not contact VibeTV, got %s", r.URL.Path)
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+	})
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		t.Fatal("runtime health must not check the Mac App release")
+		return githubRelease{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/runtime-health", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		OK        bool `json:"ok"`
+		Companion struct {
+			Version string `json:"version"`
+		} `json:"companion"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.OK || strings.TrimSpace(got.Companion.Version) == "" {
+		t.Fatalf("unexpected runtime health response: %+v", got)
+	}
+}
+
 func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	sawStaleHello := false
 	sawTokenlessHello := false

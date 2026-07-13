@@ -547,7 +547,7 @@ required_source = [
     "runtimeService.unregister(completionHandler:",
     "runtimeServiceNeedsRefresh(",
     'runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"',
-    'runtimeStatusURLString = "http://127.0.0.1:47832/v1/status"',
+    'runtimeStatusURLString = "http://127.0.0.1:47832/v1/runtime-health"',
     'runtimeDeviceRepairURLString = "http://127.0.0.1:47832/v1/device/repair"',
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",

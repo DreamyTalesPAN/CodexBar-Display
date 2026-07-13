@@ -4,7 +4,7 @@ import ServiceManagement
 import WebKit
 
 private let controlCenterURLString = "http://127.0.0.1:47832/control-center"
-private let runtimeStatusURLString = "http://127.0.0.1:47832/v1/status"
+private let runtimeStatusURLString = "http://127.0.0.1:47832/v1/runtime-health"
 private let runtimeDeviceRepairURLString = "http://127.0.0.1:47832/v1/device/repair"
 private let nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"
 private let controlCenterURLScheme = "vibetv"
