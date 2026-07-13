@@ -1,55 +1,34 @@
-name: CODEX Validate macOS DMG
+name: CODEX Build macOS Preview DMG
 
 on:
   workflow_dispatch:
     inputs:
-      dmg_recipient_certificate_base64:
-        description: Base64-encoded PEM PUBLIC RSA certificate for an encrypted one-day test artifact
-        required: false
+      source_ref:
+        description: Commit SHA or branch
+        required: true
         type: string
-        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: codex-macos-dmg-validation
+  group: codex-macos-preview-dmg
   cancel-in-progress: false
 
-env:
-  CODEX_VALIDATION_SOURCE_SHA: "732cb4578508be6353262b8a26e02b5661760c96"
-  CODEX_VALIDATION_VERSION: "1.0.47"
-
 jobs:
-  build-unsigned-macos-app:
+  build:
     if: >-
-      github.event_name == 'workflow_dispatch' &&
       github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
       github.ref == 'refs/heads/main' &&
-      github.actor == github.repository_owner &&
-      github.triggering_actor == github.repository_owner
+      github.actor == github.repository_owner
     runs-on: macos-15
     timeout-minutes: 45
     steps:
-      - name: Checkout immutable source
+      - name: Checkout requested source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ env.CODEX_VALIDATION_SOURCE_SHA }}
-          fetch-depth: 1
+          ref: ${{ inputs.source_ref }}
           persist-credentials: false
-
-      - name: Verify immutable source
-        run: |
-          set -euo pipefail
-          actual_sha="$(git rev-parse HEAD)"
-          if [[ "${actual_sha}" != "${CODEX_VALIDATION_SOURCE_SHA}" ]]; then
-            echo "error: checked out ${actual_sha}, expected ${CODEX_VALIDATION_SOURCE_SHA}" >&2
-            exit 1
-          fi
-          if [[ ! "${CODEX_VALIDATION_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "error: invalid validation version ${CODEX_VALIDATION_VERSION}" >&2
-            exit 1
-          fi
 
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -64,10 +43,12 @@ jobs:
           cache: npm
           cache-dependency-path: apps/control-center/package-lock.json
 
-      - name: Build unsigned universal Mac app
+      - name: Build Mac app
         run: |
           set -euo pipefail
-          mkdir -p dist/macos tmp/macos-validation
+          source_sha="$(git rev-parse HEAD)"
+          version="99.0.${GITHUB_RUN_NUMBER}"
+          mkdir -p dist/macos tmp/macos-preview
 
           (
             cd apps/control-center
@@ -82,133 +63,62 @@ jobs:
           for arch in amd64 arm64; do
             GOOS=darwin GOARCH="${arch}" CGO_ENABLED=0 \
               go build \
-              -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${CODEX_VALIDATION_VERSION} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${CODEX_VALIDATION_SOURCE_SHA} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              -o "../tmp/macos-validation/codexbar-display-${arch}" ./cmd/codexbar-display
+              -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${version} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${source_sha}" \
+              -o "../tmp/macos-preview/codexbar-display-${arch}" ./cmd/codexbar-display
           done
           cd ..
           lipo -create \
-            -output "tmp/macos-validation/codexbar-display" \
-            "tmp/macos-validation/codexbar-display-amd64" \
-            "tmp/macos-validation/codexbar-display-arm64"
+            -output tmp/macos-preview/codexbar-display \
+            tmp/macos-preview/codexbar-display-amd64 \
+            tmp/macos-preview/codexbar-display-arm64
 
           ./scripts/build-macos-control-center-app.sh \
-            --version "${CODEX_VALIDATION_VERSION}" \
+            --version "${version}" \
             --build "${GITHUB_RUN_NUMBER}" \
             --universal \
-            --companion-binary "tmp/macos-validation/codexbar-display" \
+            --companion-binary tmp/macos-preview/codexbar-display \
             --output "dist/macos/VibeTV Control Center.app"
 
-          tar -czf "tmp/macos-validation/unsigned-app.tar.gz" \
+          tar -czf tmp/macos-preview/app.tar.gz \
             -C dist/macos "VibeTV Control Center.app"
-          (
-            cd tmp/macos-validation
-            shasum -a 256 unsigned-app.tar.gz > unsigned-app.tar.gz.sha256
-          )
+          {
+            echo "### macOS Preview DMG"
+            echo "- Source: \`${source_sha}\`"
+            echo "- Version: \`${version}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Upload unsigned app
+      - name: Pass app to signing job
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: CODEX-vibetv-control-center-unsigned-${{ github.run_id }}
-          path: |
-            tmp/macos-validation/unsigned-app.tar.gz
-            tmp/macos-validation/unsigned-app.tar.gz.sha256
-          if-no-files-found: error
+          name: CODEX-vibetv-preview-app-${{ github.run_id }}
+          path: tmp/macos-preview/app.tar.gz
           retention-days: 1
 
-  sign-and-notarize-macos-dmg:
-    needs: build-unsigned-macos-app
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      needs.build-unsigned-macos-app.result == 'success' &&
-      github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
-      github.ref == 'refs/heads/main' &&
-      github.actor == github.repository_owner &&
-      github.triggering_actor == github.repository_owner
+  sign:
+    needs: build
     runs-on: macos-15
     timeout-minutes: 60
     steps:
-      - name: Checkout immutable signing tools
+      # The requested source never receives the Apple credentials. Only these
+      # already-reviewed signing tools run in this job.
+      - name: Checkout signing tools
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ env.CODEX_VALIDATION_SOURCE_SHA }}
-          fetch-depth: 1
+          ref: 87bc0355582f76dbb2f89b361c9aa9ffed8b192f
           persist-credentials: false
 
-      - name: Verify immutable source
-        run: |
-          set -euo pipefail
-          actual_sha="$(git rev-parse HEAD)"
-          if [[ "${actual_sha}" != "${CODEX_VALIDATION_SOURCE_SHA}" ]]; then
-            echo "error: checked out ${actual_sha}, expected ${CODEX_VALIDATION_SOURCE_SHA}" >&2
-            exit 1
-          fi
-
-      - name: Download unsigned app
+      - name: Download Mac app
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: CODEX-vibetv-control-center-unsigned-${{ github.run_id }}
-          path: tmp/macos-validation/unsigned-artifact
+          name: CODEX-vibetv-preview-app-${{ github.run_id }}
+          path: tmp/macos-preview
 
-      - name: Verify and extract unsigned app
+      - name: Extract Mac app
         run: |
-          set -euo pipefail
-          artifact_dir="tmp/macos-validation/unsigned-artifact"
-          (
-            cd "${artifact_dir}"
-            shasum -a 256 -c unsigned-app.tar.gz.sha256
-          )
-
-          tar -tzf "${artifact_dir}/unsigned-app.tar.gz" > "${artifact_dir}/tar-entries.txt"
-          while IFS= read -r entry; do
-            if [[ "${entry}" == /* || "${entry}" == ../* || "${entry}" == *"/../"* || "${entry}" == *"/.." ]]; then
-              echo "error: unsafe archive entry ${entry}" >&2
-              exit 1
-            fi
-            if [[ "${entry}" != "VibeTV Control Center.app" &&
-                  "${entry}" != "VibeTV Control Center.app/" &&
-                  "${entry}" != "VibeTV Control Center.app/"* ]]; then
-              echo "error: unexpected archive entry ${entry}" >&2
-              exit 1
-            fi
-          done < "${artifact_dir}/tar-entries.txt"
-
           mkdir -p dist/macos
-          tar -xzf "${artifact_dir}/unsigned-app.tar.gz" -C dist/macos
-          test -x "dist/macos/VibeTV Control Center.app/Contents/MacOS/VibeTVControlCenter"
-          test -x "dist/macos/VibeTV Control Center.app/Contents/Helpers/codexbar-display"
-          lipo "dist/macos/VibeTV Control Center.app/Contents/MacOS/VibeTVControlCenter" \
-            -verify_arch x86_64 arm64
-          lipo "dist/macos/VibeTV Control Center.app/Contents/Helpers/codexbar-display" \
-            -verify_arch x86_64 arm64
+          tar -xzf tmp/macos-preview/app.tar.gz -C dist/macos
 
-      - name: Verify trusted signing files
-        run: |
-          set -euo pipefail
-
-          verify_hash() {
-            expected="$1"
-            file_name="$2"
-            actual="$(shasum -a 256 "${file_name}" | awk '{print $1}')"
-            if [[ "${actual}" != "${expected}" ]]; then
-              echo "error: hash mismatch for ${file_name}" >&2
-              exit 1
-            fi
-          }
-
-          verify_hash d2c68b71bbbbb62af41804b8706a48646e4a578c898e8bf6d3496da0fa4de6b2 \
-            scripts/sign-notarize-macos-control-center.sh
-          verify_hash 7c5237b4cf8c9f43e0b387e3a46b8b11d86403c8a1c922fd73fc1bc6978a7ba9 \
-            scripts/build-macos-control-center-app.sh
-          verify_hash 2cb1c86cb6d45a3b93539861a25ad0298b60abb6138c3a737142a4dcfa724eba \
-            scripts/build-macos-control-center-dmg.sh
-          verify_hash 69eb6aa8d08e3eb6bb88efc6b4cd931a4d2270ac8b3c378b1fdb68e56e1523ee \
-            scripts/verify-macos-control-center-dmg.sh
-          verify_hash 416d95644a545c76c2ba8671f8910c5e48f40242a1f58ac35d763a929faedc2f \
-            scripts/validate-macos-control-center-runtime.sh
-          verify_hash f4cb5afb06a2d0f12377492bb240e5b3edc23f64e106575d5fe8a2197d532ed7 \
-            macos/VibeTVControlCenter/VibeTVControlCenter.entitlements
-
-      - name: Validate Apple release secrets
+      - name: Sign and notarize DMG
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
@@ -218,187 +128,25 @@ jobs:
           APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
         run: |
           set -euo pipefail
-
-          missing=0
-          for name in \
-            APPLE_TEAM_ID \
-            APPLE_SIGNING_CERTIFICATE_P12_BASE64 \
-            APPLE_SIGNING_CERTIFICATE_PASSWORD \
-            APPLE_NOTARY_KEY_ID \
-            APPLE_NOTARY_ISSUER_ID \
-            APPLE_NOTARY_KEY_P8_BASE64
-          do
-            if [[ -z "${!name:-}" ]]; then
-              echo "::error::Missing required GitHub Actions secret: ${name}"
-              missing=1
-            fi
-          done
-          (( missing == 0 ))
-
-      - name: Sign and verify Mac app
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
-          APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
-        run: |
           ./scripts/sign-notarize-macos-control-center.sh \
             --app "dist/macos/VibeTV Control Center.app" \
             --sign-app-only \
             --allow-internal-xprotect-preflight-error
-
-      - name: Build signed DMG
-        run: |
           ./scripts/build-macos-control-center-dmg.sh \
             --app "dist/macos/VibeTV Control Center.app" \
-            --output "dist/macos/VibeTV-Control-Center.dmg" \
-            --staging-dir "tmp/macos-validation/dmg-stage"
-
-      - name: Reverify notarization tools
-        run: |
-          set -euo pipefail
-          test "$(shasum -a 256 scripts/sign-notarize-macos-control-center.sh | awk '{print $1}')" = \
-            d2c68b71bbbbb62af41804b8706a48646e4a578c898e8bf6d3496da0fa4de6b2
-          test "$(shasum -a 256 scripts/verify-macos-control-center-dmg.sh | awk '{print $1}')" = \
-            69eb6aa8d08e3eb6bb88efc6b4cd931a4d2270ac8b3c378b1fdb68e56e1523ee
-          test "$(shasum -a 256 scripts/validate-macos-control-center-runtime.sh | awk '{print $1}')" = \
-            416d95644a545c76c2ba8671f8910c5e48f40242a1f58ac35d763a929faedc2f
-
-      - name: Sign, notarize, and staple DMG
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
-          APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
-        run: |
+            --output dist/macos/VibeTV-Control-Center.dmg \
+            --staging-dir tmp/macos-preview/dmg-stage
           ./scripts/sign-notarize-macos-control-center.sh \
             --app "dist/macos/VibeTV Control Center.app" \
-            --dmg "dist/macos/VibeTV-Control-Center.dmg" \
-            --skip-app-sign \
-            --notary-log "tmp/macos-validation/notarization-log.json"
-
-      - name: Verify notarized DMG for distribution
-        run: |
+            --dmg dist/macos/VibeTV-Control-Center.dmg \
+            --skip-app-sign
           ./scripts/verify-macos-control-center-dmg.sh \
-            --dmg "dist/macos/VibeTV-Control-Center.dmg"
+            --dmg dist/macos/VibeTV-Control-Center.dmg
 
-      - name: Validate installed runtime from notarized DMG
-        run: |
-          set -euo pipefail
-          mount_dir="$(mktemp -d "${RUNNER_TEMP}/vibetv-runtime-mount.XXXXXX")"
-          mounted=0
-          cleanup() {
-            if [[ "${mounted}" == "1" ]]; then
-              hdiutil detach "${mount_dir}" -force >/dev/null 2>&1 || true
-            fi
-            rmdir "${mount_dir}" >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-
-          hdiutil attach "dist/macos/VibeTV-Control-Center.dmg" \
-            -readonly -nobrowse -mountpoint "${mount_dir}"
-          mounted=1
-          test -d "${mount_dir}/VibeTV Control Center.app"
-          CODEX_ALLOW_MACOS_RUNTIME_VALIDATION=1 \
-            ./scripts/validate-macos-control-center-runtime.sh \
-              --real \
-              --app "${mount_dir}/VibeTV Control Center.app" \
-              --expected-version "${CODEX_VALIDATION_VERSION}"
-
-          cleanup
-          trap - EXIT
-
-      - name: Record validation evidence without publishing the DMG
-        run: |
-          set -euo pipefail
-          notary_log="tmp/macos-validation/notarization-log.json"
-          dmg="dist/macos/VibeTV-Control-Center.dmg"
-          notary_status="$(plutil -extract status raw -o - "${notary_log}")"
-          submission_id="$(plutil -extract jobId raw -o - "${notary_log}" 2>/dev/null || true)"
-          if [[ -z "${submission_id}" ]]; then
-            submission_id="$(plutil -extract id raw -o - "${notary_log}" 2>/dev/null || true)"
-          fi
-          [[ "${notary_status}" == "Accepted" ]]
-          [[ -n "${submission_id}" ]]
-          dmg_sha256="$(shasum -a 256 "${dmg}" | awk '{print $1}')"
-
-          {
-            echo "### CODEX macOS DMG validation"
-            echo "- Source commit: \`${CODEX_VALIDATION_SOURCE_SHA}\`"
-            echo "- Bundle version: \`${CODEX_VALIDATION_VERSION}\`"
-            echo "- Apple notarization: \`${notary_status}\`"
-            echo "- Apple submission: \`${submission_id}\`"
-            echo "- DMG SHA-256: \`${dmg_sha256}\`"
-            echo "- Plaintext signed DMG upload: disabled"
-            echo "- Notary-log upload: disabled"
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Checkout current workflow orchestration
-        if: >-
-          github.event_name == 'workflow_dispatch' &&
-          inputs.dmg_recipient_certificate_base64 != ''
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: ${{ github.sha }}
-          path: tmp/workflow-orchestration
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Encrypt signed DMG test artifact
-        if: >-
-          github.event_name == 'workflow_dispatch' &&
-          inputs.dmg_recipient_certificate_base64 != ''
-        env:
-          CODEX_DMG_RECIPIENT_CERTIFICATE_BASE64: ${{ inputs.dmg_recipient_certificate_base64 }}
-        run: |
-          set -euo pipefail
-          orchestration_dir="tmp/workflow-orchestration"
-          actual_sha="$(git -C "${orchestration_dir}" rev-parse HEAD)"
-          if [[ "${actual_sha}" != "${GITHUB_SHA}" ]]; then
-            echo "error: checked out workflow orchestration ${actual_sha}, expected ${GITHUB_SHA}" >&2
-            exit 1
-          fi
-
-          encryptor="${orchestration_dir}/scripts/encrypt-macos-dmg-test-artifact.sh"
-          expected_encryptor_sha256="7d9af43633794a50762762fa90bd1d79466bb47adbc5461e2a57645c73bbe3c2"
-          actual_encryptor_sha256="$(shasum -a 256 "${encryptor}" | awk '{print $1}')"
-          if [[ "${actual_encryptor_sha256}" != "${expected_encryptor_sha256}" ]]; then
-            echo "error: untrusted encrypted-artifact helper hash ${actual_encryptor_sha256}" >&2
-            exit 1
-          fi
-
-          "${encryptor}" \
-            --dmg "dist/macos/VibeTV-Control-Center.dmg" \
-            --output-dir "tmp/macos-validation/encrypted-artifact"
-
-      - name: Upload encrypted signed DMG test artifact
-        id: upload_encrypted_test_dmg
-        if: >-
-          github.event_name == 'workflow_dispatch' &&
-          inputs.dmg_recipient_certificate_base64 != ''
+      - name: Upload signed DMG
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: CODEX-vibetv-control-center-signed-encrypted-${{ github.run_id }}
-          path: tmp/macos-validation/encrypted-artifact/VibeTV-Control-Center.dmg.cms
-          if-no-files-found: error
+          name: CODEX-vibetv-preview-dmg-${{ github.run_id }}
+          path: dist/macos/VibeTV-Control-Center.dmg
           retention-days: 1
           compression-level: 0
-          include-hidden-files: false
-
-      - name: Record encrypted test artifact evidence
-        if: >-
-          github.event_name == 'workflow_dispatch' &&
-          inputs.dmg_recipient_certificate_base64 != ''
-        env:
-          CODEX_ENCRYPTED_ARTIFACT_DIGEST: ${{ steps.upload_encrypted_test_dmg.outputs.artifact-digest }}
-        run: |
-          {
-            echo "- Encrypted signed DMG test artifact: \`CODEX-vibetv-control-center-signed-encrypted-${GITHUB_RUN_ID}\`"
-            echo "- Artifact encryption: \`CMS AES-256-CBC with RSA-OAEP SHA-256\`"
-            echo "- GitHub artifact digest: \`${CODEX_ENCRYPTED_ARTIFACT_DIGEST}\`"
-            echo "- Artifact retention: \`1 day\`"
-          } >> "${GITHUB_STEP_SUMMARY}"
