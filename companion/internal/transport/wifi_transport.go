@@ -109,7 +109,7 @@ func (s DeviceAssetsSnapshot) PathsWithPrefix(prefix string) []string {
 
 func NewWiFiTransport() DeviceTransport {
 	return WiFiTransport{
-		client: &http.Client{Timeout: defaultWiFiTimeout},
+		client: SerializeDeviceHTTPClient(&http.Client{Timeout: defaultWiFiTimeout}),
 	}
 }
 
@@ -117,7 +117,7 @@ func NewWiFiTransportWithClient(client *http.Client) WiFiTransport {
 	if client == nil {
 		client = &http.Client{Timeout: defaultWiFiTimeout}
 	}
-	return WiFiTransport{client: client}
+	return WiFiTransport{client: SerializeDeviceHTTPClient(client)}
 }
 
 func (t WiFiTransport) WithAssetUploadRetryObserver(observer AssetUploadRetryObserver) WiFiTransport {

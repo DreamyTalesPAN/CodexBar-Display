@@ -32,6 +32,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
+	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
 )
 
@@ -582,6 +583,7 @@ func New(opts Options) (*Server, error) {
 	if client == nil {
 		client = &http.Client{Timeout: deviceTimeout}
 	}
+	client = transportlayer.SerializeDeviceHTTPClient(client)
 	origins := map[string]struct{}{
 		appOrigin:        {},
 		defaultDevOrigin: {},
