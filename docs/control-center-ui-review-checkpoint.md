@@ -13,6 +13,31 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: automatic legacy-to-DMG device recovery, interrupted-update
+  screen cleanup, hosted DMG handoff, and retirement of the duplicate local
+  browser Control Center after migration.
+- Customer rule: the installed Mac App must restore the saved VibeTV
+  connection and prove one fresh full display image before removing the old
+  installation. If recovery fails, the old installation stays available as
+  the fallback. After a successful migration, customers manage VibeTV only in
+  the Mac App; opening the former local browser page gives one short direction
+  to open the app from Applications.
+- Simplifications accepted: no new Mac App button, setup choice, paragraph,
+  tab, or manual repair step was added. The migration performs discovery,
+  pairing preservation, theme reactivation, and full-screen verification in
+  the background. The hosted site remains download-only, and the duplicate
+  browser management surface is removed in DMG mode while legacy installs keep
+  their existing browser flow until migration succeeds.
+- Verification: the flow was reviewed against
+  `docs/control-center-ui-principles.md`; `npm run lint`, `npm run
+  check:customer-ui-copy`, `npm run test:customer-flows`, `go test ./...`, `go
+  vet ./...`, `staticcheck ./...`, the native Swift app-bundle test, the macOS
+  runtime-validation contract, the ESP8266 ThemeSpec tests, the production
+  firmware build and size budget, customer-readiness gates, and `git diff
+  --check` passed locally. Companion tests cover automatic full-theme
+  reactivation after a partial update screen and HTTP 410 retirement for an
+  external browser while the native Mac App remains available.
+
 - Reviewed scope: legacy Mac App installer environment and the minimum safe
   VibeTV firmware required before the first display frame.
 - Customer rule: the existing migration stays one automatic Mac App update
