@@ -63,6 +63,7 @@ export type DeviceInfo = {
     target?: string;
     lastTarget?: string;
     detail?: string;
+    errorCode?: string;
   };
   health?: {
     ok?: boolean;

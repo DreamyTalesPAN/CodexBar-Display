@@ -440,7 +440,9 @@ main() {
   python3 - \
     "${app}/Contents/Info.plist" \
     "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist" \
-    "${ROOT}/macos/VibeTVControlCenter/main.swift" <<'PY'
+    "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    "${ROOT}/release/firmware-versions.json" <<'PY'
+import json
 import plistlib
 import sys
 
@@ -520,6 +522,19 @@ if environment.get("CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL") != agent.get("L
 if environment.get("VIBETV_DISABLE_MAC_APP_SELF_UPDATE") != "1":
     raise SystemExit(
         "DMG runtime must disable the legacy Terminal Mac App updater"
+    )
+
+minimum_safe_firmware = environment.get("VIBETV_MIN_SAFE_ESP8266_FIRMWARE")
+with open(sys.argv[4], encoding="utf-8") as f:
+    release_firmware = json.load(f)
+esp8266_release = next(
+    artifact
+    for artifact in release_firmware.get("artifacts", [])
+    if artifact.get("firmwareEnv") == "esp8266_smalltv_st7789"
+)
+if minimum_safe_firmware != esp8266_release.get("firmwareVersion"):
+    raise SystemExit(
+        "DMG runtime minimum safe ESP8266 firmware must match the release manifest"
     )
 
 with open(sys.argv[3], encoding="utf-8") as f:

@@ -1809,6 +1809,10 @@ func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	stream := s.waitForFreshDisplayStream(r.Context(), cfg.DeviceTarget, streamStartedAt)
+	if streamRequiresFirmwareUpdate(stream) {
+		writeFirmwareUpdateRequired(w)
+		return
+	}
 	device := withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
 	health, err := s.waitForVerifiedDisplayRender(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
 	if err != nil {
@@ -1963,6 +1967,10 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream := s.waitForFreshDisplayStreamAfterPair(r.Context(), target, streamStartedAt)
+	if streamRequiresFirmwareUpdate(stream) {
+		writeFirmwareUpdateRequired(w)
+		return
+	}
 	hello, _ := s.getHello(r.Context(), target, token)
 	device := withDisplayStreamInfo(deviceFromHello(target, token, hello), stream)
 	health, err := s.waitForVerifiedDisplayRender(r.Context(), target, token, baseline, stream)
@@ -2083,6 +2091,12 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 		}
 		stream = s.waitForFreshDisplayStreamAfterPair(ctx, target, streamStartedAt)
 		pairedDuringRepair = true
+	}
+	if streamRequiresFirmwareUpdate(stream) {
+		return deviceInfo{}, &repairStageError{
+			stage: "firmware-update",
+			err:   errors.New(displayStreamDiagnosticDetail(streamPointer(stream))),
+		}
 	}
 	if refreshedHello, err := s.getHello(ctx, target, token); err == nil {
 		hello = refreshedHello
@@ -3922,7 +3936,10 @@ func renderSurfaceHealthy(health deviceHealth) bool {
 	}
 	spec := health.Display.ThemeSpec
 	if !spec.Active {
-		return true
+		// Older firmware may omit ThemeSpec health entirely. If it explicitly
+		// reports renderOk while active=false, normal usage frames draw the
+		// customer-visible "Theme missing" screen and must never count as ready.
+		return spec.RenderOK == nil
 	}
 	return spec.RenderOK != nil && *spec.RenderOK
 }
@@ -4225,9 +4242,22 @@ func writeRepairError(w http.ResponseWriter, err error) {
 		case "display-render":
 			writeError(w, http.StatusBadGateway, "display_render_repair_failed", "VibeTV did not render a fresh image.", "Keep VibeTV powered on, then retry Fix connection.")
 			return
+		case "firmware-update":
+			writeFirmwareUpdateRequired(w)
+			return
 		}
 	}
 	writeDeviceNotFound(w)
+}
+
+func writeFirmwareUpdateRequired(w http.ResponseWriter) {
+	writeError(
+		w,
+		http.StatusConflict,
+		"firmware_update_required",
+		"VibeTV needs a firmware update before the Mac App can send its first image safely.",
+		"Open Updates, install the VibeTV firmware update, then finish setup.",
+	)
 }
 
 func writeInvalidDeviceTarget(w http.ResponseWriter) {
@@ -4652,7 +4682,9 @@ func waitForDisplayStreamAfterProbe(
 	var last displayStreamInfo
 	for {
 		last = inspect(ctx, target, notBefore)
-		if last.Healthy || (stopOnPairingError && last.ErrorCode == "device_pairing_required") || time.Now().After(deadline) {
+		if last.Healthy || streamRequiresFirmwareUpdate(last) ||
+			(stopOnPairingError && last.ErrorCode == "device_pairing_required") ||
+			time.Now().After(deadline) {
 			return last
 		}
 		select {
@@ -4661,6 +4693,10 @@ func waitForDisplayStreamAfterProbe(
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
+}
+
+func streamRequiresFirmwareUpdate(stream displayStreamInfo) bool {
+	return strings.TrimSpace(stream.ErrorCode) == "device_firmware_update_required"
 }
 
 func (s *Server) waitForFreshDisplayStream(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
@@ -4808,6 +4844,9 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 			} else if op == "resolve-target" {
 				detail = "Display stream could not find VibeTV and is reconnecting."
 				code = "device_not_found"
+			} else if op == "firmware-safety-check" {
+				detail = "VibeTV needs a firmware update before the Mac App can send its first image safely."
+				code = "device_firmware_update_required"
 			} else if strings.Contains(line, "cycle timeout:") {
 				detail = "Display stream timed out and is reconnecting."
 				code = "display_stream_timeout"

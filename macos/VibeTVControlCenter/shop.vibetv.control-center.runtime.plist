@@ -31,6 +31,8 @@
       <string>shop.vibetv.control-center.runtime</string>
       <key>VIBETV_DISABLE_MAC_APP_SELF_UPDATE</key>
       <string>1</string>
+      <key>VIBETV_MIN_SAFE_ESP8266_FIRMWARE</key>
+      <string>1.0.36</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

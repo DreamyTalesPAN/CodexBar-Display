@@ -57,6 +57,7 @@ const (
 	collectorOrderEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
 	providerMaxAgeEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
 	firmwareManifestEnvVar     = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	minimumSafeFirmwareEnvVar  = "VIBETV_MIN_SAFE_ESP8266_FIRMWARE"
 	firmwareManifestURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 	firmwareUpdateCheckGap     = 6 * time.Hour
 	firmwareManifestTimeout    = 5 * time.Second
@@ -73,6 +74,7 @@ const (
 	runtimeErrorCycleTimeout    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCycleTimeout)
 	runtimeErrorFrameEncode     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameEncode)
 	runtimeErrorFrameTooLarge   runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameTooLarge)
+	runtimeErrorFirmwareSafety  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFirmwareSafety)
 	runtimeErrorDeviceHello     runtimeErrorKind = runtimeErrorKind(errcode.ProtocolDeviceHelloUnavailable)
 	runtimeErrorCodexbarBinary  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarBinary)
 	runtimeErrorCodexbarVersion runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarVersion)
@@ -1167,6 +1169,9 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 	if err != nil {
 		return err
 	}
+	if err := requireSafeWiFiFirmware(caps, deps); err != nil {
+		return err
+	}
 
 	fetchCtx := ctx
 	if !state.hasLastGood {
@@ -1213,6 +1218,9 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	if err != nil {
 		return err
 	}
+	if err := requireSafeWiFiFirmware(caps, deps); err != nil {
+		return err
+	}
 
 	now := deps.now()
 	allProviders := collector.providerFrames(now)
@@ -1232,6 +1240,43 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 
 	attachFirmwareUpdateState(ctx, state, deps, caps, &result)
 	return sendCycleResult(ctx, port, caps, maxFrameBytes, state, deps, result)
+}
+
+func requireSafeWiFiFirmware(caps protocol.DeviceCapabilities, deps runtimeDeps) error {
+	requiredRaw := strings.TrimSpace(os.Getenv(minimumSafeFirmwareEnvVar))
+	if requiredRaw == "" || deps.transportName != "wifi" ||
+		strings.TrimSpace(caps.Board) != "esp8266-smalltv-st7789" {
+		return nil
+	}
+
+	required, requiredErr := versioning.ParseSemVer(requiredRaw)
+	if requiredErr != nil {
+		return &RuntimeError{
+			Kind: runtimeErrorFirmwareSafety,
+			Op:   "firmware-safety-check",
+			Err:  fmt.Errorf("invalid required ESP8266 firmware %q: %w", requiredRaw, requiredErr),
+			Hint: errcode.DefaultRecovery(errcode.RuntimeFirmwareSafety),
+		}
+	}
+	installedRaw := strings.TrimSpace(caps.Firmware)
+	installed, installedErr := versioning.ParseSemVer(installedRaw)
+	if installedErr == nil && installed.Compare(required) >= 0 {
+		return nil
+	}
+
+	detail := fmt.Sprintf("VibeTV firmware %q is older than required firmware %s", installedRaw, required.String())
+	if installedErr != nil {
+		detail = fmt.Sprintf("VibeTV firmware %q could not be verified: %v", installedRaw, installedErr)
+	}
+	return &RuntimeError{
+		Kind: runtimeErrorFirmwareSafety,
+		Op:   "firmware-safety-check",
+		Err:  errors.New(detail),
+		Hint: fmt.Sprintf(
+			"Open VibeTV Control Center and install VibeTV firmware %s or newer before the Mac App sends its first display frame.",
+			required.String(),
+		),
+	}
 }
 
 func probeProvidersDirectly(parent context.Context, order []string, deps runtimeDeps) []codexbar.ParsedFrame {

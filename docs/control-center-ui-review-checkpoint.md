@@ -13,6 +13,28 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: required ESP8266 firmware recovery before the first DMG
+  display frame, setup navigation locks, and the existing Updates screen on
+  mobile and desktop.
+- Customer rule: unsafe firmware must stop setup before the Mac App sends an
+  image. In that exact state, Updates is the one newly available recovery
+  destination; Settings, Theme Library, Support, and Overview remain locked.
+  The customer sees only the existing Firmware update action, not heap,
+  ThemeSpec, transport, manifest, or runtime details.
+- Simplifications accepted: no new screen, button, paragraph, or technical
+  choice was added. The existing Updates tab and primary `Update now` action
+  are reused, and optional firmware availability alone cannot bypass setup
+  locks.
+- Verification: the firmware recovery state was reviewed against
+  `docs/control-center-ui-principles.md` at 405-pixel mobile and 1280-pixel
+  desktop viewports. Screenshots are in
+  `/tmp/vibetv-firmware-recovery-review/firmware-recovery-mobile.png` and
+  `/tmp/vibetv-firmware-recovery-review/firmware-recovery-desktop.png`.
+  Navigation stayed uncrowded, the existing primary action remained obvious,
+  tap targets measured at least 44 pixels, and no horizontal overflow was
+  present. `npm run lint`, `npm run check:customer-ui-copy`, and `npm run
+  test:customer-flows` passed locally.
+
 - Reviewed scope: legacy local-Control-Center migration to the DMG, native
   VibeTV WiFi verification, first-frame readiness, stuck-image recovery, the
   connected Overview handoff, and Mac App replacement guidance in Updates.
