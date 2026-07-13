@@ -72,8 +72,9 @@ main() {
 
   local trigger_block trigger_block_lower permissions_block build_job signing_job
   local checkout_step encrypt_step encrypt_run upload_step summary_step
+  local trusted_files_step reverify_step runtime_step runtime_run
   local event_count permissions_count uses_line
-  local verifier_line evidence_line checkout_line encrypt_line upload_line summary_line
+  local verifier_line runtime_line evidence_line checkout_line encrypt_line upload_line summary_line
   local actual_encryptor_sha256
 
   actual_encryptor_sha256="$(shasum -a 256 "$ENCRYPTOR" | awk '{print $1}')"
@@ -90,6 +91,40 @@ main() {
   encrypt_run="$(run_block "Encrypt signed DMG test artifact")"
   upload_step="$(step_block "Upload encrypted signed DMG test artifact")"
   summary_step="$(step_block "Record encrypted test artifact evidence")"
+  trusted_files_step="$(step_block "Verify trusted signing files")"
+  reverify_step="$(step_block "Reverify notarization tools")"
+  runtime_step="$(step_block "Validate installed runtime from notarized DMG")"
+  runtime_run="$(run_block "Validate installed runtime from notarized DMG")"
+
+  assert_contains "$(cat "$WORKFLOW")" \
+    'CODEX_VALIDATION_SOURCE_SHA: "9a211c2c15039fd3b065dc6439fe2a7869b1c7a2"' \
+    "validation 10 must pin the reviewed source commit"
+  assert_contains "$(cat "$WORKFLOW")" \
+    'CODEX_VALIDATION_VERSION: "1.0.46"' \
+    "validation 10 must use the isolated validation version"
+  assert_contains "$trusted_files_step" \
+    '416d95644a545c76c2ba8671f8910c5e48f40242a1f58ac35d763a929faedc2f' \
+    "runtime validator must be pinned before signing"
+  assert_contains "$reverify_step" \
+    'scripts/validate-macos-control-center-runtime.sh' \
+    "runtime validator must be reverified after the DMG build"
+  assert_contains "$runtime_run" \
+    'hdiutil attach "dist/macos/VibeTV-Control-Center.dmg"' \
+    "runtime validation must mount the notarized DMG"
+  assert_contains "$runtime_run" \
+    'CODEX_ALLOW_MACOS_RUNTIME_VALIDATION=1' \
+    "real runtime validation must use the explicit safety opt-in"
+  assert_contains "$runtime_run" \
+    './scripts/validate-macos-control-center-runtime.sh \' \
+    "workflow must execute the pinned runtime validator"
+  assert_contains "$runtime_run" \
+    '--app "${mount_dir}/VibeTV Control Center.app"' \
+    "runtime validation must use the app inside the notarized DMG"
+  assert_contains "$runtime_run" \
+    '--expected-version "${CODEX_VALIDATION_VERSION}"' \
+    "runtime validation must verify the validation bundle version"
+  assert_not_contains "$runtime_run" 'vibetv.local' \
+    "runtime validation must not target physical hardware"
 
   event_count="$(printf '%s\n' "$trigger_block" | grep -Ec '^  [A-Za-z0-9_-]+:')"
   [[ "$event_count" == "1" ]] || die "validation workflow must only use workflow_dispatch"
@@ -199,15 +234,16 @@ main() {
     "action outputs must not be interpolated directly into shell code"
 
   verifier_line="$(line_number "Verify notarized DMG for distribution")"
+  runtime_line="$(line_number "Validate installed runtime from notarized DMG")"
   evidence_line="$(line_number "Record validation evidence without publishing the DMG")"
   checkout_line="$(line_number "Checkout current workflow orchestration")"
   encrypt_line="$(line_number "Encrypt signed DMG test artifact")"
   upload_line="$(line_number "Upload encrypted signed DMG test artifact")"
   summary_line="$(line_number "Record encrypted test artifact evidence")"
-  [[ -n "$verifier_line" && -n "$evidence_line" && -n "$checkout_line" && \
+  [[ -n "$verifier_line" && -n "$runtime_line" && -n "$evidence_line" && -n "$checkout_line" && \
      -n "$encrypt_line" && -n "$upload_line" && -n "$summary_line" ]] \
     || die "validation workflow is missing required ordered steps"
-  (( verifier_line < evidence_line && evidence_line < checkout_line && \
+  (( verifier_line < runtime_line && runtime_line < evidence_line && evidence_line < checkout_line && \
      checkout_line < encrypt_line && encrypt_line < upload_line && upload_line < summary_line )) \
     || die "validation evidence, encryption, and upload steps are in an unsafe order"
 
