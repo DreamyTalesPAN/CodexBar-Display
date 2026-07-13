@@ -3913,11 +3913,7 @@ func renderHealthyFromHealth(health deviceHealth) bool {
 	if !renderSurfaceHealthy(health) {
 		return false
 	}
-	kind := strings.TrimSpace(health.Render.LastKind)
-	if !usageRenderKind(kind) {
-		return false
-	}
-	return true
+	return usageRenderKind(health.Render.LastKind)
 }
 
 func renderSurfaceHealthy(health deviceHealth) bool {
