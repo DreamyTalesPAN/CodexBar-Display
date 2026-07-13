@@ -1458,6 +1458,31 @@ func TestFirmwareLatestUsesReleaseManifest(t *testing.T) {
 	}
 }
 
+func TestFirmwareUpdateCommandUsesCheckedManifest(t *testing.T) {
+	target := "http://192.168.178.72"
+	manifestURL := "http://127.0.0.1:47833/firmware-manifest.json"
+
+	got := firmwareUpdateCommandArgs(target, "  "+manifestURL+"  ", true)
+	want := []string{
+		"install-update",
+		"--target",
+		target,
+		"--confirm-live-update",
+		"--skip-launchagent-pause",
+		"--manifest-url",
+		manifestURL,
+		"--force",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("unexpected firmware update args:\n got: %q\nwant: %q", got, want)
+	}
+
+	withoutManifest := firmwareUpdateCommandArgs(target, "", false)
+	if strings.Contains(strings.Join(withoutManifest, "\n"), "--manifest-url") {
+		t.Fatalf("unexpected manifest flag without override: %q", withoutManifest)
+	}
+}
+
 func TestDeviceNotFoundErrorFormat(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()

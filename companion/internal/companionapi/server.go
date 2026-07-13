@@ -3466,16 +3466,7 @@ func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfi
 	if target == "" {
 		return errors.New("device target is empty")
 	}
-	args := []string{
-		"install-update",
-		"--target",
-		target,
-		"--confirm-live-update",
-		"--skip-launchagent-pause",
-	}
-	if req.Force {
-		args = append(args, "--force")
-	}
+	args := firmwareUpdateCommandArgs(target, os.Getenv(firmwareManifestEnvVar), req.Force)
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Stdout = out
 	cmd.Stderr = out
@@ -3486,6 +3477,23 @@ func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfi
 		return fmt.Errorf("firmware update command failed: %w", err)
 	}
 	return nil
+}
+
+func firmwareUpdateCommandArgs(target, manifestURL string, force bool) []string {
+	args := []string{
+		"install-update",
+		"--target",
+		target,
+		"--confirm-live-update",
+		"--skip-launchagent-pause",
+	}
+	if manifestURL = strings.TrimSpace(manifestURL); manifestURL != "" {
+		args = append(args, "--manifest-url", manifestURL)
+	}
+	if force {
+		args = append(args, "--force")
+	}
+	return args
 }
 
 func runMacAppUpdateCommand(ctx context.Context, home string, addr string, req macAppUpdateRequest, out io.Writer) error {
