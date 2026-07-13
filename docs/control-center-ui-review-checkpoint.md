@@ -13,6 +13,21 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: legacy Mac App installer environment and the minimum safe
+  VibeTV firmware required before the first display frame.
+- Customer rule: the existing migration stays one automatic Mac App update
+  followed by the existing VibeTV `Update now` action. Customers must not need
+  to understand firmware guards, environment variables, manifests, or display
+  transport.
+- Simplifications accepted: no visible screen, button, paragraph, label, tab,
+  or customer decision was added. The installer only passes the checked safe
+  firmware version to the background service so an unsafe VibeTV cannot receive
+  a frame too early.
+- Verification: the change was reviewed against
+  `docs/control-center-ui-principles.md`; targeted Companion Go tests, the
+  legacy installer test, the release-workflow test, and `git diff --check`
+  passed locally.
+
 - Reviewed scope: required ESP8266 firmware recovery before the first DMG
   display frame, setup navigation locks, and the existing Updates screen on
   mobile and desktop.
