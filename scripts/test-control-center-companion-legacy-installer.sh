@@ -320,6 +320,8 @@ run_restart_updates_daemon_launchagent() {
   assert_contains "$daemon_plist_body" "<string>--api-addr</string>"
   assert_contains "$daemon_plist_body" "<string>127.0.0.1:47832</string>"
   assert_contains "$daemon_plist_body" "<key>ThrottleInterval</key>"
+  assert_contains "$daemon_plist_body" "<key>VIBETV_MIN_SAFE_ESP8266_FIRMWARE</key>"
+  assert_contains "$daemon_plist_body" "<string>1.0.36</string>"
   assert_contains "$daemon_plist_body" "${root}/home/Library/Application Support/codexbar-display/logs/daemon.err.log"
   assert_not_contains "$daemon_plist_body" "<string></string>"
   assert_not_contains "$daemon_plist_body" "<string>api</string>"
@@ -425,7 +427,7 @@ run_install_writes_integrated_daemon_launchagent() {
 }
 
 run_install_can_skip_device_setup_for_mac_app_update() {
-  local root output curl_log api_log setup_log
+  local root output curl_log api_log setup_log daemon_plist_body
   root="${TMP_WORK_DIR}/mac-app-only"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -445,6 +447,9 @@ run_install_can_skip_device_setup_for_mac_app_update() {
   assert_contains "$output" "Done. Your Control Center is opening now."
   assert_contains "$setup_log" "Mac App update verified"
   assert_contains "$setup_log" "background service installed"
+  daemon_plist_body="$(cat "${root}/home/Library/LaunchAgents/com.codexbar-display.daemon.plist")"
+  assert_contains "$daemon_plist_body" "<key>VIBETV_MIN_SAFE_ESP8266_FIRMWARE</key>"
+  assert_contains "$daemon_plist_body" "<string>1.0.36</string>"
   assert_contains "$setup_log" "opening Control Center at http://127.0.0.1:47832/control-center?migration=9.9.9"
   assert_contains "$(cat "${root}/open.log")" "http://127.0.0.1:47832/control-center?migration=9.9.9"
   assert_not_contains "$curl_log" "/v1/device/repair"

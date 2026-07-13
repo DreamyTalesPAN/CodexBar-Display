@@ -475,6 +475,8 @@ PLIST_HEAD
     <dict>
       <key>PATH</key>
       <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+      <key>VIBETV_MIN_SAFE_ESP8266_FIRMWARE</key>
+      <string>1.0.36</string>
     </dict>
 
     <key>RunAtLoad</key>
