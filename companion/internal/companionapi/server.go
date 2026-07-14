@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
@@ -113,6 +114,7 @@ type Options struct {
 	ControlCenterFS      fs.FS
 	HTTPClient           *http.Client
 	RefreshDisplayStream func(context.Context, string) error
+	PauseDisplayStream   func(bool)
 }
 
 type Server struct {
@@ -132,6 +134,8 @@ type Server struct {
 	waitStreamAfterPair    func(context.Context, string, time.Time) displayStreamInfo
 	waitRender             func(context.Context, string, string, deviceHealth) (deviceHealth, error)
 	refreshStream          func(context.Context, string) error
+	pauseDisplayStream     func(bool)
+	firmwareUpdateActive   atomic.Bool
 	configMu               sync.Mutex
 	repairMu               sync.Mutex
 	pairMu                 sync.Mutex
@@ -618,6 +622,7 @@ func New(opts Options) (*Server, error) {
 		waitStreamAfterPair:   waitForDisplayStreamAfterPair,
 		waitRender:            nil,
 		refreshStream:         opts.RefreshDisplayStream,
+		pauseDisplayStream:    opts.PauseDisplayStream,
 		pairAttempts:          defaultPairAttempts,
 		pairAttemptTimeout:    defaultPairAttemptTimeout,
 		pairRetryGap:          defaultPairRetryGap,
@@ -2089,6 +2094,20 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "display-render", err: err}
 	}
+	themeReactivated := false
+	if activeThemeNeedsFullRepairRender(baseline) {
+		baseline, err = s.reactivateCurrentThemeAndWaitForFullRender(
+			ctx,
+			target,
+			token,
+			baseline,
+			displayStreamInfo{},
+		)
+		if err != nil {
+			return deviceInfo{}, &repairStageError{stage: "display-render", err: err}
+		}
+		themeReactivated = true
+	}
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, target); err != nil {
 		return deviceInfo{}, &repairStageError{stage: "display-stream", err: err}
@@ -2133,7 +2152,7 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	}
 	device := withDisplayStreamInfo(deviceFromHello(target, token, hello), stream)
 	health, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
-	if activeThemeNeedsFullRepairRender(health) {
+	if !themeReactivated && activeThemeNeedsFullRepairRender(health) {
 		health, err = s.reactivateCurrentThemeAndWaitForFullRender(
 			ctx,
 			target,
@@ -3034,12 +3053,25 @@ func (s *Server) createFirmwareUpdateJob(cfg runtimeconfig.Config) firmwareUpdat
 
 func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req firmwareUpdateRequest) {
 	go func() {
+		s.firmwareUpdateActive.Store(true)
+		if s.pauseDisplayStream != nil {
+			s.pauseDisplayStream(true)
+		}
+		defer func() {
+			s.firmwareUpdateActive.Store(false)
+			if s.pauseDisplayStream != nil {
+				s.pauseDisplayStream(false)
+			}
+		}()
 		ctx, cancel := context.WithTimeout(context.Background(), firmwareUpdateJobTime)
 		defer cancel()
 		writer := &firmwareUpdateProgressWriter{server: s, jobID: jobID}
 		err := s.updateFirmware(ctx, s.home, cfg, req, writer)
 		finishedAt := time.Now().UTC()
 		if err != nil {
+			if detail := sanitizeErrorDetail(err); detail != "" {
+				_, _ = fmt.Fprintf(os.Stderr, "VibeTV firmware update failed: %s\n", detail)
+			}
 			apiErr := firmwareUpdateErrorPayload(err)
 			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
 				job.Phase = "error"
@@ -4207,6 +4239,9 @@ func (s *Server) startDisplayStream(ctx context.Context, target string) error {
 }
 
 func (s *Server) doJSON(ctx context.Context, method, target, path, token string, body any, out any) error {
+	if s.firmwareUpdateActive.Load() {
+		return errors.New("VibeTV firmware update is in progress")
+	}
 	var reader io.Reader
 	if body != nil {
 		payload, err := json.Marshal(body)
@@ -4227,6 +4262,9 @@ func (s *Server) doJSON(ctx context.Context, method, target, path, token string,
 }
 
 func (s *Server) doForm(ctx context.Context, target, path, token string, form url.Values, out any) error {
+	if s.firmwareUpdateActive.Load() {
+		return errors.New("VibeTV firmware update is in progress")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint(target, path), strings.NewReader(form.Encode()))
 	if err != nil {
 		return err

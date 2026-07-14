@@ -3019,6 +3019,53 @@ func TestRunDaemonLoopRetriesAfterCycleTimeout(t *testing.T) {
 	}
 }
 
+func TestRunDaemonLoopPausesDeviceCyclesDuringFirmwareUpdate(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	wake := make(chan struct{}, 1)
+	paused := true
+	cycleCalls := 0
+	var logged strings.Builder
+
+	err := runDaemonLoop(ctx, Options{
+		Interval: time.Second,
+		Wake:     wake,
+		PauseDeviceWrites: func() bool {
+			return paused
+		},
+	}, runtimeDeps{
+		now: time.Now,
+		after: func(time.Duration) <-chan time.Time {
+			paused = false
+			wake <- struct{}{}
+			return make(chan time.Time)
+		},
+		logf: func(format string, args ...any) {
+			logged.WriteString(fmt.Sprintf(format, args...))
+		},
+	}, func(context.Context) error {
+		cycleCalls++
+		cancel()
+		return nil
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected loop cancellation after resumed cycle, got %v", err)
+	}
+	if cycleCalls != 1 {
+		t.Fatalf("device cycle calls=%d want 1 after resume", cycleCalls)
+	}
+	log := logged.String()
+	if !strings.Contains(log, "runtime event=device-writes-paused reason=firmware-update") {
+		t.Fatalf("missing pause log: %q", log)
+	}
+	if !strings.Contains(log, "runtime event=device-writes-resumed reason=firmware-update-complete") {
+		t.Fatalf("missing resume log: %q", log)
+	}
+}
+
 func TestCycleRunTimeoutHonorsBounds(t *testing.T) {
 	prepareFastTestEnv(t)
 

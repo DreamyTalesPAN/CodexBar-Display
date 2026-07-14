@@ -3038,12 +3038,12 @@ func TestDeviceRepairReactivatesCurrentThemeAfterPartialStatusScreen(t *testing.
 	var renderCalls atomic.Int32
 	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
 		call := renderCalls.Add(1)
-		fullCount := uint64(10)
-		partialCount := uint64(3)
-		lastKind := "theme_spec_frame"
+		fullCount := uint64(11)
+		partialCount := uint64(2)
+		lastKind := "theme_spec_usage"
 		if call > 1 {
-			fullCount = 11
-			lastKind = "theme_spec_usage"
+			partialCount = 3
+			lastKind = "theme_spec_frame"
 		}
 		health := deviceHealth{OK: true}
 		health.Display.ThemeSpec.Active = true
@@ -4097,6 +4097,88 @@ func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
 		if strings.Contains(joinedLogs, hidden) {
 			t.Fatalf("update progress leaked technical detail %q in %q", hidden, joinedLogs)
 		}
+	}
+}
+
+func TestFirmwareUpdatePausesDisplayTrafficUntilJobFinishes(t *testing.T) {
+	var deviceCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deviceCalls.Add(1)
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	pauseEvents := make(chan bool, 2)
+	server.pauseDisplayStream = func(paused bool) { pauseEvents <- paused }
+	startedUpdate := make(chan struct{})
+	finishUpdate := make(chan struct{})
+	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+		close(startedUpdate)
+		<-finishUpdate
+		return nil
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("expected update start, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode update start: %v", err)
+	}
+
+	select {
+	case <-startedUpdate:
+	case <-time.After(time.Second):
+		t.Fatal("firmware update did not start")
+	}
+	select {
+	case paused := <-pauseEvents:
+		if !paused {
+			t.Fatal("display stream resumed before firmware update started")
+		}
+	default:
+		t.Fatal("firmware update did not pause display stream")
+	}
+
+	beforeStatus := deviceCalls.Load()
+	statusRecorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(statusRecorder, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if statusRecorder.Code != http.StatusOK {
+		t.Fatalf("expected local status during update, got %d body=%s", statusRecorder.Code, statusRecorder.Body.String())
+	}
+	if got := deviceCalls.Load(); got != beforeStatus {
+		t.Fatalf("status polled VibeTV during firmware upload: before=%d after=%d", beforeStatus, got)
+	}
+
+	close(finishUpdate)
+	for attempt := 0; attempt < 50; attempt++ {
+		job, ok := server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if ok && job.Phase == "complete" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	select {
+	case paused := <-pauseEvents:
+		if paused {
+			t.Fatal("display stream stayed paused after firmware update")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("firmware update did not resume display stream")
 	}
 }
 

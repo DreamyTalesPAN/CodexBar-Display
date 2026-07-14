@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
@@ -306,15 +307,23 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	logf := logger.logf
 
 	wake := make(chan struct{}, 1)
+	var firmwareUpdateActive atomic.Bool
+	wakeDisplayWorker := func() {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
 	server, err := companionapi.New(companionapi.Options{
 		Addr:           opts.APIAddr,
 		AllowedOrigins: []string{opts.APIDevOrigin},
 		RefreshDisplayStream: func(context.Context, string) error {
-			select {
-			case wake <- struct{}{}:
-			default:
-			}
+			wakeDisplayWorker()
 			return nil
+		},
+		PauseDisplayStream: func(paused bool) {
+			firmwareUpdateActive.Store(paused)
+			wakeDisplayWorker()
 		},
 	})
 	if err != nil {
@@ -326,6 +335,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 
 	daemonOpts := opts.Daemon
 	daemonOpts.Wake = wake
+	daemonOpts.PauseDeviceWrites = firmwareUpdateActive.Load
 
 	errc := make(chan error, 1)
 	go func() {

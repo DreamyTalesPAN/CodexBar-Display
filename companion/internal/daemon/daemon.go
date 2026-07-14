@@ -34,6 +34,7 @@ type Options struct {
 	Theme                  string
 	DisableStartupFastPoll bool
 	Wake                   <-chan struct{}
+	PauseDeviceWrites      func() bool
 }
 
 const (
@@ -403,8 +404,26 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 	cycleTimeout := cycleRunTimeout()
 	var lastCycleStart time.Time
 	var startedAt time.Time
+	deviceWritesPaused := false
 
 	for {
+		if opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites() {
+			if !deviceWritesPaused {
+				deps.logf("runtime event=device-writes-paused reason=firmware-update\n")
+				deviceWritesPaused = true
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-opts.Wake:
+			case <-deps.after(opts.Interval):
+			}
+			continue
+		}
+		if deviceWritesPaused {
+			deps.logf("runtime event=device-writes-resumed reason=firmware-update-complete\n")
+			deviceWritesPaused = false
+		}
 		cycleStart := deps.now()
 		if startedAt.IsZero() {
 			startedAt = cycleStart
