@@ -404,6 +404,25 @@ async function main() {
 
     appContext = await startTestApp({
       catalogUrl,
+      previewDmgUrl:
+        "https://test.public.blob.vercel-storage.com/preview/test/VibeTV-Control-Center-99.0.24.dmg",
+      previewVersion: "99.0.24",
+      releaseUrl: completeReleaseUrl,
+      vercelEnv: "preview",
+    });
+    app = appContext.app;
+    await assertCompanionReleaseApi(appContext.appUrl, {
+      dmgDownloadAsset: "VibeTV-Control-Center-99.0.24.dmg",
+      dmgDownloadStatus: "available",
+      latestVersion: "99.0.24",
+      status: "available",
+      updateAvailable: true,
+    });
+    await stopProcess(app.process);
+    app = undefined;
+
+    appContext = await startTestApp({
+      catalogUrl,
       dmgDownloadEnabled: false,
       releaseUrl: completeReleaseUrl,
     });
@@ -541,7 +560,10 @@ async function startTestApp({
   catalogUrl,
   dmgDownloadEnabled = true,
   firmwareUrl,
+  previewDmgUrl,
+  previewVersion,
   releaseUrl,
+  vercelEnv,
 }) {
   const appPort = await findFreePort();
   const appUrl = `http://127.0.0.1:${appPort}`;
@@ -550,7 +572,10 @@ async function startTestApp({
     catalogUrl,
     dmgDownloadEnabled,
     firmwareUrl,
+    previewDmgUrl,
+    previewVersion,
     releaseUrl,
+    vercelEnv,
   });
   await waitForHttp(appUrl);
   return { app, appUrl };
@@ -3961,7 +3986,10 @@ function startNext({
   catalogUrl,
   dmgDownloadEnabled,
   firmwareUrl,
+  previewDmgUrl,
+  previewVersion,
   releaseUrl,
+  vercelEnv,
 }) {
   const child = spawn(
     process.execPath,
@@ -3973,6 +4001,9 @@ function startNext({
         firmwareUrl,
         releaseUrl,
         dmgDownloadEnabled,
+        previewDmgUrl,
+        previewVersion,
+        vercelEnv,
       ),
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -4013,6 +4044,9 @@ function testEnv(
   firmwareUrl,
   releaseUrl,
   dmgDownloadEnabled = true,
+  previewDmgUrl = "",
+  previewVersion = "",
+  vercelEnv = "",
 ) {
   const resolvedFirmwareUrl =
     firmwareUrl || catalogUrl.replace(/\/[^/]+$/, "/firmware-manifest.json");
@@ -4023,6 +4057,8 @@ function testEnv(
     CONTROL_CENTER_ENABLE_MAC_APP_DMG_DOWNLOAD: dmgDownloadEnabled ? "1" : "0",
     CONTROL_CENTER_FIRMWARE_MANIFEST_URL: resolvedFirmwareUrl,
     CONTROL_CENTER_GITHUB_TOKEN: "",
+    CONTROL_CENTER_PREVIEW_MAC_APP_DMG_URL: previewDmgUrl,
+    CONTROL_CENTER_PREVIEW_MAC_APP_VERSION: previewVersion,
     GITHUB_TOKEN: "",
     SHOPIFY_STORE_DOMAIN: "",
     SHOPIFY_SHOP_DOMAIN: "",
@@ -4030,6 +4066,7 @@ function testEnv(
     SHOPIFY_STOREFRONT_PRIVATE_TOKEN: "",
     CONTROL_CENTER_DISPLAY_STATE_DIR: displayStateDir,
     THEME_PACK_CATALOG_URL: catalogUrl,
+    VERCEL_ENV: vercelEnv,
   };
 }
 

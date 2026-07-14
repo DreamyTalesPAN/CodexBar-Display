@@ -7,6 +7,8 @@ const DEFAULT_RELEASE_API_URL =
 const MAC_APP_DMG_ASSET_NAME = "VibeTV-Control-Center.dmg";
 const MAC_APP_DMG_DOWNLOAD_FLAG =
   "CONTROL_CENTER_ENABLE_MAC_APP_DMG_DOWNLOAD";
+const PREVIEW_MAC_APP_VERSION = "CONTROL_CENTER_PREVIEW_MAC_APP_VERSION";
+const PREVIEW_MAC_APP_DMG_URL = "CONTROL_CENTER_PREVIEW_MAC_APP_DMG_URL";
 const RELEASE_CACHE_TTL_MS = 60_000;
 
 type GitHubRelease = {
@@ -41,6 +43,13 @@ export async function GET(request: Request) {
     url.searchParams.get("version")?.trim() || "",
   );
   const checkedAt = new Date().toISOString();
+  const previewRelease = previewMacAppRelease(
+    installedVersion,
+    checkedAt,
+  );
+  if (previewRelease) {
+    return publicJson(previewRelease);
+  }
 
   try {
     const release = await fetchLatestRelease();
@@ -92,6 +101,67 @@ export async function GET(request: Request) {
       message: "Mac App check failed.",
       dmgDownloadStatus: "check_failed",
     } satisfies CompanionReleaseInfo);
+  }
+}
+
+function previewMacAppRelease(
+  installedVersion: string,
+  checkedAt: string,
+): CompanionReleaseInfo | null {
+  if (process.env.VERCEL_ENV?.trim() !== "preview") {
+    return null;
+  }
+  const latestVersion = exactSemver(
+    process.env[PREVIEW_MAC_APP_VERSION] || "",
+  );
+  const dmgDownloadUrl = verifiedPreviewDmgUrl(
+    process.env[PREVIEW_MAC_APP_DMG_URL] || "",
+  );
+  if (!latestVersion || !dmgDownloadUrl) {
+    return null;
+  }
+
+  const updateAvailable = Boolean(
+    installedVersion && compareSemver(latestVersion, installedVersion) > 0,
+  );
+  return {
+    checkedAt,
+    status: "available",
+    release: `preview-${latestVersion}`,
+    latestVersion,
+    installedVersion: installedVersion || undefined,
+    updateAvailable,
+    message: updateAvailable
+      ? "Mac App update is available."
+      : "Mac App is up to date.",
+    dmgDownloadStatus: "available",
+    dmgDownloadUrl,
+  };
+}
+
+function exactSemver(raw: string): string {
+  const version = normalizeVersion(raw);
+  return /^\d+\.\d+\.\d+$/.test(version) ? version : "";
+}
+
+function verifiedPreviewDmgUrl(raw: string): string {
+  try {
+    const url = new URL(raw.trim());
+    if (
+      url.protocol !== "https:" ||
+      !url.hostname.endsWith(".public.blob.vercel-storage.com") ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.port !== "" ||
+      url.search !== "" ||
+      url.hash !== "" ||
+      !url.pathname.toLowerCase().endsWith(".dmg")
+    ) {
+      return "";
+    }
+    return url.toString();
+  } catch {
+    return "";
   }
 }
 
