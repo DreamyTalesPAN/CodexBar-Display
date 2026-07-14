@@ -2650,7 +2650,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     `retired AI theme endpoint should return 404, got ${aiResponse.status}`,
   );
 
-  await page.goto(localAppUrl, { waitUntil: "networkidle" });
+  await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
   await page
     .getByRole("button", { name: /^(Themes|Theme Library)$/ })
     .click();
