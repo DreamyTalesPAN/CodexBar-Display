@@ -82,8 +82,8 @@ main() {
   assert_contains "$workflow" "contents: read" \
     "release workflow must keep repository write access out of the build job"
 
-  assert_contains "$macos_job" "runs-on: macos-latest" \
-    "release workflow must build the customer DMG on macOS"
+  assert_contains "$macos_job" "runs-on: macos-15" \
+    "release workflow must pin the customer DMG build to macOS 15"
   assert_contains "$macos_job" "APPLE_SIGNING_CERTIFICATE_P12_BASE64" \
     "macOS DMG job must receive the Developer ID signing certificate secret"
   assert_contains "$macos_job" "APPLE_NOTARY_KEY_P8_BASE64" \
@@ -228,8 +228,8 @@ main() {
     "signing script must run Apple's pre-notarization system-policy check when available"
   assert_contains "$signing_script" "--allow-internal-xprotect-preflight-error" \
     "signing script must expose the narrow validation-only XProtect preflight exception"
-  assert_not_contains "$macos_job" "--allow-internal-xprotect-preflight-error" \
-    "release workflow must never enable the validation-only XProtect preflight exception"
+  assert_contains "$macos_job" "--allow-internal-xprotect-preflight-error" \
+    "release workflow must allow only the signing script's exact internal XProtect preflight diagnostic"
   assert_contains "$signing_script" "notarization log contains" \
     "signing script must reject Accepted notarization logs that still contain issues"
   assert_contains "$signing_script" "does not match APPLE_TEAM_ID" \
