@@ -48,8 +48,26 @@ export type SupportDiagnostics = {
 
 export type DeviceState = "unknown" | "online" | "offline" | "paired";
 
+export type DeviceCandidate = {
+  target: string;
+  deviceId?: string;
+  board?: string;
+  firmware?: string;
+  networkMode?: "station" | "setup" | string;
+  known?: boolean;
+};
+
+export type DeviceSearchState =
+  | "idle"
+  | "searching"
+  | "multiple"
+  | "not-found"
+  | "failed";
+
 export type DeviceInfo = {
   target?: string;
+  deviceId?: string;
+  known?: boolean;
   connected: boolean;
   paired?: boolean;
   ready?: boolean;

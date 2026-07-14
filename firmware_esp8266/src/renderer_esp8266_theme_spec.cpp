@@ -162,19 +162,38 @@ bool ensureThemeSpecSceneCached(const String& raw) {
   if (cachedThemeSpecDocHash == rawHash && cachedThemeSpecScene.primitiveCount > 0) {
     return true;
   }
+
+  // AnimatedGIF is about 24 KB on ESP8266. Allocate it before retaining the
+  // parsed/compiled theme, otherwise those smaller allocations can fragment
+  // the heap until no block is large enough for the decoder.
+  // AnimatedGIF is about 24 KB on ESP8266. Reserve its one large block before
+  // smaller theme allocations can fragment the heap. It is released again
+  // immediately after compilation when the theme does not contain a GIF.
+  resetAnimatedSpriteCaches();
   cachedThemeSpecDoc.clear();
+  cachedThemeSpecDocHash = 0;
+  themespec::ReleaseCompiledThemeSpec(cachedThemeSpecScene);
+  yield();
+  if (!GifCore().PrepareDecoder()) {
+    return false;
+  }
+
   const DeserializationError err = deserializeJson(cachedThemeSpecDoc, raw.c_str());
   if (err) {
-    cachedThemeSpecDocHash = 0;
+    GifCore().ReleaseMemory();
     return false;
   }
   themespec::CompiledThemeSpec nextScene;
   if (!themespec::CompileThemeSpecObject(cachedThemeSpecDoc.as<JsonObjectConst>(), nextScene)) {
     cachedThemeSpecDocHash = 0;
     cachedThemeSpecDoc.clear();
+    GifCore().ReleaseMemory();
     return false;
   }
   themespec::MoveCompiledThemeSpec(cachedThemeSpecScene, nextScene);
+  if (!themespec::CompiledThemeSpecHasGifAssets(cachedThemeSpecScene)) {
+    GifCore().ReleaseMemory();
+  }
   if (!cachedThemeSpecScene.requiresJsonDocument) {
     cachedThemeSpecDoc.clear();
   }
@@ -794,10 +813,6 @@ bool DrawThemeSpecUsage() {
     markThemeSpecRenderFailed("parse_fail");
     scheduleFullRenderRetry();
     return false;
-  }
-
-  if (!themespec::CompiledThemeSpecHasGifAssets(cachedThemeSpecScene)) {
-    GifCore().ReleaseMemory();
   }
 
   const auto frameData = currentThemeSpecFrameData();

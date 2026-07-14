@@ -29,7 +29,9 @@ import {
   type CompanionInfo,
   type CompanionStatus,
   type ControlCenterEvent,
+  type DeviceCandidate,
   type DeviceInfo,
+  type DeviceSearchState,
   type DeviceState,
   type SupportDiagnostics,
   type UsageSnapshot,
@@ -176,6 +178,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     null,
   );
   const [deviceState, setDeviceState] = useState<DeviceState>("unknown");
+  const [deviceCandidates, setDeviceCandidates] = useState<DeviceCandidate[]>(
+    [],
+  );
+  const [deviceSearchState, setDeviceSearchState] =
+    useState<DeviceSearchState>("idle");
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [deviceTarget, setDeviceTarget] = useState(readInitialDeviceTarget);
   const [brightness, setBrightness] = useState<number | null>(null);
@@ -201,6 +208,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const didRunAutoDisplayReload = useRef(false);
   const didRouteAfterSetupComplete = useRef(false);
   const didRunSetupVerification = useRef(false);
+  const automaticPairingRepairKey = useRef("");
   const lastCompanionRequestAt = useRef(0);
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
@@ -745,7 +753,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       try {
         if (companionStatus === "missing") {
           handleCompanionUnavailableForRepair(quiet);
-          return;
+          return false;
         }
         if (companionStatus !== "online") {
           try {
@@ -784,7 +792,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               if (deviceSetupIsUsable(statusPayload.device)) {
                 void loadSettings();
               }
-              return;
+              return true;
             }
           } catch (statusError) {
             const normalized = normalizeCaughtError(
@@ -804,7 +812,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             } else {
               handleCompanionUnavailableForRepair(quiet);
             }
-            return;
+            return false;
           }
         }
         const payload = await runCompanion<{ device: DeviceInfo }>(
@@ -852,6 +860,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (ready) {
           void loadSettings();
         }
+        return ready;
       } catch (error) {
         const normalized = normalizeCaughtError(
           error,
@@ -875,6 +884,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             tone: "attention",
           });
         }
+        return false;
       } finally {
         setBusyAction(null);
       }
@@ -891,6 +901,139 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       runCompanion,
     ],
   );
+
+  const searchAndConnect = useCallback(async () => {
+    setBusyAction("search");
+    setDeviceCandidates([]);
+    setDeviceSearchState("searching");
+    setLastError(null);
+    try {
+      const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
+        "/v1/device/search",
+        { method: "POST" },
+      );
+      const candidates = (payload.devices || []).filter(
+        (candidate) => candidate.target && candidate.networkMode !== "setup",
+      );
+      const knownCandidates = candidates.filter((candidate) => candidate.known);
+      const selected =
+        knownCandidates.length === 1
+          ? knownCandidates[0]
+          : candidates.length === 1
+            ? candidates[0]
+            : null;
+
+      if (selected) {
+        setDeviceSearchState("idle");
+        const statusPayload = await runCompanion<{ device?: DeviceInfo }>(
+          "/v1/status",
+          undefined,
+          { preserveLastError: true },
+        );
+        if (
+          statusPayload.device?.target &&
+          normalizeDeviceTarget(statusPayload.device.target) ===
+            normalizeDeviceTarget(selected.target) &&
+          deviceSetupIsUsable(statusPayload.device)
+        ) {
+          mergeDevice(statusPayload.device);
+          setDeviceTarget(statusPayload.device.target);
+          rememberDeviceTarget(statusPayload.device.target);
+          setDeviceState("paired");
+          return;
+        }
+        const repaired = await repairConnection({
+          targetOverride: selected.target,
+        });
+        if (!repaired) {
+          setDeviceSearchState("failed");
+        }
+        return;
+      }
+      if (candidates.length > 0) {
+        setDeviceCandidates(candidates);
+        setDeviceSearchState("multiple");
+        return;
+      }
+      setDeviceSearchState("not-found");
+      setDeviceState("offline");
+    } catch (error) {
+      const normalized = normalizeCaughtError(
+        error,
+        "Automatic VibeTV search could not finish.",
+      );
+      if (isCompanionMissingError(normalized)) {
+        handleCompanionUnavailableForRepair(false);
+      } else if (normalized.code === "device_not_found") {
+        setDeviceSearchState("not-found");
+        setDeviceState("offline");
+        setLastError(null);
+      } else {
+        setDeviceSearchState("failed");
+        setLastError(normalized);
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  }, [
+    handleCompanionUnavailableForRepair,
+    mergeDevice,
+    repairConnection,
+    runCompanion,
+  ]);
+
+  const selectAndConnectDevice = useCallback(
+    async (target: string) => {
+      setDeviceCandidates([]);
+      setDeviceSearchState("idle");
+      const repaired = await repairConnection({ targetOverride: target });
+      if (!repaired) {
+        setDeviceSearchState("failed");
+      }
+    },
+    [repairConnection],
+  );
+
+  useEffect(() => {
+    const pairingRequired =
+      device?.stream?.errorCode === "device_pairing_required";
+    if (!pairingRequired) {
+      automaticPairingRepairKey.current = "";
+      return;
+    }
+    if (
+      !device?.deviceId ||
+      !device.target ||
+      busyAction ||
+      companionStatus !== "online"
+    ) {
+      return;
+    }
+    const repairKey = `${device.deviceId}:${device.target}`;
+    if (automaticPairingRepairKey.current === repairKey) {
+      return;
+    }
+    automaticPairingRepairKey.current = repairKey;
+    void repairConnection({ quiet: true }).then((repaired) => {
+      if (repaired) {
+        return;
+      }
+      setActiveTab("setup");
+      setDeviceSearchState("failed");
+      setLastError({
+        code: "device_pairing_repair_failed",
+        message: "VibeTV could not reconnect automatically.",
+        nextAction: "Make sure VibeTV is on the same WiFi, then try again.",
+      });
+    });
+  }, [
+    busyAction,
+    companionStatus,
+    device?.deviceId,
+    device?.stream?.errorCode,
+    device?.target,
+    repairConnection,
+  ]);
 
   const reloadDisplay = useCallback(
     async (options?: { quiet?: boolean }) => {
@@ -965,6 +1108,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setDeviceTarget("");
     setDevice(null);
     setDeviceState("unknown");
+    setDeviceCandidates([]);
+    setDeviceSearchState("idle");
     setBrightness(null);
     setLastInstall(undefined);
     setThemeInstallStatus(null);
@@ -1776,6 +1921,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     <SetupScreen
       key={setupResetVersion}
       companionStatus={companionStatus}
+      deviceCandidates={deviceCandidates}
+      deviceSearchState={deviceSearchState}
       deviceState={deviceState}
       deviceTarget={deviceTarget}
       lastError={lastError}
@@ -1789,6 +1936,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       onCheckCompanion={checkCompanion}
       onCheckUpdates={checkUpdates}
       onDeviceTargetChange={handleDeviceTargetChange}
+      onSearchDevices={() => {
+        didRunSetupVerification.current = true;
+        void searchAndConnect();
+      }}
+      onSelectDevice={(target) => {
+        didRunSetupVerification.current = true;
+        void selectAndConnectDevice(target);
+      }}
       onRepairConnection={(targetOverride) => {
         didRunSetupVerification.current = true;
         repairConnection({ targetOverride });

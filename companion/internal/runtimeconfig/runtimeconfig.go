@@ -21,6 +21,7 @@ type Config struct {
 	Theme        string `json:"theme,omitempty"`
 	DeviceTarget string `json:"deviceTarget,omitempty"`
 	DeviceToken  string `json:"deviceToken,omitempty"`
+	DeviceID     string `json:"deviceId,omitempty"`
 }
 
 func NormalizeTheme(raw string) string {
@@ -69,6 +70,7 @@ func Load(home string) (Config, error) {
 	cfg.Theme = NormalizeTheme(cfg.Theme)
 	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
 	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
+	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
 	return cfg, nil
 }
 
@@ -81,6 +83,7 @@ func Save(home string, cfg Config) error {
 	cfg.Theme = NormalizeTheme(cfg.Theme)
 	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
 	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
+	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
 
 	path := ConfigPath(home)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

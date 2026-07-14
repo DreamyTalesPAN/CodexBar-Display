@@ -710,6 +710,24 @@ func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) 
 	if discoverErr != nil {
 		return "", protocol.DeviceCapabilities{}, false
 	}
+	hello := result.Hello.Normalize()
+	if hello.NetworkMode == "setup" {
+		deps.logf("runtime event=wifi-target-rejected target=%s reason=setup-mode\n", result.Target)
+		return "", protocol.DeviceCapabilities{}, false
+	}
+	cfg, configOK := loadRuntimeConfig(deps)
+	if configOK {
+		wantID := strings.TrimSpace(cfg.DeviceID)
+		gotID := strings.TrimSpace(hello.DeviceID)
+		if wantID != "" && !strings.EqualFold(wantID, gotID) {
+			deps.logf("runtime event=wifi-target-rejected target=%s reason=device-id-mismatch\n", result.Target)
+			return "", protocol.DeviceCapabilities{}, false
+		}
+	}
+	if result.Source == "network-scan" && (!configOK || strings.TrimSpace(cfg.DeviceID) == "") {
+		deps.logf("runtime event=wifi-target-rejected target=%s reason=legacy-device-unidentified\n", result.Target)
+		return "", protocol.DeviceCapabilities{}, false
+	}
 	caps := protocol.CapabilitiesFromHello(result.Hello)
 	if !caps.Known {
 		return "", protocol.DeviceCapabilities{}, false

@@ -20,29 +20,10 @@ constexpr int kLayoutLowerOffset = 35;
 GifCoreESP8266* GifCoreESP8266::activeInstance_ = nullptr;
 
 void GifCoreESP8266::Setup(const char* preloadAssetPath) {
+  (void)preloadAssetPath;
   activeInstance_ = this;
   if (!fsMounted_) {
     fsMounted_ = LittleFS.begin();
-  }
-  if (!EnsureDecoder()) {
-    lastErrorPath_ = preloadAssetPath != nullptr ? preloadAssetPath : "";
-    lastErrorStage_ = "decoder_alloc";
-    lastErrorFailures_ = 1;
-    lastFailureAtMs_ = millis();
-  } else if (lastErrorStage_ == "decoder_alloc") {
-    lastErrorPath_ = "";
-    lastErrorStage_ = "";
-    lastErrorFailures_ = 0;
-    lastFailureAtMs_ = 0;
-  }
-  if (fsMounted_ && preloadAssetPath != nullptr && preloadAssetPath[0] != '\0') {
-    filePresent_ = LittleFS.exists(preloadAssetPath);
-    if (filePresent_) {
-      assetPath_ = preloadAssetPath;
-      layoutMode_ = GifLayoutMode::BottomRightMini;
-      gifWidth_ = 0;
-      gifHeight_ = 0;
-    }
   }
 }
 
@@ -67,6 +48,17 @@ void GifCoreESP8266::Stop() {
 void GifCoreESP8266::ReleaseMemory() {
   Stop();
   ReleaseDecoder();
+  filePresent_ = false;
+  assetPath_ = "";
+  tft_ = nullptr;
+  lastErrorPath_ = "";
+  lastErrorStage_ = "";
+  lastErrorFailures_ = 0;
+  lastFailureAtMs_ = 0;
+}
+
+bool GifCoreESP8266::PrepareDecoder() {
+  return EnsureDecoder();
 }
 
 bool GifCoreESP8266::EnsureDecoder() {
@@ -316,7 +308,7 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
   gifHeight_ = height;
   ConfigureDrawRect(tft, request);
 
-  if (!EnsureDecoder()) {
+  if (!PrepareDecoder()) {
     NoteFailure(request.failureSlot, request.assetPath, "decoder_alloc");
     Stop();
     return false;

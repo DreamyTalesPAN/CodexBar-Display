@@ -17,6 +17,8 @@ import {
 import type {
   ApiError,
   CompanionStatus,
+  DeviceCandidate,
+  DeviceSearchState,
   DeviceState,
 } from "./control-center-types";
 import { ControlCenterButton } from "./control-center-button";
@@ -26,12 +28,16 @@ import { ControlCenterStatusIcon } from "./control-center-status-icon";
 type SetupScreenProps = {
   busyAction?: string | null;
   companionStatus: CompanionStatus;
+  deviceCandidates?: DeviceCandidate[];
+  deviceSearchState?: DeviceSearchState;
   deviceState: DeviceState;
   deviceTarget: string;
   lastError?: ApiError | null;
   onCheckCompanion?: () => void | Promise<void>;
   onCheckUpdates?: () => void | Promise<void>;
   onDeviceTargetChange?: (target: string) => void;
+  onSearchDevices?: () => void;
+  onSelectDevice?: (target: string) => void;
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
   hostedMode?: boolean;
@@ -48,12 +54,16 @@ type StepState = "active" | "blocked" | "complete" | "pending";
 export function SetupScreen({
   busyAction,
   companionStatus,
+  deviceCandidates = [],
+  deviceSearchState = "idle",
   deviceState,
   deviceTarget,
   lastError,
   onCheckCompanion,
   onCheckUpdates,
   onDeviceTargetChange,
+  onSearchDevices,
+  onSelectDevice,
   onRepairConnection,
   onResetSetup,
   hostedMode = false,
@@ -141,7 +151,7 @@ export function SetupScreen({
 
   function confirmWifi() {
     setWifiConfirmedState(true);
-    onRepairConnection?.();
+    onSearchDevices?.();
   }
 
   function confirmMacApp() {
@@ -153,8 +163,8 @@ export function SetupScreen({
     void Promise.resolve(onCheckCompanion?.()).catch(() => undefined);
   }
 
-  function retryConnect() {
-    onRepairConnection?.();
+  function retryConnect(targetOverride?: string) {
+    onRepairConnection?.(targetOverride);
   }
 
   if (showControlCenterLauncher) {
@@ -367,10 +377,14 @@ export function SetupScreen({
               {activeStep === "finish" ? (
                 <FinishSetupContent
                   busyAction={busyAction}
+                  deviceCandidates={deviceCandidates}
+                  deviceSearchState={deviceSearchState}
                   deviceState={deviceState}
                   deviceTarget={deviceTarget}
                   lastError={lastError}
                   onDeviceTargetChange={onDeviceTargetChange}
+                  onSearchDevices={onSearchDevices}
+                  onSelectDevice={onSelectDevice}
                   onRepairConnection={retryConnect}
                   setupComplete={setupComplete}
                 />
@@ -451,18 +465,26 @@ function LegacyMacAppMigrationNotice({
 
 function FinishSetupContent({
   busyAction,
+  deviceCandidates,
+  deviceSearchState,
   deviceState,
   deviceTarget,
   lastError,
   onDeviceTargetChange,
+  onSearchDevices,
+  onSelectDevice,
   onRepairConnection,
   setupComplete,
 }: {
   busyAction?: string | null;
+  deviceCandidates: DeviceCandidate[];
+  deviceSearchState: DeviceSearchState;
   deviceState: DeviceState;
   deviceTarget: string;
   lastError?: ApiError | null;
   onDeviceTargetChange?: (target: string) => void;
+  onSearchDevices?: () => void;
+  onSelectDevice?: (target: string) => void;
   onRepairConnection?: (targetOverride?: string) => void;
   setupComplete: boolean;
 }) {
@@ -470,23 +492,74 @@ function FinishSetupContent({
     return <StatusNote>VibeTV is ready.</StatusNote>;
   }
 
-  if (deviceState === "offline") {
+  if (deviceSearchState === "searching" || busyAction === "search") {
+    return (
+      <StatusNote
+        icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
+      >
+        Searching for VibeTVs on your WiFi...
+      </StatusNote>
+    );
+  }
+
+  if (deviceSearchState === "multiple") {
+    return (
+      <div className="grid gap-4">
+        <p className="text-sm leading-6 text-[#444933]">
+          More than one VibeTV was found. Choose the one you want to connect.
+        </p>
+        <div className="grid gap-3">
+          {deviceCandidates.map((candidate) => (
+            <ControlCenterButton
+              disabled={Boolean(busyAction)}
+              icon={<Monitor size={18} aria-hidden />}
+              key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
+              label={candidateLabel(candidate)}
+              onClick={() => onSelectDevice?.(candidate.target)}
+              variant="secondary"
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (deviceSearchState === "not-found") {
     return (
       <div className="grid gap-5">
         <p className="text-sm leading-6 text-[#444933]">
-          Make sure VibeTV is powered on and connected to the same WiFi.
+          No VibeTV was found automatically. Enter the address shown on the
+          VibeTV screen.
         </p>
         <DeviceTargetForm
           busy={busyAction === "repair"}
-          buttonLabel="Fix connection"
+          buttonLabel="Connect VibeTV"
           className="grid gap-4"
           disabled={Boolean(busyAction)}
           id="setup-device-target"
           lastError={lastError}
           onChange={onDeviceTargetChange}
           onSubmit={onRepairConnection}
-          searchingLabel="Reconnecting"
+          searchingLabel="Connecting"
           value={deviceTarget}
+        />
+      </div>
+    );
+  }
+
+  if (deviceSearchState === "failed") {
+    return (
+      <div className="grid gap-4">
+        <p className="text-sm leading-6 text-[#444933]">
+          Automatic search could not finish. Make sure VibeTV and this Mac are
+          on the same WiFi, then try again.
+        </p>
+        <PrimaryButton
+          fullWidth
+          icon={<RefreshCw size={18} aria-hidden />}
+          label="Try again"
+          onClick={onSearchDevices}
+          size="large"
         />
       </div>
     );
@@ -507,24 +580,20 @@ function FinishSetupContent({
   }
 
   return (
-    <div className="grid gap-4">
-      <p className="text-sm leading-6 text-[#444933]">
-        Make sure VibeTV is powered on and connected to the same WiFi.
-      </p>
-      <DeviceTargetForm
-        busy={busyAction === "repair"}
-        buttonLabel="Fix connection"
-        className="grid gap-4"
-        disabled={Boolean(busyAction)}
-        id="setup-device-target"
-        lastError={lastError}
-        onChange={onDeviceTargetChange}
-        onSubmit={onRepairConnection}
-        searchingLabel="Reconnecting"
-        value={deviceTarget}
-      />
-    </div>
+    <StatusNote>
+      {deviceState === "offline"
+        ? "VibeTV is offline. Run setup again to search for it."
+        : "Waiting for automatic VibeTV search."}
+    </StatusNote>
   );
+}
+
+function candidateLabel(candidate: DeviceCandidate): string {
+  const details = [candidate.target];
+  if (candidate.firmware) {
+    details.push(`Firmware ${candidate.firmware}`);
+  }
+  return details.join(" · ");
 }
 
 function SetupStep({

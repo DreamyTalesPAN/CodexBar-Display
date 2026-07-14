@@ -285,6 +285,18 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testLocalWifiSearchShowsManualAddressOnlyAfterNoResults(
+      browser,
+      appContext.appUrl,
+    );
+    await testLocalWifiSearchLetsCustomerChooseMultipleResults(
+      browser,
+      appContext.appUrl,
+    );
+    await testRunningPairingErrorRepairsAutomaticallyOnce(
+      browser,
+      appContext.appUrl,
+    );
     await testLocalReachableWithoutFrameStaysInSetup(
       browser,
       appContext.appUrl,
@@ -718,7 +730,7 @@ async function testLocalWifiVerificationFailureStaysInSetup(
   await page.getByRole("heading", {
     name: "Verify VibeTV connection",
   }).waitFor({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Fix connection" }).waitFor({
+  await page.getByRole("button", { name: "Try again" }).waitFor({
     timeout: 10_000,
   });
   assert(
@@ -762,7 +774,7 @@ async function testLocalWifiVerificationWithoutFrameStaysInSetup(
   await page.getByText("VibeTV screen is not ready yet.").waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Fix connection" }).waitFor({
+  await page.getByRole("button", { name: "Try again" }).waitFor({
     timeout: 10_000,
   });
   assert(
@@ -780,6 +792,149 @@ async function testLocalWifiVerificationWithoutFrameStaysInSetup(
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testLocalWifiSearchShowsManualAddressOnlyAfterNoResults(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const repairRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { connected: false, paired: false },
+    searchDevices: [],
+    onRepair: (postData) => {
+      repairRequests.push(postData || "");
+      return { ...companionDevice, target: "http://192.168.178.88" };
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  assert(
+    (await page.getByLabel("VibeTV address").count()) === 0,
+    "Manual address must stay hidden before automatic search",
+  );
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
+  await page.getByText("No VibeTV was found automatically.").waitFor({
+    timeout: 10_000,
+  });
+  const address = page.getByLabel("VibeTV address");
+  await address.waitFor({ timeout: 10_000 });
+  await address.fill("192.168.178.88");
+  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(repairRequests.length === 1, "Manual address should repair once");
+  assert(
+    JSON.parse(repairRequests[0]).target === "http://192.168.178.88",
+    `Manual address should be normalized, got ${repairRequests[0]}`,
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testLocalWifiSearchLetsCustomerChooseMultipleResults(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const repairRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { connected: false, paired: false },
+    searchDevices: [
+      {
+        target: "http://192.168.178.81",
+        deviceId: "device-81",
+        firmware: "1.0.36",
+        networkMode: "station",
+      },
+      {
+        target: "http://192.168.178.82",
+        deviceId: "device-82",
+        firmware: "1.0.36",
+        networkMode: "station",
+      },
+    ],
+    onRepair: (postData) => {
+      repairRequests.push(postData || "");
+      return { ...companionDevice, target: "http://192.168.178.82" };
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
+  await page.getByText("More than one VibeTV was found.").waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByLabel("VibeTV address").count()) === 0,
+    "Multiple results must show device choices, not manual address",
+  );
+  await page
+    .getByRole("button", {
+      name: "http://192.168.178.82 · Firmware 1.0.36",
+    })
+    .click();
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(repairRequests.length === 1, "Selected device should repair once");
+  assert(
+    JSON.parse(repairRequests[0]).target === "http://192.168.178.82",
+    `Selected address should be passed to repair, got ${repairRequests[0]}`,
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testRunningPairingErrorRepairsAutomaticallyOnce(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const repairRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      deviceId: "known-device-1",
+      paired: false,
+      ready: false,
+      stream: {
+        healthy: false,
+        running: true,
+        errorCode: "device_pairing_required",
+      },
+    },
+    onRepair: (postData) => {
+      repairRequests.push(postData || "");
+      return { ...companionDevice, deviceId: "known-device-1" };
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.waitForTimeout(5_500);
+  assert(
+    repairRequests.length === 1,
+    `Pairing error should trigger exactly one automatic repair, got ${repairRequests.length}`,
+  );
+  const repairPayload = JSON.parse(repairRequests[0] || "{}");
+  assert(
+    repairPayload.forcePair == null || repairPayload.forcePair === false,
+    `Automatic pairing repair must not force token rotation, got ${repairRequests[0]}`,
+  );
+  assert(
+    (await page.getByText("pairing token", { exact: false }).count()) === 0,
+    "Customers must never be asked to enter a pairing token",
+  );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -2188,6 +2343,14 @@ async function testSavedAddressDoesNotBlockConfirmedVibeTVSearch(
         ready: false,
         stream: { healthy: false, running: true },
       },
+      searchDevices: [
+        {
+          target: "http://vibetv.local",
+          deviceId: "fixture-device-1",
+          networkMode: "station",
+          known: true,
+        },
+      ],
       onRepair: (postData) => {
         repairRequests.push(postData || "");
         return {
@@ -2224,8 +2387,8 @@ async function testSavedAddressDoesNotBlockConfirmedVibeTVSearch(
 
   const repairPayload = JSON.parse(repairRequests[0] || "{}");
   assert(
-    repairPayload.target == null,
-    `confirmed repair should not force stale saved address, got ${repairRequests[0]}`,
+    repairPayload.target === "http://vibetv.local",
+    `confirmed repair should use the fresh search result, got ${repairRequests[0]}`,
   );
   assert(
     repairPayload.forcePair == null || repairPayload.forcePair === false,
@@ -3167,6 +3330,7 @@ async function routeCompanionOnline(
     onDiscover,
     onPair,
     onRepair,
+    onSearch,
     onRequest = () => {},
     onReset,
     onUpdate,
@@ -3181,6 +3345,7 @@ async function routeCompanionOnline(
     usageStatus = 200,
     displayFrameStatus = 200,
     repairError = false,
+    searchDevices,
     firstStatusDelayMs = 0,
   } = {},
 ) {
@@ -3485,6 +3650,26 @@ async function routeCompanionOnline(
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ ok: true, device: currentDevice }),
+      });
+      return;
+    }
+    if (pathname === "/v1/device/search") {
+      const devices =
+        onSearch?.(currentDevice) ||
+        searchDevices || [
+          {
+            target: currentDevice?.target || companionDevice.target,
+            deviceId: currentDevice?.deviceId || "fixture-device-1",
+            board: currentDevice?.board || companionDevice.board,
+            firmware: currentDevice?.firmware || companionDevice.firmware,
+            networkMode: "station",
+            known: Boolean(currentDevice?.target),
+          },
+        ];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, devices }),
       });
       return;
     }

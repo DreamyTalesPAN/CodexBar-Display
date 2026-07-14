@@ -2,11 +2,13 @@
 #include <cstdio>
 
 #include "../src/gif_core_policy.h"
+#include "../src/boot_recovery_policy.h"
 
 namespace {
 
 using codexbar_display::esp8266::GifCorePolicy;
 using codexbar_display::esp8266::GifFailureGuardState;
+using codexbar_display::esp8266::BootRecoveryPolicy;
 
 bool expect(bool cond, const char* message) {
   if (!cond) {
@@ -141,6 +143,23 @@ bool testFitContainPreservesAspectRatio() {
   return true;
 }
 
+bool testBootRecoveryOnlyCountsPhysicalResets() {
+  if (!expect(BootRecoveryPolicy::CountsAsPhysicalReset(0), "power-on reset must count")) {
+    return false;
+  }
+  if (!expect(BootRecoveryPolicy::CountsAsPhysicalReset(6), "external reset must count")) {
+    return false;
+  }
+  for (uint32_t reason = 1; reason <= 5; ++reason) {
+    if (!expect(
+            !BootRecoveryPolicy::CountsAsPhysicalReset(reason),
+            "watchdog, exception, software and deep-sleep resets must not count")) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -154,6 +173,9 @@ int main() {
     return 1;
   }
   if (!testFitContainPreservesAspectRatio()) {
+    return 1;
+  }
+  if (!testBootRecoveryOnlyCountsPhysicalResets()) {
     return 1;
   }
 

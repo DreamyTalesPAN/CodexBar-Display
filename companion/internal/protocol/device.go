@@ -41,6 +41,7 @@ type ThemeCapabilities struct {
 type TransportCapabilities struct {
 	Active    string   `json:"active,omitempty"`
 	Supported []string `json:"supported,omitempty"`
+	Mode      string   `json:"mode,omitempty"`
 }
 
 type CapabilityBlock struct {
@@ -56,6 +57,8 @@ type DeviceHello struct {
 	PreferredProtocolVersion  int             `json:"preferredProtocolVersion,omitempty"`
 	Board                     string          `json:"board,omitempty"`
 	Firmware                  string          `json:"firmware,omitempty"`
+	DeviceID                  string          `json:"deviceId,omitempty"`
+	NetworkMode               string          `json:"networkMode,omitempty"`
 	Features                  []string        `json:"features,omitempty"`
 	MaxFrameBytes             int             `json:"maxFrameBytes,omitempty"`
 	Capabilities              CapabilityBlock `json:"capabilities,omitempty"`
@@ -65,6 +68,8 @@ func (h DeviceHello) Normalize() DeviceHello {
 	h.Kind = strings.TrimSpace(strings.ToLower(h.Kind))
 	h.Board = strings.TrimSpace(strings.ToLower(h.Board))
 	h.Firmware = strings.TrimSpace(h.Firmware)
+	h.DeviceID = strings.TrimSpace(h.DeviceID)
+	h.NetworkMode = strings.TrimSpace(strings.ToLower(h.NetworkMode))
 	h.SupportedProtocolVersions = normalizeProtocolVersions(h.SupportedProtocolVersions)
 	if h.PreferredProtocolVersion > 0 && !containsProtocolVersion(h.SupportedProtocolVersions, h.PreferredProtocolVersion) {
 		h.PreferredProtocolVersion = 0
@@ -80,8 +85,12 @@ func (h DeviceHello) Normalize() DeviceHello {
 	}
 	h.Capabilities.Theme.CachedThemeID = strings.TrimSpace(h.Capabilities.Theme.CachedThemeID)
 	h.Capabilities.Transport.Active = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Active))
+	h.Capabilities.Transport.Mode = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Mode))
 	for i := range h.Capabilities.Transport.Supported {
 		h.Capabilities.Transport.Supported[i] = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Supported[i]))
+	}
+	if h.NetworkMode == "" {
+		h.NetworkMode = h.Capabilities.Transport.Mode
 	}
 	return h
 }

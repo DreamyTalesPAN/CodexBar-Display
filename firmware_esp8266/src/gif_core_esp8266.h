@@ -71,6 +71,7 @@ class GifCoreESP8266 {
   void Setup(const char* preloadAssetPath = nullptr) { (void)preloadAssetPath; }
   void Stop() {}
   void ReleaseMemory() {}
+  bool PrepareDecoder() { return false; }
   void ResetFrameSchedule() {}
   void ResetForAssetUpdate() {}
 
@@ -107,6 +108,7 @@ class GifCoreESP8266 {
   void Setup(const char* preloadAssetPath = nullptr);
   void Stop();
   void ReleaseMemory();
+  bool PrepareDecoder();
   void ResetFrameSchedule();
   void ResetForAssetUpdate();
 

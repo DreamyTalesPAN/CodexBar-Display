@@ -86,6 +86,20 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	}
 }
 
+func TestDeviceHelloNormalizesIdentityAndNetworkMode(t *testing.T) {
+	hello := (DeviceHello{
+		DeviceID:    " esp8266-123ABC ",
+		NetworkMode: " STATION ",
+	}).Normalize()
+	if hello.DeviceID != "esp8266-123ABC" || hello.NetworkMode != "station" {
+		t.Fatalf("unexpected normalized hello: %+v", hello)
+	}
+	fallback := (DeviceHello{Capabilities: CapabilityBlock{Transport: TransportCapabilities{Mode: " SETUP "}}}).Normalize()
+	if fallback.NetworkMode != "setup" {
+		t.Fatalf("expected transport mode fallback, got %+v", fallback)
+	}
+}
+
 func TestCapabilitiesFromCompactHelloTreatsThemeSpecAsThemeSupport(t *testing.T) {
 	caps := CapabilitiesFromHello(DeviceHello{
 		Kind:            "hello",

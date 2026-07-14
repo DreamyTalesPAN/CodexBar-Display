@@ -141,14 +141,105 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	if !got.Device.Connected || got.Device.Target != device.URL || got.Device.Firmware != "1.0.37" {
 		t.Fatalf("expected tokenless read-only status to keep device reachable, got %+v", got.Device)
 	}
-	if !got.Device.Paired {
-		t.Fatalf("expected existing pairing state to be preserved")
+	if got.Device.Paired {
+		t.Fatalf("stale saved token must not be reported as validated pairing")
 	}
 	if got.Device.ActiveTheme != "mini" {
 		t.Fatalf("expected tokenless health probe to populate device health, got %+v", got.Device)
 	}
 	if !sawStaleHello || !sawTokenlessHello || !sawTokenlessHealth {
 		t.Fatalf("expected stale hello, tokenless hello, and tokenless health probes; stale=%t tokenlessHello=%t tokenlessHealth=%t", sawStaleHello, sawTokenlessHello, sawTokenlessHealth)
+	}
+}
+
+func TestApplyDeviceTokenAddsHeaderAndQueryFallback(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://vibetv.local/hello?keep=1", nil)
+
+	applyDeviceToken(req, "pair-token")
+
+	if got := req.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+		t.Fatalf("expected pairing header, got %q", got)
+	}
+	if got := req.URL.Query().Get("token"); got != "pair-token" {
+		t.Fatalf("expected pairing query fallback, got %q", got)
+	}
+	if got := req.URL.Query().Get("keep"); got != "1" {
+		t.Fatalf("expected existing query to survive, got %q", got)
+	}
+}
+
+func TestDeviceSearchReturnsAllDevicesWithoutMutatingConfig(t *testing.T) {
+	device := func(id, mode, firmware string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/hello" {
+				t.Fatalf("unexpected path %s", r.URL.Path)
+			}
+			if got := r.Header.Get("X-VibeTV-Token"); got != "" {
+				t.Fatalf("search must be tokenless, got %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":%q,"deviceId":%q,"networkMode":%q,"capabilities":{"transport":{"active":"wifi"}}}`, firmware, id, mode)
+		}))
+	}
+	known := device("esp8266-123abc", "station", "1.0.36")
+	defer known.Close()
+	setupDevice := device("esp8266-456def", "setup", "1.0.36")
+	defer setupDevice.Close()
+
+	initial := runtimeconfig.Config{DeviceTarget: "http://192.0.2.1", DeviceToken: "secret", DeviceID: "esp8266-123abc"}
+	server := newTestServer(t, initial)
+	server.subnetTargets = func() []string { return []string{known.URL, setupDevice.URL} }
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		OK      bool                `json:"ok"`
+		Devices []deviceSearchEntry `json:"devices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || len(got.Devices) != 1 {
+		t.Fatalf("unexpected search response: %+v", got)
+	}
+	if !got.Devices[0].Known || got.Devices[0].DeviceID != "esp8266-123abc" || got.Devices[0].NetworkMode != "station" {
+		t.Fatalf("known device must sort first: %+v", got.Devices)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg != initial {
+		t.Fatalf("search mutated config: got=%+v want=%+v", cfg, initial)
+	}
+}
+
+func TestPairingStreamErrorClearsPairedState(t *testing.T) {
+	got := withDisplayStreamInfo(
+		deviceInfo{Connected: true, Paired: true},
+		displayStreamInfo{ErrorCode: "device_pairing_required"},
+	)
+	if got.Paired || got.Ready {
+		t.Fatalf("pairing rejection must clear pairing readiness: %+v", got)
+	}
+}
+
+func TestValidateRepairIdentityRejectsSetupAndBackgroundMismatch(t *testing.T) {
+	cfg := runtimeconfig.Config{DeviceID: "esp8266-123abc"}
+	if err := validateRepairIdentity(cfg, protocol.DeviceHello{DeviceID: "esp8266-123abc", NetworkMode: "setup"}, false); err == nil {
+		t.Fatal("expected setup device rejection")
+	}
+	if err := validateRepairIdentity(cfg, protocol.DeviceHello{DeviceID: "esp8266-456def", NetworkMode: "station"}, false); err == nil {
+		t.Fatal("expected background identity mismatch rejection")
+	}
+	if err := validateRepairIdentity(cfg, protocol.DeviceHello{DeviceID: "esp8266-456def", NetworkMode: "station"}, true); err != nil {
+		t.Fatalf("explicit user selection should permit replacing saved device: %v", err)
 	}
 }
 

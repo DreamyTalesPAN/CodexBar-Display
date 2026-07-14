@@ -228,6 +228,7 @@ void RendererESP8266::DrawStatus(
     const String& line2) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
+  display::GifCore().ReleaseMemory();
 
   TFT_eSPI& tft = display::Tft();
   display::DisplayTransaction transaction;

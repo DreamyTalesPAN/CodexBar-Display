@@ -11,6 +11,7 @@
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
 #include "../../firmware_shared/theme_spec_renderer_core.h"
+#include "boot_recovery_policy.h"
 #include "renderer_esp8266.h"
 
 #ifndef CODEXBAR_DISPLAY_BOARD_ID
@@ -928,7 +929,6 @@ void markBootRecoveryUploadActive(bool active) {
     return;
   }
   writeBootRecoveryState(readBootRecoveryCounter(), active);
-  Serial.printf("boot_recovery_upload_marker active=%d\n", active ? 1 : 0);
 }
 
 void clearBootRecoveryCounter() {
@@ -944,7 +944,12 @@ void clearBootRecoveryCounter() {
 bool consumeBootRecoveryTrigger() {
   if (readBootRecoveryUploadActive()) {
     clearBootRecoveryCounter();
-    Serial.println("boot_recovery_counter_skipped reason=upload_recovery");
+    return false;
+  }
+
+  if (!codexbar_display::esp8266::BootRecoveryPolicy::CountsAsPhysicalReset(
+          ESP.getResetInfoPtr()->reason)) {
+    clearBootRecoveryCounter();
     return false;
   }
 
@@ -953,7 +958,6 @@ bool consumeBootRecoveryTrigger() {
     ++counter;
   }
   writeBootRecoveryCounter(counter);
-  Serial.printf("boot_recovery_counter value=%u threshold=%u\n", counter, kBootRecoveryThreshold);
 
   if (counter >= kBootRecoveryThreshold) {
     clearWifiCredentials();
@@ -1230,10 +1234,18 @@ void addCorsHeaders() {
 
 void handleHello() {
   addCorsHeaders();
+  if (requestAuthToken().length() > 0 && !requireWriteAuth()) {
+    return;
+  }
+
   String out;
-  out.reserve(560);
+  out.reserve(620);
   out += "{\"kind\":\"hello\",\"protocolVersion\":2,\"board\":\"";
   out += CODEXBAR_DISPLAY_BOARD_ID;
+  out += "\",\"deviceId\":\"";
+  out += ESP.getChipId();
+  out += "\",\"networkMode\":\"";
+  out += setupMode ? "setup" : "station";
   out += "\",\"firmware\":\"";
   out += CODEXBAR_DISPLAY_FW_VERSION;
   out += "\",\"maxFrameBytes\":";
