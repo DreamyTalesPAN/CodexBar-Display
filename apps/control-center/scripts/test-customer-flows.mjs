@@ -2514,6 +2514,43 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
     "Theme Library preview should render sprite primitives",
   );
 
+  const clippyThumbnail = page.getByRole("img", {
+    name: /Rendered VibeTV theme clippy showing VibeTV/,
+  });
+  await clippyThumbnail.waitFor({ timeout: 10_000 });
+  const firstThumbnailRender = await clippyThumbnail.evaluate(
+    (node) => node.innerHTML,
+  );
+  await page.waitForTimeout(650);
+  const secondThumbnailRender = await clippyThumbnail.evaluate(
+    (node) => node.innerHTML,
+  );
+  assert(
+    firstThumbnailRender === secondThumbnailRender,
+    "Theme Library thumbnails should stay static to avoid background rendering",
+  );
+
+  await page
+    .getByRole("button", { name: "Preview Fixture Clippy Theme" })
+    .click();
+  const clippyDialogPreview = page
+    .getByRole("dialog")
+    .getByRole("img", {
+      name: /Rendered VibeTV theme clippy showing VibeTV/,
+    });
+  await clippyDialogPreview.waitFor({ timeout: 10_000 });
+  const firstDialogRender = await clippyDialogPreview.evaluate(
+    (node) => node.innerHTML,
+  );
+  await page.waitForTimeout(650);
+  const secondDialogRender = await clippyDialogPreview.evaluate(
+    (node) => node.innerHTML,
+  );
+  assert(
+    firstDialogRender !== secondDialogRender,
+    "The opened Theme Library preview should keep animating",
+  );
+
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();

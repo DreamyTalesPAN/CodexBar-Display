@@ -896,7 +896,12 @@ function ThemePreview({
 
   return (
     <span className={className}>
-      <ThemeSpecPreview pack={pack} status={status} themeId={themeId} />
+      <ThemeSpecPreview
+        animate={Boolean(large)}
+        pack={pack}
+        status={status}
+        themeId={themeId}
+      />
     </span>
   );
 }

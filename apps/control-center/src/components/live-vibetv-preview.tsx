@@ -286,10 +286,12 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
 }
 
 export function ThemeSpecPreview({
+  animate = true,
   pack,
   status,
   themeId,
 }: {
+  animate?: boolean;
   pack: ThemeRenderPack | null;
   status: "idle" | "loading" | "ready" | "error";
   themeId: string;
@@ -297,6 +299,7 @@ export function ThemeSpecPreview({
   if (pack?.spec) {
     return (
       <ThemeSpecSVG
+        animate={animate}
         assets={pack.assets || {}}
         frame={THEME_LIBRARY_PREVIEW_FRAME}
         spec={pack.spec}
@@ -338,11 +341,13 @@ function VibeTVCaseShell({ children }: { children: ReactNode }) {
 }
 
 function ThemeSpecSVG({
+  animate = true,
   assets,
   frame,
   spec,
   themeId,
 }: {
+  animate?: boolean;
   assets: Record<string, ThemePackAsset>;
   frame: FrameData;
   spec: ThemeSpec;
@@ -350,14 +355,11 @@ function ThemeSpecSVG({
 }) {
   const sprites = useMemo(() => decodeSpriteAssets(assets), [assets]);
   const primitives = spec.primitives || spec.p || [];
-  const hasAnimatedSprites = useMemo(
-    () =>
-      Object.values(sprites).some(
-        (sprite) => sprite.fps > 0 && sprite.frames.length > 1,
-      ),
-    [sprites],
+  const animationFps = useMemo(
+    () => (animate ? maximumAnimatedSpriteFps(sprites) : 0),
+    [animate, sprites],
   );
-  const animationTick = useAnimationTick(hasAnimatedSprites);
+  const animationTick = useAnimationTick(animationFps);
   return (
     <svg
       aria-label={`Rendered VibeTV theme ${themeId} showing ${frame.label}, ${frame.session}% session ${frame.usageMode}, ${frame.weekly}% weekly ${frame.usageMode}`}
@@ -922,16 +924,70 @@ function decodeSprite(raw: string): DecodedSprite | null {
   return { width, height, fps, frames };
 }
 
-function useAnimationTick(enabled: boolean): number {
+function maximumAnimatedSpriteFps(
+  sprites: Record<string, DecodedSprite>,
+): number {
+  const maximumFps = Object.values(sprites).reduce(
+    (currentMaximum, sprite) =>
+      sprite.frames.length > 1
+        ? Math.max(currentMaximum, sprite.fps)
+        : currentMaximum,
+    0,
+  );
+  return Math.min(20, Math.max(0, maximumFps));
+}
+
+function useAnimationTick(framesPerSecond: number): number {
   const [tick, setTick] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!enabled) {
+    if (framesPerSecond <= 0) {
       return;
     }
-    const timer = window.setInterval(() => setTick(Date.now()), 50);
-    return () => window.clearInterval(timer);
-  }, [enabled]);
+
+    const intervalMs = Math.max(50, Math.ceil(1000 / framesPerSecond));
+    let timer: number | undefined;
+
+    const stopTimer = () => {
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
+    };
+    const pageIsActive = () =>
+      document.visibilityState === "visible" && document.hasFocus();
+    const scheduleNextFrame = () => {
+      stopTimer();
+      if (!pageIsActive()) {
+        return;
+      }
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        setTick(Date.now());
+        scheduleNextFrame();
+      }, intervalMs);
+    };
+    const handlePageActivity = () => {
+      if (pageIsActive()) {
+        setTick(Date.now());
+        scheduleNextFrame();
+      } else {
+        stopTimer();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handlePageActivity);
+    window.addEventListener("focus", handlePageActivity);
+    window.addEventListener("blur", handlePageActivity);
+    scheduleNextFrame();
+
+    return () => {
+      stopTimer();
+      document.removeEventListener("visibilitychange", handlePageActivity);
+      window.removeEventListener("focus", handlePageActivity);
+      window.removeEventListener("blur", handlePageActivity);
+    };
+  }, [framesPerSecond]);
 
   return tick;
 }

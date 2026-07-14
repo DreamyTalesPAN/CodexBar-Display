@@ -816,6 +816,12 @@ PY
     || die "native app shell must back up old LaunchAgents during migration"
   grep -qF "SMAppService.agent" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must manage its persistent runtime with SMAppService"
+  grep -qF "NSWindowDelegate" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native app shell must observe window closure"
+  grep -qF "func windowWillClose" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native app shell must tear down closed Control Center windows"
+  grep -qF "webView = nil" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native app shell must release the WebView when its window closes"
 
   grep -qF "test-macos-control-center-app-bundle.sh" "${ROOT}/.github/workflows/ci.yml" \
     || die "CI must run the macOS app/DMG dry-run test"

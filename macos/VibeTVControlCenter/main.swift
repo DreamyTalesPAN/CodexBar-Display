@@ -628,7 +628,7 @@ func shouldRetryControlCenterNavigation(_ error: Error) -> Bool {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate {
     private var window: NSWindow?
     private var webView: WKWebView?
     private var activeNavigation: WKNavigation?
@@ -769,11 +769,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         window.title = "VibeTV Control Center"
         window.center()
         window.contentView = webView
+        window.delegate = self
         window.isReleasedWhenClosed = false
 
         self.window = window
         self.webView = webView
         loadControlCenter()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === window else {
+            return
+        }
+
+        scheduledReload?.cancel()
+        scheduledReload = nil
+        activeNavigation = nil
+        webView?.stopLoading()
+        webView?.navigationDelegate = nil
+        closingWindow.delegate = nil
+        closingWindow.contentView = nil
+        webView = nil
+        window = nil
     }
 
     private func loadControlCenter(
