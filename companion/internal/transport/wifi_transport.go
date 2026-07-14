@@ -21,6 +21,8 @@ import (
 
 const (
 	defaultWiFiTimeout      = 5 * time.Second
+	framePostTimeout        = 20 * time.Second
+	pairDeviceAttempts      = 3
 	assetUploadAttempts     = 3
 	assetUploadRetryMaxBody = 512
 	assetUploadBytesPerSec  = 1024
@@ -33,6 +35,7 @@ const (
 )
 
 var assetUploadRetryDelay = 1500 * time.Millisecond
+var pairDeviceRetryDelay = 500 * time.Millisecond
 
 type WiFiTransport struct {
 	client                   *http.Client
@@ -107,7 +110,7 @@ func (s DeviceAssetsSnapshot) PathsWithPrefix(prefix string) []string {
 
 func NewWiFiTransport() DeviceTransport {
 	return WiFiTransport{
-		client: &http.Client{Timeout: defaultWiFiTimeout},
+		client: SerializeDeviceHTTPClient(&http.Client{Timeout: defaultWiFiTimeout}),
 	}
 }
 
@@ -115,7 +118,7 @@ func NewWiFiTransportWithClient(client *http.Client) WiFiTransport {
 	if client == nil {
 		client = &http.Client{Timeout: defaultWiFiTimeout}
 	}
-	return WiFiTransport{client: client}
+	return WiFiTransport{client: SerializeDeviceHTTPClient(client)}
 }
 
 func (t WiFiTransport) WithAssetUploadRetryObserver(observer AssetUploadRetryObserver) WiFiTransport {
@@ -250,13 +253,34 @@ func (t WiFiTransport) PairDevice(target string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	form := url.Values{}
-	form.Set("api", "1")
-	req, err := http.NewRequest(http.MethodPost, base+"/api/pair", strings.NewReader(form.Encode()))
+	var lastErr error
+	for attempt := 1; attempt <= pairDeviceAttempts; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(context.Background(), defaultWiFiTimeout)
+		token, pairErr := t.pairDeviceOnce(attemptCtx, base)
+		cancel()
+		if pairErr == nil {
+			return token, nil
+		}
+		lastErr = pairErr
+		if attempt < pairDeviceAttempts {
+			time.Sleep(pairDeviceRetryDelay)
+		}
+	}
+	return "", fmt.Errorf("pair device failed after %d attempts: %w", pairDeviceAttempts, lastErr)
+}
+
+func (t WiFiTransport) pairDeviceOnce(ctx context.Context, base string) (string, error) {
+	pairURL, err := url.Parse(base + "/api/pair")
+	if err != nil {
+		return "", fmt.Errorf("build device pair URL: %w", err)
+	}
+	query := pairURL.Query()
+	query.Set("api", "1")
+	pairURL.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pairURL.String(), nil)
 	if err != nil {
 		return "", fmt.Errorf("build device pair request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Close = true
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -293,8 +317,24 @@ func (t WiFiTransport) SendLine(target string, line []byte) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Close = true
 	applyDeviceAuth(req, target)
-	resp, err := t.client.Do(req)
+	// ESP8266 firmware 1.0.35 acknowledges /frame only after the display render
+	// completes. A complex stored theme can legitimately take longer than the
+	// short timeout used by read-only probes. Let that one request finish so the
+	// daemon does not retry an already accepted frame and fill the device queue.
+	frameClient := *t.client
+	if frameClient.Timeout == 0 || frameClient.Timeout < framePostTimeout {
+		frameClient.Timeout = framePostTimeout
+	}
+	resp, err := frameClient.Do(req)
 	if err != nil {
+		// ESP8266 firmware 1.0.35 can accept and render the complete frame, then
+		// close the socket before writing an HTTP response. Retrying immediately
+		// renders the same frame again and can starve its single HTTP server.
+		// The next normal daemon cycle will refresh the display if the frame was
+		// actually lost, so a response-side EOF is safer to treat as accepted.
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		return fmt.Errorf("post frame: %w", err)
 	}
 	defer resp.Body.Close()
@@ -408,11 +448,28 @@ func retryableAssetError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
 	var netErr net.Error
-	return errors.As(err, &netErr) && netErr.Timeout()
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	for _, transient := range []string{
+		"connection reset",
+		"connection refused",
+		"broken pipe",
+		"server closed idle connection",
+		"unexpected eof",
+	} {
+		if strings.Contains(message, transient) {
+			return true
+		}
+	}
+	return false
 }
 
 type rateLimitedAssetReader struct {

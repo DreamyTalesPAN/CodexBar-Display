@@ -32,12 +32,16 @@ DISPLAY_DAEMON_SERVICE="gui/$(id -u)/${DISPLAY_DAEMON_LABEL}"
 DISPLAY_DAEMON_LOG_OUT="${INSTALL_LOG_DIR}/daemon.out.log"
 DISPLAY_DAEMON_LOG_ERR="${INSTALL_LOG_DIR}/daemon.err.log"
 CONFIG_PATH="${APP_SUPPORT_DIR}/config.json"
+DEFAULT_DMG_URL="${GITHUB_DOWNLOAD_BASE}/${DEFAULT_REPO}/releases/latest/download/VibeTV-Control-Center.dmg"
 
 REPO="${VIBETV_COMPANION_REPO:-$DEFAULT_REPO}"
 RELEASE_VERSION="${VIBETV_COMPANION_VERSION:-}"
 ADDR="${VIBETV_COMPANION_ADDR:-127.0.0.1:47832}"
 DEV_ORIGIN="${VIBETV_COMPANION_DEV_ORIGIN:-}"
 SOURCE_REF="${VIBETV_COMPANION_SOURCE_REF:-}"
+DMG_URL="${VIBETV_MAC_APP_DMG_URL:-${DEFAULT_DMG_URL}}"
+DMG_DOWNLOAD_DIR="${VIBETV_MAC_APP_DOWNLOAD_DIR:-${HOME}/Downloads}"
+DMG_PATH="${DMG_DOWNLOAD_DIR}/VibeTV-Control-Center.dmg"
 TARGET="${VIBETV_COMPANION_TARGET:-}"
 TARGET_EXPLICIT=0
 if [[ -n "${VIBETV_COMPANION_TARGET:-}" ]]; then
@@ -68,11 +72,12 @@ TERMINAL_FALLBACK_ACTIVE=0
 usage() {
   cat <<'EOF'
 Usage:
-  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://<device-ip>] [--source-ref <commit>] [--control-center-path /control-center] [--skip-device-setup] [--verbose]
+  install-control-center-companion.sh [--repo owner/name] [--version x.y.z] [--addr 127.0.0.1:47832] [--target http://<device-ip>] [--source-ref <commit>] [--dmg-url <url>] [--control-center-path /control-center] [--skip-device-setup] [--verbose]
   install-control-center-companion.sh --restart
   install-control-center-companion.sh --uninstall
 
 What it does:
+  - when started by an older VibeTV Mac App, downloads and opens the new DMG
   - downloads the matching codexbar-display macOS release binary
   - verifies the release checksum
   - installs the binary under ~/Library/Application Support/codexbar-display/bin
@@ -507,6 +512,37 @@ daemon_binary_for_plist() {
   printf '%s\n' "$BIN_PATH"
 }
 
+display_daemon_pid() {
+  local line
+  if [[ -n "${VIBETV_INSTALLER_DISPLAY_DAEMON_PID:-}" ]]; then
+    printf '%s\n' "$VIBETV_INSTALLER_DISPLAY_DAEMON_PID"
+    return 0
+  fi
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*pid[[:space:]]*=[[:space:]]*([0-9]+) ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}"
+      return 0
+    fi
+  done < <(launchctl print "$DISPLAY_DAEMON_SERVICE" 2>/dev/null || true)
+  return 1
+}
+
+running_inside_display_daemon() {
+  local daemon_pid process_pid parent_pid
+  daemon_pid="$(display_daemon_pid)" || return 1
+  [[ "$daemon_pid" =~ ^[0-9]+$ ]] || return 1
+  process_pid="$$"
+  for _ in $(seq 1 12); do
+    if [[ "$process_pid" == "$daemon_pid" ]]; then
+      return 0
+    fi
+    parent_pid="$(/bin/ps -o ppid= -p "$process_pid" 2>/dev/null | tr -d '[:space:]')"
+    [[ "$parent_pid" =~ ^[0-9]+$ && "$parent_pid" != "0" && "$parent_pid" != "$process_pid" ]] || break
+    process_pid="$parent_pid"
+  done
+  return 1
+}
+
 restart_service() {
   if [[ ! -x "$BIN_PATH" ]]; then
     die "Mac setup binary is missing: ${BIN_PATH}. Run install first."
@@ -526,6 +562,26 @@ restart_service() {
     fi
   fi
   verify_launchagent_loaded
+}
+
+download_new_mac_app() {
+  local partial_path
+  require_cmd_for curl "download the new VibeTV Mac App" "use a standard macOS Terminal with curl available, then try again."
+  require_cmd_for open "open the new VibeTV Mac App DMG" "open the downloaded DMG from your Downloads folder."
+
+  mkdir -p "$DMG_DOWNLOAD_DIR"
+  partial_path="${DMG_PATH}.part"
+  rm -f "$partial_path"
+  log "vibetv: downloading new Mac App DMG from ${DMG_URL}"
+  if ! curl -fL --cookie "" --retry 3 --connect-timeout 15 -o "$partial_path" "$DMG_URL"; then
+    rm -f "$partial_path"
+    die "the new VibeTV Mac App could not be downloaded. Try again."
+  fi
+  mv -f "$partial_path" "$DMG_PATH"
+  log "vibetv: new Mac App DMG downloaded to ${DMG_PATH}"
+  open "$DMG_PATH" >/dev/null 2>&1 \
+    || die "the DMG was downloaded to ${DMG_PATH}, but could not be opened automatically."
+  log "vibetv: opened new Mac App DMG"
 }
 
 verify_launchagent_loaded() {
@@ -583,19 +639,20 @@ verify_local_service_stable() {
 }
 
 open_control_center() {
-  local url
+  local open_url url
   url="$(control_center_url)"
+  open_url="${url}?migration=${RELEASE_VERSION}"
   verify_control_center_available
   verify_local_service_stable
   if [[ "$OPEN_CONTROL_CENTER" != "1" ]]; then
     log "vibetv: Control Center is ready at ${url}"
     return 0
   fi
-  log "vibetv: opening Control Center at ${url}"
+  log "vibetv: opening Control Center at ${open_url}"
   if command -v open >/dev/null 2>&1; then
-    open "$url" >/dev/null 2>&1 || log "vibetv: open ${url}"
+    open "$open_url" >/dev/null 2>&1 || log "vibetv: open ${open_url}"
   else
-    log "vibetv: open ${url}"
+    log "vibetv: open ${open_url}"
   fi
 }
 
@@ -1186,6 +1243,15 @@ parse_args() {
         SOURCE_REF="$(normalize_source_ref "${1#*=}")"
         shift
         ;;
+      --dmg-url)
+        [[ $# -ge 2 ]] || die "--dmg-url requires a value"
+        DMG_URL="$2"
+        shift 2
+        ;;
+      --dmg-url=*)
+        DMG_URL="${1#*=}"
+        shift
+        ;;
       --control-center-path)
         [[ $# -ge 2 ]] || die "--control-center-path requires a value"
         CONTROL_CENTER_PATH="$(normalize_control_center_path "$2")"
@@ -1243,6 +1309,18 @@ main() {
   CONTROL_CENTER_PATH="$(normalize_control_center_path "$CONTROL_CENTER_PATH")"
   if [[ -n "$SOURCE_REF" ]]; then
     SOURCE_REF="$(normalize_source_ref "$SOURCE_REF")"
+  fi
+
+  if [[ "$MODE" == "install" && "$SKIP_DEVICE_SETUP" == "1" ]] && running_inside_display_daemon; then
+    STEP_TOTAL=1
+    print_intro "Downloading the new VibeTV Mac App"
+    step_start "Downloading Mac App"
+    download_new_mac_app
+    step_done "Downloading Mac App"
+    say ""
+    say "Done. The new VibeTV Mac App is ready to install."
+    say "Drag VibeTV Control Center to Applications, then open it."
+    exit 0
   fi
 
   if [[ "$MODE" == "uninstall" ]]; then

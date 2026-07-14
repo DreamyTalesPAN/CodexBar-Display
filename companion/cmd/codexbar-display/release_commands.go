@@ -1074,6 +1074,13 @@ func downloadManifestFirmwareArtifact(ctx context.Context, home string, manifest
 	if actualSHA != expectedSHA {
 		return "", fmt.Errorf("sha256 mismatch for %s: expected %s actual %s", assetName, expectedSHA, actualSHA)
 	}
+	if strings.HasSuffix(strings.ToLower(imagePath), ".gz") {
+		rawImagePath := strings.TrimSuffix(imagePath, filepath.Ext(imagePath))
+		if err := gunzipFile(imagePath, rawImagePath, 0o644); err != nil {
+			return "", fmt.Errorf("decompress firmware image: %w", err)
+		}
+		imagePath = rawImagePath
+	}
 	return imagePath, nil
 }
 

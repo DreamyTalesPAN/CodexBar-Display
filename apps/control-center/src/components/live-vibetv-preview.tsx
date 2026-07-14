@@ -174,12 +174,12 @@ type SpriteRect = {
 export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   const provider = currentUsageProvider(usage);
   const themeId = activeThemeId(device);
-  const displayStreamReady = Boolean(device?.stream?.healthy);
+  const displayStreamReady = Boolean(device?.ready && device.stream?.healthy);
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
   );
   const effectiveDisplayFrame = displayStreamReady ? displayFrame : null;
-  const frame = hasRenderableUsage(effectiveDisplayFrame?.frame, provider)
+  const frame = hasRenderableUsage(effectiveDisplayFrame?.frame)
     ? buildFrameData(
         provider,
         effectiveDisplayFrame?.savedAt || usage?.generatedAt,
@@ -716,12 +716,8 @@ function currentUsageProvider(
 
 function hasRenderableUsage(
   displayFrame: DisplayFrame | undefined,
-  provider: UsageProviderInfo | null,
 ): boolean {
-  return (
-    hasUsagePercentPair(displayFrame?.session, displayFrame?.weekly) ||
-    hasUsagePercentPair(provider?.session, provider?.weekly)
-  );
+  return hasUsagePercentPair(displayFrame?.session, displayFrame?.weekly);
 }
 
 function hasUsagePercentPair(session: unknown, weekly: unknown): boolean {

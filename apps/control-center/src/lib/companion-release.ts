@@ -4,6 +4,12 @@ export type CompanionReleaseStatus =
   | "disabled"
   | "check_failed";
 
+export type MacAppDmgDownloadStatus =
+  | "available"
+  | "missing_asset"
+  | "disabled"
+  | "check_failed";
+
 export type CompanionReleaseInfo = {
   checkedAt: string;
   status: CompanionReleaseStatus;
@@ -12,4 +18,20 @@ export type CompanionReleaseInfo = {
   installedVersion?: string;
   updateAvailable: boolean;
   message: string;
+  dmgDownloadStatus?: MacAppDmgDownloadStatus;
+  dmgDownloadUrl?: string;
 };
+
+export function availableMacAppDmgDownloadUrl(
+  release: CompanionReleaseInfo | null | undefined,
+): string | undefined {
+  const url = release?.dmgDownloadUrl?.trim();
+  if (
+    release?.status !== "available" ||
+    release.dmgDownloadStatus !== "available" ||
+    !url
+  ) {
+    return undefined;
+  }
+  return url;
+}

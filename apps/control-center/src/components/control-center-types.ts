@@ -25,6 +25,7 @@ export type CompanionStatus = "unknown" | "online" | "missing";
 export type CompanionInfo = {
   status?: string;
   version?: string;
+  installationMode?: "legacy" | "dmg";
   update?: CompanionReleaseInfo;
   features?: {
     themeInstallEnabled?: boolean;
@@ -51,6 +52,7 @@ export type DeviceInfo = {
   target?: string;
   connected: boolean;
   paired?: boolean;
+  ready?: boolean;
   board?: string;
   firmware?: string;
   activeTheme?: string;
@@ -61,6 +63,7 @@ export type DeviceInfo = {
     target?: string;
     lastTarget?: string;
     detail?: string;
+    errorCode?: string;
   };
   health?: {
     ok?: boolean;
@@ -242,7 +245,5 @@ export function deviceStreamIsReady(device: DeviceInfo | null | undefined) {
 }
 
 export function deviceSetupIsUsable(device: DeviceInfo | null | undefined) {
-  return Boolean(
-    device?.paired && (device.connected || deviceStreamIsReady(device)),
-  );
+  return device?.ready === true;
 }

@@ -58,7 +58,9 @@ That command is no-write: it does not merge, release, install packages, start se
 ../../scripts/check-control-center-customer-ready-gate.sh --automated-only --skip-release
 ```
 
-For the current v1 setup path, customers use the Agentic setup prompt or the manual Terminal command from the Setup tab. The command installs or updates the Mac App from the current release and starts it from the Terminal context.
+For the current customer setup path, `app.vibetv.shop` offers only the verified
+DMG. The installed Mac App owns WiFi onboarding and opens Overview after it
+verifies VibeTV.
 
 The local Mac App service must run on `127.0.0.1:47832` for real device actions:
 
@@ -80,17 +82,31 @@ For local development, install the Mac App service from the repository root:
 ```
 
 That starts the normal VibeTV Mac App background service with the local Control
-Center API built in. The hosted setup uses the same one-process Mac App path
-through the Agentic prompt. See `docs/control-center-customer-readiness.md` for
-the support flow.
+Center API built in. It is a development/support path and is not shown in the
+customer setup UI. See `docs/control-center-customer-readiness.md` for the
+support flow.
 
-The hosted customer command is:
+The legacy operator command is:
 
 ```bash
 curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
 ```
 
-This path is intentional while there are no signed/notarized Apple packages.
+This command remains an operator support tool for existing installations. See
+`../../docs/macos-dmg-distribution.md` for the signed/notarized
+`VibeTV Control Center.app` release flow.
+
+Hosted setup shows only the verified DMG download. If the flag is off or the
+asset is missing, the download stays unavailable; customer setup never falls
+back to the old Agentic/Terminal installer that could create a second app under
+`~/Applications`. After opening the installed app, native onboarding owns WiFi
+instructions, device verification, pairing when required, and the automatic
+handoff to Overview. The native app first enables its bundled, persistent local
+service.
+It then backs up old user LaunchAgent plists under
+`~/Library/Application Support/codexbar-display/migration-backups/`. The
+app-owned service runs the display daemon and local API after the window quits
+and across future logins.
 
 ## Device Write Guardrails
 
@@ -104,6 +120,13 @@ VIBETV_DISABLE_WIFI_THEME_INSTALL=1 go run ./cmd/codexbar-display api --dev-orig
 
 Use read-only Companion calls and mocked/unit tests before installing themes on shared hardware.
 
+Theme Studio is part of the local Control Center. Opening it, editing a draft,
+validating, and exporting a ZIP must not write to hardware. The **Send to
+VibeTV** button is the explicit write action: it uploads loaded assets, uploads
+the current Theme JSON, activates it, and sends one live frame. Test that path
+with mocked device requests unless the current chat has approved the exact live
+hardware write.
+
 ## Environment
 
 Copy `.env.example` to `.env.local` and set the Storefront token.
@@ -115,18 +138,30 @@ SHOPIFY_STOREFRONT_PRIVATE_TOKEN=...
 SHOPIFY_STOREFRONT_API_VERSION=2026-04
 SHOPIFY_THEME_COLLECTION_HANDLE=themes-2
 CONTROL_CENTER_GITHUB_TOKEN=...
+CONTROL_CENTER_ENABLE_MAC_APP_DMG_DOWNLOAD=0
 ```
 
 Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `SHOPIFY_STOREFRONT_ACCESS_TOKEN` for a public token. `CONTROL_CENTER_GITHUB_TOKEN` is optional, server-side only, and keeps GitHub release version checks away from anonymous rate limits. If Shopify env vars are missing, the app shows a configuration warning and no installable themes. Set `CONTROL_CENTER_ALLOW_CATALOG_FALLBACK=1` only for explicit local development with repo catalog data.
 
+Keep `CONTROL_CENTER_ENABLE_MAC_APP_DMG_DOWNLOAD=0` until the latest GitHub
+release contains a signed, notarized, non-empty
+`VibeTV-Control-Center.dmg` asset. Setting it to `1` only allows the hosted
+release check to expose the exact uploaded asset URL; the Setup and Updates
+screens still stay link-free if that asset is missing or invalid. The embedded
+local UI reads the same result from the absolute hosted endpoint, so it never
+falls back to an unchecked `/latest/download/...` URL.
+
 ## Flow
 
-- On HTTPS hosted origins, `/` opens the VibeTV setup launcher.
-- On HTTPS hosted origins, `/install/[themeId]` opens setup with the theme context
-  preserved, then hands off to the local Control Center once the Mac App answers.
+- On HTTPS hosted origins, `/` offers the verified Mac App DMG download and no
+  device setup.
+- On HTTPS hosted origins, `/install/[themeId]` offers the same Mac App download;
+  native onboarding still ends at Overview, and theme choice happens later in
+  the local Theme Library.
 - On the local Mac App origin, `/control-center` opens the full Control Center
-  with Overview, Usage, Settings, Theme Library, Updates, and Support.
-- Browser talks directly to the local Mac App service at `http://127.0.0.1:47832`.
+  and starts WiFi onboarding only when no usable VibeTV connection exists.
+- After local discovery and verification succeed, the installed app opens
+  Overview directly; existing healthy installations open Overview immediately.
 - The server reads Shopify product data through the Storefront API and only sends normalized public theme data to the browser.
 
 Validate the hosted customer catalog before rollout:

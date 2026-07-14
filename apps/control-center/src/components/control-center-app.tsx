@@ -8,13 +8,13 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type { ThemeCatalogResponse } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
   isLocalCompanionOrigin,
-  LOCAL_CONTROL_CENTER_LAUNCHER_URL,
   localizeCompanionAssetUrl,
   localControlCenterUrl,
   needsLoopbackTargetAddressSpace,
@@ -45,15 +45,9 @@ import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
 
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
-const LOCAL_CONTROL_CENTER_OPENED_STORAGE_KEY =
-  "vibetv.controlCenter.localControlCenterOpened";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
+const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 90_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
-const LOCAL_APP_LAUNCH_WAIT_MS = 1500;
-const MAC_APP_UPDATE_POLL_INTERVAL_MS = 500;
-const MAC_APP_UPDATE_MAX_POLLS = 960;
-const MAC_APP_UPDATE_RECONNECT_GRACE_MS = 45_000;
-const MAC_APP_UPDATE_INITIAL_GRACE_MS = 60_000;
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
@@ -126,37 +120,6 @@ type FirmwareUpdateResponse = {
   job?: FirmwareUpdateJob;
 };
 
-type MacAppUpdateResult = {
-  version?: string;
-};
-
-type MacAppUpdateJob = {
-  id: string;
-  phase: "installing" | "complete" | "error";
-  message?: string;
-  progress?: number;
-  startedAt?: string;
-  finishedAt?: string;
-  logs?: string[];
-  result?: MacAppUpdateResult;
-  error?: ApiError;
-};
-
-type MacAppUpdateStatus = {
-  phase: "installing" | "complete" | "error";
-  startedAt: string;
-  finishedAt?: string;
-  message?: string;
-  progress?: number;
-  logs: string[];
-  result?: MacAppUpdateResult;
-  error?: string;
-};
-
-type MacAppUpdateResponse = {
-  job?: MacAppUpdateJob;
-};
-
 type Props = {
   catalog: ThemeCatalogResponse;
   initialThemeId?: string;
@@ -178,7 +141,7 @@ type ThemeInstallStatus = {
 type RunCompanion = <T>(
   path: string,
   init?: RequestInit,
-  options?: { preserveLastError?: boolean },
+  options?: { preserveLastError?: boolean; timeoutMs?: number },
 ) => Promise<T>;
 
 type FirmwareCheckOptions = {
@@ -225,25 +188,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<FirmwareUpdateInfo | null>(null);
   const [firmwareUpdateStatus, setFirmwareUpdateStatus] =
     useState<FirmwareUpdateStatus | null>(null);
-  const [macAppUpdateStatus, setMacAppUpdateStatus] =
-    useState<MacAppUpdateStatus | null>(null);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [usageError, setUsageError] = useState<ApiError | null>(null);
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
-  const [
-    localControlCenterPreviouslyOpened,
-    setLocalControlCenterPreviouslyOpened,
-  ] = useState(readLocalControlCenterPreviouslyOpened);
   const [setupResetVersion, setSetupResetVersion] = useState(0);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
   const didRunInitialConnectionCheck = useRef(false);
-  const didRunAutoRepair = useRef(false);
   const didRunAutoDisplayReload = useRef(false);
   const didRouteAfterSetupComplete = useRef(false);
+  const didRunSetupVerification = useRef(false);
   const lastCompanionRequestAt = useRef(0);
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
@@ -389,7 +346,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     async <T,>(
       path: string,
       init?: RequestInit,
-      options?: { preserveLastError?: boolean },
+      options?: { preserveLastError?: boolean; timeoutMs?: number },
     ): Promise<T> => {
       if (!options?.preserveLastError) {
         setLastError(null);
@@ -402,7 +359,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const controller = new AbortController();
       const timeout = window.setTimeout(() => {
         controller.abort();
-      }, COMPANION_REQUEST_TIMEOUT_MS);
+      }, options?.timeoutMs ?? COMPANION_REQUEST_TIMEOUT_MS);
       const requestInit: LocalNetworkRequestInit = {
         ...init,
         headers,
@@ -477,12 +434,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         setDeviceState(payload.device.paired ? "paired" : "online");
         if (!quiet) {
+          const ready = deviceSetupIsUsable(payload.device);
           addEvent({
             label: "VibeTV checked",
-            detail: payload.device.connected
-              ? "VibeTV is connected."
-              : "VibeTV is waiting for signal.",
-            tone: payload.device.connected ? "ready" : "attention",
+            detail: ready
+              ? "VibeTV is ready."
+              : payload.device.connected
+                ? "VibeTV was found, but its screen is not ready yet."
+                : "VibeTV is waiting for signal.",
+            tone: ready ? "ready" : "attention",
           });
         }
         return payload.device;
@@ -616,10 +576,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
-        if (shouldRedirectToLocalControlCenter()) {
+        if (
+          shouldRedirectToLocalControlCenter() &&
+          payload.companion?.installationMode !== "dmg"
+        ) {
           try {
             await verifyLocalControlCenterAvailable();
-            window.location.assign(localControlCenterUrl(localControlCenterPath));
           } catch (error) {
             const normalized = await normalizeLocalControlCenterError(error);
             setSetupPreviewStep("mac-app");
@@ -629,8 +591,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               detail: normalized.nextAction,
               tone: "attention",
             });
+            return;
           }
-          return;
         }
         if (!quiet) {
           try {
@@ -666,7 +628,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 : "unknown",
           );
           const refreshed = await refreshDevice({ quiet: true });
-          if (refreshed?.connected) {
+          if (deviceSetupIsUsable(refreshed)) {
             void loadSettings();
           }
         } else {
@@ -713,7 +675,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       companionStatus,
       loadSettings,
-      localControlCenterPath,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
       mergeDevice,
@@ -814,6 +775,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               setDevice(null);
               setDeviceState("unknown");
             }
+            if (
+              !target &&
+              statusPayload.device &&
+              deviceSetupIsUsable(statusPayload.device)
+            ) {
+              setLastError(null);
+              if (deviceSetupIsUsable(statusPayload.device)) {
+                void loadSettings();
+              }
+              return;
+            }
           } catch (statusError) {
             const normalized = normalizeCaughtError(
               statusError,
@@ -844,7 +816,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               ...(options?.forcePair ? { forcePair: true } : {}),
             }),
           },
-          { preserveLastError: quiet },
+          {
+            preserveLastError: quiet,
+            timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS,
+          },
         );
         setCompanionStatus("online");
         void refreshCompanionFeatures();
@@ -861,14 +836,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setDeviceTarget(payload.device.target);
           rememberDeviceTarget(payload.device.target);
         }
+        const ready = deviceSetupIsUsable(payload.device);
+        if (payload.device.connected && !ready) {
+          setLastError(displayNotReadyError());
+        }
         addEvent({
           label: quiet ? "Connection repaired" : "VibeTV connection fixed",
-          detail: payload.device.connected
-            ? "VibeTV is connected."
-            : "VibeTV is waiting for signal.",
-          tone: payload.device.connected ? "ready" : "attention",
+          detail: ready
+            ? "VibeTV is ready."
+            : payload.device.connected
+              ? "VibeTV was found, but its screen is not ready yet."
+              : "VibeTV is waiting for signal.",
+          tone: ready ? "ready" : "attention",
         });
-        if (payload.device.connected) {
+        if (ready) {
           void loadSettings();
         }
       } catch (error) {
@@ -919,7 +900,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const payload = await runCompanion<{ device: DeviceInfo }>(
           "/v1/device/reload-display",
           { method: "POST" },
-          { preserveLastError: quiet },
+          {
+            preserveLastError: quiet,
+            timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS,
+          },
         );
         setCompanionStatus("online");
         setLastError(null);
@@ -986,13 +970,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setThemeInstallStatus(null);
     setSupportDiagnostics(null);
     setFirmwareUpdate(null);
-    setMacAppUpdateStatus(null);
     setUsage(null);
     setUsageError(null);
-    didRunAutoRepair.current = false;
     didRunAutoDisplayReload.current = false;
     didRouteAfterSetupComplete.current = false;
-    setSetupPreviewStep("mac-app");
+    didRunSetupVerification.current = false;
+    setSetupPreviewStep(null);
     setActiveTab("setup");
     try {
       const payload = await runCompanion<{
@@ -1265,36 +1248,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [checkCompanion, hostedSetup, setupPreviewStep]);
 
   useEffect(() => {
-    const needsKnownTargetRepair =
-      Boolean(device?.target) && !deviceSetupIsUsable(device);
-    const needsMissingTargetRepair =
-      !device?.target &&
-      (deviceState === "unknown" || deviceState === "offline");
-    if (
-      hostedSetup ||
-      setupPreviewStep ||
-      didRunAutoRepair.current ||
-      busyAction ||
-      companionStatus !== "online" ||
-      (!needsKnownTargetRepair && !needsMissingTargetRepair) ||
-      isLocalNetworkAccessError(lastError)
-    ) {
-      return;
-    }
-    didRunAutoRepair.current = true;
-    void repairConnection({ forcePair: true, quiet: true });
-  }, [
-    busyAction,
-    companionStatus,
-    device,
-    deviceState,
-    hostedSetup,
-    lastError,
-    repairConnection,
-    setupPreviewStep,
-  ]);
-
-  useEffect(() => {
     if (hostedSetup) {
       return;
     }
@@ -1388,18 +1341,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [deviceBoard, deviceFirmware, runCompanion],
   );
-  const hasCompanionReleaseInfo = Boolean(companionInfo?.update);
-  const shouldUseLegacyCompanionRelease = Boolean(
-    companionStatus === "online" &&
-      companionInfo?.version &&
-      !hasCompanionReleaseInfo,
-  );
   const {
-    refresh: refreshLegacyCompanionRelease,
-    release: legacyCompanionRelease,
-  } = useCompanionRelease(companionInfo?.version, {
-    enabled: shouldUseLegacyCompanionRelease,
-  });
+    refresh: refreshHostedCompanionRelease,
+    release: hostedCompanionRelease,
+  } = useCompanionRelease(companionInfo?.version);
 
   const checkUpdates = useCallback(async () => {
     setBusyAction("firmware-check");
@@ -1407,10 +1352,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const checks: Array<Promise<unknown>> = [
         checkCompanion({ quiet: true }),
         refreshFirmwareUpdate(),
+        refreshHostedCompanionRelease(),
       ];
-      if (shouldUseLegacyCompanionRelease) {
-        checks.push(refreshLegacyCompanionRelease());
-      }
       await Promise.all(checks);
     } finally {
       setBusyAction(null);
@@ -1418,147 +1361,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     checkCompanion,
     refreshFirmwareUpdate,
-    refreshLegacyCompanionRelease,
-    shouldUseLegacyCompanionRelease,
+    refreshHostedCompanionRelease,
   ]);
-
-  const installMacAppUpdate = useCallback(
-    async (version?: string) => {
-      const startedAt = formatTime();
-      const targetVersion = normalizeVersion(version);
-      const initialLogs = ["Preparing Mac App update."];
-      const applyUpdateJob = (job: MacAppUpdateJob) => {
-        const phase =
-          job.phase === "complete"
-            ? "complete"
-            : job.phase === "error"
-              ? "error"
-              : "installing";
-        const logs = customerMacAppUpdateLogs(job.logs, initialLogs);
-        setMacAppUpdateStatus({
-          phase,
-          startedAt,
-          finishedAt:
-            phase === "complete" || phase === "error"
-              ? formatTime()
-              : undefined,
-          message:
-            job.error?.nextAction ||
-            job.message ||
-            logs[logs.length - 1] ||
-            initialLogs[0],
-          progress: clampProgress(job.progress),
-          logs,
-          result: job.result,
-          error: job.error?.nextAction,
-        });
-      };
-      setBusyAction("mac-app-update");
-      setMacAppUpdateStatus({
-        phase: "installing",
-        startedAt,
-        message: initialLogs[0],
-        progress: 5,
-        logs: initialLogs,
-      });
-      addEvent({
-        label: "Mac App update started",
-        detail: targetVersion
-          ? `Mac App ${targetVersion} is being installed.`
-          : "Mac App is being updated.",
-        at: startedAt,
-        tone: "unknown",
-      });
-      try {
-        const payload = await runCompanion<MacAppUpdateResponse>(
-          "/v1/mac-app/update",
-          {
-            method: "POST",
-            body: JSON.stringify(
-              targetVersion ? { version: targetVersion } : {},
-            ),
-          },
-        );
-        if (!payload.job) {
-          throw macAppUpdateFailedError();
-        }
-        applyUpdateJob(payload.job);
-        const finishedJob = await pollMacAppUpdateJob({
-          applyUpdateJob,
-          jobId: payload.job.id,
-          runCompanion,
-          targetVersion,
-        });
-        if (finishedJob.phase === "error") {
-          throw finishedJob.error || macAppUpdateFailedError();
-        }
-        const installedVersion =
-          normalizeVersion(finishedJob.result?.version) || targetVersion;
-        const logs = customerMacAppUpdateLogs(finishedJob.logs, initialLogs);
-        const finishedAt = formatTime();
-        setMacAppUpdateStatus({
-          phase: "complete",
-          startedAt,
-          finishedAt,
-          message: "Mac App updated.",
-          progress: 100,
-          logs: customerMacAppUpdateLogs([...logs, "Mac App updated."]),
-          result: installedVersion
-            ? { version: installedVersion }
-            : finishedJob.result,
-        });
-        if (installedVersion) {
-          setCompanionInfo((current) =>
-            current ? { ...current, version: installedVersion } : current,
-          );
-        }
-        addEvent({
-          label: "Mac App updated",
-          detail: installedVersion
-            ? `Mac App ${installedVersion} is installed.`
-            : "Mac App update complete.",
-          at: finishedAt,
-          tone: "ready",
-        });
-        await checkCompanion({ quiet: true });
-        return true;
-      } catch (error) {
-        const normalized = normalizeMacAppUpdateError(
-          normalizeCaughtError(error, "Mac App update failed."),
-        );
-        if (isLocalNetworkAccessError(normalized)) {
-          markCompanionAccessBlocked();
-        } else if (isCompanionMissingError(normalized)) {
-          markCompanionUnavailable();
-        }
-        setLastError(normalized);
-        setMacAppUpdateStatus({
-          phase: "error",
-          startedAt,
-          finishedAt: formatTime(),
-          message: normalized.nextAction,
-          progress: 100,
-          logs: [...initialLogs, normalized.message, normalized.nextAction],
-          error: normalized.nextAction,
-        });
-        addEvent({
-          label: "Mac App update failed",
-          detail: normalized.nextAction,
-          tone: "attention",
-        });
-        return false;
-      } finally {
-        setBusyAction(null);
-      }
-    },
-    [
-      addEvent,
-      checkCompanion,
-      markCompanionAccessBlocked,
-      markCompanionUnavailable,
-      runCompanion,
-    ],
-  );
 
   const installFirmwareUpdate = useCallback(async () => {
     const startedAt = formatTime();
@@ -1852,12 +1656,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
   const companionRelease =
-    companionInfo?.update || legacyCompanionRelease || null;
-  const macAppUpdateAvailable = Boolean(
-    companionRelease?.updateAvailable &&
-      macAppUpdateStatus?.phase !== "complete",
+    hostedCompanionRelease?.status === "check_failed" && companionInfo?.update
+      ? {
+          ...companionInfo.update,
+          ...hostedCompanionRelease,
+        }
+      : hostedCompanionRelease || companionInfo?.update || null;
+  const companionInstallationMode =
+    companionInfo?.installationMode ||
+    (companionInfo?.features?.macAppSelfUpdateEnabled === true
+      ? "legacy"
+      : undefined);
+  const requiresMacAppMigration = Boolean(
+    companionStatus === "online" && companionInstallationMode === "legacy",
   );
-  const anyUpdateAvailable = firmwareUpdateAvailable || macAppUpdateAvailable;
+  const macAppMigrationAvailable = Boolean(
+    requiresMacAppMigration &&
+      availableMacAppDmgDownloadUrl(companionRelease),
+  );
+  const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
+  const anyUpdateAvailable =
+    firmwareUpdateAvailable ||
+    macAppUpdateAvailable ||
+    macAppMigrationAvailable;
   const imageNeedsReload = deviceImageIsStuck(device);
   const setupComplete = Boolean(
     !setupPreviewStep &&
@@ -1865,56 +1686,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       deviceSetupIsUsable(device),
   );
   const usageAvailable = companionStatus === "online";
-  const openLocalControlCenter = useCallback(async () => {
-    setBusyAction("status");
-    try {
-      if (hostedSetup && companionStatus !== "online") {
-        window.location.href = LOCAL_CONTROL_CENTER_LAUNCHER_URL;
-        await delay(LOCAL_APP_LAUNCH_WAIT_MS);
-      }
-      await verifyLocalControlCenterAvailable();
-      if (hostedSetup) {
-        rememberLocalControlCenterOpened();
-        setLocalControlCenterPreviouslyOpened(true);
-      }
-      window.location.assign(localControlCenterUrl(localControlCenterPath));
-    } catch (error) {
-      const normalized = await normalizeLocalControlCenterError(error);
-      if (isLocalNetworkAccessError(normalized)) {
-        markCompanionAccessBlocked();
-      } else if (isCompanionMissingError(normalized)) {
-        markCompanionUnavailable();
-      } else {
-        setSetupPreviewStep("mac-app");
-      }
-      setLastError(normalized);
-      addEvent({
-        label:
-          normalized.code === "LOCAL_CONTROL_CENTER_UNAVAILABLE"
-            ? "Mac App update needed"
-            : "Local Control Center needs setup",
-        detail: normalized.nextAction,
-        tone: "attention",
-      });
-    } finally {
-      setBusyAction(null);
-    }
-  }, [
-    addEvent,
-    markCompanionAccessBlocked,
-    markCompanionUnavailable,
-    companionStatus,
-    hostedSetup,
-    localControlCenterPath,
-    verifyLocalControlCenterAvailable,
-  ]);
-
   useEffect(() => {
-    if (!setupComplete || didRouteAfterSetupComplete.current) {
+    if (!setupComplete) {
+      didRouteAfterSetupComplete.current = false;
+      return;
+    }
+    if (didRouteAfterSetupComplete.current) {
       return;
     }
     didRouteAfterSetupComplete.current = true;
-    setActiveTab(initialThemeId ? "theme-library" : "overview");
+    setActiveTab(
+      initialThemeId && !didRunSetupVerification.current
+        ? "theme-library"
+        : "overview",
+    );
   }, [initialThemeId, setupComplete]);
 
   const disabledTabs: ActiveTab[] = setupComplete
@@ -1990,27 +1775,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const renderSetupScreen = (showIntro: boolean) => (
     <SetupScreen
       key={setupResetVersion}
-      checkAfterWifi
       companionStatus={companionStatus}
-      device={device}
       deviceState={deviceState}
       deviceTarget={deviceTarget}
       lastError={lastError}
       busyAction={busyAction}
       hostedMode={hostedSetup}
-      localControlCenterPreviouslyOpened={localControlCenterPreviouslyOpened}
-      localControlCenterPath={localControlCenterPath}
+      macAppRelease={companionRelease}
       previewStep={setupPreviewStep}
+      requiresMacAppMigration={requiresMacAppMigration}
       showIntro={showIntro}
       setupComplete={setupComplete}
       onCheckCompanion={checkCompanion}
+      onCheckUpdates={checkUpdates}
       onDeviceTargetChange={handleDeviceTargetChange}
-      onOpenControlCenter={
-        hostedSetup ? openLocalControlCenter : () => setActiveTab("overview")
-      }
-      onRepairConnection={(targetOverride) =>
-        repairConnection({ targetOverride, forcePair: true })
-      }
+      onRepairConnection={(targetOverride) => {
+        didRunSetupVerification.current = true;
+        repairConnection({ targetOverride });
+      }}
       onResetSetup={resetSetup}
     />
   );
@@ -2055,6 +1837,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           deviceState={deviceState}
           firmwareUpdate={effectiveFirmwareUpdate}
           onReloadImage={() => reloadDisplay()}
+          requiresMacAppMigration={requiresMacAppMigration}
           usage={usage}
         />
       ) : null}
@@ -2107,17 +1890,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           companionVersion={companionInfo?.version}
           device={device}
           firmwareUpdate={effectiveFirmwareUpdate}
-          macAppSelfUpdateEnabled={Boolean(
-            companionInfo?.features?.macAppSelfUpdateEnabled,
-          )}
-          macAppUpdateStatus={macAppUpdateStatus}
           onCheckUpdates={checkUpdates}
           onCreateReport={() => {
             setActiveTab("logs");
             void loadSupportDiagnostics();
           }}
-          onInstallMacAppUpdate={installMacAppUpdate}
           onInstallUpdate={installFirmwareUpdate}
+          requiresMacAppMigration={requiresMacAppMigration}
           updateStatus={firmwareUpdateStatus}
         />
       ) : null}
@@ -2247,122 +2026,6 @@ async function pollFirmwareUpdateJob({
   } satisfies ApiError;
 }
 
-async function pollMacAppUpdateJob({
-  applyUpdateJob,
-  jobId,
-  runCompanion,
-  targetVersion,
-}: {
-  applyUpdateJob: (job: MacAppUpdateJob) => void;
-  jobId: string;
-  runCompanion: RunCompanion;
-  targetVersion?: string;
-}): Promise<MacAppUpdateJob> {
-  const startedAt = Date.now();
-  let disconnectedAt: number | null = null;
-  for (let attempt = 0; attempt < MAC_APP_UPDATE_MAX_POLLS; attempt += 1) {
-    await delay(MAC_APP_UPDATE_POLL_INTERVAL_MS);
-    let payload: { job: MacAppUpdateJob };
-    try {
-      payload = await runCompanion<{ job: MacAppUpdateJob }>(
-        `/v1/mac-app/update/status?jobId=${encodeURIComponent(jobId)}`,
-        undefined,
-        { preserveLastError: true },
-      );
-    } catch {
-      disconnectedAt = disconnectedAt ?? Date.now();
-      applyUpdateJob(reconnectingMacAppUpdateJob(jobId));
-      const reconnected = await readMacAppVersion(runCompanion);
-      if (
-        reconnected &&
-        (!targetVersion || sameVersion(reconnected, targetVersion))
-      ) {
-        return {
-          id: jobId,
-          phase: "complete",
-          message: "Mac App updated.",
-          progress: 100,
-          logs: ["Mac App updated."],
-          result: { version: normalizeVersion(reconnected) },
-        };
-      }
-      if (Date.now() - disconnectedAt >= MAC_APP_UPDATE_RECONNECT_GRACE_MS) {
-        throw macAppUpdateManualStepError(
-          "mac_app_update_reconnect_timeout",
-          "Mac App update needs attention.",
-        );
-      }
-      continue;
-    }
-    disconnectedAt = null;
-    applyUpdateJob(payload.job);
-    if (payload.job.phase === "complete" || payload.job.phase === "error") {
-      return payload.job;
-    }
-    if (
-      macAppUpdateStillPreparing(payload.job) &&
-      Date.now() - startedAt >= MAC_APP_UPDATE_INITIAL_GRACE_MS
-    ) {
-      throw macAppUpdateManualStepError(
-        "mac_app_update_start_timeout",
-        "Mac App update did not start.",
-      );
-    }
-  }
-  throw macAppUpdateManualStepError(
-    "mac_app_update_timeout",
-    "Mac App update is taking longer than expected.",
-  );
-}
-
-function reconnectingMacAppUpdateJob(jobId: string): MacAppUpdateJob {
-  return {
-    id: jobId,
-    phase: "installing",
-    message: "Restarting Mac App.",
-    progress: 85,
-    logs: [
-      "Preparing Mac App update.",
-      "Installing Mac App.",
-      "Restarting Mac App.",
-    ],
-  };
-}
-
-function macAppUpdateStillPreparing(job: MacAppUpdateJob): boolean {
-  const logs = customerMacAppUpdateLogs(job.logs);
-  return (
-    clampProgress(job.progress) <= 5 &&
-    logs.length === 1 &&
-    logs[0] === "Preparing Mac App update."
-  );
-}
-
-function macAppUpdateManualStepError(
-  code: string,
-  message: string,
-): ApiError {
-  return {
-    code,
-    message,
-    nextAction:
-      "Copy the update command and run it in Terminal, then try again.",
-  };
-}
-
-async function readMacAppVersion(runCompanion: RunCompanion): Promise<string> {
-  try {
-    const payload = await runCompanion<{ companion?: CompanionInfo }>(
-      "/v1/status",
-      undefined,
-      { preserveLastError: true },
-    );
-    return normalizeVersion(payload.companion?.version);
-  } catch {
-    return "";
-  }
-}
-
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -2412,64 +2075,11 @@ function customerUpdateLogs(
   return cleaned.length > 0 ? cleaned : fallback;
 }
 
-function customerMacAppUpdateLogs(
-  logs: string[] | undefined,
-  fallback: string[] = ["Preparing Mac App update."],
-): string[] {
-  const cleaned = (logs || [])
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line, index, all) => all.indexOf(line) === index);
-  return cleaned.length > 0 ? cleaned : fallback;
-}
-
 function clampProgress(value: number | undefined): number {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return 5;
   }
   return Math.max(5, Math.min(100, Math.round(value)));
-}
-
-function normalizeVersion(version: string | undefined): string {
-  return (version || "").trim().replace(/^v/i, "");
-}
-
-function sameVersion(a: string | undefined, b: string | undefined): boolean {
-  const left = normalizeVersion(a);
-  const right = normalizeVersion(b);
-  return Boolean(left && right && left === right);
-}
-
-function macAppUpdateFailedError(): ApiError {
-  return {
-    code: "mac_app_update_failed",
-    message: "Mac App update failed.",
-    nextAction:
-      "Copy the update command and run it in Terminal, then try again.",
-  };
-}
-
-function normalizeMacAppUpdateError(error: ApiError): ApiError {
-  if (
-    error.code === "HTTP_404" ||
-    error.code === "mac_app_update_job_not_found"
-  ) {
-    return {
-      code: "mac_app_self_update_unavailable",
-      message: "Mac App update needs a manual step.",
-      nextAction:
-        "Copy the update command and run it in Terminal, then try again.",
-    };
-  }
-  if (error.code === "COMPANION_UNREACHABLE") {
-    return {
-      code: "mac_app_update_reconnect_failed",
-      message: "Mac App update needs attention.",
-      nextAction:
-        "Copy the update command and run it in Terminal, then try again.",
-    };
-  }
-  return error;
 }
 
 function normalizeCaughtError(
@@ -2537,7 +2147,16 @@ function companionUnavailableError(): ApiError {
     code: "COMPANION_UNREACHABLE",
     message: "Mac App did not answer.",
     nextAction:
-      "Open Control Center again. If it still does not open, copy the prompt or terminal command and run setup.",
+      "Quit VibeTV Control Center, then open it again from Applications. If it still does not answer, replace it with the latest Mac App from app.vibetv.shop.",
+  };
+}
+
+function displayNotReadyError(): ApiError {
+  return {
+    code: "DISPLAY_NOT_READY",
+    message: "VibeTV screen is not ready yet.",
+    nextAction:
+      "Keep VibeTV powered on and connected to the same WiFi, then run Fix connection again.",
   };
 }
 
@@ -2714,31 +2333,6 @@ function readLocalSetupPreviewStep(): "mac-app" | null {
     return params.get("setupStep") === "mac-app" ? "mac-app" : null;
   } catch {
     return null;
-  }
-}
-
-function readLocalControlCenterPreviouslyOpened(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  try {
-    return (
-      window.localStorage.getItem(LOCAL_CONTROL_CENTER_OPENED_STORAGE_KEY) ===
-      "1"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function rememberLocalControlCenterOpened() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.localStorage.setItem(LOCAL_CONTROL_CENTER_OPENED_STORAGE_KEY, "1");
-  } catch {
-    // localStorage may be unavailable in private or restricted browser contexts.
   }
 }
 

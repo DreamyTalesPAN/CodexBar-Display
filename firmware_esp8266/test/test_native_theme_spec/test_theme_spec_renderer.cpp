@@ -1,5 +1,6 @@
 #include "../../../firmware_shared/theme_spec_renderer_core.h"
 #include "../../../firmware_shared/codexbar_display_core.h"
+#include "../../src/theme_spec_runtime_policy.h"
 
 #include <string>
 #include <vector>
@@ -33,6 +34,7 @@ using codexbar_display::core::ConsumeFrameLine;
 using codexbar_display::core::KeepLastThemeSpecFrameAfterPartialRenderFailure;
 using codexbar_display::core::RuntimeState;
 using codexbar_display::core::SerialConsumeEvent;
+using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
 
 enum class CommandType {
   BeginClip,
@@ -1394,6 +1396,43 @@ void testConfirmedThemeSpecNullClearsCachedLayout() {
   TEST_ASSERT_FALSE(state.current.hasThemeSpec);
 }
 
+void testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap() {
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::CanRender(3792, 1720));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::CanAnimate(3792, 1720));
+
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::CanRender(
+      ThemeSpecRuntimePolicy::kMinRenderFreeHeapBytes,
+      ThemeSpecRuntimePolicy::kMinRenderMaxFreeBlockBytes));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::CanRender(
+      ThemeSpecRuntimePolicy::kMinRenderFreeHeapBytes - 1,
+      ThemeSpecRuntimePolicy::kMinRenderMaxFreeBlockBytes));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::CanRender(
+      ThemeSpecRuntimePolicy::kMinRenderFreeHeapBytes,
+      ThemeSpecRuntimePolicy::kMinRenderMaxFreeBlockBytes - 1));
+
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::CanAnimate(
+      ThemeSpecRuntimePolicy::kMinAnimationFreeHeapBytes,
+      ThemeSpecRuntimePolicy::kMinAnimationMaxFreeBlockBytes));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::CanAnimate(
+      ThemeSpecRuntimePolicy::kMinAnimationFreeHeapBytes - 1,
+      ThemeSpecRuntimePolicy::kMinAnimationMaxFreeBlockBytes));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::CanAnimate(
+      ThemeSpecRuntimePolicy::kMinAnimationFreeHeapBytes,
+      ThemeSpecRuntimePolicy::kMinAnimationMaxFreeBlockBytes - 1));
+}
+
+void testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames() {
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::AnimatedAssetDue(true, true, 10, 10, 200, 100));
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::AnimatedAssetDue(false, false, 0, 0, 0, 100));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::AnimatedAssetDue(false, true, 10, 10, 200, 199));
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::AnimatedAssetDue(false, true, 10, 10, 200, 200));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::AnimatedAssetDue(false, true, 1, 10, 0, 200));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::AnimatedAssetDue(false, true, 10, 0, 0, 200));
+
+  const unsigned long deadline = 0xFFFFFFF0UL;
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::AnimatedAssetDue(false, true, 10, 10, deadline, 0x00000010UL));
+}
+
 }  // namespace
 
 int main() {
@@ -1441,5 +1480,7 @@ int main() {
   RUN_TEST(testUnknownMetadataOnlyThemeSpecDoesNotBlankPreviousRenderableRaw);
   RUN_TEST(testUnconfirmedThemeSpecNullKeepsCachedLayout);
   RUN_TEST(testConfirmedThemeSpecNullClearsCachedLayout);
+  RUN_TEST(testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap);
+  RUN_TEST(testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames);
   return UNITY_END();
 }

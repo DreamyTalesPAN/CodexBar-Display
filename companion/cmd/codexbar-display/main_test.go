@@ -41,6 +41,53 @@ func TestParseDaemonOptionsWiFiTarget(t *testing.T) {
 	}
 }
 
+func TestDeviceWriteCoordinatorDrainsActiveWriteAndBlocksNewWrites(t *testing.T) {
+	coordinator := &deviceWriteCoordinator{}
+	releaseActiveWrite := coordinator.beginWrite()
+	pauseComplete := make(chan struct{})
+	go func() {
+		coordinator.setPaused(true)
+		close(pauseComplete)
+	}()
+
+	select {
+	case <-pauseComplete:
+		t.Fatal("pause completed while a device write was still active")
+	case <-time.After(25 * time.Millisecond):
+	}
+	if !coordinator.isPaused() {
+		t.Fatal("coordinator did not reject new daemon cycles while draining")
+	}
+
+	releaseActiveWrite()
+	select {
+	case <-pauseComplete:
+	case <-time.After(time.Second):
+		t.Fatal("pause did not complete after active device write finished")
+	}
+
+	newWriteStarted := make(chan struct{})
+	newWriteFinished := make(chan struct{})
+	go func() {
+		release := coordinator.beginWrite()
+		close(newWriteStarted)
+		release()
+		close(newWriteFinished)
+	}()
+	select {
+	case <-newWriteStarted:
+		t.Fatal("new device write started during exclusive maintenance")
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	coordinator.setPaused(false)
+	select {
+	case <-newWriteFinished:
+	case <-time.After(time.Second):
+		t.Fatal("new device write stayed blocked after maintenance resumed")
+	}
+}
+
 func TestParseDaemonOptionsDefaultsToWiFi(t *testing.T) {
 	opts, err := parseDaemonOptions(nil)
 	if err != nil {
@@ -74,6 +121,271 @@ func TestParseDaemonCommandOptionsSupportsEmbeddedAPI(t *testing.T) {
 	}
 	if opts.APIDevOrigin != "http://localhost:3002" {
 		t.Fatalf("unexpected dev origin %q", opts.APIDevOrigin)
+	}
+}
+
+func TestDisplayStreamLogUsesSharedApplicationSupportPathAndAppends(t *testing.T) {
+	t.Setenv("CODEXBAR_DISPLAY_STREAM_OUT_LOG", "")
+	home := t.TempDir()
+
+	first, path, err := newDisplayStreamFileLogger(home)
+	if err != nil {
+		t.Fatalf("create first display stream logger: %v", err)
+	}
+	wantPath := filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", "daemon.out.log")
+	if path != wantPath {
+		t.Fatalf("expected display stream log %q, got %q", wantPath, path)
+	}
+	first.now = func() time.Time { return time.Date(2026, 7, 12, 10, 11, 12, 123456789, time.UTC) }
+	first.logf("sent frame -> http://vibetv.local provider=codex session=12 weekly=34")
+
+	second, secondPath, err := newDisplayStreamFileLogger(home)
+	if err != nil {
+		t.Fatalf("create second display stream logger: %v", err)
+	}
+	if secondPath != path {
+		t.Fatalf("expected logger reopen at %q, got %q", path, secondPath)
+	}
+	second.now = func() time.Time { return time.Date(2026, 7, 12, 10, 11, 12, 987654321, time.UTC) }
+	second.logf("cycle error: code=runtime_serial_write op=send-line")
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat display stream log: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("expected private display stream log mode 0600, got %04o", got)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read display stream log: %v", err)
+	}
+	content := string(raw)
+	for _, want := range []string{"sent frame -> http://vibetv.local", "cycle error: code=runtime_serial_write"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected appended log to contain %q, got %q", want, content)
+		}
+	}
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected two timestamped log lines, got %q", content)
+	}
+	for _, line := range lines {
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			t.Fatalf("expected timestamped log line, got %q", line)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, parts[0]); err != nil {
+			t.Fatalf("expected RFC3339Nano timestamp in %q: %v", line, err)
+		}
+	}
+	if !strings.HasPrefix(lines[0], "2026-07-12T10:11:12.123456789Z ") ||
+		!strings.HasPrefix(lines[1], "2026-07-12T10:11:12.987654321Z ") {
+		t.Fatalf("expected ordered subsecond timestamps, got %q", content)
+	}
+}
+
+func TestDisplayStreamLoggerRedactsCredentials(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv("CODEXBAR_DISPLAY_STREAM_OUT_LOG", logPath)
+	logger, _, err := newDisplayStreamFileLogger(t.TempDir())
+	if err != nil {
+		t.Fatalf("create display stream logger: %v", err)
+	}
+	logger.logf("request failed: GET http://user:password@vibetv.local/frame?token=pair-secret&key=api-secret")
+
+	raw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read display stream log: %v", err)
+	}
+	got := string(raw)
+	for _, secret := range []string{"user:password", "pair-secret", "api-secret"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("display stream log leaked %q in %q", secret, got)
+		}
+	}
+	for _, want := range []string{"http://<redacted>@vibetv.local", "token=<redacted>", "key=<redacted>"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected redacted marker %q in %q", want, got)
+		}
+	}
+}
+
+func TestDisplayStreamLoggerRotatesToOneBoundedArchive(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv("CODEXBAR_DISPLAY_STREAM_OUT_LOG", logPath)
+	logger, _, err := newDisplayStreamFileLogger(t.TempDir())
+	if err != nil {
+		t.Fatalf("create display stream logger: %v", err)
+	}
+	logger.maxBytes = 200
+	logger.now = func() time.Time { return time.Date(2026, 7, 12, 10, 11, 12, 123456789, time.UTC) }
+
+	logger.logf("first=%s", strings.Repeat("a", 80))
+	logger.logf("second=%s", strings.Repeat("b", 80))
+	logger.logf("third=%s", strings.Repeat("c", 80))
+
+	archivePath := logPath + ".1"
+	current, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read current display stream log: %v", err)
+	}
+	archive, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatalf("read display stream log archive: %v", err)
+	}
+	if !bytes.Contains(current, []byte("third=")) || bytes.Contains(current, []byte("second=")) {
+		t.Fatalf("expected only newest entry in current log, got %q", current)
+	}
+	if !bytes.Contains(archive, []byte("second=")) || bytes.Contains(archive, []byte("first=")) {
+		t.Fatalf("expected one replaced archive, got %q", archive)
+	}
+	for name, data := range map[string][]byte{"current": current, "archive": archive} {
+		if int64(len(data)) > logger.maxBytes {
+			t.Fatalf("expected %s log <= %d bytes, got %d", name, logger.maxBytes, len(data))
+		}
+	}
+}
+
+func TestDisplayStreamLoggerBoundsOversizedExistingLog(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv("CODEXBAR_DISPLAY_STREAM_OUT_LOG", logPath)
+	logger, _, err := newDisplayStreamFileLogger(t.TempDir())
+	if err != nil {
+		t.Fatalf("create display stream logger: %v", err)
+	}
+	logger.maxBytes = 200
+	if err := os.WriteFile(logPath, []byte(strings.Repeat("legacy-data\n", 100)), 0o600); err != nil {
+		t.Fatalf("write oversized legacy display stream log: %v", err)
+	}
+
+	logger.logf("fresh bounded entry")
+
+	for _, path := range []string{logPath, logPath + ".1"} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat bounded display stream log %q: %v", path, err)
+		}
+		if info.Size() > logger.maxBytes {
+			t.Fatalf("expected %q <= %d bytes, got %d", path, logger.maxBytes, info.Size())
+		}
+	}
+	current, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read bounded current display stream log: %v", err)
+	}
+	if !bytes.Contains(current, []byte("fresh bounded entry")) {
+		t.Fatalf("new entry missing after bounding oversized log: %q", current)
+	}
+}
+
+func TestDisplayStreamLoggerReopensAfterExternalRotation(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv("CODEXBAR_DISPLAY_STREAM_OUT_LOG", logPath)
+	logger, _, err := newDisplayStreamFileLogger(t.TempDir())
+	if err != nil {
+		t.Fatalf("create display stream logger: %v", err)
+	}
+	if err := logger.startRuntimeSession("shop.vibetv.control-center.runtime"); err != nil {
+		t.Fatalf("start display stream runtime session: %v", err)
+	}
+	logger.logf("before external rotation")
+
+	externalPath := logPath + ".external"
+	if err := os.Rename(logPath, externalPath); err != nil {
+		t.Fatalf("externally rotate display stream log: %v", err)
+	}
+	logger.logf("after external rotation")
+
+	oldData, err := os.ReadFile(externalPath)
+	if err != nil {
+		t.Fatalf("read externally rotated log: %v", err)
+	}
+	newData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read reopened display stream log: %v", err)
+	}
+	if !bytes.Contains(oldData, []byte("before external rotation")) || bytes.Contains(oldData, []byte("after external rotation")) {
+		t.Fatalf("writer remained attached to externally rotated inode: %q", oldData)
+	}
+	if !bytes.Contains(newData, []byte("after external rotation")) {
+		t.Fatalf("writer did not reopen current log path: %q", newData)
+	}
+	if !bytes.Contains(newData, []byte(`runtime event=stream-start label="shop.vibetv.control-center.runtime"`)) {
+		t.Fatalf("reopened log is missing runtime start marker: %q", newData)
+	}
+}
+
+func TestDisplayStreamLoggerWritesPreciseRuntimeStartMarker(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv("CODEXBAR_DISPLAY_STREAM_OUT_LOG", logPath)
+	logger, _, err := newDisplayStreamFileLogger(t.TempDir())
+	if err != nil {
+		t.Fatalf("create display stream logger: %v", err)
+	}
+	logger.now = func() time.Time { return time.Date(2026, 7, 12, 10, 11, 12, 123456789, time.UTC) }
+	if err := logger.startRuntimeSession("shop.vibetv.control-center.runtime"); err != nil {
+		t.Fatalf("start display stream runtime session: %v", err)
+	}
+
+	raw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read display stream log: %v", err)
+	}
+	want := `2026-07-12T10:11:12.123456789Z runtime event=stream-start label="shop.vibetv.control-center.runtime"`
+	if !bytes.Contains(raw, []byte(want)) {
+		t.Fatalf("expected precise runtime start marker %q in %q", want, raw)
+	}
+}
+
+func TestDisplayStreamLoggerPreservesRuntimeMarkerAcrossRotation(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv("CODEXBAR_DISPLAY_STREAM_OUT_LOG", logPath)
+	logger, _, err := newDisplayStreamFileLogger(t.TempDir())
+	if err != nil {
+		t.Fatalf("create display stream logger: %v", err)
+	}
+	logger.maxBytes = 260
+	logger.now = func() time.Time { return time.Date(2026, 7, 12, 10, 11, 12, 123456789, time.UTC) }
+	if err := logger.startRuntimeSession("shop.vibetv.control-center.runtime"); err != nil {
+		t.Fatalf("start display stream runtime session: %v", err)
+	}
+	logger.logf("first=%s", strings.Repeat("a", 80))
+	logger.logf("second=%s", strings.Repeat("b", 80))
+
+	marker := []byte(`runtime event=stream-start label="shop.vibetv.control-center.runtime"`)
+	for _, path := range []string{logPath, logPath + ".1"} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read rotated runtime log %q: %v", path, err)
+		}
+		if !bytes.Contains(raw, marker) {
+			t.Fatalf("rotated runtime log %q is missing session marker: %q", path, raw)
+		}
+	}
+}
+
+func TestDisplayStreamLoggerRepeatsRuntimeMarkerWithinTailWindow(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv("CODEXBAR_DISPLAY_STREAM_OUT_LOG", logPath)
+	logger, _, err := newDisplayStreamFileLogger(t.TempDir())
+	if err != nil {
+		t.Fatalf("create display stream logger: %v", err)
+	}
+	if err := logger.startRuntimeSession("shop.vibetv.control-center.runtime"); err != nil {
+		t.Fatalf("start display stream runtime session: %v", err)
+	}
+	for index := 0; index < 6; index++ {
+		logger.logf("record-%d=%s", index, strings.Repeat("x", 8000))
+	}
+
+	raw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read display stream log: %v", err)
+	}
+	marker := []byte(`runtime event=stream-start label="shop.vibetv.control-center.runtime"`)
+	if count := bytes.Count(raw, marker); count < 2 {
+		t.Fatalf("expected runtime marker repetition within bounded tail window, count=%d", count)
 	}
 }
 

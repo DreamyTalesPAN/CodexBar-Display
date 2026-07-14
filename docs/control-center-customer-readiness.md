@@ -4,35 +4,57 @@ This document tracks the customer-facing hosted app flow for `https://app.vibetv
 
 ## Current Architecture
 
-`app.vibetv.shop` is the customer UI. It runs in the browser and talks to the local Mac App service on the customer's computer:
+`app.vibetv.shop` is the customer download entrypoint. It resolves the verified
+DMG from the latest GitHub Release and does not contact the customer's local
+Mac App or VibeTV:
 
 ```text
 app.vibetv.shop
-  -> http://127.0.0.1:47832/v1/status
-  -> local Mac App service
+  -> verified VibeTV-Control-Center.dmg
+  -> installed Mac App on 127.0.0.1:47832
   -> VibeTV on the customer's LAN
 ```
 
-The browser permission prompt only allows the website to contact local services. It does not install, start, or repair the Mac App.
-
-The local Mac App service responds to Chrome Private Network Access preflights from the allowed hosted origin. Allowed preflights include `Access-Control-Allow-Private-Network: true`; unknown origins remain blocked.
+The native WebView and local Control Center own all local status, discovery,
+pairing, settings, and display actions. Hosted setup therefore needs no browser
+local-network permission.
 
 ## Customer Flow
 
 1. Customer opens `https://app.vibetv.shop`.
-2. App checks the local Mac App service at `127.0.0.1:47832`.
-3. If the Mac App is missing, the app shows one primary Mac App install/repair action.
-4. Customer installs or starts the Mac App.
-5. The Mac App service runs inside the normal VibeTV Mac App background service.
-6. App searches for VibeTV on the same WiFi/LAN.
-7. If exactly one VibeTV is found, the Mac App stores that address for later checks.
-8. If multiple VibeTV devices are found, the Mac App refuses to auto-pick one. The customer must enter the exact VibeTV address, for example `vibetv.local` or `192.168.178.163`, then use `Connect VibeTV` again. A manually entered address is strict: if that exact VibeTV does not answer, the Mac App reports a device error instead of falling back to another discovered VibeTV.
-9. App can read Mac App status, VibeTV status, firmware, active theme, and settings.
+2. The website shows one primary `Download Mac App` action only when the exact,
+   non-empty DMG release asset is verified.
+3. Customer opens the DMG, drags the app into Applications, and opens it.
+4. A fresh native app shows the phone-based `VibeTV-Setup` and home-WiFi steps.
+5. Before the customer confirms WiFi, the Control Center does not run device
+   repair or pairing.
+6. `VibeTV is on WiFi` runs one local discovery/repair check. An existing valid
+   token is preserved; pairing happens only when missing or stale.
+7. If exactly one VibeTV is found, the Mac App stores the address, starts the
+   display stream, verifies the device response, and opens Overview.
+8. If multiple VibeTV devices are found, the Mac App refuses to auto-pick one.
+   The customer can enter the exact VibeTV address as a recovery step.
+9. An already healthy installation opens Overview without onboarding writes.
 10. Theme install writes stay locked until the hardware-safe release gate is enabled.
 
-## Agentic Terminal Path
+Existing customers do not repeat WiFi onboarding:
 
-The current v1 setup does not depend on a packaged macOS installer. The Setup tab gives the customer an Agentic setup prompt and a manual Terminal fallback. Both use the release shell installer:
+1. The v1.0.41 Update action installs the bridge binary and embedded UI once.
+2. The bridge reports `installationMode=legacy` while disabling any further
+   Terminal self-update.
+3. Overview and Updates show `Move to the new Mac App` even when the bridge and
+   DMG versions are identical.
+4. The CTA appears only for the verified, feature-flagged DMG. Without it, the
+   current Control Center keeps working and no installer runs.
+5. The customer opens the DMG, moves the app into Applications, and opens it.
+6. The native app keeps the existing VibeTV settings, accepts its new runtime
+   only after health and port-ownership checks, archives the old app and user
+   LaunchAgents, reloads the new local UI, and opens Overview.
+
+## Legacy Operator Support Path
+
+The customer UI does not expose Agentic or Terminal installation. Operators can
+still use the legacy release shell installer to repair older installations:
 
 ```bash
 curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh | bash
@@ -93,54 +115,46 @@ same process also answers Control Center.
 
 ## Existing Customer Update Bridge
 
-Existing customers may enter the launch through the older VibeTV update page,
-which still copies a command based on the legacy release `install.sh`:
+Existing v1.0.41 customers already have a fixed latest-release call to
+`install-control-center-companion.sh`. The first public DMG release therefore
+publishes that bridge script, its matching Darwin binaries and checksums, and
+the signed DMG together. The old binary uses its existing update endpoint once
+to install the bridge. The new binary does not register that endpoint again.
 
-```bash
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --target http://vibetv.local && codexbar-display install-update --confirm-live-update --target http://vibetv.local
-```
+The bridge preserves the existing device URL, pairing token, display daemon,
+and current VibeTV behavior. Its new UI detects `installationMode=legacy`
+independently of `updateAvailable`, so an equal-version DMG remains visible.
+The CTA never calls `/v1/mac-app/update`; it opens only the verified DMG URL.
 
-For the Control Center launch, `install.sh` is also a migration bridge. After it
-installs the current release binary, refreshes the older display-stream daemon,
-tries to warm up CodexBar, preserves an existing device theme by skipping the
-default theme-pack install on existing Mac installs, and runs the health check,
-it verifies the integrated daemon API on `127.0.0.1:47832` when possible. It
-removes stale standalone API LaunchAgent state and disables any old global API
-LaunchAgent for the current user before the daemon is started.
+The hosted entry and local Updates screen check `/api/companion/latest`. The
+route reads the latest GitHub Release and exposes the DMG URL only when the
+feature flag is enabled and the exact asset is uploaded and non-empty.
 
-The bridge is best-effort by design. A Control Center service verification failure must
-not prevent the firmware update command after `&&` from running. The same is
-true when CodexBar provider data is not ready yet: the installer warns, but it
-continues so the customer can still update the VibeTV and finish provider setup
-later in Control Center. If the bridge cannot start or verify the service, the
-installer tells the customer or support to run setup again from
-`app.vibetv.shop`.
-
-The firmware update step preserves a concrete saved device URL such as
-`http://192.168.178.72` instead of replacing it with `http://vibetv.local`. That
-keeps the fallback path available when `.local` name resolution is unreliable.
-
-The Control Center Updates screen checks `/api/companion/latest`. That route still reads the latest GitHub Release for version information, but the v1 setup path uses the Agentic prompt and Terminal command above.
-
-The `install-control-center-companion.sh` asset is part of the hosted customer setup. The app exposes it through the Agentic prompt rather than as a raw download button.
+`install-control-center-companion.sh` remains a legacy operator asset. Hosted
+customer setup never exposes it.
 
 Set `CONTROL_CENTER_GITHUB_TOKEN` in the hosted app environment when possible. The token is used only by the server-side release check and is not sent to the browser. The read-only customer-readiness script also uses `CONTROL_CENTER_GITHUB_TOKEN` or `GITHUB_TOKEN` for GitHub release reads when present. Without a token, GitHub release reads are anonymous and can hit rate limits.
 
 Successful GitHub release reads are cached server-side for one minute. Failed release reads are not cached, so the customer-facing retry button can check again immediately.
 
-The `/api/companion/latest` route returns version state only. It must not expose macOS package download URLs in the v1 customer flow. Its human-readable `message` must use customer language and avoid release/package diagnostics.
+The `/api/companion/latest` route returns version state and, only after the DMG
+gate passes, the verified `VibeTV-Control-Center.dmg` URL. Its human-readable
+`message` must use customer language and avoid release/package diagnostics.
 
-The Overview and `/install/<theme_id>` entry use the same setup state when the Mac App is missing, so a new customer does not have to discover the Updates tab first. That setup state has one primary action: install or repair the Mac App through setup.
+The hosted `/` and `/install/<theme_id>` entries use the same download-only
+state. Native setup begins only after the downloaded app opens.
 
 The Overview and `/install/<theme_id>` setup path should not show release diagnostics, internal asset names, or multiple equal actions. Customers should see only the next action that can move setup forward.
 
-After the Agentic setup or manual Terminal command starts the Mac App service, the app checks quietly and moves forward when the Mac App becomes available.
-
 The Updates screen is available only after setup is complete. It should expose update actions, not setup recovery actions.
 
-While the page is open in the missing-Mac-App state, it quietly checks the Mac App again. After the customer installs or starts the Mac App, the UI should move forward without requiring a manual refresh.
+After the customer opens the installed app, the local Control Center checks its
+own bundled service and either opens Overview or shows WiFi onboarding.
 
-When the Mac App is running but VibeTV is not found, the Overview screen and the `/install/<theme_id>` entry expose a `VibeTV address` field and one `Connect VibeTV` action. Customers or support can enter the exact `vibetv.local`/IP address there and connect without leaving the current flow.
+When the Mac App is running but VibeTV is not found, native setup exposes a
+`VibeTV address` recovery field and one `Fix connection` action. Customers or
+support can enter the exact `vibetv.local`/IP address there without leaving the
+local flow. The hosted `/install/<theme_id>` entry remains download-only.
 
 Manual targets may be `vibetv.local`, an IP address, or an `http(s)` URL with a host and optional valid port. The Companion rejects explicit targets with unsupported schemes, invalid ports, paths, username/password credentials, query strings, or fragments so support reports do not collect tokenized URLs.
 
@@ -150,15 +164,19 @@ If the Shopify theme catalog is empty or the requested `/install/<theme_id>` doe
 
 The Updates screen labels Mac App actions plainly:
 
-- `Copy install command` when the Mac App is not running yet.
-- `Copy update command` when the installed Mac App version is behind the latest release.
-- `Copy repair command` only if the Mac App needs a clean restart path.
+- `Download new Mac App` for a verified legacy-to-DMG migration, including an
+  equal-version migration.
+- `New Mac App not ready` when a legacy installation is detected but the exact
+  signed asset cannot be verified.
+- `Download Mac App update` when a newer verified DMG is available.
+- `Mac App update not ready` when the exact signed asset cannot be verified.
+- No Terminal installer or second app location is offered.
 
 ## Documentation Cleanup Backlog
 
 The top-level README, customer setup guide, Control Center README, and this readiness doc now describe the current v1 path. The older operator/package docs still contain historical package and LaunchAgent material for development and later packaging work. Before public release, split that material into a legacy/later document or issue and write one clean public technical guide covering:
 
-- dependencies: VibeTV hardware, CodexBar, `codexbar-display`, Chrome local-network permission,
+- dependencies: VibeTV hardware, CodexBar, the signed Mac App, and local WiFi,
 - why CodexBar is installed or required,
 - how usage data moves from CodexBar to the Mac App service to VibeTV,
 - customer commands: install/update, status check, uninstall,
@@ -167,24 +185,26 @@ The top-level README, customer setup guide, Control Center README, and this read
 - update flow and failure-report flow.
 
 The intended launch path is the hosted Control Center route:
-`https://app.vibetv.shop/install/<theme_id>`. Shopify theme products may still
-show the direct Terminal install command during staged rollout or rollback, but
-that is a fallback path. Before product pages point customers into Control
-Center, verify that the Agentic setup path works end to end on a customer-like
-Mac and that `/install/<theme_id>` preserves setup gating.
+`https://app.vibetv.shop/install/<theme_id>`. It offers the same verified DMG as
+the root route. Native onboarding intentionally ends at Overview; theme choice
+happens later in the local Theme Library. There is no customer Terminal
+fallback. Before product pages point customers there, verify the signed DMG and
+the native WiFi-to-Overview flow on a customer-like Mac.
 
 ## Customer Readiness Validation
 
 Release order matters for this migration:
 
-1. Build and publish the GitHub Release for the exact commit.
+1. Build and publish the GitHub Release for the exact commit, including the
+   bridge installer, Darwin binaries, checksums, and signed DMG in that same
+   release.
 2. Verify that release with `--release v<version>`.
 3. Only then deploy or promote the hosted `app.vibetv.shop` setup launcher for
    that commit.
 
-If the hosted setup launcher goes live before the matching GitHub Release, the
-customer command can still download an older Mac App that does not serve the
-local Control Center. In that case customers can get stuck at the handoff.
+If the hosted download entry goes live before the matching GitHub Release, the
+button can still point to an older Mac App that does not serve the new local
+Control Center flow. In that case customers can get stuck after installation.
 
 Final local gate before telling anyone this is customer-ready:
 
@@ -194,11 +214,13 @@ scripts/check-control-center-customer-ready-gate.sh
 
 This gate is intentionally strict. It never merges, tags, releases, installs packages, starts services, discovers devices, or writes to VibeTV hardware. It only runs local checks and read-only hosted/release checks, then fails until the non-automated customer gates are also confirmed:
 
-- latest or selected release exposes the Mac setup assets needed by the Agentic setup prompt,
-- Agentic setup was validated on a customer-like Mac,
+- latest or selected release exposes the verified Mac App DMG,
+- DMG installation and native WiFi onboarding were validated on a customer-like Mac,
 - the user explicitly approved and passed the hardware write flow.
 
-Customer-like Mac evidence means the setup prompt was run from a realistic agent/Terminal context, the local service answered `http://127.0.0.1:47832/v1/status`, and the Control Center moved forward without manual code changes.
+Customer-like Mac evidence means the signed app was installed in Applications,
+the local service answered `http://127.0.0.1:47832/v1/status`, WiFi verification
+succeeded, and the Control Center opened Overview without manual code changes.
 
 Hardware write evidence is recorded in `docs/control-center-hardware-test-evidence.md`.
 The current PR has a user-approved WiFi theme install result there for the Control Center
@@ -246,8 +268,16 @@ What it checks:
 - release may contain the older `install.sh` support script without exposing it through the customer API,
 - release contains `install-control-center-companion.sh`,
 - release contains both Darwin companion binaries,
+- future DMG-first customer releases contain `VibeTV Control Center.app` in a
+  `.dmg` with an Applications symlink and include that DMG in checksums,
 - release contains `checksums-v<version>.txt`,
 - release does not contain Mac App `.pkg` assets,
+- hosted setup presents only the verified DMG Mac App path after rollout and
+  keeps that action unavailable while the DMG gate is off or its asset is
+  unavailable,
+- the native Mac App enables its bundled persistent service before stopping and
+  backing up old user LaunchAgents, while preserving
+  `~/Library/Application Support/codexbar-display/config.json`,
 - hosted app HTTP reachability,
 - hosted app `/api/companion/latest` version status without installer or package URLs when `--app-url` is combined with `--release` or `--release-json`,
 - optional hosted app `/api/themes` source, selected free theme readiness, concrete `/install/<theme_id>` route reachability, and all visible free theme readiness when `--expect-catalog-source`, `--expect-theme-id`, or `--expect-all-free-themes-installable` is provided.

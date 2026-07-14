@@ -34,6 +34,8 @@ type Options struct {
 	Theme                  string
 	DisableStartupFastPoll bool
 	Wake                   <-chan struct{}
+	PauseDeviceWrites      func() bool
+	BeginDeviceWrite       func() func()
 }
 
 const (
@@ -73,6 +75,7 @@ const (
 	runtimeErrorCycleTimeout    runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCycleTimeout)
 	runtimeErrorFrameEncode     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameEncode)
 	runtimeErrorFrameTooLarge   runtimeErrorKind = runtimeErrorKind(errcode.RuntimeFrameTooLarge)
+	runtimeErrorDeviceHello     runtimeErrorKind = runtimeErrorKind(errcode.ProtocolDeviceHelloUnavailable)
 	runtimeErrorCodexbarBinary  runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarBinary)
 	runtimeErrorCodexbarVersion runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarVersion)
 	runtimeErrorCodexbarCmd     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarCmd)
@@ -139,7 +142,6 @@ type runtimeDeps struct {
 	loadConfig        func(string) (runtimeconfig.Config, error)
 	saveConfig        func(string, runtimeconfig.Config) error
 	discoverWiFi      func([]string) (transportlayer.WiFiDiscoveryResult, error)
-	pairDevice        func(context.Context, string) (string, error)
 	transportName     string
 }
 
@@ -202,9 +204,6 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 				IncludeNetworkScan: true,
 			})
 		}
-	}
-	if d.pairDevice == nil {
-		d.pairDevice = pairWiFiDevice
 	}
 	return d
 }
@@ -276,6 +275,12 @@ type ProviderUsageSnapshot struct {
 }
 
 func Run(ctx context.Context, opts Options) error {
+	return RunWithLogger(ctx, opts, nil)
+}
+
+// RunWithLogger runs the display worker with an optional injected logger. A
+// nil logger preserves the legacy stdout behavior used by standalone daemons.
+func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any)) error {
 	transportName := normalizeTransportName(opts.Transport)
 	if transportName == "" {
 		transportName = "usb"
@@ -288,6 +293,7 @@ func Run(ctx context.Context, opts Options) error {
 			transport:         transportlayer.NewWiFiTransport(),
 			transportName:     "wifi",
 			usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+			logf:              logf,
 		})
 	}
 
@@ -298,6 +304,7 @@ func Run(ctx context.Context, opts Options) error {
 		sendLine:          sender.Send,
 		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+		logf:              logf,
 	})
 }
 
@@ -396,8 +403,26 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 	cycleTimeout := cycleRunTimeout()
 	var lastCycleStart time.Time
 	var startedAt time.Time
+	deviceWritesPaused := false
 
 	for {
+		if opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites() {
+			if !deviceWritesPaused {
+				deps.logf("runtime event=device-writes-paused reason=firmware-update\n")
+				deviceWritesPaused = true
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-opts.Wake:
+			case <-deps.after(opts.Interval):
+			}
+			continue
+		}
+		if deviceWritesPaused {
+			deps.logf("runtime event=device-writes-resumed reason=firmware-update-complete\n")
+			deviceWritesPaused = false
+		}
 		cycleStart := deps.now()
 		if startedAt.IsZero() {
 			startedAt = cycleStart
@@ -411,7 +436,15 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		}
 		lastCycleStart = cycleStart
 
-		err := runCycleWithTimeout(ctx, cycleTimeout, runCycle)
+		runDeviceCycle := runCycle
+		if opts.BeginDeviceWrite != nil {
+			runDeviceCycle = func(cycleCtx context.Context) error {
+				release := opts.BeginDeviceWrite()
+				defer release()
+				return runCycle(cycleCtx)
+			}
+		}
+		err := runCycleWithTimeout(ctx, cycleTimeout, runDeviceCycle)
 		if opts.Once {
 			return err
 		}
@@ -551,11 +584,21 @@ func effectiveCycleTarget(requestedTarget string, state *runtimeState, deps runt
 	if deps.transportName != "wifi" {
 		return requestedTarget
 	}
-	if cfg, ok := loadRuntimeConfig(deps); ok && strings.TrimSpace(cfg.DeviceTarget) != "" {
-		return strings.TrimSpace(cfg.DeviceTarget)
+	stateTarget := ""
+	if state != nil {
+		stateTarget = strings.TrimSpace(state.deviceTarget)
 	}
-	if state != nil && strings.TrimSpace(state.deviceTarget) != "" {
-		return strings.TrimSpace(state.deviceTarget)
+	if cfg, ok := loadRuntimeConfig(deps); ok {
+		configTarget := strings.TrimSpace(cfg.DeviceTarget)
+		if stateTarget != "" && configTarget != "" && isSameTarget(configTarget, requestedTarget) {
+			return stateTarget
+		}
+		if configTarget != "" {
+			return configTarget
+		}
+	}
+	if stateTarget != "" {
+		return stateTarget
 	}
 	return requestedTarget
 }
@@ -593,6 +636,9 @@ func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeD
 			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
 		}
 		deps.logf("runtime event=device-caps-read-failed target=%s transport=%s err=%v\n", port, deps.transportName, capsErr)
+		if deps.transportName == "wifi" {
+			return "", protocol.DeviceCapabilities{}, 0, wifiDeviceHelloRuntimeError(port, capsErr)
+		}
 		caps = protocol.UnknownDeviceCapabilities()
 	} else if !caps.Known {
 		unknownErr := errors.New("device capabilities unknown")
@@ -600,10 +646,26 @@ func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeD
 			rememberRecoveredWiFiTarget(recoveredPort, state, deps)
 			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
 		}
+		if deps.transportName == "wifi" {
+			deps.logf("runtime event=device-caps-unknown target=%s transport=%s action=skip-frame\n", publicDeviceTarget(port), deps.transportName)
+			return "", protocol.DeviceCapabilities{}, 0, wifiDeviceHelloRuntimeError(port, unknownErr)
+		}
 	}
 
 	rememberActiveWiFiTarget(port, caps, state)
 	return port, caps, maxFrameBytesForCaps(caps), nil
+}
+
+func wifiDeviceHelloRuntimeError(target string, err error) *RuntimeError {
+	if err == nil {
+		err = errors.New("device capabilities unknown")
+	}
+	return &RuntimeError{
+		Kind: runtimeErrorDeviceHello,
+		Op:   "read-device-hello",
+		Err:  fmt.Errorf("read VibeTV /hello from %s: %w", publicDeviceTarget(target), err),
+		Hint: "Wait for VibeTV to finish starting and verify its Wi-Fi connection; the daemon will retry /hello with backoff and will not send frames until the handshake succeeds.",
+	}
 }
 
 func rememberActiveWiFiTarget(target string, caps protocol.DeviceCapabilities, state *runtimeState) {
@@ -624,29 +686,6 @@ func rememberRecoveredWiFiTarget(target string, state *runtimeState, deps runtim
 	deps.logf("runtime event=wifi-target-selected target=%s\n", target)
 }
 
-func persistSuccessfulWiFiTarget(target string, deps runtimeDeps) {
-	if deps.transportName != "wifi" {
-		return
-	}
-	target = publicDeviceTarget(target)
-	if strings.TrimSpace(target) == "" {
-		return
-	}
-	cfg, ok := loadRuntimeConfig(deps)
-	if !ok {
-		return
-	}
-	if isSameTarget(cfg.DeviceTarget, target) {
-		return
-	}
-	cfg.DeviceTarget = target
-	if err := saveRuntimeConfig(cfg, deps); err != nil {
-		deps.logf("runtime event=wifi-target-persist-failed target=%s err=%v\n", target, err)
-		return
-	}
-	deps.logf("runtime event=wifi-target-persisted target=%s\n", target)
-}
-
 func loadRuntimeConfig(deps runtimeDeps) (runtimeconfig.Config, bool) {
 	home, err := deps.homeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
@@ -657,67 +696,6 @@ func loadRuntimeConfig(deps runtimeDeps) (runtimeconfig.Config, bool) {
 		return runtimeconfig.Config{}, false
 	}
 	return cfg, true
-}
-
-func saveRuntimeConfig(cfg runtimeconfig.Config, deps runtimeDeps) error {
-	home, err := deps.homeDir()
-	if err != nil {
-		return err
-	}
-	return deps.saveConfig(home, cfg)
-}
-
-func persistRuntimeDeviceToken(target, token string, deps runtimeDeps) error {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return errors.New("device token is empty")
-	}
-	cfg, ok := loadRuntimeConfig(deps)
-	if !ok {
-		cfg = runtimeconfig.Config{}
-	}
-	cfg.DeviceTarget = publicDeviceTarget(target)
-	cfg.DeviceToken = token
-	return saveRuntimeConfig(cfg, deps)
-}
-
-func pairWiFiDevice(ctx context.Context, target string) (string, error) {
-	target = publicDeviceTarget(target)
-	parsed, ok := parseDeviceTarget(target)
-	if !ok {
-		return "", fmt.Errorf("invalid device target %q", target)
-	}
-	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/api/pair"
-	form := url.Values{}
-	form.Set("api", "1")
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, parsed.String(), strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", fmt.Errorf("build pair request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Close = true
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("post pair: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", fmt.Errorf("post pair: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var payload struct {
-		OK    bool   `json:"ok"`
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode pair response: %w", err)
-	}
-	token := strings.TrimSpace(payload.Token)
-	if !payload.OK || token == "" {
-		return "", errors.New("pair response did not include token")
-	}
-	return token, nil
 }
 
 func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) (string, protocol.DeviceCapabilities, bool) {
@@ -1093,6 +1071,10 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", publicPort, caps.Board, selectedTheme)
 		}
 	}
+	// ESP8266 firmware only reads these four update fields. Dropping release
+	// metadata before every send keeps the JSON document small enough for
+	// devices that have just left WiFi setup with a fragmented heap.
+	frame.Update = compactFrameUpdate(frame.Update)
 
 	line, marshaledFrame, err := marshalFrameWithinLimit(frame, maxFrameBytes)
 	if err != nil {
@@ -1110,15 +1092,11 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 
 	sendTarget := sendTargetWithRuntimeAuth(port, deps)
 	if err := deps.sendLine(sendTarget, line); err != nil {
-		if repairedTarget, repaired := repairWiFiAuthAndRetry(ctx, port, line, deps, err); repaired {
-			sendTarget = repairedTarget
-		} else {
-			return &RuntimeError{
-				Kind: runtimeErrorSerialWrite,
-				Op:   "send-line",
-				Err:  err,
-				Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
-			}
+		return &RuntimeError{
+			Kind: runtimeErrorSerialWrite,
+			Op:   "send-line",
+			Err:  err,
+			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
 
@@ -1130,8 +1108,6 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
-	persistSuccessfulWiFiTarget(publicPort, deps)
-
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
 		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
@@ -1148,39 +1124,6 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 
 	return nil
-}
-
-func repairWiFiAuthAndRetry(ctx context.Context, target string, line []byte, deps runtimeDeps, sendErr error) (string, bool) {
-	if deps.transportName != "wifi" || !deviceAuthFailed(sendErr) {
-		return "", false
-	}
-	publicTarget := publicDeviceTarget(target)
-	token, err := deps.pairDevice(ctx, publicTarget)
-	if err != nil {
-		deps.logf("runtime event=device-token-repair-failed target=%s err=%v\n", publicTarget, err)
-		return "", false
-	}
-	if err := persistRuntimeDeviceToken(publicTarget, token, deps); err != nil {
-		deps.logf("runtime event=device-token-persist-failed target=%s err=%v\n", publicTarget, err)
-		return "", false
-	}
-	repairedTarget := targetWithDeviceToken(publicTarget, token)
-	if err := deps.sendLine(repairedTarget, line); err != nil {
-		deps.logf("runtime event=device-token-retry-failed target=%s err=%v\n", publicTarget, err)
-		return "", false
-	}
-	deps.logf("runtime event=device-token-repaired target=%s\n", publicTarget)
-	return repairedTarget, true
-}
-
-func deviceAuthFailed(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "status=401") ||
-		strings.Contains(msg, "pairing token required") ||
-		strings.Contains(msg, "unauthorized")
 }
 
 func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) string {
@@ -1252,7 +1195,6 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 	if err != nil {
 		return err
 	}
-
 	fetchCtx := ctx
 	if !state.hasLastGood {
 		timeout := coldStartFetchTimeout()
@@ -1298,7 +1240,6 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	if err != nil {
 		return err
 	}
-
 	now := deps.now()
 	allProviders := collector.providerFrames(now)
 	if len(allProviders) == 0 {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -62,6 +63,52 @@ func TestWiFiTransportSendLinePostsFrame(t *testing.T) {
 	}
 	if gotToken != "pair-token-123" {
 		t.Fatalf("unexpected auth token %q", gotToken)
+	}
+}
+
+func TestWiFiTransportSendLineAllowsSlowESP8266Render(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/frame" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		time.Sleep(50 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(&http.Client{Timeout: 10 * time.Millisecond})
+	if err := transport.SendLine(server.URL, []byte(`{"provider":"codex"}`)); err != nil {
+		t.Fatalf("slow but valid frame render must not use the probe timeout: %v", err)
+	}
+}
+
+func TestWiFiTransportSendLineAcceptsEOFWhenESPClosesAfterReadingFrame(t *testing.T) {
+	var gotBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read frame: %v", err)
+		}
+		gotBody = string(body)
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("test server does not support hijacking")
+		}
+		conn, _, err := hijacker.Hijack()
+		if err != nil {
+			t.Fatalf("hijack connection: %v", err)
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	line := []byte(`{"provider":"codex","session":12}`)
+	transport := NewWiFiTransportWithClient(server.Client())
+	if err := transport.SendLine(server.URL, line); err != nil {
+		t.Fatalf("response-side EOF after a complete frame must not trigger a retry: %v", err)
+	}
+	if gotBody != string(line) {
+		t.Fatalf("device did not receive the complete frame: %q", gotBody)
 	}
 }
 
@@ -174,6 +221,9 @@ func TestWiFiTransportPairDevicePostsPairingAPI(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("expected POST /api/pair, got %s", r.Method)
 		}
+		if got := r.URL.Query().Get("api"); got != "1" {
+			t.Fatalf("expected api=1 query, got %q", got)
+		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("read request body: %v", err)
@@ -192,8 +242,45 @@ func TestWiFiTransportPairDevicePostsPairingAPI(t *testing.T) {
 	if token != "pair-token-abc" {
 		t.Fatalf("unexpected token %q", token)
 	}
-	if gotBody != "api=1" {
+	if gotBody != "" {
 		t.Fatalf("unexpected pair body %q", gotBody)
+	}
+}
+
+func TestWiFiTransportPairDeviceRetriesLostResponses(t *testing.T) {
+	oldDelay := pairDeviceRetryDelay
+	pairDeviceRetryDelay = 0
+	t.Cleanup(func() { pairDeviceRetryDelay = oldDelay })
+
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt := attempts.Add(1)
+		if r.Method != http.MethodPost || r.URL.Path != "/api/pair" || r.URL.Query().Get("api") != "1" {
+			t.Errorf("unexpected pair request method=%s url=%s", r.Method, r.URL.String())
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read pair body: %v", err)
+		}
+		if len(body) != 0 {
+			t.Errorf("pair body=%q want empty", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if attempt < pairDeviceAttempts {
+			_, _ = w.Write([]byte(`{"ok":`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token-final"}`))
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	token, err := transport.PairDevice(server.URL)
+	if err != nil {
+		t.Fatalf("PairDevice returned error: %v", err)
+	}
+	if token != "pair-token-final" || attempts.Load() != pairDeviceAttempts {
+		t.Fatalf("token=%q attempts=%d want final token after %d attempts", token, attempts.Load(), pairDeviceAttempts)
 	}
 }
 
@@ -327,21 +414,61 @@ func TestWiFiTransportUploadAssetExtendsTimeoutForRateLimitedUploads(t *testing.
 	}
 }
 
-func TestWiFiTransportUploadAssetDoesNotRetryConnectionReset(t *testing.T) {
+func TestWiFiTransportUploadAssetRetriesEOF(t *testing.T) {
+	oldDelay := assetUploadRetryDelay
+	assetUploadRetryDelay = 0
+	defer func() {
+		assetUploadRetryDelay = oldDelay
+	}()
+
 	var attempts int
 	transport := NewWiFiTransportWithClient(&http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			attempts++
-			return nil, errors.New("read tcp 192.168.178.172:55149->192.168.178.163:80: read: connection reset by peer")
+			if attempts == 1 {
+				return nil, io.EOF
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
 		}),
 	})
 
-	err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n"))
-	if err == nil || !strings.Contains(err.Error(), "connection reset by peer") {
-		t.Fatalf("expected connection reset error, got %v", err)
+	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
+		t.Fatalf("UploadAsset returned error: %v", err)
 	}
-	if attempts != 1 {
-		t.Fatalf("expected no retry after connection reset, got attempts=%d", attempts)
+	if attempts != 2 {
+		t.Fatalf("expected retry after EOF, got attempts=%d", attempts)
+	}
+}
+
+func TestWiFiTransportUploadAssetRetriesConnectionReset(t *testing.T) {
+	oldDelay := assetUploadRetryDelay
+	assetUploadRetryDelay = 0
+	defer func() {
+		assetUploadRetryDelay = oldDelay
+	}()
+
+	var attempts int
+	transport := NewWiFiTransportWithClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts == 1 {
+				return nil, errors.New("read tcp 192.168.178.172:55149->192.168.178.163:80: read: connection reset by peer")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}),
+	})
+
+	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
+		t.Fatalf("UploadAsset returned error: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected retry after connection reset, got attempts=%d", attempts)
 	}
 }
 

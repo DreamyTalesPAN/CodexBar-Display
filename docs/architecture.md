@@ -8,9 +8,9 @@ VibeTV has four visible pieces:
 4. **Control Center**: the local browser app served by the Mac App at
    `http://127.0.0.1:47832/control-center`.
 
-The hosted page at `https://app.vibetv.shop` is the setup launcher. It helps
-customers install or update the Mac App, then hands off to the local Control
-Center on the same Mac.
+The hosted page at `https://app.vibetv.shop` is the download entrypoint. It
+offers the verified Mac App DMG. After installation, the customer opens the Mac
+App and continues entirely in the local Control Center on the same Mac.
 
 Simple version:
 
@@ -32,10 +32,11 @@ AI provider state
   -> VibeTV screen
 ```
 
-The hosted setup page may check whether the local Mac App is reachable. After
-setup, the full Control Center is served locally by the Mac App, and private
-device actions stay on the customer's Mac and LAN. VibeTV does not need a cloud
-backend to receive display frames.
+The hosted setup page only resolves and offers the verified Mac App DMG. It does
+not probe loopback or manage VibeTV. After the customer opens the installed app,
+the full Control Center is served locally, and private device actions stay on
+the customer's Mac and LAN. VibeTV does not need a cloud backend to receive
+display frames.
 
 ## Responsibilities
 
@@ -79,15 +80,17 @@ daemon. API language belongs in developer and operator docs.
 
 ## Setup Flow
 
-1. Customer powers VibeTV.
-2. Customer joins `VibeTV-Setup` and puts the device on home WiFi.
-3. VibeTV shows `app.vibetv.shop`.
-4. Customer opens the hosted setup launcher on the Mac.
-5. Setup asks the customer to install or update the Mac App when needed.
-6. The Mac App discovers or connects to VibeTV.
-7. The Mac App opens the local Control Center.
-8. Local Control Center unlocks Overview, Usage, Theme Library, Settings,
-   Updates, and Support once setup is complete.
+1. Customer opens `app.vibetv.shop` on the Mac and downloads the verified DMG.
+2. Customer drags VibeTV Control Center into Applications and opens it.
+3. If no usable device is configured, the native app explains how to join
+   `VibeTV-Setup` on a phone and put VibeTV on the home WiFi.
+4. The customer confirms that VibeTV is on WiFi.
+5. The Mac App discovers the device, pairs only when required, starts the local
+   display stream, and verifies the returned device status.
+6. A successful check opens Overview immediately. An existing healthy setup
+   skips onboarding and opens Overview directly.
+7. Overview, Usage, Theme Library, Settings, Updates, and Support remain local
+   to the installed Mac App.
 
 ## Theme Flow
 
