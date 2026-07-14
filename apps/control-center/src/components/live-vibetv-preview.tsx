@@ -946,6 +946,7 @@ function useAnimationTick(framesPerSecond: number): number {
     }
 
     const intervalMs = Math.max(50, Math.ceil(1000 / framesPerSecond));
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let timer: number | undefined;
 
     const stopTimer = () => {
@@ -955,7 +956,9 @@ function useAnimationTick(framesPerSecond: number): number {
       }
     };
     const pageIsActive = () =>
-      document.visibilityState === "visible" && document.hasFocus();
+      !reducedMotion.matches &&
+      document.visibilityState === "visible" &&
+      document.hasFocus();
     const scheduleNextFrame = () => {
       stopTimer();
       if (!pageIsActive()) {
@@ -979,6 +982,7 @@ function useAnimationTick(framesPerSecond: number): number {
     document.addEventListener("visibilitychange", handlePageActivity);
     window.addEventListener("focus", handlePageActivity);
     window.addEventListener("blur", handlePageActivity);
+    reducedMotion.addEventListener("change", handlePageActivity);
     scheduleNextFrame();
 
     return () => {
@@ -986,6 +990,7 @@ function useAnimationTick(framesPerSecond: number): number {
       document.removeEventListener("visibilitychange", handlePageActivity);
       window.removeEventListener("focus", handlePageActivity);
       window.removeEventListener("blur", handlePageActivity);
+      reducedMotion.removeEventListener("change", handlePageActivity);
     };
   }, [framesPerSecond]);
 

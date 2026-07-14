@@ -44,7 +44,6 @@ import { SettingsScreen } from "./settings-screen";
 import { ThemeLibraryScreen } from "./theme-library-screen";
 import {
   clearRetiredAiThemeStorage,
-  ThemeStudioScreen,
   type ThemeStudioInstallPayload,
 } from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
@@ -132,7 +131,6 @@ type FirmwareUpdateResponse = {
 
 type Props = {
   catalog: ThemeCatalogResponse;
-  initialTab?: ActiveTab;
   initialThemeId?: string;
 };
 
@@ -163,7 +161,7 @@ type FirmwareCheckOptions = {
 
 type RuntimeSurface = "unknown" | "hosted-setup" | "local-control-center";
 
-export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props) {
+export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     clearRetiredAiThemeStorage();
   }, []);
@@ -178,7 +176,7 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
   const [selectedThemeId, setSelectedThemeId] = useState(
     initialTheme?.themeId || initialThemeId || "",
   );
-  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab || "setup");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("setup");
   const runtimeSurface = useSyncExternalStore(
     subscribeRuntimeSurface,
     getRuntimeSurfaceSnapshot,
@@ -1308,7 +1306,6 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
     if (
       setupPreviewStep ||
       didRunAutoDisplayReload.current ||
-      activeTab === "theme-studio" ||
       busyAction ||
       companionStatus !== "online"
     ) {
@@ -1912,10 +1909,6 @@ export function ControlCenterApp({ catalog, initialTab, initialThemeId }: Props)
           onBrightnessChange={setBrightness}
           onSaveBrightness={saveBrightness}
         />
-      ) : null}
-
-      {activeShellTab === "theme-studio" ? (
-        <ThemeStudioScreen onInstallTheme={installCustomTheme} />
       ) : null}
 
       {activeShellTab === "theme-library" ? (

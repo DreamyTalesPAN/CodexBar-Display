@@ -103,7 +103,6 @@ export type ActiveTab =
   | "overview"
   | "usage"
   | "settings"
-  | "theme-studio"
   | "theme-library"
   | "updates"
   | "logs";

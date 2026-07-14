@@ -33,8 +33,8 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
-	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
+	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
 )
 
@@ -75,7 +75,7 @@ const (
 	macAppReleaseTimeout      = 5 * time.Second
 	firmwareManifestEnvVar    = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
 	firmwareReleaseTimeout    = 5 * time.Second
-	themePackUploadReadTime  = 30 * time.Second
+	themePackUploadReadTime   = 30 * time.Second
 )
 
 var deviceHealthProbeTime = 2 * time.Second

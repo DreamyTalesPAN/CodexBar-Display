@@ -2564,6 +2564,18 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
     "The opened Theme Library preview should keep animating",
   );
 
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.waitForTimeout(100);
+  const reducedMotionRender = await clippyDialogPreview.evaluate(
+    (node) => node.innerHTML,
+  );
+  await page.waitForTimeout(650);
+  assert(
+    reducedMotionRender ===
+      (await clippyDialogPreview.evaluate((node) => node.innerHTML)),
+    "Animated previews should stop when reduced motion is requested",
+  );
+
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -2578,7 +2590,6 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   const installRequests = [];
   const themeInstallRequests = [];
   const browserRequests = [];
-  const forbiddenDeviceWrites = [];
 
   await page.addInitScript(() => {
     window.localStorage.setItem(
@@ -2603,14 +2614,6 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
       },
     );
   }
-  await page.route("http://vibetv.local/**", async (route) => {
-    forbiddenDeviceWrites.push(route.request().url());
-    await route.fulfill({
-      status: 418,
-      contentType: "application/json",
-      body: JSON.stringify({ ok: false }),
-    });
-  });
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.33",
     device: {
@@ -2752,7 +2755,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     "Clippy's validated large static background should remain exportable",
   );
   await page.getByRole("button", { name: "Library", exact: true }).click();
-  await page.getByRole("button", { name: "New Theme" }).click();
+  await page.getByRole("button", { name: "Create Theme" }).click();
   const blankThemeSendButton = page.getByRole("button", {
     name: "Send to VibeTV",
   });
@@ -2799,11 +2802,8 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   );
   const unsafeRequests = browserRequests.filter(isDirectDeviceWriteUrl);
   assert(
-    forbiddenDeviceWrites.length === 0 && unsafeRequests.length === 0,
-    `Theme Studio must not write directly to VibeTV: ${JSON.stringify([
-      ...forbiddenDeviceWrites,
-      ...unsafeRequests,
-    ])}`,
+    unsafeRequests.length === 0,
+    `Theme Studio must not write directly to a device: ${JSON.stringify(unsafeRequests)}`,
   );
 
   await page.close();

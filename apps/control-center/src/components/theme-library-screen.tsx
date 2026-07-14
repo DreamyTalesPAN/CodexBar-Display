@@ -313,7 +313,7 @@ export function ThemeLibraryScreen({
         </h2>
         <ControlCenterButton
           icon={<Plus size={18} aria-hidden />}
-          label="New Theme"
+          label="Create Theme"
           onClick={openBlankTheme}
           variant="primary"
         />

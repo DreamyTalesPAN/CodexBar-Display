@@ -1422,6 +1422,16 @@ function EditableThemePreview({
                 className="cursor-move"
                 fill="transparent"
                 height={Math.max(8, bounds.height)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") {
+                    return;
+                  }
+                  event.preventDefault();
+                  onSelect(
+                    index,
+                    event.shiftKey || event.metaKey || event.ctrlKey,
+                  );
+                }}
                 onPointerDown={(event) => startDrag(event, index)}
                 role="button"
                 stroke={selected ? "#C7FF68" : "transparent"}
