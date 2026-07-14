@@ -35,6 +35,7 @@ type Options struct {
 	DisableStartupFastPoll bool
 	Wake                   <-chan struct{}
 	PauseDeviceWrites      func() bool
+	BeginDeviceWrite       func() func()
 }
 
 const (
@@ -437,7 +438,15 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		}
 		lastCycleStart = cycleStart
 
-		err := runCycleWithTimeout(ctx, cycleTimeout, runCycle)
+		runDeviceCycle := runCycle
+		if opts.BeginDeviceWrite != nil {
+			runDeviceCycle = func(cycleCtx context.Context) error {
+				release := opts.BeginDeviceWrite()
+				defer release()
+				return runCycle(cycleCtx)
+			}
+		}
+		err := runCycleWithTimeout(ctx, cycleTimeout, runDeviceCycle)
 		if opts.Once {
 			return err
 		}

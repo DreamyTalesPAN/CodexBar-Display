@@ -41,6 +41,53 @@ func TestParseDaemonOptionsWiFiTarget(t *testing.T) {
 	}
 }
 
+func TestDeviceWriteCoordinatorDrainsActiveWriteAndBlocksNewWrites(t *testing.T) {
+	coordinator := &deviceWriteCoordinator{}
+	releaseActiveWrite := coordinator.beginWrite()
+	pauseComplete := make(chan struct{})
+	go func() {
+		coordinator.setPaused(true)
+		close(pauseComplete)
+	}()
+
+	select {
+	case <-pauseComplete:
+		t.Fatal("pause completed while a device write was still active")
+	case <-time.After(25 * time.Millisecond):
+	}
+	if !coordinator.isPaused() {
+		t.Fatal("coordinator did not reject new daemon cycles while draining")
+	}
+
+	releaseActiveWrite()
+	select {
+	case <-pauseComplete:
+	case <-time.After(time.Second):
+		t.Fatal("pause did not complete after active device write finished")
+	}
+
+	newWriteStarted := make(chan struct{})
+	newWriteFinished := make(chan struct{})
+	go func() {
+		release := coordinator.beginWrite()
+		close(newWriteStarted)
+		release()
+		close(newWriteFinished)
+	}()
+	select {
+	case <-newWriteStarted:
+		t.Fatal("new device write started during exclusive maintenance")
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	coordinator.setPaused(false)
+	select {
+	case <-newWriteFinished:
+	case <-time.After(time.Second):
+		t.Fatal("new device write stayed blocked after maintenance resumed")
+	}
+}
+
 func TestParseDaemonOptionsDefaultsToWiFi(t *testing.T) {
 	opts, err := parseDaemonOptions(nil)
 	if err != nil {

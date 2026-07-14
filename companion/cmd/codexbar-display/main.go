@@ -307,7 +307,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	logf := logger.logf
 
 	wake := make(chan struct{}, 1)
-	var firmwareUpdateActive atomic.Bool
+	deviceWrites := &deviceWriteCoordinator{}
 	wakeDisplayWorker := func() {
 		select {
 		case wake <- struct{}{}:
@@ -322,7 +322,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 			return nil
 		},
 		PauseDisplayStream: func(paused bool) {
-			firmwareUpdateActive.Store(paused)
+			deviceWrites.setPaused(paused)
 			wakeDisplayWorker()
 		},
 	})
@@ -335,7 +335,8 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 
 	daemonOpts := opts.Daemon
 	daemonOpts.Wake = wake
-	daemonOpts.PauseDeviceWrites = firmwareUpdateActive.Load
+	daemonOpts.PauseDeviceWrites = deviceWrites.isPaused
+	daemonOpts.BeginDeviceWrite = deviceWrites.beginWrite
 
 	errc := make(chan error, 1)
 	go func() {
@@ -350,6 +351,45 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	err = <-errc
 	cancel()
 	return err
+}
+
+type deviceWriteCoordinator struct {
+	paused  atomic.Bool
+	gate    sync.RWMutex
+	stateMu sync.Mutex
+	locked  bool
+}
+
+func (c *deviceWriteCoordinator) isPaused() bool {
+	return c.paused.Load()
+}
+
+func (c *deviceWriteCoordinator) setPaused(paused bool) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if paused {
+		if c.locked {
+			return
+		}
+		c.paused.Store(true)
+		c.gate.Lock()
+		c.locked = true
+		return
+	}
+
+	if !c.locked {
+		c.paused.Store(false)
+		return
+	}
+	c.paused.Store(false)
+	c.locked = false
+	c.gate.Unlock()
+}
+
+func (c *deviceWriteCoordinator) beginWrite() func() {
+	c.gate.RLock()
+	return c.gate.RUnlock
 }
 
 type displayStreamLogWriter struct {

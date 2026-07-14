@@ -2991,6 +2991,7 @@ func TestDeviceRepairDoesNotRotateTokenForTransientFrameFailure(t *testing.T) {
 
 func TestDeviceRepairReactivatesCurrentThemeAfterPartialStatusScreen(t *testing.T) {
 	var activationCalls atomic.Int32
+	var displayStreamPaused atomic.Bool
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
@@ -3000,6 +3001,9 @@ func TestDeviceRepairReactivatesCurrentThemeAfterPartialStatusScreen(t *testing.
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"claude-creature","themeSpec":{"active":true,"path":"/themes/u/claude.json","renderOk":true}},"render":{"fullCount":10,"partialCount":2,"lastKind":"update_status"}}`))
 		case "/theme/active":
+			if !displayStreamPaused.Load() {
+				t.Fatal("theme reactivation raced the display stream")
+			}
 			if r.Method != http.MethodPost {
 				t.Fatalf("expected POST theme activation, got %s", r.Method)
 			}
@@ -3025,7 +3029,13 @@ func TestDeviceRepairReactivatesCurrentThemeAfterPartialStatusScreen(t *testing.
 	defer device.Close()
 
 	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
-	server.runSetup = func(context.Context, setup.Options) error { return nil }
+	server.pauseDisplayStream = displayStreamPaused.Store
+	server.refreshStream = func(context.Context, string) error {
+		if displayStreamPaused.Load() {
+			t.Fatal("display stream restart was requested before maintenance resumed")
+		}
+		return nil
+	}
 	server.waitStream = func(context.Context, string) displayStreamInfo {
 		return displayStreamInfo{
 			Running:    true,
@@ -3073,6 +3083,9 @@ func TestDeviceRepairReactivatesCurrentThemeAfterPartialStatusScreen(t *testing.
 	}
 	if activationCalls.Load() != 1 || renderCalls.Load() != 2 {
 		t.Fatalf("activation=%d renderChecks=%d want 1,2", activationCalls.Load(), renderCalls.Load())
+	}
+	if displayStreamPaused.Load() {
+		t.Fatal("repair left the display stream paused")
 	}
 }
 
@@ -3846,11 +3859,19 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
 	var gotOpts themeinstall.Options
 	var setupCalls []setup.Options
+	var displayStreamPaused atomic.Bool
+	server.pauseDisplayStream = displayStreamPaused.Store
 	server.installTheme = func(ctx context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		if !displayStreamPaused.Load() {
+			t.Fatal("theme install raced the display stream")
+		}
 		gotOpts = opts
 		return themeinstall.Result{ThemeID: opts.ThemeID, Target: opts.Target}, nil
 	}
 	server.runSetup = func(_ context.Context, opts setup.Options) error {
+		if displayStreamPaused.Load() {
+			t.Fatal("display stream refresh started before theme maintenance resumed")
+		}
 		setupCalls = append(setupCalls, opts)
 		return nil
 	}
@@ -3887,6 +3908,9 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	}
 	if setupCalls[1].ValidateOnly {
 		t.Fatalf("second setup refresh call should apply launch agent changes, got %+v", setupCalls[1])
+	}
+	if displayStreamPaused.Load() {
+		t.Fatal("theme install left the display stream paused")
 	}
 }
 

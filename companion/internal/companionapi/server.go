@@ -138,6 +138,7 @@ type Server struct {
 	firmwareUpdateActive   atomic.Bool
 	configMu               sync.Mutex
 	repairMu               sync.Mutex
+	deviceMaintenanceMu    sync.Mutex
 	pairMu                 sync.Mutex
 	verificationMu         sync.Mutex
 	displayVerifications   map[string]displayVerification
@@ -2047,8 +2048,29 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) repairDevice(ctx context.Context, requestedTarget string, forcePair bool) (deviceInfo, error) {
+	s.deviceMaintenanceMu.Lock()
+	defer s.deviceMaintenanceMu.Unlock()
+
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
+
+	streamPaused := false
+	pauseStream := func() {
+		if streamPaused || s.pauseDisplayStream == nil {
+			return
+		}
+		s.pauseDisplayStream(true)
+		streamPaused = true
+	}
+	resumeStream := func() {
+		if !streamPaused || s.pauseDisplayStream == nil {
+			return
+		}
+		s.pauseDisplayStream(false)
+		streamPaused = false
+	}
+	pauseStream()
+	defer resumeStream()
 
 	cfg, err := s.config()
 	if err != nil {
@@ -2108,6 +2130,7 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 		}
 		themeReactivated = true
 	}
+	resumeStream()
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, target); err != nil {
 		return deviceInfo{}, &repairStageError{stage: "display-stream", err: err}
@@ -2119,6 +2142,7 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 		stream = s.waitForFreshDisplayStream(ctx, target, streamStartedAt)
 	}
 	if !stream.Healthy && stream.ErrorCode == "device_pairing_required" && !pairedDuringRepair {
+		pauseStream()
 		token, err = s.pair(ctx, target)
 		if err != nil {
 			return deviceInfo{}, &repairStageError{stage: "pair", err: err}
@@ -2134,6 +2158,7 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 		if err != nil {
 			return deviceInfo{}, &repairStageError{stage: "display-render", err: err}
 		}
+		resumeStream()
 		streamStartedAt = time.Now().UTC()
 		if err := s.startDisplayStream(ctx, target); err != nil {
 			return deviceInfo{}, &repairStageError{stage: "display-stream", err: err}
@@ -2153,6 +2178,7 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	device := withDisplayStreamInfo(deviceFromHello(target, token, hello), stream)
 	health, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
 	if !themeReactivated && activeThemeNeedsFullRepairRender(health) {
+		pauseStream()
 		health, err = s.reactivateCurrentThemeAndWaitForFullRender(
 			ctx,
 			target,
@@ -2160,6 +2186,7 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 			health,
 			stream,
 		)
+		resumeStream()
 	}
 	if err != nil {
 		if !stream.Healthy {
@@ -2692,8 +2719,25 @@ func (s *Server) handleMacAppUpdateStatus(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, req themeInstallRequest, out io.Writer) (themeinstall.Result, error) {
+	s.deviceMaintenanceMu.Lock()
+	defer s.deviceMaintenanceMu.Unlock()
+
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
+
+	streamPaused := false
+	if s.pauseDisplayStream != nil {
+		s.pauseDisplayStream(true)
+		streamPaused = true
+	}
+	resumeStream := func() {
+		if streamPaused && s.pauseDisplayStream != nil {
+			s.pauseDisplayStream(false)
+			streamPaused = false
+		}
+	}
+	defer resumeStream()
+
 	latestCfg, err := s.config()
 	if err != nil {
 		return themeinstall.Result{}, err
@@ -2755,6 +2799,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		return themeinstall.Result{}, err
 	}
 	fmt.Fprintln(out, "Refreshing display stream...")
+	resumeStream()
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, cfg.DeviceTarget); err != nil {
 		return themeinstall.Result{}, &statusAPIError{
@@ -3053,6 +3098,9 @@ func (s *Server) createFirmwareUpdateJob(cfg runtimeconfig.Config) firmwareUpdat
 
 func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req firmwareUpdateRequest) {
 	go func() {
+		s.deviceMaintenanceMu.Lock()
+		defer s.deviceMaintenanceMu.Unlock()
+
 		s.firmwareUpdateActive.Store(true)
 		if s.pauseDisplayStream != nil {
 			s.pauseDisplayStream(true)
