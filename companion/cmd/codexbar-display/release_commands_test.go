@@ -417,6 +417,42 @@ func TestDownloadReleaseFirmwareDecompressesGzipForSerialFlash(t *testing.T) {
 	}
 }
 
+func TestDownloadManifestFirmwareArtifactDecompressesGzipForOTA(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	home := t.TempDir()
+	imageBody := "firmware image"
+	gzBody := gzipString(t, imageBody)
+	imageURL := "https://preview.example/firmware-1.0.3.bin.gz"
+	releaseHTTPClient = fakeReleaseHTTPClient{
+		responses: map[string]string{imageURL: gzBody},
+	}
+
+	imagePath, err := downloadManifestFirmwareArtifact(
+		context.Background(),
+		home,
+		releaseFirmwareManifest{},
+		releaseFirmwareArtifact{
+			FirmwareVersion: "1.0.3",
+			Asset:           "firmware-1.0.3.bin.gz",
+			SHA256:          sha256String(gzBody),
+			FirmwareURL:     imageURL,
+		},
+	)
+	if err != nil {
+		t.Fatalf("download manifest firmware: %v", err)
+	}
+	if strings.HasSuffix(imagePath, ".gz") {
+		t.Fatalf("expected decompressed image path, got %s", imagePath)
+	}
+	if data, err := os.ReadFile(imagePath); err != nil || string(data) != imageBody {
+		t.Fatalf("unexpected image data data=%q err=%v", string(data), err)
+	}
+}
+
 func TestDownloadReleaseFirmwareUsesLatestManifestWhenTargetVersionEmpty(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
