@@ -2806,6 +2806,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     `Theme Studio must not write directly to a device: ${JSON.stringify(unsafeRequests)}`,
   );
 
+  await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.close();
 }
 
