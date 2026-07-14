@@ -223,9 +223,11 @@ The prepared real flow is:
 5. Verify all signatures, the `Developer ID Application` authority, and the
    signed Team ID. On supported macOS versions, run
    `syspolicy_check notary-submission` before uploading anything. The dedicated
-   validation bootstrap may continue only when JSON output contains exactly one
-   known `Internal Xprotect Error`, exits with code 70, and reports no additional
-   diagnostic. The release workflow never enables this exception.
+   validation and release workflows may continue only when JSON output contains
+   exactly one known `Internal Xprotect Error`, exits with code 70, writes no
+   stderr, and reports no additional diagnostic. The release job is pinned to
+   macOS 15 and still requires the authoritative Apple notarization service and
+   every post-notarization distribution check below to succeed.
 6. Sign the DMG.
 7. Submit the DMG using `xcrun notarytool submit --wait --output-format json`.
 8. Require the returned status and the notarization log to both say `Accepted`,

@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-macos-dmg:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 90
     env:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -101,7 +101,8 @@ jobs:
 
           ./scripts/sign-notarize-macos-control-center.sh \
             --app "dist/macos/VibeTV Control Center.app" \
-            --sign-app-only
+            --sign-app-only \
+            --allow-internal-xprotect-preflight-error
 
           ./scripts/build-macos-control-center-dmg.sh \
             --app "dist/macos/VibeTV Control Center.app" \
