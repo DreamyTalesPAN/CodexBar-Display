@@ -13,6 +13,25 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: signed Preview DMG delivery, automatic recovery from a
+  partially rendered firmware-update screen, and exclusive VibeTV traffic
+  while a firmware update is running.
+- Customer rule: the hosted Preview continues to expose exactly one Mac App
+  download action. Device repair and firmware-update coordination stay inside
+  the installed Mac App; customers do not choose between stopping the display
+  stream, restoring the active theme, and restarting data delivery.
+- Simplifications accepted: no visible screen, button, paragraph, tab, label,
+  or customer decision was added. Preview release metadata only swaps the
+  verified DMG behind the existing download action, and Production ignores the
+  Preview-only values.
+- Verification: the flow was reviewed against
+  `docs/control-center-ui-principles.md`; `npm run lint`, `npm run
+  check:customer-ui-copy`, `npm run test:customer-flows`, `go test ./...`,
+  `staticcheck ./...`, and `git diff --check` passed locally. The signed
+  Preview DMG passed Gatekeeper, notarization stapling, mounted bundle-version
+  inspection, and a byte-for-byte SHA-256 check after public Vercel Blob
+  download.
+
 - Reviewed scope: automatic legacy-to-DMG device recovery, interrupted-update
   screen cleanup, hosted DMG handoff, and retirement of the duplicate local
   browser Control Center after migration.
