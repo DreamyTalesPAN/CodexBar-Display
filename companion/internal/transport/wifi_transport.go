@@ -21,6 +21,7 @@ import (
 
 const (
 	defaultWiFiTimeout      = 5 * time.Second
+	framePostTimeout        = 20 * time.Second
 	pairDeviceAttempts      = 3
 	assetUploadAttempts     = 3
 	assetUploadRetryMaxBody = 512
@@ -316,8 +317,24 @@ func (t WiFiTransport) SendLine(target string, line []byte) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Close = true
 	applyDeviceAuth(req, target)
-	resp, err := t.client.Do(req)
+	// ESP8266 firmware 1.0.35 acknowledges /frame only after the display render
+	// completes. A complex stored theme can legitimately take longer than the
+	// short timeout used by read-only probes. Let that one request finish so the
+	// daemon does not retry an already accepted frame and fill the device queue.
+	frameClient := *t.client
+	if frameClient.Timeout == 0 || frameClient.Timeout < framePostTimeout {
+		frameClient.Timeout = framePostTimeout
+	}
+	resp, err := frameClient.Do(req)
 	if err != nil {
+		// ESP8266 firmware 1.0.35 can accept and render the complete frame, then
+		// close the socket before writing an HTTP response. Retrying immediately
+		// renders the same frame again and can starve its single HTTP server.
+		// The next normal daemon cycle will refresh the display if the frame was
+		// actually lost, so a response-side EOF is safer to treat as accepted.
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		return fmt.Errorf("post frame: %w", err)
 	}
 	defer resp.Body.Close()

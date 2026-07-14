@@ -1655,10 +1655,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? firmwareUpdate
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
-  const firmwareSafetyUpdateRequired = Boolean(
-    device?.stream?.errorCode === "device_firmware_update_required" ||
-      lastError?.code === "firmware_update_required",
-  );
   const companionRelease =
     hostedCompanionRelease?.status === "check_failed" && companionInfo?.update
       ? {
@@ -1681,7 +1677,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const anyUpdateAvailable =
     firmwareUpdateAvailable ||
-    firmwareSafetyUpdateRequired ||
     macAppUpdateAvailable ||
     macAppMigrationAvailable;
   const imageNeedsReload = deviceImageIsStuck(device);
@@ -1691,10 +1686,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       deviceSetupIsUsable(device),
   );
   const usageAvailable = companionStatus === "online";
-  const incompleteSetupDisabledTabs: ActiveTab[] =
-    firmwareSafetyUpdateRequired
-      ? ["overview", "settings", "theme-library", "logs"]
-      : ["overview", "settings", "theme-library", "updates", "logs"];
   useEffect(() => {
     if (!setupComplete) {
       didRouteAfterSetupComplete.current = false;
@@ -1716,7 +1707,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? ["settings", "theme-library", "updates"]
       : []
     : usageAvailable
-      ? incompleteSetupDisabledTabs
+      ? ["overview", "settings", "theme-library", "updates", "logs"]
       : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
   const activeShellTab = disabledTabs.includes(activeTab)
     ? setupComplete

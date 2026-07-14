@@ -27,8 +27,6 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 4. An existing healthy setup opens Overview without setup writes or extra
    confirmation.
 5. Settings, Theme Library, and Updates stay locked until setup is complete.
-   Updates unlocks early only when a required VibeTV firmware update is the
-   exact reason setup cannot finish.
 6. Setup is complete when the Mac App is running and VibeTV is connected and paired.
 7. Theme Library is additionally locked until theme installs are allowed by the release gate.
 8. Support may stay available because it only creates support reports and shows recent activity, not a setup workflow.

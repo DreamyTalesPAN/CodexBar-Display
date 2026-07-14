@@ -26,7 +26,6 @@ const (
 	RuntimeCycleTimeout    Code = "runtime/cycle-timeout"
 	RuntimeFrameEncode     Code = "runtime/frame-encode"
 	RuntimeFrameTooLarge   Code = "runtime/frame-too-large"
-	RuntimeFirmwareSafety  Code = "runtime/firmware-safety-update-required"
 	RuntimeCodexbarBinary  Code = "runtime/codexbar-binary"
 	RuntimeCodexbarVersion Code = "runtime/codexbar-version"
 	RuntimeCodexbarCmd     Code = "runtime/codexbar-command"
@@ -129,8 +128,6 @@ func DefaultRecovery(code Code) string {
 		return "Daemon cycle timed out; Control Center stays online while the daemon retries. If persistent, run `codexbar-display doctor` to verify device health."
 	case RuntimeFrameEncode, RuntimeFrameTooLarge:
 		return "Inspect payload size and optional fields; reduce frame footprint."
-	case RuntimeFirmwareSafety:
-		return "Open VibeTV Control Center, install the required VibeTV firmware update, then reconnect."
 	case RuntimeCodexbarBinary:
 		return "Install CodexBar CLI or set `CODEXBAR_BIN`."
 	case RuntimeCodexbarVersion:

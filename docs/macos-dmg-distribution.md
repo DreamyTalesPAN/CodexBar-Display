@@ -90,18 +90,6 @@ self-updater as unavailable and do not register `/v1/mac-app/update`, so a
 cached or older UI cannot keep updating the former Terminal app under
 `~/Applications`.
 
-The DMG LaunchAgent additionally pins
-`VIBETV_MIN_SAFE_ESP8266_FIRMWARE=1.0.36`. Before collecting usage or sending
-the first display frame, the WiFi daemon reads `/hello` and compares the exact
-ESP8266 firmware version. Firmware `1.0.35` and unverifiable versions are
-reported as `device_firmware_update_required`; no frame is sent. This prevents
-an older stored animated ThemeSpec from being reactivated under the observed
-low-heap condition. The check itself is read-only and does not update firmware,
-clear the stored theme, delete assets, or change device settings. The customer
-must start the normal firmware update from the Control Center. The ESP8266
-firmware version in `release/firmware-versions.json` must match the LaunchAgent
-minimum so the same tagged release contains the required update.
-
 When `/health` explicitly reports `themeSpec.active=false`, the Companion does
 not accept usage/reset counters as a completed first image. Firmware `1.0.35`
 renders that state as `Theme missing`, so it must never produce `ready=true`.
@@ -331,9 +319,7 @@ Before a customer DMG rollout, release readiness must include:
   pass; `syspolicy_check distribution` either passes or returns only the exact
   known outer-DMG ticket diagnostic,
 - DMG checksum appears in `checksums-v<version>.txt`,
-- the DMG minimum safe ESP8266 firmware matches the version in
-  `release/firmware-versions.json`, old firmware is blocked before the first
-  frame, and an explicitly inactive ThemeSpec never becomes ready,
+- an explicitly inactive ThemeSpec never becomes ready,
 - clean-Mac validation confirms the app opens and shows the React Control Center,
 - no `.pkg`, Homebrew publishing, live-shop changes, Vercel deploys, releases,
   tags, merges, or hardware writes are part of this task.

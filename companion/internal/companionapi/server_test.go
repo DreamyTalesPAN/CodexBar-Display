@@ -867,41 +867,6 @@ func TestInspectDisplayStreamReportsPairingErrorBeforeFirstFrame(t *testing.T) {
 	}
 }
 
-func TestInspectDisplayStreamReportsFirmwareSafetyGateBeforeFirstFrame(t *testing.T) {
-	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
-	t.Setenv(displayStreamOutLogEnv, logPath)
-	t.Setenv(displayStreamLabelEnv, "shop.vibetv.control-center.runtime")
-	startedAt := time.Now().UTC().Add(-time.Second)
-	errorAt := startedAt.Add(100 * time.Millisecond)
-	if err := os.WriteFile(
-		logPath,
-		[]byte(strings.Join([]string{
-			startedAt.Format(time.RFC3339Nano) + ` runtime event=stream-start label="shop.vibetv.control-center.runtime"`,
-			errorAt.Format(time.RFC3339Nano) + ` cycle error: code=runtime/firmware-safety-update-required op=firmware-safety-check retry=3s recovery="install firmware 1.0.36" err=old firmware`,
-		}, "\n")+"\n"),
-		0o600,
-	); err != nil {
-		t.Fatalf("write display stream log: %v", err)
-	}
-
-	oldPrint := printDisplayStreamService
-	t.Cleanup(func() { printDisplayStreamService = oldPrint })
-	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
-		return []byte("state = running\n"), nil
-	}
-
-	stream := inspectDisplayStream(context.Background(), "http://192.168.178.72")
-	if !stream.Running || stream.Healthy {
-		t.Fatalf("expected firmware safety gate to keep stream unhealthy, got %+v", stream)
-	}
-	if stream.ErrorCode != "device_firmware_update_required" {
-		t.Fatalf("firmware safety error code=%q", stream.ErrorCode)
-	}
-	if stream.Detail != "VibeTV needs a firmware update before the Mac App can send its first image safely." {
-		t.Fatalf("unexpected firmware safety detail %q", stream.Detail)
-	}
-}
-
 func TestWaitForDisplayStreamAfterPairIgnoresTransientPairingError(t *testing.T) {
 	var calls atomic.Int32
 	inspect := func(context.Context, string, time.Time) displayStreamInfo {
@@ -926,19 +891,6 @@ func TestWaitForDisplayStreamAfterPairIgnoresTransientPairingError(t *testing.T)
 		t.Fatalf("normal wait must surface pairing error immediately, got=%+v calls=%d", got, calls.Load())
 	}
 
-	calls.Store(0)
-	firmwareGateInspect := func(context.Context, string, time.Time) displayStreamInfo {
-		calls.Add(1)
-		return displayStreamInfo{
-			Running:   true,
-			ErrorCode: "device_firmware_update_required",
-			Detail:    "Firmware update required.",
-		}
-	}
-	got = waitForDisplayStreamAfterProbe(context.Background(), "http://vibetv.local", time.Now(), false, firmwareGateInspect)
-	if got.Healthy || got.ErrorCode != "device_firmware_update_required" || calls.Load() != 1 {
-		t.Fatalf("firmware safety gate must stop the first-frame wait immediately, got=%+v calls=%d", got, calls.Load())
-	}
 }
 
 func TestInspectDisplayStreamAfterIgnoresEarlierFrameAndError(t *testing.T) {
@@ -1583,7 +1535,7 @@ func TestDeviceNotFoundErrorFormat(t *testing.T) {
 	}
 }
 
-func TestDeviceGetRediscoversWhenSavedTargetIsStale(t *testing.T) {
+func TestDeviceGetDoesNotScanSubnetWhenSavedTargetIsStale(t *testing.T) {
 	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusServiceUnavailable)
 	}))
@@ -1593,7 +1545,9 @@ func TestDeviceGetRediscoversWhenSavedTargetIsStale(t *testing.T) {
 	defer device.Close()
 
 	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: stale.URL, DeviceToken: "pair-token"})
+	subnetCalled := false
 	server.subnetTargets = func() []string {
+		subnetCalled = true
 		return []string{device.URL}
 	}
 
@@ -1601,17 +1555,11 @@ func TestDeviceGetRediscoversWhenSavedTargetIsStale(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/device", nil)
 	server.Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	var got struct {
-		Device deviceInfo `json:"device"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if !got.Device.Connected || got.Device.Target != device.URL {
-		t.Fatalf("expected rediscovered device target %q, got %+v", device.URL, got.Device)
+	if subnetCalled {
+		t.Fatal("read-only device status must not trigger subnet discovery")
 	}
 
 	rec = httptest.NewRecorder()
@@ -1624,8 +1572,8 @@ func TestDeviceGetRediscoversWhenSavedTargetIsStale(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
 		t.Fatalf("decode status: %v", err)
 	}
-	if status.Device.Target != device.URL {
-		t.Fatalf("expected rediscovered target to be persisted, got %+v", status.Device)
+	if status.Device.Target != stale.URL {
+		t.Fatalf("expected stale target to remain unchanged until explicit discovery, got %+v", status.Device)
 	}
 }
 
@@ -3774,43 +3722,6 @@ func TestDevicePairDoesNotReportSuccessBeforeFirstDisplayFrame(t *testing.T) {
 	}
 	if got.OK || got.Error.Code != "display_stream_not_ready" {
 		t.Fatalf("unexpected missing-first-frame response: %+v", got)
-	}
-}
-
-func TestDevicePairSurfacesFirmwareUpdateRequiredBeforeRenderWait(t *testing.T) {
-	device := newPairableDeviceServer(t)
-	defer device.Close()
-
-	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL})
-	server.waitStream = func(context.Context, string) displayStreamInfo {
-		return displayStreamInfo{
-			Running:   true,
-			Healthy:   false,
-			Target:    device.URL,
-			ErrorCode: "device_firmware_update_required",
-			Detail:    "VibeTV needs a firmware update.",
-		}
-	}
-	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
-		t.Fatal("firmware safety gate must stop before waiting for a render")
-		return deviceHealth{}, nil
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/device/pair", strings.NewReader(`{}`))
-	req.Header.Set("Content-Type", "application/json")
-	server.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	var got errorResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if got.OK || got.Error.Code != "firmware_update_required" ||
-		!strings.Contains(got.Error.NextAction, "Open Updates") {
-		t.Fatalf("unexpected firmware update response: %+v", got)
 	}
 }
 

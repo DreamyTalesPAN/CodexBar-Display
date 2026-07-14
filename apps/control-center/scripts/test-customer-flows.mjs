@@ -303,10 +303,6 @@ async function main() {
       { expectDmg: true },
     );
     await testSetupTabsAreLockedUntilSetupComplete(browser, appContext.appUrl);
-    await testFirmwareSafetyGateUnlocksUpdatesForRecovery(
-      browser,
-      appContext.appUrl,
-    );
     await testSetupUnlocksWhenThemeInstallGateDisabled(
       browser,
       appContext.appUrl,
@@ -1147,69 +1143,6 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
     "locked Theme Library tab should not navigate to the theme chooser",
   );
   await assertNoSetupJargon(page);
-  assertNoInstallRequests(installRequests);
-  await assertNoMobileOverflow(page);
-  await page.close();
-}
-
-async function testFirmwareSafetyGateUnlocksUpdatesForRecovery(browser, appUrl) {
-  const page = await newCustomerPage(browser, appUrl, { viewport });
-  const installRequests = [];
-  const firmwareUpdateDevice = {
-    ...reachableUnreadyDevice,
-    firmware: "1.0.32",
-    stream: {
-      healthy: false,
-      running: true,
-      errorCode: "device_firmware_update_required",
-      detail:
-        "VibeTV needs a firmware update before the Mac App can send its first image safely.",
-    },
-  };
-  await routeCompanionOnline(page, installRequests, () => {}, {
-    device: firmwareUpdateDevice,
-  });
-
-  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  const updatesButton = page.getByRole("button", { name: "Updates" });
-  await updatesButton.waitFor({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Settings" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.waitForFunction(() => {
-    const button = [...document.querySelectorAll("button")].find(
-      (candidate) => candidate.getAttribute("aria-label") === "Updates",
-    );
-    return button instanceof HTMLButtonElement && !button.disabled;
-  });
-  assert(
-    !(await updatesButton.isDisabled()),
-    "Firmware safety recovery must unlock Updates while setup is incomplete",
-  );
-  assert(
-    await page.getByRole("button", { name: "Settings" }).isDisabled(),
-    "Firmware safety recovery must keep unrelated setup tabs locked",
-  );
-
-  await updatesButton.click();
-  await page.getByRole("heading", { name: "Firmware update" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByRole("button", { name: "Update now" }).waitFor({
-    timeout: 10_000,
-  });
-  if (migrationScreenshotDir) {
-    await mkdir(migrationScreenshotDir, { recursive: true });
-    await page.screenshot({
-      fullPage: true,
-      path: join(migrationScreenshotDir, "firmware-recovery-mobile.png"),
-    });
-    await page.setViewportSize(desktopViewport);
-    await page.screenshot({
-      fullPage: true,
-      path: join(migrationScreenshotDir, "firmware-recovery-desktop.png"),
-    });
-  }
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();

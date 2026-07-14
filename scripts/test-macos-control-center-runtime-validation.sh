@@ -74,8 +74,8 @@ try:
     version_parts = tuple(int(part) for part in version.split("."))
 except ValueError:
     raise SystemExit(f"release ESP8266 firmware version is invalid: {version!r}")
-if len(version_parts) != 3 or version_parts < (1, 0, 36):
-    raise SystemExit("runtime validation contract must use repaired ESP8266 firmware 1.0.36 or newer")
+if len(version_parts) != 3:
+    raise SystemExit("release ESP8266 firmware version must use x.y.z semver")
 
 required_harness = [
     'FIRMWARE_VERSIONS="$ROOT/release/firmware-versions.json"',

@@ -1845,10 +1845,6 @@ func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	stream := s.waitForFreshDisplayStream(r.Context(), cfg.DeviceTarget, streamStartedAt)
-	if streamRequiresFirmwareUpdate(stream) {
-		writeFirmwareUpdateRequired(w)
-		return
-	}
 	device := withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
 	health, err := s.waitForVerifiedDisplayRender(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
 	if err != nil {
@@ -2003,10 +1999,6 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream := s.waitForFreshDisplayStreamAfterPair(r.Context(), target, streamStartedAt)
-	if streamRequiresFirmwareUpdate(stream) {
-		writeFirmwareUpdateRequired(w)
-		return
-	}
 	hello, _ := s.getHello(r.Context(), target, token)
 	device := withDisplayStreamInfo(deviceFromHello(target, token, hello), stream)
 	health, err := s.waitForVerifiedDisplayRender(r.Context(), target, token, baseline, stream)
@@ -2165,12 +2157,6 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 		}
 		stream = s.waitForFreshDisplayStreamAfterPair(ctx, target, streamStartedAt)
 		pairedDuringRepair = true
-	}
-	if streamRequiresFirmwareUpdate(stream) {
-		return deviceInfo{}, &repairStageError{
-			stage: "firmware-update",
-			err:   errors.New(displayStreamDiagnosticDetail(streamPointer(stream))),
-		}
 	}
 	if refreshedHello, err := s.getHello(ctx, target, token); err == nil {
 		hello = refreshedHello
@@ -3751,19 +3737,13 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 	}
 	hello, err := s.getHello(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
 	if err != nil {
-		target, discoveredHello, discoverErr := s.discover(r.Context(), cfg, "")
-		if discoverErr != nil {
-			writeDeviceNotFound(w)
-			return runtimeconfig.Config{}, protocol.DeviceHello{}, false
-		}
-		cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
-			current.DeviceTarget = target
-		})
-		if err != nil {
-			writeInternalError(w, err)
-			return runtimeconfig.Config{}, protocol.DeviceHello{}, false
-		}
-		return cfg, discoveredHello, true
+		// A read-only status poll must never fan out into a subnet scan. The
+		// Control Center polls this endpoint frequently; when VibeTV is offline,
+		// overlapping scans can consume every ESP8266 receive buffer just as a
+		// recovery or OTA update starts. Discovery remains available through the
+		// explicit /v1/device/discover and /v1/device/repair actions.
+		writeDeviceNotFound(w)
+		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
 	}
 	return cfg, hello, true
 }
@@ -4429,22 +4409,9 @@ func writeRepairError(w http.ResponseWriter, err error) {
 		case "display-render":
 			writeError(w, http.StatusBadGateway, "display_render_repair_failed", "VibeTV did not render a fresh image.", "Keep VibeTV powered on, then retry Fix connection.")
 			return
-		case "firmware-update":
-			writeFirmwareUpdateRequired(w)
-			return
 		}
 	}
 	writeDeviceNotFound(w)
-}
-
-func writeFirmwareUpdateRequired(w http.ResponseWriter) {
-	writeError(
-		w,
-		http.StatusConflict,
-		"firmware_update_required",
-		"VibeTV needs a firmware update before the Mac App can send its first image safely.",
-		"Open Updates, install the VibeTV firmware update, then finish setup.",
-	)
 }
 
 func writeInvalidDeviceTarget(w http.ResponseWriter) {
@@ -4869,8 +4836,7 @@ func waitForDisplayStreamAfterProbe(
 	var last displayStreamInfo
 	for {
 		last = inspect(ctx, target, notBefore)
-		if last.Healthy || streamRequiresFirmwareUpdate(last) ||
-			(stopOnPairingError && last.ErrorCode == "device_pairing_required") ||
+		if last.Healthy || (stopOnPairingError && last.ErrorCode == "device_pairing_required") ||
 			time.Now().After(deadline) {
 			return last
 		}
@@ -4880,10 +4846,6 @@ func waitForDisplayStreamAfterProbe(
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
-}
-
-func streamRequiresFirmwareUpdate(stream displayStreamInfo) bool {
-	return strings.TrimSpace(stream.ErrorCode) == "device_firmware_update_required"
 }
 
 func (s *Server) waitForFreshDisplayStream(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
@@ -5031,9 +4993,6 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 			} else if op == "resolve-target" {
 				detail = "Display stream could not find VibeTV and is reconnecting."
 				code = "device_not_found"
-			} else if op == "firmware-safety-check" {
-				detail = "VibeTV needs a firmware update before the Mac App can send its first image safely."
-				code = "device_firmware_update_required"
 			} else if strings.Contains(line, "cycle timeout:") {
 				detail = "Display stream timed out and is reconnecting."
 				code = "display_stream_timeout"

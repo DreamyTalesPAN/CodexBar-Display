@@ -66,6 +66,52 @@ func TestWiFiTransportSendLinePostsFrame(t *testing.T) {
 	}
 }
 
+func TestWiFiTransportSendLineAllowsSlowESP8266Render(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/frame" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		time.Sleep(50 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(&http.Client{Timeout: 10 * time.Millisecond})
+	if err := transport.SendLine(server.URL, []byte(`{"provider":"codex"}`)); err != nil {
+		t.Fatalf("slow but valid frame render must not use the probe timeout: %v", err)
+	}
+}
+
+func TestWiFiTransportSendLineAcceptsEOFWhenESPClosesAfterReadingFrame(t *testing.T) {
+	var gotBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read frame: %v", err)
+		}
+		gotBody = string(body)
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("test server does not support hijacking")
+		}
+		conn, _, err := hijacker.Hijack()
+		if err != nil {
+			t.Fatalf("hijack connection: %v", err)
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	line := []byte(`{"provider":"codex","session":12}`)
+	transport := NewWiFiTransportWithClient(server.Client())
+	if err := transport.SendLine(server.URL, line); err != nil {
+		t.Fatalf("response-side EOF after a complete frame must not trigger a retry: %v", err)
+	}
+	if gotBody != string(line) {
+		t.Fatalf("device did not receive the complete frame: %q", gotBody)
+	}
+}
+
 func TestWiFiTransportDeviceHealthReadsHealth(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/health" {

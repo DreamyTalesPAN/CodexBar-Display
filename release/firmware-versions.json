@@ -5,9 +5,9 @@
     {
       "firmwareEnv": "esp8266_smalltv_st7789",
       "board": "esp8266-smalltv-st7789",
-      "firmwareVersion": "1.0.36",
+      "firmwareVersion": "1.0.35",
       "severity": "recommended",
-      "message": "Firmware update required for safe VibeTV Control Center setup."
+      "message": "Firmware update available. Open vibetv.local."
     },
     {
       "firmwareEnv": "lilygo_t_display_s3",

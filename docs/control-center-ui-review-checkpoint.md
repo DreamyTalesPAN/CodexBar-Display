@@ -57,43 +57,6 @@ To reset the gate:
   reactivation after a partial update screen and HTTP 410 retirement for an
   external browser while the native Mac App remains available.
 
-- Reviewed scope: legacy Mac App installer environment and the minimum safe
-  VibeTV firmware required before the first display frame.
-- Customer rule: the existing migration stays one automatic Mac App update
-  followed by the existing VibeTV `Update now` action. Customers must not need
-  to understand firmware guards, environment variables, manifests, or display
-  transport.
-- Simplifications accepted: no visible screen, button, paragraph, label, tab,
-  or customer decision was added. The installer only passes the checked safe
-  firmware version to the background service so an unsafe VibeTV cannot receive
-  a frame too early.
-- Verification: the change was reviewed against
-  `docs/control-center-ui-principles.md`; targeted Companion Go tests, the
-  legacy installer test, the release-workflow test, and `git diff --check`
-  passed locally.
-
-- Reviewed scope: required ESP8266 firmware recovery before the first DMG
-  display frame, setup navigation locks, and the existing Updates screen on
-  mobile and desktop.
-- Customer rule: unsafe firmware must stop setup before the Mac App sends an
-  image. In that exact state, Updates is the one newly available recovery
-  destination; Settings, Theme Library, Support, and Overview remain locked.
-  The customer sees only the existing Firmware update action, not heap,
-  ThemeSpec, transport, manifest, or runtime details.
-- Simplifications accepted: no new screen, button, paragraph, or technical
-  choice was added. The existing Updates tab and primary `Update now` action
-  are reused, and optional firmware availability alone cannot bypass setup
-  locks.
-- Verification: the firmware recovery state was reviewed against
-  `docs/control-center-ui-principles.md` at 405-pixel mobile and 1280-pixel
-  desktop viewports. Screenshots are in
-  `/tmp/vibetv-firmware-recovery-review/firmware-recovery-mobile.png` and
-  `/tmp/vibetv-firmware-recovery-review/firmware-recovery-desktop.png`.
-  Navigation stayed uncrowded, the existing primary action remained obvious,
-  tap targets measured at least 44 pixels, and no horizontal overflow was
-  present. `npm run lint`, `npm run check:customer-ui-copy`, and `npm run
-  test:customer-flows` passed locally.
-
 - Reviewed scope: legacy local-Control-Center migration to the DMG, native
   VibeTV WiFi verification, first-frame readiness, stuck-image recovery, the
   connected Overview handoff, and Mac App replacement guidance in Updates.
