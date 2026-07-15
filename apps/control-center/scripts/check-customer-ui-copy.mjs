@@ -58,9 +58,9 @@ const forbiddenPatterns = [
   {
     label: "manual update instructions",
     pattern:
-      /\b(choose Replace|replace the copy|creating a second copy|instead of creating a second copy|keep (?:the|this) current (?:app|Control Center) installed)\b/i,
+      /\b(open the (?:downloaded )?DMG|drag (?:the )?app into Applications|choose Replace|replace the copy|creating a second copy|instead of creating a second copy|keep (?:the|this) current (?:app|Control Center) installed)\b/i,
     suggestion:
-      "Show one Update action and keep manual replacement details out of customer update UI.",
+      "Show one customer action and keep manual DMG handling out of customer UI.",
   },
   {
     label: "non-standard update action",

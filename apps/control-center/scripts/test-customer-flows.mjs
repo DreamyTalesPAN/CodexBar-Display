@@ -4669,6 +4669,10 @@ async function startVerifiedDmgSetupDownload(
     "Setup should only expose the verified DMG asset",
   );
   assert(
+    (await page.getByText(/open the DMG|Applications/i).count()) === 0,
+    "Setup must not explain manual DMG handling to customers",
+  );
+  assert(
     (await page.getByRole("tab", { name: "Agentic setup" }).count()) === 0,
     "Verified DMG setup must hide the Agentic Terminal installer",
   );

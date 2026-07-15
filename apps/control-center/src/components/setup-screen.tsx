@@ -302,12 +302,6 @@ export function SetupScreen({
                 <div className="grid min-w-0 gap-4">
                   {dmgUrl ? (
                     <div className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4">
-                      {hostedMode ? (
-                        <p className="text-sm leading-6 text-[#444933]">
-                          Download VibeTV Control Center, open the DMG, drag the
-                          app into Applications, then open it.
-                        </p>
-                      ) : null}
                       <a
                         className="vibetv-button vibetv-button--large vibetv-button--full vibetv-button--primary"
                         href={dmgUrl}
