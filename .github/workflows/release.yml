@@ -133,7 +133,7 @@ jobs:
               --maximum-deltas 0 \
               --download-url-prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/" \
               --link "https://app.vibetv.shop" \
-              -o appcast.xml \
+              -o dist/macos/appcast.xml \
               dist/macos
           test -s dist/macos/appcast.xml
           grep -F 'sparkle:edSignature=' dist/macos/appcast.xml >/dev/null

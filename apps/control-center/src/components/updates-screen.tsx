@@ -239,12 +239,12 @@ export function UpdatesScreen({
           />
           <FirmwareRow
             icon={<Monitor size={20} aria-hidden />}
-            label="Runtime"
+            label="Background version"
             value={formatRuntimeValue(companionInfo)}
           />
           <FirmwareRow
             icon={<ShieldCheck size={20} aria-hidden />}
-            label="Listener"
+            label="Background service"
             value={formatListenerValue(companionInfo)}
           />
           <FirmwareRow
@@ -531,9 +531,7 @@ function InlineUpdateProgress({
 }
 
 function formatRuntimeValue(companion: CompanionInfo | null | undefined): string {
-  const version = companion?.runtime?.version || companion?.version || "Unknown";
-  const commit = companion?.runtime?.commit?.trim();
-  return commit ? `${version} (${commit.slice(0, 8)})` : version;
+  return companion?.runtime?.version || companion?.version || "Unknown";
 }
 
 function formatListenerValue(companion: CompanionInfo | null | undefined): string {
@@ -542,7 +540,9 @@ function formatListenerValue(companion: CompanionInfo | null | undefined): strin
   if (!owner) {
     return "Not verified";
   }
-  return pid ? `${owner} (PID ${pid})` : owner;
+  return owner === "shop.vibetv.control-center.runtime" && Boolean(pid)
+    ? "Running"
+    : "Needs attention";
 }
 
 function MacAppDmgUpdateNote({

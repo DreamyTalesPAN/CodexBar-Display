@@ -1992,10 +1992,15 @@ async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
     "Installed native Mac Apps must hand updates to the exact Sparkle URL action",
   );
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
-  await page.getByText("1.0.44 (abcdef12)").waitFor({ timeout: 10_000 });
-  await page
-    .getByText("shop.vibetv.control-center.runtime (PID 174)")
-    .waitFor({ timeout: 10_000 });
+  await page.getByText("Background version").waitFor({ timeout: 10_000 });
+  await page.getByText("Background service").waitFor({ timeout: 10_000 });
+  await page.getByText("Running", { exact: true }).waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("shop.vibetv.control-center.runtime").count()) === 0 &&
+      (await page.getByText("PID 174").count()) === 0 &&
+      (await page.getByText("abcdef12").count()) === 0,
+    "Updates must keep service names, process IDs, and commits out of customer copy",
+  );
   assert(
     (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
       0,
