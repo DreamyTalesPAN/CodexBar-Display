@@ -11,6 +11,10 @@ ICON_FILE_NAME="VibeTVControlCenter.icns"
 RUNTIME_AGENT_PLIST_NAME="shop.vibetv.control-center.runtime.plist"
 APP_ICON="${ROOT}/macos/VibeTVControlCenter/${ICON_FILE_NAME}"
 RUNTIME_AGENT_PLIST="${ROOT}/macos/VibeTVControlCenter/${RUNTIME_AGENT_PLIST_NAME}"
+SPARKLE_PUBLIC_KEY_FILE="${ROOT}/macos/VibeTVControlCenter/SparklePublicKey.txt"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/appcast.xml}"
+SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
+SPARKLE_DIST_DIR=""
 VERSION="${VERSION:-0.0.0}"
 BUILD="${BUILD:-0}"
 APP_DIR="${ROOT}/dist/macos/${APP_NAME}.app"
@@ -22,7 +26,7 @@ UNIVERSAL=0
 usage() {
   cat <<EOF
 Usage:
-  build-macos-control-center-app.sh [--version x.y.z] [--build n] [--output path.app] [--control-center-static dir] [--companion-binary path] [--app-icon path.icns] [--universal] [--dry-run]
+  build-macos-control-center-app.sh [--version x.y.z] [--build n] [--output path.app] [--control-center-static dir] [--companion-binary path] [--app-icon path.icns] [--sparkle-feed-url url] [--sparkle-public-key key] [--universal] [--dry-run]
 
 Builds the prepared macOS .app bundle for ${APP_NAME}.
 
@@ -75,6 +79,16 @@ while [[ $# -gt 0 ]]; do
       APP_ICON="$2"
       shift 2
       ;;
+    --sparkle-feed-url)
+      need_value "$1" "${2:-}"
+      SPARKLE_FEED_URL="$2"
+      shift 2
+      ;;
+    --sparkle-public-key)
+      need_value "$1" "${2:-}"
+      SPARKLE_PUBLIC_ED_KEY="$2"
+      shift 2
+      ;;
     --dry-run)
       DRY_RUN=1
       shift
@@ -92,6 +106,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -z "$SPARKLE_PUBLIC_ED_KEY" && -f "$SPARKLE_PUBLIC_KEY_FILE" ]]; then
+  SPARKLE_PUBLIC_ED_KEY="$(tr -d '[:space:]' < "$SPARKLE_PUBLIC_KEY_FILE")"
+fi
+[[ "$SPARKLE_FEED_URL" == https://* ]] || die "Sparkle feed URL must use HTTPS"
+[[ "$SPARKLE_PUBLIC_ED_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] \
+  || die "Sparkle public key must be one base64-encoded Ed25519 key"
 
 xml_escape() {
   local value="$1"
@@ -159,6 +180,12 @@ write_info_plist() {
     <string>VibeTV Control Center uses the local network to connect to your VibeTV display.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>SUEnableAutomaticChecks</key>
+    <false/>
+    <key>SUFeedURL</key>
+    <string>$(xml_escape "$SPARKLE_FEED_URL")</string>
+    <key>SUPublicEDKey</key>
+    <string>$(xml_escape "$SPARKLE_PUBLIC_ED_KEY")</string>
   </dict>
 </plist>
 PLIST
@@ -211,6 +238,36 @@ EOF
   die "real app builds need --companion-binary path/to/${COMPANION_NAME}"
 }
 
+copy_runtime_agent_plist() {
+  local target="$1"
+  [[ -f "$RUNTIME_AGENT_PLIST" ]] || die "runtime LaunchAgent plist not found: ${RUNTIME_AGENT_PLIST}"
+  sed \
+    -e "s/__VIBETV_MAC_APP_VERSION__/$(xml_escape "${VERSION#v}")/g" \
+    -e "s/__VIBETV_MAC_APP_BUILD__/$(xml_escape "$BUILD")/g" \
+    "$RUNTIME_AGENT_PLIST" > "$target"
+}
+
+prepare_sparkle() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    return 0
+  fi
+  SPARKLE_DIST_DIR="$("${ROOT}/scripts/fetch-sparkle.sh")"
+  [[ -d "${SPARKLE_DIST_DIR}/Sparkle.framework" ]] \
+    || die "Sparkle framework not found after verified download"
+}
+
+copy_sparkle_framework() {
+  local target_dir="$1"
+  mkdir -p "$target_dir"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    mkdir -p "${target_dir}/Sparkle.framework"
+    printf 'Sparkle 2.9.2 dry-run placeholder\n' > "${target_dir}/Sparkle.framework/README.txt"
+    return 0
+  fi
+  command -v ditto >/dev/null 2>&1 || die "ditto is required to preserve Sparkle framework symlinks"
+  ditto "${SPARKLE_DIST_DIR}/Sparkle.framework" "${target_dir}/Sparkle.framework"
+}
+
 copy_app_icon() {
   local target_dir="$1"
   [[ -f "$APP_ICON" ]] || die "app icon not found: ${APP_ICON}"
@@ -244,15 +301,23 @@ EOF
       -target x86_64-apple-macos13 \
       "${ROOT}/macos/VibeTVControlCenter/main.swift" \
       -o "$x86_binary" \
+      -F "$SPARKLE_DIST_DIR" \
       -framework Cocoa \
       -framework ServiceManagement \
+      -framework Sparkle \
+      -Xlinker -rpath \
+      -Xlinker @executable_path/../Frameworks \
       -framework WebKit
     swiftc \
       -target arm64-apple-macos13 \
       "${ROOT}/macos/VibeTVControlCenter/main.swift" \
       -o "$arm64_binary" \
+      -F "$SPARKLE_DIST_DIR" \
       -framework Cocoa \
       -framework ServiceManagement \
+      -framework Sparkle \
+      -Xlinker -rpath \
+      -Xlinker @executable_path/../Frameworks \
       -framework WebKit
     lipo -create -output "$target" "$x86_binary" "$arm64_binary"
     rm -rf "$build_dir"
@@ -263,8 +328,12 @@ EOF
   swiftc \
     "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     -o "$target" \
+    -F "$SPARKLE_DIST_DIR" \
     -framework Cocoa \
     -framework ServiceManagement \
+    -framework Sparkle \
+    -Xlinker -rpath \
+    -Xlinker @executable_path/../Frameworks \
     -framework WebKit
   chmod 755 "$target"
 }
@@ -275,19 +344,21 @@ main() {
   local contents="${APP_DIR}/Contents"
   local macos_dir="${contents}/MacOS"
   local helpers_dir="${contents}/Helpers"
+  local frameworks_dir="${contents}/Frameworks"
   local resources_dir="${contents}/Resources"
   local launch_agents_dir="${contents}/Library/LaunchAgents"
 
   rm -rf "$APP_DIR"
-  mkdir -p "$macos_dir" "$helpers_dir" "$resources_dir" "$launch_agents_dir"
+  mkdir -p "$macos_dir" "$helpers_dir" "$frameworks_dir" "$resources_dir" "$launch_agents_dir"
 
+  prepare_sparkle
   write_info_plist "${contents}/Info.plist"
   build_executable "${macos_dir}/${EXECUTABLE_NAME}"
+  copy_sparkle_framework "$frameworks_dir"
   copy_app_icon "$resources_dir"
   copy_control_center_static "${resources_dir}/control-center"
   copy_companion_binary "$helpers_dir"
-  [[ -f "$RUNTIME_AGENT_PLIST" ]] || die "runtime LaunchAgent plist not found: ${RUNTIME_AGENT_PLIST}"
-  cp "$RUNTIME_AGENT_PLIST" "${launch_agents_dir}/${RUNTIME_AGENT_PLIST_NAME}"
+  copy_runtime_agent_plist "${launch_agents_dir}/${RUNTIME_AGENT_PLIST_NAME}"
   cp "${ROOT}/macos/VibeTVControlCenter/VibeTVControlCenter.entitlements" "${resources_dir}/VibeTVControlCenter.entitlements"
 
   if command -v xattr >/dev/null 2>&1; then

@@ -463,6 +463,34 @@ func TestStatusReportsCachedMacAppUpdateState(t *testing.T) {
 	}
 }
 
+func TestStatusSeparatesMacAppAndRuntimeVersions(t *testing.T) {
+	t.Setenv(macAppVersionEnv, "1.0.98")
+	t.Setenv(macAppBuildEnv, "198")
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{TagName: "v1.0.99"}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Companion.App.Version != "1.0.98" || got.Companion.App.Build != "198" {
+		t.Fatalf("unexpected native app metadata: %+v", got.Companion.App)
+	}
+	if got.Companion.Runtime.Version != got.Companion.Version {
+		t.Fatalf("legacy version alias must remain the runtime version: companion=%q runtime=%q", got.Companion.Version, got.Companion.Runtime.Version)
+	}
+	if got.Companion.Update.InstalledVersion != "1.0.98" || !got.Companion.Update.UpdateAvailable {
+		t.Fatalf("Mac App update check must compare the app version: %+v", got.Companion.Update)
+	}
+}
+
 func TestStatusReportsMacAppUpdateCheckFailure(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
@@ -1764,6 +1792,240 @@ func TestDeviceGetDoesNotScanSubnetWhenSavedTargetIsStale(t *testing.T) {
 	}
 }
 
+func TestStatusKeepsConfiguredDeviceReconnectingDuringTransientProbeFailure(t *testing.T) {
+	var available atomic.Bool
+	var boot atomic.Int32
+	available.Store(true)
+	boot.Store(1)
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !available.Load() {
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = fmt.Fprintf(w, `{"ok":true,"system":{"bootId":"boot-%d","uptimeMs":1200,"resetCount":%d,"resetReason":"Software/System restart"},"render":{"fullCount":3,"partialCount":1,"lastKind":"usage"}}`, boot.Load(), boot.Load()+3)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	subnetCalls := atomic.Int32{}
+	server.subnetTargets = func() []string {
+		subnetCalls.Add(1)
+		return nil
+	}
+
+	readStatus := func() statusResponse {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status: %v", err)
+		}
+		return got
+	}
+
+	ready := readStatus()
+	if !ready.Device.Ready || ready.Device.ConnectionState != deviceConnectionReady {
+		t.Fatalf("expected initial ready device, got %+v", ready.Device)
+	}
+	available.Store(false)
+	reconnecting := readStatus()
+	if reconnecting.Device.ConnectionState != deviceConnectionRetrying || reconnecting.Device.Ready {
+		t.Fatalf("transient timeout restarted setup instead of reconnecting: %+v", reconnecting.Device)
+	}
+	if !reconnecting.Device.Paired || reconnecting.Device.DeviceID != "vibetv-canary" || reconnecting.Device.Firmware != "1.0.44" {
+		t.Fatalf("saved identity and last verified details were not preserved: %+v", reconnecting.Device)
+	}
+	if reconnecting.Device.LastSeenAt == "" {
+		t.Fatalf("expected last-seen timestamp, got %+v", reconnecting.Device)
+	}
+	if subnetCalls.Load() != 0 {
+		t.Fatalf("grace-period status poll started %d subnet scans", subnetCalls.Load())
+	}
+	boot.Store(2)
+	available.Store(true)
+	recovered := readStatus()
+	if !recovered.Device.Ready || recovered.Device.ConnectionState != deviceConnectionReady || recovered.Device.Health == nil || recovered.Device.Health.BootID != "boot-2" {
+		t.Fatalf("device reboot did not recover automatically inside grace period: %+v", recovered.Device)
+	}
+	if subnetCalls.Load() != 0 {
+		t.Fatalf("short reboot recovery unexpectedly scanned the subnet %d times", subnetCalls.Load())
+	}
+}
+
+func TestStatusStartsOneBoundedRecoveryAfterGraceAndThenRequiresSetup(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "offline", http.StatusServiceUnavailable)
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.reconnectGraceTime = 30 * time.Second
+	recoveryStarted := make(chan struct{})
+	releaseRecovery := make(chan struct{})
+	var recoveryCalls atomic.Int32
+	server.autoRecover = func(context.Context, runtimeconfig.Config) (deviceInfo, error) {
+		if recoveryCalls.Add(1) == 1 {
+			close(recoveryStarted)
+		}
+		<-releaseRecovery
+		return deviceInfo{}, errors.New("saved identity not found")
+	}
+
+	readStatus := func() statusResponse {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status: %v body=%s", err, rec.Body.String())
+		}
+		return got
+	}
+
+	if got := readStatus(); got.Device.ConnectionState != deviceConnectionRetrying {
+		t.Fatalf("first miss must enter reconnecting grace period: %+v", got.Device)
+	}
+	now = now.Add(31 * time.Second)
+	for range 5 {
+		if got := readStatus(); got.Device.ConnectionState != deviceConnectionRetrying {
+			t.Fatalf("active recovery must stay reconnecting: %+v", got.Device)
+		}
+	}
+	select {
+	case <-recoveryStarted:
+	case <-time.After(time.Second):
+		t.Fatal("recovery did not start after grace period")
+	}
+	if recoveryCalls.Load() != 1 {
+		t.Fatalf("overlapping status polls started %d recovery scans", recoveryCalls.Load())
+	}
+	close(releaseRecovery)
+	deadline := time.Now().Add(time.Second)
+	for {
+		got := readStatus()
+		if got.Device.ConnectionState == deviceConnectionSetup {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("failed bounded recovery never required setup: %+v", got.Device)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestStatusAutoRecoveryFindsSavedDeviceIDAtChangedIP(t *testing.T) {
+	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "old address", http.StatusServiceUnavailable)
+	}))
+	defer stale.Close()
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":3,"partialCount":1,"lastKind":"usage"}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: stale.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.reconnectGraceTime = time.Second
+
+	readStatus := func() statusResponse {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status: %v body=%s", err, rec.Body.String())
+		}
+		return got
+	}
+
+	_ = readStatus()
+	now = now.Add(2 * time.Second)
+	_ = readStatus()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		got := readStatus()
+		if got.Device.Target == device.URL && got.Device.Ready && got.Device.ConnectionState == deviceConnectionReady {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("saved device ID was not recovered at changed IP: %+v", got.Device)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestDeviceProbesAreSingleFlightAndCached(t *testing.T) {
+	var helloCalls atomic.Int32
+	var healthCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			helloCalls.Add(1)
+			time.Sleep(20 * time.Millisecond)
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789"}`))
+		case "/health":
+			healthCalls.Add(1)
+			time.Sleep(20 * time.Millisecond)
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.probeCacheTime = time.Second
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if _, err := server.getHelloProbe(context.Background(), device.URL, "pair-token", time.Second); err != nil {
+				t.Errorf("hello probe: %v", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if _, err := server.getHealthProbe(context.Background(), device.URL, "pair-token", time.Second); err != nil {
+				t.Errorf("health probe: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if helloCalls.Load() != 1 || healthCalls.Load() != 1 {
+		t.Fatalf("probes were not coalesced: hello=%d health=%d", helloCalls.Load(), healthCalls.Load())
+	}
+}
+
 func TestDeviceReachableButDisplayStreamNotReadyStaysConnected(t *testing.T) {
 	device := newHelloDeviceServer(t)
 	defer device.Close()
@@ -2216,7 +2478,7 @@ func TestDeviceHealthReportsResetReason(t *testing.T) {
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.35","capabilities":{"transport":{"active":"wifi"}}}`))
 		case "/health":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"ok":true,"system":{"resetReason":"Exception"},"settings":{"display":{"brightnessPercent":40}}}`))
+			_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"00abc123-7-deadbeef","uptimeMs":2500,"resetCount":7,"resetReason":"Exception"},"settings":{"display":{"brightnessPercent":40}}}`))
 		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
@@ -2239,6 +2501,9 @@ func TestDeviceHealthReportsResetReason(t *testing.T) {
 	}
 	if got.Device.Health == nil || !got.Device.Health.OK || got.Device.Health.ResetReason != "Exception" {
 		t.Fatalf("expected reset reason in health metadata, got %+v", got.Device.Health)
+	}
+	if got.Device.Health.BootID != "00abc123-7-deadbeef" || got.Device.Health.UptimeMs != 2500 || got.Device.Health.ResetCount != 7 || got.Device.Health.LastResetAt == "" {
+		t.Fatalf("expected boot identity, uptime, counter, and reset timestamp, got %+v", got.Device.Health)
 	}
 }
 
@@ -4167,10 +4432,28 @@ func TestThemeInstallAsyncReportsCustomerProgress(t *testing.T) {
 }
 
 func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
-	device := newThemeInstallReadyDeviceServer(t)
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-174","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.32","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
 	defer device.Close()
 
-	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token", DeviceID: "device-174"})
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, _ deviceHealth) (deviceHealth, error) {
+		return deviceHealth{OK: true}, nil
+	}
 	server.updateFirmware = func(_ context.Context, _ string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer) error {
 		if cfg.DeviceTarget != device.URL || strings.TrimSpace(cfg.DeviceToken) != "pair-token" {
 			t.Fatalf("unexpected update config: %+v", cfg)
@@ -4179,6 +4462,7 @@ func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
 			t.Fatalf("force should default to false")
 		}
 		for _, line := range []string{
+			`CODEX_FIRMWARE_UPDATE_EVENT {"stage":"validating_artifact","phase":"installing","target":"` + device.URL + `","deviceId":"device-174","helloVerified":true}`,
 			"Checking device...",
 			"Device: esp8266-smalltv-st7789 firmware 1.0.31",
 			"Checking firmware...",
@@ -4187,6 +4471,7 @@ func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
 			"Pausing Mac App during firmware update...",
 			"Uploading firmware...",
 			"Restarting VibeTV...",
+			`CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","firmware":"1.0.32","target":"` + device.URL + `","deviceId":"device-174","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`,
 			"Done: firmware 1.0.32 installed",
 		} {
 			_, _ = io.WriteString(out, line+"\n")
@@ -4233,7 +4518,7 @@ func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
 		t.Fatalf("expected firmware result, got %+v", got.Job.Result)
 	}
 	joinedLogs := strings.Join(got.Job.Logs, "\n")
-	for _, want := range []string{"Checking VibeTV.", "Checking update.", "Update downloaded.", "Updating VibeTV.", "Restarting VibeTV.", "Update complete."} {
+	for _, want := range []string{"Update downloaded.", "Updating VibeTV.", "Restarting VibeTV.", "Checking VibeTV health.", "Restarting display stream.", "Checking the picture.", "Update complete."} {
 		if !strings.Contains(joinedLogs, want) {
 			t.Fatalf("expected customer update log %q in %q", want, joinedLogs)
 		}
@@ -4252,7 +4537,7 @@ func TestFirmwareUpdatePausesDisplayTrafficUntilJobFinishes(t *testing.T) {
 		switch r.URL.Path {
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","capabilities":{"transport":{"active":"wifi"}}}`))
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-pause","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","capabilities":{"transport":{"active":"wifi"}}}`))
 		case "/health":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true}`))
@@ -4262,14 +4547,22 @@ func TestFirmwareUpdatePausesDisplayTrafficUntilJobFinishes(t *testing.T) {
 	}))
 	defer device.Close()
 
-	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token", DeviceID: "device-pause"})
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, _ deviceHealth) (deviceHealth, error) {
+		return deviceHealth{OK: true}, nil
+	}
 	pauseEvents := make(chan bool, 2)
 	server.pauseDisplayStream = func(paused bool) { pauseEvents <- paused }
 	startedUpdate := make(chan struct{})
 	finishUpdate := make(chan struct{})
-	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
 		close(startedUpdate)
 		<-finishUpdate
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","outcome":"already_current","firmware":"1.0.36","target":"`+device.URL+`","deviceId":"device-pause","artifactValidated":true,"helloVerified":true}`+"\n")
 		return nil
 	}
 
@@ -4324,6 +4617,88 @@ func TestFirmwareUpdatePausesDisplayTrafficUntilJobFinishes(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("firmware update did not resume display stream")
+	}
+}
+
+func TestFirmwareUpdateVerifiedFirmwareOverridesTemporaryCommandError(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-recovered","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-recovered", DeviceToken: "pair-token"})
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, _ deviceHealth) (deviceHealth, error) {
+		return deviceHealth{OK: true}, nil
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"rebooting","phase":"installing","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-recovered","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return errors.New("temporary timeout after accepted upload")
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 100; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase != "complete" || job.Outcome != "updated" || job.Result == nil || !job.Result.RenderVerified {
+		t.Fatalf("verified running state must override the temporary command error: %+v", job)
+	}
+}
+
+func TestFirmwareUpdateCurrentFirmwareWithStreamFailureNeedsAttention(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-attention","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-attention", DeviceToken: "pair-token"})
+	server.refreshStream = func(context.Context, string) error { return errors.New("stream unavailable") }
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-attention","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 100; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase != "attention" || job.Outcome != "firmware_current_stream_attention" || job.Result == nil || !job.Result.HealthVerified || job.Result.StreamVerified {
+		t.Fatalf("current firmware with a broken stream must need attention without another flash: %+v", job)
 	}
 }
 
@@ -4807,6 +5182,7 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
+	server.probeCacheTime = 0
 	current := cfg
 	server.loadConfig = func(string) (runtimeconfig.Config, error) {
 		return current, nil

@@ -93,11 +93,20 @@ type ThemeInstallJob = {
 type FirmwareUpdateResult = {
   firmware?: string;
   target?: string;
+  deviceId?: string;
+  artifactValidated?: boolean;
+  uploadAccepted?: boolean;
+  helloVerified?: boolean;
+  healthVerified?: boolean;
+  streamVerified?: boolean;
+  renderVerified?: boolean;
 };
 
 type FirmwareUpdateJob = {
   id: string;
-  phase: "installing" | "complete" | "error";
+  phase: "installing" | "complete" | "attention" | "error";
+  stage?: string;
+  outcome?: string;
   message?: string;
   progress?: number;
   startedAt?: string;
@@ -108,7 +117,9 @@ type FirmwareUpdateJob = {
 };
 
 type FirmwareUpdateStatus = {
-  phase: "installing" | "complete" | "error";
+  phase: "installing" | "complete" | "attention" | "error";
+  stage?: string;
+  outcome?: string;
   startedAt: string;
   finishedAt?: string;
   message?: string;
@@ -1436,7 +1447,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     const shouldPollIncompleteSetup =
       companionStatus === "missing" ||
-      (companionStatus === "online" && !deviceSetupIsUsable(device));
+      (companionStatus === "online" &&
+        (!deviceSetupIsUsable(device) ||
+          device?.connectionState === "reconnecting"));
     if (hostedSetup || !shouldPollIncompleteSetup) {
       return;
     }
@@ -1506,7 +1519,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const {
     refresh: refreshHostedCompanionRelease,
     release: hostedCompanionRelease,
-  } = useCompanionRelease(companionInfo?.version);
+  } = useCompanionRelease(
+    companionInfo?.app?.version || companionInfo?.version,
+  );
 
   const checkUpdates = useCallback(async () => {
     setBusyAction("firmware-check");
@@ -1533,15 +1548,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const phase =
         job.phase === "complete"
           ? "complete"
+          : job.phase === "attention"
+            ? "attention"
           : job.phase === "error"
             ? "error"
             : "installing";
       const logs = customerUpdateLogs(job.logs, initialLogs);
       setFirmwareUpdateStatus({
         phase,
+        stage: job.stage,
+        outcome: job.outcome,
         startedAt,
         finishedAt:
-          phase === "complete" || phase === "error" ? formatTime() : undefined,
+          phase === "complete" || phase === "attention" || phase === "error"
+            ? formatTime()
+            : undefined,
         message:
           job.error?.nextAction ||
           job.message ||
@@ -1596,6 +1617,39 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             nextAction: "Keep VibeTV powered on, then try again.",
           }
         );
+      }
+      if (finishedJob.phase === "attention") {
+        const logs = customerUpdateLogs(finishedJob.logs, initialLogs);
+        const finishedAt = formatTime();
+        setFirmwareUpdateStatus({
+          phase: "attention",
+          stage: finishedJob.stage,
+          outcome: finishedJob.outcome,
+          startedAt,
+          finishedAt,
+          message:
+            finishedJob.message ||
+            "The firmware is current, but VibeTV still needs attention.",
+          progress: 100,
+          logs,
+          result: finishedJob.result,
+        });
+        const installedFirmware = finishedJob.result?.firmware?.trim() || "";
+        if (installedFirmware) {
+          setDevice((current) =>
+            current ? { ...current, firmware: installedFirmware } : current,
+          );
+          setFirmwareUpdate(currentFirmwareUpdate(installedFirmware));
+        }
+        addEvent({
+          label: "VibeTV update needs attention",
+          detail:
+            finishedJob.message ||
+            "The firmware is current, but the connection or picture still needs repair.",
+          at: finishedAt,
+          tone: "attention",
+        });
+        return true;
       }
       const logs = customerUpdateLogs(finishedJob.logs, initialLogs);
       const finishedAt = formatTime();
@@ -2060,6 +2114,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           companionRelease={companionRelease}
           companionStatus={companionStatus}
           companionVersion={companionInfo?.version}
+          companionInfo={companionInfo}
           device={device}
           firmwareUpdate={effectiveFirmwareUpdate}
           onCheckUpdates={checkUpdates}

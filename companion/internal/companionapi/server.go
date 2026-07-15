@@ -47,8 +47,14 @@ const (
 	previewOriginHostPrefix   = "codex-vibetv-control-center-"
 	previewOriginHostSuffix   = "-paul-anduschus-projects.vercel.app"
 	nativeControlCenterUA     = "VibeTVControlCenter/"
+	deviceConnectionReady     = "ready"
+	deviceConnectionRetrying  = "reconnecting"
+	deviceConnectionSetup     = "setup_required"
 	deviceTimeout             = 15 * time.Second
 	discoveryProbeTime        = 1500 * time.Millisecond
+	deviceProbeCacheTime      = 750 * time.Millisecond
+	deviceReconnectGraceTime  = 45 * time.Second
+	deviceReconnectRepairTime = 60 * time.Second
 	repairDiscoveryAttempts   = 3
 	repairDiscoveryRetryGap   = 1200 * time.Millisecond
 	subnetProbeLimit          = 32
@@ -72,12 +78,16 @@ const (
 	macAppReleaseAPIURL       = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
 	macAppReleaseCheckGap     = 6 * time.Hour
 	macAppReleaseTimeout      = 5 * time.Second
+	macAppVersionEnv          = "VIBETV_MAC_APP_VERSION"
+	macAppBuildEnv            = "VIBETV_MAC_APP_BUILD"
 	firmwareManifestEnvVar    = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
 	firmwareReleaseTimeout    = 5 * time.Second
 )
 
 var deviceHealthProbeTime = 2 * time.Second
+var firmwareHealthVerifyTime = 30 * time.Second
 var subnetProbeTime = 450 * time.Millisecond
+var errMacAppActionRequired = errors.New("mac app installation requires customer action")
 
 var printDisplayStreamService = func(ctx context.Context, service string) ([]byte, error) {
 	return exec.CommandContext(ctx, "launchctl", "print", service).CombinedOutput()
@@ -141,6 +151,18 @@ type Server struct {
 	repairMu               sync.Mutex
 	repairFlightsMu        sync.Mutex
 	repairFlights          map[string]*deviceRepairFlight
+	probeMu                sync.Mutex
+	helloProbeCache        map[string]helloProbeSnapshot
+	helloProbeFlights      map[string]*helloProbeFlight
+	healthProbeCache       map[string]healthProbeSnapshot
+	healthProbeFlights     map[string]*healthProbeFlight
+	probeCacheTime         time.Duration
+	connectionMu           sync.Mutex
+	connectionStates       map[string]*configuredDeviceConnection
+	reconnectGraceTime     time.Duration
+	reconnectRepairTime    time.Duration
+	now                    func() time.Time
+	autoRecover            func(context.Context, runtimeconfig.Config) (deviceInfo, error)
 	deviceMaintenanceMu    sync.Mutex
 	pairMu                 sync.Mutex
 	verificationMu         sync.Mutex
@@ -211,6 +233,39 @@ type deviceRepairFlight struct {
 	err    error
 }
 
+type helloProbeSnapshot struct {
+	at    time.Time
+	hello protocol.DeviceHello
+	err   error
+}
+
+type helloProbeFlight struct {
+	done  chan struct{}
+	hello protocol.DeviceHello
+	err   error
+}
+
+type healthProbeSnapshot struct {
+	at     time.Time
+	health deviceHealth
+	err    error
+}
+
+type healthProbeFlight struct {
+	done   chan struct{}
+	health deviceHealth
+	err    error
+}
+
+type configuredDeviceConnection struct {
+	outageStartedAt time.Time
+	lastSeenAt      time.Time
+	lastDevice      deviceInfo
+	recoveryStarted bool
+	recoveryFailed  bool
+	recoveryCancel  context.CancelFunc
+}
+
 func (e *repairStageError) Error() string {
 	if e == nil || e.err == nil {
 		return ""
@@ -226,19 +281,21 @@ func (e *repairStageError) Unwrap() error {
 }
 
 type deviceInfo struct {
-	Target       string                    `json:"target,omitempty"`
-	DeviceID     string                    `json:"deviceId,omitempty"`
-	NetworkMode  string                    `json:"networkMode,omitempty"`
-	Connected    bool                      `json:"connected"`
-	Paired       bool                      `json:"paired,omitempty"`
-	Ready        bool                      `json:"ready"`
-	Board        string                    `json:"board,omitempty"`
-	Firmware     string                    `json:"firmware,omitempty"`
-	ActiveTheme  string                    `json:"activeTheme,omitempty"`
-	Capabilities *protocol.CapabilityBlock `json:"capabilities,omitempty"`
-	Stream       *displayStreamInfo        `json:"stream,omitempty"`
-	Display      *deviceDisplayInfo        `json:"display,omitempty"`
-	Health       *deviceHealthInfo         `json:"health,omitempty"`
+	Target          string                    `json:"target,omitempty"`
+	DeviceID        string                    `json:"deviceId,omitempty"`
+	NetworkMode     string                    `json:"networkMode,omitempty"`
+	Connected       bool                      `json:"connected"`
+	Paired          bool                      `json:"paired,omitempty"`
+	Ready           bool                      `json:"ready"`
+	ConnectionState string                    `json:"connectionState,omitempty"`
+	LastSeenAt      string                    `json:"lastSeenAt,omitempty"`
+	Board           string                    `json:"board,omitempty"`
+	Firmware        string                    `json:"firmware,omitempty"`
+	ActiveTheme     string                    `json:"activeTheme,omitempty"`
+	Capabilities    *protocol.CapabilityBlock `json:"capabilities,omitempty"`
+	Stream          *displayStreamInfo        `json:"stream,omitempty"`
+	Display         *deviceDisplayInfo        `json:"display,omitempty"`
+	Health          *deviceHealthInfo         `json:"health,omitempty"`
 }
 
 type displayStreamInfo struct {
@@ -264,7 +321,11 @@ type deviceDisplayInfo struct {
 
 type deviceHealthInfo struct {
 	OK          bool   `json:"ok"`
+	BootID      string `json:"bootId,omitempty"`
+	UptimeMs    uint64 `json:"uptimeMs,omitempty"`
+	ResetCount  uint32 `json:"resetCount,omitempty"`
 	ResetReason string `json:"resetReason,omitempty"`
+	LastResetAt string `json:"lastResetAt,omitempty"`
 	RenderKind  string `json:"renderKind,omitempty"`
 	Error       string `json:"error,omitempty"`
 }
@@ -351,19 +412,29 @@ type firmwareReleaseArtifact struct {
 }
 
 type firmwareUpdateResult struct {
-	Firmware string `json:"firmware,omitempty"`
-	Target   string `json:"target,omitempty"`
+	Firmware          string `json:"firmware,omitempty"`
+	Target            string `json:"target,omitempty"`
+	DeviceID          string `json:"deviceId,omitempty"`
+	ArtifactValidated bool   `json:"artifactValidated"`
+	UploadAccepted    bool   `json:"uploadAccepted"`
+	HelloVerified     bool   `json:"helloVerified"`
+	HealthVerified    bool   `json:"healthVerified"`
+	StreamVerified    bool   `json:"streamVerified"`
+	RenderVerified    bool   `json:"renderVerified"`
 }
 
 type firmwareUpdateJob struct {
 	ID         string                `json:"id"`
 	Phase      string                `json:"phase"`
+	Stage      string                `json:"stage"`
+	Outcome    string                `json:"outcome,omitempty"`
 	Message    string                `json:"message"`
 	Progress   int                   `json:"progress"`
 	StartedAt  time.Time             `json:"startedAt"`
 	FinishedAt *time.Time            `json:"finishedAt,omitempty"`
 	Logs       []string              `json:"logs,omitempty"`
 	Result     *firmwareUpdateResult `json:"result,omitempty"`
+	Warnings   []string              `json:"warnings,omitempty"`
 	Error      *apiError             `json:"error,omitempty"`
 	target     string
 	firmware   string
@@ -432,8 +503,27 @@ type companion struct {
 	Status           string               `json:"status"`
 	Version          string               `json:"version"`
 	InstallationMode string               `json:"installationMode"`
+	App              companionAppInfo     `json:"app"`
+	Runtime          companionRuntimeInfo `json:"runtime"`
 	Update           companionReleaseInfo `json:"update"`
 	Features         companionFeatures    `json:"features"`
+}
+
+type companionAppInfo struct {
+	Version                 string `json:"version,omitempty"`
+	Build                   string `json:"build,omitempty"`
+	Path                    string `json:"path,omitempty"`
+	InstallationMode        string `json:"installationMode"`
+	InstalledInApplications bool   `json:"installedInApplications"`
+}
+
+type companionRuntimeInfo struct {
+	Version       string `json:"version"`
+	Commit        string `json:"commit,omitempty"`
+	BuiltAt       string `json:"builtAt,omitempty"`
+	Executable    string `json:"executable,omitempty"`
+	PID           int    `json:"pid"`
+	ListenerOwner string `json:"listenerOwner,omitempty"`
 }
 
 type companionFeatures struct {
@@ -648,6 +738,16 @@ func New(opts Options) (*Server, error) {
 		pairAttempts:          defaultPairAttempts,
 		pairAttemptTimeout:    defaultPairAttemptTimeout,
 		pairRetryGap:          defaultPairRetryGap,
+		repairFlights:         make(map[string]*deviceRepairFlight),
+		helloProbeCache:       make(map[string]helloProbeSnapshot),
+		helloProbeFlights:     make(map[string]*helloProbeFlight),
+		healthProbeCache:      make(map[string]healthProbeSnapshot),
+		healthProbeFlights:    make(map[string]*healthProbeFlight),
+		probeCacheTime:        deviceProbeCacheTime,
+		connectionStates:      make(map[string]*configuredDeviceConnection),
+		reconnectGraceTime:    deviceReconnectGraceTime,
+		reconnectRepairTime:   deviceReconnectRepairTime,
+		now:                   time.Now,
 		displayVerifications:  make(map[string]displayVerification),
 		allowMacAppSelfUpdate: false,
 		installationMode:      macAppInstallationMode(),
@@ -877,13 +977,17 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	cfg, _ := s.config()
 	stream := s.streamStatus(r.Context(), cfg.DeviceTarget)
 	device := deviceInfo{
-		Target:    publicTarget(cfg.DeviceTarget),
-		Connected: strings.TrimSpace(cfg.DeviceToken) != "" && stream.Healthy,
-		Paired:    strings.TrimSpace(cfg.DeviceToken) != "" && stream.Healthy,
-		Stream:    streamPointer(stream),
+		Target:          publicTarget(cfg.DeviceTarget),
+		DeviceID:        strings.TrimSpace(cfg.DeviceID),
+		Connected:       false,
+		Paired:          strings.TrimSpace(cfg.DeviceToken) != "",
+		ConnectionState: deviceConnectionSetup,
+		Stream:          streamPointer(stream),
 	}
+	reachable := false
 	if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		if hello, probeToken, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
+			reachable = true
 			device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
 			device.Paired = strings.TrimSpace(cfg.DeviceToken) != "" &&
 				probeToken == cfg.DeviceToken &&
@@ -895,11 +999,159 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	device, startRecovery := s.withConfiguredConnectionState(cfg, device, reachable)
+	if startRecovery {
+		s.startConfiguredDeviceRecovery(cfg)
+	}
 	writeJSON(w, http.StatusOK, statusResponse{
 		OK:        true,
 		Companion: s.companionInfo(r.Context()),
 		Device:    device,
 	})
+}
+
+func (s *Server) withConfiguredConnectionState(
+	cfg runtimeconfig.Config,
+	device deviceInfo,
+	reachable bool,
+) (deviceInfo, bool) {
+	target := publicTarget(cfg.DeviceTarget)
+	token := strings.TrimSpace(cfg.DeviceToken)
+	if target == "" || token == "" {
+		device.ConnectionState = deviceConnectionSetup
+		return device, false
+	}
+
+	now := s.currentTime()
+	key := configuredDeviceKey(cfg)
+	s.connectionMu.Lock()
+	defer s.connectionMu.Unlock()
+	if s.connectionStates == nil {
+		s.connectionStates = make(map[string]*configuredDeviceConnection)
+	}
+	state := s.connectionStates[key]
+	if state == nil {
+		state = &configuredDeviceConnection{}
+		s.connectionStates[key] = state
+	}
+
+	if reachable {
+		state.lastSeenAt = now
+		state.lastDevice = device
+	}
+	if device.Ready {
+		if state.recoveryCancel != nil {
+			state.recoveryCancel()
+			state.recoveryCancel = nil
+		}
+		state.outageStartedAt = time.Time{}
+		state.recoveryStarted = false
+		state.recoveryFailed = false
+		device.ConnectionState = deviceConnectionReady
+		device.LastSeenAt = now.UTC().Format(time.RFC3339Nano)
+		state.lastDevice = device
+		return device, false
+	}
+
+	if !reachable && state.lastDevice.Target != "" {
+		last := state.lastDevice
+		last.Target = target
+		if strings.TrimSpace(cfg.DeviceID) != "" {
+			last.DeviceID = strings.TrimSpace(cfg.DeviceID)
+		}
+		last.Connected = false
+		last.Paired = true
+		last.Ready = false
+		last.Stream = device.Stream
+		if device.Health != nil {
+			last.Health = device.Health
+		}
+		device = last
+	}
+	if state.outageStartedAt.IsZero() {
+		state.outageStartedAt = now
+	}
+	if !state.lastSeenAt.IsZero() {
+		device.LastSeenAt = state.lastSeenAt.UTC().Format(time.RFC3339Nano)
+	}
+	device.ConnectionState = deviceConnectionRetrying
+	if state.recoveryFailed {
+		device.ConnectionState = deviceConnectionSetup
+		return device, false
+	}
+	grace := s.reconnectGraceTime
+	if grace <= 0 {
+		grace = deviceReconnectGraceTime
+	}
+	if !state.recoveryStarted && now.Sub(state.outageStartedAt) >= grace {
+		state.recoveryStarted = true
+		return device, true
+	}
+	return device, false
+}
+
+func configuredDeviceKey(cfg runtimeconfig.Config) string {
+	if id := strings.ToLower(strings.TrimSpace(cfg.DeviceID)); id != "" {
+		return "id:" + id
+	}
+	return "target:" + strings.ToLower(publicTarget(cfg.DeviceTarget))
+}
+
+func (s *Server) currentTime() time.Time {
+	if s.now != nil {
+		return s.now().UTC()
+	}
+	return time.Now().UTC()
+}
+
+func (s *Server) startConfiguredDeviceRecovery(cfg runtimeconfig.Config) {
+	key := configuredDeviceKey(cfg)
+	timeout := s.reconnectRepairTime
+	if timeout <= 0 {
+		timeout = deviceReconnectRepairTime
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	s.connectionMu.Lock()
+	state := s.connectionStates[key]
+	if state == nil || !state.recoveryStarted {
+		s.connectionMu.Unlock()
+		cancel()
+		return
+	}
+	state.recoveryCancel = cancel
+	s.connectionMu.Unlock()
+	go func() {
+		defer cancel()
+		var (
+			device deviceInfo
+			err    error
+		)
+		if s.autoRecover != nil {
+			device, err = s.autoRecover(ctx, cfg)
+		} else {
+			device, err = s.repairDevice(ctx, "", cfg.DeviceID, false)
+		}
+
+		s.connectionMu.Lock()
+		defer s.connectionMu.Unlock()
+		state := s.connectionStates[key]
+		if state == nil || !state.recoveryStarted {
+			return
+		}
+		state.recoveryStarted = false
+		state.recoveryCancel = nil
+		if err != nil || !device.Ready {
+			state.recoveryFailed = true
+			return
+		}
+		now := s.currentTime()
+		device.ConnectionState = deviceConnectionReady
+		device.LastSeenAt = now.Format(time.RFC3339Nano)
+		state.lastSeenAt = now
+		state.lastDevice = device
+		state.outageStartedAt = time.Time{}
+		state.recoveryFailed = false
+	}()
 }
 
 func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
@@ -909,13 +1161,21 @@ func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, struct {
 		OK        bool `json:"ok"`
 		Companion struct {
-			Version string `json:"version"`
+			Version string               `json:"version"`
+			App     companionAppInfo     `json:"app"`
+			Runtime companionRuntimeInfo `json:"runtime"`
 		} `json:"companion"`
 	}{
 		OK: true,
 		Companion: struct {
-			Version string `json:"version"`
-		}{Version: buildinfo.NormalizedVersion()},
+			Version string               `json:"version"`
+			App     companionAppInfo     `json:"app"`
+			Runtime companionRuntimeInfo `json:"runtime"`
+		}{
+			Version: buildinfo.NormalizedVersion(),
+			App:     currentCompanionAppInfo(s.installationMode),
+			Runtime: currentCompanionRuntimeInfo(),
+		},
 	})
 }
 
@@ -1207,6 +1467,8 @@ func (s *Server) companionInfo(ctx context.Context) companion {
 		Status:           "ready",
 		Version:          buildinfo.NormalizedVersion(),
 		InstallationMode: s.installationMode,
+		App:              currentCompanionAppInfo(s.installationMode),
+		Runtime:          currentCompanionRuntimeInfo(),
 		Update:           s.macAppReleaseInfo(ctx),
 		Features: companionFeatures{
 			ThemeInstallEnabled:     themeInstallEnabled(),
@@ -1216,7 +1478,11 @@ func (s *Server) companionInfo(ctx context.Context) companion {
 }
 
 func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
-	installedVersion := normalizeMacAppReleaseVersion(buildinfo.NormalizedVersion())
+	app := currentCompanionAppInfo(s.installationMode)
+	installedVersion := normalizeMacAppReleaseVersion(app.Version)
+	if installedVersion == "" {
+		installedVersion = normalizeMacAppReleaseVersion(buildinfo.NormalizedVersion())
+	}
 	now := time.Now().UTC()
 
 	s.macAppReleaseMu.Lock()
@@ -1942,6 +2208,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.clearDisplayVerification("")
+	s.clearConfiguredDeviceState()
 	writeJSON(w, http.StatusOK, statusResponse{
 		OK:        true,
 		Companion: s.companionInfo(r.Context()),
@@ -1962,6 +2229,11 @@ func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 		device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, cfg.DeviceToken, false)
 	} else {
 		device = withDeviceHealthProbeError(device, err)
+	}
+	if device.Ready {
+		device.ConnectionState = deviceConnectionReady
+	} else {
+		device.ConnectionState = deviceConnectionRetrying
 	}
 	writeJSON(w, http.StatusOK, struct {
 		OK     bool       `json:"ok"`
@@ -2291,6 +2563,8 @@ func (s *Server) repairDeviceOnce(
 	if !device.Ready {
 		return deviceInfo{}, &repairStageError{stage: "display-render", err: errors.New("device is reachable but not ready")}
 	}
+	device.ConnectionState = deviceConnectionReady
+	device.LastSeenAt = s.currentTime().Format(time.RFC3339Nano)
 	return device, nil
 }
 
@@ -3179,6 +3453,7 @@ func (s *Server) createFirmwareUpdateJob(cfg runtimeconfig.Config) firmwareUpdat
 	job := &firmwareUpdateJob{
 		ID:        id,
 		Phase:     "installing",
+		Stage:     "validating_artifact",
 		Message:   "Preparing VibeTV update.",
 		Progress:  5,
 		StartedAt: time.Now().UTC(),
@@ -3195,19 +3470,58 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		defer s.deviceMaintenanceMu.Unlock()
 
 		s.firmwareUpdateActive.Store(true)
+		streamPaused := false
 		if s.pauseDisplayStream != nil {
 			s.pauseDisplayStream(true)
+			streamPaused = true
+		}
+		resumeStream := func() {
+			if !streamPaused {
+				return
+			}
+			streamPaused = false
+			s.pauseDisplayStream(false)
 		}
 		defer func() {
 			s.firmwareUpdateActive.Store(false)
-			if s.pauseDisplayStream != nil {
-				s.pauseDisplayStream(false)
-			}
+			resumeStream()
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), firmwareUpdateJobTime)
 		defer cancel()
 		writer := &firmwareUpdateProgressWriter{server: s, jobID: jobID}
 		err := s.updateFirmware(ctx, s.home, cfg, req, writer)
+		s.firmwareUpdateActive.Store(false)
+		resumeStream()
+
+		snapshot, _ := s.firmwareUpdateJobSnapshot(jobID)
+		shouldVerify := err == nil || (snapshot.Result != nil && snapshot.Result.UploadAccepted)
+		if shouldVerify {
+			outcome, attentionMessage, verifyErr := s.verifyFirmwareUpdateResult(ctx, jobID, cfg)
+			if verifyErr == nil {
+				finishedAt := time.Now().UTC()
+				s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+					job.Progress = 100
+					job.FinishedAt = &finishedAt
+					job.Outcome = outcome
+					if attentionMessage != "" {
+						job.Phase = "attention"
+						job.Message = attentionMessage
+						job.Warnings = append(job.Warnings, attentionMessage)
+						appendFirmwareUpdateJobLog(job, attentionMessage)
+						return
+					}
+					job.Phase = "complete"
+					job.Message = "Update complete."
+					appendFirmwareUpdateJobLog(job, "Update complete.")
+				})
+				return
+			}
+			if err == nil {
+				err = verifyErr
+			} else {
+				err = fmt.Errorf("%v; final verification: %w", err, verifyErr)
+			}
+		}
 		finishedAt := time.Now().UTC()
 		if err != nil {
 			if detail := sanitizeErrorDetail(err); detail != "" {
@@ -3224,18 +3538,129 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 			})
 			return
 		}
-		s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
-			job.Phase = "complete"
-			job.Message = "Update complete."
-			job.Progress = 100
-			job.FinishedAt = &finishedAt
-			job.Result = &firmwareUpdateResult{
-				Firmware: strings.TrimSpace(job.firmware),
-				Target:   strings.TrimSpace(job.target),
-			}
-			appendFirmwareUpdateJobLog(job, "Update complete.")
-		})
 	}()
+}
+
+func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, initialCfg runtimeconfig.Config) (string, string, error) {
+	snapshot, ok := s.firmwareUpdateJobSnapshot(jobID)
+	if !ok || snapshot.Result == nil {
+		return "", "", errors.New("firmware update produced no verification result")
+	}
+	expectedFirmware := strings.TrimSpace(snapshot.Result.Firmware)
+	expectedDeviceID := strings.TrimSpace(snapshot.Result.DeviceID)
+	target := strings.TrimSpace(snapshot.Result.Target)
+	if expectedFirmware == "" || expectedDeviceID == "" || target == "" {
+		return "", "", errors.New("firmware update result is missing firmware, device id, or target")
+	}
+	cfg := initialCfg
+	if current, err := s.loadConfig(s.home); err == nil {
+		cfg = current
+	}
+	token := strings.TrimSpace(cfg.DeviceToken)
+	s.setFirmwareUpdateStage(jobID, "verifying_firmware")
+	hello, err := s.getHello(ctx, target, token)
+	if err != nil {
+		return "", "", fmt.Errorf("verify installed firmware: %w", err)
+	}
+	if !strings.EqualFold(expectedDeviceID, strings.TrimSpace(hello.DeviceID)) {
+		return "", "", fmt.Errorf("VibeTV identity mismatch after update: expected=%q got=%q", expectedDeviceID, strings.TrimSpace(hello.DeviceID))
+	}
+	if strings.TrimSpace(hello.Firmware) != expectedFirmware {
+		return "", "", fmt.Errorf("VibeTV firmware mismatch after update: expected=%q got=%q", expectedFirmware, strings.TrimSpace(hello.Firmware))
+	}
+	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+		result.HelloVerified = true
+		result.Target = target
+		result.Firmware = strings.TrimSpace(hello.Firmware)
+	})
+	if strings.TrimSpace(cfg.DeviceTarget) != target {
+		cfg.DeviceTarget = target
+		if err := s.saveConfig(s.home, cfg); err != nil {
+			return "", "", fmt.Errorf("save rediscovered VibeTV target: %w", err)
+		}
+	}
+
+	s.setFirmwareUpdateStage(jobID, "verifying_health")
+	healthDeadline := time.Now().Add(firmwareHealthVerifyTime)
+	var health deviceHealth
+	for {
+		health, err = s.getHealth(ctx, target, token)
+		if err == nil && health.OK {
+			break
+		}
+		if time.Now().After(healthDeadline) {
+			return firmwareAttentionOutcome(snapshot, "health"), "Firmware is current, but VibeTV health still needs attention.", nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+		result.HealthVerified = true
+	})
+
+	s.setFirmwareUpdateStage(jobID, "restarting_stream")
+	baseline := health
+	streamStartedAt := time.Now().UTC()
+	if err := s.startDisplayStream(ctx, target); err != nil {
+		return firmwareAttentionOutcome(snapshot, "stream"), "Firmware is current, but the display stream could not restart.", nil
+	}
+	stream := s.waitForFreshDisplayStream(ctx, target, streamStartedAt)
+	if !displayStreamHealthyForTarget(&stream, target) {
+		return firmwareAttentionOutcome(snapshot, "stream"), "Firmware is current, but the display stream still needs attention.", nil
+	}
+	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+		result.StreamVerified = true
+	})
+
+	s.setFirmwareUpdateStage(jobID, "verifying_render")
+	if _, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream); err != nil {
+		return firmwareAttentionOutcome(snapshot, "render"), "Firmware is current, but the picture could not be verified.", nil
+	}
+	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+		result.RenderVerified = true
+	})
+	if snapshot.Outcome == "already_current" {
+		return "already_current", "", nil
+	}
+	return "updated", "", nil
+}
+
+func firmwareAttentionOutcome(job firmwareUpdateJob, kind string) string {
+	prefix := "firmware_current_"
+	switch kind {
+	case "health":
+		return prefix + "health_attention"
+	case "stream":
+		return prefix + "stream_attention"
+	default:
+		return prefix + "render_attention"
+	}
+}
+
+func (s *Server) setFirmwareUpdateStage(jobID, stage string) {
+	s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+		job.Stage = stage
+		message, progress := firmwareUpdateStageProgress(stage)
+		if message != "" {
+			job.Message = message
+			appendFirmwareUpdateJobLog(job, message)
+		}
+		if progress > job.Progress {
+			job.Progress = progress
+		}
+	})
+}
+
+func (s *Server) updateFirmwareVerification(jobID string, update func(*firmwareUpdateResult)) {
+	s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+		if job.Result == nil {
+			job.Result = &firmwareUpdateResult{}
+		}
+		update(job.Result)
+	})
 }
 
 func (s *Server) updateFirmwareUpdateJob(jobID string, update func(*firmwareUpdateJob)) {
@@ -3267,6 +3692,7 @@ func cloneFirmwareUpdateJob(job *firmwareUpdateJob) firmwareUpdateJob {
 	}
 	clone := *job
 	clone.Logs = append([]string(nil), job.Logs...)
+	clone.Warnings = append([]string(nil), job.Warnings...)
 	if job.Result != nil {
 		result := *job.Result
 		clone.Result = &result
@@ -3308,6 +3734,13 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 	if line == "" || w.server == nil {
 		return
 	}
+	if strings.HasPrefix(line, firmwareUpdateEventPrefix) {
+		var event firmwareUpdateEvent
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, firmwareUpdateEventPrefix)), &event); err == nil {
+			w.server.applyFirmwareUpdateEvent(w.jobID, event)
+		}
+		return
+	}
 	w.server.updateFirmwareUpdateJob(w.jobID, func(job *firmwareUpdateJob) {
 		message, progress, ok := customerFirmwareUpdateProgress(line, job)
 		if !ok {
@@ -3319,6 +3752,82 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 		}
 		appendFirmwareUpdateJobLog(job, message)
 	})
+}
+
+const firmwareUpdateEventPrefix = "CODEX_FIRMWARE_UPDATE_EVENT "
+
+type firmwareUpdateEvent struct {
+	Stage             string `json:"stage"`
+	Phase             string `json:"phase,omitempty"`
+	Outcome           string `json:"outcome,omitempty"`
+	Firmware          string `json:"firmware,omitempty"`
+	Target            string `json:"target,omitempty"`
+	DeviceID          string `json:"deviceId,omitempty"`
+	ArtifactValidated bool   `json:"artifactValidated,omitempty"`
+	UploadAccepted    bool   `json:"uploadAccepted,omitempty"`
+	HelloVerified     bool   `json:"helloVerified,omitempty"`
+}
+
+func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEvent) {
+	s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+		if stage := strings.TrimSpace(event.Stage); stage != "" {
+			job.Stage = stage
+		}
+		if phase := strings.TrimSpace(event.Phase); phase != "" {
+			job.Phase = phase
+		}
+		if outcome := strings.TrimSpace(event.Outcome); outcome != "" {
+			job.Outcome = outcome
+		}
+		if job.Result == nil {
+			job.Result = &firmwareUpdateResult{}
+		}
+		if value := strings.TrimSpace(event.Firmware); value != "" {
+			job.firmware = value
+			job.Result.Firmware = value
+		}
+		if value := strings.TrimSpace(event.Target); value != "" {
+			job.target = value
+			job.Result.Target = value
+		}
+		if value := strings.TrimSpace(event.DeviceID); value != "" {
+			job.Result.DeviceID = value
+		}
+		job.Result.ArtifactValidated = job.Result.ArtifactValidated || event.ArtifactValidated
+		job.Result.UploadAccepted = job.Result.UploadAccepted || event.UploadAccepted
+		job.Result.HelloVerified = job.Result.HelloVerified || event.HelloVerified
+		message, progress := firmwareUpdateStageProgress(job.Stage)
+		if message != "" {
+			job.Message = message
+			appendFirmwareUpdateJobLog(job, message)
+		}
+		if progress > job.Progress {
+			job.Progress = progress
+		}
+	})
+}
+
+func firmwareUpdateStageProgress(stage string) (string, int) {
+	switch strings.TrimSpace(stage) {
+	case "validating_artifact":
+		return "Validating update.", 20
+	case "uploading":
+		return "Updating VibeTV.", 55
+	case "rebooting":
+		return "Restarting VibeTV.", 70
+	case "rediscovering":
+		return "Finding VibeTV again.", 76
+	case "verifying_firmware":
+		return "Checking installed firmware.", 82
+	case "verifying_health":
+		return "Checking VibeTV health.", 87
+	case "restarting_stream":
+		return "Restarting display stream.", 92
+	case "verifying_render":
+		return "Checking the picture.", 97
+	default:
+		return "", 0
+	}
 }
 
 func customerFirmwareUpdateProgress(line string, job *firmwareUpdateJob) (string, int, bool) {
@@ -3418,6 +3927,17 @@ func (s *Server) startMacAppUpdateJob(_ context.Context, jobID string, req macAp
 		err := s.updateMacApp(ctx, s.home, s.addr, req, writer)
 		finishedAt := time.Now().UTC()
 		if err != nil {
+			if errors.Is(err, errMacAppActionRequired) {
+				s.updateMacAppUpdateJob(jobID, func(job *macAppUpdateJob) {
+					job.Phase = "action_required"
+					job.Message = "Finish installing the Mac App in Applications."
+					job.Progress = 95
+					job.FinishedAt = &finishedAt
+					job.Result = &macAppUpdateResult{Version: strings.TrimSpace(job.version)}
+					appendMacAppUpdateJobLog(job, "Mac App installation needs customer action.")
+				})
+				return
+			}
 			apiErr := macAppUpdateErrorPayload(err)
 			s.updateMacAppUpdateJob(jobID, func(job *macAppUpdateJob) {
 				job.Phase = "error"
@@ -3650,6 +4170,11 @@ func firmwareUpdateDiagnosticDetail(job firmwareUpdateJob) string {
 			return "Last VibeTV update failed: " + strings.TrimSpace(job.Error.Message)
 		}
 		return "Last VibeTV update failed."
+	case "attention":
+		if strings.TrimSpace(job.Message) != "" {
+			return strings.TrimSpace(job.Message)
+		}
+		return "Firmware is current, but VibeTV still needs attention."
 	default:
 		return "VibeTV update is still running."
 	}
@@ -3663,6 +4188,9 @@ func firmwareUpdateDiagnosticErrorCode(job firmwareUpdateJob) string {
 }
 
 func firmwareUpdateDiagnosticNextAction(job firmwareUpdateJob) string {
+	if job.Phase == "attention" {
+		return "Use connection or picture repair. Do not install the same firmware again."
+	}
 	if job.Phase != "error" || job.Error == nil {
 		return ""
 	}
@@ -3729,6 +4257,10 @@ curl -fsSL "$installer_url" | bash -s -- "$@"
 		cmd.Env = append(os.Environ(), "HOME="+home)
 	}
 	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 20 {
+			return errMacAppActionRequired
+		}
 		return fmt.Errorf("mac app update command failed: %w", err)
 	}
 	return nil
@@ -3844,7 +4376,7 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 		writeDeviceNotFound(w)
 		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
 	}
-	hello, err := s.getHello(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
+	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
 	if err != nil {
 		// A read-only status poll must never fan out into a subnet scan. The
 		// Control Center polls this endpoint frequently; when VibeTV is offline,
@@ -3855,6 +4387,21 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
 	}
 	return cfg, hello, true
+}
+
+func (s *Server) clearConfiguredDeviceState() {
+	s.connectionMu.Lock()
+	for _, state := range s.connectionStates {
+		if state != nil && state.recoveryCancel != nil {
+			state.recoveryCancel()
+		}
+	}
+	clear(s.connectionStates)
+	s.connectionMu.Unlock()
+	s.probeMu.Lock()
+	clear(s.helloProbeCache)
+	clear(s.healthProbeCache)
+	s.probeMu.Unlock()
 }
 
 func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) (string, protocol.DeviceHello, error) {
@@ -4160,6 +4707,39 @@ func (s *Server) getHello(ctx context.Context, target, token string) (protocol.D
 }
 
 func (s *Server) getHelloProbe(ctx context.Context, target, token string, timeout time.Duration) (protocol.DeviceHello, error) {
+	if timeout <= 0 || s.probeCacheTime <= 0 {
+		return s.getHelloProbeDirect(ctx, target, token, timeout)
+	}
+	key := deviceProbeKey(target, token)
+	now := s.currentTime()
+	s.probeMu.Lock()
+	if cached, ok := s.helloProbeCache[key]; ok && now.Sub(cached.at) < s.probeCacheTime {
+		s.probeMu.Unlock()
+		return cached.hello, cached.err
+	}
+	if flight := s.helloProbeFlights[key]; flight != nil {
+		s.probeMu.Unlock()
+		select {
+		case <-flight.done:
+			return flight.hello, flight.err
+		case <-ctx.Done():
+			return protocol.DeviceHello{}, ctx.Err()
+		}
+	}
+	flight := &helloProbeFlight{done: make(chan struct{})}
+	s.helloProbeFlights[key] = flight
+	s.probeMu.Unlock()
+
+	flight.hello, flight.err = s.getHelloProbeDirect(ctx, target, token, timeout)
+	s.probeMu.Lock()
+	s.helloProbeCache[key] = helloProbeSnapshot{at: s.currentTime(), hello: flight.hello, err: flight.err}
+	delete(s.helloProbeFlights, key)
+	close(flight.done)
+	s.probeMu.Unlock()
+	return flight.hello, flight.err
+}
+
+func (s *Server) getHelloProbeDirect(ctx context.Context, target, token string, timeout time.Duration) (protocol.DeviceHello, error) {
 	if timeout <= 0 {
 		return s.getHello(ctx, target, token)
 	}
@@ -4188,6 +4768,9 @@ type deviceHealth struct {
 	// It is intentionally not populated from device JSON.
 	correlatedFrameProof bool
 	System               struct {
+		BootID      string `json:"bootId"`
+		UptimeMs    uint64 `json:"uptimeMs"`
+		ResetCount  uint32 `json:"resetCount"`
 		ResetReason string `json:"resetReason"`
 	} `json:"system"`
 	Display struct {
@@ -4217,12 +4800,49 @@ func (s *Server) getHealth(ctx context.Context, target, token string) (deviceHea
 }
 
 func (s *Server) getHealthProbe(ctx context.Context, target, token string, timeout time.Duration) (deviceHealth, error) {
+	if timeout <= 0 || s.probeCacheTime <= 0 {
+		return s.getHealthProbeDirect(ctx, target, token, timeout)
+	}
+	key := deviceProbeKey(target, token)
+	now := s.currentTime()
+	s.probeMu.Lock()
+	if cached, ok := s.healthProbeCache[key]; ok && now.Sub(cached.at) < s.probeCacheTime {
+		s.probeMu.Unlock()
+		return cached.health, cached.err
+	}
+	if flight := s.healthProbeFlights[key]; flight != nil {
+		s.probeMu.Unlock()
+		select {
+		case <-flight.done:
+			return flight.health, flight.err
+		case <-ctx.Done():
+			return deviceHealth{}, ctx.Err()
+		}
+	}
+	flight := &healthProbeFlight{done: make(chan struct{})}
+	s.healthProbeFlights[key] = flight
+	s.probeMu.Unlock()
+
+	flight.health, flight.err = s.getHealthProbeDirect(ctx, target, token, timeout)
+	s.probeMu.Lock()
+	s.healthProbeCache[key] = healthProbeSnapshot{at: s.currentTime(), health: flight.health, err: flight.err}
+	delete(s.healthProbeFlights, key)
+	close(flight.done)
+	s.probeMu.Unlock()
+	return flight.health, flight.err
+}
+
+func (s *Server) getHealthProbeDirect(ctx context.Context, target, token string, timeout time.Duration) (deviceHealth, error) {
 	if timeout <= 0 {
 		return s.getHealth(ctx, target, token)
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return s.getHealth(probeCtx, target, token)
+}
+
+func deviceProbeKey(target, token string) string {
+	return normalizeTarget(target) + "\x00" + strings.TrimSpace(token)
 }
 
 func (s *Server) captureDisplayRenderBaseline(ctx context.Context, target, token string) (deviceHealth, error) {
@@ -4782,6 +5402,58 @@ func macAppInstallationMode() string {
 	}
 }
 
+func currentCompanionAppInfo(installationMode string) companionAppInfo {
+	version := strings.TrimSpace(os.Getenv(macAppVersionEnv))
+	build := strings.TrimSpace(os.Getenv(macAppBuildEnv))
+	appPath := companionAppBundlePath()
+	installed := strings.HasPrefix(filepath.Clean(appPath), filepath.Clean("/Applications")+string(os.PathSeparator))
+	return companionAppInfo{
+		Version:                 version,
+		Build:                   build,
+		Path:                    appPath,
+		InstallationMode:        strings.TrimSpace(installationMode),
+		InstalledInApplications: installed,
+	}
+}
+
+func currentCompanionRuntimeInfo() companionRuntimeInfo {
+	executable, _ := os.Executable()
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+		executable = resolved
+	}
+	return companionRuntimeInfo{
+		Version:       buildinfo.NormalizedVersion(),
+		Commit:        strings.TrimSpace(buildinfo.Commit),
+		BuiltAt:       strings.TrimSpace(buildinfo.Date),
+		Executable:    strings.TrimSpace(executable),
+		PID:           os.Getpid(),
+		ListenerOwner: displayStreamLaunchAgentLabel(),
+	}
+}
+
+func companionAppBundlePath() string {
+	executable, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(executable); resolveErr == nil {
+		executable = resolved
+	}
+	helpersDir := filepath.Dir(executable)
+	if filepath.Base(helpersDir) != "Helpers" {
+		return ""
+	}
+	contentsDir := filepath.Dir(helpersDir)
+	if filepath.Base(contentsDir) != "Contents" {
+		return ""
+	}
+	appDir := filepath.Dir(contentsDir)
+	if !strings.HasSuffix(strings.ToLower(appDir), ".app") {
+		return ""
+	}
+	return filepath.Clean(appDir)
+}
+
 func minInt(a, b int) int {
 	if a < b {
 		return a
@@ -4832,9 +5504,17 @@ func withDisplayStreamInfo(device deviceInfo, stream displayStreamInfo) deviceIn
 }
 
 func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
+	lastResetAt := ""
+	if health.System.UptimeMs > 0 {
+		lastResetAt = time.Now().UTC().Add(-time.Duration(health.System.UptimeMs) * time.Millisecond).Format(time.RFC3339Nano)
+	}
 	device.Health = &deviceHealthInfo{
 		OK:          health.OK,
+		BootID:      strings.TrimSpace(health.System.BootID),
+		UptimeMs:    health.System.UptimeMs,
+		ResetCount:  health.System.ResetCount,
 		ResetReason: strings.TrimSpace(health.System.ResetReason),
+		LastResetAt: lastResetAt,
 		RenderKind:  strings.TrimSpace(health.Render.LastKind),
 	}
 	device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)

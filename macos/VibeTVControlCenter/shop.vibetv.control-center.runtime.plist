@@ -29,6 +29,10 @@
       <string>shop.vibetv.control-center.runtime</string>
       <key>VIBETV_DISABLE_MAC_APP_SELF_UPDATE</key>
       <string>1</string>
+      <key>VIBETV_MAC_APP_VERSION</key>
+      <string>__VIBETV_MAC_APP_VERSION__</string>
+      <key>VIBETV_MAC_APP_BUILD</key>
+      <string>__VIBETV_MAC_APP_BUILD__</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

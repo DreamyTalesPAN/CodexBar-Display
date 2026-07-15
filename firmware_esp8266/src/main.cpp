@@ -40,6 +40,7 @@ constexpr int kMaxFrameBytes = 2048;
 constexpr uint16_t kDnsPort = 53;
 constexpr uint32_t kWifiCredsMagic = 0x56544231UL;  // VTB1
 constexpr uint32_t kBootRecoveryMagic = 0x56544252UL;  // VTBR
+constexpr uint32_t kBootDiagnosticsMagic = 0x56544244UL;  // VTBD
 constexpr size_t kWifiSsidBytes = 33;
 constexpr size_t kWifiPasswordBytes = 65;
 constexpr size_t kWifiCredsBytes = 4 + kWifiSsidBytes + kWifiPasswordBytes;
@@ -47,7 +48,10 @@ constexpr size_t kBootRecoveryOffset = kWifiCredsBytes;
 constexpr size_t kBootRecoveryBytes = 6;
 constexpr size_t kBootRecoveryCounterOffset = kBootRecoveryOffset + 4;
 constexpr size_t kBootRecoveryUploadOffset = kBootRecoveryOffset + 5;
-constexpr size_t kEepromBytes = kWifiCredsBytes + kBootRecoveryBytes;
+constexpr size_t kBootDiagnosticsOffset = kBootRecoveryOffset + kBootRecoveryBytes;
+constexpr size_t kBootDiagnosticsBytes = 8;
+constexpr size_t kBootResetCounterOffset = kBootDiagnosticsOffset + 4;
+constexpr size_t kEepromBytes = kWifiCredsBytes + kBootRecoveryBytes + kBootDiagnosticsBytes;
 constexpr unsigned long kWifiConnectTimeoutMs = 20000UL;
 constexpr unsigned long kWifiReconnectRetryMs = 5000UL;
 constexpr unsigned long kWifiReconnectFallbackMs = 120000UL;
@@ -191,7 +195,9 @@ OtaUploadDiagnostics otaDiagnostics;
 RuntimeRenderDiagnostics renderDiagnostics;
 DeviceSettings deviceSettings;
 String deviceAuthToken;
+String bootID;
 String bootResetReasonJSON;
+uint32_t bootResetCounter = 0;
 
 void addCorsHeaders();
 
@@ -908,6 +914,23 @@ void clearBootRecoveryCounter() {
   Serial.println("boot_recovery_counter_cleared");
 }
 
+uint32_t incrementBootResetCounter() {
+  EEPROM.begin(kEepromBytes);
+  uint32_t magic = 0;
+  uint32_t counter = 0;
+  EEPROM.get(kBootDiagnosticsOffset, magic);
+  if (magic == kBootDiagnosticsMagic) {
+    EEPROM.get(kBootResetCounterOffset, counter);
+  }
+  if (counter < 0xFFFFFFFFUL) {
+    ++counter;
+  }
+  EEPROM.put(kBootDiagnosticsOffset, kBootDiagnosticsMagic);
+  EEPROM.put(kBootResetCounterOffset, counter);
+  EEPROM.commit();
+  return counter;
+}
+
 bool consumeBootRecoveryTrigger() {
   if (readBootRecoveryUploadActive()) {
     clearBootRecoveryCounter();
@@ -1336,7 +1359,7 @@ void handleHealth() {
   const codexbar_display::esp8266::RendererHealthSnapshot snapshot = renderer.HealthSnapshot();
 
   String out;
-  out.reserve(768);
+  out.reserve(896);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
@@ -1345,6 +1368,12 @@ void handleHealth() {
   out += String(ESP.getMaxFreeBlockSize());
   out += ",\"heapFragmentationPercent\":";
   out += String(ESP.getHeapFragmentation());
+  out += ",\"bootId\":\"";
+  out += jsonEscape(bootID);
+  out += "\",\"uptimeMs\":";
+  out += String(millis());
+  out += ",\"resetCount\":";
+  out += String(bootResetCounter);
   out += ",\"resetReason\":";
   out += bootResetReasonJSON;
   out += "},";
@@ -2567,6 +2596,12 @@ void setup() {
   bootResetReasonJSON = "\"";
   bootResetReasonJSON += jsonEscape(ESP.getResetReason());
   bootResetReasonJSON += "\"";
+  bootResetCounter = incrementBootResetCounter();
+  bootID = String(ESP.getChipId(), HEX);
+  bootID += "-";
+  bootID += String(bootResetCounter);
+  bootID += "-";
+  bootID += String(ESP.getCycleCount(), HEX);
   renderer.Setup(runtimeCtx);
   loadDeviceSettings();
   loadDeviceAuthToken();
