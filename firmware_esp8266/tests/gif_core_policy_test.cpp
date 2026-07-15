@@ -201,12 +201,12 @@ bool testDecoderAllocationStaysInsideRealPlayback(
     return false;
   }
 
-  const std::size_t headerRead = gifCore.find("ReadGifDimensions(");
-  const std::size_t decoderAllocation = gifCore.find("if (!PrepareDecoder())", headerRead);
+  const std::size_t validation = gifCore.find("ValidateGifAssetFile(");
+  const std::size_t decoderAllocation = gifCore.find("if (!PrepareDecoder())", validation);
   if (!expect(
-          headerRead != std::string::npos && decoderAllocation != std::string::npos &&
-              headerRead < decoderAllocation,
-          "decoder allocation must happen only after a valid GIF header is read for playback")) {
+          validation != std::string::npos && decoderAllocation != std::string::npos &&
+              validation < decoderAllocation,
+          "decoder allocation must happen only after complete GIF profile validation")) {
     return false;
   }
   if (!expect(
@@ -215,6 +215,19 @@ bool testDecoderAllocationStaysInsideRealPlayback(
     return false;
   }
   return true;
+}
+
+bool testInternalUploadPathIsRejected(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t pathValidation = mainSource.find("if (!isSafeAssetPath(assetUploadPath))");
+  const std::size_t reservedValidation =
+      mainSource.find("if (assetUploadPath == kAssetUploadTemporaryPath)", pathValidation);
+  const std::size_t temporaryOpen =
+      mainSource.find("LittleFS.open(kAssetUploadTemporaryPath, \"w\")", reservedValidation);
+  return expect(
+      pathValidation != std::string::npos && reservedValidation != std::string::npos &&
+          temporaryOpen != std::string::npos && reservedValidation < temporaryOpen,
+      "the internal staging path must be rejected before opening an external upload");
 }
 
 }  // namespace
@@ -235,10 +248,13 @@ int main(int argc, char** argv) {
   if (!testBootRecoveryOnlyCountsPhysicalResets()) {
     return 1;
   }
-  if (!expect(argc == 3, "source paths are required for decoder lifecycle test")) {
+  if (!expect(argc == 4, "source paths are required for firmware policy tests")) {
     return 1;
   }
   if (!testDecoderAllocationStaysInsideRealPlayback(argv[1], argv[2])) {
+    return 1;
+  }
+  if (!testInternalUploadPathIsRejected(argv[3])) {
     return 1;
   }
 

@@ -214,7 +214,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if opts.Verbose {
 		fmt.Fprintf(out, "Device: board=%s protocol=%d target=%s\n", caps.Board, caps.NegotiatedProtocolVersion, displayTarget)
 	}
-	if err := themespec.ValidateAgainstCapabilities(pack.ThemeSpec, pack.ThemeSpecRaw, caps); err != nil {
+	if err := pack.ValidateAgainstCapabilities(caps); err != nil {
 		return Result{}, &InstallError{
 			Op:   "theme-pack/capabilities",
 			Code: errcode.ProtocolThemeSpecIncompatible,

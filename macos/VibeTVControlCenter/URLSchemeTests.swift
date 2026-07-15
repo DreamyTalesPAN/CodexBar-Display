@@ -169,6 +169,16 @@ func runURLSchemeTests() {
         ) == nil,
         "local-network privacy preflight must not contact arbitrary hosts"
     )
+    let existingDeviceStatus = makeExistingDeviceStatusRequest(timeout: 7)
+    require(
+        existingDeviceStatus?.url?.absoluteString == "http://127.0.0.1:47832/v1/status",
+        "existing-device preparation must inspect device status, not runtime-only health"
+    )
+    require(
+        existingDeviceStatus?.httpMethod == "GET" &&
+            existingDeviceStatus?.timeoutInterval == 7,
+        "existing-device status inspection must stay read-only and bounded"
+    )
     require(
         shouldRunRuntimeValidationUnregister(
             arguments: [

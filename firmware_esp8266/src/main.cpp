@@ -12,6 +12,7 @@
 #include "../../firmware_shared/app_transport.h"
 #include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "boot_recovery_policy.h"
+#include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
 
 #ifndef CODEXBAR_DISPLAY_BOARD_ID
@@ -74,6 +75,7 @@ const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
 const char kDeviceAuthTokenPath[] = "/auth";
 const char kActiveThemeSpecPathFile[] = "/theme-active";
+const char kAssetUploadTemporaryPath[] = "/.asset-upload.tmp";
 const char kDeviceAuthHeader[] = "X-VibeTV-Token";
 const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
 constexpr uint8_t kFirmwareUpdateNoticeTextCount = 3;
@@ -105,6 +107,8 @@ String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   out += String(codexbar_display::themespec::kMaxThemeSpecGifHeight);
   out += ",\"maxThemeGifPixels\":";
   out += String(codexbar_display::themespec::kMaxThemeSpecGifPixels);
+  out += ",\"maxThemeGifLzwBits\":";
+  out += String(codexbar_display::esp8266::kMaxThemeGifLzwBits);
   out += "}";
   return out;
 }
@@ -1516,16 +1520,45 @@ void finishAssetUploadRequest() {
   assetUploadInProgress = false;
 }
 
+bool assetPathLooksGif(const String& path);
+
 void discardPartialAssetUpload() {
-  if (assetUploadPath.length() == 0 || !isSafeAssetPath(assetUploadPath)) {
+  if (!LittleFS.begin() || !LittleFS.exists(kAssetUploadTemporaryPath)) {
     return;
   }
-  if (!LittleFS.begin() || !LittleFS.exists(assetUploadPath)) {
-    return;
-  }
-  if (LittleFS.remove(assetUploadPath)) {
+  if (LittleFS.remove(kAssetUploadTemporaryPath)) {
     Serial.printf("asset_upload_discarded path=%s\n", assetUploadPath.c_str());
   }
+}
+
+bool validateCompletedAssetUpload() {
+  if (!assetPathLooksGif(assetUploadPath)) {
+    return true;
+  }
+  codexbar_display::esp8266::GifValidationInfo info;
+  const codexbar_display::esp8266::GifValidationError error =
+      codexbar_display::esp8266::ValidateGifAssetFile(
+          kAssetUploadTemporaryPath,
+          codexbar_display::esp8266::kMaxThemeGifLzwBits,
+          &info);
+  if (error == codexbar_display::esp8266::GifValidationError::None) {
+    return true;
+  }
+  setAssetUploadError(
+      error == codexbar_display::esp8266::GifValidationError::LzwCodeSizeExceeded
+          ? "gif requires unsupported LZW width"
+          : "invalid gif");
+  return false;
+}
+
+bool promoteCompletedAssetUpload() {
+  // LittleFS rename is atomic and replaces an existing destination only after
+  // the temporary file has been fully written and, for GIFs, validated.
+  if (!LittleFS.rename(kAssetUploadTemporaryPath, assetUploadPath)) {
+    setAssetUploadError("commit asset failed");
+    return false;
+  }
+  return true;
 }
 
 String requestedAssetPath() {
@@ -1599,6 +1632,10 @@ void handleAssetUpload() {
       setAssetUploadError("invalid asset path");
       return;
     }
+    if (assetUploadPath == kAssetUploadTemporaryPath) {
+      setAssetUploadError("reserved asset path");
+      return;
+    }
     if (assetUploadContentLengthWouldExceedLimits(upload)) {
       setAssetUploadError("gif asset too large");
       return;
@@ -1613,10 +1650,11 @@ void handleAssetUpload() {
       setAssetUploadError("create parent directory failed");
       return;
     }
-    if (LittleFS.exists(assetUploadPath)) {
-      LittleFS.remove(assetUploadPath);
+    if (LittleFS.exists(kAssetUploadTemporaryPath) && !LittleFS.remove(kAssetUploadTemporaryPath)) {
+      setAssetUploadError("remove stale upload failed");
+      return;
     }
-    assetUploadFile = LittleFS.open(assetUploadPath, "w");
+    assetUploadFile = LittleFS.open(kAssetUploadTemporaryPath, "w");
     if (!assetUploadFile) {
       setAssetUploadError("open asset failed");
       return;
@@ -1644,7 +1682,9 @@ void handleAssetUpload() {
       assetUploadFile.flush();
       assetUploadFile.close();
     }
-    if (assetUploadError.length() == 0) {
+    if (assetUploadError.length() == 0 &&
+        validateCompletedAssetUpload() &&
+        promoteCompletedAssetUpload()) {
       assetUploadSucceeded = true;
       Serial.printf("asset_upload_success path=%s bytes=%zu\n", assetUploadPath.c_str(), upload.totalSize);
     }

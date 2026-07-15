@@ -13,6 +13,31 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: customer-facing Control Center setup changes from checkpoint
+  `091ed03` through `3025d78`, including WiFi confirmation, automatic VibeTV
+  search, identity-pinned selection, automatic pairing repair, manual address
+  fallback, and completed-setup handoff.
+- Customer rule: the existing `VibeTV is on WiFi` button starts the full search
+  and connection flow. While searching, no second action or address field is
+  shown. Zero results reveal the manual address fallback, one unambiguous or
+  known result connects automatically, and multiple unknown results require
+  only the unavoidable device choice. Pairing stays automatic and invisible.
+- Simplifications accepted: no new normal-path button, tab, setup step, or
+  technical explanation was added. Manual address validation prevents empty or
+  malformed submissions before they reach the Mac App. Search failure and
+  post-search connection failure use separate short recovery messages, each
+  with one `Try again` action; successful verification opens Overview and the
+  completed Setup view keeps only `Run setup again`.
+- Verification: the current customer diff was reviewed against
+  `docs/control-center-ui-principles.md` at HEAD `3025d78`. Browser coverage
+  includes delayed search with the fallback hidden, zero/one/many results,
+  one-known-among-many selection, empty and malformed addresses, unreachable
+  manual addresses, identity-pinned repair, bounded automatic pairing repair,
+  failed/unready connection states, direct Overview handoff, and completed
+  Setup. `npm run lint -- --max-warnings=0`, `npm run
+  check:customer-ui-copy`, `npm run test:customer-flows`, and `git diff
+  --check` passed locally. No hardware write was part of this UI review.
+
 - Reviewed scope: signed Preview DMG delivery, automatic recovery from a
   partially rendered firmware-update screen, and exclusive VibeTV traffic
   while a firmware update is running.

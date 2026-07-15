@@ -4,7 +4,8 @@ import ServiceManagement
 import WebKit
 
 private let controlCenterURLString = "http://127.0.0.1:47832/control-center"
-private let runtimeStatusURLString = "http://127.0.0.1:47832/v1/runtime-health"
+private let runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"
+private let runtimeDeviceStatusURLString = "http://127.0.0.1:47832/v1/status"
 private let runtimeDeviceRepairURLString = "http://127.0.0.1:47832/v1/device/repair"
 private let nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"
 private let controlCenterURLScheme = "vibetv"
@@ -143,6 +144,22 @@ func makeLocalNetworkPrivacyProbeRequest(
           url.password == nil,
           url.query == nil,
           url.fragment == nil else {
+        return nil
+    }
+    var request = URLRequest(
+        url: url,
+        cachePolicy: .reloadIgnoringLocalCacheData,
+        timeoutInterval: timeout
+    )
+    request.httpMethod = "GET"
+    return request
+}
+
+func makeExistingDeviceStatusRequest(
+    urlString: String = runtimeDeviceStatusURLString,
+    timeout: TimeInterval = runtimeHealthRequestTimeout
+) -> URLRequest? {
+    guard let url = URL(string: urlString) else {
         return nil
     }
     var request = URLRequest(
@@ -1037,17 +1054,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private func prepareExistingDeviceConnection(
         requireFreshFullFrame: Bool
     ) async -> ExistingDevicePreparationOutcome {
-        guard let statusURL = URL(string: runtimeStatusURLString),
+        guard let statusRequest = makeExistingDeviceStatusRequest(),
               let repairURL = URL(string: runtimeDeviceRepairURLString) else {
             return .failed("invalid local device preparation URL")
         }
-
-        var statusRequest = URLRequest(
-            url: statusURL,
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            timeoutInterval: runtimeHealthRequestTimeout
-        )
-        statusRequest.httpMethod = "GET"
         let statusResult: (Data, URLResponse)
         do {
             statusResult = try await URLSession.shared.data(
@@ -1194,7 +1204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private func waitForHealthyRuntime(
         expectedVersion: String
     ) async -> RuntimeHealthEvaluation {
-        guard let statusURL = URL(string: runtimeStatusURLString) else {
+        guard let statusURL = URL(string: runtimeHealthURLString) else {
             return .requestFailed("invalid local status URL")
         }
 

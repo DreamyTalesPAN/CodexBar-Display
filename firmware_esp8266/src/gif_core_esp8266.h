@@ -140,7 +140,6 @@ class GifCoreESP8266 {
   void NoteSuccess(GifFailureSlot slot, const char* path);
   bool IsBlocked(GifFailureSlot slot, const char* path);
 
-  bool ReadGifDimensions(const char* path, int& width, int& height);
   bool EnsureStorage(const char* path);
   void ConfigureDrawRect(TFT_eSPI& tft, const GifPlaybackRequest& request);
   void ClearDrawRect(TFT_eSPI& tft);

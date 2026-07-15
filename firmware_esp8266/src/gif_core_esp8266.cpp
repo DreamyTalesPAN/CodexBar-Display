@@ -3,12 +3,15 @@
 #if !defined(CODEXBAR_DISPLAY_PROBE_ONLY) && CODEXBAR_DISPLAY_GIF_CORE
 
 #include "renderer_esp8266_display_state.h"
+#include "gif_asset_validator_file.h"
 
 #include <cstdio>
 #include <cstring>
 
 namespace codexbar_display {
 namespace esp8266 {
+
+static_assert(sizeof(AnimatedGIF) <= 15U * 1024U, "AnimatedGIF decoder exceeds the ESP8266 heap profile");
 
 namespace {
 
@@ -154,35 +157,6 @@ bool GifCoreESP8266::IsBlocked(GifFailureSlot slot, const char* path) {
   return GifCorePolicy::IsBlocked(guard, millis());
 }
 
-bool GifCoreESP8266::ReadGifDimensions(const char* path, int& width, int& height) {
-  width = 0;
-  height = 0;
-  if (!fsMounted_ || path == nullptr || path[0] == '\0' || !LittleFS.exists(path)) {
-    return false;
-  }
-
-  File file = LittleFS.open(path, "r");
-  if (!file) {
-    return false;
-  }
-
-  uint8_t header[10] = {0};
-  const size_t bytesRead = file.read(header, sizeof(header));
-  file.close();
-  if (bytesRead < sizeof(header)) {
-    return false;
-  }
-
-  const bool gifHeader = (memcmp(header, "GIF87a", 6) == 0) || (memcmp(header, "GIF89a", 6) == 0);
-  if (!gifHeader) {
-    return false;
-  }
-
-  width = static_cast<int>(header[6] | (static_cast<uint16_t>(header[7]) << 8));
-  height = static_cast<int>(header[8] | (static_cast<uint16_t>(header[9]) << 8));
-  return width > 0 && height > 0;
-}
-
 bool GifCoreESP8266::EnsureStorage(const char* path) {
   if (fsMounted_) {
     filePresent_ = path != nullptr && path[0] != '\0' && LittleFS.exists(path);
@@ -295,17 +269,21 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
     return true;
   }
 
-  int width = 0;
-  int height = 0;
-  if (!ReadGifDimensions(request.assetPath, width, height)) {
-    NoteFailure(request.failureSlot, request.assetPath, "invalid_header");
+  GifValidationInfo validationInfo;
+  const GifValidationError validationError =
+      ValidateGifAssetFile(request.assetPath, kMaxThemeGifLzwBits, &validationInfo);
+  if (validationError != GifValidationError::None) {
+    NoteFailure(
+        request.failureSlot,
+        request.assetPath,
+        validationError == GifValidationError::LzwCodeSizeExceeded ? "lzw_profile" : "invalid_gif");
     Stop();
     return false;
   }
 
   Stop();
-  gifWidth_ = width;
-  gifHeight_ = height;
+  gifWidth_ = validationInfo.width;
+  gifHeight_ = validationInfo.height;
   ConfigureDrawRect(tft, request);
 
   if (!PrepareDecoder()) {

@@ -1,6 +1,9 @@
 package protocol
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	caps := CapabilitiesFromHello(DeviceHello{
@@ -30,6 +33,7 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 				MaxThemeGifWidth:        80,
 				MaxThemeGifHeight:       80,
 				MaxThemeGifPixels:       6400,
+				MaxThemeGifLzwBits:      11,
 				SupportedPrimitiveTypes: []string{"Text", "RECT", "progress", "gif"},
 				BuiltinThemes:           []string{"classic", "crt", "mini"},
 				CachedThemeID:           "mini-transport",
@@ -63,7 +67,7 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	if caps.MaxThemeSpecBytes != 1024 || caps.MaxThemePrimitives != 32 {
 		t.Fatalf("unexpected theme limits: bytes=%d primitives=%d", caps.MaxThemeSpecBytes, caps.MaxThemePrimitives)
 	}
-	if caps.MaxThemeGifAssets != 1 || caps.MaxThemeGifBytes != 24576 || caps.MaxThemeGifWidth != 80 || caps.MaxThemeGifHeight != 80 || caps.MaxThemeGifPixels != 6400 {
+	if caps.MaxThemeGifAssets != 1 || caps.MaxThemeGifBytes != 24576 || caps.MaxThemeGifWidth != 80 || caps.MaxThemeGifHeight != 80 || caps.MaxThemeGifPixels != 6400 || caps.MaxThemeGifLzwBits != 11 {
 		t.Fatalf("unexpected GIF limits: %+v", caps)
 	}
 	if got, want := caps.SupportedPrimitiveTypes, []string{"text", "rect", "progress", "gif"}; len(got) != len(want) {
@@ -83,6 +87,17 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	}
 	if caps.CachedThemeID != "mini-transport" || caps.CachedThemeRev != 3 {
 		t.Fatalf("unexpected theme cache descriptor: id=%q rev=%d", caps.CachedThemeID, caps.CachedThemeRev)
+	}
+}
+
+func TestCapabilitiesFromHelloMapsGIFLZWLimitFromJSON(t *testing.T) {
+	var hello DeviceHello
+	if err := json.Unmarshal([]byte(`{"kind":"hello","capabilities":{"theme":{"maxThemeGifLzwBits":11}}}`), &hello); err != nil {
+		t.Fatalf("decode hello: %v", err)
+	}
+	caps := CapabilitiesFromHello(hello)
+	if !caps.Known || caps.MaxThemeGifLzwBits != 11 {
+		t.Fatalf("expected mapped 11-bit GIF LZW capability, got %+v", caps)
 	}
 }
 
