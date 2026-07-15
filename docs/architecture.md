@@ -126,4 +126,5 @@ silently flash firmware.
 - Usage collector: `companion/internal/codexbar`
 - Device daemon/frame sending: `companion/internal/daemon`
 - Firmware: `firmware_esp8266`
-- Theme Studio: `tools/theme-studio`
+- Theme Studio UI: `apps/control-center/src/components/theme-studio-screen.tsx`
+- Theme Studio domain and ZIP logic: `apps/control-center/src/lib/theme-studio.ts`

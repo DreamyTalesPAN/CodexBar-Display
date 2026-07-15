@@ -41,13 +41,8 @@ Rules:
 
 ## CLI
 
-Sync the built-in Theme Studio presets into versioned pack sources:
-
-```bash
-node scripts/sync-theme-studio-packs.mjs
-```
-
-Build all pack ZIPs and the GitHub catalog:
+The versioned directories under `theme-packs/` are the source of truth for
+published themes. Build all pack ZIPs and the GitHub catalog with:
 
 ```bash
 node scripts/build-theme-packs.mjs

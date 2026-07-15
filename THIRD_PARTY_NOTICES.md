@@ -1,17 +1,5 @@
 # Third-Party Notices
 
-## TFT_eSPI Font Data
-
-`tools/theme-studio/src/tft-fonts.ts` contains generated preview data derived
-from TFT_eSPI `Fonts/Font16.c` and `Fonts/Font32rle.c`, so the Theme Studio can
-match the firmware's built-in text rendering.
-
-Source: https://github.com/Bodmer/TFT_eSPI
-
-TFT_eSPI is based on MIT-licensed Adafruit_ILI9341 code and includes font and
-graphics portions under the applicable upstream notices in the TFT_eSPI
-distribution.
-
 ## Clawd Tank Sprite Assets
 
 Portions of the Claude Creature theme sprite animation are adapted from Clawd Tank by Marcio Granzotto Rodrigues.

@@ -71,21 +71,14 @@ checks as every other theme install.
 The AI-assisted builder is intentionally not part of the first Theme Studio
 release. It needs a separate security design before it can be enabled.
 
-The older standalone developer tool is still available for deeper asset work:
-
-```bash
-./scripts/theme-studio.sh
-```
-
 Theme Studio can:
 
 - edit 240x240 layouts
-- import sprites and GIFs in the standalone developer tool
+- import sprites and GIFs in the local Control Center
 - preview live usage bindings
 - export theme packs from Control Center without an automatic hardware write
 - install the generated pack through the Mac App only after the customer clicks
   **Send to VibeTV**
-- publish/update theme-pack source files from developer workflows
 
 For reliable hardware themes, keep static visual detail in streamed assets and
 keep ThemeSpec JSON focused on live fields. Start with
