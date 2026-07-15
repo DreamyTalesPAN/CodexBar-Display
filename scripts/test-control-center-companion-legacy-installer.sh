@@ -527,6 +527,21 @@ run_install_hands_off_to_existing_app_without_second_dmg() {
   : > "${root}/curl.log"
   : > "${root}/api.log"
   : > "${root}/open.log"
+  cat > "${root}/fake-bin/plutil" <<'EOF'
+#!/usr/bin/env bash
+case "${2:-}" in
+  CFBundleIdentifier)
+    printf 'shop.vibetv.control-center\n'
+    ;;
+  CFBundleShortVersionString)
+    printf '9.9.9\n'
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+EOF
+  chmod +x "${root}/fake-bin/plutil"
   app_path="${root}/Applications/VibeTV Control Center.app"
   mkdir -p "${app_path}/Contents/MacOS"
   printf '#!/usr/bin/env bash\nexit 0\n' > "${app_path}/Contents/MacOS/VibeTVControlCenter"
