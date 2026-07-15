@@ -177,3 +177,35 @@ Conclusion:
   and the five-minute Claude stability soak.
 - This is preview evidence only. It does not authorize merge, tag, release, or
   publication of firmware or Mac App assets.
+
+### Final rc.2 artifact and IP-only discovery verification
+
+The earlier `1.0.36-rc.1` evidence above records the customer-path GIF and
+pairing tests performed on that preview. After removing the remaining mDNS
+runtime dependency, the final release candidate was rebuilt and installed once
+on the same approved canary. The following results supersede the artifact
+identity and final stability state above without replacing the earlier theme
+transition evidence:
+
+- Device ID: `9517433`
+- Address: `http://192.168.178.163`
+- Firmware: `1.0.36-rc.2`
+- Firmware SHA-256:
+  `b98964b4ae373c4f46d99e7d979fe6306fa870bc238e9268174ec671446f1012`
+- Firmware size: `459568` bytes; gzip size: `326363` bytes
+- Build usage: RAM `52.3%`; flash `43.6%`
+- Installed Mac App version observed through `/v1/status`: `1.0.44-rc.16`
+- The authenticated corrective OTA returned HTTP `200`; the same device ID
+  returned in `station` mode and reported `1.0.36-rc.2`.
+- Automatic device search found the known device at its IPv4 address while
+  `vibetv.local` did not resolve on the Mac.
+- A five-minute read-only soak completed `30/30` identity, firmware, and
+  station-mode checks without a restart or WiFi loss.
+- Final `/health` state with GIF-free Clippy active reported
+  `decoderAllocated:false`, `decoderOpen:false`, `renderOk:true`, free heap
+  `28928` bytes, largest free block `27528` bytes, and `5%` fragmentation.
+- The installed Mac App reported `connected:true`, `paired:true`, `ready:true`,
+  and a healthy running display stream to the same IPv4 target.
+
+No merge, production deployment, tag, or release was performed by this final
+verification.
