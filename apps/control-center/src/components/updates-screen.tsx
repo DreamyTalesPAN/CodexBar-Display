@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
   availableMacAppDmgDownloadUrl,
   type CompanionReleaseInfo,
@@ -79,7 +79,6 @@ export function UpdatesScreen({
   busyAction,
   updateStatus,
 }: UpdatesScreenProps) {
-  const [macAppDownloadStarted, setMacAppDownloadStarted] = useState(false);
   const installedFirmware =
     firmwareUpdate?.installedFirmware || device?.firmware || "Unknown";
   const canCheckFirmware = Boolean(device?.board && device?.firmware);
@@ -127,9 +126,9 @@ export function UpdatesScreen({
       : checkFailed
         ? "Update check failed"
         : macAppMigrationReady
-          ? "Move to the new Mac App"
+          ? "Update available"
           : requiresMacAppMigration
-            ? "New Mac App is being prepared"
+            ? "Update not ready"
             : anyUpdateAvailable
               ? "Update available"
               : "Up to date";
@@ -208,7 +207,6 @@ export function UpdatesScreen({
             macAppMigrationRequired={requiresMacAppMigration}
             macAppMigrationReady={macAppMigrationReady}
             macAppUpdateAvailable={macAppUpdateAvailable}
-            onDownloadStart={() => setMacAppDownloadStarted(true)}
             onClick={runPrimaryUpdate}
             updateReady={Boolean(
               updateAvailable
@@ -259,16 +257,6 @@ export function UpdatesScreen({
           />
         </dl>
 
-        {requiresMacAppMigration || (macAppUpdateAvailable && !nativeMacUpdateReady) ? (
-          <MacAppDmgUpdateNote
-            downloadReady={macAppDownloadReady}
-            downloadStarted={macAppDownloadStarted}
-            downloadUrl={macAppDownloadUrl}
-            migration={requiresMacAppMigration}
-            onDownloadStart={() => setMacAppDownloadStarted(true)}
-            showDownloadAction={updateAvailable}
-          />
-        ) : null}
       </section>
 
       <section className="border-b border-[#747A60] py-8">
@@ -318,7 +306,6 @@ function PrimaryUpdateAction({
   macAppMigrationRequired,
   macAppMigrationReady,
   macAppUpdateAvailable,
-  onDownloadStart,
   onClick,
   updateReady,
 }: {
@@ -332,12 +319,10 @@ function PrimaryUpdateAction({
   macAppMigrationRequired: boolean;
   macAppMigrationReady: boolean;
   macAppUpdateAvailable: boolean;
-  onDownloadStart: () => void;
   onClick: () => void | Promise<void>;
   updateReady: boolean;
 }) {
   if (
-    !firmwareUpdateAvailable &&
     macAppUpdateAvailable &&
     nativeUpdateUrl &&
     !disabled &&
@@ -349,13 +334,12 @@ function PrimaryUpdateAction({
         href={nativeUpdateUrl}
       >
         <Download size={20} aria-hidden />
-        <span>Install Mac App update</span>
+        <span>Update</span>
       </a>
     );
   }
 
   if (
-    !firmwareUpdateAvailable &&
     (macAppMigrationReady || macAppUpdateAvailable) &&
     downloadUrl &&
     !disabled &&
@@ -365,12 +349,9 @@ function PrimaryUpdateAction({
       <a
         className="vibetv-button vibetv-button--large vibetv-button--primary w-full sm:w-auto sm:min-w-[240px]"
         href={downloadUrl}
-        onClick={onDownloadStart}
       >
         <Download size={20} aria-hidden />
-        <span>
-          Download new Mac App
-        </span>
+        <span>Update</span>
       </a>
     );
   }
@@ -378,17 +359,13 @@ function PrimaryUpdateAction({
   const label = installingFirmware
     ? "Updating VibeTV"
     : firmwareUpdateAvailable
-      ? "Update now"
+      ? "Update"
       : macAppMigrationRequired
         ? macAppCheckFailed
           ? "Check again"
-          : downloadUrl
-            ? "Download new Mac App"
-            : "New Mac App not ready"
+          : "Update"
         : macAppUpdateAvailable
-          ? downloadUrl
-            ? "Download new Mac App"
-            : "New Mac App not ready"
+          ? "Update"
           : checking
             ? "Checking updates"
             : "Check for updates";
@@ -545,71 +522,6 @@ function formatListenerValue(companion: CompanionInfo | null | undefined): strin
     : "Needs attention";
 }
 
-function MacAppDmgUpdateNote({
-  downloadReady,
-  downloadStarted,
-  downloadUrl,
-  migration,
-  onDownloadStart,
-  showDownloadAction,
-}: {
-  downloadReady: boolean;
-  downloadStarted: boolean;
-  downloadUrl?: string;
-  migration: boolean;
-  onDownloadStart: () => void;
-  showDownloadAction: boolean;
-}) {
-  return (
-    <div
-      className="mt-6 border border-[#747A60] bg-[#F9F9F9] p-4 text-sm leading-6 text-[#444933]"
-      role="status"
-    >
-      <div>
-        {downloadReady ? (
-          <>
-            <strong className="font-black text-[#1B1B1B]">
-              {downloadStarted
-                ? "Download started."
-                : migration
-                  ? "Move to the new Mac App."
-                  : "Install the new Mac App."}
-            </strong>{" "}
-            Open the downloaded DMG, drag VibeTV Control Center into
-            Applications, and choose Replace if macOS asks. Then open the app
-            from Applications.
-            {migration
-              ? " Your VibeTV settings stay in place, and the new app takes over only after it confirms its background service is working."
-              : " This replaces the installed app instead of creating a second copy."}
-          </>
-        ) : (
-          <>
-            <strong className="font-black text-[#1B1B1B]">
-              {migration
-                ? "New Mac App is not ready yet."
-                : "New Mac App is not ready yet."}
-            </strong>{" "}
-            Your current Control Center keeps working. No installer will run;
-            check again after the signed Mac App download is available.
-          </>
-        )}
-      </div>
-      {showDownloadAction && downloadUrl ? (
-        <a
-          className="vibetv-button vibetv-button--compact vibetv-button--secondary mt-4 w-full sm:w-auto"
-          href={downloadUrl}
-          onClick={onDownloadStart}
-        >
-          <Download size={16} aria-hidden />
-          <span>
-            Download new Mac App
-          </span>
-        </a>
-      ) : null}
-    </div>
-  );
-}
-
 function companionReleaseLabel({
   macAppRunning,
   migrationReady,
@@ -629,11 +541,11 @@ function companionReleaseLabel({
       ) {
         return "Check failed";
       }
-      return migrationReady ? "New Mac App ready" : "New Mac App waiting";
+      return migrationReady ? "Update available" : "Update not ready";
     }
     if (release?.updateAvailable) {
       return availableMacAppDmgDownloadUrl(release)
-        ? "Download ready"
+        ? "Update available"
         : "Update waiting";
     }
     if (

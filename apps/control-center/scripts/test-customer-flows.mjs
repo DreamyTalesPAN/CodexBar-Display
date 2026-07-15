@@ -1923,7 +1923,7 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
   const dmgUpdateLink = page.getByRole("link", {
-    name: "Download new Mac App",
+    name: "Update",
   });
   await dmgUpdateLink.waitFor({
     timeout: 10_000,
@@ -1933,8 +1933,11 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
       "VibeTV-Control-Center.dmg",
     "Updates should use the verified DMG release asset",
   );
-  await page.getByText("Install the new Mac App.").waitFor({ timeout: 10_000 });
-  await page.getByText(/choose Replace/).waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText(/DMG|Applications|choose Replace|second copy/i).count()) ===
+      0,
+    "Updates must not expose manual Mac App installation mechanics",
+  );
   await page.getByText("App version").waitFor({ timeout: 10_000 });
   await page.getByText("Latest version").waitFor({ timeout: 10_000 });
   assert(
@@ -1984,7 +1987,7 @@ async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
   const updateLink = page.getByRole("link", {
-    name: "Install Mac App update",
+    name: "Update",
   });
   await updateLink.waitFor({ timeout: 10_000 });
   assert(
@@ -2002,9 +2005,8 @@ async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
     "Updates must keep service names, process IDs, and commits out of customer copy",
   );
   assert(
-    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
-      0,
-    "Native Sparkle updates must not offer a second DMG download",
+    (await page.getByRole("link", { name: "Update" }).count()) === 1,
+    "Native Sparkle updates must show exactly one Update action",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -2049,10 +2051,10 @@ async function testLegacyInstallMigratesToDmgAtSameVersion(browser, appUrl) {
     updateAvailable: false,
   });
   await page
-    .getByRole("heading", { name: "Move to the new Mac App" })
+    .getByRole("heading", { name: "Update available" })
     .waitFor({ timeout: 10_000 });
   const overviewDownload = page.getByRole("link", {
-    name: "Download new Mac App",
+    name: "Update",
   });
   await overviewDownload.waitFor({ timeout: 10_000 });
   assert(
@@ -2064,15 +2066,17 @@ async function testLegacyInstallMigratesToDmgAtSameVersion(browser, appUrl) {
 
   await page.getByRole("button", { name: "Updates" }).click();
   await page
-    .getByRole("heading", { name: "Move to the new Mac App" })
+    .getByRole("heading", { name: "Update available" })
     .waitFor({ timeout: 10_000 });
   const updatesDownload = page.getByRole("link", {
-    name: "Download new Mac App",
+    name: "Update",
   });
   await updatesDownload.waitFor({ timeout: 10_000 });
-  await page.getByText("Move to the new Mac App.").waitFor({
-    timeout: 10_000,
-  });
+  assert(
+    (await page.getByText(/DMG|Applications|choose Replace|second copy/i).count()) ===
+      0,
+    "Legacy Updates must not expose manual installation mechanics",
+  );
   await captureMigrationScreenshot(page, "02-legacy-updates.png");
   await updatesDownload.click();
   await waitForCondition(
@@ -2121,14 +2125,14 @@ async function testLegacyMigrationStaysAvailableWhenVibeTVOffline(
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page
-    .getByRole("heading", { name: "Move to the new Mac App" })
+    .getByRole("heading", { name: "Update available" })
     .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("button", { name: "VibeTV is on WiFi" }).count()) ===
       1,
     "Legacy migration must keep the existing VibeTV setup flow available",
   );
-  await page.getByRole("link", { name: "Download new Mac App" }).waitFor({
+  await page.getByRole("link", { name: "Update" }).waitFor({
     timeout: 10_000,
   });
   await captureMigrationScreenshot(page, "03-legacy-offline-setup.png");
@@ -2170,7 +2174,7 @@ async function testLegacyFeatureFallbackMigratesAtSameVersion(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page
-    .getByRole("heading", { name: "Move to the new Mac App" })
+    .getByRole("heading", { name: "Update available" })
     .waitFor({ timeout: 10_000 });
   assert(
     macAppUpdateRequests.length === 0,
@@ -2205,7 +2209,7 @@ async function testDmgInstallStaysUpToDateAtSameVersion(browser, appUrl) {
     timeout: 10_000,
   });
   assert(
-    (await page.getByRole("heading", { name: "Move to the new Mac App" }).count()) ===
+    (await page.getByRole("heading", { name: "Update available" }).count()) ===
       0,
     "DMG Overview must not show the legacy migration card",
   );
@@ -2214,12 +2218,12 @@ async function testDmgInstallStaysUpToDateAtSameVersion(browser, appUrl) {
     timeout: 10_000,
   });
   assert(
-    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
+    (await page.getByRole("link", { name: "Update" }).count()) ===
       0,
     "Current DMG install must not show a migration download",
   );
   assert(
-    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
+    (await page.getByRole("link", { name: "Update" }).count()) ===
       0,
     "Current DMG install must not show an update download",
   );
@@ -2315,7 +2319,7 @@ async function testOfflineLegacyMigrationCanRetryFailedRelease(
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page
-    .getByRole("heading", { name: "Move to the new Mac App" })
+    .getByRole("heading", { name: "Update not ready" })
     .waitFor({ timeout: 10_000 });
   const retry = page.getByRole("button", { name: "Check again" });
   await retry.waitFor({ timeout: 10_000 });
@@ -2355,7 +2359,7 @@ async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
   await page
-    .getByRole("link", { name: "Download new Mac App" })
+    .getByRole("link", { name: "Update" })
     .waitFor({ timeout: 10_000 });
   const macAppSection = page.locator("section.border-b").filter({
     has: page.getByRole("heading", { name: "Mac App" }),
@@ -2419,14 +2423,15 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   const firmwareSection = page.locator("section.border-b").filter({
     has: page.getByRole("heading", { name: "Firmware update" }),
   });
-  await page.getByRole("button", { name: "Update now" }).waitFor({
+  await page.getByRole("button", { name: "Update", exact: true }).waitFor({
     timeout: 10_000,
   });
   assert(
-    (await page.getByRole("button", { name: "Update now" }).count()) === 1,
-    "Updates should show one primary Update now button",
+    (await page.getByRole("button", { name: "Update", exact: true }).count()) ===
+      1,
+    "Updates should show one primary Update button",
   );
-  await page.getByRole("button", { name: "Update now" }).click();
+  await page.getByRole("button", { name: "Update", exact: true }).click();
   await page
     .getByRole("status")
     .filter({ hasText: "Updating VibeTV" })
@@ -2499,7 +2504,7 @@ async function testFirmwareAttentionDoesNotOfferSecondFlash(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
-  await page.getByRole("button", { name: "Update now" }).click();
+  await page.getByRole("button", { name: "Update", exact: true }).click();
   await page
     .getByText("Firmware current — attention needed")
     .waitFor({ timeout: 10_000 });
@@ -2549,24 +2554,22 @@ async function testUpdatesKeepDmgHiddenWithoutVerifiedAsset(
     updateAvailable: false,
   });
   await page
-    .getByRole("heading", { name: "New Mac App is being prepared" })
+    .getByRole("heading", { name: "Update not ready" })
     .waitFor({ timeout: 10_000 });
-  const overviewUnavailableButton = page.getByRole("button", {
-    name: "New Mac App not ready",
-  });
-  await overviewUnavailableButton.waitFor({ timeout: 10_000 });
   assert(
-    await overviewUnavailableButton.isDisabled(),
-    "Legacy Overview must keep an unavailable DMG disabled",
+    (await page.getByRole("button", { name: "Update", exact: true }).count()) ===
+      0,
+    "Legacy Overview must hide an unavailable update action",
   );
   await page.getByRole("button", { name: "Updates" }).click();
   const unavailableButton = page.getByRole("button", {
-    name: "New Mac App not ready",
+    name: "Update",
+    exact: true,
   });
   await unavailableButton.waitFor({ timeout: 10_000 });
   assert(await unavailableButton.isDisabled(), "Unavailable DMG must stay disabled");
   assert(
-    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
+    (await page.getByRole("link", { name: "Update" }).count()) ===
       0,
     "Updates must not show a DMG link without a verified asset",
   );
@@ -2613,16 +2616,13 @@ async function testLegacyMigrationDoesNotBlockFirmwareUpdate(browser, appUrl) {
   await page.getByRole("heading", { name: "Update available" }).waitFor({
     timeout: 10_000,
   });
-  const updateNow = page.getByRole("button", { name: "Update now" });
-  await updateNow.waitFor({ timeout: 10_000 });
+  const update = page.getByRole("button", { name: "Update", exact: true });
+  await update.waitFor({ timeout: 10_000 });
   assert(
-    await updateNow.isEnabled(),
+    await update.isEnabled(),
     "Unavailable DMG migration must not disable a VibeTV firmware update",
   );
-  await page.getByText("New Mac App is not ready yet.").waitFor({
-    timeout: 10_000,
-  });
-  await updateNow.click();
+  await update.click();
   await waitForCondition(
     () => firmwareUpdateRequests.length === 1,
     "Firmware update should start while the migration DMG is unavailable",
@@ -3449,7 +3449,8 @@ async function testDisabledDmgFlagHidesSetupAndUpdateLinks(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Updates" }).click();
   const unavailableButton = page.getByRole("button", {
-    name: "New Mac App not ready",
+    name: "Update",
+    exact: true,
   });
   await unavailableButton.waitFor({ timeout: 10_000 });
   assert(await unavailableButton.isDisabled(), "Disabled DMG flag must stay disabled");
@@ -4824,12 +4825,12 @@ async function assertNoDmgDownloadActions(page) {
     "Setup must not show a DMG link without an enabled, verified asset",
   );
   assert(
-    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
+    (await page.getByRole("link", { name: "Update" }).count()) ===
       0,
     "Updates must not show a DMG link without an enabled, verified asset",
   );
   assert(
-    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
+    (await page.getByRole("link", { name: "Update" }).count()) ===
       0,
     "Legacy migration must not show a DMG link without an enabled, verified asset",
   );

@@ -99,8 +99,8 @@ export function SetupScreen({
       ? "Download Mac App"
       : "Mac App download not ready"
     : dmgUrl
-      ? "Download new Mac App"
-      : "New Mac App not ready";
+      ? "Update available"
+      : "Update not ready";
   const showControlCenterLauncher =
     !hostedMode &&
     showIntro &&
@@ -112,7 +112,6 @@ export function SetupScreen({
       checkFailed={macAppReleaseCheckFailed}
       checking={busyAction === "firmware-check"}
       downloadUrl={dmgUrl}
-      onDownloadStart={() => setDmgDownloadStarted(true)}
       onRetry={() => void onCheckUpdates?.()}
     />
   ) : null;
@@ -303,11 +302,12 @@ export function SetupScreen({
                 <div className="grid min-w-0 gap-4">
                   {dmgUrl ? (
                     <div className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4">
-                      <p className="text-sm leading-6 text-[#444933]">
-                        {hostedMode
-                          ? "Download VibeTV Control Center, open the DMG, drag the app into Applications, then open it."
-                          : "Download the latest VibeTV Control Center, replace the copy in Applications, then open it again."}
-                      </p>
+                      {hostedMode ? (
+                        <p className="text-sm leading-6 text-[#444933]">
+                          Download VibeTV Control Center, open the DMG, drag the
+                          app into Applications, then open it.
+                        </p>
+                      ) : null}
                       <a
                         className="vibetv-button vibetv-button--large vibetv-button--full vibetv-button--primary"
                         href={dmgUrl}
@@ -317,7 +317,7 @@ export function SetupScreen({
                         <span>
                           {hostedMode
                             ? "Download Mac App"
-                            : "Download new Mac App"}
+                            : "Update"}
                         </span>
                       </a>
                     </div>
@@ -401,13 +401,11 @@ function LegacyMacAppMigrationNotice({
   checkFailed,
   checking,
   downloadUrl,
-  onDownloadStart,
   onRetry,
 }: {
   checkFailed: boolean;
   checking: boolean;
   downloadUrl?: string;
-  onDownloadStart: () => void;
   onRetry: () => void;
 }) {
   return (
@@ -419,25 +417,17 @@ function LegacyMacAppMigrationNotice({
           </ControlCenterStatusIcon>
           <div className="min-w-0">
             <h2 className="text-2xl font-black text-[#1B1B1B]">
-              Move to the new Mac App
+              {downloadUrl ? "Update available" : "Update not ready"}
             </h2>
-            <p className="mt-2 max-w-[620px] text-sm leading-6 text-[#444933]">
-              {downloadUrl
-                ? "Open the DMG, drag VibeTV Control Center into Applications, then open it there. Keep this Control Center installed until the new app opens; your VibeTV settings stay in place."
-                : checkFailed
-                  ? "The signed Mac App check did not finish. Your current Control Center keeps working; check again when you are ready."
-                  : "The signed Mac App is not ready yet. Your current Control Center keeps working, including VibeTV setup and updates."}
-            </p>
           </div>
         </div>
         {downloadUrl ? (
           <a
             className="vibetv-button vibetv-button--large vibetv-button--primary w-full sm:w-auto"
             href={downloadUrl}
-            onClick={onDownloadStart}
           >
             <Download size={18} aria-hidden />
-            <span>Download new Mac App</span>
+            <span>Update</span>
           </a>
         ) : checkFailed ? (
           <PrimaryButton
@@ -449,15 +439,7 @@ function LegacyMacAppMigrationNotice({
             onClick={onRetry}
             size="large"
           />
-        ) : (
-          <PrimaryButton
-            disabled
-            fullWidth
-            icon={<Download size={18} aria-hidden />}
-            label="New Mac App not ready"
-            size="large"
-          />
-        )}
+        ) : null}
       </div>
     </section>
   );

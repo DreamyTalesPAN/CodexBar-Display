@@ -25,6 +25,12 @@ assert_contains() {
     || die "expected output to contain: ${needle}"
 }
 
+approval_entry() {
+  local label="$1"
+  printf '\n## %s\n\n- User approval: Explicit test approval.\n- Approved customer-visible result: %s\n' \
+    "$label" "$label"
+}
+
 setup_repo() {
   local repo="$1"
   mkdir -p "$repo"
@@ -33,15 +39,17 @@ setup_repo() {
   git -C "$repo" config user.name "Control Center UI Review Test"
 
   mkdir -p "$repo/docs" "$repo/apps/control-center/src/components"
-  printf '# Control Center UI Review Checkpoint\n\ninitial review\n' \
-    > "$repo/docs/control-center-ui-review-checkpoint.md"
+  printf '# Control Center Customer UI Approvals\n' \
+    > "$repo/docs/control-center-customer-ui-approval.md"
+  approval_entry "Initial UI" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
   printf '# Control Center UI Principles\n\nKeep it simple.\n' \
     > "$repo/docs/control-center-ui-principles.md"
   printf 'export function Overview() { return "Ready"; }\n' \
     > "$repo/apps/control-center/src/components/overview-screen.tsx"
 
   git -C "$repo" add .
-  git -C "$repo" commit -q -m "Initial UI review checkpoint"
+  git -C "$repo" commit -q -m "Initial approved UI"
 }
 
 commit_file() {
@@ -55,12 +63,20 @@ commit_file() {
   git -C "$repo" commit -q -m "$message"
 }
 
+commit_approval() {
+  local repo="$1"
+  local label="$2"
+  approval_entry "$label" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Approve ${label}"
+}
+
 run_gate() {
   local repo="$1"
   (
     cd "$repo"
-    CONTROL_CENTER_UI_REVIEW_INTERVAL=5 \
-      GITHUB_ACTIONS= \
+    GITHUB_ACTIONS= \
       GITHUB_EVENT_NAME= \
       node "$GATE"
   ) 2>&1
@@ -70,8 +86,7 @@ run_gate_pull_request() {
   local repo="$1"
   (
     cd "$repo"
-    CONTROL_CENTER_UI_REVIEW_INTERVAL=5 \
-      GITHUB_ACTIONS=true \
+    GITHUB_ACTIONS=true \
       GITHUB_EVENT_NAME=pull_request \
       node "$GATE"
   ) 2>&1
@@ -82,7 +97,7 @@ expect_gate_success() {
   local output
   output="$(run_gate "$repo")" || {
     printf '%s\n' "$output" >&2
-    die "expected UI review gate to pass"
+    die "expected UI approval gate to pass"
   }
   assert_contains "$output" "Control Center UI review gate: ok"
 }
@@ -96,10 +111,10 @@ expect_gate_due() {
   set -e
   [[ "$status" -ne 0 ]] || {
     printf '%s\n' "$output" >&2
-    die "expected UI review gate to fail"
+    die "expected UI approval gate to fail"
   }
   assert_contains "$output" "Control Center UI review gate: due"
-  assert_contains "$output" "Control Center UI review is due"
+  assert_contains "$output" "explicit approval"
   assert_contains "$output" "docs/control-center-ui-principles.md"
 }
 
@@ -112,51 +127,50 @@ test_non_ui_commits_do_not_block() {
   expect_gate_success "$repo"
 }
 
-test_control_center_readme_does_not_block() {
-  local repo="${TMP_ROOT}/control-center-readme"
-  setup_repo "$repo"
-  for index in 1 2 3 4 5; do
-    commit_file "$repo" "apps/control-center/README.md" \
-      "Document Control Center setup ${index}"
-  done
-  expect_gate_success "$repo"
-}
-
-test_ui_change_blocks_after_interval() {
+test_ui_change_blocks_immediately() {
   local repo="${TMP_ROOT}/ui-due"
   setup_repo "$repo"
   commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
     "Change customer-facing UI"
-  for index in 1 2 3 4; do
-    commit_file "$repo" "docs/follow-up-${index}.md" "Follow-up non-ui change ${index}"
-  done
   expect_gate_due "$repo"
 }
 
-test_working_tree_ui_change_counts_as_next_commit() {
+test_working_tree_ui_change_blocks_immediately() {
   local repo="${TMP_ROOT}/working-tree"
   setup_repo "$repo"
-  for index in 1 2 3 4; do
-    commit_file "$repo" "docs/follow-up-${index}.md" "Follow-up non-ui change ${index}"
-  done
   printf '\nexport const visibleLabel = "Install";\n' \
     >> "$repo/apps/control-center/src/components/overview-screen.tsx"
   expect_gate_due "$repo"
 }
 
-test_review_marker_resets_gate() {
-  local repo="${TMP_ROOT}/review-reset"
+test_explicit_approval_resets_gate() {
+  local repo="${TMP_ROOT}/approval-reset"
   setup_repo "$repo"
   commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
     "Change customer-facing UI"
-  for index in 1 2 3 4; do
-    commit_file "$repo" "docs/follow-up-${index}.md" "Follow-up non-ui change ${index}"
-  done
   expect_gate_due "$repo"
-
-  commit_file "$repo" "docs/control-center-ui-review-checkpoint.md" \
-    "Record UI review"
+  commit_approval "$repo" "Updated overview"
   expect_gate_success "$repo"
+}
+
+test_working_tree_approval_covers_same_change() {
+  local repo="${TMP_ROOT}/working-tree-approval"
+  setup_repo "$repo"
+  printf '\nexport const visibleLabel = "Update";\n' \
+    >> "$repo/apps/control-center/src/components/overview-screen.tsx"
+  approval_entry "One Update action" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  expect_gate_success "$repo"
+}
+
+test_marker_without_evidence_does_not_reset_gate() {
+  local repo="${TMP_ROOT}/invalid-marker"
+  setup_repo "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  commit_file "$repo" "docs/control-center-customer-ui-approval.md" \
+    "Reviewed by the implementation agent"
+  expect_gate_due "$repo"
 }
 
 test_pull_request_merge_commit_uses_pr_head() {
@@ -168,10 +182,7 @@ test_pull_request_merge_commit_uses_pr_head() {
   git -C "$repo" checkout -q -b feature
   commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
     "Change customer-facing UI"
-  for index in 1 2 3; do
-    commit_file "$repo" "docs/feature-follow-up-${index}.md" \
-      "Feature follow-up non-ui change ${index}"
-  done
+  commit_approval "$repo" "Feature overview"
   local feature_head
   feature_head="$(git -C "$repo" rev-parse HEAD)"
 
@@ -179,28 +190,21 @@ test_pull_request_merge_commit_uses_pr_head() {
   commit_file "$repo" "docs/base-follow-up.md" "Base follow-up non-ui change"
   git -C "$repo" merge -q --no-ff "$feature_head" -m "Merge pull request"
 
-  local output status
-  set +e
-  output="$(run_gate "$repo")"
-  status=$?
-  set -e
-  [[ "$status" -ne 0 ]] || die "expected normal merge-head UI review gate to fail"
-  assert_contains "$output" "Control Center UI review gate: due"
-
+  local output
   output="$(run_gate_pull_request "$repo")" || {
     printf '%s\n' "$output" >&2
-    die "expected pull_request merge-head UI review gate to pass"
+    die "expected pull_request merge-head UI approval gate to pass"
   }
   assert_contains "$output" "Control Center UI review gate: ok"
   assert_contains "$output" "Review head: ${feature_head}"
-  assert_contains "$output" "Commits since marker: 4/5"
 }
 
 test_non_ui_commits_do_not_block
-test_control_center_readme_does_not_block
-test_ui_change_blocks_after_interval
-test_working_tree_ui_change_counts_as_next_commit
-test_review_marker_resets_gate
+test_ui_change_blocks_immediately
+test_working_tree_ui_change_blocks_immediately
+test_explicit_approval_resets_gate
+test_working_tree_approval_covers_same_change
+test_marker_without_evidence_does_not_reset_gate
 test_pull_request_merge_commit_uses_pr_head
 
 printf 'control-center UI review gate tests passed\n'

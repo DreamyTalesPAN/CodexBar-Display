@@ -55,6 +55,19 @@ const forbiddenPatterns = [
     pattern: /\b(Installer unavailable|Needs Companion|Protected)\b/i,
     suggestion: "Hide unavailable actions or show a passive status.",
   },
+  {
+    label: "manual update instructions",
+    pattern:
+      /\b(choose Replace|replace the copy|creating a second copy|instead of creating a second copy|keep (?:the|this) current (?:app|Control Center) installed)\b/i,
+    suggestion:
+      "Show one Update action and keep manual replacement details out of customer update UI.",
+  },
+  {
+    label: "non-standard update action",
+    pattern:
+      /\b(Download new Mac App|Install Mac App update|Update now)\b/i,
+    suggestion: "Use the single customer action label Update.",
+  },
 ];
 
 const findings = [];
