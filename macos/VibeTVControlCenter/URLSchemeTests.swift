@@ -146,6 +146,29 @@ func runURLSchemeTests() {
         ) == "VibeTVControlCenter/99.0.16+163",
         "native WebView must identify itself without exposing the browser UI"
     )
+    let localNetworkProbe = makeLocalNetworkPrivacyProbeRequest(timeout: 12)
+    require(
+        localNetworkProbe?.url?.absoluteString == "http://vibetv.local/hello",
+        "local-network privacy preflight must use the read-only VibeTV hello endpoint"
+    )
+    require(
+        localNetworkProbe?.httpMethod == "GET",
+        "local-network privacy preflight must remain read-only"
+    )
+    require(
+        localNetworkProbe?.cachePolicy == .reloadIgnoringLocalCacheData,
+        "local-network privacy preflight must not accept a cached response"
+    )
+    require(
+        localNetworkProbe?.timeoutInterval == 12,
+        "local-network privacy preflight must stay bounded"
+    )
+    require(
+        makeLocalNetworkPrivacyProbeRequest(
+            urlString: "http://other-device.local/hello"
+        ) == nil,
+        "local-network privacy preflight must not contact arbitrary hosts"
+    )
     require(
         shouldRunRuntimeValidationUnregister(
             arguments: [

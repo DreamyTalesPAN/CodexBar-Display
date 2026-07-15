@@ -18,6 +18,8 @@ private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
 private let runtimeDeviceRepairTimeout: TimeInterval = 90
 private let runtimeDeviceRepairMaxAttempts = 3
+private let localNetworkPrivacyProbeURLString = "http://vibetv.local/hello"
+private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
 private let runtimeDeviceRepairRetryDelay: Duration = .seconds(3)
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
 private let runtimeValidationUnregisterArgument =
@@ -127,6 +129,29 @@ func nativeControlCenterUserAgent(shortVersion: String?, buildVersion: String?) 
         buildVersion: buildVersion
     )
     return nativeControlCenterUserAgentPrefix + (version.isEmpty ? "unknown" : version)
+}
+
+func makeLocalNetworkPrivacyProbeRequest(
+    urlString: String = localNetworkPrivacyProbeURLString,
+    timeout: TimeInterval = localNetworkPrivacyProbeTimeout
+) -> URLRequest? {
+    guard let url = URL(string: urlString),
+          url.scheme?.lowercased() == "http",
+          url.host?.lowercased() == "vibetv.local",
+          url.path == "/hello",
+          url.user == nil,
+          url.password == nil,
+          url.query == nil,
+          url.fragment == nil else {
+        return nil
+    }
+    var request = URLRequest(
+        url: url,
+        cachePolicy: .reloadIgnoringLocalCacheData,
+        timeoutInterval: timeout
+    )
+    request.httpMethod = "GET"
+    return request
 }
 
 func normalizedCompanionVersion(_ raw: String) -> String {
@@ -663,6 +688,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             guard let self else {
                 return
             }
+            await self.performLocalNetworkPrivacyPreflight()
             let outcome = await self.prepareCompanion()
             if outcome.shouldReloadControlCenter {
                 self.reloadControlCenter()
@@ -956,6 +982,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             "VibeTV Control Center migration completed with healthy Companion version \(expectedVersion); backup=\(backupRoot.path)"
         )
         return .nativeRuntimeReady
+    }
+
+    private func performLocalNetworkPrivacyPreflight() async {
+        guard let request = makeLocalNetworkPrivacyProbeRequest() else {
+            NSLog("VibeTV Control Center local-network privacy preflight URL is invalid")
+            return
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForRequest = localNetworkPrivacyProbeTimeout
+        configuration.timeoutIntervalForResource = localNetworkPrivacyProbeTimeout
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+
+        do {
+            _ = try await session.data(for: request)
+            NSLog("VibeTV Control Center local-network privacy preflight completed")
+        } catch {
+            // This read-only probe only lets macOS resolve Local Network
+            // privacy while the foreground app is visible. Setup handles
+            // discovery and device availability afterward.
+            NSLog(
+                "VibeTV Control Center local-network privacy preflight finished without a device response: \((error as NSError).localizedDescription)"
+            )
+        }
     }
 
     private func prepareExistingDeviceConnectionWithRetries(
