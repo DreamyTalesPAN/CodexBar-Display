@@ -28,6 +28,7 @@ type WiFiDiscoveryOptions struct {
 	IncludeNetworkScan bool
 	Timeout            time.Duration
 	Client             *http.Client
+	ExpectedDeviceID   string
 }
 
 type WiFiDiscoveryResult struct {
@@ -57,6 +58,10 @@ func DiscoverWiFiDevice(ctx context.Context, opts WiFiDiscoveryOptions) (WiFiDis
 	for _, candidate := range candidates {
 		hello, err := probeWiFiHello(ctx, client, candidate)
 		if err == nil {
+			if !matchesExpectedDeviceID(hello, opts.ExpectedDeviceID) {
+				lastErr = fmt.Errorf("VibeTV device id mismatch: expected=%q got=%q", strings.TrimSpace(opts.ExpectedDeviceID), hello.DeviceID)
+				continue
+			}
 			return WiFiDiscoveryResult{Target: publicDiscoveryTarget(candidate), Hello: hello, Source: "candidate"}, nil
 		}
 		lastErr = err
@@ -88,7 +93,7 @@ func DiscoverWiFiDevice(ctx context.Context, opts WiFiDiscoveryOptions) (WiFiDis
 		filtered = append(filtered, target)
 	}
 
-	result, err := scanWiFiTargets(ctx, client, filtered)
+	result, err := scanWiFiTargets(ctx, client, filtered, opts.ExpectedDeviceID)
 	if err == nil {
 		return result, nil
 	}
@@ -98,7 +103,7 @@ func DiscoverWiFiDevice(ctx context.Context, opts WiFiDiscoveryOptions) (WiFiDis
 	return WiFiDiscoveryResult{}, err
 }
 
-func scanWiFiTargets(ctx context.Context, client *http.Client, targets []string) (WiFiDiscoveryResult, error) {
+func scanWiFiTargets(ctx context.Context, client *http.Client, targets []string, expectedDeviceID string) (WiFiDiscoveryResult, error) {
 	if len(targets) == 0 {
 		return WiFiDiscoveryResult{}, errors.New("no scan targets")
 	}
@@ -123,6 +128,9 @@ func scanWiFiTargets(ctx context.Context, client *http.Client, targets []string)
 				}
 				hello, err := probeWiFiHello(ctx, client, target)
 				if err != nil {
+					continue
+				}
+				if !matchesExpectedDeviceID(hello, expectedDeviceID) {
 					continue
 				}
 				select {
@@ -160,6 +168,14 @@ func scanWiFiTargets(ctx context.Context, client *http.Client, targets []string)
 	case <-ctx.Done():
 		return WiFiDiscoveryResult{}, ctx.Err()
 	}
+}
+
+func matchesExpectedDeviceID(hello protocol.DeviceHello, expected string) bool {
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		return true
+	}
+	return strings.EqualFold(expected, strings.TrimSpace(hello.DeviceID))
 }
 
 func probeWiFiHello(ctx context.Context, client *http.Client, target string) (protocol.DeviceHello, error) {

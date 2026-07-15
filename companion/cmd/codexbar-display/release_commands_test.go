@@ -657,6 +657,51 @@ func TestRunInstallUpdateDoesNotFallBackFromExplicitTarget(t *testing.T) {
 	}
 }
 
+func TestRunInstallUpdateAlreadyCurrentSkipsOTAUpload(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousUpload := uploadFirmwareOTAFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		uploadFirmwareOTAFn = previousUpload
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	uploads := 0
+	uploadFirmwareOTAFn = func(context.Context, string, string, string) error {
+		uploads++
+		return nil
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-current","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.1","features":["theme"],"maxFrameBytes":1024}`))
+		case "/manifest.json":
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"https://example.invalid/firmware.bin","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`))
+		default:
+			t.Fatalf("already-current update must not request %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", server.URL,
+			"--manifest-url", server.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err != nil {
+		t.Fatalf("already-current update: %v", err)
+	}
+	if uploads != 0 {
+		t.Fatalf("already-current firmware must not upload, got %d calls", uploads)
+	}
+	if !strings.Contains(output, `"outcome":"already_current"`) {
+		t.Fatalf("expected typed already-current outcome, got:\n%s", output)
+	}
+}
+
 func TestRunInstallUpdateRediscoverAfterFirmwareRebootIPChange(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn

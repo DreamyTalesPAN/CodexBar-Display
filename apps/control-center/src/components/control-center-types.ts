@@ -26,6 +26,21 @@ export type CompanionInfo = {
   status?: string;
   version?: string;
   installationMode?: "legacy" | "dmg";
+  app?: {
+    version?: string;
+    build?: string;
+    path?: string;
+    installationMode?: "legacy" | "dmg";
+    installedInApplications?: boolean;
+  };
+  runtime?: {
+    version?: string;
+    commit?: string;
+    builtAt?: string;
+    executable?: string;
+    pid?: number;
+    listenerOwner?: string;
+  };
   update?: CompanionReleaseInfo;
   features?: {
     themeInstallEnabled?: boolean;
@@ -72,6 +87,8 @@ export type DeviceInfo = {
   connected: boolean;
   paired?: boolean;
   ready?: boolean;
+  connectionState?: "ready" | "reconnecting" | "setup_required";
+  lastSeenAt?: string;
   board?: string;
   firmware?: string;
   activeTheme?: string;
@@ -86,7 +103,11 @@ export type DeviceInfo = {
   };
   health?: {
     ok?: boolean;
+    bootId?: string;
+    uptimeMs?: number;
+    resetCount?: number;
     resetReason?: string;
+    lastResetAt?: string;
     error?: string;
   };
   display?: {
@@ -264,5 +285,11 @@ export function deviceStreamIsReady(device: DeviceInfo | null | undefined) {
 }
 
 export function deviceSetupIsUsable(device: DeviceInfo | null | undefined) {
+  if (device?.connectionState) {
+    return (
+      device.connectionState === "ready" ||
+      device.connectionState === "reconnecting"
+    );
+  }
   return device?.ready === true;
 }

@@ -14,8 +14,8 @@ func runURLSchemeTests() {
         "healthy native runtime must refresh the WebView"
     )
     require(
-        RuntimePreparationOutcome.legacyRuntimeRestored.shouldReloadControlCenter,
-        "successful rollback must refresh the WebView to the restored runtime"
+        !RuntimePreparationOutcome.legacyRuntimeRestored.shouldReloadControlCenter,
+        "a restored legacy runtime must keep the WebView closed until native installation succeeds"
     )
     require(
         !RuntimePreparationOutcome.keepCurrentPage.shouldReloadControlCenter,
@@ -53,6 +53,21 @@ func runURLSchemeTests() {
         !isOpenControlCenterURL(URL(string: "https://open-control-center")!),
         "non-VibeTV schemes must be rejected"
     )
+    require(
+        isCheckForUpdatesURL(URL(string: "vibetv://check-for-updates")!),
+        "the exact native Sparkle action must be accepted"
+    )
+    for rejectedUpdateURL in [
+        "vibetv://check-for-updates/extra",
+        "vibetv://check-for-updates?channel=beta",
+        "https://check-for-updates",
+        "vibetv://install-update",
+    ] {
+        require(
+            !isCheckForUpdatesURL(URL(string: rejectedUpdateURL)!),
+            "unexpected update action must be rejected: \(rejectedUpdateURL)"
+        )
+    }
     require(
         isApprovedDMGDownloadURL(
             URL(
@@ -146,6 +161,40 @@ func runURLSchemeTests() {
         ) == "VibeTVControlCenter/99.0.16+163",
         "native WebView must identify itself without exposing the browser UI"
     )
+    let pendingCreatedAt = Date(timeIntervalSince1970: 1_700_000_000)
+    let pendingUpdate = PendingNativeUpdate(
+        version: "1.2.4",
+        build: "201",
+        createdAt: pendingCreatedAt
+    )
+    require(
+        pendingNativeUpdateMatchesBundle(
+            pendingUpdate,
+            shortVersion: "1.2.4",
+            buildVersion: "201"
+        ),
+        "a relaunched updated bundle must satisfy its pending marker"
+    )
+    require(
+        pendingNativeUpdateBlocksBundle(
+            pendingUpdate,
+            shortVersion: "1.2.3",
+            buildVersion: "200",
+            now: pendingCreatedAt.addingTimeInterval(60),
+            maximumAge: 1_800
+        ),
+        "a fresh pending marker must block an unverified old bundle"
+    )
+    require(
+        !pendingNativeUpdateBlocksBundle(
+            pendingUpdate,
+            shortVersion: "1.2.3",
+            buildVersion: "200",
+            now: pendingCreatedAt.addingTimeInterval(1_801),
+            maximumAge: 1_800
+        ),
+        "an abandoned pending marker must expire instead of permanently locking the old app"
+    )
     let localNetworkProbe = makeLocalNetworkPrivacyProbeRequest(timeout: 12)
     require(
         localNetworkProbe?.url?.absoluteString == "http://192.168.4.1/hello",
@@ -238,6 +287,48 @@ func runURLSchemeTests() {
         ) == .versionMismatch(expected: "1.2.4", actual: "1.2.3"),
         "wrong Companion version must fail the health gate"
     )
+    let nativeStatus = Data(
+        #"{"ok":true,"companion":{"version":"1.2.3","app":{"version":"2.0.0","build":"200","path":"/Applications/VibeTV Control Center.app","installedInApplications":true},"runtime":{"version":"1.2.3","listenerOwner":"shop.vibetv.control-center.runtime"}}}"#.utf8
+    )
+    require(
+        evaluateRuntimeHealth(
+            data: nativeStatus,
+            httpStatus: 200,
+            expectedVersion: "1.2.3",
+            expectedAppVersion: "2.0.0",
+            expectedBuild: "200",
+            expectedAppPath: "/Applications/VibeTV Control Center.app",
+            expectedRuntimeOwner: "shop.vibetv.control-center.runtime"
+        ) == .healthy(version: "1.2.3"),
+        "native health must verify app, runtime, and listener independently"
+    )
+    require(
+        evaluateRuntimeHealth(
+            data: nativeStatus,
+            httpStatus: 200,
+            expectedVersion: "1.2.3",
+            expectedAppVersion: "2.0.0",
+            expectedBuild: "201",
+            expectedAppPath: "/Applications/VibeTV Control Center.app",
+            expectedRuntimeOwner: "shop.vibetv.control-center.runtime"
+        ) == .appBuildMismatch(expected: "201", actual: "200"),
+        "a stale app build must fail the native health gate"
+    )
+    require(
+        evaluateRuntimeHealth(
+            data: nativeStatus,
+            httpStatus: 200,
+            expectedVersion: "1.2.3",
+            expectedAppVersion: "2.0.0",
+            expectedBuild: "200",
+            expectedAppPath: "/Applications/VibeTV Control Center.app",
+            expectedRuntimeOwner: "unexpected.owner"
+        ) == .runtimeOwnerMismatch(
+            expected: "unexpected.owner",
+            actual: "shop.vibetv.control-center.runtime"
+        ),
+        "the wrong listener owner must fail the native health gate"
+    )
     require(
         evaluateRuntimeHealth(
             data: healthyStatus,
@@ -293,6 +384,15 @@ func runURLSchemeTests() {
             httpStatus: 200
         ) == .needsRepair,
         "a preserved target without a fresh frame must be repaired automatically"
+    )
+    require(
+        evaluateExistingDeviceStatus(
+            data: Data(
+                #"{"ok":true,"companion":{"version":"1.2.3"},"device":{"target":"http://192.168.178.72","paired":true,"ready":false,"connectionState":"reconnecting"}}"#.utf8
+            ),
+            httpStatus: 200
+        ) == .ready,
+        "a configured VibeTV in its reconnect grace period must not restart setup"
     )
     require(
         evaluateExistingDeviceStatus(

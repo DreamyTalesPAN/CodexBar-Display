@@ -152,6 +152,19 @@ const reachableUnreadyDevice = {
   },
 };
 
+const reconnectingDevice = {
+  ...companionDevice,
+  connected: false,
+  ready: false,
+  connectionState: "reconnecting",
+  lastSeenAt: "2026-07-15T10:00:00Z",
+  stream: {
+    healthy: false,
+    running: true,
+    detail: "Display stream is reconnecting.",
+  },
+};
+
 async function main() {
   await assertCompanionRequestTimeoutContract();
   const fixtureServer = await startFixtureServer();
@@ -221,6 +234,10 @@ async function main() {
         appContext.appUrl,
       );
       await testLocalReachableWithoutFrameStaysInSetup(
+        browser,
+        appContext.appUrl,
+      );
+      await testConfiguredDeviceShowsReconnectingWithoutSetup(
         browser,
         appContext.appUrl,
       );
@@ -314,6 +331,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testConfiguredDeviceShowsReconnectingWithoutSetup(
+      browser,
+      appContext.appUrl,
+    );
     await testLocalSetupRecoversWhenDeviceBecomesReady(
       browser,
       appContext.appUrl,
@@ -348,6 +369,7 @@ async function main() {
     );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
+    await testNativeMacAppUpdateUsesSparkleAction(browser, appContext.appUrl);
     await testLegacyInstallMigratesToDmgAtSameVersion(
       browser,
       appContext.appUrl,
@@ -382,6 +404,10 @@ async function main() {
       appContext.appUrl,
     );
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
+    await testFirmwareAttentionDoesNotOfferSecondFlash(
+      browser,
+      appContext.appUrl,
+    );
     await testSupportReportExportsAppearAfterReportLoads(
       browser,
       appContext.appUrl,
@@ -1310,6 +1336,47 @@ async function testLocalReachableWithoutFrameStaysInSetup(browser, appUrl) {
   await page.close();
 }
 
+async function testConfiguredDeviceShowsReconnectingWithoutSetup(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const repairRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: reconnectingDevice,
+    onRequest: (pathname, method) => {
+      if (pathname === "/v1/device/repair" && method === "POST") {
+        repairRequests.push(pathname);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByText("Reconnecting…", { exact: true }).first().waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByRole("heading", { name: "Set up your VibeTV" }).count()) ===
+      0,
+    "A configured VibeTV must not return to initial Setup during an outage",
+  );
+  for (const tabName of ["Overview", "Usage", "Settings", "Theme Library", "Updates", "Support"]) {
+    assert(
+      !(await page.getByRole("button", { name: tabName }).isDisabled()),
+      `${tabName} must stay available while VibeTV reconnects`,
+    );
+  }
+  assert(
+    repairRequests.length === 0,
+    "The browser must let the Companion own bounded automatic recovery",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
 async function testLocalSetupRecoversWhenDeviceBecomesReady(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
@@ -1868,7 +1935,7 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   );
   await page.getByText("Install the new Mac App.").waitFor({ timeout: 10_000 });
   await page.getByText(/choose Replace/).waitFor({ timeout: 10_000 });
-  await page.getByText("Installed version").waitFor({ timeout: 10_000 });
+  await page.getByText("App version").waitFor({ timeout: 10_000 });
   await page.getByText("Latest version").waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("button", { name: "Copy update command" }).count()) ===
@@ -1888,6 +1955,51 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   assert(
     macAppUpdateRequests.length === 0,
     "DMG update must never call the legacy /v1/mac-app/update endpoint",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.44",
+    companionApp: {
+      version: "1.0.32",
+      build: "132",
+      path: "/Applications/VibeTV Control Center.app",
+      installationMode: "dmg",
+      installedInApplications: true,
+    },
+    companionRuntime: {
+      version: "1.0.44",
+      commit: "abcdef1234567890",
+      pid: 174,
+      listenerOwner: "shop.vibetv.control-center.runtime",
+    },
+    device: { ...companionDevice, firmware: "1.0.33" },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  const updateLink = page.getByRole("link", {
+    name: "Install Mac App update",
+  });
+  await updateLink.waitFor({ timeout: 10_000 });
+  assert(
+    (await updateLink.getAttribute("href")) === "vibetv://check-for-updates",
+    "Installed native Mac Apps must hand updates to the exact Sparkle URL action",
+  );
+  await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
+  await page.getByText("1.0.44 (abcdef12)").waitFor({ timeout: 10_000 });
+  await page
+    .getByText("shop.vibetv.control-center.runtime (PID 174)")
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByRole("link", { name: "Download new Mac App" }).count()) ===
+      0,
+    "Native Sparkle updates must not offer a second DMG download",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -2245,6 +2357,7 @@ async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
   });
   await macAppSection
     .getByText("1.0.32", { exact: true })
+    .first()
     .waitFor({ timeout: 10_000 });
   await macAppSection
     .getByText("1.0.99", { exact: true })
@@ -2345,6 +2458,57 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testFirmwareAttentionDoesNotOfferSecondFlash(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.99",
+    updateStatusSequence: [
+      {
+        phase: "attention",
+        stage: "verifying_render",
+        outcome: "firmware_current_render_attention",
+        message: "Firmware is current, but the picture could not be verified.",
+        progress: 100,
+        logs: [
+          "Updating VibeTV.",
+          "Restarting VibeTV.",
+          "Checking the picture.",
+        ],
+        result: {
+          firmware: "1.0.33",
+          deviceId: "device-174",
+          artifactValidated: true,
+          uploadAccepted: true,
+          helloVerified: true,
+          healthVerified: true,
+          streamVerified: true,
+          renderVerified: false,
+        },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page.getByRole("button", { name: "Update now" }).click();
+  await page
+    .getByText("Firmware current — attention needed")
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Firmware is current, but the picture could not be verified.")
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByRole("button", { name: "Try again" }).count()) === 0,
+    "Attention after a verified firmware install must not offer a second flash",
+  );
+  await page.getByRole("button", { name: "Create report" }).waitFor({
+    timeout: 10_000,
+  });
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -3528,6 +3692,8 @@ async function routeCompanionOnline(
       macAppSelfUpdateEnabled: false,
     },
     companionVersion = "1.0.32",
+    companionApp,
+    companionRuntime,
     installationMode = "dmg",
     legacyCompanionRelease = false,
     device = companionDevice,
@@ -3935,6 +4101,8 @@ async function routeCompanionOnline(
             companionFeatures,
             legacyCompanionRelease,
             installationMode,
+            companionApp,
+            companionRuntime,
           ),
           device: currentDevice,
         }),
@@ -3974,6 +4142,8 @@ async function routeCompanionOnline(
             companionFeatures,
             legacyCompanionRelease,
             installationMode,
+            companionApp,
+            companionRuntime,
           ),
           device: currentDevice,
         }),
@@ -4013,6 +4183,8 @@ async function routeCompanionOnline(
             companionFeatures,
             legacyCompanionRelease,
             installationMode,
+            companionApp,
+            companionRuntime,
           ),
           device: currentDevice,
           checks: [
@@ -4163,6 +4335,8 @@ function companionPayload(
   features,
   legacyRelease = false,
   installationMode = "dmg",
+  app,
+  runtime,
 ) {
   const payload = {
     version,
@@ -4170,6 +4344,12 @@ function companionPayload(
   };
   if (installationMode) {
     payload.installationMode = installationMode;
+  }
+  if (app) {
+    payload.app = app;
+  }
+  if (runtime) {
+    payload.runtime = runtime;
   }
   if (!legacyRelease) {
     payload.update = macAppReleaseInfo(version);

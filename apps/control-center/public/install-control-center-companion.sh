@@ -10,6 +10,7 @@ BIN_DIR="${APP_SUPPORT_DIR}/bin"
 BIN_PATH="${BIN_DIR}/${INSTALL_NAME}"
 USER_APPLICATIONS_DIR="${HOME}/Applications"
 APP_BUNDLE_DIR="${USER_APPLICATIONS_DIR}/VibeTV Control Center.app"
+SYSTEM_APP_BUNDLE_DIR="${VIBETV_SYSTEM_APP_BUNDLE_DIR:-/Applications/VibeTV Control Center.app}"
 LEGACY_APP_BUNDLE_DIR="${APP_SUPPORT_DIR}/VibeTV Control Center.app"
 APP_BUNDLE_CONTENTS_DIR="${APP_BUNDLE_DIR}/Contents"
 APP_BUNDLE_BIN_DIR="${APP_BUNDLE_CONTENTS_DIR}/MacOS"
@@ -565,9 +566,26 @@ restart_service() {
 }
 
 download_new_mac_app() {
-  local partial_path
+  local partial_path installed_version signature_details
   require_cmd_for curl "download the new VibeTV Mac App" "use a standard macOS Terminal with curl available, then try again."
   require_cmd_for open "open the new VibeTV Mac App DMG" "open the downloaded DMG from your Downloads folder."
+
+  if [[ -x "${SYSTEM_APP_BUNDLE_DIR}/Contents/MacOS/VibeTVControlCenter" \
+        && -f "${SYSTEM_APP_BUNDLE_DIR}/Contents/Info.plist" ]] \
+      && command -v plutil >/dev/null 2>&1 \
+      && [[ "$(plutil -extract CFBundleIdentifier raw -o - "${SYSTEM_APP_BUNDLE_DIR}/Contents/Info.plist" 2>/dev/null || true)" == "shop.vibetv.control-center" ]]; then
+    installed_version="$(plutil -extract CFBundleShortVersionString raw -o - "${SYSTEM_APP_BUNDLE_DIR}/Contents/Info.plist" 2>/dev/null || true)"
+    signature_details="$(codesign --display --verbose=2 "$SYSTEM_APP_BUNDLE_DIR" 2>&1 || true)"
+    if codesign --verify --deep --strict "$SYSTEM_APP_BUNDLE_DIR" >/dev/null 2>&1 \
+        && [[ "$signature_details" == *"Authority=Developer ID Application:"* ]] \
+        && { [[ -z "$RELEASE_VERSION" ]] || [[ "$installed_version" == "$RELEASE_VERSION" ]]; }; then
+      log "vibetv: verified native Mac App already installed version=${installed_version}"
+      open "$SYSTEM_APP_BUNDLE_DIR" >/dev/null 2>&1 \
+        || die "the verified VibeTV Control Center app could not be opened from Applications."
+      say "CODEX_MAC_APP_ACTION_REQUIRED kind=handoff version=${installed_version}"
+      return 0
+    fi
+  fi
 
   mkdir -p "$DMG_DOWNLOAD_DIR"
   partial_path="${DMG_PATH}.part"
@@ -582,6 +600,7 @@ download_new_mac_app() {
   open "$DMG_PATH" >/dev/null 2>&1 \
     || die "the DMG was downloaded to ${DMG_PATH}, but could not be opened automatically."
   log "vibetv: opened new Mac App DMG"
+  say "CODEX_MAC_APP_ACTION_REQUIRED kind=manual_install path=${DMG_PATH}"
 }
 
 verify_launchagent_loaded() {
@@ -1320,6 +1339,11 @@ main() {
     say ""
     say "Done. The new VibeTV Mac App is ready to install."
     say "Drag VibeTV Control Center to Applications, then open it."
+    # This script is also curl-loaded by older Companions. Keep their default
+    # exit status successful; only a new Companion opts into exit 20.
+    if [[ "${VIBETV_MAC_APP_ACTION_REQUIRED_EXIT_CODE:-0}" == "20" ]]; then
+      exit 20
+    fi
     exit 0
   fi
 

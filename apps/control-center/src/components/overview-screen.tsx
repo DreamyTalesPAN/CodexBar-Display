@@ -313,6 +313,9 @@ function labelForDevice(
   if (deviceImageIsStuck(device)) {
     return "Image is stuck";
   }
+  if (device?.connectionState === "reconnecting") {
+    return "Reconnecting…";
+  }
   if (device?.ready) {
     return "Connected";
   }
@@ -337,6 +340,9 @@ function deviceHealthDetail(device: DeviceInfo | null): string | undefined {
   const resetReason = device?.health?.resetReason?.trim();
   if (resetReason && resetReason.toLowerCase() === "exception") {
     return "VibeTV restarted after a firmware exception. If this keeps happening, reconnect power and run setup again.";
+  }
+  if (device?.connectionState === "reconnecting") {
+    return "VibeTV is temporarily unavailable. The Mac App is reconnecting automatically.";
   }
   if (device?.connected && device.health?.error) {
     return "VibeTV is reachable, but health details are temporarily unavailable.";

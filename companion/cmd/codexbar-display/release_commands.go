@@ -23,6 +23,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
@@ -59,8 +60,19 @@ var (
 	flashReleaseFirmwareImageFn                        = flashReleaseFirmwareImage
 	uploadFirmwareOTAFn                                = uploadFirmwareOTA
 	firmwareHTTPVerifyPollInterval                     = 2 * time.Second
-	firmwareUpdateRediscoveryAfter                     = 20 * time.Second
+	firmwareUpdateRediscoveryAfter                     = 10 * time.Second
+	firmwareUpdateRediscoveryInterval                  = 5 * time.Second
 )
+
+type firmwareUpdateEvent = firmwareupdate.Event
+
+func emitFirmwareUpdateEvent(event firmwareUpdateEvent) {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	fmt.Printf("%s%s\n", firmwareupdate.EventPrefix, payload)
+}
 
 const launchAgentLabel = "com.codexbar-display.daemon.plist"
 
@@ -470,6 +482,14 @@ func runInstallUpdate(args []string) (retErr error) {
 		}
 	}
 	caps := protocol.CapabilitiesFromHello(hello)
+	deviceID := strings.TrimSpace(hello.DeviceID)
+	emitFirmwareUpdateEvent(firmwareUpdateEvent{
+		Stage:         "validating_artifact",
+		Phase:         "installing",
+		Target:        base,
+		DeviceID:      deviceID,
+		HelloVerified: true,
+	})
 	fmt.Println("Checking device...")
 	fmt.Printf("Device: %s firmware %s\n", caps.Board, caps.Firmware)
 
@@ -494,6 +514,16 @@ func runInstallUpdate(args []string) (retErr error) {
 	}
 	if current.Compare(next) >= 0 && !*force {
 		fmt.Printf("Firmware: already current (%s)\n", caps.Firmware)
+		emitFirmwareUpdateEvent(firmwareUpdateEvent{
+			Stage:             "verifying_health",
+			Phase:             "complete",
+			Outcome:           "already_current",
+			Firmware:          caps.Firmware,
+			Target:            base,
+			DeviceID:          deviceID,
+			ArtifactValidated: true,
+			HelloVerified:     true,
+		})
 		return nil
 	}
 	fmt.Printf("Updating firmware: %s -> %s\n", caps.Firmware, targetVersion)
@@ -514,6 +544,15 @@ func runInstallUpdate(args []string) (retErr error) {
 	if *verbose {
 		fmt.Printf("Firmware downloaded: %s sha256=%s\n", imagePath, strings.TrimSpace(artifact.SHA256))
 	}
+	emitFirmwareUpdateEvent(firmwareUpdateEvent{
+		Stage:             "uploading",
+		Phase:             "installing",
+		Firmware:          targetVersion,
+		Target:            base,
+		DeviceID:          deviceID,
+		ArtifactValidated: true,
+		HelloVerified:     true,
+	})
 
 	deviceToken, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, false)
 	if err != nil {
@@ -551,9 +590,19 @@ func runInstallUpdate(args []string) (retErr error) {
 			}
 		}
 	}
+	emitFirmwareUpdateEvent(firmwareUpdateEvent{
+		Stage:             "rebooting",
+		Phase:             "installing",
+		Firmware:          targetVersion,
+		Target:            base,
+		DeviceID:          deviceID,
+		ArtifactValidated: true,
+		UploadAccepted:    true,
+		HelloVerified:     true,
+	})
 	fmt.Println("Restarting VibeTV...")
 
-	verifiedBase, err := waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, 90*time.Second)
+	verifiedBase, err := waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, 120*time.Second)
 	if err != nil {
 		return &commandError{
 			Op:   "post-update-verify",
@@ -562,6 +611,25 @@ func runInstallUpdate(args []string) (retErr error) {
 			Hint: "wait one minute, then open http://<device-ip>/health",
 		}
 	}
+	verifiedHello, helloErr := fetchDeviceHelloHTTP(ctx, verifiedBase)
+	if helloErr != nil || !strings.EqualFold(strings.TrimSpace(verifiedHello.DeviceID), deviceID) {
+		return &commandError{
+			Op:   "post-update-device-identity",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  fmt.Errorf("updated VibeTV identity changed: expected=%q got=%q: %v", deviceID, strings.TrimSpace(verifiedHello.DeviceID), helloErr),
+			Hint: "do not retry the flash; verify the saved VibeTV device identity",
+		}
+	}
+	emitFirmwareUpdateEvent(firmwareUpdateEvent{
+		Stage:             "verifying_health",
+		Phase:             "installing",
+		Firmware:          targetVersion,
+		Target:            verifiedBase,
+		DeviceID:          deviceID,
+		ArtifactValidated: true,
+		UploadAccepted:    true,
+		HelloVerified:     true,
+	})
 	if verifiedBase != base {
 		base = verifiedBase
 		if _, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, false); err != nil {
@@ -610,7 +678,8 @@ func shouldStoreFirmwareUpdateTarget(current, next string) bool {
 	return true
 }
 
-func waitForHTTPFirmwareVersionWithDiscovery(ctx context.Context, home, base, version string, timeout time.Duration) (string, error) {
+func waitForHTTPFirmwareVersionWithDiscovery(ctx context.Context, home, base, version, deviceID string, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
 	firstTimeout := timeout
 	if firmwareUpdateRediscoveryAfter > 0 && firmwareUpdateRediscoveryAfter < timeout {
 		firstTimeout = firmwareUpdateRediscoveryAfter
@@ -620,26 +689,41 @@ func waitForHTTPFirmwareVersionWithDiscovery(ctx context.Context, home, base, ve
 		return base, nil
 	}
 
-	discovered, discoverErr := discoverInstallUpdateTarget(ctx, home, base)
-	if discoverErr != nil {
-		if firstTimeout < timeout {
-			if retryErr := waitForHTTPFirmwareVersion(ctx, base, version, timeout-firstTimeout); retryErr == nil {
-				return base, nil
+	var lastDiscoveryErr error
+	for time.Now().Before(deadline) {
+		discovered, discoverErr := discoverInstallUpdateTarget(ctx, home, base, deviceID)
+		if discoverErr == nil && strings.TrimSpace(discovered) != "" {
+			remaining := time.Until(deadline)
+			verifyFor := 30 * time.Second
+			if remaining < verifyFor {
+				verifyFor = remaining
 			}
+			if verifyFor > 0 {
+				if verifyErr := waitForHTTPFirmwareVersion(ctx, discovered, version, verifyFor); verifyErr == nil {
+					if strings.TrimRight(discovered, "/") != strings.TrimRight(base, "/") {
+						fmt.Printf("Using rediscovered VibeTV address: %s\n", discovered)
+					}
+					return discovered, nil
+				} else {
+					lastDiscoveryErr = verifyErr
+				}
+			}
+		} else if discoverErr != nil {
+			lastDiscoveryErr = discoverErr
 		}
-		return "", fmt.Errorf("%w; rediscovery failed: %v", err, discoverErr)
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(firmwareUpdateRediscoveryInterval):
+		}
 	}
-	if strings.TrimSpace(discovered) == "" || strings.TrimRight(discovered, "/") == strings.TrimRight(base, "/") {
-		return "", err
+	if lastDiscoveryErr != nil {
+		return "", fmt.Errorf("%w; rediscovery failed: %v", err, lastDiscoveryErr)
 	}
-	fmt.Printf("Using rediscovered VibeTV address: %s\n", discovered)
-	if verifyErr := waitForHTTPFirmwareVersion(ctx, discovered, version, 30*time.Second); verifyErr != nil {
-		return "", fmt.Errorf("%w; rediscovered target %s also failed: %v", err, discovered, verifyErr)
-	}
-	return discovered, nil
+	return "", err
 }
 
-func discoverInstallUpdateTarget(ctx context.Context, home, base string) (string, error) {
+func discoverInstallUpdateTarget(ctx context.Context, home, base, deviceID string) (string, error) {
 	candidates := []string{base, setup.DefaultWiFiTarget()}
 	if cfg, err := runtimeconfig.Load(home); err == nil {
 		candidates = append(candidates, cfg.DeviceTarget)
@@ -648,6 +732,7 @@ func discoverInstallUpdateTarget(ctx context.Context, home, base string) (string
 		Candidates:         candidates,
 		IncludeNetworkScan: true,
 		Timeout:            8 * time.Second,
+		ExpectedDeviceID:   strings.TrimSpace(deviceID),
 	})
 	if err != nil {
 		return "", err

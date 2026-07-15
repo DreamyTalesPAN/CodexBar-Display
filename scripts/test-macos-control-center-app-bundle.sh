@@ -436,6 +436,7 @@ main() {
     || die "Mach-O helpers must not be stored in the Resources directory"
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
   assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
+  assert_file "${app}/Contents/Frameworks/Sparkle.framework/README.txt"
 
   python3 - \
     "${app}/Contents/Info.plist" \
@@ -456,6 +457,9 @@ expected = {
     "CFBundleShortVersionString": "1.2.3",
     "CFBundleVersion": "146",
     "CFBundlePackageType": "APPL",
+    "SUEnableAutomaticChecks": False,
+    "SUFeedURL": "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/appcast.xml",
+    "SUPublicEDKey": "2txeIAd+ofTbffzPR5hy5J4lvGX8LGclIdG82es1qPA=",
 }
 
 for key, value in expected.items():
@@ -519,6 +523,10 @@ if environment.get("VIBETV_DISABLE_MAC_APP_SELF_UPDATE") != "1":
     raise SystemExit(
         "DMG runtime must disable the legacy Terminal Mac App updater"
     )
+if environment.get("VIBETV_MAC_APP_VERSION") != "1.2.3":
+    raise SystemExit("DMG runtime must report its containing Mac App version")
+if environment.get("VIBETV_MAC_APP_BUILD") != "146":
+    raise SystemExit("DMG runtime must report its containing Mac App build")
 
 with open(sys.argv[3], encoding="utf-8") as f:
     source = f.read()
@@ -538,6 +546,11 @@ if stop_legacy > register_runtime:
 
 required_source = [
     "import ServiceManagement",
+    "import Sparkle",
+    "SPUStandardUpdaterController(",
+    "SPUUpdaterDelegate",
+    'isCheckForUpdatesURL(url)',
+    'pendingNativeUpdateFileName = "pending-native-update.json"',
     "SMAppService.agent(plistName: runtimeLaunchAgentPlistName)",
     "try runtimeService.register()",
     "runtimeService.unregister(completionHandler:",
@@ -583,6 +596,12 @@ required_source = [
     "requiresApplicationInstallation(Bundle.main.bundleURL)",
     "presentInstallationRequiredAlert()",
     "RuntimePreparationOutcome",
+    "pendingNativeUpdateBlocksBundle(",
+    "pendingNativeUpdateIsExpired(",
+    "discardMismatchedPendingNativeUpdate()",
+    "presentInstallationStatus(",
+    'title: "Finishing installation…"',
+    'title: "Installation needs attention"',
     "activeNavigation = webView?.load(",
     ".reloadIgnoringLocalCacheData",
     'alert.addButton(withTitle: "Open Applications")',
@@ -597,25 +616,25 @@ launch_end = source.find("func application(_ application:", launch_start)
 launch_method = source[launch_start:launch_end]
 install_guard = launch_method.find("guard !installationRequired else")
 install_alert = launch_method.find("presentInstallationRequiredAlert()", install_guard)
+sparkle_start = launch_method.find("_ = updaterController", install_guard)
 runtime_start = launch_method.find("Task {", install_guard)
-control_center_start = launch_method.find("presentControlCenter()", install_guard)
-if not (
-    0 <= install_guard < install_alert < runtime_start
-    and install_guard < control_center_start
-):
+runtime_start = launch_method.find("startRuntimePreparation()", install_guard)
+if not (0 <= install_guard < install_alert < sparkle_start < runtime_start):
     raise SystemExit(
-        "native app must stop at the install dialog before starting the runtime or WebView"
+        "native app must stop at the install dialog before starting Sparkle, the runtime, or WebView"
     )
 
-prepare_runtime = launch_method.find("let outcome = await self.prepareCompanion()")
-reload_after_prepare = launch_method.find(
-    "if outcome.shouldReloadControlCenter",
-    prepare_runtime,
-)
-reload_call = launch_method.find("self.reloadControlCenter()", reload_after_prepare)
-if not (0 <= prepare_runtime < reload_after_prepare < reload_call):
+prepare_start = source.find("private func startRuntimePreparation()")
+prepare_end = source.find("@objc private func retryRuntimePreparation()", prepare_start)
+preparation_method = source[prepare_start:prepare_end]
+status_start = preparation_method.find("presentInstallationStatus(")
+prepare_runtime = preparation_method.find("let outcome = await self.prepareCompanion()")
+native_case = preparation_method.find("case .nativeRuntimeReady:", prepare_runtime)
+webview_after_verify = preparation_method.find("self.presentControlCenter()", native_case)
+legacy_case = preparation_method.find("case .legacyRuntimeRestored:", native_case)
+if not (0 <= status_start < prepare_runtime < native_case < webview_after_verify < legacy_case):
     raise SystemExit(
-        "native app must refresh the WebView after a confirmed runtime migration or rollback"
+        "native app must keep the WebView closed until app, runtime, and listener verification succeeds"
     )
 
 if "shouldRetryControlCenterNavigation(error)" not in source:
@@ -648,10 +667,11 @@ if (
     )
 
 present_start = source.find("private func presentControlCenter()")
-present_end = source.find("private func createWindow()", present_start)
-if "guard !installationRequired else" not in source[present_start:present_end]:
+present_end = source.find("private func presentInstallationRequiredAlert()", present_start)
+present_source = source[present_start:present_end]
+if "guard !installationRequired, installationReady else" not in present_source:
     raise SystemExit(
-        "native app must prevent every non-Applications launch from creating a WebView"
+        "native app must prevent every unverified launch from creating a WebView"
     )
 
 registration = source.find("guard await ensureBundledRuntimeServiceRegistered()")
@@ -844,6 +864,33 @@ PY
     "signing dry-run must show stapler"
   assert_contains "$sign_output" "spctl --assess" \
     "signing dry-run must show Gatekeeper assessment"
+
+  python3 - "${ROOT}/scripts/sign-notarize-macos-control-center.sh" <<'PY'
+import sys
+
+source = open(sys.argv[1], encoding="utf-8").read()
+positions = [
+    source.index('"${sparkle_version_dir}/XPCServices/Downloader.xpc"'),
+    source.index('"${sparkle_version_dir}/XPCServices/Installer.xpc"'),
+    source.index('"${sparkle_version_dir}/Updater.app"'),
+    source.index('"${sparkle_version_dir}/Autoupdate"'),
+    source.index('"$sparkle_framework"', source.index('"${sparkle_version_dir}/Autoupdate"')),
+    source.index('"$companion_binary"', source.index('"$sparkle_framework"')),
+]
+if positions != sorted(positions):
+    raise SystemExit("Sparkle nested helpers, framework, and companion must be signed inside-out")
+PY
+
+  grep -qF 'VERSION="2.9.2"' "${ROOT}/scripts/fetch-sparkle.sh" \
+    || die "Sparkle distribution version must stay pinned"
+  grep -qF 'SHA256="1cb340cbbef04c6c0d162078610c25e2221031d794a3449d89f2f56f4df77c95"' "${ROOT}/scripts/fetch-sparkle.sh" \
+    || die "Sparkle distribution checksum must stay pinned"
+  grep -qF 'generate_appcast' "${ROOT}/.github/workflows/release.yml" \
+    || die "release workflow must generate a Sparkle appcast"
+  grep -qF 'sparkle:edSignature=' "${ROOT}/.github/workflows/release.yml" \
+    || die "release workflow must verify the appcast signature"
+  grep -qF 'SPARKLE_ED25519_PRIVATE_KEY' "${ROOT}/.github/workflows/release.yml" \
+    || die "release workflow must source the Sparkle private key from Actions secrets"
 
   grep -qF "com.codexbar-display.daemon" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must detect the old LaunchAgent"
