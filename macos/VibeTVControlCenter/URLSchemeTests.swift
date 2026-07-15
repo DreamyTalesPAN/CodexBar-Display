@@ -146,6 +146,39 @@ func runURLSchemeTests() {
         ) == "VibeTVControlCenter/99.0.16+163",
         "native WebView must identify itself without exposing the browser UI"
     )
+    let localNetworkProbe = makeLocalNetworkPrivacyProbeRequest(timeout: 12)
+    require(
+        localNetworkProbe?.url?.absoluteString == "http://192.168.4.1/hello",
+        "local-network privacy preflight must use the read-only setup gateway hello endpoint"
+    )
+    require(
+        localNetworkProbe?.httpMethod == "GET",
+        "local-network privacy preflight must remain read-only"
+    )
+    require(
+        localNetworkProbe?.cachePolicy == .reloadIgnoringLocalCacheData,
+        "local-network privacy preflight must not accept a cached response"
+    )
+    require(
+        localNetworkProbe?.timeoutInterval == 12,
+        "local-network privacy preflight must stay bounded"
+    )
+    require(
+        makeLocalNetworkPrivacyProbeRequest(
+            urlString: "http://other-device.local/hello"
+        ) == nil,
+        "local-network privacy preflight must not contact arbitrary hosts"
+    )
+    let existingDeviceStatus = makeExistingDeviceStatusRequest(timeout: 7)
+    require(
+        existingDeviceStatus?.url?.absoluteString == "http://127.0.0.1:47832/v1/status",
+        "existing-device preparation must inspect device status, not runtime-only health"
+    )
+    require(
+        existingDeviceStatus?.httpMethod == "GET" &&
+            existingDeviceStatus?.timeoutInterval == 7,
+        "existing-device status inspection must stay read-only and bounded"
+    )
     require(
         shouldRunRuntimeValidationUnregister(
             arguments: [
@@ -286,7 +319,7 @@ func runURLSchemeTests() {
     )
     require(
         shouldRetryExistingDevicePreparation(
-            .failed("temporary network failure"),
+            .retryableFailure("temporary network failure"),
             attempt: 1,
             maximumAttempts: 3
         ),
@@ -294,11 +327,19 @@ func runURLSchemeTests() {
     )
     require(
         !shouldRetryExistingDevicePreparation(
-            .failed("persistent network failure"),
+            .retryableFailure("persistent network failure"),
             attempt: 3,
             maximumAttempts: 3
         ),
         "device preparation retries must stop at the configured maximum"
+    )
+    require(
+        !shouldRetryExistingDevicePreparation(
+            .failed("pairing repair failed"),
+            attempt: 1,
+            maximumAttempts: 3
+        ),
+        "a failed pairing transaction must not be repeated automatically"
     )
     require(
         !shouldRetryExistingDevicePreparation(
@@ -344,6 +385,14 @@ func runURLSchemeTests() {
             serviceEnabled: false
         ),
         "a disabled SMAppService must not trigger a registration refresh"
+    )
+    require(
+        runtimeHealthGatePassed(.healthy(version: "1.2.3")),
+        "proven runtime health must survive a stale Service Management status after an app update"
+    )
+    require(
+        !runtimeHealthGatePassed(.ownershipFailed(.serviceUnavailable)),
+        "a listener without proven launchd ownership must not pass the runtime health gate"
     )
 
     let launchctlFixture = """

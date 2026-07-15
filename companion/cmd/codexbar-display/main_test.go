@@ -18,8 +18,35 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
+
+func TestDisplayWriterLockAllowsOnlyOneDaemon(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "display-writer.lock")
+	first, err := writerlock.AcquireAt(lockPath)
+	if err != nil {
+		t.Fatalf("acquire first writer lock: %v", err)
+	}
+	defer first.Release()
+
+	second, err := writerlock.AcquireAt(lockPath)
+	if err == nil {
+		second.Release()
+		t.Fatal("second daemon acquired the same display writer lock")
+	}
+	if got := errcode.Of(err); got != errcode.RuntimeWriterLocked {
+		t.Fatalf("second lock error code=%q want %q: %v", got, errcode.RuntimeWriterLocked, err)
+	}
+
+	first.Release()
+	third, err := writerlock.AcquireAt(lockPath)
+	if err != nil {
+		t.Fatalf("lock stayed unavailable after owner exited: %v", err)
+	}
+	third.Release()
+}
 
 func TestParseDaemonOptionsWiFiTarget(t *testing.T) {
 	opts, err := parseDaemonOptions([]string{
@@ -137,7 +164,7 @@ func TestDisplayStreamLogUsesSharedApplicationSupportPathAndAppends(t *testing.T
 		t.Fatalf("expected display stream log %q, got %q", wantPath, path)
 	}
 	first.now = func() time.Time { return time.Date(2026, 7, 12, 10, 11, 12, 123456789, time.UTC) }
-	first.logf("sent frame -> http://vibetv.local provider=codex session=12 weekly=34")
+	first.logf("sent frame -> http://192.168.1.42 provider=codex session=12 weekly=34")
 
 	second, secondPath, err := newDisplayStreamFileLogger(home)
 	if err != nil {
@@ -161,7 +188,7 @@ func TestDisplayStreamLogUsesSharedApplicationSupportPathAndAppends(t *testing.T
 		t.Fatalf("read display stream log: %v", err)
 	}
 	content := string(raw)
-	for _, want := range []string{"sent frame -> http://vibetv.local", "cycle error: code=runtime_serial_write"} {
+	for _, want := range []string{"sent frame -> http://192.168.1.42", "cycle error: code=runtime_serial_write"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("expected appended log to contain %q, got %q", want, content)
 		}
@@ -192,7 +219,7 @@ func TestDisplayStreamLoggerRedactsCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create display stream logger: %v", err)
 	}
-	logger.logf("request failed: GET http://user:password@vibetv.local/frame?token=pair-secret&key=api-secret")
+	logger.logf("request failed: GET http://user:password@192.168.1.42/frame?token=pair-secret&key=api-secret")
 
 	raw, err := os.ReadFile(logPath)
 	if err != nil {
@@ -204,7 +231,7 @@ func TestDisplayStreamLoggerRedactsCredentials(t *testing.T) {
 			t.Fatalf("display stream log leaked %q in %q", secret, got)
 		}
 	}
-	for _, want := range []string{"http://<redacted>@vibetv.local", "token=<redacted>", "key=<redacted>"} {
+	for _, want := range []string{"http://<redacted>@192.168.1.42", "token=<redacted>", "key=<redacted>"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected redacted marker %q in %q", want, got)
 		}

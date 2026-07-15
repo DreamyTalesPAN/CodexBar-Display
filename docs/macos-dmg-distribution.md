@@ -74,7 +74,7 @@ The embedded LaunchAgent runs the integrated display daemon and local API:
 ```bash
 codexbar-display daemon \
   --transport wifi \
-  --target http://vibetv.local \
+  --target http://<device-ip> \
   --interval 30s \
   --api-addr 127.0.0.1:47832 \
   --api-dev-origin http://127.0.0.1:47832

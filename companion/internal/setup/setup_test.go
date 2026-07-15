@@ -354,7 +354,7 @@ func TestRunWithDepsPersistsWiFiTargetAndTokenInRuntimeConfig(t *testing.T) {
 	}
 }
 
-func TestRunWithDepsDefaultsToWiFiLaunchAgentTarget(t *testing.T) {
+func TestRunWithDepsDefaultsToDiscoveryOnlyWiFiLaunchAgent(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
 
@@ -408,13 +408,12 @@ func TestRunWithDepsDefaultsToWiFiLaunchAgentTarget(t *testing.T) {
 	plist := string(plistData)
 	if !strings.Contains(plist, "<string>--transport</string>") ||
 		!strings.Contains(plist, "<string>wifi</string>") ||
-		!strings.Contains(plist, "<string>--target</string>") ||
-		!strings.Contains(plist, "<string>http://vibetv.local</string>") {
-		t.Fatalf("expected default WiFi launch agent target in plist, got:\n%s", plist)
+		strings.Contains(plist, "<string>--target</string>") {
+		t.Fatalf("expected discovery-only WiFi launch agent without a hostname target, got:\n%s", plist)
 	}
 }
 
-func TestRunWithDepsDiscoversWiFiIPWhenDefaultMDNSIsUnreliable(t *testing.T) {
+func TestRunWithDepsDiscoversWiFiIPWithoutDefaultHostname(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
 	var gotCandidates []string
@@ -468,8 +467,8 @@ func TestRunWithDepsDiscoversWiFiIPWhenDefaultMDNSIsUnreliable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected setup success, got %v", err)
 	}
-	if !containsString(gotCandidates, defaultWiFiTarget) {
-		t.Fatalf("expected default target candidate, got %#v", gotCandidates)
+	if len(gotCandidates) != 0 {
+		t.Fatalf("expected subnet discovery without a hostname candidate, got %#v", gotCandidates)
 	}
 
 	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")

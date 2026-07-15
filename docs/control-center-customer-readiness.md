@@ -153,10 +153,10 @@ own bundled service and either opens Overview or shows WiFi onboarding.
 
 When the Mac App is running but VibeTV is not found, native setup exposes a
 `VibeTV address` recovery field and one `Fix connection` action. Customers or
-support can enter the exact `vibetv.local`/IP address there without leaving the
+support can enter the exact IP address there without leaving the
 local flow. The hosted `/install/<theme_id>` entry remains download-only.
 
-Manual targets may be `vibetv.local`, an IP address, or an `http(s)` URL with a host and optional valid port. The Companion rejects explicit targets with unsupported schemes, invalid ports, paths, username/password credentials, query strings, or fragments so support reports do not collect tokenized URLs.
+Manual customer targets are IP addresses. The Companion rejects unsupported schemes, invalid ports, paths, username/password credentials, query strings, or fragments so support reports do not collect tokenized URLs.
 
 If an exact address does not answer, the app keeps the Mac App online and shows VibeTV as not found. That means the customer should correct the VibeTV address or WiFi state, not reinstall the Mac App.
 
@@ -281,7 +281,7 @@ What it checks:
 - hosted app HTTP reachability,
 - hosted app `/api/companion/latest` version status without installer or package URLs when `--app-url` is combined with `--release` or `--release-json`,
 - optional hosted app `/api/themes` source, selected free theme readiness, concrete `/install/<theme_id>` route reachability, and all visible free theme readiness when `--expect-catalog-source`, `--expect-theme-id`, or `--expect-all-free-themes-installable` is provided.
-- optional public Shopify product page readiness when `--expect-shopify-product-pages` or `--shopify-product-page <url> <theme_id>` is provided: during staged rollout, each checked product page must show `Copy install command` and the direct command `codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local`. During Control Center cutover, validate that product pages point to the matching `https://app.vibetv.shop/install/<theme_id>` route and that the hosted app route remains reachable and setup-gated. `--expect-shopify-product-pages` reads `productUrl` from `/api/themes`, or derives it from `handle` plus `--shopify-store-url` while deployments are rolling forward, and checks every free Shopify catalog item.
+- optional public Shopify product page readiness when `--expect-shopify-product-pages` or `--shopify-product-page <url> <theme_id>` is provided: validate that product pages point to the matching `https://app.vibetv.shop/install/<theme_id>` route and that the hosted app route remains reachable and setup-gated. `--expect-shopify-product-pages` reads `productUrl` from `/api/themes`, or derives it from `handle` plus `--shopify-store-url` while deployments are rolling forward, and checks every free Shopify catalog item.
 
 Use `--expect-catalog-source shopify` for the production customer app. Use `--expect-theme-id <theme_id>` for at least one public free Shopify theme before linking customers to product pages. That selected theme check requests `/install/<theme_id>` to prove the hosted app route exists. Add `--expect-all-free-themes-installable` before a collection-wide rollout. Those checks fail if a required theme is missing, paid, missing `themeId`, has no resolved `packUrl`, exposes a `packUrl` that is not an `http(s)` download URL, or if any free theme's `/install/<theme_id>` route is not reachable.
 

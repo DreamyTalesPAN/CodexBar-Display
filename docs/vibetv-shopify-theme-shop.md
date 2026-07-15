@@ -64,7 +64,7 @@ It renders one primary action, `Copy install command`, then shows the actual
 command:
 
 ```liquid
-curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local
+curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme <theme_id> --target http://<device-ip>
 ```
 
 The Liquid derives `<theme_id>` from `vibetv.theme_id` or `theme.theme_id`.
@@ -83,7 +83,7 @@ Fallback flow:
 
 1. Product page shows `Copy install command`.
 2. Customer opens Terminal, pastes the command, and presses Return while VibeTV is on the same WiFi.
-3. The command installs/updates the CLI helper and runs `codexbar-display theme-pack install --theme <theme_id> --target http://vibetv.local`.
+3. The command installs/updates the CLI helper and runs `codexbar-display theme-pack install --theme <theme_id> --target http://<device-ip>`.
 
 ## GitHub Theme Pack Artifacts
 
@@ -120,7 +120,7 @@ https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/them
 
 ## Hardware Test Guardrail
 
-WiFi theme installs write to the device. Do not run them against `vibetv.local` as a routine development check.
+WiFi theme installs write to the device. Do not run them against a device IP as a routine development check.
 
 Before linking customers to a Control Center theme route, verify that the hosted
 app is reading the Shopify catalog and that the product resolves to an

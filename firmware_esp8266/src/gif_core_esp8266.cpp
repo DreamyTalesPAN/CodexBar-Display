@@ -3,12 +3,15 @@
 #if !defined(CODEXBAR_DISPLAY_PROBE_ONLY) && CODEXBAR_DISPLAY_GIF_CORE
 
 #include "renderer_esp8266_display_state.h"
+#include "gif_asset_validator_file.h"
 
 #include <cstdio>
 #include <cstring>
 
 namespace codexbar_display {
 namespace esp8266 {
+
+static_assert(sizeof(AnimatedGIF) <= 15U * 1024U, "AnimatedGIF decoder exceeds the ESP8266 heap profile");
 
 namespace {
 
@@ -20,29 +23,10 @@ constexpr int kLayoutLowerOffset = 35;
 GifCoreESP8266* GifCoreESP8266::activeInstance_ = nullptr;
 
 void GifCoreESP8266::Setup(const char* preloadAssetPath) {
+  (void)preloadAssetPath;
   activeInstance_ = this;
   if (!fsMounted_) {
     fsMounted_ = LittleFS.begin();
-  }
-  if (!EnsureDecoder()) {
-    lastErrorPath_ = preloadAssetPath != nullptr ? preloadAssetPath : "";
-    lastErrorStage_ = "decoder_alloc";
-    lastErrorFailures_ = 1;
-    lastFailureAtMs_ = millis();
-  } else if (lastErrorStage_ == "decoder_alloc") {
-    lastErrorPath_ = "";
-    lastErrorStage_ = "";
-    lastErrorFailures_ = 0;
-    lastFailureAtMs_ = 0;
-  }
-  if (fsMounted_ && preloadAssetPath != nullptr && preloadAssetPath[0] != '\0') {
-    filePresent_ = LittleFS.exists(preloadAssetPath);
-    if (filePresent_) {
-      assetPath_ = preloadAssetPath;
-      layoutMode_ = GifLayoutMode::BottomRightMini;
-      gifWidth_ = 0;
-      gifHeight_ = 0;
-    }
   }
 }
 
@@ -67,6 +51,17 @@ void GifCoreESP8266::Stop() {
 void GifCoreESP8266::ReleaseMemory() {
   Stop();
   ReleaseDecoder();
+  filePresent_ = false;
+  assetPath_ = "";
+  tft_ = nullptr;
+  lastErrorPath_ = "";
+  lastErrorStage_ = "";
+  lastErrorFailures_ = 0;
+  lastFailureAtMs_ = 0;
+}
+
+bool GifCoreESP8266::PrepareDecoder() {
+  return EnsureDecoder();
 }
 
 bool GifCoreESP8266::EnsureDecoder() {
@@ -160,35 +155,6 @@ bool GifCoreESP8266::IsBlocked(GifFailureSlot slot, const char* path) {
 
   GifFailureGuard& guard = GuardForSlot(slot);
   return GifCorePolicy::IsBlocked(guard, millis());
-}
-
-bool GifCoreESP8266::ReadGifDimensions(const char* path, int& width, int& height) {
-  width = 0;
-  height = 0;
-  if (!fsMounted_ || path == nullptr || path[0] == '\0' || !LittleFS.exists(path)) {
-    return false;
-  }
-
-  File file = LittleFS.open(path, "r");
-  if (!file) {
-    return false;
-  }
-
-  uint8_t header[10] = {0};
-  const size_t bytesRead = file.read(header, sizeof(header));
-  file.close();
-  if (bytesRead < sizeof(header)) {
-    return false;
-  }
-
-  const bool gifHeader = (memcmp(header, "GIF87a", 6) == 0) || (memcmp(header, "GIF89a", 6) == 0);
-  if (!gifHeader) {
-    return false;
-  }
-
-  width = static_cast<int>(header[6] | (static_cast<uint16_t>(header[7]) << 8));
-  height = static_cast<int>(header[8] | (static_cast<uint16_t>(header[9]) << 8));
-  return width > 0 && height > 0;
 }
 
 bool GifCoreESP8266::EnsureStorage(const char* path) {
@@ -303,20 +269,24 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
     return true;
   }
 
-  int width = 0;
-  int height = 0;
-  if (!ReadGifDimensions(request.assetPath, width, height)) {
-    NoteFailure(request.failureSlot, request.assetPath, "invalid_header");
+  GifValidationInfo validationInfo;
+  const GifValidationError validationError =
+      ValidateGifAssetFile(request.assetPath, kMaxThemeGifLzwBits, &validationInfo);
+  if (validationError != GifValidationError::None) {
+    NoteFailure(
+        request.failureSlot,
+        request.assetPath,
+        validationError == GifValidationError::LzwCodeSizeExceeded ? "lzw_profile" : "invalid_gif");
     Stop();
     return false;
   }
 
   Stop();
-  gifWidth_ = width;
-  gifHeight_ = height;
+  gifWidth_ = validationInfo.width;
+  gifHeight_ = validationInfo.height;
   ConfigureDrawRect(tft, request);
 
-  if (!EnsureDecoder()) {
+  if (!PrepareDecoder()) {
     NoteFailure(request.failureSlot, request.assetPath, "decoder_alloc");
     Stop();
     return false;

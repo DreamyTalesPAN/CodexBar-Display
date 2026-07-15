@@ -49,7 +49,7 @@ Behavior:
 
 ## Setup
 
-`setup` is idempotent. The default LaunchAgent runtime is WiFi and targets `http://vibetv.local`.
+`setup` is idempotent. The default LaunchAgent runtime uses WiFi discovery, then stores the selected IP and stable `deviceId`.
 USB setup is an explicit development/support path.
 
 ### Default WiFi runtime
@@ -68,7 +68,7 @@ Use this for normal devices. It downloads the latest published firmware manifest
 
 ```bash
 codexbar-display install-update \
-  --target http://vibetv.local \
+  --target http://<device-ip> \
   --confirm-live-update
 ```
 
@@ -207,7 +207,7 @@ During normal operation the display uses explicit support states:
 - `Update running`: firmware, filesystem, or display asset upload is in progress. The display intentionally does not show internal paths such as GIF or theme asset filenames.
 - `WiFi reset`: saved WiFi credentials are being cleared before setup mode restarts.
 
-Before packaging a device for a customer, clear local provisioning WiFi credentials with `POST /reset-wifi` while the device is still reachable. After reboot, the display must show both setup steps on one screen: connect to `VibeTV-Setup`, then open the shown setup IP in a browser. The web setup flow still supports `vibetv.local`, with `192.168.4.1` as the fallback address in setup AP mode.
+Before packaging a device for a customer, clear local provisioning WiFi credentials with `POST /reset-wifi` while the device is still reachable. After reboot, the display must show both setup steps on one screen: connect to `VibeTV-Setup`, then open `192.168.4.1` in a browser.
 
 QR codes are deferred. They would be useful on the setup and connected screens, but adding QR generation to the ESP8266 firmware is a larger dependency and rendering-risk item. Keep the plain IP/host display as the supported customer path for now.
 

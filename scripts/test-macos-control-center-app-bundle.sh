@@ -498,8 +498,6 @@ expected_arguments = [
     "daemon",
     "--transport",
     "wifi",
-    "--target",
-    "http://vibetv.local",
     "--interval",
     "30s",
     "--api-addr",
@@ -525,6 +523,19 @@ if environment.get("VIBETV_DISABLE_MAC_APP_SELF_UPDATE") != "1":
 with open(sys.argv[3], encoding="utf-8") as f:
     source = f.read()
 
+prepare_start = source.index("private func prepareCompanion()")
+prepare_end = source.index(
+    "private func ensureBundledRuntimeServiceRegistered()",
+    prepare_start,
+)
+prepare_source = source[prepare_start:prepare_end]
+stop_legacy = prepare_source.index("stopLegacyLaunchAgents(legacyStates)")
+register_runtime = prepare_source.index("ensureBundledRuntimeServiceRegistered()")
+if stop_legacy > register_runtime:
+    raise SystemExit(
+        "native app must stop legacy display writers before registering the new LaunchAgent"
+    )
+
 required_source = [
     "import ServiceManagement",
     "SMAppService.agent(plistName: runtimeLaunchAgentPlistName)",
@@ -532,11 +543,13 @@ required_source = [
     "runtimeService.unregister(completionHandler:",
     "runtimeServiceNeedsRefresh(",
     'runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"',
-    'runtimeStatusURLString = "http://127.0.0.1:47832/v1/runtime-health"',
+    'runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"',
+    'runtimeDeviceStatusURLString = "http://127.0.0.1:47832/v1/status"',
     'runtimeDeviceRepairURLString = "http://127.0.0.1:47832/v1/device/repair"',
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",
     "let devicePreparation = await prepareExistingDeviceConnectionWithRetries(",
+    "guard let statusRequest = makeExistingDeviceStatusRequest()",
     "requireFreshFullFrame: !legacyStates.isEmpty || !legacyApps.isEmpty",
     "var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)",
     "shouldRetryRuntimeRegistration(",
@@ -654,11 +667,11 @@ legacy_app_migration = source.find(
 )
 persist_version = source.find("recordCurrentRuntimeBundleVersion()", health_gate)
 if not (
-    0 <= registration < stop_legacy < health_gate < device_preparation
+    0 <= stop_legacy < registration < health_gate < device_preparation
     < legacy_app_migration < persist_version
 ):
     raise SystemExit(
-        "native app must register, stop legacy, pass health, repair the existing device, migrate old apps, then persist"
+        "native app must stop legacy writers, register, pass health, repair the existing device, migrate old apps, then persist"
     )
 
 prepare_start = source.find("private func prepareCompanion() async")
@@ -673,13 +686,22 @@ retry_gate = prepare_method.find("if shouldRetryRuntimeRegistration(")
 retry_unregister = prepare_method.find("await unregisterBundledRuntimeService()", retry_gate)
 retry_register = prepare_method.find("registerBundledRuntimeService()", retry_unregister)
 retry_health = prepare_method.find("health = await waitForHealthyRuntime", retry_register)
-final_health_gate = prepare_method.find("guard case .healthy = health", retry_health)
+final_health_gate = prepare_method.find("guard runtimeHealthGatePassed(health)", retry_health)
+final_device_preparation = prepare_method.find(
+    "let devicePreparation = await prepareExistingDeviceConnectionWithRetries(",
+    final_health_gate,
+)
 if not (
     prepare_method.count("if shouldRetryRuntimeRegistration(") == 1
-    and 0 <= retry_gate < retry_unregister < retry_register < retry_health < final_health_gate
+    and 0 <= retry_gate < retry_unregister < retry_register < retry_health
+    < final_health_gate < final_device_preparation
 ):
     raise SystemExit(
         "native runtime may perform exactly one unregister/register/health recovery before the final gate"
+    )
+if "runtimeService.status == .enabled" in prepare_method[retry_health:final_device_preparation]:
+    raise SystemExit(
+        "proven runtime health must not be rejected by a stale Service Management status"
     )
 
 stop_method = source[
@@ -695,14 +717,27 @@ if not (0 <= disable_legacy < bootout_legacy):
 
 rollback_method = source[
     source.find("private func rollbackToLegacyAgents("):
+    source.find("private func restoreLegacyAgents(")
+]
+if (
+    ") async -> Bool" not in rollback_method
+    or "await unregisterBundledRuntimeService()" not in rollback_method
+    or "return restoreLegacyAgents(states, reason: reason)" not in rollback_method
+):
+    raise SystemExit(
+        "legacy rollback must stop the app-managed writer before restoring legacy services"
+    )
+
+restore_method = source[
+    source.find("private func restoreLegacyAgents("):
     source.find("private func legacyServiceIsLoaded(")
 ]
-if ") async -> Bool" not in rollback_method or "return restored" not in rollback_method:
+if ") -> Bool" not in restore_method or "return restored" not in restore_method:
     raise SystemExit(
-        "legacy rollback must report whether the restored runtime is safe to reload"
+        "legacy restore must report whether the restored runtime is safe to reload"
     )
-enable_legacy = rollback_method.find('launchctlExitStatus(["enable", service])')
-restart_legacy = rollback_method.find('"bootstrap"')
+enable_legacy = restore_method.find('launchctlExitStatus(["enable", service])')
+restart_legacy = restore_method.find('"bootstrap"')
 if not (0 <= enable_legacy < restart_legacy):
     raise SystemExit(
         "legacy rollback must re-enable services before restoring their loaded state"

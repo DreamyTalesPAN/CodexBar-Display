@@ -44,7 +44,6 @@ const (
 	defaultCycleTimeout        = 180 * time.Second
 	startupFastPollWindow      = 2 * time.Minute
 	startupFastPollInterval    = 30 * time.Second
-	defaultWiFiTarget          = "http://vibetv.local"
 	lastGoodPersistInterval    = 1 * time.Minute
 	directProviderProbeMax     = 3
 	themeEnvVar                = "CODEXBAR_DISPLAY_THEME"
@@ -81,6 +80,7 @@ const (
 	runtimeErrorCodexbarCmd     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarCmd)
 	runtimeErrorCodexbarParse   runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarParse)
 	runtimeErrorNoProviders     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeNoProviders)
+	runtimeErrorPairingRequired runtimeErrorKind = runtimeErrorKind(errcode.RuntimePairingRequired)
 )
 
 type RuntimeError struct {
@@ -615,11 +615,18 @@ func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
 
 func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeDeps) (string, protocol.DeviceCapabilities, int, error) {
 	requestedPort = effectiveCycleTarget(requestedPort, state, deps)
+	if deps.transportName == "wifi" && isLegacyMDNSTarget(requestedPort) {
+		legacyErr := errors.New("legacy mDNS target requires IP migration")
+		if recoveredPort, recoveredCaps, recovered := recoverStaleWiFiTarget(requestedPort, legacyErr, deps); recovered {
+			rememberRecoveredWiFiTarget(recoveredPort, state, deps)
+			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
+		}
+	}
 	port, err := resolvePortWithFallback(requestedPort, deps)
 	if err != nil {
 		hint := errcode.DefaultRecovery(errcode.RuntimeSerialResolve)
 		if deps.transportName == "wifi" {
-			hint = "Verify the Mac can open http://vibetv.local. If not, rerun setup with --target http://<device-ip>."
+			hint = "Wait for automatic discovery, or rerun setup with the IP shown on VibeTV."
 		}
 		return "", protocol.DeviceCapabilities{}, 0, &RuntimeError{
 			Kind: runtimeErrorSerialResolve,
@@ -686,6 +693,26 @@ func rememberRecoveredWiFiTarget(target string, state *runtimeState, deps runtim
 	deps.logf("runtime event=wifi-target-selected target=%s\n", target)
 }
 
+func persistActiveWiFiTarget(target string, deps runtimeDeps) {
+	target = strings.TrimSpace(target)
+	if deps.transportName != "wifi" || target == "" {
+		return
+	}
+	if home, err := deps.homeDir(); err == nil && strings.TrimSpace(home) != "" {
+		if cfg, err := deps.loadConfig(home); err == nil && strings.TrimSpace(cfg.DeviceID) != "" {
+			if isSameTarget(cfg.DeviceTarget, target) {
+				return
+			}
+			cfg.DeviceTarget = target
+			if err := deps.saveConfig(home, cfg); err != nil {
+				deps.logf("runtime event=wifi-target-persist-failed target=%s err=%v\n", target, err)
+				return
+			}
+			deps.logf("runtime event=wifi-target-persisted target=%s deviceId=%s\n", target, cfg.DeviceID)
+		}
+	}
+}
+
 func loadRuntimeConfig(deps runtimeDeps) (runtimeconfig.Config, bool) {
 	home, err := deps.homeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
@@ -703,11 +730,29 @@ func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) 
 		return "", protocol.DeviceCapabilities{}, false
 	}
 	candidates := []string{stalePort}
-	if isDefaultWiFiTarget(stalePort) {
-		candidates = append(candidates, defaultWiFiTarget)
+	if isLegacyMDNSTarget(stalePort) {
+		candidates = nil
 	}
 	result, discoverErr := deps.discoverWiFi(candidates)
 	if discoverErr != nil {
+		return "", protocol.DeviceCapabilities{}, false
+	}
+	hello := result.Hello.Normalize()
+	if hello.NetworkMode == "setup" {
+		deps.logf("runtime event=wifi-target-rejected target=%s reason=setup-mode\n", result.Target)
+		return "", protocol.DeviceCapabilities{}, false
+	}
+	cfg, configOK := loadRuntimeConfig(deps)
+	if configOK {
+		wantID := strings.TrimSpace(cfg.DeviceID)
+		gotID := strings.TrimSpace(hello.DeviceID)
+		if wantID != "" && !strings.EqualFold(wantID, gotID) {
+			deps.logf("runtime event=wifi-target-rejected target=%s reason=device-id-mismatch\n", result.Target)
+			return "", protocol.DeviceCapabilities{}, false
+		}
+	}
+	if result.Source == "network-scan" && (!configOK || strings.TrimSpace(cfg.DeviceID) == "") {
+		deps.logf("runtime event=wifi-target-rejected target=%s reason=legacy-device-unidentified\n", result.Target)
 		return "", protocol.DeviceCapabilities{}, false
 	}
 	caps := protocol.CapabilitiesFromHello(result.Hello)
@@ -724,8 +769,12 @@ func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) 
 	return result.Target, caps, true
 }
 
-func isDefaultWiFiTarget(target string) bool {
-	return strings.Contains(strings.ToLower(strings.TrimSpace(target)), "vibetv.local")
+func isLegacyMDNSTarget(target string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(target))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSuffix(parsed.Hostname(), "."), "vibetv.local")
 }
 
 func isSameTarget(left, right string) bool {
@@ -1090,16 +1139,15 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	frame = marshaledFrame
 
-	sendTarget := sendTargetWithRuntimeAuth(port, deps)
-	if err := deps.sendLine(sendTarget, line); err != nil {
+	sendTarget, authErr := sendTargetWithRuntimeAuth(port, deps)
+	if authErr != nil {
 		return &RuntimeError{
-			Kind: runtimeErrorSerialWrite,
-			Op:   "send-line",
-			Err:  err,
-			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
+			Kind: runtimeErrorPairingRequired,
+			Op:   "authorize-wifi-frame",
+			Err:  authErr,
+			Hint: errcode.DefaultRecovery(errcode.RuntimePairingRequired),
 		}
 	}
-
 	if sendTarget == "" {
 		return &RuntimeError{
 			Kind: runtimeErrorSerialWrite,
@@ -1108,6 +1156,16 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
+	if err := deps.sendLine(sendTarget, line); err != nil {
+		return &RuntimeError{
+			Kind: runtimeErrorSerialWrite,
+			Op:   "send-line",
+			Err:  err,
+			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
+		}
+	}
+	persistActiveWiFiTarget(port, deps)
+
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
 		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
@@ -1126,15 +1184,24 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	return nil
 }
 
-func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) string {
+func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) (string, error) {
 	if deps.transportName != "wifi" {
-		return target
+		return target, nil
 	}
 	cfg, ok := loadRuntimeConfig(deps)
 	if !ok {
-		return target
+		return "", errors.New("pairing token required: runtime config unavailable")
 	}
-	return targetWithDeviceToken(target, cfg.DeviceToken)
+	token := strings.TrimSpace(cfg.DeviceToken)
+	if token == "" {
+		return "", errors.New("pairing token required: no saved token")
+	}
+	authenticatedTarget := targetWithDeviceToken(target, token)
+	parsed, parsedOK := parseDeviceTarget(authenticatedTarget)
+	if !parsedOK || parsed.Query().Get("token") != token {
+		return "", errors.New("pairing token required: could not authenticate WiFi target")
+	}
+	return authenticatedTarget, nil
 }
 
 func targetWithDeviceToken(target, token string) string {

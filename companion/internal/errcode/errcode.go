@@ -31,6 +31,8 @@ const (
 	RuntimeCodexbarCmd     Code = "runtime/codexbar-command"
 	RuntimeCodexbarParse   Code = "runtime/codexbar-parse"
 	RuntimeNoProviders     Code = "runtime/no-providers"
+	RuntimePairingRequired Code = "runtime/device-pairing-required"
+	RuntimeWriterLocked    Code = "runtime/display-writer-locked"
 
 	SetupCodexbarValidate    Code = "setup/codexbar-validate"
 	SetupCodexbarInstall     Code = "setup/codexbar-install"
@@ -138,6 +140,10 @@ func DefaultRecovery(code Code) string {
 		return "Update CodexBar and check provider JSON output format."
 	case RuntimeNoProviders:
 		return "Open a provider once in CodexBar, then retry."
+	case RuntimePairingRequired:
+		return "Open VibeTV Control Center to repair pairing; the daemon will not send frames without a saved pairing token."
+	case RuntimeWriterLocked:
+		return "Keep only one VibeTV Companion daemon running for this macOS user."
 	case SetupCodexbarValidate:
 		return "Install CodexBar CLI (`brew install --cask steipete/tap/codexbar`) and rerun setup."
 	case SetupCodexbarInstall:

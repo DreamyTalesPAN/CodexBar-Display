@@ -6,7 +6,7 @@
   assign theme_id = theme_product.metafields.vibetv.theme_id.value | default: theme_product.metafields.theme.theme_id.value
   assign install_command = ''
   if theme_id != blank
-    assign install_command = 'curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme ' | append: theme_id | append: ' --target http://vibetv.local'
+    assign install_command = 'curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme ' | append: theme_id | append: ' --target http://<device-ip>'
   endif
 %}
 

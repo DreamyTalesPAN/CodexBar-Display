@@ -431,7 +431,7 @@ func runUpgrade(args []string) (retErr error) {
 
 func runInstallUpdate(args []string) (retErr error) {
 	fs := flag.NewFlagSet("install-update", flag.ContinueOnError)
-	target := fs.String("target", setup.DefaultWiFiTarget(), "VibeTV URL, for example http://vibetv.local")
+	target := fs.String("target", setup.DefaultWiFiTarget(), "VibeTV URL, for example http://192.168.1.42")
 	manifestURL := fs.String("manifest-url", vibeTVFirmwareManifestURL, "firmware manifest URL")
 	force := fs.Bool("force", false, "install even when the device already reports the latest firmware")
 	confirmLiveUpdate := fs.Bool("confirm-live-update", false, "allow installing from the default live Shopify firmware manifest")
@@ -460,13 +460,13 @@ func runInstallUpdate(args []string) (retErr error) {
 		return &commandError{Op: "resolve-target", Code: errcode.UpgradeFlashFirmware, Err: err}
 	}
 
-	hello, base, err := fetchDeviceHelloHTTPWithSavedTargetFallback(ctx, home, base)
+	hello, err := fetchDeviceHelloHTTP(ctx, base)
 	if err != nil {
 		return &commandError{
 			Op:   "device-hello",
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  err,
-			Hint: "open http://vibetv.local/health or pass --target http://<device-ip>",
+			Hint: "open http://<device-ip>/health or pass --target http://<device-ip>",
 		}
 	}
 	caps := protocol.CapabilitiesFromHello(hello)
@@ -559,7 +559,7 @@ func runInstallUpdate(args []string) (retErr error) {
 			Op:   "post-update-verify",
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  err,
-			Hint: "wait one minute, then open http://vibetv.local/health",
+			Hint: "wait one minute, then open http://<device-ip>/health",
 		}
 	}
 	if verifiedBase != base {
@@ -570,51 +570,6 @@ func runInstallUpdate(args []string) (retErr error) {
 	}
 	fmt.Printf("Done: firmware %s installed\n", targetVersion)
 	return nil
-}
-
-func fetchDeviceHelloHTTPWithSavedTargetFallback(ctx context.Context, home, base string) (protocol.DeviceHello, string, error) {
-	hello, err := fetchDeviceHelloHTTP(ctx, base)
-	if err == nil {
-		return hello, base, nil
-	}
-
-	fallback, ok := savedInstallUpdateFallbackBase(home, base)
-	if !ok {
-		return protocol.DeviceHello{}, base, err
-	}
-	fallbackHello, fallbackErr := fetchDeviceHelloHTTP(ctx, fallback)
-	if fallbackErr != nil {
-		return protocol.DeviceHello{}, base, fmt.Errorf("%w; saved target %s also failed: %v", err, fallback, fallbackErr)
-	}
-	fmt.Printf("Using saved VibeTV address: %s\n", fallback)
-	return fallbackHello, fallback, nil
-}
-
-func savedInstallUpdateFallbackBase(home, base string) (string, bool) {
-	if !isVibeTVLocalBase(base) {
-		return "", false
-	}
-	cfg, err := runtimeconfig.Load(home)
-	if err != nil {
-		return "", false
-	}
-	fallback, err := normalizeHTTPBaseURL(cfg.DeviceTarget)
-	if err != nil || strings.TrimSpace(fallback) == "" {
-		return "", false
-	}
-	if strings.TrimRight(fallback, "/") == strings.TrimRight(base, "/") {
-		return "", false
-	}
-	return fallback, true
-}
-
-func isVibeTVLocalBase(base string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(base))
-	if err != nil {
-		return false
-	}
-	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(parsed.Hostname())), ".")
-	return host == "vibetv.local"
 }
 
 func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base string, forcePair bool) (string, error) {
@@ -651,12 +606,6 @@ func shouldStoreFirmwareUpdateTarget(current, next string) bool {
 	next = strings.TrimSpace(next)
 	if next == "" || strings.TrimSpace(current) == next {
 		return false
-	}
-	if isVibeTVLocalBase(next) {
-		currentBase, err := normalizeHTTPBaseURL(current)
-		if err == nil && strings.TrimSpace(currentBase) != "" && !isVibeTVLocalBase(currentBase) {
-			return false
-		}
 	}
 	return true
 }
@@ -1216,7 +1165,7 @@ func sha256File(path string) (string, error) {
 func normalizeHTTPBaseURL(raw string) (string, error) {
 	target := strings.TrimSpace(raw)
 	if target == "" {
-		return "", errors.New("target is required, for example http://vibetv.local")
+		return "", errors.New("target is required, for example http://192.168.1.42")
 	}
 	if !strings.Contains(target, "://") {
 		target = "http://" + target

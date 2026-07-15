@@ -14,8 +14,8 @@ Sprite sheets can be imported from PNG, JPEG, or WebP. The browser slices the sh
 Animated sprites can use a `Clear` color in the inspector. Set it to the solid local background behind the sprite to prevent frame-to-frame flicker boxes on the ESP8266.
 GIF elements can also use `Background` as their local clear color. This does not magically key out every black pixel; it gives the firmware a color to restore behind transparent GIF pixels and between GIF loops.
 Use `Cozy Meadow` to load a warm pastoral sample theme with a generated meadow background sprite, birds, a butterfly, flowers, a small GIF, and live usage text.
-Set the Vibe TV field to the device URL, for example `http://192.168.178.163` or `http://vibetv.local`.
-For paired firmware, paste the `vibetv.local` Pairing token into the Pairing token field. `Pair Device` creates or rotates that token and stores it in browser storage.
+Set the Vibe TV field to the device IP, for example `http://192.168.178.163`.
+For paired firmware, paste the device Pairing token into the Pairing token field. `Pair Device` creates or rotates that token and stores it in browser storage.
 The Studio clears any cached ThemeSpec, uploads referenced GIF and sprite assets, uploads the compact ThemeSpec JSON as a content-hashed `/themes/u/<short-id>-<hash>.json`, activates it with `/theme/active`, then sends a small live `/frame` with usage values only.
 The health confirmation checks the active stored path and firmware-reported content hash so inspector edits such as text color, font, size, and position cannot be mistaken for an older same-id/same-revision theme.
 Use `Watch 60s` after sending when you need stronger confidence before publishing. It polls `/health` for one minute and reports whether the theme stayed active, whether render/GIF failures appeared, whether reset diagnostics changed, and whether free heap is low. A successful send confirms immediate activation; the watch check confirms short-run stability.
@@ -48,8 +48,8 @@ Advanced fallback through the companion CLI:
 
 ```bash
 cd ../../companion
-go run ./cmd/codexbar-display theme-validate --transport wifi --target http://vibetv.local --spec ../tools/theme-studio/theme.json
-CODEXBAR_DISPLAY_DEVICE_TOKEN=<pairing-token> go run ./cmd/codexbar-display theme-apply --transport wifi --target http://vibetv.local --spec ../tools/theme-studio/theme.json
+go run ./cmd/codexbar-display theme-validate --transport wifi --target http://<device-ip> --spec ../tools/theme-studio/theme.json
+CODEXBAR_DISPLAY_DEVICE_TOKEN=<pairing-token> go run ./cmd/codexbar-display theme-apply --transport wifi --target http://<device-ip> --spec ../tools/theme-studio/theme.json
 ```
 
 Current MVP scope:

@@ -1,12 +1,18 @@
 #include <cstdint>
 #include <cstdio>
+#include <fstream>
+#include <string>
 
 #include "../src/gif_core_policy.h"
+#include "../src/boot_recovery_policy.h"
+#include "../src/theme_spec_runtime_policy.h"
 
 namespace {
 
 using codexbar_display::esp8266::GifCorePolicy;
 using codexbar_display::esp8266::GifFailureGuardState;
+using codexbar_display::esp8266::BootRecoveryPolicy;
+using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
 
 bool expect(bool cond, const char* message) {
   if (!cond) {
@@ -141,9 +147,117 @@ bool testFitContainPreservesAspectRatio() {
   return true;
 }
 
+bool testBootRecoveryOnlyCountsPhysicalResets() {
+  if (!expect(BootRecoveryPolicy::CountsAsPhysicalReset(0), "power-on reset must count")) {
+    return false;
+  }
+  if (!expect(BootRecoveryPolicy::CountsAsPhysicalReset(6), "external reset must count")) {
+    return false;
+  }
+  for (uint32_t reason = 1; reason <= 5; ++reason) {
+    if (!expect(
+            !BootRecoveryPolicy::CountsAsPhysicalReset(reason),
+            "watchdog, exception, software and deep-sleep resets must not count")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool testAnimatedAssetScanYieldsEveryEightRows() {
+  for (int row = 1; row <= 32; ++row) {
+    const bool expected = row == 8 || row == 16 || row == 24 || row == 32;
+    if (!expect(
+            ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row) == expected,
+            "animated asset indexing must yield after every eight rows")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::string readFile(const char* path) {
+  std::ifstream input(path);
+  return std::string(
+      std::istreambuf_iterator<char>(input),
+      std::istreambuf_iterator<char>());
+}
+
+bool testDecoderAllocationStaysInsideRealPlayback(
+    const char* themeSpecRendererPath,
+    const char* gifCorePath) {
+  const std::string renderer = readFile(themeSpecRendererPath);
+  const std::string gifCore = readFile(gifCorePath);
+  if (!expect(!renderer.empty(), "theme renderer source must be readable")) {
+    return false;
+  }
+  if (!expect(!gifCore.empty(), "GIF core source must be readable")) {
+    return false;
+  }
+
+  const std::size_t cacheStart = renderer.find("bool ensureThemeSpecSceneCached(");
+  const std::size_t cacheEnd = renderer.find("bool readSpriteLine(", cacheStart);
+  if (!expect(
+          cacheStart != std::string::npos && cacheEnd != std::string::npos,
+          "theme cache function must remain discoverable")) {
+    return false;
+  }
+  const std::string cacheFunction = renderer.substr(cacheStart, cacheEnd - cacheStart);
+  if (!expect(
+          cacheFunction.find("PrepareDecoder(") == std::string::npos,
+          "theme parsing must never allocate the GIF decoder")) {
+    return false;
+  }
+  if (!expect(
+          cacheFunction.find("GifCore().ReleaseMemory()") <
+              cacheFunction.find("deserializeJson("),
+          "theme changes must release GIF memory before parsing the next theme")) {
+    return false;
+  }
+
+  const std::size_t validation = gifCore.find("ValidateGifAssetFile(");
+  const std::size_t decoderAllocation = gifCore.find("if (!PrepareDecoder())", validation);
+  if (!expect(
+          validation != std::string::npos && decoderAllocation != std::string::npos &&
+              validation < decoderAllocation,
+          "decoder allocation must happen only after complete GIF profile validation")) {
+    return false;
+  }
+  if (!expect(
+          gifCore.find("if (!PrepareDecoder())", decoderAllocation + 1) == std::string::npos,
+          "real GIF playback must be the only decoder allocation call site")) {
+    return false;
+  }
+  return true;
+}
+
+bool testInternalUploadPathIsRejected(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t pathValidation = mainSource.find("if (!isSafeAssetPath(assetUploadPath))");
+  const std::size_t reservedValidation =
+      mainSource.find("if (assetUploadPath == kAssetUploadTemporaryPath)", pathValidation);
+  const std::size_t temporaryOpen =
+      mainSource.find("LittleFS.open(kAssetUploadTemporaryPath, \"w\")", reservedValidation);
+  return expect(
+      pathValidation != std::string::npos && reservedValidation != std::string::npos &&
+          temporaryOpen != std::string::npos && reservedValidation < temporaryOpen,
+      "the internal staging path must be rejected before opening an external upload");
+}
+
+bool testFirmwareUsesIPDiscoveryInsteadOfMdns(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  return expect(
+      mainSource.find("ESP8266mDNS") == std::string::npos &&
+          mainSource.find("vibetv.local") == std::string::npos &&
+          mainSource.find("MDNS.") == std::string::npos &&
+          mainSource.find("WiFi.localIP().toString()") != std::string::npos &&
+          mainSource.find("192.168.4.1") != std::string::npos,
+      "firmware must expose setup and station endpoints by IP without mDNS");
+}
+
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
   if (!testBackoffThresholdAndExpiry()) {
     return 1;
   }
@@ -154,6 +268,24 @@ int main() {
     return 1;
   }
   if (!testFitContainPreservesAspectRatio()) {
+    return 1;
+  }
+  if (!testBootRecoveryOnlyCountsPhysicalResets()) {
+    return 1;
+  }
+  if (!testAnimatedAssetScanYieldsEveryEightRows()) {
+    return 1;
+  }
+  if (!expect(argc == 4, "source paths are required for firmware policy tests")) {
+    return 1;
+  }
+  if (!testDecoderAllocationStaysInsideRealPlayback(argv[1], argv[2])) {
+    return 1;
+  }
+  if (!testInternalUploadPathIsRejected(argv[3])) {
+    return 1;
+  }
+  if (!testFirmwareUsesIPDiscoveryInsteadOfMdns(argv[3])) {
     return 1;
   }
 

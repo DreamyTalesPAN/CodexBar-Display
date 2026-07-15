@@ -128,6 +128,7 @@ type Server struct {
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
 	subnetTargets          func() []string
+	defaultWiFiTarget      func() string
 	streamStatus           func(context.Context, string) displayStreamInfo
 	waitStream             func(context.Context, string) displayStreamInfo
 	waitStreamAfter        func(context.Context, string, time.Time) displayStreamInfo
@@ -138,6 +139,8 @@ type Server struct {
 	firmwareUpdateActive   atomic.Bool
 	configMu               sync.Mutex
 	repairMu               sync.Mutex
+	repairFlightsMu        sync.Mutex
+	repairFlights          map[string]*deviceRepairFlight
 	deviceMaintenanceMu    sync.Mutex
 	pairMu                 sync.Mutex
 	verificationMu         sync.Mutex
@@ -202,6 +205,12 @@ type repairStageError struct {
 	err   error
 }
 
+type deviceRepairFlight struct {
+	done   chan struct{}
+	device deviceInfo
+	err    error
+}
+
 func (e *repairStageError) Error() string {
 	if e == nil || e.err == nil {
 		return ""
@@ -218,6 +227,8 @@ func (e *repairStageError) Unwrap() error {
 
 type deviceInfo struct {
 	Target       string                    `json:"target,omitempty"`
+	DeviceID     string                    `json:"deviceId,omitempty"`
+	NetworkMode  string                    `json:"networkMode,omitempty"`
 	Connected    bool                      `json:"connected"`
 	Paired       bool                      `json:"paired,omitempty"`
 	Ready        bool                      `json:"ready"`
@@ -276,6 +287,15 @@ type statusResponse struct {
 type deviceActionResponse struct {
 	OK     bool       `json:"ok"`
 	Device deviceInfo `json:"device"`
+}
+
+type deviceSearchEntry struct {
+	Target      string `json:"target"`
+	DeviceID    string `json:"deviceId,omitempty"`
+	Board       string `json:"board,omitempty"`
+	Firmware    string `json:"firmware,omitempty"`
+	NetworkMode string `json:"networkMode,omitempty"`
+	Known       bool   `json:"known"`
 }
 
 type themeInstallRequest struct {
@@ -617,6 +637,7 @@ func New(opts Options) (*Server, error) {
 		installTheme:          themeinstall.Install,
 		runSetup:              setup.Run,
 		subnetTargets:         localSubnetTargets,
+		defaultWiFiTarget:     setup.DefaultWiFiTarget,
 		streamStatus:          inspectDisplayStream,
 		waitStream:            waitForDisplayStream,
 		waitStreamAfter:       waitForDisplayStreamAfter,
@@ -677,6 +698,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
+	mux.HandleFunc("/v1/device/search", s.handleDeviceSearch)
 	mux.HandleFunc("/v1/device/repair", s.handleDeviceRepair)
 	mux.HandleFunc("/v1/device/reload-display", s.handleDeviceReloadDisplay)
 	mux.HandleFunc("/v1/device", s.handleDevice)
@@ -857,12 +879,15 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	device := deviceInfo{
 		Target:    publicTarget(cfg.DeviceTarget),
 		Connected: strings.TrimSpace(cfg.DeviceToken) != "" && stream.Healthy,
-		Paired:    strings.TrimSpace(cfg.DeviceToken) != "",
+		Paired:    strings.TrimSpace(cfg.DeviceToken) != "" && stream.Healthy,
 		Stream:    streamPointer(stream),
 	}
 	if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		if hello, probeToken, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
 			device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
+			device.Paired = strings.TrimSpace(cfg.DeviceToken) != "" &&
+				probeToken == cfg.DeviceToken &&
+				stream.ErrorCode != "device_pairing_required"
 			if health, healthErr := s.getHealthProbe(r.Context(), cfg.DeviceTarget, probeToken, deviceHealthProbeTime); healthErr == nil {
 				device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, probeToken, false)
 			} else {
@@ -1782,18 +1807,48 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 	}{OK: true, Device: s.withDisplayStream(r.Context(), target, deviceFromHello(target, cfg.DeviceToken, hello))})
 }
 
+// handleDeviceSearch performs a read-only scan. Unlike the legacy discover
+// action it intentionally does not select a target, pair, or persist config.
+func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		Target string `json:"target"`
+	}
+	if !decodeOptionalJSON(w, r, &req) {
+		return
+	}
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	devices := s.searchDevices(r.Context(), cfg, strings.TrimSpace(req.Target))
+	writeJSON(w, http.StatusOK, struct {
+		OK      bool                `json:"ok"`
+		Devices []deviceSearchEntry `json:"devices"`
+	}{OK: true, Devices: devices})
+}
+
 func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	var req struct {
-		Target    string `json:"target"`
-		ForcePair bool   `json:"forcePair"`
+		Target           string `json:"target"`
+		ExpectedDeviceID string `json:"expectedDeviceId"`
+		ForcePair        bool   `json:"forcePair"`
 	}
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
-	device, err := s.repairDevice(r.Context(), strings.TrimSpace(req.Target), req.ForcePair)
+	device, err := s.repairDevice(
+		r.Context(),
+		strings.TrimSpace(req.Target),
+		strings.TrimSpace(req.ExpectedDeviceID),
+		req.ForcePair,
+	)
 	if err != nil {
 		writeRepairError(w, err)
 		return
@@ -1880,6 +1935,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
 		cfg.DeviceTarget = ""
 		cfg.DeviceToken = ""
+		cfg.DeviceID = ""
 	})
 	if err != nil {
 		writeInternalError(w, err)
@@ -1967,9 +2023,11 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", "Keep VibeTV powered on, then retry pairing.")
 		return
 	}
+	hello, _ := s.getHello(r.Context(), target, token)
 	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
 		current.DeviceTarget = target
 		current.DeviceToken = token
+		current.DeviceID = strings.TrimSpace(hello.DeviceID)
 	})
 	if err != nil {
 		writeInternalError(w, err)
@@ -1999,7 +2057,6 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream := s.waitForFreshDisplayStreamAfterPair(r.Context(), target, streamStartedAt)
-	hello, _ := s.getHello(r.Context(), target, token)
 	device := withDisplayStreamInfo(deviceFromHello(target, token, hello), stream)
 	health, err := s.waitForVerifiedDisplayRender(r.Context(), target, token, baseline, stream)
 	if err != nil {
@@ -2039,7 +2096,49 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 	}{OK: true, Device: device})
 }
 
-func (s *Server) repairDevice(ctx context.Context, requestedTarget string, forcePair bool) (deviceInfo, error) {
+func (s *Server) repairDevice(
+	ctx context.Context,
+	requestedTarget string,
+	expectedDeviceID string,
+	forcePair bool,
+) (deviceInfo, error) {
+	key := fmt.Sprintf(
+		"%t|%s|%s",
+		forcePair,
+		strings.ToLower(strings.TrimSpace(requestedTarget)),
+		strings.ToLower(strings.TrimSpace(expectedDeviceID)),
+	)
+	s.repairFlightsMu.Lock()
+	if s.repairFlights == nil {
+		s.repairFlights = make(map[string]*deviceRepairFlight)
+	}
+	if active := s.repairFlights[key]; active != nil {
+		s.repairFlightsMu.Unlock()
+		select {
+		case <-active.done:
+			return active.device, active.err
+		case <-ctx.Done():
+			return deviceInfo{}, ctx.Err()
+		}
+	}
+	flight := &deviceRepairFlight{done: make(chan struct{})}
+	s.repairFlights[key] = flight
+	s.repairFlightsMu.Unlock()
+
+	flight.device, flight.err = s.repairDeviceOnce(ctx, requestedTarget, expectedDeviceID, forcePair)
+	s.repairFlightsMu.Lock()
+	delete(s.repairFlights, key)
+	close(flight.done)
+	s.repairFlightsMu.Unlock()
+	return flight.device, flight.err
+}
+
+func (s *Server) repairDeviceOnce(
+	ctx context.Context,
+	requestedTarget string,
+	expectedDeviceID string,
+	forcePair bool,
+) (deviceInfo, error) {
 	s.deviceMaintenanceMu.Lock()
 	defer s.deviceMaintenanceMu.Unlock()
 
@@ -2085,6 +2184,14 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	if err != nil {
 		return deviceInfo{}, err
 	}
+	if err := validateRepairIdentity(
+		cfg,
+		hello,
+		strings.TrimSpace(requestedTarget) != "",
+		expectedDeviceID,
+	); err != nil {
+		return deviceInfo{}, err
+	}
 
 	token := strings.TrimSpace(cfg.DeviceToken)
 	pairedDuringRepair := false
@@ -2099,6 +2206,7 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
 		current.DeviceTarget = target
 		current.DeviceToken = token
+		current.DeviceID = strings.TrimSpace(hello.DeviceID)
 	})
 	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
@@ -2107,20 +2215,6 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	baseline, err := s.captureDisplayRenderBaseline(ctx, target, token)
 	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "display-render", err: err}
-	}
-	themeReactivated := false
-	if activeThemeNeedsFullRepairRender(baseline) {
-		baseline, err = s.reactivateCurrentThemeAndWaitForFullRender(
-			ctx,
-			target,
-			token,
-			baseline,
-			displayStreamInfo{},
-		)
-		if err != nil {
-			return deviceInfo{}, &repairStageError{stage: "display-render", err: err}
-		}
-		themeReactivated = true
 	}
 	resumeStream()
 	streamStartedAt := time.Now().UTC()
@@ -2162,17 +2256,30 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 		hello = refreshedHello
 	}
 	device := withDisplayStreamInfo(deviceFromHello(target, token, hello), stream)
-	health, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
-	if !themeReactivated && activeThemeNeedsFullRepairRender(health) {
+	var health deviceHealth
+	if activeThemeNeedsFullRepairRender(baseline) {
 		pauseStream()
 		health, err = s.reactivateCurrentThemeAndWaitForFullRender(
 			ctx,
 			target,
 			token,
-			health,
+			baseline,
 			stream,
 		)
 		resumeStream()
+	} else {
+		health, err = s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
+		if activeThemeNeedsFullRepairRender(health) {
+			pauseStream()
+			health, err = s.reactivateCurrentThemeAndWaitForFullRender(
+				ctx,
+				target,
+				token,
+				health,
+				stream,
+			)
+			resumeStream()
+		}
 	}
 	if err != nil {
 		if !stream.Healthy {
@@ -3704,6 +3811,7 @@ func (s *Server) loadConfigNormalized() (runtimeconfig.Config, error) {
 	}
 	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
 	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
+	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
 	return cfg, nil
 }
 
@@ -3719,6 +3827,7 @@ func (s *Server) updateConfig(mutate func(*runtimeconfig.Config)) (runtimeconfig
 	}
 	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
 	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
+	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
 	if err := s.saveConfig(s.home, cfg); err != nil {
 		return runtimeconfig.Config{}, err
 	}
@@ -3758,15 +3867,12 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		}
 		hello, err := s.getHelloProbe(ctx, target, cfg.DeviceToken, discoveryProbeTime)
 		if err != nil {
-			if !isVibeTVLocalTarget(target) {
-				return "", protocol.DeviceHello{}, err
-			}
-			lastErr = err
+			return "", protocol.DeviceHello{}, err
 		} else {
 			return target, hello, nil
 		}
 	} else {
-		candidates := uniqueStrings(cfg.DeviceTarget, setup.DefaultWiFiTarget())
+		candidates := uniqueStrings(cfg.DeviceTarget, s.configuredDefaultWiFiTarget())
 		for _, candidate := range candidates {
 			hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, discoveryProbeTime)
 			if err == nil {
@@ -3784,15 +3890,6 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		lastErr = errors.New("no device candidates")
 	}
 	return "", protocol.DeviceHello{}, lastErr
-}
-
-func isVibeTVLocalTarget(target string) bool {
-	parsed, err := url.Parse(normalizeTarget(target))
-	if err != nil {
-		return false
-	}
-	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(parsed.Hostname())), ".")
-	return host == "vibetv.local"
 }
 
 func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (string, protocol.DeviceHello, error) {
@@ -3877,6 +3974,181 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 		lastErr = errors.New("subnet discovery found no device")
 	}
 	return "", protocol.DeviceHello{}, lastErr
+}
+
+func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) []deviceSearchEntry {
+	byIdentity := make(map[string]deviceSearchEntry)
+	for attempt := 0; attempt < repairDiscoveryAttempts; attempt++ {
+		foundKnown := false
+		for _, entry := range s.searchDevicesOnce(ctx, cfg, explicitTarget) {
+			key := deviceSearchIdentityKey(entry)
+			if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
+				byIdentity[key] = entry
+			}
+			if entry.Known {
+				foundKnown = true
+			}
+		}
+		if foundKnown {
+			return sortedDeviceSearchEntries(byIdentity)
+		}
+		if attempt+1 >= repairDiscoveryAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return sortedDeviceSearchEntries(byIdentity)
+		case <-time.After(repairDiscoveryRetryGap):
+		}
+	}
+	return sortedDeviceSearchEntries(byIdentity)
+}
+
+func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) []deviceSearchEntry {
+	candidates := []string{}
+	if explicitTarget != "" {
+		if target, err := normalizeExplicitDeviceTarget(explicitTarget); err == nil {
+			candidates = append(candidates, target)
+		}
+	}
+	candidates = append(candidates, cfg.DeviceTarget, s.configuredDefaultWiFiTarget())
+	if s.subnetTargets != nil {
+		candidates = append(candidates, s.subnetTargets()...)
+	}
+	candidates = uniqueStrings(candidates...)
+	if len(candidates) == 0 {
+		return []deviceSearchEntry{}
+	}
+
+	type result struct {
+		target string
+		hello  protocol.DeviceHello
+	}
+	workers := subnetProbeLimit
+	if len(candidates) < workers {
+		workers = len(candidates)
+	}
+	jobs := make(chan string)
+	results := make(chan result, len(candidates))
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for candidate := range jobs {
+				hello, err := s.getHelloProbe(ctx, candidate, "", subnetProbeTime)
+				if err == nil {
+					results <- result{target: normalizeTarget(candidate), hello: hello.Normalize()}
+				}
+			}
+		}()
+	}
+	go func() {
+		defer close(jobs)
+		for _, candidate := range candidates {
+			select {
+			case jobs <- candidate:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	byIdentity := make(map[string]deviceSearchEntry)
+	for found := range results {
+		hello := found.hello
+		if hello.NetworkMode == "setup" {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(hello.DeviceID))
+		if key == "" {
+			key = strings.ToLower(publicTarget(found.target))
+		}
+		entry := deviceSearchEntry{
+			Target:      publicTarget(found.target),
+			DeviceID:    hello.DeviceID,
+			Board:       hello.Board,
+			Firmware:    hello.Firmware,
+			NetworkMode: hello.NetworkMode,
+			Known:       deviceIdentityMatches(cfg, hello),
+		}
+		if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
+			byIdentity[key] = entry
+		}
+	}
+	devices := make([]deviceSearchEntry, 0, len(byIdentity))
+	for _, entry := range byIdentity {
+		devices = append(devices, entry)
+	}
+	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].Known != devices[j].Known {
+			return devices[i].Known
+		}
+		return devices[i].Target < devices[j].Target
+	})
+	return devices
+}
+
+func deviceSearchIdentityKey(entry deviceSearchEntry) string {
+	key := strings.ToLower(strings.TrimSpace(entry.DeviceID))
+	if key == "" {
+		key = strings.ToLower(publicTarget(entry.Target))
+	}
+	return key
+}
+
+func (s *Server) configuredDefaultWiFiTarget() string {
+	if s.defaultWiFiTarget != nil {
+		return s.defaultWiFiTarget()
+	}
+	return setup.DefaultWiFiTarget()
+}
+
+func sortedDeviceSearchEntries(byIdentity map[string]deviceSearchEntry) []deviceSearchEntry {
+	devices := make([]deviceSearchEntry, 0, len(byIdentity))
+	for _, entry := range byIdentity {
+		devices = append(devices, entry)
+	}
+	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].Known != devices[j].Known {
+			return devices[i].Known
+		}
+		return devices[i].Target < devices[j].Target
+	})
+	return devices
+}
+
+func deviceIdentityMatches(cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
+	wantID := strings.TrimSpace(cfg.DeviceID)
+	gotID := strings.TrimSpace(hello.DeviceID)
+	return wantID != "" && gotID != "" && strings.EqualFold(wantID, gotID)
+}
+
+func validateRepairIdentity(
+	cfg runtimeconfig.Config,
+	hello protocol.DeviceHello,
+	explicit bool,
+	expectedDeviceID string,
+) error {
+	hello = hello.Normalize()
+	if hello.NetworkMode == "setup" {
+		return &repairStageError{stage: "discovery", err: errors.New("VibeTV is still in Wi-Fi setup mode")}
+	}
+	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
+	if expectedDeviceID != "" && !strings.EqualFold(expectedDeviceID, strings.TrimSpace(hello.DeviceID)) {
+		return &repairStageError{stage: "discovery", err: errors.New("selected VibeTV identity changed before pairing")}
+	}
+	if explicit || strings.TrimSpace(cfg.DeviceID) == "" {
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(cfg.DeviceID), strings.TrimSpace(hello.DeviceID)) {
+		return &repairStageError{stage: "discovery", err: errors.New("discovered VibeTV does not match the saved device identity")}
+	}
+	return nil
 }
 
 func (s *Server) getHello(ctx context.Context, target, token string) (protocol.DeviceHello, error) {
@@ -4098,7 +4370,10 @@ func correlatedOverlayProvesUsage(
 	if !baselineOK || !currentOK {
 		return false
 	}
-	if currentFull <= baselineFull || currentPartial < baselinePartial {
+	fullAdvanced := currentFull > baselineFull && currentPartial >= baselinePartial
+	resetCountdownAdvanced := strings.TrimSpace(current.Render.LastKind) == "reset" &&
+		currentFull >= baselineFull && currentPartial > baselinePartial
+	if !fullAdvanced && !resetCountdownAdvanced {
 		return false
 	}
 	if !localOverlayRenderKind(current.Render.LastKind) || !renderSurfaceHealthy(current) {
@@ -4162,7 +4437,7 @@ func (s *Server) reactivateCurrentThemeAndWaitForFullRender(
 	if err != nil {
 		return health, err
 	}
-	if !fullUsageRenderKind(health.Render.LastKind) {
+	if !fullUsageRenderKind(health.Render.LastKind) && !health.correlatedFrameProof {
 		return health, fmt.Errorf("VibeTV did not confirm a full display render: lastKind=%s", strings.TrimSpace(health.Render.LastKind))
 	}
 	return health, nil
@@ -4376,7 +4651,7 @@ func writeDiscoveryError(w http.ResponseWriter, err error) {
 			http.StatusConflict,
 			"multiple_devices_found",
 			"Multiple VibeTV devices were found.",
-			"Enter the exact VibeTV target in the VibeTV target field, for example http://vibetv.local or http://<device-ip>, then search again.",
+			"Enter the IP address shown on the VibeTV screen, then search again.",
 		)
 		return
 	}
@@ -4415,7 +4690,7 @@ func writeRepairError(w http.ResponseWriter, err error) {
 }
 
 func writeInvalidDeviceTarget(w http.ResponseWriter) {
-	writeError(w, http.StatusBadRequest, "invalid_device_target", "VibeTV target is invalid.", "Enter vibetv.local, an IP address, or an http(s) URL with a valid port and without path, username, password, query, or fragment.")
+	writeError(w, http.StatusBadRequest, "invalid_device_target", "VibeTV target is invalid.", "Enter the IP address shown on the VibeTV screen without a path, username, password, query, or fragment.")
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter) {
@@ -4547,6 +4822,9 @@ func withDisplayStreamInfo(device deviceInfo, stream displayStreamInfo) deviceIn
 		stream.Target = device.Target
 	}
 	device.Stream = streamPointer(stream)
+	if stream.ErrorCode == "device_pairing_required" {
+		device.Paired = false
+	}
 	if !stream.Healthy {
 		device.Ready = false
 	}
@@ -5172,6 +5450,8 @@ func deviceFromHello(target, token string, hello protocol.DeviceHello) deviceInf
 	}
 	return deviceInfo{
 		Target:       publicTarget(target),
+		DeviceID:     hello.DeviceID,
+		NetworkMode:  hello.NetworkMode,
 		Connected:    caps.Known,
 		Paired:       strings.TrimSpace(token) != "",
 		Board:        caps.Board,
@@ -5275,6 +5555,13 @@ func targetWithToken(target, token string) string {
 func applyDeviceToken(req *http.Request, token string) {
 	if token = strings.TrimSpace(token); token != "" {
 		req.Header.Set("X-VibeTV-Token", token)
+		// ESP8266WebServer 3.1.2 does not reliably retain custom headers on every
+		// route. Keep the header for compatible firmware, and also send the token
+		// through the firmware's existing query fallback used by the display
+		// stream. This makes /hello token verification reliable on real hardware.
+		query := req.URL.Query()
+		query.Set("token", token)
+		req.URL.RawQuery = query.Encode()
 	}
 }
 
