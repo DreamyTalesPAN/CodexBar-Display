@@ -24,7 +24,6 @@ import {
   type ReadinessTone,
   type UsageSnapshot,
 } from "./control-center-types";
-import { ControlCenterButton } from "./control-center-button";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
@@ -157,35 +156,21 @@ function MacAppMigrationCard({ downloadUrl }: { downloadUrl?: string }) {
             className="text-base font-black text-[#1B1B1B]"
             id="mac-app-migration-title"
           >
-            {downloadReady
-              ? "Move to the new Mac App"
-              : "New Mac App is being prepared"}
+            {downloadReady ? "Update available" : "Update not ready"}
           </h3>
-          <p className="mt-1 text-sm leading-6 text-[#444933]">
-            {downloadReady
-              ? "Open the downloaded DMG, drag VibeTV Control Center into Applications, then open it there. Keep the current app installed; your VibeTV settings carry over automatically."
-              : "Your current Control Center keeps working. The download will appear after the signed Mac App is ready."}
-          </p>
         </div>
       </div>
-      <div className="mt-4">
-        {downloadUrl ? (
+      {downloadUrl ? (
+        <div className="mt-4">
           <a
             className="vibetv-button vibetv-button--large vibetv-button--full vibetv-button--primary"
             href={downloadUrl}
           >
             <Download size={20} aria-hidden />
-            <span>Download new Mac App</span>
+            <span>Update</span>
           </a>
-        ) : (
-          <ControlCenterButton
-            disabled
-            fullWidth
-            label="New Mac App not ready"
-            size="large"
-          />
-        )}
-      </div>
+        </div>
+      ) : null}
     </section>
   );
 }

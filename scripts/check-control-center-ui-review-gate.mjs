@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 
 const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
   encoding: "utf8",
@@ -9,10 +9,12 @@ const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
 }).trim();
 process.chdir(repoRoot);
 
-const REVIEW_FILE = "docs/control-center-ui-review-checkpoint.md";
+const APPROVAL_FILE = "docs/control-center-customer-ui-approval.md";
 const PRINCIPLES_FILE = "docs/control-center-ui-principles.md";
-const DEFAULT_INTERVAL = 5;
-const interval = readInterval();
+const APPROVAL_PREFIXES = [
+  "- User approval:",
+  "- Approved customer-visible result:",
+];
 
 const uiFilePatterns = [
   /^apps\/control-center\/src\/components\//,
@@ -23,69 +25,56 @@ const uiFilePatterns = [
 ];
 
 const analysisRef = analysisHeadRef();
-const reviewCommit = latestReviewCommit(analysisRef);
+const approvalCommit = latestApprovalCommit(analysisRef);
 const workingTreeChangedFiles = changedFilesInWorkingTree();
-const workingTreeReviewMarker =
-  workingTreeChangedFiles.includes(REVIEW_FILE) ||
-  (!reviewCommit && existsSync(REVIEW_FILE));
-const commitsSinceReview = reviewCommit
-  ? workingTreeReviewMarker
-    ? 0
-    : Number(git(["rev-list", "--count", `${reviewCommit}..${analysisRef}`]))
-  : workingTreeReviewMarker
-    ? 0
-  : Number(git(["rev-list", "--count", analysisRef]));
-const committedChangedFiles = workingTreeReviewMarker
-  ? []
-  : changedFilesSince(reviewCommit, analysisRef);
-const changedFiles = unique([...committedChangedFiles, ...workingTreeChangedFiles]);
+const workingTreeApprovalChanged = workingTreeChangedFiles.includes(APPROVAL_FILE);
+const workingTreeApprovalValid = workingTreeApprovalChanged
+  ? diffAddsApprovalEvidence(workingTreeApprovalDiff())
+  : false;
+const committedApprovalValid = approvalCommit
+  ? diffAddsApprovalEvidence(commitDiff(approvalCommit))
+  : false;
+const activeApprovalValid = workingTreeApprovalChanged
+  ? workingTreeApprovalValid
+  : committedApprovalValid;
+const changedFiles = unique([
+  ...changedFilesSince(approvalCommit, analysisRef),
+  ...workingTreeChangedFiles,
+]);
 const uiChangedFiles = changedFiles.filter(isUiFile);
-const projectedCommits =
-  commitsSinceReview + (workingTreeChangedFiles.some(isUiFile) ? 1 : 0);
-const due = projectedCommits >= interval && uiChangedFiles.length > 0;
+const approvalCoversUi = workingTreeApprovalChanged && workingTreeApprovalValid;
+const unapprovedUiFiles = approvalCoversUi ? [] : uiChangedFiles;
+const invalidApprovalMarker =
+  (workingTreeApprovalChanged && !workingTreeApprovalValid) ||
+  (!workingTreeApprovalChanged && Boolean(approvalCommit) && !committedApprovalValid);
+const due = invalidApprovalMarker || unapprovedUiFiles.length > 0;
 
 printSummary({
-  changedFiles,
-  committedChangedFiles,
-  commitsSinceReview,
-  due,
+  activeApprovalValid,
   analysisRef,
-  projectedCommits,
-  reviewCommit,
+  approvalCommit,
+  due,
+  invalidApprovalMarker,
   uiChangedFiles,
+  unapprovedUiFiles,
+  workingTreeApprovalChanged,
   workingTreeChangedFiles,
 });
 
 if (due) {
-  const commitSummary =
-    projectedCommits === commitsSinceReview
-      ? `${commitsSinceReview} commits`
-      : `${commitsSinceReview} committed changes plus current working-tree UI changes`;
+  const reason = invalidApprovalMarker
+    ? `The newest approval marker does not add both required approval lines.`
+    : `Customer-facing UI changed in ${unapprovedUiFiles.length} file(s) without a matching approval entry.`;
   const message = [
-    `Control Center UI review is due: ${commitSummary} since ${REVIEW_FILE}.`,
-    `Customer-facing UI changed in ${uiChangedFiles.length} file(s).`,
-    `Review ${PRINCIPLES_FILE}, simplify the UI, then update ${REVIEW_FILE}.`,
+    reason,
+    `Get explicit approval for the exact visible result, review ${PRINCIPLES_FILE}, then append it to ${APPROVAL_FILE}.`,
   ].join(" ");
   if (process.env["GITHUB_ACTIONS"]) {
-    console.error(`::error title=Control Center UI review due::${message}`);
+    console.error(`::error title=Control Center UI approval required::${message}`);
   } else {
     console.error(`error: ${message}`);
   }
   process.exit(1);
-}
-
-function readInterval() {
-  const raw = process.env["CONTROL_CENTER_UI_REVIEW_INTERVAL"];
-  if (!raw) {
-    return DEFAULT_INTERVAL;
-  }
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(
-      `CONTROL_CENTER_UI_REVIEW_INTERVAL must be a positive integer, got ${raw}`,
-    );
-  }
-  return value;
 }
 
 function analysisHeadRef() {
@@ -99,8 +88,8 @@ function analysisHeadRef() {
   return "HEAD";
 }
 
-function latestReviewCommit(ref) {
-  const result = tryGit(["log", "-n", "1", "--format=%H", ref, "--", REVIEW_FILE]);
+function latestApprovalCommit(ref) {
+  const result = tryGit(["log", "-n", "1", "--format=%H", ref, "--", APPROVAL_FILE]);
   return result || null;
 }
 
@@ -119,48 +108,79 @@ function changedFilesInWorkingTree() {
   ]);
 }
 
+function workingTreeApprovalDiff() {
+  return [
+    tryGit(["diff", "--", APPROVAL_FILE]),
+    tryGit(["diff", "--cached", "--", APPROVAL_FILE]),
+    untrackedFileContents(APPROVAL_FILE),
+  ].join("\n");
+}
+
+function commitDiff(commit) {
+  return tryGit(["show", "--format=", "--unified=0", commit, "--", APPROVAL_FILE]);
+}
+
+function untrackedFileContents(file) {
+  if (!lines(tryGit(["ls-files", "--others", "--exclude-standard", "--", file])).includes(file)) {
+    return "";
+  }
+  try {
+    return readFileSync(file, "utf8")
+      .split("\n")
+      .map((line) => `+${line}`)
+      .join("\n");
+  } catch {
+    return "";
+  }
+}
+
+function diffAddsApprovalEvidence(diff) {
+  const addedLines = lines(diff)
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+    .map((line) => line.slice(1).trim());
+  return APPROVAL_PREFIXES.every((prefix) =>
+    addedLines.some((line) => line.startsWith(prefix)),
+  );
+}
+
 function isUiFile(file) {
   return uiFilePatterns.some((pattern) => pattern.test(file));
 }
 
 function printSummary({
-  changedFiles,
-  committedChangedFiles,
-  commitsSinceReview,
-  due,
+  activeApprovalValid,
   analysisRef,
-  projectedCommits,
-  reviewCommit,
+  approvalCommit,
+  due,
+  invalidApprovalMarker,
   uiChangedFiles,
+  unapprovedUiFiles,
+  workingTreeApprovalChanged,
   workingTreeChangedFiles,
 }) {
-  const status = due ? "due" : "ok";
-  console.log(`Control Center UI review gate: ${status}`);
+  console.log(`Control Center UI review gate: ${due ? "due" : "ok"}`);
   if (analysisRef !== "HEAD") {
     console.log(`Review head: ${analysisRef}`);
   }
   console.log(
-    `Review marker: ${reviewCommit || (workingTreeReviewMarker ? "working tree" : "none")}`,
+    `Approval marker: ${workingTreeApprovalChanged ? "working tree" : approvalCommit || "none"}`,
   );
-  console.log(`Commits since marker: ${commitsSinceReview}/${interval}`);
-  if (workingTreeChangedFiles.some(isUiFile)) {
-    console.log(`Projected commits after current UI changes: ${projectedCommits}/${interval}`);
-  }
-  console.log(`Committed files since marker: ${committedChangedFiles.length}`);
+  console.log(`Approval evidence: ${activeApprovalValid ? "valid" : "missing"}`);
   console.log(`Working tree files: ${workingTreeChangedFiles.length}`);
-  console.log(`Changed files since marker: ${changedFiles.length}`);
-  console.log(`UI-impacting files since marker: ${uiChangedFiles.length}`);
-  if (uiChangedFiles.length > 0) {
-    console.log("UI-impacting files:");
-    for (const file of uiChangedFiles.slice(0, 40)) {
+  console.log(`UI-impacting files since approval: ${uiChangedFiles.length}`);
+  console.log(`Unapproved UI files: ${unapprovedUiFiles.length}`);
+  if (invalidApprovalMarker) {
+    console.log("Approval marker is missing required evidence.");
+  }
+  const filesToPrint = due ? unapprovedUiFiles : uiChangedFiles;
+  if (filesToPrint.length > 0) {
+    console.log(due ? "Unapproved UI files:" : "Approved UI files:");
+    for (const file of filesToPrint.slice(0, 40)) {
       console.log(`- ${file}`);
     }
-    if (uiChangedFiles.length > 40) {
-      console.log(`- ... ${uiChangedFiles.length - 40} more`);
+    if (filesToPrint.length > 40) {
+      console.log(`- ... ${filesToPrint.length - 40} more`);
     }
-  }
-  if (!due) {
-    console.log(`Next required review at ${interval} commits with UI changes.`);
   }
 }
 
