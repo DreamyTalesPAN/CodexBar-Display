@@ -3094,7 +3094,7 @@ func TestDeviceRepairDoesNotRotateTokenForTransientFrameFailure(t *testing.T) {
 	}
 }
 
-func TestDeviceRepairReactivatesCurrentThemeAfterPartialStatusScreen(t *testing.T) {
+func TestDeviceRepairReactivatesCurrentThemeAfterOverlayWithHealthyStreamProof(t *testing.T) {
 	var activationCalls atomic.Int32
 	var displayStreamPaused atomic.Bool
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3152,14 +3152,9 @@ func TestDeviceRepairReactivatesCurrentThemeAfterPartialStatusScreen(t *testing.
 	}
 	var renderCalls atomic.Int32
 	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
-		call := renderCalls.Add(1)
+		renderCalls.Add(1)
 		fullCount := uint64(11)
 		partialCount := uint64(2)
-		lastKind := "theme_spec_usage"
-		if call > 1 {
-			partialCount = 3
-			lastKind = "theme_spec_frame"
-		}
 		health := deviceHealth{OK: true}
 		health.Display.ThemeSpec.Active = true
 		health.Display.ThemeSpec.Path = "/themes/u/claude.json"
@@ -3167,8 +3162,8 @@ func TestDeviceRepairReactivatesCurrentThemeAfterPartialStatusScreen(t *testing.
 		health.Display.ThemeSpec.RenderOK = &renderOK
 		health.Render.FullCount = &fullCount
 		health.Render.PartialCount = &partialCount
-		health.Render.LastKind = lastKind
-		return health, nil
+		health.Render.LastKind = "reset"
+		return health, errors.New("lastKind=reset")
 	}
 
 	recorder := httptest.NewRecorder()
@@ -3186,8 +3181,8 @@ func TestDeviceRepairReactivatesCurrentThemeAfterPartialStatusScreen(t *testing.
 	if !got.OK || !got.Device.Ready {
 		t.Fatalf("expected ready device after full redraw, got %+v", got)
 	}
-	if activationCalls.Load() != 1 || renderCalls.Load() != 2 {
-		t.Fatalf("activation=%d renderChecks=%d want 1,2", activationCalls.Load(), renderCalls.Load())
+	if activationCalls.Load() != 1 || renderCalls.Load() != 1 {
+		t.Fatalf("activation=%d renderChecks=%d want 1,1", activationCalls.Load(), renderCalls.Load())
 	}
 	if displayStreamPaused.Load() {
 		t.Fatal("repair left the display stream paused")

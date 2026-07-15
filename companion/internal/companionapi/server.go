@@ -2214,20 +2214,6 @@ func (s *Server) repairDeviceOnce(
 	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "display-render", err: err}
 	}
-	themeReactivated := false
-	if activeThemeNeedsFullRepairRender(baseline) {
-		baseline, err = s.reactivateCurrentThemeAndWaitForFullRender(
-			ctx,
-			target,
-			token,
-			baseline,
-			displayStreamInfo{},
-		)
-		if err != nil {
-			return deviceInfo{}, &repairStageError{stage: "display-render", err: err}
-		}
-		themeReactivated = true
-	}
 	resumeStream()
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, target); err != nil {
@@ -2268,17 +2254,30 @@ func (s *Server) repairDeviceOnce(
 		hello = refreshedHello
 	}
 	device := withDisplayStreamInfo(deviceFromHello(target, token, hello), stream)
-	health, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
-	if !themeReactivated && activeThemeNeedsFullRepairRender(health) {
+	var health deviceHealth
+	if activeThemeNeedsFullRepairRender(baseline) {
 		pauseStream()
 		health, err = s.reactivateCurrentThemeAndWaitForFullRender(
 			ctx,
 			target,
 			token,
-			health,
+			baseline,
 			stream,
 		)
 		resumeStream()
+	} else {
+		health, err = s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
+		if activeThemeNeedsFullRepairRender(health) {
+			pauseStream()
+			health, err = s.reactivateCurrentThemeAndWaitForFullRender(
+				ctx,
+				target,
+				token,
+				health,
+				stream,
+			)
+			resumeStream()
+		}
 	}
 	if err != nil {
 		if !stream.Healthy {
@@ -4388,7 +4387,7 @@ func (s *Server) reactivateCurrentThemeAndWaitForFullRender(
 	if err != nil {
 		return health, err
 	}
-	if !fullUsageRenderKind(health.Render.LastKind) {
+	if !fullUsageRenderKind(health.Render.LastKind) && !health.correlatedFrameProof {
 		return health, fmt.Errorf("VibeTV did not confirm a full display render: lastKind=%s", strings.TrimSpace(health.Render.LastKind))
 	}
 	return health, nil
