@@ -44,6 +44,9 @@ jobs:
         working-directory: companion
         run: go test ./...
 
+      - name: Test release-candidate infrastructure contract
+        run: ./scripts/test-release-candidate-contract.sh
+
       - name: Install staticcheck
         working-directory: companion
         run: go install honnef.co/go/tools/cmd/staticcheck@latest

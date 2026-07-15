@@ -1,0 +1,284 @@
+name: CODEX Test VibeTV Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Candidate commit SHA or branch
+        required: true
+        type: string
+      candidate:
+        description: Candidate Mac App SemVer
+        required: true
+        type: string
+      candidate_firmware:
+        description: Candidate firmware SemVer
+        required: true
+        type: string
+      from_app:
+        description: Currently public Mac App SemVer
+        required: true
+        type: string
+      legacy_app:
+        description: Previous public or migration-floor Mac App SemVer
+        required: true
+        type: string
+      from_firmware:
+        description: Currently public firmware SemVer
+        required: true
+        type: string
+      run_vm:
+        description: Run clean, legacy, and native Tart snapshots
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-vibetv-release-candidate
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout requested source without credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/control-center/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Validate candidate inputs
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          CANDIDATE_FIRMWARE: ${{ inputs.candidate_firmware }}
+        run: |
+          set -euo pipefail
+          semver='^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'
+          [[ "${CANDIDATE#v}" =~ $semver ]]
+          [[ "${CANDIDATE_FIRMWARE#v}" =~ $semver ]]
+
+      - name: Build private candidate inputs
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          CANDIDATE_FIRMWARE: ${{ inputs.candidate_firmware }}
+        run: |
+          set -euo pipefail
+          candidate="${CANDIDATE#v}"
+          candidate_firmware="${CANDIDATE_FIRMWARE#v}"
+          source_sha="$(git rev-parse HEAD)"
+          mkdir -p tmp/release-candidate dist/macos
+
+          (
+            cd apps/control-center
+            npm ci
+            npm run build:local
+          )
+          rm -rf companion/internal/companionapi/controlcenter_static
+          mkdir -p companion/internal/companionapi/controlcenter_static
+          cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
+
+          (
+            cd companion
+            for arch in amd64 arm64; do
+              GOOS=darwin GOARCH="${arch}" CGO_ENABLED=0 \
+                go build \
+                -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${candidate} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${source_sha}" \
+                -o "../tmp/release-candidate/codexbar-display-${arch}" ./cmd/codexbar-display
+            done
+            GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
+              go build -o ../tmp/release-candidate/virtual-vibetv ./cmd/virtual-vibetv
+          )
+          lipo -create \
+            -output tmp/release-candidate/codexbar-display \
+            tmp/release-candidate/codexbar-display-amd64 \
+            tmp/release-candidate/codexbar-display-arm64
+
+          ./scripts/build-macos-control-center-app.sh \
+            --version "$candidate" \
+            --build "${GITHUB_RUN_NUMBER}" \
+            --universal \
+            --companion-binary tmp/release-candidate/codexbar-display \
+            --output "dist/macos/VibeTV Control Center.app"
+
+          ./scripts/release-candidate/build-sparkle-cli.sh \
+            --output tmp/release-candidate/sparkle-cli.tar.gz
+
+          (
+            cd firmware_esp8266
+            CODEXBAR_DISPLAY_FW_VERSION="$candidate_firmware" pio run -e esp8266_smalltv_st7789
+          )
+          cp firmware_esp8266/.pio/build/esp8266_smalltv_st7789/firmware.bin \
+            tmp/release-candidate/firmware.bin
+          printf '%s\n' "$source_sha" > tmp/release-candidate/source-sha.txt
+          COPYFILE_DISABLE=1 tar -czf tmp/release-candidate/app.tar.gz \
+            -C dist/macos "VibeTV Control Center.app"
+
+      - name: Upload unsigned candidate inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: CODEX-vibetv-candidate-inputs-${{ github.run_id }}
+          path: |
+            tmp/release-candidate/app.tar.gz
+            tmp/release-candidate/firmware.bin
+            tmp/release-candidate/virtual-vibetv
+            tmp/release-candidate/sparkle-cli.tar.gz
+            tmp/release-candidate/source-sha.txt
+          retention-days: 1
+
+  sign-and-package:
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout trusted candidate and signing tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Download unsigned candidate inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: CODEX-vibetv-candidate-inputs-${{ github.run_id }}
+          path: tmp/release-candidate
+
+      - name: Extract candidate app
+        run: |
+          ./scripts/release-candidate/extract-candidate-app-archive.sh \
+            --archive tmp/release-candidate/app.tar.gz \
+            --output dist/macos
+
+      - name: Sign and notarize private candidate DMG
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          ./scripts/sign-notarize-macos-control-center.sh \
+            --app "dist/macos/VibeTV Control Center.app" \
+            --sign-app-only \
+            --allow-internal-xprotect-preflight-error
+          ./scripts/build-macos-control-center-dmg.sh \
+            --app "dist/macos/VibeTV Control Center.app" \
+            --output dist/macos/VibeTV-Control-Center.dmg \
+            --staging-dir tmp/release-candidate/dmg-stage
+          ./scripts/sign-notarize-macos-control-center.sh \
+            --app "dist/macos/VibeTV Control Center.app" \
+            --dmg dist/macos/VibeTV-Control-Center.dmg \
+            --skip-app-sign
+          ./scripts/verify-macos-control-center-dmg.sh \
+            --dmg dist/macos/VibeTV-Control-Center.dmg
+
+      - name: Build signed private candidate bundle
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          CANDIDATE_FIRMWARE: ${{ inputs.candidate_firmware }}
+          FROM_APP: ${{ inputs.from_app }}
+          SPARKLE_ED_PRIVATE_KEY_BASE64: ${{ secrets.SPARKLE_ED_PRIVATE_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          [[ "${FROM_APP#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] \
+            || { echo 'from_app must be a SemVer release version' >&2; exit 1; }
+          key_file="$(mktemp)"
+          cleanup() {
+            rm -f "$key_file"
+          }
+          trap cleanup EXIT HUP INT TERM
+          [[ -n "$SPARKLE_ED_PRIVATE_KEY_BASE64" ]] \
+            || { echo 'Missing SPARKLE_ED_PRIVATE_KEY_BASE64' >&2; exit 1; }
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY_BASE64" | base64 -D > "$key_file"
+          chmod 600 "$key_file"
+          source_sha="$(cat tmp/release-candidate/source-sha.txt)"
+          curl -fsSL \
+            "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v${FROM_APP#v}/VibeTV-Control-Center.dmg" \
+            -o tmp/release-candidate/public-baseline.dmg
+          ./scripts/verify-macos-control-center-dmg.sh \
+            --dmg tmp/release-candidate/public-baseline.dmg
+          ./scripts/release-candidate/create-candidate-bundle.sh \
+            --dmg dist/macos/VibeTV-Control-Center.dmg \
+            --baseline-dmg tmp/release-candidate/public-baseline.dmg \
+            --baseline-version "${FROM_APP#v}" \
+            --firmware tmp/release-candidate/firmware.bin \
+            --virtual-vibetv tmp/release-candidate/virtual-vibetv \
+            --sparkle-cli-archive tmp/release-candidate/sparkle-cli.tar.gz \
+            --candidate "${CANDIDATE#v}" \
+            --candidate-firmware "${CANDIDATE_FIRMWARE#v}" \
+            --build "$GITHUB_RUN_NUMBER" \
+            --source-sha "$source_sha" \
+            --sparkle-key-file "$key_file" \
+            --output dist/release-candidate
+
+      - name: Upload private candidate bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: CODEX-vibetv-release-candidate-${{ inputs.candidate }}-${{ github.run_id }}
+          path: dist/release-candidate
+          retention-days: 1
+          compression-level: 0
+
+  vm-test:
+    if: ${{ inputs.run_vm }}
+    needs: sign-and-package
+    runs-on: [self-hosted, macOS, ARM64, codex-vibetv-rc]
+    timeout-minutes: 90
+    steps:
+      - name: Checkout trusted test orchestration
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Download private candidate bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: CODEX-vibetv-release-candidate-${{ inputs.candidate }}-${{ github.run_id }}
+          path: tmp/release-candidate-bundle
+
+      - name: Run disposable macOS snapshot matrix
+        run: |
+          ./scripts/test-release-candidate.sh \
+            --from-app "${{ inputs.from_app }}" \
+            --legacy-app "${{ inputs.legacy_app }}" \
+            --from-firmware "${{ inputs.from_firmware }}" \
+            --candidate "${{ inputs.candidate }}" \
+            --candidate-firmware "${{ inputs.candidate_firmware }}" \
+            --bundle tmp/release-candidate-bundle \
+            --vm-driver tart \
+            --output tmp/release-candidate-results
+
+      - name: Upload release-candidate results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: CODEX-vibetv-release-candidate-results-${{ github.run_id }}
+          path: tmp/release-candidate-results
+          retention-days: 7

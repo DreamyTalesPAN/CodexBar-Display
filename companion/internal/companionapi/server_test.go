@@ -4375,6 +4375,17 @@ func TestFirmwareUpdateAsyncReportsCustomerError(t *testing.T) {
 	}
 }
 
+func TestMacAppInstallerURLCanUsePrivateCandidateSource(t *testing.T) {
+	t.Setenv(macAppInstallerURLEnvVar, "  http://127.0.0.1:47835/install-candidate-mac-app.sh  ")
+	if got := macAppInstallerURLForEnvironment(); got != "http://127.0.0.1:47835/install-candidate-mac-app.sh" {
+		t.Fatalf("private candidate installer URL=%q", got)
+	}
+	t.Setenv(macAppInstallerURLEnvVar, "")
+	if got := macAppInstallerURLForEnvironment(); got != macAppInstallerURL {
+		t.Fatalf("default installer URL=%q", got)
+	}
+}
+
 func TestMacAppUpdateAsyncReportsCustomerProgress(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.allowMacAppSelfUpdate = true
