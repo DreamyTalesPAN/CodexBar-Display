@@ -68,6 +68,7 @@ const (
 	macAppUpdateJobTime       = 8 * time.Minute
 	usageFallbackFetchTime    = 15 * time.Second
 	macAppInstallerURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
+	macAppInstallerURLEnvVar  = "CODEXBAR_DISPLAY_MAC_APP_INSTALLER_URL"
 	macAppReleaseAPIEnvVar    = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
 	macAppReleaseAPIURL       = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
 	macAppReleaseCheckGap     = 6 * time.Hour
@@ -3721,7 +3722,7 @@ installer_url="$1"
 shift
 curl -fsSL "$installer_url" | bash -s -- "$@"
 `
-	cmdArgs := append([]string{"-c", script, "vibetv-mac-app-update", macAppInstallerURL}, args...)
+	cmdArgs := append([]string{"-c", script, "vibetv-mac-app-update", macAppInstallerURLForEnvironment()}, args...)
 	cmd := exec.CommandContext(ctx, "/bin/bash", cmdArgs...)
 	cmd.Stdout = out
 	cmd.Stderr = out
@@ -3732,6 +3733,13 @@ curl -fsSL "$installer_url" | bash -s -- "$@"
 		return fmt.Errorf("mac app update command failed: %w", err)
 	}
 	return nil
+}
+
+func macAppInstallerURLForEnvironment() string {
+	if candidate := strings.TrimSpace(os.Getenv(macAppInstallerURLEnvVar)); candidate != "" {
+		return candidate
+	}
+	return macAppInstallerURL
 }
 
 func (s *Server) requireThemeInstallPreflight(w http.ResponseWriter, r *http.Request, cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
