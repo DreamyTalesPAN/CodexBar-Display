@@ -5,12 +5,14 @@
 
 #include "../src/gif_core_policy.h"
 #include "../src/boot_recovery_policy.h"
+#include "../src/theme_spec_runtime_policy.h"
 
 namespace {
 
 using codexbar_display::esp8266::GifCorePolicy;
 using codexbar_display::esp8266::GifFailureGuardState;
 using codexbar_display::esp8266::BootRecoveryPolicy;
+using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
 
 bool expect(bool cond, const char* message) {
   if (!cond) {
@@ -162,6 +164,18 @@ bool testBootRecoveryOnlyCountsPhysicalResets() {
   return true;
 }
 
+bool testAnimatedAssetScanYieldsEveryEightRows() {
+  for (int row = 1; row <= 32; ++row) {
+    const bool expected = row == 8 || row == 16 || row == 24 || row == 32;
+    if (!expect(
+            ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row) == expected,
+            "animated asset indexing must yield after every eight rows")) {
+      return false;
+    }
+  }
+  return true;
+}
+
 std::string readFile(const char* path) {
   std::ifstream input(path);
   return std::string(
@@ -246,6 +260,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testBootRecoveryOnlyCountsPhysicalResets()) {
+    return 1;
+  }
+  if (!testAnimatedAssetScanYieldsEveryEightRows()) {
     return 1;
   }
   if (!expect(argc == 4, "source paths are required for firmware policy tests")) {

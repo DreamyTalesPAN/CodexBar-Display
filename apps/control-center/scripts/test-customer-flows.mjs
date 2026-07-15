@@ -314,6 +314,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testLocalSetupRecoversWhenDeviceBecomesReady(
+      browser,
+      appContext.appUrl,
+    );
     await testLocalExistingSetupOpensOverviewWithoutRepair(
       browser,
       appContext.appUrl,
@@ -1297,6 +1301,37 @@ async function testLocalReachableWithoutFrameStaysInSetup(browser, appUrl) {
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testLocalSetupRecoversWhenDeviceBecomesReady(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const repairRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: reachableUnreadyDevice,
+    statusDeviceSequence: [reachableUnreadyDevice, companionDevice],
+    onRequest: (pathname, method) => {
+      if (pathname === "/v1/device/repair" && method === "POST") {
+        repairRequests.push(pathname);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 12_000,
+  });
+  assert(
+    repairRequests.length === 0,
+    "Setup recovery must use read-only status polling without pairing or repair writes",
+  );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -3511,6 +3546,7 @@ async function routeCompanionOnline(
     searchDevices,
     searchDelayMs = 0,
     firstStatusDelayMs = 0,
+    statusDeviceSequence,
   } = {},
 ) {
   let currentDevice = device;
@@ -3913,6 +3949,12 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/status") {
       statusRequestCount += 1;
+      if (Array.isArray(statusDeviceSequence) && statusDeviceSequence.length > 0) {
+        currentDevice =
+          statusDeviceSequence[
+            Math.min(statusRequestCount - 1, statusDeviceSequence.length - 1)
+          ];
+      }
       if (statusRequestCount === 1 && firstStatusDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, firstStatusDelayMs));
       }

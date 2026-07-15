@@ -42,6 +42,10 @@ class ThemeSpecRuntimePolicy {
     }
     return static_cast<int32_t>(nowMs - nextFrameAtMs) >= 0;
   }
+
+  static bool ShouldYieldDuringAssetScan(int completedRows) {
+    return completedRows > 0 && (completedRows % 8) == 0;
+  }
 };
 
 }  // namespace esp8266

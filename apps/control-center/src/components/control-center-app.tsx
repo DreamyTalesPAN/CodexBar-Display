@@ -1434,7 +1434,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   ]);
 
   useEffect(() => {
-    if (hostedSetup || companionStatus !== "missing") {
+    const shouldPollIncompleteSetup =
+      companionStatus === "missing" ||
+      (companionStatus === "online" && !deviceSetupIsUsable(device));
+    if (hostedSetup || !shouldPollIncompleteSetup) {
       return;
     }
 
@@ -1446,7 +1449,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }, 5000);
 
     return () => window.clearInterval(timer);
-  }, [busyAction, checkCompanion, companionStatus, hostedSetup]);
+  }, [busyAction, checkCompanion, companionStatus, device, hostedSetup]);
 
   const deviceBoard = device?.board;
   const deviceFirmware = device?.firmware;

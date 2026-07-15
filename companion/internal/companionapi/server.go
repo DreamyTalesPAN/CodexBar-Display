@@ -4382,7 +4382,10 @@ func correlatedOverlayProvesUsage(
 	if !baselineOK || !currentOK {
 		return false
 	}
-	if currentFull <= baselineFull || currentPartial < baselinePartial {
+	fullAdvanced := currentFull > baselineFull && currentPartial >= baselinePartial
+	resetCountdownAdvanced := strings.TrimSpace(current.Render.LastKind) == "reset" &&
+		currentFull >= baselineFull && currentPartial > baselinePartial
+	if !fullAdvanced && !resetCountdownAdvanced {
 		return false
 	}
 	if !localOverlayRenderKind(current.Render.LastKind) || !renderSurfaceHealthy(current) {

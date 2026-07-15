@@ -2042,6 +2042,17 @@ func TestCorrelatedOverlayProvesFirmware135FirstUsageRender(t *testing.T) {
 	if !correlatedOverlayProvesUsage(health(3, 0, "usage"), current, stream, target) {
 		t.Fatal("fresh exact-target frame plus a full redraw should also prove reload from a live baseline")
 	}
+	resetCountdown := health(3, 1, "reset")
+	resetCountdown.Display.ThemeSpec.Active = true
+	resetCountdown.Display.ThemeSpec.RenderOK = boolPtr(true)
+	if !correlatedOverlayProvesUsage(baseline, resetCountdown, stream, target) {
+		t.Fatal("fresh exact-target frame plus an advanced reset countdown render should prove the active usage surface")
+	}
+	updateNoticeOnly := resetCountdown
+	updateNoticeOnly.Render.LastKind = "update_notice"
+	if correlatedOverlayProvesUsage(baseline, updateNoticeOnly, stream, target) {
+		t.Fatal("a partial firmware update notice must not prove a fresh usage render")
+	}
 
 	tests := []struct {
 		name     string
@@ -2051,12 +2062,14 @@ func TestCorrelatedOverlayProvesFirmware135FirstUsageRender(t *testing.T) {
 		target   string
 	}{
 		{
-			name:     "reset without full render",
+			name:     "reset without advanced render",
 			baseline: baseline,
 			current: func() deviceHealth {
 				got := current
 				full := uint64(3)
+				partial := uint64(0)
 				got.Render.FullCount = &full
+				got.Render.PartialCount = &partial
 				return got
 			}(),
 			stream: stream,

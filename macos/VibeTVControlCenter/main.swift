@@ -553,6 +553,13 @@ func shouldRetryRuntimeRegistration(
     }
 }
 
+func runtimeHealthGatePassed(_ health: RuntimeHealthEvaluation) -> Bool {
+    if case .healthy = health {
+        return true
+    }
+    return false
+}
+
 func isInstalledApplicationsBundle(_ appURL: URL) -> Bool {
     let path = appURL.standardizedFileURL.resolvingSymlinksInPath().path
     return path.hasPrefix("/Applications/")
@@ -922,7 +929,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
                 health = await waitForHealthyRuntime(expectedVersion: expectedVersion)
             }
         }
-        guard case .healthy = health, runtimeService.status == .enabled else {
+        // A healthy result already proves that the expected Companion version
+        // owns the listener through this launchd label. Service Management can
+        // briefly report a stale non-enabled status after an app update or a
+        // bounded re-registration. Do not let that weaker snapshot tear down a
+        // runtime whose identity, version, and listener ownership were proven.
+        guard runtimeHealthGatePassed(health) else {
             NSLog(
                 "VibeTV Control Center runtime health gate failed; legacy artifacts remain untouched: \(health)"
             )

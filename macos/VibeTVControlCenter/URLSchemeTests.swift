@@ -386,6 +386,14 @@ func runURLSchemeTests() {
         ),
         "a disabled SMAppService must not trigger a registration refresh"
     )
+    require(
+        runtimeHealthGatePassed(.healthy(version: "1.2.3")),
+        "proven runtime health must survive a stale Service Management status after an app update"
+    )
+    require(
+        !runtimeHealthGatePassed(.ownershipFailed(.serviceUnavailable)),
+        "a listener without proven launchd ownership must not pass the runtime health gate"
+    )
 
     let launchctlFixture = """
     gui/501/shop.vibetv.control-center.runtime = {

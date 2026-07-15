@@ -688,13 +688,22 @@ retry_gate = prepare_method.find("if shouldRetryRuntimeRegistration(")
 retry_unregister = prepare_method.find("await unregisterBundledRuntimeService()", retry_gate)
 retry_register = prepare_method.find("registerBundledRuntimeService()", retry_unregister)
 retry_health = prepare_method.find("health = await waitForHealthyRuntime", retry_register)
-final_health_gate = prepare_method.find("guard case .healthy = health", retry_health)
+final_health_gate = prepare_method.find("guard runtimeHealthGatePassed(health)", retry_health)
+final_device_preparation = prepare_method.find(
+    "let devicePreparation = await prepareExistingDeviceConnectionWithRetries(",
+    final_health_gate,
+)
 if not (
     prepare_method.count("if shouldRetryRuntimeRegistration(") == 1
-    and 0 <= retry_gate < retry_unregister < retry_register < retry_health < final_health_gate
+    and 0 <= retry_gate < retry_unregister < retry_register < retry_health
+    < final_health_gate < final_device_preparation
 ):
     raise SystemExit(
         "native runtime may perform exactly one unregister/register/health recovery before the final gate"
+    )
+if "runtimeService.status == .enabled" in prepare_method[retry_health:final_device_preparation]:
+    raise SystemExit(
+        "proven runtime health must not be rejected by a stale Service Management status"
     )
 
 stop_method = source[

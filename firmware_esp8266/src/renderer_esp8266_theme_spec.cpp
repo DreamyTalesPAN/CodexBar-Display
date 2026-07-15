@@ -346,6 +346,12 @@ bool skipSpriteRows(File& file, int rowCount) {
     if (!readSpriteLine(file, line)) {
       return false;
     }
+    // Building the random-access frame index can scan hundreds of compressed
+    // rows before anything is drawn. Yield inside that scan so large current
+    // and future CBA themes cannot starve Wi-Fi or the hardware watchdog.
+    if (ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row + 1)) {
+      yield();
+    }
   }
   return true;
 }
