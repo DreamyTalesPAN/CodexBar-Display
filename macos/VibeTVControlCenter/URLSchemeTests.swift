@@ -161,6 +161,40 @@ func runURLSchemeTests() {
         ) == "VibeTVControlCenter/99.0.16+163",
         "native WebView must identify itself without exposing the browser UI"
     )
+    let pendingCreatedAt = Date(timeIntervalSince1970: 1_700_000_000)
+    let pendingUpdate = PendingNativeUpdate(
+        version: "1.2.4",
+        build: "201",
+        createdAt: pendingCreatedAt
+    )
+    require(
+        pendingNativeUpdateMatchesBundle(
+            pendingUpdate,
+            shortVersion: "1.2.4",
+            buildVersion: "201"
+        ),
+        "a relaunched updated bundle must satisfy its pending marker"
+    )
+    require(
+        pendingNativeUpdateBlocksBundle(
+            pendingUpdate,
+            shortVersion: "1.2.3",
+            buildVersion: "200",
+            now: pendingCreatedAt.addingTimeInterval(60),
+            maximumAge: 1_800
+        ),
+        "a fresh pending marker must block an unverified old bundle"
+    )
+    require(
+        !pendingNativeUpdateBlocksBundle(
+            pendingUpdate,
+            shortVersion: "1.2.3",
+            buildVersion: "200",
+            now: pendingCreatedAt.addingTimeInterval(1_801),
+            maximumAge: 1_800
+        ),
+        "an abandoned pending marker must expire instead of permanently locking the old app"
+    )
     let localNetworkProbe = makeLocalNetworkPrivacyProbeRequest(timeout: 12)
     require(
         localNetworkProbe?.url?.absoluteString == "http://192.168.4.1/hello",

@@ -20,6 +20,7 @@ private let runtimeLaunchAgentPlistName = "shop.vibetv.control-center.runtime.pl
 private let runtimeRegisteredVersionDefaultsKey =
     "shop.vibetv.control-center.runtime.registered-bundle-version"
 private let pendingNativeUpdateFileName = "pending-native-update.json"
+private let pendingNativeUpdateMaximumAge: TimeInterval = 30 * 60
 private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
 private let runtimeDeviceRepairTimeout: TimeInterval = 90
@@ -797,6 +798,32 @@ func pendingNativeUpdateMatchesBundle(
         == (buildVersion ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+func pendingNativeUpdateIsExpired(
+    _ pending: PendingNativeUpdate,
+    now: Date = Date(),
+    maximumAge: TimeInterval = pendingNativeUpdateMaximumAge
+) -> Bool {
+    maximumAge >= 0 && now.timeIntervalSince(pending.createdAt) > maximumAge
+}
+
+func pendingNativeUpdateBlocksBundle(
+    _ pending: PendingNativeUpdate,
+    shortVersion: String?,
+    buildVersion: String?,
+    now: Date = Date(),
+    maximumAge: TimeInterval = pendingNativeUpdateMaximumAge
+) -> Bool {
+    !pendingNativeUpdateMatchesBundle(
+        pending,
+        shortVersion: shortVersion,
+        buildVersion: buildVersion
+    ) && !pendingNativeUpdateIsExpired(
+        pending,
+        now: now,
+        maximumAge: maximumAge
+    )
+}
+
 enum RuntimePreparationOutcome: Equatable {
     case nativeRuntimeReady
     case legacyRuntimeRestored
@@ -837,13 +864,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         configureMenu()
-#if canImport(Sparkle)
-        _ = updaterController
-#endif
         guard !installationRequired else {
             presentInstallationRequiredAlert()
             return
         }
+#if canImport(Sparkle)
+        _ = updaterController
+#endif
         presentInstallationStatus(
             title: "Finishing installation…",
             detail: "Checking the Mac App and its background runtime.",
@@ -919,6 +946,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     @objc private func retryRuntimePreparation() {
+        discardMismatchedPendingNativeUpdate()
         startRuntimePreparation()
     }
 
@@ -971,6 +999,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     @objc private func checkForUpdates() {
+        guard !installationRequired else {
+            presentInstallationRequiredAlert()
+            return
+        }
 #if canImport(Sparkle)
         updaterController.checkForUpdates(nil)
 #else
@@ -1159,20 +1191,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             )
             return .keepCurrentPage
         }
-        if let pending = loadPendingNativeUpdate(),
-           !pendingNativeUpdateMatchesBundle(
-               pending,
-               shortVersion: Bundle.main.object(
-                   forInfoDictionaryKey: "CFBundleShortVersionString"
-               ) as? String,
-               buildVersion: Bundle.main.object(
-                   forInfoDictionaryKey: "CFBundleVersion"
-               ) as? String
-           ) {
-            NSLog(
-                "VibeTV Control Center pending update mismatch expected=\(pending.version)+\(pending.build)"
-            )
-            return .keepCurrentPage
+        if let pending = loadPendingNativeUpdate() {
+            let shortVersion = Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String
+            let buildVersion = Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleVersion"
+            ) as? String
+            if pendingNativeUpdateBlocksBundle(
+                pending,
+                shortVersion: shortVersion,
+                buildVersion: buildVersion
+            ) {
+                NSLog(
+                    "VibeTV Control Center pending update mismatch expected=\(pending.version)+\(pending.build); Try again can discard the failed handoff"
+                )
+                return .keepCurrentPage
+            }
+            if !pendingNativeUpdateMatchesBundle(
+                pending,
+                shortVersion: shortVersion,
+                buildVersion: buildVersion
+            ) {
+                NSLog(
+                    "VibeTV Control Center discarded expired pending update expected=\(pending.version)+\(pending.build)"
+                )
+                clearPendingNativeUpdate()
+            }
         }
         guard bundledRuntimeResourcesAreValid() else {
             NSLog("VibeTV Control Center app-managed runtime resources are missing")
@@ -2101,6 +2146,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         } catch {
             NSLog("VibeTV Control Center could not clear pending update verification: \(error)")
         }
+    }
+
+    private func discardMismatchedPendingNativeUpdate() {
+        guard let pending = loadPendingNativeUpdate(),
+              !pendingNativeUpdateMatchesBundle(
+                  pending,
+                  shortVersion: Bundle.main.object(
+                      forInfoDictionaryKey: "CFBundleShortVersionString"
+                  ) as? String,
+                  buildVersion: Bundle.main.object(
+                      forInfoDictionaryKey: "CFBundleVersion"
+                  ) as? String
+              ) else {
+            return
+        }
+        NSLog(
+            "VibeTV Control Center user discarded failed pending update expected=\(pending.version)+\(pending.build)"
+        )
+        clearPendingNativeUpdate()
     }
 
 #if canImport(Sparkle)

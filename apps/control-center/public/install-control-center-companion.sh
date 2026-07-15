@@ -1339,7 +1339,12 @@ main() {
     say ""
     say "Done. The new VibeTV Mac App is ready to install."
     say "Drag VibeTV Control Center to Applications, then open it."
-    exit 20
+    # This script is also curl-loaded by older Companions. Keep their default
+    # exit status successful; only a new Companion opts into exit 20.
+    if [[ "${VIBETV_MAC_APP_ACTION_REQUIRED_EXIT_CODE:-0}" == "20" ]]; then
+      exit 20
+    fi
+    exit 0
   fi
 
   if [[ "$MODE" == "uninstall" ]]; then

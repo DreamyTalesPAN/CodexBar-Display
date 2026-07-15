@@ -28,6 +28,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
@@ -1001,6 +1002,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	device, startRecovery := s.withConfiguredConnectionState(cfg, device, reachable)
 	if startRecovery {
+		// Status remains free of synchronous discovery fan-out, but after the
+		// reconnect grace period it may schedule exactly one bounded background
+		// recovery for the pinned device. That recovery owns its own timeout and
+		// is cancelled as soon as a later status probe sees the device again.
 		s.startConfiguredDeviceRecovery(cfg)
 	}
 	writeJSON(w, http.StatusOK, statusResponse{
@@ -3589,7 +3594,7 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 			break
 		}
 		if time.Now().After(healthDeadline) {
-			return firmwareAttentionOutcome(snapshot, "health"), "Firmware is current, but VibeTV health still needs attention.", nil
+			return firmwareAttentionOutcome("health"), "Firmware is current, but VibeTV health still needs attention.", nil
 		}
 		select {
 		case <-ctx.Done():
@@ -3605,11 +3610,11 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	baseline := health
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, target); err != nil {
-		return firmwareAttentionOutcome(snapshot, "stream"), "Firmware is current, but the display stream could not restart.", nil
+		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream could not restart.", nil
 	}
 	stream := s.waitForFreshDisplayStream(ctx, target, streamStartedAt)
 	if !displayStreamHealthyForTarget(&stream, target) {
-		return firmwareAttentionOutcome(snapshot, "stream"), "Firmware is current, but the display stream still needs attention.", nil
+		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream still needs attention.", nil
 	}
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.StreamVerified = true
@@ -3617,7 +3622,7 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 
 	s.setFirmwareUpdateStage(jobID, "verifying_render")
 	if _, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream); err != nil {
-		return firmwareAttentionOutcome(snapshot, "render"), "Firmware is current, but the picture could not be verified.", nil
+		return firmwareAttentionOutcome("render"), "Firmware is current, but the picture could not be verified.", nil
 	}
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.RenderVerified = true
@@ -3628,7 +3633,7 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	return "updated", "", nil
 }
 
-func firmwareAttentionOutcome(job firmwareUpdateJob, kind string) string {
+func firmwareAttentionOutcome(kind string) string {
 	prefix := "firmware_current_"
 	switch kind {
 	case "health":
@@ -3734,9 +3739,9 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 	if line == "" || w.server == nil {
 		return
 	}
-	if strings.HasPrefix(line, firmwareUpdateEventPrefix) {
+	if strings.HasPrefix(line, firmwareupdate.EventPrefix) {
 		var event firmwareUpdateEvent
-		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, firmwareUpdateEventPrefix)), &event); err == nil {
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, firmwareupdate.EventPrefix)), &event); err == nil {
 			w.server.applyFirmwareUpdateEvent(w.jobID, event)
 		}
 		return
@@ -3754,19 +3759,7 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 	})
 }
 
-const firmwareUpdateEventPrefix = "CODEX_FIRMWARE_UPDATE_EVENT "
-
-type firmwareUpdateEvent struct {
-	Stage             string `json:"stage"`
-	Phase             string `json:"phase,omitempty"`
-	Outcome           string `json:"outcome,omitempty"`
-	Firmware          string `json:"firmware,omitempty"`
-	Target            string `json:"target,omitempty"`
-	DeviceID          string `json:"deviceId,omitempty"`
-	ArtifactValidated bool   `json:"artifactValidated,omitempty"`
-	UploadAccepted    bool   `json:"uploadAccepted,omitempty"`
-	HelloVerified     bool   `json:"helloVerified,omitempty"`
-}
+type firmwareUpdateEvent = firmwareupdate.Event
 
 func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEvent) {
 	s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
@@ -4247,6 +4240,9 @@ func runMacAppUpdateCommand(ctx context.Context, home string, addr string, req m
 	script := `set -euo pipefail
 installer_url="$1"
 shift
+# The public installer defaults to exit 0 for older Companions that curl the
+# same script. This version opts into the action-required status explicitly.
+export VIBETV_MAC_APP_ACTION_REQUIRED_EXIT_CODE=20
 curl -fsSL "$installer_url" | bash -s -- "$@"
 `
 	cmdArgs := append([]string{"-c", script, "vibetv-mac-app-update", macAppInstallerURL}, args...)
@@ -4729,14 +4725,30 @@ func (s *Server) getHelloProbe(ctx context.Context, target, token string, timeou
 	flight := &helloProbeFlight{done: make(chan struct{})}
 	s.helloProbeFlights[key] = flight
 	s.probeMu.Unlock()
+	go s.runHelloProbeFlight(key, target, token, timeout, flight)
+	select {
+	case <-flight.done:
+		return flight.hello, flight.err
+	case <-ctx.Done():
+		return protocol.DeviceHello{}, ctx.Err()
+	}
+}
 
-	flight.hello, flight.err = s.getHelloProbeDirect(ctx, target, token, timeout)
+func (s *Server) runHelloProbeFlight(
+	key string,
+	target string,
+	token string,
+	timeout time.Duration,
+	flight *helloProbeFlight,
+) {
+	hello, err := s.getHelloProbeDirect(context.Background(), target, token, timeout)
 	s.probeMu.Lock()
-	s.helloProbeCache[key] = helloProbeSnapshot{at: s.currentTime(), hello: flight.hello, err: flight.err}
+	flight.hello = hello
+	flight.err = err
+	s.helloProbeCache[key] = helloProbeSnapshot{at: s.currentTime(), hello: hello, err: err}
 	delete(s.helloProbeFlights, key)
 	close(flight.done)
 	s.probeMu.Unlock()
-	return flight.hello, flight.err
 }
 
 func (s *Server) getHelloProbeDirect(ctx context.Context, target, token string, timeout time.Duration) (protocol.DeviceHello, error) {
@@ -4822,14 +4834,30 @@ func (s *Server) getHealthProbe(ctx context.Context, target, token string, timeo
 	flight := &healthProbeFlight{done: make(chan struct{})}
 	s.healthProbeFlights[key] = flight
 	s.probeMu.Unlock()
+	go s.runHealthProbeFlight(key, target, token, timeout, flight)
+	select {
+	case <-flight.done:
+		return flight.health, flight.err
+	case <-ctx.Done():
+		return deviceHealth{}, ctx.Err()
+	}
+}
 
-	flight.health, flight.err = s.getHealthProbeDirect(ctx, target, token, timeout)
+func (s *Server) runHealthProbeFlight(
+	key string,
+	target string,
+	token string,
+	timeout time.Duration,
+	flight *healthProbeFlight,
+) {
+	health, err := s.getHealthProbeDirect(context.Background(), target, token, timeout)
 	s.probeMu.Lock()
-	s.healthProbeCache[key] = healthProbeSnapshot{at: s.currentTime(), health: flight.health, err: flight.err}
+	flight.health = health
+	flight.err = err
+	s.healthProbeCache[key] = healthProbeSnapshot{at: s.currentTime(), health: health, err: err}
 	delete(s.healthProbeFlights, key)
 	close(flight.done)
 	s.probeMu.Unlock()
-	return flight.health, flight.err
 }
 
 func (s *Server) getHealthProbeDirect(ctx context.Context, target, token string, timeout time.Duration) (deviceHealth, error) {

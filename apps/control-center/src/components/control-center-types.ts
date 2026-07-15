@@ -285,11 +285,11 @@ export function deviceStreamIsReady(device: DeviceInfo | null | undefined) {
 }
 
 export function deviceSetupIsUsable(device: DeviceInfo | null | undefined) {
-	if (device?.connectionState) {
-		return (
-			device.connectionState === "ready" ||
-			device.connectionState === "reconnecting"
-		);
-	}
+  if (device?.connectionState) {
+    return (
+      device.connectionState === "ready" ||
+      device.connectionState === "reconnecting"
+    );
+  }
   return device?.ready === true;
 }

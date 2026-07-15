@@ -23,6 +23,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
@@ -63,26 +64,14 @@ var (
 	firmwareUpdateRediscoveryInterval                  = 5 * time.Second
 )
 
-const firmwareUpdateEventPrefix = "CODEX_FIRMWARE_UPDATE_EVENT "
-
-type firmwareUpdateEvent struct {
-	Stage             string `json:"stage"`
-	Phase             string `json:"phase,omitempty"`
-	Outcome           string `json:"outcome,omitempty"`
-	Firmware          string `json:"firmware,omitempty"`
-	Target            string `json:"target,omitempty"`
-	DeviceID          string `json:"deviceId,omitempty"`
-	ArtifactValidated bool   `json:"artifactValidated,omitempty"`
-	UploadAccepted    bool   `json:"uploadAccepted,omitempty"`
-	HelloVerified     bool   `json:"helloVerified,omitempty"`
-}
+type firmwareUpdateEvent = firmwareupdate.Event
 
 func emitFirmwareUpdateEvent(event firmwareUpdateEvent) {
 	payload, err := json.Marshal(event)
 	if err != nil {
 		return
 	}
-	fmt.Printf("%s%s\n", firmwareUpdateEventPrefix, payload)
+	fmt.Printf("%s%s\n", firmwareupdate.EventPrefix, payload)
 }
 
 const launchAgentLabel = "com.codexbar-display.daemon.plist"

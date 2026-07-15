@@ -2026,6 +2026,88 @@ func TestDeviceProbesAreSingleFlightAndCached(t *testing.T) {
 	}
 }
 
+func TestDeviceProbeFlightsOutliveTheFirstRequestCancellation(t *testing.T) {
+	t.Run("hello", func(t *testing.T) {
+		var calls atomic.Int32
+		started := make(chan struct{})
+		release := make(chan struct{})
+		device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			close(started)
+			<-release
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789"}`))
+		}))
+		defer device.Close()
+
+		server := newTestServer(t, runtimeconfig.Config{})
+		server.probeCacheTime = time.Second
+		firstContext, cancelFirst := context.WithCancel(context.Background())
+		firstResult := make(chan error, 1)
+		go func() {
+			_, err := server.getHelloProbe(firstContext, device.URL, "pair-token", time.Second)
+			firstResult <- err
+		}()
+		<-started
+		cancelFirst()
+		if err := <-firstResult; !errors.Is(err, context.Canceled) {
+			t.Fatalf("first request should observe its own cancellation, got %v", err)
+		}
+
+		secondResult := make(chan error, 1)
+		go func() {
+			_, err := server.getHelloProbe(context.Background(), device.URL, "pair-token", time.Second)
+			secondResult <- err
+		}()
+		close(release)
+		if err := <-secondResult; err != nil {
+			t.Fatalf("shared hello probe was poisoned by the first cancellation: %v", err)
+		}
+		if calls.Load() != 1 {
+			t.Fatalf("expected one detached hello probe, got %d", calls.Load())
+		}
+	})
+
+	t.Run("health", func(t *testing.T) {
+		var calls atomic.Int32
+		started := make(chan struct{})
+		release := make(chan struct{})
+		device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			close(started)
+			<-release
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}))
+		defer device.Close()
+
+		server := newTestServer(t, runtimeconfig.Config{})
+		server.probeCacheTime = time.Second
+		firstContext, cancelFirst := context.WithCancel(context.Background())
+		firstResult := make(chan error, 1)
+		go func() {
+			_, err := server.getHealthProbe(firstContext, device.URL, "pair-token", time.Second)
+			firstResult <- err
+		}()
+		<-started
+		cancelFirst()
+		if err := <-firstResult; !errors.Is(err, context.Canceled) {
+			t.Fatalf("first request should observe its own cancellation, got %v", err)
+		}
+
+		secondResult := make(chan error, 1)
+		go func() {
+			_, err := server.getHealthProbe(context.Background(), device.URL, "pair-token", time.Second)
+			secondResult <- err
+		}()
+		close(release)
+		if err := <-secondResult; err != nil {
+			t.Fatalf("shared health probe was poisoned by the first cancellation: %v", err)
+		}
+		if calls.Load() != 1 {
+			t.Fatalf("expected one detached health probe, got %d", calls.Load())
+		}
+	})
+}
+
 func TestDeviceReachableButDisplayStreamNotReadyStaysConnected(t *testing.T) {
 	device := newHelloDeviceServer(t)
 	defer device.Close()

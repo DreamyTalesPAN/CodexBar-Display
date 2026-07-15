@@ -596,6 +596,9 @@ required_source = [
     "requiresApplicationInstallation(Bundle.main.bundleURL)",
     "presentInstallationRequiredAlert()",
     "RuntimePreparationOutcome",
+    "pendingNativeUpdateBlocksBundle(",
+    "pendingNativeUpdateIsExpired(",
+    "discardMismatchedPendingNativeUpdate()",
     "presentInstallationStatus(",
     'title: "Finishing installation…"',
     'title: "Installation needs attention"',
@@ -613,11 +616,12 @@ launch_end = source.find("func application(_ application:", launch_start)
 launch_method = source[launch_start:launch_end]
 install_guard = launch_method.find("guard !installationRequired else")
 install_alert = launch_method.find("presentInstallationRequiredAlert()", install_guard)
+sparkle_start = launch_method.find("_ = updaterController", install_guard)
 runtime_start = launch_method.find("Task {", install_guard)
 runtime_start = launch_method.find("startRuntimePreparation()", install_guard)
-if not (0 <= install_guard < install_alert < runtime_start):
+if not (0 <= install_guard < install_alert < sparkle_start < runtime_start):
     raise SystemExit(
-        "native app must stop at the install dialog before starting the runtime or WebView"
+        "native app must stop at the install dialog before starting Sparkle, the runtime, or WebView"
     )
 
 prepare_start = source.find("private func startRuntimePreparation()")
