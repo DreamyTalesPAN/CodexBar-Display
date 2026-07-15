@@ -18,8 +18,35 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
+
+func TestDisplayWriterLockAllowsOnlyOneDaemon(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "display-writer.lock")
+	first, err := writerlock.AcquireAt(lockPath)
+	if err != nil {
+		t.Fatalf("acquire first writer lock: %v", err)
+	}
+	defer first.Release()
+
+	second, err := writerlock.AcquireAt(lockPath)
+	if err == nil {
+		second.Release()
+		t.Fatal("second daemon acquired the same display writer lock")
+	}
+	if got := errcode.Of(err); got != errcode.RuntimeWriterLocked {
+		t.Fatalf("second lock error code=%q want %q: %v", got, errcode.RuntimeWriterLocked, err)
+	}
+
+	first.Release()
+	third, err := writerlock.AcquireAt(lockPath)
+	if err != nil {
+		t.Fatalf("lock stayed unavailable after owner exited: %v", err)
+	}
+	third.Release()
+}
 
 func TestParseDaemonOptionsWiFiTarget(t *testing.T) {
 	opts, err := parseDaemonOptions([]string{

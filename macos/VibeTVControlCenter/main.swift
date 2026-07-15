@@ -817,20 +817,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         }
         let legacyDescriptors = legacyStates.map(\.descriptor)
         let legacyApps = legacyTerminalAppURLs()
+        let hasLoadedLegacyWriter = legacyStates.contains(where: \.wasLoaded)
 
-        guard await ensureBundledRuntimeServiceRegistered() else {
-            NSLog(
-                "VibeTV Control Center kept legacy services and apps because the app-managed runtime could not be registered"
-            )
-            return .keepCurrentPage
+        // Repair an already-overlapping installation before migration. Apple's
+        // unregister call terminates the running app-managed LaunchAgent.
+        if hasLoadedLegacyWriter, runtimeService.status == .enabled {
+            guard await unregisterBundledRuntimeService() else {
+                NSLog(
+                    "VibeTV Control Center could not stop the app-managed runtime before legacy migration"
+                )
+                return .keepCurrentPage
+            }
         }
 
         if !stopLegacyLaunchAgents(legacyStates) {
-            let restored = await rollbackToLegacyAgents(
-                legacyStates,
-                reason: "one or more legacy LaunchAgents could not be stopped"
-            )
+            let reason = "one or more legacy LaunchAgents could not be stopped"
+            let restored = restoreLegacyAgents(legacyStates, reason: reason)
             return restored ? .legacyRuntimeRestored : .keepCurrentPage
+        }
+
+        // SMAppService.register() bootstraps a LaunchAgent immediately. Stop
+        // every legacy writer first so migration never overlaps two streams.
+        guard await ensureBundledRuntimeServiceRegistered() else {
+            NSLog(
+                "VibeTV Control Center could not register the app-managed runtime after stopping legacy services"
+            )
+            if !legacyStates.isEmpty {
+                let reason = "the app-managed runtime could not be registered"
+                let restored: Bool
+                if runtimeService.status == .enabled {
+                    restored = await rollbackToLegacyAgents(legacyStates, reason: reason)
+                } else {
+                    restored = restoreLegacyAgents(legacyStates, reason: reason)
+                }
+                return restored ? .legacyRuntimeRestored : .keepCurrentPage
+            }
+            return .keepCurrentPage
         }
 
         var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)
@@ -1274,7 +1296,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             )
             return false
         }
+        return restoreLegacyAgents(states, reason: reason)
+    }
 
+    private func restoreLegacyAgents(
+        _ states: [LegacyLaunchAgentState],
+        reason: String
+    ) -> Bool {
+        NSLog("VibeTV Control Center restoring legacy services: \(reason)")
         var restored = true
         for state in states {
             let service = launchctlServiceTarget(

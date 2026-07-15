@@ -525,6 +525,19 @@ if environment.get("VIBETV_DISABLE_MAC_APP_SELF_UPDATE") != "1":
 with open(sys.argv[3], encoding="utf-8") as f:
     source = f.read()
 
+prepare_start = source.index("private func prepareCompanion()")
+prepare_end = source.index(
+    "private func ensureBundledRuntimeServiceRegistered()",
+    prepare_start,
+)
+prepare_source = source[prepare_start:prepare_end]
+stop_legacy = prepare_source.index("stopLegacyLaunchAgents(legacyStates)")
+register_runtime = prepare_source.index("ensureBundledRuntimeServiceRegistered()")
+if stop_legacy > register_runtime:
+    raise SystemExit(
+        "native app must stop legacy display writers before registering the new LaunchAgent"
+    )
+
 required_source = [
     "import ServiceManagement",
     "SMAppService.agent(plistName: runtimeLaunchAgentPlistName)",
@@ -654,11 +667,11 @@ legacy_app_migration = source.find(
 )
 persist_version = source.find("recordCurrentRuntimeBundleVersion()", health_gate)
 if not (
-    0 <= registration < stop_legacy < health_gate < device_preparation
+    0 <= stop_legacy < registration < health_gate < device_preparation
     < legacy_app_migration < persist_version
 ):
     raise SystemExit(
-        "native app must register, stop legacy, pass health, repair the existing device, migrate old apps, then persist"
+        "native app must stop legacy writers, register, pass health, repair the existing device, migrate old apps, then persist"
     )
 
 prepare_start = source.find("private func prepareCompanion() async")
@@ -695,14 +708,27 @@ if not (0 <= disable_legacy < bootout_legacy):
 
 rollback_method = source[
     source.find("private func rollbackToLegacyAgents("):
+    source.find("private func restoreLegacyAgents(")
+]
+if (
+    ") async -> Bool" not in rollback_method
+    or "await unregisterBundledRuntimeService()" not in rollback_method
+    or "return restoreLegacyAgents(states, reason: reason)" not in rollback_method
+):
+    raise SystemExit(
+        "legacy rollback must stop the app-managed writer before restoring legacy services"
+    )
+
+restore_method = source[
+    source.find("private func restoreLegacyAgents("):
     source.find("private func legacyServiceIsLoaded(")
 ]
-if ") async -> Bool" not in rollback_method or "return restored" not in rollback_method:
+if ") -> Bool" not in restore_method or "return restored" not in restore_method:
     raise SystemExit(
-        "legacy rollback must report whether the restored runtime is safe to reload"
+        "legacy restore must report whether the restored runtime is safe to reload"
     )
-enable_legacy = rollback_method.find('launchctlExitStatus(["enable", service])')
-restart_legacy = rollback_method.find('"bootstrap"')
+enable_legacy = restore_method.find('launchctlExitStatus(["enable", service])')
+restart_legacy = restore_method.find('"bootstrap"')
 if not (0 <= enable_legacy < restart_legacy):
     raise SystemExit(
         "legacy rollback must re-enable services before restoring their loaded state"

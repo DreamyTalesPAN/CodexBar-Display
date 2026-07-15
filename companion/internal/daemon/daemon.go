@@ -81,6 +81,7 @@ const (
 	runtimeErrorCodexbarCmd     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarCmd)
 	runtimeErrorCodexbarParse   runtimeErrorKind = runtimeErrorKind(errcode.RuntimeCodexbarParse)
 	runtimeErrorNoProviders     runtimeErrorKind = runtimeErrorKind(errcode.RuntimeNoProviders)
+	runtimeErrorPairingRequired runtimeErrorKind = runtimeErrorKind(errcode.RuntimePairingRequired)
 )
 
 type RuntimeError struct {
@@ -1108,7 +1109,23 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	frame = marshaledFrame
 
-	sendTarget := sendTargetWithRuntimeAuth(port, deps)
+	sendTarget, authErr := sendTargetWithRuntimeAuth(port, deps)
+	if authErr != nil {
+		return &RuntimeError{
+			Kind: runtimeErrorPairingRequired,
+			Op:   "authorize-wifi-frame",
+			Err:  authErr,
+			Hint: errcode.DefaultRecovery(errcode.RuntimePairingRequired),
+		}
+	}
+	if sendTarget == "" {
+		return &RuntimeError{
+			Kind: runtimeErrorSerialWrite,
+			Op:   "send-line",
+			Err:  errors.New("send target empty after auth repair"),
+			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
+		}
+	}
 	if err := deps.sendLine(sendTarget, line); err != nil {
 		return &RuntimeError{
 			Kind: runtimeErrorSerialWrite,
@@ -1118,14 +1135,6 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		}
 	}
 
-	if sendTarget == "" {
-		return &RuntimeError{
-			Kind: runtimeErrorSerialWrite,
-			Op:   "send-line",
-			Err:  errors.New("send target empty after auth repair"),
-			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
-		}
-	}
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
 		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
@@ -1144,15 +1153,24 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	return nil
 }
 
-func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) string {
+func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) (string, error) {
 	if deps.transportName != "wifi" {
-		return target
+		return target, nil
 	}
 	cfg, ok := loadRuntimeConfig(deps)
 	if !ok {
-		return target
+		return "", errors.New("pairing token required: runtime config unavailable")
 	}
-	return targetWithDeviceToken(target, cfg.DeviceToken)
+	token := strings.TrimSpace(cfg.DeviceToken)
+	if token == "" {
+		return "", errors.New("pairing token required: no saved token")
+	}
+	authenticatedTarget := targetWithDeviceToken(target, token)
+	parsed, parsedOK := parseDeviceTarget(authenticatedTarget)
+	if !parsedOK || parsed.Query().Get("token") != token {
+		return "", errors.New("pairing token required: could not authenticate WiFi target")
+	}
+	return authenticatedTarget, nil
 }
 
 func targetWithDeviceToken(target, token string) string {

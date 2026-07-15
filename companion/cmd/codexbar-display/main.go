@@ -33,6 +33,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themespec"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 const defaultThemeCatalogURL = themeinstall.DefaultCatalogURL
@@ -160,6 +161,11 @@ func runDaemon(args []string) error {
 	if err != nil {
 		return err
 	}
+	writerLock, err := writerlock.Acquire()
+	if err != nil {
+		return err
+	}
+	defer writerLock.Release()
 	if opts.APIAddr == "" {
 		return daemon.Run(context.Background(), opts.Daemon)
 	}
