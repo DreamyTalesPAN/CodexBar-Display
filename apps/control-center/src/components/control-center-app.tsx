@@ -741,6 +741,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const repairConnection = useCallback(
     async (options?: {
       targetOverride?: string;
+      expectedDeviceId?: string;
       forcePair?: boolean;
       quiet?: boolean;
     }) => {
@@ -821,6 +822,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             method: "POST",
             body: JSON.stringify({
               ...(target ? { target } : {}),
+              ...(options?.expectedDeviceId
+                ? { expectedDeviceId: options.expectedDeviceId }
+                : {}),
               ...(options?.forcePair ? { forcePair: true } : {}),
             }),
           },
@@ -944,9 +948,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         const repaired = await repairConnection({
           targetOverride: selected.target,
+          expectedDeviceId: selected.deviceId,
         });
         if (!repaired) {
-          setDeviceSearchState("failed");
+          setDeviceSearchState("repair-failed");
         }
         return;
       }
@@ -983,12 +988,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   ]);
 
   const selectAndConnectDevice = useCallback(
-    async (target: string) => {
+    async (candidate: DeviceCandidate) => {
       setDeviceCandidates([]);
       setDeviceSearchState("idle");
-      const repaired = await repairConnection({ targetOverride: target });
+      const repaired = await repairConnection({
+        targetOverride: candidate.target,
+        expectedDeviceId: candidate.deviceId,
+      });
       if (!repaired) {
-        setDeviceSearchState("failed");
+        setDeviceSearchState("repair-failed");
       }
     },
     [repairConnection],
@@ -998,7 +1006,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const pairingRequired =
       device?.stream?.errorCode === "device_pairing_required";
     if (!pairingRequired) {
-      automaticPairingRepairKey.current = "";
+      if (device?.ready === true) {
+        automaticPairingRepairKey.current = "";
+      }
       return;
     }
     if (
@@ -1014,12 +1024,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     automaticPairingRepairKey.current = repairKey;
-    void repairConnection({ quiet: true }).then((repaired) => {
+    void repairConnection({
+      expectedDeviceId: device.deviceId,
+      quiet: true,
+    }).then((repaired) => {
       if (repaired) {
         return;
       }
       setActiveTab("setup");
-      setDeviceSearchState("failed");
+      setDeviceSearchState("repair-failed");
       setLastError({
         code: "device_pairing_repair_failed",
         message: "VibeTV could not reconnect automatically.",
@@ -1030,6 +1043,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     busyAction,
     companionStatus,
     device?.deviceId,
+    device?.ready,
     device?.stream?.errorCode,
     device?.target,
     repairConnection,
@@ -1940,9 +1954,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         didRunSetupVerification.current = true;
         void searchAndConnect();
       }}
-      onSelectDevice={(target) => {
+      onSelectDevice={(candidate) => {
         didRunSetupVerification.current = true;
-        void selectAndConnectDevice(target);
+        void selectAndConnectDevice(candidate);
       }}
       onRepairConnection={(targetOverride) => {
         didRunSetupVerification.current = true;

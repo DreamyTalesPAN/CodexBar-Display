@@ -1,5 +1,7 @@
 #include <cstdint>
 #include <cstdio>
+#include <fstream>
+#include <string>
 
 #include "../src/gif_core_policy.h"
 #include "../src/boot_recovery_policy.h"
@@ -160,9 +162,64 @@ bool testBootRecoveryOnlyCountsPhysicalResets() {
   return true;
 }
 
+std::string readFile(const char* path) {
+  std::ifstream input(path);
+  return std::string(
+      std::istreambuf_iterator<char>(input),
+      std::istreambuf_iterator<char>());
+}
+
+bool testDecoderAllocationStaysInsideRealPlayback(
+    const char* themeSpecRendererPath,
+    const char* gifCorePath) {
+  const std::string renderer = readFile(themeSpecRendererPath);
+  const std::string gifCore = readFile(gifCorePath);
+  if (!expect(!renderer.empty(), "theme renderer source must be readable")) {
+    return false;
+  }
+  if (!expect(!gifCore.empty(), "GIF core source must be readable")) {
+    return false;
+  }
+
+  const std::size_t cacheStart = renderer.find("bool ensureThemeSpecSceneCached(");
+  const std::size_t cacheEnd = renderer.find("bool readSpriteLine(", cacheStart);
+  if (!expect(
+          cacheStart != std::string::npos && cacheEnd != std::string::npos,
+          "theme cache function must remain discoverable")) {
+    return false;
+  }
+  const std::string cacheFunction = renderer.substr(cacheStart, cacheEnd - cacheStart);
+  if (!expect(
+          cacheFunction.find("PrepareDecoder(") == std::string::npos,
+          "theme parsing must never allocate the GIF decoder")) {
+    return false;
+  }
+  if (!expect(
+          cacheFunction.find("GifCore().ReleaseMemory()") <
+              cacheFunction.find("deserializeJson("),
+          "theme changes must release GIF memory before parsing the next theme")) {
+    return false;
+  }
+
+  const std::size_t headerRead = gifCore.find("ReadGifDimensions(");
+  const std::size_t decoderAllocation = gifCore.find("if (!PrepareDecoder())", headerRead);
+  if (!expect(
+          headerRead != std::string::npos && decoderAllocation != std::string::npos &&
+              headerRead < decoderAllocation,
+          "decoder allocation must happen only after a valid GIF header is read for playback")) {
+    return false;
+  }
+  if (!expect(
+          gifCore.find("if (!PrepareDecoder())", decoderAllocation + 1) == std::string::npos,
+          "real GIF playback must be the only decoder allocation call site")) {
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
   if (!testBackoffThresholdAndExpiry()) {
     return 1;
   }
@@ -176,6 +233,12 @@ int main() {
     return 1;
   }
   if (!testBootRecoveryOnlyCountsPhysicalResets()) {
+    return 1;
+  }
+  if (!expect(argc == 3, "source paths are required for decoder lifecycle test")) {
+    return 1;
+  }
+  if (!testDecoderAllocationStaysInsideRealPlayback(argv[1], argv[2])) {
     return 1;
   }
 

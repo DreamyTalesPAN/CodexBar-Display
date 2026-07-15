@@ -37,7 +37,7 @@ type SetupScreenProps = {
   onCheckUpdates?: () => void | Promise<void>;
   onDeviceTargetChange?: (target: string) => void;
   onSearchDevices?: () => void;
-  onSelectDevice?: (target: string) => void;
+  onSelectDevice?: (candidate: DeviceCandidate) => void;
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
   hostedMode?: boolean;
@@ -484,7 +484,7 @@ function FinishSetupContent({
   lastError?: ApiError | null;
   onDeviceTargetChange?: (target: string) => void;
   onSearchDevices?: () => void;
-  onSelectDevice?: (target: string) => void;
+  onSelectDevice?: (candidate: DeviceCandidate) => void;
   onRepairConnection?: (targetOverride?: string) => void;
   setupComplete: boolean;
 }) {
@@ -515,7 +515,7 @@ function FinishSetupContent({
               icon={<Monitor size={18} aria-hidden />}
               key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
               label={candidateLabel(candidate)}
-              onClick={() => onSelectDevice?.(candidate.target)}
+              onClick={() => onSelectDevice?.(candidate)}
               variant="secondary"
             />
           ))}
@@ -553,6 +553,24 @@ function FinishSetupContent({
         <p className="text-sm leading-6 text-[#444933]">
           Automatic search could not finish. Make sure VibeTV and this Mac are
           on the same WiFi, then try again.
+        </p>
+        <PrimaryButton
+          fullWidth
+          icon={<RefreshCw size={18} aria-hidden />}
+          label="Try again"
+          onClick={onSearchDevices}
+          size="large"
+        />
+      </div>
+    );
+  }
+
+  if (deviceSearchState === "repair-failed") {
+    return (
+      <div className="grid gap-4">
+        <p className="text-sm leading-6 text-[#444933]">
+          VibeTV could not reconnect automatically. Make sure it is on the same
+          WiFi as this Mac, then try again.
         </p>
         <PrimaryButton
           fullWidth

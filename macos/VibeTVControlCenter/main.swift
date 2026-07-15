@@ -255,6 +255,7 @@ enum ExistingDeviceStatusEvaluation: Equatable {
 enum ExistingDevicePreparationOutcome: Equatable, CustomStringConvertible {
     case ready
     case notConfigured
+    case retryableFailure(String)
     case failed(String)
 
     var description: String {
@@ -263,8 +264,19 @@ enum ExistingDevicePreparationOutcome: Equatable, CustomStringConvertible {
             return "ready"
         case .notConfigured:
             return "not configured"
+        case .retryableFailure(let detail):
+            return "retryable failure: \(detail)"
         case .failed(let detail):
             return "failed: \(detail)"
+        }
+    }
+
+    var failureDetail: String? {
+        switch self {
+        case .retryableFailure(let detail), .failed(let detail):
+            return detail
+        case .ready, .notConfigured:
+            return nil
         }
     }
 }
@@ -329,7 +341,7 @@ func shouldRetryExistingDevicePreparation(
     guard attempt < maximumAttempts else {
         return false
     }
-    if case .failed = outcome {
+    if case .retryableFailure = outcome {
         return true
     }
     return false
@@ -888,7 +900,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         let devicePreparation = await prepareExistingDeviceConnectionWithRetries(
             requireFreshFullFrame: !legacyStates.isEmpty || !legacyApps.isEmpty
         )
-        if case .failed(let detail) = devicePreparation {
+        if let detail = devicePreparation.failureDetail {
             NSLog(
                 "VibeTV Control Center kept legacy artifacts because the existing VibeTV connection could not be repaired automatically: \(detail)"
             )
@@ -978,61 +990,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             return .failed("invalid local device preparation URL")
         }
 
+        var statusRequest = URLRequest(
+            url: statusURL,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: runtimeHealthRequestTimeout
+        )
+        statusRequest.httpMethod = "GET"
+        let statusResult: (Data, URLResponse)
         do {
-            var statusRequest = URLRequest(
-                url: statusURL,
-                cachePolicy: .reloadIgnoringLocalCacheData,
-                timeoutInterval: runtimeHealthRequestTimeout
-            )
-            statusRequest.httpMethod = "GET"
-            let (statusData, statusResponse) = try await URLSession.shared.data(
+            statusResult = try await URLSession.shared.data(
                 for: statusRequest
             )
-            guard let statusHTTP = statusResponse as? HTTPURLResponse else {
-                return .failed("local status response was not HTTP")
-            }
+        } catch {
+            return .retryableFailure((error as NSError).localizedDescription)
+        }
+        let (statusData, statusResponse) = statusResult
+        guard let statusHTTP = statusResponse as? HTTPURLResponse else {
+            return .retryableFailure("local status response was not HTTP")
+        }
 
-            let statusEvaluation = evaluateExistingDeviceStatus(
-                data: statusData,
-                httpStatus: statusHTTP.statusCode
-            )
-            switch statusEvaluation {
-            case .ready:
-                if !shouldRepairExistingDevice(
-                    statusEvaluation,
-                    requireFreshFullFrame: requireFreshFullFrame
-                ) {
-                    return .ready
-                }
-            case .notConfigured:
-                return .notConfigured
-            case .failed(let detail):
-                return .failed(detail)
-            case .needsRepair:
-                break
+        let statusEvaluation = evaluateExistingDeviceStatus(
+            data: statusData,
+            httpStatus: statusHTTP.statusCode
+        )
+        switch statusEvaluation {
+        case .ready:
+            if !shouldRepairExistingDevice(
+                statusEvaluation,
+                requireFreshFullFrame: requireFreshFullFrame
+            ) {
+                return .ready
             }
+        case .notConfigured:
+            return .notConfigured
+        case .failed(let detail):
+            return .retryableFailure(detail)
+        case .needsRepair:
+            break
+        }
 
-            var repairRequest = URLRequest(
-                url: repairURL,
-                cachePolicy: .reloadIgnoringLocalCacheData,
-                timeoutInterval: runtimeDeviceRepairTimeout
-            )
-            repairRequest.httpMethod = "POST"
-            repairRequest.httpBody = Data("{}".utf8)
-            repairRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            let (repairData, repairResponse) = try await URLSession.shared.data(
+        var repairRequest = URLRequest(
+            url: repairURL,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: runtimeDeviceRepairTimeout
+        )
+        repairRequest.httpMethod = "POST"
+        repairRequest.httpBody = Data("{}".utf8)
+        repairRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let repairResult: (Data, URLResponse)
+        do {
+            repairResult = try await URLSession.shared.data(
                 for: repairRequest
-            )
-            guard let repairHTTP = repairResponse as? HTTPURLResponse else {
-                return .failed("local repair response was not HTTP")
-            }
-            return evaluateExistingDeviceRepair(
-                data: repairData,
-                httpStatus: repairHTTP.statusCode
             )
         } catch {
             return .failed((error as NSError).localizedDescription)
         }
+        let (repairData, repairResponse) = repairResult
+        guard let repairHTTP = repairResponse as? HTTPURLResponse else {
+            return .failed("local repair response was not HTTP")
+        }
+        return evaluateExistingDeviceRepair(
+            data: repairData,
+            httpStatus: repairHTTP.statusCode
+        )
     }
 
     private func ensureBundledRuntimeServiceRegistered() async -> Bool {

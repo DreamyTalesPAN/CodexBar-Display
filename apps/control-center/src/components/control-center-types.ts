@@ -62,6 +62,7 @@ export type DeviceSearchState =
   | "searching"
   | "multiple"
   | "not-found"
+  | "repair-failed"
   | "failed";
 
 export type DeviceInfo = {

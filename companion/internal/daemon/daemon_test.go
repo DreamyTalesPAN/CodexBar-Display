@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3082,29 +3083,27 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringFirmwareUpdate(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	wake := make(chan struct{}, 1)
-	paused := true
-	cycleCalls := 0
+	resume := make(chan time.Time, 1)
+	resume <- time.Now()
+	var pauseChecks atomic.Int32
+	var cycleCalls atomic.Int32
 	var logged strings.Builder
 
 	err := runDaemonLoop(ctx, Options{
 		Interval: time.Second,
-		Wake:     wake,
 		PauseDeviceWrites: func() bool {
-			return paused
+			return pauseChecks.Add(1) == 1
 		},
 	}, runtimeDeps{
 		now: time.Now,
 		after: func(time.Duration) <-chan time.Time {
-			paused = false
-			wake <- struct{}{}
-			return make(chan time.Time)
+			return resume
 		},
 		logf: func(format string, args ...any) {
 			logged.WriteString(fmt.Sprintf(format, args...))
 		},
 	}, func(context.Context) error {
-		cycleCalls++
+		cycleCalls.Add(1)
 		cancel()
 		return nil
 	})
@@ -3112,8 +3111,8 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringFirmwareUpdate(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected loop cancellation after resumed cycle, got %v", err)
 	}
-	if cycleCalls != 1 {
-		t.Fatalf("device cycle calls=%d want 1 after resume", cycleCalls)
+	if got := cycleCalls.Load(); got != 1 {
+		t.Fatalf("device cycle calls=%d want 1 after resume", got)
 	}
 	log := logged.String()
 	if !strings.Contains(log, "runtime event=device-writes-paused reason=firmware-update") {

@@ -163,37 +163,27 @@ bool ensureThemeSpecSceneCached(const String& raw) {
     return true;
   }
 
-  // AnimatedGIF is about 24 KB on ESP8266. Allocate it before retaining the
-  // parsed/compiled theme, otherwise those smaller allocations can fragment
-  // the heap until no block is large enough for the decoder.
-  // AnimatedGIF is about 24 KB on ESP8266. Reserve its one large block before
-  // smaller theme allocations can fragment the heap. It is released again
-  // immediately after compilation when the theme does not contain a GIF.
+  // A changed theme must stop any previous GIF immediately. The decoder stays
+  // released while the next theme is parsed and compiled; GifCore allocates it
+  // lazily only after real playback has found a valid GIF header.
   resetAnimatedSpriteCaches();
+  GifCore().ReleaseMemory();
   cachedThemeSpecDoc.clear();
   cachedThemeSpecDocHash = 0;
   themespec::ReleaseCompiledThemeSpec(cachedThemeSpecScene);
   yield();
-  if (!GifCore().PrepareDecoder()) {
-    return false;
-  }
 
   const DeserializationError err = deserializeJson(cachedThemeSpecDoc, raw.c_str());
   if (err) {
-    GifCore().ReleaseMemory();
     return false;
   }
   themespec::CompiledThemeSpec nextScene;
   if (!themespec::CompileThemeSpecObject(cachedThemeSpecDoc.as<JsonObjectConst>(), nextScene)) {
     cachedThemeSpecDocHash = 0;
     cachedThemeSpecDoc.clear();
-    GifCore().ReleaseMemory();
     return false;
   }
   themespec::MoveCompiledThemeSpec(cachedThemeSpecScene, nextScene);
-  if (!themespec::CompiledThemeSpecHasGifAssets(cachedThemeSpecScene)) {
-    GifCore().ReleaseMemory();
-  }
   if (!cachedThemeSpecScene.requiresJsonDocument) {
     cachedThemeSpecDoc.clear();
   }

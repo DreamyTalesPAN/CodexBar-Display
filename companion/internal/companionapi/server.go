@@ -138,6 +138,8 @@ type Server struct {
 	firmwareUpdateActive   atomic.Bool
 	configMu               sync.Mutex
 	repairMu               sync.Mutex
+	repairFlightsMu        sync.Mutex
+	repairFlights          map[string]*deviceRepairFlight
 	deviceMaintenanceMu    sync.Mutex
 	pairMu                 sync.Mutex
 	verificationMu         sync.Mutex
@@ -200,6 +202,12 @@ func (e *invalidTargetError) Error() string {
 type repairStageError struct {
 	stage string
 	err   error
+}
+
+type deviceRepairFlight struct {
+	done   chan struct{}
+	device deviceInfo
+	err    error
 }
 
 func (e *repairStageError) Error() string {
@@ -1826,13 +1834,19 @@ func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Target    string `json:"target"`
-		ForcePair bool   `json:"forcePair"`
+		Target           string `json:"target"`
+		ExpectedDeviceID string `json:"expectedDeviceId"`
+		ForcePair        bool   `json:"forcePair"`
 	}
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
-	device, err := s.repairDevice(r.Context(), strings.TrimSpace(req.Target), req.ForcePair)
+	device, err := s.repairDevice(
+		r.Context(),
+		strings.TrimSpace(req.Target),
+		strings.TrimSpace(req.ExpectedDeviceID),
+		req.ForcePair,
+	)
 	if err != nil {
 		writeRepairError(w, err)
 		return
@@ -2080,7 +2094,49 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 	}{OK: true, Device: device})
 }
 
-func (s *Server) repairDevice(ctx context.Context, requestedTarget string, forcePair bool) (deviceInfo, error) {
+func (s *Server) repairDevice(
+	ctx context.Context,
+	requestedTarget string,
+	expectedDeviceID string,
+	forcePair bool,
+) (deviceInfo, error) {
+	key := fmt.Sprintf(
+		"%t|%s|%s",
+		forcePair,
+		strings.ToLower(strings.TrimSpace(requestedTarget)),
+		strings.ToLower(strings.TrimSpace(expectedDeviceID)),
+	)
+	s.repairFlightsMu.Lock()
+	if s.repairFlights == nil {
+		s.repairFlights = make(map[string]*deviceRepairFlight)
+	}
+	if active := s.repairFlights[key]; active != nil {
+		s.repairFlightsMu.Unlock()
+		select {
+		case <-active.done:
+			return active.device, active.err
+		case <-ctx.Done():
+			return deviceInfo{}, ctx.Err()
+		}
+	}
+	flight := &deviceRepairFlight{done: make(chan struct{})}
+	s.repairFlights[key] = flight
+	s.repairFlightsMu.Unlock()
+
+	flight.device, flight.err = s.repairDeviceOnce(ctx, requestedTarget, expectedDeviceID, forcePair)
+	s.repairFlightsMu.Lock()
+	delete(s.repairFlights, key)
+	close(flight.done)
+	s.repairFlightsMu.Unlock()
+	return flight.device, flight.err
+}
+
+func (s *Server) repairDeviceOnce(
+	ctx context.Context,
+	requestedTarget string,
+	expectedDeviceID string,
+	forcePair bool,
+) (deviceInfo, error) {
 	s.deviceMaintenanceMu.Lock()
 	defer s.deviceMaintenanceMu.Unlock()
 
@@ -2126,7 +2182,12 @@ func (s *Server) repairDevice(ctx context.Context, requestedTarget string, force
 	if err != nil {
 		return deviceInfo{}, err
 	}
-	if err := validateRepairIdentity(cfg, hello, strings.TrimSpace(requestedTarget) != ""); err != nil {
+	if err := validateRepairIdentity(
+		cfg,
+		hello,
+		strings.TrimSpace(requestedTarget) != "",
+		expectedDeviceID,
+	); err != nil {
 		return deviceInfo{}, err
 	}
 
@@ -3996,7 +4057,7 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 			Board:       hello.Board,
 			Firmware:    hello.Firmware,
 			NetworkMode: hello.NetworkMode,
-			Known:       deviceIdentityMatches(cfg, found.target, hello),
+			Known:       deviceIdentityMatches(cfg, hello),
 		}
 		if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
 			byIdentity[key] = entry
@@ -4015,19 +4076,25 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 	return devices
 }
 
-func deviceIdentityMatches(cfg runtimeconfig.Config, target string, hello protocol.DeviceHello) bool {
+func deviceIdentityMatches(cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
 	wantID := strings.TrimSpace(cfg.DeviceID)
 	gotID := strings.TrimSpace(hello.DeviceID)
-	if wantID != "" {
-		return gotID != "" && strings.EqualFold(wantID, gotID)
-	}
-	return strings.TrimSpace(cfg.DeviceTarget) != "" && samePublicTarget(cfg.DeviceTarget, target)
+	return wantID != "" && gotID != "" && strings.EqualFold(wantID, gotID)
 }
 
-func validateRepairIdentity(cfg runtimeconfig.Config, hello protocol.DeviceHello, explicit bool) error {
+func validateRepairIdentity(
+	cfg runtimeconfig.Config,
+	hello protocol.DeviceHello,
+	explicit bool,
+	expectedDeviceID string,
+) error {
 	hello = hello.Normalize()
 	if hello.NetworkMode == "setup" {
 		return &repairStageError{stage: "discovery", err: errors.New("VibeTV is still in Wi-Fi setup mode")}
+	}
+	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
+	if expectedDeviceID != "" && !strings.EqualFold(expectedDeviceID, strings.TrimSpace(hello.DeviceID)) {
+		return &repairStageError{stage: "discovery", err: errors.New("selected VibeTV identity changed before pairing")}
 	}
 	if explicit || strings.TrimSpace(cfg.DeviceID) == "" {
 		return nil

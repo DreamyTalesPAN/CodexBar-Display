@@ -286,7 +286,7 @@ func runURLSchemeTests() {
     )
     require(
         shouldRetryExistingDevicePreparation(
-            .failed("temporary network failure"),
+            .retryableFailure("temporary network failure"),
             attempt: 1,
             maximumAttempts: 3
         ),
@@ -294,11 +294,19 @@ func runURLSchemeTests() {
     )
     require(
         !shouldRetryExistingDevicePreparation(
-            .failed("persistent network failure"),
+            .retryableFailure("persistent network failure"),
             attempt: 3,
             maximumAttempts: 3
         ),
         "device preparation retries must stop at the configured maximum"
+    )
+    require(
+        !shouldRetryExistingDevicePreparation(
+            .failed("pairing repair failed"),
+            attempt: 1,
+            maximumAttempts: 3
+        ),
+        "a failed pairing transaction must not be repeated automatically"
     )
     require(
         !shouldRetryExistingDevicePreparation(

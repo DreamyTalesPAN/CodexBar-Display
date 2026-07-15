@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/fstest"
@@ -183,12 +184,18 @@ func TestDeviceSearchReturnsAllDevicesWithoutMutatingConfig(t *testing.T) {
 	}
 	known := device("esp8266-123abc", "station", "1.0.36")
 	defer known.Close()
+	knownAlias := device("esp8266-123abc", "station", "1.0.36")
+	defer knownAlias.Close()
+	unknown := device("esp8266-789abc", "station", "1.0.35")
+	defer unknown.Close()
 	setupDevice := device("esp8266-456def", "setup", "1.0.36")
 	defer setupDevice.Close()
 
 	initial := runtimeconfig.Config{DeviceTarget: "http://192.0.2.1", DeviceToken: "secret", DeviceID: "esp8266-123abc"}
 	server := newTestServer(t, initial)
-	server.subnetTargets = func() []string { return []string{known.URL, setupDevice.URL} }
+	server.subnetTargets = func() []string {
+		return []string{unknown.URL, knownAlias.URL, known.URL, setupDevice.URL}
+	}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
@@ -205,11 +212,14 @@ func TestDeviceSearchReturnsAllDevicesWithoutMutatingConfig(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if !got.OK || len(got.Devices) != 1 {
+	if !got.OK || len(got.Devices) != 2 {
 		t.Fatalf("unexpected search response: %+v", got)
 	}
-	if !got.Devices[0].Known || got.Devices[0].DeviceID != "esp8266-123abc" || got.Devices[0].NetworkMode != "station" {
+	if !got.Devices[0].Known || got.Devices[0].DeviceID != "esp8266-123abc" || got.Devices[0].NetworkMode != "station" || got.Devices[0].Board != "esp8266-smalltv-st7789" || got.Devices[0].Firmware != "1.0.36" || got.Devices[0].Target == "" {
 		t.Fatalf("known device must sort first: %+v", got.Devices)
+	}
+	if got.Devices[1].Known || got.Devices[1].DeviceID != "esp8266-789abc" || got.Devices[1].Firmware != "1.0.35" {
+		t.Fatalf("unknown station device must remain selectable after known device: %+v", got.Devices)
 	}
 	cfg, err := server.config()
 	if err != nil {
@@ -232,14 +242,70 @@ func TestPairingStreamErrorClearsPairedState(t *testing.T) {
 
 func TestValidateRepairIdentityRejectsSetupAndBackgroundMismatch(t *testing.T) {
 	cfg := runtimeconfig.Config{DeviceID: "esp8266-123abc"}
-	if err := validateRepairIdentity(cfg, protocol.DeviceHello{DeviceID: "esp8266-123abc", NetworkMode: "setup"}, false); err == nil {
+	if err := validateRepairIdentity(cfg, protocol.DeviceHello{DeviceID: "esp8266-123abc", NetworkMode: "setup"}, false, ""); err == nil {
 		t.Fatal("expected setup device rejection")
 	}
-	if err := validateRepairIdentity(cfg, protocol.DeviceHello{DeviceID: "esp8266-456def", NetworkMode: "station"}, false); err == nil {
+	if err := validateRepairIdentity(cfg, protocol.DeviceHello{DeviceID: "esp8266-456def", NetworkMode: "station"}, false, ""); err == nil {
 		t.Fatal("expected background identity mismatch rejection")
 	}
-	if err := validateRepairIdentity(cfg, protocol.DeviceHello{DeviceID: "esp8266-456def", NetworkMode: "station"}, true); err != nil {
+	if err := validateRepairIdentity(cfg, protocol.DeviceHello{DeviceID: "esp8266-456def", NetworkMode: "station"}, true, ""); err != nil {
 		t.Fatalf("explicit user selection should permit replacing saved device: %v", err)
+	}
+	if err := validateRepairIdentity(cfg, protocol.DeviceHello{DeviceID: "esp8266-456def", NetworkMode: "station"}, true, "esp8266-123abc"); err == nil {
+		t.Fatal("selected device identity must stay pinned through pairing")
+	}
+}
+
+func TestDeviceIdentityKnownRequiresStableDeviceID(t *testing.T) {
+	cfg := runtimeconfig.Config{DeviceTarget: "http://192.168.178.72"}
+	hello := protocol.DeviceHello{DeviceID: "esp8266-123abc", NetworkMode: "station"}
+	if deviceIdentityMatches(cfg, hello) {
+		t.Fatal("a legacy target match must not claim a stable known identity")
+	}
+	cfg.DeviceID = "ESP8266-123ABC"
+	if !deviceIdentityMatches(cfg, hello) {
+		t.Fatal("stable device identity must remain known after its IP changes")
+	}
+}
+
+func TestDeviceRepairRejectsIdentitySwapBetweenSearchAndPair(t *testing.T) {
+	var pairCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","deviceId":"replacement-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/api/pair":
+			pairCalls.Add(1)
+			_, _ = w.Write([]byte(`{"ok":true,"token":"must-not-be-issued"}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/device/repair",
+		strings.NewReader(`{"target":"`+device.URL+`","expectedDeviceId":"selected-device"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Fatalf("identity swap was accepted: %s", rec.Body.String())
+	}
+	if pairCalls.Load() != 0 {
+		t.Fatalf("identity swap triggered %d pairing writes", pairCalls.Load())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceTarget != "" || cfg.DeviceToken != "" || cfg.DeviceID != "" {
+		t.Fatalf("identity swap mutated config: %+v", cfg)
 	}
 }
 
@@ -3353,6 +3419,9 @@ func TestDisplayVerificationSeparatesHealthyStreamFromLostResponseProof(t *testi
 
 func TestConcurrentDeviceRepairsShareOnePairingTransaction(t *testing.T) {
 	var pairCalls atomic.Int32
+	pairStarted := make(chan struct{})
+	releasePair := make(chan struct{})
+	var pairStartedOnce sync.Once
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
@@ -3360,6 +3429,8 @@ func TestConcurrentDeviceRepairsShareOnePairingTransaction(t *testing.T) {
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.35","capabilities":{"transport":{"active":"wifi"}}}`))
 		case "/api/pair":
 			pairCalls.Add(1)
+			pairStartedOnce.Do(func() { close(pairStarted) })
+			<-releasePair
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"token":"new-token"}`))
 		case "/health":
@@ -3399,20 +3470,30 @@ func TestConcurrentDeviceRepairsShareOnePairingTransaction(t *testing.T) {
 		return health, nil
 	}
 
-	start := make(chan struct{})
-	results := make(chan error, 2)
-	for range 2 {
-		go func() {
-			<-start
-			_, err := server.repairDevice(context.Background(), "", false)
-			results <- err
-		}()
-	}
-	close(start)
-	for range 2 {
-		if err := <-results; err != nil {
-			t.Fatalf("concurrent repair failed: %v", err)
+	firstResult := make(chan error, 1)
+	go func() {
+		_, err := server.repairDevice(context.Background(), "", "", false)
+		firstResult <- err
+	}()
+	<-pairStarted
+	secondCtx, cancelSecond := context.WithCancel(context.Background())
+	secondResult := make(chan error, 1)
+	go func() {
+		_, err := server.repairDevice(secondCtx, "", "", false)
+		secondResult <- err
+	}()
+	cancelSecond()
+	select {
+	case err := <-secondResult:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("shared repair waiter error=%v want context cancellation", err)
 		}
+	case <-time.After(time.Second):
+		t.Fatal("concurrent repair started a second transaction instead of joining the active flight")
+	}
+	close(releasePair)
+	if err := <-firstResult; err != nil {
+		t.Fatalf("first repair failed: %v", err)
 	}
 	if pairCalls.Load() != 1 {
 		t.Fatalf("concurrent repairs rotated pairing token %d times, want 1", pairCalls.Load())
