@@ -20,6 +20,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/virtualvibetv"
 )
 
 func TestReleaseStateRoundTrip(t *testing.T) {
@@ -613,6 +614,239 @@ func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
 		if strings.Contains(output, noisy) {
 			t.Fatalf("expected quiet update output not to contain %q, got:\n%s", noisy, output)
 		}
+	}
+}
+
+func TestRunInstallUpdateAgainstVirtualVibeTVPreventsSecondFlash(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousUpload := uploadFirmwareOTAFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareHTTPVerifyPollInterval = previousPoll
+		uploadFirmwareOTAFn = previousUpload
+	})
+	t.Setenv("HOME", t.TempDir())
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+
+	imageBody := []byte("virtual candidate firmware")
+	imageSum := sha256.Sum256(imageBody)
+	cfg := virtualvibetv.DefaultConfig()
+	cfg.ExpectedFirmwareSHA256 = hex.EncodeToString(imageSum[:])
+	cfg.RebootUnavailableRequests = 2
+	device := virtualvibetv.New(cfg)
+	deviceServer := httptest.NewServer(device)
+	defer deviceServer.Close()
+
+	artifactServerURL := ""
+	artifactServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/manifest.json":
+			_, _ = io.WriteString(w, `{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"`+artifactServerURL+`/firmware.bin","sha256":"`+hex.EncodeToString(imageSum[:])+`"}]}`)
+		case "/firmware.bin":
+			_, _ = w.Write(imageBody)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer artifactServer.Close()
+	artifactServerURL = artifactServer.URL
+	releaseHTTPClient = &http.Client{Timeout: 5 * time.Second}
+	uploadFirmwareOTAFn = uploadFirmwareOTAMultipart
+
+	args := []string{"--target", deviceServer.URL, "--manifest-url", artifactServer.URL + "/manifest.json", "--skip-launchagent-pause"}
+	if _, err := captureStdout(t, func() error { return runInstallUpdate(args) }); err != nil {
+		t.Fatalf("first virtual update: %v", err)
+	}
+	secondOutput, err := captureStdout(t, func() error { return runInstallUpdate(args) })
+	if err != nil {
+		t.Fatalf("second virtual update check: %v", err)
+	}
+	if !strings.Contains(secondOutput, "Firmware: already current (1.0.1)") {
+		t.Fatalf("expected already-current result, got:\n%s", secondOutput)
+	}
+	snapshot := device.Snapshot()
+	if snapshot.UpdateUploads != 1 || snapshot.Firmware != "1.0.1" || len(snapshot.Violations) != 0 {
+		t.Fatalf("unexpected virtual update snapshot: %+v", snapshot)
+	}
+}
+
+func TestRunInstallUpdateVerifiesAcceptedOTAAfterTransportErrorWithoutRetry(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousUpload := uploadFirmwareOTAFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareHTTPVerifyPollInterval = previousPoll
+		uploadFirmwareOTAFn = previousUpload
+	})
+	t.Setenv("HOME", t.TempDir())
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+
+	imageBody := []byte("accepted before response dropped")
+	imageSum := sha256.Sum256(imageBody)
+	cfg := virtualvibetv.DefaultConfig()
+	cfg.ExpectedFirmwareSHA256 = hex.EncodeToString(imageSum[:])
+	cfg.DropUpdateResponseAfterAccept = true
+	cfg.RebootUnavailableRequests = 1
+	device := virtualvibetv.New(cfg)
+	deviceServer := httptest.NewServer(device)
+	defer deviceServer.Close()
+
+	artifactServerURL := ""
+	artifactServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/manifest.json":
+			_, _ = io.WriteString(w, `{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"`+artifactServerURL+`/firmware.bin","sha256":"`+hex.EncodeToString(imageSum[:])+`"}]}`)
+		case "/firmware.bin":
+			_, _ = w.Write(imageBody)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer artifactServer.Close()
+	artifactServerURL = artifactServer.URL
+	releaseHTTPClient = &http.Client{Timeout: 5 * time.Second}
+	uploadFirmwareOTAFn = uploadFirmwareOTAMultipart
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", deviceServer.URL, "--manifest-url", artifactServer.URL + "/manifest.json", "--skip-launchagent-pause"})
+	})
+	if err != nil {
+		t.Fatalf("accepted virtual update: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "Checking VibeTV before retrying") || !strings.Contains(output, "Done: firmware 1.0.1 installed") {
+		t.Fatalf("missing accepted-upload verification output:\n%s", output)
+	}
+	snapshot := device.Snapshot()
+	if snapshot.UpdateUploads != 1 || len(snapshot.Violations) != 0 {
+		t.Fatalf("accepted upload was repeated: %+v", snapshot)
+	}
+}
+
+func TestRunInstallUpdateRediscoveryFollowsSameDeviceIDAtNewAddress(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousRediscoveryAfter := firmwareUpdateRediscoveryAfter
+	previousUpload := uploadFirmwareOTAFn
+	previousDiscover := discoverWiFiDeviceFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareUpdateRediscoveryAfter = previousRediscoveryAfter
+		uploadFirmwareOTAFn = previousUpload
+		discoverWiFiDeviceFn = previousDiscover
+	})
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareUpdateRediscoveryAfter = 2 * time.Millisecond
+
+	imageBody := []byte("candidate moving to another address")
+	imageSum := sha256.Sum256(imageBody)
+	cfg := virtualvibetv.DefaultConfig()
+	cfg.ExpectedFirmwareSHA256 = hex.EncodeToString(imageSum[:])
+	cfg.RebootUnavailableRequests = 0
+	device := virtualvibetv.New(cfg)
+	newAddress := httptest.NewServer(device)
+	defer newAddress.Close()
+	oldAddress := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/hello" && device.Snapshot().UpdateUploads > 0 {
+			http.Error(w, "old address unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		device.ServeHTTP(w, r)
+	}))
+	defer oldAddress.Close()
+
+	artifactServerURL := ""
+	artifactServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/manifest.json":
+			_, _ = io.WriteString(w, `{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"`+artifactServerURL+`/firmware.bin","sha256":"`+hex.EncodeToString(imageSum[:])+`"}]}`)
+		case "/firmware.bin":
+			_, _ = w.Write(imageBody)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer artifactServer.Close()
+	artifactServerURL = artifactServer.URL
+
+	releaseHTTPClient = &http.Client{Timeout: 5 * time.Second}
+	uploadFirmwareOTAFn = uploadFirmwareOTAMultipart
+	discoverWiFiDeviceFn = func(context.Context, transportlayer.WiFiDiscoveryOptions) (transportlayer.WiFiDiscoveryResult, error) {
+		return transportlayer.WiFiDiscoveryResult{
+			Target: newAddress.URL,
+			Hello:  protocol.DeviceHello{DeviceID: cfg.DeviceID, Firmware: cfg.CandidateFirmware},
+			Source: "virtual-ip-change",
+		}, nil
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", oldAddress.URL,
+			"--manifest-url", artifactServer.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err != nil {
+		t.Fatalf("rediscovered virtual update: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "Using rediscovered VibeTV address: "+newAddress.URL) {
+		t.Fatalf("missing address-change evidence:\n%s", output)
+	}
+	saved, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.DeviceTarget != newAddress.URL {
+		t.Fatalf("rediscovered target was not saved: %+v", saved)
+	}
+	if snapshot := device.Snapshot(); snapshot.UpdateUploads != 1 || len(snapshot.Violations) != 0 {
+		t.Fatalf("unexpected rediscovered device state: %+v", snapshot)
+	}
+}
+
+func TestFirmwareRediscoveryRejectsDifferentDeviceID(t *testing.T) {
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousRediscoveryAfter := firmwareUpdateRediscoveryAfter
+	previousDiscover := discoverWiFiDeviceFn
+	t.Cleanup(func() {
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareUpdateRediscoveryAfter = previousRediscoveryAfter
+		discoverWiFiDeviceFn = previousDiscover
+	})
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareUpdateRediscoveryAfter = 2 * time.Millisecond
+
+	oldAddress := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "old address unavailable", http.StatusServiceUnavailable)
+	}))
+	defer oldAddress.Close()
+	wrongDevice := virtualvibetv.DefaultConfig()
+	wrongDevice.DeviceID = "different-device"
+	wrongDevice.Firmware = wrongDevice.CandidateFirmware
+	wrongServer := httptest.NewServer(virtualvibetv.New(wrongDevice))
+	defer wrongServer.Close()
+	discoverWiFiDeviceFn = func(context.Context, transportlayer.WiFiDiscoveryOptions) (transportlayer.WiFiDiscoveryResult, error) {
+		return transportlayer.WiFiDiscoveryResult{
+			Target: wrongServer.URL,
+			Hello:  protocol.DeviceHello{DeviceID: wrongDevice.DeviceID, Firmware: wrongDevice.Firmware},
+			Source: "virtual-wrong-device",
+		}, nil
+	}
+
+	_, err := waitForHTTPFirmwareVersionWithDiscovery(
+		context.Background(),
+		t.TempDir(),
+		oldAddress.URL,
+		wrongDevice.Firmware,
+		"expected-device",
+		10*time.Millisecond,
+	)
+	if err == nil || !strings.Contains(err.Error(), "does not match original deviceId") {
+		t.Fatalf("wrong rediscovered device was not rejected: %v", err)
 	}
 }
 

@@ -542,24 +542,44 @@ func runInstallUpdate(args []string) (retErr error) {
 				uploadErr = fmt.Errorf("%w; repair pairing failed: %v", uploadErr, pairErr)
 			}
 		}
-		if uploadErr != nil {
+	}
+
+	verifiedBase := ""
+	if uploadErr != nil {
+		if firmwareOTAAuthError(uploadErr) {
 			return &commandError{
 				Op:   "ota-upload",
 				Code: errcode.UpgradeFlashFirmware,
 				Err:  uploadErr,
+				Hint: "pair VibeTV again, then retry",
+			}
+		}
+		// A VibeTV can finish writing the OTA image and reboot before its HTTP
+		// acknowledgement reaches the Mac. Retrying that ambiguous upload can
+		// flash the same image twice. Verify the candidate version first; only an
+		// explicit authentication rejection is safe to retry above.
+		fmt.Println("Firmware upload response was interrupted. Checking VibeTV before retrying...")
+		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, hello.DeviceID, 90*time.Second)
+		if err != nil {
+			return &commandError{
+				Op:   "ota-upload",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  fmt.Errorf("%w; candidate verification also failed: %v", uploadErr, err),
 				Hint: "keep VibeTV powered and on the same WiFi, then retry",
 			}
 		}
 	}
 	fmt.Println("Restarting VibeTV...")
 
-	verifiedBase, err := waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, 90*time.Second)
-	if err != nil {
-		return &commandError{
-			Op:   "post-update-verify",
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "wait one minute, then open http://<device-ip>/health",
+	if verifiedBase == "" {
+		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, hello.DeviceID, 90*time.Second)
+		if err != nil {
+			return &commandError{
+				Op:   "post-update-verify",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  err,
+				Hint: "wait one minute, then open http://<device-ip>/health",
+			}
 		}
 	}
 	if verifiedBase != base {
@@ -610,20 +630,20 @@ func shouldStoreFirmwareUpdateTarget(current, next string) bool {
 	return true
 }
 
-func waitForHTTPFirmwareVersionWithDiscovery(ctx context.Context, home, base, version string, timeout time.Duration) (string, error) {
+func waitForHTTPFirmwareVersionWithDiscovery(ctx context.Context, home, base, version, deviceID string, timeout time.Duration) (string, error) {
 	firstTimeout := timeout
 	if firmwareUpdateRediscoveryAfter > 0 && firmwareUpdateRediscoveryAfter < timeout {
 		firstTimeout = firmwareUpdateRediscoveryAfter
 	}
-	err := waitForHTTPFirmwareVersion(ctx, base, version, firstTimeout)
+	err := waitForHTTPFirmwareVersion(ctx, base, version, deviceID, firstTimeout)
 	if err == nil {
 		return base, nil
 	}
 
-	discovered, discoverErr := discoverInstallUpdateTarget(ctx, home, base)
+	discovered, discoverErr := discoverInstallUpdateTarget(ctx, home, base, deviceID)
 	if discoverErr != nil {
 		if firstTimeout < timeout {
-			if retryErr := waitForHTTPFirmwareVersion(ctx, base, version, timeout-firstTimeout); retryErr == nil {
+			if retryErr := waitForHTTPFirmwareVersion(ctx, base, version, deviceID, timeout-firstTimeout); retryErr == nil {
 				return base, nil
 			}
 		}
@@ -633,13 +653,13 @@ func waitForHTTPFirmwareVersionWithDiscovery(ctx context.Context, home, base, ve
 		return "", err
 	}
 	fmt.Printf("Using rediscovered VibeTV address: %s\n", discovered)
-	if verifyErr := waitForHTTPFirmwareVersion(ctx, discovered, version, 30*time.Second); verifyErr != nil {
+	if verifyErr := waitForHTTPFirmwareVersion(ctx, discovered, version, deviceID, 30*time.Second); verifyErr != nil {
 		return "", fmt.Errorf("%w; rediscovered target %s also failed: %v", err, discovered, verifyErr)
 	}
 	return discovered, nil
 }
 
-func discoverInstallUpdateTarget(ctx context.Context, home, base string) (string, error) {
+func discoverInstallUpdateTarget(ctx context.Context, home, base, deviceID string) (string, error) {
 	candidates := []string{base, setup.DefaultWiFiTarget()}
 	if cfg, err := runtimeconfig.Load(home); err == nil {
 		candidates = append(candidates, cfg.DeviceTarget)
@@ -651,6 +671,11 @@ func discoverInstallUpdateTarget(ctx context.Context, home, base string) (string
 	})
 	if err != nil {
 		return "", err
+	}
+	expectedDeviceID := strings.TrimSpace(deviceID)
+	discoveredDeviceID := strings.TrimSpace(result.Hello.DeviceID)
+	if expectedDeviceID != "" && discoveredDeviceID != "" && discoveredDeviceID != expectedDeviceID {
+		return "", fmt.Errorf("rediscovered deviceId %q does not match original deviceId %q", discoveredDeviceID, expectedDeviceID)
 	}
 	target, err := normalizeHTTPBaseURL(result.Target)
 	if err != nil {
@@ -1214,7 +1239,10 @@ func uploadFirmwareOTA(ctx context.Context, base, imagePath, token string) error
 	} else if !rawFirmwareUploadUnavailable(err) {
 		return err
 	}
+	return uploadFirmwareOTAMultipart(ctx, base, imagePath, token)
+}
 
+func uploadFirmwareOTAMultipart(ctx context.Context, base, imagePath, token string) error {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	part, err := writer.CreateFormFile("firmware", filepath.Base(imagePath))
@@ -1326,7 +1354,7 @@ func rawFirmwareUploadUnavailable(err error) bool {
 		strings.Contains(msg, "404")
 }
 
-func waitForHTTPFirmwareVersion(ctx context.Context, base, version string, timeout time.Duration) error {
+func waitForHTTPFirmwareVersion(ctx context.Context, base, version, deviceID string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
@@ -1335,7 +1363,12 @@ func waitForHTTPFirmwareVersion(ctx context.Context, base, version string, timeo
 		}
 		hello, err := fetchDeviceHelloHTTP(ctx, base)
 		if err == nil && normalizeReleaseVersion(hello.Firmware) == normalizeReleaseVersion(version) {
-			return nil
+			expectedDeviceID := strings.TrimSpace(deviceID)
+			observedDeviceID := strings.TrimSpace(hello.DeviceID)
+			if expectedDeviceID == "" || observedDeviceID == expectedDeviceID {
+				return nil
+			}
+			err = fmt.Errorf("device reported deviceId %q, want %q", observedDeviceID, expectedDeviceID)
 		}
 		if err != nil {
 			lastErr = err
