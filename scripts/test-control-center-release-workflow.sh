@@ -139,6 +139,10 @@ main() {
     "macOS DMG job must preserve the Apple notarization log"
   assert_contains "$macos_job" "VibeTV-Control-Center.dmg" \
     "macOS DMG job must produce the stable latest-download DMG asset"
+  assert_contains "$macos_job" "-o dist/macos/appcast.xml" \
+    "Sparkle must write the appcast where verification and release upload expect it"
+  assert_not_contains "$macos_job" "-o appcast.xml" \
+    "Sparkle must not write the appcast outside the release artifact directory"
   assert_contains "$macos_job" "actions/upload-artifact@v4" \
     "macOS DMG job must upload the notarized DMG for the release job"
   assert_not_contains "$macos_job" "--dry-run" \
