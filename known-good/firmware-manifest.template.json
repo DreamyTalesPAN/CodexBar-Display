@@ -8,7 +8,7 @@
       "board": "esp8266-smalltv-st7789",
       "firmwareVersion": "X.Y.Z",
       "severity": "recommended",
-      "message": "Firmware update available. Open vibetv.local.",
+      "message": "Firmware update available. Open app.vibetv.shop.",
       "asset": "codexbar-display-firmware-esp8266_smalltv_st7789-vX.Y.Z.bin",
       "firmwareUrl": "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/vX.Y.Z/codexbar-display-firmware-esp8266_smalltv_st7789-vX.Y.Z.bin",
       "sha256": "<filled-by-release-workflow>"
@@ -18,7 +18,7 @@
       "board": "esp32-lilygo-t-display-s3",
       "firmwareVersion": "X.Y.Z",
       "severity": "recommended",
-      "message": "Firmware update available. Open vibetv.local.",
+      "message": "Firmware update available. Open app.vibetv.shop.",
       "asset": "codexbar-display-firmware-lilygo_t_display_s3-vX.Y.Z.bin",
       "firmwareUrl": "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/vX.Y.Z/codexbar-display-firmware-lilygo_t_display_s3-vX.Y.Z.bin",
       "sha256": "<filled-by-release-workflow>"

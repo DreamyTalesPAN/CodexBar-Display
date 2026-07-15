@@ -19,7 +19,7 @@ private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
 private let runtimeDeviceRepairTimeout: TimeInterval = 90
 private let runtimeDeviceRepairMaxAttempts = 3
-private let localNetworkPrivacyProbeURLString = "http://vibetv.local/hello"
+private let localNetworkPrivacyProbeURLString = "http://192.168.4.1/hello"
 private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
 private let runtimeDeviceRepairRetryDelay: Duration = .seconds(3)
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
@@ -138,7 +138,7 @@ func makeLocalNetworkPrivacyProbeRequest(
 ) -> URLRequest? {
     guard let url = URL(string: urlString),
           url.scheme?.lowercased() == "http",
-          url.host?.lowercased() == "vibetv.local",
+          url.host == "192.168.4.1",
           url.path == "/hello",
           url.user == nil,
           url.password == nil,

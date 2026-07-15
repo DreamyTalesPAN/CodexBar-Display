@@ -154,7 +154,7 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 }
 
 func TestApplyDeviceTokenAddsHeaderAndQueryFallback(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "http://vibetv.local/hello?keep=1", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://192.0.2.10/hello?keep=1", nil)
 
 	applyDeviceToken(req, "pair-token")
 
@@ -1067,13 +1067,13 @@ func TestWaitForDisplayStreamAfterPairIgnoresTransientPairingError(t *testing.T)
 		return displayStreamInfo{Running: true, Healthy: true}
 	}
 
-	got := waitForDisplayStreamAfterProbe(context.Background(), "http://vibetv.local", time.Now(), false, inspect)
+	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, inspect)
 	if !got.Healthy || calls.Load() != 2 {
 		t.Fatalf("post-pair wait must ignore one stale auth error, got=%+v calls=%d", got, calls.Load())
 	}
 
 	calls.Store(0)
-	got = waitForDisplayStreamAfterProbe(context.Background(), "http://vibetv.local", time.Now(), true, inspect)
+	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, inspect)
 	if got.Healthy || got.ErrorCode != "device_pairing_required" || calls.Load() != 1 {
 		t.Fatalf("normal wait must surface pairing error immediately, got=%+v calls=%d", got, calls.Load())
 	}
@@ -2425,14 +2425,14 @@ func TestDiagnosticsRedactsPublicTargetCredentials(t *testing.T) {
 }
 
 func TestSanitizeErrorDetailRedactsURLCredentials(t *testing.T) {
-	detail := sanitizeErrorDetail(errors.New("GET http://user:secret@vibetv.local/setup?token=pair-token&key=api-key failed"))
+	detail := sanitizeErrorDetail(errors.New("GET http://user:secret@192.0.2.10/setup?token=pair-token&key=api-key failed"))
 
 	for _, sensitive := range []string{"user:secret", "pair-token", "api-key"} {
 		if strings.Contains(detail, sensitive) {
 			t.Fatalf("sanitized detail leaked %q: %s", sensitive, detail)
 		}
 	}
-	for _, expected := range []string{"http://<redacted>@vibetv.local", "token=<redacted>", "key=<redacted>"} {
+	for _, expected := range []string{"http://<redacted>@192.0.2.10", "token=<redacted>", "key=<redacted>"} {
 		if !strings.Contains(detail, expected) {
 			t.Fatalf("sanitized detail missing %q: %s", expected, detail)
 		}
@@ -2672,7 +2672,7 @@ func TestDeviceRepairRetriesTransientDiscoveryMiss(t *testing.T) {
 
 	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: stale.URL})
 	server.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if strings.EqualFold(strings.TrimSuffix(req.URL.Hostname(), "."), "vibetv.local") {
+		if strings.EqualFold(strings.TrimSuffix(req.URL.Hostname(), "."), "192.0.2.10") {
 			return nil, errors.New("mdns lookup failed")
 		}
 		return http.DefaultTransport.RoundTrip(req)
@@ -2798,7 +2798,7 @@ func TestDeviceRepairRecoversLastLogTargetWhenConfigIsEmpty(t *testing.T) {
 	}
 }
 
-func TestDeviceRepairExplicitVibetvLocalFallsBackToSubnet(t *testing.T) {
+func TestDeviceRepairMigratesStoredLegacyMDNSTargetToSubnetIP(t *testing.T) {
 	device := newRepairableDeviceServer(t)
 	defer device.Close()
 
@@ -2819,7 +2819,7 @@ func TestDeviceRepairExplicitVibetvLocalFallsBackToSubnet(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{"target":"http://vibetv.local","forcePair":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{"forcePair":true}`))
 	req.Header.Set("Content-Type", "application/json")
 
 	server.Handler().ServeHTTP(rec, req)
@@ -2910,7 +2910,7 @@ func TestDeviceRepairForcePairIgnoresStaleTokenDuringDiscovery(t *testing.T) {
 	}))
 	defer device.Close()
 
-	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: "http://vibetv.local", DeviceToken: "old-token"})
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: "http://192.0.2.10", DeviceToken: "old-token"})
 	server.runSetup = func(_ context.Context, opts setup.Options) error {
 		if opts.Target != device.URL {
 			t.Fatalf("expected display stream target %q, got %q", device.URL, opts.Target)
@@ -3610,15 +3610,15 @@ func TestDeviceDiscoverDoesNotFallbackWhenExplicitTargetFails(t *testing.T) {
 
 func TestDeviceDiscoverRejectsInvalidExplicitTarget(t *testing.T) {
 	for _, target := range []string{
-		"ftp://vibetv.local",
-		"http://ftp://vibetv.local",
-		"http://vibetv.local:",
-		"http://vibetv.local:abc",
-		"http://vibetv.local:0",
-		"http://vibetv.local:99999",
-		"http://vibetv.local/setup",
-		"http://vibetv.local?token=pair-token",
-		"http://vibetv.local/#setup",
+		"ftp://192.0.2.10",
+		"http://ftp://192.0.2.10",
+		"http://192.0.2.10:",
+		"http://192.0.2.10:abc",
+		"http://192.0.2.10:0",
+		"http://192.0.2.10:99999",
+		"http://192.0.2.10/setup",
+		"http://192.0.2.10?token=pair-token",
+		"http://192.0.2.10/#setup",
 	} {
 		t.Run(target, func(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{})
@@ -3686,10 +3686,10 @@ func TestConcurrentConfigUpdatesPreserveTargetAndPairingToken(t *testing.T) {
 
 func TestDevicePairRejectsInvalidExplicitTarget(t *testing.T) {
 	for _, target := range []string{
-		"http://user:pass@vibetv.local",
-		"http://vibetv.local:abc",
-		"http://vibetv.local:0",
-		"http://vibetv.local:99999",
+		"http://user:pass@192.0.2.10",
+		"http://192.0.2.10:abc",
+		"http://192.0.2.10:0",
+		"http://192.0.2.10:99999",
 	} {
 		t.Run(target, func(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{})
@@ -4518,7 +4518,7 @@ func TestThemeInstallErrorIncludesSanitizedDetail(t *testing.T) {
 
 	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
 	server.installTheme = func(ctx context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
-		return themeinstall.Result{}, errors.New(`theme-pack/upload: post asset /themes/u/cm.cbi: Post "http://vibetv.local/assets?path=%2Fthemes%2Fu%2Fcm.cbi&token=pair-token": connection reset by peer`)
+		return themeinstall.Result{}, errors.New(`theme-pack/upload: post asset /themes/u/cm.cbi: Post "http://192.0.2.10/assets?path=%2Fthemes%2Fu%2Fcm.cbi&token=pair-token": connection reset by peer`)
 	}
 
 	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip"}`)

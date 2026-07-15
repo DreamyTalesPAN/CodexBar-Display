@@ -148,8 +148,8 @@ func runURLSchemeTests() {
     )
     let localNetworkProbe = makeLocalNetworkPrivacyProbeRequest(timeout: 12)
     require(
-        localNetworkProbe?.url?.absoluteString == "http://vibetv.local/hello",
-        "local-network privacy preflight must use the read-only VibeTV hello endpoint"
+        localNetworkProbe?.url?.absoluteString == "http://192.168.4.1/hello",
+        "local-network privacy preflight must use the read-only setup gateway hello endpoint"
     )
     require(
         localNetworkProbe?.httpMethod == "GET",

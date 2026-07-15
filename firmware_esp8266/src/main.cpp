@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <DNSServer.h>
 #include <EEPROM.h>
-#include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
@@ -67,9 +66,7 @@ constexpr uint8_t kMaxBrightnessPercent = 100;
 constexpr size_t kSetupWifiOptionsMaxBytes = 900;
 constexpr uint8_t kSetupWifiMaxOptions = 10;
 const char kSetupApSsid[] = "VibeTV-Setup";
-const char kSetupHost[] = "vibetv.local";
-const char kMdnsName[] = "vibetv";
-const char kMdnsHost[] = "vibetv.local";
+const char kSetupAddress[] = "192.168.4.1";
 const char kCustomerAppHost[] = "app.vibetv.shop";
 const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
@@ -185,8 +182,6 @@ unsigned long bootRecoveryClearAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
 bool frameStaleStatusRendered = false;
 bool captiveDnsStarted = false;
-bool mdnsStarted = false;
-IPAddress mdnsAddress;
 unsigned long wifiDisconnectedAtMs = 0;
 unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
@@ -591,7 +586,7 @@ void applyFrameUpdateState() {
 
 void drawWaitingForCompanionStatus() {
   const unsigned long renderStartUs = micros();
-  renderer.DrawConnectedSetupInstructions(runtimeCtx, kMdnsHost, WiFi.localIP().toString());
+  renderer.DrawConnectedSetupInstructions(runtimeCtx, kCustomerAppHost, WiFi.localIP().toString());
   recordRenderFull("connected_setup", micros() - renderStartUs);
   waitStatusRendered = true;
 }
@@ -622,38 +617,6 @@ void resetWifiReconnectState() {
   wifiDisconnectedAtMs = 0;
   wifiReconnectAttemptAtMs = 0;
   wifiReconnectStatusRendered = false;
-}
-
-void startMdnsResponder(const IPAddress& address) {
-  if (mdnsStarted && mdnsAddress == address) {
-    return;
-  }
-  if (mdnsStarted) {
-    MDNS.close();
-    mdnsStarted = false;
-    Serial.printf("mdns_restarting host=%s old_ip=%s new_ip=%s\n",
-                  kMdnsHost,
-                  mdnsAddress.toString().c_str(),
-                  address.toString().c_str());
-  }
-  if (!MDNS.begin(kMdnsName, address)) {
-    Serial.printf("mdns_start_failed host=%s ip=%s\n", kMdnsHost, address.toString().c_str());
-    return;
-  }
-  MDNS.addService("http", "tcp", 80);
-  mdnsStarted = true;
-  mdnsAddress = address;
-  Serial.printf("mdns_started host=%s ip=%s service=http\n", kMdnsHost, address.toString().c_str());
-}
-
-void stopMdnsResponder(const char* reason) {
-  if (!mdnsStarted) {
-    return;
-  }
-  MDNS.close();
-  mdnsStarted = false;
-  mdnsAddress = IPAddress();
-  Serial.printf("mdns_stopped host=%s reason=%s\n", kMdnsHost, reason == nullptr ? "unknown" : reason);
 }
 
 String displayErrorMessage(const String& message) {
@@ -795,7 +758,7 @@ String macInstallerCommand() {
 }
 
 String updateTargetURL() {
-  return String("http://") + kMdnsHost;
+  return String("http://") + WiFi.localIP().toString();
 }
 
 String updateInstallCommand() {
@@ -1105,8 +1068,8 @@ String setupPageHTML() {
   html += "<label>Password</label><input name='password' type='password' maxlength='64' autocomplete='current-password'>";
   html += "<button type='submit'>Save</button></form>";
   html += "<p class='muted'>Setup address: http://";
-  html += kSetupHost;
-  html += "<br>Fallback: http://192.168.4.1</p></main></body></html>";
+  html += kSetupAddress;
+  html += "</p></main></body></html>";
   return html;
 }
 
@@ -1119,8 +1082,6 @@ String connectedPageHTML() {
   html += F("<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><title>VibeTV</title><style>");
   html += F("body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:24px;background:#0b0c0d;color:#f6f4ed}a{color:#c7ff00;font-weight:800}code,pre{background:#08090a;border:1px solid #30343a;padding:8px;display:block;white-space:pre-wrap;word-break:break-word}button,input{width:100%;font:inherit;margin-top:8px}button{padding:12px;background:#c7ff00;border:0;font-weight:900}section{border-top:1px solid #2b2f35;margin-top:16px;padding-top:12px}</style><h1>Vibe TV</h1>");
   html += F("<p>Connected<br><code>http://");
-  html += kMdnsHost;
-  html += F("</code><code>http://");
   html += ip;
   html += F("</code></p>");
   if (firmwareUpdate.available) {
@@ -1173,7 +1134,7 @@ void handleRoot() {
 
 void redirectToSetupRoot() {
   webServer.keepAlive(false);
-  webServer.sendHeader("Location", String("http://") + kSetupHost + "/", true);
+  webServer.sendHeader("Location", String("http://") + kSetupAddress + "/", true);
   webServer.send(302, "text/plain; charset=utf-8", "");
 }
 
@@ -1607,7 +1568,6 @@ void enterAssetUploadSafeMode() {
   frameStaleStatusRendered = false;
   renderer.ResetGifStateForAssetUpdate();
   close_all_fs();
-  stopMdnsResponder("asset_upload");
   WiFiUDP::stopAll();
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
   ESP.wdtFeed();
@@ -2093,7 +2053,6 @@ void enterOtaSafeMode(int command) {
   frameStaleStatusRendered = false;
   renderer.ResetGifStateForAssetUpdate();
   close_all_fs();
-  stopMdnsResponder("ota_upload");
   WiFiUDP::stopAll();
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
   ESP.wdtFeed();
@@ -2500,13 +2459,12 @@ void startSetupAccessPoint() {
   scanSetupNetworks();
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
   captiveDnsStarted = true;
-  Serial.printf("captive_dns_started port=%u host=%s ip=%s\n", kDnsPort, kSetupHost, WiFi.softAPIP().toString().c_str());
+  Serial.printf("captive_dns_started port=%u ip=%s\n", kDnsPort, WiFi.softAPIP().toString().c_str());
   const unsigned long renderStartUs = micros();
   renderer.DrawSetupInstructions(runtimeCtx, kSetupApSsid, WiFi.softAPIP().toString());
   recordRenderFull("setup", micros() - renderStartUs);
   waitStatusRendered = true;
   startHttpServer();
-  startMdnsResponder(WiFi.softAPIP());
 }
 
 void maintainWifiConnection() {
@@ -2518,7 +2476,6 @@ void maintainWifiConnection() {
       Serial.printf("wifi_reconnected ip=%s\n", WiFi.localIP().toString().c_str());
       drawWaitingForCompanionStatus();
     }
-    startMdnsResponder(WiFi.localIP());
     resetWifiReconnectState();
     return;
   }
@@ -2530,7 +2487,6 @@ void maintainWifiConnection() {
     Serial.printf("wifi_disconnected status=%d fallback_ms=%lu\n",
                   static_cast<int>(WiFi.status()),
                   kWifiReconnectFallbackMs);
-    stopMdnsResponder("wifi_disconnected");
   }
 
   if (!wifiReconnectStatusRendered) {
@@ -2634,11 +2590,9 @@ void setup() {
   if (!forceSetupMode && readWifiCredentials(creds) && connectToSavedWifi(creds)) {
     setupMode = false;
     startHttpServer();
-    startMdnsResponder(WiFi.localIP());
   } else if (!forceSetupMode && connectToSdkWifiConfig()) {
     setupMode = false;
     startHttpServer();
-    startMdnsResponder(WiFi.localIP());
   } else {
     startSetupAccessPoint();
   }
@@ -2662,9 +2616,6 @@ void loop() {
   if (otaUploadInProgress || assetUploadInProgress) {
     if (httpServerStarted) {
       webServer.handleClient();
-    }
-    if (mdnsStarted) {
-      MDNS.update();
     }
     delay(1);
     return;
@@ -2778,9 +2729,6 @@ void loop() {
   handleRawOtaClient();
   if (captiveDnsStarted) {
     dnsServer.processNextRequest();
-  }
-  if (mdnsStarted) {
-    MDNS.update();
   }
   if (rebootPending && static_cast<long>(millis() - rebootAtMs) >= 0) {
     Serial.println("reboot_now");

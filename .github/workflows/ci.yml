@@ -188,10 +188,20 @@ jobs:
         working-directory: firmware_esp8266
         run: pio test -e native_theme_spec_renderer
 
+      - name: Test firmware size budget checker
+        run: ./scripts/test-firmware-size-budget.sh
+
       - name: Build firmware + size budget
         run: |
+          set -euo pipefail
+          BUILD_LOG="$(mktemp)"
+          (
+            cd "${{ matrix.firmware_dir }}"
+            pio run -e "${{ matrix.env_name }}"
+          ) 2>&1 | tee "${BUILD_LOG}"
           ./scripts/check-firmware-size-budget.sh \
-            "${{ matrix.firmware_dir }}" \
+            "${BUILD_LOG}" \
+            "${{ matrix.firmware_dir }}/.pio/build/${{ matrix.env_name }}/firmware.bin" \
             "${{ matrix.env_name }}" \
             "${{ matrix.max_flash_pct }}" \
             "${{ matrix.max_ram_pct }}" \
@@ -215,8 +225,15 @@ jobs:
 
       - name: Build ESP32 experimental profile
         run: |
+          set -euo pipefail
+          BUILD_LOG="$(mktemp)"
+          (
+            cd firmware_esp32
+            pio run -e lilygo_t_display_s3
+          ) 2>&1 | tee "${BUILD_LOG}"
           ./scripts/check-firmware-size-budget.sh \
-            "firmware_esp32" \
+            "${BUILD_LOG}" \
+            "firmware_esp32/.pio/build/lilygo_t_display_s3/firmware.bin" \
             "lilygo_t_display_s3" \
             "20" \
             "25" \

@@ -121,7 +121,7 @@ const missingAssetReleaseFixture = {
 };
 
 const companionDevice = {
-  target: "http://vibetv.local",
+  target: "http://192.168.178.163",
   connected: true,
   paired: true,
   ready: true,
@@ -962,12 +962,18 @@ async function testManualAddressRejectsInvalidAndReportsUnreachable(
   const address = page.getByLabel("VibeTV address");
   await address.waitFor({ timeout: 10_000 });
   await page.getByRole("button", { name: "Connect VibeTV" }).click();
-  await page.getByText("Enter vibetv.local or the IP address shown").waitFor({
-    timeout: 10_000,
-  });
+  await page.locator("#setup-device-target-error").getByText(
+    "Enter the IP address shown on the VibeTV screen.",
+  ).waitFor({ timeout: 10_000 });
   await address.fill("not a VibeTV address");
   await page.getByRole("button", { name: "Connect VibeTV" }).click();
   assert(repairRequests.length === 0, "Invalid addresses must not reach Companion");
+  await address.fill("vibetv" + ".local");
+  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  assert(
+    repairRequests.length === 0,
+    "The retired mDNS hostname must not reach Companion",
+  );
   await address.fill("192.168.178.250");
   await page.getByRole("button", { name: "Connect VibeTV" }).click();
   await page.getByText("No VibeTV device was found.").waitFor({
@@ -1584,8 +1590,8 @@ async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
 
   await page.getByText("Setup needed").waitFor({ timeout: 10_000 });
   assert(
-    (await page.getByText("vibetv.local").count()) === 0,
-    "desktop header should not show vibetv.local while setup is incomplete",
+    (await page.getByText("192.168.178.163").count()) === 0,
+    "desktop header should not show a device IP while setup is incomplete",
   );
 
   assertNoInstallRequests(installRequests);
@@ -2503,7 +2509,7 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
     "Companion",
     "API",
     "target",
-    "http://vibetv.local",
+    "http://192.168.178.163",
     "COMPANION_UNREACHABLE",
   ];
   for (const text of hiddenSupportText) {
@@ -2543,7 +2549,7 @@ async function testSavedAddressDoesNotBlockConfirmedVibeTVSearch(
       },
       searchDevices: [
         {
-          target: "http://vibetv.local",
+          target: "http://192.168.178.163",
           deviceId: "fixture-device-1",
           networkMode: "station",
           known: true,
@@ -2553,7 +2559,7 @@ async function testSavedAddressDoesNotBlockConfirmedVibeTVSearch(
         repairRequests.push(postData || "");
         return {
           ...companionDevice,
-          target: "http://vibetv.local",
+          target: "http://192.168.178.163",
           connected: true,
           paired: true,
         };
@@ -2585,7 +2591,7 @@ async function testSavedAddressDoesNotBlockConfirmedVibeTVSearch(
 
   const repairPayload = JSON.parse(repairRequests[0] || "{}");
   assert(
-    repairPayload.target === "http://vibetv.local",
+    repairPayload.target === "http://192.168.178.163",
     `confirmed repair should use the fresh search result, got ${repairRequests[0]}`,
   );
   assert(
@@ -4013,7 +4019,7 @@ async function routeCompanionOnline(
             {
               name: "companion",
               status: "pass",
-              detail: "Companion API target http://vibetv.local is reachable.",
+              detail: "Companion API target http://192.168.178.163 is reachable.",
               nextAction: "No action needed for COMPANION_UNREACHABLE.",
             },
             {

@@ -270,15 +270,21 @@ jobs:
               MAX_GZIP_BYTES="350000"
             fi
 
-            CODEXBAR_DISPLAY_FW_VERSION="${FW_VERSION}" ./scripts/check-firmware-size-budget.sh \
-              "${DIR}" \
+            BUILD_LOG="$(mktemp)"
+            (
+              cd "${DIR}"
+              CODEXBAR_DISPLAY_FW_VERSION="${FW_VERSION}" pio run -e "${ENV_NAME}"
+            ) 2>&1 | tee "${BUILD_LOG}"
+
+            SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
+            ./scripts/check-firmware-size-budget.sh \
+              "${BUILD_LOG}" \
+              "${SRC}" \
               "${ENV_NAME}" \
               "${MAX_FLASH_PCT}" \
               "${MAX_RAM_PCT}" \
               "${MAX_BIN_BYTES}" \
               "${MAX_GZIP_BYTES}"
-
-            SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
             DEST="dist/firmware/${ASSET}"
             if [[ "${ENV_NAME}" == esp8266_* ]]; then
               gzip -c -9 "${SRC}" > "${DEST}"
@@ -328,7 +334,7 @@ jobs:
                       "asset": asset,
                       "sha256": sha,
                       "severity": str(artifact.get("severity") or "recommended"),
-                      "message": str(artifact.get("message") or "Firmware update available. Open vibetv.local."),
+                      "message": str(artifact.get("message") or "Firmware update available. Open app.vibetv.shop."),
                       "firmwareUrl": f"https://github.com/{repo}/releases/download/v{version}/{asset}",
                   }
               )

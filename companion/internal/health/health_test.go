@@ -48,7 +48,7 @@ func TestParseLaunchAgentConfig(t *testing.T) {
       <string>--transport</string>
       <string>wifi</string>
       <string>--target</string>
-      <string>http://vibetv.local</string>
+      <string>http://192.0.2.10</string>
     </array>
   </dict>
 </plist>`)
@@ -57,8 +57,8 @@ func TestParseLaunchAgentConfig(t *testing.T) {
 	if config.Transport != "wifi" {
 		t.Fatalf("expected wifi transport, got %q", config.Transport)
 	}
-	if config.Target != "http://vibetv.local" {
-		t.Fatalf("expected vibetv.local target, got %q", config.Target)
+	if config.Target != "http://192.0.2.10" {
+		t.Fatalf("expected 192.0.2.10 target, got %q", config.Target)
 	}
 }
 
@@ -81,7 +81,7 @@ func TestRunWithDepsReportsWiFiLaunchAgentWithoutUSBPortError(t *testing.T) {
       <string>--transport</string>
       <string>wifi</string>
       <string>--target</string>
-      <string>http://vibetv.local</string>
+      <string>http://192.0.2.10</string>
     </array>
   </dict>
 </plist>`)
@@ -122,7 +122,7 @@ func TestRunWithDepsReportsWiFiLaunchAgentWithoutUSBPortError(t *testing.T) {
 	got := output.String()
 	for _, want := range []string{
 		"transport: wifi",
-		"device target: http://vibetv.local",
+		"device target: http://192.0.2.10",
 		"last sent frame: 2026-05-03T15:29:49Z target=http://192.168.178.66",
 		"last error: none since last sent frame",
 	} {

@@ -43,7 +43,7 @@ export function DeviceTargetForm({
     const normalized = normalizeManualDeviceTarget(value);
     if (!normalized) {
       setValidationError(
-        "Enter vibetv.local or the IP address shown on the VibeTV screen.",
+        "Enter the IP address shown on the VibeTV screen.",
       );
       return;
     }

@@ -64,7 +64,7 @@ What it does:
 
 Examples:
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash
-  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --target http://vibetv.local --theme mini
+  curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --target http://192.168.178.159 --theme mini
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --target http://192.168.178.159
   curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash -s -- --version 1.0.0
 EOF
@@ -221,7 +221,7 @@ install_default_theme_pack() {
 
   log "vibetv: installing default theme pack (${DEFAULT_THEME_PACK_ID})..."
   if ! "$INSTALL_PATH" theme-pack install --theme "$DEFAULT_THEME_PACK_ID" --skip-firmware-update; then
-    die "default theme pack install failed. If VibeTV is reachable by IP but not vibetv.local, rerun with: bash -s -- --target http://<device-ip>"
+    die "default theme pack install failed. Rerun with the IP shown on VibeTV: bash -s -- --target http://<device-ip>"
   fi
 }
 
@@ -574,7 +574,7 @@ main() {
 
   log "vibetv: starting setup..."
   log "vibetv: normal setup uses WiFi; USB-C only powers VibeTV and no USB serial port is expected."
-  log "vibetv: if vibetv.local is unreliable, setup will try to discover the device IP automatically."
+  log "vibetv: setup discovers the device IP automatically and verifies its device ID."
   prepare_control_center_service
   "$DOWNLOAD_BIN" setup --yes --skip-flash "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
 

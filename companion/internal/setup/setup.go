@@ -32,7 +32,6 @@ const (
 	defaultCompanionAPIAddr   = "127.0.0.1:47832"
 	defaultLastGoodMaxAge     = "168h"
 	defaultTransport          = "wifi"
-	defaultWiFiTarget         = "http://vibetv.local"
 	codexbarInstallURL        = "https://codexbar.app/"
 	codexbarBrewCask          = "steipete/tap/codexbar"
 )
@@ -55,7 +54,7 @@ func DefaultTransport() string {
 }
 
 func DefaultWiFiTarget() string {
-	return defaultWiFiTarget
+	return ""
 }
 
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
@@ -268,16 +267,6 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		}
 	}
 	target := normalizeSetupTarget(opts.Target)
-	if transportName == "wifi" && target == "" {
-		target = defaultWiFiTarget
-	}
-	if transportName == "wifi" && target == "" {
-		return &StepError{
-			Step: "validate-target",
-			Err:  errors.New("--target is required with --transport wifi"),
-			Hint: "use --target http://vibetv.local or the IP shown on Vibe TV",
-		}
-	}
 	runtimeConfigTarget := ""
 	if transportName == "wifi" {
 		runtimeConfigTarget = target
@@ -941,7 +930,10 @@ func writeLaunchAgentPlist(home, binaryPath, transportName, target, port string)
 func renderLaunchAgentPlist(home, binaryPath, transportName, target, port string) []byte {
 	args := []string{binaryPath, "daemon", "--interval", daemonIntervalForSetupTransport(transportName), "--api-addr", defaultCompanionAPIAddr}
 	if normalizeSetupTransport(transportName) == "wifi" {
-		args = append(args, "--transport", "wifi", "--target", normalizeSetupTarget(target))
+		args = append(args, "--transport", "wifi")
+		if normalizedTarget := normalizeSetupTarget(target); normalizedTarget != "" {
+			args = append(args, "--target", normalizedTarget)
+		}
 	} else if strings.TrimSpace(port) != "" {
 		args = append(args, "--port", strings.TrimSpace(port))
 	}
@@ -1284,7 +1276,7 @@ func discoverSetupWiFiTarget(ctx context.Context, d deps, target, rawRuntimeTarg
 	if publicTarget == "" {
 		publicTarget = strings.TrimSpace(target)
 	}
-	candidates := uniqueStrings(publicTarget, target, defaultWiFiTarget)
+	candidates := uniqueStrings(publicTarget, target)
 	result, err := d.discoverWiFi(ctx, candidates)
 	if err != nil {
 		if d.stdout != nil {

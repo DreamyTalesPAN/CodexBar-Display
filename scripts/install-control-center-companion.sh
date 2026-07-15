@@ -22,7 +22,7 @@ DISPLAY_DAEMON_LOG_OUT="${APP_SUPPORT_DIR}/logs/daemon.out.log"
 DISPLAY_DAEMON_LOG_ERR="${APP_SUPPORT_DIR}/logs/daemon.err.log"
 ADDR="${VIBETV_COMPANION_ADDR:-127.0.0.1:47832}"
 DEV_ORIGIN="${VIBETV_COMPANION_DEV_ORIGIN:-}"
-TARGET="${VIBETV_COMPANION_TARGET:-http://vibetv.local}"
+TARGET="${VIBETV_COMPANION_TARGET:-}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "error: this installer currently supports macOS only" >&2
@@ -143,7 +143,10 @@ xml_escape() {
 }
 
 write_daemon_plist() {
-  local daemon_args=("$BIN_PATH" "daemon" "--interval" "30s" "--transport" "wifi" "--target" "$TARGET" "--api-addr" "$ADDR")
+  local daemon_args=("$BIN_PATH" "daemon" "--interval" "30s" "--transport" "wifi" "--api-addr" "$ADDR")
+  if [[ -n "$TARGET" ]]; then
+    daemon_args+=("--target" "$TARGET")
+  fi
   if [[ -n "$DEV_ORIGIN" ]]; then
     daemon_args+=("--api-dev-origin" "$DEV_ORIGIN")
   fi

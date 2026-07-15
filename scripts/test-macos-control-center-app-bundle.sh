@@ -498,8 +498,6 @@ expected_arguments = [
     "daemon",
     "--transport",
     "wifi",
-    "--target",
-    "http://vibetv.local",
     "--interval",
     "30s",
     "--api-addr",

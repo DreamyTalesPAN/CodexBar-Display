@@ -225,7 +225,7 @@ run_install_sh_enables_control_center_in_daemon() {
   : > "${root}/curl.log"
   : > "${root}/launchctl.log"
 
-  output="$(run_installer "$root" --version 9.9.9 -- --target http://vibetv.local)" || {
+  output="$(run_installer "$root" --version 9.9.9 -- --target http://192.0.2.10)" || {
     printf '%s\n' "$output" >&2
     die "expected install.sh migration path to pass"
   }
@@ -252,7 +252,7 @@ run_fresh_install_keeps_default_theme_pack() {
   : > "${root}/curl.log"
   : > "${root}/launchctl.log"
 
-  output="$(run_installer "$root" --version 9.9.9 -- --target http://vibetv.local)" || {
+  output="$(run_installer "$root" --version 9.9.9 -- --target http://192.0.2.10)" || {
     printf '%s\n' "$output" >&2
     die "expected fresh install path to pass"
   }
@@ -277,7 +277,7 @@ run_install_sh_does_not_block_when_codexbar_usage_is_missing() {
     CODEXBAR_DISPLAY_WARMUP_ATTEMPTS=1 \
       CODEXBAR_DISPLAY_WARMUP_SLEEP_SECS=0 \
       CODEXBAR_DISPLAY_WARMUP_TIMEOUT_SECS=1 \
-      run_installer "$root" --version 9.9.9 -- --target http://vibetv.local
+      run_installer "$root" --version 9.9.9 -- --target http://192.0.2.10
   )" || {
     printf '%s\n' "$output" >&2
     die "expected install.sh to continue when CodexBar usage is not ready"
@@ -309,7 +309,7 @@ exit 55
 EOF
   chmod +x "${root}/fake-bin/ln"
 
-  output="$(run_installer "$root" --version 9.9.9 -- --target http://vibetv.local)" || {
+  output="$(run_installer "$root" --version 9.9.9 -- --target http://192.0.2.10)" || {
     printf '%s\n' "$output" >&2
     die "expected install.sh to keep the existing global command symlink"
   }

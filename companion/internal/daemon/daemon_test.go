@@ -263,7 +263,7 @@ func TestRunCycleWithDepsUsesRuntimeConfigTargetOverStaleLaunchAgentTarget(t *te
 	var resolvedTarget string
 	var sentTarget string
 
-	err := runCycleWithDeps(context.Background(), "http://vibetv.local", state, runtimeDeps{
+	err := runCycleWithDeps(context.Background(), "http://192.0.2.10", state, runtimeDeps{
 		now:           func() time.Time { return now },
 		transportName: "wifi",
 		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
@@ -306,7 +306,7 @@ func TestRunCycleWithDepsUsesRuntimeConfigTargetOverStaleLaunchAgentTarget(t *te
 
 func TestEffectiveCycleTargetUsesRuntimeConfigOverInMemoryTarget(t *testing.T) {
 	state := &runtimeState{deviceTarget: "http://192.168.178.10"}
-	got := effectiveCycleTarget("http://vibetv.local", state, runtimeDeps{
+	got := effectiveCycleTarget("http://192.0.2.10", state, runtimeDeps{
 		transportName: "wifi",
 		homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
 		loadConfig: func(string) (runtimeconfig.Config, error) {
@@ -1618,7 +1618,7 @@ func TestRunCycleWithDepsRefreshesFirmwareUpdateCacheWhenFirmwareChanges(t *test
 	var sentLine []byte
 	deps := runtimeDeps{
 		now:         func() time.Time { return now },
-		resolvePort: func(string) (string, error) { return "http://vibetv.local", nil },
+		resolvePort: func(string) (string, error) { return "http://192.0.2.10", nil },
 		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
 			return protocol.DeviceCapabilities{
 				Known:                     true,
@@ -1678,7 +1678,7 @@ func TestRunCycleWithDepsPreservesFirmwareUpdateNoticeForLegacyDevice(t *testing
 	var sentLine []byte
 	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
 		now:         func() time.Time { return now },
-		resolvePort: func(string) (string, error) { return "http://vibetv.local", nil },
+		resolvePort: func(string) (string, error) { return "http://192.0.2.10", nil },
 		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
 			return protocol.DeviceCapabilities{
 				Known:                     true,
@@ -1703,7 +1703,7 @@ func TestRunCycleWithDepsPreservesFirmwareUpdateNoticeForLegacyDevice(t *testing
 				LatestVersion: "1.0.20",
 				Status:        "update_available",
 				Severity:      "recommended",
-				Message:       strings.Repeat("Firmware update available. Open vibetv.local. ", 20),
+				Message:       strings.Repeat("Firmware update available. Open app.vibetv.shop. ", 20),
 				FirmwareURL:   "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.20/" + strings.Repeat("codexbar-display-firmware-esp8266-smalltv-st7789-", 10) + "v1.0.20.bin.gz",
 				SHA256:        strings.Repeat("a", 128),
 			}, nil
@@ -2131,7 +2131,7 @@ func TestRunCycleWithDepsDoesNotFallbackWhenRequestedPortDisappears(t *testing.T
 	}
 }
 
-func TestRunCycleWithDepsKeepsRecoveredWiFiIPInMemoryWithoutRewritingConfig(t *testing.T) {
+func TestRunCycleWithDepsPersistsRecoveredWiFiIP(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -2170,9 +2170,6 @@ func TestRunCycleWithDepsKeepsRecoveredWiFiIPInMemoryWithoutRewritingConfig(t *t
 		discoverWiFi: func(candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
 			if !containsString(candidates, staleTarget) {
 				t.Fatalf("expected stale IP candidate, got %#v", candidates)
-			}
-			if containsString(candidates, defaultWiFiTarget) {
-				t.Fatalf("did not expect default mDNS candidate before network scan for stale IP, got %#v", candidates)
 			}
 			return transportlayer.WiFiDiscoveryResult{
 				Target: recoveredTarget,
@@ -2214,8 +2211,8 @@ func TestRunCycleWithDepsKeepsRecoveredWiFiIPInMemoryWithoutRewritingConfig(t *t
 	if !strings.Contains(logged.String(), "wifi-target-discovered") {
 		t.Fatalf("expected discovery log, got %q", logged.String())
 	}
-	if savedConfig.DeviceTarget != staleTarget || savedConfig.DeviceToken != "pair-token" {
-		t.Fatalf("runtime must not rewrite shared pairing config, got %+v", savedConfig)
+	if savedConfig.DeviceTarget != recoveredTarget || savedConfig.DeviceToken != "pair-token" {
+		t.Fatalf("runtime must persist the recovered IP without changing pairing, got %+v", savedConfig)
 	}
 	if state.deviceTarget != recoveredTarget {
 		t.Fatalf("expected discovered target in runtime state, got %q", state.deviceTarget)
@@ -2421,9 +2418,6 @@ func TestRunCycleWithDepsDiscoversWiFiIPWhenStoredIPCapabilitiesAreUnknown(t *te
 			if !containsString(candidates, staleTarget) {
 				t.Fatalf("expected stale IP candidate, got %#v", candidates)
 			}
-			if containsString(candidates, defaultWiFiTarget) {
-				t.Fatalf("did not expect default mDNS candidate before network scan for stale IP, got %#v", candidates)
-			}
 			return transportlayer.WiFiDiscoveryResult{
 				Target: recoveredTarget,
 				Hello: protocol.DeviceHello{
@@ -2456,7 +2450,7 @@ func TestRunCycleWithDepsDiscoversWiFiIPWhenStoredIPCapabilitiesAreUnknown(t *te
 	}
 }
 
-func TestRunCycleWithDepsDiscoversWiFiIPWhenMDNSFails(t *testing.T) {
+func TestRunCycleWithDepsMigratesLegacyMDNSTargetToIP(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -2491,8 +2485,8 @@ func TestRunCycleWithDepsDiscoversWiFiIPWhenMDNSFails(t *testing.T) {
 			return protocol.DeviceCapabilities{}, fmt.Errorf("unexpected target %s", target)
 		},
 		discoverWiFi: func(candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
-			if !containsString(candidates, staleTarget) {
-				t.Fatalf("expected stale target candidate, got %#v", candidates)
+			if len(candidates) != 0 {
+				t.Fatalf("legacy hostname must be skipped in favor of subnet discovery, got %#v", candidates)
 			}
 			return transportlayer.WiFiDiscoveryResult{
 				Target: discoveredTarget,
@@ -2526,8 +2520,8 @@ func TestRunCycleWithDepsDiscoversWiFiIPWhenMDNSFails(t *testing.T) {
 	if publicDeviceTarget(sentPort) != discoveredTarget {
 		t.Fatalf("expected frame sent to discovered target, got %q", sentPort)
 	}
-	if cfg.DeviceTarget != staleTarget {
-		t.Fatalf("runtime must keep recovered target in memory without rewriting config, got %+v", cfg)
+	if cfg.DeviceTarget != discoveredTarget {
+		t.Fatalf("runtime must persist the migrated IP target, got %+v", cfg)
 	}
 	if !strings.Contains(logged.String(), "wifi-target-discovered") {
 		t.Fatalf("expected discovery log, got %q", logged.String())

@@ -16,7 +16,7 @@ Bevor du pro Chat anfängst zu bauen, prüfe einmal, ob der Remote-Branch vor lo
 ## Live VibeTV Guardrails
 
 - Das angeschlossene VibeTV ist kein Routine-Testziel.
-- Keine Firmware-Updates, Theme-Pack-Installs, Asset-Uploads, `POST /v1/themes/install`, `codexbar-display theme-pack install`, `POST /assets`, `POST /theme/active`, `POST /frame`, `POST /reset-wifi` oder ähnliche Schreibzugriffe gegen `vibetv.local` oder eine Geräte-IP ohne eine aktuelle, explizite Nutzerfreigabe genau für diesen Hardware-Test.
+- Keine Firmware-Updates, Theme-Pack-Installs, Asset-Uploads, `POST /v1/themes/install`, `codexbar-display theme-pack install`, `POST /assets`, `POST /theme/active`, `POST /frame`, `POST /reset-wifi` oder ähnliche Schreibzugriffe gegen eine Geräte-IP ohne eine aktuelle, explizite Nutzerfreigabe genau für diesen Hardware-Test.
 - Read-only Checks sind erlaubt: `GET /hello`, `GET /health`, `GET /assets`, Companion `GET /v1/status`, `GET /v1/device`, `POST /v1/device/discover`.
 - Für Hardware-Schreibtests muss vorher klar im Chat stehen: welches Gerät, welcher Befehl, welches Risiko, und dass der Nutzer jetzt testen will.
 - Nach einem fehlgeschlagenen Hardware-Schreibtest keine Wiederholung ohne neue explizite Freigabe.

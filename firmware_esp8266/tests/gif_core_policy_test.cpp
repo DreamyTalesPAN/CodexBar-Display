@@ -244,6 +244,17 @@ bool testInternalUploadPathIsRejected(const char* mainPath) {
       "the internal staging path must be rejected before opening an external upload");
 }
 
+bool testFirmwareUsesIPDiscoveryInsteadOfMdns(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  return expect(
+      mainSource.find("ESP8266mDNS") == std::string::npos &&
+          mainSource.find("vibetv.local") == std::string::npos &&
+          mainSource.find("MDNS.") == std::string::npos &&
+          mainSource.find("WiFi.localIP().toString()") != std::string::npos &&
+          mainSource.find("192.168.4.1") != std::string::npos,
+      "firmware must expose setup and station endpoints by IP without mDNS");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -272,6 +283,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testInternalUploadPathIsRejected(argv[3])) {
+    return 1;
+  }
+  if (!testFirmwareUsesIPDiscoveryInsteadOfMdns(argv[3])) {
     return 1;
   }
 

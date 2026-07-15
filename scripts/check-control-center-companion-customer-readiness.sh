@@ -659,20 +659,14 @@ html_path, product_url, theme_id, app_url = sys.argv[1:]
 with open(html_path, encoding="utf-8", errors="replace") as f:
     html = f.read()
 
-expected_command = (
-    f"codexbar-display theme-pack install --theme {theme_id} "
-    "--target http://vibetv.local"
-)
-required_terminal_copy = [
-    "Copy install command",
-    expected_command,
+expected_app_url = f"{app_url.rstrip('/')}/install/{quote(theme_id, safe='')}"
+required_app_copy = [
+    "Check compatibility in the app",
+    expected_app_url,
 ]
 forbidden = [
-    f"{app_url.rstrip('/')}/install/{quote(theme_id, safe='')}",
-    "app.vibetv.shop/install",
-    "Check compatibility in the app",
-    "Opens the hosted Control Center",
-    "Theme check unavailable",
+    "Copy install command",
+    "codexbar-display theme-pack install",
     "Jetzt installieren",
     "Jetzt Theme installieren",
     "Install now",
@@ -681,12 +675,12 @@ forbidden = [
 ]
 
 errors = []
-for copy in required_terminal_copy:
+for copy in required_app_copy:
     if copy not in html:
-        errors.append(f"missing terminal install copy: {copy}")
+        errors.append(f"missing hosted app install copy: {copy}")
 for needle in forbidden:
     if needle in html:
-        errors.append(f"unavailable app install copy still present: {needle}")
+        errors.append(f"legacy install copy still present: {needle}")
 
 if errors:
     print(

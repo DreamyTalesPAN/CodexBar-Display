@@ -44,7 +44,6 @@ const (
 	defaultCycleTimeout        = 180 * time.Second
 	startupFastPollWindow      = 2 * time.Minute
 	startupFastPollInterval    = 30 * time.Second
-	defaultWiFiTarget          = "http://vibetv.local"
 	lastGoodPersistInterval    = 1 * time.Minute
 	directProviderProbeMax     = 3
 	themeEnvVar                = "CODEXBAR_DISPLAY_THEME"
@@ -616,11 +615,18 @@ func ensureCycleState(state *runtimeState, deps runtimeDeps) *runtimeState {
 
 func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeDeps) (string, protocol.DeviceCapabilities, int, error) {
 	requestedPort = effectiveCycleTarget(requestedPort, state, deps)
+	if deps.transportName == "wifi" && isLegacyMDNSTarget(requestedPort) {
+		legacyErr := errors.New("legacy mDNS target requires IP migration")
+		if recoveredPort, recoveredCaps, recovered := recoverStaleWiFiTarget(requestedPort, legacyErr, deps); recovered {
+			rememberRecoveredWiFiTarget(recoveredPort, state, deps)
+			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
+		}
+	}
 	port, err := resolvePortWithFallback(requestedPort, deps)
 	if err != nil {
 		hint := errcode.DefaultRecovery(errcode.RuntimeSerialResolve)
 		if deps.transportName == "wifi" {
-			hint = "Verify the Mac can open http://vibetv.local. If not, rerun setup with --target http://<device-ip>."
+			hint = "Wait for automatic discovery, or rerun setup with the IP shown on VibeTV."
 		}
 		return "", protocol.DeviceCapabilities{}, 0, &RuntimeError{
 			Kind: runtimeErrorSerialResolve,
@@ -687,6 +693,26 @@ func rememberRecoveredWiFiTarget(target string, state *runtimeState, deps runtim
 	deps.logf("runtime event=wifi-target-selected target=%s\n", target)
 }
 
+func persistActiveWiFiTarget(target string, deps runtimeDeps) {
+	target = strings.TrimSpace(target)
+	if deps.transportName != "wifi" || target == "" {
+		return
+	}
+	if home, err := deps.homeDir(); err == nil && strings.TrimSpace(home) != "" {
+		if cfg, err := deps.loadConfig(home); err == nil && strings.TrimSpace(cfg.DeviceID) != "" {
+			if isSameTarget(cfg.DeviceTarget, target) {
+				return
+			}
+			cfg.DeviceTarget = target
+			if err := deps.saveConfig(home, cfg); err != nil {
+				deps.logf("runtime event=wifi-target-persist-failed target=%s err=%v\n", target, err)
+				return
+			}
+			deps.logf("runtime event=wifi-target-persisted target=%s deviceId=%s\n", target, cfg.DeviceID)
+		}
+	}
+}
+
 func loadRuntimeConfig(deps runtimeDeps) (runtimeconfig.Config, bool) {
 	home, err := deps.homeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
@@ -704,8 +730,8 @@ func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) 
 		return "", protocol.DeviceCapabilities{}, false
 	}
 	candidates := []string{stalePort}
-	if isDefaultWiFiTarget(stalePort) {
-		candidates = append(candidates, defaultWiFiTarget)
+	if isLegacyMDNSTarget(stalePort) {
+		candidates = nil
 	}
 	result, discoverErr := deps.discoverWiFi(candidates)
 	if discoverErr != nil {
@@ -743,8 +769,12 @@ func recoverStaleWiFiTarget(stalePort string, staleErr error, deps runtimeDeps) 
 	return result.Target, caps, true
 }
 
-func isDefaultWiFiTarget(target string) bool {
-	return strings.Contains(strings.ToLower(strings.TrimSpace(target)), "vibetv.local")
+func isLegacyMDNSTarget(target string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(target))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSuffix(parsed.Hostname(), "."), "vibetv.local")
 }
 
 func isSameTarget(left, right string) bool {
@@ -1134,6 +1164,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
+	persistActiveWiFiTarget(port, deps)
 
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
 		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)

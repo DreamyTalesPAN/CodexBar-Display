@@ -12,8 +12,6 @@
       <string>daemon</string>
       <string>--transport</string>
       <string>wifi</string>
-      <string>--target</string>
-      <string>http://vibetv.local</string>
       <string>--interval</string>
       <string>30s</string>
       <string>--api-addr</string>

@@ -3867,10 +3867,7 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		}
 		hello, err := s.getHelloProbe(ctx, target, cfg.DeviceToken, discoveryProbeTime)
 		if err != nil {
-			if !isVibeTVLocalTarget(target) {
-				return "", protocol.DeviceHello{}, err
-			}
-			lastErr = err
+			return "", protocol.DeviceHello{}, err
 		} else {
 			return target, hello, nil
 		}
@@ -3893,15 +3890,6 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		lastErr = errors.New("no device candidates")
 	}
 	return "", protocol.DeviceHello{}, lastErr
-}
-
-func isVibeTVLocalTarget(target string) bool {
-	parsed, err := url.Parse(normalizeTarget(target))
-	if err != nil {
-		return false
-	}
-	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(parsed.Hostname())), ".")
-	return host == "vibetv.local"
 }
 
 func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (string, protocol.DeviceHello, error) {
@@ -4663,7 +4651,7 @@ func writeDiscoveryError(w http.ResponseWriter, err error) {
 			http.StatusConflict,
 			"multiple_devices_found",
 			"Multiple VibeTV devices were found.",
-			"Enter the exact VibeTV target in the VibeTV target field, for example http://vibetv.local or http://<device-ip>, then search again.",
+			"Enter the IP address shown on the VibeTV screen, then search again.",
 		)
 		return
 	}
@@ -4702,7 +4690,7 @@ func writeRepairError(w http.ResponseWriter, err error) {
 }
 
 func writeInvalidDeviceTarget(w http.ResponseWriter) {
-	writeError(w, http.StatusBadRequest, "invalid_device_target", "VibeTV target is invalid.", "Enter vibetv.local, an IP address, or an http(s) URL with a valid port and without path, username, password, query, or fragment.")
+	writeError(w, http.StatusBadRequest, "invalid_device_target", "VibeTV target is invalid.", "Enter the IP address shown on the VibeTV screen without a path, username, password, query, or fragment.")
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter) {

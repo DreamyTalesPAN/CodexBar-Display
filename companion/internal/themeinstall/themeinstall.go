@@ -153,10 +153,9 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			Op:   "theme-pack/resolve-target",
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  err,
-			Hint: "use --target http://vibetv.local or the IP shown on Vibe TV",
+			Hint: "use --target http://<device-ip> with the IP shown on VibeTV",
 		}
 	}
-	resolvedTarget = discoverThemeInstallTarget(ctx, client, resolvedTarget, opts.Verbose, out)
 	displayTarget := stripTargetCredentials(resolvedTarget)
 
 	if !opts.SkipFirmwareUpdate {
@@ -345,32 +344,6 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		ThemeRevision:     pack.ThemeSpec.ThemeRev,
 		CapabilitiesKnown: caps.Known,
 	}, nil
-}
-
-func discoverThemeInstallTarget(ctx context.Context, client *http.Client, target string, verbose bool, out io.Writer) string {
-	publicTarget := stripTargetCredentials(target)
-	if !isMDNSTarget(publicTarget) {
-		return target
-	}
-	result, err := transportlayer.DiscoverWiFiDevice(ctx, transportlayer.WiFiDiscoveryOptions{
-		Candidates:         []string{publicTarget},
-		IncludeNetworkScan: true,
-		Client:             client,
-	})
-	if err != nil {
-		if verbose {
-			fmt.Fprintf(out, "Device discovery: no IP fallback found for %s (%v)\n", publicTarget, err)
-		}
-		return target
-	}
-	discovered := strings.TrimSpace(result.Target)
-	if discovered == "" || sameTarget(publicTarget, discovered) {
-		return target
-	}
-	if out != nil {
-		fmt.Fprintf(out, "Device discovery: using %s instead of %s\n", discovered, publicTarget)
-	}
-	return targetWithToken(discovered, targetToken(target))
 }
 
 func sendInstallingThemeFrame(wifi transportlayer.WiFiTransport, target string, caps protocol.DeviceCapabilities) error {
@@ -786,29 +759,6 @@ func targetWithToken(target, token string) string {
 	query.Set("token", token)
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
-}
-
-func targetToken(target string) string {
-	parsed, err := url.Parse(strings.TrimSpace(target))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(parsed.Query().Get("token"))
-}
-
-func isMDNSTarget(target string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(target))
-	if err != nil {
-		return strings.Contains(strings.ToLower(target), "vibetv.local")
-	}
-	return strings.EqualFold(parsed.Hostname(), "vibetv.local")
-}
-
-func sameTarget(left, right string) bool {
-	return strings.EqualFold(
-		strings.TrimRight(stripTargetCredentials(left), "/"),
-		strings.TrimRight(stripTargetCredentials(right), "/"),
-	)
 }
 
 func authRequired(err error) bool {

@@ -191,13 +191,13 @@ read-only checks first.
 Allowed read-only checks:
 
 ```bash
-curl http://vibetv.local/hello
-curl http://vibetv.local/health
-curl http://vibetv.local/assets
+curl http://<device-ip>/hello
+curl http://<device-ip>/health
+curl http://<device-ip>/assets
 ```
 
 Do not run firmware updates, theme installs, asset uploads, frame posts, or WiFi
-resets against `vibetv.local` or a device IP unless a human explicitly approved
+resets against a device IP unless a human explicitly approved
 that exact hardware test.
 
 ## License

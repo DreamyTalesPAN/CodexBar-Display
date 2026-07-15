@@ -64,7 +64,7 @@ run_expect_broken_product_page_failure() {
   set -e
 
   [[ "$status" -ne 0 ]] || die "expected broken Shopify product page check to fail"
-  assert_contains "$output" "missing terminal install copy: codexbar-display theme-pack install --theme synthwave --target http://vibetv.local"
+  assert_contains "$output" "missing hosted app install copy: https://app.example.test/install/synthwave"
 }
 
 run_expect_local_url_guard_failure() {
@@ -73,7 +73,7 @@ run_expect_local_url_guard_failure() {
   output="$(
     CONTROL_CENTER_READINESS_CURL="$FAKE_CURL" \
       "$READINESS" \
-        --shopify-product-page http://vibetv.local/products/synthwave synthwave \
+        --shopify-product-page http://shop.example.local/products/synthwave synthwave \
         2>&1
   )"
   status=$?
@@ -491,15 +491,13 @@ JSON
   https://vibetv.example.test/products/synthwave-theme)
     cat <<'HTML'
 <!doctype html>
-<button>Copy install command</button>
-<code>curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme synthwave --target http://vibetv.local</code>
+<a href="https://app.example.test/install/synthwave">Check compatibility in the app</a>
 HTML
     ;;
   https://vibetv.example.test/products/clippy-theme)
     cat <<'HTML'
 <!doctype html>
-<button>Copy install command</button>
-<code>curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash && codexbar-display theme-pack install --theme clippy --target http://vibetv.local</code>
+<a href="https://app.example.test/install/clippy">Check compatibility in the app</a>
 HTML
     ;;
   https://vibetv.example.test/products/broken)

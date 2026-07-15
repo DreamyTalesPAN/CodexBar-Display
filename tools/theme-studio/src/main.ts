@@ -23,7 +23,7 @@ const THEME_ID_RE = /^[a-z0-9][a-z0-9\-_]{2,63}$/;
 const FIXED_THEME_REV = 1;
 const FIXED_FALLBACK_THEME = "mini";
 const THEME_PACK_MIN_FIRMWARE = "1.0.24";
-const DEFAULT_TARGET_ORIGIN = "http://vibetv.local";
+const DEFAULT_TARGET_ORIGIN = "";
 const TARGET_STORAGE_KEY = "codexbar.themeStudio.targetOrigin";
 const DEVICE_TOKEN_STORAGE_KEY = "codexbar.themeStudio.deviceToken";
 const DEVICE_AUTH_HEADER = "X-VibeTV-Token";
@@ -336,7 +336,7 @@ const frame: FrameData = {
   totalTokens: 190420,
 };
 const UPDATE_LABEL_PREVIEW_TOGGLE_MS = 1500;
-const UPDATE_LABEL_PREVIEW_TEXTS = ["Update Available:", "vibetv.local"] as const;
+const UPDATE_LABEL_PREVIEW_TEXTS = ["Update available", "app.vibetv.shop"] as const;
 const STABILITY_CHECK_MS = 60_000;
 const STABILITY_POLL_MS = 5_000;
 const LOW_HEAP_WARNING_BYTES = 6000;
@@ -2416,7 +2416,8 @@ function prettyJson(spec: ThemeSpec): string {
 
 function storedTargetOrigin(): string {
   try {
-    return normalizeTargetOrigin(window.localStorage.getItem(TARGET_STORAGE_KEY) ?? DEFAULT_TARGET_ORIGIN);
+    const stored = window.localStorage.getItem(TARGET_STORAGE_KEY)?.trim() ?? "";
+    return stored ? normalizeTargetOrigin(stored) : DEFAULT_TARGET_ORIGIN;
   } catch {
     return DEFAULT_TARGET_ORIGIN;
   }
@@ -2765,9 +2766,30 @@ async function saveThemeLocally() {
 }
 
 function normalizeTargetOrigin(value: string): string {
-  const raw = value.trim() || DEFAULT_TARGET_ORIGIN;
+  const raw = value.trim();
+  if (!raw) {
+    throw new Error("Enter the VibeTV IP address shown on its screen.");
+  }
   const withProtocol = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
-  return withProtocol.replace(/\/+$/, "");
+  const parsed = new URL(withProtocol);
+  const octets = parsed.hostname.split(".");
+  const isIPv4 =
+    octets.length === 4 &&
+    octets.every(
+      (octet) => /^\d{1,3}$/.test(octet) && Number(octet) >= 0 && Number(octet) <= 255,
+    );
+  if (
+    !isIPv4 ||
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    parsed.username ||
+    parsed.password ||
+    (parsed.pathname !== "/" && parsed.pathname !== "") ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new Error("Enter only the VibeTV IP address shown on its screen.");
+  }
+  return parsed.origin;
 }
 
 function numberOrDefault(value: unknown, fallback: number): number {
@@ -3502,7 +3524,7 @@ function render() {
             <input class="theme-name-input" data-field="themeId" aria-label="Theme name" value="${escapeAttr(state.spec.themeId)}" />
           </div>
           <label>Vibe TV
-            <input data-field="targetOrigin" aria-label="Vibe TV URL" value="${escapeAttr(state.targetOrigin)}" />
+            <input data-field="targetOrigin" aria-label="Vibe TV URL" placeholder="http://192.168.178.163" value="${escapeAttr(state.targetOrigin)}" />
           </label>
           <label>Pairing token
             <input data-field="deviceToken" aria-label="Vibe TV pairing token" type="password" autocomplete="off" value="${escapeAttr(state.deviceToken)}" />
@@ -7908,7 +7930,7 @@ async function sendThemeToVibeTV() {
     const cleaned = await cleanupStoredThemeVersions(targetOrigin, state.spec);
     state.notice = `${confirmation ?? "Theme sent to Vibe TV."}${cleanupNotice(cleaned)}`;
   } catch (error) {
-    state.notice = error instanceof Error ? error.message : `Could not reach Vibe TV at ${normalizeTargetOrigin(state.targetOrigin)}. Check Wi-Fi/mDNS, then try again.`;
+    state.notice = error instanceof Error ? error.message : "Could not reach VibeTV at that IP address. Check WiFi, then try again.";
   }
   render();
 }
@@ -7934,7 +7956,7 @@ async function requestDevicePairingToken(targetOrigin: string): Promise<string> 
     body,
   });
   if (response.type === "opaque") {
-    throw new Error("Pairing response was not readable. Open vibetv.local and copy the token manually.");
+    throw new Error("Pairing response was not readable. Open the VibeTV IP address and copy the token manually.");
   }
   if (!response.ok) {
     throw new Error(await responseFailureMessage(response, "Pairing failed"));

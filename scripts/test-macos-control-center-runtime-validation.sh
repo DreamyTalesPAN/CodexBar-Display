@@ -98,7 +98,7 @@ for snippet in required_harness:
         raise SystemExit(f"runtime harness is missing fail-closed contract: {snippet}")
 if '"firmware":"1.0.35"' in harness:
     raise SystemExit("runtime harness still hard-codes the blocked ESP8266 firmware")
-for forbidden in ["sfltool", "vibetv.local", "192.168."]:
+for forbidden in ["sfltool", ".local", "192.168."]:
     if forbidden in harness:
         raise SystemExit(f"runtime harness must stay loopback-only and scoped: {forbidden}")
 

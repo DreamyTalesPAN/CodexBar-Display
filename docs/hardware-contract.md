@@ -39,13 +39,13 @@ Companion negotiation:
 ## WiFi Setup Contract
 - Devices ship with firmware installed.
 - Fresh or failed WiFi devices start an open `VibeTV-Setup` access point.
-- Setup UI is served at `http://vibetv.local`. In setup mode this is backed by AP mDNS plus captive DNS; `http://192.168.4.1` remains the fallback address.
+- Setup UI is served at `http://192.168.4.1` through the setup access point and captive DNS.
 - The setup flow stores home WiFi credentials and restarts the device.
-- Connected devices expose `http://vibetv.local` with mDNS, log the fallback IP, show `WiFi connected!` plus `app.vibetv.shop` on the display, serve a local setup hub that links to the hosted Control Center, and wait for the Mac App.
-- Connected devices expose customer-facing display settings directly on `http://vibetv.local`. The MVP setting is brightness on supported hardware.
-- `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response from browser tools such as Theme Studio; omit it for the built-in `vibetv.local` form redirect. `GET /health` is the readback and support-diagnostics path.
+- Connected devices expose their current IP in `/hello` discovery, show `WiFi connected!` plus `app.vibetv.shop`, serve the local setup hub on that IP, and wait for the Mac App.
+- Connected devices expose customer-facing display settings directly on their current IP. The MVP setting is brightness on supported hardware.
+- `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response from browser tools such as Theme Studio; omit it for the built-in IP-based form redirect. `GET /health` is the readback and support-diagnostics path.
 - Connected devices expose `POST /api/pair` to create or rotate a local LAN pairing token. After pairing, write APIs require `X-VibeTV-Token` or the built-in form/raw-OTA `token` query parameter. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
-- Companion runtime defaults to WiFi with `http://vibetv.local`; explicit device IPs remain supported when `.local` does not resolve.
+- Companion runtime discovers the current device IP and verifies the stable `deviceId`; it does not use a hostname default.
 - Saved WiFi credentials can be cleared from the local web UI with `POST /reset-wifi`.
 - If a connected device loses WiFi, it retries in station mode first. After a persistent outage it starts `VibeTV-Setup` again so the user can choose a different network.
 - If the device is not reachable on WiFi, three interrupted early boots clear saved WiFi credentials and return the device to `VibeTV-Setup`.

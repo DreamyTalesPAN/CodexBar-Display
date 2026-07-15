@@ -38,8 +38,8 @@ func TestResolveSourceRejectsPackAndCatalog(t *testing.T) {
 }
 
 func TestStripTargetCredentialsRemovesTokenQuery(t *testing.T) {
-	got := stripTargetCredentials("http://vibetv.local?token=secret")
-	if got != "http://vibetv.local" {
+	got := stripTargetCredentials("http://192.0.2.10?token=secret")
+	if got != "http://192.0.2.10" {
 		t.Fatalf("unexpected stripped target %q", got)
 	}
 }

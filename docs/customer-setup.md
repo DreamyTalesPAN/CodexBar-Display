@@ -104,12 +104,6 @@ If it finds exactly one device, it connects automatically.
 If it cannot find the device, enter the address shown on VibeTV, for example:
 
 ```text
-vibetv.local
-```
-
-or:
-
-```text
 192.168.178.123
 ```
 
