@@ -230,6 +230,36 @@ func TestDeviceSearchReturnsAllDevicesWithoutMutatingConfig(t *testing.T) {
 	}
 }
 
+func TestDeviceSearchRetriesTransientKnownDeviceFailure(t *testing.T) {
+	var helloCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if helloCalls.Add(1) == 1 {
+			http.Error(w, "busy", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","deviceId":"esp8266-retry","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "esp8266-retry",
+	})
+	server.subnetTargets = func() []string { return nil }
+
+	devices := server.searchDevices(context.Background(), runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "esp8266-retry",
+	}, "")
+	if len(devices) != 1 || !devices[0].Known || devices[0].DeviceID != "esp8266-retry" {
+		t.Fatalf("expected transiently busy known VibeTV on retry, got %+v", devices)
+	}
+	if helloCalls.Load() != 2 {
+		t.Fatalf("expected exactly one bounded retry, got %d hello calls", helloCalls.Load())
+	}
+}
+
 func TestPairingStreamErrorClearsPairedState(t *testing.T) {
 	got := withDisplayStreamInfo(
 		deviceInfo{Connected: true, Paired: true},
@@ -4775,6 +4805,7 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	server.runSetup = func(context.Context, setup.Options) error {
 		return nil
 	}
+	server.defaultWiFiTarget = func() string { return "http://127.0.0.1:1" }
 	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
 		return nil
 	}

@@ -128,6 +128,7 @@ type Server struct {
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
 	subnetTargets          func() []string
+	defaultWiFiTarget      func() string
 	streamStatus           func(context.Context, string) displayStreamInfo
 	waitStream             func(context.Context, string) displayStreamInfo
 	waitStreamAfter        func(context.Context, string, time.Time) displayStreamInfo
@@ -636,6 +637,7 @@ func New(opts Options) (*Server, error) {
 		installTheme:          themeinstall.Install,
 		runSetup:              setup.Run,
 		subnetTargets:         localSubnetTargets,
+		defaultWiFiTarget:     setup.DefaultWiFiTarget,
 		streamStatus:          inspectDisplayStream,
 		waitStream:            waitForDisplayStream,
 		waitStreamAfter:       waitForDisplayStreamAfter,
@@ -3873,7 +3875,7 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 			return target, hello, nil
 		}
 	} else {
-		candidates := uniqueStrings(cfg.DeviceTarget, setup.DefaultWiFiTarget())
+		candidates := uniqueStrings(cfg.DeviceTarget, s.configuredDefaultWiFiTarget())
 		for _, candidate := range candidates {
 			hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, discoveryProbeTime)
 			if err == nil {
@@ -3987,13 +3989,41 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 }
 
 func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) []deviceSearchEntry {
+	byIdentity := make(map[string]deviceSearchEntry)
+	for attempt := 0; attempt < repairDiscoveryAttempts; attempt++ {
+		foundKnown := false
+		for _, entry := range s.searchDevicesOnce(ctx, cfg, explicitTarget) {
+			key := deviceSearchIdentityKey(entry)
+			if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
+				byIdentity[key] = entry
+			}
+			if entry.Known {
+				foundKnown = true
+			}
+		}
+		if foundKnown {
+			return sortedDeviceSearchEntries(byIdentity)
+		}
+		if attempt+1 >= repairDiscoveryAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return sortedDeviceSearchEntries(byIdentity)
+		case <-time.After(repairDiscoveryRetryGap):
+		}
+	}
+	return sortedDeviceSearchEntries(byIdentity)
+}
+
+func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) []deviceSearchEntry {
 	candidates := []string{}
 	if explicitTarget != "" {
 		if target, err := normalizeExplicitDeviceTarget(explicitTarget); err == nil {
 			candidates = append(candidates, target)
 		}
 	}
-	candidates = append(candidates, cfg.DeviceTarget, setup.DefaultWiFiTarget())
+	candidates = append(candidates, cfg.DeviceTarget, s.configuredDefaultWiFiTarget())
 	if s.subnetTargets != nil {
 		candidates = append(candidates, s.subnetTargets()...)
 	}
@@ -4062,6 +4092,35 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 			byIdentity[key] = entry
 		}
 	}
+	devices := make([]deviceSearchEntry, 0, len(byIdentity))
+	for _, entry := range byIdentity {
+		devices = append(devices, entry)
+	}
+	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].Known != devices[j].Known {
+			return devices[i].Known
+		}
+		return devices[i].Target < devices[j].Target
+	})
+	return devices
+}
+
+func deviceSearchIdentityKey(entry deviceSearchEntry) string {
+	key := strings.ToLower(strings.TrimSpace(entry.DeviceID))
+	if key == "" {
+		key = strings.ToLower(publicTarget(entry.Target))
+	}
+	return key
+}
+
+func (s *Server) configuredDefaultWiFiTarget() string {
+	if s.defaultWiFiTarget != nil {
+		return s.defaultWiFiTarget()
+	}
+	return setup.DefaultWiFiTarget()
+}
+
+func sortedDeviceSearchEntries(byIdentity map[string]deviceSearchEntry) []deviceSearchEntry {
 	devices := make([]deviceSearchEntry, 0, len(byIdentity))
 	for _, entry := range byIdentity {
 		devices = append(devices, entry)
