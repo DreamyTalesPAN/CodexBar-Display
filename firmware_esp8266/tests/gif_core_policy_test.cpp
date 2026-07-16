@@ -222,9 +222,9 @@ bool testEsp8266CbaCooperativeAnimationPolicy() {
 
   int row = 0;
   int ticks = 0;
-  while (row < 9) {
-    const int budget = ThemeSpecRuntimePolicy::CbaRowsForTick(row, 9);
-    const int expectedBudget = row < 8 ? 4 : 1;
+  while (row < 17) {
+    const int budget = ThemeSpecRuntimePolicy::CbaRowsForTick(row, 17);
+    const int expectedBudget = row < 16 ? 8 : 1;
     if (!expect(budget == expectedBudget, "each CBA resume tick must stay within its row budget")) {
       return false;
     }
@@ -232,7 +232,7 @@ bool testEsp8266CbaCooperativeAnimationPolicy() {
     ticks += 1;
   }
   if (!expect(
-          ticks == 3 && ThemeSpecRuntimePolicy::CbaRowsForTick(row, 9) == 0,
+          ticks == 3 && ThemeSpecRuntimePolicy::CbaRowsForTick(row, 17) == 0,
           "CBA row progress must resume without repeating completed rows")) {
     return false;
   }
