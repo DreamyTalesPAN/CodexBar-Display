@@ -243,6 +243,15 @@ main() {
   assert_contains "$(cat "$PREVIEW_WORKFLOW")" \
     "ref: 24c3855468991f28ef1af2df905b95944d90985c" \
     "preview signing job must use the reviewed main commit with nested Sparkle signing"
+  assert_contains "$(cat "$PREVIEW_WORKFLOW")" \
+    'preview_build="$((90000000 + GITHUB_RUN_NUMBER))"' \
+    "preview app builds must stay above public release build numbers"
+  assert_contains "$(cat "$PREVIEW_WORKFLOW")" \
+    '--build "${preview_build}"' \
+    "preview app must use the reserved preview build number"
+  assert_not_contains "$(cat "$PREVIEW_WORKFLOW")" \
+    '--build "${GITHUB_RUN_NUMBER}"' \
+    "preview app must not look like a downgrade from a public release"
 
   assert_contains "$verify_dmg_plan" "hdiutil verify" \
     "DMG distribution gate must verify the disk image container"
