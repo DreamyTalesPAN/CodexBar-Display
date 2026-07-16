@@ -919,6 +919,150 @@ func TestRunInstallUpdateUsesStoredDeviceTokenForOTA(t *testing.T) {
 	}
 }
 
+func TestRecoverInterruptedFirmwareUploadAcceptsInstalledTargetVersion(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousTimeout := firmwareInterruptedVerifyTimeout
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareInterruptedVerifyTimeout = previousTimeout
+	})
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareInterruptedVerifyTimeout = 10 * time.Millisecond
+
+	multipartCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37"}`))
+		case "/update/firmware":
+			multipartCalls++
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	err := recoverInterruptedFirmwareUpload(
+		context.Background(),
+		server.URL,
+		filepath.Join(t.TempDir(), "unused.bin"),
+		"pair-token",
+		"1.0.37",
+		"device-a",
+		errors.New("write tcp: use of closed network connection"),
+	)
+	if err != nil {
+		t.Fatalf("installed target version should resolve interrupted upload: %v", err)
+	}
+	if multipartCalls != 0 {
+		t.Fatalf("must not retry after target version is installed, got %d multipart calls", multipartCalls)
+	}
+}
+
+func TestRecoverInterruptedFirmwareUploadFallsBackOnlyAfterOldVersionReturns(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousTimeout := firmwareInterruptedVerifyTimeout
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareInterruptedVerifyTimeout = previousTimeout
+	})
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareInterruptedVerifyTimeout = 5 * time.Millisecond
+
+	imagePath := filepath.Join(t.TempDir(), "firmware.bin")
+	if err := os.WriteFile(imagePath, []byte("firmware image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	multipartCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36"}`))
+		case "/update/firmware":
+			multipartCalls++
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Errorf("unexpected token %q", got)
+			}
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Errorf("parse multipart: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_, _ = w.Write([]byte("ok"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	err := recoverInterruptedFirmwareUpload(
+		context.Background(),
+		server.URL,
+		imagePath,
+		"pair-token",
+		"1.0.37",
+		"device-a",
+		errors.New("write tcp: use of closed network connection"),
+	)
+	if err != nil {
+		t.Fatalf("compatibility upload failed: %v", err)
+	}
+	if multipartCalls != 1 {
+		t.Fatalf("expected exactly one compatibility upload, got %d", multipartCalls)
+	}
+}
+
+func TestRecoverInterruptedFirmwareUploadRejectsChangedDeviceIdentity(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousTimeout := firmwareInterruptedVerifyTimeout
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareInterruptedVerifyTimeout = previousTimeout
+	})
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareInterruptedVerifyTimeout = 5 * time.Millisecond
+
+	multipartCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-b","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36"}`))
+		case "/update/firmware":
+			multipartCalls++
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	err := recoverInterruptedFirmwareUpload(
+		context.Background(),
+		server.URL,
+		filepath.Join(t.TempDir(), "unused.bin"),
+		"pair-token",
+		"1.0.37",
+		"device-a",
+		errors.New("write tcp: use of closed network connection"),
+	)
+	if err == nil || !strings.Contains(err.Error(), "identity changed") {
+		t.Fatalf("expected identity-change rejection, got %v", err)
+	}
+	if multipartCalls != 0 {
+		t.Fatalf("must not write to a changed device, got %d multipart calls", multipartCalls)
+	}
+}
+
 func TestRunInstallUpdateRepairsStaleDeviceTokenOnUnauthorizedOTA(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn

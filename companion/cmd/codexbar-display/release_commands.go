@@ -62,6 +62,7 @@ var (
 	firmwareHTTPVerifyPollInterval                     = 2 * time.Second
 	firmwareUpdateRediscoveryAfter                     = 10 * time.Second
 	firmwareUpdateRediscoveryInterval                  = 5 * time.Second
+	firmwareInterruptedVerifyTimeout                   = 20 * time.Second
 )
 
 type firmwareUpdateEvent = firmwareupdate.Event
@@ -572,6 +573,15 @@ func runInstallUpdate(args []string) (retErr error) {
 
 	fmt.Println("Uploading firmware...")
 	uploadErr := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken)
+	uploadErr = recoverInterruptedFirmwareUpload(
+		ctx,
+		base,
+		imagePath,
+		deviceToken,
+		targetVersion,
+		deviceID,
+		uploadErr,
+	)
 	if uploadErr != nil {
 		if firmwareOTAAuthError(uploadErr) {
 			refreshedToken, pairErr := ensureFirmwareUpdateDeviceToken(ctx, home, base, true)
@@ -1299,7 +1309,10 @@ func uploadFirmwareOTA(ctx context.Context, base, imagePath, token string) error
 	} else if !rawFirmwareUploadUnavailable(err) {
 		return err
 	}
+	return uploadFirmwareOTAMultipart(ctx, base, imagePath, token)
+}
 
+func uploadFirmwareOTAMultipart(ctx context.Context, base, imagePath, token string) error {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	part, err := writer.CreateFormFile("firmware", filepath.Base(imagePath))
@@ -1340,6 +1353,57 @@ func uploadFirmwareOTA(ctx context.Context, base, imagePath, token string) error
 		return fmt.Errorf("POST /update/firmware returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+func recoverInterruptedFirmwareUpload(
+	ctx context.Context,
+	base string,
+	imagePath string,
+	token string,
+	targetVersion string,
+	expectedDeviceID string,
+	uploadErr error,
+) error {
+	if uploadErr == nil || !firmwareUploadConnectionInterrupted(uploadErr) {
+		return uploadErr
+	}
+	if err := waitForHTTPFirmwareVersion(ctx, base, targetVersion, firmwareInterruptedVerifyTimeout); err == nil {
+		return nil
+	}
+	hello, helloErr := fetchDeviceHelloHTTP(ctx, base)
+	if helloErr != nil {
+		return fmt.Errorf("%w; could not verify VibeTV after interrupted upload: %v", uploadErr, helloErr)
+	}
+	if expectedDeviceID = strings.TrimSpace(expectedDeviceID); expectedDeviceID != "" &&
+		!strings.EqualFold(strings.TrimSpace(hello.DeviceID), expectedDeviceID) {
+		return fmt.Errorf("%w; VibeTV identity changed after interrupted upload: expected=%q got=%q", uploadErr, expectedDeviceID, strings.TrimSpace(hello.DeviceID))
+	}
+	if normalizeReleaseVersion(hello.Firmware) == normalizeReleaseVersion(targetVersion) {
+		return nil
+	}
+
+	fmt.Println("Raw firmware upload did not complete. Retrying the compatibility updater...")
+	retryErr := uploadFirmwareOTAMultipart(ctx, base, imagePath, token)
+	if retryErr == nil {
+		return nil
+	}
+	if firmwareUploadConnectionInterrupted(retryErr) {
+		if err := waitForHTTPFirmwareVersion(ctx, base, targetVersion, firmwareInterruptedVerifyTimeout); err == nil {
+			return nil
+		}
+	}
+	return retryErr
+}
+
+func firmwareUploadConnectionInterrupted(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "use of closed network connection") ||
+		strings.Contains(message, "connection reset by peer") ||
+		strings.Contains(message, "broken pipe") ||
+		strings.Contains(message, "unexpected eof")
 }
 
 func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) error {

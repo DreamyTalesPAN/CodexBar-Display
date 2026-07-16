@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKFLOW="${ROOT}/.github/workflows/release.yml"
 CI_WORKFLOW="${ROOT}/.github/workflows/ci.yml"
+PREVIEW_WORKFLOW="${ROOT}/.github/workflows/validate-macos-dmg.yml"
 LOCAL_INSTALLER="${ROOT}/scripts/install-control-center-companion.sh"
 RELEASE_INSTALLER="${ROOT}/scripts/install-control-center-companion-release.sh"
 PUBLIC_INSTALLER="${ROOT}/apps/control-center/public/install-control-center-companion.sh"
@@ -50,6 +51,7 @@ installer_line_number() {
 
 main() {
   [[ -f "$WORKFLOW" ]] || die "release workflow is missing"
+  [[ -f "$PREVIEW_WORKFLOW" ]] || die "macOS preview workflow is missing"
   [[ -f "$LOCAL_INSTALLER" ]] || die "local Control Center installer is missing"
   [[ -f "$RELEASE_INSTALLER" ]] || die "release Control Center installer is missing"
   [[ -f "$PUBLIC_INSTALLER" ]] || die "public Control Center installer is missing"
@@ -238,6 +240,9 @@ main() {
     "signing script must reject Accepted notarization logs that still contain issues"
   assert_contains "$signing_script" "does not match APPLE_TEAM_ID" \
     "signing script must reject a certificate for the wrong Apple team"
+  assert_contains "$(cat "$PREVIEW_WORKFLOW")" \
+    "ref: 24c3855468991f28ef1af2df905b95944d90985c" \
+    "preview signing job must use the reviewed main commit with nested Sparkle signing"
 
   assert_contains "$verify_dmg_plan" "hdiutil verify" \
     "DMG distribution gate must verify the disk image container"
