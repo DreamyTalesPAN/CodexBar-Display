@@ -426,6 +426,54 @@ bool testDecoderAllocationStaysInsideRealPlayback(
   return true;
 }
 
+bool testGifLoopResetStaysAtomic(const char* gifCorePath) {
+  const std::string gifCore = readFile(gifCorePath);
+  const std::size_t loopReset = gifCore.find("if (!played) {");
+  const std::size_t loopResetEnd = gifCore.find("if (delayMs < 0)", loopReset);
+  if (!expect(
+          loopReset != std::string::npos && loopResetEnd != std::string::npos,
+          "GIF loop reset must remain discoverable")) {
+    return false;
+  }
+  const std::string resetBlock = gifCore.substr(loopReset, loopResetEnd - loopReset);
+  const std::size_t transaction = resetBlock.find("display::DisplayTransaction transaction;");
+  const std::size_t reset = resetBlock.find("decoder_->reset();");
+  const std::size_t clear = resetBlock.find("ClearDrawRect(tft);");
+  const std::size_t firstFrame = resetBlock.find("decoder_->playFrame(false, &delayMs, nullptr);");
+  return expect(
+      transaction != std::string::npos && reset != std::string::npos && clear != std::string::npos &&
+          firstFrame != std::string::npos && transaction < reset && reset < clear && clear < firstFrame,
+      "GIF loop clear and first frame must share one display transaction");
+}
+
+bool testLegacyMiniThemeUsesLiveUsageMode(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  if (!expect(
+      mainSource.find("kLegacyDefaultThemeSpecPath = \"/themes/u/mini-cl-1-410a37.json\"") !=
+              std::string::npos &&
+          mainSource.find("raw.replace(\"\\\"v\\\":\\\"left\\\"\", \"\\\"v\\\":\\\"{usageMode}\\\"\")") !=
+              std::string::npos,
+      "legacy factory Mini specs must render the live usage mode after OTA")) {
+    return false;
+  }
+
+  const std::size_t loadStart = mainSource.find("void loadDefaultStoredThemeSpecCache()");
+  const std::size_t loadEnd = mainSource.find("#endif", loadStart);
+  if (!expect(
+          loadStart != std::string::npos && loadEnd != std::string::npos,
+          "default ThemeSpec cache loader must remain discoverable")) {
+    return false;
+  }
+  const std::string loader = mainSource.substr(loadStart, loadEnd - loadStart);
+  const std::size_t active = loader.find("readActiveThemeSpecPath(activePath)");
+  const std::size_t currentDefault = loader.find("loadStoredThemeSpecCacheFromPath(kDefaultThemeSpecPath)");
+  const std::size_t legacyDefault = loader.find("loadStoredThemeSpecCacheFromPath(kLegacyDefaultThemeSpecPath)");
+  return expect(
+      active != std::string::npos && currentDefault != std::string::npos && legacyDefault != std::string::npos &&
+          active < currentDefault && currentDefault < legacyDefault,
+      "a 1.0.36 filesystem without theme-active must fall back to its legacy Mini spec");
+}
+
 bool testInternalUploadPathIsRejected(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t pathValidation = mainSource.find("if (!isSafeAssetPath(assetUploadPath))");
@@ -484,6 +532,12 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testDecoderAllocationStaysInsideRealPlayback(argv[1], argv[2])) {
+    return 1;
+  }
+  if (!testGifLoopResetStaysAtomic(argv[2])) {
+    return 1;
+  }
+  if (!testLegacyMiniThemeUsesLiveUsageMode(argv[3])) {
     return 1;
   }
   if (!testInternalUploadPathIsRejected(argv[3])) {

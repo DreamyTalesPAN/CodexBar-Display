@@ -333,10 +333,10 @@ bool GifCoreESP8266::PlayFrame(TFT_eSPI& tft, bool forceFrame) {
       Stop();
       return false;
     }
-    decoder_->reset();
-    ClearDrawRect(tft);
     {
       display::DisplayTransaction transaction;
+      decoder_->reset();
+      ClearDrawRect(tft);
       played = decoder_->playFrame(false, &delayMs, nullptr);
     }
     if (!played) {

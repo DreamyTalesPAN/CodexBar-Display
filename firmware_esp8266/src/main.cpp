@@ -206,7 +206,8 @@ uint32_t bootResetCounter = 0;
 void addCorsHeaders();
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
+constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-b3c3f7.json";
+constexpr const char* kLegacyDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
 constexpr const char* kDefaultThemeSpecId = "mini-classic";
 constexpr int kDefaultThemeSpecRev = 1;
 #endif
@@ -1836,6 +1837,14 @@ bool readStoredThemeSpec(const String& path, String& raw, String& error) {
   raw = file.readString();
   file.close();
   raw.trim();
+
+  // Firmware OTA intentionally preserves LittleFS. Devices upgraded from 1.0.36
+  // therefore keep this known factory Mini spec, whose labels were hard-coded
+  // to "left". Upgrade only that immutable legacy path in memory so the live
+  // usage mode is rendered without rewriting customer storage during OTA.
+  if (path == kLegacyDefaultThemeSpecPath) {
+    raw.replace("\"v\":\"left\"", "\"v\":\"{usageMode}\"");
+  }
   if (raw.length() == 0 || raw.length() > kMaxStoredThemeSpecBytes) {
     error = "theme file too large";
     return false;
@@ -2050,6 +2059,11 @@ void loadDefaultStoredThemeSpecCache() {
     return;
   }
   if (loadStoredThemeSpecCacheFromPath(kDefaultThemeSpecPath)) {
+    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
+    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
+    return;
+  }
+  if (loadStoredThemeSpecCacheFromPath(kLegacyDefaultThemeSpecPath)) {
     runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
     runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
   }
