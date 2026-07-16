@@ -240,6 +240,14 @@ enum class SpriteRenderMode {
   AnimatedOnly,
 };
 
+struct SpriteClip {
+  bool active = false;
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+};
+
 bool parseSpritePaletteSize(const String& line, int& paletteSize) {
   paletteSize = line.toInt();
   return paletteSize > 0 && paletteSize <= 26;
@@ -257,8 +265,10 @@ bool drawSpriteRleRow(
     int targetWidth,
     int targetHeight,
     bool drawTransparentRuns,
-    uint16_t transparentColor) {
+    uint16_t transparentColor,
+    const SpriteClip& clip) {
   int offset = 0;
+  int completedRuns = 0;
   const int drawWidth = targetWidth > 0 ? targetWidth : sourceWidth;
   const int drawHeight = targetHeight > 0 ? targetHeight : sourceHeight;
   const int drawY1 = y + ((sourceRow * drawHeight) / sourceHeight);
@@ -281,22 +291,33 @@ bool drawSpriteRleRow(
     const char token = row[i++];
     const int drawX1 = x + ((offset * drawWidth) / sourceWidth);
     const int drawX2 = x + (((offset + runLength) * drawWidth + sourceWidth - 1) / sourceWidth);
+    const int clippedX1 = clip.active ? max(drawX1, clip.x) : drawX1;
+    const int clippedY1 = clip.active ? max(drawY1, clip.y) : drawY1;
+    const int clippedX2 = clip.active ? min(drawX2, clip.x + clip.width) : drawX2;
+    const int clippedY2 = clip.active ? min(drawY2, clip.y + clip.height) : drawY2;
+    const bool visible = clippedX1 < clippedX2 && clippedY1 < clippedY2;
     if (token == '.') {
-      if (drawTransparentRuns) {
-        PrimitiveFillRect(drawX1, drawY1, max(1, drawX2 - drawX1), max(1, drawY2 - drawY1), transparentColor);
+      if (drawTransparentRuns && visible) {
+        PrimitiveFillRect(clippedX1, clippedY1, clippedX2 - clippedX1, clippedY2 - clippedY1, transparentColor);
       }
       offset += runLength;
-      continue;
+    } else {
+      if (token < 'a' || token > 'z') {
+        return false;
+      }
+      const int colorIndex = token - 'a';
+      if (colorIndex >= paletteSize) {
+        return false;
+      }
+      if (visible) {
+        PrimitiveFillRect(clippedX1, clippedY1, clippedX2 - clippedX1, clippedY2 - clippedY1, palette[colorIndex]);
+      }
+      offset += runLength;
     }
-    if (token < 'a' || token > 'z') {
-      return false;
+    ++completedRuns;
+    if (ThemeSpecRuntimePolicy::ShouldYieldDuringRleDecode(completedRuns)) {
+      yield();
     }
-    const int colorIndex = token - 'a';
-    if (colorIndex >= paletteSize) {
-      return false;
-    }
-    PrimitiveFillRect(drawX1, drawY1, max(1, drawX2 - drawX1), max(1, drawY2 - drawY1), palette[colorIndex]);
-    offset += runLength;
   }
   return offset == sourceWidth;
 }
@@ -356,7 +377,15 @@ bool skipSpriteRows(File& file, int rowCount) {
   return true;
 }
 
-void drawStaticSpriteAsset(File& file, int x, int y, int targetWidth, int targetHeight, bool hasClearColor, uint16_t clearColor) {
+void drawStaticSpriteAsset(
+    File& file,
+    int x,
+    int y,
+    int targetWidth,
+    int targetHeight,
+    bool hasClearColor,
+    uint16_t clearColor,
+    const SpriteClip& clip) {
   String line;
   int width = 0;
   int height = 0;
@@ -371,11 +400,35 @@ void drawStaticSpriteAsset(File& file, int x, int y, int targetWidth, int target
   }
 
   for (int row = 0; row < height; ++row) {
-    if (!readSpriteLine(file, line) ||
-        !drawSpriteRleRow(line, palette, paletteSize, x, y, width, row, height, targetWidth, targetHeight, hasClearColor, clearColor)) {
+    if (!readSpriteLine(file, line)) {
       return;
     }
-    if ((row & 0x07) == 0x07) {
+    const int drawHeight = targetHeight > 0 ? targetHeight : height;
+    // Partial renders keep the TFT viewport for correctness, but avoid
+    // decoding the unchanged rows of a full-screen background entirely.
+    if (clip.active &&
+        !ThemeSpecRuntimePolicy::ScaledSpriteRowIntersectsClip(row, height, y, drawHeight, clip.y, clip.height)) {
+      const int drawY1 = y + ((row * drawHeight) / height);
+      if (drawY1 >= clip.y + clip.height) {
+        break;
+      }
+    } else if (!drawSpriteRleRow(
+                   line,
+                   palette,
+                   paletteSize,
+                   x,
+                   y,
+                   width,
+                   row,
+                   height,
+                   targetWidth,
+                   targetHeight,
+                   hasClearColor,
+                   clearColor,
+                   clip)) {
+      return;
+    }
+    if (ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row + 1)) {
       yield();
     }
   }
@@ -461,7 +514,8 @@ void drawAnimatedSpriteAsset(
     int targetHeight,
     bool forceFrame,
     bool hasClearColor,
-    uint16_t clearColor) {
+    uint16_t clearColor,
+    const SpriteClip& clip) {
   if (!cache.valid && !loadAnimatedSpriteCache(file, cache)) {
     return;
   }
@@ -491,10 +545,11 @@ void drawAnimatedSpriteAsset(
             targetWidth,
             targetHeight,
             hasClearColor,
-            clearColor)) {
+            clearColor,
+            clip)) {
       return;
     }
-    if ((row & 0x07) == 0x07) {
+    if (ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row + 1)) {
       yield();
     }
   }
@@ -509,7 +564,8 @@ void drawSpriteAsset(
     SpriteRenderMode mode,
     bool forceAnimatedFrame,
     bool hasClearColor,
-    uint16_t clearColor) {
+    uint16_t clearColor,
+    const SpriteClip& clip) {
   if (assetPath == nullptr || assetPath[0] == '\0') {
     return;
   }
@@ -539,11 +595,21 @@ void drawSpriteAsset(
   if (readSpriteLine(file, line)) {
     if (line == "CBI1") {
       if (mode != SpriteRenderMode::AnimatedOnly) {
-        drawStaticSpriteAsset(file, x, y, targetWidth, targetHeight, hasClearColor, clearColor);
+        drawStaticSpriteAsset(file, x, y, targetWidth, targetHeight, hasClearColor, clearColor, clip);
       }
     } else if (line == "CBA1") {
       if (mode != SpriteRenderMode::StaticOnly && animatedCache != nullptr) {
-        drawAnimatedSpriteAsset(*animatedCache, file, x, y, targetWidth, targetHeight, forceAnimatedFrame, hasClearColor, clearColor);
+        drawAnimatedSpriteAsset(
+            *animatedCache,
+            file,
+            x,
+            y,
+            targetWidth,
+            targetHeight,
+            forceAnimatedFrame,
+            hasClearColor,
+            clearColor,
+            clip);
       }
     }
   }
@@ -686,6 +752,12 @@ class ThemeSpecSink final : public themespec::Sink {
   }
 
   void DrawSprite(const themespec::SpriteCommand& cmd) override {
+    SpriteClip clip;
+    clip.active = clipActive_;
+    clip.x = clipX_;
+    clip.y = clipY_;
+    clip.width = clipW_;
+    clip.height = clipH_;
     drawSpriteAsset(
         cmd.assetPath,
         cmd.x,
@@ -695,7 +767,8 @@ class ThemeSpecSink final : public themespec::Sink {
         spriteRenderMode_,
         forceAnimatedFrame_,
         clearSpriteTransparent_ && (cmd.hasBg || hasBackgroundColor_),
-        cmd.hasBg ? cmd.bg : backgroundColor_);
+        cmd.hasBg ? cmd.bg : backgroundColor_,
+        clip);
   }
 
   void DrawPixels(const themespec::PixelsCommand& cmd) override {

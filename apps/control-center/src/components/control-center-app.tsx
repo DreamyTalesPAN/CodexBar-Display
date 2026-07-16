@@ -227,6 +227,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const didRunSetupVerification = useRef(false);
   const automaticPairingRepairKey = useRef("");
   const lastCompanionRequestAt = useRef(0);
+  const statusPollInFlight = useRef(false);
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
       id: "session-start",
@@ -588,6 +589,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const checkCompanion = useCallback(
     async (options?: { quiet?: boolean }) => {
+      if (statusPollInFlight.current) {
+        return;
+      }
+      statusPollInFlight.current = true;
       const quiet = Boolean(options?.quiet);
       if (!quiet) {
         setBusyAction("status");
@@ -656,8 +661,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 ? "online"
                 : "unknown",
           );
-          const refreshed = await refreshDevice({ quiet: true });
-          if (deviceSetupIsUsable(refreshed)) {
+          if (deviceSetupIsUsable(payload.device)) {
             void loadSettings();
           }
         } else {
@@ -695,6 +699,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           });
         }
       } finally {
+        statusPollInFlight.current = false;
         setInitialCompanionCheckComplete(true);
         if (!quiet) {
           setBusyAction(null);
@@ -708,13 +713,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       markCompanionAccessBlocked,
       markCompanionUnavailable,
       mergeDevice,
-      refreshDevice,
       runCompanion,
       verifyLocalControlCenterAvailable,
     ],
   );
 
   const syncLocalStatus = useCallback(async () => {
+    if (statusPollInFlight.current) {
+      return;
+    }
+    statusPollInFlight.current = true;
     try {
       const payload = await runCompanion<{
         companion?: CompanionInfo;
@@ -752,6 +760,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       } else {
         markCompanionUnavailable();
       }
+    } finally {
+      statusPollInFlight.current = false;
     }
   }, [
     markCompanionAccessBlocked,

@@ -915,6 +915,43 @@ void testChangedPrimitivePassHandlesCompactClippySpec() {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands.back().type));
 }
 
+void testClippyIdleToCodingWeeklyPartialKeepsBackgroundDecodeClipped() {
+  const char* spec = R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"bg":"#C6C3BD","a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":212,"w":146,"h":14,"b":"w"},{"t":"tx","x":181,"y":204,"v":"{weekly}%","s":2}],"fb":"mini","bg":"#000000"})JSON";
+
+  FrameData codingFrame = testFrame();
+  codingFrame.activity = "coding";
+  codingFrame.weekly = 75;
+
+  RecordingSink sink;
+  bool skippedAnimated = false;
+  TEST_ASSERT_TRUE(renderChangedSpecWithSkippedAnimated(
+      spec,
+      codingFrame,
+      kThemeSpecFieldActivity | kThemeSpecFieldWeekly,
+      sink,
+      skippedAnimated));
+  TEST_ASSERT_TRUE(skippedAnimated);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sink.commands.front().type));
+  TEST_ASSERT_EQUAL_INT(27, sink.commands.front().x);
+  TEST_ASSERT_EQUAL_INT(54, sink.commands.front().y);
+  TEST_ASSERT_EQUAL_INT(213, sink.commands.front().width);
+  TEST_ASSERT_EQUAL_INT(172, sink.commands.front().height);
+
+  int backgroundSpriteCount = 0;
+  for (const RecordedCommand& command : sink.commands) {
+    if (command.type == CommandType::Sprite && command.assetPath == "/themes/u/cp-bg.cbi") {
+      ++backgroundSpriteCount;
+    }
+  }
+  TEST_ASSERT_EQUAL_INT(1, backgroundSpriteCount);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands.back().type));
+
+  // The ESP8266 sink uses this dirty clip to decode only intersecting CBI rows.
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ScaledSpriteRowIntersectsClip(0, 105, 0, 240, 54, 172));
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::ScaledSpriteRowIntersectsClip(24, 105, 0, 240, 54, 172));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ScaledSpriteRowIntersectsClip(104, 105, 0, 240, 54, 172));
+}
+
 void testCompiledThemeSpecFullPartialAndAnimatedPasses() {
   const char* spec = R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"tx","x":26,"y":28,"v":"{label} Usage","s":2,"f":2,"c":"#FFFFFF"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"bg":"#C6C3BD","a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s","ps":"segments","sg":28,"gg":1,"c":"#0FA514","bg":"#DAD7D0","bc":"#FFFFFF"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2,"f":2,"c":"#111111"},{"t":"tx","x":172,"y":178,"v":"remaining","s":1,"f":2,"c":"#111111"},{"t":"p","x":27,"y":212,"w":146,"h":14,"b":"w","ps":"segments","sg":28,"gg":1,"c":"#0FA514","bg":"#DAD7D0","bc":"#FFFFFF"},{"t":"tx","x":181,"y":204,"v":"{weekly}%","s":2,"f":2,"c":"#111111"},{"t":"tx","x":172,"y":224,"v":"remaining","s":1,"f":2,"c":"#111111"}],"fb":"mini","bg":"#000000"})JSON";
 
@@ -1433,6 +1470,18 @@ void testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames() {
   TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::AnimatedAssetDue(false, true, 10, 10, deadline, 0x00000010UL));
 }
 
+void testAssetDecodeYieldPolicyBoundsLongRleWork() {
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(0));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(3));
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(4));
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(8));
+
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ShouldYieldDuringRleDecode(0));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ShouldYieldDuringRleDecode(15));
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::ShouldYieldDuringRleDecode(16));
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::ShouldYieldDuringRleDecode(32));
+}
+
 }  // namespace
 
 int main() {
@@ -1458,6 +1507,7 @@ int main() {
   RUN_TEST(testChangedPrimitivePassUsesThemeBackgroundAndOverlaps);
   RUN_TEST(testChangedLabelPassUsesRenderedFontHeightForProviderLabel);
   RUN_TEST(testChangedPrimitivePassHandlesCompactClippySpec);
+  RUN_TEST(testClippyIdleToCodingWeeklyPartialKeepsBackgroundDecodeClipped);
   RUN_TEST(testCompiledThemeSpecFullPartialAndAnimatedPasses);
   RUN_TEST(testChangedPrimitivePassReportsNoAffectedPrimitiveForUnusedReset);
   RUN_TEST(testChangedPrimitivePassHandlesTextWithoutMaxWidth);
@@ -1482,5 +1532,6 @@ int main() {
   RUN_TEST(testConfirmedThemeSpecNullClearsCachedLayout);
   RUN_TEST(testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap);
   RUN_TEST(testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames);
+  RUN_TEST(testAssetDecodeYieldPolicyBoundsLongRleWork);
   return UNITY_END();
 }

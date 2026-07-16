@@ -1487,12 +1487,16 @@ async function testLocalSetupRecoversWhenDeviceBecomesReady(browser, appUrl) {
   });
   const installRequests = [];
   const repairRequests = [];
+  const deviceReadRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: reachableUnreadyDevice,
     statusDeviceSequence: [reachableUnreadyDevice, companionDevice],
     onRequest: (pathname, method) => {
       if (pathname === "/v1/device/repair" && method === "POST") {
         repairRequests.push(pathname);
+      }
+      if (pathname === "/v1/device" && method === "GET") {
+        deviceReadRequests.push(pathname);
       }
     },
   });
@@ -1507,6 +1511,10 @@ async function testLocalSetupRecoversWhenDeviceBecomesReady(browser, appUrl) {
   assert(
     repairRequests.length === 0,
     "Setup recovery must use read-only status polling without pairing or repair writes",
+  );
+  assert(
+    deviceReadRequests.length === 0,
+    `Setup recovery must use the /v1/status device payload without redundant /v1/device reads, got ${deviceReadRequests.length}`,
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -5029,6 +5037,12 @@ async function assertCompanionRequestTimeoutContract() {
   assert(
     repairTimeoutUses.length === 3,
     `Exactly select, repair, and reload-display must use the 90 second timeout, got ${repairTimeoutUses.length} uses`,
+  );
+  const statusPollGuards =
+    source.match(/if \(statusPollInFlight\.current\)/g) || [];
+  assert(
+    statusPollGuards.length === 2,
+    `Startup and Control Center status polling must both be single-flight, got ${statusPollGuards.length} guards`,
   );
 }
 

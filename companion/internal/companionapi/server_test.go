@@ -553,12 +553,17 @@ func TestDeviceSelectFailureRestoresPreviousActiveDevice(t *testing.T) {
 	initial.Normalize()
 	server := newTestServer(t, initial)
 	var restoredStream atomic.Bool
+	var wakeCalls atomic.Int32
+	server.wakeDisplayStream = func() {
+		wakeCalls.Add(1)
+	}
 	server.refreshStream = func(_ context.Context, target string) error {
 		if target == device.URL {
 			return errors.New("selected display stream failed")
 		}
 		if target == initial.DeviceTarget {
 			restoredStream.Store(true)
+			server.wakeDisplayStream()
 		}
 		return nil
 	}
@@ -584,6 +589,9 @@ func TestDeviceSelectFailureRestoresPreviousActiveDevice(t *testing.T) {
 	}
 	if !restoredStream.Load() {
 		t.Fatal("previous display stream was not restored")
+	}
+	if wakeCalls.Load() != 1 {
+		t.Fatalf("failed selection wake calls=%d want 1", wakeCalls.Load())
 	}
 }
 
@@ -3732,7 +3740,7 @@ func TestDeviceRepairDoesNotRotateTokenForTransientFrameFailure(t *testing.T) {
 	}
 }
 
-func TestDeviceRepairReactivatesCurrentThemeAfterOverlayWithHealthyStreamProof(t *testing.T) {
+func TestDeviceRepairReactivatesCurrentThemeAfterUnknownRenderKindWithHealthyStreamProof(t *testing.T) {
 	var activationCalls atomic.Int32
 	var displayStreamPaused atomic.Bool
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3824,6 +3832,140 @@ func TestDeviceRepairReactivatesCurrentThemeAfterOverlayWithHealthyStreamProof(t
 	}
 	if displayStreamPaused.Load() {
 		t.Fatal("repair left the display stream paused")
+	}
+}
+
+func TestDeviceRepairKeepsNormalThemeRenderAndRefreshesStreamOnce(t *testing.T) {
+	var activationCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"device-a","board":"esp8266-smalltv-st7789","firmware":"1.0.36","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy.json","renderOk":true}},"render":{"fullCount":10,"partialCount":2,"lastKind":"reset"}}`))
+		case "/theme/active":
+			activationCalls.Add(1)
+			t.Fatal("normal reset/theme-spec rendering must not reactivate the current theme")
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+	var refreshCalls atomic.Int32
+	var wakeCalls atomic.Int32
+	server.wakeDisplayStream = func() {
+		wakeCalls.Add(1)
+	}
+	server.refreshStream = func(context.Context, string) error {
+		refreshCalls.Add(1)
+		server.wakeDisplayStream()
+		return nil
+	}
+	var pauseEvents []bool
+	server.pauseDisplayStream = func(paused bool) {
+		pauseEvents = append(pauseEvents, paused)
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		fullCount := uint64(10)
+		partialCount := uint64(3)
+		renderOK := true
+		health := deviceHealth{OK: true}
+		health.Display.ThemeSpec.Active = true
+		health.Display.ThemeSpec.Path = "/themes/u/clippy.json"
+		health.Display.ThemeSpec.RenderOK = &renderOK
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "theme_spec_frame"
+		return health, nil
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected repair success, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if activationCalls.Load() != 0 {
+		t.Fatalf("theme activation calls=%d want 0", activationCalls.Load())
+	}
+	if refreshCalls.Load() != 1 {
+		t.Fatalf("display stream refresh calls=%d want 1", refreshCalls.Load())
+	}
+	if wakeCalls.Load() != 1 {
+		t.Fatalf("display stream wake calls=%d want 1", wakeCalls.Load())
+	}
+	if !reflect.DeepEqual(pauseEvents, []bool{true, false}) {
+		t.Fatalf("pause events=%v want [true false]", pauseEvents)
+	}
+}
+
+func TestDeviceRepairWakesStreamOnceAfterEarlyFailure(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"device-a","board":"esp8266-smalltv-st7789","firmware":"1.0.36","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+	var refreshCalls atomic.Int32
+	server.refreshStream = func(context.Context, string) error {
+		refreshCalls.Add(1)
+		return nil
+	}
+	var wakeCalls atomic.Int32
+	server.wakeDisplayStream = func() {
+		wakeCalls.Add(1)
+	}
+	var pauseEvents []bool
+	server.pauseDisplayStream = func(paused bool) {
+		pauseEvents = append(pauseEvents, paused)
+	}
+
+	_, err := server.repairDevice(context.Background(), device.URL, "device-b", false)
+	if err == nil {
+		t.Fatal("expected identity mismatch repair failure")
+	}
+	if refreshCalls.Load() != 0 {
+		t.Fatalf("early failure requested display refresh %d times", refreshCalls.Load())
+	}
+	if wakeCalls.Load() != 1 {
+		t.Fatalf("early failure wake calls=%d want 1", wakeCalls.Load())
+	}
+	if !reflect.DeepEqual(pauseEvents, []bool{true, false}) {
+		t.Fatalf("pause events=%v want [true false]", pauseEvents)
+	}
+}
+
+func TestActiveThemeNormalRenderKindsDoNotRequireReactivation(t *testing.T) {
+	renderOK := true
+	for _, kind := range []string{"usage", "theme_spec_usage", "theme_spec_frame", "reset", "update_notice"} {
+		t.Run(kind, func(t *testing.T) {
+			health := deviceHealth{}
+			health.Display.ThemeSpec.Active = true
+			health.Display.ThemeSpec.Path = "/themes/u/clippy.json"
+			health.Display.ThemeSpec.RenderOK = &renderOK
+			health.Render.LastKind = kind
+			if activeThemeNeedsFullRepairRender(health) {
+				t.Fatalf("normal render kind %q requested theme reactivation", kind)
+			}
+		})
 	}
 }
 
@@ -4130,6 +4272,25 @@ func TestConcurrentDeviceRepairsShareOnePairingTransaction(t *testing.T) {
 	}
 	if pairCalls.Load() != 1 {
 		t.Fatalf("concurrent repairs rotated pairing token %d times, want 1", pairCalls.Load())
+	}
+}
+
+func TestRepairFlightKeyUsesCanonicalDeviceIdentity(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceID:     " Device-A ",
+	})
+
+	fromActiveConfig := server.repairFlightKey("http://192.168.178.72", "", false)
+	fromExplicitIdentity := server.repairFlightKey("http://192.168.178.99/", " device-a ", false)
+	if fromActiveConfig != fromExplicitIdentity {
+		t.Fatalf("same device produced different flight keys: active=%q explicit=%q", fromActiveConfig, fromExplicitIdentity)
+	}
+	if got := server.repairFlightKey("http://192.168.178.72", "device-b", false); got == fromActiveConfig {
+		t.Fatalf("different device reused flight key %q", got)
+	}
+	if got := server.repairFlightKey("http://192.168.178.72", "device-a", true); got == fromActiveConfig {
+		t.Fatalf("force-pair repair reused normal repair flight key %q", got)
 	}
 }
 

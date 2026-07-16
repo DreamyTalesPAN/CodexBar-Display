@@ -44,7 +44,26 @@ class ThemeSpecRuntimePolicy {
   }
 
   static bool ShouldYieldDuringAssetScan(int completedRows) {
-    return completedRows > 0 && (completedRows % 8) == 0;
+    return completedRows > 0 && (completedRows % 4) == 0;
+  }
+
+  static bool ShouldYieldDuringRleDecode(int completedRuns) {
+    return completedRuns > 0 && (completedRuns % 16) == 0;
+  }
+
+  static bool ScaledSpriteRowIntersectsClip(
+      int sourceRow,
+      int sourceHeight,
+      int targetY,
+      int targetHeight,
+      int clipY,
+      int clipHeight) {
+    if (sourceRow < 0 || sourceHeight <= 0 || targetHeight <= 0 || clipHeight <= 0) {
+      return false;
+    }
+    const int drawY1 = targetY + ((sourceRow * targetHeight) / sourceHeight);
+    const int drawY2 = targetY + (((sourceRow + 1) * targetHeight + sourceHeight - 1) / sourceHeight);
+    return drawY1 < clipY + clipHeight && drawY2 > clipY;
   }
 };
 

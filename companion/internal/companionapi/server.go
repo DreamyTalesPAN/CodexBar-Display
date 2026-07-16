@@ -126,6 +126,7 @@ type Options struct {
 	HTTPClient           *http.Client
 	RefreshDisplayStream func(context.Context, string) error
 	PauseDisplayStream   func(bool)
+	WakeDisplayStream    func()
 }
 
 type Server struct {
@@ -147,6 +148,7 @@ type Server struct {
 	waitRender             func(context.Context, string, string, deviceHealth) (deviceHealth, error)
 	refreshStream          func(context.Context, string) error
 	pauseDisplayStream     func(bool)
+	wakeDisplayStream      func()
 	firmwareUpdateActive   atomic.Bool
 	configMu               sync.Mutex
 	repairMu               sync.Mutex
@@ -737,6 +739,7 @@ func New(opts Options) (*Server, error) {
 		waitRender:            nil,
 		refreshStream:         opts.RefreshDisplayStream,
 		pauseDisplayStream:    opts.PauseDisplayStream,
+		wakeDisplayStream:     opts.WakeDisplayStream,
 		pairAttempts:          defaultPairAttempts,
 		pairAttemptTimeout:    defaultPairAttemptTimeout,
 		pairRetryGap:          defaultPairRetryGap,
@@ -2402,12 +2405,17 @@ func (s *Server) repairDevice(
 	expectedDeviceID string,
 	forcePair bool,
 ) (deviceInfo, error) {
-	key := fmt.Sprintf(
-		"%t|%s|%s",
-		forcePair,
-		strings.ToLower(strings.TrimSpace(requestedTarget)),
-		strings.ToLower(strings.TrimSpace(expectedDeviceID)),
-	)
+	return s.repairDeviceWithFailureWake(ctx, requestedTarget, expectedDeviceID, forcePair, true)
+}
+
+func (s *Server) repairDeviceWithFailureWake(
+	ctx context.Context,
+	requestedTarget string,
+	expectedDeviceID string,
+	forcePair bool,
+	wakeOnFailure bool,
+) (deviceInfo, error) {
+	key := fmt.Sprintf("%t|%s", wakeOnFailure, s.repairFlightKey(requestedTarget, expectedDeviceID, forcePair))
 	s.repairFlightsMu.Lock()
 	if s.repairFlights == nil {
 		s.repairFlights = make(map[string]*deviceRepairFlight)
@@ -2426,11 +2434,33 @@ func (s *Server) repairDevice(
 	s.repairFlightsMu.Unlock()
 
 	flight.device, flight.err = s.repairDeviceOnce(ctx, requestedTarget, expectedDeviceID, forcePair)
+	if flight.err != nil && wakeOnFailure && s.wakeDisplayStream != nil {
+		s.wakeDisplayStream()
+	}
 	s.repairFlightsMu.Lock()
 	delete(s.repairFlights, key)
 	close(flight.done)
 	s.repairFlightsMu.Unlock()
 	return flight.device, flight.err
+}
+
+func (s *Server) repairFlightKey(requestedTarget, expectedDeviceID string, forcePair bool) string {
+	deviceID := strings.ToLower(strings.TrimSpace(expectedDeviceID))
+	if deviceID == "" {
+		if cfg, err := s.config(); err == nil {
+			deviceID = strings.ToLower(strings.TrimSpace(cfg.DeviceID))
+		}
+	}
+	identity := "device:" + deviceID
+	if deviceID == "" {
+		target := strings.ToLower(normalizeTarget(requestedTarget))
+		if target == "" {
+			identity = "active-device"
+		} else {
+			identity = "target:" + target
+		}
+	}
+	return fmt.Sprintf("%t|%s", forcePair, identity)
 }
 
 func (s *Server) selectDevice(
@@ -2478,7 +2508,7 @@ func (s *Server) selectDevice(
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
 	}
 
-	device, repairErr := s.repairDevice(ctx, target, expectedDeviceID, false)
+	device, repairErr := s.repairDeviceWithFailureWake(ctx, target, expectedDeviceID, false, false)
 	if repairErr == nil {
 		return device, nil
 	}
@@ -5069,7 +5099,7 @@ func fullUsageRenderKind(raw string) bool {
 
 func activeThemeNeedsFullRepairRender(health deviceHealth) bool {
 	spec := health.Display.ThemeSpec
-	return spec.Active && strings.TrimSpace(spec.Path) != "" && !fullUsageRenderKind(health.Render.LastKind)
+	return spec.Active && strings.TrimSpace(spec.Path) != "" && !liveScreenRenderKind(health.Render.LastKind)
 }
 
 func renderSurfaceHealthy(health deviceHealth) bool {
