@@ -13,6 +13,27 @@ To reset the gate:
 
 ## Last Review Notes
 
+- Reviewed scope: Theme Studio inside Theme Library, immersive editor layout,
+  local theme saving and recovery, custom-theme deletion, device compatibility,
+  advanced editor controls, and the existing Mac App ZIP installation handoff.
+- Customer rule: Theme Studio remains an explicit expert workflow entered from
+  Theme Library. `Save theme` is the single primary editor action; Export and
+  Send remain secondary, invalid actions are disabled before they can fail,
+  and implementation details such as direct device requests stay hidden.
+- Simplifications accepted: no public Theme Studio route, AI builder, separate
+  navigation item, cloud storage choice, or manual device-write step was added.
+  The normal Control Center shell disappears while editing, advanced sections
+  stay behind one disclosure, and unsaved work is handled by one recovery card
+  plus one Save/Discard/Keep editing decision.
+- Verification: reviewed against `docs/control-center-ui-principles.md`; the
+  dedicated browser flow passed at `1180x820` with Layers, Preview, and
+  Inspector side by side, no horizontal overflow, visible save feedback, no AI
+  surface, no direct device writes, and exactly one Mac App ZIP install request.
+  `npm run test:unit` (24 tests), `npx tsc --noEmit`, `npm run lint`, `npm run
+  build`, `npm run check:customer-ui-copy`, `npm run test:theme-studio`, `npm
+  run test:customer-flows`, `go test ./...` in `companion`, and `git diff
+  --check` passed locally.
+
 - Reviewed scope: signed Preview DMG delivery, automatic recovery from a
   partially rendered firmware-update screen, and exclusive VibeTV traffic
   while a firmware update is running.

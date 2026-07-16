@@ -11,6 +11,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const nextBin = join(root, "node_modules", "next", "dist", "bin", "next");
 const viewport = { width: 390, height: 844 };
 const desktopViewport = { width: 1280, height: 900 };
+const themeStudioViewport = { width: 1180, height: 820 };
 const smokeOnly = process.argv.includes("--smoke");
 const migrationScreenshotDir =
   process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
@@ -358,10 +359,6 @@ async function main() {
     );
     await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
     await testThemeLibraryRendersThemeSpecPreviews(
-      browser,
-      appContext.appUrl,
-    );
-    await testThemeStudioUsesLocalRenderAndCompanionInstall(
       browser,
       appContext.appUrl,
     );
@@ -2586,7 +2583,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   appUrl,
 ) {
   const localAppUrl = "http://127.0.0.1:47832/control-center";
-  const page = await browser.newPage({ viewport: desktopViewport });
+  const page = await browser.newPage({ viewport: themeStudioViewport });
   const installRequests = [];
   const themeInstallRequests = [];
   const browserRequests = [];
@@ -2663,6 +2660,33 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   const sendButton = page.getByRole("button", { name: "Send to VibeTV" });
   await sendButton.waitFor({ timeout: 10_000 });
   assert(
+    await page.locator(".control-center-shell__sidebar").isHidden(),
+    "Theme Studio should hide the normal shell sidebar",
+  );
+  assert(
+    await page.locator(".control-center-shell__header").isHidden(),
+    "Theme Studio should hide the normal shell header",
+  );
+  const layersBox = await page.getByText("Layers", { exact: true }).boundingBox();
+  const previewBox = await page
+    .getByLabel("Editable 240x240 preview")
+    .boundingBox();
+  const inspectorBox = await page
+    .getByText("Inspector", { exact: true })
+    .boundingBox();
+  assert(
+    layersBox &&
+      previewBox &&
+      inspectorBox &&
+      layersBox.x < previewBox.x &&
+      previewBox.x < inspectorBox.x,
+    "Theme Studio should show Layers, Preview, and Inspector side by side at 1180x820",
+  );
+  assert(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    "Theme Studio should not create horizontal body overflow at 1180x820",
+  );
+  assert(
     await sendButton.isEnabled(),
     "published themes with validated large static sprites should remain editable and installable",
   );
@@ -2704,6 +2728,24 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   );
 
   await page.getByText("Advanced", { exact: true }).click();
+  const previewSelection = page.locator('[aria-label^="Select "]').nth(1);
+  await previewSelection.click();
+  const undoButton = page.getByRole("button", { name: "Undo" });
+  assert(
+    await undoButton.isDisabled(),
+    "selecting an element should not create an undo step",
+  );
+  await page.getByRole("tab", { name: "Project" }).press("ArrowRight");
+  assert(
+    (await page.getByRole("tab", { name: "Assets" }).getAttribute("aria-selected")) ===
+      "true",
+    "ArrowRight should switch the Advanced tab",
+  );
+  assert(
+    await undoButton.isDisabled(),
+    "Advanced tab keyboard navigation must not move preview elements",
+  );
+  await page.getByRole("tab", { name: "Project" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Synthwave Customer Copy");
   await page.getByLabel("ID", { exact: true }).fill("synthwave-copy");
   const [download] = await Promise.all([
@@ -2727,6 +2769,14 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   );
   await runCommand("unzip", ["-t", downloadPath], { cwd: root });
   await page.getByRole("button", { name: "Save theme" }).click();
+  await page.getByText("Saved to library.", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    await page.locator("[data-theme-studio-root]").isVisible(),
+    "saving should keep Theme Studio open",
+  );
+  await page.getByRole("button", { name: "Library", exact: true }).click();
   await page.getByText("Synthwave Customer Copy", { exact: true }).waitFor({
     timeout: 10_000,
   });
@@ -2804,6 +2854,92 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   assert(
     unsafeRequests.length === 0,
     `Theme Studio must not write directly to a device: ${JSON.stringify(unsafeRequests)}`,
+  );
+
+  await page.getByText("Advanced", { exact: true }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Recovery scratch");
+  await page.waitForTimeout(400);
+  await page.getByRole("button", { name: "Library", exact: true }).click();
+  await page.getByRole("dialog", { name: "Save your changes?" }).waitFor();
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await page.getByRole("heading", { name: "Themes", exact: true }).waitFor();
+  assert(
+    (await page.getByText("Continue your unsaved theme", { exact: true }).count()) === 0,
+    "discarding an editor draft should also clear the in-memory recovery card",
+  );
+
+  await page.evaluate(() => {
+    window.localStorage.setItem(
+      "vibetv.controlCenter.themeStudioDraft",
+      JSON.stringify({
+        schemaVersion: 1,
+        recovery: {
+          document: {
+            assets: {},
+            packName: "Recovered Draft",
+            spec: {
+              bgColor: "#000000",
+              fallbackTheme: "mini",
+              primitives: [
+                {
+                  color: "#FFFFFF",
+                  height: 20,
+                  type: "rect",
+                  width: 20,
+                  x: 10,
+                  y: 10,
+                },
+              ],
+              themeId: "recovered-draft",
+              themeRev: 1,
+              themeSpecVersion: 1,
+            },
+          },
+          source: "blank",
+          updatedAt: "2026-07-15T10:00:00.000Z",
+        },
+      }),
+    );
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("button", { name: /^(Themes|Theme Library)$/ })
+    .click();
+  await page.getByText("Continue your unsaved theme", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  await page.getByText("Unsaved changes", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Library", exact: true }).click();
+  await page.getByRole("dialog", { name: "Save your changes?" }).waitFor();
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+  assert(
+    await page.getByRole("button", { name: "Library", exact: true }).evaluate(
+      (button) => button === document.activeElement,
+    ),
+    "closing the leave dialog should return focus to Library",
+  );
+  await page.getByRole("button", { name: "Library", exact: true }).click();
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await page.getByRole("heading", { name: "Themes", exact: true }).waitFor();
+  assert(
+    (await page.getByText("Continue your unsaved theme", { exact: true }).count()) === 0,
+    "discarding a resumed recovery should remove the recovery card",
+  );
+
+  await page.evaluate(() => {
+    window.localStorage.setItem(
+      "vibetv.controlCenter.themeStudioDraft",
+      "{broken-recovery",
+    );
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("button", { name: /^(Themes|Theme Library)$/ })
+    .click();
+  await page.getByText("Theme storage needs attention", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Create Theme" }).click();
+  assert(
+    await page.getByRole("button", { name: "Save theme" }).isDisabled(),
+    "invalid recovery data should lock theme saving until it is handled",
   );
 
   await page.unrouteAll({ behavior: "ignoreErrors" });

@@ -108,9 +108,13 @@ jobs:
         working-directory: apps/control-center
         run: npx playwright install --with-deps chromium
 
+      - name: Test Theme Studio units
+        working-directory: apps/control-center
+        run: npm run test:unit
+
       - name: Test Mac App Theme Studio safety
         working-directory: apps/control-center
-        run: npm run test:theme-studio-safety
+        run: npm run test:theme-studio
 
   control-center-tests:
     runs-on: ubuntu-latest
