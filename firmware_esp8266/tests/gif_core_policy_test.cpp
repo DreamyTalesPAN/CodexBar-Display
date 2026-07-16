@@ -202,10 +202,66 @@ bool testAnimatedFrameOffsetsAreIndexedOneFrameAtATime() {
       "cached or final frames must not extend the offset index");
 }
 
-bool testRendererUsesLazyAnimatedFrameIndex(const char* themeSpecRendererPath) {
+bool testEsp8266CbaCooperativeAnimationPolicy() {
+  if (!expect(
+          ThemeSpecRuntimePolicy::CbaWorkDue(false, false, false, 8, 3, 0, 0),
+          "a fresh CBA activation must start frame zero")) {
+    return false;
+  }
+  if (!expect(
+          ThemeSpecRuntimePolicy::CbaWorkDue(false, true, true, 8, 3, 9999, 1),
+          "an in-progress CBA frame must resume before its fps deadline")) {
+    return false;
+  }
+  if (!expect(
+          !ThemeSpecRuntimePolicy::CbaWorkDue(false, false, true, 8, 3, 1000, 999) &&
+              ThemeSpecRuntimePolicy::CbaWorkDue(false, false, true, 8, 3, 1000, 1000),
+          "a completed CBA frame must wait for its fps deadline")) {
+    return false;
+  }
+
+  int row = 0;
+  int ticks = 0;
+  while (row < 3) {
+    const int budget = ThemeSpecRuntimePolicy::CbaRowsForTick(row, 3);
+    if (!expect(budget == 1, "each CBA resume tick must process exactly one row")) {
+      return false;
+    }
+    row += budget;
+    ticks += 1;
+  }
+  if (!expect(
+          ticks == 3 && ThemeSpecRuntimePolicy::CbaRowsForTick(row, 3) == 0,
+          "CBA row progress must resume without repeating completed rows")) {
+    return false;
+  }
+
+  if (!expect(
+          ThemeSpecRuntimePolicy::NextCbaFrameIndex(-1, 3) == 0 &&
+              ThemeSpecRuntimePolicy::NextCbaFrameIndex(0, 3) == 1 &&
+              ThemeSpecRuntimePolicy::NextCbaFrameIndex(2, 3) == 0,
+          "CBA frames must start at zero, advance, and loop")) {
+    return false;
+  }
+  if (!expect(
+          ThemeSpecRuntimePolicy::CbaFrameDelayMs(4) == 250 &&
+              ThemeSpecRuntimePolicy::CbaFrameDelayMs(0) == 0,
+          "CBA frame delay must follow the asset fps")) {
+    return false;
+  }
+  return expect(
+      ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(0) &&
+          !ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(1) &&
+          !ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(2),
+      "yield boundaries must require display transaction depth zero");
+}
+
+bool testRendererUsesResumableCbaAnimation(
+    const char* themeSpecRendererPath,
+    const char* displayRendererPath) {
   const std::string renderer = readFile(themeSpecRendererPath);
   const std::size_t loadStart = renderer.find("bool loadAnimatedSpriteCache(");
-  const std::size_t drawStart = renderer.find("void drawAnimatedSpriteAsset(", loadStart);
+  const std::size_t drawStart = renderer.find("bool drawAnimatedSpriteAsset(", loadStart);
   const std::size_t drawEnd = renderer.find("void drawSpriteAsset(", drawStart);
   if (!expect(
           loadStart != std::string::npos && drawStart != std::string::npos && drawEnd != std::string::npos,
@@ -222,10 +278,45 @@ bool testRendererUsesLazyAnimatedFrameIndex(const char* themeSpecRendererPath) {
   }
 
   const std::string drawFunction = renderer.substr(drawStart, drawEnd - drawStart);
+  if (!expect(
+          drawFunction.find("CbaRowsForTick") != std::string::npos &&
+              drawFunction.find("cache.nextRowOffset") != std::string::npos &&
+              drawFunction.find("cache.frameInProgress") != std::string::npos &&
+              drawFunction.find("ShouldIndexNextAnimatedFrame") != std::string::npos &&
+              drawFunction.find("cache.indexedFrameCount += 1") != std::string::npos,
+          "ESP8266 CBA frames must resume by row and index one successor at completion")) {
+    return false;
+  }
+  const std::string spriteFunction = renderer.substr(drawEnd, renderer.find("void resetAnimatedSpriteCaches", drawEnd) - drawEnd);
+  if (!expect(
+          spriteFunction.find("CbaWorkDue") != std::string::npos,
+          "CBA dispatch must resume active jobs and respect completed-frame deadlines")) {
+    return false;
+  }
+  if (!expect(
+          renderer.find("kThemeSpecAnimatedResumeTickMs") != std::string::npos &&
+              renderer.find("changedFields & themespec::kThemeSpecFieldActivity") != std::string::npos,
+          "unfinished CBA work must resume quickly and activity switches must restart it")) {
+    return false;
+  }
+
+  const std::string displayRenderer = readFile(displayRendererPath);
+  const std::size_t tickStart = displayRenderer.find("void RendererESP8266::TickActive(");
+  const std::size_t tickEnd = displayRenderer.find("void RendererESP8266::DrawError(", tickStart);
+  if (!expect(
+          tickStart != std::string::npos && tickEnd != std::string::npos &&
+              displayRenderer.substr(tickStart, tickEnd - tickStart).find("DisplayTransaction") == std::string::npos,
+          "the resumable animation tick must not hold a global display transaction")) {
+    return false;
+  }
+  if (!expect(
+          renderer.find("CanYieldAtDisplayTransactionDepth") != std::string::npos,
+          "all explicit theme-renderer yields must be guarded by transaction depth")) {
+    return false;
+  }
   return expect(
-      drawFunction.find("ShouldIndexNextAnimatedFrame") != std::string::npos &&
-          drawFunction.find("cache.indexedFrameCount += 1") != std::string::npos,
-      "a successful CBA draw must index at most its direct successor");
+      renderer.find("cache.frameStartedAtMs + frameDelayMs") != std::string::npos,
+      "CBA fps deadlines must be based on frame start rather than render completion");
 }
 
 std::string readFile(const char* path) {
@@ -331,10 +422,13 @@ int main(int argc, char** argv) {
   if (!testAnimatedFrameOffsetsAreIndexedOneFrameAtATime()) {
     return 1;
   }
-  if (!expect(argc == 4, "source paths are required for firmware policy tests")) {
+  if (!testEsp8266CbaCooperativeAnimationPolicy()) {
     return 1;
   }
-  if (!testRendererUsesLazyAnimatedFrameIndex(argv[1])) {
+  if (!expect(argc == 5, "source paths are required for firmware policy tests")) {
+    return 1;
+  }
+  if (!testRendererUsesResumableCbaAnimation(argv[1], argv[4])) {
     return 1;
   }
   if (!testDecoderAllocationStaysInsideRealPlayback(argv[1], argv[2])) {

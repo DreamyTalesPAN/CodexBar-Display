@@ -9,6 +9,7 @@ namespace esp8266 {
 // verified by the native test target.
 class ThemeSpecRuntimePolicy {
  public:
+  static constexpr int kCbaRowsPerTick = 1;
   static constexpr uint32_t kMinRenderFreeHeapBytes = 6144UL;
   static constexpr uint32_t kMinRenderMaxFreeBlockBytes = 2048UL;
   static constexpr uint32_t kMinAnimationFreeHeapBytes = 8192UL;
@@ -41,6 +42,46 @@ class ThemeSpecRuntimePolicy {
       return true;
     }
     return static_cast<int32_t>(nowMs - nextFrameAtMs) >= 0;
+  }
+
+  static bool CbaWorkDue(
+      bool forceFrame,
+      bool frameInProgress,
+      bool cacheValid,
+      int frameCount,
+      int fps,
+      unsigned long nextFrameAtMs,
+      unsigned long nowMs) {
+    return frameInProgress || AnimatedAssetDue(
+                                  forceFrame,
+                                  cacheValid,
+                                  frameCount,
+                                  fps,
+                                  nextFrameAtMs,
+                                  nowMs);
+  }
+
+  static int CbaRowsForTick(int nextRow, int height) {
+    if (nextRow < 0 || height <= 0 || nextRow >= height) {
+      return 0;
+    }
+    const int remaining = height - nextRow;
+    return remaining < kCbaRowsPerTick ? remaining : kCbaRowsPerTick;
+  }
+
+  static int NextCbaFrameIndex(int completedFrameIndex, int frameCount) {
+    if (frameCount <= 0 || completedFrameIndex < 0) {
+      return 0;
+    }
+    return (completedFrameIndex + 1) % frameCount;
+  }
+
+  static unsigned long CbaFrameDelayMs(int fps) {
+    return fps > 0 ? (1000UL / static_cast<unsigned long>(fps)) : 0;
+  }
+
+  static bool CanYieldAtDisplayTransactionDepth(uint16_t transactionDepth) {
+    return transactionDepth == 0;
   }
 
   static int InitialAnimatedIndexedFrameCount(int frameCount) {

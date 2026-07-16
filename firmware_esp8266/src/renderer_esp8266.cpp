@@ -167,6 +167,14 @@ void RendererESP8266::ResetGifStateForAssetUpdate() {
 #endif
 }
 
+bool RendererESP8266::AnimationWorkPending() const {
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  return display::ThemeSpecAnimationWorkPending();
+#else
+  return false;
+#endif
+}
+
 void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::SerialConsumeEvent& event) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
@@ -185,7 +193,6 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
         event.themeSpecPartialRender &&
         display::CurrentFrame().hasThemeSpec &&
         display::CurrentThemeSpecRenderedSuccessfully()) {
-      display::DisplayTransaction transaction;
       if (display::RenderThemeSpecPartial(event.themeSpecChangedFields)) {
         return;
       }
@@ -407,7 +414,6 @@ void RendererESP8266::DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const S
     const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
         core::ThemeSpecUsesBinding(raw, "label", "l")) {
-      display::DisplayTransaction transaction;
       if (!display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldLabel, text.c_str())) {
         display::ScreenDirty() = true;
       }
@@ -425,7 +431,6 @@ void RendererESP8266::TickActive(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
-    display::DisplayTransaction transaction;
     (void)display::TickThemeSpecGifs();
     return;
   }
@@ -449,7 +454,6 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
-    display::DisplayTransaction transaction;
     if (display::DrawThemeSpecUsage()) {
       return;
     }
@@ -478,7 +482,6 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
-    display::DisplayTransaction transaction;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     const String& themeSpecRaw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
     if (display::CurrentThemeSpecRenderedSuccessfully() &&

@@ -11,6 +11,7 @@
 #include "../../firmware_shared/app_transport.h"
 #include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "boot_recovery_policy.h"
+#include "frame_render_policy.h"
 #include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
 
@@ -677,6 +678,20 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     activeThemeSpecPath = "";
     activeThemeSpecHash = "";
 #endif
+  }
+
+  // Never render a WiFi frame from inside ESP8266WebServer::handleClient().
+  // ThemeSpec partial rendering can decode assets and touch the TFT for long
+  // enough to starve the WiFi stack or hardware watchdog. Marking the screen
+  // dirty makes RendererESP8266::OnFrameAccepted skip its synchronous partial
+  // path; the normal main-loop render block will draw the accepted frame on
+  // the next iteration. USB keeps its existing low-latency partial path.
+  const bool deferVisualRender =
+      codexbar_display::esp8266::FrameRenderPolicy::ShouldDeferToMainLoop(
+          transport != nullptr && strcmp(transport, "wifi") == 0,
+          event.visualChanged);
+  if (deferVisualRender) {
+    runtimeCtx.screenDirty = true;
   }
   const bool maybeThemeSpecPartial = event.themeSpecPartialRender && !runtimeCtx.screenDirty;
   const unsigned long partialStartUs = maybeThemeSpecPartial ? micros() : 0;
@@ -2775,5 +2790,9 @@ void loop() {
     clearBootRecoveryCounter();
   }
 
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  delay(renderer.AnimationWorkPending() ? 1 : 20);
+#else
   delay(20);
+#endif
 }

@@ -60,6 +60,7 @@ class RendererESP8266 : public app::Renderer {
   RendererDebugSnapshot DebugSnapshot() const;
   RendererHealthSnapshot HealthSnapshot() const;
   bool ShouldDeferDirtyRender(app::RuntimeContext& ctx) const;
+  bool AnimationWorkPending() const;
   void ResetGifStateForAssetUpdate();
   bool SupportsBrightnessControl() const;
   void ApplyBrightnessPercent(uint8_t percent);
