@@ -999,8 +999,6 @@ func TestRecoverInterruptedFirmwareUploadAcceptsInstalledTargetVersion(t *testin
 	err := recoverInterruptedFirmwareUpload(
 		context.Background(),
 		server.URL,
-		filepath.Join(t.TempDir(), "unused.bin"),
-		"pair-token",
 		"1.0.37",
 		"device-a",
 		errors.New("write tcp: use of closed network connection"),
@@ -1013,7 +1011,7 @@ func TestRecoverInterruptedFirmwareUploadAcceptsInstalledTargetVersion(t *testin
 	}
 }
 
-func TestRecoverInterruptedFirmwareUploadFallsBackOnlyAfterOldVersionReturns(t *testing.T) {
+func TestRecoverInterruptedFirmwareUploadRequiresRestartAfterOldVersionReturns(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	previousPoll := firmwareHTTPVerifyPollInterval
 	previousTimeout := firmwareInterruptedVerifyTimeout
@@ -1025,10 +1023,6 @@ func TestRecoverInterruptedFirmwareUploadFallsBackOnlyAfterOldVersionReturns(t *
 	firmwareHTTPVerifyPollInterval = time.Millisecond
 	firmwareInterruptedVerifyTimeout = 5 * time.Millisecond
 
-	imagePath := filepath.Join(t.TempDir(), "firmware.bin")
-	if err := os.WriteFile(imagePath, []byte("firmware image"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	multipartCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1036,15 +1030,7 @@ func TestRecoverInterruptedFirmwareUploadFallsBackOnlyAfterOldVersionReturns(t *
 			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36"}`))
 		case "/update/firmware":
 			multipartCalls++
-			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
-				t.Errorf("unexpected token %q", got)
-			}
-			if err := r.ParseMultipartForm(1 << 20); err != nil {
-				t.Errorf("parse multipart: %v", err)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			_, _ = w.Write([]byte("ok"))
+			w.WriteHeader(http.StatusInternalServerError)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -1055,17 +1041,15 @@ func TestRecoverInterruptedFirmwareUploadFallsBackOnlyAfterOldVersionReturns(t *
 	err := recoverInterruptedFirmwareUpload(
 		context.Background(),
 		server.URL,
-		imagePath,
-		"pair-token",
 		"1.0.37",
 		"device-a",
 		errors.New("write tcp: use of closed network connection"),
 	)
-	if err != nil {
-		t.Fatalf("compatibility upload failed: %v", err)
+	if !errors.Is(err, errFirmwareUploadRestartRequired) {
+		t.Fatalf("expected restart-required error, got %v", err)
 	}
-	if multipartCalls != 1 {
-		t.Fatalf("expected exactly one compatibility upload, got %d", multipartCalls)
+	if multipartCalls != 0 {
+		t.Fatalf("must not retry multipart in the same boot, got %d calls", multipartCalls)
 	}
 }
 
@@ -1099,8 +1083,6 @@ func TestRecoverInterruptedFirmwareUploadRejectsChangedDeviceIdentity(t *testing
 	err := recoverInterruptedFirmwareUpload(
 		context.Background(),
 		server.URL,
-		filepath.Join(t.TempDir(), "unused.bin"),
-		"pair-token",
 		"1.0.37",
 		"device-a",
 		errors.New("write tcp: use of closed network connection"),
@@ -1110,6 +1092,15 @@ func TestRecoverInterruptedFirmwareUploadRejectsChangedDeviceIdentity(t *testing
 	}
 	if multipartCalls != 0 {
 		t.Fatalf("must not write to a changed device, got %d multipart calls", multipartCalls)
+	}
+}
+
+func TestRawFirmwareUploadUnavailableDoesNotTreatTimeoutAsSafeFallback(t *testing.T) {
+	if rawFirmwareUploadUnavailable(errors.New("operation timed out")) {
+		t.Fatal("a timeout may happen after firmware bytes were sent and must not trigger multipart fallback")
+	}
+	if !rawFirmwareUploadUnavailable(errors.New("connect: connection refused")) {
+		t.Fatal("connection refusal before an upload should allow the legacy endpoint fallback")
 	}
 }
 

@@ -53,6 +53,7 @@ const (
 )
 
 var (
+	errFirmwareUploadRestartRequired                   = errors.New("VibeTV must restart before another firmware upload")
 	upgradeStopLaunchAgentFn                           = stopLaunchAgentBestEffort
 	upgradeRestartLaunchAgentFn                        = restartLaunchAgent
 	rollbackRestartLaunchAgentFn                       = restartLaunchAgent
@@ -586,8 +587,6 @@ func runInstallUpdate(args []string) (retErr error) {
 	uploadErr = recoverInterruptedFirmwareUpload(
 		ctx,
 		base,
-		imagePath,
-		deviceToken,
 		targetVersion,
 		deviceID,
 		uploadErr,
@@ -602,11 +601,15 @@ func runInstallUpdate(args []string) (retErr error) {
 			}
 		}
 		if uploadErr != nil {
+			hint := "keep VibeTV powered and on the same WiFi, then retry"
+			if errors.Is(uploadErr, errFirmwareUploadRestartRequired) {
+				hint = "disconnect VibeTV from power for 10 seconds, reconnect it, wait until the picture returns, then retry once"
+			}
 			return &commandError{
 				Op:   "ota-upload",
 				Code: errcode.UpgradeFlashFirmware,
 				Err:  uploadErr,
-				Hint: "keep VibeTV powered and on the same WiFi, then retry",
+				Hint: hint,
 			}
 		}
 	}
@@ -1368,8 +1371,6 @@ func uploadFirmwareOTAMultipart(ctx context.Context, base, imagePath, token stri
 func recoverInterruptedFirmwareUpload(
 	ctx context.Context,
 	base string,
-	imagePath string,
-	token string,
 	targetVersion string,
 	expectedDeviceID string,
 	uploadErr error,
@@ -1392,17 +1393,17 @@ func recoverInterruptedFirmwareUpload(
 		return nil
 	}
 
-	fmt.Println("Raw firmware upload did not complete. Retrying the compatibility updater...")
-	retryErr := uploadFirmwareOTAMultipart(ctx, base, imagePath, token)
-	if retryErr == nil {
-		return nil
-	}
-	if firmwareUploadConnectionInterrupted(retryErr) {
-		if err := waitForHTTPFirmwareVersion(ctx, base, targetVersion, firmwareInterruptedVerifyTimeout); err == nil {
-			return nil
-		}
-	}
-	return retryErr
+	// Firmware 1.0.36 does not reset the ESP8266 Update object after a partial
+	// RAW upload. A second upload in the same boot can therefore fail with
+	// "Update failed: No Error" or operate on stale updater state. Never switch
+	// transports or retry automatically after bytes may have reached the device.
+	return fmt.Errorf(
+		"%w: interrupted upload left firmware %s installed on device %s: %v",
+		errFirmwareUploadRestartRequired,
+		strings.TrimSpace(hello.Firmware),
+		strings.TrimSpace(hello.DeviceID),
+		uploadErr,
+	)
 }
 
 func firmwareUploadConnectionInterrupted(err error) bool {
@@ -1590,7 +1591,6 @@ func rawFirmwareUploadUnavailable(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "connection refused") ||
 		strings.Contains(msg, "no route to host") ||
-		strings.Contains(msg, "operation timed out") ||
 		strings.Contains(msg, "404")
 }
 

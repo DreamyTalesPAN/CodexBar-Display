@@ -209,3 +209,84 @@ transition evidence:
 
 No merge, production deployment, tag, or release was performed by this final
 verification.
+
+## 2026-07-16 - Firmware 1.0.36 to 1.0.37 migration gate
+
+Approval:
+
+- The user authorized the remaining hardware writes and selected three
+  consecutive migration runs as the release gate.
+
+Device and artifacts:
+
+- Device ID: `14799300`
+- Address: `http://192.168.178.72`
+- Board: `esp8266-smalltv-st7789`
+- Source firmware: public `1.0.36` from release `v1.0.46`
+- Source compressed SHA-256:
+  `88164516ddb33c0b411392b2ab1ce99c5698e7176bdc640d01b3887cfd77f199`
+- Source raw firmware SHA-256:
+  `d78580503a871bd58f947570e3eeee178487b62566b36eebb84833a2d3dc6b93`
+- Source raw size: `459920` bytes
+- Target firmware: final PR #182 candidate `1.0.37`
+- Target SHA-256:
+  `7b2b297829d5b2551ead94cdea6450f0fac053b1d05ab57288a4393c2b6302a5`
+- Target size: `462688` bytes
+- Target build usage: RAM `52.7%`; flash `43.9%`
+
+Test method:
+
+- Each run restored only flash address `0x0` with the exact public `1.0.36`
+  firmware. No erase-all, filesystem, WiFi, theme, or asset write was used.
+- Before each OTA, `/hello` confirmed firmware `1.0.36`, device ID `14799300`,
+  and station mode.
+- The combined Control Center runtime/API process sent a normal display frame
+  before each update.
+- Each update was started through `POST /v1/updates/install`, not by calling the
+  device OTA endpoint directly.
+- The Control Center paused its display writer for the OTA. No display frame was
+  sent during any upload window; a fresh frame was sent after each update.
+- The Companion used the paced RAW compatibility transport and did not retry or
+  fall back to multipart.
+
+Results:
+
+| Run | Control Center job | Result | Target boot ID |
+| --- | --- | --- | --- |
+| 1 | `firmware-update-1784219770952740000-1` | `1.0.37`, identity and health verified | `e1d1c4-36-5aeea5bb` |
+| 2 | `firmware-update-1784220182473777000-1` | `1.0.37`, identity and health verified | `e1d1c4-38-889c42d3` |
+| 3 | `firmware-update-1784220373588746000-2` | `1.0.37`, identity and health verified | `e1d1c4-40-e47c3e48` |
+
+All three runs additionally verified:
+
+- reset reason `Software/System restart` after OTA;
+- filesystem mounted;
+- ThemeSpec `renderOk: true`;
+- `/themes/mini/mini.gif` still present with `20870` bytes;
+- `/themes/u/mini-cl-1-410a37.json` still present with `642` bytes;
+- WiFi credentials preserved and the device returned at the same address.
+
+Harness note:
+
+- A stale previous-agent LaunchAgent, `shop.vibetv.preview-fixture`, was found
+  serving an old `1.0.36` preview manifest on port `47833`. The final gate used
+  an isolated server on port `47834`, so the stale fixture did not affect any of
+  the three artifacts or uploads. The stale service was booted out after the
+  gate and port `47833` was confirmed closed.
+- The local final candidate binary was run directly instead of from the signed
+  app bundle. macOS did not allow that unsigned `/tmp` binary to use local
+  networking when registered through `launchd`, so the combined runtime/API
+  process was run directly for the gate.
+- Consequently the API job's separate `launchctl` inspection reported
+  `firmware_current_stream_attention`, even though the same process demonstrably
+  paused the writer, resumed it, sent a fresh frame, and the device reported a
+  healthy render after every update. This is a test-harness registration warning,
+  not an OTA, device-health, or render failure.
+
+Conclusion:
+
+- The final candidate passed the selected `3/3` consecutive customer-path
+  firmware migration gate from public `1.0.36` to `1.0.37`.
+- No USB data connection was used for the upgrade itself; USB was used only to
+  recreate the source firmware between runs.
+- No merge, tag, release, Main push, or production deployment was performed.

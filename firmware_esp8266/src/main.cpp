@@ -60,6 +60,8 @@ constexpr unsigned long kRebootDelayMs = 750UL;
 constexpr unsigned long kBootRecoveryStableMs = 30000UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
+constexpr unsigned long kRawOtaProgressTimeoutMs = 30000UL;
+constexpr size_t kRawOtaReadBufferBytes = 512;
 constexpr uint8_t kBootRecoveryThreshold = 3;
 constexpr uint8_t kBootRecoveryUploadMarker = 0xA5;
 constexpr size_t kMaxAssetPathBytes = 32;
@@ -170,6 +172,7 @@ bool setupMode = false;
 bool waitStatusRendered = false;
 bool otaUploadSucceeded = false;
 bool otaUploadInProgress = false;
+bool otaUploadNeedsReboot = false;
 String otaUploadError;
 bool assetUploadSucceeded = false;
 bool assetUploadInProgress = false;
@@ -2094,6 +2097,13 @@ void setOtaError(const String& message) {
   }
 }
 
+void resetOtaUpdaterAfterFailure() {
+  if (Update.isRunning()) {
+    Update.end(false);
+  }
+  Update.clearError();
+}
+
 size_t otaMaxSizeForCommand(int command) {
   if (command == U_FS) {
     return static_cast<size_t>(FS_end - FS_start);
@@ -2101,13 +2111,18 @@ size_t otaMaxSizeForCommand(int command) {
   return static_cast<size_t>((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000);
 }
 
-void enterOtaSafeMode(int command) {
+void enterOtaSafeMode(int command, WiFiClient* otaClient) {
   (void)command;
   firmwareUpdateNoticeDirty = false;
   frameStaleStatusRendered = false;
   renderer.ResetGifStateForAssetUpdate();
   close_all_fs();
   WiFiUDP::stopAll();
+  if (otaClient != nullptr) {
+    WiFiClient::stopAllExcept(otaClient);
+  } else {
+    WiFiClient::stopAll();
+  }
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
   ESP.wdtFeed();
 }
@@ -2118,6 +2133,7 @@ void handleOtaUpload(int command, const char* target) {
   if (upload.status == UPLOAD_FILE_START) {
     otaUploadSucceeded = false;
     otaUploadInProgress = true;
+    otaUploadNeedsReboot = false;
     otaUploadError = "";
     const size_t maxSize = otaMaxSizeForCommand(command);
     otaDiagnostics.target = target;
@@ -2139,17 +2155,19 @@ void handleOtaUpload(int command, const char* target) {
         upload.contentLength,
         maxSize,
         otaDiagnostics.freeSketchSpace);
-    const String targetLabel = command == U_FS ? "Loading display" : "Loading firmware";
-    drawUpdateStatus(targetLabel);
-    waitStatusRendered = true;
     if (!requestHasValidAuth()) {
       setOtaError("unauthorized");
       return;
     }
     markBootRecoveryUploadActive(true);
-    enterOtaSafeMode(command);
+    enterOtaSafeMode(command, &webServer.client());
+    otaUploadNeedsReboot = true;
+    const String targetLabel = command == U_FS ? "Loading display" : "Loading firmware";
+    drawUpdateStatus(targetLabel);
+    waitStatusRendered = true;
     if (!Update.begin(maxSize, command)) {
       setOtaError(Update.getErrorString());
+      resetOtaUpdaterAfterFailure();
     } else {
       otaDiagnostics.status = "writing";
     }
@@ -2157,6 +2175,7 @@ void handleOtaUpload(int command, const char* target) {
     otaDiagnostics.totalSize = upload.totalSize + upload.currentSize;
     if (otaUploadError.length() == 0 && Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setOtaError(Update.getErrorString());
+      resetOtaUpdaterAfterFailure();
     }
     ESP.wdtFeed();
   } else if (upload.status == UPLOAD_FILE_END) {
@@ -2170,10 +2189,11 @@ void handleOtaUpload(int command, const char* target) {
       Serial.printf("ota_upload_success target=%s bytes=%zu\n", target, upload.totalSize);
     } else if (otaUploadError.length() == 0) {
       setOtaError(Update.getErrorString());
+      resetOtaUpdaterAfterFailure();
     }
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
-    Update.end();
     setOtaError("upload aborted");
+    resetOtaUpdaterAfterFailure();
     otaDiagnostics.totalSize = upload.totalSize;
     Serial.printf("ota_upload_aborted target=%s bytes=%zu\n", target, upload.totalSize);
   }
@@ -2196,6 +2216,7 @@ void handleOtaResult(const char* target) {
     otaDiagnostics.updateError = Update.getError();
     otaDiagnostics.endedAtMs = millis();
     otaDiagnostics.failureCount++;
+    otaUploadNeedsReboot = false;
     addCorsHeaders();
     webServer.sendHeader("WWW-Authenticate", "VibeTV token");
     webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
@@ -2212,6 +2233,10 @@ void handleOtaResult(const char* target) {
     otaDiagnostics.failureCount++;
     Serial.printf("ota_upload_failed target=%s error=%s\n", target, error.c_str());
     webServer.send(500, "text/plain; charset=utf-8", "Update failed: " + error);
+    if (otaUploadNeedsReboot) {
+      scheduleReboot("ota_failure");
+    }
+    otaUploadNeedsReboot = false;
     return;
   }
 
@@ -2228,6 +2253,7 @@ void handleOtaResult(const char* target) {
   otaDiagnostics.status = "reboot_scheduled";
   scheduleReboot(target);
   otaUploadInProgress = false;
+  otaUploadNeedsReboot = false;
 }
 
 void sendRawOtaResponse(WiFiClient& client, int status, const char* statusText, const String& body) {
@@ -2318,10 +2344,17 @@ void handleRawOtaClient() {
     return;
   }
 
+  const size_t maxSize = otaMaxSizeForCommand(U_FLASH);
+  if (contentLength > maxSize) {
+    sendRawOtaResponse(client, 413, "Payload Too Large", "firmware image is too large");
+    client.stop();
+    return;
+  }
+
   otaUploadSucceeded = false;
   otaUploadInProgress = true;
+  otaUploadNeedsReboot = false;
   otaUploadError = "";
-  const size_t maxSize = otaMaxSizeForCommand(U_FLASH);
   otaDiagnostics.target = "firmware_raw";
   otaDiagnostics.status = "starting";
   otaDiagnostics.filename = "raw";
@@ -2335,43 +2368,64 @@ void handleRawOtaClient() {
   otaDiagnostics.startedAtMs = millis();
   otaDiagnostics.endedAtMs = 0;
 
+  markBootRecoveryUploadActive(true);
+  enterOtaSafeMode(U_FLASH, &client);
+  otaUploadNeedsReboot = true;
   drawUpdateStatus("Loading firmware");
   waitStatusRendered = true;
-  markBootRecoveryUploadActive(true);
-  enterOtaSafeMode(U_FLASH);
 
-  if (!Update.begin(maxSize, U_FLASH)) {
+  if (!Update.begin(contentLength, U_FLASH)) {
     setOtaError(Update.getErrorString());
+    resetOtaUpdaterAfterFailure();
   } else {
     otaDiagnostics.status = "writing";
   }
 
-  uint8_t buffer[1024];
+  uint8_t buffer[kRawOtaReadBufferBytes];
   size_t remaining = contentLength;
   unsigned long lastProgressMs = millis();
   while (remaining > 0 && otaUploadError.length() == 0) {
-    const size_t want = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
-    const size_t got = client.readBytes(buffer, want);
-    if (got == 0) {
-      if (millis() - lastProgressMs > 10000UL) {
+    const int available = client.available();
+    if (available <= 0) {
+      if (!client.connected()) {
+        setOtaError("raw upload disconnected");
+        resetOtaUpdaterAfterFailure();
+        break;
+      }
+      if (millis() - lastProgressMs > kRawOtaProgressTimeoutMs) {
         setOtaError("raw upload timeout");
+        resetOtaUpdaterAfterFailure();
         break;
       }
       delay(1);
       continue;
     }
+    size_t want = static_cast<size_t>(available);
+    if (want > remaining) {
+      want = remaining;
+    }
+    if (want > sizeof(buffer)) {
+      want = sizeof(buffer);
+    }
+    const int readCount = client.read(buffer, want);
+    if (readCount <= 0) {
+      delay(1);
+      continue;
+    }
+    const size_t got = static_cast<size_t>(readCount);
     lastProgressMs = millis();
     remaining -= got;
     otaDiagnostics.totalSize += got;
     if (Update.write(buffer, got) != got) {
       setOtaError(Update.getErrorString());
+      resetOtaUpdaterAfterFailure();
       break;
     }
     ESP.wdtFeed();
     delay(0);
   }
 
-  if (otaUploadError.length() == 0 && Update.end(true)) {
+  if (otaUploadError.length() == 0 && remaining == 0 && Update.end(false)) {
     otaUploadSucceeded = true;
     otaDiagnostics.status = "succeeded";
     otaDiagnostics.updateError = UPDATE_ERROR_OK;
@@ -2382,13 +2436,19 @@ void handleRawOtaClient() {
     waitStatusRendered = true;
     otaDiagnostics.status = "reboot_scheduled";
     scheduleReboot("firmware_raw");
+    otaUploadNeedsReboot = false;
   } else {
     markBootRecoveryUploadActive(false);
     if (otaUploadError.length() == 0) {
       setOtaError(Update.getErrorString());
+      resetOtaUpdaterAfterFailure();
     }
     otaDiagnostics.failureCount++;
     sendRawOtaResponse(client, 500, "Internal Server Error", "Update failed: " + otaUploadError);
+    if (otaUploadNeedsReboot) {
+      scheduleReboot("firmware_raw_failure");
+    }
+    otaUploadNeedsReboot = false;
   }
   otaUploadInProgress = false;
   client.stop();
