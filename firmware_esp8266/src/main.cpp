@@ -1411,6 +1411,12 @@ void handleHealth() {
   out += String(snapshot.cbaCompletedFrames);
   out += ",\"cbaLastFrameDurationMs\":";
   out += String(snapshot.cbaLastFrameDurationMs);
+  out += ",\"cbaBufferBytes\":";
+  out += String(snapshot.cbaBufferBytes);
+  out += ",\"cbaBufferAllocationFailures\":";
+  out += String(snapshot.cbaBufferAllocationFailures);
+  out += ",\"cbaLastPushDurationUs\":";
+  out += String(snapshot.cbaLastPushDurationUs);
   out += "},\"gif\":{\"activePath\":\"";
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";

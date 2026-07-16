@@ -24,6 +24,9 @@ struct RendererDebugSnapshot {
   bool themeSpecHasAnimatedAssets = false;
   unsigned long cbaCompletedFrames = 0;
   unsigned long cbaLastFrameDurationMs = 0;
+  uint32_t cbaBufferBytes = 0;
+  unsigned long cbaBufferAllocationFailures = 0;
+  unsigned long cbaLastPushDurationUs = 0;
   unsigned long themeSpecPartialSuccesses = 0;
   unsigned long themeSpecPartialFailures = 0;
   uint32_t themeSpecLastPartialChangedFields = 0;
@@ -50,6 +53,9 @@ struct RendererHealthSnapshot {
   unsigned long themeSpecRenderFailures = 0;
   unsigned long cbaCompletedFrames = 0;
   unsigned long cbaLastFrameDurationMs = 0;
+  uint32_t cbaBufferBytes = 0;
+  unsigned long cbaBufferAllocationFailures = 0;
+  unsigned long cbaLastPushDurationUs = 0;
   String gifActivePath;
   bool gifFilePresent = false;
   bool gifDecoderAllocated = false;

@@ -11,6 +11,7 @@
 #include <LittleFS.h>
 
 #include <cstdio>
+#include <new>
 
 #include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "theme_spec_runtime_policy.h"
@@ -33,6 +34,10 @@ bool lastThemeSpecRenderOk = true;
 bool cbaRenderJobInProgress = false;
 unsigned long cbaCompletedFrames = 0;
 unsigned long cbaLastFrameDurationMs = 0;
+uint16_t* cbaFrameBuffer = nullptr;
+uint32_t cbaFrameBufferCapacityPixels = 0;
+unsigned long cbaBufferAllocationFailures = 0;
+unsigned long cbaLastPushDurationUs = 0;
 const char* lastThemeSpecRenderError = "";
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
@@ -62,11 +67,15 @@ struct AnimatedSpriteCache {
   int nextRow = 0;
   uint32_t nextRowOffset = 0;
   bool frameInProgress = false;
+  bool frameReadyToPush = false;
   unsigned long frameStartedAtMs = 0;
   unsigned long nextFrameAtMs = 0;
+  int frameBufferWidth = 0;
+  int frameBufferHeight = 0;
 };
 
 AnimatedSpriteCache animatedSpriteCaches[kAnimatedSpriteCacheSlots];
+AnimatedSpriteCache* cbaFrameBufferOwner = nullptr;
 int nextAnimatedSpriteCacheSlot = 0;
 
 void markThemeSpecRenderOk() {
@@ -107,8 +116,48 @@ uint32_t themeSpecRawHash(const String& raw) {
   return hash == 0 ? 1 : hash;
 }
 
+bool compiledThemeSpecHasCbaAssets(const themespec::CompiledThemeSpec& scene) {
+  auto isCba = [](const char* path) {
+    return themespec::AssetPathLooksAnimated(path) &&
+           !themespec::AssetPathLooksGif(path);
+  };
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    const themespec::CompiledPrimitive& primitive = scene.primitives[i];
+    if (primitive.kind == themespec::PrimitiveKind::Sprite &&
+        (isCba(primitive.assetPath) ||
+         isCba(primitive.idleAssetPath) ||
+         isCba(primitive.codingAssetPath))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 const String& currentThemeSpecRaw();
 void resetAnimatedSpriteCaches();
+
+void releaseCbaFrameBuffer() {
+  delete[] cbaFrameBuffer;
+  cbaFrameBuffer = nullptr;
+  cbaFrameBufferCapacityPixels = 0;
+  cbaFrameBufferOwner = nullptr;
+}
+
+void releaseAnimatedSpriteBuffer(AnimatedSpriteCache& cache) {
+  if (cbaFrameBufferOwner == &cache) {
+    cbaFrameBufferOwner = nullptr;
+  }
+  cache.frameBufferWidth = 0;
+  cache.frameBufferHeight = 0;
+  cache.frameReadyToPush = false;
+}
+
+void cancelAnimatedSpriteFrame(AnimatedSpriteCache& cache) {
+  releaseAnimatedSpriteBuffer(cache);
+  cache.frameInProgress = false;
+  cache.nextRow = 0;
+  cache.nextRowOffset = 0;
+}
 
 void cooperativeYield() {
   if (ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(
@@ -158,6 +207,7 @@ void clearFullRenderRetry() {
 
 void releaseThemeSpecRenderMemory() {
   resetAnimatedSpriteCaches();
+  releaseCbaFrameBuffer();
   GifCore().ReleaseMemory();
   cachedThemeSpecDoc.clear();
   cachedThemeSpecDocHash = 0;
@@ -203,6 +253,9 @@ bool ensureThemeSpecSceneCached(const String& raw) {
   themespec::MoveCompiledThemeSpec(cachedThemeSpecScene, nextScene);
   if (!cachedThemeSpecScene.requiresJsonDocument) {
     cachedThemeSpecDoc.clear();
+  }
+  if (!compiledThemeSpecHasCbaAssets(cachedThemeSpecScene)) {
+    releaseCbaFrameBuffer();
   }
   cachedThemeSpecDocHash = rawHash;
   return true;
@@ -339,6 +392,67 @@ bool drawSpriteRleRow(
   return offset == sourceWidth;
 }
 
+bool decodeSpriteRleRowToBuffer(
+    const String& row,
+    const uint16_t* palette,
+    int paletteSize,
+    int sourceWidth,
+    int sourceRow,
+    int sourceHeight,
+    uint16_t transparentColor,
+    uint16_t* buffer,
+    int bufferWidth,
+    int bufferHeight) {
+  if (buffer == nullptr || sourceWidth <= 0 || sourceHeight <= 0 ||
+      sourceRow < 0 || sourceRow >= sourceHeight ||
+      bufferWidth <= 0 || bufferHeight <= 0) {
+    return false;
+  }
+
+  int sourceOffset = 0;
+  for (size_t i = 0; i < row.length();) {
+    int runLength = 0;
+    bool hasRunLength = false;
+    while (i < row.length() && row[i] >= '0' && row[i] <= '9') {
+      hasRunLength = true;
+      runLength = (runLength * 10) + (row[i] - '0');
+      ++i;
+    }
+    if (!hasRunLength) {
+      runLength = 1;
+    }
+    if (runLength <= 0 || i >= row.length() || sourceOffset + runLength > sourceWidth) {
+      return false;
+    }
+
+    const char token = row[i++];
+    uint16_t color = transparentColor;
+    if (token != '.') {
+      if (token < 'a' || token > 'z') {
+        return false;
+      }
+      const int colorIndex = token - 'a';
+      if (colorIndex >= paletteSize) {
+        return false;
+      }
+      color = palette[colorIndex];
+    }
+
+    const int x1 = (sourceOffset * bufferWidth) / sourceWidth;
+    const int x2 = ((sourceOffset + runLength) * bufferWidth + sourceWidth - 1) / sourceWidth;
+    const int y1 = (sourceRow * bufferHeight) / sourceHeight;
+    const int y2 = ((sourceRow + 1) * bufferHeight + sourceHeight - 1) / sourceHeight;
+    for (int py = y1; py < y2 && py < bufferHeight; ++py) {
+      uint16_t* out = buffer + (py * bufferWidth);
+      for (int px = x1; px < x2 && px < bufferWidth; ++px) {
+        out[px] = color;
+      }
+    }
+    sourceOffset += runLength;
+  }
+  return sourceOffset == sourceWidth;
+}
+
 bool readSpritePalette(File& file, uint16_t* palette, int& paletteSize) {
   String line;
   if (!readSpriteLine(file, line) || !parseSpritePaletteSize(line, paletteSize)) {
@@ -432,6 +546,7 @@ AnimatedSpriteCache* animatedSpriteCacheForPath(const char* assetPath) {
     nextAnimatedSpriteCacheSlot = (nextAnimatedSpriteCacheSlot + 1) % kAnimatedSpriteCacheSlots;
   }
 
+  releaseAnimatedSpriteBuffer(*slot);
   *slot = AnimatedSpriteCache{};
   slot->path = assetPath;
   return slot;
@@ -482,16 +597,107 @@ bool loadAnimatedSpriteCache(File& file, AnimatedSpriteCache& cache) {
   return true;
 }
 
-bool drawAnimatedSpriteAsset(
+bool prepareAnimatedSpriteBuffer(
     AnimatedSpriteCache& cache,
-    File& file,
-    int x,
-    int y,
     int targetWidth,
     int targetHeight,
     bool hasClearColor,
-    uint16_t clearColor,
-    const SpriteClip& clip) {
+    uint16_t clearColor) {
+  const int bufferWidth = targetWidth > 0 ? targetWidth : cache.width;
+  const int bufferHeight = targetHeight > 0 ? targetHeight : cache.height;
+  const uint32_t bufferBytes = ThemeSpecRuntimePolicy::CbaBufferBytes(
+      bufferWidth,
+      bufferHeight);
+  if (!hasClearColor || bufferBytes == 0 ||
+      (cbaFrameBufferOwner != nullptr && cbaFrameBufferOwner != &cache)) {
+    return false;
+  }
+
+  const uint32_t requiredPixels = bufferBytes / sizeof(uint16_t);
+  if (cbaFrameBuffer == nullptr || cbaFrameBufferCapacityPixels < requiredPixels) {
+    uint16_t* replacement = nullptr;
+    if (ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(
+            ESP.getFreeHeap(),
+            ESP.getMaxFreeBlockSize(),
+            bufferBytes)) {
+      replacement = new (std::nothrow) uint16_t[requiredPixels];
+    }
+    if (replacement == nullptr && cbaFrameBuffer != nullptr) {
+      // A larger theme may need the bytes currently held by the reusable
+      // buffer. Release only for this deliberate resize, then re-check the
+      // real allocator state before retrying. There is never a direct-draw
+      // fallback if the guarded allocation still fails.
+      releaseCbaFrameBuffer();
+      if (ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(
+              ESP.getFreeHeap(),
+              ESP.getMaxFreeBlockSize(),
+              bufferBytes)) {
+        replacement = new (std::nothrow) uint16_t[requiredPixels];
+      }
+    }
+    if (replacement == nullptr) {
+      cbaBufferAllocationFailures += 1;
+      return false;
+    }
+    delete[] cbaFrameBuffer;
+    cbaFrameBuffer = replacement;
+    cbaFrameBufferCapacityPixels = requiredPixels;
+  }
+  for (uint32_t i = 0; i < requiredPixels; ++i) {
+    cbaFrameBuffer[i] = clearColor;
+  }
+  cbaFrameBufferOwner = &cache;
+  cache.frameBufferWidth = bufferWidth;
+  cache.frameBufferHeight = bufferHeight;
+  return true;
+}
+
+void pushCompletedAnimatedSpriteFrame(
+    AnimatedSpriteCache& cache,
+    int x,
+    int y) {
+  if (!cache.frameReadyToPush || cbaFrameBuffer == nullptr ||
+      cbaFrameBufferOwner != &cache) {
+    return;
+  }
+  const unsigned long pushStartUs = micros();
+  {
+    DisplayTransaction transaction;
+    const bool previousSwapBytes = Tft().getSwapBytes();
+    Tft().setSwapBytes(true);
+    Tft().pushImage(
+        x,
+        y,
+        cache.frameBufferWidth,
+        cache.frameBufferHeight,
+        cbaFrameBuffer);
+    Tft().setSwapBytes(previousSwapBytes);
+  }
+  cbaLastPushDurationUs = micros() - pushStartUs;
+
+  cache.frameIndex = cache.renderingFrameIndex;
+  if (ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(
+          cache.frameIndex,
+          cache.frameCount,
+          cache.indexedFrameCount)) {
+    cache.frameOffsets[cache.indexedFrameCount] = cache.nextRowOffset;
+    cache.indexedFrameCount += 1;
+  }
+  cache.frameReadyToPush = false;
+  cbaCompletedFrames += 1;
+  cbaLastFrameDurationMs = millis() - cache.frameStartedAtMs;
+  const unsigned long frameDelayMs = ThemeSpecRuntimePolicy::CbaFrameDelayMs(cache.fps);
+  cache.nextFrameAtMs = frameDelayMs > 0 ? cache.frameStartedAtMs + frameDelayMs : 0;
+  releaseAnimatedSpriteBuffer(cache);
+}
+
+bool drawAnimatedSpriteAsset(
+    AnimatedSpriteCache& cache,
+    File& file,
+    int targetWidth,
+    int targetHeight,
+    bool hasClearColor,
+    uint16_t clearColor) {
   if (!cache.valid && !loadAnimatedSpriteCache(file, cache)) {
     return false;
   }
@@ -509,13 +715,23 @@ bool drawAnimatedSpriteAsset(
     }
     cache.nextRow = 0;
     cache.nextRowOffset = cache.frameOffsets[cache.renderingFrameIndex];
+    releaseAnimatedSpriteBuffer(cache);
+    if (!prepareAnimatedSpriteBuffer(
+            cache,
+            targetWidth,
+            targetHeight,
+            hasClearColor,
+            clearColor)) {
+      cache.nextFrameAtMs = millis() + kThemeSpecFullRenderRetryMs;
+      return false;
+    }
     cache.frameInProgress = true;
     cache.frameStartedAtMs = millis();
   }
 
   if (!file.seek(cache.nextRowOffset, SeekSet)) {
     cache.valid = false;
-    cache.frameInProgress = false;
+    cancelAnimatedSpriteFrame(cache);
     return false;
   }
 
@@ -526,22 +742,19 @@ bool drawAnimatedSpriteAsset(
   for (int rowBudget = 0; rowBudget < rowsThisTick; ++rowBudget) {
     const int row = cache.nextRow;
     if (!readSpriteLine(file, line) ||
-        !drawSpriteRleRow(
+        !decodeSpriteRleRowToBuffer(
             line,
             cache.palette,
             cache.paletteSize,
-            x,
-            y,
             cache.width,
             row,
             cache.height,
-            targetWidth,
-            targetHeight,
-            hasClearColor,
             clearColor,
-            clip)) {
+            cbaFrameBuffer,
+            cache.frameBufferWidth,
+            cache.frameBufferHeight)) {
       cache.valid = false;
-      cache.frameInProgress = false;
+      cancelAnimatedSpriteFrame(cache);
       return false;
     }
     cache.nextRow += 1;
@@ -553,19 +766,8 @@ bool drawAnimatedSpriteAsset(
     return true;
   }
 
-  cache.frameIndex = cache.renderingFrameIndex;
   cache.frameInProgress = false;
-  cbaCompletedFrames += 1;
-  cbaLastFrameDurationMs = millis() - cache.frameStartedAtMs;
-  if (ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(
-          cache.frameIndex,
-          cache.frameCount,
-          cache.indexedFrameCount)) {
-    cache.frameOffsets[cache.indexedFrameCount] = cache.nextRowOffset;
-    cache.indexedFrameCount += 1;
-  }
-  const unsigned long frameDelayMs = ThemeSpecRuntimePolicy::CbaFrameDelayMs(cache.fps);
-  cache.nextFrameAtMs = frameDelayMs > 0 ? cache.frameStartedAtMs + frameDelayMs : 0;
+  cache.frameReadyToPush = true;
   return true;
 }
 
@@ -584,6 +786,9 @@ void drawSpriteAsset(
   }
   AnimatedSpriteCache* animatedCache = nullptr;
   if (mode == SpriteRenderMode::AnimatedOnly) {
+    if (clip.active) {
+      return;
+    }
     animatedCache = animatedSpriteCacheForPath(assetPath);
     if (animatedCache == nullptr ||
         !ThemeSpecRuntimePolicy::CbaWorkDue(
@@ -616,18 +821,18 @@ void drawSpriteAsset(
         (void)drawAnimatedSpriteAsset(
             *animatedCache,
             file,
-            x,
-            y,
             targetWidth,
             targetHeight,
             hasClearColor,
-            clearColor,
-            clip);
+            clearColor);
       }
     }
   }
 
   file.close();
+  if (animatedCache != nullptr && animatedCache->frameReadyToPush) {
+    pushCompletedAnimatedSpriteFrame(*animatedCache, x, y);
+  }
   if (animatedCache != nullptr && animatedCache->frameInProgress) {
     cbaRenderJobInProgress = true;
   }
@@ -635,6 +840,7 @@ void drawSpriteAsset(
 
 void resetAnimatedSpriteCaches() {
   cbaRenderJobInProgress = false;
+  cbaFrameBufferOwner = nullptr;
   for (int i = 0; i < kAnimatedSpriteCacheSlots; ++i) {
     animatedSpriteCaches[i] = AnimatedSpriteCache{};
   }
@@ -1005,6 +1211,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
 
 void ResetThemeSpecSpriteCaches() {
   resetAnimatedSpriteCaches();
+  releaseCbaFrameBuffer();
   clearFullRenderRetry();
   lastSuccessfulThemeSpecId = "";
   lastSuccessfulThemeSpecRev = 0;
@@ -1047,6 +1254,9 @@ ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot() {
   stats.hasAnimatedAssets = cachedThemeSpecScene.hasAnimatedAssets;
   stats.cbaCompletedFrames = cbaCompletedFrames;
   stats.cbaLastFrameDurationMs = cbaLastFrameDurationMs;
+  stats.cbaBufferBytes = cbaFrameBufferCapacityPixels * sizeof(uint16_t);
+  stats.cbaBufferAllocationFailures = cbaBufferAllocationFailures;
+  stats.cbaLastPushDurationUs = cbaLastPushDurationUs;
   stats.partialSuccesses = themeSpecPartialSuccesses;
   stats.partialFailures = themeSpecPartialFailures;
   stats.lastPartialChangedFields = lastPartialChangedFields;

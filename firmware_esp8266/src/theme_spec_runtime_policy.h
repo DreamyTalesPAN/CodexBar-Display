@@ -10,10 +10,14 @@ namespace esp8266 {
 class ThemeSpecRuntimePolicy {
  public:
   static constexpr int kCbaRowsPerTick = 4;
+  static constexpr int kMaxCbaBufferWidth = 80;
+  static constexpr int kMaxCbaBufferHeight = 80;
   static constexpr uint32_t kMinRenderFreeHeapBytes = 6144UL;
   static constexpr uint32_t kMinRenderMaxFreeBlockBytes = 2048UL;
   static constexpr uint32_t kMinAnimationFreeHeapBytes = 8192UL;
   static constexpr uint32_t kMinAnimationMaxFreeBlockBytes = 3072UL;
+  static constexpr uint32_t kCbaBufferHeapReserveBytes =
+      kMinAnimationFreeHeapBytes + 4096UL;
 
   static bool CanRender(uint32_t freeHeapBytes, uint32_t maxFreeBlockBytes) {
     return freeHeapBytes >= kMinRenderFreeHeapBytes &&
@@ -78,6 +82,23 @@ class ThemeSpecRuntimePolicy {
 
   static unsigned long CbaFrameDelayMs(int fps) {
     return fps > 0 ? (1000UL / static_cast<unsigned long>(fps)) : 0;
+  }
+
+  static uint32_t CbaBufferBytes(int width, int height) {
+    if (width <= 0 || height <= 0 ||
+        width > kMaxCbaBufferWidth || height > kMaxCbaBufferHeight) {
+      return 0;
+    }
+    return static_cast<uint32_t>(width) * static_cast<uint32_t>(height) * 2UL;
+  }
+
+  static bool CanAllocateCbaBuffer(
+      uint32_t freeHeapBytes,
+      uint32_t maxFreeBlockBytes,
+      uint32_t bufferBytes) {
+    return bufferBytes > 0 &&
+           freeHeapBytes >= bufferBytes + kCbaBufferHeapReserveBytes &&
+           maxFreeBlockBytes >= bufferBytes;
   }
 
   static bool CanYieldAtDisplayTransactionDepth(uint16_t transactionDepth) {

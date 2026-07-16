@@ -174,6 +174,9 @@ struct ThemeSpecRuntimeStats {
   bool hasAnimatedAssets = false;
   unsigned long cbaCompletedFrames = 0;
   unsigned long cbaLastFrameDurationMs = 0;
+  uint32_t cbaBufferBytes = 0;
+  unsigned long cbaBufferAllocationFailures = 0;
+  unsigned long cbaLastPushDurationUs = 0;
   unsigned long partialSuccesses = 0;
   unsigned long partialFailures = 0;
   uint32_t lastPartialChangedFields = 0;

@@ -250,6 +250,22 @@ bool testEsp8266CbaCooperativeAnimationPolicy() {
           "CBA frame delay must follow the asset fps")) {
     return false;
   }
+  if (!expect(
+          ThemeSpecRuntimePolicy::CbaBufferBytes(74, 74) == 10952 &&
+              ThemeSpecRuntimePolicy::CbaBufferBytes(77, 77) == 11858 &&
+              ThemeSpecRuntimePolicy::CbaBufferBytes(80, 80) == 12800 &&
+              ThemeSpecRuntimePolicy::CbaBufferBytes(81, 1) == 0,
+          "CBA buffer policy must cover Clippy and Claude within an 80x80 hard limit")) {
+    return false;
+  }
+  const uint32_t clippyBytes = ThemeSpecRuntimePolicy::CbaBufferBytes(74, 74);
+  if (!expect(
+          ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(24000, 12000, clippyBytes) &&
+              !ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(23000, 12000, clippyBytes) &&
+              !ThemeSpecRuntimePolicy::CanAllocateCbaBuffer(30000, 10000, clippyBytes),
+          "CBA allocation must preserve heap reserve and require one contiguous block")) {
+    return false;
+  }
   return expect(
       ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(0) &&
           !ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(1) &&
@@ -281,17 +297,18 @@ bool testRendererUsesResumableCbaAnimation(
   const std::string drawFunction = renderer.substr(drawStart, drawEnd - drawStart);
   if (!expect(
           drawFunction.find("CbaRowsForTick") != std::string::npos &&
+              drawFunction.find("decodeSpriteRleRowToBuffer") != std::string::npos &&
+              drawFunction.find("drawSpriteRleRow") == std::string::npos &&
               drawFunction.find("cache.nextRowOffset") != std::string::npos &&
-              drawFunction.find("cache.frameInProgress") != std::string::npos &&
-              drawFunction.find("ShouldIndexNextAnimatedFrame") != std::string::npos &&
-              drawFunction.find("cache.indexedFrameCount += 1") != std::string::npos,
-          "ESP8266 CBA frames must resume by row and index one successor at completion")) {
+              drawFunction.find("cache.frameInProgress") != std::string::npos,
+          "ESP8266 CBA frames must resume by row into the offscreen buffer")) {
     return false;
   }
   const std::string spriteFunction = renderer.substr(drawEnd, renderer.find("void resetAnimatedSpriteCaches", drawEnd) - drawEnd);
   if (!expect(
-          spriteFunction.find("CbaWorkDue") != std::string::npos,
-          "CBA dispatch must resume active jobs and respect completed-frame deadlines")) {
+          spriteFunction.find("CbaWorkDue") != std::string::npos &&
+              spriteFunction.find("file.close()") < spriteFunction.find("pushCompletedAnimatedSpriteFrame"),
+          "CBA dispatch must close storage before its single completed-frame push")) {
     return false;
   }
   if (!expect(
@@ -313,6 +330,40 @@ bool testRendererUsesResumableCbaAnimation(
   if (!expect(
           renderer.find("CanYieldAtDisplayTransactionDepth") != std::string::npos,
           "all explicit theme-renderer yields must be guarded by transaction depth")) {
+    return false;
+  }
+  const std::size_t pushImage = renderer.find("Tft().pushImage(");
+  const std::size_t pushFunction = renderer.rfind("void pushCompletedAnimatedSpriteFrame(", pushImage);
+  if (!expect(
+          renderer.find("TFT_eSprite") == std::string::npos &&
+              pushImage != std::string::npos &&
+              renderer.find("Tft().pushImage(", pushImage + 1) == std::string::npos &&
+              renderer.find("new (std::nothrow) uint16_t") != std::string::npos &&
+              renderer.find("CanAllocateCbaBuffer") != std::string::npos,
+          "CBA must use one guarded raw RGB565 buffer and exactly one atomic push path")) {
+    return false;
+  }
+  if (!expect(
+          pushFunction != std::string::npos &&
+              renderer.find("ShouldIndexNextAnimatedFrame", pushImage) != std::string::npos &&
+              renderer.find("cache.indexedFrameCount += 1", pushImage) != std::string::npos,
+          "the next lazy CBA offset must be committed only after the completed frame push")) {
+    return false;
+  }
+  if (!expect(
+          renderer.find("const bool previousSwapBytes = Tft().getSwapBytes()") != std::string::npos &&
+              renderer.find("Tft().setSwapBytes(true)", pushImage - 256) < pushImage &&
+              renderer.find("Tft().setSwapBytes(previousSwapBytes)", pushImage) > pushImage,
+          "raw RGB565 pushes must enable byte swapping and restore the previous TFT state")) {
+    return false;
+  }
+  const std::size_t resetEnd = renderer.find("class ThemeSpecSink");
+  const std::size_t resetStart = renderer.rfind("void resetAnimatedSpriteCaches(", resetEnd);
+  if (!expect(
+          resetStart != std::string::npos && resetEnd != std::string::npos &&
+              renderer.substr(resetStart, resetEnd - resetStart).find("cbaFrameBufferOwner = nullptr") != std::string::npos &&
+              renderer.substr(resetStart, resetEnd - resetStart).find("releaseCbaFrameBuffer") == std::string::npos,
+          "activity/cache reset must clear the owner while retaining singleton capacity")) {
     return false;
   }
   return expect(
