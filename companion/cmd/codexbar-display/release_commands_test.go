@@ -22,6 +22,56 @@ import (
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
+type recordingWriter struct {
+	writes [][]byte
+}
+
+func (w *recordingWriter) Write(p []byte) (int, error) {
+	w.writes = append(w.writes, append([]byte(nil), p...))
+	return len(p), nil
+}
+
+func TestRawFirmwareBodyWriterSegmentsBody(t *testing.T) {
+	destination := &recordingWriter{}
+	writer := &rawFirmwareBodyWriter{destination: destination}
+	body := bytes.Repeat([]byte{0xa5}, 130)
+
+	if _, err := writer.Write(body); err != nil {
+		t.Fatalf("write body: %v", err)
+	}
+	if len(destination.writes) != 3 {
+		t.Fatalf("expected three body writes, got %d", len(destination.writes))
+	}
+	for i, write := range destination.writes {
+		if len(write) > otaRawWriteChunkBytes {
+			t.Fatalf("body write %d has %d bytes, want at most %d", i, len(write), otaRawWriteChunkBytes)
+		}
+	}
+	if got := bytes.Join(destination.writes, nil); !bytes.Equal(got, body) {
+		t.Fatal("segmented body does not match input")
+	}
+}
+
+func TestRawFirmwareBodyWriterWaitsForBodyBlockAcks(t *testing.T) {
+	destination := &recordingWriter{}
+	ackCalls := 0
+	writer := &rawFirmwareBodyWriter{
+		destination: destination,
+		waitForAck: func() error {
+			ackCalls++
+			return nil
+		},
+	}
+	body := bytes.Repeat([]byte{0x5a}, 2*otaRawAckBlockBytes+1)
+
+	if _, err := writer.Write(body); err != nil {
+		t.Fatalf("write body: %v", err)
+	}
+	if ackCalls != 2 {
+		t.Fatalf("expected two body-block acks, got %d", ackCalls)
+	}
+}
+
 func TestReleaseStateRoundTrip(t *testing.T) {
 	home := t.TempDir()
 	state := releaseState{

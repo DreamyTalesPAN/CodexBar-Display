@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,6 +28,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -41,6 +44,12 @@ const (
 	githubDownloadBaseURL     = "https://github.com"
 	vibeTVFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 	otaUploadBytesPerSecond   = 32 * 1024
+	otaRawWriteChunkBytes     = 64
+	otaRawWritePause          = 10 * time.Millisecond
+	otaRawWriteBufferBytes    = 2 * 1024
+	otaRawAckBlockBytes       = 1024
+	otaRawAckTimeout          = 30 * time.Second
+	otaRawHeaderPause         = 250 * time.Millisecond
 )
 
 var (
@@ -59,6 +68,7 @@ var (
 	discoverWiFiDeviceFn                               = transportlayer.DiscoverWiFiDevice
 	flashReleaseFirmwareImageFn                        = flashReleaseFirmwareImage
 	uploadFirmwareOTAFn                                = uploadFirmwareOTA
+	firmwareRawDialContextFn                           = dialFirmwareRawConnection
 	firmwareHTTPVerifyPollInterval                     = 2 * time.Second
 	firmwareUpdateRediscoveryAfter                     = 10 * time.Second
 	firmwareUpdateRediscoveryInterval                  = 5 * time.Second
@@ -1421,7 +1431,7 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) er
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, newRateLimitedReader(file, otaUploadBytesPerSecond))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, file)
 	if err != nil {
 		return err
 	}
@@ -1429,7 +1439,64 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) er
 	req.Header.Set("User-Agent", "codexbar-display-update")
 	applyFirmwareUpdateToken(req, token)
 	req.ContentLength = info.Size()
-	resp, err := releaseHTTPClient.Do(req)
+	req.Close = true
+	if strings.ContainsAny(strings.TrimSpace(token), "\r\n") {
+		return errors.New("firmware update token contains an invalid newline")
+	}
+
+	parsedEndpoint, err := url.Parse(endpoint)
+	if err != nil {
+		return err
+	}
+	if parsedEndpoint.Scheme != "http" {
+		return fmt.Errorf("raw firmware upload requires http, got %q", parsedEndpoint.Scheme)
+	}
+	address := parsedEndpoint.Host
+	if _, _, err := net.SplitHostPort(address); err != nil {
+		address = net.JoinHostPort(parsedEndpoint.Hostname(), "8081")
+	}
+	conn, err := firmwareRawDialContextFn(ctx, "tcp", address)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		_ = tcpConn.SetNoDelay(true)
+	}
+	deadline := time.Now().Add(5 * time.Minute)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	_ = conn.SetDeadline(deadline)
+
+	waitForAck := func() error {
+		return waitForFirmwareRawAck(ctx, conn, otaRawAckTimeout)
+	}
+	header := fmt.Sprintf(
+		"POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\nUser-Agent: codexbar-display-update\r\nConnection: close\r\n",
+		parsedEndpoint.RequestURI(),
+		parsedEndpoint.Host,
+		info.Size(),
+	)
+	if normalizedToken := strings.TrimSpace(token); normalizedToken != "" {
+		header += "X-VibeTV-Token: " + normalizedToken + "\r\n"
+	}
+	header += "\r\n"
+	if err := writeAll(conn, []byte(header)); err != nil {
+		return err
+	}
+	if err := waitForAck(); err != nil {
+		return err
+	}
+	time.Sleep(otaRawHeaderPause)
+	bodyWriter := &rawFirmwareBodyWriter{destination: conn, waitForAck: waitForAck}
+	if _, err := io.Copy(bodyWriter, file); err != nil {
+		return err
+	}
+	if err := waitForAck(); err != nil {
+		return err
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
 	if err != nil {
 		return err
 	}
@@ -1437,6 +1504,58 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) er
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("POST /update/firmware.raw returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+// rawFirmwareBodyWriter deliberately writes the firmware body in tiny TCP
+// writes. ESP8266 firmware 1.0.36 can stop draining its receive queue when a
+// desktop sender fills the TCP window with normal multi-kilobyte writes. Small
+// paced writes avoid exhausting that queue.
+type rawFirmwareBodyWriter struct {
+	destination   io.Writer
+	waitForAck    func() error
+	bytesSinceAck int
+}
+
+func (w *rawFirmwareBodyWriter) Write(p []byte) (int, error) {
+	originalLength := len(p)
+	for len(p) > 0 {
+		chunkSize := otaRawWriteChunkBytes
+		if len(p) < chunkSize {
+			chunkSize = len(p)
+		}
+		if remainingInBlock := otaRawAckBlockBytes - w.bytesSinceAck; chunkSize > remainingInBlock {
+			chunkSize = remainingInBlock
+		}
+		if err := writeAll(w.destination, p[:chunkSize]); err != nil {
+			return originalLength - len(p), err
+		}
+		w.bytesSinceAck += chunkSize
+		p = p[chunkSize:]
+		time.Sleep(otaRawWritePause)
+		if w.bytesSinceAck == otaRawAckBlockBytes {
+			if w.waitForAck != nil {
+				if err := w.waitForAck(); err != nil {
+					return originalLength - len(p), err
+				}
+			}
+			w.bytesSinceAck = 0
+		}
+	}
+	return originalLength, nil
+}
+
+func writeAll(w io.Writer, p []byte) error {
+	for len(p) > 0 {
+		written, err := w.Write(p)
+		if err != nil {
+			return err
+		}
+		if written <= 0 {
+			return io.ErrShortWrite
+		}
+		p = p[written:]
 	}
 	return nil
 }
@@ -1734,7 +1853,15 @@ func ensureSerialPortNotBusy(port string) error {
 
 func stopLaunchAgentBestEffort() {
 	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	service := domain + "/com.codexbar-display.daemon"
+	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+	service := domain + "/" + label
+	if label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
+		// Bundled Control Center runtimes are registered through SMAppService (or
+		// the preview app) and must remain registered. Suspend the writer process
+		// while its child updater owns the VibeTV connection.
+		_, _ = exec.Command("launchctl", "kill", "SIGSTOP", service).CombinedOutput()
+		return
+	}
 	bootoutLaunchAgentBestEffort(domain, service, "")
 }
 
@@ -1949,6 +2076,21 @@ func copyRegularFileAtomic(sourcePath, targetPath string, mode os.FileMode) erro
 }
 
 func restartLaunchAgent(home string) error {
+	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+	if label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
+		domain := fmt.Sprintf("gui/%d", os.Getuid())
+		service := domain + "/" + label
+		resumeOut, resumeErr := exec.Command("launchctl", "kill", "SIGCONT", service).CombinedOutput()
+		if resumeErr == nil {
+			return nil
+		}
+		kickOut, kickErr := exec.Command("launchctl", "kickstart", "-k", service).CombinedOutput()
+		if kickErr != nil {
+			return fmt.Errorf("resume runtime: %w (%s); kickstart: %v (%s)", resumeErr, strings.TrimSpace(string(resumeOut)), kickErr, strings.TrimSpace(string(kickOut)))
+		}
+		return nil
+	}
+
 	plist := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel)
 	if !fileExists(plist) {
 		return nil
