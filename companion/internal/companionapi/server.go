@@ -431,20 +431,21 @@ type firmwareUpdateResult struct {
 }
 
 type firmwareUpdateJob struct {
-	ID         string                `json:"id"`
-	Phase      string                `json:"phase"`
-	Stage      string                `json:"stage"`
-	Outcome    string                `json:"outcome,omitempty"`
-	Message    string                `json:"message"`
-	Progress   int                   `json:"progress"`
-	StartedAt  time.Time             `json:"startedAt"`
-	FinishedAt *time.Time            `json:"finishedAt,omitempty"`
-	Logs       []string              `json:"logs,omitempty"`
-	Result     *firmwareUpdateResult `json:"result,omitempty"`
-	Warnings   []string              `json:"warnings,omitempty"`
-	Error      *apiError             `json:"error,omitempty"`
-	target     string
-	firmware   string
+	ID          string                `json:"id"`
+	Phase       string                `json:"phase"`
+	Stage       string                `json:"stage"`
+	Outcome     string                `json:"outcome,omitempty"`
+	RetryPolicy string                `json:"retryPolicy,omitempty"`
+	Message     string                `json:"message"`
+	Progress    int                   `json:"progress"`
+	StartedAt   time.Time             `json:"startedAt"`
+	FinishedAt  *time.Time            `json:"finishedAt,omitempty"`
+	Logs        []string              `json:"logs,omitempty"`
+	Result      *firmwareUpdateResult `json:"result,omitempty"`
+	Warnings    []string              `json:"warnings,omitempty"`
+	Error       *apiError             `json:"error,omitempty"`
+	target      string
+	firmware    string
 }
 
 type firmwareUpdateJobResponse struct {
@@ -3692,7 +3693,7 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 			if detail := sanitizeErrorDetail(err); detail != "" {
 				_, _ = fmt.Fprintf(os.Stderr, "VibeTV firmware update failed: %s\n", detail)
 			}
-			apiErr := firmwareUpdateErrorPayload(err)
+			apiErr := firmwareUpdateErrorPayload(err, snapshot.RetryPolicy)
 			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
 				job.Phase = "error"
 				job.Message = "Update failed."
@@ -3931,6 +3932,9 @@ func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEven
 		}
 		if outcome := strings.TrimSpace(event.Outcome); outcome != "" {
 			job.Outcome = outcome
+		}
+		if retryPolicy := strings.TrimSpace(event.RetryPolicy); retryPolicy != "" {
+			job.RetryPolicy = retryPolicy
 		}
 		if job.Result == nil {
 			job.Result = &firmwareUpdateResult{}
@@ -4285,12 +4289,19 @@ func normalizeMacAppUpdateVersion(raw string) (string, bool) {
 	return version, true
 }
 
-func firmwareUpdateErrorPayload(err error) apiError {
+func firmwareUpdateErrorPayload(err error, retryPolicy string) apiError {
 	if errcode.Of(err) == errcode.UpgradeVersionGuard {
 		return apiError{
 			Code:       "firmware_update_blocked",
 			Message:    "Update cannot be installed on this VibeTV.",
 			NextAction: "Create a support report.",
+		}
+	}
+	if strings.TrimSpace(retryPolicy) == "power_cycle" {
+		return apiError{
+			Code:       "firmware_update_restart_required",
+			Message:    "VibeTV must restart before another update attempt.",
+			NextAction: "Disconnect VibeTV from power for 10 seconds, reconnect it, and wait until the picture returns before trying again.",
 		}
 	}
 	return apiError{

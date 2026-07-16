@@ -22,6 +22,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
@@ -5378,6 +5379,45 @@ func TestFirmwareUpdateAsyncReportsCustomerError(t *testing.T) {
 	joinedLogs := strings.Join(got.Job.Logs, "\n")
 	if strings.Contains(joinedLogs, "pair-token") || strings.Contains(got.Job.Error.Message, "pair-token") {
 		t.Fatalf("update error leaked token: job=%+v logs=%q", got.Job, joinedLogs)
+	}
+}
+
+func TestFirmwareUpdateAsyncRequiresPowerCycleAfterUnsafeUpload(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		event, err := json.Marshal(firmwareUpdateEvent{Stage: "uploading", RetryPolicy: "power_cycle"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = fmt.Fprintf(out, "%s%s\n", firmwareupdate.EventPrefix, event)
+		return errors.New("exit status 1")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 50; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Error == nil || job.Error.Code != "firmware_update_restart_required" {
+		t.Fatalf("unsafe upload must require a power cycle: %+v", job)
+	}
+	if job.RetryPolicy != "power_cycle" || !strings.Contains(job.Error.NextAction, "Disconnect VibeTV from power") {
+		t.Fatalf("missing typed power-cycle recovery: %+v", job)
 	}
 }
 

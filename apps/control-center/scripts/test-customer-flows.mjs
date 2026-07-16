@@ -416,6 +416,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testFirmwarePowerCycleErrorDoesNotOfferSecondFlash(
+      browser,
+      appContext.appUrl,
+    );
     await testSupportReportExportsAppearAfterReportLoads(
       browser,
       appContext.appUrl,
@@ -2697,6 +2701,52 @@ async function testFirmwareAttentionDoesNotOfferSecondFlash(browser, appUrl) {
   assert(
     (await page.getByRole("button", { name: "Try again" }).count()) === 0,
     "Attention after a verified firmware install must not offer a second flash",
+  );
+  await page.getByRole("button", { name: "Create report" }).waitFor({
+    timeout: 10_000,
+  });
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testFirmwarePowerCycleErrorDoesNotOfferSecondFlash(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.99",
+    updateStatusSequence: [
+      {
+        phase: "error",
+        stage: "uploading",
+        retryPolicy: "power_cycle",
+        message: "Update failed.",
+        progress: 100,
+        logs: ["Updating VibeTV.", "Update failed."],
+        error: {
+          code: "firmware_update_restart_required",
+          message: "VibeTV must restart before another update attempt.",
+          nextAction:
+            "Disconnect VibeTV from power for 10 seconds, reconnect it, and wait until the picture returns before trying again.",
+        },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page.getByRole("button", { name: "Update", exact: true }).click();
+  await page.getByText("Update failed", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByText("Disconnect VibeTV from power", { exact: false }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByRole("button", { name: "Try again" }).count()) === 0,
+    "Unsafe firmware failure must not offer a same-boot retry",
   );
   await page.getByRole("button", { name: "Create report" }).waitFor({
     timeout: 10_000,

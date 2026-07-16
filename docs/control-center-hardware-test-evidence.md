@@ -290,3 +290,34 @@ Conclusion:
 - No USB data connection was used for the upgrade itself; USB was used only to
   recreate the source firmware between runs.
 - No merge, tag, release, Main push, or production deployment was performed.
+
+## 2026-07-16 post-review retry-safety validation
+
+After the typed `power_cycle` recovery and UI retry lock were added, one
+additional user-approved hardware migration was run on device `14799300`:
+
+- public source firmware: `1.0.36`, raw SHA-256
+  `d78580503a871bd58f947570e3eeee178487b62566b36eebb84833a2d3dc6b93`;
+- target firmware: `1.0.37`, SHA-256
+  `7b2b297829d5b2551ead94cdea6450f0fac053b1d05ab57288a4393c2b6302a5`;
+- Control Center API job: `firmware-update-1784232337381943000-1`;
+- result: upload accepted, firmware identity verified, device identity
+  `14799300` verified, and health verified;
+- target boot ID: `e1d1c4-43-5c294cb6`, reset reason
+  `Software/System restart`;
+- `/themes/mini/mini.gif` remained `20870` bytes and
+  `/themes/u/mini-cl-1-410a37.json` remained `642` bytes;
+- the runtime log recorded `device-writes-paused` before the upload,
+  `device-writes-resumed` after it, and a fresh frame after resume.
+
+The API outcome was `firmware_current_stream_attention` only because the final
+test process was run directly and therefore had no loaded LaunchAgent service
+to inspect. Firmware, identity, health, assets, and the resumed frame all
+passed.
+
+A locally built app was also installed in `/Applications`; its LaunchAgent
+registered and served the expected `1.0.47` runtime from the bundled helper.
+This Mac has no Developer ID signing identity. macOS consequently denied local
+network access to the ad-hoc LaunchAgent, while direct access from the Mac
+continued to work. This does not count as the signed/notarized customer-app
+gate; that gate requires the final Developer-ID-signed build.

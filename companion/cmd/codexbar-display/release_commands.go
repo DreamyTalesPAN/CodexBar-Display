@@ -54,6 +54,7 @@ const (
 
 var (
 	errFirmwareUploadRestartRequired                   = errors.New("VibeTV must restart before another firmware upload")
+	errFirmwareUploadMayHaveWritten                    = errors.New("firmware upload may have written data")
 	upgradeStopLaunchAgentFn                           = stopLaunchAgentBestEffort
 	upgradeRestartLaunchAgentFn                        = restartLaunchAgent
 	rollbackRestartLaunchAgentFn                       = restartLaunchAgent
@@ -596,6 +597,13 @@ func runInstallUpdate(args []string) (retErr error) {
 			refreshedToken, pairErr := ensureFirmwareUpdateDeviceToken(ctx, home, base, true)
 			if pairErr == nil {
 				uploadErr = uploadFirmwareOTAFn(ctx, base, imagePath, refreshedToken)
+				uploadErr = recoverInterruptedFirmwareUpload(
+					ctx,
+					base,
+					targetVersion,
+					deviceID,
+					uploadErr,
+				)
 			} else {
 				uploadErr = fmt.Errorf("%w; repair pairing failed: %v", uploadErr, pairErr)
 			}
@@ -604,6 +612,13 @@ func runInstallUpdate(args []string) (retErr error) {
 			hint := "keep VibeTV powered and on the same WiFi, then retry"
 			if errors.Is(uploadErr, errFirmwareUploadRestartRequired) {
 				hint = "disconnect VibeTV from power for 10 seconds, reconnect it, wait until the picture returns, then retry once"
+				emitFirmwareUpdateEvent(firmwareUpdateEvent{
+					Stage:       "uploading",
+					RetryPolicy: "power_cycle",
+					Firmware:    targetVersion,
+					Target:      base,
+					DeviceID:    deviceID,
+				})
 			}
 			return &commandError{
 				Op:   "ota-upload",
@@ -1358,12 +1373,16 @@ func uploadFirmwareOTAMultipart(ctx context.Context, base, imagePath, token stri
 	req.ContentLength = int64(body.Len())
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("POST /update/firmware returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+		err := fmt.Errorf("POST /update/firmware returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return err
+		}
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
 	return nil
 }
@@ -1410,11 +1429,18 @@ func firmwareUploadConnectionInterrupted(err error) bool {
 	if err == nil {
 		return false
 	}
+	if errors.Is(err, errFirmwareUploadMayHaveWritten) || errors.Is(err, io.EOF) {
+		return true
+	}
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "use of closed network connection") ||
 		strings.Contains(message, "connection reset by peer") ||
 		strings.Contains(message, "broken pipe") ||
-		strings.Contains(message, "unexpected eof")
+		strings.Contains(message, "unexpected eof") ||
+		strings.Contains(message, "timed out waiting for vibetv to acknowledge firmware data") ||
+		strings.Contains(message, "i/o timeout") ||
+		strings.Contains(message, "operation timed out") ||
+		strings.Contains(message, "update failed: no error")
 }
 
 func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) error {
@@ -1487,24 +1513,28 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) er
 		return err
 	}
 	if err := waitForAck(); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
 	time.Sleep(otaRawHeaderPause)
 	bodyWriter := &rawFirmwareBodyWriter{destination: conn, waitForAck: waitForAck}
 	if _, err := io.Copy(bodyWriter, file); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
 	if err := waitForAck(); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
 	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("POST /update/firmware.raw returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+		err := fmt.Errorf("POST /update/firmware.raw returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return err
+		}
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
 	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1038,15 +1039,23 @@ func TestRecoverInterruptedFirmwareUploadRequiresRestartAfterOldVersionReturns(t
 	defer server.Close()
 	releaseHTTPClient = server.Client()
 
-	err := recoverInterruptedFirmwareUpload(
-		context.Background(),
-		server.URL,
-		"1.0.37",
-		"device-a",
+	unsafeErrors := []error{
 		errors.New("write tcp: use of closed network connection"),
-	)
-	if !errors.Is(err, errFirmwareUploadRestartRequired) {
-		t.Fatalf("expected restart-required error, got %v", err)
+		errors.New("timed out waiting for VibeTV to acknowledge firmware data (1024 bytes pending)"),
+		errors.New("POST /update/firmware.raw returned 500 body=\"Update failed: No Error\""),
+		io.EOF,
+	}
+	for _, uploadErr := range unsafeErrors {
+		err := recoverInterruptedFirmwareUpload(
+			context.Background(),
+			server.URL,
+			"1.0.37",
+			"device-a",
+			uploadErr,
+		)
+		if !errors.Is(err, errFirmwareUploadRestartRequired) {
+			t.Fatalf("expected restart-required error for %v, got %v", uploadErr, err)
+		}
 	}
 	if multipartCalls != 0 {
 		t.Fatalf("must not retry multipart in the same boot, got %d calls", multipartCalls)
@@ -1101,6 +1110,21 @@ func TestRawFirmwareUploadUnavailableDoesNotTreatTimeoutAsSafeFallback(t *testin
 	}
 	if !rawFirmwareUploadUnavailable(errors.New("connect: connection refused")) {
 		t.Fatal("connection refusal before an upload should allow the legacy endpoint fallback")
+	}
+}
+
+func TestFirmwareUploadConnectionInterruptedRequiresRecoveryForUnsafeErrors(t *testing.T) {
+	tests := []error{
+		errors.New("timed out waiting for VibeTV to acknowledge firmware data (1024 bytes pending)"),
+		errors.New("write tcp: i/o timeout"),
+		errors.New("POST /update/firmware.raw returned 500 body=\"Update failed: No Error\""),
+		io.EOF,
+		fmt.Errorf("%w: response disappeared", errFirmwareUploadMayHaveWritten),
+	}
+	for _, err := range tests {
+		if !firmwareUploadConnectionInterrupted(err) {
+			t.Fatalf("unsafe upload error was treated as retryable: %v", err)
+		}
 	}
 }
 

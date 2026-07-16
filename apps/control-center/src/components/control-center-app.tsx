@@ -109,6 +109,7 @@ type FirmwareUpdateJob = {
   phase: "installing" | "complete" | "attention" | "error";
   stage?: string;
   outcome?: string;
+  retryPolicy?: "power_cycle";
   message?: string;
   progress?: number;
   startedAt?: string;
@@ -122,6 +123,7 @@ type FirmwareUpdateStatus = {
   phase: "installing" | "complete" | "attention" | "error";
   stage?: string;
   outcome?: string;
+  retryAllowed?: boolean;
   startedAt: string;
   finishedAt?: string;
   message?: string;
@@ -1652,6 +1654,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         phase,
         stage: job.stage,
         outcome: job.outcome,
+        retryAllowed: job.retryPolicy !== "power_cycle",
         startedAt,
         finishedAt:
           phase === "complete" || phase === "attention" || phase === "error"
@@ -1806,6 +1809,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         progress: 100,
         logs: [...initialLogs, normalized.message, normalized.nextAction],
         error: normalized.nextAction,
+        retryAllowed: normalized.code !== "firmware_update_restart_required",
       });
       addEvent({
         label: "VibeTV update failed",
