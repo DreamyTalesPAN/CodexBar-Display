@@ -3,6 +3,7 @@ package runtimeconfig
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -69,5 +70,81 @@ func TestClearDevicesRemovesActiveAndKnownProfiles(t *testing.T) {
 
 	if cfg.DeviceID != "" || cfg.DeviceTarget != "" || cfg.DeviceToken != "" || len(cfg.KnownDevices) != 0 {
 		t.Fatalf("expected a complete device reset, got %+v", cfg)
+	}
+}
+
+func TestRecoverPendingDeviceSelectionRestoresLastCommittedConfig(t *testing.T) {
+	home := t.TempDir()
+	previous := Config{
+		Theme:        "mini",
+		DeviceID:     "device-a",
+		DeviceTarget: "http://192.0.2.1",
+		DeviceToken:  "token-a",
+	}
+	previous.Normalize()
+	if err := Save(home, previous); err != nil {
+		t.Fatal(err)
+	}
+	if err := BeginDeviceSelection(home, previous); err != nil {
+		t.Fatal(err)
+	}
+	staged := previous
+	staged.SetActiveDevice(KnownDevice{
+		DeviceID:    "device-b",
+		Target:      "http://192.0.2.2",
+		DeviceToken: "token-b",
+	})
+	if err := Save(home, staged); err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := RecoverPendingDeviceSelection(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !recovered {
+		t.Fatal("expected pending device selection recovery")
+	}
+	got, err := Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, previous) {
+		t.Fatalf("unexpected recovered config: got=%+v want=%+v", got, previous)
+	}
+	if _, err := os.Stat(deviceSelectionJournalPath(home)); !os.IsNotExist(err) {
+		t.Fatalf("selection journal still exists after recovery: %v", err)
+	}
+}
+
+func TestCommittedDeviceSelectionDoesNotRollBack(t *testing.T) {
+	home := t.TempDir()
+	previous := Config{DeviceID: "device-a", DeviceTarget: "http://192.0.2.1", DeviceToken: "token-a"}
+	previous.Normalize()
+	if err := BeginDeviceSelection(home, previous); err != nil {
+		t.Fatal(err)
+	}
+	selected := previous
+	selected.SetActiveDevice(KnownDevice{DeviceID: "device-b", Target: "http://192.0.2.2", DeviceToken: "token-b"})
+	if err := Save(home, selected); err != nil {
+		t.Fatal(err)
+	}
+	if err := CommitDeviceSelection(home); err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := RecoverPendingDeviceSelection(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered {
+		t.Fatal("committed selection must not be recovered")
+	}
+	got, err := Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, selected) {
+		t.Fatalf("committed config changed: got=%+v want=%+v", got, selected)
 	}
 }

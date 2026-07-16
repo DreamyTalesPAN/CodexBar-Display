@@ -595,6 +595,137 @@ func TestDeviceSelectFailureRestoresPreviousActiveDevice(t *testing.T) {
 	}
 }
 
+func TestDeviceSelectKeepsPreviousConfigVisibleUntilCandidateIsReady(t *testing.T) {
+	const deviceID = "device-b"
+	device := newSelectableDeviceServer(t, deviceID)
+	defer device.Close()
+
+	initial := runtimeconfig.Config{DeviceID: "device-a", DeviceTarget: "http://192.0.2.1", DeviceToken: "token-a"}
+	initial.Normalize()
+	server := newTestServer(t, initial)
+	streamStarted := make(chan struct{})
+	releaseStream := make(chan struct{})
+	server.refreshStream = func(_ context.Context, target string) error {
+		if target == device.URL {
+			close(streamStarted)
+			<-releaseStream
+		}
+		return nil
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := server.selectDevice(context.Background(), device.URL, deviceID)
+		done <- err
+	}()
+	select {
+	case <-streamStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("candidate display stream did not start")
+	}
+	visible, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(visible, initial) {
+		t.Fatalf("unconfirmed candidate became externally visible: got=%+v want=%+v", visible, initial)
+	}
+	close(releaseStream)
+	if err := <-done; err != nil {
+		t.Fatalf("selection failed: %v", err)
+	}
+	committed, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.DeviceID != deviceID || committed.DeviceTarget != device.URL {
+		t.Fatalf("ready candidate was not committed: %+v", committed)
+	}
+}
+
+func TestDeviceSelectSerializesConcurrentSelections(t *testing.T) {
+	deviceB := newSelectableDeviceServer(t, "device-b")
+	defer deviceB.Close()
+	deviceC := newSelectableDeviceServer(t, "device-c")
+	defer deviceC.Close()
+
+	initial := runtimeconfig.Config{DeviceID: "device-a", DeviceTarget: "http://192.0.2.1", DeviceToken: "token-a"}
+	initial.Normalize()
+	server := newTestServer(t, initial)
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondStarted := make(chan struct{})
+	server.refreshStream = func(_ context.Context, target string) error {
+		switch target {
+		case deviceB.URL:
+			close(firstStarted)
+			<-releaseFirst
+		case deviceC.URL:
+			close(secondStarted)
+		}
+		return nil
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := server.selectDevice(context.Background(), deviceB.URL, "device-b")
+		firstDone <- err
+	}()
+	select {
+	case <-firstStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first selection did not start")
+	}
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := server.selectDevice(context.Background(), deviceC.URL, "device-c")
+		secondDone <- err
+	}()
+	select {
+	case <-secondStarted:
+		t.Fatal("second selection started before first selection committed")
+	case <-time.After(150 * time.Millisecond):
+	}
+	close(releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first selection failed: %v", err)
+	}
+	select {
+	case <-secondStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second selection did not start after first committed")
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second selection failed: %v", err)
+	}
+	committed, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.DeviceID != "device-c" || committed.DeviceTarget != deviceC.URL {
+		t.Fatalf("unexpected final selection: %+v", committed)
+	}
+}
+
+func newSelectableDeviceServer(t *testing.T, deviceID string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, deviceID)
+		case "/api/pair":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"ok":true,"token":%q}`, "token-"+deviceID)
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini"},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+}
+
 func TestStatusReportsThemeInstallDisableFlag(t *testing.T) {
 	t.Setenv(themeInstallDisableEnv, "1")
 	server := newTestServer(t, runtimeconfig.Config{})

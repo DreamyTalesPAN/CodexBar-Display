@@ -318,6 +318,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testFreshSetupMultipleDevicesUsesFirstRunCopy(
+      browser,
+      appContext.appUrl,
+    );
     await testOfflineActiveDeviceOffersAlternativeWithoutWriting(
       browser,
       appContext.appUrl,
@@ -959,6 +963,75 @@ async function testLocalWifiSearchLetsCustomerChooseMultipleResults(
   assert(
     JSON.parse(selectRequests[0]).expectedDeviceId === "device-82",
     `Selected identity should stay pinned through selection, got ${selectRequests[0]}`,
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testFreshSetupMultipleDevicesUsesFirstRunCopy(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const deviceWriteRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { connected: false, paired: false },
+    searchDevices: [
+      {
+        target: "http://192.168.178.81",
+        deviceId: "device-81",
+        firmware: "1.0.36",
+        networkMode: "station",
+        known: false,
+        active: false,
+      },
+      {
+        target: "http://192.168.178.82",
+        deviceId: "device-82",
+        firmware: "1.0.36",
+        networkMode: "station",
+        known: false,
+        active: false,
+      },
+    ],
+    onRequest: (pathname, method) => {
+      if (
+        method === "POST" &&
+        (pathname === "/v1/device/select" || pathname === "/v1/device/repair")
+      ) {
+        deviceWriteRequests.push(pathname);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await page
+    .getByText(
+      "More than one VibeTV was found. Choose the one you want to connect.",
+    )
+    .waitFor();
+  const copy = await page.locator("body").innerText();
+  assert(
+    !copy.includes("last connected VibeTV") &&
+      !copy.includes("previous VibeTV"),
+    `Fresh setup must not claim a previous device, got: ${copy}`,
+  );
+  assert(
+    deviceWriteRequests.length === 0,
+    `Fresh setup search must stay read-only, got ${deviceWriteRequests}`,
+  );
+  await page.getByRole("button", { name: "Not now" }).click();
+  await page
+    .getByText("No VibeTV is selected. You can search again when you are ready.")
+    .waitFor();
+  assert(
+    deviceWriteRequests.length === 0,
+    `Fresh setup Not now must stay read-only, got ${deviceWriteRequests}`,
   );
   assertNoInstallRequests(installRequests);
   await page.close();

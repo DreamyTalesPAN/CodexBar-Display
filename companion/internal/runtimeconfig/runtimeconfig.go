@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	configFileName = "config.json"
-	defaultTheme   = "mini"
+	configFileName                 = "config.json"
+	deviceSelectionJournalFileName = "device-selection-pending.json"
+	defaultTheme                   = "mini"
 )
 
 type Config struct {
@@ -50,6 +51,10 @@ func ClearThemeValue(raw string) bool {
 
 func ConfigPath(home string) string {
 	return filepath.Join(home, "Library", "Application Support", "codexbar-display", configFileName)
+}
+
+func deviceSelectionJournalPath(home string) string {
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", deviceSelectionJournalFileName)
 }
 
 func Load(home string) (Config, error) {
@@ -106,6 +111,74 @@ func Save(home string, cfg Config) error {
 		return fmt.Errorf("replace runtime config: %w", err)
 	}
 	return os.Chmod(path, 0o644)
+}
+
+// BeginDeviceSelection records the last committed configuration before a
+// candidate device is staged. If the Companion process exits before the
+// selection is committed, RecoverPendingDeviceSelection restores this exact
+// configuration on the next startup.
+func BeginDeviceSelection(home string, previous Config) error {
+	home = strings.TrimSpace(home)
+	if home == "" {
+		return errors.New("home directory is empty")
+	}
+	previous.Normalize()
+	path := deviceSelectionJournalPath(home)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	payload, err := json.MarshalIndent(previous, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal device selection journal: %w", err)
+	}
+	payload = append(payload, '\n')
+	tmpPath := fmt.Sprintf("%s.tmp-%d", path, time.Now().UnixNano())
+	if err := os.WriteFile(tmpPath, payload, 0o600); err != nil {
+		return fmt.Errorf("write device selection journal: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("replace device selection journal: %w", err)
+	}
+	return os.Chmod(path, 0o600)
+}
+
+func CommitDeviceSelection(home string) error {
+	home = strings.TrimSpace(home)
+	if home == "" {
+		return errors.New("home directory is empty")
+	}
+	err := os.Remove(deviceSelectionJournalPath(home))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove device selection journal: %w", err)
+	}
+	return nil
+}
+
+func RecoverPendingDeviceSelection(home string) (bool, error) {
+	home = strings.TrimSpace(home)
+	if home == "" {
+		return false, errors.New("home directory is empty")
+	}
+	path := deviceSelectionJournalPath(home)
+	payload, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read device selection journal: %w", err)
+	}
+	var previous Config
+	if err := json.Unmarshal(payload, &previous); err != nil {
+		return false, fmt.Errorf("parse device selection journal: %w", err)
+	}
+	if err := Save(home, previous); err != nil {
+		return false, fmt.Errorf("restore device selection config: %w", err)
+	}
+	if err := CommitDeviceSelection(home); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (cfg Config) KnownDevice(deviceID string) (KnownDevice, bool) {

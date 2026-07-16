@@ -151,6 +151,9 @@ type Server struct {
 	wakeDisplayStream      func()
 	firmwareUpdateActive   atomic.Bool
 	configMu               sync.Mutex
+	selectionMu            sync.Mutex
+	selectionStateMu       sync.RWMutex
+	selectionPrevious      *runtimeconfig.Config
 	repairMu               sync.Mutex
 	repairFlightsMu        sync.Mutex
 	repairFlights          map[string]*deviceRepairFlight
@@ -697,6 +700,9 @@ func New(opts Options) (*Server, error) {
 		if err != nil {
 			return nil, fmt.Errorf("resolve home directory: %w", err)
 		}
+	}
+	if _, recoverErr := runtimeconfig.RecoverPendingDeviceSelection(home); recoverErr != nil {
+		return nil, fmt.Errorf("recover pending device selection: %w", recoverErr)
 	}
 	client := opts.HTTPClient
 	if client == nil {
@@ -2468,6 +2474,9 @@ func (s *Server) selectDevice(
 	requestedTarget string,
 	expectedDeviceID string,
 ) (deviceInfo, error) {
+	s.selectionMu.Lock()
+	defer s.selectionMu.Unlock()
+
 	target, err := normalizeExplicitDeviceTarget(requestedTarget)
 	if err != nil {
 		return deviceInfo{}, err
@@ -2491,10 +2500,19 @@ func (s *Server) selectDevice(
 		}
 	}
 
-	previous, err := s.config()
+	s.deviceMaintenanceMu.Lock()
+	defer s.deviceMaintenanceMu.Unlock()
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
+
+	previous, err := s.configForMaintenance()
 	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
 	}
+	if err := runtimeconfig.BeginDeviceSelection(s.home, previous); err != nil {
+		return deviceInfo{}, &repairStageError{stage: "config", err: err}
+	}
+	s.beginPendingDeviceSelection(previous)
 	selected := runtimeconfig.KnownDevice{
 		DeviceID: expectedDeviceID,
 		Target:   target,
@@ -2505,25 +2523,42 @@ func (s *Server) selectDevice(
 	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
 		current.SetActiveDevice(selected)
 	}); err != nil {
-		return deviceInfo{}, &repairStageError{stage: "config", err: err}
+		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, &repairStageError{stage: "config", err: err})
 	}
 
-	device, repairErr := s.repairDeviceWithFailureWake(ctx, target, expectedDeviceID, false, false)
-	if repairErr == nil {
-		return device, nil
+	device, repairErr := s.repairDeviceOnceLocked(ctx, target, expectedDeviceID, false)
+	if repairErr != nil {
+		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, repairErr)
 	}
-	if _, restoreErr := s.updateConfig(func(current *runtimeconfig.Config) {
+	if err := runtimeconfig.CommitDeviceSelection(s.home); err != nil {
+		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, &repairStageError{stage: "config", err: err})
+	}
+	s.endPendingDeviceSelection()
+	return device, nil
+}
+
+func (s *Server) rollbackDeviceSelection(
+	ctx context.Context,
+	previous runtimeconfig.Config,
+	selectionErr error,
+) error {
+	_, restoreErr := s.updateConfig(func(current *runtimeconfig.Config) {
 		*current = previous
-	}); restoreErr != nil {
-		return deviceInfo{}, &repairStageError{
+	})
+	if restoreErr == nil {
+		restoreErr = runtimeconfig.CommitDeviceSelection(s.home)
+	}
+	s.endPendingDeviceSelection()
+	if restoreErr != nil {
+		return &repairStageError{
 			stage: "config",
-			err:   fmt.Errorf("selection failed: %v; restore previous VibeTV: %w", repairErr, restoreErr),
+			err:   fmt.Errorf("selection failed: %v; restore previous VibeTV: %w", selectionErr, restoreErr),
 		}
 	}
 	if strings.TrimSpace(previous.DeviceTarget) != "" {
 		_ = s.startDisplayStream(ctx, previous.DeviceTarget)
 	}
-	return deviceInfo{}, repairErr
+	return selectionErr
 }
 
 func (s *Server) repairDeviceOnce(
@@ -2537,6 +2572,15 @@ func (s *Server) repairDeviceOnce(
 
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
+	return s.repairDeviceOnceLocked(ctx, requestedTarget, expectedDeviceID, forcePair)
+}
+
+func (s *Server) repairDeviceOnceLocked(
+	ctx context.Context,
+	requestedTarget string,
+	expectedDeviceID string,
+	forcePair bool,
+) (deviceInfo, error) {
 
 	streamPaused := false
 	pauseStream := func() {
@@ -2556,7 +2600,7 @@ func (s *Server) repairDeviceOnce(
 	pauseStream()
 	defer resumeStream()
 
-	cfg, err := s.config()
+	cfg, err := s.configForMaintenance()
 	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
 	}
@@ -4443,9 +4487,38 @@ func validRemoteThemePackURL(raw string) bool {
 }
 
 func (s *Server) config() (runtimeconfig.Config, error) {
+	s.selectionStateMu.RLock()
+	if s.selectionPrevious != nil {
+		cfg := cloneRuntimeConfig(*s.selectionPrevious)
+		s.selectionStateMu.RUnlock()
+		return cfg, nil
+	}
+	s.selectionStateMu.RUnlock()
+	return s.configForMaintenance()
+}
+
+func (s *Server) configForMaintenance() (runtimeconfig.Config, error) {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 	return s.loadConfigNormalized()
+}
+
+func (s *Server) beginPendingDeviceSelection(previous runtimeconfig.Config) {
+	s.selectionStateMu.Lock()
+	defer s.selectionStateMu.Unlock()
+	cloned := cloneRuntimeConfig(previous)
+	s.selectionPrevious = &cloned
+}
+
+func (s *Server) endPendingDeviceSelection() {
+	s.selectionStateMu.Lock()
+	defer s.selectionStateMu.Unlock()
+	s.selectionPrevious = nil
+}
+
+func cloneRuntimeConfig(cfg runtimeconfig.Config) runtimeconfig.Config {
+	cfg.KnownDevices = append([]runtimeconfig.KnownDevice(nil), cfg.KnownDevices...)
+	return cfg
 }
 
 func (s *Server) loadConfigNormalized() (runtimeconfig.Config, error) {

@@ -491,11 +491,10 @@ function FinishSetupContent({
       <div className="grid gap-5" aria-live="polite">
         <div className="grid gap-2">
           <h4 className="text-xl font-black text-[#1B1B1B]">
-            Another VibeTV was found
+            VibeTV found
           </h4>
           <p className="text-sm leading-6 text-[#444933]">
-            Your last connected VibeTV is not available. Connect to this VibeTV
-            instead?
+            Connect to this VibeTV?
           </p>
         </div>
         <DeviceCandidateCard candidate={candidate} />
@@ -538,8 +537,7 @@ function FinishSetupContent({
             Choose a VibeTV
           </h4>
           <p className="text-sm leading-6 text-[#444933]">
-            Your last connected VibeTV is not available. Choose another VibeTV
-            to connect.
+            More than one VibeTV was found. Choose the one you want to connect.
           </p>
         </div>
         <div className="grid gap-3">
@@ -586,8 +584,7 @@ function FinishSetupContent({
     return (
       <div className="grid gap-4">
         <p className="text-sm leading-6 text-[#444933]">
-          Your previous VibeTV remains selected. You can search for another
-          VibeTV when you are ready.
+          No VibeTV is selected. You can search again when you are ready.
         </p>
         <SecondaryButton
           fullWidth
