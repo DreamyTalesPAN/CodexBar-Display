@@ -9,7 +9,7 @@ namespace esp8266 {
 // verified by the native test target.
 class ThemeSpecRuntimePolicy {
  public:
-  static constexpr int kCbaRowsPerTick = 1;
+  static constexpr int kCbaRowsPerTick = 4;
   static constexpr uint32_t kMinRenderFreeHeapBytes = 6144UL;
   static constexpr uint32_t kMinRenderMaxFreeBlockBytes = 2048UL;
   static constexpr uint32_t kMinAnimationFreeHeapBytes = 8192UL;

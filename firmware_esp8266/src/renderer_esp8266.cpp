@@ -72,6 +72,8 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
   snapshot.themeSpecStringCapacity = themeSpecStats.stringCapacity;
   snapshot.themeSpecKeepsJsonDocument = themeSpecStats.keepsJsonDocument;
   snapshot.themeSpecHasAnimatedAssets = themeSpecStats.hasAnimatedAssets;
+  snapshot.cbaCompletedFrames = themeSpecStats.cbaCompletedFrames;
+  snapshot.cbaLastFrameDurationMs = themeSpecStats.cbaLastFrameDurationMs;
   snapshot.themeSpecPartialSuccesses = themeSpecStats.partialSuccesses;
   snapshot.themeSpecPartialFailures = themeSpecStats.partialFailures;
   snapshot.themeSpecLastPartialChangedFields = themeSpecStats.lastPartialChangedFields;
@@ -109,6 +111,9 @@ RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
   snapshot.themeSpecRenderOk = !snapshot.themeSpecActive || display::ThemeSpecRenderOk();
   snapshot.themeSpecRenderError = snapshot.themeSpecActive ? display::ThemeSpecRenderError() : "";
   snapshot.themeSpecRenderFailures = display::ThemeSpecRenderFailures();
+  const display::ThemeSpecRuntimeStats themeSpecStats = display::ThemeSpecRuntimeStatsSnapshot();
+  snapshot.cbaCompletedFrames = themeSpecStats.cbaCompletedFrames;
+  snapshot.cbaLastFrameDurationMs = themeSpecStats.cbaLastFrameDurationMs;
   const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
   snapshot.gifActivePath = gif.activePath;
   snapshot.gifFilePresent = gif.filePresent;

@@ -1407,6 +1407,10 @@ void handleHealth() {
   appendJSONNullableString(out, snapshot.themeSpecRenderError);
   out += ",\"renderFailures\":";
   out += String(snapshot.themeSpecRenderFailures);
+  out += ",\"cbaCompletedFrames\":";
+  out += String(snapshot.cbaCompletedFrames);
+  out += ",\"cbaLastFrameDurationMs\":";
+  out += String(snapshot.cbaLastFrameDurationMs);
   out += "},\"gif\":{\"activePath\":\"";
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";

@@ -31,6 +31,8 @@ unsigned long nextThemeSpecAnimatedTickAtMs = 0;
 unsigned long nextThemeSpecFullRenderRetryAtMs = 0;
 bool lastThemeSpecRenderOk = true;
 bool cbaRenderJobInProgress = false;
+unsigned long cbaCompletedFrames = 0;
+unsigned long cbaLastFrameDurationMs = 0;
 const char* lastThemeSpecRenderError = "";
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
@@ -553,6 +555,8 @@ bool drawAnimatedSpriteAsset(
 
   cache.frameIndex = cache.renderingFrameIndex;
   cache.frameInProgress = false;
+  cbaCompletedFrames += 1;
+  cbaLastFrameDurationMs = millis() - cache.frameStartedAtMs;
   if (ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(
           cache.frameIndex,
           cache.frameCount,
@@ -897,7 +901,7 @@ bool DrawThemeSpecUsage() {
   }
 
   // A full redraw cancels any partial CBA job. The active state restarts at
-  // frame zero and resumes one bounded row per main-loop tick.
+  // frame zero and resumes a bounded row chunk per main-loop tick.
   resetAnimatedSpriteCaches();
 
   const auto frameData = currentThemeSpecFrameData();
@@ -1041,6 +1045,8 @@ ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot() {
   stats.stringCapacity = static_cast<uint16_t>(cachedThemeSpecScene.stringPoolCapacity);
   stats.keepsJsonDocument = cachedThemeSpecScene.requiresJsonDocument;
   stats.hasAnimatedAssets = cachedThemeSpecScene.hasAnimatedAssets;
+  stats.cbaCompletedFrames = cbaCompletedFrames;
+  stats.cbaLastFrameDurationMs = cbaLastFrameDurationMs;
   stats.partialSuccesses = themeSpecPartialSuccesses;
   stats.partialFailures = themeSpecPartialFailures;
   stats.lastPartialChangedFields = lastPartialChangedFields;

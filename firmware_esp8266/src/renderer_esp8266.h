@@ -22,6 +22,8 @@ struct RendererDebugSnapshot {
   uint16_t themeSpecStringCapacity = 0;
   bool themeSpecKeepsJsonDocument = false;
   bool themeSpecHasAnimatedAssets = false;
+  unsigned long cbaCompletedFrames = 0;
+  unsigned long cbaLastFrameDurationMs = 0;
   unsigned long themeSpecPartialSuccesses = 0;
   unsigned long themeSpecPartialFailures = 0;
   uint32_t themeSpecLastPartialChangedFields = 0;
@@ -46,6 +48,8 @@ struct RendererHealthSnapshot {
   bool themeSpecRenderOk = true;
   String themeSpecRenderError;
   unsigned long themeSpecRenderFailures = 0;
+  unsigned long cbaCompletedFrames = 0;
+  unsigned long cbaLastFrameDurationMs = 0;
   String gifActivePath;
   bool gifFilePresent = false;
   bool gifDecoderAllocated = false;
