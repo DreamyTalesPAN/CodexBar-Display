@@ -112,14 +112,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ "$BUILD" =~ ^[0-9]+$ ]] || die "build must be a positive integer"
-if [[ "${GITHUB_WORKFLOW:-}" == "CODEX Build macOS Preview DMG" ]]; then
-  build_value="$((10#$BUILD))"
-  if (( build_value < 90000000 )); then
-    BUILD="$((90000000 + build_value))"
-  fi
-fi
-
 if [[ -z "$SPARKLE_PUBLIC_ED_KEY" && -f "$SPARKLE_PUBLIC_KEY_FILE" ]]; then
   SPARKLE_PUBLIC_ED_KEY="$(tr -d '[:space:]' < "$SPARKLE_PUBLIC_KEY_FILE")"
 fi

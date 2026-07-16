@@ -48,7 +48,6 @@ jobs:
           set -euo pipefail
           source_sha="$(git rev-parse HEAD)"
           version="99.0.${GITHUB_RUN_NUMBER}"
-          preview_build="$((90000000 + GITHUB_RUN_NUMBER))"
           mkdir -p dist/macos tmp/macos-preview
 
           (
@@ -75,7 +74,7 @@ jobs:
 
           ./scripts/build-macos-control-center-app.sh \
             --version "${version}" \
-            --build "${preview_build}" \
+            --build "${GITHUB_RUN_NUMBER}" \
             --universal \
             --companion-binary tmp/macos-preview/codexbar-display \
             --output "dist/macos/VibeTV Control Center.app"
@@ -86,7 +85,6 @@ jobs:
             echo "### macOS Preview DMG"
             echo "- Source: \`${source_sha}\`"
             echo "- Version: \`${version}\`"
-            echo "- Build: \`${preview_build}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Pass app to signing job

@@ -321,3 +321,70 @@ This Mac has no Developer ID signing identity. macOS consequently denied local
 network access to the ad-hoc LaunchAgent, while direct access from the Mac
 continued to work. This does not count as the signed/notarized customer-app
 gate; that gate requires the final Developer-ID-signed build.
+
+## 2026-07-16 signed and notarized customer-app gate
+
+The manual `CODEX Build macOS Preview DMG` workflow was dispatched from trusted
+`main` with PR source SHA
+`0dc5188edbefec4326bcc5dcee0b9baf6bcaa1cd`. It did not merge, tag, publish, or
+create a release.
+
+Signed artifact:
+
+- GitHub Actions run:
+  `https://github.com/DreamyTalesPAN/CodexBar-Display/actions/runs/29532570187`
+- Mac App version: `99.0.30`
+- Mac App build: `90000030`
+- Developer ID team: `QJ36BU5499`
+- DMG SHA-256:
+  `cc09375c9540c748f4b2c30e7607b0a167fb4acdcb27ae38af88505e3f0298c0`
+- The DMG passed checksum verification, strict nested code-signature
+  verification, stapler validation, Gatekeeper with
+  `source=Notarized Developer ID`, and the repository's final distribution
+  verifier.
+- The embedded Companion reported the exact requested source SHA.
+
+Customer-path runtime:
+
+- The app was installed and opened from `/Applications`.
+- `SMAppService` loaded `shop.vibetv.control-center.runtime` as the sole local
+  runtime and port owner.
+- `/v1/status` reported installation mode `dmg`, the app and bundled-helper
+  paths under `/Applications`, runtime PID `81436`, and listener owner
+  `shop.vibetv.control-center.runtime`.
+- The runtime connected to device `14799300` at
+  `http://192.168.178.72`, sent a normal frame on public firmware `1.0.36`, and
+  reported the device ready with a healthy stream before the update.
+
+Single OTA result:
+
+- Control Center API job: `firmware-update-1784234213717492000-1`
+- Started: `2026-07-16T20:36:53.717504Z`
+- Finished: `2026-07-16T20:38:54.687615Z`
+- Phase/outcome: `complete` / `updated`
+- Result firmware: `1.0.37`
+- Artifact validation, upload acceptance, device identity, `/hello`, health,
+  stream, and render verification all passed.
+- Runtime log recorded `device-writes-paused` at
+  `2026-07-16T20:37:11.2634Z`, `device-writes-resumed` at
+  `2026-07-16T20:38:54.067134Z`, and a fresh frame immediately afterward.
+- Target boot ID: `e1d1c4-46-da1b6ac5`; reset reason:
+  `Software/System restart`.
+- `/themes/mini/mini.gif` remained `20870` bytes and
+  `/themes/u/mini-cl-1-410a37.json` remained `642` bytes.
+
+Local Service Management note:
+
+- The first signed preview launch encountered an AMFI launch-constraint error
+  after many earlier ad-hoc and debug app replacements on this Mac.
+- A clean registration of the public Developer-ID-signed `1.0.46` app repaired
+  that local Service Management state.
+- The original signed preview `99.0.29` with build `29` was then installed again
+  and its real `SMAppService` runtime started successfully. This disproved the
+  temporary hypothesis that the preview build number caused the failure; the
+  speculative build-number workaround was removed from the PR.
+
+After the test, the isolated firmware server and launchd manifest override were
+removed. The signed preview remained installed with the normal production feed,
+and device `14799300` remained ready on `1.0.37` with a healthy stream. No merge,
+tag, release, Main push, or production deployment was performed.

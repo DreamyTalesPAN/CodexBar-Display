@@ -410,14 +410,13 @@ source=Developer ID"
 )
 
 main() {
-  local tmp app preview_app workflow_preview_app dmg stage sign_output
+  local tmp app preview_app dmg stage sign_output
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-macos-test.XXXXXX")"
   TMP_TEST_DIR="$tmp"
   trap cleanup EXIT
 
   app="${tmp}/VibeTV Control Center.app"
   preview_app="${tmp}/VibeTV Control Center Preview.app"
-  workflow_preview_app="${tmp}/VibeTV Control Center Workflow Preview.app"
   dmg="${tmp}/VibeTV-Control-Center-v1.2.3.dmg"
   stage="${tmp}/dmg-stage"
 
@@ -448,17 +447,6 @@ main() {
     --output "$preview_app" >/dev/null
   [[ "$(plutil -extract VibeTVLocalPreviewRuntime raw -o - "${preview_app}/Contents/Info.plist")" == "true" ]] \
     || die "local preview bundle must opt into its isolated preview runtime"
-
-  GITHUB_WORKFLOW="CODEX Build macOS Preview DMG" \
-    "${ROOT}/scripts/build-macos-control-center-app.sh" \
-      --dry-run \
-      --version "99.0.30" \
-      --build "30" \
-      --output "$workflow_preview_app" >/dev/null
-  [[ "$(plutil -extract CFBundleVersion raw -o - "${workflow_preview_app}/Contents/Info.plist")" == "90000030" ]] \
-    || die "signed workflow preview must stay above public release build numbers"
-  [[ "$(plutil -extract EnvironmentVariables.VIBETV_MAC_APP_BUILD raw -o - "${workflow_preview_app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist")" == "90000030" ]] \
-    || die "signed workflow preview runtime must receive the reserved build number"
 
   python3 - \
     "${app}/Contents/Info.plist" \
