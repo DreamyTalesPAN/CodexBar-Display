@@ -744,7 +744,7 @@ function validatePrimitive(
   const width = primitive.width ?? estimatePrimitiveWidth(primitive);
   const height = primitive.height ?? estimatePrimitiveHeight(primitive);
   if (primitive.x + width > DISPLAY_SIZE || primitive.y + height > DISPLAY_SIZE) {
-    warnings.push(`${prefix}: part of it sits outside 240x240.`);
+    errors.push(`${prefix}: it must stay inside 240x240.`);
   }
 }
 

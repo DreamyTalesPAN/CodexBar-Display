@@ -87,10 +87,22 @@ export type DeviceInfo = {
         minPercent?: number;
         maxPercent?: number;
       };
+      widthPx?: number;
+      heightPx?: number;
     };
     theme?: {
       supportsThemeSpecV1?: boolean;
+      supportsStoredThemes?: boolean;
+      maxThemeSpecBytes?: number;
+      maxStoredThemeSpecBytes?: number;
+      maxThemePrimitives?: number;
+      maxThemeGifAssets?: number;
       maxThemeGifBytes?: number;
+      maxThemeGifWidth?: number;
+      maxThemeGifHeight?: number;
+      maxThemeGifPixels?: number;
+      supportedPrimitiveTypes?: string[];
+      builtinThemes?: string[];
     };
     transport?: {
       active?: string;

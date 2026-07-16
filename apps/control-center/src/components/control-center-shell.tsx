@@ -85,9 +85,9 @@ export function ControlCenterShell({
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#F9F9F9] text-[#1B1B1B]">
-      <div className="grid min-h-screen lg:grid-cols-[266px_minmax(0,1fr)]">
-        <aside className="hidden bg-[#1B1B1B] text-[#EDEDED] lg:flex lg:flex-col">
+    <main className="control-center-shell min-h-screen overflow-x-hidden bg-[#F9F9F9] text-[#1B1B1B]">
+      <div className="control-center-shell__layout grid min-h-screen lg:grid-cols-[266px_minmax(0,1fr)]">
+        <aside className="control-center-shell__sidebar hidden bg-[#1B1B1B] text-[#EDEDED] lg:flex lg:flex-col">
           <div className="px-9 pb-9 pt-8">
             <div className="text-[32px] font-black uppercase leading-none tracking-normal">
               VIBE<span className="text-[#CCFF00]">TV</span>
@@ -112,7 +112,7 @@ export function ControlCenterShell({
         </aside>
 
         <section className="min-w-0">
-          <header className="flex min-h-[86px] items-center justify-between overflow-hidden border-b border-[#747A60] bg-[#F9F9F9] px-4 py-3 lg:h-[86px] lg:px-10 lg:py-0">
+          <header className="control-center-shell__header flex min-h-[86px] items-center justify-between overflow-hidden border-b border-[#747A60] bg-[#F9F9F9] px-4 py-3 lg:h-[86px] lg:px-10 lg:py-0">
             <div className="hidden min-w-0 lg:block">
               <h1 className="truncate text-xl font-semibold text-[#1B1B1B]">
                 {NAV_ITEMS.find((item) => item.id === activeTab)?.label ||
@@ -165,7 +165,7 @@ export function ControlCenterShell({
             </div>
           </header>
 
-          <div className="px-7 py-0 lg:px-10">{children}</div>
+          <div className="control-center-shell__content px-7 py-0 lg:px-10">{children}</div>
         </section>
       </div>
     </main>

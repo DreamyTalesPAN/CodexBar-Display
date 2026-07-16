@@ -2,17 +2,17 @@
 
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   CheckCircle2,
   Code2,
-  Download,
   FileUp,
   Film,
   ImagePlus,
   LayoutGrid,
   Palette,
   RefreshCw,
-  Save,
   Send,
   Square,
   Trash2,
@@ -22,34 +22,77 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import {
   buildThemePack,
-  cloneThemeSpec,
   createStarterThemeSpec,
   deviceThemeSpecJson,
   importThemeSpec,
   normalizeThemeSpec,
   referencedThemeAssetPaths,
-  THEME_STUDIO_DRAFT_STORAGE_KEY,
   updateThemeColors,
   validateThemeSpec,
   type ThemeStudioAsset,
-  type ThemeStudioDraft,
   type ThemeStudioPrimitive,
   type ThemeStudioSpec,
 } from "@/lib/theme-studio";
+import {
+  assetFileName,
+  assetKind,
+  assetKindLabel,
+  fileToBase64,
+  formatBytes,
+  importSpriteFile,
+  spriteMetadata,
+  themeAssetByteLength,
+  themeAssetPathForFile,
+} from "@/lib/theme-studio-assets";
+import {
+  clearThemeStudioRecovery,
+  writeThemeStudioRecovery,
+} from "@/lib/theme-studio-storage";
+import {
+  validateThemeAgainstCapabilities,
+  type ThemeStudioDeviceCapabilities,
+} from "@/lib/theme-studio-capabilities";
+import {
+  cloneDocument,
+  createThemeStudioEditorState,
+  isThemeStudioDirty,
+  reorderPrimitiveIndices,
+  themeStudioEditorReducer,
+  type ThemeStudioDocument,
+} from "./theme-studio/theme-studio-editor-state";
+import {
+  AdvancedPanel,
+  type ThemeStudioAdvancedTab,
+} from "./theme-studio/advanced-panel";
+import {
+  ColorField,
+  NumberField,
+  SelectField,
+  TextField,
+} from "./theme-studio/editor-fields";
+import {
+  StatusLine,
+  StatusPill,
+  type EditorStatus,
+} from "./theme-studio/editor-status";
+import { LeaveEditorDialog } from "./theme-studio/leave-editor-dialog";
+import { ThemeStudioToolbar } from "./theme-studio/theme-studio-toolbar";
 import {
   ThemeSpecPreview,
   type ThemeRenderPack,
 } from "./live-vibetv-preview";
 import { ControlCenterButton } from "./control-center-button";
 import { themeRenderPackUrl } from "./control-center-runtime";
-
-type StudioStatus = {
-  tone: "ready" | "attention" | "unknown";
-  message: string;
-};
 
 type DragState =
   | {
@@ -108,10 +151,6 @@ const DISPLAY_SIZE = 240;
 const COLOR_FALLBACK = "#000000";
 const DEFAULT_GIF_SIZE = 80;
 const DEFAULT_SPRITE_FPS = 8;
-const MAX_SPRITE_FRAME_WIDTH = 64;
-const MAX_SPRITE_FRAME_HEIGHT = 64;
-const MAX_SPRITE_FRAMES = 32;
-const MAX_SPRITE_TOTAL_PIXELS = 32768;
 const MAX_TEXT_FONT_SIZE = 30;
 const TEXT_SELECTION_HEIGHT_SCALE = 1.2;
 const DEFAULT_FRAME = {
@@ -146,6 +185,7 @@ export type ThemeStudioEditorTheme = {
   assets?: Record<string, ThemeStudioAsset>;
   libraryId?: string;
   packName: string;
+  recovered?: boolean;
   source: ThemeStudioEditorSource;
   spec: ThemeStudioSpec;
 };
@@ -158,6 +198,12 @@ export type ThemeStudioSavePayload = {
   spec: ThemeStudioSpec;
 };
 
+export type ThemeStudioSaveResult = {
+  document?: ThemeStudioDocument;
+  libraryId: string;
+  savedAt: string;
+};
+
 export type ThemeStudioInstallPayload = {
   assets: Record<string, ThemeStudioAsset>;
   packName: string;
@@ -165,55 +211,93 @@ export type ThemeStudioInstallPayload = {
 };
 
 export type ThemeStudioScreenProps = {
+  deviceCapabilities?: ThemeStudioDeviceCapabilities;
   initialTheme?: ThemeStudioEditorTheme;
   onBackToLibrary?: () => void;
   onInstallTheme?: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
-  onSaveToLibrary?: (payload: ThemeStudioSavePayload) => void;
+  onRecoveryDiscarded?: () => void;
+  onSaveToLibrary?: (
+    payload: ThemeStudioSavePayload,
+  ) => Promise<ThemeStudioSaveResult | void> | ThemeStudioSaveResult | void;
+  saveBlockedReason?: string;
 };
 
 export function ThemeStudioScreen({
+  deviceCapabilities,
   initialTheme,
   onBackToLibrary,
   onInstallTheme,
+  onRecoveryDiscarded,
   onSaveToLibrary,
+  saveBlockedReason,
 }: ThemeStudioScreenProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gifInputRef = useRef<HTMLInputElement>(null);
+  const libraryButtonRef = useRef<HTMLDivElement>(null);
+  const recoveryWrittenRef = useRef(Boolean(initialTheme?.recovered));
   const spriteInputRef = useRef<HTMLInputElement>(null);
-  const [spec, setSpec] = useState<ThemeStudioSpec>(() =>
-    createStarterThemeSpec(),
+  const libraryIdRef = useRef(initialTheme?.libraryId);
+  const sourceRef = useRef<ThemeStudioEditorSource>(
+    initialTheme?.source || "custom",
   );
-  const [assets, setAssets] = useState<Record<string, ThemeStudioAsset>>({});
-  const [packName, setPackName] = useState("Mini Classic");
+  const [editorState, dispatchEditor] = useReducer(
+    themeStudioEditorReducer,
+    undefined,
+    () =>
+      createThemeStudioEditorState({
+        assets: {},
+        packName: "Mini Classic",
+        spec: createStarterThemeSpec(),
+      }),
+  );
+  const { assets, packName, spec } = editorState.present;
+  const [recoveryDirty, setRecoveryDirty] = useState(
+    Boolean(initialTheme?.recovered),
+  );
+  const dirty = recoveryDirty || isThemeStudioDirty(editorState);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([0]);
   const [jsonText, setJsonText] = useState(() =>
     prettyJson(createStarterThemeSpec()),
   );
   const [jsonDirty, setJsonDirty] = useState(false);
-  const [, setSavedAt] = useState("");
   const [loadingPreset, setLoadingPreset] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
-  const [jsonStatus, setJsonStatus] = useState<StudioStatus>({
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [advancedTab, setAdvancedTab] =
+    useState<ThemeStudioAdvancedTab>("project");
+  const [jsonStatus, setJsonStatus] = useState<EditorStatus>({
     tone: "unknown",
     message: "Draft ready.",
   });
-  const [, setExportStatus] = useState<StudioStatus>({
+  const [exportStatus, setExportStatus] = useState<EditorStatus>({
     tone: "unknown",
     message: "Export is ready after validation.",
   });
-  const [deviceStatus, setDeviceStatus] = useState<StudioStatus>({
+  const [deviceStatus, setDeviceStatus] = useState<EditorStatus>({
     tone: "unknown",
     message: "Nothing is sent until you click Send.",
   });
-  const [assetStatus, setAssetStatus] = useState<StudioStatus>({
+  const [assetStatus, setAssetStatus] = useState<EditorStatus>({
     tone: "unknown",
     message: "Import GIF or sprite assets when the theme needs them.",
   });
-  const [libraryStatus, setLibraryStatus] = useState<StudioStatus | null>(null);
+  const [libraryStatus, setLibraryStatus] = useState<EditorStatus | null>(() =>
+    saveBlockedReason
+      ? { message: saveBlockedReason, tone: "attention" }
+      : null,
+  );
 
   const validation = useMemo(
     () => validateThemeSpec(spec, assets),
     [assets, spec],
+  );
+  const deviceValidation = useMemo(
+    () =>
+      deviceCapabilities
+        ? validateThemeAgainstCapabilities(spec, assets, deviceCapabilities)
+        : null,
+    [assets, deviceCapabilities, spec],
   );
   const visibleSelectedIndices = useMemo(
     () => normalizeSelectedIndices(selectedIndices, spec.primitives.length),
@@ -237,8 +321,12 @@ export function ThemeStudioScreen({
 
   useEffect(() => {
     if (initialTheme) {
+      libraryIdRef.current = initialTheme.libraryId;
+      sourceRef.current = initialTheme.source;
+      recoveryWrittenRef.current = Boolean(initialTheme.recovered);
       replaceLoadedTheme({
         assets: initialTheme.assets || {},
+        markSaved: true,
         packName: initialTheme.packName,
         spec: initialTheme.spec,
         status: { tone: "ready", message: "Theme opened." },
@@ -249,20 +337,6 @@ export function ThemeStudioScreen({
     let cancelled = false;
 
     async function loadInitialTheme() {
-      const draft = readDraft();
-      if (draft) {
-        if (cancelled) {
-          return;
-        }
-        replaceLoadedTheme({
-          assets: draft.assets || {},
-          packName: draft.packName,
-          spec: draft.spec,
-          status: { tone: "ready", message: "Draft restored." },
-        });
-        setSavedAt(formatSavedAt(draft.savedAt));
-        return;
-      }
       await loadBuiltInTheme("mini-classic", {
         cancelled: () => cancelled,
         quiet: true,
@@ -277,41 +351,28 @@ export function ThemeStudioScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTheme]);
 
-  useEffect(() => {
-    if (initialTheme || !spec.themeId) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      const draft: ThemeStudioDraft = {
-        assets,
-        packName,
-        savedAt: new Date().toISOString(),
-        spec,
-      };
-      window.localStorage.setItem(
-        THEME_STUDIO_DRAFT_STORAGE_KEY,
-        JSON.stringify(draft),
-      );
-      setSavedAt(formatSavedAt(draft.savedAt));
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [assets, initialTheme, packName, spec]);
-
   function replaceLoadedTheme({
     assets: nextAssets,
+    markSaved = false,
     packName: nextPackName,
     spec: nextSpec,
     status,
   }: {
     assets?: Record<string, ThemeStudioAsset>;
+    markSaved?: boolean;
     packName: string;
     spec: ThemeStudioSpec;
-    status?: StudioStatus;
+    status?: EditorStatus;
   }) {
     const normalized = normalizeThemeSpec(nextSpec);
-    setAssets(nextAssets || {});
-    setSpec(normalized);
-    setPackName(nextPackName);
+    dispatchEditor({
+      document: {
+        assets: nextAssets || {},
+        packName: nextPackName,
+        spec: normalized,
+      },
+      type: markSaved ? "load" : "update",
+    });
     setSelectedIndices(normalized.primitives.length > 0 ? [0] : []);
     setJsonText(prettyJson(normalized));
     setJsonDirty(false);
@@ -324,40 +385,111 @@ export function ThemeStudioScreen({
     });
   }
 
-  const updateSpec = useCallback((updater: (draft: ThemeStudioSpec) => void) => {
-    setSpec((current) => {
-      const draft = cloneThemeSpec(current);
-      updater(draft);
-      const normalized = normalizeThemeSpec(draft);
-      if (!jsonDirty) {
-        setJsonText(prettyJson(normalized));
-      }
-      return normalized;
-    });
-  }, [jsonDirty]);
+  const updateDocument = useCallback(
+    (updater: (draft: ThemeStudioDocument) => void) => {
+      dispatchEditor({
+        mutate: (draft) => {
+          updater(draft);
+          draft.spec = normalizeThemeSpec(draft.spec);
+          if (!jsonDirty) {
+            setJsonText(prettyJson(draft.spec));
+          } else {
+            setJsonStatus({
+              tone: "unknown",
+              message: "JSON is out of date. Apply or reset it before editing JSON.",
+            });
+          }
+        },
+        type: "mutate",
+      });
+    },
+    [jsonDirty],
+  );
 
-  function saveThemeToLibrary() {
+  const updateSpec = useCallback(
+    (updater: (draft: ThemeStudioSpec) => void) => {
+      updateDocument((document) => updater(document.spec));
+    },
+    [updateDocument],
+  );
+
+  async function saveThemeToLibrary(): Promise<boolean> {
     if (!onSaveToLibrary) {
-      return;
+      return false;
+    }
+    if (saveBlockedReason) {
+      setLibraryStatus({ tone: "attention", message: saveBlockedReason });
+      return false;
     }
     if (validation.errors.length > 0) {
       setLibraryStatus({
         tone: "attention",
         message: validation.errors[0],
       });
+      return false;
+    }
+    setSaving(true);
+    try {
+      const result = await onSaveToLibrary({
+        assets,
+        libraryId: libraryIdRef.current,
+        packName,
+        source: sourceRef.current,
+        spec,
+      });
+      if (result?.libraryId) {
+        libraryIdRef.current = result.libraryId;
+      }
+      sourceRef.current = "custom";
+      recoveryWrittenRef.current = false;
+      setRecoveryDirty(false);
+      dispatchEditor({
+        document: result?.document || cloneDocument(editorState.present),
+        type: "mark_saved",
+      });
+      const clearedRecovery = clearThemeStudioRecovery();
+      if (clearedRecovery.ok) {
+        onRecoveryDiscarded?.();
+      }
+      setLibraryStatus({
+        tone: "ready",
+        message: "Saved to library.",
+      });
+      return true;
+    } catch (error) {
+      setLibraryStatus({
+        tone: "attention",
+        message:
+          error instanceof Error ? error.message : "Theme could not be saved.",
+      });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function setPackName(value: string) {
+    updateDocument((document) => {
+      document.packName = value;
+    });
+  }
+
+  function requestBackToLibrary() {
+    if (!onBackToLibrary) {
       return;
     }
-    onSaveToLibrary({
-      assets,
-      libraryId: initialTheme?.libraryId,
-      packName,
-      source: initialTheme?.source || "custom",
-      spec,
-    });
-    setLibraryStatus({
-      tone: "ready",
-      message: "Saved to library.",
-    });
+    if (!dirty) {
+      onBackToLibrary();
+      return;
+    }
+    setLeaveDialogOpen(true);
+  }
+
+  function keepEditing() {
+    setLeaveDialogOpen(false);
+    window.setTimeout(() => {
+      libraryButtonRef.current?.querySelector("button")?.focus();
+    }, 0);
   }
 
   function selectPrimitiveIndex(index: number, additive = false) {
@@ -427,6 +559,7 @@ export function ThemeStudioScreen({
       const imported = importThemeSpec(payload.spec);
       replaceLoadedTheme({
         assets: payload.assets || {},
+        markSaved: Boolean(options.quiet),
         packName: payload.name || titleFromThemeId(payload.themeId || themeId),
         spec: imported,
         status: options.quiet
@@ -519,9 +652,9 @@ export function ThemeStudioScreen({
         data: await fileToBase64(file),
         encoding: "base64",
       };
-      setAssets((current) => ({ ...current, [assetPath]: asset }));
-      updateSpec((draft) => {
-        draft.primitives.push({
+      updateDocument((document) => {
+        document.assets[assetPath] = asset;
+        document.spec.primitives.push({
           type: "gif",
           x: 24,
           y: 24,
@@ -529,7 +662,7 @@ export function ThemeStudioScreen({
           height: DEFAULT_GIF_SIZE,
           assetPath,
         });
-        setSelectedIndices([draft.primitives.length - 1]);
+        setSelectedIndices([document.spec.primitives.length - 1]);
       });
       setAssetStatus({
         tone: "ready",
@@ -553,9 +686,9 @@ export function ThemeStudioScreen({
     }
     try {
       const imported = await importSpriteFile(file);
-      setAssets((current) => ({ ...current, [imported.assetPath]: imported.asset }));
-      updateSpec((draft) => {
-        draft.primitives.push({
+      updateDocument((document) => {
+        document.assets[imported.assetPath] = imported.asset;
+        document.spec.primitives.push({
           type: "sprite",
           x: 176,
           y: 26,
@@ -566,7 +699,7 @@ export function ThemeStudioScreen({
           sheetColumns: imported.sheetColumns,
           assetPath: imported.assetPath,
         });
-        setSelectedIndices([draft.primitives.length - 1]);
+        setSelectedIndices([document.spec.primitives.length - 1]);
       });
       setAssetStatus({
         tone: "ready",
@@ -629,15 +762,28 @@ export function ThemeStudioScreen({
   }
 
   function removeAsset(assetPath: string) {
-    setAssets((current) => {
-      const next = { ...current };
-      delete next[assetPath];
-      return next;
+    updateDocument((document) => {
+      delete document.assets[assetPath];
     });
     setAssetStatus({
       tone: "unknown",
       message: `${assetFileName(assetPath)} removed from this draft.`,
     });
+  }
+
+  function reorderSelectedPrimitives(direction: "backward" | "forward") {
+    if (visibleSelectedIndices.length === 0) {
+      return;
+    }
+    const reordered = reorderPrimitiveIndices(
+      spec.primitives,
+      visibleSelectedIndices,
+      direction,
+    );
+    updateSpec((draft) => {
+      draft.primitives = reordered.primitives;
+    });
+    setSelectedIndices(reordered.selectedIndices);
   }
 
   const deleteSelectedPrimitives = useCallback(() => {
@@ -678,6 +824,118 @@ export function ThemeStudioScreen({
     window.addEventListener("keydown", handleDeleteKey);
     return () => window.removeEventListener("keydown", handleDeleteKey);
   }, [deleteSelectedPrimitives, visibleSelectedIndices.length]);
+
+  useEffect(() => {
+    function handleEditorShortcut(event: KeyboardEvent) {
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+
+      const modifier = event.metaKey || event.ctrlKey;
+      if (modifier && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        dispatchEditor({ type: event.shiftKey ? "redo" : "undo" });
+        return;
+      }
+      if (event.ctrlKey && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        dispatchEditor({ type: "redo" });
+        return;
+      }
+      if (!["ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp"].includes(event.key)) {
+        return;
+      }
+      if (visibleSelectedIndices.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      const distance = event.shiftKey ? 10 : 1;
+      const requestedX = event.key === "ArrowLeft" ? -distance : event.key === "ArrowRight" ? distance : 0;
+      const requestedY = event.key === "ArrowUp" ? -distance : event.key === "ArrowDown" ? distance : 0;
+      const origins = visibleSelectedIndices.flatMap((index) => {
+        const primitive = spec.primitives[index];
+        if (!primitive) {
+          return [];
+        }
+        const bounds = primitiveBounds(primitive);
+        return [{
+          height: bounds.height,
+          index,
+          width: bounds.width,
+          x: primitive.x,
+          y: primitive.y,
+        }];
+      });
+      const delta = clampedMoveDelta(origins, requestedX, requestedY);
+      updateSpec((draft) => {
+        for (const origin of origins) {
+          const primitive = draft.primitives[origin.index];
+          if (primitive) {
+            primitive.x = origin.x + delta.x;
+            primitive.y = origin.y + delta.y;
+          }
+        }
+      });
+    }
+
+    window.addEventListener("keydown", handleEditorShortcut);
+    return () => window.removeEventListener("keydown", handleEditorShortcut);
+  }, [spec.primitives, updateSpec, visibleSelectedIndices]);
+
+  useEffect(() => {
+    if (!dirty) {
+      return;
+    }
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!dirty) {
+      if (!recoveryWrittenRef.current) {
+        return;
+      }
+      const result = clearThemeStudioRecovery();
+      if (result.ok) {
+        recoveryWrittenRef.current = false;
+        const callbackTimer = window.setTimeout(() => {
+          onRecoveryDiscarded?.();
+        }, 0);
+        return () => window.clearTimeout(callbackTimer);
+      } else {
+        const statusTimer = window.setTimeout(() => {
+          setLibraryStatus({
+            tone: "attention",
+            message: result.error.message,
+          });
+        }, 0);
+        return () => window.clearTimeout(statusTimer);
+      }
+    }
+    const timer = window.setTimeout(() => {
+      const result = writeThemeStudioRecovery({
+        document: editorState.present,
+        libraryId: libraryIdRef.current,
+        originThemeId:
+          sourceRef.current === "published" ? libraryIdRef.current : undefined,
+        source: sourceRef.current,
+        updatedAt: new Date().toISOString(),
+      });
+      if (!result.ok) {
+        setLibraryStatus({
+          tone: "attention",
+          message: result.error.message,
+        });
+      } else {
+        recoveryWrittenRef.current = true;
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [dirty, editorState.present, onRecoveryDiscarded]);
 
   function insertToken(token: string) {
     updateSelectedPrimitive((primitive) => {
@@ -731,6 +989,14 @@ export function ThemeStudioScreen({
       });
       return;
     }
+    if (deviceValidation && deviceValidation.errors.length > 0) {
+      setDeviceStatus({
+        tone: "attention",
+        message: deviceValidation.errors[0],
+      });
+      setAdvancedTab("device");
+      return;
+    }
 
     if (!onInstallTheme) {
       setDeviceStatus({
@@ -771,26 +1037,30 @@ export function ThemeStudioScreen({
 
   const validationOk = validation.errors.length === 0;
   const assetCount = referencedAssets.length;
-  const showAssetStatus = assetStatus.tone === "attention";
   const showDeviceStatus =
     deviceStatus.tone === "attention" ||
     deviceStatus.message !== "Nothing is sent until you click Send.";
   const showJsonStatus = jsonStatus.tone === "attention";
 
   return (
-    <div className="mx-auto max-w-[1540px] text-[#1B1B1B]">
+    <div
+      className="mx-auto max-w-[1540px] text-[#1B1B1B] lg:h-screen lg:max-w-none lg:overflow-hidden"
+      data-theme-studio-root
+    >
       <h2 className="sr-only">Theme Studio</h2>
-      <section className="grid gap-5 py-5">
-        <header className="grid gap-4 border-b border-[#747A60] pb-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+      <section className="grid gap-4 py-4 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)]">
+        <header className="grid gap-4 border-b border-[#747A60] pb-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="min-w-0">
             <div className="grid justify-items-start gap-3">
               {onBackToLibrary ? (
-                <DarkButton
-                  fullWidth={false}
-                  icon={<ArrowLeft size={16} aria-hidden />}
-                  label="Library"
-                  onClick={onBackToLibrary}
-                />
+                <div ref={libraryButtonRef}>
+                  <DarkButton
+                    fullWidth={false}
+                    icon={<ArrowLeft size={16} aria-hidden />}
+                    label="Library"
+                    onClick={requestBackToLibrary}
+                  />
+                </div>
               ) : null}
               <h3 className="truncate text-3xl font-black leading-tight text-[#1B1B1B]">
                 {packName || "Untitled theme"}
@@ -819,42 +1089,38 @@ export function ThemeStudioScreen({
                   label={`${assetCount} ${assetCount === 1 ? "asset" : "assets"}`}
                   tone={assetCount > 0 ? "warn" : "neutral"}
                 />
+                <StatusPill
+                  label={dirty ? "Unsaved changes" : "Saved"}
+                  tone={dirty ? "warn" : "ready"}
+                />
               </div>
             </div>
           </div>
 
-          <div
-            className={`grid gap-2 sm:grid-cols-2 ${
-              onSaveToLibrary ? "xl:min-w-[500px] xl:grid-cols-3" : "xl:min-w-[330px]"
-            }`}
-          >
-            <DarkButton
-              disabled={validation.errors.length > 0}
-              icon={<Download size={16} aria-hidden />}
-              label="Export ZIP"
-              onClick={exportThemePack}
-            />
-            {onSaveToLibrary ? (
-              <DarkButton
-                disabled={validation.errors.length > 0}
-                icon={<Save size={16} aria-hidden />}
-                label="Save theme"
-                onClick={saveThemeToLibrary}
-                variant="accent"
-              />
-            ) : null}
-            <DarkButton
-              busy={sending}
-              disabled={sending || validation.errors.length > 0}
-              icon={<Send size={16} aria-hidden />}
-              label={sending ? "Sending" : "Send to VibeTV"}
-              onClick={() => void sendTheme()}
-            />
-          </div>
+          <ThemeStudioToolbar
+            canExport={validation.errors.length === 0}
+            canRedo={editorState.future.length > 0}
+            canSave={
+              validation.errors.length === 0 && !saveBlockedReason
+            }
+            canSend={
+              validation.errors.length === 0 &&
+              (deviceValidation?.errors.length || 0) === 0
+            }
+            canUndo={editorState.past.length > 0}
+            onExport={exportThemePack}
+            onRedo={() => dispatchEditor({ type: "redo" })}
+            onSave={() => void saveThemeToLibrary()}
+            onSend={() => void sendTheme()}
+            onUndo={() => dispatchEditor({ type: "undo" })}
+            saving={saving}
+            sending={sending}
+            showSave={Boolean(onSaveToLibrary)}
+          />
         </header>
 
-        <section className="grid items-start gap-5 xl:grid-cols-[280px_minmax(420px,1fr)_340px] 2xl:grid-cols-[300px_minmax(560px,1fr)_360px]">
-          <aside className="order-2 grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4 xl:order-1">
+        <section className="grid min-h-0 items-start gap-4 lg:grid-cols-[240px_minmax(360px,1fr)_300px] lg:overflow-hidden 2xl:grid-cols-[300px_minmax(560px,1fr)_360px]">
+          <aside className="order-2 grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4 lg:order-1 lg:max-h-full lg:overflow-y-auto">
             <div>
               <PanelTitle icon={<LayoutGrid size={16} aria-hidden />} title="Layers" />
               <div className="grid grid-cols-3 gap-2">
@@ -912,27 +1178,32 @@ export function ThemeStudioScreen({
               ))}
             </div>
 
-            <details className="border border-[#747A60] bg-[#EEEEEE] p-3">
-              <summary className="cursor-pointer text-xs font-black uppercase tracking-normal text-[#1B1B1B]">
-                Advanced
-              </summary>
-              <div className="mt-3 grid grid-cols-4 gap-1 text-center text-[11px] font-black text-[#444933]">
-                <span className="border border-[#747A60] bg-[#F9F9F9] px-1 py-1">
-                  Project
-                </span>
-                <span className="border border-[#747A60] bg-[#F9F9F9] px-1 py-1">
-                  Assets
-                </span>
-                <span className="border border-[#747A60] bg-[#F9F9F9] px-1 py-1">
-                  JSON
-                </span>
-                <span className="border border-[#747A60] bg-[#F9F9F9] px-1 py-1">
-                  Device
-                </span>
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              <DarkButton
+                disabled={visibleSelectedIndices.length === 0}
+                icon={<ArrowUp size={15} aria-hidden />}
+                label="Bring forward"
+                onClick={() => reorderSelectedPrimitives("forward")}
+              />
+              <DarkButton
+                disabled={visibleSelectedIndices.length === 0}
+                icon={<ArrowDown size={15} aria-hidden />}
+                label="Send backward"
+                onClick={() => reorderSelectedPrimitives("backward")}
+              />
+            </div>
 
-              <div className="mt-4 grid gap-4">
-                <section className="grid gap-3">
+            <AdvancedPanel
+              activeTab={advancedTab}
+              onTabChange={setAdvancedTab}
+              panels={{
+                project: (
+                <section
+                  aria-labelledby="theme-studio-tab-project"
+                  className="grid gap-3"
+                  id="theme-studio-panel-project"
+                  role="tabpanel"
+                >
                   <PanelTitle icon={<Palette size={16} aria-hidden />} title="Project" />
                   <TextField label="Name" value={packName} onChange={setPackName} />
                   <TextField
@@ -948,9 +1219,12 @@ export function ThemeStudioScreen({
                     label="Background"
                     value={spec.bgColor || COLOR_FALLBACK}
                     onChange={(value) =>
-                      setSpec((current) =>
-                        updateThemeColors(current, { background: value }),
-                      )
+                      updateSpec((draft) => {
+                        Object.assign(
+                          draft,
+                          updateThemeColors(draft, { background: value }),
+                        );
+                      })
                     }
                   />
                   <DarkButton
@@ -964,8 +1238,15 @@ export function ThemeStudioScreen({
                     onClick={() => fileInputRef.current?.click()}
                   />
                 </section>
+                ),
 
-                <section className="grid gap-2">
+                assets: (
+                <section
+                  aria-labelledby="theme-studio-tab-assets"
+                  className="grid gap-2"
+                  id="theme-studio-panel-assets"
+                  role="tabpanel"
+                >
                   <PanelTitle icon={<FileUp size={16} aria-hidden />} title="Assets" />
                   <div className="grid grid-cols-2 gap-2">
                     <DarkButton
@@ -995,7 +1276,7 @@ export function ThemeStudioScreen({
                       No custom assets in this draft.
                     </p>
                   )}
-                  {showAssetStatus ? (
+                  {assetStatus.message ? (
                     <StatusLine
                       detail={assetStatus.message}
                       icon={<FileUp size={16} aria-hidden />}
@@ -1004,17 +1285,38 @@ export function ThemeStudioScreen({
                     />
                   ) : null}
                 </section>
+                ),
 
-                {showDeviceStatus ? (
+                device: (
+                  <section
+                    aria-labelledby="theme-studio-tab-device"
+                    id="theme-studio-panel-device"
+                    role="tabpanel"
+                  >
                   <StatusLine
                     icon={<Send size={16} aria-hidden />}
-                    tone={deviceStatus.tone}
+                    tone={
+                      deviceValidation?.errors.length
+                        ? "attention"
+                        : deviceStatus.tone
+                    }
                     title="VibeTV"
-                    detail={deviceStatus.message}
+                    detail={
+                      deviceValidation?.errors[0] ||
+                      deviceValidation?.warnings[0] ||
+                      deviceStatus.message
+                    }
                   />
-                ) : null}
+                  </section>
+                ),
 
-                <section className="grid gap-3">
+                json: (
+                <section
+                  aria-labelledby="theme-studio-tab-json"
+                  className="grid gap-3"
+                  id="theme-studio-panel-json"
+                  role="tabpanel"
+                >
                   <PanelTitle icon={<Code2 size={16} aria-hidden />} title="JSON" />
                   <textarea
                     aria-label="Theme JSON"
@@ -1031,7 +1333,7 @@ export function ThemeStudioScreen({
                     value={jsonText || prettyJson(spec)}
                   />
                   <div className="grid gap-2">
-                    {showJsonStatus ? (
+                    {jsonDirty || showJsonStatus ? (
                       <StatusLine
                         detail={jsonStatus.message}
                         icon={<Code2 size={16} aria-hidden />}
@@ -1044,14 +1346,33 @@ export function ThemeStudioScreen({
                       label="Apply JSON"
                       onClick={applyJson}
                     />
+                    <DarkButton
+                      icon={<RefreshCw size={16} aria-hidden />}
+                      label="Reset JSON"
+                      onClick={() => {
+                        setJsonText(prettyJson(spec));
+                        setJsonDirty(false);
+                        setJsonStatus({ tone: "ready", message: "JSON reset." });
+                      }}
+                    />
                   </div>
                 </section>
-              </div>
-            </details>
+                ),
+              }}
+            />
           </aside>
 
-          <main className="order-1 grid min-w-0 place-items-center xl:order-2">
+          <main className="order-1 grid min-h-0 min-w-0 place-items-center lg:order-2 lg:h-full">
             <EditableThemePreview
+              onInteractionCancel={() =>
+                dispatchEditor({ type: "cancel_transaction" })
+              }
+              onInteractionCommit={() =>
+                dispatchEditor({ type: "commit_transaction" })
+              }
+              onInteractionStart={() =>
+                dispatchEditor({ type: "begin_transaction" })
+              }
               onMoveMany={(moves) => {
                 updateSpec((draft) => {
                   for (const move of moves) {
@@ -1094,7 +1415,7 @@ export function ThemeStudioScreen({
             />
           </main>
 
-          <aside className="order-3 grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4">
+          <aside className="order-3 grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4 lg:max-h-full lg:overflow-y-auto">
             <div>
               <PanelTitle
                 icon={<LayoutGrid size={16} aria-hidden />}
@@ -1147,12 +1468,40 @@ export function ThemeStudioScreen({
                 </div>
               </div>
             ) : null}
-            {libraryStatus?.tone === "attention" ? (
+            {libraryStatus ? (
               <StatusLine
                 detail={libraryStatus.message}
-                icon={<AlertTriangle size={16} aria-hidden />}
+                icon={
+                  libraryStatus.tone === "attention" ? (
+                    <AlertTriangle size={16} aria-hidden />
+                  ) : (
+                    <CheckCircle2 size={16} aria-hidden />
+                  )
+                }
                 title="Library"
-                tone="attention"
+                tone={libraryStatus.tone}
+              />
+            ) : null}
+            {exportStatus.message !== "Export is ready after validation." ? (
+              <StatusLine
+                detail={exportStatus.message}
+                icon={
+                  exportStatus.tone === "attention" ? (
+                    <AlertTriangle size={16} aria-hidden />
+                  ) : (
+                    <CheckCircle2 size={16} aria-hidden />
+                  )
+                }
+                title="Export"
+                tone={exportStatus.tone}
+              />
+            ) : null}
+            {showDeviceStatus ? (
+              <StatusLine
+                detail={deviceStatus.message}
+                icon={<Send size={16} aria-hidden />}
+                title="VibeTV"
+                tone={deviceStatus.tone}
               />
             ) : null}
           </aside>
@@ -1180,11 +1529,42 @@ export function ThemeStudioScreen({
         ref={spriteInputRef}
         type="file"
       />
+      {leaveDialogOpen ? (
+        <LeaveEditorDialog
+          saving={saving}
+          onDiscard={() => {
+            const cleared = clearThemeStudioRecovery();
+            if (!cleared.ok) {
+              setLibraryStatus({
+                tone: "attention",
+                message: cleared.error.message,
+              });
+              keepEditing();
+              return;
+            }
+            setLeaveDialogOpen(false);
+            recoveryWrittenRef.current = false;
+            setRecoveryDirty(false);
+            onRecoveryDiscarded?.();
+            onBackToLibrary?.();
+          }}
+          onKeepEditing={keepEditing}
+          onSaveAndReturn={async () => {
+            if (await saveThemeToLibrary()) {
+              setLeaveDialogOpen(false);
+              onBackToLibrary?.();
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
 function EditableThemePreview({
+  onInteractionCancel,
+  onInteractionCommit,
+  onInteractionStart,
   onMoveMany,
   onResize,
   onSelect,
@@ -1194,6 +1574,9 @@ function EditableThemePreview({
   selectedIndices,
   spec,
 }: {
+  onInteractionCancel: () => void;
+  onInteractionCommit: () => void;
+  onInteractionStart: () => void;
   onMoveMany: (moves: PrimitiveMove[]) => void;
   onResize: (index: number, size: ResizeSize) => void;
   onSelect: (index: number, additive?: boolean) => void;
@@ -1206,6 +1589,19 @@ function EditableThemePreview({
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(() =>
+    typeof window === "undefined"
+      ? false
+      : window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const handleChange = (event: MediaQueryListEvent) =>
+      setPrefersReducedMotion(event.matches);
+    media.addEventListener("change", handleChange);
+    return () => media.removeEventListener("change", handleChange);
+  }, []);
 
   function pointerPoint(event: ReactPointerEvent<SVGElement>) {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -1260,6 +1656,7 @@ function EditableThemePreview({
       startX: point.x,
       startY: point.y,
     };
+    onInteractionStart();
     if (!shouldMoveSelection) {
       onSelect(index, event.shiftKey || event.metaKey || event.ctrlKey);
     }
@@ -1299,6 +1696,7 @@ function EditableThemePreview({
       originX: primitive.x,
       originY: primitive.y,
     };
+    onInteractionStart();
     onSelect(index, event.metaKey || event.ctrlKey);
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -1361,9 +1759,18 @@ function EditableThemePreview({
     );
   }
 
-  function stopDrag() {
+  function stopDrag(outcome: "cancel" | "commit" | "selection" = "commit") {
+    const drag = dragRef.current;
     dragRef.current = null;
     setSelectionBox(null);
+    if (!drag || drag.mode === "select" || outcome === "selection") {
+      return;
+    }
+    if (outcome === "cancel") {
+      onInteractionCancel();
+    } else {
+      onInteractionCommit();
+    }
   }
 
   function finishPointer(event: ReactPointerEvent<SVGElement>) {
@@ -1385,17 +1792,33 @@ function EditableThemePreview({
           : selectedPrimitiveIndices(spec.primitives, box),
       );
     }
-    stopDrag();
+    stopDrag(drag.mode === "select" ? "selection" : "commit");
   }
+
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape" || !dragRef.current) {
+        return;
+      }
+      event.preventDefault();
+      stopDrag("cancel");
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  });
 
   return (
     <div className="relative aspect-square w-full max-w-[480px] overflow-hidden border border-[#1B1B1B] bg-black p-0">
-      <ThemeSpecPreview pack={pack} status="ready" themeId={spec.themeId} />
+      <ThemeSpecPreview
+        animate={!prefersReducedMotion}
+        pack={pack}
+        status="ready"
+        themeId={spec.themeId}
+      />
       <svg
         aria-label="Editable 240x240 preview"
         className="absolute inset-0 h-full w-full [touch-action:none]"
-        onPointerCancel={stopDrag}
-        onPointerLeave={stopDrag}
+        onPointerCancel={() => stopDrag("cancel")}
         onPointerMove={movePointer}
         onPointerUp={finishPointer}
         ref={svgRef}
@@ -1444,11 +1867,9 @@ function EditableThemePreview({
               />
               {active ? (
                 <g
-                  aria-label={`Resize ${primitive.type} ${index + 1}`}
+                  aria-hidden="true"
                   className="cursor-se-resize"
                   onPointerDown={(event) => startResize(event, index)}
-                  role="button"
-                  tabIndex={0}
                 >
                   <rect
                     fill="transparent"
@@ -1714,176 +2135,6 @@ function PrimitiveInspector({
   );
 }
 
-function TextField({
-  label,
-  onChange,
-  type = "text",
-  value,
-}: {
-  label: string;
-  onChange: (value: string) => void;
-  type?: "password" | "text";
-  value: string;
-}) {
-  return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-black uppercase tracking-normal text-[#444933]">
-        {label}
-      </span>
-      <input
-        className="min-h-11 w-full border border-[#747A60] bg-[#F9F9F9] px-3 text-sm text-[#1B1B1B] outline-none focus:border-[#5E7200]"
-        onChange={(event) => onChange(event.target.value)}
-        type={type}
-        value={value}
-      />
-    </label>
-  );
-}
-
-function NumberField({
-  label,
-  onChange,
-  value,
-}: {
-  label: string;
-  onChange: (value: number) => void;
-  value: number;
-}) {
-  return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-black uppercase tracking-normal text-[#444933]">
-        {label}
-      </span>
-      <input
-        className="min-h-11 w-full border border-[#747A60] bg-[#F9F9F9] px-3 text-sm text-[#1B1B1B] outline-none focus:border-[#5E7200]"
-        min={0}
-        onChange={(event) => onChange(integerOrDefault(event.target.value, 0))}
-        type="number"
-        value={value}
-      />
-    </label>
-  );
-}
-
-function ColorField({
-  label,
-  onChange,
-  value,
-}: {
-  label: string;
-  onChange: (value: string) => void;
-  value: string;
-}) {
-  const safeValue = /^#[0-9A-Fa-f]{6}$/.test(value) ? value : COLOR_FALLBACK;
-  return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-black uppercase tracking-normal text-[#444933]">
-        {label}
-      </span>
-      <span className="grid min-h-11 grid-cols-[44px_minmax(0,1fr)] overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
-        <input
-          aria-label={`${label} swatch`}
-          className="h-11 w-11 cursor-pointer border-0 bg-transparent p-1"
-          onChange={(event) => onChange(event.target.value)}
-          type="color"
-          value={safeValue}
-        />
-        <input
-          className="min-w-0 border-0 bg-[#F9F9F9] px-3 font-mono text-sm text-[#1B1B1B] outline-none"
-          onChange={(event) => onChange(event.target.value)}
-          value={safeValue.toUpperCase()}
-        />
-      </span>
-    </label>
-  );
-}
-
-function SelectField({
-  label,
-  onChange,
-  options,
-  value,
-}: {
-  label: string;
-  onChange: (value: string) => void;
-  options: Array<[string, string]>;
-  value: string;
-}) {
-  return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-black uppercase tracking-normal text-[#444933]">
-        {label}
-      </span>
-      <select
-        className="min-h-11 w-full border border-[#747A60] bg-[#F9F9F9] px-3 text-sm text-[#1B1B1B] outline-none focus:border-[#5E7200]"
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
-      >
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>
-            {optionLabel}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function StatusPill({
-  icon,
-  label,
-  tone,
-}: {
-  icon?: ReactNode;
-  label: string;
-  tone: "attention" | "neutral" | "ready" | "warn";
-}) {
-  const toneClass =
-    tone === "attention"
-      ? "border-[#7D2633] bg-[#FFE3E8] text-[#7D2633]"
-      : tone === "ready"
-        ? "border-[#5E7200] bg-[#F1FFD0] text-[#3B5200]"
-        : tone === "warn"
-          ? "border-[#8A6D00] bg-[#FFF2B8] text-[#4D3D00]"
-          : "border-[#747A60] bg-[#EEEEEE] text-[#444933]";
-  return (
-    <span
-      className={`inline-flex min-h-8 items-center gap-1.5 border px-3 text-xs font-black ${toneClass}`}
-    >
-      {icon}
-      <span>{label}</span>
-    </span>
-  );
-}
-
-function StatusLine({
-  detail,
-  icon,
-  title,
-  tone,
-}: {
-  detail: string;
-  icon: ReactNode;
-  title: string;
-  tone: StudioStatus["tone"];
-}) {
-  const toneClass =
-    tone === "attention"
-      ? "border-[#7D2633] bg-[#FFE3E8] text-[#7D2633]"
-      : tone === "ready"
-        ? "border-[#5E7200] bg-[#F1FFD0] text-[#3B5200]"
-        : "border-[#747A60] bg-[#EEEEEE] text-[#444933]";
-  return (
-    <div className={`flex min-w-0 gap-3 border p-3 ${toneClass}`}>
-      <span className="mt-0.5 shrink-0">{icon}</span>
-      <div className="min-w-0">
-        <div className="truncate text-sm font-black text-[#1B1B1B]">{title}</div>
-        <div className="mt-1 break-words text-sm leading-5">{detail}</div>
-      </div>
-    </div>
-  );
-}
-
 function DarkButton({
   busy = false,
   className = "",
@@ -2017,27 +2268,6 @@ export function clearRetiredAiThemeStorage() {
   }
 }
 
-function readDraft(): ThemeStudioDraft | null {
-  try {
-    const raw = window.localStorage.getItem(THEME_STUDIO_DRAFT_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as Partial<ThemeStudioDraft>;
-    if (!parsed.spec) {
-      return null;
-    }
-    return {
-      assets: parsed.assets || {},
-      packName: parsed.packName || titleFromThemeId(parsed.spec.themeId),
-      savedAt: parsed.savedAt || new Date().toISOString(),
-      spec: normalizeThemeSpec(parsed.spec),
-    };
-  } catch {
-    return null;
-  }
-}
-
 function prettyJson(spec: ThemeStudioSpec): string {
   return JSON.stringify(JSON.parse(deviceThemeSpecJson(spec)), null, 2);
 }
@@ -2078,389 +2308,6 @@ function defaultPrimitive(
     height: 36,
     color: "#24313D",
   };
-}
-
-type SpriteImportResult = {
-  asset: ThemeStudioAsset;
-  assetPath: string;
-  fps: number;
-  frameCount: number;
-  height: number;
-  sheetColumns: number;
-  width: number;
-};
-
-type EncodedSprite = {
-  fps: number;
-  frameCount: number;
-  frames: string[][];
-  height: number;
-  palette: string[];
-  width: number;
-};
-
-async function importSpriteFile(file: File): Promise<SpriteImportResult> {
-  if (isSpriteTextFile(file)) {
-    const raw = ensureTrailingNewline(await file.text());
-    const metadata = spriteMetadata(raw);
-    if (!metadata) {
-      throw new Error("Sprite file must be CBI1 or CBA1.");
-    }
-    const extension = raw.trimStart().startsWith("CBA1") ? ".cba" : ".cbi";
-    return {
-      asset: {
-        contentType: "text/plain",
-        data: raw,
-        encoding: "text",
-      },
-      assetPath: themeAssetPathForFile(file.name, extension),
-      fps: metadata.fps,
-      frameCount: metadata.frameCount,
-      height: metadata.height,
-      sheetColumns: metadata.frameCount,
-      width: metadata.width,
-    };
-  }
-
-  if (file.type && !file.type.startsWith("image/")) {
-    throw new Error("Choose a PNG, JPEG, WebP, CBI, or CBA file.");
-  }
-
-  const bitmap = await createImageBitmap(file);
-  try {
-    const frame = inferSpriteSheetFrame(bitmap.width, bitmap.height);
-    const sprite = spriteFromBitmap(bitmap, frame);
-    return {
-      asset: {
-        contentType: "text/plain",
-        data: encodeSpriteAsset(sprite),
-        encoding: "text",
-      },
-      assetPath: themeAssetPathForFile(file.name, ".cba"),
-      fps: sprite.fps,
-      frameCount: sprite.frameCount,
-      height: sprite.height,
-      sheetColumns: frame.columns,
-      width: sprite.width,
-    };
-  } finally {
-    bitmap.close();
-  }
-}
-
-function inferSpriteSheetFrame(width: number, height: number) {
-  let frameWidth = width;
-  let frameHeight = height;
-  if (
-    width !== height ||
-    width > MAX_SPRITE_FRAME_WIDTH ||
-    height > MAX_SPRITE_FRAME_HEIGHT
-  ) {
-    const commonSizes = [64, 48, 32, 24, 16, 8];
-    const squareCell = commonSizes.find((size) => {
-      const frames = (width / size) * (height / size);
-      return (
-        width % size === 0 &&
-        height % size === 0 &&
-        frames >= 2 &&
-        frames <= MAX_SPRITE_FRAMES &&
-        size <= MAX_SPRITE_FRAME_WIDTH &&
-        size <= MAX_SPRITE_FRAME_HEIGHT
-      );
-    });
-    if (squareCell) {
-      frameWidth = squareCell;
-      frameHeight = squareCell;
-    } else if (height <= MAX_SPRITE_FRAME_HEIGHT && width % height === 0) {
-      frameWidth = height;
-      frameHeight = height;
-    } else {
-      frameWidth = Math.min(width, MAX_SPRITE_FRAME_WIDTH);
-      frameHeight = Math.min(height, MAX_SPRITE_FRAME_HEIGHT);
-    }
-  }
-  frameWidth = clampInt(frameWidth, 1, Math.min(MAX_SPRITE_FRAME_WIDTH, width));
-  frameHeight = clampInt(frameHeight, 1, Math.min(MAX_SPRITE_FRAME_HEIGHT, height));
-  const columns = Math.max(1, Math.floor(width / frameWidth));
-  const rows = Math.max(1, Math.floor(height / frameHeight));
-  const frameCount = Math.min(
-    MAX_SPRITE_FRAMES,
-    columns * rows,
-    Math.max(1, Math.floor(MAX_SPRITE_TOTAL_PIXELS / (frameWidth * frameHeight))),
-  );
-  return { columns, frameCount, height: frameHeight, width: frameWidth };
-}
-
-function spriteFromBitmap(
-  bitmap: ImageBitmap,
-  frame: { columns: number; frameCount: number; height: number; width: number },
-): EncodedSprite {
-  const canvas = document.createElement("canvas");
-  canvas.width = frame.width;
-  canvas.height = frame.height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) {
-    return {
-      fps: 0,
-      frameCount: 1,
-      frames: [Array.from({ length: frame.height }, () => `${frame.width}.`)],
-      height: frame.height,
-      palette: ["#FFFFFF"],
-      width: frame.width,
-    };
-  }
-
-  const rawFrames: Array<Array<string | null>> = [];
-  const colorCounts = new Map<string, number>();
-  for (let frameIndex = 0; frameIndex < frame.frameCount; frameIndex += 1) {
-    const sx = (frameIndex % frame.columns) * frame.width;
-    const sy = Math.floor(frameIndex / frame.columns) * frame.height;
-    context.clearRect(0, 0, frame.width, frame.height);
-    context.drawImage(
-      bitmap,
-      sx,
-      sy,
-      frame.width,
-      frame.height,
-      0,
-      0,
-      frame.width,
-      frame.height,
-    );
-    const image = context.getImageData(0, 0, frame.width, frame.height).data;
-    const pixels: Array<string | null> = [];
-    for (let offset = 0; offset < image.length; offset += 4) {
-      const alpha = image[offset + 3] ?? 0;
-      if (alpha < 128) {
-        pixels.push(null);
-        continue;
-      }
-      const color = quantizedHexColor(
-        image[offset] ?? 0,
-        image[offset + 1] ?? 0,
-        image[offset + 2] ?? 0,
-      );
-      colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
-      pixels.push(color);
-    }
-    rawFrames.push(pixels);
-  }
-
-  const nonEmptyFrames = rawFrames.filter((pixels) =>
-    pixels.some((color) => color !== null),
-  );
-  const framesToEncode = nonEmptyFrames.length > 0 ? nonEmptyFrames : rawFrames.slice(0, 1);
-  const palette = Array.from(colorCounts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 26)
-    .map(([color]) => color);
-  if (palette.length === 0) {
-    palette.push("#FFFFFF");
-  }
-
-  const frames = framesToEncode.map((pixels) => {
-    const rows: string[] = [];
-    for (let row = 0; row < frame.height; row += 1) {
-      const tokens: string[] = [];
-      for (let col = 0; col < frame.width; col += 1) {
-        const color = pixels[row * frame.width + col];
-        tokens.push(color ? paletteTokenForColor(color, palette) : ".");
-      }
-      rows.push(encodeRleTokenRow(tokens));
-    }
-    return rows;
-  });
-
-  return {
-    fps: frames.length > 1 ? DEFAULT_SPRITE_FPS : 0,
-    frameCount: frames.length,
-    frames,
-    height: frame.height,
-    palette,
-    width: frame.width,
-  };
-}
-
-function encodeSpriteAsset(sprite: EncodedSprite): string {
-  if (sprite.frameCount <= 1) {
-    return ensureTrailingNewline(
-      [
-        "CBI1",
-        `${sprite.width} ${sprite.height}`,
-        String(sprite.palette.length),
-        ...sprite.palette,
-        ...(sprite.frames[0] || []),
-      ].join("\n"),
-    );
-  }
-  return ensureTrailingNewline(
-    [
-      "CBA1",
-      `${sprite.width} ${sprite.height} ${sprite.frameCount} ${sprite.fps}`,
-      String(sprite.palette.length),
-      ...sprite.palette,
-      ...sprite.frames.flat(),
-    ].join("\n"),
-  );
-}
-
-function encodeRleTokenRow(tokens: string[]): string {
-  let output = "";
-  for (let index = 0; index < tokens.length;) {
-    const token = tokens[index] || ".";
-    let count = 1;
-    while (tokens[index + count] === token) {
-      count += 1;
-    }
-    output += `${count > 1 ? count : ""}${token}`;
-    index += count;
-  }
-  return output;
-}
-
-function quantizedHexColor(r: number, g: number, b: number): string {
-  const quantize = (value: number) => clampInt(Math.round(value / 17) * 17, 0, 255);
-  return `#${[quantize(r), quantize(g), quantize(b)]
-    .map((value) => value.toString(16).padStart(2, "0"))
-    .join("")
-    .toUpperCase()}`;
-}
-
-function paletteTokenForColor(color: string, palette: string[]): string {
-  const exactIndex = palette.indexOf(color);
-  const index = exactIndex >= 0 ? exactIndex : nearestPaletteIndex(color, palette);
-  return String.fromCharCode(97 + clampInt(index, 0, palette.length - 1));
-}
-
-function nearestPaletteIndex(color: string, palette: string[]): number {
-  const [r, g, b] = rgbFromHex(color);
-  let bestIndex = 0;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  palette.forEach((candidate, index) => {
-    const [cr, cg, cb] = rgbFromHex(candidate);
-    const distance = (r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestIndex = index;
-    }
-  });
-  return bestIndex;
-}
-
-function rgbFromHex(color: string): [number, number, number] {
-  return [
-    Number.parseInt(color.slice(1, 3), 16),
-    Number.parseInt(color.slice(3, 5), 16),
-    Number.parseInt(color.slice(5, 7), 16),
-  ];
-}
-
-function spriteMetadata(
-  raw: string | undefined,
-): { width: number; height: number; frameCount: number; fps: number } | null {
-  if (!raw) {
-    return null;
-  }
-  const lines = raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const kind = lines[0];
-  if (kind !== "CBI1" && kind !== "CBA1") {
-    return null;
-  }
-  const header = (lines[1] || "").split(/\s+/).map(Number);
-  const width = header[0] || 0;
-  const height = header[1] || 0;
-  const frameCount = kind === "CBA1" ? header[2] || 0 : 1;
-  const fps = kind === "CBA1" ? header[3] || 0 : 0;
-  const paletteSize = Number(lines[2] || 0);
-  if (
-    width <= 0 ||
-    height <= 0 ||
-    frameCount <= 0 ||
-    paletteSize <= 0 ||
-    paletteSize > 26
-  ) {
-    return null;
-  }
-  return { width, height, frameCount, fps };
-}
-
-function themeAssetPathForFile(
-  name: string,
-  extension: ".cba" | ".cbi" | ".gif",
-): string {
-  return `/themes/u/${safeAssetName(name, extension)}`;
-}
-
-function safeAssetName(name: string, extension: ".cba" | ".cbi" | ".gif"): string {
-  const cleaned = name
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const withoutExtension = cleaned.replace(/\.[a-z0-9]+$/i, "");
-  const withExtension = cleaned.endsWith(extension)
-    ? cleaned
-    : `${withoutExtension || "asset"}${extension}`;
-  if (withExtension.length <= 21) {
-    return withExtension;
-  }
-  const base = withExtension.slice(0, -extension.length);
-  const maxBase = 21 - extension.length;
-  return `${base.slice(0, maxBase).replace(/[._-]+$/g, "") || "asset"}${extension}`;
-}
-
-function isSpriteTextFile(file: File): boolean {
-  return /\.(cbi|cba)$/i.test(file.name) || file.type === "text/plain";
-}
-
-async function fileToBase64(file: File): Promise<string> {
-  return arrayBufferToBase64(await file.arrayBuffer());
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return window.btoa(binary);
-}
-
-function themeAssetByteLength(asset: ThemeStudioAsset): number {
-  if (asset.encoding === "text") {
-    return new TextEncoder().encode(asset.data).byteLength;
-  }
-  return Math.floor((asset.data.replace(/=+$/, "").length * 3) / 4);
-}
-
-function formatBytes(value: number): string {
-  if (value < 1024) {
-    return `${value} B`;
-  }
-  return `${Math.round(value / 1024)} KB`;
-}
-
-function assetKind(path: string): "gif" | "sprite" | null {
-  if (/\.gif$/i.test(path)) {
-    return "gif";
-  }
-  if (/\.(cbi|cba)$/i.test(path)) {
-    return "sprite";
-  }
-  return null;
-}
-
-function assetKindLabel(path: string): string {
-  const kind = assetKind(path);
-  return kind === "gif" ? "GIF" : kind === "sprite" ? "Sprite" : "Asset";
-}
-
-function ensureTrailingNewline(value: string): string {
-  return value.endsWith("\n") ? value : `${value}\n`;
 }
 
 function setPrimitiveField(
@@ -2632,6 +2479,8 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
   const tagName = target.tagName.toLowerCase();
   return (
     target.isContentEditable ||
+    tagName === "a" ||
+    tagName === "button" ||
     tagName === "input" ||
     tagName === "textarea" ||
     tagName === "select"
@@ -2707,10 +2556,6 @@ function primitiveTitle(primitive: ThemeStudioPrimitive): string {
   return primitive.color || "Rect";
 }
 
-function assetFileName(path: string): string {
-  return path.split("/").pop()?.trim() || "asset.bin";
-}
-
 function boundText(binding: string): string {
   switch (binding) {
     case "label":
@@ -2754,22 +2599,6 @@ function substituteText(value: string): string {
 function clampInt(value: number, min: number, max: number): number {
   const rounded = Math.round(value);
   return Math.max(min, Math.min(Math.max(min, max), rounded));
-}
-
-function integerOrDefault(value: string, fallback: number): number {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function formatSavedAt(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return new Intl.DateTimeFormat("en", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
 }
 
 function titleFromThemeId(themeId: string): string {
