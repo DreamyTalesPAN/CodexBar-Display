@@ -19,6 +19,7 @@ private let runtimeRegisteredVersionDefaultsKey =
     "shop.vibetv.control-center.runtime.registered-bundle-version"
 private let pendingNativeUpdateFileName = "pending-native-update.json"
 private let pendingNativeUpdateMaximumAge: TimeInterval = 30 * 60
+private let runtimeInitialHealthTimeout: TimeInterval = 8
 private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
 private let localNetworkPrivacyProbeURLString = "http://192.168.4.1/hello"
@@ -926,7 +927,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
         self.window = window
         self.webView = webView
-        loadControlCenter()
+        // The local server can keep the same URL across app updates. Always
+        // fetch the freshly bundled UI instead of reviving an older cached
+        // Control Center whose device-selection logic may be stale.
+        loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)
     }
 
     private func makeMainWindow() -> NSWindow {
@@ -1135,7 +1139,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             return .keepCurrentPage
         }
 
-        var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)
+        // A newly installed ad-hoc preview can inherit a stale Service
+        // Management launch constraint from the previously signed app. Detect
+        // that failed first launch quickly, then use the existing bounded
+        // unregister/register recovery. The recovery attempt still receives
+        // the full health timeout below.
+        var health = await waitForHealthyRuntime(
+            expectedVersion: expectedVersion,
+            timeout: runtimeInitialHealthTimeout
+        )
         if shouldRetryRuntimeRegistration(
             after: health,
             serviceEnabled: runtimeService.status == .enabled
@@ -1323,13 +1335,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     private func waitForHealthyRuntime(
-        expectedVersion: String
+        expectedVersion: String,
+        timeout: TimeInterval = runtimeHealthTimeout
     ) async -> RuntimeHealthEvaluation {
         guard let statusURL = URL(string: runtimeHealthURLString) else {
             return .requestFailed("invalid local status URL")
         }
 
-        let deadline = Date().addingTimeInterval(runtimeHealthTimeout)
+        let deadline = Date().addingTimeInterval(timeout)
         var lastEvaluation: RuntimeHealthEvaluation = .requestFailed("no response")
         repeat {
             var request = URLRequest(

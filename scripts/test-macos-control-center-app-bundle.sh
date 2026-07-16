@@ -559,7 +559,7 @@ required_source = [
     'runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"',
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",
-    "var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)",
+    "timeout: runtimeInitialHealthTimeout",
     "shouldRetryRuntimeRegistration(",
     "shouldRunRuntimeValidationUnregister(",
     '"--vibetv-validation-unregister-runtime"',
@@ -678,6 +678,14 @@ if "guard !installationRequired, installationReady else" not in present_source:
         "native app must prevent every unverified launch from creating a WebView"
     )
 
+create_window_start = source.find("private func createWindow()")
+create_window_end = source.find("private func makeMainWindow()", create_window_start)
+create_window_source = source[create_window_start:create_window_end]
+if "loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)" not in create_window_source:
+    raise SystemExit(
+        "native app must bypass stale Control Center HTML on the first verified WebView load"
+    )
+
 registration = source.find("guard await ensureBundledRuntimeServiceRegistered()")
 stop_legacy = source.find("if !stopLegacyLaunchAgents(legacyStates)")
 health_gate = source.find("var health = await waitForHealthyRuntime")
@@ -704,6 +712,10 @@ native_ready = prepare_method.find("return .nativeRuntimeReady")
 if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):
     raise SystemExit(
         "native runtime must pass the health and ownership gate before triggering a fresh WebView load"
+    )
+if "timeout: runtimeInitialHealthTimeout" not in prepare_method:
+    raise SystemExit(
+        "native runtime must detect a stale first Service Management launch before the full retry timeout"
     )
 retry_gate = prepare_method.find("if shouldRetryRuntimeRegistration(")
 retry_unregister = prepare_method.find("await unregisterBundledRuntimeService()", retry_gate)
@@ -778,6 +790,10 @@ health_method = source[
     source.find("private func waitForHealthyRuntime("):
     source.find("private func currentCompanionVersion()")
 ]
+if "timeout: TimeInterval = runtimeHealthTimeout" not in health_method:
+    raise SystemExit(
+        "native runtime recovery must retain the full health timeout after the fast first check"
+    )
 if health_method.find("evaluateRuntimeHealth(") > health_method.find(
     "verifyRuntimeListenerOwnership()"
 ):
