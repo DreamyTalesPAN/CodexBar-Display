@@ -839,6 +839,12 @@ func shouldRetryControlCenterNavigation(_ error: Error) -> Bool {
     return !(error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled)
 }
 
+struct InstallationStatus {
+    let title: String
+    let detail: String
+    let failed: Bool
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate {
     private var window: NSWindow?
@@ -850,6 +856,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var scheduledReload: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
     private var installationReady = false
+    private var installationStatus: InstallationStatus?
 #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -901,6 +908,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
         if installationReady {
             presentControlCenter()
+        } else if let status = installationStatus {
+            presentInstallationStatus(
+                title: status.title,
+                detail: status.detail,
+                failed: status.failed
+            )
         } else {
             window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -927,6 +940,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             switch outcome {
             case .nativeRuntimeReady:
                 self.installationReady = true
+                self.installationStatus = nil
                 _ = self.urlRouter.markReady()
                 self.presentControlCenter()
             case .legacyRuntimeRestored:
@@ -1089,6 +1103,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         detail: String,
         failed: Bool
     ) {
+        installationStatus = InstallationStatus(
+            title: title,
+            detail: detail,
+            failed: failed
+        )
         let window = window ?? makeMainWindow()
         let container = NSView()
         container.wantsLayer = true
