@@ -358,6 +358,7 @@ type deviceSearchEntry struct {
 	Firmware    string `json:"firmware,omitempty"`
 	NetworkMode string `json:"networkMode,omitempty"`
 	Known       bool   `json:"known"`
+	Active      bool   `json:"active"`
 }
 
 type themeInstallRequest struct {
@@ -800,6 +801,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/search", s.handleDeviceSearch)
+	mux.HandleFunc("/v1/device/select", s.handleDeviceSelect)
 	mux.HandleFunc("/v1/device/repair", s.handleDeviceRepair)
 	mux.HandleFunc("/v1/device/reload-display", s.handleDeviceReloadDisplay)
 	mux.HandleFunc("/v1/device", s.handleDevice)
@@ -2102,6 +2104,29 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 	}{OK: true, Devices: devices})
 }
 
+func (s *Server) handleDeviceSelect(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		Target           string `json:"target"`
+		ExpectedDeviceID string `json:"expectedDeviceId"`
+	}
+	if !decodeOptionalJSON(w, r, &req) {
+		return
+	}
+	device, err := s.selectDevice(
+		r.Context(),
+		strings.TrimSpace(req.Target),
+		strings.TrimSpace(req.ExpectedDeviceID),
+	)
+	if err != nil {
+		writeRepairError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
+}
+
 func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -2204,9 +2229,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
-		cfg.DeviceTarget = ""
-		cfg.DeviceToken = ""
-		cfg.DeviceID = ""
+		cfg.ClearDevices()
 	})
 	if err != nil {
 		writeInternalError(w, err)
@@ -2408,6 +2431,69 @@ func (s *Server) repairDevice(
 	close(flight.done)
 	s.repairFlightsMu.Unlock()
 	return flight.device, flight.err
+}
+
+func (s *Server) selectDevice(
+	ctx context.Context,
+	requestedTarget string,
+	expectedDeviceID string,
+) (deviceInfo, error) {
+	target, err := normalizeExplicitDeviceTarget(requestedTarget)
+	if err != nil {
+		return deviceInfo{}, err
+	}
+	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
+	if expectedDeviceID == "" {
+		return deviceInfo{}, &repairStageError{
+			stage: "discovery",
+			err:   errors.New("selected VibeTV identity is missing"),
+		}
+	}
+
+	hello, err := s.getHelloProbe(ctx, target, "", discoveryProbeTime)
+	if err != nil {
+		return deviceInfo{}, &repairStageError{stage: "discovery", err: err}
+	}
+	if !strings.EqualFold(expectedDeviceID, strings.TrimSpace(hello.DeviceID)) {
+		return deviceInfo{}, &repairStageError{
+			stage: "discovery",
+			err:   errors.New("selected VibeTV identity changed before pairing"),
+		}
+	}
+
+	previous, err := s.config()
+	if err != nil {
+		return deviceInfo{}, &repairStageError{stage: "config", err: err}
+	}
+	selected := runtimeconfig.KnownDevice{
+		DeviceID: expectedDeviceID,
+		Target:   target,
+	}
+	if known, ok := previous.KnownDevice(expectedDeviceID); ok {
+		selected.DeviceToken = known.DeviceToken
+	}
+	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
+		current.SetActiveDevice(selected)
+	}); err != nil {
+		return deviceInfo{}, &repairStageError{stage: "config", err: err}
+	}
+
+	device, repairErr := s.repairDevice(ctx, target, expectedDeviceID, false)
+	if repairErr == nil {
+		return device, nil
+	}
+	if _, restoreErr := s.updateConfig(func(current *runtimeconfig.Config) {
+		*current = previous
+	}); restoreErr != nil {
+		return deviceInfo{}, &repairStageError{
+			stage: "config",
+			err:   fmt.Errorf("selection failed: %v; restore previous VibeTV: %w", repairErr, restoreErr),
+		}
+	}
+	if strings.TrimSpace(previous.DeviceTarget) != "" {
+		_ = s.startDisplayStream(ctx, previous.DeviceTarget)
+	}
+	return deviceInfo{}, repairErr
 }
 
 func (s *Server) repairDeviceOnce(
@@ -4337,9 +4423,7 @@ func (s *Server) loadConfigNormalized() (runtimeconfig.Config, error) {
 	if err != nil {
 		return runtimeconfig.Config{}, err
 	}
-	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
-	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
-	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	cfg.Normalize()
 	return cfg, nil
 }
 
@@ -4353,9 +4437,7 @@ func (s *Server) updateConfig(mutate func(*runtimeconfig.Config)) (runtimeconfig
 	if mutate != nil {
 		mutate(&cfg)
 	}
-	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
-	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
-	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	cfg.Normalize()
 	if err := s.saveConfig(s.home, cfg); err != nil {
 		return runtimeconfig.Config{}, err
 	}
@@ -4617,7 +4699,8 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 			Board:       hello.Board,
 			Firmware:    hello.Firmware,
 			NetworkMode: hello.NetworkMode,
-			Known:       deviceIdentityMatches(cfg, hello),
+			Known:       deviceIdentityIsKnown(cfg, hello),
+			Active:      deviceIdentityMatches(cfg, hello),
 		}
 		if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
 			byIdentity[key] = entry
@@ -4628,6 +4711,9 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 		devices = append(devices, entry)
 	}
 	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].Active != devices[j].Active {
+			return devices[i].Active
+		}
 		if devices[i].Known != devices[j].Known {
 			return devices[i].Known
 		}
@@ -4657,6 +4743,9 @@ func sortedDeviceSearchEntries(byIdentity map[string]deviceSearchEntry) []device
 		devices = append(devices, entry)
 	}
 	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].Active != devices[j].Active {
+			return devices[i].Active
+		}
 		if devices[i].Known != devices[j].Known {
 			return devices[i].Known
 		}
@@ -4669,6 +4758,18 @@ func deviceIdentityMatches(cfg runtimeconfig.Config, hello protocol.DeviceHello)
 	wantID := strings.TrimSpace(cfg.DeviceID)
 	gotID := strings.TrimSpace(hello.DeviceID)
 	return wantID != "" && gotID != "" && strings.EqualFold(wantID, gotID)
+}
+
+func deviceIdentityIsKnown(cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
+	deviceID := strings.TrimSpace(hello.DeviceID)
+	if deviceID == "" {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.DeviceID), deviceID) {
+		return true
+	}
+	_, ok := cfg.KnownDevice(deviceID)
+	return ok
 }
 
 func validateRepairIdentity(

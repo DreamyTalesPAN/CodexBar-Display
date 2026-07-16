@@ -18,10 +18,17 @@ const (
 )
 
 type Config struct {
-	Theme        string `json:"theme,omitempty"`
-	DeviceTarget string `json:"deviceTarget,omitempty"`
-	DeviceToken  string `json:"deviceToken,omitempty"`
-	DeviceID     string `json:"deviceId,omitempty"`
+	Theme        string        `json:"theme,omitempty"`
+	DeviceTarget string        `json:"deviceTarget,omitempty"`
+	DeviceToken  string        `json:"deviceToken,omitempty"`
+	DeviceID     string        `json:"deviceId,omitempty"`
+	KnownDevices []KnownDevice `json:"knownDevices,omitempty"`
+}
+
+type KnownDevice struct {
+	DeviceID    string `json:"deviceId"`
+	Target      string `json:"target"`
+	DeviceToken string `json:"deviceToken,omitempty"`
 }
 
 func NormalizeTheme(raw string) string {
@@ -67,10 +74,7 @@ func Load(home string) (Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse runtime config: %w", err)
 	}
-	cfg.Theme = NormalizeTheme(cfg.Theme)
-	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
-	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
-	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	cfg.Normalize()
 	return cfg, nil
 }
 
@@ -80,10 +84,7 @@ func Save(home string, cfg Config) error {
 		return errors.New("home directory is empty")
 	}
 
-	cfg.Theme = NormalizeTheme(cfg.Theme)
-	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
-	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
-	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	cfg.Normalize()
 
 	path := ConfigPath(home)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -105,4 +106,83 @@ func Save(home string, cfg Config) error {
 		return fmt.Errorf("replace runtime config: %w", err)
 	}
 	return os.Chmod(path, 0o644)
+}
+
+func (cfg Config) KnownDevice(deviceID string) (KnownDevice, bool) {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return KnownDevice{}, false
+	}
+	for _, device := range cfg.KnownDevices {
+		if strings.EqualFold(device.DeviceID, deviceID) {
+			return device, true
+		}
+	}
+	return KnownDevice{}, false
+}
+
+func (cfg *Config) Normalize() {
+	cfg.Theme = NormalizeTheme(cfg.Theme)
+	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
+	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
+	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	cfg.normalizeKnownDevices()
+}
+
+func (cfg *Config) SetActiveDevice(device KnownDevice) {
+	device = normalizeKnownDevice(device)
+	cfg.DeviceID = device.DeviceID
+	cfg.DeviceTarget = device.Target
+	cfg.DeviceToken = device.DeviceToken
+	cfg.upsertKnownDevice(device)
+}
+
+func (cfg *Config) ClearDevices() {
+	cfg.DeviceTarget = ""
+	cfg.DeviceToken = ""
+	cfg.DeviceID = ""
+	cfg.KnownDevices = nil
+}
+
+func (cfg *Config) normalizeKnownDevices() {
+	devices := append([]KnownDevice(nil), cfg.KnownDevices...)
+	cfg.KnownDevices = nil
+	for _, device := range devices {
+		cfg.upsertKnownDevice(device)
+	}
+	if strings.TrimSpace(cfg.DeviceID) != "" {
+		cfg.upsertKnownDevice(KnownDevice{
+			DeviceID:    cfg.DeviceID,
+			Target:      cfg.DeviceTarget,
+			DeviceToken: cfg.DeviceToken,
+		})
+	}
+}
+
+func (cfg *Config) upsertKnownDevice(device KnownDevice) {
+	device = normalizeKnownDevice(device)
+	if device.DeviceID == "" {
+		return
+	}
+	for i := range cfg.KnownDevices {
+		if !strings.EqualFold(cfg.KnownDevices[i].DeviceID, device.DeviceID) {
+			continue
+		}
+		if device.Target == "" {
+			device.Target = cfg.KnownDevices[i].Target
+		}
+		if device.DeviceToken == "" {
+			device.DeviceToken = cfg.KnownDevices[i].DeviceToken
+		}
+		cfg.KnownDevices[i] = device
+		return
+	}
+	cfg.KnownDevices = append(cfg.KnownDevices, device)
+}
+
+func normalizeKnownDevice(device KnownDevice) KnownDevice {
+	device.DeviceID = strings.TrimSpace(device.DeviceID)
+	device.Target = strings.TrimSpace(device.Target)
+	device.DeviceToken = strings.TrimSpace(device.DeviceToken)
+	return device
 }

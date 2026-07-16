@@ -70,12 +70,15 @@ export type DeviceCandidate = {
   firmware?: string;
   networkMode?: "station" | "setup" | string;
   known?: boolean;
+  active?: boolean;
 };
 
 export type DeviceSearchState =
   | "idle"
   | "searching"
+  | "alternate"
   | "multiple"
+  | "declined"
   | "not-found"
   | "repair-failed"
   | "failed";

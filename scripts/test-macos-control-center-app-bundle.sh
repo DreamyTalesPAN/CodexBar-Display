@@ -557,13 +557,8 @@ required_source = [
     "runtimeServiceNeedsRefresh(",
     'runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"',
     'runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"',
-    'runtimeDeviceStatusURLString = "http://127.0.0.1:47832/v1/status"',
-    'runtimeDeviceRepairURLString = "http://127.0.0.1:47832/v1/device/repair"',
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",
-    "let devicePreparation = await prepareExistingDeviceConnectionWithRetries(",
-    "guard let statusRequest = makeExistingDeviceStatusRequest()",
-    "requireFreshFullFrame: !legacyStates.isEmpty || !legacyApps.isEmpty",
     "var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)",
     "shouldRetryRuntimeRegistration(",
     "shouldRunRuntimeValidationUnregister(",
@@ -628,13 +623,22 @@ prepare_start = source.find("private func startRuntimePreparation()")
 prepare_end = source.find("@objc private func retryRuntimePreparation()", prepare_start)
 preparation_method = source[prepare_start:prepare_end]
 status_start = preparation_method.find("presentInstallationStatus(")
+preflight_call = preparation_method.find("await self?.performLocalNetworkPrivacyPreflight()")
+preparation_task = preparation_method.find("preparationTask = Task")
 prepare_runtime = preparation_method.find("let outcome = await self.prepareCompanion()")
 native_case = preparation_method.find("case .nativeRuntimeReady:", prepare_runtime)
 webview_after_verify = preparation_method.find("self.presentControlCenter()", native_case)
 legacy_case = preparation_method.find("case .legacyRuntimeRestored:", native_case)
-if not (0 <= status_start < prepare_runtime < native_case < webview_after_verify < legacy_case):
+if not (
+    0 <= status_start < preflight_call < preparation_task < prepare_runtime
+    < native_case < webview_after_verify < legacy_case
+):
     raise SystemExit(
         "native app must keep the WebView closed until app, runtime, and listener verification succeeds"
+    )
+if "await self.performLocalNetworkPrivacyPreflight()" in preparation_method:
+    raise SystemExit(
+        "local-network privacy preflight must run in parallel and never block runtime preparation"
     )
 
 if "shouldRetryControlCenterNavigation(error)" not in source:
@@ -677,26 +681,25 @@ if "guard !installationRequired, installationReady else" not in present_source:
 registration = source.find("guard await ensureBundledRuntimeServiceRegistered()")
 stop_legacy = source.find("if !stopLegacyLaunchAgents(legacyStates)")
 health_gate = source.find("var health = await waitForHealthyRuntime")
-device_preparation = source.find(
-    "let devicePreparation = await prepareExistingDeviceConnectionWithRetries(",
-    health_gate,
-)
 legacy_app_migration = source.find(
     "let migratedLegacyApps = await migrateLegacyAppsAfterHealthyRuntime",
     health_gate,
 )
 persist_version = source.find("recordCurrentRuntimeBundleVersion()", health_gate)
 if not (
-    0 <= stop_legacy < registration < health_gate < device_preparation
+    0 <= stop_legacy < registration < health_gate
     < legacy_app_migration < persist_version
 ):
     raise SystemExit(
-        "native app must stop legacy writers, register, pass health, repair the existing device, migrate old apps, then persist"
+        "native app must stop legacy writers, register, pass local runtime health, migrate old apps, then persist"
     )
-
 prepare_start = source.find("private func prepareCompanion() async")
 prepare_end = source.find("private func ensureBundledRuntimeServiceRegistered()", prepare_start)
 prepare_method = source[prepare_start:prepare_end]
+if "/v1/device/repair" in prepare_method or "prepareExistingDeviceConnection" in prepare_method:
+    raise SystemExit(
+        "native installation must not probe, pair, or repair a VibeTV"
+    )
 native_ready = prepare_method.find("return .nativeRuntimeReady")
 if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):
     raise SystemExit(
@@ -707,19 +710,16 @@ retry_unregister = prepare_method.find("await unregisterBundledRuntimeService()"
 retry_register = prepare_method.find("registerBundledRuntimeService()", retry_unregister)
 retry_health = prepare_method.find("health = await waitForHealthyRuntime", retry_register)
 final_health_gate = prepare_method.find("guard runtimeHealthGatePassed(health)", retry_health)
-final_device_preparation = prepare_method.find(
-    "let devicePreparation = await prepareExistingDeviceConnectionWithRetries(",
-    final_health_gate,
-)
+first_native_ready = prepare_method.find("return .nativeRuntimeReady", final_health_gate)
 if not (
     prepare_method.count("if shouldRetryRuntimeRegistration(") == 1
     and 0 <= retry_gate < retry_unregister < retry_register < retry_health
-    < final_health_gate < final_device_preparation
+    < final_health_gate < first_native_ready
 ):
     raise SystemExit(
         "native runtime may perform exactly one unregister/register/health recovery before the final gate"
     )
-if "runtimeService.status == .enabled" in prepare_method[retry_health:final_device_preparation]:
+if "runtimeService.status == .enabled" in prepare_method[retry_health:first_native_ready]:
     raise SystemExit(
         "proven runtime health must not be rejected by a stale Service Management status"
     )

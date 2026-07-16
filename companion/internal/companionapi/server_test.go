@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -186,15 +187,27 @@ func TestDeviceSearchReturnsAllDevicesWithoutMutatingConfig(t *testing.T) {
 	defer known.Close()
 	knownAlias := device("esp8266-123abc", "station", "1.0.36")
 	defer knownAlias.Close()
+	knownAlternative := device("esp8266-456abc", "station", "1.0.34")
+	defer knownAlternative.Close()
 	unknown := device("esp8266-789abc", "station", "1.0.35")
 	defer unknown.Close()
 	setupDevice := device("esp8266-456def", "setup", "1.0.36")
 	defer setupDevice.Close()
 
-	initial := runtimeconfig.Config{DeviceTarget: "http://192.0.2.1", DeviceToken: "secret", DeviceID: "esp8266-123abc"}
+	initial := runtimeconfig.Config{
+		DeviceTarget: "http://192.0.2.1",
+		DeviceToken:  "secret",
+		DeviceID:     "esp8266-123abc",
+		KnownDevices: []runtimeconfig.KnownDevice{{
+			DeviceID:    "esp8266-456abc",
+			Target:      "http://192.0.2.2",
+			DeviceToken: "alternative-secret",
+		}},
+	}
+	initial.Normalize()
 	server := newTestServer(t, initial)
 	server.subnetTargets = func() []string {
-		return []string{unknown.URL, knownAlias.URL, known.URL, setupDevice.URL}
+		return []string{unknown.URL, knownAlias.URL, known.URL, knownAlternative.URL, setupDevice.URL}
 	}
 
 	rec := httptest.NewRecorder()
@@ -212,20 +225,23 @@ func TestDeviceSearchReturnsAllDevicesWithoutMutatingConfig(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if !got.OK || len(got.Devices) != 2 {
+	if !got.OK || len(got.Devices) != 3 {
 		t.Fatalf("unexpected search response: %+v", got)
 	}
-	if !got.Devices[0].Known || got.Devices[0].DeviceID != "esp8266-123abc" || got.Devices[0].NetworkMode != "station" || got.Devices[0].Board != "esp8266-smalltv-st7789" || got.Devices[0].Firmware != "1.0.36" || got.Devices[0].Target == "" {
+	if !got.Devices[0].Known || !got.Devices[0].Active || got.Devices[0].DeviceID != "esp8266-123abc" || got.Devices[0].NetworkMode != "station" || got.Devices[0].Board != "esp8266-smalltv-st7789" || got.Devices[0].Firmware != "1.0.36" || got.Devices[0].Target == "" {
 		t.Fatalf("known device must sort first: %+v", got.Devices)
 	}
-	if got.Devices[1].Known || got.Devices[1].DeviceID != "esp8266-789abc" || got.Devices[1].Firmware != "1.0.35" {
+	if !got.Devices[1].Known || got.Devices[1].Active || got.Devices[1].DeviceID != "esp8266-456abc" || got.Devices[1].Firmware != "1.0.34" {
+		t.Fatalf("known alternative must be marked without becoming active: %+v", got.Devices)
+	}
+	if got.Devices[2].Known || got.Devices[2].Active || got.Devices[2].DeviceID != "esp8266-789abc" || got.Devices[2].Firmware != "1.0.35" {
 		t.Fatalf("unknown station device must remain selectable after known device: %+v", got.Devices)
 	}
 	cfg, err := server.config()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg != initial {
+	if !reflect.DeepEqual(cfg, initial) {
 		t.Fatalf("search mutated config: got=%+v want=%+v", cfg, initial)
 	}
 }
@@ -336,6 +352,238 @@ func TestDeviceRepairRejectsIdentitySwapBetweenSearchAndPair(t *testing.T) {
 	}
 	if cfg.DeviceTarget != "" || cfg.DeviceToken != "" || cfg.DeviceID != "" {
 		t.Fatalf("identity swap mutated config: %+v", cfg)
+	}
+}
+
+func TestDeviceSelectRejectsIdentitySwapBeforePairing(t *testing.T) {
+	var pairCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","deviceId":"replacement-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/api/pair":
+			pairCalls.Add(1)
+			_, _ = w.Write([]byte(`{"ok":true,"token":"must-not-be-issued"}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	initial := runtimeconfig.Config{DeviceID: "device-a", DeviceTarget: "http://192.0.2.1", DeviceToken: "token-a"}
+	initial.Normalize()
+	server := newTestServer(t, initial)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/device/select",
+		strings.NewReader(`{"target":"`+device.URL+`","expectedDeviceId":"selected-device"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Fatalf("identity swap was accepted: %s", rec.Body.String())
+	}
+	if pairCalls.Load() != 0 {
+		t.Fatalf("identity swap triggered %d pairing writes", pairCalls.Load())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, initial) {
+		t.Fatalf("identity swap mutated config: got=%+v want=%+v", cfg, initial)
+	}
+}
+
+func TestDeviceSelectReusesKnownTokenAndKeepsProfiles(t *testing.T) {
+	const deviceID = "device-b"
+	const savedToken = "token-b"
+	var pairCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			if token := strings.TrimSpace(r.Header.Get("X-VibeTV-Token")); token != "" && token != savedToken {
+				http.Error(w, "invalid token", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, deviceID)
+		case "/api/pair":
+			pairCalls.Add(1)
+			_, _ = w.Write([]byte(`{"ok":true,"token":"rotated-token"}`))
+		case "/health":
+			if r.Header.Get("X-VibeTV-Token") != savedToken {
+				http.Error(w, "pairing required", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini"},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	initial := runtimeconfig.Config{
+		DeviceID:     "device-a",
+		DeviceTarget: "http://192.0.2.1",
+		DeviceToken:  "token-a",
+		KnownDevices: []runtimeconfig.KnownDevice{{DeviceID: deviceID, Target: "http://192.0.2.2", DeviceToken: savedToken}},
+	}
+	initial.Normalize()
+	server := newTestServer(t, initial)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/device/select",
+		strings.NewReader(`{"target":"`+device.URL+`","expectedDeviceId":"`+deviceID+`"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected successful selection, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if pairCalls.Load() != 0 {
+		t.Fatalf("known token should be reused without pairing, got %d pair calls", pairCalls.Load())
+	}
+	if strings.Contains(rec.Body.String(), savedToken) {
+		t.Fatalf("selection response leaked token: %s", rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceID != deviceID || cfg.DeviceTarget != device.URL || cfg.DeviceToken != savedToken {
+		t.Fatalf("unexpected active selection: %+v", cfg)
+	}
+	if len(cfg.KnownDevices) != 2 {
+		t.Fatalf("expected both device profiles to remain known: %+v", cfg.KnownDevices)
+	}
+}
+
+func TestDeviceSelectRenewsStaleKnownToken(t *testing.T) {
+	const deviceID = "device-b"
+	var pairCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimSpace(r.Header.Get("X-VibeTV-Token"))
+		switch r.URL.Path {
+		case "/hello":
+			if token == "stale-token" {
+				http.Error(w, "expired token", http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, deviceID)
+		case "/api/pair":
+			pairCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"renewed-token"}`))
+		case "/health":
+			if token != "renewed-token" {
+				http.Error(w, "pairing required", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini"},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	initial := runtimeconfig.Config{
+		DeviceID:     "device-a",
+		DeviceTarget: "http://192.0.2.1",
+		DeviceToken:  "token-a",
+		KnownDevices: []runtimeconfig.KnownDevice{{DeviceID: deviceID, Target: "http://192.0.2.2", DeviceToken: "stale-token"}},
+	}
+	server := newTestServer(t, initial)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/device/select",
+		strings.NewReader(`{"target":"`+device.URL+`","expectedDeviceId":"`+deviceID+`"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected stale token recovery, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if pairCalls.Load() != 1 {
+		t.Fatalf("expected exactly one safe token renewal, got %d", pairCalls.Load())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceID != deviceID || cfg.DeviceToken != "renewed-token" {
+		t.Fatalf("expected renewed active profile, got %+v", cfg)
+	}
+	known, ok := cfg.KnownDevice(deviceID)
+	if !ok || known.DeviceToken != "renewed-token" {
+		t.Fatalf("expected renewed token in known profile, got %+v", cfg.KnownDevices)
+	}
+}
+
+func TestDeviceSelectFailureRestoresPreviousActiveDevice(t *testing.T) {
+	const deviceID = "device-b"
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, deviceID)
+		case "/api/pair":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"token-b"}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini"},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	initial := runtimeconfig.Config{DeviceID: "device-a", DeviceTarget: "http://192.0.2.1", DeviceToken: "token-a"}
+	initial.Normalize()
+	server := newTestServer(t, initial)
+	var restoredStream atomic.Bool
+	server.refreshStream = func(_ context.Context, target string) error {
+		if target == device.URL {
+			return errors.New("selected display stream failed")
+		}
+		if target == initial.DeviceTarget {
+			restoredStream.Store(true)
+		}
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/device/select",
+		strings.NewReader(`{"target":"`+device.URL+`","expectedDeviceId":"`+deviceID+`"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Fatalf("failed stream was accepted: %s", rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, initial) {
+		t.Fatalf("failed selection did not restore config: got=%+v want=%+v", cfg, initial)
+	}
+	if !restoredStream.Load() {
+		t.Fatal("previous display stream was not restored")
 	}
 }
 
@@ -3890,6 +4138,8 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 		Theme:        "mini",
 		DeviceTarget: "http://192.168.178.72",
 		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+		KnownDevices: []runtimeconfig.KnownDevice{{DeviceID: "device-b", Target: "http://192.168.178.73", DeviceToken: "pair-token-b"}},
 	})
 
 	rec := httptest.NewRecorder()
@@ -3916,6 +4166,13 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	}
 	if got.Device.Target != "" || got.Device.Paired {
 		t.Fatalf("expected persisted device reset, got %+v", got.Device)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceTarget != "" || cfg.DeviceToken != "" || cfg.DeviceID != "" || len(cfg.KnownDevices) != 0 {
+		t.Fatalf("expected reset to remove every stored device profile, got %+v", cfg)
 	}
 }
 

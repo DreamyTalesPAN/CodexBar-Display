@@ -318,7 +318,11 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testLocalWifiSearchAutoSelectsOnlyKnownResult(
+    await testOfflineActiveDeviceOffersAlternativeWithoutWriting(
+      browser,
+      appContext.appUrl,
+    );
+    await testOfflineActiveDeviceReconnectsWithoutPrompt(
       browser,
       appContext.appUrl,
     );
@@ -885,54 +889,76 @@ async function testLocalWifiSearchLetsCustomerChooseMultipleResults(
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const repairRequests = [];
+  const selectRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
-    device: { connected: false, paired: false },
+    device: {
+      target: "http://192.168.178.70",
+      deviceId: "device-70",
+      connected: false,
+      paired: true,
+      ready: false,
+    },
     searchDevices: [
       {
         target: "http://192.168.178.81",
         deviceId: "device-81",
         firmware: "1.0.36",
         networkMode: "station",
+        known: true,
+        active: false,
       },
       {
         target: "http://192.168.178.82",
         deviceId: "device-82",
         firmware: "1.0.36",
         networkMode: "station",
+        known: false,
+        active: false,
       },
     ],
-    onRepair: (postData) => {
-      repairRequests.push(postData || "");
-      return { ...companionDevice, target: "http://192.168.178.82" };
+    onSelect: (postData) => {
+      selectRequests.push(postData || "");
+      return {
+        ...companionDevice,
+        target: "http://192.168.178.82",
+        deviceId: "device-82",
+      };
     },
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
-  await page.getByText("More than one VibeTV was found.").waitFor({
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
   assert(
     (await page.getByLabel("VibeTV address").count()) === 0,
     "Multiple results must show device choices, not manual address",
   );
+  assert(
+    (await page.getByText("Previously connected").count()) === 1,
+    "Only confirmed devices should carry the generic previous-connection hint",
+  );
+  assert(
+    !(await page.locator("body").innerText()).includes("Home") &&
+      !(await page.locator("body").innerText()).includes("Work"),
+    "Device choices must not invent location names",
+  );
   await page
-    .getByRole("button", {
-      name: "http://192.168.178.82 · Firmware 1.0.36",
-    })
+    .locator("div.border")
+    .filter({ hasText: "VibeTV device-82" })
+    .getByRole("button", { name: "Connect this VibeTV" })
     .click();
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
-  assert(repairRequests.length === 1, "Selected device should repair once");
+  assert(selectRequests.length === 1, "Selected device should switch once");
   assert(
-    JSON.parse(repairRequests[0]).target === "http://192.168.178.82",
-    `Selected address should be passed to repair, got ${repairRequests[0]}`,
+    JSON.parse(selectRequests[0]).target === "http://192.168.178.82",
+    `Selected address should be passed to selection, got ${selectRequests[0]}`,
   );
   assert(
-    JSON.parse(repairRequests[0]).expectedDeviceId === "device-82",
-    `Selected identity should stay pinned through repair, got ${repairRequests[0]}`,
+    JSON.parse(selectRequests[0]).expectedDeviceId === "device-82",
+    `Selected identity should stay pinned through selection, got ${selectRequests[0]}`,
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -1010,24 +1036,88 @@ async function testManualAddressRejectsInvalidAndReportsUnreachable(
   await page.close();
 }
 
-async function testLocalWifiSearchAutoSelectsOnlyKnownResult(browser, appUrl) {
+async function testOfflineActiveDeviceOffersAlternativeWithoutWriting(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const deviceWriteRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      target: "http://192.168.178.70",
+      deviceId: "device-70",
+      connected: false,
+      paired: true,
+      ready: false,
+    },
+    searchDevices: [
+      {
+        target: "http://192.168.178.82",
+        deviceId: "device-82",
+        firmware: "1.0.36",
+        networkMode: "station",
+        known: true,
+        active: false,
+      },
+    ],
+    onRequest: (pathname, method) => {
+      if (
+        method === "POST" &&
+        (pathname === "/v1/device/select" || pathname === "/v1/device/repair")
+      ) {
+        deviceWriteRequests.push(pathname);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Another VibeTV was found" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByText(
+    "Your last connected VibeTV is not available. Connect to this VibeTV instead?",
+  ).waitFor();
+  assert(
+    deviceWriteRequests.length === 0,
+    `Automatic search must remain read-only, got ${deviceWriteRequests}`,
+  );
+  await page.getByRole("button", { name: "Not now" }).click();
+  await page.getByText("Your previous VibeTV remains selected.").waitFor();
+  assert(
+    deviceWriteRequests.length === 0,
+    `Not now must not write to a device or change selection, got ${deviceWriteRequests}`,
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testOfflineActiveDeviceReconnectsWithoutPrompt(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const repairRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
-    device: { connected: false, paired: false },
+    device: {
+      target: "http://192.168.178.70",
+      deviceId: "known-82",
+      connected: false,
+      paired: true,
+      ready: false,
+    },
     searchDevices: [
       {
         target: "http://192.168.178.81",
         deviceId: "unknown-81",
         networkMode: "station",
         known: false,
+        active: false,
       },
       {
         target: "http://192.168.178.82",
         deviceId: "known-82",
         networkMode: "station",
         known: true,
+        active: true,
       },
     ],
     onRepair: (postData) => {
@@ -1037,14 +1127,13 @@ async function testLocalWifiSearchAutoSelectsOnlyKnownResult(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
-  assert(repairRequests.length === 1, "Exactly one known VibeTV should auto-connect");
+  assert(repairRequests.length === 1, "The active VibeTV should reconnect once");
   const request = JSON.parse(repairRequests[0] || "{}");
-  assert(request.target === "http://192.168.178.82", "Known target should win");
-  assert(request.expectedDeviceId === "known-82", "Known identity must stay pinned");
+  assert(request.target === "http://192.168.178.82", "Active target should win");
+  assert(request.expectedDeviceId === "known-82", "Active identity must stay pinned");
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -1125,7 +1214,7 @@ async function testFailedPairingErrorDoesNotLoop(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByText("VibeTV could not reconnect automatically.").waitFor({
+  await page.getByText("VibeTV could not reconnect automatically.", { exact: true }).waitFor({
     timeout: 10_000,
   });
   await page.waitForTimeout(6_000);
@@ -3706,6 +3795,7 @@ async function routeCompanionOnline(
     onDiscover,
     onPair,
     onRepair,
+    onSelect,
     onSearch,
     onRequest = () => {},
     onReset,
@@ -3721,6 +3811,7 @@ async function routeCompanionOnline(
     usageStatus = 200,
     displayFrameStatus = 200,
     repairError = false,
+    selectError = false,
     searchDevices,
     searchDelayMs = 0,
     firstStatusDelayMs = 0,
@@ -4045,12 +4136,49 @@ async function routeCompanionOnline(
             firmware: currentDevice?.firmware || companionDevice.firmware,
             networkMode: "station",
             known: Boolean(currentDevice?.target),
+            active: Boolean(currentDevice?.deviceId),
           },
         ];
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ ok: true, devices }),
+      });
+      return;
+    }
+    if (pathname === "/v1/device/select") {
+      if (selectError) {
+        await route.fulfill({
+          status: 502,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: {
+              code: "device_selection_failed",
+              message: "The selected VibeTV could not be connected.",
+              nextAction: "Keep both VibeTVs powered on, then try again.",
+            },
+          }),
+        });
+        return;
+      }
+      const postData = route.request().postData() || "";
+      const parsed = parseJSON(postData);
+      const nextDevice = onSelect?.(postData, currentDevice) || {
+        ...companionDevice,
+        target: parsed?.target || currentDevice?.target,
+        deviceId: parsed?.expectedDeviceId || currentDevice?.deviceId,
+      };
+      currentDevice = {
+        ...nextDevice,
+        connected: true,
+        paired: true,
+        ready: true,
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, device: currentDevice }),
       });
       return;
     }
@@ -4886,8 +5014,8 @@ async function assertCompanionRequestTimeoutContract() {
   const repairTimeoutUses =
     source.match(/timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS/g) || [];
   assert(
-    repairTimeoutUses.length === 2,
-    `Exactly repair and reload-display must use the 90 second timeout, got ${repairTimeoutUses.length} uses`,
+    repairTimeoutUses.length === 3,
+    `Exactly select, repair, and reload-display must use the 90 second timeout, got ${repairTimeoutUses.length} uses`,
   );
 }
 
