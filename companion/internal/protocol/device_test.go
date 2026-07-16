@@ -23,7 +23,9 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 			},
 			Theme: ThemeCapabilities{
 				SupportsThemeSpecV1:     true,
+				SupportsStoredThemes:    true,
 				MaxThemeSpecBytes:       1024,
+				MaxStoredThemeSpecBytes: 4096,
 				MaxThemePrimitives:      32,
 				MaxThemeGifAssets:       1,
 				MaxThemeGifBytes:        24576,
@@ -54,14 +56,17 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	if !caps.SupportsThemeSpecV1 {
 		t.Fatalf("expected theme spec support")
 	}
+	if !caps.SupportsStoredThemes {
+		t.Fatalf("expected stored theme support")
+	}
 	if caps.Board != "esp8266-smalltv-st7789" {
 		t.Fatalf("unexpected normalized board: %q", caps.Board)
 	}
 	if caps.Firmware != "1.0.0" {
 		t.Fatalf("unexpected firmware version: %q", caps.Firmware)
 	}
-	if caps.MaxThemeSpecBytes != 1024 || caps.MaxThemePrimitives != 32 {
-		t.Fatalf("unexpected theme limits: bytes=%d primitives=%d", caps.MaxThemeSpecBytes, caps.MaxThemePrimitives)
+	if caps.MaxThemeSpecBytes != 1024 || caps.MaxStoredThemeSpecBytes != 4096 || caps.MaxThemePrimitives != 32 {
+		t.Fatalf("unexpected theme limits: inline=%d stored=%d primitives=%d", caps.MaxThemeSpecBytes, caps.MaxStoredThemeSpecBytes, caps.MaxThemePrimitives)
 	}
 	if caps.MaxThemeGifAssets != 1 || caps.MaxThemeGifBytes != 24576 || caps.MaxThemeGifWidth != 80 || caps.MaxThemeGifHeight != 80 || caps.MaxThemeGifPixels != 6400 {
 		t.Fatalf("unexpected GIF limits: %+v", caps)
@@ -98,10 +103,11 @@ func TestCapabilitiesFromCompactHelloTreatsThemeSpecAsThemeSupport(t *testing.T)
 				Brightness: DisplayBrightnessCapabilities{Supported: true},
 			},
 			Theme: ThemeCapabilities{
-				SupportsThemeSpecV1: true,
-				MaxThemeSpecBytes:   2048,
-				MaxThemePrimitives:  32,
-				MaxThemeGifBytes:    24576,
+				SupportsThemeSpecV1:     true,
+				MaxThemeSpecBytes:       2048,
+				MaxStoredThemeSpecBytes: 4096,
+				MaxThemePrimitives:      32,
+				MaxThemeGifBytes:        24576,
 			},
 			Transport: TransportCapabilities{Active: "wifi"},
 		},
@@ -116,14 +122,29 @@ func TestCapabilitiesFromCompactHelloTreatsThemeSpecAsThemeSupport(t *testing.T)
 	if !caps.SupportsThemeSpecV1 {
 		t.Fatalf("expected theme spec support")
 	}
+	if !caps.SupportsStoredThemes {
+		t.Fatalf("expected stored theme support to be inferred from its advertised limit")
+	}
 	if caps.ActiveTransport != "wifi" {
 		t.Fatalf("unexpected transport: %q", caps.ActiveTransport)
 	}
-	if caps.MaxFrameBytes != 2048 || caps.MaxThemeSpecBytes != 2048 || caps.MaxThemePrimitives != 32 || caps.MaxThemeGifBytes != 24576 {
+	if caps.MaxFrameBytes != 2048 || caps.MaxThemeSpecBytes != 2048 || caps.MaxStoredThemeSpecBytes != 4096 || caps.MaxThemePrimitives != 32 || caps.MaxThemeGifBytes != 24576 {
 		t.Fatalf("unexpected compact limits: %+v", caps)
 	}
 	if !caps.SupportsBrightness {
 		t.Fatalf("expected brightness support")
+	}
+}
+
+func TestStoredThemeSpecBytesLimitFallsBackForOlderFirmware(t *testing.T) {
+	caps := DeviceCapabilities{MaxThemeSpecBytes: 2048}
+	if got := caps.StoredThemeSpecBytesLimit(); got != 2048 {
+		t.Fatalf("unexpected legacy stored theme limit: %d", got)
+	}
+
+	caps.MaxStoredThemeSpecBytes = 4096
+	if got := caps.StoredThemeSpecBytesLimit(); got != 4096 {
+		t.Fatalf("unexpected explicit stored theme limit: %d", got)
 	}
 }
 

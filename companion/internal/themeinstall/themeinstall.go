@@ -228,7 +228,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if opts.Verbose {
 		fmt.Fprintf(out, "Device: board=%s protocol=%d target=%s\n", caps.Board, caps.NegotiatedProtocolVersion, displayTarget)
 	}
-	if err := themespec.ValidateAgainstCapabilities(pack.ThemeSpec, pack.ThemeSpecRaw, caps); err != nil {
+	if err := pack.ValidateAgainstCapabilities(caps); err != nil {
 		return Result{}, &InstallError{
 			Op:   "theme-pack/capabilities",
 			Code: errcode.ProtocolThemeSpecIncompatible,
@@ -1007,8 +1007,10 @@ func FallbackThemeSpecCapabilities() protocol.DeviceCapabilities {
 		Board:                     "assumed-usb-profile",
 		SupportsTheme:             true,
 		SupportsThemeSpecV1:       true,
+		SupportsStoredThemes:      true,
 		MaxFrameBytes:             1024,
 		MaxThemeSpecBytes:         1024,
+		MaxStoredThemeSpecBytes:   1024,
 		MaxThemePrimitives:        32,
 		BuiltinThemes:             theme.Names(),
 		ActiveTransport:           "usb",

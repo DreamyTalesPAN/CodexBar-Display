@@ -2,6 +2,7 @@ package themespec
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -361,6 +362,66 @@ func TestValidateAgainstCapabilitiesChecksLimits(t *testing.T) {
 	}
 	if err := ValidateAgainstCapabilities(spec, raw, caps); err == nil {
 		t.Fatalf("expected capability mismatch")
+	}
+}
+
+func TestValidateStoredAgainstCapabilitiesUsesStoredLimit(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "stored-theme",
+		ThemeRev:         1,
+		FallbackTheme:    "mini",
+		Primitives: []Primitive{
+			{Type: "text", X: 1, Y: 1, Text: "hello"},
+		},
+	}
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal raw: %v", err)
+	}
+	raw = append(raw, []byte(strings.Repeat(" ", 2300-len(raw)))...)
+
+	caps := protocol.DeviceCapabilities{
+		Known:                   true,
+		SupportsThemeSpecV1:     true,
+		SupportsStoredThemes:    true,
+		MaxThemeSpecBytes:       2048,
+		MaxStoredThemeSpecBytes: 4096,
+		MaxThemePrimitives:      8,
+		BuiltinThemes:           []string{"mini"},
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, caps); err == nil {
+		t.Fatalf("expected inline validation to reject 2300-byte spec")
+	}
+	if err := ValidateStoredAgainstCapabilities(spec, raw, caps); err != nil {
+		t.Fatalf("expected stored validation to accept 2300-byte spec: %v", err)
+	}
+
+	caps.MaxStoredThemeSpecBytes = 2048
+	if err := ValidateStoredAgainstCapabilities(spec, raw, caps); err == nil {
+		t.Fatalf("expected stored validation to reject spec above stored limit")
+	}
+}
+
+func TestValidateStoredAgainstCapabilitiesFallsBackToInlineLimit(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "legacy-theme",
+		ThemeRev:         1,
+		Primitives:       []Primitive{{Type: "text", X: 1, Y: 1, Text: "hello"}},
+	}
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal raw: %v", err)
+	}
+
+	caps := protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+		MaxThemeSpecBytes:   len(raw) - 1,
+	}
+	if err := ValidateStoredAgainstCapabilities(spec, raw, caps); err == nil {
+		t.Fatalf("expected legacy inline limit fallback to reject oversized stored spec")
 	}
 }
 

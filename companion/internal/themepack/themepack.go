@@ -74,7 +74,7 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 	if p == nil {
 		return errors.New("theme pack is nil")
 	}
-	if err := themespec.ValidateAgainstCapabilities(p.ThemeSpec, p.ThemeSpecRaw, caps); err != nil {
+	if err := themespec.ValidateStoredAgainstCapabilities(p.ThemeSpec, p.ThemeSpecRaw, caps); err != nil {
 		return err
 	}
 	if caps.MaxThemeGifBytes <= 0 {

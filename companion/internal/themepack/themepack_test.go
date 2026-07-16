@@ -230,6 +230,34 @@ func TestValidateAgainstCapabilitiesRejectsOversizedGIFAsset(t *testing.T) {
 	}
 }
 
+func TestValidateAgainstCapabilitiesUsesStoredThemeSpecLimit(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":"OK","s":1}]}`
+	spec += strings.Repeat(" ", 2300-len(spec))
+	dir := writeThemePackWithSpec(t, spec, nil)
+
+	pack, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	caps := protocol.DeviceCapabilities{
+		Known:                   true,
+		SupportsThemeSpecV1:     true,
+		SupportsStoredThemes:    true,
+		MaxThemeSpecBytes:       2048,
+		MaxStoredThemeSpecBytes: 4096,
+		MaxThemePrimitives:      32,
+		BuiltinThemes:           []string{"mini"},
+	}
+	if err := pack.ValidateAgainstCapabilities(caps); err != nil {
+		t.Fatalf("expected stored theme spec to use 4096-byte limit: %v", err)
+	}
+
+	caps.MaxStoredThemeSpecBytes = 2048
+	if err := pack.ValidateAgainstCapabilities(caps); err == nil {
+		t.Fatalf("expected stored theme spec above 2048 bytes to be rejected")
+	}
+}
+
 func TestLoadRejectsMissingStateAsset(t *testing.T) {
 	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":24,"h":24,"sa":{"idle":"/themes/u/idle.cbi","coding":"/themes/u/code.cbi"}}]}`
 	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{

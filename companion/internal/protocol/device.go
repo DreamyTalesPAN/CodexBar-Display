@@ -25,7 +25,9 @@ type DisplayCapabilities struct {
 
 type ThemeCapabilities struct {
 	SupportsThemeSpecV1     bool     `json:"supportsThemeSpecV1,omitempty"`
+	SupportsStoredThemes    bool     `json:"supportsStoredThemes,omitempty"`
 	MaxThemeSpecBytes       int      `json:"maxThemeSpecBytes,omitempty"`
+	MaxStoredThemeSpecBytes int      `json:"maxStoredThemeSpecBytes,omitempty"`
 	MaxThemePrimitives      int      `json:"maxThemePrimitives,omitempty"`
 	MaxThemeGifAssets       int      `json:"maxThemeGifAssets,omitempty"`
 	MaxThemeGifBytes        int      `json:"maxThemeGifBytes,omitempty"`
@@ -110,8 +112,10 @@ type DeviceCapabilities struct {
 	Features                   []string
 	SupportsTheme              bool
 	SupportsThemeSpecV1        bool
+	SupportsStoredThemes       bool
 	MaxFrameBytes              int
 	MaxThemeSpecBytes          int
+	MaxStoredThemeSpecBytes    int
 	MaxThemePrimitives         int
 	MaxThemeGifAssets          int
 	MaxThemeGifBytes           int
@@ -148,6 +152,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 	negotiated := NegotiateProtocolVersion(supportedProtocols, h.PreferredProtocolVersion, h.ProtocolVersion)
 	supportsTheme := h.HasFeature(FeatureTheme)
 	supportsThemeSpecV1 := h.HasFeature(FeatureThemeSpecV1) || h.Capabilities.Theme.SupportsThemeSpecV1
+	supportsStoredThemes := h.Capabilities.Theme.SupportsStoredThemes || h.Capabilities.Theme.MaxStoredThemeSpecBytes > 0
 	if !supportsTheme {
 		supportsTheme = len(h.Capabilities.Theme.BuiltinThemes) > 0 || supportsThemeSpecV1
 	}
@@ -162,8 +167,10 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		Features:                   append([]string(nil), h.Features...),
 		SupportsTheme:              supportsTheme,
 		SupportsThemeSpecV1:        supportsThemeSpecV1,
+		SupportsStoredThemes:       supportsStoredThemes,
 		MaxFrameBytes:              h.MaxFrameBytes,
 		MaxThemeSpecBytes:          h.Capabilities.Theme.MaxThemeSpecBytes,
+		MaxStoredThemeSpecBytes:    h.Capabilities.Theme.MaxStoredThemeSpecBytes,
 		MaxThemePrimitives:         h.Capabilities.Theme.MaxThemePrimitives,
 		MaxThemeGifAssets:          h.Capabilities.Theme.MaxThemeGifAssets,
 		MaxThemeGifBytes:           h.Capabilities.Theme.MaxThemeGifBytes,
@@ -199,6 +206,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		h.Capabilities.Display.WidthPx > 0 ||
 		h.Capabilities.Display.HeightPx > 0 ||
 		h.Capabilities.Theme.MaxThemeSpecBytes > 0 ||
+		h.Capabilities.Theme.MaxStoredThemeSpecBytes > 0 ||
 		h.Capabilities.Theme.MaxThemePrimitives > 0 ||
 		h.Capabilities.Theme.MaxThemeGifBytes > 0 ||
 		h.Capabilities.Theme.CachedThemeRev > 0 ||
@@ -207,6 +215,16 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		caps.Known = true
 	}
 	return caps
+}
+
+// StoredThemeSpecBytesLimit returns the advertised limit for theme specs that
+// are uploaded to device storage. Older firmware only advertised the inline
+// ThemeSpec limit, so that value remains the compatibility fallback.
+func (c DeviceCapabilities) StoredThemeSpecBytesLimit() int {
+	if c.MaxStoredThemeSpecBytes > 0 {
+		return c.MaxStoredThemeSpecBytes
+	}
+	return c.MaxThemeSpecBytes
 }
 
 func normalizeProtocolVersions(raw []int) []int {
