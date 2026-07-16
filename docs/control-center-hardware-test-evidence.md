@@ -388,3 +388,21 @@ After the test, the isolated firmware server and launchd manifest override were
 removed. The signed preview remained installed with the normal production feed,
 and device `14799300` remained ready on `1.0.37` with a healthy stream. No merge,
 tag, release, Main push, or production deployment was performed.
+
+Final-head notarized verification:
+
+- After removing the disproved build-number workaround and recording this
+  evidence, trusted workflow run
+  `https://github.com/DreamyTalesPAN/CodexBar-Display/actions/runs/29533270837`
+  built final PR source SHA
+  `8e98f5a75f62cf7eac3042347860776a0dbfaa5c`.
+- Final preview version/build: `99.0.31` / `31`.
+- Final DMG SHA-256:
+  `f52ef31197f9e265cbd7a7644a0432e67398859851afc7c4a20cb39f01eafce6`.
+- The final DMG passed the same signature, notarization, stapler, Gatekeeper,
+  and repository distribution checks and embedded the exact final PR SHA.
+- Installed from `/Applications`, it loaded
+  `shop.vibetv.control-center.runtime` with PID `24164`; `/v1/status` reported
+  `installationMode: dmg`, the expected app/helper paths and final source SHA.
+- Device `14799300` remained ready on `1.0.37` with boot ID
+  `e1d1c4-46-da1b6ac5` and a healthy stream. No second OTA was performed.
