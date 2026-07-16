@@ -104,7 +104,8 @@ jobs:
       - name: Checkout signing tools
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: 87bc0355582f76dbb2f89b361c9aa9ffed8b192f
+          # Reviewed main commit that signs Sparkle's nested code inside-out.
+          ref: 24c3855468991f28ef1af2df905b95944d90985c
           persist-credentials: false
 
       - name: Download Mac app
