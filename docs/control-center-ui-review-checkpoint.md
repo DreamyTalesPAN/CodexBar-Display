@@ -33,7 +33,54 @@ To reset the gate:
   build`, `npm run check:customer-ui-copy`, `npm run test:theme-studio`, `npm
   run test:customer-flows`, `go test ./...` in `companion`, and `git diff
   --check` passed locally.
+- Reviewed scope: transactional Mac App and firmware update states, separate App
+  and background-service health, automatic reconnect presentation, update
+  navigation badges, and the legacy-to-native DMG handoff introduced through
+  PR #175.
+- Customer rule: a healthy install shows one short `Up to date` state and one
+  `Check for updates` action. During a temporary disconnect, the existing
+  Overview stays available and explains that the Mac App is reconnecting
+  automatically. App, background version, and background-service health stay
+  distinct without exposing commit hashes, process IDs, or service labels.
+- Simplifications accepted: the Updates screen now says `Background version`
+  and `Background service` with `Running`, `Needs attention`, or `Not verified`
+  instead of showing `Runtime`, `Listener`, an internal launch-service name,
+  PID, and commit hash. No new customer decision, tab, setup step, or recovery
+  button was added.
+- Verification: the ready Overview, ready Updates screen, and bounded
+  reconnecting Overview were reviewed at a 1280-by-720 Mac window against
+  `docs/control-center-ui-principles.md`. Accepted screenshots are in
+  `tmp/ui-review-issue-174-release/`. DOM inspection confirmed semantic status,
+  heading, description-list, and button labels. `npm run lint`, `npm run
+  check:customer-ui-copy`, `npm run test:customer-flows`,
+  `scripts/test-control-center-release-workflow.sh`, the deterministic UI
+  review gate, and `git diff --check` passed locally. The connected VibeTV was
+  used read-only; no firmware or device write was part of this review.
 
+- Reviewed scope: customer-facing Control Center setup changes from checkpoint
+  `091ed03` through `3025d78`, including WiFi confirmation, automatic VibeTV
+  search, identity-pinned selection, automatic pairing repair, manual address
+  fallback, and completed-setup handoff.
+- Customer rule: the existing `VibeTV is on WiFi` button starts the full search
+  and connection flow. While searching, no second action or address field is
+  shown. Zero results reveal the manual address fallback, one unambiguous or
+  known result connects automatically, and multiple unknown results require
+  only the unavoidable device choice. Pairing stays automatic and invisible.
+- Simplifications accepted: no new normal-path button, tab, setup step, or
+  technical explanation was added. Manual address validation prevents empty or
+  malformed submissions before they reach the Mac App. Search failure and
+  post-search connection failure use separate short recovery messages, each
+  with one `Try again` action; successful verification opens Overview and the
+  completed Setup view keeps only `Run setup again`.
+- Verification: the current customer diff was reviewed against
+  `docs/control-center-ui-principles.md` at HEAD `3025d78`. Browser coverage
+  includes delayed search with the fallback hidden, zero/one/many results,
+  one-known-among-many selection, empty and malformed addresses, unreachable
+  manual addresses, identity-pinned repair, bounded automatic pairing repair,
+  failed/unready connection states, direct Overview handoff, and completed
+  Setup. `npm run lint -- --max-warnings=0`, `npm run
+  check:customer-ui-copy`, `npm run test:customer-flows`, and `git diff
+  --check` passed locally. No hardware write was part of this UI review.
 - Reviewed scope: signed Preview DMG delivery, automatic recovery from a
   partially rendered firmware-update screen, and exclusive VibeTV traffic
   while a firmware update is running.

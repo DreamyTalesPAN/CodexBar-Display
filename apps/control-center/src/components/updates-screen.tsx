@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
   availableMacAppDmgDownloadUrl,
   type CompanionReleaseInfo,
@@ -17,6 +17,7 @@ import {
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { ControlCenterButton } from "./control-center-button";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
+import type { CompanionInfo } from "./control-center-types";
 
 export type UpdatesCompanionStatus = "unknown" | "online" | "missing";
 
@@ -27,7 +28,9 @@ export type UpdatesDeviceInfo = {
 };
 
 export type FirmwareUpdateStatus = {
-  phase: "installing" | "complete" | "error";
+  phase: "installing" | "complete" | "attention" | "error";
+  stage?: string;
+  outcome?: string;
   startedAt: string;
   finishedAt?: string;
   message?: string;
@@ -36,6 +39,13 @@ export type FirmwareUpdateStatus = {
   result?: {
     firmware?: string;
     target?: string;
+    deviceId?: string;
+    artifactValidated?: boolean;
+    uploadAccepted?: boolean;
+    helloVerified?: boolean;
+    healthVerified?: boolean;
+    streamVerified?: boolean;
+    renderVerified?: boolean;
   };
   error?: string;
 };
@@ -44,6 +54,7 @@ export type UpdatesScreenProps = {
   companionStatus: UpdatesCompanionStatus;
   device: UpdatesDeviceInfo | null;
   companionVersion?: string;
+  companionInfo?: CompanionInfo | null;
   companionRelease?: CompanionReleaseInfo | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
   onCheckUpdates?: () => Promise<void> | void;
@@ -58,6 +69,7 @@ export function UpdatesScreen({
   companionStatus,
   device,
   companionVersion,
+  companionInfo,
   companionRelease = null,
   firmwareUpdate,
   onCheckUpdates,
@@ -67,7 +79,6 @@ export function UpdatesScreen({
   busyAction,
   updateStatus,
 }: UpdatesScreenProps) {
-  const [macAppDownloadStarted, setMacAppDownloadStarted] = useState(false);
   const installedFirmware =
     firmwareUpdate?.installedFirmware || device?.firmware || "Unknown";
   const canCheckFirmware = Boolean(device?.board && device?.firmware);
@@ -79,6 +90,9 @@ export function UpdatesScreen({
     firmwareUpdate?.latestFirmware || (checking ? "Checking" : "Not available");
   const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
+  const nativeMacUpdateReady = Boolean(
+    macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
+  );
   const verifiedDmgDownloadUrl = availableMacAppDmgDownloadUrl(companionRelease);
   const macAppMigrationReady = Boolean(
     requiresMacAppMigration && verifiedDmgDownloadUrl,
@@ -89,8 +103,10 @@ export function UpdatesScreen({
       : undefined;
   const macAppDownloadReady = Boolean(macAppDownloadUrl);
   const macAppDownloadAction =
-    macAppMigrationReady || macAppUpdateAvailable;
-  const anyUpdateAvailable = updateAvailable || macAppDownloadAction;
+    macAppMigrationReady || (macAppUpdateAvailable && !nativeMacUpdateReady);
+  const macAppNativeAction = nativeMacUpdateReady;
+  const anyUpdateAvailable =
+    updateAvailable || macAppDownloadAction || macAppNativeAction;
   const needsAttention = anyUpdateAvailable || requiresMacAppMigration;
   const refreshing = busyAction === "firmware-check";
   const installingUpdate =
@@ -110,9 +126,9 @@ export function UpdatesScreen({
       : checkFailed
         ? "Update check failed"
         : macAppMigrationReady
-          ? "Move to the new Mac App"
+          ? "Update available"
           : requiresMacAppMigration
-            ? "New Mac App is being prepared"
+            ? "Update not ready"
             : anyUpdateAvailable
               ? "Update available"
               : "Up to date";
@@ -134,7 +150,7 @@ export function UpdatesScreen({
   const companionInstalled =
     companionStatus === "missing"
       ? "Not running"
-      : companionVersion || "Unknown";
+      : companionInfo?.app?.version || companionVersion || "Unknown";
   const companionAvailable =
     companionRelease?.latestVersion || companionRelease?.release || "Checking";
 
@@ -184,13 +200,13 @@ export function UpdatesScreen({
               Boolean(busyAction && busyAction !== "firmware-check")
             }
             downloadUrl={macAppDownloadUrl}
+            nativeUpdateUrl={macAppNativeAction ? "vibetv://check-for-updates" : undefined}
             installingFirmware={installingUpdate}
             firmwareUpdateAvailable={updateAvailable}
             macAppCheckFailed={macAppCheckFailed}
             macAppMigrationRequired={requiresMacAppMigration}
             macAppMigrationReady={macAppMigrationReady}
             macAppUpdateAvailable={macAppUpdateAvailable}
-            onDownloadStart={() => setMacAppDownloadStarted(true)}
             onClick={runPrimaryUpdate}
             updateReady={Boolean(
               updateAvailable
@@ -211,8 +227,23 @@ export function UpdatesScreen({
         <dl className="grid gap-0 border-y border-[#747A60]">
           <FirmwareRow
             icon={<Server size={20} aria-hidden />}
-            label="Installed version"
+            label="App version"
             value={companionInstalled}
+          />
+          <FirmwareRow
+            icon={<Server size={20} aria-hidden />}
+            label="App build"
+            value={companionInfo?.app?.build || "Unknown"}
+          />
+          <FirmwareRow
+            icon={<Monitor size={20} aria-hidden />}
+            label="Background version"
+            value={formatRuntimeValue(companionInfo)}
+          />
+          <FirmwareRow
+            icon={<ShieldCheck size={20} aria-hidden />}
+            label="Background service"
+            value={formatListenerValue(companionInfo)}
           />
           <FirmwareRow
             icon={<Download size={20} aria-hidden />}
@@ -226,16 +257,6 @@ export function UpdatesScreen({
           />
         </dl>
 
-        {requiresMacAppMigration || macAppUpdateAvailable ? (
-          <MacAppDmgUpdateNote
-            downloadReady={macAppDownloadReady}
-            downloadStarted={macAppDownloadStarted}
-            downloadUrl={macAppDownloadUrl}
-            migration={requiresMacAppMigration}
-            onDownloadStart={() => setMacAppDownloadStarted(true)}
-            showDownloadAction={updateAvailable}
-          />
-        ) : null}
       </section>
 
       <section className="border-b border-[#747A60] py-8">
@@ -278,31 +299,47 @@ function PrimaryUpdateAction({
   checking,
   disabled,
   downloadUrl,
+  nativeUpdateUrl,
   firmwareUpdateAvailable,
   installingFirmware,
   macAppCheckFailed,
   macAppMigrationRequired,
   macAppMigrationReady,
   macAppUpdateAvailable,
-  onDownloadStart,
   onClick,
   updateReady,
 }: {
   checking: boolean;
   disabled: boolean;
   downloadUrl?: string;
+  nativeUpdateUrl?: string;
   firmwareUpdateAvailable: boolean;
   installingFirmware: boolean;
   macAppCheckFailed: boolean;
   macAppMigrationRequired: boolean;
   macAppMigrationReady: boolean;
   macAppUpdateAvailable: boolean;
-  onDownloadStart: () => void;
   onClick: () => void | Promise<void>;
   updateReady: boolean;
 }) {
   if (
-    !firmwareUpdateAvailable &&
+    macAppUpdateAvailable &&
+    nativeUpdateUrl &&
+    !disabled &&
+    !checking
+  ) {
+    return (
+      <a
+        className="vibetv-button vibetv-button--large vibetv-button--primary w-full sm:w-auto sm:min-w-[240px]"
+        href={nativeUpdateUrl}
+      >
+        <Download size={20} aria-hidden />
+        <span>Update</span>
+      </a>
+    );
+  }
+
+  if (
     (macAppMigrationReady || macAppUpdateAvailable) &&
     downloadUrl &&
     !disabled &&
@@ -312,12 +349,9 @@ function PrimaryUpdateAction({
       <a
         className="vibetv-button vibetv-button--large vibetv-button--primary w-full sm:w-auto sm:min-w-[240px]"
         href={downloadUrl}
-        onClick={onDownloadStart}
       >
         <Download size={20} aria-hidden />
-        <span>
-          Download new Mac App
-        </span>
+        <span>Update</span>
       </a>
     );
   }
@@ -325,17 +359,13 @@ function PrimaryUpdateAction({
   const label = installingFirmware
     ? "Updating VibeTV"
     : firmwareUpdateAvailable
-      ? "Update now"
+      ? "Update"
       : macAppMigrationRequired
         ? macAppCheckFailed
           ? "Check again"
-          : downloadUrl
-            ? "Download new Mac App"
-            : "New Mac App not ready"
+          : "Update"
         : macAppUpdateAvailable
-          ? downloadUrl
-            ? "Download new Mac App"
-            : "New Mac App not ready"
+          ? "Update"
           : checking
             ? "Checking updates"
             : "Check for updates";
@@ -387,16 +417,22 @@ function InlineUpdateProgress({
 }) {
   const failed = status.phase === "error";
   const complete = status.phase === "complete";
+  const attention = status.phase === "attention";
   const progress = clampUpdateProgress(
-    failed || complete ? 100 : status.progress,
+    failed || complete || attention ? 100 : status.progress,
   );
   const title = failed
     ? "Update failed"
+    : attention
+      ? "Firmware current — attention needed"
     : complete
       ? "Update complete"
       : "Updating VibeTV";
   const detail = failed
     ? status.error || "Update was not installed. Try again."
+    : attention
+      ? status.message ||
+        "The firmware is current, but the connection or picture still needs repair."
     : complete
       ? status.result?.firmware
         ? `Firmware ${status.result.firmware} is installed.`
@@ -404,14 +440,15 @@ function InlineUpdateProgress({
       : status.message ||
         status.logs[status.logs.length - 1] ||
         "Preparing VibeTV update.";
-  const previousSteps = failed || complete ? [] : status.logs.slice(-4, -1);
+  const previousSteps =
+    failed || complete || attention ? [] : status.logs.slice(-4, -1);
 
   return (
     <div className="mt-6" role="status" aria-live="polite">
       <div className="h-2 overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
         <div
           className={`h-full bg-[#CCFF00] transition-[width] duration-300 ${
-            failed || complete ? "" : "animate-pulse"
+            failed || complete || attention ? "" : "animate-pulse"
           }`}
           style={{ width: `${progress}%` }}
         />
@@ -421,6 +458,8 @@ function InlineUpdateProgress({
           {failed ? (
             <X className="mt-0.5 shrink-0" size={16} aria-hidden />
           ) : complete ? (
+            <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden />
+          ) : attention ? (
             <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden />
           ) : (
             <RefreshCw
@@ -443,15 +482,17 @@ function InlineUpdateProgress({
             ) : null}
           </div>
         </div>
-        {failed ? (
+        {failed || attention ? (
           <div className="flex flex-col gap-2 sm:flex-row">
-            <ControlCenterButton
-              disabled={!onRetry}
-              label="Try again"
-              onClick={onRetry}
-              size="compact"
-              variant="secondary"
-            />
+            {failed ? (
+              <ControlCenterButton
+                disabled={!onRetry}
+                label="Try again"
+                onClick={onRetry}
+                size="compact"
+                variant="secondary"
+              />
+            ) : null}
             <ControlCenterButton
               label={creatingReport ? "Creating report" : "Create report"}
               disabled={!onCreateReport || creatingReport}
@@ -466,69 +507,19 @@ function InlineUpdateProgress({
   );
 }
 
-function MacAppDmgUpdateNote({
-  downloadReady,
-  downloadStarted,
-  downloadUrl,
-  migration,
-  onDownloadStart,
-  showDownloadAction,
-}: {
-  downloadReady: boolean;
-  downloadStarted: boolean;
-  downloadUrl?: string;
-  migration: boolean;
-  onDownloadStart: () => void;
-  showDownloadAction: boolean;
-}) {
-  return (
-    <div
-      className="mt-6 border border-[#747A60] bg-[#F9F9F9] p-4 text-sm leading-6 text-[#444933]"
-      role="status"
-    >
-      <div>
-        {downloadReady ? (
-          <>
-            <strong className="font-black text-[#1B1B1B]">
-              {downloadStarted
-                ? "Download started."
-                : migration
-                  ? "Move to the new Mac App."
-                  : "Install the new Mac App."}
-            </strong>{" "}
-            Open the downloaded DMG, drag VibeTV Control Center into
-            Applications, and choose Replace if macOS asks. Then open the app
-            from Applications.
-            {migration
-              ? " Your VibeTV settings stay in place, and the new app takes over only after it confirms its background service is working."
-              : " This replaces the installed app instead of creating a second copy."}
-          </>
-        ) : (
-          <>
-            <strong className="font-black text-[#1B1B1B]">
-              {migration
-                ? "New Mac App is not ready yet."
-                : "New Mac App is not ready yet."}
-            </strong>{" "}
-            Your current Control Center keeps working. No installer will run;
-            check again after the signed Mac App download is available.
-          </>
-        )}
-      </div>
-      {showDownloadAction && downloadUrl ? (
-        <a
-          className="vibetv-button vibetv-button--compact vibetv-button--secondary mt-4 w-full sm:w-auto"
-          href={downloadUrl}
-          onClick={onDownloadStart}
-        >
-          <Download size={16} aria-hidden />
-          <span>
-            Download new Mac App
-          </span>
-        </a>
-      ) : null}
-    </div>
-  );
+function formatRuntimeValue(companion: CompanionInfo | null | undefined): string {
+  return companion?.runtime?.version || companion?.version || "Unknown";
+}
+
+function formatListenerValue(companion: CompanionInfo | null | undefined): string {
+  const owner = companion?.runtime?.listenerOwner?.trim();
+  const pid = companion?.runtime?.pid;
+  if (!owner) {
+    return "Not verified";
+  }
+  return owner === "shop.vibetv.control-center.runtime" && Boolean(pid)
+    ? "Running"
+    : "Needs attention";
 }
 
 function companionReleaseLabel({
@@ -550,11 +541,11 @@ function companionReleaseLabel({
       ) {
         return "Check failed";
       }
-      return migrationReady ? "New Mac App ready" : "New Mac App waiting";
+      return migrationReady ? "Update available" : "Update not ready";
     }
     if (release?.updateAvailable) {
       return availableMacAppDmgDownloadUrl(release)
-        ? "Download ready"
+        ? "Update available"
         : "Update waiting";
     }
     if (

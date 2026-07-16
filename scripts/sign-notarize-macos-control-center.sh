@@ -310,7 +310,33 @@ run_notary_submission_preflight() {
 sign_app_bundle() {
   local identity="$1"
   local companion_binary="${APP_DIR}/Contents/Helpers/codexbar-display"
+  local sparkle_framework="${APP_DIR}/Contents/Frameworks/Sparkle.framework"
   local authority signature_details signed_team_id
+
+  if [[ -d "$sparkle_framework" ]]; then
+    local sparkle_version_dir="${sparkle_framework}/Versions/B"
+    local nested
+    for nested in \
+      "${sparkle_version_dir}/XPCServices/Downloader.xpc" \
+      "${sparkle_version_dir}/XPCServices/Installer.xpc" \
+      "${sparkle_version_dir}/Updater.app" \
+      "${sparkle_version_dir}/Autoupdate"; do
+      [[ -e "$nested" ]] || die "Sparkle nested code is missing: ${nested}"
+      codesign \
+        --force \
+        --options runtime \
+        --timestamp \
+        --sign "$identity" \
+        "$nested"
+    done
+    codesign \
+      --force \
+      --options runtime \
+      --timestamp \
+      --sign "$identity" \
+      "$sparkle_framework"
+    codesign --verify --deep --strict --verbose=2 "$sparkle_framework"
+  fi
 
   if [[ -x "$companion_binary" ]]; then
     codesign \

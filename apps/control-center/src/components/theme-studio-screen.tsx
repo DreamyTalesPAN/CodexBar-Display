@@ -63,7 +63,6 @@ import {
   type ThemeStudioDeviceCapabilities,
 } from "@/lib/theme-studio-capabilities";
 import {
-  cloneDocument,
   createThemeStudioEditorState,
   isThemeStudioDirty,
   reorderPrimitiveIndices,
@@ -199,7 +198,7 @@ export type ThemeStudioSavePayload = {
 };
 
 export type ThemeStudioSaveResult = {
-  document?: ThemeStudioDocument;
+  document: ThemeStudioDocument;
   libraryId: string;
   savedAt: string;
 };
@@ -218,7 +217,7 @@ export type ThemeStudioScreenProps = {
   onRecoveryDiscarded?: () => void;
   onSaveToLibrary?: (
     payload: ThemeStudioSavePayload,
-  ) => Promise<ThemeStudioSaveResult | void> | ThemeStudioSaveResult | void;
+  ) => Promise<ThemeStudioSaveResult>;
   saveBlockedReason?: string;
 };
 
@@ -437,14 +436,14 @@ export function ThemeStudioScreen({
         source: sourceRef.current,
         spec,
       });
-      if (result?.libraryId) {
+      if (result.libraryId) {
         libraryIdRef.current = result.libraryId;
       }
       sourceRef.current = "custom";
       recoveryWrittenRef.current = false;
       setRecoveryDirty(false);
       dispatchEditor({
-        document: result?.document || cloneDocument(editorState.present),
+        document: result.document,
         type: "mark_saved",
       });
       const clearedRecovery = clearThemeStudioRecovery();

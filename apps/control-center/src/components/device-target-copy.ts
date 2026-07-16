@@ -1,4 +1,31 @@
-export const DEVICE_TARGET_PLACEHOLDER = "vibetv.local or 192.168.178.163";
+export const DEVICE_TARGET_PLACEHOLDER = "192.168.178.163";
+
+export function normalizeManualDeviceTarget(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const withoutScheme = trimmed.replace(/^https?:\/\//i, "");
+  if (
+    withoutScheme.includes("/") ||
+    withoutScheme.includes("?") ||
+    withoutScheme.includes("#")
+  ) {
+    return null;
+  }
+  const host = withoutScheme.toLowerCase();
+  const octets = host.split(".");
+  if (
+    octets.length !== 4 ||
+    octets.some(
+      (octet) =>
+        !/^\d{1,3}$/.test(octet) || Number(octet) < 0 || Number(octet) > 255,
+    )
+  ) {
+    return null;
+  }
+  return `http://${host}`;
+}
 
 export function deviceTargetHelpText(error?: { code?: string } | null): string {
   if (error?.code === "multiple_devices_found") {
@@ -8,7 +35,7 @@ export function deviceTargetHelpText(error?: { code?: string } | null): string {
     return "That VibeTV did not answer. Check the VibeTV screen for its IP address.";
   }
   if (error?.code === "invalid_device_target") {
-    return "Enter only vibetv.local or the IP address shown on the VibeTV screen.";
+    return "Enter only the IP address shown on the VibeTV screen.";
   }
-  return "Use vibetv.local, or enter the IP address shown on the VibeTV screen.";
+  return "Enter the IP address shown on the VibeTV screen.";
 }

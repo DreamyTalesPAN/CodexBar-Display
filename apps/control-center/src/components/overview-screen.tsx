@@ -24,7 +24,6 @@ import {
   type ReadinessTone,
   type UsageSnapshot,
 } from "./control-center-types";
-import { ControlCenterButton } from "./control-center-button";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
@@ -157,35 +156,21 @@ function MacAppMigrationCard({ downloadUrl }: { downloadUrl?: string }) {
             className="text-base font-black text-[#1B1B1B]"
             id="mac-app-migration-title"
           >
-            {downloadReady
-              ? "Move to the new Mac App"
-              : "New Mac App is being prepared"}
+            {downloadReady ? "Update available" : "Update not ready"}
           </h3>
-          <p className="mt-1 text-sm leading-6 text-[#444933]">
-            {downloadReady
-              ? "Open the downloaded DMG, drag VibeTV Control Center into Applications, then open it there. Keep the current app installed; your VibeTV settings carry over automatically."
-              : "Your current Control Center keeps working. The download will appear after the signed Mac App is ready."}
-          </p>
         </div>
       </div>
-      <div className="mt-4">
-        {downloadUrl ? (
+      {downloadUrl ? (
+        <div className="mt-4">
           <a
             className="vibetv-button vibetv-button--large vibetv-button--full vibetv-button--primary"
             href={downloadUrl}
           >
             <Download size={20} aria-hidden />
-            <span>Download new Mac App</span>
+            <span>Update</span>
           </a>
-        ) : (
-          <ControlCenterButton
-            disabled
-            fullWidth
-            label="New Mac App not ready"
-            size="large"
-          />
-        )}
-      </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -313,6 +298,9 @@ function labelForDevice(
   if (deviceImageIsStuck(device)) {
     return "Image is stuck";
   }
+  if (device?.connectionState === "reconnecting") {
+    return "Reconnecting…";
+  }
   if (device?.ready) {
     return "Connected";
   }
@@ -337,6 +325,9 @@ function deviceHealthDetail(device: DeviceInfo | null): string | undefined {
   const resetReason = device?.health?.resetReason?.trim();
   if (resetReason && resetReason.toLowerCase() === "exception") {
     return "VibeTV restarted after a firmware exception. If this keeps happening, reconnect power and run setup again.";
+  }
+  if (device?.connectionState === "reconnecting") {
+    return "VibeTV is temporarily unavailable. The Mac App is reconnecting automatically.";
   }
   if (device?.connected && device.health?.error) {
     return "VibeTV is reachable, but health details are temporarily unavailable.";

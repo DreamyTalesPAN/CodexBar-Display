@@ -26,6 +26,21 @@ export type CompanionInfo = {
   status?: string;
   version?: string;
   installationMode?: "legacy" | "dmg";
+  app?: {
+    version?: string;
+    build?: string;
+    path?: string;
+    installationMode?: "legacy" | "dmg";
+    installedInApplications?: boolean;
+  };
+  runtime?: {
+    version?: string;
+    commit?: string;
+    builtAt?: string;
+    executable?: string;
+    pid?: number;
+    listenerOwner?: string;
+  };
   update?: CompanionReleaseInfo;
   features?: {
     themeInstallEnabled?: boolean;
@@ -48,11 +63,32 @@ export type SupportDiagnostics = {
 
 export type DeviceState = "unknown" | "online" | "offline" | "paired";
 
+export type DeviceCandidate = {
+  target: string;
+  deviceId?: string;
+  board?: string;
+  firmware?: string;
+  networkMode?: "station" | "setup" | string;
+  known?: boolean;
+};
+
+export type DeviceSearchState =
+  | "idle"
+  | "searching"
+  | "multiple"
+  | "not-found"
+  | "repair-failed"
+  | "failed";
+
 export type DeviceInfo = {
   target?: string;
+  deviceId?: string;
+  known?: boolean;
   connected: boolean;
   paired?: boolean;
   ready?: boolean;
+  connectionState?: "ready" | "reconnecting" | "setup_required";
+  lastSeenAt?: string;
   board?: string;
   firmware?: string;
   activeTheme?: string;
@@ -67,7 +103,11 @@ export type DeviceInfo = {
   };
   health?: {
     ok?: boolean;
+    bootId?: string;
+    uptimeMs?: number;
+    resetCount?: number;
     resetReason?: string;
+    lastResetAt?: string;
     error?: string;
   };
   display?: {
@@ -101,6 +141,7 @@ export type DeviceInfo = {
       maxThemeGifWidth?: number;
       maxThemeGifHeight?: number;
       maxThemeGifPixels?: number;
+      maxThemeGifLzwBits?: number;
       supportedPrimitiveTypes?: string[];
       builtinThemes?: string[];
     };
@@ -257,5 +298,11 @@ export function deviceStreamIsReady(device: DeviceInfo | null | undefined) {
 }
 
 export function deviceSetupIsUsable(device: DeviceInfo | null | undefined) {
+  if (device?.connectionState) {
+    return (
+      device.connectionState === "ready" ||
+      device.connectionState === "reconnecting"
+    );
+  }
   return device?.ready === true;
 }

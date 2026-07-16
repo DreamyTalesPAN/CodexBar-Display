@@ -1,0 +1,12 @@
+{
+  "name": "AnimatedGIFVibeTV",
+  "version": "2.2.0-vibetv.1",
+  "description": "Pinned AnimatedGIF 2.2.0 with VibeTV's validated 11-bit ESP8266 LZW profile",
+  "keywords": ["gif", "decoder", "esp8266"],
+  "license": "Apache-2.0",
+  "frameworks": "arduino",
+  "platforms": "*",
+  "build": {
+    "srcDir": "src"
+  }
+}

@@ -213,6 +213,9 @@ EOF
 
   cat > "${fake_bin}/codesign" <<'EOF'
 #!/usr/bin/env bash
+if [[ " $* " == *" --display "* ]]; then
+  printf 'Authority=Developer ID Application: VibeTV Test (TESTTEAM)\n' >&2
+fi
 exit 0
 EOF
 
@@ -282,6 +285,7 @@ run_installer() {
       FAKE_STATUS_DEVICE_DISCONNECTED="${FAKE_STATUS_DEVICE_DISCONNECTED:-}" \
       VIBETV_INSTALLER_DISPLAY_DAEMON_PID="${VIBETV_INSTALLER_DISPLAY_DAEMON_PID:-}" \
       VIBETV_MAC_APP_DMG_URL="${VIBETV_MAC_APP_DMG_URL:-}" \
+      VIBETV_SYSTEM_APP_BUNDLE_DIR="${VIBETV_SYSTEM_APP_BUNDLE_DIR:-}" \
       VIBETV_COMPANION_REPAIR_ATTEMPTS="${VIBETV_COMPANION_REPAIR_ATTEMPTS:-3}" \
       VIBETV_COMPANION_REPAIR_RETRY_DELAY="${VIBETV_COMPANION_REPAIR_RETRY_DELAY:-0}" \
       VIBETV_COMPANION_STABLE_RETRY_DELAY="${VIBETV_COMPANION_STABLE_RETRY_DELAY:-0}" \
@@ -470,7 +474,7 @@ run_install_can_skip_device_setup_for_mac_app_update() {
 }
 
 run_install_downloads_dmg_when_started_inside_display_daemon() {
-  local root output setup_log dmg_url dmg_path old_binary old_binary_before
+	local root output protocol_output setup_log dmg_url dmg_path old_binary old_binary_before installer_status
   root="${TMP_WORK_DIR}/dmg-download"
   write_fake_commands "${root}/fake-bin"
   prepare_home "${root}/home"
@@ -483,15 +487,26 @@ run_install_downloads_dmg_when_started_inside_display_daemon() {
   old_binary="${root}/home/Library/Application Support/codexbar-display/bin/codexbar-display"
   old_binary_before="$(cat "$old_binary")"
 
-  output="$(VIBETV_INSTALLER_DISPLAY_DAEMON_PID="$$" VIBETV_MAC_APP_DMG_URL="$dmg_url" run_installer "$root" --version 9.9.9 --skip-device-setup)" || {
-    printf '%s\n' "$output" >&2
-    die "expected DMG download to pass"
-  }
+	set +e
+	output="$(VIBETV_INSTALLER_DISPLAY_DAEMON_PID="$$" VIBETV_MAC_APP_DMG_URL="$dmg_url" run_installer "$root" --version 9.9.9 --skip-device-setup)"
+	installer_status=$?
+	set -e
+	[[ "$installer_status" == "0" ]] \
+		|| die "legacy Companion handoff must stay compatible with exit 0, got ${installer_status}"
+
+	set +e
+	protocol_output="$(VIBETV_INSTALLER_DISPLAY_DAEMON_PID="$$" VIBETV_MAC_APP_DMG_URL="$dmg_url" VIBETV_MAC_APP_ACTION_REQUIRED_EXIT_CODE=20 run_installer "$root" --version 9.9.9 --skip-device-setup)"
+	installer_status=$?
+	set -e
+	[[ "$installer_status" == "20" ]] \
+		|| die "new Companion handoff must report action_required with exit 20, got ${installer_status}"
+	assert_contains "$protocol_output" "CODEX_MAC_APP_ACTION_REQUIRED kind=manual_install"
 
   setup_log="$(support_log "$root")"
 
   assert_contains "$output" "Downloading the new VibeTV Mac App"
-  assert_contains "$output" "[1/1] Downloading Mac App"
+	assert_contains "$output" "[1/1] Downloading Mac App"
+	assert_contains "$output" "CODEX_MAC_APP_ACTION_REQUIRED kind=manual_install"
   assert_contains "$output" "Done. The new VibeTV Mac App is ready to install."
   assert_contains "$output" "Drag VibeTV Control Center to Applications, then open it."
   assert_not_contains "$output" "Installing your local Control Center"
@@ -509,6 +524,62 @@ run_install_downloads_dmg_when_started_inside_display_daemon() {
   assert_not_contains "$(cat "${root}/curl.log")" "/releases/latest"
   assert_not_contains "$(cat "${root}/curl.log")" "checksums-"
   assert_not_contains "$(cat "${root}/api.log")" "install-update"
+}
+
+run_install_hands_off_to_existing_app_without_second_dmg() {
+  local root output protocol_output app_path installer_status
+  root="${TMP_WORK_DIR}/existing-system-app"
+  write_fake_commands "${root}/fake-bin"
+  prepare_home "${root}/home"
+  : > "${root}/launchctl.log"
+  : > "${root}/curl.log"
+  : > "${root}/api.log"
+  : > "${root}/open.log"
+  cat > "${root}/fake-bin/plutil" <<'EOF'
+#!/usr/bin/env bash
+case "${2:-}" in
+  CFBundleIdentifier)
+    printf 'shop.vibetv.control-center\n'
+    ;;
+  CFBundleShortVersionString)
+    printf '9.9.9\n'
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+EOF
+  chmod +x "${root}/fake-bin/plutil"
+  app_path="${root}/Applications/VibeTV Control Center.app"
+  mkdir -p "${app_path}/Contents/MacOS"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${app_path}/Contents/MacOS/VibeTVControlCenter"
+  chmod +x "${app_path}/Contents/MacOS/VibeTVControlCenter"
+  cat > "${app_path}/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>shop.vibetv.control-center</string>
+  <key>CFBundleShortVersionString</key><string>9.9.9</string>
+</dict></plist>
+PLIST
+
+  set +e
+  output="$(VIBETV_INSTALLER_DISPLAY_DAEMON_PID="$$" VIBETV_SYSTEM_APP_BUNDLE_DIR="$app_path" run_installer "$root" --version 9.9.9 --skip-device-setup)"
+  installer_status=$?
+  set -e
+  [[ "$installer_status" == "0" ]] \
+    || die "legacy existing-app handoff must stay compatible with exit 0, got ${installer_status}"
+
+  set +e
+  protocol_output="$(VIBETV_INSTALLER_DISPLAY_DAEMON_PID="$$" VIBETV_SYSTEM_APP_BUNDLE_DIR="$app_path" VIBETV_MAC_APP_ACTION_REQUIRED_EXIT_CODE=20 run_installer "$root" --version 9.9.9 --skip-device-setup)"
+  installer_status=$?
+  set -e
+  [[ "$installer_status" == "20" ]] \
+    || die "new Companion existing-app handoff must report action_required with exit 20, got ${installer_status}"
+  assert_contains "$protocol_output" "CODEX_MAC_APP_ACTION_REQUIRED kind=handoff version=9.9.9"
+  assert_contains "$output" "CODEX_MAC_APP_ACTION_REQUIRED kind=handoff version=9.9.9"
+  assert_contains "$(cat "${root}/open.log")" "$app_path"
+  [[ ! -s "${root}/curl.log" ]] || die "existing native app handoff must not download a second DMG"
 }
 
 run_install_disables_global_legacy_launchagent() {
@@ -699,6 +770,7 @@ run_install_restarts_when_old_api_version_answers() {
 run_install_writes_integrated_daemon_launchagent
 run_install_can_skip_device_setup_for_mac_app_update
 run_install_downloads_dmg_when_started_inside_display_daemon
+run_install_hands_off_to_existing_app_without_second_dmg
 run_install_disables_global_legacy_launchagent
 run_install_retries_transient_repair_failure
 run_install_waits_for_slow_repair_recovery

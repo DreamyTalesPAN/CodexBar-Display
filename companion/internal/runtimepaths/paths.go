@@ -8,6 +8,7 @@ import (
 
 const (
 	DisplayStreamOutLogEnv                    = "CODEXBAR_DISPLAY_STREAM_OUT_LOG"
+	DisplayWriterLockEnv                      = "CODEXBAR_DISPLAY_WRITER_LOCK"
 	DisplayStreamLaunchAgentLabelEnv          = "CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL"
 	LegacyDisplayStreamLaunchAgentLabel       = "com.codexbar-display.daemon"
 	displayStreamOutLog                       = "daemon.out.log"
@@ -16,6 +17,28 @@ const (
 	DisplayStreamMarkerRepeatBytes      int64 = 32 * 1024
 	DisplayStreamLogRecordMaxBytes      int64 = 8 * 1024
 )
+
+// DisplayWriterLock returns the per-user lock shared by every Companion daemon.
+// An environment override keeps the lock isolated in tests.
+func DisplayWriterLock(home string) string {
+	if path := strings.TrimSpace(os.Getenv(DisplayWriterLockEnv)); path != "" {
+		return path
+	}
+
+	home = strings.TrimSpace(home)
+	if home == "" {
+		resolved, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		home = strings.TrimSpace(resolved)
+	}
+	if home == "" {
+		return ""
+	}
+
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "run", "display-writer.lock")
+}
 
 // DisplayStreamOutLog returns the shared display-worker log used by both the
 // persistent daemon and the local Companion API. An explicit environment

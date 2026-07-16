@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -77,16 +78,30 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 	if err := themespec.ValidateStoredAgainstCapabilities(p.ThemeSpec, p.ThemeSpecRaw, caps); err != nil {
 		return err
 	}
-	if caps.MaxThemeGifBytes <= 0 {
-		return nil
-	}
 	gifRefs := referencedGIFAssets(p.ThemeSpec)
+	assetsByPath := make(map[string]File, len(p.Assets))
 	for _, asset := range p.Assets {
-		if _, ok := gifRefs[asset.Entry.Path]; !ok {
-			continue
+		assetsByPath[asset.Entry.Path] = asset
+	}
+	paths := make([]string, 0, len(gifRefs))
+	for assetPath := range gifRefs {
+		paths = append(paths, assetPath)
+	}
+	sort.Strings(paths)
+	for _, assetPath := range paths {
+		asset, ok := assetsByPath[assetPath]
+		if !ok {
+			return fmt.Errorf("referenced GIF asset %s is missing", assetPath)
 		}
-		if len(asset.Data) > caps.MaxThemeGifBytes {
+		if caps.MaxThemeGifBytes > 0 && len(asset.Data) > caps.MaxThemeGifBytes {
 			return fmt.Errorf("GIF asset %s exceeds device limit: size=%d limit=%d", asset.Entry.Path, len(asset.Data), caps.MaxThemeGifBytes)
+		}
+		requiredBits, err := maxGIFLZWCodeWidth(asset.Data)
+		if err != nil {
+			return fmt.Errorf("GIF asset %s is malformed: %w", asset.Entry.Path, err)
+		}
+		if caps.MaxThemeGifLzwBits > 0 && requiredBits > caps.MaxThemeGifLzwBits {
+			return fmt.Errorf("GIF asset %s requires LZW code width %d bits, device supports at most %d bits", asset.Entry.Path, requiredBits, caps.MaxThemeGifLzwBits)
 		}
 	}
 	return nil

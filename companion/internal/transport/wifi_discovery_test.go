@@ -52,6 +52,32 @@ func TestDiscoverWiFiDeviceRejectsNonVibeHello(t *testing.T) {
 	}
 }
 
+func TestDiscoverWiFiDeviceRequiresExpectedDeviceID(t *testing.T) {
+	device := func(id string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"` + id + `","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"transport":{"active":"wifi"}}}`))
+		}))
+	}
+	wrong := device("wrong-device")
+	defer wrong.Close()
+	expected := device("expected-device")
+	defer expected.Close()
+
+	result, err := DiscoverWiFiDevice(context.Background(), WiFiDiscoveryOptions{
+		Candidates:       []string{wrong.URL, expected.URL},
+		Client:           expected.Client(),
+		Timeout:          time.Second,
+		ExpectedDeviceID: "EXPECTED-device",
+	})
+	if err != nil {
+		t.Fatalf("DiscoverWiFiDevice returned error: %v", err)
+	}
+	if result.Target != expected.URL || result.Hello.DeviceID != "expected-device" {
+		t.Fatalf("discovery accepted the wrong VibeTV identity: %+v", result)
+	}
+}
+
 func TestLocalIPv4DiscoveryTargetsFromAddrsScansHostSubnet(t *testing.T) {
 	_, ipNet, err := net.ParseCIDR("192.168.178.42/24")
 	if err != nil {

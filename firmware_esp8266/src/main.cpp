@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <DNSServer.h>
 #include <EEPROM.h>
-#include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
@@ -11,6 +10,8 @@
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
 #include "../../firmware_shared/theme_spec_renderer_core.h"
+#include "boot_recovery_policy.h"
+#include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
 
 #ifndef CODEXBAR_DISPLAY_BOARD_ID
@@ -39,6 +40,7 @@ constexpr int kMaxFrameBytes = 2048;
 constexpr uint16_t kDnsPort = 53;
 constexpr uint32_t kWifiCredsMagic = 0x56544231UL;  // VTB1
 constexpr uint32_t kBootRecoveryMagic = 0x56544252UL;  // VTBR
+constexpr uint32_t kBootDiagnosticsMagic = 0x56544244UL;  // VTBD
 constexpr size_t kWifiSsidBytes = 33;
 constexpr size_t kWifiPasswordBytes = 65;
 constexpr size_t kWifiCredsBytes = 4 + kWifiSsidBytes + kWifiPasswordBytes;
@@ -46,7 +48,10 @@ constexpr size_t kBootRecoveryOffset = kWifiCredsBytes;
 constexpr size_t kBootRecoveryBytes = 6;
 constexpr size_t kBootRecoveryCounterOffset = kBootRecoveryOffset + 4;
 constexpr size_t kBootRecoveryUploadOffset = kBootRecoveryOffset + 5;
-constexpr size_t kEepromBytes = kWifiCredsBytes + kBootRecoveryBytes;
+constexpr size_t kBootDiagnosticsOffset = kBootRecoveryOffset + kBootRecoveryBytes;
+constexpr size_t kBootDiagnosticsBytes = 8;
+constexpr size_t kBootResetCounterOffset = kBootDiagnosticsOffset + 4;
+constexpr size_t kEepromBytes = kWifiCredsBytes + kBootRecoveryBytes + kBootDiagnosticsBytes;
 constexpr unsigned long kWifiConnectTimeoutMs = 20000UL;
 constexpr unsigned long kWifiReconnectRetryMs = 5000UL;
 constexpr unsigned long kWifiReconnectFallbackMs = 120000UL;
@@ -65,14 +70,13 @@ constexpr uint8_t kMaxBrightnessPercent = 100;
 constexpr size_t kSetupWifiOptionsMaxBytes = 900;
 constexpr uint8_t kSetupWifiMaxOptions = 10;
 const char kSetupApSsid[] = "VibeTV-Setup";
-const char kSetupHost[] = "vibetv.local";
-const char kMdnsName[] = "vibetv";
-const char kMdnsHost[] = "vibetv.local";
+const char kSetupAddress[] = "192.168.4.1";
 const char kCustomerAppHost[] = "app.vibetv.shop";
 const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
 const char kDeviceAuthTokenPath[] = "/auth";
 const char kActiveThemeSpecPathFile[] = "/theme-active";
+const char kAssetUploadTemporaryPath[] = "/.asset-upload.tmp";
 const char kDeviceAuthHeader[] = "X-VibeTV-Token";
 const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
 constexpr uint8_t kFirmwareUpdateNoticeTextCount = 3;
@@ -104,6 +108,8 @@ String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   out += String(codexbar_display::themespec::kMaxThemeSpecGifHeight);
   out += ",\"maxThemeGifPixels\":";
   out += String(codexbar_display::themespec::kMaxThemeSpecGifPixels);
+  out += ",\"maxThemeGifLzwBits\":";
+  out += String(codexbar_display::esp8266::kMaxThemeGifLzwBits);
   out += "}";
   return out;
 }
@@ -180,8 +186,6 @@ unsigned long bootRecoveryClearAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
 bool frameStaleStatusRendered = false;
 bool captiveDnsStarted = false;
-bool mdnsStarted = false;
-IPAddress mdnsAddress;
 unsigned long wifiDisconnectedAtMs = 0;
 unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
@@ -191,7 +195,9 @@ OtaUploadDiagnostics otaDiagnostics;
 RuntimeRenderDiagnostics renderDiagnostics;
 DeviceSettings deviceSettings;
 String deviceAuthToken;
+String bootID;
 String bootResetReasonJSON;
+uint32_t bootResetCounter = 0;
 
 void addCorsHeaders();
 
@@ -586,7 +592,7 @@ void applyFrameUpdateState() {
 
 void drawWaitingForCompanionStatus() {
   const unsigned long renderStartUs = micros();
-  renderer.DrawConnectedSetupInstructions(runtimeCtx, kMdnsHost, WiFi.localIP().toString());
+  renderer.DrawConnectedSetupInstructions(runtimeCtx, kCustomerAppHost, WiFi.localIP().toString());
   recordRenderFull("connected_setup", micros() - renderStartUs);
   waitStatusRendered = true;
 }
@@ -617,38 +623,6 @@ void resetWifiReconnectState() {
   wifiDisconnectedAtMs = 0;
   wifiReconnectAttemptAtMs = 0;
   wifiReconnectStatusRendered = false;
-}
-
-void startMdnsResponder(const IPAddress& address) {
-  if (mdnsStarted && mdnsAddress == address) {
-    return;
-  }
-  if (mdnsStarted) {
-    MDNS.close();
-    mdnsStarted = false;
-    Serial.printf("mdns_restarting host=%s old_ip=%s new_ip=%s\n",
-                  kMdnsHost,
-                  mdnsAddress.toString().c_str(),
-                  address.toString().c_str());
-  }
-  if (!MDNS.begin(kMdnsName, address)) {
-    Serial.printf("mdns_start_failed host=%s ip=%s\n", kMdnsHost, address.toString().c_str());
-    return;
-  }
-  MDNS.addService("http", "tcp", 80);
-  mdnsStarted = true;
-  mdnsAddress = address;
-  Serial.printf("mdns_started host=%s ip=%s service=http\n", kMdnsHost, address.toString().c_str());
-}
-
-void stopMdnsResponder(const char* reason) {
-  if (!mdnsStarted) {
-    return;
-  }
-  MDNS.close();
-  mdnsStarted = false;
-  mdnsAddress = IPAddress();
-  Serial.printf("mdns_stopped host=%s reason=%s\n", kMdnsHost, reason == nullptr ? "unknown" : reason);
 }
 
 String displayErrorMessage(const String& message) {
@@ -790,7 +764,7 @@ String macInstallerCommand() {
 }
 
 String updateTargetURL() {
-  return String("http://") + kMdnsHost;
+  return String("http://") + WiFi.localIP().toString();
 }
 
 String updateInstallCommand() {
@@ -928,7 +902,6 @@ void markBootRecoveryUploadActive(bool active) {
     return;
   }
   writeBootRecoveryState(readBootRecoveryCounter(), active);
-  Serial.printf("boot_recovery_upload_marker active=%d\n", active ? 1 : 0);
 }
 
 void clearBootRecoveryCounter() {
@@ -941,10 +914,32 @@ void clearBootRecoveryCounter() {
   Serial.println("boot_recovery_counter_cleared");
 }
 
+uint32_t incrementBootResetCounter() {
+  EEPROM.begin(kEepromBytes);
+  uint32_t magic = 0;
+  uint32_t counter = 0;
+  EEPROM.get(kBootDiagnosticsOffset, magic);
+  if (magic == kBootDiagnosticsMagic) {
+    EEPROM.get(kBootResetCounterOffset, counter);
+  }
+  if (counter < 0xFFFFFFFFUL) {
+    ++counter;
+  }
+  EEPROM.put(kBootDiagnosticsOffset, kBootDiagnosticsMagic);
+  EEPROM.put(kBootResetCounterOffset, counter);
+  EEPROM.commit();
+  return counter;
+}
+
 bool consumeBootRecoveryTrigger() {
   if (readBootRecoveryUploadActive()) {
     clearBootRecoveryCounter();
-    Serial.println("boot_recovery_counter_skipped reason=upload_recovery");
+    return false;
+  }
+
+  if (!codexbar_display::esp8266::BootRecoveryPolicy::CountsAsPhysicalReset(
+          ESP.getResetInfoPtr()->reason)) {
+    clearBootRecoveryCounter();
     return false;
   }
 
@@ -953,7 +948,6 @@ bool consumeBootRecoveryTrigger() {
     ++counter;
   }
   writeBootRecoveryCounter(counter);
-  Serial.printf("boot_recovery_counter value=%u threshold=%u\n", counter, kBootRecoveryThreshold);
 
   if (counter >= kBootRecoveryThreshold) {
     clearWifiCredentials();
@@ -1097,8 +1091,8 @@ String setupPageHTML() {
   html += "<label>Password</label><input name='password' type='password' maxlength='64' autocomplete='current-password'>";
   html += "<button type='submit'>Save</button></form>";
   html += "<p class='muted'>Setup address: http://";
-  html += kSetupHost;
-  html += "<br>Fallback: http://192.168.4.1</p></main></body></html>";
+  html += kSetupAddress;
+  html += "</p></main></body></html>";
   return html;
 }
 
@@ -1111,8 +1105,6 @@ String connectedPageHTML() {
   html += F("<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><title>VibeTV</title><style>");
   html += F("body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:24px;background:#0b0c0d;color:#f6f4ed}a{color:#c7ff00;font-weight:800}code,pre{background:#08090a;border:1px solid #30343a;padding:8px;display:block;white-space:pre-wrap;word-break:break-word}button,input{width:100%;font:inherit;margin-top:8px}button{padding:12px;background:#c7ff00;border:0;font-weight:900}section{border-top:1px solid #2b2f35;margin-top:16px;padding-top:12px}</style><h1>Vibe TV</h1>");
   html += F("<p>Connected<br><code>http://");
-  html += kMdnsHost;
-  html += F("</code><code>http://");
   html += ip;
   html += F("</code></p>");
   if (firmwareUpdate.available) {
@@ -1165,7 +1157,7 @@ void handleRoot() {
 
 void redirectToSetupRoot() {
   webServer.keepAlive(false);
-  webServer.sendHeader("Location", String("http://") + kSetupHost + "/", true);
+  webServer.sendHeader("Location", String("http://") + kSetupAddress + "/", true);
   webServer.send(302, "text/plain; charset=utf-8", "");
 }
 
@@ -1230,10 +1222,18 @@ void addCorsHeaders() {
 
 void handleHello() {
   addCorsHeaders();
+  if (requestAuthToken().length() > 0 && !requireWriteAuth()) {
+    return;
+  }
+
   String out;
-  out.reserve(560);
+  out.reserve(620);
   out += "{\"kind\":\"hello\",\"protocolVersion\":2,\"board\":\"";
   out += CODEXBAR_DISPLAY_BOARD_ID;
+  out += "\",\"deviceId\":\"";
+  out += ESP.getChipId();
+  out += "\",\"networkMode\":\"";
+  out += setupMode ? "setup" : "station";
   out += "\",\"firmware\":\"";
   out += CODEXBAR_DISPLAY_FW_VERSION;
   out += "\",\"maxFrameBytes\":";
@@ -1359,7 +1359,7 @@ void handleHealth() {
   const codexbar_display::esp8266::RendererHealthSnapshot snapshot = renderer.HealthSnapshot();
 
   String out;
-  out.reserve(768);
+  out.reserve(896);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
@@ -1368,6 +1368,12 @@ void handleHealth() {
   out += String(ESP.getMaxFreeBlockSize());
   out += ",\"heapFragmentationPercent\":";
   out += String(ESP.getHeapFragmentation());
+  out += ",\"bootId\":\"";
+  out += jsonEscape(bootID);
+  out += "\",\"uptimeMs\":";
+  out += String(millis());
+  out += ",\"resetCount\":";
+  out += String(bootResetCounter);
   out += ",\"resetReason\":";
   out += bootResetReasonJSON;
   out += "},";
@@ -1504,16 +1510,45 @@ void finishAssetUploadRequest() {
   assetUploadInProgress = false;
 }
 
+bool assetPathLooksGif(const String& path);
+
 void discardPartialAssetUpload() {
-  if (assetUploadPath.length() == 0 || !isSafeAssetPath(assetUploadPath)) {
+  if (!LittleFS.begin() || !LittleFS.exists(kAssetUploadTemporaryPath)) {
     return;
   }
-  if (!LittleFS.begin() || !LittleFS.exists(assetUploadPath)) {
-    return;
-  }
-  if (LittleFS.remove(assetUploadPath)) {
+  if (LittleFS.remove(kAssetUploadTemporaryPath)) {
     Serial.printf("asset_upload_discarded path=%s\n", assetUploadPath.c_str());
   }
+}
+
+bool validateCompletedAssetUpload() {
+  if (!assetPathLooksGif(assetUploadPath)) {
+    return true;
+  }
+  codexbar_display::esp8266::GifValidationInfo info;
+  const codexbar_display::esp8266::GifValidationError error =
+      codexbar_display::esp8266::ValidateGifAssetFile(
+          kAssetUploadTemporaryPath,
+          codexbar_display::esp8266::kMaxThemeGifLzwBits,
+          &info);
+  if (error == codexbar_display::esp8266::GifValidationError::None) {
+    return true;
+  }
+  setAssetUploadError(
+      error == codexbar_display::esp8266::GifValidationError::LzwCodeSizeExceeded
+          ? "gif requires unsupported LZW width"
+          : "invalid gif");
+  return false;
+}
+
+bool promoteCompletedAssetUpload() {
+  // LittleFS rename is atomic and replaces an existing destination only after
+  // the temporary file has been fully written and, for GIFs, validated.
+  if (!LittleFS.rename(kAssetUploadTemporaryPath, assetUploadPath)) {
+    setAssetUploadError("commit asset failed");
+    return false;
+  }
+  return true;
 }
 
 String requestedAssetPath() {
@@ -1562,7 +1597,6 @@ void enterAssetUploadSafeMode() {
   frameStaleStatusRendered = false;
   renderer.ResetGifStateForAssetUpdate();
   close_all_fs();
-  stopMdnsResponder("asset_upload");
   WiFiUDP::stopAll();
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
   ESP.wdtFeed();
@@ -1587,6 +1621,10 @@ void handleAssetUpload() {
       setAssetUploadError("invalid asset path");
       return;
     }
+    if (assetUploadPath == kAssetUploadTemporaryPath) {
+      setAssetUploadError("reserved asset path");
+      return;
+    }
     if (assetUploadContentLengthWouldExceedLimits(upload)) {
       setAssetUploadError("gif asset too large");
       return;
@@ -1601,10 +1639,11 @@ void handleAssetUpload() {
       setAssetUploadError("create parent directory failed");
       return;
     }
-    if (LittleFS.exists(assetUploadPath)) {
-      LittleFS.remove(assetUploadPath);
+    if (LittleFS.exists(kAssetUploadTemporaryPath) && !LittleFS.remove(kAssetUploadTemporaryPath)) {
+      setAssetUploadError("remove stale upload failed");
+      return;
     }
-    assetUploadFile = LittleFS.open(assetUploadPath, "w");
+    assetUploadFile = LittleFS.open(kAssetUploadTemporaryPath, "w");
     if (!assetUploadFile) {
       setAssetUploadError("open asset failed");
       return;
@@ -1632,7 +1671,9 @@ void handleAssetUpload() {
       assetUploadFile.flush();
       assetUploadFile.close();
     }
-    if (assetUploadError.length() == 0) {
+    if (assetUploadError.length() == 0 &&
+        validateCompletedAssetUpload() &&
+        promoteCompletedAssetUpload()) {
       assetUploadSucceeded = true;
       Serial.printf("asset_upload_success path=%s bytes=%zu\n", assetUploadPath.c_str(), upload.totalSize);
     }
@@ -2041,7 +2082,6 @@ void enterOtaSafeMode(int command) {
   frameStaleStatusRendered = false;
   renderer.ResetGifStateForAssetUpdate();
   close_all_fs();
-  stopMdnsResponder("ota_upload");
   WiFiUDP::stopAll();
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
   ESP.wdtFeed();
@@ -2448,13 +2488,12 @@ void startSetupAccessPoint() {
   scanSetupNetworks();
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
   captiveDnsStarted = true;
-  Serial.printf("captive_dns_started port=%u host=%s ip=%s\n", kDnsPort, kSetupHost, WiFi.softAPIP().toString().c_str());
+  Serial.printf("captive_dns_started port=%u ip=%s\n", kDnsPort, WiFi.softAPIP().toString().c_str());
   const unsigned long renderStartUs = micros();
   renderer.DrawSetupInstructions(runtimeCtx, kSetupApSsid, WiFi.softAPIP().toString());
   recordRenderFull("setup", micros() - renderStartUs);
   waitStatusRendered = true;
   startHttpServer();
-  startMdnsResponder(WiFi.softAPIP());
 }
 
 void maintainWifiConnection() {
@@ -2466,7 +2505,6 @@ void maintainWifiConnection() {
       Serial.printf("wifi_reconnected ip=%s\n", WiFi.localIP().toString().c_str());
       drawWaitingForCompanionStatus();
     }
-    startMdnsResponder(WiFi.localIP());
     resetWifiReconnectState();
     return;
   }
@@ -2478,7 +2516,6 @@ void maintainWifiConnection() {
     Serial.printf("wifi_disconnected status=%d fallback_ms=%lu\n",
                   static_cast<int>(WiFi.status()),
                   kWifiReconnectFallbackMs);
-    stopMdnsResponder("wifi_disconnected");
   }
 
   if (!wifiReconnectStatusRendered) {
@@ -2559,6 +2596,12 @@ void setup() {
   bootResetReasonJSON = "\"";
   bootResetReasonJSON += jsonEscape(ESP.getResetReason());
   bootResetReasonJSON += "\"";
+  bootResetCounter = incrementBootResetCounter();
+  bootID = String(ESP.getChipId(), HEX);
+  bootID += "-";
+  bootID += String(bootResetCounter);
+  bootID += "-";
+  bootID += String(ESP.getCycleCount(), HEX);
   renderer.Setup(runtimeCtx);
   loadDeviceSettings();
   loadDeviceAuthToken();
@@ -2582,11 +2625,9 @@ void setup() {
   if (!forceSetupMode && readWifiCredentials(creds) && connectToSavedWifi(creds)) {
     setupMode = false;
     startHttpServer();
-    startMdnsResponder(WiFi.localIP());
   } else if (!forceSetupMode && connectToSdkWifiConfig()) {
     setupMode = false;
     startHttpServer();
-    startMdnsResponder(WiFi.localIP());
   } else {
     startSetupAccessPoint();
   }
@@ -2610,9 +2651,6 @@ void loop() {
   if (otaUploadInProgress || assetUploadInProgress) {
     if (httpServerStarted) {
       webServer.handleClient();
-    }
-    if (mdnsStarted) {
-      MDNS.update();
     }
     delay(1);
     return;
@@ -2726,9 +2764,6 @@ void loop() {
   handleRawOtaClient();
   if (captiveDnsStarted) {
     dnsServer.processNextRequest();
-  }
-  if (mdnsStarted) {
-    MDNS.update();
   }
   if (rebootPending && static_cast<long>(millis() - rebootAtMs) >= 0) {
     Serial.println("reboot_now");

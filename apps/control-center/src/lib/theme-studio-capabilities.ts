@@ -17,6 +17,7 @@ export type ThemeStudioDeviceCapabilities = {
   maxThemeGifWidth?: number;
   maxThemeGifHeight?: number;
   maxThemeGifPixels?: number;
+  maxThemeGifLzwBits?: number;
   supportedPrimitiveTypes?: string[];
   builtinThemes?: string[];
   displayWidthPx?: number;

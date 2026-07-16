@@ -2,22 +2,31 @@ import Cocoa
 import Foundation
 import ServiceManagement
 import WebKit
+#if canImport(Sparkle)
+import Sparkle
+#endif
 
 private let controlCenterURLString = "http://127.0.0.1:47832/control-center"
-private let runtimeStatusURLString = "http://127.0.0.1:47832/v1/runtime-health"
+private let runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"
+private let runtimeDeviceStatusURLString = "http://127.0.0.1:47832/v1/status"
 private let runtimeDeviceRepairURLString = "http://127.0.0.1:47832/v1/device/repair"
 private let nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"
 private let controlCenterURLScheme = "vibetv"
 private let controlCenterURLHost = "open-control-center"
+private let checkForUpdatesURLHost = "check-for-updates"
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
 private let runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"
 private let runtimeLaunchAgentPlistName = "shop.vibetv.control-center.runtime.plist"
 private let runtimeRegisteredVersionDefaultsKey =
     "shop.vibetv.control-center.runtime.registered-bundle-version"
+private let pendingNativeUpdateFileName = "pending-native-update.json"
+private let pendingNativeUpdateMaximumAge: TimeInterval = 30 * 60
 private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
 private let runtimeDeviceRepairTimeout: TimeInterval = 90
 private let runtimeDeviceRepairMaxAttempts = 3
+private let localNetworkPrivacyProbeURLString = "http://192.168.4.1/hello"
+private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
 private let runtimeDeviceRepairRetryDelay: Duration = .seconds(3)
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
 private let runtimeValidationUnregisterArgument =
@@ -33,6 +42,21 @@ func isOpenControlCenterURL(_ url: URL) -> Bool {
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
           components.scheme?.lowercased() == controlCenterURLScheme,
           components.host?.lowercased() == controlCenterURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
+}
+
+func isCheckForUpdatesURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == checkForUpdatesURLHost,
           components.user == nil,
           components.password == nil,
           components.port == nil,
@@ -129,6 +153,45 @@ func nativeControlCenterUserAgent(shortVersion: String?, buildVersion: String?) 
     return nativeControlCenterUserAgentPrefix + (version.isEmpty ? "unknown" : version)
 }
 
+func makeLocalNetworkPrivacyProbeRequest(
+    urlString: String = localNetworkPrivacyProbeURLString,
+    timeout: TimeInterval = localNetworkPrivacyProbeTimeout
+) -> URLRequest? {
+    guard let url = URL(string: urlString),
+          url.scheme?.lowercased() == "http",
+          url.host == "192.168.4.1",
+          url.path == "/hello",
+          url.user == nil,
+          url.password == nil,
+          url.query == nil,
+          url.fragment == nil else {
+        return nil
+    }
+    var request = URLRequest(
+        url: url,
+        cachePolicy: .reloadIgnoringLocalCacheData,
+        timeoutInterval: timeout
+    )
+    request.httpMethod = "GET"
+    return request
+}
+
+func makeExistingDeviceStatusRequest(
+    urlString: String = runtimeDeviceStatusURLString,
+    timeout: TimeInterval = runtimeHealthRequestTimeout
+) -> URLRequest? {
+    guard let url = URL(string: urlString) else {
+        return nil
+    }
+    var request = URLRequest(
+        url: url,
+        cachePolicy: .reloadIgnoringLocalCacheData,
+        timeoutInterval: timeout
+    )
+    request.httpMethod = "GET"
+    return request
+}
+
 func normalizedCompanionVersion(_ raw: String) -> String {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.lowercased().hasPrefix("v") {
@@ -223,12 +286,29 @@ private func runRuntimeValidationUnregister() async -> Int32 {
 private struct RuntimeStatusPayload: Decodable {
     struct Companion: Decodable {
         let version: String
+        let app: App?
+        let runtime: Runtime?
+
+        struct App: Decodable {
+            let version: String?
+            let build: String?
+            let path: String?
+            let installedInApplications: Bool?
+        }
+
+        struct Runtime: Decodable {
+            let version: String?
+            let commit: String?
+            let pid: Int32?
+            let listenerOwner: String?
+        }
     }
 
     struct Device: Decodable {
         let target: String?
         let paired: Bool?
         let ready: Bool
+        let connectionState: String?
     }
 
     let ok: Bool
@@ -255,6 +335,7 @@ enum ExistingDeviceStatusEvaluation: Equatable {
 enum ExistingDevicePreparationOutcome: Equatable, CustomStringConvertible {
     case ready
     case notConfigured
+    case retryableFailure(String)
     case failed(String)
 
     var description: String {
@@ -263,8 +344,19 @@ enum ExistingDevicePreparationOutcome: Equatable, CustomStringConvertible {
             return "ready"
         case .notConfigured:
             return "not configured"
+        case .retryableFailure(let detail):
+            return "retryable failure: \(detail)"
         case .failed(let detail):
             return "failed: \(detail)"
+        }
+    }
+
+    var failureDetail: String? {
+        switch self {
+        case .retryableFailure(let detail), .failed(let detail):
+            return detail
+        case .ready, .notConfigured:
+            return nil
         }
     }
 }
@@ -285,7 +377,10 @@ func evaluateExistingDeviceStatus(
     guard !target.isEmpty else {
         return .notConfigured
     }
-    return payload.device?.ready == true ? .ready : .needsRepair
+    if payload.device?.ready == true || payload.device?.connectionState == "reconnecting" {
+        return .ready
+    }
+    return .needsRepair
 }
 
 func evaluateExistingDeviceRepair(
@@ -329,7 +424,7 @@ func shouldRetryExistingDevicePreparation(
     guard attempt < maximumAttempts else {
         return false
     }
-    if case .failed = outcome {
+    if case .retryableFailure = outcome {
         return true
     }
     return false
@@ -342,6 +437,10 @@ enum RuntimeHealthEvaluation: Equatable, CustomStringConvertible {
     case reportedUnhealthy
     case expectedVersionMissing
     case versionMismatch(expected: String, actual: String)
+    case appMetadataMissing
+    case appBuildMismatch(expected: String, actual: String)
+    case appPathMismatch(expected: String, actual: String)
+    case runtimeOwnerMismatch(expected: String, actual: String)
     case ownershipFailed(RuntimeOwnershipEvaluation)
     case requestFailed(String)
 
@@ -359,6 +458,14 @@ enum RuntimeHealthEvaluation: Equatable, CustomStringConvertible {
             return "expected bundled Companion version is missing"
         case .versionMismatch(let expected, let actual):
             return "version mismatch expected=\(expected) actual=\(actual)"
+        case .appMetadataMissing:
+            return "native app metadata is missing"
+        case .appBuildMismatch(let expected, let actual):
+            return "app build mismatch expected=\(expected) actual=\(actual)"
+        case .appPathMismatch(let expected, let actual):
+            return "app path mismatch expected=\(expected) actual=\(actual)"
+        case .runtimeOwnerMismatch(let expected, let actual):
+            return "runtime owner mismatch expected=\(expected) actual=\(actual)"
         case .ownershipFailed(let ownership):
             return "listener ownership failed: \(ownership)"
         case .requestFailed(let detail):
@@ -449,7 +556,11 @@ func evaluateRuntimeOwnership(
 func evaluateRuntimeHealth(
     data: Data,
     httpStatus: Int,
-    expectedVersion: String
+    expectedVersion: String,
+    expectedAppVersion: String? = nil,
+    expectedBuild: String? = nil,
+    expectedAppPath: String? = nil,
+    expectedRuntimeOwner: String? = nil
 ) -> RuntimeHealthEvaluation {
     guard (200..<300).contains(httpStatus) else {
         return .httpStatus(httpStatus)
@@ -468,6 +579,53 @@ func evaluateRuntimeHealth(
     let actual = normalizedCompanionVersion(payload.companion.version)
     guard actual == expected else {
         return .versionMismatch(expected: expected, actual: actual)
+    }
+
+    let requiresNativeMetadata = expectedBuild != nil
+        || expectedAppPath != nil
+        || expectedRuntimeOwner != nil
+    if requiresNativeMetadata {
+        guard let app = payload.companion.app,
+              let runtime = payload.companion.runtime,
+              app.installedInApplications == true else {
+            return .appMetadataMissing
+        }
+        let expectedNativeAppVersion = normalizedCompanionVersion(
+            expectedAppVersion ?? expectedVersion
+        )
+        let appVersion = normalizedCompanionVersion(app.version ?? "")
+        guard appVersion == expectedNativeAppVersion else {
+            return .versionMismatch(expected: expectedNativeAppVersion, actual: appVersion)
+        }
+        if let expectedBuild {
+            let actualBuild = app.build?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard actualBuild == expectedBuild.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                return .appBuildMismatch(expected: expectedBuild, actual: actualBuild)
+            }
+        }
+        if let expectedAppPath {
+            let expectedPath = URL(fileURLWithPath: expectedAppPath)
+                .standardizedFileURL.resolvingSymlinksInPath().path
+            let actualPath = URL(fileURLWithPath: app.path ?? "")
+                .standardizedFileURL.resolvingSymlinksInPath().path
+            guard actualPath == expectedPath else {
+                return .appPathMismatch(expected: expectedPath, actual: actualPath)
+            }
+        }
+        let runtimeVersion = normalizedCompanionVersion(runtime.version ?? "")
+        guard runtimeVersion == expected else {
+            return .versionMismatch(expected: expected, actual: runtimeVersion)
+        }
+        if let expectedRuntimeOwner {
+            let actualOwner = runtime.listenerOwner?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard actualOwner == expectedRuntimeOwner else {
+                return .runtimeOwnerMismatch(
+                    expected: expectedRuntimeOwner,
+                    actual: actualOwner
+                )
+            }
+        }
     }
     return .healthy(version: actual)
 }
@@ -494,9 +652,20 @@ func shouldRetryRuntimeRegistration(
          .invalidPayload,
          .reportedUnhealthy,
          .expectedVersionMissing,
-         .versionMismatch:
+         .versionMismatch,
+         .appMetadataMissing,
+         .appBuildMismatch,
+         .appPathMismatch,
+         .runtimeOwnerMismatch:
         return false
     }
+}
+
+func runtimeHealthGatePassed(_ health: RuntimeHealthEvaluation) -> Bool {
+    if case .healthy = health {
+        return true
+    }
+    return false
 }
 
 func isInstalledApplicationsBundle(_ appURL: URL) -> Bool {
@@ -612,13 +781,56 @@ private struct ProcessOutput {
     let output: String
 }
 
+struct PendingNativeUpdate: Codable, Equatable {
+    let version: String
+    let build: String
+    let createdAt: Date
+}
+
+func pendingNativeUpdateMatchesBundle(
+    _ pending: PendingNativeUpdate,
+    shortVersion: String?,
+    buildVersion: String?
+) -> Bool {
+    normalizedCompanionVersion(pending.version)
+        == normalizedCompanionVersion(shortVersion ?? "")
+        && pending.build.trimmingCharacters(in: .whitespacesAndNewlines)
+        == (buildVersion ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+func pendingNativeUpdateIsExpired(
+    _ pending: PendingNativeUpdate,
+    now: Date = Date(),
+    maximumAge: TimeInterval = pendingNativeUpdateMaximumAge
+) -> Bool {
+    maximumAge >= 0 && now.timeIntervalSince(pending.createdAt) > maximumAge
+}
+
+func pendingNativeUpdateBlocksBundle(
+    _ pending: PendingNativeUpdate,
+    shortVersion: String?,
+    buildVersion: String?,
+    now: Date = Date(),
+    maximumAge: TimeInterval = pendingNativeUpdateMaximumAge
+) -> Bool {
+    !pendingNativeUpdateMatchesBundle(
+        pending,
+        shortVersion: shortVersion,
+        buildVersion: buildVersion
+    ) && !pendingNativeUpdateIsExpired(
+        pending,
+        now: now,
+        maximumAge: maximumAge
+    )
+}
+
 enum RuntimePreparationOutcome: Equatable {
     case nativeRuntimeReady
     case legacyRuntimeRestored
     case keepCurrentPage
 
     var shouldReloadControlCenter: Bool {
-        self == .nativeRuntimeReady || self == .legacyRuntimeRestored
+        self == .nativeRuntimeReady
     }
 }
 
@@ -636,6 +848,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var urlRouter = ControlCenterURLRouter()
     private var reloadAttempts = 0
     private var scheduledReload: Task<Void, Never>?
+    private var preparationTask: Task<Void, Never>?
+    private var installationReady = false
+#if canImport(Sparkle)
+    private lazy var updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: self,
+        userDriverDelegate: nil
+    )
+#endif
     private var installationRequired: Bool {
         requiresApplicationInstallation(Bundle.main.bundleURL)
     }
@@ -647,21 +868,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             presentInstallationRequiredAlert()
             return
         }
-        Task { [weak self] in
-            guard let self else {
-                return
-            }
-            let outcome = await self.prepareCompanion()
-            if outcome.shouldReloadControlCenter {
-                self.reloadControlCenter()
-            }
-        }
-        _ = urlRouter.markReady()
-        presentControlCenter()
+#if canImport(Sparkle)
+        _ = updaterController
+#endif
+        presentInstallationStatus(
+            title: "Finishing installation…",
+            detail: "Checking the Mac App and its background runtime.",
+            failed: false
+        )
+        startRuntimePreparation()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         guard !installationRequired else {
+            return
+        }
+        if urls.contains(where: isCheckForUpdatesURL) {
+            checkForUpdates()
             return
         }
         if urlRouter.receive(urls) {
@@ -676,8 +899,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         guard !installationRequired else {
             return false
         }
-        presentControlCenter()
+        if installationReady {
+            presentControlCenter()
+        } else {
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
         return true
+    }
+
+    private func startRuntimePreparation() {
+        guard preparationTask == nil else {
+            return
+        }
+        presentInstallationStatus(
+            title: "Finishing installation…",
+            detail: "Checking the Mac App and its background runtime.",
+            failed: false
+        )
+        preparationTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+            await self.performLocalNetworkPrivacyPreflight()
+            let outcome = await self.prepareCompanion()
+            self.preparationTask = nil
+            switch outcome {
+            case .nativeRuntimeReady:
+                self.installationReady = true
+                _ = self.urlRouter.markReady()
+                self.presentControlCenter()
+            case .legacyRuntimeRestored:
+                self.presentInstallationStatus(
+                    title: "Installation needs attention",
+                    detail: "The previous VibeTV service was restored. Try again or open the support log.",
+                    failed: true
+                )
+            case .keepCurrentPage:
+                self.presentInstallationStatus(
+                    title: "Installation could not be verified",
+                    detail: "The Mac App, runtime, and local listener did not reach one verified state.",
+                    failed: true
+                )
+            }
+        }
+    }
+
+    @objc private func retryRuntimePreparation() {
+        discardMismatchedPendingNativeUpdate()
+        startRuntimePreparation()
+    }
+
+    @objc private func openSupportLog() {
+        let logURL = applicationSupportURL()
+            .appendingPathComponent("logs", isDirectory: true)
+        if !NSWorkspace.shared.open(logURL) {
+            _ = NSWorkspace.shared.open(applicationSupportURL())
+        }
     }
 
     @objc private func reloadControlCenter() {
@@ -699,6 +977,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 keyEquivalent: "r"
             )
         )
+        appMenu.addItem(
+            NSMenuItem(
+                title: "Check for Updates…",
+                action: #selector(checkForUpdates),
+                keyEquivalent: ""
+            )
+        )
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(
             NSMenuItem(
@@ -713,11 +998,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         NSApp.mainMenu = mainMenu
     }
 
-    private func presentControlCenter() {
+    @objc private func checkForUpdates() {
         guard !installationRequired else {
+            presentInstallationRequiredAlert()
             return
         }
-        if window == nil {
+#if canImport(Sparkle)
+        updaterController.checkForUpdates(nil)
+#else
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Native updater is unavailable"
+        alert.informativeText = "Install the latest signed VibeTV Control Center from app.vibetv.shop."
+        alert.runModal()
+#endif
+    }
+
+    private func presentControlCenter() {
+        guard !installationRequired, installationReady else {
+            return
+        }
+        if webView == nil {
             createWindow()
         }
         window?.makeKeyAndOrderFront(nil)
@@ -760,6 +1061,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         )
         webView.navigationDelegate = self
 
+        let window = window ?? makeMainWindow()
+        window.title = "VibeTV Control Center"
+        window.contentView = webView
+
+        self.window = window
+        self.webView = webView
+        loadControlCenter()
+    }
+
+    private func makeMainWindow() -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1180, height: 820),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -768,13 +1079,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         )
         window.title = "VibeTV Control Center"
         window.center()
-        window.contentView = webView
         window.delegate = self
         window.isReleasedWhenClosed = false
+        return window
+    }
 
+    private func presentInstallationStatus(
+        title: String,
+        detail: String,
+        failed: Bool
+    ) {
+        let window = window ?? makeMainWindow()
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor(
+            calibratedRed: 0.976,
+            green: 0.976,
+            blue: 0.976,
+            alpha: 1
+        ).cgColor
+
+        let brand = NSTextField(labelWithString: "VIBETV")
+        brand.font = .systemFont(ofSize: 40, weight: .black)
+        brand.textColor = NSColor(calibratedWhite: 0.1, alpha: 1)
+        brand.alignment = .center
+
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 28, weight: .bold)
+        titleLabel.textColor = NSColor(calibratedWhite: 0.1, alpha: 1)
+        titleLabel.alignment = .center
+        titleLabel.maximumNumberOfLines = 2
+        titleLabel.lineBreakMode = .byWordWrapping
+        titleLabel.setAccessibilityRole(.staticText)
+
+        let detailLabel = NSTextField(wrappingLabelWithString: detail)
+        detailLabel.font = .systemFont(ofSize: 16, weight: .regular)
+        detailLabel.textColor = NSColor(calibratedWhite: 0.28, alpha: 1)
+        detailLabel.alignment = .center
+        detailLabel.maximumNumberOfLines = 3
+
+        let progress = NSProgressIndicator()
+        progress.style = .spinning
+        progress.controlSize = .large
+        if failed {
+            progress.isHidden = true
+        } else {
+            progress.startAnimation(nil)
+        }
+
+        let retry = NSButton(
+            title: "Try again",
+            target: self,
+            action: #selector(retryRuntimePreparation)
+        )
+        retry.bezelStyle = .rounded
+        retry.keyEquivalent = "\r"
+        retry.isHidden = !failed
+
+        let support = NSButton(
+            title: "Open support log",
+            target: self,
+            action: #selector(openSupportLog)
+        )
+        support.bezelStyle = .rounded
+        support.isHidden = !failed
+
+        let actions = NSStackView(views: [retry, support])
+        actions.orientation = .horizontal
+        actions.alignment = .centerY
+        actions.spacing = 12
+
+        let stack = NSStackView(views: [brand, progress, titleLabel, detailLabel, actions])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 18
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 32),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -32),
+            titleLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 620),
+            detailLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 620),
+        ])
+
+        window.contentView = container
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
         self.window = window
-        self.webView = webView
-        loadControlCenter()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -816,6 +1209,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             )
             return .keepCurrentPage
         }
+        if let pending = loadPendingNativeUpdate() {
+            let shortVersion = Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String
+            let buildVersion = Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleVersion"
+            ) as? String
+            if pendingNativeUpdateBlocksBundle(
+                pending,
+                shortVersion: shortVersion,
+                buildVersion: buildVersion
+            ) {
+                NSLog(
+                    "VibeTV Control Center pending update mismatch expected=\(pending.version)+\(pending.build); Try again can discard the failed handoff"
+                )
+                return .keepCurrentPage
+            }
+            if !pendingNativeUpdateMatchesBundle(
+                pending,
+                shortVersion: shortVersion,
+                buildVersion: buildVersion
+            ) {
+                NSLog(
+                    "VibeTV Control Center discarded expired pending update expected=\(pending.version)+\(pending.build)"
+                )
+                clearPendingNativeUpdate()
+            }
+        }
         guard bundledRuntimeResourcesAreValid() else {
             NSLog("VibeTV Control Center app-managed runtime resources are missing")
             return .keepCurrentPage
@@ -835,20 +1256,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
         let legacyDescriptors = legacyStates.map(\.descriptor)
         let legacyApps = legacyTerminalAppURLs()
+        let hasLoadedLegacyWriter = legacyStates.contains(where: \.wasLoaded)
 
-        guard await ensureBundledRuntimeServiceRegistered() else {
-            NSLog(
-                "VibeTV Control Center kept legacy services and apps because the app-managed runtime could not be registered"
-            )
-            return .keepCurrentPage
+        // Repair an already-overlapping installation before migration. Apple's
+        // unregister call terminates the running app-managed LaunchAgent.
+        if hasLoadedLegacyWriter, runtimeService.status == .enabled {
+            guard await unregisterBundledRuntimeService() else {
+                NSLog(
+                    "VibeTV Control Center could not stop the app-managed runtime before legacy migration"
+                )
+                return .keepCurrentPage
+            }
         }
 
         if !stopLegacyLaunchAgents(legacyStates) {
-            let restored = await rollbackToLegacyAgents(
-                legacyStates,
-                reason: "one or more legacy LaunchAgents could not be stopped"
-            )
+            let reason = "one or more legacy LaunchAgents could not be stopped"
+            let restored = restoreLegacyAgents(legacyStates, reason: reason)
             return restored ? .legacyRuntimeRestored : .keepCurrentPage
+        }
+
+        // SMAppService.register() bootstraps a LaunchAgent immediately. Stop
+        // every legacy writer first so migration never overlaps two streams.
+        guard await ensureBundledRuntimeServiceRegistered() else {
+            NSLog(
+                "VibeTV Control Center could not register the app-managed runtime after stopping legacy services"
+            )
+            if !legacyStates.isEmpty {
+                let reason = "the app-managed runtime could not be registered"
+                let restored: Bool
+                if runtimeService.status == .enabled {
+                    restored = await rollbackToLegacyAgents(legacyStates, reason: reason)
+                } else {
+                    restored = restoreLegacyAgents(legacyStates, reason: reason)
+                }
+                return restored ? .legacyRuntimeRestored : .keepCurrentPage
+            }
+            return .keepCurrentPage
         }
 
         var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)
@@ -863,7 +1306,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 health = await waitForHealthyRuntime(expectedVersion: expectedVersion)
             }
         }
-        guard case .healthy = health, runtimeService.status == .enabled else {
+        // A healthy result already proves that the expected Companion version
+        // owns the listener through this launchd label. Service Management can
+        // briefly report a stale non-enabled status after an app update or a
+        // bounded re-registration. Do not let that weaker snapshot tear down a
+        // runtime whose identity, version, and listener ownership were proven.
+        guard runtimeHealthGatePassed(health) else {
             NSLog(
                 "VibeTV Control Center runtime health gate failed; legacy artifacts remain untouched: \(health)"
             )
@@ -880,11 +1328,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             }
             return .keepCurrentPage
         }
+        clearPendingNativeUpdate()
 
         let devicePreparation = await prepareExistingDeviceConnectionWithRetries(
             requireFreshFullFrame: !legacyStates.isEmpty || !legacyApps.isEmpty
         )
-        if case .failed(let detail) = devicePreparation {
+        if let detail = devicePreparation.failureDetail {
             NSLog(
                 "VibeTV Control Center kept legacy artifacts because the existing VibeTV connection could not be repaired automatically: \(detail)"
             )
@@ -942,6 +1391,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return .nativeRuntimeReady
     }
 
+    private func performLocalNetworkPrivacyPreflight() async {
+        guard let request = makeLocalNetworkPrivacyProbeRequest() else {
+            NSLog("VibeTV Control Center local-network privacy preflight URL is invalid")
+            return
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForRequest = localNetworkPrivacyProbeTimeout
+        configuration.timeoutIntervalForResource = localNetworkPrivacyProbeTimeout
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+
+        do {
+            _ = try await session.data(for: request)
+            NSLog("VibeTV Control Center local-network privacy preflight completed")
+        } catch {
+            // This read-only probe only lets macOS resolve Local Network
+            // privacy while the foreground app is visible. Setup handles
+            // discovery and device availability afterward.
+            NSLog(
+                "VibeTV Control Center local-network privacy preflight finished without a device response: \((error as NSError).localizedDescription)"
+            )
+        }
+    }
+
     private func prepareExistingDeviceConnectionWithRetries(
         requireFreshFullFrame: Bool
     ) async -> ExistingDevicePreparationOutcome {
@@ -969,66 +1444,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func prepareExistingDeviceConnection(
         requireFreshFullFrame: Bool
     ) async -> ExistingDevicePreparationOutcome {
-        guard let statusURL = URL(string: runtimeStatusURLString),
+        guard let statusRequest = makeExistingDeviceStatusRequest(),
               let repairURL = URL(string: runtimeDeviceRepairURLString) else {
             return .failed("invalid local device preparation URL")
         }
-
+        let statusResult: (Data, URLResponse)
         do {
-            var statusRequest = URLRequest(
-                url: statusURL,
-                cachePolicy: .reloadIgnoringLocalCacheData,
-                timeoutInterval: runtimeHealthRequestTimeout
-            )
-            statusRequest.httpMethod = "GET"
-            let (statusData, statusResponse) = try await URLSession.shared.data(
+            statusResult = try await URLSession.shared.data(
                 for: statusRequest
             )
-            guard let statusHTTP = statusResponse as? HTTPURLResponse else {
-                return .failed("local status response was not HTTP")
-            }
+        } catch {
+            return .retryableFailure((error as NSError).localizedDescription)
+        }
+        let (statusData, statusResponse) = statusResult
+        guard let statusHTTP = statusResponse as? HTTPURLResponse else {
+            return .retryableFailure("local status response was not HTTP")
+        }
 
-            let statusEvaluation = evaluateExistingDeviceStatus(
-                data: statusData,
-                httpStatus: statusHTTP.statusCode
-            )
-            switch statusEvaluation {
-            case .ready:
-                if !shouldRepairExistingDevice(
-                    statusEvaluation,
-                    requireFreshFullFrame: requireFreshFullFrame
-                ) {
-                    return .ready
-                }
-            case .notConfigured:
-                return .notConfigured
-            case .failed(let detail):
-                return .failed(detail)
-            case .needsRepair:
-                break
+        let statusEvaluation = evaluateExistingDeviceStatus(
+            data: statusData,
+            httpStatus: statusHTTP.statusCode
+        )
+        switch statusEvaluation {
+        case .ready:
+            if !shouldRepairExistingDevice(
+                statusEvaluation,
+                requireFreshFullFrame: requireFreshFullFrame
+            ) {
+                return .ready
             }
+        case .notConfigured:
+            return .notConfigured
+        case .failed(let detail):
+            return .retryableFailure(detail)
+        case .needsRepair:
+            break
+        }
 
-            var repairRequest = URLRequest(
-                url: repairURL,
-                cachePolicy: .reloadIgnoringLocalCacheData,
-                timeoutInterval: runtimeDeviceRepairTimeout
-            )
-            repairRequest.httpMethod = "POST"
-            repairRequest.httpBody = Data("{}".utf8)
-            repairRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            let (repairData, repairResponse) = try await URLSession.shared.data(
+        var repairRequest = URLRequest(
+            url: repairURL,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: runtimeDeviceRepairTimeout
+        )
+        repairRequest.httpMethod = "POST"
+        repairRequest.httpBody = Data("{}".utf8)
+        repairRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let repairResult: (Data, URLResponse)
+        do {
+            repairResult = try await URLSession.shared.data(
                 for: repairRequest
-            )
-            guard let repairHTTP = repairResponse as? HTTPURLResponse else {
-                return .failed("local repair response was not HTTP")
-            }
-            return evaluateExistingDeviceRepair(
-                data: repairData,
-                httpStatus: repairHTTP.statusCode
             )
         } catch {
             return .failed((error as NSError).localizedDescription)
         }
+        let (repairData, repairResponse) = repairResult
+        guard let repairHTTP = repairResponse as? HTTPURLResponse else {
+            return .failed("local repair response was not HTTP")
+        }
+        return evaluateExistingDeviceRepair(
+            data: repairData,
+            httpStatus: repairHTTP.statusCode
+        )
     }
 
     private func ensureBundledRuntimeServiceRegistered() async -> Bool {
@@ -1118,7 +1594,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func waitForHealthyRuntime(
         expectedVersion: String
     ) async -> RuntimeHealthEvaluation {
-        guard let statusURL = URL(string: runtimeStatusURLString) else {
+        guard let statusURL = URL(string: runtimeHealthURLString) else {
             return .requestFailed("invalid local status URL")
         }
 
@@ -1140,7 +1616,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 lastEvaluation = evaluateRuntimeHealth(
                     data: data,
                     httpStatus: http.statusCode,
-                    expectedVersion: expectedVersion
+                    expectedVersion: expectedVersion,
+                    expectedAppVersion: Bundle.main.object(
+                        forInfoDictionaryKey: "CFBundleShortVersionString"
+                    ) as? String,
+                    expectedBuild: Bundle.main.object(
+                        forInfoDictionaryKey: "CFBundleVersion"
+                    ) as? String,
+                    expectedAppPath: Bundle.main.bundleURL.path,
+                    expectedRuntimeOwner: runtimeLaunchAgentLabel
                 )
                 if case .healthy = lastEvaluation {
                     let ownership = verifyRuntimeListenerOwnership()
@@ -1292,7 +1776,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             )
             return false
         }
+        return restoreLegacyAgents(states, reason: reason)
+    }
 
+    private func restoreLegacyAgents(
+        _ states: [LegacyLaunchAgentState],
+        reason: String
+    ) -> Bool {
+        NSLog("VibeTV Control Center restoring legacy services: \(reason)")
         var restored = true
         for state in states {
             let service = launchctlServiceTarget(
@@ -1634,6 +2125,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             .appendingPathComponent("Library/Application Support/codexbar-display", isDirectory: true)
     }
 
+    private func pendingNativeUpdateURL() -> URL {
+        applicationSupportURL().appendingPathComponent(pendingNativeUpdateFileName)
+    }
+
+    private func loadPendingNativeUpdate() -> PendingNativeUpdate? {
+        guard let data = try? Data(contentsOf: pendingNativeUpdateURL()) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(PendingNativeUpdate.self, from: data)
+    }
+
+    private func savePendingNativeUpdate(version: String, build: String) {
+        let pending = PendingNativeUpdate(
+            version: version,
+            build: build,
+            createdAt: Date()
+        )
+        do {
+            try FileManager.default.createDirectory(
+                at: applicationSupportURL(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder().encode(pending)
+            try data.write(to: pendingNativeUpdateURL(), options: .atomic)
+        } catch {
+            NSLog("VibeTV Control Center could not save pending update verification: \(error)")
+        }
+    }
+
+    private func clearPendingNativeUpdate() {
+        let url = pendingNativeUpdateURL()
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return
+        }
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            NSLog("VibeTV Control Center could not clear pending update verification: \(error)")
+        }
+    }
+
+    private func discardMismatchedPendingNativeUpdate() {
+        guard let pending = loadPendingNativeUpdate(),
+              !pendingNativeUpdateMatchesBundle(
+                  pending,
+                  shortVersion: Bundle.main.object(
+                      forInfoDictionaryKey: "CFBundleShortVersionString"
+                  ) as? String,
+                  buildVersion: Bundle.main.object(
+                      forInfoDictionaryKey: "CFBundleVersion"
+                  ) as? String
+              ) else {
+            return
+        }
+        NSLog(
+            "VibeTV Control Center user discarded failed pending update expected=\(pending.version)+\(pending.build)"
+        )
+        clearPendingNativeUpdate()
+    }
+
+#if canImport(Sparkle)
+    func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        savePendingNativeUpdate(
+            version: item.displayVersionString,
+            build: item.versionString
+        )
+    }
+#endif
+
     private func timestampForBackup() -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -1648,8 +2208,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
     ) {
         guard navigationAction.navigationType == .linkActivated,
-              let url = navigationAction.request.url,
-              isApprovedDMGDownloadURL(url) else {
+              let url = navigationAction.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+
+        if isCheckForUpdatesURL(url) {
+            decisionHandler(.cancel)
+            checkForUpdates()
+            return
+        }
+
+        guard isApprovedDMGDownloadURL(url) else {
             decisionHandler(.allow)
             return
         }
@@ -1722,6 +2292,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 }
+
+#if canImport(Sparkle)
+extension AppDelegate: SPUUpdaterDelegate {}
+#endif
 
 #if VIBETV_CONTROL_CENTER_TESTING
 runURLSchemeTests()

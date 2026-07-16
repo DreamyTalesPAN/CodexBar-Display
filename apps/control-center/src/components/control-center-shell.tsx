@@ -75,12 +75,15 @@ export function ControlCenterShell({
 }: ControlCenterShellProps) {
   const imageStuck = deviceImageIsStuck(device);
   const setupConnected = deviceSetupIsUsable(device);
-  const targetLabel = setupConnected
+  const reconnecting = device?.connectionState === "reconnecting";
+  const targetLabel = reconnecting
+    ? "Reconnecting…"
+    : setupConnected
     ? imageStuck
       ? "Image is stuck"
       : device?.target?.replace(/^https?:\/\//, "") || "VibeTV connected"
     : "Setup needed";
-  const targetDotClass = setupConnected && !imageStuck ? "bg-[#CCFF00]" : "bg-[#747A60]";
+  const targetDotClass = setupConnected && !reconnecting && !imageStuck ? "bg-[#CCFF00]" : "bg-[#747A60]";
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
 
@@ -121,7 +124,11 @@ export function ControlCenterShell({
             </div>
 
             <div className="hidden items-center gap-8 lg:flex">
-              <div className="inline-flex items-center gap-3 text-base text-[#1B1B1B]">
+              <div
+                aria-live="polite"
+                className="inline-flex items-center gap-3 text-base text-[#1B1B1B]"
+                role="status"
+              >
                 <span className={`size-2 rounded-full ${targetDotClass}`} />
                 <span>{targetLabel}</span>
               </div>

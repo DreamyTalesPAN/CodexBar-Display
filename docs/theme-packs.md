@@ -78,19 +78,19 @@ Install it on a connected VibeTV only during an explicit hardware test window. T
 For theme-only tests, skip firmware update explicitly:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/cozy-meadow --target http://vibetv.local --skip-firmware-update
+go run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/cozy-meadow --target http://<device-ip> --skip-firmware-update
 ```
 
 Install a ZIP directly from GitHub:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack install --pack https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-cozy-meadow.zip --target http://vibetv.local --skip-firmware-update
+go run ./cmd/codexbar-display theme-pack install --pack https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-cozy-meadow.zip --target http://<device-ip> --skip-firmware-update
 ```
 
 Install by catalog theme ID:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack install --theme clippy --target http://vibetv.local --skip-firmware-update
+go run ./cmd/codexbar-display theme-pack install --theme clippy --target http://<device-ip> --skip-firmware-update
 ```
 
 Without `--skip-firmware-update`, install first runs the WiFi firmware update flow for the same `--target`. If the device is already current, it continues without flashing. Then it uploads assets, uploads the stored ThemeSpec, and activates it via `/theme/active`. The regular daemon keeps sending real live frames after install.

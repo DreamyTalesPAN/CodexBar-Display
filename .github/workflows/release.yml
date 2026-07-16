@@ -20,6 +20,7 @@ jobs:
       APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
       APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
       APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+      SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,7 +49,8 @@ jobs:
             APPLE_SIGNING_CERTIFICATE_PASSWORD \
             APPLE_NOTARY_KEY_ID \
             APPLE_NOTARY_ISSUER_ID \
-            APPLE_NOTARY_KEY_P8_BASE64
+            APPLE_NOTARY_KEY_P8_BASE64 \
+            SPARKLE_ED25519_PRIVATE_KEY
           do
             if [[ -z "${!name:-}" ]]; then
               echo "::error::Missing required GitHub Actions secret: ${name}"
@@ -120,6 +122,22 @@ jobs:
           ./scripts/verify-macos-control-center-dmg.sh \
             --dmg "dist/macos/VibeTV-Control-Center.dmg"
 
+      - name: Build signed Sparkle appcast
+        run: |
+          set -euo pipefail
+
+          sparkle_dir="$(./scripts/fetch-sparkle.sh)"
+          printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | \
+            "${sparkle_dir}/bin/generate_appcast" \
+              --ed-key-file - \
+              --maximum-deltas 0 \
+              --download-url-prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/" \
+              --link "https://app.vibetv.shop" \
+              -o dist/macos/appcast.xml \
+              dist/macos
+          test -s dist/macos/appcast.xml
+          grep -F 'sparkle:edSignature=' dist/macos/appcast.xml >/dev/null
+
       - name: Upload notarization evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -133,7 +151,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vibetv-control-center-dmg
-          path: dist/macos/VibeTV-Control-Center.dmg
+          path: |
+            dist/macos/VibeTV-Control-Center.dmg
+            dist/macos/appcast.xml
           if-no-files-found: error
           retention-days: 7
 
@@ -270,15 +290,21 @@ jobs:
               MAX_GZIP_BYTES="350000"
             fi
 
-            CODEXBAR_DISPLAY_FW_VERSION="${FW_VERSION}" ./scripts/check-firmware-size-budget.sh \
-              "${DIR}" \
+            BUILD_LOG="$(mktemp)"
+            (
+              cd "${DIR}"
+              CODEXBAR_DISPLAY_FW_VERSION="${FW_VERSION}" pio run -e "${ENV_NAME}"
+            ) 2>&1 | tee "${BUILD_LOG}"
+
+            SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
+            ./scripts/check-firmware-size-budget.sh \
+              "${BUILD_LOG}" \
+              "${SRC}" \
               "${ENV_NAME}" \
               "${MAX_FLASH_PCT}" \
               "${MAX_RAM_PCT}" \
               "${MAX_BIN_BYTES}" \
               "${MAX_GZIP_BYTES}"
-
-            SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
             DEST="dist/firmware/${ASSET}"
             if [[ "${ENV_NAME}" == esp8266_* ]]; then
               gzip -c -9 "${SRC}" > "${DEST}"
@@ -328,7 +354,7 @@ jobs:
                       "asset": asset,
                       "sha256": sha,
                       "severity": str(artifact.get("severity") or "recommended"),
-                      "message": str(artifact.get("message") or "Firmware update available. Open vibetv.local."),
+                      "message": str(artifact.get("message") or "Firmware update available. Open app.vibetv.shop."),
                       "firmwareUrl": f"https://github.com/{repo}/releases/download/v{version}/{asset}",
                   }
               )
@@ -349,7 +375,9 @@ jobs:
           path: dist/macos
 
       - name: Require verified Mac DMG
-        run: test -f dist/macos/VibeTV-Control-Center.dmg
+        run: |
+          test -f dist/macos/VibeTV-Control-Center.dmg
+          test -s dist/macos/appcast.xml
 
       - name: Build release checksums
         env:
@@ -376,4 +404,5 @@ jobs:
             dist/firmware/firmware-manifest.json
             dist/firmware/firmware-manifest-*.json
             dist/macos/*.dmg
+            dist/macos/appcast.xml
             dist/checksums-*.txt

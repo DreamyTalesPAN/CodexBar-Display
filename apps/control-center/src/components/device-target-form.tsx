@@ -1,12 +1,13 @@
 "use client";
 
 import { Monitor, RefreshCw } from "lucide-react";
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { ControlCenterButton } from "./control-center-button";
 import type { ApiError } from "./control-center-types";
 import {
   DEVICE_TARGET_PLACEHOLDER,
   deviceTargetHelpText,
+  normalizeManualDeviceTarget,
 } from "./device-target-copy";
 
 type DeviceTargetFormProps = {
@@ -35,10 +36,19 @@ export function DeviceTargetForm({
   value,
 }: DeviceTargetFormProps) {
   const formDisabled = disabled || busy;
+  const [validationError, setValidationError] = useState("");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSubmit?.(value);
+    const normalized = normalizeManualDeviceTarget(value);
+    if (!normalized) {
+      setValidationError(
+        "Enter the IP address shown on the VibeTV screen.",
+      );
+      return;
+    }
+    setValidationError("");
+    onSubmit?.(normalized);
   }
 
   return (
@@ -54,12 +64,22 @@ export function DeviceTargetForm({
           className="mt-3 h-12 w-full border border-[#747A60] bg-[#F9F9F9] px-3 font-mono text-sm text-[#1B1B1B] outline-none transition placeholder:text-[#747A60] focus:border-[#5E7200] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
           disabled={formDisabled}
           id={id}
-          onChange={(event) => onChange?.(event.target.value)}
+          aria-invalid={Boolean(validationError)}
+          aria-describedby={validationError ? `${id}-error` : undefined}
+          onChange={(event) => {
+            setValidationError("");
+            onChange?.(event.target.value);
+          }}
           placeholder={DEVICE_TARGET_PLACEHOLDER}
           spellCheck={false}
           type="text"
           value={value}
         />
+        {validationError ? (
+          <p className="mt-2 text-sm font-semibold text-[#8A2500]" id={`${id}-error`}>
+            {validationError}
+          </p>
+        ) : null}
       </div>
       <ControlCenterButton
         disabled={formDisabled}

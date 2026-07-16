@@ -162,10 +162,19 @@ bool ensureThemeSpecSceneCached(const String& raw) {
   if (cachedThemeSpecDocHash == rawHash && cachedThemeSpecScene.primitiveCount > 0) {
     return true;
   }
+
+  // A changed theme must stop any previous GIF immediately. The decoder stays
+  // released while the next theme is parsed and compiled; GifCore allocates it
+  // lazily only after real playback has found a valid GIF header.
+  resetAnimatedSpriteCaches();
+  GifCore().ReleaseMemory();
   cachedThemeSpecDoc.clear();
+  cachedThemeSpecDocHash = 0;
+  themespec::ReleaseCompiledThemeSpec(cachedThemeSpecScene);
+  yield();
+
   const DeserializationError err = deserializeJson(cachedThemeSpecDoc, raw.c_str());
   if (err) {
-    cachedThemeSpecDocHash = 0;
     return false;
   }
   themespec::CompiledThemeSpec nextScene;
@@ -336,6 +345,12 @@ bool skipSpriteRows(File& file, int rowCount) {
   for (int row = 0; row < rowCount; ++row) {
     if (!readSpriteLine(file, line)) {
       return false;
+    }
+    // Building the random-access frame index can scan hundreds of compressed
+    // rows before anything is drawn. Yield inside that scan so large current
+    // and future CBA themes cannot starve Wi-Fi or the hardware watchdog.
+    if (ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row + 1)) {
+      yield();
     }
   }
   return true;
@@ -794,10 +809,6 @@ bool DrawThemeSpecUsage() {
     markThemeSpecRenderFailed("parse_fail");
     scheduleFullRenderRetry();
     return false;
-  }
-
-  if (!themespec::CompiledThemeSpecHasGifAssets(cachedThemeSpecScene)) {
-    GifCore().ReleaseMemory();
   }
 
   const auto frameData = currentThemeSpecFrameData();

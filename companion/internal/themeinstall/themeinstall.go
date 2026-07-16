@@ -167,66 +167,15 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			Op:   "theme-pack/resolve-target",
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  err,
-			Hint: "use --target http://vibetv.local or the IP shown on Vibe TV",
+			Hint: "use --target http://<device-ip> with the IP shown on VibeTV",
 		}
 	}
-	resolvedTarget = discoverThemeInstallTarget(ctx, client, resolvedTarget, opts.Verbose, out)
 	displayTarget := stripTargetCredentials(resolvedTarget)
 
-	if !opts.SkipFirmwareUpdate {
-		if opts.FirmwareUpdater != nil {
-			manifestURL := strings.TrimSpace(opts.FirmwareManifestURL)
-			if manifestURL == "" {
-				manifestURL = DefaultFirmwareManifestURL
-			}
-			if err := opts.FirmwareUpdater(ctx, resolvedTarget, manifestURL); err != nil {
-				return Result{}, &InstallError{
-					Op:   "theme-pack/check-firmware",
-					Code: errcode.UpgradeFlashFirmware,
-					Err:  err,
-					Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
-				}
-			}
-		}
-	} else if opts.Verbose {
-		fmt.Fprintln(out, "Firmware check: skipped")
-	}
-
 	fmt.Fprintln(out, "Checking device...")
-	caps, err := wifi.DeviceCapabilities(resolvedTarget)
+	caps, err := themeInstallCapabilities(wifi, resolvedTarget, displayTarget, opts.AllowUnknown, opts.Verbose, out)
 	if err != nil {
-		if !opts.AllowUnknown {
-			return Result{}, &InstallError{
-				Op:   "theme-pack/check-device",
-				Code: errcode.UpgradeFlashFirmware,
-				Err:  fmt.Errorf("VibeTV is not reachable at %s: %w", displayTarget, err),
-				Hint: "check VibeTV power/WiFi or pass --target http://<device-ip>",
-			}
-		}
-		caps = FallbackThemeSpecCapabilities()
-		caps.ActiveTransport = "wifi"
-		fmt.Fprintln(out, "Checking device: using local fallback profile")
-		if opts.Verbose {
-			fmt.Fprintf(out, "Device warning: hello unavailable for %s: %v\n", displayTarget, err)
-		}
-	}
-	if opts.AllowUnknown && !caps.Known {
-		caps = FallbackThemeSpecCapabilities()
-		caps.ActiveTransport = "wifi"
-		fmt.Fprintln(out, "Checking device: using local fallback profile")
-		if opts.Verbose {
-			fmt.Fprintf(out, "Device warning: capabilities unknown on %s\n", displayTarget)
-		}
-	}
-	if !opts.AllowUnknown && !caps.Known {
-		return Result{}, &InstallError{
-			Op:   "theme-pack/capabilities",
-			Code: errcode.ProtocolThemeSpecIncompatible,
-			Err:  errors.New("device capabilities unavailable; connect device and retry"),
-		}
-	}
-	if opts.Verbose {
-		fmt.Fprintf(out, "Device: board=%s protocol=%d target=%s\n", caps.Board, caps.NegotiatedProtocolVersion, displayTarget)
+		return Result{}, err
 	}
 	if err := pack.ValidateAgainstCapabilities(caps); err != nil {
 		return Result{}, &InstallError{
@@ -235,6 +184,36 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			Err:  err,
 		}
 	}
+
+	if !opts.SkipFirmwareUpdate && opts.FirmwareUpdater != nil {
+		manifestURL := strings.TrimSpace(opts.FirmwareManifestURL)
+		if manifestURL == "" {
+			manifestURL = DefaultFirmwareManifestURL
+		}
+		if err := opts.FirmwareUpdater(ctx, resolvedTarget, manifestURL); err != nil {
+			return Result{}, &InstallError{
+				Op:   "theme-pack/check-firmware",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  err,
+				Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+			}
+		}
+		fmt.Fprintln(out, "Rechecking device after firmware update...")
+		caps, err = themeInstallCapabilities(wifi, resolvedTarget, displayTarget, opts.AllowUnknown, opts.Verbose, out)
+		if err != nil {
+			return Result{}, err
+		}
+		if err := pack.ValidateAgainstCapabilities(caps); err != nil {
+			return Result{}, &InstallError{
+				Op:   "theme-pack/capabilities",
+				Code: errcode.ProtocolThemeSpecIncompatible,
+				Err:  err,
+			}
+		}
+	} else if opts.SkipFirmwareUpdate && opts.Verbose {
+		fmt.Fprintln(out, "Firmware check: skipped")
+	}
+
 	previousThemePath, previousThemePathErr := currentStoredThemePath(wifi, resolvedTarget)
 	if previousThemePathErr != nil && opts.Verbose {
 		fmt.Fprintf(out, "Restore snapshot: skipped (%v)\n", previousThemePathErr)
@@ -361,30 +340,50 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	}, nil
 }
 
-func discoverThemeInstallTarget(ctx context.Context, client *http.Client, target string, verbose bool, out io.Writer) string {
-	publicTarget := stripTargetCredentials(target)
-	if !isMDNSTarget(publicTarget) {
-		return target
-	}
-	result, err := transportlayer.DiscoverWiFiDevice(ctx, transportlayer.WiFiDiscoveryOptions{
-		Candidates:         []string{publicTarget},
-		IncludeNetworkScan: true,
-		Client:             client,
-	})
+func themeInstallCapabilities(
+	wifi transportlayer.WiFiTransport,
+	target string,
+	displayTarget string,
+	allowUnknown bool,
+	verbose bool,
+	out io.Writer,
+) (protocol.DeviceCapabilities, error) {
+	caps, err := wifi.DeviceCapabilities(target)
 	if err != nil {
-		if verbose {
-			fmt.Fprintf(out, "Device discovery: no IP fallback found for %s (%v)\n", publicTarget, err)
+		if !allowUnknown {
+			return protocol.DeviceCapabilities{}, &InstallError{
+				Op:   "theme-pack/check-device",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  fmt.Errorf("VibeTV is not reachable at %s: %w", displayTarget, err),
+				Hint: "check VibeTV power/WiFi or pass --target http://<device-ip>",
+			}
 		}
-		return target
+		caps = FallbackThemeSpecCapabilities()
+		caps.ActiveTransport = "wifi"
+		fmt.Fprintln(out, "Checking device: using local fallback profile")
+		if verbose {
+			fmt.Fprintf(out, "Device warning: hello unavailable for %s: %v\n", displayTarget, err)
+		}
 	}
-	discovered := strings.TrimSpace(result.Target)
-	if discovered == "" || sameTarget(publicTarget, discovered) {
-		return target
+	if allowUnknown && !caps.Known {
+		caps = FallbackThemeSpecCapabilities()
+		caps.ActiveTransport = "wifi"
+		fmt.Fprintln(out, "Checking device: using local fallback profile")
+		if verbose {
+			fmt.Fprintf(out, "Device warning: capabilities unknown on %s\n", displayTarget)
+		}
 	}
-	if out != nil {
-		fmt.Fprintf(out, "Device discovery: using %s instead of %s\n", discovered, publicTarget)
+	if !allowUnknown && !caps.Known {
+		return protocol.DeviceCapabilities{}, &InstallError{
+			Op:   "theme-pack/capabilities",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err:  errors.New("device capabilities unavailable; connect device and retry"),
+		}
 	}
-	return targetWithToken(discovered, targetToken(target))
+	if verbose {
+		fmt.Fprintf(out, "Device: board=%s protocol=%d target=%s\n", caps.Board, caps.NegotiatedProtocolVersion, displayTarget)
+	}
+	return caps, nil
 }
 
 func sendInstallingThemeFrame(wifi transportlayer.WiFiTransport, target string, caps protocol.DeviceCapabilities) error {
@@ -800,29 +799,6 @@ func targetWithToken(target, token string) string {
 	query.Set("token", token)
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
-}
-
-func targetToken(target string) string {
-	parsed, err := url.Parse(strings.TrimSpace(target))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(parsed.Query().Get("token"))
-}
-
-func isMDNSTarget(target string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(target))
-	if err != nil {
-		return strings.Contains(strings.ToLower(target), "vibetv.local")
-	}
-	return strings.EqualFold(parsed.Hostname(), "vibetv.local")
-}
-
-func sameTarget(left, right string) bool {
-	return strings.EqualFold(
-		strings.TrimRight(stripTargetCredentials(left), "/"),
-		strings.TrimRight(stripTargetCredentials(right), "/"),
-	)
 }
 
 func authRequired(err error) bool {

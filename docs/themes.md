@@ -92,9 +92,9 @@ read-only checks before installing themes on real hardware.
 Allowed read-only checks:
 
 ```bash
-curl http://vibetv.local/hello
-curl http://vibetv.local/health
-curl http://vibetv.local/assets
+curl http://<device-ip>/hello
+curl http://<device-ip>/health
+curl http://<device-ip>/assets
 ```
 
 Do not upload assets, activate themes, reset WiFi, or run firmware updates on a

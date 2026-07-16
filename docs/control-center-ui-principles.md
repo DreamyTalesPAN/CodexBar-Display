@@ -14,6 +14,8 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 - **State gating:** tabs and controls that are not usable in the current setup state stay locked. Overview owns setup recovery.
 - **Visual hierarchy discipline:** no button stacks with equal weight. If multiple actions appear, the design is probably exposing implementation detail.
 - **Low text density:** short labels and short status rows are preferred. If a paragraph is needed, first try to delete it or convert it into a button label/status value.
+- **Approval before visible change:** implementation work never authorizes a visible UI change by itself. Any added, changed, or removed customer-facing copy, control, hierarchy, or state requires explicit user approval recorded in `control-center-customer-ui-approval.md`.
+- **One update action:** whenever an app or firmware update is available, the customer action is exactly `Update`. Do not expose DMG handling, Applications-folder replacement, relaunch mechanics, Sparkle, or duplicate-copy prevention in the customer UI.
 
 ## Setup Flow Rules
 
@@ -36,18 +38,21 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 
 Before shipping customer-facing UI changes, answer these in order:
 
-1. Can a non-technical customer identify the next step in under 5 seconds?
-2. Is there exactly one primary action for the current state?
-3. Can any visible button fail because another visible setup step should have happened first?
-4. Are there internal implementation words visible to the customer?
-5. Are tabs or controls visible when they cannot be used?
-6. Is any paragraph explaining something that could be solved by hiding, disabling, merging, or automating an action?
-7. Did the change add a new customer decision that the software could make automatically?
-8. Does mobile have the same decision order and no wrapped or crowded action rows?
+1. Is the exact visible result explicitly approved in `control-center-customer-ui-approval.md`?
+2. Can a non-technical customer identify the next step in under 5 seconds?
+3. Is there exactly one primary action for the current state?
+4. Can any visible button fail because another visible setup step should have happened first?
+5. Are there internal implementation words visible to the customer?
+6. Are tabs or controls visible when they cannot be used?
+7. Is any paragraph explaining something that could be solved by hiding, disabling, merging, or automating an action?
+8. Did the change add a new customer decision that the software could make automatically?
+9. Does mobile have the same decision order and no wrapped or crowded action rows?
 
 ## Automated Copy Guard
 
 Run `npm run check:customer-ui-copy` in `apps/control-center` before shipping customer-facing UI changes. It parses customer-facing TSX copy and blocks internal wording such as `Companion`, `Bridge`, local API terms, release/package diagnostics, and technical setup substeps.
+
+The repository gate also blocks every customer-facing UI diff until the same change includes a new approval entry with both `User approval:` and `Approved customer-visible result:`. A general implementation or release approval is not enough; the visible result must be named.
 
 ## Verification Budget
 

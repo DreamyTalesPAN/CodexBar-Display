@@ -378,7 +378,7 @@ func TestWiFiTransportUploadAssetRetriesTimeout(t *testing.T) {
 		}
 	})
 
-	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
+	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
 		t.Fatalf("UploadAsset returned error: %v", err)
 	}
 	if attempts != 2 {
@@ -406,7 +406,7 @@ func TestWiFiTransportUploadAssetExtendsTimeoutForRateLimitedUploads(t *testing.
 		}),
 	})
 
-	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/big.cba", "big.cba", bytes.Repeat([]byte("x"), 20*1024)); err != nil {
+	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/big.cba", "big.cba", bytes.Repeat([]byte("x"), 20*1024)); err != nil {
 		t.Fatalf("UploadAsset returned error: %v", err)
 	}
 	if remaining := time.Until(gotDeadline); remaining < 25*time.Second {
@@ -435,7 +435,7 @@ func TestWiFiTransportUploadAssetRetriesEOF(t *testing.T) {
 		}),
 	})
 
-	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
+	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
 		t.Fatalf("UploadAsset returned error: %v", err)
 	}
 	if attempts != 2 {
@@ -464,7 +464,7 @@ func TestWiFiTransportUploadAssetRetriesConnectionReset(t *testing.T) {
 		}),
 	})
 
-	if err := transport.UploadAsset("http://vibetv.local", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
+	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
 		t.Fatalf("UploadAsset returned error: %v", err)
 	}
 	if attempts != 2 {
