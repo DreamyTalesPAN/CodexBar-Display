@@ -406,3 +406,48 @@ Final-head notarized verification:
   `installationMode: dmg`, the expected app/helper paths and final source SHA.
 - Device `14799300` remained ready on `1.0.37` with boot ID
   `e1d1c4-46-da1b6ac5` and a healthy stream. No second OTA was performed.
+
+## 2026-07-16 Mini GIF loop and legacy-label correction
+
+A visual check of the signed-app result found two separate Mini issues:
+
+- the current GIF asset was already present (`20870` bytes, matching the
+  current theme-pack size), but it briefly disappeared between loops;
+- the preserved factory ThemeSpec at
+  `/themes/u/mini-cl-1-410a37.json` still hard-coded `left` instead of using
+  the live usage mode.
+
+Corrected candidate:
+
+- source commit: `77a1726`;
+- firmware version: `1.0.37`;
+- size: `462816` bytes;
+- SHA-256:
+  `5b5b7a75475dd323015560e43bfd3b91387b72c1756e3a081bb83326e97ffba4`;
+- native ThemeSpec tests: `48/48` passed;
+- GIF policy, asset validation, decoder profile, and parity tests passed;
+- flash size `43.9%`, RAM `52.8%`, gzip size `328755` bytes.
+
+The public `1.0.36` firmware was restored at `0x0` only. Before OTA, the old
+ThemeSpec remained `642` bytes with runtime hash `fd263e45`, and the GIF
+remained `20870` bytes. The signed and notarized `99.0.31` app in
+`/Applications` then ran exactly one OTA job through the real
+`shop.vibetv.control-center.runtime` service:
+
+- job: `firmware-update-1784235859364733000-1`;
+- started: `2026-07-16T21:04:19.364737Z`;
+- finished: `2026-07-16T21:07:33.653117Z`;
+- outcome: `complete` / `updated`;
+- artifact validation, upload acceptance, identity, `/hello`, health, stream,
+  and render verification all passed;
+- resulting boot ID: `e1d1c4-49-b122d25`;
+- device result: `1.0.37`, ready, healthy stream, successful ThemeSpec render.
+
+LittleFS was not uploaded. After OTA, the same old ThemeSpec path remained
+`642` bytes and the same GIF remained `20870` bytes. The rendered ThemeSpec
+hash changed to `28095cf9`, proving that the legacy factory spec was upgraded in
+memory. The local firmware server was stopped, the manifest override was
+removed, and the signed runtime returned to the normal production feed.
+
+The physical no-gap GIF-loop observation is still pending operator
+confirmation before this corrected binary can count as the final visual gate.
