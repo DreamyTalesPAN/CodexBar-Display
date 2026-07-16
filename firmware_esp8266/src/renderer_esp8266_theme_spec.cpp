@@ -52,6 +52,7 @@ struct AnimatedSpriteCache {
   uint16_t palette[26] = {0};
   int paletteSize = 0;
   uint32_t frameOffsets[64] = {0};
+  int indexedFrameCount = 0;
   int frameIndex = 0;
   unsigned long nextFrameAtMs = 0;
 };
@@ -361,22 +362,6 @@ int cachedSpriteFrameIndex(AnimatedSpriteCache& cache, bool forceFrame, bool& sh
   return cache.frameIndex;
 }
 
-bool skipSpriteRows(File& file, int rowCount) {
-  String line;
-  for (int row = 0; row < rowCount; ++row) {
-    if (!readSpriteLine(file, line)) {
-      return false;
-    }
-    // Building the random-access frame index can scan hundreds of compressed
-    // rows before anything is drawn. Yield inside that scan so large current
-    // and future CBA themes cannot starve Wi-Fi or the hardware watchdog.
-    if (ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row + 1)) {
-      yield();
-    }
-  }
-  return true;
-}
-
 void drawStaticSpriteAsset(
     File& file,
     int x,
@@ -490,16 +475,12 @@ bool loadAnimatedSpriteCache(File& file, AnimatedSpriteCache& cache) {
   cache.frameIndex = 0;
   cache.nextFrameAtMs = 0;
 
-  for (int frame = 0; frame < frameCount; ++frame) {
-    cache.frameOffsets[frame] = static_cast<uint32_t>(file.position());
-    if (!skipSpriteRows(file, height)) {
-      cache.valid = false;
-      return false;
-    }
-    if ((frame & 0x03) == 0x03) {
-      yield();
-    }
-  }
+  // Do not scan every compressed row of every frame during the first render.
+  // Frame zero starts at the current position. Each successful frame draw
+  // records the following frame's offset, amortizing the index across normal
+  // animation ticks instead of blocking the HTTP/frame path up front.
+  cache.indexedFrameCount = ThemeSpecRuntimePolicy::InitialAnimatedIndexedFrameCount(frameCount);
+  cache.frameOffsets[0] = static_cast<uint32_t>(file.position());
 
   cache.valid = true;
   return true;
@@ -525,7 +506,12 @@ void drawAnimatedSpriteAsset(
   if (!shouldDraw) {
     return;
   }
-  if (selectedFrame < 0 || selectedFrame >= cache.frameCount || !file.seek(cache.frameOffsets[selectedFrame], SeekSet)) {
+  if (!ThemeSpecRuntimePolicy::AnimatedFrameOffsetAvailable(
+          selectedFrame,
+          cache.frameCount,
+          cache.indexedFrameCount) ||
+      !file.seek(cache.frameOffsets[selectedFrame], SeekSet)) {
+    cache.valid = false;
     return;
   }
 
@@ -547,11 +533,21 @@ void drawAnimatedSpriteAsset(
             hasClearColor,
             clearColor,
             clip)) {
+      cache.valid = false;
       return;
     }
     if (ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row + 1)) {
       yield();
     }
+  }
+
+  if (ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(
+          selectedFrame,
+          cache.frameCount,
+          cache.indexedFrameCount)) {
+    cache.frameOffsets[cache.indexedFrameCount] = static_cast<uint32_t>(file.position());
+    cache.indexedFrameCount += 1;
+    yield();
   }
 }
 

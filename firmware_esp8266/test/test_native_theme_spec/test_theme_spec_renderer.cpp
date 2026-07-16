@@ -1482,6 +1482,20 @@ void testAssetDecodeYieldPolicyBoundsLongRleWork() {
   TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::ShouldYieldDuringRleDecode(32));
 }
 
+void testAnimatedSpriteFrameOffsetsAreIndexedOneFrameAtATime() {
+  TEST_ASSERT_EQUAL_INT(0, ThemeSpecRuntimePolicy::InitialAnimatedIndexedFrameCount(0));
+  TEST_ASSERT_EQUAL_INT(1, ThemeSpecRuntimePolicy::InitialAnimatedIndexedFrameCount(8));
+
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::AnimatedFrameOffsetAvailable(0, 8, 1));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::AnimatedFrameOffsetAvailable(1, 8, 1));
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(0, 8, 1));
+
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::AnimatedFrameOffsetAvailable(1, 8, 2));
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(1, 8, 2));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(0, 8, 2));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(7, 8, 8));
+}
+
 }  // namespace
 
 int main() {
@@ -1533,5 +1547,6 @@ int main() {
   RUN_TEST(testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap);
   RUN_TEST(testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames);
   RUN_TEST(testAssetDecodeYieldPolicyBoundsLongRleWork);
+  RUN_TEST(testAnimatedSpriteFrameOffsetsAreIndexedOneFrameAtATime);
   return UNITY_END();
 }

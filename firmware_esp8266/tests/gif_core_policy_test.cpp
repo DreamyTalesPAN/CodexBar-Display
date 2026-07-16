@@ -164,16 +164,68 @@ bool testBootRecoveryOnlyCountsPhysicalResets() {
   return true;
 }
 
-bool testAnimatedAssetScanYieldsEveryEightRows() {
+bool testAnimatedAssetScanYieldsEveryFourRows() {
   for (int row = 1; row <= 32; ++row) {
-    const bool expected = row == 8 || row == 16 || row == 24 || row == 32;
+    const bool expected = (row % 4) == 0;
     if (!expect(
             ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row) == expected,
-            "animated asset indexing must yield after every eight rows")) {
+            "animated asset work must yield after every four rows")) {
       return false;
     }
   }
   return true;
+}
+
+std::string readFile(const char* path);
+
+bool testAnimatedFrameOffsetsAreIndexedOneFrameAtATime() {
+  if (!expect(
+          ThemeSpecRuntimePolicy::InitialAnimatedIndexedFrameCount(8) == 1,
+          "animated asset load must expose only the first frame offset")) {
+    return false;
+  }
+  if (!expect(
+          ThemeSpecRuntimePolicy::AnimatedFrameOffsetAvailable(0, 8, 1) &&
+              !ThemeSpecRuntimePolicy::AnimatedFrameOffsetAvailable(1, 8, 1),
+          "only frame zero may be available after initial load")) {
+    return false;
+  }
+  if (!expect(
+          ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(0, 8, 1) &&
+              ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(1, 8, 2),
+          "each successful frame may publish at most its direct successor")) {
+    return false;
+  }
+  return expect(
+      !ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(0, 8, 2) &&
+          !ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(7, 8, 8),
+      "cached or final frames must not extend the offset index");
+}
+
+bool testRendererUsesLazyAnimatedFrameIndex(const char* themeSpecRendererPath) {
+  const std::string renderer = readFile(themeSpecRendererPath);
+  const std::size_t loadStart = renderer.find("bool loadAnimatedSpriteCache(");
+  const std::size_t drawStart = renderer.find("void drawAnimatedSpriteAsset(", loadStart);
+  const std::size_t drawEnd = renderer.find("void drawSpriteAsset(", drawStart);
+  if (!expect(
+          loadStart != std::string::npos && drawStart != std::string::npos && drawEnd != std::string::npos,
+          "animated sprite load and draw functions must remain discoverable")) {
+    return false;
+  }
+
+  const std::string loadFunction = renderer.substr(loadStart, drawStart - loadStart);
+  if (!expect(
+          loadFunction.find("InitialAnimatedIndexedFrameCount") != std::string::npos &&
+              loadFunction.find("for (int frame") == std::string::npos,
+          "initial CBA load must publish frame zero without scanning every frame")) {
+    return false;
+  }
+
+  const std::string drawFunction = renderer.substr(drawStart, drawEnd - drawStart);
+  return expect(
+      drawFunction.find("ShouldIndexNextAnimatedFrame") != std::string::npos &&
+          drawFunction.find("cache.indexedFrameCount += 1") != std::string::npos,
+      "a successful CBA draw must index at most its direct successor");
 }
 
 std::string readFile(const char* path) {
@@ -273,10 +325,16 @@ int main(int argc, char** argv) {
   if (!testBootRecoveryOnlyCountsPhysicalResets()) {
     return 1;
   }
-  if (!testAnimatedAssetScanYieldsEveryEightRows()) {
+  if (!testAnimatedAssetScanYieldsEveryFourRows()) {
+    return 1;
+  }
+  if (!testAnimatedFrameOffsetsAreIndexedOneFrameAtATime()) {
     return 1;
   }
   if (!expect(argc == 4, "source paths are required for firmware policy tests")) {
+    return 1;
+  }
+  if (!testRendererUsesLazyAnimatedFrameIndex(argv[1])) {
     return 1;
   }
   if (!testDecoderAllocationStaysInsideRealPlayback(argv[1], argv[2])) {

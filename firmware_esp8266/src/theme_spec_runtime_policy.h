@@ -43,6 +43,28 @@ class ThemeSpecRuntimePolicy {
     return static_cast<int32_t>(nowMs - nextFrameAtMs) >= 0;
   }
 
+  static int InitialAnimatedIndexedFrameCount(int frameCount) {
+    return frameCount > 0 ? 1 : 0;
+  }
+
+  static bool AnimatedFrameOffsetAvailable(
+      int selectedFrame,
+      int frameCount,
+      int indexedFrameCount) {
+    return selectedFrame >= 0 &&
+           selectedFrame < frameCount &&
+           selectedFrame < indexedFrameCount;
+  }
+
+  static bool ShouldIndexNextAnimatedFrame(
+      int selectedFrame,
+      int frameCount,
+      int indexedFrameCount) {
+    return AnimatedFrameOffsetAvailable(selectedFrame, frameCount, indexedFrameCount) &&
+           selectedFrame + 1 == indexedFrameCount &&
+           indexedFrameCount < frameCount;
+  }
+
   static bool ShouldYieldDuringAssetScan(int completedRows) {
     return completedRows > 0 && (completedRows % 4) == 0;
   }
