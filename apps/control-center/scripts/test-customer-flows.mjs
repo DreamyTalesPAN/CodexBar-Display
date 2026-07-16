@@ -1075,6 +1075,14 @@ async function testOfflineActiveDeviceOffersAlternativeWithoutWriting(
   await page.getByRole("heading", { name: "Another VibeTV was found" }).waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) === 0,
+    "Offline-device selection must run before the Control Center shell",
+  );
+  assert(
+    (await page.getByRole("heading", { name: "Set up your VibeTV" }).count()) === 0,
+    "Offline-device selection must not appear inside Setup",
+  );
   await page.getByText(
     "Your last connected VibeTV is not available. Connect to this VibeTV instead?",
   ).waitFor();
@@ -1083,7 +1091,11 @@ async function testOfflineActiveDeviceOffersAlternativeWithoutWriting(
     `Automatic search must remain read-only, got ${deviceWriteRequests}`,
   );
   await page.getByRole("button", { name: "Not now" }).click();
-  await page.getByText("Your previous VibeTV remains selected.").waitFor();
+  await page.getByRole("button", { name: "Overview" }).waitFor();
+  assert(
+    (await page.getByText("Reconnecting…", { exact: true }).count()) === 0,
+    "Not now may open Control Center, but reconnecting copy must stay out of Overview",
+  );
   assert(
     deviceWriteRequests.length === 0,
     `Not now must not write to a device or change selection, got ${deviceWriteRequests}`,
@@ -1435,7 +1447,9 @@ async function testConfiguredDeviceShowsReconnectingWithoutSetup(
   const installRequests = [];
   const repairRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
-    device: reconnectingDevice,
+    device: { ...reconnectingDevice, deviceId: "known-device-1" },
+    searchDelayMs: 500,
+    searchDevices: [],
     onRequest: (pathname, method) => {
       if (pathname === "/v1/device/repair" && method === "POST") {
         repairRequests.push(pathname);
@@ -1444,7 +1458,7 @@ async function testConfiguredDeviceShowsReconnectingWithoutSetup(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByText("Reconnecting…", { exact: true }).first().waitFor({
+  await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor({
     timeout: 10_000,
   });
   assert(
@@ -1452,12 +1466,13 @@ async function testConfiguredDeviceShowsReconnectingWithoutSetup(
       0,
     "A configured VibeTV must not return to initial Setup during an outage",
   );
-  for (const tabName of ["Overview", "Usage", "Settings", "Theme Library", "Updates", "Support"]) {
-    assert(
-      !(await page.getByRole("button", { name: tabName }).isDisabled()),
-      `${tabName} must stay available while VibeTV reconnects`,
-    );
-  }
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) === 0,
+    "Reconnect and search must finish before Overview or Setup is rendered",
+  );
+  await page.getByRole("heading", { name: "VibeTV was not found" }).waitFor({
+    timeout: 10_000,
+  });
   assert(
     repairRequests.length === 0,
     "The browser must let the Companion own bounded automatic recovery",
@@ -1547,11 +1562,9 @@ async function testInitialHealthyStatusRaceAvoidsRepair(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  const wifiReadyButton = page.getByRole("button", {
-    name: "VibeTV is on WiFi",
+  await page.getByRole("heading", { name: "Starting Control Center" }).waitFor({
+    timeout: 10_000,
   });
-  await wifiReadyButton.waitFor({ timeout: 10_000 });
-  await wifiReadyButton.click();
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });

@@ -14,7 +14,11 @@ private let controlCenterURLHost = "open-control-center"
 private let checkForUpdatesURLHost = "check-for-updates"
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
 private let runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"
+private let previewRuntimeLaunchAgentLabel =
+    "shop.vibetv.control-center.preview-runtime"
 private let runtimeLaunchAgentPlistName = "shop.vibetv.control-center.runtime.plist"
+private let localPreviewRuntimeInfoKey = "VibeTVLocalPreviewRuntime"
+private let localPreviewRuntimePlistName = "preview-runtime.plist"
 private let runtimeRegisteredVersionDefaultsKey =
     "shop.vibetv.control-center.runtime.registered-bundle-version"
 private let pendingNativeUpdateFileName = "pending-native-update.json"
@@ -718,6 +722,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private var installationRequired: Bool {
         requiresApplicationInstallation(Bundle.main.bundleURL)
     }
+    private var usesLocalPreviewRuntime: Bool {
+        Bundle.main.object(
+            forInfoDictionaryKey: localPreviewRuntimeInfoKey
+        ) as? Bool == true
+    }
+    private var activeRuntimeLaunchAgentLabel: String {
+        usesLocalPreviewRuntime
+            ? previewRuntimeLaunchAgentLabel
+            : runtimeLaunchAgentLabel
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -1105,7 +1119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
         // Repair an already-overlapping installation before migration. Apple's
         // unregister call terminates the running app-managed LaunchAgent.
-        if hasLoadedLegacyWriter, runtimeService.status == .enabled {
+        if hasLoadedLegacyWriter, bundledRuntimeServiceIsEnabled() {
             guard await unregisterBundledRuntimeService() else {
                 NSLog(
                     "VibeTV Control Center could not stop the app-managed runtime before legacy migration"
@@ -1129,7 +1143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             if !legacyStates.isEmpty {
                 let reason = "the app-managed runtime could not be registered"
                 let restored: Bool
-                if runtimeService.status == .enabled {
+                if bundledRuntimeServiceIsEnabled() {
                     restored = await rollbackToLegacyAgents(legacyStates, reason: reason)
                 } else {
                     restored = restoreLegacyAgents(legacyStates, reason: reason)
@@ -1139,18 +1153,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             return .keepCurrentPage
         }
 
-        // A newly installed ad-hoc preview can inherit a stale Service
-        // Management launch constraint from the previously signed app. Detect
-        // that failed first launch quickly, then use the existing bounded
-        // unregister/register recovery. The recovery attempt still receives
-        // the full health timeout below.
+        // Detect a failed first runtime launch quickly, then use the existing
+        // bounded unregister/register recovery. The recovery attempt still
+        // receives the full health timeout below.
         var health = await waitForHealthyRuntime(
             expectedVersion: expectedVersion,
             timeout: runtimeInitialHealthTimeout
         )
         if shouldRetryRuntimeRegistration(
             after: health,
-            serviceEnabled: runtimeService.status == .enabled
+            serviceEnabled: bundledRuntimeServiceIsEnabled()
         ) {
             NSLog(
                 "VibeTV Control Center runtime did not become reachable; refreshing its Service Management registration once: \(health)"
@@ -1251,6 +1263,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     private func ensureBundledRuntimeServiceRegistered() async -> Bool {
+        if usesLocalPreviewRuntime {
+            // An ad-hoc preview cannot satisfy the Developer ID launch
+            // constraint retained by SMAppService from a production install.
+            // Isolate previews behind their own user LaunchAgent instead.
+            _ = launchctlExitStatus([
+                "bootout",
+                launchctlServiceTarget(
+                    uid: getuid(),
+                    label: runtimeLaunchAgentLabel
+                ),
+            ])
+            guard await unregisterLocalPreviewRuntimeService() else {
+                return false
+            }
+            return registerLocalPreviewRuntimeService()
+        }
         switch runtimeService.status {
         case .enabled:
             if runtimeServiceNeedsRefresh(
@@ -1277,6 +1305,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     private func registerBundledRuntimeService() -> Bool {
+        if usesLocalPreviewRuntime {
+            return registerLocalPreviewRuntimeService()
+        }
         do {
             try runtimeService.register()
         } catch {
@@ -1302,6 +1333,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     private func unregisterBundledRuntimeService() async -> Bool {
+        if usesLocalPreviewRuntime {
+            return await unregisterLocalPreviewRuntimeService()
+        }
         switch runtimeService.status {
         case .notRegistered, .notFound:
             return true
@@ -1332,6 +1366,109 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             )
             return false
         }
+    }
+
+    private func bundledRuntimeServiceIsEnabled() -> Bool {
+        if usesLocalPreviewRuntime {
+            return legacyServiceIsLoaded(label: previewRuntimeLaunchAgentLabel)
+        }
+        return runtimeService.status == .enabled
+    }
+
+    private func registerLocalPreviewRuntimeService() -> Bool {
+        let fileManager = FileManager.default
+        let helperURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers", isDirectory: true)
+            .appendingPathComponent("codexbar-display")
+        guard fileManager.isExecutableFile(atPath: helperURL.path) else {
+            NSLog("VibeTV Control Center preview runtime helper is missing")
+            return false
+        }
+
+        let plistURL = applicationSupportURL()
+            .appendingPathComponent(localPreviewRuntimePlistName)
+        let environment = [
+            "CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE": "168h",
+            "CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL":
+                previewRuntimeLaunchAgentLabel,
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "VIBETV_DISABLE_MAC_APP_SELF_UPDATE": "1",
+            "VIBETV_MAC_APP_BUILD": Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleVersion"
+            ) as? String ?? "",
+            "VIBETV_MAC_APP_VERSION": Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String ?? "",
+        ]
+        let plist: [String: Any] = [
+            "Label": previewRuntimeLaunchAgentLabel,
+            "Program": helperURL.path,
+            "ProgramArguments": [
+                helperURL.path,
+                "daemon",
+                "--transport",
+                "wifi",
+                "--interval",
+                "30s",
+                "--api-addr",
+                "127.0.0.1:47832",
+                "--api-dev-origin",
+                "http://127.0.0.1:47832",
+            ],
+            "EnvironmentVariables": environment,
+            "RunAtLoad": true,
+            "KeepAlive": true,
+            "ProcessType": "Background",
+            "ThrottleInterval": 10,
+        ]
+
+        do {
+            try fileManager.createDirectory(
+                at: applicationSupportURL(),
+                withIntermediateDirectories: true
+            )
+            let data = try PropertyListSerialization.data(
+                fromPropertyList: plist,
+                format: .xml,
+                options: 0
+            )
+            try data.write(to: plistURL, options: .atomic)
+        } catch {
+            NSLog(
+                "VibeTV Control Center could not write its preview runtime plist: \(error)"
+            )
+            return false
+        }
+
+        let status = launchctlExitStatus([
+            "bootstrap",
+            "gui/\(getuid())",
+            plistURL.path,
+        ])
+        guard status == 0 else {
+            let exitDescription = status.map(String.init) ?? "unknown"
+            NSLog(
+                "VibeTV Control Center could not bootstrap its local preview runtime: exit=\(exitDescription)"
+            )
+            return false
+        }
+        return legacyServiceIsLoaded(label: previewRuntimeLaunchAgentLabel)
+    }
+
+    private func unregisterLocalPreviewRuntimeService() async -> Bool {
+        let service = launchctlServiceTarget(
+            uid: getuid(),
+            label: previewRuntimeLaunchAgentLabel
+        )
+        _ = launchctlExitStatus(["bootout", service])
+        guard !legacyServiceIsLoaded(
+            label: previewRuntimeLaunchAgentLabel
+        ) else {
+            NSLog("VibeTV Control Center could not stop its local preview runtime")
+            return false
+        }
+        try? await Task<Never, Never>.sleep(for: .milliseconds(250))
+        return true
     }
 
     private func waitForHealthyRuntime(
@@ -1368,7 +1505,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
                         forInfoDictionaryKey: "CFBundleVersion"
                     ) as? String,
                     expectedAppPath: Bundle.main.bundleURL.path,
-                    expectedRuntimeOwner: runtimeLaunchAgentLabel
+                    expectedRuntimeOwner: activeRuntimeLaunchAgentLabel
                 )
                 if case .healthy = lastEvaluation {
                     let ownership = verifyRuntimeListenerOwnership()
@@ -1619,7 +1756,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             executable: "/bin/launchctl",
             arguments: [
                 "print",
-                "gui/\(getuid())/\(runtimeLaunchAgentLabel)",
+                "gui/\(getuid())/\(activeRuntimeLaunchAgentLabel)",
             ]
         )
         guard let servicePID = parseLaunchctlServicePID(launchctl.output),

@@ -410,12 +410,13 @@ source=Developer ID"
 )
 
 main() {
-  local tmp app dmg stage sign_output
+  local tmp app preview_app dmg stage sign_output
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-macos-test.XXXXXX")"
   TMP_TEST_DIR="$tmp"
   trap cleanup EXIT
 
   app="${tmp}/VibeTV Control Center.app"
+  preview_app="${tmp}/VibeTV Control Center Preview.app"
   dmg="${tmp}/VibeTV-Control-Center-v1.2.3.dmg"
   stage="${tmp}/dmg-stage"
 
@@ -437,6 +438,15 @@ main() {
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
   assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
   assert_file "${app}/Contents/Frameworks/Sparkle.framework/README.txt"
+
+  "${ROOT}/scripts/build-macos-control-center-app.sh" \
+    --dry-run \
+    --local-preview \
+    --version "1.2.3-preview.146" \
+    --build "146" \
+    --output "$preview_app" >/dev/null
+  [[ "$(plutil -extract VibeTVLocalPreviewRuntime raw -o - "${preview_app}/Contents/Info.plist")" == "true" ]] \
+    || die "local preview bundle must opt into its isolated preview runtime"
 
   python3 - \
     "${app}/Contents/Info.plist" \
@@ -460,6 +470,7 @@ expected = {
     "SUEnableAutomaticChecks": False,
     "SUFeedURL": "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/appcast.xml",
     "SUPublicEDKey": "2txeIAd+ofTbffzPR5hy5J4lvGX8LGclIdG82es1qPA=",
+    "VibeTVLocalPreviewRuntime": False,
 }
 
 for key, value in expected.items():
@@ -555,6 +566,11 @@ required_source = [
     "try runtimeService.register()",
     "runtimeService.unregister(completionHandler:",
     "runtimeServiceNeedsRefresh(",
+    'previewRuntimeLaunchAgentLabel =',
+    'localPreviewRuntimeInfoKey = "VibeTVLocalPreviewRuntime"',
+    'registerLocalPreviewRuntimeService()',
+    'unregisterLocalPreviewRuntimeService()',
+    '"CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL":',
     'runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"',
     'runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"',
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',

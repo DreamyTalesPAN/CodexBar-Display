@@ -296,3 +296,13 @@ export function deviceSetupIsUsable(device: DeviceInfo | null | undefined) {
   }
   return device?.ready === true;
 }
+
+export function deviceStartupConnectionIsReady(
+  device: DeviceInfo | null | undefined,
+) {
+  return Boolean(
+    deviceSetupIsUsable(device) &&
+      device?.connectionState !== "reconnecting" &&
+      device?.connected !== false,
+  );
+}
