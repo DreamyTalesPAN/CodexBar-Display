@@ -291,6 +291,32 @@ export type UsageSnapshot = {
   providers: UsageProviderInfo[];
 };
 
+export type PreferenceHealthState =
+  | "healthy"
+  | "auth_required"
+  | "setup_required"
+  | "stale"
+  | "unavailable"
+  | "checking"
+  | "disabled"
+  | string;
+
+export type PreferenceDescriptor = {
+  id: string;
+  section: string;
+  owner: string;
+  type: string;
+  label: string;
+  value: unknown;
+  writable: boolean;
+  health: {
+    state: PreferenceHealthState;
+    service: "operational" | "degraded" | "outage" | "unknown" | string;
+    message: string;
+    lastSuccessAt?: string;
+  };
+};
+
 export function deviceImageIsStuck(device: DeviceInfo | null | undefined) {
   const themeSpec = device?.display?.themeSpec;
   return Boolean(themeSpec?.active && themeSpec.renderOk === false);
