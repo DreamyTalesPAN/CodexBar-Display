@@ -193,7 +193,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [selectedThemeId, setSelectedThemeId] = useState(
     initialTheme?.themeId || initialThemeId || "",
   );
-  const [activeTab, setActiveTab] = useState<ActiveTab>("setup");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("overview");
   const runtimeSurface = useSyncExternalStore(
     subscribeRuntimeSurface,
     getRuntimeSurfaceSnapshot,
@@ -325,7 +325,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     (quiet: boolean) => {
       const normalized = companionUnavailableError();
       markCompanionUnavailable();
-      setActiveTab("setup");
+      setActiveTab("overview");
       if (!quiet) {
         setLastError(normalized);
         addEvent({
@@ -1130,7 +1130,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (repaired) {
         return;
       }
-      setActiveTab("setup");
+      setActiveTab("overview");
       setDeviceSearchState("repair-failed");
       setLastError({
         code: "device_pairing_repair_failed",
@@ -1236,7 +1236,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     didRouteAfterSetupComplete.current = false;
     didRunSetupVerification.current = false;
     setSetupPreviewStep(null);
-    setActiveTab("setup");
+    setActiveTab("overview");
     try {
       const payload = await runCompanion<{
         companion?: CompanionInfo;
@@ -1548,7 +1548,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setupPreviewStep ||
       requiresMacAppMigration ||
       companionStatus !== "online" ||
+      device?.stream?.errorCode === "device_pairing_required" ||
       (device &&
+        device.paired !== false &&
         device.connected !== false &&
         device.connectionState !== "reconnecting") ||
       deviceStartupConnectionIsReady(device) ||
@@ -1919,8 +1921,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           markCompanionAccessBlocked();
         } else if (isCompanionMissingError(normalized)) {
           markCompanionUnavailable();
-        } else if (normalized.code === "MAC_APP_UPDATE_REQUIRED") {
-          setSetupPreviewStep("mac-app");
         }
         setUsageError(normalized);
         if (!quiet) {
@@ -2079,9 +2079,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? ["overview", "settings", "theme-library", "updates", "logs"]
       : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
   const activeShellTab = disabledTabs.includes(activeTab)
-    ? setupComplete
-      ? "overview"
-      : "setup"
+    ? "overview"
     : activeTab;
 
   useEffect(() => {
@@ -2089,6 +2087,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       hostedSetup ||
       setupPreviewStep ||
       companionStatus !== "online" ||
+      !controlCenterAvailable ||
       (activeShellTab !== "usage" && activeShellTab !== "overview")
     ) {
       return;
@@ -2112,6 +2111,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     activeShellTab,
     busyAction,
     companionStatus,
+    controlCenterAvailable,
     hostedSetup,
     setupPreviewStep,
     syncLocalStatus,
@@ -2120,7 +2120,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     if (
       (activeShellTab !== "usage" && activeShellTab !== "overview") ||
-      companionStatus !== "online"
+      companionStatus !== "online" ||
+      !controlCenterAvailable
     ) {
       return;
     }
@@ -2139,7 +2140,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       window.clearTimeout(initialTimer);
       window.clearInterval(timer);
     };
-  }, [activeShellTab, companionStatus, refreshUsage]);
+  }, [activeShellTab, companionStatus, controlCenterAvailable, refreshUsage]);
 
   const renderSetupScreen = (showIntro: boolean) => (
     <SetupScreen
@@ -2203,15 +2204,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   if (
+    companionStatus !== "online" ||
+    (requiresMacAppMigration && !deviceStartupConnectionIsReady(device)) ||
+    Boolean(setupPreviewStep)
+  ) {
+    return renderSetupScreen(true);
+  }
+
+  if (
     companionStatus === "online" &&
     !requiresMacAppMigration &&
     !deviceStartupConnectionIsReady(device) &&
-    !deviceStartupDismissed &&
-    deviceSearchState !== "not-found" &&
-    (deviceSearchState !== "idle" ||
-      !device ||
-      device.connected === false ||
-      device.connectionState === "reconnecting")
+    !deviceStartupDismissed
   ) {
     return (
       <DeviceStartupScreen
@@ -2250,8 +2254,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setActiveTab(tab);
       }}
     >
-      {activeShellTab === "setup" ? renderSetupScreen(true) : null}
-
       {activeShellTab === "overview" ? (
         <OverviewScreen
           busyAction={busyAction}

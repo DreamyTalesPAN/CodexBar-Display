@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Monitor, RefreshCw } from "lucide-react";
+import { Check, Loader2, Monitor, RefreshCw } from "lucide-react";
 import { ControlCenterButton } from "./control-center-button";
 import type {
   ApiError,
@@ -36,6 +36,7 @@ export function DeviceStartupScreen({
   const alternate =
     deviceSearchState === "alternate" && deviceCandidates.length === 1;
   const multiple = deviceSearchState === "multiple";
+  const wifiSetupNeeded = deviceSearchState === "not-found";
 
   let title = "Reconnecting to your VibeTV";
   let detail = "Checking your last connected VibeTV and your WiFi.";
@@ -58,8 +59,11 @@ export function DeviceStartupScreen({
     detail = hasSavedActiveDevice
       ? "Your last connected VibeTV is not available. Choose another VibeTV to connect."
       : "More than one VibeTV was found. Choose the one you want to connect.";
+  } else if (wifiSetupNeeded) {
+    title = "Connect VibeTV to WiFi";
+    detail =
+      "No VibeTV was found. Connect it to WiFi, then search again.";
   } else if (
-    deviceSearchState === "not-found" ||
     deviceSearchState === "failed" ||
     deviceSearchState === "repair-failed"
   ) {
@@ -115,6 +119,8 @@ export function DeviceStartupScreen({
           </div>
         ) : null}
 
+        {wifiSetupNeeded ? <WifiSetupInstructions /> : null}
+
         {lastError && !searching ? (
           <div
             className="grid gap-1 border border-[#747A60] px-4 py-3 text-left text-sm text-[#444933]"
@@ -160,8 +166,16 @@ export function DeviceStartupScreen({
               variant="secondary"
             />
           </div>
-        ) : deviceSearchState === "not-found" ||
-          deviceSearchState === "failed" ||
+        ) : wifiSetupNeeded ? (
+          <ControlCenterButton
+            fullWidth
+            icon={<Check size={18} aria-hidden />}
+            label="VibeTV is on WiFi"
+            onClick={onSearch}
+            size="large"
+            variant="primary"
+          />
+        ) : deviceSearchState === "failed" ||
           deviceSearchState === "repair-failed" ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <ControlCenterButton
@@ -183,6 +197,29 @@ export function DeviceStartupScreen({
         ) : null}
       </section>
     </main>
+  );
+}
+
+function WifiSetupInstructions() {
+  return (
+    <div className="border-y border-[#747A60] py-6 text-left sm:px-6">
+      <ol className="grid gap-3 text-base leading-7 text-[#444933] sm:text-lg">
+        <li>1. Plug VibeTV into power.</li>
+        <li>2. Wait until VibeTV shows VibeTV-Setup.</li>
+        <li>3. Take your phone.</li>
+        <li>
+          4. Open WiFi settings and join <strong>VibeTV-Setup</strong>.
+        </li>
+        <li>
+          5. If the browser does not open automatically, open{" "}
+          <strong>192.168.4.1</strong> on your phone.
+        </li>
+        <li>6. Choose your home WiFi and save.</li>
+        <li>
+          7. Wait until VibeTV says WiFi connected, then continue here.
+        </li>
+      </ol>
+    </div>
   );
 }
 

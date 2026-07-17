@@ -859,9 +859,6 @@ async function testLocalWifiSetupRescansAfterNoResults(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
   await page.getByRole("heading", { name: "Connect VibeTV to WiFi" }).waitFor();
   assert(
     (await page.getByLabel("VibeTV address").count()) === 0,
@@ -1023,9 +1020,7 @@ async function testFreshSetupMultipleDevicesUsesFirstRunCopy(
     `Fresh setup search must stay read-only, got ${deviceWriteRequests}`,
   );
   await page.getByRole("button", { name: "Not now" }).click();
-  await page
-    .getByText("No VibeTV is selected. You can search again when you are ready.")
-    .waitFor();
+  await page.getByRole("heading", { name: "VibeTV status" }).waitFor();
   assert(
     deviceWriteRequests.length === 0,
     `Fresh setup Not now must stay read-only, got ${deviceWriteRequests}`,
@@ -1058,6 +1053,13 @@ async function testLocalWifiSearchHidesFallbackWhileSearching(browser, appUrl) {
   await page.getByRole("button", { name: "VibeTV is on WiFi" }).waitFor({
     timeout: 10_000,
   });
+  await page.getByText("Plug VibeTV into power.").waitFor();
+  await page.getByText("Wait until VibeTV shows VibeTV-Setup.").waitFor();
+  await page.getByText("192.168.4.1").waitFor();
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) === 0,
+    "The WiFi guide must stay inside the full-screen startup experience",
+  );
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -1412,11 +1414,8 @@ async function testLocalFreshAppSearchesBeforeWifiSetup(
   assert(
     (await page.getByRole("heading", { name: "Set up your VibeTV" }).count()) ===
       0,
-    "Fresh local onboarding must finish its first scan before showing Setup",
+    "Fresh local onboarding must never show the old Setup screen",
   );
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
   await page.getByRole("heading", { name: "Connect VibeTV to WiFi" }).waitFor({
     timeout: 10_000,
   });
@@ -1439,9 +1438,13 @@ async function testLocalFreshAppSearchesBeforeWifiSetup(
   await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+  await page.getByRole("heading", { name: "Connect VibeTV to WiFi" }).waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) === 0,
+    "The Control Center navigation must stay hidden throughout WiFi onboarding",
+  );
   assert(searchRequests === 2, "WiFi confirmation must start another scan");
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1463,23 +1466,20 @@ async function testLocalReachableWithoutFrameStaysInSetup(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByRole("button", { name: "VibeTV is on WiFi" }).waitFor({
+  await page.getByRole("heading", { name: "Reconnecting to your VibeTV" }).waitFor({
     timeout: 10_000,
   });
   assert(
-    await page.getByRole("button", { name: "Overview" }).isDisabled(),
-    "A reachable and paired VibeTV must stay in Setup while ready is false",
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) === 0,
+    "A reachable and paired VibeTV must stay on the startup screen while ready is false",
   );
   assert(
-    (await page.getByText("Setup needed", { exact: true }).count()) === 1,
-    "The desktop status must not turn green before a display frame is rendered",
+    (await page.getByRole("button", { name: "Setup", exact: true }).count()) === 0,
+    "The installed app must not expose a Setup tab",
   );
   assert(
     repairRequests.length === 0,
-    "Opening Setup must not automatically retry a reachable but unready VibeTV",
+    "Opening the startup gate must not automatically retry a reachable but unready VibeTV",
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1519,9 +1519,6 @@ async function testConfiguredDeviceShowsReconnectingWithoutSetup(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) === 0,
     "Reconnect and search must finish before Overview or Setup is rendered",
   );
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
   await page.getByRole("heading", { name: "Connect VibeTV to WiFi" }).waitFor();
   await page.getByRole("button", { name: "VibeTV is on WiFi" }).waitFor();
   assert(
@@ -1553,7 +1550,7 @@ async function testLocalSetupRecoversWhenDeviceBecomesReady(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+  await page.getByRole("heading", { name: "Reconnecting to your VibeTV" }).waitFor({
     timeout: 10_000,
   });
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
@@ -1681,45 +1678,16 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  const settingsButton = page.getByRole("button", {
-    name: "Settings",
+  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+    timeout: 10_000,
   });
-  const themeLibraryButton = page.getByRole("button", {
-    name: "Theme Library",
-  });
-  const updatesButton = page.getByRole("button", {
-    name: "Updates",
-  });
-  const overviewButton = page.getByRole("button", {
-    name: "Overview",
-  });
-  const supportButton = page.getByRole("button", {
-    name: "Support",
-  });
-  await overviewButton.waitFor({ timeout: 10_000 });
-  await settingsButton.waitFor({ timeout: 10_000 });
-  await themeLibraryButton.waitFor({ timeout: 10_000 });
-  await updatesButton.waitFor({ timeout: 10_000 });
-  await supportButton.waitFor({ timeout: 10_000 });
   assert(
-    await overviewButton.isDisabled(),
-    "Overview tab should stay disabled until setup is complete",
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) === 0,
+    "Control Center navigation must stay hidden until startup is complete",
   );
   assert(
-    await settingsButton.isDisabled(),
-    "Settings tab should stay disabled until setup is complete",
-  );
-  assert(
-    await themeLibraryButton.isDisabled(),
-    "Theme Library tab should stay disabled until setup can install themes",
-  );
-  assert(
-    await updatesButton.isDisabled(),
-    "Updates tab should stay disabled until setup is complete",
-  );
-  assert(
-    await supportButton.isDisabled(),
-    "Support tab should stay disabled until setup is complete",
+    (await page.getByRole("button", { name: "Setup", exact: true }).count()) === 0,
+    "The installed app must not expose a Setup tab before startup is complete",
   );
   assert(
     (await page.getByText("Selected in this app").count()) === 0,
@@ -1770,21 +1738,14 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     (await page.getByText("needs an update before themes").count()) === 0,
     "setup must not require theme install availability",
   );
-  await page.getByRole("button", { name: "Setup", exact: true }).click();
-  await page.getByRole("heading", { name: "Setup complete" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByRole("button", { name: "Run setup again" }).waitFor({
-    timeout: 10_000,
-  });
   assert(
-    (await page.getByText("Connect VibeTV to WiFi").count()) === 0,
-    "completed setup should not show the setup checklist",
+    (await page.getByRole("button", { name: "Setup", exact: true }).count()) === 0,
+    "The ready Control Center must not expose a Setup tab",
   );
   assert(
     (await page.getByRole("button", { name: "Run setup again" }).count()) ===
-      1,
-    "completed local setup should expose one explicit reset action",
+      0,
+    "The removed Setup tab must not leave its reset action in the ready Control Center",
   );
   assert(
     (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
@@ -1816,7 +1777,10 @@ async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
     timeout: 10_000,
   });
 
-  await page.getByText("Setup needed").waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) === 0,
+    "The Control Center header and navigation must stay hidden during startup",
+  );
   assert(
     (await page.getByText("192.168.178.163").count()) === 0,
     "desktop header should not show a device IP while setup is incomplete",
@@ -2044,22 +2008,20 @@ async function testRunSetupAgainReturnsToWifiOnboarding(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Setup", exact: true }).click();
-  await page.getByRole("button", { name: "Run setup again" }).click();
-  await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByRole("heading", { name: "Connect VibeTV to WiFi" }).waitFor({
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
   assert(
-    resetRequests.length === 1,
-    `Run setup again should reset once, got ${resetRequests.length}`,
+    (await page.getByRole("button", { name: "Setup", exact: true }).count()) === 0,
+    "The ready Control Center must not expose a Setup tab",
   );
   assert(
-    (await page.getByRole("heading", { name: "Download Mac App" }).count()) ===
-      0,
-    "Run setup again must not send the installed app to its own download",
+    (await page.getByRole("button", { name: "Run setup again" }).count()) === 0,
+    "Removing the Setup tab must also remove its reset action",
+  );
+  assert(
+    resetRequests.length === 0,
+    `Opening the ready Control Center must not reset setup, got ${resetRequests.length}`,
   );
 
   assertNoInstallRequests(installRequests);
@@ -3904,29 +3866,23 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
   );
 
   await page.goto(`${appUrl}/install/synthwave`, { waitUntil: "domcontentloaded" });
-  const wifiReadyButton = page.getByRole("button", {
-    name: "VibeTV is on WiFi",
-  });
-  await wifiReadyButton.waitFor({ timeout: 10_000 });
-  assert(
-    pairRequests.length === 0,
-    "An unpaired saved target must not pair before WiFi confirmation",
-  );
-  await wifiReadyButton.click();
-  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+  await page.getByRole("heading", { name: "Themes" }).waitFor({
     timeout: 10_000,
   });
   assert(
+    (await page.getByRole("button", { name: "VibeTV is on WiFi" }).count()) === 0,
+    "A VibeTV found by the startup scan must not show the no-results WiFi guide",
+  );
+  assert(
     (await page
-      .getByRole("button", { name: "Overview" })
+      .getByRole("button", { name: "Theme Library" })
       .getAttribute("aria-current")) === "page",
-    "Successful verification must open Overview even from a theme link",
+    "Successful automatic verification must continue to the requested theme",
   );
   await waitForCondition(
     () => settingsCalls >= 1,
     "expected settings refresh after pairing",
   );
-  await page.getByRole("button", { name: "Theme Library" }).click();
   await assertSelectedThemeRow(page, "Fixture Synthwave Theme");
   const installButton = page
     .locator("li")
@@ -3937,7 +3893,7 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
     await installButton.isEnabled(),
     "paired VibeTV should unlock install",
   );
-  assert(pairRequests.length === 1, "pairing should call Companion once");
+  assert(pairRequests.length === 1, "the single discovered VibeTV should connect once");
   assert(
     !pairRequests[0]?.includes('"forcePair":true'),
     `explicit verification should not force token rotation: ${pairRequests[0]}`,
@@ -5457,29 +5413,13 @@ async function startVerifiedDmgSetupDownload(
 }
 
 async function assertThemeLibraryLockedBehindSetup(page) {
-  const themeLibraryButton = page.getByRole("button", {
-    name: "Theme Library",
-  });
-  const settingsButton = page.getByRole("button", {
-    name: "Settings",
-  });
-  const updatesButton = page.getByRole("button", {
-    name: "Updates",
-  });
-  await settingsButton.waitFor({ timeout: 10_000 });
-  await themeLibraryButton.waitFor({ timeout: 10_000 });
-  await updatesButton.waitFor({ timeout: 10_000 });
   assert(
-    await settingsButton.isDisabled(),
-    "Settings tab should stay disabled until setup is complete",
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) === 0,
+    "Control Center navigation must stay hidden until startup is complete",
   );
   assert(
-    await themeLibraryButton.isDisabled(),
-    "Theme Library tab should stay disabled until setup can install themes",
-  );
-  assert(
-    await updatesButton.isDisabled(),
-    "Updates tab should stay disabled until setup is complete",
+    (await page.getByRole("button", { name: "Setup", exact: true }).count()) === 0,
+    "No Setup tab may be exposed while startup is incomplete",
   );
   assert(
     (await page.getByRole("heading", { name: "Choose a theme" }).count()) === 0,
