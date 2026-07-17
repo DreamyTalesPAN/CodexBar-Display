@@ -19,7 +19,7 @@ jobs:
   build:
     if: >-
       github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
-      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
       github.actor == github.repository_owner
     runs-on: macos-15
     timeout-minutes: 45
@@ -109,8 +109,9 @@ jobs:
       - name: Checkout signing tools
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          # Reviewed main commit that signs Sparkle's nested code inside-out.
-          ref: 24c3855468991f28ef1af2df905b95944d90985c
+          # Reviewed hotfix commit that signs Sparkle and both universal helpers
+          # inside-out. The requested source never supplies signing code.
+          ref: fd95fbdc3a9412b6c85fe9b9bddb750319db48a0
           persist-credentials: false
 
       - name: Download Mac app

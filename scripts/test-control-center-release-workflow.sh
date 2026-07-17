@@ -258,8 +258,11 @@ main() {
   assert_contains "$signing_script" "does not match APPLE_TEAM_ID" \
     "signing script must reject a certificate for the wrong Apple team"
   assert_contains "$(cat "$PREVIEW_WORKFLOW")" \
-    "ref: 24c3855468991f28ef1af2df905b95944d90985c" \
-    "preview signing job must use the reviewed main commit with nested Sparkle signing"
+    "ref: fd95fbdc3a9412b6c85fe9b9bddb750319db48a0" \
+    "preview signing job must use the reviewed hotfix commit with both helper signatures"
+  assert_contains "$(cat "$PREVIEW_WORKFLOW")" \
+    "github.actor == github.repository_owner" \
+    "preview workflow must remain restricted to the repository owner"
 
   assert_contains "$verify_dmg_plan" "hdiutil verify" \
     "DMG distribution gate must verify the disk image container"
