@@ -270,7 +270,7 @@ MOUNTED_APP="${MOUNT_DIR}/${APP_NAME}.app"
 
 COMPANION_HELPER="${MOUNTED_APP}/Contents/Helpers/codexbar-display"
 CODEXBAR_HELPER="${MOUNTED_APP}/Contents/Helpers/CodexBarCLI"
-CODEXBAR_VERSION="${MOUNTED_APP}/Contents/Helpers/VERSION"
+CODEXBAR_VERSION="${MOUNTED_APP}/Contents/Resources/CodexBar/VERSION"
 CODEXBAR_LICENSE="${MOUNTED_APP}/Contents/Resources/ThirdPartyNotices/CodexBar-LICENSE.txt"
 for helper in "$COMPANION_HELPER" "$CODEXBAR_HELPER"; do
   [[ -x "$helper" ]] || die "DMG is missing executable helper: ${helper}"

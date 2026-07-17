@@ -262,7 +262,8 @@ EOF
 copy_codexbar_cli() {
   local helpers_dir="$1"
   local notices_dir="$2"
-  mkdir -p "$helpers_dir" "$notices_dir"
+  local metadata_dir="$3"
+  mkdir -p "$helpers_dir" "$notices_dir" "$metadata_dir"
 
   if [[ "$DRY_RUN" == "1" ]]; then
     cat > "${helpers_dir}/${CODEXBAR_CLI_NAME}" <<'EOF'
@@ -270,7 +271,7 @@ copy_codexbar_cli() {
 printf 'CodexBar 0.37.2\n'
 EOF
     chmod 755 "${helpers_dir}/${CODEXBAR_CLI_NAME}"
-    printf '0.37.2\n' > "${helpers_dir}/VERSION"
+    printf '0.37.2\n' > "${metadata_dir}/VERSION"
   else
     [[ -f "$CODEXBAR_CLI_BINARY" ]] \
       || die "real app builds need --codexbar-cli-binary path/to/${CODEXBAR_CLI_NAME}"
@@ -278,7 +279,7 @@ EOF
       || die "real app builds need --codexbar-cli-version-file path/to/VERSION"
     cp "$CODEXBAR_CLI_BINARY" "${helpers_dir}/${CODEXBAR_CLI_NAME}"
     chmod 755 "${helpers_dir}/${CODEXBAR_CLI_NAME}"
-    cp "$CODEXBAR_CLI_VERSION_FILE" "${helpers_dir}/VERSION"
+    cp "$CODEXBAR_CLI_VERSION_FILE" "${metadata_dir}/VERSION"
   fi
 
   [[ -f "$CODEXBAR_LICENSE" ]] || die "CodexBar license file not found: ${CODEXBAR_LICENSE}"
@@ -394,6 +395,7 @@ main() {
   local frameworks_dir="${contents}/Frameworks"
   local resources_dir="${contents}/Resources"
   local notices_dir="${resources_dir}/ThirdPartyNotices"
+  local codexbar_metadata_dir="${resources_dir}/CodexBar"
   local launch_agents_dir="${contents}/Library/LaunchAgents"
 
   rm -rf "$APP_DIR"
@@ -406,7 +408,7 @@ main() {
   copy_app_icon "$resources_dir"
   copy_control_center_static "${resources_dir}/control-center"
   copy_companion_binary "$helpers_dir"
-  copy_codexbar_cli "$helpers_dir" "$notices_dir"
+  copy_codexbar_cli "$helpers_dir" "$notices_dir" "$codexbar_metadata_dir"
   copy_runtime_agent_plist "${launch_agents_dir}/${RUNTIME_AGENT_PLIST_NAME}"
   cp "${ROOT}/macos/VibeTVControlCenter/VibeTVControlCenter.entitlements" "${resources_dir}/VibeTVControlCenter.entitlements"
 

@@ -435,9 +435,11 @@ main() {
     || die "bundled Companion helper is missing or not executable"
   [[ -x "${app}/Contents/Helpers/CodexBarCLI" ]] \
     || die "bundled CodexBarCLI helper is missing or not executable"
-  assert_file "${app}/Contents/Helpers/VERSION"
-  [[ "$(tr -d '[:space:]' < "${app}/Contents/Helpers/VERSION")" == "0.37.2" ]] \
+  assert_file "${app}/Contents/Resources/CodexBar/VERSION"
+  [[ "$(tr -d '[:space:]' < "${app}/Contents/Resources/CodexBar/VERSION")" == "0.37.2" ]] \
     || die "bundled CodexBarCLI VERSION must be pinned to 0.37.2"
+  [[ ! -e "${app}/Contents/Helpers/VERSION" ]] \
+    || die "data files must not be placed in the code-only Contents/Helpers directory"
   assert_file "${app}/Contents/Resources/ThirdPartyNotices/CodexBar-LICENSE.txt"
   [[ ! -e "${app}/Contents/Resources/companion" ]] \
     || die "Mach-O helpers must not be stored in the Resources directory"
