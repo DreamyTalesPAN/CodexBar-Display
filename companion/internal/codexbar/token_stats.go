@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	tokenStatsRefreshInterval = 1500 * time.Millisecond
+	tokenStatsRefreshInterval = 30 * time.Second
 	tokenStatsStaleMaxAge     = 15 * time.Minute
-	tokenStatsCommandTimeout  = 12 * time.Second
+	tokenStatsCommandTimeout  = 45 * time.Second
 )
 
 type ProviderTokenStats struct {
