@@ -91,8 +91,9 @@ For local development, install the Mac App service from the repository root:
 
 That starts the normal VibeTV Mac App background service with the local Control
 Center API built in. It is a development/support path and is not shown in the
-customer setup UI. See `docs/control-center-customer-readiness.md` for the
-support flow.
+customer setup UI. See
+[`docs/control-center-customer-readiness.md`](../../docs/control-center-customer-readiness.md)
+for the support flow.
 
 The legacy operator command is:
 
