@@ -717,15 +717,19 @@ function currentUsageProvider(
 function hasRenderableUsage(
   displayFrame: DisplayFrame | undefined,
 ): boolean {
-  return hasUsagePercentPair(displayFrame?.session, displayFrame?.weekly);
-}
-
-function hasUsagePercentPair(session: unknown, weekly: unknown): boolean {
+  if (!displayFrame) {
+    return false;
+  }
+  const hasProvider = [displayFrame.provider, displayFrame.label].some(
+    (value) => typeof value === "string" && value.trim().length > 0,
+  );
+  const validPercent = (value: unknown) =>
+    value === undefined ||
+    (typeof value === "number" && Number.isFinite(value));
   return (
-    typeof session === "number" &&
-    Number.isFinite(session) &&
-    typeof weekly === "number" &&
-    Number.isFinite(weekly)
+    hasProvider &&
+    validPercent(displayFrame.session) &&
+    validPercent(displayFrame.weekly)
   );
 }
 

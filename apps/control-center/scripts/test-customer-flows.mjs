@@ -2035,7 +2035,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
           id: "codex",
           label: "Codex",
           source: "oauth",
-          session: 27,
+          session: 0,
           weekly: 63,
           resetSecs: 5400,
           usageMode: "used",
@@ -2054,7 +2054,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
   await page
     .getByRole("img", {
-      name: /Rendered VibeTV theme synthwave showing Codex, 27% session used, 63% weekly used/,
+      name: /Rendered VibeTV theme synthwave showing Codex, 0% session used, 63% weekly used/,
     })
     .waitFor({ timeout: 10_000 });
   const renderedTheme = page.getByRole("img", {
@@ -2067,7 +2067,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   await renderedTheme
     .getByText("WEEKLY used")
     .waitFor({ timeout: 10_000 });
-  await renderedTheme.getByText("27%").waitFor({ timeout: 10_000 });
+  await renderedTheme.getByText("0%").waitFor({ timeout: 10_000 });
   await renderedTheme.getByText("63%").waitFor({ timeout: 10_000 });
   const previewFigure = page.locator("figure").filter({ has: renderedTheme });
   assert(
@@ -3537,11 +3537,13 @@ function displayFrameFromUsageResponse(usageResponse) {
     provider.usageMode === "remaining" || usage.usageMode === "remaining"
       ? "remaining"
       : "used";
+  const session = clampPercent(provider.session);
+  const weekly = clampPercent(provider.weekly);
   return {
     provider: provider.id,
     label: provider.label || provider.id,
-    session: clampPercent(provider.session),
-    weekly: clampPercent(provider.weekly),
+    ...(session > 0 ? { session } : {}),
+    ...(weekly > 0 ? { weekly } : {}),
     resetSecs: nonNegativeInteger(provider.resetSecs),
     usageMode,
     activity: provider.activity || "idle",
