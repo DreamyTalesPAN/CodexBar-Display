@@ -180,6 +180,11 @@ type Server struct {
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
 	fetchUsage             func(context.Context) ([]codexbar.ParsedFrame, error)
+	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
+	openCodexBar           func(context.Context) error
+	providerSetupMu        sync.Mutex
+	providerSetupCache     codexbar.ProviderSetup
+	providerSetupCachedAt  time.Time
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
 	updateMacApp           func(context.Context, string, string, macAppUpdateRequest, io.Writer) error
 	fetchMacAppRelease     func(context.Context) (githubRelease, error)
@@ -346,9 +351,10 @@ type themeSpecHealth struct {
 }
 
 type statusResponse struct {
-	OK        bool       `json:"ok"`
-	Companion companion  `json:"companion"`
-	Device    deviceInfo `json:"device"`
+	OK            bool                   `json:"ok"`
+	Companion     companion              `json:"companion"`
+	Device        deviceInfo             `json:"device"`
+	ProviderSetup codexbar.ProviderSetup `json:"providerSetup"`
 }
 
 type deviceActionResponse struct {
@@ -492,11 +498,12 @@ func (e *statusAPIError) Error() string {
 }
 
 type diagnosticsResponse struct {
-	OK          bool              `json:"ok"`
-	GeneratedAt string            `json:"generatedAt"`
-	Companion   companion         `json:"companion"`
-	Device      deviceInfo        `json:"device"`
-	Checks      []diagnosticCheck `json:"checks"`
+	OK            bool                   `json:"ok"`
+	GeneratedAt   string                 `json:"generatedAt"`
+	Companion     companion              `json:"companion"`
+	Device        deviceInfo             `json:"device"`
+	ProviderSetup codexbar.ProviderSetup `json:"providerSetup"`
+	Checks        []diagnosticCheck      `json:"checks"`
 }
 
 type diagnosticCheck struct {
@@ -765,6 +772,8 @@ func New(opts Options) (*Server, error) {
 		installationMode:      macAppInstallationMode(),
 		loadUsage:             daemon.LoadPersistedUsage,
 		fetchUsage:            codexbar.FetchAllProviders,
+		probeProviderSetup:    codexbar.ProbeProviderSetup,
+		openCodexBar:          codexbar.OpenApp,
 		updateFirmware:        runFirmwareUpdateCommand,
 		updateMacApp:          runMacAppUpdateCommand,
 		fetchMacAppRelease:    fetchLatestMacAppRelease,
@@ -809,6 +818,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/usage", s.handleUsage)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
+	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)
+	mux.HandleFunc("/v1/providers/open-codexbar", s.handleOpenCodexBar)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/search", s.handleDeviceSearch)
 	mux.HandleFunc("/v1/device/select", s.handleDeviceSelect)
@@ -1021,9 +1032,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		s.startConfiguredDeviceRecovery(cfg)
 	}
 	writeJSON(w, http.StatusOK, statusResponse{
-		OK:        true,
-		Companion: s.companionInfo(r.Context()),
-		Device:    device,
+		OK:            true,
+		Companion:     s.companionInfo(r.Context()),
+		Device:        device,
+		ProviderSetup: s.currentProviderSetup(r.Context(), false),
 	})
 }
 
@@ -1333,12 +1345,14 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	providerSetup := s.currentProviderSetup(r.Context(), false)
 	checks := []diagnosticCheck{
 		{
 			Name:   "companion_api",
 			Status: "pass",
 			Detail: "Companion API is responding on loopback.",
 		},
+		providerDiagnosticCheck(providerSetup),
 	}
 	if themeInstallEnabled() {
 		checks = append(checks, diagnosticCheck{
@@ -1370,11 +1384,12 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			NextAction: "Run device discovery or enter the exact VibeTV target in the VibeTV target field.",
 		})
 		writeJSON(w, http.StatusOK, diagnosticsResponse{
-			OK:          true,
-			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			Companion:   s.companionInfo(r.Context()),
-			Device:      device,
-			Checks:      checks,
+			OK:            true,
+			GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+			Companion:     s.companionInfo(r.Context()),
+			Device:        device,
+			ProviderSetup: providerSetup,
+			Checks:        checks,
 		})
 		return
 	}
@@ -1394,11 +1409,12 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			NextAction: "Keep VibeTV powered on, then run discovery again.",
 		})
 		writeJSON(w, http.StatusOK, diagnosticsResponse{
-			OK:          true,
-			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			Companion:   s.companionInfo(r.Context()),
-			Device:      device,
-			Checks:      checks,
+			OK:            true,
+			GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+			Companion:     s.companionInfo(r.Context()),
+			Device:        device,
+			ProviderSetup: providerSetup,
+			Checks:        checks,
 		})
 		return
 	}
@@ -1451,6 +1467,14 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Status: "pass",
 			Detail: device.Stream.Detail,
 		})
+	} else if device.Stream != nil && device.Stream.ErrorCode == "provider_setup_required" {
+		checks = append(checks, diagnosticCheck{
+			Name:       "display_stream",
+			Status:     "attention",
+			Detail:     device.Stream.Detail,
+			ErrorCode:  "provider_setup_required",
+			NextAction: "Connect an AI provider in CodexBar, then click Check again.",
+		})
 	} else {
 		checks = append(checks, diagnosticCheck{
 			Name:       "display_stream",
@@ -1471,11 +1495,12 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, diagnosticsResponse{
-		OK:          true,
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Companion:   s.companionInfo(r.Context()),
-		Device:      device,
-		Checks:      checks,
+		OK:            true,
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+		Companion:     s.companionInfo(r.Context()),
+		Device:        device,
+		ProviderSetup: providerSetup,
+		Checks:        checks,
 	})
 }
 
@@ -6188,7 +6213,10 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 			op := displayStreamLogValue(line, "op")
 			detail := "Display stream hit an error after the last frame and is reconnecting."
 			code := "display_stream_failed"
-			if op == "send-line" {
+			if displayStreamLogValue(line, "code") == "runtime/no-providers" || strings.Contains(line, "runtime/no-providers") {
+				detail = "VibeTV is connected, but no AI provider is ready yet."
+				code = "provider_setup_required"
+			} else if op == "send-line" {
 				detail = "Display stream could not send to VibeTV and is reconnecting."
 				code = "display_send_failed"
 			} else if op == "resolve-target" {

@@ -12,6 +12,9 @@ RUNTIME_AGENT_PLIST_NAME="shop.vibetv.control-center.runtime.plist"
 APP_ICON="${ROOT}/macos/VibeTVControlCenter/${ICON_FILE_NAME}"
 RUNTIME_AGENT_PLIST="${ROOT}/macos/VibeTVControlCenter/${RUNTIME_AGENT_PLIST_NAME}"
 SPARKLE_PUBLIC_KEY_FILE="${ROOT}/macos/VibeTVControlCenter/SparklePublicKey.txt"
+CODEXBAR_MANIFEST="${ROOT}/macos/VibeTVControlCenter/CodexBar-v0.44.0.manifest.json"
+CODEXBAR_LICENSE="${ROOT}/macos/VibeTVControlCenter/CodexBar-LICENSE.txt"
+CODEXBAR_ARCHIVE_NAME="CodexBar-macos-universal-0.44.0.zip"
 SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/appcast.xml}"
 SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 SPARKLE_DIST_DIR=""
@@ -175,7 +178,7 @@ write_info_plist() {
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>14.0</string>
     <key>NSAppTransportSecurity</key>
     <dict>
       <key>NSAllowsLocalNetworking</key>
@@ -281,6 +284,25 @@ copy_app_icon() {
   cp "$APP_ICON" "${target_dir}/${ICON_FILE_NAME}"
 }
 
+copy_codexbar_distribution() {
+  local target_dir="$1"
+  local archive
+
+  [[ -f "$CODEXBAR_MANIFEST" ]] || die "CodexBar manifest not found: ${CODEXBAR_MANIFEST}"
+  [[ -f "$CODEXBAR_LICENSE" ]] || die "CodexBar license not found: ${CODEXBAR_LICENSE}"
+  mkdir -p "$target_dir"
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    printf 'CodexBar 0.44.0 dry-run archive placeholder\n' \
+      > "${target_dir}/${CODEXBAR_ARCHIVE_NAME}"
+  else
+    archive="$("${ROOT}/scripts/fetch-codexbar.sh")"
+    cp "$archive" "${target_dir}/${CODEXBAR_ARCHIVE_NAME}"
+  fi
+  cp "$CODEXBAR_MANIFEST" "${target_dir}/CodexBar-v0.44.0.manifest.json"
+  cp "$CODEXBAR_LICENSE" "${target_dir}/CodexBar-LICENSE.txt"
+}
+
 build_executable() {
   local target="$1"
 
@@ -305,7 +327,7 @@ EOF
     arm64_binary="${build_dir}/${EXECUTABLE_NAME}-arm64"
 
     swiftc \
-      -target x86_64-apple-macos13 \
+      -target x86_64-apple-macos14 \
       "${ROOT}/macos/VibeTVControlCenter/main.swift" \
       -o "$x86_binary" \
       -F "$SPARKLE_DIST_DIR" \
@@ -316,7 +338,7 @@ EOF
       -Xlinker @executable_path/../Frameworks \
       -framework WebKit
     swiftc \
-      -target arm64-apple-macos13 \
+      -target arm64-apple-macos14 \
       "${ROOT}/macos/VibeTVControlCenter/main.swift" \
       -o "$arm64_binary" \
       -F "$SPARKLE_DIST_DIR" \
@@ -363,10 +385,15 @@ main() {
   build_executable "${macos_dir}/${EXECUTABLE_NAME}"
   copy_sparkle_framework "$frameworks_dir"
   copy_app_icon "$resources_dir"
+  copy_codexbar_distribution "${resources_dir}/CodexBar"
   copy_control_center_static "${resources_dir}/control-center"
   copy_companion_binary "$helpers_dir"
   copy_runtime_agent_plist "${launch_agents_dir}/${RUNTIME_AGENT_PLIST_NAME}"
   cp "${ROOT}/macos/VibeTVControlCenter/VibeTVControlCenter.entitlements" "${resources_dir}/VibeTVControlCenter.entitlements"
+
+  if [[ "$DRY_RUN" != "1" ]]; then
+    "${ROOT}/scripts/verify-bundled-codexbar.sh" --app "$APP_DIR"
+  fi
 
   if command -v xattr >/dev/null 2>&1; then
     xattr -cr "$APP_DIR" >/dev/null 2>&1 || true

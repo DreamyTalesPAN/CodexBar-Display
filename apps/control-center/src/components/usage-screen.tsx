@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import type {
   ApiError,
   CompanionStatus,
+  ProviderSetupInfo,
   UsageCostDay,
   UsagePaceInfo,
   UsageProviderInfo,
@@ -17,6 +18,10 @@ import type {
   UsageSnapshot,
   UsageWindowInfo,
 } from "./control-center-types";
+import {
+  ProviderSetupCard,
+  providerSetupNeedsAction,
+} from "./provider-setup-card";
 
 type UsageScreenProps = {
   busyAction?: string | null;
@@ -24,6 +29,9 @@ type UsageScreenProps = {
   usage: UsageSnapshot | null;
   usageError?: ApiError | null;
   onRefresh?: () => void;
+  onOpenCodexBar?: () => void;
+  onRetryProviders?: () => void;
+  providerSetup?: ProviderSetupInfo | null;
 };
 
 export function UsageScreen({
@@ -32,6 +40,9 @@ export function UsageScreen({
   usage,
   usageError,
   onRefresh,
+  onOpenCodexBar,
+  onRetryProviders,
+  providerSetup,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
   const providers = filterVisibleProviders(
@@ -39,6 +50,7 @@ export function UsageScreen({
     usage?.currentProvider,
   );
   const hasProviders = providers.length > 0;
+  const providerActionRequired = providerSetupNeedsAction(providerSetup);
   const overTimeProvider = pickUsageOverTimeProvider(
     providers,
     usage?.currentProvider,
@@ -76,7 +88,18 @@ export function UsageScreen({
           ) : null}
         </div>
 
-        {usageError ? (
+        {providerActionRequired && providerSetup ? (
+          <div className="mb-6">
+            <ProviderSetupCard
+              busyAction={busyAction}
+              onOpenCodexBar={onOpenCodexBar}
+              onRetry={onRetryProviders}
+              providerSetup={providerSetup}
+            />
+          </div>
+        ) : null}
+
+        {usageError && !providerActionRequired ? (
           <div className="mb-6 border border-[#747A60] bg-[#EEEEEE] p-4 text-sm leading-6 text-[#444933]">
             <div className="mb-1 flex items-center gap-2 font-bold text-[#1B1B1B]">
               <AlertTriangle size={17} aria-hidden />
@@ -100,7 +123,7 @@ export function UsageScreen({
               </li>
             ))}
           </ol>
-        ) : usageError ? null : (
+        ) : usageError || providerActionRequired ? null : (
           <UsageEmptyState
             companionStatus={companionStatus}
             refreshing={refreshing}

@@ -79,6 +79,9 @@ jobs:
             --companion-binary tmp/macos-preview/codexbar-display \
             --output "dist/macos/VibeTV Control Center.app"
 
+          ./scripts/verify-bundled-codexbar.sh \
+            --app "dist/macos/VibeTV Control Center.app"
+
           tar -czf tmp/macos-preview/app.tar.gz \
             -C dist/macos "VibeTV Control Center.app"
           {

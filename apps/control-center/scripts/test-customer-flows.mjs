@@ -165,6 +165,28 @@ const reconnectingDevice = {
   },
 };
 
+function readyProviderSetup() {
+  return {
+    status: "ready",
+    checkedAt: "2026-07-17T17:00:00Z",
+    engine: {
+      status: "ready",
+      version: "0.44.0",
+      path: "/Users/customer/Applications/CodexBar.app",
+      source: "bundled",
+      configWritable: true,
+    },
+    providers: [
+      {
+        id: "codex",
+        label: "Codex",
+        enabled: true,
+        status: "ready",
+      },
+    ],
+  };
+}
+
 async function main() {
   await assertCompanionRequestTimeoutContract();
   const fixtureServer = await startFixtureServer();
@@ -406,6 +428,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testProviderReadinessCustomerStates(browser, appContext.appUrl);
     await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
     await testThemeLibraryRendersThemeSpecPreviews(
       browser,
@@ -848,6 +871,126 @@ async function testLocalWifiVerificationWithoutFrameStaysInSetup(
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
+}
+
+async function testProviderReadinessCustomerStates(browser, appUrl) {
+  const cases = [
+    {
+      status: "auth_required",
+      expected: "Sign in to Claude in CodexBar, then check again.",
+    },
+    {
+      status: "permission_required",
+      expected:
+        "Claude needs permission to read your sign-in. Open CodexBar and allow access, then check again.",
+    },
+    {
+      status: "no_usage_available",
+      expected:
+        "Claude is connected, but this account does not expose usage limits. Choose another provider.",
+    },
+    {
+      status: "config_error",
+      expected:
+        "CodexBar could not save its provider settings. Open CodexBar and finish provider setup there.",
+    },
+  ];
+
+  for (const fixture of cases) {
+    const page = await newCustomerPage(browser, appUrl, { viewport });
+    const requests = [];
+    await routeCompanionOnline(page, [], () => {}, {
+      device: reachableUnreadyDevice,
+      onRequest: (path, method) => requests.push(`${method} ${path}`),
+      providerSetup: providerSetupFixture(fixture.status),
+    });
+
+    await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+    await page
+      .getByRole("heading", { name: "Connect an AI provider" })
+      .first()
+      .waitFor({ timeout: 10_000 });
+    await page.getByText(fixture.expected).first().waitFor({ timeout: 10_000 });
+    assert(
+      (await page.getByText("VibeTV screen is not ready").count()) === 0,
+      `${fixture.status} must not be presented as a VibeTV screen problem`,
+    );
+    assert(
+      (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
+      `${fixture.status} must not offer Fix connection`,
+    );
+
+    if (fixture.status === "auth_required") {
+      await page.getByRole("button", { name: "Open CodexBar" }).click();
+      await page.getByRole("button", { name: "Check again" }).click();
+      assert(
+        requests.includes("POST /v1/providers/open-codexbar"),
+        "Open CodexBar must call the provider action",
+      );
+      assert(
+        requests.includes("POST /v1/providers/retry"),
+        "Check again must retry provider detection",
+      );
+
+      await page.getByRole("button", { name: "Overview" }).click();
+      await page
+        .getByRole("heading", { name: "Connect an AI provider" })
+        .first()
+        .waitFor({ timeout: 10_000 });
+      await page.getByText("Waiting for AI usage").waitFor({ timeout: 10_000 });
+
+      await page.getByRole("button", { name: "Usage" }).click();
+      await page
+        .getByRole("heading", { name: "Connect an AI provider" })
+        .first()
+        .waitFor({ timeout: 10_000 });
+      assert(
+        (await page.getByText("No provider usage is available yet.").count()) === 0,
+        "Provider setup must replace the generic empty usage state",
+      );
+    }
+
+    await assertNoMobileOverflow(page);
+    await page.close();
+  }
+
+  const readyPage = await newCustomerPage(browser, appUrl, { viewport });
+  await routeCompanionOnline(readyPage, [], () => {}, {
+    device: companionDevice,
+    providerSetup: readyProviderSetup(),
+  });
+  await readyPage.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await readyPage
+    .getByRole("heading", { name: "VibeTV is connected" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await readyPage.getByRole("heading", { name: "Connect an AI provider" }).count()) ===
+      0,
+    "Ready providers must not show provider setup",
+  );
+  await readyPage.close();
+}
+
+function providerSetupFixture(status) {
+  return {
+    status: "setup_required",
+    checkedAt: "2026-07-17T17:00:00Z",
+    engine: {
+      status: status === "config_error" ? "config_error" : "ready",
+      version: "0.44.0",
+      path: "/Users/customer/Applications/CodexBar.app",
+      source: "bundled",
+      configWritable: status !== "config_error",
+    },
+    providers: [
+      {
+        id: "claude",
+        label: "Claude",
+        enabled: true,
+        status,
+      },
+    ],
+  };
 }
 
 async function testLocalWifiSearchShowsManualAddressOnlyAfterNoResults(
@@ -3960,6 +4103,9 @@ async function routeCompanionOnline(
     searchDelayMs = 0,
     firstStatusDelayMs = 0,
     statusDeviceSequence,
+    providerSetup = readyProviderSetup(),
+    onProviderRetry,
+    onOpenCodexBar,
   } = {},
 ) {
   let currentDevice = device;
@@ -3972,9 +4118,30 @@ async function routeCompanionOnline(
   let macAppUpdateStatusIndex = 0;
   let macAppUpdateStatusFailuresRemaining = macAppUpdateStatusFailures;
   let statusRequestCount = 0;
+  let currentProviderSetup = providerSetup;
   const handler = async (route) => {
     const pathname = companionPath(route);
     onRequest(pathname, route.request().method());
+    if (pathname === "/v1/providers/retry") {
+      currentProviderSetup =
+        onProviderRetry?.(currentProviderSetup) || currentProviderSetup;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, providerSetup: currentProviderSetup }),
+      });
+      return;
+    }
+    if (pathname === "/v1/providers/open-codexbar") {
+      currentProviderSetup =
+        onOpenCodexBar?.(currentProviderSetup) || currentProviderSetup;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, providerSetup: currentProviderSetup }),
+      });
+      return;
+    }
     if (pathname === "/v1/mac-app/update/status") {
       if (macAppUpdateStatusFailuresRemaining > 0) {
         macAppUpdateStatusFailuresRemaining -= 1;
@@ -4383,6 +4550,7 @@ async function routeCompanionOnline(
             companionRuntime,
           ),
           device: currentDevice,
+          providerSetup: currentProviderSetup,
         }),
       });
       return;
@@ -4423,6 +4591,7 @@ async function routeCompanionOnline(
             companionApp,
             companionRuntime,
           ),
+          providerSetup: currentProviderSetup,
           device: currentDevice,
         }),
       });
@@ -4464,6 +4633,7 @@ async function routeCompanionOnline(
             companionApp,
             companionRuntime,
           ),
+          providerSetup: currentProviderSetup,
           device: currentDevice,
           checks: [
             {

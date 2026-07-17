@@ -27,6 +27,11 @@ var knownBinaryPaths = []string{
 	"/Applications/CodexBar.app/Contents/MacOS/CodexBar",
 }
 
+var systemAppBinaryPaths = []string{
+	"/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI",
+	"/Applications/CodexBar.app/Contents/MacOS/CodexBar",
+}
+
 var (
 	ErrNoProviders             = errors.New("codexbar returned no providers")
 	ErrUnexpectedProviderShape = errors.New("unexpected provider payload")
@@ -36,6 +41,7 @@ var runUsageCommandFn = runUsageCommand
 var runCostCommandFn = runUsageCommand
 var runVersionCommandFn = runUsageCommand
 var readFileFn = os.ReadFile
+var executablePathFn = os.Executable
 
 const (
 	minSharedFallbackTimeBudget = 4 * time.Second
@@ -111,22 +117,46 @@ func FindBinary() (string, error) {
 		return "", fmt.Errorf("CODEXBAR_BIN is not executable: %s", env)
 	}
 
+	// The native Control Center ships CodexBarCLI next to codexbar-display.
+	// Prefer that pinned copy over an unrelated Homebrew/PATH installation.
+	if executable, err := executablePathFn(); err == nil {
+		base := filepath.Dir(executable)
+		for _, p := range []string{
+			filepath.Join(base, "CodexBarCLI"),
+			filepath.Join(base, "codexbar"),
+			filepath.Join(base, "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"),
+		} {
+			if isExecutable(p) {
+				return p, nil
+			}
+		}
+	}
+
+	home, _ := os.UserHomeDir()
+	appCandidates := append([]string(nil), systemAppBinaryPaths...)
+	if home != "" {
+		appCandidates = append(appCandidates,
+			filepath.Join(home, "Applications", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"),
+			filepath.Join(home, "Applications", "CodexBar.app", "Contents", "MacOS", "CodexBar"),
+		)
+	}
+	for _, p := range appCandidates {
+		if isExecutable(p) {
+			return p, nil
+		}
+	}
+
 	if p, err := exec.LookPath("codexbar"); err == nil && p != "" {
 		return p, nil
 	}
 
-	home, _ := os.UserHomeDir()
-	candidates := make([]string, 0, len(knownBinaryPaths)+4)
-	candidates = append(candidates, knownBinaryPaths...)
+	candidates := append([]string(nil), knownBinaryPaths...)
 	if home != "" {
 		candidates = append(candidates,
-			filepath.Join(home, "Applications", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"),
-			filepath.Join(home, "Applications", "CodexBar.app", "Contents", "MacOS", "CodexBar"),
 			filepath.Join(home, "Downloads", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"),
 			filepath.Join(home, "Downloads", "CodexBar.app", "Contents", "MacOS", "CodexBar"),
 		)
 	}
-
 	for _, p := range candidates {
 		if isExecutable(p) {
 			return p, nil
@@ -315,6 +345,7 @@ func runUsageCommand(parent context.Context, timeout time.Duration, bin string, 
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, bin, args...)
+	cmd.Env = commandEnvironment(configPathFromContext(parent))
 	return cmd.Output()
 }
 

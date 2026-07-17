@@ -10,6 +10,46 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 
 func runURLSchemeTests() {
     require(
+        isCompatibleCodexBarVersion("0.23.0"),
+        "the minimum supported CodexBar version must be compatible"
+    )
+    require(
+        isCompatibleCodexBarVersion("0.45.0"),
+        "a newer CodexBar version must be reusable"
+    )
+    require(
+        isCompatibleCodexBarVersion("0.43.0"),
+        "an existing CodexBar 0.43 installation must remain reusable"
+    )
+    require(
+        !isCompatibleCodexBarVersion("0.22.0"),
+        "an unsupported CodexBar version must not replace the pinned bootstrap"
+    )
+    let codexBarCandidates = codexBarInstalledAppCandidates(
+        homeDirectory: URL(fileURLWithPath: "/Users/customer", isDirectory: true)
+    )
+    require(
+        codexBarCandidates.map(\.path) == [
+            "/Applications/CodexBar.app",
+            "/Users/customer/Applications/CodexBar.app",
+        ],
+        "CodexBar discovery must prefer the shared app and then the user app"
+    )
+    let config = try! JSONSerialization.jsonObject(
+        with: defaultCodexBarConfigData()
+    ) as! [String: Any]
+    let providers = config["providers"] as! [[String: Any]]
+    require(
+        providers.compactMap { $0["id"] as? String } == [
+            "codex", "claude", "cursor", "gemini", "copilot",
+        ],
+        "fresh installs must seed only the common supported providers"
+    )
+    require(
+        providers.allSatisfy { $0["enabled"] as? Bool == true },
+        "fresh-install providers must be enabled before the first probe"
+    )
+    require(
         RuntimePreparationOutcome.nativeRuntimeReady.shouldReloadControlCenter,
         "healthy native runtime must refresh the WebView"
     )

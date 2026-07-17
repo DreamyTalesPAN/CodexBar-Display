@@ -153,6 +153,7 @@ cleanup() {
 require_real_inputs() {
   [[ -d "$APP_DIR" ]] || die "app bundle not found: ${APP_DIR}"
   [[ -f "${APP_DIR}/Contents/Info.plist" ]] || die "app bundle is missing Contents/Info.plist"
+  "${ROOT}/scripts/verify-bundled-codexbar.sh" --app "$APP_DIR"
   if [[ "$SIGN_APP_ONLY" != "1" ]]; then
     [[ -n "$DMG_PATH" ]] || die "--dmg is required unless --sign-app-only is used"
     [[ -f "$DMG_PATH" ]] || die "DMG not found: ${DMG_PATH}"
@@ -205,6 +206,7 @@ dry-run: planned real-mode commands:
   codesign --force --options runtime --timestamp --sign <identity> "${APP_DIR}/Contents/Helpers/codexbar-display"
   codesign --force --options runtime --timestamp --entitlements macos/VibeTVControlCenter/VibeTVControlCenter.entitlements --sign <identity> "${APP_DIR}"
   codesign --verify --deep --strict --verbose=2 "${APP_DIR}"
+  verify the pinned CodexBar ZIP, manifest, and MIT license resource
   syspolicy_check notary-submission "${APP_DIR}" (when available)
   build or rebuild the DMG from the already signed app bundle
   codesign --force --timestamp --sign <identity> "${DMG_PATH:-<dmg>}"

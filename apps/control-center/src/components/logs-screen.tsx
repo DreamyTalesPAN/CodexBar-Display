@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { SupportDiagnostics } from "./control-center-types";
+import { providerSetupStatusLabel } from "./provider-setup-card";
 
 export type LogEvent = {
   id: string;
@@ -135,6 +136,14 @@ export function LogsScreen({
               <DiagnosticFact
                 label="Mac App"
                 value={diagnostics.companion?.version || "Unknown"}
+              />
+              <DiagnosticFact
+                label="CodexBar"
+                value={formatCodexBarStatus(diagnostics)}
+              />
+              <DiagnosticFact
+                label="AI provider"
+                value={providerSetupStatusLabel(diagnostics.providerSetup)}
               />
               <DiagnosticFact
                 label="VibeTV address"
@@ -317,6 +326,20 @@ function formatDiagnosticTime(value?: string): string {
     minute: "2-digit",
     second: "2-digit",
   }).format(date);
+}
+
+function formatCodexBarStatus(diagnostics: SupportDiagnostics): string {
+  const engine = diagnostics.providerSetup?.engine;
+  if (!engine) {
+    return "Unknown";
+  }
+  if (engine.status === "ready") {
+    return engine.version ? `Ready ${engine.version}` : "Ready";
+  }
+  if (engine.status === "config_error") {
+    return "Settings need attention";
+  }
+  return "Setup needed";
 }
 
 function supportReportFilename(value?: string): string {
