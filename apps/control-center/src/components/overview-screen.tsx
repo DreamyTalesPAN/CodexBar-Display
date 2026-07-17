@@ -1,16 +1,36 @@
 "use client";
 
 import {
+  AppWindow,
   ArrowUpFromLine,
   Check,
   CircleHelp,
   Download,
   Monitor,
+  Palette,
   RefreshCw,
   SlidersHorizontal,
-  Wifi,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import { Spinner } from "@/components/ui/spinner";
 import {
   availableMacAppDmgDownloadUrl,
   type CompanionReleaseInfo,
@@ -21,10 +41,8 @@ import {
   type CompanionStatus,
   type DeviceInfo,
   type DeviceState,
-  type ReadinessTone,
   type UsageSnapshot,
 } from "./control-center-types";
-import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
@@ -70,20 +88,33 @@ export function OverviewScreen({
     : undefined;
 
   return (
-    <div className="mx-auto max-w-[1180px]">
-      <section className="grid min-h-[500px] items-center gap-8 border-b border-[#747A60] py-8 lg:grid-cols-[minmax(0,520px)_minmax(420px,1fr)] lg:py-9">
-        <div className="min-w-0">
-          <div className="flex items-start gap-5">
-            <StatusBadge tone={hero.tone}>{hero.icon}</StatusBadge>
-            <div className="min-w-0">
-              <h2 className="max-w-[440px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-                {hero.title}
-              </h2>
-            </div>
+    <div className="mx-auto max-w-[1180px] py-4">
+      <section aria-labelledby="vibetv-overview-title">
+        <div className="mx-auto flex w-full max-w-[1040px] flex-col items-center gap-5">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <Badge variant={hero.badgeVariant}>
+              {hero.icon}
+              <span>{hero.badge}</span>
+            </Badge>
+            <h2
+              className="text-4xl font-black tracking-tight md:text-5xl"
+              id="vibetv-overview-title"
+            >
+              VibeTV
+            </h2>
           </div>
 
-          <dl className="mt-9 max-w-[420px]">
-            <StatusRow
+          <div className="flex justify-center">
+            <LiveVibeTVPreview device={device} usage={usage || null} />
+          </div>
+
+          <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">
+            <StatusItem
+              icon={<Monitor aria-hidden />}
+              label="VibeTV"
+              value={labelForDevice(deviceState, device, reloadingImage)}
+            />
+            <StatusItem
               badge={
                 requiresMacAppMigration
                   ? "New App"
@@ -91,48 +122,56 @@ export function OverviewScreen({
                     ? "Update"
                     : undefined
               }
-              icon={<Wifi size={18} aria-hidden />}
+              icon={<AppWindow aria-hidden />}
               label="Mac App"
               value={labelForCompanion(companionStatus, companionVersion)}
             />
-            <StatusRow
-              icon={<Monitor size={18} aria-hidden />}
-              label="VibeTV"
-              detail={imageStuck ? imageStuckDetail(device) : healthDetail}
-              value={labelForDevice(deviceState, device, reloadingImage)}
-            />
-            <StatusRow
+            <StatusItem
               badge={firmwareUpdateAvailable ? "Update" : undefined}
-              icon={<ArrowUpFromLine size={18} aria-hidden />}
-              label="VibeTV firmware"
+              icon={<ArrowUpFromLine aria-hidden />}
+              label="Firmware"
               value={device?.firmware || "Waiting for VibeTV"}
             />
-          </dl>
-          {requiresMacAppMigration ? (
-            <MacAppMigrationCard downloadUrl={macAppMigrationUrl} />
-          ) : null}
-          {imageStuck && onReloadImage ? (
-            <div className="mt-7">
-              <button
-                className="inline-flex min-h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#CCFF00] px-5 text-sm font-bold text-[#1B1B1B] transition hover:bg-[#ABD600] disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={reloadingImage}
-                onClick={onReloadImage}
-                type="button"
-              >
-                <RefreshCw
-                  className={reloadingImage ? "animate-spin" : undefined}
-                  size={18}
-                  aria-hidden
-                />
-                <span>{reloadingImage ? "Reloading image" : "Reload image"}</span>
-              </button>
-            </div>
-          ) : null}
+            <StatusItem
+              icon={<Palette aria-hidden />}
+              label="Active theme"
+              value={activeThemeLabel(device)}
+            />
+          </ItemGroup>
         </div>
 
-        <div className="flex justify-center lg:justify-end">
-          <LiveVibeTVPreview device={device} usage={usage || null} />
-        </div>
+        {healthDetail || imageStuck ? (
+          <Card className="mx-auto mt-4 max-w-[1040px]" size="sm">
+            <CardHeader>
+              <CardTitle>
+                {imageStuck ? "Screen needs attention" : "Connection detail"}
+              </CardTitle>
+              <CardDescription>
+                {imageStuck ? imageStuckDetail(device) : healthDetail}
+              </CardDescription>
+            </CardHeader>
+            {imageStuck && onReloadImage ? (
+              <CardFooter>
+                <Button
+                  disabled={reloadingImage}
+                  onClick={onReloadImage}
+                  type="button"
+                >
+                  {reloadingImage ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <RefreshCw data-icon="inline-start" aria-hidden />
+                  )}
+                  <span>{reloadingImage ? "Reloading image" : "Reload image"}</span>
+                </Button>
+              </CardFooter>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {requiresMacAppMigration ? (
+          <MacAppMigrationCard downloadUrl={macAppMigrationUrl} />
+        ) : null}
       </section>
     </div>
   );
@@ -141,55 +180,35 @@ export function OverviewScreen({
 function MacAppMigrationCard({ downloadUrl }: { downloadUrl?: string }) {
   const downloadReady = Boolean(downloadUrl);
   return (
-    <section
+    <Card
       aria-labelledby="mac-app-migration-title"
-      className="mt-7 border border-[#747A60] bg-[#F9F9F9] p-4"
+      className="mx-auto mt-4 max-w-[1040px]"
     >
-      <div className="flex items-start gap-3">
-        <Download
-          className="mt-0.5 shrink-0 text-[#506600]"
-          size={20}
-          aria-hidden
-        />
-        <div className="min-w-0">
-          <h3
-            className="text-base font-black text-[#1B1B1B]"
-            id="mac-app-migration-title"
-          >
-            {downloadReady ? "Update available" : "Update not ready"}
-          </h3>
-        </div>
-      </div>
+      <CardHeader>
+        <CardTitle id="mac-app-migration-title">
+          {downloadReady
+            ? "Mac App update available"
+            : "Mac App update not ready"}
+        </CardTitle>
+        <CardDescription>
+          Keep the Control Center and VibeTV connection on the latest version.
+        </CardDescription>
+      </CardHeader>
       {downloadUrl ? (
-        <div className="mt-4">
-          <a
-            className="vibetv-button vibetv-button--large vibetv-button--full vibetv-button--primary"
-            href={downloadUrl}
-          >
-            <Download size={20} aria-hidden />
-            <span>Update</span>
-          </a>
-        </div>
+        <CardFooter>
+          <Button asChild size="lg">
+            <a href={downloadUrl}>
+              <Download data-icon="inline-start" />
+              <span>Update</span>
+            </a>
+          </Button>
+        </CardFooter>
       ) : null}
-    </section>
+    </Card>
   );
 }
 
-function StatusBadge({
-  children,
-  tone,
-}: {
-  children: ReactNode;
-  tone: ReadinessTone;
-}) {
-  return (
-    <ControlCenterStatusIcon variant={tone === "ready" ? "complete" : "neutral"}>
-      {children}
-    </ControlCenterStatusIcon>
-  );
-}
-
-function StatusRow({
+function StatusItem({
   badge,
   detail,
   icon,
@@ -203,21 +222,21 @@ function StatusRow({
   value: string;
 }) {
   return (
-    <div className="grid min-h-[50px] grid-cols-[28px_1fr_120px] items-start gap-3 border-b border-[#747A60] py-3 last:border-b-0">
-      <div className="pt-0.5 text-[#506600]">{icon}</div>
-      <dt className="font-medium text-[#1B1B1B]">{label}</dt>
-      <dd className="min-w-0 text-[#1B1B1B]">
-        <div className="flex flex-wrap items-center gap-2">
-          <span>{value}</span>
-          {badge ? (
-            <span className="rounded-full bg-[#CCFF00] px-2 py-0.5 text-xs font-semibold text-[#1B1B1B]">
-              {badge}
-            </span>
-          ) : null}
-        </div>
-        {detail ? <div className="mt-1 text-sm text-[#444933]">{detail}</div> : null}
-      </dd>
-    </div>
+    <Item
+      className="min-w-0 flex-nowrap items-start"
+      role="listitem"
+      variant="muted"
+    >
+      <ItemMedia variant="icon">{icon}</ItemMedia>
+      <ItemContent>
+        <ItemDescription>{label}</ItemDescription>
+        <ItemTitle>{value}</ItemTitle>
+        {detail ? <ItemDescription>{detail}</ItemDescription> : null}
+      </ItemContent>
+      <ItemActions className="flex-wrap justify-end">
+        {badge ? <Badge>{badge}</Badge> : null}
+      </ItemActions>
+    </Item>
   );
 }
 
@@ -236,42 +255,54 @@ function buildHeroCopy({
 }) {
   if (reloadingImage) {
     return {
-      title: "VibeTV is updating image",
-      tone: "attention" as ReadinessTone,
-      icon: <RefreshCw className="animate-spin" size={34} aria-hidden />,
+      badge: "Updating",
+      badgeVariant: "outline" as const,
+      icon: <Spinner data-icon="inline-start" />,
     };
   }
   if (imageStuck) {
     return {
-      title: "Image is stuck",
-      tone: "attention" as ReadinessTone,
-      icon: <RefreshCw size={34} aria-hidden />,
+      badge: "Needs attention",
+      badgeVariant: "destructive" as const,
+      icon: <RefreshCw data-icon="inline-start" aria-hidden />,
     };
   }
   if (ready) {
     return {
-      title: "VibeTV is connected",
-      tone: "ready" as ReadinessTone,
-      icon: <Check size={38} aria-hidden />,
+      badge: "Connected",
+      badgeVariant: "default" as const,
+      icon: <Check data-icon="inline-start" aria-hidden />,
     };
   }
   if (reachable) {
     return {
-      title: "VibeTV screen is not ready",
-      tone: "attention" as ReadinessTone,
-      icon: <SlidersHorizontal size={34} aria-hidden />,
+      badge: "Preparing",
+      badgeVariant: "outline" as const,
+      icon: <SlidersHorizontal data-icon="inline-start" aria-hidden />,
     };
   }
   return {
-    title: companionStatus === "missing" ? "Setup needed" : "VibeTV status",
-    tone: "attention" as ReadinessTone,
+    badge: companionStatus === "missing" ? "Setup needed" : "Checking",
+    badgeVariant: "outline" as const,
     icon:
       companionStatus === "missing" ? (
-        <CircleHelp size={36} aria-hidden />
+        <CircleHelp data-icon="inline-start" aria-hidden />
       ) : (
-        <SlidersHorizontal size={34} aria-hidden />
+        <SlidersHorizontal data-icon="inline-start" aria-hidden />
       ),
   };
+}
+
+function activeThemeLabel(device: DeviceInfo | null): string {
+  const theme = device?.activeTheme?.trim();
+  if (!theme) {
+    return device?.connected ? "Default" : "Waiting for VibeTV";
+  }
+  return theme
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function labelForCompanion(

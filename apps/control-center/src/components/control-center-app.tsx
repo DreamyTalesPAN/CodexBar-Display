@@ -1,5 +1,6 @@
 "use client";
 
+import { RefreshCw } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -8,6 +9,12 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { buildThemePack } from "@/lib/theme-studio";
@@ -1974,11 +1981,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     : usageAvailable
       ? ["overview", "settings", "theme-library", "updates", "logs"]
       : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
-  const activeShellTab = disabledTabs.includes(activeTab)
-    ? setupComplete
+  const activeShellTab =
+    setupComplete && activeTab === "setup"
       ? "overview"
-      : "setup"
-    : activeTab;
+      : disabledTabs.includes(activeTab)
+        ? setupComplete
+          ? "overview"
+          : "setup"
+        : activeTab;
 
   useEffect(() => {
     if (
@@ -2092,6 +2102,30 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       activeTab={activeShellTab}
       disabledTabs={disabledTabs}
       device={device}
+      headerAction={
+        activeShellTab === "usage" ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                aria-label="Refresh usage"
+                disabled={busyAction === "usage"}
+                onClick={() => void refreshUsage()}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <RefreshCw
+                  className={busyAction === "usage" ? "animate-spin" : undefined}
+                  aria-hidden
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {busyAction === "usage" ? "Refreshing usage" : "Refresh usage"}
+            </TooltipContent>
+          </Tooltip>
+        ) : null
+      }
       updateAvailable={anyUpdateAvailable}
       onTabChange={(tab) => {
         if (disabledTabs.includes(tab)) {
@@ -2121,7 +2155,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         <UsageScreen
           busyAction={busyAction}
           companionStatus={companionStatus}
-          onRefresh={() => refreshUsage()}
           usage={usage}
           usageError={usageError}
         />
@@ -2181,11 +2214,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       {activeShellTab === "logs" ? (
         <LogsScreen
           busyAction={busyAction}
+          device={device}
           diagnostics={supportDiagnostics}
           events={logs}
           lastError={lastError}
           onLoadDiagnostics={loadSupportDiagnostics}
           onRefresh={checkCompanion}
+          onRunSetupAgain={resetSetup}
         />
       ) : null}
     </ControlCenterShell>

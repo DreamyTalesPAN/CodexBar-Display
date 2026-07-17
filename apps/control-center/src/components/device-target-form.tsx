@@ -1,8 +1,17 @@
 "use client";
 
-import { Monitor, RefreshCw } from "lucide-react";
+import { Monitor } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { ControlCenterButton } from "./control-center-button";
+import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import type { ApiError } from "./control-center-types";
 import {
   DEVICE_TARGET_PLACEHOLDER,
@@ -52,20 +61,21 @@ export function DeviceTargetForm({
   }
 
   return (
-    <form className={className} onSubmit={handleSubmit}>
-      <div className="min-w-0">
-        <label className="text-sm font-bold text-[#1B1B1B]" htmlFor={id}>
+    <form onSubmit={handleSubmit}>
+      <FieldGroup className={className}>
+        <Field className="min-w-0" data-invalid={Boolean(validationError)}>
+          <FieldLabel htmlFor={id}>
           VibeTV address
-        </label>
-        <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
-          {deviceTargetHelpText(lastError)}
-        </p>
-        <input
-          className="mt-3 h-12 w-full border border-[#747A60] bg-[#F9F9F9] px-3 font-mono text-sm text-[#1B1B1B] outline-none transition placeholder:text-[#747A60] focus:border-[#5E7200] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+          </FieldLabel>
+          <FieldDescription id={`${id}-description`}>
+            {deviceTargetHelpText(lastError)}
+          </FieldDescription>
+          <Input
+          className="h-12 font-mono"
           disabled={formDisabled}
           id={id}
           aria-invalid={Boolean(validationError)}
-          aria-describedby={validationError ? `${id}-error` : undefined}
+          aria-describedby={`${id}-description${validationError ? ` ${id}-error` : ""}`}
           onChange={(event) => {
             setValidationError("");
             onChange?.(event.target.value);
@@ -75,25 +85,21 @@ export function DeviceTargetForm({
           type="text"
           value={value}
         />
-        {validationError ? (
-          <p className="mt-2 text-sm font-semibold text-[#8A2500]" id={`${id}-error`}>
+          {validationError ? (
+            <FieldError id={`${id}-error`}>
             {validationError}
-          </p>
-        ) : null}
-      </div>
-      <ControlCenterButton
-        disabled={formDisabled}
-        icon={
-          busy ? (
-            <RefreshCw className="animate-spin" size={18} aria-hidden />
+            </FieldError>
+          ) : null}
+        </Field>
+        <Button className="h-12" disabled={formDisabled} type="submit">
+          {busy ? (
+            <Spinner data-icon="inline-start" />
           ) : (
-            <Monitor size={18} aria-hidden />
-          )
-        }
-        label={busy ? searchingLabel : buttonLabel}
-        type="submit"
-        variant="primary"
-      />
+            <Monitor data-icon="inline-start" aria-hidden />
+          )}
+          <span>{busy ? searchingLabel : buttonLabel}</span>
+        </Button>
+      </FieldGroup>
     </form>
   );
 }

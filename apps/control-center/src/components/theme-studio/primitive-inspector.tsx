@@ -1,6 +1,7 @@
 "use client";
 
 import { Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { ThemeStudioPrimitive } from "@/lib/theme-studio";
 import { ColorField, NumberField, SelectField, TextField } from "./editor-fields";
 import { primitiveBounds, type FieldKey } from "./editor-geometry";
@@ -118,22 +119,23 @@ export function PrimitiveInspector({
             onChange={(value) => onChange("color", value)}
           />
           <div className="grid gap-2">
-            <span className="text-xs font-black uppercase tracking-normal text-[#444933]">
+            <span className="text-xs font-black uppercase tracking-normal text-muted-foreground">
               Variables
             </span>
             <div className="grid grid-cols-2 gap-2">
               {VARIABLE_TOKENS.map((item) => (
-                <button
-                  className="min-w-0 border border-[#747A60] bg-[#F9F9F9] px-2 py-2 text-left text-xs text-[#1B1B1B] outline-none transition hover:bg-[#EEEEEE] focus-visible:border-[#5E7200]"
+                <Button
+                  className="h-auto min-w-0 justify-start px-2 py-2 text-left text-xs"
                   key={item.token}
                   onClick={() => onInsertToken(item.token)}
                   type="button"
+                  variant="outline"
                 >
                   <span className="block truncate font-black">{item.label}</span>
-                  <code className="block truncate text-[11px] text-[#5E7200]">
+                  <code className="block truncate text-[11px] text-ring">
                     {item.token}
                   </code>
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -191,15 +193,29 @@ export function PrimitiveInspector({
             value={primitive.borderColor || "#3B4552"}
             onChange={(value) => onChange("borderColor", value)}
           />
+          <NumberField
+            label="Border radius"
+            max={120}
+            value={primitive.borderRadius ?? 0}
+            onChange={(value) => onChange("borderRadius", value)}
+          />
         </>
       ) : null}
 
       {primitive.type === "rect" ? (
-        <ColorField
-          label="Fill color"
-          value={primitive.color || "#222222"}
-          onChange={(value) => onChange("color", value)}
-        />
+        <>
+          <ColorField
+            label="Fill color"
+            value={primitive.color || "#222222"}
+            onChange={(value) => onChange("color", value)}
+          />
+          <NumberField
+            label="Border radius"
+            max={120}
+            value={primitive.borderRadius ?? 0}
+            onChange={(value) => onChange("borderRadius", value)}
+          />
+        </>
       ) : null}
 
       {primitive.type === "gif" || primitive.type === "sprite" ? (
@@ -230,14 +246,15 @@ export function PrimitiveInspector({
         </div>
       ) : null}
 
-      <button
-        className="mt-1 inline-flex min-h-11 items-center justify-center gap-2 border border-[#7D2633] bg-[#FFE3E8] px-3 text-sm font-black text-[#7D2633] outline-none hover:bg-[#FFD1DA] focus-visible:border-[#7D2633]"
+      <Button
+        className="mt-1"
         onClick={onDelete}
         type="button"
+        variant="destructive"
       >
         <Trash2 size={16} aria-hidden />
         <span>Delete</span>
-      </button>
+      </Button>
     </div>
   );
 }

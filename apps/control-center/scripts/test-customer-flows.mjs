@@ -743,7 +743,7 @@ async function testLocalWifiVerificationOpensOverview(
     repairPayload.forcePair == null || repairPayload.forcePair === false,
     `Onboarding must preserve a valid token instead of forcing rotation, got ${repairRequests[0]}`,
   );
-  const overviewButton = page.getByRole("button", { name: "Overview" });
+  const overviewButton = await getNavigationButton(page, "Overview");
   assert(
     (await overviewButton.getAttribute("aria-current")) === "page",
     "Successful native verification should go directly to Overview",
@@ -791,7 +791,7 @@ async function testLocalWifiVerificationFailureStaysInSetup(
     `Failed verification must not retry automatically, got ${repairRequests.length} attempts`,
   );
   assert(
-    (await page.getByRole("button", { name: "Overview" }).isDisabled()) === true,
+    (await (await getNavigationButton(page, "Overview")).isDisabled()) === true,
     "Overview must stay locked after failed verification",
   );
   await assertNoDmgDownloadActions(page);
@@ -835,7 +835,7 @@ async function testLocalWifiVerificationWithoutFrameStaysInSetup(
     `A reachable VibeTV without a display frame must not be accepted or retried automatically, got ${repairRequests.length} attempts`,
   );
   assert(
-    await page.getByRole("button", { name: "Overview" }).isDisabled(),
+    await (await getNavigationButton(page, "Overview")).isDisabled(),
     "Overview must stay locked until the first display frame is rendered",
   );
   assert(
@@ -1330,7 +1330,7 @@ async function testLocalReachableWithoutFrameStaysInSetup(browser, appUrl) {
     timeout: 10_000,
   });
   assert(
-    await page.getByRole("button", { name: "Overview" }).isDisabled(),
+    await (await getNavigationButton(page, "Overview")).isDisabled(),
     "A reachable and paired VibeTV must stay in Setup while ready is false",
   );
   assert(
@@ -1374,8 +1374,9 @@ async function testConfiguredDeviceShowsReconnectingWithoutSetup(
     "A configured VibeTV must not return to initial Setup during an outage",
   );
   for (const tabName of ["Overview", "Usage", "Settings", "Theme Library", "Updates", "Support"]) {
+    const button = await getNavigationButton(page, tabName);
     assert(
-      !(await page.getByRole("button", { name: tabName }).isDisabled()),
+      !(await button.isDisabled()),
       `${tabName} must stay available while VibeTV reconnects`,
     );
   }
@@ -1459,7 +1460,7 @@ async function testInitialHealthyStatusRaceAvoidsRepair(browser, appUrl) {
   const repairRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: companionDevice,
-    firstStatusDelayMs: 250,
+    firstStatusDelayMs: 2_000,
     onRequest: (pathname, method) => {
       if (method === "POST" && pathname === "/v1/device/repair") {
         repairRequests.push(pathname);
@@ -1502,8 +1503,6 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await assertNoDmgDownloadActions(page);
-  await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
-  await assertNoDmgDownloadActions(page);
 
   assert(
     (await page.getByText("Shopify theme link was not found").count()) === 0,
@@ -1530,21 +1529,11 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  const settingsButton = page.getByRole("button", {
-    name: "Settings",
-  });
-  const themeLibraryButton = page.getByRole("button", {
-    name: "Theme Library",
-  });
-  const updatesButton = page.getByRole("button", {
-    name: "Updates",
-  });
-  const overviewButton = page.getByRole("button", {
-    name: "Overview",
-  });
-  const supportButton = page.getByRole("button", {
-    name: "Support",
-  });
+  const overviewButton = await getNavigationButton(page, "Overview");
+  const settingsButton = await getNavigationButton(page, "Settings");
+  const themeLibraryButton = await getNavigationButton(page, "Theme Library");
+  const updatesButton = await getNavigationButton(page, "Updates");
+  const supportButton = await getNavigationButton(page, "Support");
   await overviewButton.waitFor({ timeout: 10_000 });
   await settingsButton.waitFor({ timeout: 10_000 });
   await themeLibraryButton.waitFor({ timeout: 10_000 });
@@ -1592,15 +1581,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(
-    () =>
-      Array.from(document.querySelectorAll("nav button")).some(
-        (button) =>
-          button.textContent?.includes("Overview") && !button.disabled,
-      ),
-    null,
-    { timeout: 20_000 },
-  );
+  await (await getNavigationButton(page, "Overview")).waitFor({ timeout: 20_000 });
   for (const tabName of [
     "Overview",
     "Settings",
@@ -1608,7 +1589,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     "Updates",
     "Support",
   ]) {
-    const button = page.getByRole("button", { name: tabName });
+    const button = await getNavigationButton(page, tabName);
     await button.waitFor({ timeout: 10_000 });
     assert(
       !(await button.isDisabled()),
@@ -1619,8 +1600,12 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     (await page.getByText("needs an update before themes").count()) === 0,
     "setup must not require theme install availability",
   );
-  await page.getByRole("button", { name: "Setup", exact: true }).click();
-  await page.getByRole("heading", { name: "Setup complete" }).waitFor({
+  assert(
+    (await page.getByRole("button", { name: "Setup", exact: true }).count()) === 0,
+    "completed setup should not remain in the main navigation",
+  );
+  await clickNavigation(page, "Settings");
+  await page.getByRole("heading", { name: "Connected VibeTV" }).waitFor({
     timeout: 10_000,
   });
   await page.getByRole("button", { name: "Run setup again" }).waitFor({
@@ -1639,11 +1624,11 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
     "completed setup should not show repair actions while healthy",
   );
-  await page.getByRole("button", { name: "Overview" }).click();
+  await clickNavigation(page, "Overview");
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Theme Library" }).click();
+  await clickNavigation(page, "Theme Library");
   await page
     .getByRole("heading", { name: "Themes" })
     .waitFor({ timeout: 10_000 });
@@ -1689,7 +1674,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     "expected settings refresh before opening Settings",
   );
 
-  await page.getByRole("button", { name: "Settings" }).click();
+  await clickNavigation(page, "Settings");
   await page.getByRole("heading", { name: "Display" }).waitFor({
     timeout: 10_000,
   });
@@ -1711,6 +1696,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     );
   }
 
+  await captureMigrationScreenshot(page, "04-settings-mobile.png");
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -1818,7 +1804,7 @@ async function testUsageShowsCodexCostHistory(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Usage" }).click();
+  await clickNavigation(page, "Usage");
   await page.getByRole("heading", { name: "Limit Reset Credits" }).waitFor({
     timeout: 10_000,
   });
@@ -1842,6 +1828,7 @@ async function testUsageShowsCodexCostHistory(browser, appUrl) {
     timeout: 10_000,
   });
 
+  await captureMigrationScreenshot(page, "05-usage-desktop.png");
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -1858,7 +1845,7 @@ async function testUsageShowsMacAppUpdateForOldMacApp(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Usage" }).click();
+  await clickNavigation(page, "Usage");
   await page.getByText("Mac App update needed.").waitFor({
     timeout: 10_000,
   });
@@ -1891,7 +1878,7 @@ async function testRunSetupAgainReturnsToWifiOnboarding(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Setup", exact: true }).click();
+  await clickNavigation(page, "Settings");
   await page.getByRole("button", { name: "Run setup again" }).click();
   await page.getByRole("heading", { name: "Connect VibeTV to WiFi" }).waitFor({
     timeout: 10_000,
@@ -1931,7 +1918,7 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   );
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   const dmgUpdateLink = page.getByRole("link", {
     name: "Update",
   });
@@ -1948,8 +1935,8 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
       0,
     "Updates must not expose manual Mac App installation mechanics",
   );
-  await page.getByText("App version").waitFor({ timeout: 10_000 });
-  await page.getByText("Latest version").waitFor({ timeout: 10_000 });
+  await page.getByText("Installed", { exact: true }).waitFor({ timeout: 10_000 });
+  await page.getByText("Available", { exact: true }).waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("button", { name: "Copy update command" }).count()) ===
       0,
@@ -1995,7 +1982,7 @@ async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   const updateLink = page.getByRole("link", {
     name: "Update",
   });
@@ -2005,14 +1992,17 @@ async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
     "Installed native Mac Apps must hand updates to the exact Sparkle URL action",
   );
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
-  await page.getByText("Background version").waitFor({ timeout: 10_000 });
-  await page.getByText("Background service").waitFor({ timeout: 10_000 });
-  await page.getByText("Running", { exact: true }).waitFor({ timeout: 10_000 });
+  await page.getByText("Installed", { exact: true }).waitFor({ timeout: 10_000 });
+  await page.getByText("Available", { exact: true }).waitFor({ timeout: 10_000 });
+  await page.getByText("Status", { exact: true }).first().waitFor({ timeout: 10_000 });
   assert(
-    (await page.getByText("shop.vibetv.control-center.runtime").count()) === 0 &&
+    (await page.getByText("App build", { exact: true }).count()) === 0 &&
+      (await page.getByText("Background version", { exact: true }).count()) === 0 &&
+      (await page.getByText("Background service", { exact: true }).count()) === 0 &&
+      (await page.getByText("shop.vibetv.control-center.runtime").count()) === 0 &&
       (await page.getByText("PID 174").count()) === 0 &&
       (await page.getByText("abcdef12").count()) === 0,
-    "Updates must keep service names, process IDs, and commits out of customer copy",
+    "Updates must keep internal Mac App details out of customer copy",
   );
   assert(
     (await page.getByRole("link", { name: "Update" }).count()) === 1,
@@ -2074,7 +2064,7 @@ async function testLegacyInstallMigratesToDmgAtSameVersion(browser, appUrl) {
   );
   await captureMigrationScreenshot(page, "01-legacy-overview.png");
 
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page
     .getByRole("heading", { name: "Update available" })
     .waitFor({ timeout: 10_000 });
@@ -2223,7 +2213,7 @@ async function testDmgInstallStaysUpToDateAtSameVersion(browser, appUrl) {
       0,
     "DMG Overview must not show the legacy migration card",
   );
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page.getByRole("heading", { name: "Up to date" }).waitFor({
     timeout: 10_000,
   });
@@ -2270,7 +2260,7 @@ async function testLegacyMigrationCanRetryFailedRelease(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page.getByRole("heading", { name: "Update check failed" }).waitFor({
     timeout: 10_000,
   });
@@ -2367,7 +2357,7 @@ async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page
     .getByRole("link", { name: "Update" })
     .waitFor({ timeout: 10_000 });
@@ -2429,7 +2419,7 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   const firmwareSection = page.locator("section.border-b").filter({
     has: page.getByRole("heading", { name: "Firmware update" }),
   });
@@ -2513,7 +2503,7 @@ async function testFirmwareAttentionDoesNotOfferSecondFlash(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page.getByRole("button", { name: "Update", exact: true }).click();
   await page
     .getByText("Firmware current — attention needed")
@@ -2571,7 +2561,7 @@ async function testUpdatesKeepDmgHiddenWithoutVerifiedAsset(
       0,
     "Legacy Overview must hide an unavailable update action",
   );
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   const unavailableButton = page.getByRole("button", {
     name: "Update",
     exact: true,
@@ -2622,7 +2612,7 @@ async function testLegacyMigrationDoesNotBlockFirmwareUpdate(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page.getByRole("heading", { name: "Update available" }).waitFor({
     timeout: 10_000,
   });
@@ -2652,7 +2642,7 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   await routeCompanionOnline(page, installRequests);
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Support" }).click();
+  await clickNavigation(page, "Support");
   await page.getByRole("heading", { name: "Support report" }).waitFor({
     timeout: 10_000,
   });
@@ -2698,6 +2688,7 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
     );
   }
 
+  await captureMigrationScreenshot(page, "06-support-mobile.png");
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -3050,7 +3041,7 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Theme Library" }).click();
+  await clickNavigation(page, "Theme Library");
   const synthwavePreview = page.getByRole("img", {
     name: /Rendered VibeTV theme synthwave showing VibeTV, 62% session remaining, 62% weekly remaining/,
   });
@@ -3076,6 +3067,7 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
     "Theme Library thumbnails should stay static to avoid background rendering",
   );
 
+  await captureMigrationScreenshot(page, "07-theme-library-desktop.png");
   await page
     .getByRole("button", { name: "Preview Fixture Clippy Theme" })
     .click();
@@ -3222,6 +3214,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     "Theme Studio should not create horizontal body overflow at 1180x820",
   );
+  await captureMigrationScreenshot(page, "08-theme-studio-1180x820.png");
   assert(
     await sendButton.isEnabled(),
     "published themes with validated large static sprites should remain editable and installable",
@@ -3655,7 +3648,7 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
     .getByText("Install failed", { exact: true })
     .waitFor({ timeout: 10_000 });
 
-  await page.getByRole("button", { name: "Support", exact: true }).click();
+  await clickNavigation(page, "Support");
   await page.getByRole("heading", { name: "Recent activity" }).waitFor({
     timeout: 10_000,
   });
@@ -3724,16 +3717,14 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
     timeout: 10_000,
   });
   assert(
-    (await page
-      .getByRole("button", { name: "Overview" })
-      .getAttribute("aria-current")) === "page",
+    (await (await getNavigationButton(page, "Overview")).getAttribute("aria-current")) === "page",
     "Successful verification must open Overview even from a theme link",
   );
   await waitForCondition(
     () => settingsCalls >= 1,
     "expected settings refresh after pairing",
   );
-  await page.getByRole("button", { name: "Theme Library" }).click();
+  await clickNavigation(page, "Theme Library");
   await assertSelectedThemeRow(page, "Fixture Synthwave Theme");
   const installButton = page
     .locator("li")
@@ -3874,7 +3865,7 @@ async function testDisabledDmgFlagHidesSetupAndUpdateLinks(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   const unavailableButton = page.getByRole("button", {
     name: "Update",
     exact: true,
@@ -5225,15 +5216,9 @@ async function startVerifiedDmgSetupDownload(
 }
 
 async function assertThemeLibraryLockedBehindSetup(page) {
-  const themeLibraryButton = page.getByRole("button", {
-    name: "Theme Library",
-  });
-  const settingsButton = page.getByRole("button", {
-    name: "Settings",
-  });
-  const updatesButton = page.getByRole("button", {
-    name: "Updates",
-  });
+  const themeLibraryButton = await getNavigationButton(page, "Theme Library");
+  const settingsButton = await getNavigationButton(page, "Settings");
+  const updatesButton = await getNavigationButton(page, "Updates");
   await settingsButton.waitFor({ timeout: 10_000 });
   await themeLibraryButton.waitFor({ timeout: 10_000 });
   await updatesButton.waitFor({ timeout: 10_000 });
@@ -5372,6 +5357,26 @@ async function assertNoThemeLibraryReleaseDiagnostics(page) {
       `Theme Library should not show release diagnostic: ${text}`,
     );
   }
+}
+
+async function getNavigationButton(page, name) {
+  await page.locator("main.control-center-shell").waitFor({ timeout: 10_000 });
+  const navigation = page.getByRole("navigation", { name: /Control Center/ });
+  const button = navigation.getByRole("button", { name });
+  for (let index = 0; index < (await button.count()); index += 1) {
+    if (await button.nth(index).isVisible()) {
+      return button.nth(index);
+    }
+  }
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  return page
+    .getByRole("navigation", { name: "Control Center mobile", exact: true })
+    .getByRole("button", { name })
+    .first();
+}
+
+async function clickNavigation(page, name) {
+  await (await getNavigationButton(page, name)).click();
 }
 
 async function waitForCondition(predicate, message, timeoutMs = 10_000) {

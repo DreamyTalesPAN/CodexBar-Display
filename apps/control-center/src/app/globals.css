@@ -1,8 +1,10 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: #F9F9F9;
-  --foreground: #1B1B1B;
   --vibetv-signal: #CCFF00;
   --vibetv-signal-hover: #ABD600;
   --vibetv-support: #506600;
@@ -10,21 +12,114 @@
   --vibetv-body: #444933;
   --vibetv-surface: #F9F9F9;
   --vibetv-surface-secondary: #EEEEEE;
-  --vibetv-stroke: #747A60;
+  --vibetv-stroke: #E3E3E3;
   --vibetv-inverse: #EDEDED;
+  --background: #F9F9F9;
+  --foreground: #1B1B1B;
+  --card: #F9F9F9;
+  --card-foreground: #1B1B1B;
+  --popover: #F9F9F9;
+  --popover-foreground: #1B1B1B;
+  --primary: #CCFF00;
+  --primary-hover: #ABD600;
+  --primary-foreground: #1B1B1B;
+  --secondary: #EEEEEE;
+  --secondary-foreground: #1B1B1B;
+  --muted: #EEEEEE;
+  --muted-foreground: #444933;
+  --accent: #EEEEEE;
+  --accent-foreground: #1B1B1B;
+  --destructive: #7D2633;
+  --destructive-foreground: #F9F9F9;
+  --warning: #FFF2B8;
+  --warning-foreground: #4D3D00;
+  --success: #F1FFD0;
+  --success-foreground: #3B5200;
+  --border: #E3E3E3;
+  --input: #888888;
+  --ring: #506600;
+  --chart-1: #1B1B1B;
+  --chart-2: #506600;
+  --chart-3: #2F6473;
+  --chart-4: #7A4F73;
+  --chart-5: #9A651F;
+  --radius: 0.625rem;
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+  --radius-badge: 0.375rem;
+  --sidebar: #1B1B1B;
+  --sidebar-foreground: #EDEDED;
+  --sidebar-primary: #CCFF00;
+  --sidebar-primary-foreground: #1B1B1B;
+  --sidebar-accent: #444933;
+  --sidebar-accent-foreground: #EDEDED;
+  --sidebar-border: #444933;
+  --sidebar-ring: #CCFF00;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-sans);
   --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Transitional chrome rules keep legacy screens on the same radius system while
+   their bespoke markup is replaced component by component. Theme preview pixels
+   are intentionally excluded. */
+.control-center-shell :where(button, input:not([type="range"]):not([type="color"]), select, textarea) {
+  border-radius: var(--radius-control);
+}
+
+.control-center-shell :where(a[class*="button"], a[class*="inline-flex"]) {
+  border-radius: var(--radius-control);
 }
 
 /* Theme Studio owns the full app canvas while it is open inside Theme Library. */
@@ -54,78 +149,10 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   letter-spacing: 0;
-}
-
-.vibetv-button {
-  align-items: center;
-  border-style: solid;
-  border-width: 1px;
-  display: inline-flex;
-  font-weight: 700;
-  gap: 0.5rem;
-  justify-content: center;
-  min-width: 190px;
-  padding-left: 1.25rem;
-  padding-right: 1.25rem;
-  transition:
-    background-color 150ms ease,
-    border-color 150ms ease,
-    color 150ms ease,
-    opacity 150ms ease;
-}
-
-.vibetv-button--default {
-  font-size: 0.875rem;
-  min-height: 3rem;
-}
-
-.vibetv-button--large {
-  font-size: 1rem;
-  min-height: 3.5rem;
-}
-
-.vibetv-button--compact {
-  font-size: 0.875rem;
-  min-height: 2.5rem;
-  padding-left: 0.75rem;
-  padding-right: 0.75rem;
-}
-
-.vibetv-button--full {
-  min-width: 0;
-  width: 100%;
-}
-
-.vibetv-button--primary {
-  background: #CCFF00;
-  border-color: #CCFF00;
-  color: #1B1B1B;
-}
-
-.vibetv-button--primary:hover {
-  background: #ABD600;
-  border-color: #ABD600;
-}
-
-.vibetv-button--secondary {
-  background: #F9F9F9;
-  border-color: #747A60;
-  color: #1B1B1B;
-}
-
-.vibetv-button--secondary:hover {
-  background: #EEEEEE;
-}
-
-.vibetv-button--disabled,
-.vibetv-button--disabled:hover {
-  background: #EEEEEE;
-  border-color: #747A60;
-  color: #444933;
-  cursor: not-allowed;
-  opacity: 0.7;
 }
 
 .vibetv-status-icon {
@@ -163,12 +190,67 @@ input {
 
 .vibetv-status-icon--neutral {
   background: #EEEEEE;
-  border-color: #747A60;
+  border-color: var(--border);
   color: #1B1B1B;
 }
 
 .vibetv-status-icon--pending {
   background: #F9F9F9;
-  border-color: #747A60;
+  border-color: var(--border);
   color: #506600;
+}
+
+.dark {
+  --background: #1B1B1B;
+  --foreground: #EDEDED;
+  --card: #1B1B1B;
+  --card-foreground: #EDEDED;
+  --popover: #1B1B1B;
+  --popover-foreground: #EDEDED;
+  --primary: #CCFF00;
+  --primary-foreground: #1B1B1B;
+  --secondary: #444933;
+  --secondary-foreground: #EDEDED;
+  --muted: #444933;
+  --muted-foreground: #EDEDED;
+  --accent: #444933;
+  --accent-foreground: #EDEDED;
+  --destructive: #FFE3E8;
+  --destructive-foreground: #7D2633;
+  --warning: #4D3D00;
+  --warning-foreground: #FFF2B8;
+  --success: #3B5200;
+  --success-foreground: #F1FFD0;
+  --border: #343434;
+  --input: #707070;
+  --ring: #CCFF00;
+  --chart-1: #EDEDED;
+  --chart-2: #A9C76A;
+  --chart-3: #72AFBC;
+  --chart-4: #C48CB9;
+  --chart-5: #D7A35E;
+  --sidebar: #1B1B1B;
+  --sidebar-foreground: #EDEDED;
+  --sidebar-primary: #CCFF00;
+  --sidebar-primary-foreground: #1B1B1B;
+  --sidebar-accent: #444933;
+  --sidebar-accent-foreground: #EDEDED;
+  --sidebar-border: #444933;
+  --sidebar-ring: #CCFF00;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }

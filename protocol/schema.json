@@ -214,6 +214,16 @@
                     "type": "string",
                     "pattern": "^#[A-Fa-f0-9]{6}$"
                   },
+                  "borderRadius": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 120
+                  },
+                  "br": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 120
+                  },
                   "assetPath": {
                     "type": "string",
                     "maxLength": 31,
@@ -412,6 +422,16 @@
                   "bc": {
                     "type": "string",
                     "pattern": "^#[A-Fa-f0-9]{6}$"
+                  },
+                  "borderRadius": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 120
+                  },
+                  "br": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 120
                   },
                   "assetPath": {
                     "type": "string",

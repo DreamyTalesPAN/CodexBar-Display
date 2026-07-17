@@ -34,6 +34,7 @@ export type ThemeStudioPrimitive = {
   color?: string;
   bgColor?: string;
   borderColor?: string;
+  borderRadius?: number;
   align?: "left" | "center" | "right";
   progressStyle?: "solid" | "segments";
   segments?: number;
@@ -402,6 +403,10 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
     color: normalizeColor(primitive.color),
     bgColor: normalizeColor(primitive.bgColor),
     borderColor: normalizeColor(primitive.borderColor),
+    borderRadius:
+      primitive.borderRadius === undefined
+        ? undefined
+        : integerOrDefault(primitive.borderRadius, 0),
     align:
       primitive.align === "center" || primitive.align === "right"
         ? primitive.align
@@ -633,6 +638,14 @@ function validatePrimitive(
   if (primitive.type === "rect" || primitive.type === "progress") {
     if (!isPositiveInteger(primitive.width) || !isPositiveInteger(primitive.height)) {
       errors.push(`${prefix}: width/height must be greater than 0.`);
+    }
+    if (
+      primitive.borderRadius !== undefined &&
+      (!Number.isInteger(primitive.borderRadius) ||
+        primitive.borderRadius < 0 ||
+        primitive.borderRadius > 120)
+    ) {
+      errors.push(`${prefix}: border radius must be between 0 and 120.`);
     }
   }
 
@@ -924,6 +937,9 @@ function buildDevicePrimitive(
   if (primitive.borderColor !== undefined) {
     compact.bc = primitive.borderColor;
   }
+  if (primitive.borderRadius !== undefined) {
+    compact.br = primitive.borderRadius;
+  }
   if (primitive.assetPath !== undefined) {
     compact.a = primitive.assetPath;
   }
@@ -1011,6 +1027,10 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   const segmentGap = numberValue(value.segmentGap) ?? numberValue(value.gg);
   if (segmentGap !== undefined) {
     primitive.segmentGap = segmentGap;
+  }
+  const borderRadius = numberValue(value.borderRadius) ?? numberValue(value.br);
+  if (borderRadius !== undefined) {
+    primitive.borderRadius = borderRadius;
   }
   primitive.color = normalizeColor(
     colorStringValue(value.color) ??

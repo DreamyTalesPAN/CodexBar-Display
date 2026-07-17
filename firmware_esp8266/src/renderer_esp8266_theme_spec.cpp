@@ -604,7 +604,14 @@ class ThemeSpecSink final : public themespec::Sink {
   }
 
   void FillRect(const themespec::RectCommand& cmd) override {
-    PrimitiveFillRect(cmd.x, cmd.y, cmd.width, cmd.height, cmd.color);
+    primitive::RectCommand rect;
+    rect.x = cmd.x;
+    rect.y = cmd.y;
+    rect.width = cmd.width;
+    rect.height = cmd.height;
+    rect.borderRadius = cmd.borderRadius;
+    rect.color = cmd.color;
+    PrimitiveLayer().FillRect(rect);
   }
 
   void DrawText(const themespec::TextCommand& cmd) override {
@@ -665,6 +672,7 @@ class ThemeSpecSink final : public themespec::Sink {
     progress.style = cmd.style;
     progress.segments = cmd.segments;
     progress.segmentGap = cmd.segmentGap;
+    progress.borderRadius = cmd.borderRadius;
     progress.fillColor = cmd.fillColor;
     progress.borderColor = cmd.borderColor;
     progress.bgColor = cmd.bgColor;

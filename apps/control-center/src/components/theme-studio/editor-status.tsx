@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export type EditorStatus = {
   message: string;
@@ -18,19 +21,18 @@ export function StatusPill({
 }) {
   const toneClass =
     tone === "attention"
-      ? "border-[#7D2633] bg-[#FFE3E8] text-[#7D2633]"
-      : tone === "ready"
-        ? "border-[#5E7200] bg-[#F1FFD0] text-[#3B5200]"
-        : tone === "warn"
-          ? "border-[#8A6D00] bg-[#FFF2B8] text-[#4D3D00]"
-          : "border-[#747A60] bg-[#EEEEEE] text-[#444933]";
+      ? "bg-destructive/10 text-destructive"
+      : tone === "warn"
+          ? "bg-warning text-warning-foreground"
+          : "bg-secondary text-secondary-foreground";
   return (
-    <span
-      className={`inline-flex min-h-8 items-center gap-1.5 border px-3 text-xs font-black ${toneClass}`}
+    <Badge
+      className={cn("min-h-8 gap-1.5 px-3", tone === "ready" ? undefined : toneClass)}
+      variant={tone === "ready" ? "default" : "outline"}
     >
       {icon}
       <span>{label}</span>
-    </span>
+    </Badge>
   );
 }
 
@@ -47,20 +49,18 @@ export function StatusLine({
 }) {
   const toneClass =
     tone === "attention"
-      ? "border-[#7D2633] bg-[#FFE3E8] text-[#7D2633]"
+      ? "border-destructive/40 bg-destructive/10 text-destructive"
       : tone === "ready"
-        ? "border-[#5E7200] bg-[#F1FFD0] text-[#3B5200]"
-        : "border-[#747A60] bg-[#EEEEEE] text-[#444933]";
+        ? "border-success-foreground/40 bg-success text-success-foreground"
+        : "bg-secondary text-secondary-foreground";
   return (
-    <div
-      className={`flex min-w-0 gap-3 border p-3 ${toneClass}`}
+    <Alert
+      className={toneClass}
       role={tone === "attention" ? "alert" : "status"}
     >
-      <span className="mt-0.5 shrink-0">{icon}</span>
-      <div className="min-w-0">
-        <div className="truncate text-sm font-black text-[#1B1B1B]">{title}</div>
-        <div className="mt-1 break-words text-sm leading-5">{detail}</div>
-      </div>
-    </div>
+      {icon}
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription className="text-current/80">{detail}</AlertDescription>
+    </Alert>
   );
 }

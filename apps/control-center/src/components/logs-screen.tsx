@@ -3,14 +3,49 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowUpFromLine,
   Clipboard,
+  Clock,
   Download,
   FileText,
-  Clock,
+  Monitor,
+  Palette,
   RefreshCw,
+  Wifi,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import type { SupportDiagnostics } from "./control-center-types";
+import { useMemo, useState, type ReactNode } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemSeparator,
+  ItemTitle,
+} from "@/components/ui/item";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Spinner } from "@/components/ui/spinner";
+import type { DeviceInfo, SupportDiagnostics } from "./control-center-types";
 
 export type LogEvent = {
   id: string;
@@ -21,6 +56,7 @@ export type LogEvent = {
 
 export type LogsScreenProps = {
   events?: LogEvent[];
+  device?: DeviceInfo | null;
   diagnostics?: SupportDiagnostics | null;
   lastError?: {
     code: string;
@@ -29,15 +65,18 @@ export type LogsScreenProps = {
   } | null;
   onLoadDiagnostics?: () => void;
   onRefresh?: () => void;
+  onRunSetupAgain?: () => void;
   busyAction?: string | null;
 };
 
 export function LogsScreen({
   events = [],
+  device,
   diagnostics,
   lastError,
   onLoadDiagnostics,
   onRefresh,
+  onRunSetupAgain,
   busyAction,
 }: LogsScreenProps) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
@@ -47,6 +86,12 @@ export function LogsScreen({
     () => (diagnostics ? JSON.stringify(diagnostics, null, 2) : ""),
     [diagnostics],
   );
+  const deviceConnected = Boolean(device?.connected);
+  const deviceStatus = deviceConnected
+    ? device?.connectionState === "reconnecting"
+      ? "Reconnecting"
+      : "Connected"
+    : "Not connected";
 
   async function copyDiagnostics() {
     if (!diagnosticsText) {
@@ -78,197 +123,356 @@ export function LogsScreen({
   }
 
   return (
-    <div className="mx-auto max-w-[1180px]">
-      <section className="border-b border-[#747A60] py-10">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <h3 className="text-base font-bold text-[#1B1B1B]">
-            Support report
-          </h3>
-          <div className="flex flex-wrap gap-3">
-            {onLoadDiagnostics ? (
-              <button
-                className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={busyAction === "diagnostics"}
-                onClick={onLoadDiagnostics}
+    <div className="mx-auto grid max-w-[1180px] gap-6 py-8">
+      <div className="grid items-stretch gap-6 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.4fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Connected VibeTV</CardTitle>
+            <CardDescription>
+              {deviceConnected
+                ? "The VibeTV currently controlled by this Mac."
+                : "No VibeTV is currently connected."}
+            </CardDescription>
+            <CardAction>
+              <Badge variant={deviceConnected ? "default" : "outline"}>
+                {deviceStatus}
+              </Badge>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="flex-1">
+            <ItemGroup className="gap-0">
+              <SupportDeviceFact
+                icon={<Monitor aria-hidden />}
+                label="Device"
+                value={deviceLabel(device)}
+              />
+              <ItemSeparator />
+              <SupportDeviceFact
+                icon={<Wifi aria-hidden />}
+                label="Address"
+                value={deviceAddress(device)}
+              />
+              <ItemSeparator />
+              <SupportDeviceFact
+                icon={<ArrowUpFromLine aria-hidden />}
+                label="Firmware"
+                value={device?.firmware || "Not available"}
+              />
+              <ItemSeparator />
+              <SupportDeviceFact
+                icon={<Palette aria-hidden />}
+                label="Active theme"
+                value={activeThemeLabel(device)}
+              />
+            </ItemGroup>
+          </CardContent>
+          {onRunSetupAgain ? (
+            <CardFooter className="justify-end">
+              <Button
+                className="w-full sm:w-auto"
+                disabled={Boolean(busyAction)}
+                onClick={onRunSetupAgain}
                 type="button"
+                variant="outline"
               >
-                {busyAction === "diagnostics" ? (
-                  <RefreshCw className="animate-spin" size={18} />
+                {busyAction === "reset-setup" ? (
+                  <Spinner data-icon="inline-start" />
                 ) : (
-                  <FileText size={18} aria-hidden />
+                  <RefreshCw data-icon="inline-start" aria-hidden />
                 )}
                 <span>
-                  {busyAction === "diagnostics" ? "Creating" : "Create report"}
+                  {busyAction === "reset-setup"
+                    ? "Resetting setup"
+                    : "Run setup again"}
                 </span>
-              </button>
-            ) : null}
-            {diagnosticsText ? (
-              <>
-                <button
-                  className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
-                  onClick={copyDiagnostics}
-                  type="button"
-                >
-                  <Clipboard size={18} aria-hidden />
-                  <span>{copyState === "copied" ? "Copied" : "Copy report"}</span>
-                </button>
-                <button
-                  className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
-                  onClick={downloadDiagnostics}
-                  type="button"
-                >
-                  <Download size={18} aria-hidden />
-                  <span>Download report</span>
-                </button>
-              </>
-            ) : null}
-          </div>
-        </div>
-
-        {diagnostics ? (
-          <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-            <dl className="divide-y divide-[#747A60] border-y border-[#747A60]">
-              <DiagnosticFact
-                label="Generated"
-                value={formatDiagnosticTime(diagnostics.generatedAt)}
-              />
-              <DiagnosticFact
-                label="Mac App"
-                value={diagnostics.companion?.version || "Unknown"}
-              />
-              <DiagnosticFact
-                label="VibeTV address"
-                value={formatDeviceAddress(diagnostics.device?.target)}
-              />
-              <DiagnosticFact
-                label="Device"
-                value={
-                  diagnostics.device?.connected
-                    ? diagnostics.device.board || "Connected"
-                    : "Not connected"
-                }
-              />
-            </dl>
-            <ol className="grid gap-0 border-y border-[#747A60]">
-              {(diagnostics.checks || []).map((check) => (
-                <li
-                  className="grid gap-3 border-b border-[#747A60] py-4 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)]"
-                  key={`${check.name}-${check.status}`}
-                >
-                  <div>
-                    <span className="inline-flex min-h-8 items-center border border-[#747A60] bg-[#F9F9F9] px-3 text-xs font-bold uppercase text-[#1B1B1B]">
-                      {check.status}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-bold text-[#1B1B1B]">
-                      {formatCheckName(check.name)}
-                    </div>
-                    {check.detail ? (
-                      <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-                        {formatCustomerSupportText(check.detail)}
-                      </div>
-                    ) : null}
-                    {check.nextAction ? (
-                      <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-                        {formatCustomerSupportText(check.nextAction)}
-                      </div>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </div>
-        ) : (
-          <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
-            Create a support report when support asks for it.
-          </div>
-        )}
-        {copyState === "failed" ? (
-          <div className="mt-4 border border-[#747A60] bg-[#EEEEEE] p-4 text-sm text-[#444933]">
-            Copy failed. Use the browser clipboard permission and try again.
-          </div>
-        ) : null}
-      </section>
-
-      <section className="border-b border-[#747A60] py-10">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h3 className="text-base font-bold text-[#1B1B1B]">
-            Recent activity
-          </h3>
-          {onRefresh ? (
-            <button
-              className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={busyAction === "logs"}
-              onClick={onRefresh}
-              type="button"
-            >
-              {busyAction === "logs" ? (
-                <RefreshCw className="animate-spin" size={18} />
-              ) : (
-                <RefreshCw size={18} aria-hidden />
-              )}
-              <span>{busyAction === "logs" ? "Refreshing..." : "Refresh"}</span>
-            </button>
+              </Button>
+            </CardFooter>
           ) : null}
-        </div>
+        </Card>
 
-        {lastError ? (
-          <div className="mb-6 border border-[#747A60] bg-[#EEEEEE] p-4 text-sm leading-6 text-[#444933]">
-            <div className="mb-1 flex items-center gap-2 font-bold text-[#1B1B1B]">
-              <AlertTriangle size={17} aria-hidden />
-              {formatCustomerSupportText(lastError.message)}
-            </div>
-            {formatCustomerSupportText(lastError.nextAction)}
-          </div>
-        ) : null}
+        <Card>
+          <CardHeader>
+            <CardTitle>Support report</CardTitle>
+            <CardDescription>
+              Create a local diagnostic snapshot when support asks for it.
+            </CardDescription>
+          </CardHeader>
 
-        {events.length ? (
-          <ol className="grid gap-0 border-y border-[#747A60]">
-            {events.map((event) => (
-              <li
-                className="grid gap-4 border-b border-[#747A60] py-5 last:border-b-0 md:grid-cols-[58px_minmax(0,1fr)_120px]"
-                key={event.id}
-              >
-                <div className="grid size-12 place-items-center rounded-full bg-[#1B1B1B] text-[#CCFF00]">
-                  <Activity size={23} aria-hidden />
-                </div>
-                <div className="min-w-0">
-                  <div className="break-words font-bold text-[#1B1B1B]">
-                    {formatCustomerSupportText(event.label)}
-                  </div>
-                  {event.detail ? (
-                    <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-                      {formatCustomerSupportText(event.detail)}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="flex min-w-0 items-center gap-2 break-words text-sm text-[#444933] md:justify-end">
-                  <Clock size={15} aria-hidden />
-                  <span className="min-w-0 break-words">
-                    {event.timestamp || "Session"}
+          <CardContent className="grid flex-1 gap-5">
+            {diagnostics ? (
+              <>
+                <dl className="grid gap-2 sm:grid-cols-2">
+                  <DiagnosticFact
+                    label="Generated"
+                    value={formatDiagnosticTime(diagnostics.generatedAt)}
+                  />
+                  <DiagnosticFact
+                    label="Mac App"
+                    value={diagnostics.companion?.version || "Unknown"}
+                  />
+                  <DiagnosticFact
+                    label="VibeTV address"
+                    value={formatDeviceAddress(diagnostics.device?.target)}
+                  />
+                  <DiagnosticFact
+                    label="Device"
+                    value={
+                      diagnostics.device?.connected
+                        ? diagnostics.device.board || "Connected"
+                        : "Not connected"
+                    }
+                  />
+                </dl>
+                <ItemGroup>
+                  {(diagnostics.checks || []).map((check) => (
+                    <Item
+                      key={`${check.name}-${check.status}`}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <ItemMedia>
+                        <Badge
+                          className="min-h-8 uppercase"
+                          variant={
+                            check.status === "pass"
+                              ? "default"
+                              : check.status === "fail"
+                                ? "destructive"
+                                : "outline"
+                          }
+                        >
+                          {check.status}
+                        </Badge>
+                      </ItemMedia>
+                      <ItemContent>
+                        <ItemTitle>{formatCheckName(check.name)}</ItemTitle>
+                        {check.detail ? (
+                          <ItemDescription className="line-clamp-none break-words">
+                            {formatCustomerSupportText(check.detail)}
+                          </ItemDescription>
+                        ) : null}
+                        {check.nextAction ? (
+                          <ItemDescription className="line-clamp-none break-words">
+                            {formatCustomerSupportText(check.nextAction)}
+                          </ItemDescription>
+                        ) : null}
+                      </ItemContent>
+                    </Item>
+                  ))}
+                </ItemGroup>
+              </>
+            ) : (
+              <Empty className="min-h-32 bg-muted/30 px-4 py-6">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <FileText aria-hidden />
+                  </EmptyMedia>
+                  <EmptyTitle>No report created</EmptyTitle>
+                  <EmptyDescription>
+                    Reports stay local until you copy or download them.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+            {copyState === "failed" ? (
+              <Alert>
+                <AlertTriangle aria-hidden />
+                <AlertTitle>Copy failed</AlertTitle>
+                <AlertDescription>
+                  Use the browser clipboard permission and try again.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+          </CardContent>
+
+          {diagnosticsText || onLoadDiagnostics ? (
+            <CardFooter className="flex-col items-stretch gap-2 sm:flex-row sm:justify-end">
+              {diagnosticsText ? (
+                <>
+                  <Button
+                    onClick={copyDiagnostics}
+                    type="button"
+                    variant="outline"
+                  >
+                    <Clipboard data-icon="inline-start" aria-hidden />
+                    <span>
+                      {copyState === "copied" ? "Copied" : "Copy report"}
+                    </span>
+                  </Button>
+                  <Button
+                    onClick={downloadDiagnostics}
+                    type="button"
+                    variant="outline"
+                  >
+                    <Download data-icon="inline-start" aria-hidden />
+                    <span>Download report</span>
+                  </Button>
+                </>
+              ) : null}
+              {onLoadDiagnostics ? (
+                <Button
+                  disabled={busyAction === "diagnostics"}
+                  onClick={onLoadDiagnostics}
+                  type="button"
+                >
+                  {busyAction === "diagnostics" ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <FileText data-icon="inline-start" aria-hidden />
+                  )}
+                  <span>
+                    {busyAction === "diagnostics"
+                      ? "Creating"
+                      : diagnosticsText
+                        ? "Refresh report"
+                        : "Create report"}
                   </span>
-                </div>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
-            Recent activity will appear here.
-          </div>
-        )}
-      </section>
+                </Button>
+              ) : null}
+            </CardFooter>
+          ) : null}
+        </Card>
+      </div>
+
+      <Card className="border-0">
+        <CardHeader>
+          <CardTitle>Recent activity</CardTitle>
+          <CardDescription>
+            Local Control Center events from this session.
+          </CardDescription>
+          <CardAction>
+            {onRefresh ? (
+              <Button
+                disabled={busyAction === "logs"}
+                onClick={onRefresh}
+                type="button"
+                variant="outline"
+              >
+                {busyAction === "logs" ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <RefreshCw data-icon="inline-start" aria-hidden />
+                )}
+                <span>
+                  {busyAction === "logs" ? "Refreshing..." : "Refresh"}
+                </span>
+              </Button>
+            ) : null}
+          </CardAction>
+        </CardHeader>
+
+        <CardContent className="grid gap-4">
+          {lastError ? (
+            <Alert variant="destructive">
+              <AlertTriangle aria-hidden />
+              <AlertTitle>
+                {formatCustomerSupportText(lastError.message)}
+              </AlertTitle>
+              <AlertDescription>
+                {formatCustomerSupportText(lastError.nextAction)}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {events.length ? (
+            <ScrollArea className="max-h-80">
+              <ItemGroup className="pr-3">
+                {events.map((event) => (
+                  <Item key={event.id} variant="muted">
+                    <ItemMedia variant="icon">
+                      <Activity aria-hidden />
+                    </ItemMedia>
+                    <ItemContent>
+                      <ItemTitle className="break-words">
+                        {formatCustomerSupportText(event.label)}
+                      </ItemTitle>
+                      {event.detail ? (
+                        <ItemDescription className="line-clamp-none break-words">
+                          {formatCustomerSupportText(event.detail)}
+                        </ItemDescription>
+                      ) : null}
+                    </ItemContent>
+                    <ItemActions>
+                      <Badge variant="outline">
+                        <Clock aria-hidden />
+                        {event.timestamp || "Session"}
+                      </Badge>
+                    </ItemActions>
+                  </Item>
+                ))}
+              </ItemGroup>
+            </ScrollArea>
+          ) : (
+            <Empty className="min-h-52">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Activity aria-hidden />
+                </EmptyMedia>
+                <EmptyTitle>No recent activity</EmptyTitle>
+                <EmptyDescription>
+                  New Control Center events will appear here.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
 function DiagnosticFact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid min-h-[52px] gap-1 py-3 sm:grid-cols-[110px_minmax(0,1fr)] sm:gap-4">
-      <dt className="text-sm font-bold text-[#1B1B1B]">{label}</dt>
-      <dd className="break-words text-sm leading-6 text-[#444933]">{value}</dd>
-    </div>
+    <Item variant="muted">
+      <ItemContent>
+        <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+        <dd className="break-words font-medium text-foreground">{value}</dd>
+      </ItemContent>
+    </Item>
   );
+}
+
+function SupportDeviceFact({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <Item role="listitem" size="sm">
+      <ItemMedia variant="icon">{icon}</ItemMedia>
+      <ItemContent>
+        <ItemDescription>{label}</ItemDescription>
+        <ItemTitle>{value}</ItemTitle>
+      </ItemContent>
+    </Item>
+  );
+}
+
+function deviceLabel(device: DeviceInfo | null | undefined): string {
+  if (device?.deviceId) {
+    return `VibeTV ${device.deviceId}`;
+  }
+  return device?.connected ? "Current VibeTV" : "Not connected";
+}
+
+function deviceAddress(device: DeviceInfo | null | undefined): string {
+  return device?.target?.replace(/^https?:\/\//, "") || "Not available";
+}
+
+function activeThemeLabel(device: DeviceInfo | null | undefined): string {
+  const theme = device?.activeTheme?.trim();
+  if (!theme) {
+    return device?.connected ? "Default" : "Not available";
+  }
+  return theme
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function formatCheckName(name: string): string {

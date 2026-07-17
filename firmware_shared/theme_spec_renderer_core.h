@@ -58,6 +58,7 @@ struct RectCommand {
   int y = 0;
   int width = 0;
   int height = 0;
+  int borderRadius = 0;
   uint16_t color = 0x0000;
 };
 
@@ -85,6 +86,7 @@ struct ProgressCommand {
   int style = 0;
   int segments = 0;
   int segmentGap = 1;
+  int borderRadius = 0;
   uint16_t fillColor = 0xFFFF;
   uint16_t borderColor = 0x7BEF;
   uint16_t bgColor = 0x0000;
@@ -146,6 +148,7 @@ struct CompiledPrimitive {
   int style = 0;
   int segments = 0;
   int segmentGap = 1;
+  int borderRadius = 0;
   uint16_t color = 0xFFFF;
   uint16_t bg = 0x0000;
   uint16_t border = 0x7BEF;
@@ -863,6 +866,7 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     out.kind = PrimitiveKind::Rect;
     out.width = JsonIntFor(primitive, "width", "w", 0);
     out.height = JsonIntFor(primitive, "height", "h", 0);
+    out.borderRadius = JsonIntFor(primitive, "borderRadius", "br", 0);
     out.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0x0000);
     return out.width > 0 && out.height > 0;
   }
@@ -904,6 +908,7 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     }
     out.segments = JsonIntFor(primitive, "segments", "sg", 0);
     out.segmentGap = JsonIntFor(primitive, "segmentGap", "gg", 1);
+    out.borderRadius = JsonIntFor(primitive, "borderRadius", "br", 0);
     out.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     out.bg = ParseColor(JsonStringFor(primitive, "bgColor", "bg"), 0x0000);
     out.border = ParseColor(JsonStringFor(primitive, "borderColor", "bc"), 0x7BEF);
@@ -1180,6 +1185,7 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
     cmd.y = primitive.y;
     cmd.width = primitive.width;
     cmd.height = primitive.height;
+    cmd.borderRadius = primitive.borderRadius;
     cmd.color = primitive.color;
     if (cmd.width <= 0 || cmd.height <= 0) {
       return false;
@@ -1224,6 +1230,7 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
     cmd.style = primitive.style;
     cmd.segments = primitive.segments;
     cmd.segmentGap = primitive.segmentGap;
+    cmd.borderRadius = primitive.borderRadius;
     cmd.fillColor = primitive.color;
     cmd.bgColor = primitive.bg;
     cmd.borderColor = primitive.border;

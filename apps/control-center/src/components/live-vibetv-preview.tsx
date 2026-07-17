@@ -94,6 +94,8 @@ export type ThemePrimitive = {
   bg?: string;
   borderColor?: string;
   bc?: string;
+  borderRadius?: number;
+  br?: number;
   align?: string;
   al?: string;
   maxWidth?: number;
@@ -266,7 +268,7 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   }, [displayStreamReady]);
 
   return (
-    <figure className="w-full max-w-[540px]">
+    <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
         {pack?.spec && frame ? (
           <ThemeSpecSVG
@@ -402,10 +404,17 @@ function ThemePrimitiveNode({
   const height = primitive.height || primitive.h || 0;
 
   if (type === "rect" || type === "r") {
+    const radius = clampRadius(
+      primitive.borderRadius ?? primitive.br ?? 0,
+      width,
+      height,
+    );
     return (
       <rect
         fill={colorFor(primitive.color || primitive.c, "#000000")}
         height={height}
+        rx={radius}
+        ry={radius}
         width={width}
         x={x}
         y={y}
@@ -539,11 +548,21 @@ function ThemeProgress({
   const innerHeight = Math.max(0, height - 2);
   const style = primitive.progressStyle || primitive.ps || "";
   const segmented = style === "segments" || style === "segmented";
+  const radius = clampRadius(
+    primitive.borderRadius ?? primitive.br ?? 0,
+    width,
+    height,
+  );
+  const innerRadius = Math.max(0, radius - 1);
+  const fillWidth = Math.max(
+    0,
+    Math.min(innerWidth, Math.floor((innerWidth * percent) / 100)),
+  );
 
   return (
     <g>
-      <rect fill="none" height={height} stroke={borderColor} width={width} x={x} y={y} />
-      <rect fill={bgColor} height={innerHeight} width={innerWidth} x={x + 1} y={y + 1} />
+      <rect fill="none" height={height} rx={radius} ry={radius} stroke={borderColor} width={width} x={x} y={y} />
+      <rect fill={bgColor} height={innerHeight} rx={innerRadius} ry={innerRadius} width={innerWidth} x={x + 1} y={y + 1} />
       {segmented ? (
         <SegmentedProgress
           fillColor={fillColor}
@@ -554,12 +573,15 @@ function ThemeProgress({
           width={innerWidth}
           x={x + 1}
           y={y + 1}
+          radius={innerRadius}
         />
       ) : (
         <rect
           fill={fillColor}
           height={innerHeight}
-          width={Math.max(0, Math.min(innerWidth, Math.floor((width * percent) / 100)))}
+          rx={clampRadius(innerRadius, fillWidth, innerHeight)}
+          ry={clampRadius(innerRadius, fillWidth, innerHeight)}
+          width={fillWidth}
           x={x + 1}
           y={y + 1}
         />
@@ -572,6 +594,7 @@ function SegmentedProgress({
   fillColor,
   height,
   percent,
+  radius,
   segmentGap,
   segments,
   width,
@@ -581,6 +604,7 @@ function SegmentedProgress({
   fillColor: string;
   height: number;
   percent: number;
+  radius: number;
   segmentGap: number;
   segments: number;
   width: number;
@@ -599,6 +623,8 @@ function SegmentedProgress({
             fill={fillColor}
             height={height}
             key={index}
+            rx={clampRadius(radius, segW, height)}
+            ry={clampRadius(radius, segW, height)}
             width={segW}
             x={segX1}
             y={y}
@@ -607,6 +633,10 @@ function SegmentedProgress({
       })}
     </g>
   );
+}
+
+function clampRadius(radius: number, width: number, height: number): number {
+  return Math.max(0, Math.min(Math.round(radius), width / 2, height / 2));
 }
 
 function PixelRows({

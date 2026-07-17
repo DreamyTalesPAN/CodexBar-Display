@@ -22,6 +22,7 @@ struct RectCommand {
   int y = 0;
   int width = 0;
   int height = 0;
+  int borderRadius = 0;
   uint16_t color = 0x0000;
 };
 
@@ -34,6 +35,7 @@ struct ProgressCommand {
   int style = 0;
   int segments = 0;
   int segmentGap = 1;
+  int borderRadius = 0;
   uint16_t fillColor = 0xFFFF;
   uint16_t borderColor = 0x7BEF;
   uint16_t bgColor = 0x0000;

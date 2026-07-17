@@ -2,6 +2,7 @@
 
 import {
   Check,
+  CircleHelp,
   Clipboard,
   Download,
   Loader2,
@@ -9,6 +10,9 @@ import {
   RefreshCw,
   Wifi,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Spinner } from "@/components/ui/spinner";
 import { useMemo, useState, type ReactNode } from "react";
 import {
   availableMacAppDmgDownloadUrl,
@@ -21,7 +25,6 @@ import type {
   DeviceSearchState,
   DeviceState,
 } from "./control-center-types";
-import { ControlCenterButton } from "./control-center-button";
 import { DeviceTargetForm } from "./device-target-form";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
 
@@ -170,7 +173,7 @@ export function SetupScreen({
     return (
       <div className="mx-auto max-w-[980px]">
         {migrationNotice}
-        <section className="border-b border-[#747A60] py-8 lg:min-h-[330px] lg:py-12">
+        <section className="py-8 lg:min-h-[330px] lg:py-12">
           <div className="flex items-start gap-5">
             <ControlCenterStatusIcon variant="complete">
               <Check size={38} aria-hidden />
@@ -180,14 +183,21 @@ export function SetupScreen({
                 Setup complete
               </h2>
               <div className="mt-6">
-                <PrimaryButton
-                  busy={busyAction === "reset-setup"}
-                  busyLabel="Resetting"
-                  icon={<Clipboard size={18} aria-hidden />}
-                  label="Run setup again"
+                <Button
+                  disabled={busyAction === "reset-setup"}
                   onClick={onResetSetup}
-                  size="large"
-                />
+                  size="lg"
+                  type="button"
+                >
+                  {busyAction === "reset-setup" ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <Clipboard data-icon="inline-start" aria-hidden />
+                  )}
+                  <span>
+                    {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
+                  </span>
+                </Button>
               </div>
             </div>
           </div>
@@ -200,7 +210,7 @@ export function SetupScreen({
     <div className="mx-auto max-w-[980px]">
       {migrationNotice}
       {showIntro ? (
-        <section className="border-b border-[#747A60] py-8 lg:min-h-[330px] lg:py-12">
+        <section className="py-8 lg:min-h-[330px] lg:py-12">
           <div className="flex items-start gap-5">
             <ControlCenterStatusIcon
               variant={setupComplete ? "complete" : "neutral"}
@@ -221,13 +231,21 @@ export function SetupScreen({
               </h2>
               {setupComplete ? (
                 <div className="mt-6 flex flex-wrap gap-3">
-                  <SecondaryButton
-                    busy={busyAction === "reset-setup"}
-                    busyLabel="Resetting"
-                    icon={<Clipboard size={16} aria-hidden />}
-                    label="Run setup again"
+                  <Button
+                    disabled={busyAction === "reset-setup"}
                     onClick={onResetSetup}
-                  />
+                    type="button"
+                    variant="outline"
+                  >
+                    {busyAction === "reset-setup" ? (
+                      <Spinner data-icon="inline-start" />
+                    ) : (
+                      <Clipboard data-icon="inline-start" aria-hidden />
+                    )}
+                    <span>
+                      {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
+                    </span>
+                  </Button>
                 </div>
               ) : null}
               {lastError && !macAppMissing ? (
@@ -245,7 +263,7 @@ export function SetupScreen({
       ) : null}
 
       <section className="py-6">
-        <ol className="grid gap-0 border-y border-[#747A60]">
+        <ol className="grid gap-0">
           {!hostedMode && !forceMacAppStep ? (
             <SetupStep
               icon={<Wifi size={22} aria-hidden />}
@@ -279,13 +297,10 @@ export function SetupScreen({
                       here.
                     </li>
                   </ol>
-                  <PrimaryButton
-                    fullWidth
-                    icon={<Check size={18} aria-hidden />}
-                    label="VibeTV is on WiFi"
-                    onClick={confirmWifi}
-                    size="large"
-                  />
+                  <Button className="w-full" onClick={confirmWifi} size="lg" type="button">
+                    <Check data-icon="inline-start" aria-hidden />
+                    <span>VibeTV is on WiFi</span>
+                  </Button>
                 </div>
               ) : null}
             </SetupStep>
@@ -301,37 +316,32 @@ export function SetupScreen({
               {activeStep === "mac-app" ? (
                 <div className="grid min-w-0 gap-4">
                   {dmgUrl ? (
-                    <div className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4">
-                      <a
-                        className="vibetv-button vibetv-button--large vibetv-button--full vibetv-button--primary"
-                        href={dmgUrl}
-                        onClick={() => setDmgDownloadStarted(true)}
-                      >
-                        <Download size={18} aria-hidden />
+                    <div className="grid gap-3 border border-border bg-card p-4">
+                      <Button asChild className="w-full" size="lg">
+                        <a href={dmgUrl} onClick={() => setDmgDownloadStarted(true)}>
+                        <Download data-icon="inline-start" />
                         <span>
                           {hostedMode
                             ? "Download Mac App"
                             : "Update"}
                         </span>
-                      </a>
+                        </a>
+                      </Button>
                     </div>
                   ) : (
-                    <div className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4">
+                    <div className="grid gap-3 border border-border bg-card p-4">
                       <p className="text-sm leading-6 text-[#444933]">
                         The signed Mac App download is not ready yet. Please try
                         again later.
                       </p>
-                      <PrimaryButton
-                        disabled
-                        fullWidth
-                        icon={<Download size={18} aria-hidden />}
-                        label={
-                          hostedMode
+                      <Button className="w-full" disabled size="lg" type="button">
+                        <Download data-icon="inline-start" aria-hidden />
+                        <span>
+                          {hostedMode
                             ? "Mac App download not ready"
-                            : "New Mac App not ready"
-                        }
-                        size="large"
-                      />
+                            : "New Mac App not ready"}
+                        </span>
+                      </Button>
                     </div>
                   )}
 
@@ -344,16 +354,22 @@ export function SetupScreen({
 
                   {!hostedMode && dmgUrl ? (
                     <div className="flex flex-wrap gap-3">
-                      <PrimaryButton
-                        busy={busyAction === "status"}
-                        busyLabel="Checking"
-                        disabled={!dmgDownloadStarted}
-                        fullWidth
-                        icon={<Check size={18} aria-hidden />}
-                        label="Mac App is installed"
+                      <Button
+                        className="w-full"
+                        disabled={!dmgDownloadStarted || busyAction === "status"}
                         onClick={confirmMacApp}
-                        size="large"
-                      />
+                        size="lg"
+                        type="button"
+                      >
+                        {busyAction === "status" ? (
+                          <Spinner data-icon="inline-start" />
+                        ) : (
+                          <Check data-icon="inline-start" aria-hidden />
+                        )}
+                        <span>
+                          {busyAction === "status" ? "Checking" : "Mac App is installed"}
+                        </span>
+                      </Button>
                     </div>
                   ) : null}
                 </div>
@@ -403,7 +419,7 @@ function LegacyMacAppMigrationNotice({
   onRetry: () => void;
 }) {
   return (
-    <section className="border-b border-[#747A60] py-6">
+    <section className="py-6">
       <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div className="flex min-w-0 items-start gap-4">
           <ControlCenterStatusIcon size="step" variant="active">
@@ -416,23 +432,24 @@ function LegacyMacAppMigrationNotice({
           </div>
         </div>
         {downloadUrl ? (
-          <a
-            className="vibetv-button vibetv-button--large vibetv-button--primary w-full sm:w-auto"
-            href={downloadUrl}
-          >
-            <Download size={18} aria-hidden />
-            <span>Update</span>
-          </a>
+          <Button asChild className="w-full sm:w-auto" size="lg">
+            <a href={downloadUrl}><Download data-icon="inline-start" /><span>Update</span></a>
+          </Button>
         ) : checkFailed ? (
-          <PrimaryButton
-            busy={checking}
-            busyLabel="Checking"
-            fullWidth
-            icon={<RefreshCw size={18} aria-hidden />}
-            label="Check again"
+          <Button
+            className="w-full"
+            disabled={checking}
             onClick={onRetry}
-            size="large"
-          />
+            size="lg"
+            type="button"
+          >
+            {checking ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <RefreshCw data-icon="inline-start" aria-hidden />
+            )}
+            <span>{checking ? "Checking" : "Check again"}</span>
+          </Button>
         ) : null}
       </div>
     </section>
@@ -486,14 +503,16 @@ function FinishSetupContent({
         </p>
         <div className="grid gap-3">
           {deviceCandidates.map((candidate) => (
-            <ControlCenterButton
+            <Button
               disabled={Boolean(busyAction)}
-              icon={<Monitor size={18} aria-hidden />}
               key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
-              label={candidateLabel(candidate)}
               onClick={() => onSelectDevice?.(candidate)}
-              variant="secondary"
-            />
+              type="button"
+              variant="outline"
+            >
+              <Monitor data-icon="inline-start" aria-hidden />
+              <span>{candidateLabel(candidate)}</span>
+            </Button>
           ))}
         </div>
       </div>
@@ -530,13 +549,10 @@ function FinishSetupContent({
           Automatic search could not finish. Make sure VibeTV and this Mac are
           on the same WiFi, then try again.
         </p>
-        <PrimaryButton
-          fullWidth
-          icon={<RefreshCw size={18} aria-hidden />}
-          label="Try again"
-          onClick={onSearchDevices}
-          size="large"
-        />
+        <Button className="w-full" onClick={onSearchDevices} size="lg" type="button">
+          <RefreshCw data-icon="inline-start" aria-hidden />
+          <span>Try again</span>
+        </Button>
       </div>
     );
   }
@@ -548,13 +564,10 @@ function FinishSetupContent({
           VibeTV could not reconnect automatically. Make sure it is on the same
           WiFi as this Mac, then try again.
         </p>
-        <PrimaryButton
-          fullWidth
-          icon={<RefreshCw size={18} aria-hidden />}
-          label="Try again"
-          onClick={onSearchDevices}
-          size="large"
-        />
+        <Button className="w-full" onClick={onSearchDevices} size="lg" type="button">
+          <RefreshCw data-icon="inline-start" aria-hidden />
+          <span>Try again</span>
+        </Button>
       </div>
     );
   }
@@ -607,7 +620,7 @@ function SetupStep({
   const complete = state === "complete";
   return (
     <li
-      className={`grid gap-4 border-b border-[#747A60] px-0 py-5 last:border-b-0 md:grid-cols-[54px_minmax(0,1fr)] ${
+      className={`grid gap-4 border-b border-border px-0 py-5 last:border-b-0 md:grid-cols-[54px_minmax(0,1fr)] ${
         state === "blocked" ? "opacity-45" : ""
       }`}
     >
@@ -630,74 +643,6 @@ function SetupStep({
   );
 }
 
-function PrimaryButton({
-  busy,
-  busyLabel,
-  disabled,
-  fullWidth,
-  icon,
-  label,
-  onClick,
-  size,
-}: {
-  busy?: boolean;
-  busyLabel?: string;
-  disabled?: boolean;
-  fullWidth?: boolean;
-  icon?: ReactNode;
-  label: string;
-  onClick?: () => void;
-  size?: "default" | "large" | "compact";
-}) {
-  return (
-    <ControlCenterButton
-      busy={busy}
-      busyLabel={busyLabel}
-      disabled={disabled}
-      fullWidth={fullWidth}
-      icon={icon}
-      label={label}
-      onClick={onClick}
-      size={size}
-      variant="primary"
-    />
-  );
-}
-
-function SecondaryButton({
-  busy,
-  busyLabel,
-  disabled,
-  fullWidth,
-  icon,
-  label,
-  onClick,
-  size,
-}: {
-  busy?: boolean;
-  busyLabel?: string;
-  disabled?: boolean;
-  fullWidth?: boolean;
-  icon?: ReactNode;
-  label: string;
-  onClick?: () => void;
-  size?: "default" | "large" | "compact";
-}) {
-  return (
-    <ControlCenterButton
-      busy={busy}
-      busyLabel={busyLabel}
-      disabled={disabled}
-      fullWidth={fullWidth}
-      icon={icon}
-      label={label}
-      onClick={onClick}
-      size={size}
-      variant="secondary"
-    />
-  );
-}
-
 function StatusNote({
   children,
   icon,
@@ -706,25 +651,20 @@ function StatusNote({
   icon?: ReactNode;
 }) {
   return (
-    <div
-      className="inline-flex min-h-12 items-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 py-2 text-sm font-semibold text-[#444933]"
-      role="status"
-    >
-      {icon || <Check size={16} aria-hidden />}
-      <span>{children}</span>
-    </div>
+    <Alert className="max-w-[560px]" role="status">
+      {icon || <Check aria-hidden />}
+      <AlertTitle>{children}</AlertTitle>
+    </Alert>
   );
 }
 
 function ErrorNote({ error }: { error: ApiError }) {
   return (
-    <div
-      className="mt-4 grid max-w-[560px] gap-1 border border-[#747A60] bg-[#F9F9F9] px-4 py-3 text-sm text-[#444933]"
-      role="alert"
-    >
-      <strong className="font-black text-[#1B1B1B]">{error.message}</strong>
-      <span>{error.nextAction}</span>
-    </div>
+    <Alert className="mt-4 max-w-[560px]" variant="destructive">
+      <CircleHelp aria-hidden />
+      <AlertTitle>{error.message}</AlertTitle>
+      <AlertDescription>{error.nextAction}</AlertDescription>
+    </Alert>
   );
 }
 

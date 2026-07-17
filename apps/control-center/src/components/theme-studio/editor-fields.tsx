@@ -1,6 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const COLOR_FALLBACK = "#000000";
 
@@ -15,43 +30,44 @@ export function TextField({
   type?: "password" | "text";
   value: string;
 }) {
+  const id = useId();
   return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-black uppercase tracking-normal text-[#444933]">
-        {label}
-      </span>
-      <input
-        className="min-h-11 w-full border border-[#747A60] bg-[#F9F9F9] px-3 text-sm text-[#1B1B1B] outline-none focus:border-[#5E7200]"
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Input
+        id={id}
         onChange={(event) => onChange(event.target.value)}
         type={type}
         value={value}
       />
-    </label>
+    </Field>
   );
 }
 
 export function NumberField({
   label,
+  max,
   onChange,
   value,
 }: {
   label: string;
+  max?: number;
   onChange: (value: number) => void;
   value: number;
 }) {
+  const id = useId();
   return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-black uppercase tracking-normal text-[#444933]">
-        {label}
-      </span>
-      <input
-        className="min-h-11 w-full border border-[#747A60] bg-[#F9F9F9] px-3 text-sm text-[#1B1B1B] outline-none focus:border-[#5E7200]"
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Input
+        id={id}
+        max={max}
         min={0}
         onChange={(event) => onChange(integerOrDefault(event.target.value, 0))}
         type="number"
         value={value}
       />
-    </label>
+    </Field>
   );
 }
 
@@ -64,6 +80,7 @@ export function ColorField({
   onChange: (value: string) => void;
   value: string;
 }) {
+  const id = useId();
   const safeValue = /^#[0-9A-Fa-f]{6}$/.test(value) ? value : COLOR_FALLBACK;
   const normalizedValue = safeValue.toUpperCase();
   const [colorState, setColorState] = useState({
@@ -87,25 +104,12 @@ export function ColorField({
   }
 
   return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-black uppercase tracking-normal text-[#444933]">
-        {label}
-      </span>
-      <span className="grid min-h-11 grid-cols-[44px_minmax(0,1fr)] overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
-        <input
-          aria-label={`${label} swatch`}
-          className="h-11 w-11 cursor-pointer border-0 bg-transparent p-1"
-          onChange={(event) => {
-            const next = event.target.value.toUpperCase();
-            setColorState({ draft: next, source: next });
-            onChange(next);
-          }}
-          type="color"
-          value={safeValue}
-        />
-        <input
+    <Field data-invalid={!draftValid}>
+      <FieldLabel htmlFor={`${id}-text`}>{label}</FieldLabel>
+      <InputGroup className="h-11 rounded-[var(--radius-control)]">
+        <InputGroupInput
           aria-invalid={!draftValid}
-          className="min-w-0 border-0 bg-[#F9F9F9] px-3 font-mono text-sm text-[#1B1B1B] outline-none"
+          className="font-mono"
           onBlur={commitDraft}
           onChange={(event) => setDraftValue(event.target.value)}
           onKeyDown={(event) => {
@@ -119,9 +123,24 @@ export function ColorField({
             }
           }}
           value={draftValue}
+          id={`${id}-text`}
         />
-      </span>
-    </label>
+        <InputGroupAddon align="inline-start" className="p-0">
+          <input
+            aria-label={`${label} swatch`}
+            className="h-10 w-10 cursor-pointer border-0 bg-transparent p-1"
+            onChange={(event) => {
+              const next = event.target.value.toUpperCase();
+              setColorState({ draft: next, source: next });
+              onChange(next);
+            }}
+            type="color"
+            value={safeValue}
+            id={`${id}-swatch`}
+          />
+        </InputGroupAddon>
+      </InputGroup>
+    </Field>
   );
 }
 
@@ -136,23 +155,25 @@ export function SelectField({
   options: Array<[string, string]>;
   value: string;
 }) {
+  const id = useId();
   return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-black uppercase tracking-normal text-[#444933]">
-        {label}
-      </span>
-      <select
-        className="min-h-11 w-full border border-[#747A60] bg-[#F9F9F9] px-3 text-sm text-[#1B1B1B] outline-none focus:border-[#5E7200]"
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
-      >
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>
-            {optionLabel}
-          </option>
-        ))}
-      </select>
-    </label>
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Select onValueChange={onChange} value={value}>
+        <SelectTrigger className="h-11 w-full rounded-[var(--radius-control)]" id={id}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {options.map(([optionValue, optionLabel]) => (
+              <SelectItem key={optionValue} value={optionValue}>
+                {optionLabel}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </Field>
   );
 }
 
