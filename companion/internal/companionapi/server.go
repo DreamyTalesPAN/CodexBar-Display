@@ -126,6 +126,7 @@ type Options struct {
 	HTTPClient           *http.Client
 	RefreshDisplayStream func(context.Context, string) error
 	PauseDisplayStream   func(bool)
+	WakeDisplayStream    func()
 }
 
 type Server struct {
@@ -147,8 +148,12 @@ type Server struct {
 	waitRender             func(context.Context, string, string, deviceHealth) (deviceHealth, error)
 	refreshStream          func(context.Context, string) error
 	pauseDisplayStream     func(bool)
+	wakeDisplayStream      func()
 	firmwareUpdateActive   atomic.Bool
 	configMu               sync.Mutex
+	selectionMu            sync.Mutex
+	selectionStateMu       sync.RWMutex
+	selectionPrevious      *runtimeconfig.Config
 	repairMu               sync.Mutex
 	repairFlightsMu        sync.Mutex
 	repairFlights          map[string]*deviceRepairFlight
@@ -358,6 +363,7 @@ type deviceSearchEntry struct {
 	Firmware    string `json:"firmware,omitempty"`
 	NetworkMode string `json:"networkMode,omitempty"`
 	Known       bool   `json:"known"`
+	Active      bool   `json:"active"`
 }
 
 type themeInstallRequest struct {
@@ -425,20 +431,21 @@ type firmwareUpdateResult struct {
 }
 
 type firmwareUpdateJob struct {
-	ID         string                `json:"id"`
-	Phase      string                `json:"phase"`
-	Stage      string                `json:"stage"`
-	Outcome    string                `json:"outcome,omitempty"`
-	Message    string                `json:"message"`
-	Progress   int                   `json:"progress"`
-	StartedAt  time.Time             `json:"startedAt"`
-	FinishedAt *time.Time            `json:"finishedAt,omitempty"`
-	Logs       []string              `json:"logs,omitempty"`
-	Result     *firmwareUpdateResult `json:"result,omitempty"`
-	Warnings   []string              `json:"warnings,omitempty"`
-	Error      *apiError             `json:"error,omitempty"`
-	target     string
-	firmware   string
+	ID          string                `json:"id"`
+	Phase       string                `json:"phase"`
+	Stage       string                `json:"stage"`
+	Outcome     string                `json:"outcome,omitempty"`
+	RetryPolicy string                `json:"retryPolicy,omitempty"`
+	Message     string                `json:"message"`
+	Progress    int                   `json:"progress"`
+	StartedAt   time.Time             `json:"startedAt"`
+	FinishedAt  *time.Time            `json:"finishedAt,omitempty"`
+	Logs        []string              `json:"logs,omitempty"`
+	Result      *firmwareUpdateResult `json:"result,omitempty"`
+	Warnings    []string              `json:"warnings,omitempty"`
+	Error       *apiError             `json:"error,omitempty"`
+	target      string
+	firmware    string
 }
 
 type firmwareUpdateJobResponse struct {
@@ -695,6 +702,9 @@ func New(opts Options) (*Server, error) {
 			return nil, fmt.Errorf("resolve home directory: %w", err)
 		}
 	}
+	if _, recoverErr := runtimeconfig.RecoverPendingDeviceSelection(home); recoverErr != nil {
+		return nil, fmt.Errorf("recover pending device selection: %w", recoverErr)
+	}
 	client := opts.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: deviceTimeout}
@@ -736,6 +746,7 @@ func New(opts Options) (*Server, error) {
 		waitRender:            nil,
 		refreshStream:         opts.RefreshDisplayStream,
 		pauseDisplayStream:    opts.PauseDisplayStream,
+		wakeDisplayStream:     opts.WakeDisplayStream,
 		pairAttempts:          defaultPairAttempts,
 		pairAttemptTimeout:    defaultPairAttemptTimeout,
 		pairRetryGap:          defaultPairRetryGap,
@@ -800,6 +811,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/search", s.handleDeviceSearch)
+	mux.HandleFunc("/v1/device/select", s.handleDeviceSelect)
 	mux.HandleFunc("/v1/device/repair", s.handleDeviceRepair)
 	mux.HandleFunc("/v1/device/reload-display", s.handleDeviceReloadDisplay)
 	mux.HandleFunc("/v1/device", s.handleDevice)
@@ -2102,6 +2114,29 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 	}{OK: true, Devices: devices})
 }
 
+func (s *Server) handleDeviceSelect(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		Target           string `json:"target"`
+		ExpectedDeviceID string `json:"expectedDeviceId"`
+	}
+	if !decodeOptionalJSON(w, r, &req) {
+		return
+	}
+	device, err := s.selectDevice(
+		r.Context(),
+		strings.TrimSpace(req.Target),
+		strings.TrimSpace(req.ExpectedDeviceID),
+	)
+	if err != nil {
+		writeRepairError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
+}
+
 func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -2204,9 +2239,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
-		cfg.DeviceTarget = ""
-		cfg.DeviceToken = ""
-		cfg.DeviceID = ""
+		cfg.ClearDevices()
 	})
 	if err != nil {
 		writeInternalError(w, err)
@@ -2379,12 +2412,17 @@ func (s *Server) repairDevice(
 	expectedDeviceID string,
 	forcePair bool,
 ) (deviceInfo, error) {
-	key := fmt.Sprintf(
-		"%t|%s|%s",
-		forcePair,
-		strings.ToLower(strings.TrimSpace(requestedTarget)),
-		strings.ToLower(strings.TrimSpace(expectedDeviceID)),
-	)
+	return s.repairDeviceWithFailureWake(ctx, requestedTarget, expectedDeviceID, forcePair, true)
+}
+
+func (s *Server) repairDeviceWithFailureWake(
+	ctx context.Context,
+	requestedTarget string,
+	expectedDeviceID string,
+	forcePair bool,
+	wakeOnFailure bool,
+) (deviceInfo, error) {
+	key := fmt.Sprintf("%t|%s", wakeOnFailure, s.repairFlightKey(requestedTarget, expectedDeviceID, forcePair))
 	s.repairFlightsMu.Lock()
 	if s.repairFlights == nil {
 		s.repairFlights = make(map[string]*deviceRepairFlight)
@@ -2403,11 +2441,125 @@ func (s *Server) repairDevice(
 	s.repairFlightsMu.Unlock()
 
 	flight.device, flight.err = s.repairDeviceOnce(ctx, requestedTarget, expectedDeviceID, forcePair)
+	if flight.err != nil && wakeOnFailure && s.wakeDisplayStream != nil {
+		s.wakeDisplayStream()
+	}
 	s.repairFlightsMu.Lock()
 	delete(s.repairFlights, key)
 	close(flight.done)
 	s.repairFlightsMu.Unlock()
 	return flight.device, flight.err
+}
+
+func (s *Server) repairFlightKey(requestedTarget, expectedDeviceID string, forcePair bool) string {
+	deviceID := strings.ToLower(strings.TrimSpace(expectedDeviceID))
+	if deviceID == "" {
+		if cfg, err := s.config(); err == nil {
+			deviceID = strings.ToLower(strings.TrimSpace(cfg.DeviceID))
+		}
+	}
+	identity := "device:" + deviceID
+	if deviceID == "" {
+		target := strings.ToLower(normalizeTarget(requestedTarget))
+		if target == "" {
+			identity = "active-device"
+		} else {
+			identity = "target:" + target
+		}
+	}
+	return fmt.Sprintf("%t|%s", forcePair, identity)
+}
+
+func (s *Server) selectDevice(
+	ctx context.Context,
+	requestedTarget string,
+	expectedDeviceID string,
+) (deviceInfo, error) {
+	s.selectionMu.Lock()
+	defer s.selectionMu.Unlock()
+
+	target, err := normalizeExplicitDeviceTarget(requestedTarget)
+	if err != nil {
+		return deviceInfo{}, err
+	}
+	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
+	if expectedDeviceID == "" {
+		return deviceInfo{}, &repairStageError{
+			stage: "discovery",
+			err:   errors.New("selected VibeTV identity is missing"),
+		}
+	}
+
+	hello, err := s.getHelloProbe(ctx, target, "", discoveryProbeTime)
+	if err != nil {
+		return deviceInfo{}, &repairStageError{stage: "discovery", err: err}
+	}
+	if !strings.EqualFold(expectedDeviceID, strings.TrimSpace(hello.DeviceID)) {
+		return deviceInfo{}, &repairStageError{
+			stage: "discovery",
+			err:   errors.New("selected VibeTV identity changed before pairing"),
+		}
+	}
+
+	s.deviceMaintenanceMu.Lock()
+	defer s.deviceMaintenanceMu.Unlock()
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
+
+	previous, err := s.configForMaintenance()
+	if err != nil {
+		return deviceInfo{}, &repairStageError{stage: "config", err: err}
+	}
+	if err := runtimeconfig.BeginDeviceSelection(s.home, previous); err != nil {
+		return deviceInfo{}, &repairStageError{stage: "config", err: err}
+	}
+	s.beginPendingDeviceSelection(previous)
+	selected := runtimeconfig.KnownDevice{
+		DeviceID: expectedDeviceID,
+		Target:   target,
+	}
+	if known, ok := previous.KnownDevice(expectedDeviceID); ok {
+		selected.DeviceToken = known.DeviceToken
+	}
+	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
+		current.SetActiveDevice(selected)
+	}); err != nil {
+		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, &repairStageError{stage: "config", err: err})
+	}
+
+	device, repairErr := s.repairDeviceOnceLocked(ctx, target, expectedDeviceID, false)
+	if repairErr != nil {
+		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, repairErr)
+	}
+	if err := runtimeconfig.CommitDeviceSelection(s.home); err != nil {
+		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, &repairStageError{stage: "config", err: err})
+	}
+	s.endPendingDeviceSelection()
+	return device, nil
+}
+
+func (s *Server) rollbackDeviceSelection(
+	ctx context.Context,
+	previous runtimeconfig.Config,
+	selectionErr error,
+) error {
+	_, restoreErr := s.updateConfig(func(current *runtimeconfig.Config) {
+		*current = previous
+	})
+	if restoreErr == nil {
+		restoreErr = runtimeconfig.CommitDeviceSelection(s.home)
+	}
+	s.endPendingDeviceSelection()
+	if restoreErr != nil {
+		return &repairStageError{
+			stage: "config",
+			err:   fmt.Errorf("selection failed: %v; restore previous VibeTV: %w", selectionErr, restoreErr),
+		}
+	}
+	if strings.TrimSpace(previous.DeviceTarget) != "" {
+		_ = s.startDisplayStream(ctx, previous.DeviceTarget)
+	}
+	return selectionErr
 }
 
 func (s *Server) repairDeviceOnce(
@@ -2421,6 +2573,15 @@ func (s *Server) repairDeviceOnce(
 
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
+	return s.repairDeviceOnceLocked(ctx, requestedTarget, expectedDeviceID, forcePair)
+}
+
+func (s *Server) repairDeviceOnceLocked(
+	ctx context.Context,
+	requestedTarget string,
+	expectedDeviceID string,
+	forcePair bool,
+) (deviceInfo, error) {
 
 	streamPaused := false
 	pauseStream := func() {
@@ -2440,7 +2601,7 @@ func (s *Server) repairDeviceOnce(
 	pauseStream()
 	defer resumeStream()
 
-	cfg, err := s.config()
+	cfg, err := s.configForMaintenance()
 	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
 	}
@@ -3532,7 +3693,7 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 			if detail := sanitizeErrorDetail(err); detail != "" {
 				_, _ = fmt.Fprintf(os.Stderr, "VibeTV firmware update failed: %s\n", detail)
 			}
-			apiErr := firmwareUpdateErrorPayload(err)
+			apiErr := firmwareUpdateErrorPayload(err, snapshot.RetryPolicy)
 			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
 				job.Phase = "error"
 				job.Message = "Update failed."
@@ -3771,6 +3932,9 @@ func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEven
 		}
 		if outcome := strings.TrimSpace(event.Outcome); outcome != "" {
 			job.Outcome = outcome
+		}
+		if retryPolicy := strings.TrimSpace(event.RetryPolicy); retryPolicy != "" {
+			job.RetryPolicy = retryPolicy
 		}
 		if job.Result == nil {
 			job.Result = &firmwareUpdateResult{}
@@ -4125,12 +4289,19 @@ func normalizeMacAppUpdateVersion(raw string) (string, bool) {
 	return version, true
 }
 
-func firmwareUpdateErrorPayload(err error) apiError {
+func firmwareUpdateErrorPayload(err error, retryPolicy string) apiError {
 	if errcode.Of(err) == errcode.UpgradeVersionGuard {
 		return apiError{
 			Code:       "firmware_update_blocked",
 			Message:    "Update cannot be installed on this VibeTV.",
 			NextAction: "Create a support report.",
+		}
+	}
+	if strings.TrimSpace(retryPolicy) == "power_cycle" {
+		return apiError{
+			Code:       "firmware_update_restart_required",
+			Message:    "VibeTV must restart before another update attempt.",
+			NextAction: "Disconnect VibeTV from power for 10 seconds, reconnect it, and wait until the picture returns before trying again.",
 		}
 	}
 	return apiError{
@@ -4327,9 +4498,38 @@ func validRemoteThemePackURL(raw string) bool {
 }
 
 func (s *Server) config() (runtimeconfig.Config, error) {
+	s.selectionStateMu.RLock()
+	if s.selectionPrevious != nil {
+		cfg := cloneRuntimeConfig(*s.selectionPrevious)
+		s.selectionStateMu.RUnlock()
+		return cfg, nil
+	}
+	s.selectionStateMu.RUnlock()
+	return s.configForMaintenance()
+}
+
+func (s *Server) configForMaintenance() (runtimeconfig.Config, error) {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 	return s.loadConfigNormalized()
+}
+
+func (s *Server) beginPendingDeviceSelection(previous runtimeconfig.Config) {
+	s.selectionStateMu.Lock()
+	defer s.selectionStateMu.Unlock()
+	cloned := cloneRuntimeConfig(previous)
+	s.selectionPrevious = &cloned
+}
+
+func (s *Server) endPendingDeviceSelection() {
+	s.selectionStateMu.Lock()
+	defer s.selectionStateMu.Unlock()
+	s.selectionPrevious = nil
+}
+
+func cloneRuntimeConfig(cfg runtimeconfig.Config) runtimeconfig.Config {
+	cfg.KnownDevices = append([]runtimeconfig.KnownDevice(nil), cfg.KnownDevices...)
+	return cfg
 }
 
 func (s *Server) loadConfigNormalized() (runtimeconfig.Config, error) {
@@ -4337,9 +4537,7 @@ func (s *Server) loadConfigNormalized() (runtimeconfig.Config, error) {
 	if err != nil {
 		return runtimeconfig.Config{}, err
 	}
-	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
-	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
-	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	cfg.Normalize()
 	return cfg, nil
 }
 
@@ -4353,9 +4551,7 @@ func (s *Server) updateConfig(mutate func(*runtimeconfig.Config)) (runtimeconfig
 	if mutate != nil {
 		mutate(&cfg)
 	}
-	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
-	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
-	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	cfg.Normalize()
 	if err := s.saveConfig(s.home, cfg); err != nil {
 		return runtimeconfig.Config{}, err
 	}
@@ -4617,7 +4813,8 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 			Board:       hello.Board,
 			Firmware:    hello.Firmware,
 			NetworkMode: hello.NetworkMode,
-			Known:       deviceIdentityMatches(cfg, hello),
+			Known:       deviceIdentityIsKnown(cfg, hello),
+			Active:      deviceIdentityMatches(cfg, hello),
 		}
 		if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
 			byIdentity[key] = entry
@@ -4628,6 +4825,9 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 		devices = append(devices, entry)
 	}
 	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].Active != devices[j].Active {
+			return devices[i].Active
+		}
 		if devices[i].Known != devices[j].Known {
 			return devices[i].Known
 		}
@@ -4657,6 +4857,9 @@ func sortedDeviceSearchEntries(byIdentity map[string]deviceSearchEntry) []device
 		devices = append(devices, entry)
 	}
 	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].Active != devices[j].Active {
+			return devices[i].Active
+		}
 		if devices[i].Known != devices[j].Known {
 			return devices[i].Known
 		}
@@ -4669,6 +4872,18 @@ func deviceIdentityMatches(cfg runtimeconfig.Config, hello protocol.DeviceHello)
 	wantID := strings.TrimSpace(cfg.DeviceID)
 	gotID := strings.TrimSpace(hello.DeviceID)
 	return wantID != "" && gotID != "" && strings.EqualFold(wantID, gotID)
+}
+
+func deviceIdentityIsKnown(cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
+	deviceID := strings.TrimSpace(hello.DeviceID)
+	if deviceID == "" {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.DeviceID), deviceID) {
+		return true
+	}
+	_, ok := cfg.KnownDevice(deviceID)
+	return ok
 }
 
 func validateRepairIdentity(
@@ -4968,7 +5183,7 @@ func fullUsageRenderKind(raw string) bool {
 
 func activeThemeNeedsFullRepairRender(health deviceHealth) bool {
 	spec := health.Display.ThemeSpec
-	return spec.Active && strings.TrimSpace(spec.Path) != "" && !fullUsageRenderKind(health.Render.LastKind)
+	return spec.Active && strings.TrimSpace(spec.Path) != "" && !liveScreenRenderKind(health.Render.LastKind)
 }
 
 func renderSurfaceHealthy(health deviceHealth) bool {

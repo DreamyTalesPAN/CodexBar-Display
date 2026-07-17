@@ -77,7 +77,7 @@ export function ControlCenterShell({
   const setupConnected = deviceSetupIsUsable(device);
   const reconnecting = device?.connectionState === "reconnecting";
   const targetLabel = reconnecting
-    ? "Reconnecting…"
+    ? "VibeTV unavailable"
     : setupConnected
     ? imageStuck
       ? "Image is stuck"

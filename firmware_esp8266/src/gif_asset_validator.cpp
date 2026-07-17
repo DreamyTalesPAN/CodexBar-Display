@@ -274,6 +274,7 @@ GifValidationError ValidateGifAsset(
 
   Reader reader(readAt, context, size);
   bool sawFrame = false;
+  bool nextFrameHasTransparency = false;
   uint8_t signature[6] = {0};
   for (uint8_t& byte : signature) {
     if (!reader.ReadByte(byte)) {
@@ -312,7 +313,23 @@ GifValidationError ValidateGifAsset(
     }
     if (introducer == 0x21U) {
       uint8_t extensionLabel = 0;
-      if (!reader.ReadByte(extensionLabel) || !SkipSubBlocks(reader)) {
+      if (!reader.ReadByte(extensionLabel)) {
+        return GifValidationError::Invalid;
+      }
+      if (extensionLabel == 0xF9U) {
+        uint8_t blockSize = 0;
+        uint8_t graphicControlPacked = 0;
+        uint8_t ignoredByte = 0;
+        uint8_t terminator = 0;
+        if (!reader.ReadByte(blockSize) || blockSize != 4U ||
+            !reader.ReadByte(graphicControlPacked) ||
+            !reader.ReadByte(ignoredByte) || !reader.ReadByte(ignoredByte) ||
+            !reader.ReadByte(ignoredByte) || !reader.ReadByte(terminator) ||
+            terminator != 0U) {
+          return GifValidationError::Invalid;
+        }
+        nextFrameHasTransparency = (graphicControlPacked & 0x01U) != 0;
+      } else if (!SkipSubBlocks(reader)) {
         return GifValidationError::Invalid;
       }
       continue;
@@ -334,6 +351,11 @@ GifValidationError ValidateGifAsset(
         width > info->width - left || height > info->height - top) {
       return GifValidationError::Invalid;
     }
+    if (!sawFrame) {
+      info->firstFrameCoversCanvasOpaque =
+          left == 0 && top == 0 && width == info->width && height == info->height &&
+          !nextFrameHasTransparency;
+    }
     if ((packed & 0x80U) != 0) {
       const size_t colorTableBytes = static_cast<size_t>(3U << ((packed & 0x07U) + 1U));
       if (!reader.Skip(colorTableBytes)) {
@@ -352,6 +374,7 @@ GifValidationError ValidateGifAsset(
       return lzwError;
     }
     sawFrame = true;
+    nextFrameHasTransparency = false;
   }
 }
 

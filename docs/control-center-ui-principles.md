@@ -11,7 +11,7 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 - **Error prevention over error explanation:** disable or hide actions that would fail instead of explaining why they failed after the click.
 - **Plain-language labels:** use customer words: Mac App, VibeTV, Install, Connect, Update. Avoid internal words such as bridge, asset, package signing, protocol, transport, daemon, write gate, API, Companion, or agent.
 - **Automation-first workflows:** buttons should do the background work in sequence. Customers should not choose between technical substeps such as discover, pair, check bridge, check installer, or find device.
-- **State gating:** tabs and controls that are not usable in the current setup state stay locked. Overview owns setup recovery.
+- **State gating:** tabs and controls that are not usable in the current setup state stay locked. A startup gate owns recovery for an already configured VibeTV; Setup owns first-time onboarding.
 - **Visual hierarchy discipline:** no button stacks with equal weight. If multiple actions appear, the design is probably exposing implementation detail.
 - **Low text density:** short labels and short status rows are preferred. If a paragraph is needed, first try to delete it or convert it into a button label/status value.
 - **Approval before visible change:** implementation work never authorizes a visible UI change by itself. Any added, changed, or removed customer-facing copy, control, hierarchy, or state requires explicit user approval recorded in `control-center-customer-ui-approval.md`.
@@ -23,11 +23,14 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
    Mac App DMG. It never owns VibeTV WiFi, discovery, pairing, or local checks.
 2. The installed Mac App never asks the customer to download itself during
    normal onboarding. A fresh setup begins with VibeTV WiFi instructions.
-3. Device discovery and verification start only after the customer confirms
-   that VibeTV joined WiFi. Saved but incomplete devices are not repaired
-   passively. A successful check opens Overview automatically.
+3. During first-time setup, device discovery and verification start only after
+   the customer confirms that VibeTV joined WiFi. An existing unavailable
+   VibeTV is handled before the Control Center shell: reconnect the active
+   device automatically, search for alternatives read-only, and require an
+   explicit choice before switching device identity.
 4. An existing healthy setup opens Overview without setup writes or extra
-   confirmation.
+   confirmation. Reconnect/search progress for an existing setup stays on the
+   startup gate and never appears inside Overview or Setup.
 5. Settings, Theme Library, and Updates stay locked until setup is complete.
 6. Setup is complete when the Mac App is running and VibeTV is connected and paired.
 7. Theme Library is additionally locked until theme installs are allowed by the release gate.

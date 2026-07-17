@@ -125,8 +125,24 @@ bool testProfileAndMalformedStreams() {
   const std::vector<uint8_t> valid = gifWithLzw(packFixedWidthCodes({4, 0, 5}, 3));
   if (!expectError(valid, GifValidationError::None, "valid three-bit GIF must pass")) return false;
   if (!expect(validate(valid, &info) == GifValidationError::None &&
-              info.width == 1 && info.height == 1,
+              info.width == 1 && info.height == 1 && info.firstFrameCoversCanvasOpaque,
               "valid GIF metadata must be reported")) return false;
+
+  std::vector<uint8_t> transparent = valid;
+  transparent.insert(
+      transparent.begin() + 19,
+      {0x21, 0xF9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00});
+  if (!expect(
+          validate(transparent, &info) == GifValidationError::None &&
+              !info.firstFrameCoversCanvasOpaque,
+          "transparent first frame must require a loop clear")) return false;
+
+  std::vector<uint8_t> partial = valid;
+  partial[6] = 2;
+  if (!expect(
+          validate(partial, &info) == GifValidationError::None &&
+              !info.firstFrameCoversCanvasOpaque,
+          "partial first frame must require a loop clear")) return false;
 
   if (!expectError(
           gifWithLzw(growingTwelveBitStream(), 2043, 1),
@@ -185,8 +201,8 @@ bool testRepositoryMiniGif(const char* path) {
     return false;
   }
   return expect(
-      info.width == 80 && info.height == 80,
-      "Mini Classic GIF must remain an 80x80 asset within the 11-bit profile");
+      info.width == 80 && info.height == 80 && info.firstFrameCoversCanvasOpaque,
+      "Mini Classic GIF must remain an opaque full-canvas 80x80 asset within the 11-bit profile");
 }
 
 }  // namespace

@@ -22,11 +22,12 @@ CONTROL_CENTER_STATIC="${ROOT}/apps/control-center/out-local"
 COMPANION_BINARY=""
 DRY_RUN=0
 UNIVERSAL=0
+LOCAL_PREVIEW=0
 
 usage() {
   cat <<EOF
 Usage:
-  build-macos-control-center-app.sh [--version x.y.z] [--build n] [--output path.app] [--control-center-static dir] [--companion-binary path] [--app-icon path.icns] [--sparkle-feed-url url] [--sparkle-public-key key] [--universal] [--dry-run]
+  build-macos-control-center-app.sh [--version x.y.z] [--build n] [--output path.app] [--control-center-static dir] [--companion-binary path] [--app-icon path.icns] [--sparkle-feed-url url] [--sparkle-public-key key] [--universal] [--local-preview] [--dry-run]
 
 Builds the prepared macOS .app bundle for ${APP_NAME}.
 
@@ -95,6 +96,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --universal)
       UNIVERSAL=1
+      shift
+      ;;
+    --local-preview)
+      LOCAL_PREVIEW=1
       shift
       ;;
     -h|--help)
@@ -186,6 +191,8 @@ write_info_plist() {
     <string>$(xml_escape "$SPARKLE_FEED_URL")</string>
     <key>SUPublicEDKey</key>
     <string>$(xml_escape "$SPARKLE_PUBLIC_ED_KEY")</string>
+    <key>VibeTVLocalPreviewRuntime</key>
+    <$([[ "$LOCAL_PREVIEW" == "1" ]] && printf 'true' || printf 'false')/>
   </dict>
 </plist>
 PLIST

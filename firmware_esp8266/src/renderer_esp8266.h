@@ -22,6 +22,11 @@ struct RendererDebugSnapshot {
   uint16_t themeSpecStringCapacity = 0;
   bool themeSpecKeepsJsonDocument = false;
   bool themeSpecHasAnimatedAssets = false;
+  unsigned long cbaCompletedFrames = 0;
+  unsigned long cbaLastFrameDurationMs = 0;
+  uint32_t cbaBufferBytes = 0;
+  unsigned long cbaBufferAllocationFailures = 0;
+  unsigned long cbaLastPushDurationUs = 0;
   unsigned long themeSpecPartialSuccesses = 0;
   unsigned long themeSpecPartialFailures = 0;
   uint32_t themeSpecLastPartialChangedFields = 0;
@@ -46,6 +51,11 @@ struct RendererHealthSnapshot {
   bool themeSpecRenderOk = true;
   String themeSpecRenderError;
   unsigned long themeSpecRenderFailures = 0;
+  unsigned long cbaCompletedFrames = 0;
+  unsigned long cbaLastFrameDurationMs = 0;
+  uint32_t cbaBufferBytes = 0;
+  unsigned long cbaBufferAllocationFailures = 0;
+  unsigned long cbaLastPushDurationUs = 0;
   String gifActivePath;
   bool gifFilePresent = false;
   bool gifDecoderAllocated = false;
@@ -60,6 +70,7 @@ class RendererESP8266 : public app::Renderer {
   RendererDebugSnapshot DebugSnapshot() const;
   RendererHealthSnapshot HealthSnapshot() const;
   bool ShouldDeferDirtyRender(app::RuntimeContext& ctx) const;
+  bool AnimationWorkPending() const;
   void ResetGifStateForAssetUpdate();
   bool SupportsBrightnessControl() const;
   void ApplyBrightnessPercent(uint8_t percent);
@@ -72,7 +83,6 @@ class RendererESP8266 : public app::Renderer {
   void DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const String& text);
   void TickActive(app::RuntimeContext& ctx) override;
   void DrawError(app::RuntimeContext& ctx, const String& message) override;
-  bool DrawTopLine(app::RuntimeContext& ctx);
   void DrawUsage(app::RuntimeContext& ctx) override;
   void DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) override;
 };

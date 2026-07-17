@@ -209,3 +209,257 @@ transition evidence:
 
 No merge, production deployment, tag, or release was performed by this final
 verification.
+
+## 2026-07-16 - Firmware 1.0.36 to 1.0.37 migration gate
+
+Approval:
+
+- The user authorized the remaining hardware writes and selected three
+  consecutive migration runs as the release gate.
+
+Device and artifacts:
+
+- Device ID: `14799300`
+- Address: `http://192.168.178.72`
+- Board: `esp8266-smalltv-st7789`
+- Source firmware: public `1.0.36` from release `v1.0.46`
+- Source compressed SHA-256:
+  `88164516ddb33c0b411392b2ab1ce99c5698e7176bdc640d01b3887cfd77f199`
+- Source raw firmware SHA-256:
+  `d78580503a871bd58f947570e3eeee178487b62566b36eebb84833a2d3dc6b93`
+- Source raw size: `459920` bytes
+- Target firmware: final PR #182 candidate `1.0.37`
+- Target SHA-256:
+  `7b2b297829d5b2551ead94cdea6450f0fac053b1d05ab57288a4393c2b6302a5`
+- Target size: `462688` bytes
+- Target build usage: RAM `52.7%`; flash `43.9%`
+
+Test method:
+
+- Each run restored only flash address `0x0` with the exact public `1.0.36`
+  firmware. No erase-all, filesystem, WiFi, theme, or asset write was used.
+- Before each OTA, `/hello` confirmed firmware `1.0.36`, device ID `14799300`,
+  and station mode.
+- The combined Control Center runtime/API process sent a normal display frame
+  before each update.
+- Each update was started through `POST /v1/updates/install`, not by calling the
+  device OTA endpoint directly.
+- The Control Center paused its display writer for the OTA. No display frame was
+  sent during any upload window; a fresh frame was sent after each update.
+- The Companion used the paced RAW compatibility transport and did not retry or
+  fall back to multipart.
+
+Results:
+
+| Run | Control Center job | Result | Target boot ID |
+| --- | --- | --- | --- |
+| 1 | `firmware-update-1784219770952740000-1` | `1.0.37`, identity and health verified | `e1d1c4-36-5aeea5bb` |
+| 2 | `firmware-update-1784220182473777000-1` | `1.0.37`, identity and health verified | `e1d1c4-38-889c42d3` |
+| 3 | `firmware-update-1784220373588746000-2` | `1.0.37`, identity and health verified | `e1d1c4-40-e47c3e48` |
+
+All three runs additionally verified:
+
+- reset reason `Software/System restart` after OTA;
+- filesystem mounted;
+- ThemeSpec `renderOk: true`;
+- `/themes/mini/mini.gif` still present with `20870` bytes;
+- `/themes/u/mini-cl-1-410a37.json` still present with `642` bytes;
+- WiFi credentials preserved and the device returned at the same address.
+
+Harness note:
+
+- A stale previous-agent LaunchAgent, `shop.vibetv.preview-fixture`, was found
+  serving an old `1.0.36` preview manifest on port `47833`. The final gate used
+  an isolated server on port `47834`, so the stale fixture did not affect any of
+  the three artifacts or uploads. The stale service was booted out after the
+  gate and port `47833` was confirmed closed.
+- The local final candidate binary was run directly instead of from the signed
+  app bundle. macOS did not allow that unsigned `/tmp` binary to use local
+  networking when registered through `launchd`, so the combined runtime/API
+  process was run directly for the gate.
+- Consequently the API job's separate `launchctl` inspection reported
+  `firmware_current_stream_attention`, even though the same process demonstrably
+  paused the writer, resumed it, sent a fresh frame, and the device reported a
+  healthy render after every update. This is a test-harness registration warning,
+  not an OTA, device-health, or render failure.
+
+Conclusion:
+
+- The final candidate passed the selected `3/3` consecutive customer-path
+  firmware migration gate from public `1.0.36` to `1.0.37`.
+- No USB data connection was used for the upgrade itself; USB was used only to
+  recreate the source firmware between runs.
+- No merge, tag, release, Main push, or production deployment was performed.
+
+## 2026-07-16 post-review retry-safety validation
+
+After the typed `power_cycle` recovery and UI retry lock were added, one
+additional user-approved hardware migration was run on device `14799300`:
+
+- public source firmware: `1.0.36`, raw SHA-256
+  `d78580503a871bd58f947570e3eeee178487b62566b36eebb84833a2d3dc6b93`;
+- target firmware: `1.0.37`, SHA-256
+  `7b2b297829d5b2551ead94cdea6450f0fac053b1d05ab57288a4393c2b6302a5`;
+- Control Center API job: `firmware-update-1784232337381943000-1`;
+- result: upload accepted, firmware identity verified, device identity
+  `14799300` verified, and health verified;
+- target boot ID: `e1d1c4-43-5c294cb6`, reset reason
+  `Software/System restart`;
+- `/themes/mini/mini.gif` remained `20870` bytes and
+  `/themes/u/mini-cl-1-410a37.json` remained `642` bytes;
+- the runtime log recorded `device-writes-paused` before the upload,
+  `device-writes-resumed` after it, and a fresh frame after resume.
+
+The API outcome was `firmware_current_stream_attention` only because the final
+test process was run directly and therefore had no loaded LaunchAgent service
+to inspect. Firmware, identity, health, assets, and the resumed frame all
+passed.
+
+A locally built app was also installed in `/Applications`; its LaunchAgent
+registered and served the expected `1.0.47` runtime from the bundled helper.
+This Mac has no Developer ID signing identity. macOS consequently denied local
+network access to the ad-hoc LaunchAgent, while direct access from the Mac
+continued to work. This does not count as the signed/notarized customer-app
+gate; that gate requires the final Developer-ID-signed build.
+
+## 2026-07-16 signed and notarized customer-app gate
+
+The manual `CODEX Build macOS Preview DMG` workflow was dispatched from trusted
+`main` with PR source SHA
+`0dc5188edbefec4326bcc5dcee0b9baf6bcaa1cd`. It did not merge, tag, publish, or
+create a release.
+
+Signed artifact:
+
+- GitHub Actions run:
+  `https://github.com/DreamyTalesPAN/CodexBar-Display/actions/runs/29532570187`
+- Mac App version: `99.0.30`
+- Mac App build: `90000030`
+- Developer ID team: `QJ36BU5499`
+- DMG SHA-256:
+  `cc09375c9540c748f4b2c30e7607b0a167fb4acdcb27ae38af88505e3f0298c0`
+- The DMG passed checksum verification, strict nested code-signature
+  verification, stapler validation, Gatekeeper with
+  `source=Notarized Developer ID`, and the repository's final distribution
+  verifier.
+- The embedded Companion reported the exact requested source SHA.
+
+Customer-path runtime:
+
+- The app was installed and opened from `/Applications`.
+- `SMAppService` loaded `shop.vibetv.control-center.runtime` as the sole local
+  runtime and port owner.
+- `/v1/status` reported installation mode `dmg`, the app and bundled-helper
+  paths under `/Applications`, runtime PID `81436`, and listener owner
+  `shop.vibetv.control-center.runtime`.
+- The runtime connected to device `14799300` at
+  `http://192.168.178.72`, sent a normal frame on public firmware `1.0.36`, and
+  reported the device ready with a healthy stream before the update.
+
+Single OTA result:
+
+- Control Center API job: `firmware-update-1784234213717492000-1`
+- Started: `2026-07-16T20:36:53.717504Z`
+- Finished: `2026-07-16T20:38:54.687615Z`
+- Phase/outcome: `complete` / `updated`
+- Result firmware: `1.0.37`
+- Artifact validation, upload acceptance, device identity, `/hello`, health,
+  stream, and render verification all passed.
+- Runtime log recorded `device-writes-paused` at
+  `2026-07-16T20:37:11.2634Z`, `device-writes-resumed` at
+  `2026-07-16T20:38:54.067134Z`, and a fresh frame immediately afterward.
+- Target boot ID: `e1d1c4-46-da1b6ac5`; reset reason:
+  `Software/System restart`.
+- `/themes/mini/mini.gif` remained `20870` bytes and
+  `/themes/u/mini-cl-1-410a37.json` remained `642` bytes.
+
+Local Service Management note:
+
+- The first signed preview launch encountered an AMFI launch-constraint error
+  after many earlier ad-hoc and debug app replacements on this Mac.
+- A clean registration of the public Developer-ID-signed `1.0.46` app repaired
+  that local Service Management state.
+- The original signed preview `99.0.29` with build `29` was then installed again
+  and its real `SMAppService` runtime started successfully. This disproved the
+  temporary hypothesis that the preview build number caused the failure; the
+  speculative build-number workaround was removed from the PR.
+
+After the test, the isolated firmware server and launchd manifest override were
+removed. The signed preview remained installed with the normal production feed,
+and device `14799300` remained ready on `1.0.37` with a healthy stream. No merge,
+tag, release, Main push, or production deployment was performed.
+
+Final-head notarized verification:
+
+- After removing the disproved build-number workaround and recording this
+  evidence, trusted workflow run
+  `https://github.com/DreamyTalesPAN/CodexBar-Display/actions/runs/29533270837`
+  built final PR source SHA
+  `8e98f5a75f62cf7eac3042347860776a0dbfaa5c`.
+- Final preview version/build: `99.0.31` / `31`.
+- Final DMG SHA-256:
+  `f52ef31197f9e265cbd7a7644a0432e67398859851afc7c4a20cb39f01eafce6`.
+- The final DMG passed the same signature, notarization, stapler, Gatekeeper,
+  and repository distribution checks and embedded the exact final PR SHA.
+- Installed from `/Applications`, it loaded
+  `shop.vibetv.control-center.runtime` with PID `24164`; `/v1/status` reported
+  `installationMode: dmg`, the expected app/helper paths and final source SHA.
+- Device `14799300` remained ready on `1.0.37` with boot ID
+  `e1d1c4-46-da1b6ac5` and a healthy stream. No second OTA was performed.
+
+## 2026-07-16 Mini GIF loop and legacy-label correction
+
+A visual check of the signed-app result found two separate Mini issues:
+
+- the current GIF asset was already present (`20870` bytes, matching the
+  current theme-pack size), but it briefly disappeared between loops;
+- the preserved factory ThemeSpec at
+  `/themes/u/mini-cl-1-410a37.json` still hard-coded `left` instead of using
+  the live usage mode.
+
+Corrected candidate:
+
+- source commit: `77a1726`;
+- firmware version: `1.0.37`;
+- size: `462816` bytes;
+- SHA-256:
+  `5b5b7a75475dd323015560e43bfd3b91387b72c1756e3a081bb83326e97ffba4`;
+- native ThemeSpec tests: `48/48` passed;
+- GIF policy, asset validation, decoder profile, and parity tests passed;
+- flash size `43.9%`, RAM `52.8%`, gzip size `328755` bytes.
+
+The public `1.0.36` firmware was restored at `0x0` only. Before OTA, the old
+ThemeSpec remained `642` bytes with runtime hash `fd263e45`, and the GIF
+remained `20870` bytes. The signed and notarized `99.0.31` app in
+`/Applications` then ran exactly one OTA job through the real
+`shop.vibetv.control-center.runtime` service:
+
+- job: `firmware-update-1784235859364733000-1`;
+- started: `2026-07-16T21:04:19.364737Z`;
+- finished: `2026-07-16T21:07:33.653117Z`;
+- outcome: `complete` / `updated`;
+- artifact validation, upload acceptance, identity, `/hello`, health, stream,
+  and render verification all passed;
+- resulting boot ID: `e1d1c4-49-b122d25`;
+- device result: `1.0.37`, ready, healthy stream, successful ThemeSpec render.
+
+LittleFS was not uploaded. After OTA, the same old ThemeSpec path remained
+`642` bytes and the same GIF remained `20870` bytes. The rendered ThemeSpec
+hash changed to `28095cf9`, proving that the legacy factory spec was upgraded in
+memory. The local firmware server was stopped, the manifest override was
+removed, and the signed runtime returned to the normal production feed.
+
+Final operator confirmation on 2026-07-17:
+
+- source commit: `217239a`;
+- firmware version: `1.0.37`;
+- size: `461296` bytes;
+- SHA-256:
+  `1583cb5120a7c68377aa2a1d384f89bc2cf1c616339a6fde0a3e853e121e2f54`;
+- the firmware was flashed over USB and its written hash was verified;
+- `/health` reported Mini Classic active, the Mini GIF present with an open
+  decoder, and no ThemeSpec or GIF error;
+- the operator visually confirmed on the physical VibeTV that the Mini GIF
+  looped without the previous disappearance or full-screen redraw.
+
+This closes the physical no-gap GIF-loop gate for the corrected firmware.
