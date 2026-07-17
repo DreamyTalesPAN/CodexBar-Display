@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,56 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
+
+type recordingWriter struct {
+	writes [][]byte
+}
+
+func (w *recordingWriter) Write(p []byte) (int, error) {
+	w.writes = append(w.writes, append([]byte(nil), p...))
+	return len(p), nil
+}
+
+func TestRawFirmwareBodyWriterSegmentsBody(t *testing.T) {
+	destination := &recordingWriter{}
+	writer := &rawFirmwareBodyWriter{destination: destination}
+	body := bytes.Repeat([]byte{0xa5}, 130)
+
+	if _, err := writer.Write(body); err != nil {
+		t.Fatalf("write body: %v", err)
+	}
+	if len(destination.writes) != 3 {
+		t.Fatalf("expected three body writes, got %d", len(destination.writes))
+	}
+	for i, write := range destination.writes {
+		if len(write) > otaRawWriteChunkBytes {
+			t.Fatalf("body write %d has %d bytes, want at most %d", i, len(write), otaRawWriteChunkBytes)
+		}
+	}
+	if got := bytes.Join(destination.writes, nil); !bytes.Equal(got, body) {
+		t.Fatal("segmented body does not match input")
+	}
+}
+
+func TestRawFirmwareBodyWriterWaitsForBodyBlockAcks(t *testing.T) {
+	destination := &recordingWriter{}
+	ackCalls := 0
+	writer := &rawFirmwareBodyWriter{
+		destination: destination,
+		waitForAck: func() error {
+			ackCalls++
+			return nil
+		},
+	}
+	body := bytes.Repeat([]byte{0x5a}, 2*otaRawAckBlockBytes+1)
+
+	if _, err := writer.Write(body); err != nil {
+		t.Fatalf("write body: %v", err)
+	}
+	if ackCalls != 2 {
+		t.Fatalf("expected two body-block acks, got %d", ackCalls)
+	}
+}
 
 func TestReleaseStateRoundTrip(t *testing.T) {
 	home := t.TempDir()
@@ -916,6 +967,164 @@ func TestRunInstallUpdateUsesStoredDeviceTokenForOTA(t *testing.T) {
 	}
 	if !uploaded {
 		t.Fatal("expected OTA upload")
+	}
+}
+
+func TestRecoverInterruptedFirmwareUploadAcceptsInstalledTargetVersion(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousTimeout := firmwareInterruptedVerifyTimeout
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareInterruptedVerifyTimeout = previousTimeout
+	})
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareInterruptedVerifyTimeout = 10 * time.Millisecond
+
+	multipartCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37"}`))
+		case "/update/firmware":
+			multipartCalls++
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	err := recoverInterruptedFirmwareUpload(
+		context.Background(),
+		server.URL,
+		"1.0.37",
+		"device-a",
+		errors.New("write tcp: use of closed network connection"),
+	)
+	if err != nil {
+		t.Fatalf("installed target version should resolve interrupted upload: %v", err)
+	}
+	if multipartCalls != 0 {
+		t.Fatalf("must not retry after target version is installed, got %d multipart calls", multipartCalls)
+	}
+}
+
+func TestRecoverInterruptedFirmwareUploadRequiresRestartAfterOldVersionReturns(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousTimeout := firmwareInterruptedVerifyTimeout
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareInterruptedVerifyTimeout = previousTimeout
+	})
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareInterruptedVerifyTimeout = 5 * time.Millisecond
+
+	multipartCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36"}`))
+		case "/update/firmware":
+			multipartCalls++
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	unsafeErrors := []error{
+		errors.New("write tcp: use of closed network connection"),
+		errors.New("timed out waiting for VibeTV to acknowledge firmware data (1024 bytes pending)"),
+		errors.New("POST /update/firmware.raw returned 500 body=\"Update failed: No Error\""),
+		io.EOF,
+	}
+	for _, uploadErr := range unsafeErrors {
+		err := recoverInterruptedFirmwareUpload(
+			context.Background(),
+			server.URL,
+			"1.0.37",
+			"device-a",
+			uploadErr,
+		)
+		if !errors.Is(err, errFirmwareUploadRestartRequired) {
+			t.Fatalf("expected restart-required error for %v, got %v", uploadErr, err)
+		}
+	}
+	if multipartCalls != 0 {
+		t.Fatalf("must not retry multipart in the same boot, got %d calls", multipartCalls)
+	}
+}
+
+func TestRecoverInterruptedFirmwareUploadRejectsChangedDeviceIdentity(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousTimeout := firmwareInterruptedVerifyTimeout
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareInterruptedVerifyTimeout = previousTimeout
+	})
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareInterruptedVerifyTimeout = 5 * time.Millisecond
+
+	multipartCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-b","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36"}`))
+		case "/update/firmware":
+			multipartCalls++
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	err := recoverInterruptedFirmwareUpload(
+		context.Background(),
+		server.URL,
+		"1.0.37",
+		"device-a",
+		errors.New("write tcp: use of closed network connection"),
+	)
+	if err == nil || !strings.Contains(err.Error(), "identity changed") {
+		t.Fatalf("expected identity-change rejection, got %v", err)
+	}
+	if multipartCalls != 0 {
+		t.Fatalf("must not write to a changed device, got %d multipart calls", multipartCalls)
+	}
+}
+
+func TestRawFirmwareUploadUnavailableDoesNotTreatTimeoutAsSafeFallback(t *testing.T) {
+	if rawFirmwareUploadUnavailable(errors.New("operation timed out")) {
+		t.Fatal("a timeout may happen after firmware bytes were sent and must not trigger multipart fallback")
+	}
+	if !rawFirmwareUploadUnavailable(errors.New("connect: connection refused")) {
+		t.Fatal("connection refusal before an upload should allow the legacy endpoint fallback")
+	}
+}
+
+func TestFirmwareUploadConnectionInterruptedRequiresRecoveryForUnsafeErrors(t *testing.T) {
+	tests := []error{
+		errors.New("timed out waiting for VibeTV to acknowledge firmware data (1024 bytes pending)"),
+		errors.New("write tcp: i/o timeout"),
+		errors.New("POST /update/firmware.raw returned 500 body=\"Update failed: No Error\""),
+		io.EOF,
+		fmt.Errorf("%w: response disappeared", errFirmwareUploadMayHaveWritten),
+	}
+	for _, err := range tests {
+		if !firmwareUploadConnectionInterrupted(err) {
+			t.Fatalf("unsafe upload error was treated as retryable: %v", err)
+		}
 	}
 }
 

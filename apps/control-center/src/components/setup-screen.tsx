@@ -41,6 +41,7 @@ type SetupScreenProps = {
   onDeviceTargetChange?: (target: string) => void;
   onSearchDevices?: () => void;
   onSelectDevice?: (candidate: DeviceCandidate) => void;
+  onDeclineDevice?: () => void;
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
   hostedMode?: boolean;
@@ -67,6 +68,7 @@ export function SetupScreen({
   onDeviceTargetChange,
   onSearchDevices,
   onSelectDevice,
+  onDeclineDevice,
   onRepairConnection,
   onResetSetup,
   hostedMode = false,
@@ -87,8 +89,10 @@ export function SetupScreen({
     !forceMacAppStep &&
     !macAppMissing &&
     (macAppConfirmedState || macAppReady || setupComplete);
+  const deviceSelectionInProgress = deviceSearchState !== "idle";
   const wifiConfirmed =
     wifiConfirmedState ||
+    deviceSelectionInProgress ||
     setupComplete ||
     previewStep === "mac-app" ||
     hostedMode;
@@ -395,6 +399,7 @@ export function SetupScreen({
                   onDeviceTargetChange={onDeviceTargetChange}
                   onSearchDevices={onSearchDevices}
                   onSelectDevice={onSelectDevice}
+                  onDeclineDevice={onDeclineDevice}
                   onRepairConnection={retryConnect}
                   setupComplete={setupComplete}
                 />
@@ -466,6 +471,7 @@ function FinishSetupContent({
   onDeviceTargetChange,
   onSearchDevices,
   onSelectDevice,
+  onDeclineDevice,
   onRepairConnection,
   setupComplete,
 }: {
@@ -478,6 +484,7 @@ function FinishSetupContent({
   onDeviceTargetChange?: (target: string) => void;
   onSearchDevices?: () => void;
   onSelectDevice?: (candidate: DeviceCandidate) => void;
+  onDeclineDevice?: () => void;
   onRepairConnection?: (targetOverride?: string) => void;
   setupComplete: boolean;
 }) {
@@ -495,26 +502,138 @@ function FinishSetupContent({
     );
   }
 
+  if (deviceSearchState === "alternate" && deviceCandidates[0]) {
+    const candidate = deviceCandidates[0];
+    return (
+      <div className="grid gap-5" aria-live="polite">
+        <div className="grid gap-2">
+          <h4 className="text-xl font-black text-[#1B1B1B]">
+            VibeTV found
+          </h4>
+          <p className="text-sm leading-6 text-[#444933]">
+            Connect to this VibeTV?
+          </p>
+        </div>
+        <DeviceCandidateCard candidate={candidate} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Button
+            className="w-full"
+            disabled={Boolean(busyAction) && busyAction !== "select"}
+            onClick={() => onSelectDevice?.(candidate)}
+            size="lg"
+            type="button"
+          >
+            {busyAction === "select" ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <Monitor data-icon="inline-start" aria-hidden />
+            )}
+            <span>{busyAction === "select" ? "Connecting" : "Connect this VibeTV"}</span>
+          </Button>
+          <Button
+            className="w-full"
+            disabled={Boolean(busyAction)}
+            onClick={onDeclineDevice}
+            size="lg"
+            type="button"
+            variant="outline"
+          >
+            Not now
+          </Button>
+          <Button
+            className="w-full"
+            disabled={Boolean(busyAction)}
+            onClick={onSearchDevices}
+            size="lg"
+            type="button"
+            variant="outline"
+          >
+            <RefreshCw data-icon="inline-start" aria-hidden />
+            <span>Search again</span>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (deviceSearchState === "multiple") {
     return (
       <div className="grid gap-4">
-        <p className="text-sm leading-6 text-[#444933]">
-          More than one VibeTV was found. Choose the one you want to connect.
-        </p>
+        <div className="grid gap-2">
+          <h4 className="text-xl font-black text-[#1B1B1B]">
+            Choose a VibeTV
+          </h4>
+          <p className="text-sm leading-6 text-[#444933]">
+            More than one VibeTV was found. Choose the one you want to connect.
+          </p>
+        </div>
         <div className="grid gap-3">
           {deviceCandidates.map((candidate) => (
-            <Button
-              disabled={Boolean(busyAction)}
+            <div
+              className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
               key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
-              onClick={() => onSelectDevice?.(candidate)}
-              type="button"
-              variant="outline"
             >
-              <Monitor data-icon="inline-start" aria-hidden />
-              <span>{candidateLabel(candidate)}</span>
-            </Button>
+              <DeviceCandidateDetails candidate={candidate} />
+              <Button
+                disabled={Boolean(busyAction) && busyAction !== "select"}
+                onClick={() => onSelectDevice?.(candidate)}
+                size="lg"
+                type="button"
+                variant="outline"
+              >
+                {busyAction === "select" ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <Monitor data-icon="inline-start" aria-hidden />
+                )}
+                <span>{busyAction === "select" ? "Connecting" : "Connect this VibeTV"}</span>
+              </Button>
+            </div>
           ))}
         </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Button
+            className="w-full"
+            disabled={Boolean(busyAction)}
+            onClick={onDeclineDevice}
+            size="lg"
+            type="button"
+            variant="outline"
+          >
+            Not now
+          </Button>
+          <Button
+            className="w-full"
+            disabled={Boolean(busyAction)}
+            onClick={onSearchDevices}
+            size="lg"
+            type="button"
+            variant="outline"
+          >
+            <RefreshCw data-icon="inline-start" aria-hidden />
+            <span>Search again</span>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (deviceSearchState === "declined") {
+    return (
+      <div className="grid gap-4">
+        <p className="text-sm leading-6 text-[#444933]">
+          No VibeTV is selected. You can search again when you are ready.
+        </p>
+        <Button
+          className="w-full"
+          onClick={onSearchDevices}
+          size="lg"
+          type="button"
+          variant="outline"
+        >
+          <RefreshCw data-icon="inline-start" aria-hidden />
+          <span>Search again</span>
+        </Button>
       </div>
     );
   }
@@ -575,7 +694,8 @@ function FinishSetupContent({
   if (
     busyAction === "connect" ||
     busyAction === "discover" ||
-    busyAction === "repair"
+    busyAction === "repair" ||
+    busyAction === "select"
   ) {
     return (
       <StatusNote
@@ -595,12 +715,44 @@ function FinishSetupContent({
   );
 }
 
-function candidateLabel(candidate: DeviceCandidate): string {
-  const details = [candidate.target];
-  if (candidate.firmware) {
-    details.push(`Firmware ${candidate.firmware}`);
+function DeviceCandidateCard({ candidate }: { candidate: DeviceCandidate }) {
+  return (
+    <div className="border border-[#747A60] bg-[#F9F9F9] p-4">
+      <DeviceCandidateDetails candidate={candidate} />
+    </div>
+  );
+}
+
+function DeviceCandidateDetails({
+  candidate,
+}: {
+  candidate: DeviceCandidate;
+}) {
+  const address = candidateAddress(candidate.target);
+  return (
+    <div className="min-w-0">
+      <p className="break-words text-base font-black text-[#1B1B1B]">
+        VibeTV {candidate.deviceId || address}
+      </p>
+      <p className="mt-1 break-words text-sm leading-6 text-[#444933]">
+        IP address: {address}
+        {candidate.firmware ? ` · Firmware ${candidate.firmware}` : ""}
+      </p>
+      {candidate.known ? (
+        <p className="mt-1 text-sm font-bold text-[#506600]">
+          Previously connected
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function candidateAddress(target: string): string {
+  try {
+    return new URL(target).hostname || target;
+  } catch {
+    return target.replace(/^https?:\/\//i, "").replace(/\/$/, "");
   }
-  return details.join(" · ");
 }
 
 function SetupStep({

@@ -160,19 +160,6 @@ export function validateThemeAgainstCapabilities(
     }
   }
 
-  if (
-    normalized.fallbackTheme &&
-    caps.builtinThemes &&
-    caps.builtinThemes.length > 0 &&
-    !caps.builtinThemes.some(
-      (theme) => theme.trim().toLowerCase() === normalized.fallbackTheme,
-    )
-  ) {
-    errors.push(
-      `Fallback theme ${normalized.fallbackTheme} is not available on this VibeTV.`,
-    );
-  }
-
   return {
     errors,
     warnings,

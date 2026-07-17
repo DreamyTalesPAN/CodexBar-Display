@@ -13,7 +13,6 @@ function document(packName = "Test Theme"): ThemeStudioDocument {
     assets: {},
     packName,
     spec: {
-      fallbackTheme: "mini",
       primitives: [
         { color: "#000000", height: 240, type: "rect", width: 240, x: 0, y: 0 },
         { color: "#FFFFFF", text: "A", type: "text", x: 10, y: 10 },

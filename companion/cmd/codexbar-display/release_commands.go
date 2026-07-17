@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,6 +28,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
@@ -41,9 +44,17 @@ const (
 	githubDownloadBaseURL     = "https://github.com"
 	vibeTVFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 	otaUploadBytesPerSecond   = 32 * 1024
+	otaRawWriteChunkBytes     = 64
+	otaRawWritePause          = 10 * time.Millisecond
+	otaRawWriteBufferBytes    = 2 * 1024
+	otaRawAckBlockBytes       = 1024
+	otaRawAckTimeout          = 30 * time.Second
+	otaRawHeaderPause         = 250 * time.Millisecond
 )
 
 var (
+	errFirmwareUploadRestartRequired                   = errors.New("VibeTV must restart before another firmware upload")
+	errFirmwareUploadMayHaveWritten                    = errors.New("firmware upload may have written data")
 	upgradeStopLaunchAgentFn                           = stopLaunchAgentBestEffort
 	upgradeRestartLaunchAgentFn                        = restartLaunchAgent
 	rollbackRestartLaunchAgentFn                       = restartLaunchAgent
@@ -59,9 +70,11 @@ var (
 	discoverWiFiDeviceFn                               = transportlayer.DiscoverWiFiDevice
 	flashReleaseFirmwareImageFn                        = flashReleaseFirmwareImage
 	uploadFirmwareOTAFn                                = uploadFirmwareOTA
+	firmwareRawDialContextFn                           = dialFirmwareRawConnection
 	firmwareHTTPVerifyPollInterval                     = 2 * time.Second
 	firmwareUpdateRediscoveryAfter                     = 10 * time.Second
 	firmwareUpdateRediscoveryInterval                  = 5 * time.Second
+	firmwareInterruptedVerifyTimeout                   = 20 * time.Second
 )
 
 type firmwareUpdateEvent = firmwareupdate.Event
@@ -572,21 +585,46 @@ func runInstallUpdate(args []string) (retErr error) {
 
 	fmt.Println("Uploading firmware...")
 	uploadErr := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken)
+	uploadErr = recoverInterruptedFirmwareUpload(
+		ctx,
+		base,
+		targetVersion,
+		deviceID,
+		uploadErr,
+	)
 	if uploadErr != nil {
 		if firmwareOTAAuthError(uploadErr) {
 			refreshedToken, pairErr := ensureFirmwareUpdateDeviceToken(ctx, home, base, true)
 			if pairErr == nil {
 				uploadErr = uploadFirmwareOTAFn(ctx, base, imagePath, refreshedToken)
+				uploadErr = recoverInterruptedFirmwareUpload(
+					ctx,
+					base,
+					targetVersion,
+					deviceID,
+					uploadErr,
+				)
 			} else {
 				uploadErr = fmt.Errorf("%w; repair pairing failed: %v", uploadErr, pairErr)
 			}
 		}
 		if uploadErr != nil {
+			hint := "keep VibeTV powered and on the same WiFi, then retry"
+			if errors.Is(uploadErr, errFirmwareUploadRestartRequired) {
+				hint = "disconnect VibeTV from power for 10 seconds, reconnect it, wait until the picture returns, then retry once"
+				emitFirmwareUpdateEvent(firmwareUpdateEvent{
+					Stage:       "uploading",
+					RetryPolicy: "power_cycle",
+					Firmware:    targetVersion,
+					Target:      base,
+					DeviceID:    deviceID,
+				})
+			}
 			return &commandError{
 				Op:   "ota-upload",
 				Code: errcode.UpgradeFlashFirmware,
 				Err:  uploadErr,
-				Hint: "keep VibeTV powered and on the same WiFi, then retry",
+				Hint: hint,
 			}
 		}
 	}
@@ -1299,7 +1337,10 @@ func uploadFirmwareOTA(ctx context.Context, base, imagePath, token string) error
 	} else if !rawFirmwareUploadUnavailable(err) {
 		return err
 	}
+	return uploadFirmwareOTAMultipart(ctx, base, imagePath, token)
+}
 
+func uploadFirmwareOTAMultipart(ctx context.Context, base, imagePath, token string) error {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	part, err := writer.CreateFormFile("firmware", filepath.Base(imagePath))
@@ -1332,14 +1373,74 @@ func uploadFirmwareOTA(ctx context.Context, base, imagePath, token string) error
 	req.ContentLength = int64(body.Len())
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("POST /update/firmware returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+		err := fmt.Errorf("POST /update/firmware returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return err
+		}
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
 	return nil
+}
+
+func recoverInterruptedFirmwareUpload(
+	ctx context.Context,
+	base string,
+	targetVersion string,
+	expectedDeviceID string,
+	uploadErr error,
+) error {
+	if uploadErr == nil || !firmwareUploadConnectionInterrupted(uploadErr) {
+		return uploadErr
+	}
+	if err := waitForHTTPFirmwareVersion(ctx, base, targetVersion, firmwareInterruptedVerifyTimeout); err == nil {
+		return nil
+	}
+	hello, helloErr := fetchDeviceHelloHTTP(ctx, base)
+	if helloErr != nil {
+		return fmt.Errorf("%w; could not verify VibeTV after interrupted upload: %v", uploadErr, helloErr)
+	}
+	if expectedDeviceID = strings.TrimSpace(expectedDeviceID); expectedDeviceID != "" &&
+		!strings.EqualFold(strings.TrimSpace(hello.DeviceID), expectedDeviceID) {
+		return fmt.Errorf("%w; VibeTV identity changed after interrupted upload: expected=%q got=%q", uploadErr, expectedDeviceID, strings.TrimSpace(hello.DeviceID))
+	}
+	if normalizeReleaseVersion(hello.Firmware) == normalizeReleaseVersion(targetVersion) {
+		return nil
+	}
+
+	// Firmware 1.0.36 does not reset the ESP8266 Update object after a partial
+	// RAW upload. A second upload in the same boot can therefore fail with
+	// "Update failed: No Error" or operate on stale updater state. Never switch
+	// transports or retry automatically after bytes may have reached the device.
+	return fmt.Errorf(
+		"%w: interrupted upload left firmware %s installed on device %s: %v",
+		errFirmwareUploadRestartRequired,
+		strings.TrimSpace(hello.Firmware),
+		strings.TrimSpace(hello.DeviceID),
+		uploadErr,
+	)
+}
+
+func firmwareUploadConnectionInterrupted(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, errFirmwareUploadMayHaveWritten) || errors.Is(err, io.EOF) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "use of closed network connection") ||
+		strings.Contains(message, "connection reset by peer") ||
+		strings.Contains(message, "broken pipe") ||
+		strings.Contains(message, "unexpected eof") ||
+		strings.Contains(message, "timed out waiting for vibetv to acknowledge firmware data") ||
+		strings.Contains(message, "i/o timeout") ||
+		strings.Contains(message, "operation timed out") ||
+		strings.Contains(message, "update failed: no error")
 }
 
 func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) error {
@@ -1357,7 +1458,7 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) er
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, newRateLimitedReader(file, otaUploadBytesPerSecond))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, file)
 	if err != nil {
 		return err
 	}
@@ -1365,14 +1466,127 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) er
 	req.Header.Set("User-Agent", "codexbar-display-update")
 	applyFirmwareUpdateToken(req, token)
 	req.ContentLength = info.Size()
-	resp, err := releaseHTTPClient.Do(req)
+	req.Close = true
+	if strings.ContainsAny(strings.TrimSpace(token), "\r\n") {
+		return errors.New("firmware update token contains an invalid newline")
+	}
+
+	parsedEndpoint, err := url.Parse(endpoint)
 	if err != nil {
 		return err
+	}
+	if parsedEndpoint.Scheme != "http" {
+		return fmt.Errorf("raw firmware upload requires http, got %q", parsedEndpoint.Scheme)
+	}
+	address := parsedEndpoint.Host
+	if _, _, err := net.SplitHostPort(address); err != nil {
+		address = net.JoinHostPort(parsedEndpoint.Hostname(), "8081")
+	}
+	conn, err := firmwareRawDialContextFn(ctx, "tcp", address)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		_ = tcpConn.SetNoDelay(true)
+	}
+	deadline := time.Now().Add(5 * time.Minute)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	_ = conn.SetDeadline(deadline)
+
+	waitForAck := func() error {
+		return waitForFirmwareRawAck(ctx, conn, otaRawAckTimeout)
+	}
+	header := fmt.Sprintf(
+		"POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\nUser-Agent: codexbar-display-update\r\nConnection: close\r\n",
+		parsedEndpoint.RequestURI(),
+		parsedEndpoint.Host,
+		info.Size(),
+	)
+	if normalizedToken := strings.TrimSpace(token); normalizedToken != "" {
+		header += "X-VibeTV-Token: " + normalizedToken + "\r\n"
+	}
+	header += "\r\n"
+	if err := writeAll(conn, []byte(header)); err != nil {
+		return err
+	}
+	if err := waitForAck(); err != nil {
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
+	}
+	time.Sleep(otaRawHeaderPause)
+	bodyWriter := &rawFirmwareBodyWriter{destination: conn, waitForAck: waitForAck}
+	if _, err := io.Copy(bodyWriter, file); err != nil {
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
+	}
+	if err := waitForAck(); err != nil {
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("POST /update/firmware.raw returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+		err := fmt.Errorf("POST /update/firmware.raw returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return err
+		}
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
+	}
+	return nil
+}
+
+// rawFirmwareBodyWriter deliberately writes the firmware body in tiny TCP
+// writes. ESP8266 firmware 1.0.36 can stop draining its receive queue when a
+// desktop sender fills the TCP window with normal multi-kilobyte writes. Small
+// paced writes avoid exhausting that queue.
+type rawFirmwareBodyWriter struct {
+	destination   io.Writer
+	waitForAck    func() error
+	bytesSinceAck int
+}
+
+func (w *rawFirmwareBodyWriter) Write(p []byte) (int, error) {
+	originalLength := len(p)
+	for len(p) > 0 {
+		chunkSize := otaRawWriteChunkBytes
+		if len(p) < chunkSize {
+			chunkSize = len(p)
+		}
+		if remainingInBlock := otaRawAckBlockBytes - w.bytesSinceAck; chunkSize > remainingInBlock {
+			chunkSize = remainingInBlock
+		}
+		if err := writeAll(w.destination, p[:chunkSize]); err != nil {
+			return originalLength - len(p), err
+		}
+		w.bytesSinceAck += chunkSize
+		p = p[chunkSize:]
+		time.Sleep(otaRawWritePause)
+		if w.bytesSinceAck == otaRawAckBlockBytes {
+			if w.waitForAck != nil {
+				if err := w.waitForAck(); err != nil {
+					return originalLength - len(p), err
+				}
+			}
+			w.bytesSinceAck = 0
+		}
+	}
+	return originalLength, nil
+}
+
+func writeAll(w io.Writer, p []byte) error {
+	for len(p) > 0 {
+		written, err := w.Write(p)
+		if err != nil {
+			return err
+		}
+		if written <= 0 {
+			return io.ErrShortWrite
+		}
+		p = p[written:]
 	}
 	return nil
 }
@@ -1407,7 +1621,6 @@ func rawFirmwareUploadUnavailable(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "connection refused") ||
 		strings.Contains(msg, "no route to host") ||
-		strings.Contains(msg, "operation timed out") ||
 		strings.Contains(msg, "404")
 }
 
@@ -1670,7 +1883,15 @@ func ensureSerialPortNotBusy(port string) error {
 
 func stopLaunchAgentBestEffort() {
 	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	service := domain + "/com.codexbar-display.daemon"
+	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+	service := domain + "/" + label
+	if label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
+		// Bundled Control Center runtimes are registered through SMAppService (or
+		// the preview app) and must remain registered. Suspend the writer process
+		// while its child updater owns the VibeTV connection.
+		_, _ = exec.Command("launchctl", "kill", "SIGSTOP", service).CombinedOutput()
+		return
+	}
 	bootoutLaunchAgentBestEffort(domain, service, "")
 }
 
@@ -1885,6 +2106,21 @@ func copyRegularFileAtomic(sourcePath, targetPath string, mode os.FileMode) erro
 }
 
 func restartLaunchAgent(home string) error {
+	label := runtimepaths.DisplayStreamLaunchAgentLabel()
+	if label != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
+		domain := fmt.Sprintf("gui/%d", os.Getuid())
+		service := domain + "/" + label
+		resumeOut, resumeErr := exec.Command("launchctl", "kill", "SIGCONT", service).CombinedOutput()
+		if resumeErr == nil {
+			return nil
+		}
+		kickOut, kickErr := exec.Command("launchctl", "kickstart", "-k", service).CombinedOutput()
+		if kickErr != nil {
+			return fmt.Errorf("resume runtime: %w (%s); kickstart: %v (%s)", resumeErr, strings.TrimSpace(string(resumeOut)), kickErr, strings.TrimSpace(string(kickOut)))
+		}
+		return nil
+	}
+
 	plist := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel)
 	if !fileExists(plist) {
 		return nil

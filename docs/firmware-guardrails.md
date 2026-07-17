@@ -24,11 +24,15 @@ Rules:
 - Companion code must not emit `themeSpec:null` unless the caller explicitly marks that clear as confirmed. Normal recovery paths should reactivate a stored ThemeSpec or repair assets instead of clearing the live theme.
 
 ## ESP8266 WiFi Upload Guardrails
+- The protocol, compatibility pacing, retry rules, and release gate in
+  `docs/firmware-ota-contract.md` are mandatory for firmware OTA changes.
 - Asset upload crashes are usually RAM pressure first. Do not start by adding retries or longer timeouts.
 - `/assets` uploads must remain rate-limited from the Companion. Fast multipart writes can reset the ESP8266 even for small files.
 - If an upload returns `connection reset by peer`, EOF, or timeout, stop the upload attempt and check `/health`. Do not immediately resend the same asset.
 - Firmware must mark firmware/filesystem/theme asset uploads so upload-related restarts do not count toward the WiFi setup reset counter.
 - Firmware must release GIF decoder, sprite caches, and open filesystem handles before asset upload, OTA, and stored ThemeSpec activation.
+- A firmware upload that may have written bytes must never fall back to another
+  transport or retry in the same device boot.
 - A stored ThemeSpec activation must not keep the previous Mini GIF decoder open unless the new ThemeSpec actually uses that GIF.
 
 ## Split Thresholds (mandatory refactor trigger)

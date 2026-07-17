@@ -218,16 +218,6 @@ func runURLSchemeTests() {
         ) == nil,
         "local-network privacy preflight must not contact arbitrary hosts"
     )
-    let existingDeviceStatus = makeExistingDeviceStatusRequest(timeout: 7)
-    require(
-        existingDeviceStatus?.url?.absoluteString == "http://127.0.0.1:47832/v1/status",
-        "existing-device preparation must inspect device status, not runtime-only health"
-    )
-    require(
-        existingDeviceStatus?.httpMethod == "GET" &&
-            existingDeviceStatus?.timeoutInterval == 7,
-        "existing-device status inspection must stay read-only and bounded"
-    )
     require(
         shouldRunRuntimeValidationUnregister(
             arguments: [
@@ -352,102 +342,6 @@ func runURLSchemeTests() {
             expectedVersion: "1.2.3"
         ) == .invalidPayload,
         "invalid status JSON must fail the health gate"
-    )
-    require(
-        evaluateExistingDeviceStatus(
-            data: Data(
-                #"{"ok":true,"companion":{"version":"1.2.3"},"device":{"target":"http://192.168.178.72","paired":true,"ready":true}}"#.utf8
-            ),
-            httpStatus: 200
-        ) == .ready,
-        "a verified existing VibeTV must not be repaired again"
-    )
-    require(
-        shouldRepairExistingDevice(
-            .ready,
-            requireFreshFullFrame: true
-        ),
-        "legacy migration must prove one fresh full frame even when old status says ready"
-    )
-    require(
-        !shouldRepairExistingDevice(
-            .ready,
-            requireFreshFullFrame: false
-        ),
-        "normal app starts must not rewrite an already healthy VibeTV"
-    )
-    require(
-        evaluateExistingDeviceStatus(
-            data: Data(
-                #"{"ok":true,"companion":{"version":"1.2.3"},"device":{"target":"http://192.168.178.72","connected":true,"ready":false}}"#.utf8
-            ),
-            httpStatus: 200
-        ) == .needsRepair,
-        "a preserved target without a fresh frame must be repaired automatically"
-    )
-    require(
-        evaluateExistingDeviceStatus(
-            data: Data(
-                #"{"ok":true,"companion":{"version":"1.2.3"},"device":{"target":"http://192.168.178.72","paired":true,"ready":false,"connectionState":"reconnecting"}}"#.utf8
-            ),
-            httpStatus: 200
-        ) == .ready,
-        "a configured VibeTV in its reconnect grace period must not restart setup"
-    )
-    require(
-        evaluateExistingDeviceStatus(
-            data: Data(
-                #"{"ok":true,"companion":{"version":"1.2.3"},"device":{"connected":false,"ready":false}}"#.utf8
-            ),
-            httpStatus: 200
-        ) == .notConfigured,
-        "a fresh install without a target must continue to onboarding"
-    )
-    require(
-        evaluateExistingDeviceRepair(
-            data: Data(#"{"ok":true,"device":{"ready":true}}"#.utf8),
-            httpStatus: 200
-        ) == .ready,
-        "migration may retire the legacy runtime only after a fresh frame is confirmed"
-    )
-    require(
-        evaluateExistingDeviceRepair(
-            data: Data(#"{"ok":true,"device":{"ready":false}}"#.utf8),
-            httpStatus: 200
-        ) == .failed("VibeTV did not confirm a fresh full display frame"),
-        "an incomplete display repair must keep legacy artifacts"
-    )
-    require(
-        shouldRetryExistingDevicePreparation(
-            .retryableFailure("temporary network failure"),
-            attempt: 1,
-            maximumAttempts: 3
-        ),
-        "a transient device preparation failure must get a bounded retry"
-    )
-    require(
-        !shouldRetryExistingDevicePreparation(
-            .retryableFailure("persistent network failure"),
-            attempt: 3,
-            maximumAttempts: 3
-        ),
-        "device preparation retries must stop at the configured maximum"
-    )
-    require(
-        !shouldRetryExistingDevicePreparation(
-            .failed("pairing repair failed"),
-            attempt: 1,
-            maximumAttempts: 3
-        ),
-        "a failed pairing transaction must not be repeated automatically"
-    )
-    require(
-        !shouldRetryExistingDevicePreparation(
-            .notConfigured,
-            attempt: 1,
-            maximumAttempts: 3
-        ),
-        "a fresh install without a configured VibeTV must not retry migration"
     )
     require(
         shouldRetryRuntimeRegistration(

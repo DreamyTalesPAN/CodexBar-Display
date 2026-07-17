@@ -23,9 +23,9 @@
 #endif
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-const char kThemeFeatureJSON[] = "[\"theme\",\"theme-spec-v1\"]";
+const char kThemeFeatureJSON[] = "[\"theme-spec-v1\"]";
 #else
-const char kThemeFeatureJSON[] = "[\"theme\"]";
+const char kThemeFeatureJSON[] = "[]";
 #endif
 
 namespace {
@@ -59,6 +59,8 @@ constexpr unsigned long kRebootDelayMs = 750UL;
 constexpr unsigned long kBootRecoveryStableMs = 30000UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
+constexpr unsigned long kRawOtaProgressTimeoutMs = 30000UL;
+constexpr size_t kRawOtaReadBufferBytes = 512;
 constexpr uint8_t kBootRecoveryThreshold = 3;
 constexpr uint8_t kBootRecoveryUploadMarker = 0xA5;
 constexpr size_t kMaxAssetPathBytes = 32;
@@ -169,6 +171,7 @@ bool setupMode = false;
 bool waitStatusRendered = false;
 bool otaUploadSucceeded = false;
 bool otaUploadInProgress = false;
+bool otaUploadNeedsReboot = false;
 String otaUploadError;
 bool assetUploadSucceeded = false;
 bool assetUploadInProgress = false;
@@ -184,6 +187,8 @@ unsigned long rebootAtMs = 0;
 bool bootRecoveryCounterNeedsClear = false;
 unsigned long bootRecoveryClearAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
+bool pendingWifiRender = false;
+codexbar_display::core::SerialConsumeEvent pendingWifiRenderEvent;
 bool frameStaleStatusRendered = false;
 bool captiveDnsStarted = false;
 unsigned long wifiDisconnectedAtMs = 0;
@@ -202,7 +207,9 @@ uint32_t bootResetCounter = 0;
 void addCorsHeaders();
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
+constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-e4fe6b.json";
+constexpr const char* kPreviousDefaultThemeSpecPath = "/themes/u/mini-cl-1-b3c3f7.json";
+constexpr const char* kLegacyDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
 constexpr const char* kDefaultThemeSpecId = "mini-classic";
 constexpr int kDefaultThemeSpecRev = 1;
 #endif
@@ -644,6 +651,20 @@ String displayErrorMessage(const String& message) {
   return "Open App";
 }
 
+void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event) {
+  const bool maybeThemeSpecPartial = event.themeSpecPartialRender && !runtimeCtx.screenDirty;
+  const unsigned long partialStartUs = maybeThemeSpecPartial ? micros() : 0;
+  const unsigned long partialSuccessesBefore =
+      maybeThemeSpecPartial ? renderer.DebugSnapshot().themeSpecPartialSuccesses : 0;
+  renderer.OnFrameAccepted(runtimeCtx, event);
+  if (maybeThemeSpecPartial) {
+    const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
+    if (snapshot.themeSpecPartialSuccesses > partialSuccessesBefore && !runtimeCtx.screenDirty) {
+      recordRenderPartial("theme_spec_frame", micros() - partialStartUs);
+    }
+  }
+}
+
 void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, const char* transport) {
   if (statusScreenLocked()) {
     Serial.printf("frame_ignored transport=%s reason=status_screen_locked\n", transport);
@@ -678,16 +699,16 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     activeThemeSpecHash = "";
 #endif
   }
-  const bool maybeThemeSpecPartial = event.themeSpecPartialRender && !runtimeCtx.screenDirty;
-  const unsigned long partialStartUs = maybeThemeSpecPartial ? micros() : 0;
-  const unsigned long partialSuccessesBefore =
-      maybeThemeSpecPartial ? renderer.DebugSnapshot().themeSpecPartialSuccesses : 0;
-  renderer.OnFrameAccepted(runtimeCtx, event);
-  if (maybeThemeSpecPartial) {
-    const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
-    if (snapshot.themeSpecPartialSuccesses > partialSuccessesBefore && !runtimeCtx.screenDirty) {
-      recordRenderPartial("theme_spec_frame", micros() - partialStartUs);
-    }
+
+  const bool wifiTransport = transport != nullptr && strcmp(transport, "wifi") == 0;
+  if (wifiTransport && event.visualChanged) {
+    // ESP8266WebServer invokes this from handleClient(). Keep all display work
+    // out of that callback; the event is consumed before any new frame can
+    // replace the runtime state at the start of the next loop.
+    pendingWifiRenderEvent = event;
+    pendingWifiRender = true;
+  } else if (!wifiTransport) {
+    renderAcceptedFrame(event);
   }
   Serial.printf("frame_received transport=%s\n", transport);
 }
@@ -1392,6 +1413,16 @@ void handleHealth() {
   appendJSONNullableString(out, snapshot.themeSpecRenderError);
   out += ",\"renderFailures\":";
   out += String(snapshot.themeSpecRenderFailures);
+  out += ",\"cbaCompletedFrames\":";
+  out += String(snapshot.cbaCompletedFrames);
+  out += ",\"cbaLastFrameDurationMs\":";
+  out += String(snapshot.cbaLastFrameDurationMs);
+  out += ",\"cbaBufferBytes\":";
+  out += String(snapshot.cbaBufferBytes);
+  out += ",\"cbaBufferAllocationFailures\":";
+  out += String(snapshot.cbaBufferAllocationFailures);
+  out += ",\"cbaLastPushDurationUs\":";
+  out += String(snapshot.cbaLastPushDurationUs);
   out += "},\"gif\":{\"activePath\":\"";
   out += jsonEscape(snapshot.gifActivePath);
   out += "\",\"filePresent\":";
@@ -1808,6 +1839,14 @@ bool readStoredThemeSpec(const String& path, String& raw, String& error) {
   raw = file.readString();
   file.close();
   raw.trim();
+
+  // Firmware OTA intentionally preserves LittleFS. Devices upgraded from 1.0.36
+  // therefore keep this known factory Mini spec, whose labels were hard-coded
+  // to "left". Upgrade only that immutable legacy path in memory so the live
+  // usage mode is rendered without rewriting customer storage during OTA.
+  if (path == kLegacyDefaultThemeSpecPath) {
+    raw.replace("\"v\":\"left\"", "\"v\":\"{usageMode}\"");
+  }
   if (raw.length() == 0 || raw.length() > kMaxStoredThemeSpecBytes) {
     error = "theme file too large";
     return false;
@@ -1815,14 +1854,12 @@ bool readStoredThemeSpec(const String& path, String& raw, String& error) {
   return true;
 }
 
-bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String& fallbackTheme, String& error) {
+bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String& error) {
   JsonDocument filter;
   filter["themeId"] = true;
   filter["id"] = true;
   filter["themeRev"] = true;
   filter["rev"] = true;
-  filter["fallbackTheme"] = true;
-  filter["fb"] = true;
 
   JsonDocument doc;
   const DeserializationError err = deserializeJson(doc, raw, DeserializationOption::Filter(filter));
@@ -1852,22 +1889,10 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
     return false;
   }
 
-  const char* fallback = nullptr;
-  if (spec["fallbackTheme"].is<const char*>()) {
-    fallback = spec["fallbackTheme"].as<const char*>();
-  } else if (spec["fb"].is<const char*>()) {
-    fallback = spec["fb"].as<const char*>();
-  }
-  if (fallback != nullptr) {
-    String normalized;
-    if (codexbar_display::theme::NormalizeThemeName(String(fallback), normalized)) {
-      fallbackTheme = normalized;
-    }
-  }
   return true;
 }
 
-void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev, const String& fallbackTheme) {
+void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev) {
   renderer.ResetGifStateForAssetUpdate();
   close_all_fs();
 
@@ -1882,11 +1907,6 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
   next.themeSpecId = themeId;
   next.themeSpecRev = themeRev;
   next.themeSpecRaw = "";
-  if (fallbackTheme.length() > 0) {
-    next.hasTheme = true;
-    next.theme = fallbackTheme;
-  }
-
   runtimeCtx.runtime.cachedThemeId = themeId;
   runtimeCtx.runtime.cachedThemeRev = themeRev;
   runtimeCtx.runtime.cachedThemeSpecRaw = raw;
@@ -1902,7 +1922,6 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
   event.hadFrame = hadFrame;
   event.themeSpecChanged = true;
   event.visualChanged = !hadFrame || codexbar_display::core::FrameVisualChanged(previous, next) || event.themeSpecChanged;
-  event.themeChanged = hadFrame && codexbar_display::core::FrameThemeChanged(previous, next);
   markFrameAccepted(event, "theme");
 }
 
@@ -1912,8 +1931,7 @@ bool activateStoredThemePath(const String& path, String& themeId, int& themeRev,
     return false;
   }
 
-  String fallbackTheme;
-  if (!themeSpecMetadata(raw, themeId, themeRev, fallbackTheme, error)) {
+  if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
     return false;
   }
   if (!saveActiveThemeSpecPath(path)) {
@@ -1921,7 +1939,7 @@ bool activateStoredThemePath(const String& path, String& themeId, int& themeRev,
     return false;
   }
 
-  activateStoredThemeSpec(path, raw, themeId, themeRev, fallbackTheme);
+  activateStoredThemeSpec(path, raw, themeId, themeRev);
   return true;
 }
 
@@ -2001,8 +2019,7 @@ bool loadStoredThemeSpecCacheFromPath(const String& path) {
 
   String themeId;
   int themeRev = 0;
-  String fallbackTheme;
-  if (!themeSpecMetadata(raw, themeId, themeRev, fallbackTheme, error)) {
+  if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
     Serial.printf("theme_cache_load_failed path=%s err=%s\n", path.c_str(), error.c_str());
     return false;
   }
@@ -2022,6 +2039,16 @@ void loadDefaultStoredThemeSpecCache() {
     return;
   }
   if (loadStoredThemeSpecCacheFromPath(kDefaultThemeSpecPath)) {
+    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
+    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
+    return;
+  }
+  if (loadStoredThemeSpecCacheFromPath(kPreviousDefaultThemeSpecPath)) {
+    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
+    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
+    return;
+  }
+  if (loadStoredThemeSpecCacheFromPath(kLegacyDefaultThemeSpecPath)) {
     runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
     runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
   }
@@ -2069,6 +2096,13 @@ void setOtaError(const String& message) {
   }
 }
 
+void resetOtaUpdaterAfterFailure() {
+  if (Update.isRunning()) {
+    Update.end(false);
+  }
+  Update.clearError();
+}
+
 size_t otaMaxSizeForCommand(int command) {
   if (command == U_FS) {
     return static_cast<size_t>(FS_end - FS_start);
@@ -2076,13 +2110,18 @@ size_t otaMaxSizeForCommand(int command) {
   return static_cast<size_t>((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000);
 }
 
-void enterOtaSafeMode(int command) {
+void enterOtaSafeMode(int command, WiFiClient* otaClient) {
   (void)command;
   firmwareUpdateNoticeDirty = false;
   frameStaleStatusRendered = false;
   renderer.ResetGifStateForAssetUpdate();
   close_all_fs();
   WiFiUDP::stopAll();
+  if (otaClient != nullptr) {
+    WiFiClient::stopAllExcept(otaClient);
+  } else {
+    WiFiClient::stopAll();
+  }
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
   ESP.wdtFeed();
 }
@@ -2093,6 +2132,7 @@ void handleOtaUpload(int command, const char* target) {
   if (upload.status == UPLOAD_FILE_START) {
     otaUploadSucceeded = false;
     otaUploadInProgress = true;
+    otaUploadNeedsReboot = false;
     otaUploadError = "";
     const size_t maxSize = otaMaxSizeForCommand(command);
     otaDiagnostics.target = target;
@@ -2114,17 +2154,19 @@ void handleOtaUpload(int command, const char* target) {
         upload.contentLength,
         maxSize,
         otaDiagnostics.freeSketchSpace);
-    const String targetLabel = command == U_FS ? "Loading display" : "Loading firmware";
-    drawUpdateStatus(targetLabel);
-    waitStatusRendered = true;
     if (!requestHasValidAuth()) {
       setOtaError("unauthorized");
       return;
     }
     markBootRecoveryUploadActive(true);
-    enterOtaSafeMode(command);
+    enterOtaSafeMode(command, &webServer.client());
+    otaUploadNeedsReboot = true;
+    const String targetLabel = command == U_FS ? "Loading display" : "Loading firmware";
+    drawUpdateStatus(targetLabel);
+    waitStatusRendered = true;
     if (!Update.begin(maxSize, command)) {
       setOtaError(Update.getErrorString());
+      resetOtaUpdaterAfterFailure();
     } else {
       otaDiagnostics.status = "writing";
     }
@@ -2132,6 +2174,7 @@ void handleOtaUpload(int command, const char* target) {
     otaDiagnostics.totalSize = upload.totalSize + upload.currentSize;
     if (otaUploadError.length() == 0 && Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setOtaError(Update.getErrorString());
+      resetOtaUpdaterAfterFailure();
     }
     ESP.wdtFeed();
   } else if (upload.status == UPLOAD_FILE_END) {
@@ -2145,10 +2188,11 @@ void handleOtaUpload(int command, const char* target) {
       Serial.printf("ota_upload_success target=%s bytes=%zu\n", target, upload.totalSize);
     } else if (otaUploadError.length() == 0) {
       setOtaError(Update.getErrorString());
+      resetOtaUpdaterAfterFailure();
     }
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
-    Update.end();
     setOtaError("upload aborted");
+    resetOtaUpdaterAfterFailure();
     otaDiagnostics.totalSize = upload.totalSize;
     Serial.printf("ota_upload_aborted target=%s bytes=%zu\n", target, upload.totalSize);
   }
@@ -2171,6 +2215,7 @@ void handleOtaResult(const char* target) {
     otaDiagnostics.updateError = Update.getError();
     otaDiagnostics.endedAtMs = millis();
     otaDiagnostics.failureCount++;
+    otaUploadNeedsReboot = false;
     addCorsHeaders();
     webServer.sendHeader("WWW-Authenticate", "VibeTV token");
     webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
@@ -2187,6 +2232,10 @@ void handleOtaResult(const char* target) {
     otaDiagnostics.failureCount++;
     Serial.printf("ota_upload_failed target=%s error=%s\n", target, error.c_str());
     webServer.send(500, "text/plain; charset=utf-8", "Update failed: " + error);
+    if (otaUploadNeedsReboot) {
+      scheduleReboot("ota_failure");
+    }
+    otaUploadNeedsReboot = false;
     return;
   }
 
@@ -2203,6 +2252,7 @@ void handleOtaResult(const char* target) {
   otaDiagnostics.status = "reboot_scheduled";
   scheduleReboot(target);
   otaUploadInProgress = false;
+  otaUploadNeedsReboot = false;
 }
 
 void sendRawOtaResponse(WiFiClient& client, int status, const char* statusText, const String& body) {
@@ -2293,10 +2343,17 @@ void handleRawOtaClient() {
     return;
   }
 
+  const size_t maxSize = otaMaxSizeForCommand(U_FLASH);
+  if (contentLength > maxSize) {
+    sendRawOtaResponse(client, 413, "Payload Too Large", "firmware image is too large");
+    client.stop();
+    return;
+  }
+
   otaUploadSucceeded = false;
   otaUploadInProgress = true;
+  otaUploadNeedsReboot = false;
   otaUploadError = "";
-  const size_t maxSize = otaMaxSizeForCommand(U_FLASH);
   otaDiagnostics.target = "firmware_raw";
   otaDiagnostics.status = "starting";
   otaDiagnostics.filename = "raw";
@@ -2310,43 +2367,64 @@ void handleRawOtaClient() {
   otaDiagnostics.startedAtMs = millis();
   otaDiagnostics.endedAtMs = 0;
 
+  markBootRecoveryUploadActive(true);
+  enterOtaSafeMode(U_FLASH, &client);
+  otaUploadNeedsReboot = true;
   drawUpdateStatus("Loading firmware");
   waitStatusRendered = true;
-  markBootRecoveryUploadActive(true);
-  enterOtaSafeMode(U_FLASH);
 
-  if (!Update.begin(maxSize, U_FLASH)) {
+  if (!Update.begin(contentLength, U_FLASH)) {
     setOtaError(Update.getErrorString());
+    resetOtaUpdaterAfterFailure();
   } else {
     otaDiagnostics.status = "writing";
   }
 
-  uint8_t buffer[1024];
+  uint8_t buffer[kRawOtaReadBufferBytes];
   size_t remaining = contentLength;
   unsigned long lastProgressMs = millis();
   while (remaining > 0 && otaUploadError.length() == 0) {
-    const size_t want = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
-    const size_t got = client.readBytes(buffer, want);
-    if (got == 0) {
-      if (millis() - lastProgressMs > 10000UL) {
+    const int available = client.available();
+    if (available <= 0) {
+      if (!client.connected()) {
+        setOtaError("raw upload disconnected");
+        resetOtaUpdaterAfterFailure();
+        break;
+      }
+      if (millis() - lastProgressMs > kRawOtaProgressTimeoutMs) {
         setOtaError("raw upload timeout");
+        resetOtaUpdaterAfterFailure();
         break;
       }
       delay(1);
       continue;
     }
+    size_t want = static_cast<size_t>(available);
+    if (want > remaining) {
+      want = remaining;
+    }
+    if (want > sizeof(buffer)) {
+      want = sizeof(buffer);
+    }
+    const int readCount = client.read(buffer, want);
+    if (readCount <= 0) {
+      delay(1);
+      continue;
+    }
+    const size_t got = static_cast<size_t>(readCount);
     lastProgressMs = millis();
     remaining -= got;
     otaDiagnostics.totalSize += got;
     if (Update.write(buffer, got) != got) {
       setOtaError(Update.getErrorString());
+      resetOtaUpdaterAfterFailure();
       break;
     }
     ESP.wdtFeed();
     delay(0);
   }
 
-  if (otaUploadError.length() == 0 && Update.end(true)) {
+  if (otaUploadError.length() == 0 && remaining == 0 && Update.end(false)) {
     otaUploadSucceeded = true;
     otaDiagnostics.status = "succeeded";
     otaDiagnostics.updateError = UPDATE_ERROR_OK;
@@ -2357,13 +2435,19 @@ void handleRawOtaClient() {
     waitStatusRendered = true;
     otaDiagnostics.status = "reboot_scheduled";
     scheduleReboot("firmware_raw");
+    otaUploadNeedsReboot = false;
   } else {
     markBootRecoveryUploadActive(false);
     if (otaUploadError.length() == 0) {
       setOtaError(Update.getErrorString());
+      resetOtaUpdaterAfterFailure();
     }
     otaDiagnostics.failureCount++;
     sendRawOtaResponse(client, 500, "Internal Server Error", "Update failed: " + otaUploadError);
+    if (otaUploadNeedsReboot) {
+      scheduleReboot("firmware_raw_failure");
+    }
+    otaUploadNeedsReboot = false;
   }
   otaUploadInProgress = false;
   client.stop();
@@ -2398,7 +2482,7 @@ void handleFrame() {
   }
 
   codexbar_display::core::SerialConsumeEvent event;
-  if (!codexbar_display::core::ConsumeFrameLine(runtimeCtx.runtime, body.c_str(), millis(), true, event) ||
+  if (!codexbar_display::core::ConsumeFrameLine(runtimeCtx.runtime, body.c_str(), millis(), event) ||
       !event.frameAccepted) {
     addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "frame was not accepted");
@@ -2638,8 +2722,14 @@ void loop() {
   bool rendered = false;
   unsigned long renderDurationUs = 0;
 
+  if (pendingWifiRender) {
+    const codexbar_display::core::SerialConsumeEvent event = pendingWifiRenderEvent;
+    pendingWifiRender = false;
+    renderAcceptedFrame(event);
+  }
+
   codexbar_display::core::SerialConsumeEvent event;
-  if (codexbar_display::app::ConsumeSerial(runtimeCtx, true, millis(), event)) {
+  if (codexbar_display::app::ConsumeSerial(runtimeCtx, millis(), event)) {
     markFrameAccepted(event, "usb");
   }
 
@@ -2775,5 +2865,9 @@ void loop() {
     clearBootRecoveryCounter();
   }
 
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  delay(renderer.AnimationWorkPending() ? 1 : 20);
+#else
   delay(20);
+#endif
 }

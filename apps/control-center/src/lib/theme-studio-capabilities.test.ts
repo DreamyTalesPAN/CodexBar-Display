@@ -31,7 +31,6 @@ function baseSpec(): ThemeStudioSpec {
     themeSpecVersion: 1,
     themeId: "test-theme",
     themeRev: 1,
-    fallbackTheme: "mini",
     bgColor: "#000000",
     primitives: [
       {

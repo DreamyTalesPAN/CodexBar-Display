@@ -53,6 +53,7 @@ export type FirmwareUpdateStatus = {
   phase: "installing" | "complete" | "attention" | "error";
   stage?: string;
   outcome?: string;
+  retryAllowed?: boolean;
   startedAt: string;
   finishedAt?: string;
   message?: string;
@@ -381,7 +382,7 @@ function InlineUpdateProgress({
       ? "Update complete"
       : "Updating VibeTV";
   const detail = failed
-    ? status.error || "Update was not installed. Try again."
+    ? status.error || "Update was not installed."
     : attention
       ? status.message ||
         "The firmware is current, but the connection or picture still needs repair."
@@ -407,7 +408,7 @@ function InlineUpdateProgress({
         <AlertDescription>{detail}</AlertDescription>
         {failed || attention ? (
           <AlertAction className="flex gap-2">
-            {failed ? (
+            {failed && status.retryAllowed !== false ? (
               <Button
                 disabled={!onRetry}
                 onClick={onRetry}

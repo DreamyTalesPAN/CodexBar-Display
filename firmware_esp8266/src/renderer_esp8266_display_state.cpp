@@ -170,45 +170,6 @@ void PrimitiveFillRect(int x, int y, int w, int h, uint16_t color) {
   PrimitiveLayer().FillRect(cmd);
 }
 
-void PrimitiveDrawText(
-    const char* text,
-    int x,
-    int y,
-    int font,
-    int size,
-    uint16_t fg,
-    uint16_t bg,
-    bool wrap) {
-  primitive::TextCommand cmd;
-  cmd.text = text;
-  cmd.x = x;
-  cmd.y = y;
-  cmd.font = font;
-  cmd.size = size;
-  cmd.fg = fg;
-  cmd.bg = bg;
-  cmd.hasBg = true;
-  cmd.wrap = wrap;
-  PrimitiveLayer().DrawText(cmd);
-}
-
-void PrimitiveDrawProgress(int x, int y, int w, int h, int pct, uint16_t fillColor) {
-  primitive::ProgressCommand cmd;
-  cmd.x = x;
-  cmd.y = y;
-  cmd.width = w;
-  cmd.height = h;
-  cmd.percent = pct;
-  cmd.fillColor = fillColor;
-  cmd.borderColor = TFT_DARKGREY;
-  cmd.bgColor = TFT_BLACK;
-  PrimitiveLayer().DrawProgress(cmd);
-}
-
-void DrawBar(int x, int y, int w, int h, int pct, uint16_t fillColor) {
-  PrimitiveDrawProgress(x, y, w, h, pct, fillColor);
-}
-
 int TextPixelWidth(const char* text, int textSize) {
   if (text == nullptr || textSize <= 0) {
     return 0;
@@ -240,7 +201,7 @@ int CenteredTextX(const char* text, int textSize) {
   return x;
 }
 
-void SetClassicTextSize(int size) {
+void SetTextSize(int size) {
   Tft().setTextFont(1);
   Tft().setTextSize(size);
 }
@@ -253,17 +214,6 @@ const char* ProviderLabelText() {
     return CurrentFrame().label.c_str();
   }
   return "Provider";
-}
-
-const char* SplashDotsSuffix() {
-  switch (SplashWaitingDots()) {
-    case 0:
-      return ".";
-    case 1:
-      return "..";
-    default:
-      return "...";
-  }
 }
 
 }  // namespace display
