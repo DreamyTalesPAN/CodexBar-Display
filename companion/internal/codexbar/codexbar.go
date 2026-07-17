@@ -35,13 +35,21 @@ var (
 var runUsageCommandFn = runUsageCommand
 var runCostCommandFn = runUsageCommand
 var runVersionCommandFn = runUsageCommand
+var runConfigCommandFn = runUsageCommand
+var executablePathFn = os.Executable
+var fetchAllProvidersFn = FetchAllProviders
 var readFileFn = os.ReadFile
 
 const (
 	minSharedFallbackTimeBudget = 4 * time.Second
 	minSupportedVersionString   = "0.23"
+	minConfigVersionString      = "0.27"
 	versionCheckTimeout         = 2 * time.Second
+	discoveryCommandTimeout     = 45 * time.Second
+	configCommandTimeout        = 5 * time.Second
 )
+
+var providerIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
 const usageModeEnvVar = "CODEXBAR_DISPLAY_USAGE_MODE"
 
@@ -111,6 +119,13 @@ func FindBinary() (string, error) {
 		return "", fmt.Errorf("CODEXBAR_BIN is not executable: %s", env)
 	}
 
+	if executable, err := executablePathFn(); err == nil && strings.TrimSpace(executable) != "" {
+		bundled := filepath.Join(filepath.Dir(executable), "CodexBarCLI")
+		if isExecutable(bundled) {
+			return bundled, nil
+		}
+	}
+
 	if p, err := exec.LookPath("codexbar"); err == nil && p != "" {
 		return p, nil
 	}
@@ -136,21 +151,130 @@ func FindBinary() (string, error) {
 	return "", errors.New("could not find CodexBar CLI binary")
 }
 
+// DiscoverAndEnableProviders asks the pinned CodexBar CLI to probe every
+// registered provider once. Only providers that return a valid usage payload
+// are enabled, then the normal enabled-provider fetch verifies the result.
+func DiscoverAndEnableProviders(ctx context.Context) ([]ParsedFrame, error) {
+	bin, err := FindBinary()
+	if err != nil {
+		return nil, wrapFetchError(FetchErrorBinary, err)
+	}
+	if err := checkMinimumVersion(ctx, bin, minConfigVersionString); err != nil {
+		return nil, wrapFetchError(FetchErrorVersion, err)
+	}
+
+	out, commandErr := runUsageCommandFn(
+		ctx,
+		discoveryCommandTimeout,
+		bin,
+		"usage",
+		"--provider",
+		"all",
+		"--json",
+		"--web-timeout",
+		"8",
+	)
+	discovered, parseErr := parseAllProviders(out)
+	if len(discovered) == 0 {
+		if commandErr != nil {
+			return nil, wrapFetchError(FetchErrorCommand, fmt.Errorf("discover codexbar providers: %w", commandErr))
+		}
+		if parseErr != nil {
+			if errors.Is(parseErr, ErrUnexpectedProviderShape) && payloadContainsOnlyProviderErrors(out) {
+				return nil, wrapFetchError(FetchErrorNoProviders, ErrNoProviders)
+			}
+			return nil, wrapFetchError(classifyParseError(parseErr), parseErr)
+		}
+		return nil, wrapFetchError(FetchErrorNoProviders, ErrNoProviders)
+	}
+
+	providerIDs := make([]string, 0, len(discovered))
+	seen := make(map[string]struct{}, len(discovered))
+	for _, parsed := range discovered {
+		provider := strings.TrimSpace(strings.ToLower(parsed.Provider))
+		if provider == "" {
+			provider = strings.TrimSpace(strings.ToLower(parsed.Frame.Provider))
+		}
+		if !providerIDPattern.MatchString(provider) {
+			continue
+		}
+		if _, ok := seen[provider]; ok {
+			continue
+		}
+		seen[provider] = struct{}{}
+		providerIDs = append(providerIDs, provider)
+	}
+	sort.Strings(providerIDs)
+
+	enabled := 0
+	var enableErrors []string
+	for _, provider := range providerIDs {
+		if _, err := runConfigCommandFn(
+			ctx,
+			configCommandTimeout,
+			bin,
+			"config",
+			"enable",
+			"--provider",
+			provider,
+			"--format",
+			"json",
+		); err != nil {
+			enableErrors = append(enableErrors, provider)
+			continue
+		}
+		enabled++
+	}
+	if enabled == 0 {
+		if len(enableErrors) > 0 {
+			return nil, wrapFetchError(FetchErrorCommand, fmt.Errorf("could not enable discovered providers: %s", strings.Join(enableErrors, ", ")))
+		}
+		return nil, wrapFetchError(FetchErrorNoProviders, ErrNoProviders)
+	}
+
+	verified, err := fetchAllProvidersFn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(verified) == 0 {
+		return nil, wrapFetchError(FetchErrorNoProviders, ErrNoProviders)
+	}
+	return verified, nil
+}
+
+func payloadContainsOnlyProviderErrors(raw []byte) bool {
+	providers, err := extractProvidersFromRawJSON(raw)
+	if err != nil || len(providers) == 0 {
+		return false
+	}
+	for _, providerAny := range providers {
+		payload, ok := providerAny.(map[string]any)
+		if !ok || !providerPayloadHasError(payload) {
+			return false
+		}
+	}
+	return true
+}
+
 func MinimumSupportedVersion() string {
 	return minSupportedVersionString
 }
 
 func CheckMinimumVersion(ctx context.Context, bin string) error {
+	return checkMinimumVersion(ctx, bin, minSupportedVersionString)
+}
+
+func checkMinimumVersion(ctx context.Context, bin, minimumVersion string) error {
 	version, err := installedVersion(ctx, bin)
 	if err != nil {
 		return err
 	}
-	minimum, err := parseLooseVersion(minSupportedVersionString)
+	minimum, err := parseLooseVersion(minimumVersion)
 	if err != nil {
 		return err
 	}
 	if version.Compare(minimum) < 0 {
-		return fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minSupportedVersionString)
+		return fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minimumVersion)
 	}
 	return nil
 }

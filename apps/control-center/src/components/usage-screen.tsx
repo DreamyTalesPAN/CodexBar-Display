@@ -24,6 +24,7 @@ type UsageScreenProps = {
   usage: UsageSnapshot | null;
   usageError?: ApiError | null;
   onRefresh?: () => void;
+  onDiscoverProviders?: () => void;
 };
 
 export function UsageScreen({
@@ -32,8 +33,10 @@ export function UsageScreen({
   usage,
   usageError,
   onRefresh,
+  onDiscoverProviders,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
+  const providerSetupRequired = usageError?.code === "provider_setup_required";
   const providers = filterVisibleProviders(
     usage?.providers || [],
     usage?.currentProvider,
@@ -62,16 +65,26 @@ export function UsageScreen({
           {onRefresh ? (
             <button
               className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={refreshing}
-              onClick={onRefresh}
+              disabled={refreshing || busyAction === "provider-discovery"}
+              onClick={
+                providerSetupRequired && onDiscoverProviders
+                  ? onDiscoverProviders
+                  : onRefresh
+              }
               type="button"
             >
-              {refreshing ? (
+              {refreshing || busyAction === "provider-discovery" ? (
                 <RefreshCw className="animate-spin" size={18} aria-hidden />
               ) : (
                 <RefreshCw size={18} aria-hidden />
               )}
-              <span>{refreshing ? "Refreshing" : "Refresh"}</span>
+              <span>
+                {refreshing || busyAction === "provider-discovery"
+                  ? "Checking"
+                  : providerSetupRequired
+                    ? "Check again"
+                    : "Refresh"}
+              </span>
             </button>
           ) : null}
         </div>

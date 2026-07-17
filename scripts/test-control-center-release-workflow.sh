@@ -10,6 +10,7 @@ RELEASE_INSTALLER="${ROOT}/scripts/install-control-center-companion-release.sh"
 PUBLIC_INSTALLER="${ROOT}/apps/control-center/public/install-control-center-companion.sh"
 SIGNING_SCRIPT="${ROOT}/scripts/sign-notarize-macos-control-center.sh"
 VERIFY_DMG_SCRIPT="${ROOT}/scripts/verify-macos-control-center-dmg.sh"
+PREPARE_CODEXBAR_SCRIPT="${ROOT}/scripts/prepare-bundled-codexbar-cli.sh"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -57,6 +58,7 @@ main() {
   [[ -f "$PUBLIC_INSTALLER" ]] || die "public Control Center installer is missing"
   [[ -x "$SIGNING_SCRIPT" ]] || die "macOS signing/notarization script is missing or not executable"
   [[ -x "$VERIFY_DMG_SCRIPT" ]] || die "macOS DMG verification script is missing or not executable"
+  [[ -x "$PREPARE_CODEXBAR_SCRIPT" ]] || die "bundled CodexBarCLI preparation script is missing or not executable"
   cmp -s "$RELEASE_INSTALLER" "$PUBLIC_INSTALLER" \
     || die "public Control Center installer must match the release installer"
 
@@ -74,6 +76,15 @@ main() {
   signing_script="$(cat "$SIGNING_SCRIPT")"
   verify_dmg_plan="$("$VERIFY_DMG_SCRIPT" --dry-run --dmg "/tmp/VibeTV-Control-Center.dmg")"
   macos_job="$(job_block "build-macos-dmg")"
+
+  assert_contains "$(cat "$PREPARE_CODEXBAR_SCRIPT")" \
+    "282acfc4b99aafe9d3b7b093f2ee6abbda3e2725b8512217f10c41784cba59df" \
+    "bundled arm64 CodexBarCLI must use the reviewed 0.37.2 SHA-256"
+  assert_contains "$(cat "$PREPARE_CODEXBAR_SCRIPT")" \
+    "da24ab1bd9ec5ba51026bb2d97d9634b642e0fc9c6a5f2198854c20fb76ca34a" \
+    "bundled x86_64 CodexBarCLI must use the reviewed 0.37.2 SHA-256"
+  assert_contains "$(cat "$PREPARE_CODEXBAR_SCRIPT")" "lipo -create" \
+    "bundled CodexBarCLI must be assembled as a universal binary"
 
   assert_not_contains "$workflow" "workflow_dispatch:" \
     "public release workflow must not expose the validation-only trigger"
@@ -121,6 +132,12 @@ main() {
     "macOS DMG job must build both Darwin companion architectures"
   assert_contains "$macos_job" "lipo -create" \
     "macOS DMG job must combine the bundled companion binary into a universal binary"
+  assert_contains "$macos_job" "prepare-bundled-codexbar-cli.sh" \
+    "macOS DMG job must prepare the pinned universal CodexBarCLI"
+  assert_contains "$macos_job" "--codexbar-cli-binary" \
+    "macOS DMG job must bundle CodexBarCLI inside the Mac App"
+  assert_contains "$macos_job" "--codexbar-cli-version-file" \
+    "macOS DMG job must bundle the pinned CodexBarCLI VERSION file"
   assert_contains "$macos_job" "build-macos-control-center-app.sh" \
     "macOS DMG job must build the real app bundle"
   assert_contains "$macos_job" "--universal" \
@@ -248,6 +265,10 @@ main() {
     "DMG distribution gate must verify the disk image container"
   assert_contains "$verify_dmg_plan" "codesign --verify --strict" \
     "DMG distribution gate must verify the DMG signature"
+  assert_contains "$verify_dmg_plan" "CodexBarCLI\" -verify_arch arm64 x86_64" \
+    "DMG distribution gate must verify the bundled CodexBarCLI architectures"
+  assert_contains "$verify_dmg_plan" "VERSION is 0.37.2" \
+    "DMG distribution gate must verify the pinned CodexBarCLI version"
   assert_contains "$verify_dmg_plan" "xcrun stapler validate" \
     "DMG distribution gate must validate the stapled notarization ticket"
   assert_contains "$verify_dmg_plan" "spctl --assess --type open" \

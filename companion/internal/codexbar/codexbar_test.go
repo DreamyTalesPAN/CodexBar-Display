@@ -14,6 +14,116 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
+func TestFindBinaryPrefersBundledCLI(t *testing.T) {
+	t.Setenv("CODEXBAR_BIN", "")
+	tmp := t.TempDir()
+	appExecutable := filepath.Join(tmp, "VibeTV Control Center")
+	bundled := filepath.Join(tmp, "CodexBarCLI")
+	if err := os.WriteFile(appExecutable, []byte("app"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bundled, []byte("cli"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	originalExecutablePath := executablePathFn
+	executablePathFn = func() (string, error) { return appExecutable, nil }
+	t.Cleanup(func() { executablePathFn = originalExecutablePath })
+
+	got, err := FindBinary()
+	if err != nil {
+		t.Fatalf("FindBinary failed: %v", err)
+	}
+	if got != bundled {
+		t.Fatalf("expected bundled CLI %q, got %q", bundled, got)
+	}
+}
+
+func TestDiscoverAndEnableProvidersKeepsSuccessfulProviders(t *testing.T) {
+	t.Setenv("CODEXBAR_BIN", executableTestFile(t))
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	originalConfig := runConfigCommandFn
+	originalFetch := fetchAllProvidersFn
+	t.Cleanup(func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+		runConfigCommandFn = originalConfig
+		fetchAllProvidersFn = originalFetch
+	})
+
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.37.2\n"), nil
+	}
+	var discoveryArgs []string
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		discoveryArgs = append([]string(nil), args...)
+		return []byte(`[
+			{"provider":"codex","usage":{"primary":{"usedPercent":12}}},
+			{"provider":"claude","usage":{"primary":{"usedPercent":34}}},
+			{"provider":"cursor","error":{"message":"not signed in"}}
+		]`), nil
+	}
+	var enabled []string
+	runConfigCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		for i, arg := range args {
+			if arg == "--provider" && i+1 < len(args) {
+				enabled = append(enabled, args[i+1])
+				if args[i+1] == "claude" {
+					return nil, errors.New("claude config failed")
+				}
+			}
+		}
+		return []byte(`{"ok":true}`), nil
+	}
+	fetchAllProvidersFn = func(context.Context) ([]ParsedFrame, error) {
+		return []ParsedFrame{testParsedFrame("codex", 12, 20, 0)}, nil
+	}
+
+	got, err := DiscoverAndEnableProviders(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverAndEnableProviders failed: %v", err)
+	}
+	if len(got) != 1 || got[0].Provider != "codex" {
+		t.Fatalf("unexpected verified providers: %+v", got)
+	}
+	if strings.Join(discoveryArgs, " ") != "usage --provider all --json --web-timeout 8" {
+		t.Fatalf("unexpected discovery args: %v", discoveryArgs)
+	}
+	if strings.Join(enabled, ",") != "claude,codex" {
+		t.Fatalf("expected all usable providers to be considered in sorted order, got %v", enabled)
+	}
+}
+
+func TestDiscoverAndEnableProvidersRequiresUsableProvider(t *testing.T) {
+	t.Setenv("CODEXBAR_BIN", executableTestFile(t))
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	t.Cleanup(func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	})
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.37.2\n"), nil
+	}
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte(`[{"provider":"cursor","error":{"message":"not signed in"}}]`), nil
+	}
+
+	_, err := DiscoverAndEnableProviders(context.Background())
+	if err == nil || FetchErrorKindOf(err) != FetchErrorNoProviders {
+		t.Fatalf("expected no-providers error, got %v", err)
+	}
+}
+
+func executableTestFile(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "codexbar")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestParseUsageJSONReturnsFirstProvider(t *testing.T) {
 	raw := []byte(`[
 		{"provider":"codex","usage":{"primary":{"usedPercent":1}}},

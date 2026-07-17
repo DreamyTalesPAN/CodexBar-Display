@@ -46,3 +46,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: After the critical pre-release review, the user explicitly ordered all identified retry-safety and real-runtime-path fixes except the separately numbered reproducible-build and staged-rollout items in the Codex task on 2026-07-16.
 - Approved customer-visible result: When a firmware upload may have started but did not finish safely, the failed update state shows the instruction to disconnect VibeTV from power for 10 seconds and wait for the picture after reconnecting. It does not show `Try again` in that state; creating a support report remains available.
 - Approved files: `control-center-app.tsx`, `updates-screen.tsx`, and the customer-flow assertion in `test-customer-flows.mjs`.
+
+## 2026-07-17 — Automatic AI-tool discovery without provider selection
+
+- User approval: The user explicitly approved the KISS hotfix plan in the Codex task on 2026-07-17 and required automatic detection with no provider choice.
+- Approved customer-visible result: During automatic detection, Setup shows `Finding your AI tools`. When no usable AI tool is available, it asks the customer to sign in to their existing AI tool and offers only `Check again`. It never asks the customer to select a provider, never recommends firmware repair or `Fix connection` for this cause, and Overview shows the automatically detected AI tools.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`, `overview-screen.tsx`, `setup-screen.tsx`, `usage-screen.tsx`, and their customer-flow assertions in `test-customer-flows.mjs`.

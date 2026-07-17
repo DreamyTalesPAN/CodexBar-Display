@@ -2,6 +2,7 @@
 
 import {
   ArrowUpFromLine,
+  BarChart3,
   Check,
   CircleHelp,
   Download,
@@ -21,6 +22,7 @@ import {
   type CompanionStatus,
   type DeviceInfo,
   type DeviceState,
+  type ProviderStatusInfo,
   type ReadinessTone,
   type UsageSnapshot,
 } from "./control-center-types";
@@ -35,6 +37,7 @@ type OverviewScreenProps = {
   device: DeviceInfo | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
   usage?: UsageSnapshot | null;
+  providerStatus: ProviderStatusInfo;
   busyAction?: string | null;
   onReloadImage?: () => void;
   requiresMacAppMigration?: boolean;
@@ -49,6 +52,7 @@ export function OverviewScreen({
   device,
   firmwareUpdate,
   usage,
+  providerStatus,
   onReloadImage,
   requiresMacAppMigration = false,
 }: OverviewScreenProps) {
@@ -96,6 +100,12 @@ export function OverviewScreen({
               value={labelForCompanion(companionStatus, companionVersion)}
             />
             <StatusRow
+              icon={<BarChart3 size={18} aria-hidden />}
+              label="AI tools"
+              detail={providerStatus.message}
+              value={labelForProviders(providerStatus)}
+            />
+            <StatusRow
               icon={<Monitor size={18} aria-hidden />}
               label="VibeTV"
               detail={imageStuck ? imageStuckDetail(device) : healthDetail}
@@ -136,6 +146,16 @@ export function OverviewScreen({
       </section>
     </div>
   );
+}
+
+function labelForProviders(provider: ProviderStatusInfo): string {
+  if (provider.state === "ready") {
+    return provider.providers.join(", ") || "Ready";
+  }
+  if (provider.state === "scanning") {
+    return "Finding tools";
+  }
+  return "Sign-in needed";
 }
 
 function MacAppMigrationCard({ downloadUrl }: { downloadUrl?: string }) {

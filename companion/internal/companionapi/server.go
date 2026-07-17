@@ -180,6 +180,11 @@ type Server struct {
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
 	fetchUsage             func(context.Context) ([]codexbar.ParsedFrame, error)
+	discoverProviders      func(context.Context) ([]codexbar.ParsedFrame, error)
+	providerVersion        func(context.Context) (string, error)
+	providerMu             sync.RWMutex
+	providerStatus         providerStatusInfo
+	providerDiscoveryBusy  bool
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
 	updateMacApp           func(context.Context, string, string, macAppUpdateRequest, io.Writer) error
 	fetchMacAppRelease     func(context.Context) (githubRelease, error)
@@ -346,9 +351,10 @@ type themeSpecHealth struct {
 }
 
 type statusResponse struct {
-	OK        bool       `json:"ok"`
-	Companion companion  `json:"companion"`
-	Device    deviceInfo `json:"device"`
+	OK        bool               `json:"ok"`
+	Companion companion          `json:"companion"`
+	Device    deviceInfo         `json:"device"`
+	Provider  providerStatusInfo `json:"provider"`
 }
 
 type deviceActionResponse struct {
@@ -765,16 +771,23 @@ func New(opts Options) (*Server, error) {
 		installationMode:      macAppInstallationMode(),
 		loadUsage:             daemon.LoadPersistedUsage,
 		fetchUsage:            codexbar.FetchAllProviders,
-		updateFirmware:        runFirmwareUpdateCommand,
-		updateMacApp:          runMacAppUpdateCommand,
-		fetchMacAppRelease:    fetchLatestMacAppRelease,
-		installJobs:           make(map[string]*themeInstallJob),
-		updateJobs:            make(map[string]*firmwareUpdateJob),
-		macAppUpdateJobs:      make(map[string]*macAppUpdateJob),
+		discoverProviders:     codexbar.DiscoverAndEnableProviders,
+		providerVersion:       installedCodexBarVersion,
+		providerStatus: providerStatusInfo{
+			State:   providerStateScanning,
+			Message: "Finding your AI tools.",
+		},
+		updateFirmware:     runFirmwareUpdateCommand,
+		updateMacApp:       runMacAppUpdateCommand,
+		fetchMacAppRelease: fetchLatestMacAppRelease,
+		installJobs:        make(map[string]*themeInstallJob),
+		updateJobs:         make(map[string]*firmwareUpdateJob),
+		macAppUpdateJobs:   make(map[string]*macAppUpdateJob),
 	}, nil
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
+	s.startProviderDiscovery(false)
 	server := &http.Server{
 		Addr:              s.addr,
 		Handler:           s.Handler(),
@@ -807,6 +820,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
+	mux.HandleFunc("/v1/providers/discover", s.handleProviderDiscover)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
@@ -1024,6 +1038,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		OK:        true,
 		Companion: s.companionInfo(r.Context()),
 		Device:    device,
+		Provider:  s.providerStatusSnapshot(),
 	})
 }
 
@@ -1224,7 +1239,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			writeUsage(persisted)
 			return
 		}
-		writeUsage(emptyUsageResponse(now, "codexbar-display"))
+		writeProviderSetupRequired(w)
 		return
 	}
 
@@ -1236,13 +1251,8 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			writeUsage(persisted)
 			return
 		}
-		writeError(
-			w,
-			http.StatusServiceUnavailable,
-			"usage_unavailable",
-			"Usage is not ready.",
-			"Open CodexBar and the Mac App, then try again.",
-		)
+		s.startProviderDiscovery(false)
+		writeProviderSetupRequired(w)
 		return
 	}
 	resp := usageResponseFromParsed(now, providers)
@@ -1250,7 +1260,32 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		writeUsage(persisted)
 		return
 	}
+	if len(resp.Providers) == 0 {
+		s.startProviderDiscovery(false)
+		writeProviderSetupRequired(w)
+		return
+	}
+	status := s.providerStatusSnapshot()
+	if status.State != providerStateReady || len(status.Providers) == 0 {
+		version := status.CodexBarVersion
+		if version == "" && s.providerVersion != nil {
+			if detectedVersion, versionErr := s.providerVersion(r.Context()); versionErr == nil {
+				version = detectedVersion
+			}
+		}
+		s.setProviderStatus(providerReadyStatus(version, providers))
+	}
 	writeUsage(resp)
+}
+
+func writeProviderSetupRequired(w http.ResponseWriter) {
+	writeError(
+		w,
+		http.StatusServiceUnavailable,
+		"provider_setup_required",
+		"No AI tool usage is available yet.",
+		"Sign in to your AI tool, then choose Check again.",
+	)
 }
 
 func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request) {
@@ -1354,6 +1389,19 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			NextAction: "Unset VIBETV_DISABLE_WIFI_THEME_INSTALL, then restart the Mac App.",
 		})
 	}
+	provider := s.providerStatusSnapshot()
+	providerCheck := diagnosticCheck{
+		Name:   "provider_usage",
+		Status: "pass",
+		Detail: strings.Join(provider.Providers, ", "),
+	}
+	if provider.State != providerStateReady || len(provider.Providers) == 0 {
+		providerCheck.Status = "attention"
+		providerCheck.Detail = provider.Message
+		providerCheck.ErrorCode = "provider_setup_required"
+		providerCheck.NextAction = "Sign in to your AI tool, then choose Check again."
+	}
+	checks = append(checks, providerCheck)
 
 	device := deviceInfo{
 		Target:    publicTarget(cfg.DeviceTarget),
@@ -6199,6 +6247,11 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 				code = "display_stream_timeout"
 			}
 			lower := strings.ToLower(line)
+			if strings.Contains(lower, "runtime/no-providers") ||
+				strings.Contains(lower, "select-provider") {
+				detail = "No AI tool usage is available yet."
+				code = "provider_setup_required"
+			}
 			if strings.Contains(lower, "status=401") ||
 				strings.Contains(lower, "pairing token required") ||
 				strings.Contains(lower, "unauthorized") {

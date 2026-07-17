@@ -227,6 +227,9 @@ dry-run: planned distribution verification for ${DMG_PATH}:
   spctl --assess --type open --context context:primary-signature --verbose=4 "${DMG_PATH}"
   hdiutil attach -readonly -nobrowse -noautoopen "${DMG_PATH}"
   codesign --verify --deep --strict --verbose=2 "<mount>/${APP_NAME}.app"
+  lipo "<mount>/${APP_NAME}.app/Contents/Helpers/codexbar-display" -verify_arch arm64 x86_64
+  lipo "<mount>/${APP_NAME}.app/Contents/Helpers/CodexBarCLI" -verify_arch arm64 x86_64
+  verify bundled CodexBarCLI VERSION is 0.37.2 and MIT license is present
   syspolicy_check distribution "<mount>/${APP_NAME}.app" (allow only the exact outer-DMG ticket diagnostic)
   spctl --assess --type execute --verbose=4 "<mount>/${APP_NAME}.app"
 EOF
@@ -235,7 +238,7 @@ fi
 
 [[ "$(uname -s)" == "Darwin" ]] || die "DMG distribution verification requires macOS"
 [[ -f "$DMG_PATH" ]] || die "DMG not found: ${DMG_PATH}"
-for command in codesign hdiutil spctl xcrun; do
+for command in codesign hdiutil lipo spctl xcrun; do
   command -v "$command" >/dev/null 2>&1 || die "${command} is required"
 done
 
@@ -264,6 +267,21 @@ MOUNTED_APP="${MOUNT_DIR}/${APP_NAME}.app"
 [[ -L "${MOUNT_DIR}/Applications" ]] || die "DMG is missing the Applications symlink"
 [[ "$(readlink "${MOUNT_DIR}/Applications")" == "/Applications" ]] \
   || die "DMG Applications symlink does not point to /Applications"
+
+COMPANION_HELPER="${MOUNTED_APP}/Contents/Helpers/codexbar-display"
+CODEXBAR_HELPER="${MOUNTED_APP}/Contents/Helpers/CodexBarCLI"
+CODEXBAR_VERSION="${MOUNTED_APP}/Contents/Helpers/VERSION"
+CODEXBAR_LICENSE="${MOUNTED_APP}/Contents/Resources/ThirdPartyNotices/CodexBar-LICENSE.txt"
+for helper in "$COMPANION_HELPER" "$CODEXBAR_HELPER"; do
+  [[ -x "$helper" ]] || die "DMG is missing executable helper: ${helper}"
+  lipo "$helper" -verify_arch arm64 x86_64 \
+    || die "DMG helper is not universal arm64/x86_64: ${helper}"
+  codesign --verify --strict --verbose=2 "$helper"
+done
+[[ -f "$CODEXBAR_VERSION" ]] || die "DMG is missing bundled CodexBarCLI VERSION"
+[[ "$(tr -d '[:space:]' < "$CODEXBAR_VERSION")" == "0.37.2" ]] \
+  || die "DMG bundled CodexBarCLI VERSION is not 0.37.2"
+[[ -s "$CODEXBAR_LICENSE" ]] || die "DMG is missing CodexBar MIT license notice"
 
 codesign --verify --deep --strict --verbose=2 "$MOUNTED_APP"
 verify_mounted_app_gatekeeper

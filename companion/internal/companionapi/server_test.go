@@ -61,6 +61,145 @@ func TestStatusWorksWithoutDevice(t *testing.T) {
 	}
 }
 
+func TestStatusReportsProviderReadiness(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.setProviderStatus(providerStatusInfo{
+		State:           providerStateReady,
+		CodexBarVersion: "0.37.2",
+		Providers:       []string{"codex", "claude"},
+		Message:         "AI tools found.",
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Provider.State != providerStateReady || got.Provider.CodexBarVersion != "0.37.2" {
+		t.Fatalf("unexpected provider status: %+v", got.Provider)
+	}
+	if strings.Join(got.Provider.Providers, ",") != "claude,codex" {
+		t.Fatalf("expected normalized providers, got %v", got.Provider.Providers)
+	}
+}
+
+func TestProviderDiscoveryMarksReadyAndPersistsSchemaMarker(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerVersion = func(context.Context) (string, error) { return "0.37.2", nil }
+	server.discoverProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{
+			{Provider: "codex", Frame: protocol.Frame{Provider: "codex"}},
+			{Provider: "claude", Frame: protocol.Frame{Provider: "claude"}},
+		}, nil
+	}
+	server.runProviderDiscovery(context.Background(), true)
+
+	status := server.providerStatusSnapshot()
+	if status.State != providerStateReady || strings.Join(status.Providers, ",") != "claude,codex" {
+		t.Fatalf("unexpected provider readiness: %+v", status)
+	}
+	marker, ok := server.loadProviderDiscoveryMarker()
+	if !ok || marker.SchemaVersion != 1 || marker.CodexBarVersion != "0.37.2" {
+		t.Fatalf("unexpected provider marker: %+v ok=%v", marker, ok)
+	}
+	info, err := os.Stat(server.providerDiscoveryMarkerPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("expected marker permissions 0600, got %o", info.Mode().Perm())
+	}
+}
+
+func TestProviderDiscoveryReusesMarkerOnlyWhileUsageStillWorks(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerVersion = func(context.Context) (string, error) { return "0.37.2", nil }
+	if err := server.saveProviderDiscoveryMarker(providerDiscoveryMarker{
+		SchemaVersion:   1,
+		CodexBarVersion: "0.37.2",
+		Providers:       []string{"codex"},
+		CompletedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, nil
+	}
+	discoveryCalls := 0
+	server.discoverProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		discoveryCalls++
+		return []codexbar.ParsedFrame{{Provider: "claude", Frame: protocol.Frame{Provider: "claude"}}}, nil
+	}
+
+	server.runProviderDiscovery(context.Background(), false)
+	status := server.providerStatusSnapshot()
+	if discoveryCalls != 1 || status.State != providerStateReady || strings.Join(status.Providers, ",") != "claude" {
+		t.Fatalf("zero live providers must trigger a new scan: calls=%d status=%+v", discoveryCalls, status)
+	}
+}
+
+func TestProviderDiscoveryRerunsWhenBundledVersionChanges(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerVersion = func(context.Context) (string, error) { return "0.37.2", nil }
+	if err := server.saveProviderDiscoveryMarker(providerDiscoveryMarker{
+		SchemaVersion:   1,
+		CodexBarVersion: "0.36.0",
+		Providers:       []string{"codex"},
+		CompletedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		t.Fatal("version change must bypass the old marker")
+		return nil, nil
+	}
+	discoveryCalls := 0
+	server.discoverProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		discoveryCalls++
+		return []codexbar.ParsedFrame{{Provider: "codex", Frame: protocol.Frame{Provider: "codex"}}}, nil
+	}
+	server.runProviderDiscovery(context.Background(), false)
+	if discoveryCalls != 1 || server.providerStatusSnapshot().State != providerStateReady {
+		t.Fatalf("bundled version change did not rerun discovery")
+	}
+}
+
+func TestProviderDiscoveryHidesRawAPIFailure(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerVersion = func(context.Context) (string, error) { return "0.37.2", nil }
+	server.discoverProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, errors.New("secret upstream API response")
+	}
+	server.runProviderDiscovery(context.Background(), true)
+	status := server.providerStatusSnapshot()
+	if status.State != providerStateError || strings.Contains(status.Message, "secret") {
+		t.Fatalf("unexpected provider API error status: %+v", status)
+	}
+}
+
+func TestProviderDiscoveryRetryEndpointStartsAutomaticScan(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	started := make(chan struct{}, 1)
+	server.providerVersion = func(context.Context) (string, error) { return "0.37.2", nil }
+	server.discoverProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		started <- struct{}{}
+		return nil, codexbar.ErrNoProviders
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/providers/discover", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("provider discovery did not start")
+	}
+}
+
 func TestRuntimeHealthDoesNotProbeDeviceOrRelease(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("runtime health must not contact VibeTV, got %s", r.URL.Path)
@@ -1602,6 +1741,21 @@ func TestLastDisplayStreamErrorParsesLatestCycleError(t *testing.T) {
 	}
 }
 
+func TestLastDisplayStreamErrorMapsMissingProvidersToSetup(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	if err := os.WriteFile(
+		logPath,
+		[]byte(`2026-07-17T10:00:00Z cycle error: code=runtime/no-providers op=select-provider retry=3s err="no providers"`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	_, detail, code, ok := lastDisplayStreamErrorRecordAfter(logPath, time.Time{})
+	if !ok || code != "provider_setup_required" || detail != "No AI tool usage is available yet." {
+		t.Fatalf("unexpected provider stream error: ok=%v code=%q detail=%q", ok, code, detail)
+	}
+}
+
 func TestDisplayFrameLatestReturnsNotFoundWithoutLastGoodFrame(t *testing.T) {
 	t.Setenv(displayStreamOutLogEnv, filepath.Join(t.TempDir(), "missing.log"))
 	server := newTestServer(t, runtimeconfig.Config{})
@@ -1815,8 +1969,24 @@ func TestUsageUnavailableReturnsCustomerSafeError(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.OK || got.Error.Code != "usage_unavailable" {
+	if got.OK || got.Error.Code != "provider_setup_required" {
 		t.Fatalf("unexpected error response: %+v", got)
+	}
+}
+
+func TestUsageWithZeroProvidersRequiresProviderSetup(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{}, false
+	}
+	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, nil
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), `"code":"provider_setup_required"`) {
+		t.Fatalf("expected provider setup response, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -5874,6 +6044,12 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	}
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
 		return githubRelease{TagName: "v1.0.0"}, nil
+	}
+	server.providerVersion = func(context.Context) (string, error) {
+		return "0.37.2", nil
+	}
+	server.discoverProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, codexbar.ErrNoProviders
 	}
 	server.subnetTargets = func() []string {
 		return nil

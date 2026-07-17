@@ -169,6 +169,7 @@ require_real_inputs() {
   [[ "$(uname -s)" == "Darwin" ]] || die "real signing and notarization require macOS"
   command -v security >/dev/null 2>&1 || die "security is required"
   command -v codesign >/dev/null 2>&1 || die "codesign is required"
+  command -v lipo >/dev/null 2>&1 || die "lipo is required"
   command -v plutil >/dev/null 2>&1 || die "plutil is required"
   command -v xcrun >/dev/null 2>&1 || die "xcrun is required"
   command -v spctl >/dev/null 2>&1 || die "spctl is required"
@@ -203,6 +204,9 @@ dry-run: planned real-mode commands:
   curl https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
   security create-keychain / security import Developer ID Application certificate
   codesign --force --options runtime --timestamp --sign <identity> "${APP_DIR}/Contents/Helpers/codexbar-display"
+  codesign --force --options runtime --timestamp --sign <identity> "${APP_DIR}/Contents/Helpers/CodexBarCLI"
+  lipo "${APP_DIR}/Contents/Helpers/codexbar-display" -verify_arch arm64 x86_64
+  lipo "${APP_DIR}/Contents/Helpers/CodexBarCLI" -verify_arch arm64 x86_64
   codesign --force --options runtime --timestamp --entitlements macos/VibeTVControlCenter/VibeTVControlCenter.entitlements --sign <identity> "${APP_DIR}"
   codesign --verify --deep --strict --verbose=2 "${APP_DIR}"
   syspolicy_check notary-submission "${APP_DIR}" (when available)
@@ -310,6 +314,7 @@ run_notary_submission_preflight() {
 sign_app_bundle() {
   local identity="$1"
   local companion_binary="${APP_DIR}/Contents/Helpers/codexbar-display"
+  local codexbar_cli="${APP_DIR}/Contents/Helpers/CodexBarCLI"
   local sparkle_framework="${APP_DIR}/Contents/Frameworks/Sparkle.framework"
   local authority signature_details signed_team_id
 
@@ -338,15 +343,18 @@ sign_app_bundle() {
     codesign --verify --deep --strict --verbose=2 "$sparkle_framework"
   fi
 
-  if [[ -x "$companion_binary" ]]; then
+  for helper in "$companion_binary" "$codexbar_cli"; do
+    [[ -x "$helper" ]] || die "required app helper is missing or not executable: ${helper}"
+    lipo "$helper" -verify_arch arm64 x86_64 \
+      || die "required app helper is not universal arm64/x86_64: ${helper}"
     codesign \
       --force \
       --options runtime \
       --timestamp \
       --sign "$identity" \
-      "$companion_binary"
-    codesign --verify --strict --verbose=2 "$companion_binary"
-  fi
+      "$helper"
+    codesign --verify --strict --verbose=2 "$helper"
+  done
 
   codesign \
     --force \

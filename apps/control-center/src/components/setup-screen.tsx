@@ -20,6 +20,7 @@ import type {
   DeviceCandidate,
   DeviceSearchState,
   DeviceState,
+  ProviderStatusInfo,
 } from "./control-center-types";
 import { ControlCenterButton } from "./control-center-button";
 import { DeviceTargetForm } from "./device-target-form";
@@ -34,6 +35,7 @@ type SetupScreenProps = {
   deviceTarget: string;
   lastError?: ApiError | null;
   onCheckCompanion?: () => void | Promise<void>;
+  onDiscoverProviders?: () => void | Promise<void>;
   onCheckUpdates?: () => void | Promise<void>;
   onDeviceTargetChange?: (target: string) => void;
   onSearchDevices?: () => void;
@@ -47,9 +49,10 @@ type SetupScreenProps = {
   requiresMacAppMigration?: boolean;
   showIntro?: boolean;
   setupComplete: boolean;
+  providerStatus: ProviderStatusInfo;
 };
 
-type StepId = "wifi" | "mac-app" | "finish";
+type StepId = "providers" | "wifi" | "mac-app" | "finish";
 type StepState = "active" | "blocked" | "complete" | "pending";
 
 export function SetupScreen({
@@ -61,6 +64,7 @@ export function SetupScreen({
   deviceTarget,
   lastError,
   onCheckCompanion,
+  onDiscoverProviders,
   onCheckUpdates,
   onDeviceTargetChange,
   onSearchDevices,
@@ -74,6 +78,7 @@ export function SetupScreen({
   requiresMacAppMigration = false,
   showIntro = true,
   setupComplete,
+  providerStatus,
 }: SetupScreenProps) {
   const [wifiConfirmedState, setWifiConfirmedState] = useState(false);
   const [dmgDownloadStarted, setDmgDownloadStarted] = useState(false);
@@ -81,6 +86,9 @@ export function SetupScreen({
   const macAppMissing = isCompanionMissingError(lastError);
   const macAppReady = companionStatus === "online";
   const macAppCheckFailed = macAppMissing && macAppConfirmedState;
+  const providersReady = providerStatus.state === "ready";
+  const providersReadyForFlow =
+    providersReady || companionStatus !== "online";
   const forceMacAppStep = previewStep === "mac-app";
   const macAppConfirmed =
     !forceMacAppStep &&
@@ -124,11 +132,17 @@ export function SetupScreen({
     () =>
       hostedMode
         ? "mac-app"
-        : previewStep || (setupComplete || wifiConfirmed ? "finish" : "wifi"),
+        : previewStep ||
+          (!providersReadyForFlow
+            ? "providers"
+            : setupComplete || wifiConfirmed
+              ? "finish"
+              : "wifi"),
     [
       hostedMode,
       previewStep,
       setupComplete,
+      providersReadyForFlow,
       wifiConfirmed,
     ],
   );
@@ -139,6 +153,7 @@ export function SetupScreen({
         forceMacAppStep,
         macAppConfirmed,
         macAppReady,
+        providersReady: providersReadyForFlow,
         setupComplete,
         wifiConfirmed,
       }),
@@ -147,6 +162,7 @@ export function SetupScreen({
       forceMacAppStep,
       macAppConfirmed,
       macAppReady,
+      providersReadyForFlow,
       setupComplete,
       wifiConfirmed,
     ],
@@ -250,10 +266,42 @@ export function SetupScreen({
 
       <section className="py-6">
         <ol className="grid gap-0 border-y border-[#747A60]">
+          {!hostedMode && !forceMacAppStep && companionStatus === "online" ? (
+            <SetupStep
+              icon={
+                providerStatus.state === "scanning" ? (
+                  <Loader2 className="animate-spin" size={22} aria-hidden />
+                ) : (
+                  <RefreshCw size={22} aria-hidden />
+                )
+              }
+              index={1}
+              state={stepStates.providers}
+              title="Finding your AI tools"
+            >
+              {activeStep === "providers" ? (
+                <div className="grid gap-4 text-sm leading-6 text-[#444933]">
+                  <p>{providerStatus.message}</p>
+                  {providerStatus.state !== "scanning" ? (
+                    <PrimaryButton
+                      busy={busyAction === "provider-discovery"}
+                      busyLabel="Checking"
+                      fullWidth
+                      icon={<RefreshCw size={18} aria-hidden />}
+                      label="Check again"
+                      onClick={() => void onDiscoverProviders?.()}
+                      size="large"
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+            </SetupStep>
+          ) : null}
+
           {!hostedMode && !forceMacAppStep ? (
             <SetupStep
               icon={<Wifi size={22} aria-hidden />}
-              index={1}
+              index={2}
               state={stepStates.wifi}
               title="Connect VibeTV to WiFi"
             >
@@ -368,7 +416,7 @@ export function SetupScreen({
           {!hostedMode && !forceMacAppStep ? (
             <SetupStep
               icon={<Monitor size={22} aria-hidden />}
-              index={2}
+              index={3}
               state={stepStates.finish}
               title="Verify VibeTV connection"
             >
@@ -863,6 +911,7 @@ function buildStepStates({
   forceMacAppStep,
   macAppConfirmed,
   macAppReady,
+  providersReady,
   setupComplete,
   wifiConfirmed,
 }: {
@@ -870,16 +919,25 @@ function buildStepStates({
   forceMacAppStep: boolean;
   macAppConfirmed: boolean;
   macAppReady: boolean;
+  providersReady: boolean;
   setupComplete: boolean;
   wifiConfirmed: boolean;
 }): Record<StepId, StepState> {
   return {
+    providers:
+      providersReady || setupComplete
+        ? "complete"
+        : activeStep === "providers"
+          ? "active"
+          : "blocked",
     wifi:
       wifiConfirmed || setupComplete
         ? "complete"
         : activeStep === "wifi"
           ? "active"
-          : "blocked",
+          : providersReady
+            ? "pending"
+            : "blocked",
     "mac-app": forceMacAppStep
       ? "active"
       : macAppConfirmed || macAppReady || setupComplete

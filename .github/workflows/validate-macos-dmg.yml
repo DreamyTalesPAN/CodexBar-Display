@@ -72,11 +72,16 @@ jobs:
             tmp/macos-preview/codexbar-display-amd64 \
             tmp/macos-preview/codexbar-display-arm64
 
+          ./scripts/prepare-bundled-codexbar-cli.sh \
+            --output-dir tmp/macos-preview/codexbar-cli
+
           ./scripts/build-macos-control-center-app.sh \
             --version "${version}" \
             --build "${GITHUB_RUN_NUMBER}" \
             --universal \
             --companion-binary tmp/macos-preview/codexbar-display \
+            --codexbar-cli-binary tmp/macos-preview/codexbar-cli/CodexBarCLI \
+            --codexbar-cli-version-file tmp/macos-preview/codexbar-cli/VERSION \
             --output "dist/macos/VibeTV Control Center.app"
 
           tar -czf tmp/macos-preview/app.tar.gz \

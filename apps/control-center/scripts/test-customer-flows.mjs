@@ -233,6 +233,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testProviderDiscoveryNeedsNoSelection(browser, appContext.appUrl);
       await testLocalReachableWithoutFrameStaysInSetup(
         browser,
         appContext.appUrl,
@@ -290,6 +291,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testProviderDiscoveryNeedsNoSelection(browser, appContext.appUrl);
     await testLocalWifiVerificationOpensOverview(
       browser,
       appContext.appUrl,
@@ -701,6 +703,56 @@ async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
   assert(
     (await page.getByText("Browser permission needed.").count()) === 0,
     "setup should not show browser permission copy",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testProviderDiscoveryNeedsNoSelection(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  let discoveryRequests = 0;
+  const setupRequired = {
+    state: "setup_required",
+    codexBarVersion: "0.37.2",
+    providers: [],
+    message: "Sign in to your AI tool, then check again.",
+  };
+  await routeCompanionOnline(page, installRequests, undefined, {
+    device: { connected: false },
+    providerStatus: setupRequired,
+    providerStatusSequence: [
+      setupRequired,
+      {
+        state: "ready",
+        codexBarVersion: "0.37.2",
+        providers: ["claude", "codex"],
+        message: "AI tools found.",
+      },
+    ],
+    onProviderDiscover: () => {
+      discoveryRequests += 1;
+    },
+  });
+
+  await page.goto(appUrl, {
+    waitUntil: "domcontentloaded",
+  });
+  await page
+    .getByRole("heading", { name: "Finding your AI tools" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByText("Sign in to your AI tool, then check again.").waitFor();
+  assert(
+    (await page.getByText("Select provider").count()) === 0,
+    "Provider discovery must not ask the customer to select a provider",
+  );
+  await page.getByRole("button", { name: "Check again" }).click();
+  await page
+    .getByRole("button", { name: "VibeTV is on WiFi" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    discoveryRequests === 1,
+    `Check again must trigger exactly one provider scan, got ${discoveryRequests}`,
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -3938,6 +3990,7 @@ async function routeCompanionOnline(
     device = companionDevice,
     onDiscover,
     onPair,
+    onProviderDiscover,
     onRepair,
     onSelect,
     onSearch,
@@ -3960,6 +4013,13 @@ async function routeCompanionOnline(
     searchDelayMs = 0,
     firstStatusDelayMs = 0,
     statusDeviceSequence,
+    providerStatusSequence,
+    providerStatus = {
+      state: "ready",
+      codexBarVersion: "0.37.2",
+      providers: ["codex"],
+      message: "AI tools found.",
+    },
   } = {},
 ) {
   let currentDevice = device;
@@ -3972,6 +4032,7 @@ async function routeCompanionOnline(
   let macAppUpdateStatusIndex = 0;
   let macAppUpdateStatusFailuresRemaining = macAppUpdateStatusFailures;
   let statusRequestCount = 0;
+  let currentProviderStatus = providerStatus;
   const handler = async (route) => {
     const pathname = companionPath(route);
     onRequest(pathname, route.request().method());
@@ -4383,6 +4444,7 @@ async function routeCompanionOnline(
             companionRuntime,
           ),
           device: currentDevice,
+          provider: providerStatus,
         }),
       });
       return;
@@ -4399,6 +4461,20 @@ async function routeCompanionOnline(
       });
       return;
     }
+    if (pathname === "/v1/providers/discover") {
+      onProviderDiscover?.();
+      currentProviderStatus = {
+        ...currentProviderStatus,
+        state: "scanning",
+        message: "Finding your AI tools.",
+      };
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, provider: currentProviderStatus }),
+      });
+      return;
+    }
     if (pathname === "/v1/status") {
       statusRequestCount += 1;
       if (Array.isArray(statusDeviceSequence) && statusDeviceSequence.length > 0) {
@@ -4409,6 +4485,15 @@ async function routeCompanionOnline(
       }
       if (statusRequestCount === 1 && firstStatusDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, firstStatusDelayMs));
+      }
+      if (
+        Array.isArray(providerStatusSequence) &&
+        providerStatusSequence.length > 0
+      ) {
+        currentProviderStatus =
+          providerStatusSequence[
+            Math.min(statusRequestCount - 1, providerStatusSequence.length - 1)
+          ];
       }
       await route.fulfill({
         status: 200,
@@ -4424,6 +4509,7 @@ async function routeCompanionOnline(
             companionRuntime,
           ),
           device: currentDevice,
+          provider: currentProviderStatus,
         }),
       });
       return;

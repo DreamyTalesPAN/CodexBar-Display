@@ -22,6 +22,13 @@ export type ApiError = {
 
 export type CompanionStatus = "unknown" | "online" | "missing";
 
+export type ProviderStatusInfo = {
+  state: "scanning" | "ready" | "setup_required" | "error";
+  codexBarVersion?: string;
+  providers: string[];
+  message: string;
+};
+
 export type CompanionInfo = {
   status?: string;
   version?: string;

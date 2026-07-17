@@ -433,6 +433,12 @@ main() {
     || die "Control Center resource folder is missing"
   [[ -x "${app}/Contents/Helpers/codexbar-display" ]] \
     || die "bundled Companion helper is missing or not executable"
+  [[ -x "${app}/Contents/Helpers/CodexBarCLI" ]] \
+    || die "bundled CodexBarCLI helper is missing or not executable"
+  assert_file "${app}/Contents/Helpers/VERSION"
+  [[ "$(tr -d '[:space:]' < "${app}/Contents/Helpers/VERSION")" == "0.37.2" ]] \
+    || die "bundled CodexBarCLI VERSION must be pinned to 0.37.2"
+  assert_file "${app}/Contents/Resources/ThirdPartyNotices/CodexBar-LICENSE.txt"
   [[ ! -e "${app}/Contents/Resources/companion" ]] \
     || die "Mach-O helpers must not be stored in the Resources directory"
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
@@ -887,6 +893,10 @@ PY
     "signing dry-run must show hardened-runtime codesign"
   assert_contains "$sign_output" "${app}/Contents/Helpers/codexbar-display" \
     "signing dry-run must sign the helper from the standard code directory"
+  assert_contains "$sign_output" "${app}/Contents/Helpers/CodexBarCLI" \
+    "signing dry-run must sign the bundled CodexBarCLI helper"
+  assert_contains "$sign_output" "-verify_arch arm64 x86_64" \
+    "signing dry-run must verify both helper architectures"
   if [[ "$sign_output" == *"Contents/Resources/companion"* ]]; then
     die "signing dry-run must not treat Resources as a Mach-O code directory"
   fi

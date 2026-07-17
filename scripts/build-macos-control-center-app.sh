@@ -7,6 +7,7 @@ APP_NAME="VibeTV Control Center"
 BUNDLE_ID="shop.vibetv.control-center"
 EXECUTABLE_NAME="VibeTVControlCenter"
 COMPANION_NAME="codexbar-display"
+CODEXBAR_CLI_NAME="CodexBarCLI"
 ICON_FILE_NAME="VibeTVControlCenter.icns"
 RUNTIME_AGENT_PLIST_NAME="shop.vibetv.control-center.runtime.plist"
 APP_ICON="${ROOT}/macos/VibeTVControlCenter/${ICON_FILE_NAME}"
@@ -20,6 +21,9 @@ BUILD="${BUILD:-0}"
 APP_DIR="${ROOT}/dist/macos/${APP_NAME}.app"
 CONTROL_CENTER_STATIC="${ROOT}/apps/control-center/out-local"
 COMPANION_BINARY=""
+CODEXBAR_CLI_BINARY=""
+CODEXBAR_CLI_VERSION_FILE=""
+CODEXBAR_LICENSE="${ROOT}/third_party/CodexBar-LICENSE.txt"
 DRY_RUN=0
 UNIVERSAL=0
 LOCAL_PREVIEW=0
@@ -27,7 +31,7 @@ LOCAL_PREVIEW=0
 usage() {
   cat <<EOF
 Usage:
-  build-macos-control-center-app.sh [--version x.y.z] [--build n] [--output path.app] [--control-center-static dir] [--companion-binary path] [--app-icon path.icns] [--sparkle-feed-url url] [--sparkle-public-key key] [--universal] [--local-preview] [--dry-run]
+  build-macos-control-center-app.sh [--version x.y.z] [--build n] [--output path.app] [--control-center-static dir] [--companion-binary path] [--codexbar-cli-binary path] [--codexbar-cli-version-file path] [--app-icon path.icns] [--sparkle-feed-url url] [--sparkle-public-key key] [--universal] [--local-preview] [--dry-run]
 
 Builds the prepared macOS .app bundle for ${APP_NAME}.
 
@@ -73,6 +77,16 @@ while [[ $# -gt 0 ]]; do
     --companion-binary)
       need_value "$1" "${2:-}"
       COMPANION_BINARY="$2"
+      shift 2
+      ;;
+    --codexbar-cli-binary)
+      need_value "$1" "${2:-}"
+      CODEXBAR_CLI_BINARY="$2"
+      shift 2
+      ;;
+    --codexbar-cli-version-file)
+      need_value "$1" "${2:-}"
+      CODEXBAR_CLI_VERSION_FILE="$2"
       shift 2
       ;;
     --app-icon)
@@ -245,6 +259,32 @@ EOF
   die "real app builds need --companion-binary path/to/${COMPANION_NAME}"
 }
 
+copy_codexbar_cli() {
+  local helpers_dir="$1"
+  local notices_dir="$2"
+  mkdir -p "$helpers_dir" "$notices_dir"
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    cat > "${helpers_dir}/${CODEXBAR_CLI_NAME}" <<'EOF'
+#!/usr/bin/env bash
+printf 'CodexBar 0.37.2\n'
+EOF
+    chmod 755 "${helpers_dir}/${CODEXBAR_CLI_NAME}"
+    printf '0.37.2\n' > "${helpers_dir}/VERSION"
+  else
+    [[ -f "$CODEXBAR_CLI_BINARY" ]] \
+      || die "real app builds need --codexbar-cli-binary path/to/${CODEXBAR_CLI_NAME}"
+    [[ -f "$CODEXBAR_CLI_VERSION_FILE" ]] \
+      || die "real app builds need --codexbar-cli-version-file path/to/VERSION"
+    cp "$CODEXBAR_CLI_BINARY" "${helpers_dir}/${CODEXBAR_CLI_NAME}"
+    chmod 755 "${helpers_dir}/${CODEXBAR_CLI_NAME}"
+    cp "$CODEXBAR_CLI_VERSION_FILE" "${helpers_dir}/VERSION"
+  fi
+
+  [[ -f "$CODEXBAR_LICENSE" ]] || die "CodexBar license file not found: ${CODEXBAR_LICENSE}"
+  cp "$CODEXBAR_LICENSE" "${notices_dir}/CodexBar-LICENSE.txt"
+}
+
 copy_runtime_agent_plist() {
   local target="$1"
   [[ -f "$RUNTIME_AGENT_PLIST" ]] || die "runtime LaunchAgent plist not found: ${RUNTIME_AGENT_PLIST}"
@@ -353,10 +393,11 @@ main() {
   local helpers_dir="${contents}/Helpers"
   local frameworks_dir="${contents}/Frameworks"
   local resources_dir="${contents}/Resources"
+  local notices_dir="${resources_dir}/ThirdPartyNotices"
   local launch_agents_dir="${contents}/Library/LaunchAgents"
 
   rm -rf "$APP_DIR"
-  mkdir -p "$macos_dir" "$helpers_dir" "$frameworks_dir" "$resources_dir" "$launch_agents_dir"
+  mkdir -p "$macos_dir" "$helpers_dir" "$frameworks_dir" "$resources_dir" "$notices_dir" "$launch_agents_dir"
 
   prepare_sparkle
   write_info_plist "${contents}/Info.plist"
@@ -365,6 +406,7 @@ main() {
   copy_app_icon "$resources_dir"
   copy_control_center_static "${resources_dir}/control-center"
   copy_companion_binary "$helpers_dir"
+  copy_codexbar_cli "$helpers_dir" "$notices_dir"
   copy_runtime_agent_plist "${launch_agents_dir}/${RUNTIME_AGENT_PLIST_NAME}"
   cp "${ROOT}/macos/VibeTVControlCenter/VibeTVControlCenter.entitlements" "${resources_dir}/VibeTVControlCenter.entitlements"
 

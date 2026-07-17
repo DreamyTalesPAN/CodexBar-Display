@@ -34,6 +34,7 @@ import {
   type DeviceInfo,
   type DeviceSearchState,
   type DeviceState,
+  type ProviderStatusInfo,
   type SupportDiagnostics,
   type UsageSnapshot,
 } from "./control-center-types";
@@ -214,6 +215,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<FirmwareUpdateStatus | null>(null);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [usageError, setUsageError] = useState<ApiError | null>(null);
+  const [providerStatus, setProviderStatus] = useState<ProviderStatusInfo>({
+    state: "scanning",
+    providers: [],
+    message: "Finding your AI tools.",
+  });
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
@@ -603,11 +609,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const payload = await runCompanion<{
           companion?: CompanionInfo;
           device?: DeviceInfo;
+          provider?: ProviderStatusInfo;
         }>("/v1/status", undefined, { preserveLastError: quiet });
         const checkedAt = formatTime();
         const wasMissing = companionStatus === "missing";
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
+        if (payload.provider) {
+          setProviderStatus(payload.provider);
+        }
         setLastError(null);
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
@@ -1544,7 +1554,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const shouldPollIncompleteSetup =
       companionStatus === "missing" ||
       (companionStatus === "online" &&
-        (!deviceSetupIsUsable(device) ||
+        (providerStatus.state !== "ready" ||
+          !deviceSetupIsUsable(device) ||
           device?.connectionState === "reconnecting"));
     if (hostedSetup || !shouldPollIncompleteSetup) {
       return;
@@ -1558,7 +1569,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }, 5000);
 
     return () => window.clearInterval(timer);
-  }, [busyAction, checkCompanion, companionStatus, device, hostedSetup]);
+  }, [
+    busyAction,
+    checkCompanion,
+    companionStatus,
+    device,
+    hostedSetup,
+    providerStatus.state,
+  ]);
 
   const deviceBoard = device?.board;
   const deviceFirmware = device?.firmware;
@@ -1886,6 +1904,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ],
   );
 
+  const discoverProviders = useCallback(async () => {
+    setBusyAction("provider-discovery");
+    try {
+      const payload = await runCompanion<{ provider?: ProviderStatusInfo }>(
+        "/v1/providers/discover",
+        { method: "POST" },
+      );
+      if (payload.provider) {
+        setProviderStatus(payload.provider);
+      }
+      setUsageError(null);
+      setLastError(null);
+    } catch (error) {
+      const normalized = normalizeUsageError(
+        normalizeCaughtError(error, "AI tool check needs attention."),
+      );
+      setUsageError(normalized);
+      setLastError(normalized);
+    } finally {
+      setBusyAction(null);
+    }
+  }, [runCompanion]);
+
   const loadSupportDiagnostics = useCallback(async () => {
     setBusyAction("diagnostics");
     try {
@@ -1997,6 +2038,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const setupComplete = Boolean(
     !setupPreviewStep &&
       companionStatus === "online" &&
+      providerStatus.state === "ready" &&
       deviceStartupConnectionIsReady(device),
   );
   const hasSavedActiveDevice = Boolean(device?.deviceId);
@@ -2106,7 +2148,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       requiresMacAppMigration={requiresMacAppMigration}
       showIntro={showIntro}
       setupComplete={setupComplete}
+      providerStatus={providerStatus}
       onCheckCompanion={checkCompanion}
+      onDiscoverProviders={discoverProviders}
       onCheckUpdates={checkUpdates}
       onDeviceTargetChange={handleDeviceTargetChange}
       onSearchDevices={() => {
@@ -2204,6 +2248,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           deviceState={deviceState}
           firmwareUpdate={effectiveFirmwareUpdate}
           onReloadImage={() => reloadDisplay()}
+          providerStatus={providerStatus}
           requiresMacAppMigration={requiresMacAppMigration}
           usage={usage}
         />
@@ -2213,6 +2258,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         <UsageScreen
           busyAction={busyAction}
           companionStatus={companionStatus}
+          onDiscoverProviders={discoverProviders}
           onRefresh={() => refreshUsage()}
           usage={usage}
           usageError={usageError}
