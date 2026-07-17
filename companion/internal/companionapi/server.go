@@ -4926,7 +4926,7 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 			Firmware:    hello.Firmware,
 			NetworkMode: hello.NetworkMode,
 			Known:       deviceIdentityIsKnown(cfg, hello),
-			Active:      deviceIdentityMatches(cfg, hello),
+			Active:      deviceIdentityMatches(cfg, found.target, hello),
 		}
 		if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
 			byIdentity[key] = entry
@@ -4980,10 +4980,14 @@ func sortedDeviceSearchEntries(byIdentity map[string]deviceSearchEntry) []device
 	return devices
 }
 
-func deviceIdentityMatches(cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
+func deviceIdentityMatches(cfg runtimeconfig.Config, target string, hello protocol.DeviceHello) bool {
 	wantID := strings.TrimSpace(cfg.DeviceID)
 	gotID := strings.TrimSpace(hello.DeviceID)
-	return wantID != "" && gotID != "" && strings.EqualFold(wantID, gotID)
+	if wantID != "" {
+		return gotID != "" && strings.EqualFold(wantID, gotID)
+	}
+	wantTarget := normalizeTarget(cfg.DeviceTarget)
+	return wantTarget != "" && wantTarget == normalizeTarget(target)
 }
 
 func deviceIdentityIsKnown(cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {

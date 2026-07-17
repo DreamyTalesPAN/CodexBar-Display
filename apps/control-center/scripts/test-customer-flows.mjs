@@ -329,6 +329,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testLegacyActiveTargetReconnectsAndPinsDiscoveredIdentity(
+      browser,
+      appContext.appUrl,
+    );
     await testRunningPairingErrorRepairsAutomaticallyOnce(
       browser,
       appContext.appUrl,
@@ -359,6 +363,8 @@ async function main() {
       appContext.appUrl,
     );
     await testInitialHealthyStatusRaceAvoidsRepair(browser, appContext.appUrl);
+    await testDelayedSettingsDoesNotResetActiveTab(browser, appContext.appUrl);
+    await testSetupResetIgnoresInFlightStatus(browser, appContext.appUrl);
     await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
       browser,
       appContext.appUrl,
@@ -1189,6 +1195,64 @@ async function testOfflineActiveDeviceReconnectsWithoutPrompt(browser, appUrl) {
   await page.close();
 }
 
+async function testLegacyActiveTargetReconnectsAndPinsDiscoveredIdentity(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const repairRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      target: "http://192.168.178.70",
+      connected: false,
+      paired: true,
+      ready: false,
+    },
+    searchDevices: [
+      {
+        target: "http://192.168.178.70",
+        deviceId: "migrated-device-70",
+        networkMode: "station",
+        known: false,
+        active: true,
+      },
+    ],
+    onRepair: (postData) => {
+      repairRequests.push(postData || "");
+      return {
+        ...companionDevice,
+        target: "http://192.168.178.70",
+        deviceId: "migrated-device-70",
+      };
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    repairRequests.length === 1,
+    "A legacy paired target should reconnect exactly once",
+  );
+  const request = JSON.parse(repairRequests[0] || "{}");
+  assert(
+    request.target === "http://192.168.178.70",
+    "Legacy reconnect must keep the saved target",
+  );
+  assert(
+    request.expectedDeviceId === "migrated-device-70",
+    "Legacy reconnect must pin the discovered stable identity",
+  );
+  assert(
+    request.forcePair == null || request.forcePair === false,
+    "Legacy reconnect must not force a device switch",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
 async function testRunningCompanionOutageKeepsControlCenterOpen(
   browser,
   appUrl,
@@ -1780,6 +1844,108 @@ async function testInitialHealthyStatusRaceAvoidsRepair(browser, appUrl) {
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testDelayedSettingsDoesNotResetActiveTab(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  let settingsRequests = 0;
+  await routeCompanionOnline(
+    page,
+    installRequests,
+    () => {
+      settingsRequests += 1;
+    },
+    {
+      device: companionDevice,
+      settingsDelayMs: 700,
+    },
+  );
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Updates" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Updates" }).click();
+  await page.waitForTimeout(900);
+  assert(settingsRequests > 0, "The delayed settings response must be tested");
+  assert(
+    (await page
+      .getByRole("button", { name: "Updates", exact: true })
+      .getAttribute("aria-current")) === "page",
+    "A late settings response must not reset the active tab to Overview",
+  );
+  assert(
+    (await page.getByTestId("device-startup-screen").count()) === 0,
+    "A late settings response must keep the Control Center mounted",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testSetupResetIgnoresInFlightStatus(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const resetRequests = [];
+  let statusRequests = 0;
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...reconnectingDevice,
+      target: "http://192.168.178.70",
+      deviceId: "known-device-1",
+      paired: true,
+    },
+    searchDevices: [],
+    statusDelayAfterFirstMs: 800,
+    onRequest: (pathname) => {
+      if (pathname === "/v1/status") {
+        statusRequests += 1;
+      }
+    },
+    onReset: (postData) => {
+      resetRequests.push(postData || "");
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV was not found" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Open Control Center" }).click();
+  await page.getByRole("button", { name: "Search for VibeTV" }).click();
+  await page
+    .getByRole("button", { name: "Set up another VibeTV" })
+    .waitFor({ timeout: 10_000 });
+
+  const statusDeadline = Date.now() + 5_000;
+  while (statusRequests < 2 && Date.now() < statusDeadline) {
+    await page.waitForTimeout(25);
+  }
+  assert(statusRequests >= 2, "The in-flight status response must be tested");
+  await page.getByRole("button", { name: "Set up another VibeTV" }).click();
+  await page.getByRole("heading", { name: "Connect VibeTV to WiFi" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.waitForTimeout(1_000);
+  assert(
+    (await page
+      .getByRole("heading", { name: "Connect VibeTV to WiFi" })
+      .count()) === 1,
+    "A stale status response must not restore the reset device identity",
+  );
+  assert(
+    (await page.getByText("VibeTV was not found", { exact: true }).count()) ===
+      0,
+    "Reset setup must stay in fresh onboarding after a stale status response",
+  );
+  assert(
+    resetRequests.length === 1,
+    `Setup should reset exactly once, got ${resetRequests.length}`,
+  );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -2664,11 +2830,15 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   const installRequests = [];
   const updateRequests = [];
   const reloadRequests = [];
+  let firmwareStatusRequests = 0;
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.99",
     onRequest: (pathname, method) => {
       if (pathname === "/v1/device/reload-display" && method === "POST") {
         reloadRequests.push(pathname);
+      }
+      if (pathname === "/v1/status" && updateRequests.length > 0) {
+        firmwareStatusRequests += 1;
       }
     },
     onUpdate: (postData) => {
@@ -2676,10 +2846,23 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
     },
     dropBoardAfterFirmwareUpdate: true,
     deviceAfterFirmwareUpdate: {
-      ...reconnectingDevice,
+      ...companionDevice,
+      connectionState: "ready",
       deviceId: "firmware-device-1",
       firmware: "1.0.33",
     },
+    firmwareStatusDeviceSequence: [
+      {
+        ...reconnectingDevice,
+        deviceId: "firmware-device-1",
+      },
+      {
+        ...companionDevice,
+        connectionState: "ready",
+        deviceId: "firmware-device-1",
+        firmware: "1.0.33",
+      },
+    ],
     updateStatusSequence: [
       {
         phase: "installing",
@@ -2691,6 +2874,19 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
           "Checking update.",
           "Update downloaded.",
           "Updating VibeTV.",
+        ],
+      },
+      {
+        phase: "installing",
+        message: "Restarting VibeTV.",
+        progress: 85,
+        logs: [
+          "Preparing VibeTV update.",
+          "Checking VibeTV.",
+          "Checking update.",
+          "Update downloaded.",
+          "Updating VibeTV.",
+          "Restarting VibeTV.",
         ],
       },
       {
@@ -2730,6 +2926,24 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
     .getByRole("status")
     .filter({ hasText: "Updating VibeTV" })
     .waitFor({ timeout: 10_000 });
+  const offlineDeadline = Date.now() + 5_000;
+  while (firmwareStatusRequests < 1 && Date.now() < offlineDeadline) {
+    await page.waitForTimeout(25);
+  }
+  assert(
+    firmwareStatusRequests >= 1,
+    "Firmware progress must include a reconnecting status response",
+  );
+  assert(
+    (await page
+      .getByRole("button", { name: "Updates", exact: true })
+      .getAttribute("aria-current")) === "page",
+    "The Updates tab must stay active while VibeTV is reconnecting",
+  );
+  assert(
+    (await page.getByTestId("device-startup-screen").count()) === 0,
+    "Firmware reconnecting must not open the startup screen",
+  );
   await page
     .getByRole("status")
     .filter({ hasText: "Update complete" })
@@ -2737,6 +2951,14 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   await page.getByText("Firmware 1.0.33 is installed.").waitFor({
     timeout: 10_000,
   });
+  const readyDeadline = Date.now() + 5_000;
+  while (firmwareStatusRequests < 2 && Date.now() < readyDeadline) {
+    await page.waitForTimeout(25);
+  }
+  assert(
+    firmwareStatusRequests >= 2,
+    "Firmware progress must verify ready → reconnecting → ready status",
+  );
   assert(
     (await page.getByRole("button", { name: "Overview" }).count()) === 1,
     "Firmware reboot must keep the Control Center shell visible",
@@ -4520,7 +4742,10 @@ async function routeCompanionOnline(
     searchDevices,
     searchDelayMs = 0,
     firstStatusDelayMs = 0,
+    statusDelayAfterFirstMs = 0,
+    settingsDelayMs = 0,
     statusDeviceSequence,
+    firmwareStatusDeviceSequence,
     statusFailuresAfter = 0,
   } = {},
 ) {
@@ -4534,6 +4759,7 @@ async function routeCompanionOnline(
   let macAppUpdateStatusIndex = 0;
   let macAppUpdateStatusFailuresRemaining = macAppUpdateStatusFailures;
   let statusRequestCount = 0;
+  let firmwareStatusIndex = 0;
   const handler = async (route) => {
     const pathname = companionPath(route);
     onRequest(pathname, route.request().method());
@@ -4992,8 +5218,27 @@ async function routeCompanionOnline(
             Math.min(statusRequestCount - 1, statusDeviceSequence.length - 1)
           ];
       }
+      if (
+        activeUpdateJobId &&
+        Array.isArray(firmwareStatusDeviceSequence) &&
+        firmwareStatusDeviceSequence.length > 0
+      ) {
+        currentDevice =
+          firmwareStatusDeviceSequence[
+            Math.min(
+              firmwareStatusIndex,
+              firmwareStatusDeviceSequence.length - 1,
+            )
+          ];
+        firmwareStatusIndex += 1;
+      }
+      const responseDevice = currentDevice;
       if (statusRequestCount === 1 && firstStatusDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, firstStatusDelayMs));
+      } else if (statusRequestCount > 1 && statusDelayAfterFirstMs > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, statusDelayAfterFirstMs),
+        );
       }
       await route.fulfill({
         status: 200,
@@ -5008,7 +5253,7 @@ async function routeCompanionOnline(
             companionApp,
             companionRuntime,
           ),
-          device: currentDevice,
+          device: responseDevice,
         }),
       });
       return;
@@ -5023,13 +5268,17 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/settings") {
       onSettings();
+      const responseDevice = currentDevice;
+      if (settingsDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, settingsDelayMs));
+      }
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
           ok: true,
           settings: { display: { brightnessPercent: 50 } },
-          device: currentDevice,
+          device: responseDevice,
         }),
       });
       return;

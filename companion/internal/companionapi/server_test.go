@@ -305,14 +305,17 @@ func TestValidateRepairIdentityRejectsSetupAndBackgroundMismatch(t *testing.T) {
 	}
 }
 
-func TestDeviceIdentityKnownRequiresStableDeviceID(t *testing.T) {
+func TestDeviceIdentityMatchUsesStableIDOrLegacyActiveTarget(t *testing.T) {
 	cfg := runtimeconfig.Config{DeviceTarget: "http://192.168.178.72"}
 	hello := protocol.DeviceHello{DeviceID: "esp8266-123abc", NetworkMode: "station"}
-	if deviceIdentityMatches(cfg, hello) {
-		t.Fatal("a legacy target match must not claim a stable known identity")
+	if !deviceIdentityMatches(cfg, "http://192.168.178.72", hello) {
+		t.Fatal("a legacy paired target must remain the active reconnect candidate")
+	}
+	if deviceIdentityMatches(cfg, "http://192.168.178.73", hello) {
+		t.Fatal("a legacy config must not activate a different target")
 	}
 	cfg.DeviceID = "ESP8266-123ABC"
-	if !deviceIdentityMatches(cfg, hello) {
+	if !deviceIdentityMatches(cfg, "http://192.168.178.99", hello) {
 		t.Fatal("stable device identity must remain known after its IP changes")
 	}
 }

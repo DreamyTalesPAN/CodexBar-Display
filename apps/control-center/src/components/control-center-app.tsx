@@ -142,7 +142,7 @@ type FirmwareUpdateStatus = {
   error?: string;
 };
 
-type RepairConnectionOutcome = "ready" | "waiting" | "failed";
+type RepairConnectionOutcome = "ready" | "waiting" | "failed" | "stale";
 type DeviceSearchMode = "onboarding" | "configured";
 
 type FirmwareUpdateResponse = {
@@ -238,6 +238,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
+  const hasEnteredControlCenterRef = useRef(false);
+  const setupGenerationRef = useRef(0);
   const didRunInitialConnectionCheck = useRef(false);
   const didRunAutomaticDeviceSearch = useRef(false);
   const didRunAutoDisplayReload = useRef(false);
@@ -283,7 +285,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     (next: DeviceInfo) => {
       if (deviceStartupConnectionIsReady(next)) {
         didRunAutomaticDeviceSearch.current = false;
-        if (!hasEnteredControlCenter) {
+        if (!hasEnteredControlCenterRef.current) {
+          hasEnteredControlCenterRef.current = true;
           setHasEnteredControlCenter(true);
           setActiveTab(
             initialThemeId && !didRunSetupVerification.current
@@ -294,7 +297,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       setDevice((current) => mergeDeviceInfo(current, next));
     },
-    [hasEnteredControlCenter, initialThemeId],
+    [initialThemeId],
   );
 
   const addEvent = useCallback(
@@ -487,10 +490,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const refreshDevice = useCallback(
     async ({ quiet = false }: { quiet?: boolean } = {}) => {
+      const setupGeneration = setupGenerationRef.current;
       try {
         const payload = await runCompanion<{ device: DeviceInfo }>(
           "/v1/device",
         );
+        if (setupGeneration !== setupGenerationRef.current) {
+          return null;
+        }
         mergeDevice(payload.device);
         if (payload.device.target) {
           setDeviceTarget(payload.device.target);
@@ -511,6 +518,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         return payload.device;
       } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return null;
+        }
         const normalized = normalizeCaughtError(
           error,
           "VibeTV needs attention.",
@@ -546,9 +556,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const loadSettings = useCallback(async () => {
+    const setupGeneration = setupGenerationRef.current;
     setBusyAction("settings");
     try {
       const payload = await runCompanion<SettingsResponse>("/v1/settings");
+      if (setupGeneration !== setupGenerationRef.current) {
+        return;
+      }
       const loadedBrightness =
         payload.settings?.display?.brightnessPercent ?? null;
       setBrightness(loadedBrightness);
@@ -578,6 +592,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         tone: "ready",
       });
     } catch (error) {
+      if (setupGeneration !== setupGenerationRef.current) {
+        return;
+      }
       const normalized = normalizeCaughtError(
         error,
         "Settings need attention.",
@@ -594,7 +611,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         tone: "attention",
       });
     } finally {
-      setBusyAction(null);
+      if (setupGeneration === setupGenerationRef.current) {
+        setBusyAction(null);
+      }
     }
   }, [
     addEvent,
@@ -627,6 +646,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return;
       }
       statusPollInFlight.current = true;
+      const setupGeneration = setupGenerationRef.current;
       const quiet = Boolean(options?.quiet);
       if (!quiet) {
         setBusyAction("status");
@@ -636,6 +656,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           companion?: CompanionInfo;
           device?: DeviceInfo;
         }>("/v1/status", undefined, { preserveLastError: quiet });
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         const checkedAt = formatTime();
         const wasMissing = companionStatus === "missing";
         setCompanionStatus("online");
@@ -650,7 +673,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         ) {
           try {
             await verifyLocalControlCenterAvailable();
+            if (setupGeneration !== setupGenerationRef.current) {
+              return;
+            }
           } catch (error) {
+            if (setupGeneration !== setupGenerationRef.current) {
+              return;
+            }
             const normalized = await normalizeLocalControlCenterError(error);
             setSetupPreviewStep("mac-app");
             setLastError(normalized);
@@ -667,7 +696,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             await runCompanion<unknown>("/v1/usage", undefined, {
               preserveLastError: true,
             });
+            if (setupGeneration !== setupGenerationRef.current) {
+              return;
+            }
           } catch (error) {
+            if (setupGeneration !== setupGenerationRef.current) {
+              return;
+            }
             const usageError = normalizeUsageError(
               normalizeCaughtError(error, "Mac App needs attention."),
             );
@@ -713,6 +748,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           });
         }
       } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         const normalized = normalizeCaughtError(
           error,
           "Mac App needs attention.",
@@ -733,7 +771,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       } finally {
         statusPollInFlight.current = false;
         setInitialCompanionCheckComplete(true);
-        if (!quiet) {
+        if (!quiet && setupGeneration === setupGenerationRef.current) {
           setBusyAction(null);
         }
       }
@@ -755,11 +793,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     statusPollInFlight.current = true;
+    const setupGeneration = setupGenerationRef.current;
     try {
       const payload = await runCompanion<{
         companion?: CompanionInfo;
         device?: DeviceInfo;
       }>("/v1/status", undefined, { preserveLastError: true });
+      if (setupGeneration !== setupGenerationRef.current) {
+        return;
+      }
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
       setThemeInstallEnabled(
@@ -781,6 +823,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceState("offline");
       }
     } catch (error) {
+      if (setupGeneration !== setupGenerationRef.current) {
+        return;
+      }
       const normalized = normalizeCaughtError(
         error,
         "Mac App needs attention.",
@@ -807,6 +852,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       forcePair?: boolean;
       quiet?: boolean;
     }) => {
+      const setupGeneration = setupGenerationRef.current;
       const quiet = Boolean(options?.quiet);
       const target =
         typeof options?.targetOverride === "string"
@@ -824,6 +870,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               companion?: CompanionInfo;
               device?: DeviceInfo;
             }>("/v1/status", undefined, { preserveLastError: quiet });
+            if (setupGeneration !== setupGenerationRef.current) {
+              return "stale" as RepairConnectionOutcome;
+            }
             setCompanionStatus("online");
             setCompanionInfo(statusPayload.companion || null);
             setThemeInstallEnabled(
@@ -893,6 +942,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS,
           },
         );
+        if (setupGeneration !== setupGenerationRef.current) {
+          return "stale" as RepairConnectionOutcome;
+        }
         setCompanionStatus("online");
         void refreshCompanionFeatures();
         setLastError(null);
@@ -928,6 +980,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         return outcome;
       } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return "stale" as RepairConnectionOutcome;
+        }
         const normalized = normalizeCaughtError(
           error,
           "VibeTV connection needs attention.",
@@ -941,6 +996,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             const statusPayload = await runCompanion<{
               device?: DeviceInfo;
             }>("/v1/status", undefined, { preserveLastError: true });
+            if (setupGeneration !== setupGenerationRef.current) {
+              return "stale" as RepairConnectionOutcome;
+            }
             const statusDevice = statusPayload.device;
             const targetMatches =
               !target ||
@@ -985,7 +1043,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         return "failed" as RepairConnectionOutcome;
       } finally {
-        setBusyAction(null);
+        if (setupGeneration === setupGenerationRef.current) {
+          setBusyAction(null);
+        }
       }
     },
     [
@@ -1003,6 +1063,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const searchAndConnect = useCallback(
     async (mode: DeviceSearchMode = "onboarding") => {
+      const setupGeneration = setupGenerationRef.current;
       setBusyAction("search");
       setDeviceCandidates([]);
       setDeviceSearchState("searching");
@@ -1012,6 +1073,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           "/v1/device/search",
           { method: "POST" },
         );
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         const candidates = (payload.devices || []).filter(
           (candidate) => candidate.target && candidate.networkMode !== "setup",
         );
@@ -1036,6 +1100,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             undefined,
             { preserveLastError: true },
           );
+          if (setupGeneration !== setupGenerationRef.current) {
+            return;
+          }
           if (
             statusPayload.device?.target &&
             normalizeDeviceTarget(statusPayload.device.target) ===
@@ -1054,6 +1121,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             targetOverride: selected.target,
             expectedDeviceId: selected.deviceId,
           });
+          if (
+            outcome === "stale" ||
+            setupGeneration !== setupGenerationRef.current
+          ) {
+            return;
+          }
           if (outcome === "waiting") {
             setDeviceSearchState("waiting");
           } else if (outcome === "failed") {
@@ -1069,6 +1142,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceSearchState("not-found");
         setDeviceState("offline");
       } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         const normalized = normalizeCaughtError(
           error,
           "Automatic VibeTV search could not finish.",
@@ -1085,7 +1161,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setLastError(normalized);
         }
       } finally {
-        setBusyAction(null);
+        if (setupGeneration === setupGenerationRef.current) {
+          setBusyAction(null);
+        }
       }
     },
     [
@@ -1108,6 +1186,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceSearchState("repair-failed");
         return;
       }
+      const setupGeneration = setupGenerationRef.current;
       setBusyAction("select");
       setLastError(null);
       try {
@@ -1122,6 +1201,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           },
           { timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS },
         );
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         mergeDevice(payload.device);
         setDeviceCandidates([]);
         setDeviceSearchState("idle");
@@ -1138,6 +1220,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
         void loadSettings();
       } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         const normalized = normalizeCaughtError(
           error,
           "The selected VibeTV could not be connected.",
@@ -1150,7 +1235,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           tone: "attention",
         });
       } finally {
-        setBusyAction(null);
+        if (setupGeneration === setupGenerationRef.current) {
+          setBusyAction(null);
+        }
       }
     },
     [addEvent, loadSettings, mergeDevice, runCompanion],
@@ -1182,7 +1269,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       expectedDeviceId: device.deviceId,
       quiet: true,
     }).then((outcome) => {
-      if (outcome === "ready") {
+      if (outcome === "ready" || outcome === "stale") {
         return;
       }
       if (outcome === "waiting") {
@@ -1208,6 +1295,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const reloadDisplay = useCallback(
     async (options?: { quiet?: boolean }) => {
+      const setupGeneration = setupGenerationRef.current;
       const quiet = Boolean(options?.quiet);
       setBusyAction("reload-display");
       try {
@@ -1219,6 +1307,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS,
           },
         );
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         setCompanionStatus("online");
         setLastError(null);
         mergeDevice(payload.device);
@@ -1245,6 +1336,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           });
         }
       } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         const normalized = normalizeCaughtError(error, "Image reload failed.");
         if (isLocalNetworkAccessError(normalized)) {
           markCompanionAccessBlocked();
@@ -1260,7 +1354,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           });
         }
       } finally {
-        setBusyAction(null);
+        if (setupGeneration === setupGenerationRef.current) {
+          setBusyAction(null);
+        }
       }
     },
     [
@@ -1273,6 +1369,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const resetSetup = useCallback(async () => {
+    setupGenerationRef.current += 1;
+    const setupGeneration = setupGenerationRef.current;
+    hasEnteredControlCenterRef.current = false;
     setBusyAction("reset-setup");
     setLastError(null);
     forgetDeviceTarget();
@@ -1299,6 +1398,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         companion?: CompanionInfo;
         device?: DeviceInfo;
       }>("/v1/setup/reset", { method: "POST" });
+      if (setupGeneration !== setupGenerationRef.current) {
+        return;
+      }
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
       setThemeInstallEnabled(
@@ -1313,6 +1415,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         tone: "unknown",
       });
     } catch (error) {
+      if (setupGeneration !== setupGenerationRef.current) {
+        return;
+      }
       const normalized = normalizeCaughtError(error, "Setup reset locally.");
       if (isLocalNetworkAccessError(normalized)) {
         markCompanionAccessBlocked();
@@ -1325,8 +1430,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         tone: "unknown",
       });
     } finally {
-      setSetupResetVersion((current) => current + 1);
-      setBusyAction(null);
+      if (setupGeneration === setupGenerationRef.current) {
+        setSetupResetVersion((current) => current + 1);
+        setBusyAction(null);
+      }
     }
   }, [
     addEvent,
@@ -1337,6 +1444,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const saveBrightness = useCallback(
     async (value: number) => {
+      const setupGeneration = setupGenerationRef.current;
       setBrightness(value);
       setBusyAction("brightness");
       try {
@@ -1344,6 +1452,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           method: "POST",
           body: JSON.stringify({ brightnessPercent: value }),
         });
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         const savedValue =
           payload.settings?.display?.brightnessPercent ?? value;
         setBrightness(savedValue);
@@ -1361,6 +1472,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           tone: "ready",
         });
       } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
         const normalized = normalizeCaughtError(
           error,
           "Brightness needs attention.",
@@ -1377,7 +1491,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           tone: "attention",
         });
       } finally {
-        setBusyAction(null);
+        if (setupGeneration === setupGenerationRef.current) {
+          setBusyAction(null);
+        }
       }
     },
     [
@@ -2001,9 +2117,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const loadSupportDiagnostics = useCallback(async () => {
+    const setupGeneration = setupGenerationRef.current;
     setBusyAction("diagnostics");
     try {
       const payload = await runCompanion<SupportDiagnostics>("/v1/diagnostics");
+      if (setupGeneration !== setupGenerationRef.current) {
+        return;
+      }
       setSupportDiagnostics(payload);
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
@@ -2032,6 +2152,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           : "ready",
       });
     } catch (error) {
+      if (setupGeneration !== setupGenerationRef.current) {
+        return;
+      }
       const normalized = normalizeCaughtError(error, "Support report failed.");
       if (isLocalNetworkAccessError(normalized)) {
         markCompanionAccessBlocked();
@@ -2046,7 +2169,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         tone: "attention",
       });
     } finally {
-      setBusyAction(null);
+      if (setupGeneration === setupGenerationRef.current) {
+        setBusyAction(null);
+      }
     }
   }, [
     addEvent,
@@ -2127,14 +2252,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       hostedSetup ||
       setupPreviewStep ||
       companionStatus !== "online" ||
-      !controlCenterAvailable ||
-      (activeShellTab !== "usage" && activeShellTab !== "overview")
+      !controlCenterAvailable
     ) {
       return;
     }
 
     const refreshStatus = () => {
-      if (document.visibilityState === "hidden" || busyAction) {
+      if (
+        document.visibilityState === "hidden" ||
+        (busyAction && busyAction !== "firmware-update")
+      ) {
         return;
       }
       void syncLocalStatus();
@@ -2213,6 +2340,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceCandidates([]);
         setDeviceSearchState("idle");
         setLastError(null);
+        hasEnteredControlCenterRef.current = true;
         setHasEnteredControlCenter(true);
         setActiveTab("overview");
       }}
@@ -2269,6 +2397,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setDeviceCandidates([]);
           setDeviceSearchState("idle");
           setLastError(null);
+          hasEnteredControlCenterRef.current = true;
           setHasEnteredControlCenter(true);
           setActiveTab("overview");
         }}
