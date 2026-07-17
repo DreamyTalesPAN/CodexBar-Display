@@ -258,7 +258,7 @@ main() {
   assert_contains "$signing_script" "does not match APPLE_TEAM_ID" \
     "signing script must reject a certificate for the wrong Apple team"
   assert_contains "$(cat "$PREVIEW_WORKFLOW")" \
-    "ref: fd95fbdc3a9412b6c85fe9b9bddb750319db48a0" \
+    "ref: 170a0d0d94e8cf434b6cab1d0380499b94f6b7f2" \
     "preview signing job must use the reviewed hotfix commit with both helper signatures"
   assert_contains "$(cat "$PREVIEW_WORKFLOW")" \
     "github.actor == github.repository_owner" \

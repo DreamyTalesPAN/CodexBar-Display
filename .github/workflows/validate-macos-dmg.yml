@@ -111,7 +111,7 @@ jobs:
         with:
           # Reviewed hotfix commit that signs Sparkle and both universal helpers
           # inside-out. The requested source never supplies signing code.
-          ref: fd95fbdc3a9412b6c85fe9b9bddb750319db48a0
+          ref: 170a0d0d94e8cf434b6cab1d0380499b94f6b7f2
           persist-credentials: false
 
       - name: Download Mac app
