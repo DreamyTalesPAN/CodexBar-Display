@@ -99,7 +99,7 @@ export function SetupScreen({
   const dmgUrl = availableMacAppDmgDownloadUrl(macAppRelease);
   const macAppReleaseCheckFailed = Boolean(
     macAppRelease?.status === "check_failed" ||
-      macAppRelease?.dmgDownloadStatus === "check_failed",
+    macAppRelease?.dmgDownloadStatus === "check_failed",
   );
   const macAppStepTitle = hostedMode
     ? dmgUrl
@@ -109,11 +109,7 @@ export function SetupScreen({
       ? "Update available"
       : "Update not ready";
   const showControlCenterLauncher =
-    !hostedMode &&
-    showIntro &&
-    !previewStep &&
-    !lastError &&
-    setupComplete;
+    !hostedMode && showIntro && !previewStep && !lastError && setupComplete;
   const migrationNotice = requiresMacAppMigration ? (
     <LegacyMacAppMigrationNotice
       checkFailed={macAppReleaseCheckFailed}
@@ -128,12 +124,7 @@ export function SetupScreen({
       hostedMode
         ? "mac-app"
         : previewStep || (setupComplete || wifiConfirmed ? "finish" : "wifi"),
-    [
-      hostedMode,
-      previewStep,
-      setupComplete,
-      wifiConfirmed,
-    ],
+    [hostedMode, previewStep, setupComplete, wifiConfirmed],
   );
   const stepStates = useMemo(
     () =>
@@ -316,9 +307,7 @@ export function SetupScreen({
                       >
                         <Download size={18} aria-hidden />
                         <span>
-                          {hostedMode
-                            ? "Download Mac App"
-                            : "Update"}
+                          {hostedMode ? "Download Mac App" : "Update"}
                         </span>
                       </a>
                     </div>
@@ -488,57 +477,11 @@ function FinishSetupContent({
     );
   }
 
-  if (deviceSearchState === "alternate" && deviceCandidates[0]) {
-    const candidate = deviceCandidates[0];
-    return (
-      <div className="grid gap-5" aria-live="polite">
-        <div className="grid gap-2">
-          <h4 className="text-xl font-black text-[#1B1B1B]">
-            VibeTV found
-          </h4>
-          <p className="text-sm leading-6 text-[#444933]">
-            Connect to this VibeTV?
-          </p>
-        </div>
-        <DeviceCandidateCard candidate={candidate} />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <PrimaryButton
-            busy={busyAction === "select"}
-            busyLabel="Connecting"
-            disabled={Boolean(busyAction) && busyAction !== "select"}
-            fullWidth
-            icon={<Monitor size={18} aria-hidden />}
-            label="Connect this VibeTV"
-            onClick={() => onSelectDevice?.(candidate)}
-            size="large"
-          />
-          <SecondaryButton
-            disabled={Boolean(busyAction)}
-            fullWidth
-            label="Not now"
-            onClick={onDeclineDevice}
-            size="large"
-          />
-          <SecondaryButton
-            disabled={Boolean(busyAction)}
-            fullWidth
-            icon={<RefreshCw size={18} aria-hidden />}
-            label="Search again"
-            onClick={onSearchDevices}
-            size="large"
-          />
-        </div>
-      </div>
-    );
-  }
-
   if (deviceSearchState === "multiple") {
     return (
       <div className="grid gap-4">
         <div className="grid gap-2">
-          <h4 className="text-xl font-black text-[#1B1B1B]">
-            Choose a VibeTV
-          </h4>
+          <h4 className="text-xl font-black text-[#1B1B1B]">Choose a VibeTV</h4>
           <p className="text-sm leading-6 text-[#444933]">
             More than one VibeTV was found. Choose the one you want to connect.
           </p>
@@ -579,23 +522,6 @@ function FinishSetupContent({
             size="large"
           />
         </div>
-      </div>
-    );
-  }
-
-  if (deviceSearchState === "declined") {
-    return (
-      <div className="grid gap-4">
-        <p className="text-sm leading-6 text-[#444933]">
-          No VibeTV is selected. You can search again when you are ready.
-        </p>
-        <SecondaryButton
-          fullWidth
-          icon={<RefreshCw size={18} aria-hidden />}
-          label="Search again"
-          onClick={onSearchDevices}
-          size="large"
-        />
       </div>
     );
   }
@@ -683,19 +609,7 @@ function FinishSetupContent({
   );
 }
 
-function DeviceCandidateCard({ candidate }: { candidate: DeviceCandidate }) {
-  return (
-    <div className="border border-[#747A60] bg-[#F9F9F9] p-4">
-      <DeviceCandidateDetails candidate={candidate} />
-    </div>
-  );
-}
-
-function DeviceCandidateDetails({
-  candidate,
-}: {
-  candidate: DeviceCandidate;
-}) {
+function DeviceCandidateDetails({ candidate }: { candidate: DeviceCandidate }) {
   const address = candidateAddress(candidate.target);
   return (
     <div className="min-w-0">

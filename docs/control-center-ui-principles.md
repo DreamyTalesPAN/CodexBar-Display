@@ -11,7 +11,7 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 - **Error prevention over error explanation:** disable or hide actions that would fail instead of explaining why they failed after the click.
 - **Plain-language labels:** use customer words: Mac App, VibeTV, Install, Connect, Update. Avoid internal words such as bridge, asset, package signing, protocol, transport, daemon, write gate, API, Companion, or agent.
 - **Automation-first workflows:** buttons should do the background work in sequence. Customers should not choose between technical substeps such as discover, pair, check bridge, check installer, or find device.
-- **State gating:** the full-screen startup gate owns first-time onboarding and recovery. The Control Center navigation is only shown after startup and has no Setup tab.
+- **State gating:** the full-screen startup gate owns first-time onboarding and cold-start recovery. After the customer enters Control Center, temporary device or Mac App outages keep the current tab and navigation mounted until setup is explicitly reset.
 - **Visual hierarchy discipline:** no button stacks with equal weight. If multiple actions appear, the design is probably exposing implementation detail.
 - **Low text density:** short labels and short status rows are preferred. If a paragraph is needed, first try to delete it or convert it into a button label/status value.
 - **Approval before visible change:** implementation work never authorizes a visible UI change by itself. Any added, changed, or removed customer-facing copy, control, hierarchy, or state requires explicit user approval recorded in `control-center-customer-ui-approval.md`.
@@ -27,13 +27,18 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 3. If the initial search finds no VibeTV, the same full-screen startup gate
    shows the VibeTV WiFi instructions and one `VibeTV is on WiFi` action. That
    action starts a fresh device search. The Control Center shell and navigation
-   remain hidden. An existing unavailable VibeTV is handled by that same gate:
-   reconnect the active device automatically, search for alternatives
-   read-only, and require an explicit choice before switching device identity.
+   remain hidden. On a later app start, a saved but unavailable VibeTV uses a
+   separate reconnect screen without first-time WiFi instructions. It searches
+   only for the active saved identity and allows the customer to open Control
+   Center without replacing that identity.
 4. An existing healthy setup opens Overview without setup writes or extra
-   confirmation. Reconnect/search progress for an existing setup stays on the
-   startup gate and never appears inside Overview.
-5. Settings, Theme Library, and Updates stay locked until setup is complete.
+   confirmation. If VibeTV or the Mac App becomes unavailable after Control
+   Center was entered, the current tab and navigation remain visible. Overview
+   offers recovery for the saved VibeTV and only then a secondary action to
+   reset setup for another VibeTV.
+5. Settings, Theme Library, and Updates stay locked until setup is complete for
+   the first time. A temporary outage in the running app does not lock them
+   again or change the active tab.
 6. Setup is complete when the Mac App is running and VibeTV is connected and paired.
 7. Theme Library is additionally locked until theme installs are allowed by the release gate.
 8. Support may stay available because it only creates support reports and shows recent activity, not a setup workflow.

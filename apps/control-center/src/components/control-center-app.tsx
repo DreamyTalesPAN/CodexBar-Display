@@ -143,6 +143,7 @@ type FirmwareUpdateStatus = {
 };
 
 type RepairConnectionOutcome = "ready" | "waiting" | "failed";
+type DeviceSearchMode = "onboarding" | "configured";
 
 type FirmwareUpdateResponse = {
   job?: FirmwareUpdateJob;
@@ -233,14 +234,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     readLocalSetupPreviewStep,
   );
   const [setupResetVersion, setSetupResetVersion] = useState(0);
-  const [deviceStartupDismissed, setDeviceStartupDismissed] = useState(false);
+  const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(false);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
   const didRunInitialConnectionCheck = useRef(false);
   const didRunAutomaticDeviceSearch = useRef(false);
   const didRunAutoDisplayReload = useRef(false);
-  const didRouteAfterSetupComplete = useRef(false);
   const didRunSetupVerification = useRef(false);
   const automaticPairingRepairKey = useRef("");
   const lastCompanionRequestAt = useRef(0);
@@ -279,13 +279,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, []);
 
-  const mergeDevice = useCallback((next: DeviceInfo) => {
-    if (deviceStartupConnectionIsReady(next)) {
-      didRunAutomaticDeviceSearch.current = false;
-      setDeviceStartupDismissed(false);
-    }
-    setDevice((current) => mergeDeviceInfo(current, next));
-  }, []);
+  const mergeDevice = useCallback(
+    (next: DeviceInfo) => {
+      if (deviceStartupConnectionIsReady(next)) {
+        didRunAutomaticDeviceSearch.current = false;
+        if (!hasEnteredControlCenter) {
+          setHasEnteredControlCenter(true);
+          setActiveTab(
+            initialThemeId && !didRunSetupVerification.current
+              ? "theme-library"
+              : "overview",
+          );
+        }
+      }
+      setDevice((current) => mergeDeviceInfo(current, next));
+    },
+    [hasEnteredControlCenter, initialThemeId],
+  );
 
   const addEvent = useCallback(
     (event: Omit<ControlCenterEvent, "id" | "at"> & { at?: string }) => {
@@ -307,8 +317,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setCompanionStatus("missing");
     setCompanionInfo(null);
     setThemeInstallEnabled(false);
-    setDevice(null);
-    setDeviceState("unknown");
+    setDevice((current) => markDeviceDisconnected(current));
+    setDeviceState("offline");
     setUsage(null);
     setUsageError(null);
   }, []);
@@ -317,8 +327,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setCompanionStatus("unknown");
     setCompanionInfo(null);
     setThemeInstallEnabled(false);
-    setDevice(null);
-    setDeviceState("unknown");
+    setDevice((current) => markDeviceDisconnected(current));
+    setDeviceState("offline");
     setUsage(null);
     setUsageError(null);
   }, []);
@@ -327,7 +337,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     (quiet: boolean) => {
       const normalized = companionUnavailableError();
       markCompanionUnavailable();
-      setActiveTab("overview");
       if (!quiet) {
         setLastError(normalized);
         addEvent({
@@ -690,10 +699,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             void loadSettings();
           }
         } else {
-          forgetDeviceTarget();
-          setDeviceTarget("");
-          setDevice(null);
-          setDeviceState("unknown");
+          setDevice((current) => markDeviceDisconnected(current));
+          setDeviceState("offline");
         }
         if (!quiet || wasMissing) {
           addEvent({
@@ -767,13 +774,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             ? "paired"
             : payload.device.connected
               ? "online"
-          : "unknown",
+              : "unknown",
         );
       } else {
-        forgetDeviceTarget();
-        setDeviceTarget("");
-        setDevice(null);
-        setDeviceState("unknown");
+        setDevice((current) => markDeviceDisconnected(current));
+        setDeviceState("offline");
       }
     } catch (error) {
       const normalized = normalizeCaughtError(
@@ -836,10 +841,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                     : "unknown",
               );
             } else {
-              forgetDeviceTarget();
-              setDeviceTarget("");
-              setDevice(null);
-              setDeviceState("unknown");
+              setDevice((current) => markDeviceDisconnected(current));
+              setDeviceState("offline");
             }
             if (
               !target &&
@@ -969,7 +972,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }
           setCompanionStatus("online");
           void refreshCompanionFeatures();
-          setDevice(target ? { target, connected: false } : null);
+          setDevice((current) => markDeviceDisconnected(current, target));
           setDeviceState("offline");
         }
         if (!quiet) {
@@ -998,88 +1001,101 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ],
   );
 
-  const searchAndConnect = useCallback(async () => {
-    setBusyAction("search");
-    setDeviceCandidates([]);
-    setDeviceSearchState("searching");
-    setLastError(null);
-    try {
-      const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
-        "/v1/device/search",
-        { method: "POST" },
-      );
-      const candidates = (payload.devices || []).filter(
-        (candidate) => candidate.target && candidate.networkMode !== "setup",
-      );
-      const activeCandidate = candidates.find((candidate) => candidate.active);
-      const hasSavedActiveDevice = Boolean(device?.deviceId);
-      const selected = activeCandidate ||
-        (!hasSavedActiveDevice && candidates.length === 1
-          ? candidates[0]
-          : null);
-
-      if (selected) {
-        setDeviceSearchState("idle");
-        const statusPayload = await runCompanion<{ device?: DeviceInfo }>(
-          "/v1/status",
-          undefined,
-          { preserveLastError: true },
+  const searchAndConnect = useCallback(
+    async (mode: DeviceSearchMode = "onboarding") => {
+      setBusyAction("search");
+      setDeviceCandidates([]);
+      setDeviceSearchState("searching");
+      setLastError(null);
+      try {
+        const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
+          "/v1/device/search",
+          { method: "POST" },
         );
-        if (
-          statusPayload.device?.target &&
-          normalizeDeviceTarget(statusPayload.device.target) ===
-            normalizeDeviceTarget(selected.target) &&
-          deviceStartupConnectionIsReady(statusPayload.device)
-        ) {
-          mergeDevice(statusPayload.device);
-          setDeviceTarget(statusPayload.device.target);
-          rememberDeviceTarget(statusPayload.device.target);
-          setDeviceState("paired");
+        const candidates = (payload.devices || []).filter(
+          (candidate) => candidate.target && candidate.networkMode !== "setup",
+        );
+        const configuredDeviceId = device?.deviceId?.trim();
+        const activeCandidate = candidates.find(
+          (candidate) =>
+            candidate.active &&
+            (mode === "onboarding" ||
+              !configuredDeviceId ||
+              candidate.deviceId === configuredDeviceId),
+        );
+        const selected =
+          activeCandidate ||
+          (mode === "onboarding" && candidates.length === 1
+            ? candidates[0]
+            : null);
+
+        if (selected) {
+          setDeviceSearchState("idle");
+          const statusPayload = await runCompanion<{ device?: DeviceInfo }>(
+            "/v1/status",
+            undefined,
+            { preserveLastError: true },
+          );
+          if (
+            statusPayload.device?.target &&
+            normalizeDeviceTarget(statusPayload.device.target) ===
+              normalizeDeviceTarget(selected.target) &&
+            (!selected.deviceId ||
+              statusPayload.device.deviceId === selected.deviceId) &&
+            deviceStartupConnectionIsReady(statusPayload.device)
+          ) {
+            mergeDevice(statusPayload.device);
+            setDeviceTarget(statusPayload.device.target);
+            rememberDeviceTarget(statusPayload.device.target);
+            setDeviceState("paired");
+            return;
+          }
+          const outcome = await repairConnection({
+            targetOverride: selected.target,
+            expectedDeviceId: selected.deviceId,
+          });
+          if (outcome === "waiting") {
+            setDeviceSearchState("waiting");
+          } else if (outcome === "failed") {
+            setDeviceSearchState("repair-failed");
+          }
           return;
         }
-        const outcome = await repairConnection({
-          targetOverride: selected.target,
-          expectedDeviceId: selected.deviceId,
-        });
-        if (outcome === "waiting") {
-          setDeviceSearchState("waiting");
-        } else if (outcome === "failed") {
-          setDeviceSearchState("repair-failed");
+        if (mode === "onboarding" && candidates.length > 0) {
+          setDeviceCandidates(candidates);
+          setDeviceSearchState("multiple");
+          return;
         }
-        return;
-      }
-      if (candidates.length > 0) {
-        setDeviceCandidates(candidates);
-        setDeviceSearchState(candidates.length === 1 ? "alternate" : "multiple");
-        return;
-      }
-      setDeviceSearchState("not-found");
-      setDeviceState("offline");
-    } catch (error) {
-      const normalized = normalizeCaughtError(
-        error,
-        "Automatic VibeTV search could not finish.",
-      );
-      if (isCompanionMissingError(normalized)) {
-        handleCompanionUnavailableForRepair(false);
-      } else if (normalized.code === "device_not_found") {
         setDeviceSearchState("not-found");
         setDeviceState("offline");
-        setLastError(null);
-      } else {
-        setDeviceSearchState("failed");
-        setLastError(normalized);
+      } catch (error) {
+        const normalized = normalizeCaughtError(
+          error,
+          "Automatic VibeTV search could not finish.",
+        );
+        if (isCompanionMissingError(normalized)) {
+          handleCompanionUnavailableForRepair(false);
+          setDeviceSearchState("failed");
+        } else if (normalized.code === "device_not_found") {
+          setDeviceSearchState("not-found");
+          setDeviceState("offline");
+          setLastError(null);
+        } else {
+          setDeviceSearchState("failed");
+          setLastError(normalized);
+        }
+      } finally {
+        setBusyAction(null);
       }
-    } finally {
-      setBusyAction(null);
-    }
-  }, [
-    handleCompanionUnavailableForRepair,
-    device,
-    mergeDevice,
-    repairConnection,
-    runCompanion,
-  ]);
+    },
+    [
+      handleCompanionUnavailableForRepair,
+      device,
+      mergeDevice,
+      repairConnection,
+      runCompanion,
+    ],
+  );
 
   const selectAndConnectDevice = useCallback(
     async (candidate: DeviceCandidate) => {
@@ -1173,7 +1189,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceSearchState("waiting");
         return;
       }
-      setActiveTab("overview");
       setDeviceSearchState("repair-failed");
       setLastError({
         code: "device_pairing_repair_failed",
@@ -1266,7 +1281,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setDeviceState("unknown");
     setDeviceCandidates([]);
     setDeviceSearchState("idle");
-    setDeviceStartupDismissed(false);
+    setHasEnteredControlCenter(false);
     setBrightness(null);
     setLastInstall(undefined);
     setThemeInstallStatus(null);
@@ -1276,7 +1291,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setUsageError(null);
     didRunAutoDisplayReload.current = false;
     didRunAutomaticDeviceSearch.current = false;
-    didRouteAfterSetupComplete.current = false;
     didRunSetupVerification.current = false;
     setSetupPreviewStep(null);
     setActiveTab("overview");
@@ -1604,7 +1618,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     didRunAutomaticDeviceSearch.current = true;
-    void searchAndConnect();
+    void searchAndConnect(
+      deviceIsConfigured(device) ? "configured" : "onboarding",
+    );
   }, [
     busyAction,
     companionStatus,
@@ -1620,7 +1636,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (hostedSetup) {
       return;
     }
-    if (!deviceImageIsStuck(device)) {
+    if (!device?.connected || !deviceImageIsStuck(device)) {
       didRunAutoDisplayReload.current = false;
       return;
     }
@@ -1735,11 +1751,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     } finally {
       setBusyAction(null);
     }
-  }, [
-    checkCompanion,
-    refreshFirmwareUpdate,
-    refreshHostedCompanionRelease,
-  ]);
+  }, [checkCompanion, refreshFirmwareUpdate, refreshHostedCompanionRelease]);
 
   const installFirmwareUpdate = useCallback(async () => {
     const startedAt = formatTime();
@@ -1750,9 +1762,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           ? "complete"
           : job.phase === "attention"
             ? "attention"
-          : job.phase === "error"
-            ? "error"
-            : "installing";
+            : job.phase === "error"
+              ? "error"
+              : "installing";
       const logs = customerUpdateLogs(job.logs, initialLogs);
       setFirmwareUpdateStatus({
         phase,
@@ -2079,41 +2091,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
       : hostedCompanionRelease || companionInfo?.update || null;
   const macAppMigrationAvailable = Boolean(
-    requiresMacAppMigration &&
-      availableMacAppDmgDownloadUrl(companionRelease),
+    requiresMacAppMigration && availableMacAppDmgDownloadUrl(companionRelease),
   );
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const anyUpdateAvailable =
     firmwareUpdateAvailable ||
     macAppUpdateAvailable ||
     macAppMigrationAvailable;
-  const imageNeedsReload = deviceImageIsStuck(device);
+  const imageNeedsReload = Boolean(
+    device?.connected && deviceImageIsStuck(device),
+  );
   const setupComplete = Boolean(
     !setupPreviewStep &&
-      companionStatus === "online" &&
-      deviceStartupConnectionIsReady(device),
+    companionStatus === "online" &&
+    deviceStartupConnectionIsReady(device),
   );
-  const hasSavedActiveDevice = Boolean(device?.deviceId);
+  const hasConfiguredDevice = deviceIsConfigured(device);
   const controlCenterAvailable = Boolean(
-    setupComplete || (hasSavedActiveDevice && deviceStartupDismissed),
+    setupComplete || hasEnteredControlCenter,
   );
   const usageAvailable = companionStatus === "online";
-  useEffect(() => {
-    if (!setupComplete) {
-      didRouteAfterSetupComplete.current = false;
-      return;
-    }
-    if (didRouteAfterSetupComplete.current) {
-      return;
-    }
-    didRouteAfterSetupComplete.current = true;
-    setActiveTab(
-      initialThemeId && !didRunSetupVerification.current
-        ? "theme-library"
-        : "overview",
-    );
-  }, [initialThemeId, setupComplete]);
-
   const disabledTabs: ActiveTab[] = controlCenterAvailable
     ? imageNeedsReload
       ? ["settings", "theme-library", "updates"]
@@ -2206,7 +2203,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       onDeviceTargetChange={handleDeviceTargetChange}
       onSearchDevices={() => {
         didRunSetupVerification.current = true;
-        void searchAndConnect();
+        void searchAndConnect("onboarding");
       }}
       onSelectDevice={(candidate) => {
         didRunSetupVerification.current = true;
@@ -2214,9 +2211,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }}
       onDeclineDevice={() => {
         setDeviceCandidates([]);
-        setDeviceSearchState("declined");
+        setDeviceSearchState("idle");
         setLastError(null);
-        setDeviceStartupDismissed(true);
+        setHasEnteredControlCenter(true);
         setActiveTab("overview");
       }}
       onRepairConnection={(targetOverride) => {
@@ -2247,9 +2244,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   if (
-    companionStatus !== "online" ||
-    (requiresMacAppMigration && !deviceStartupConnectionIsReady(device)) ||
-    Boolean(setupPreviewStep)
+    !hasEnteredControlCenter &&
+    (companionStatus !== "online" ||
+      (requiresMacAppMigration && !deviceStartupConnectionIsReady(device)) ||
+      Boolean(setupPreviewStep))
   ) {
     return renderSetupScreen(true);
   }
@@ -2258,24 +2256,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     !requiresMacAppMigration &&
     !deviceStartupConnectionIsReady(device) &&
-    !deviceStartupDismissed
+    !hasEnteredControlCenter
   ) {
     return (
       <DeviceStartupScreen
         busyAction={busyAction}
         deviceCandidates={deviceCandidates}
         deviceSearchState={deviceSearchState}
-        hasSavedActiveDevice={hasSavedActiveDevice}
+        hasConfiguredDevice={hasConfiguredDevice}
         lastError={lastError}
         onDecline={() => {
           setDeviceCandidates([]);
-          setDeviceSearchState("declined");
+          setDeviceSearchState("idle");
           setLastError(null);
-          setDeviceStartupDismissed(true);
+          setHasEnteredControlCenter(true);
           setActiveTab("overview");
         }}
         onSearch={() => {
-          void searchAndConnect();
+          void searchAndConnect(
+            hasConfiguredDevice ? "configured" : "onboarding",
+          );
         }}
         onSelect={(candidate) => {
           void selectAndConnectDevice(candidate);
@@ -2306,6 +2306,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           device={device}
           deviceState={deviceState}
           firmwareUpdate={effectiveFirmwareUpdate}
+          deviceSearchState={deviceSearchState}
+          onSearchDevice={() => searchAndConnect("configured")}
+          onSetUpAnotherDevice={resetSetup}
           onReloadImage={() => reloadDisplay()}
           requiresMacAppMigration={requiresMacAppMigration}
           usage={usage}
@@ -2719,6 +2722,28 @@ function mergeDeviceInfo(
     display: mergeDeviceDisplay(current.display, next.display),
     health: next.health ?? current.health,
     stream: next.stream ?? current.stream,
+  };
+}
+
+function deviceIsConfigured(device: DeviceInfo | null | undefined): boolean {
+  return Boolean(device?.deviceId || (device?.target && device.paired));
+}
+
+function markDeviceDisconnected(
+  current: DeviceInfo | null,
+  target = "",
+): DeviceInfo | null {
+  if (!current) {
+    return target ? { target, connected: false, ready: false } : null;
+  }
+  return {
+    ...current,
+    ...(target ? { target } : {}),
+    connected: false,
+    ready: false,
+    connectionState: deviceIsConfigured(current)
+      ? "reconnecting"
+      : current.connectionState,
   };
 }
 

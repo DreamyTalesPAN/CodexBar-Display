@@ -77,9 +77,7 @@ export type DeviceSearchState =
   | "idle"
   | "searching"
   | "waiting"
-  | "alternate"
   | "multiple"
-  | "declined"
   | "not-found"
   | "repair-failed"
   | "failed";
@@ -156,12 +154,7 @@ export type DeviceInfo = {
 };
 
 export type ActiveTab =
-  | "overview"
-  | "usage"
-  | "settings"
-  | "theme-library"
-  | "updates"
-  | "logs";
+  "overview" | "usage" | "settings" | "theme-library" | "updates" | "logs";
 
 export type ReadinessTone = "ready" | "attention" | "unknown";
 
@@ -315,7 +308,7 @@ export function deviceStartupConnectionIsReady(
 ) {
   return Boolean(
     deviceSetupIsUsable(device) &&
-      device?.connectionState !== "reconnecting" &&
-      device?.connected !== false,
+    device?.connectionState !== "reconnecting" &&
+    device?.connected !== false,
   );
 }

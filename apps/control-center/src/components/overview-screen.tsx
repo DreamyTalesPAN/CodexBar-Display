@@ -20,6 +20,7 @@ import {
   deviceImageIsStuck,
   type CompanionStatus,
   type DeviceInfo,
+  type DeviceSearchState,
   type DeviceState,
   type ReadinessTone,
   type UsageSnapshot,
@@ -34,9 +35,12 @@ type OverviewScreenProps = {
   deviceState: DeviceState;
   device: DeviceInfo | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
+  deviceSearchState: DeviceSearchState;
   usage?: UsageSnapshot | null;
   busyAction?: string | null;
   onReloadImage?: () => void;
+  onSearchDevice: () => void;
+  onSetUpAnotherDevice: () => void;
   requiresMacAppMigration?: boolean;
 };
 
@@ -47,9 +51,12 @@ export function OverviewScreen({
   companionStatus,
   deviceState,
   device,
+  deviceSearchState,
   firmwareUpdate,
   usage,
   onReloadImage,
+  onSearchDevice,
+  onSetUpAnotherDevice,
   requiresMacAppMigration = false,
 }: OverviewScreenProps) {
   const imageStuck = deviceImageIsStuck(device);
@@ -68,6 +75,13 @@ export function OverviewScreen({
   const macAppMigrationUrl = requiresMacAppMigration
     ? availableMacAppDmgDownloadUrl(companionRelease)
     : undefined;
+  const configuredDevice = Boolean(
+    device?.deviceId || (device?.target && device.paired),
+  );
+  const needsReconnect = Boolean(
+    configuredDevice &&
+    (!device?.connected || device.connectionState === "reconnecting"),
+  );
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -124,9 +138,19 @@ export function OverviewScreen({
                   size={18}
                   aria-hidden
                 />
-                <span>{reloadingImage ? "Reloading image" : "Reload image"}</span>
+                <span>
+                  {reloadingImage ? "Reloading image" : "Reload image"}
+                </span>
               </button>
             </div>
+          ) : null}
+          {needsReconnect ? (
+            <ConnectionRecovery
+              busyAction={busyAction}
+              deviceSearchState={deviceSearchState}
+              onSearch={onSearchDevice}
+              onSetUpAnother={onSetUpAnotherDevice}
+            />
           ) : null}
         </div>
 
@@ -135,6 +159,72 @@ export function OverviewScreen({
         </div>
       </section>
     </div>
+  );
+}
+
+function ConnectionRecovery({
+  busyAction,
+  deviceSearchState,
+  onSearch,
+  onSetUpAnother,
+}: {
+  busyAction?: string | null;
+  deviceSearchState: DeviceSearchState;
+  onSearch: () => void;
+  onSetUpAnother: () => void;
+}) {
+  const searching =
+    busyAction === "search" || deviceSearchState === "searching";
+  const waiting = deviceSearchState === "waiting";
+  const searchFailed =
+    deviceSearchState === "not-found" ||
+    deviceSearchState === "repair-failed" ||
+    deviceSearchState === "failed";
+  const detail = searching
+    ? "Searching your WiFi for your saved VibeTV."
+    : waiting
+      ? "VibeTV was found. Waiting for usage data."
+      : searchFailed
+        ? "Your saved VibeTV is still offline."
+        : "The Mac App will reconnect automatically when VibeTV is available.";
+
+  return (
+    <section
+      aria-live="polite"
+      className="mt-7 grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4"
+    >
+      <p className="text-sm leading-6 text-[#444933]">{detail}</p>
+      <div className={searchFailed ? "grid gap-3 sm:grid-cols-2" : "grid"}>
+        <button
+          className="inline-flex min-h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#CCFF00] px-5 text-sm font-bold text-[#1B1B1B] transition hover:bg-[#ABD600] disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={searching || waiting}
+          onClick={onSearch}
+          type="button"
+        >
+          <RefreshCw
+            className={searching ? "animate-spin" : undefined}
+            size={18}
+            aria-hidden
+          />
+          <span>
+            {searching
+              ? "Searching"
+              : searchFailed
+                ? "Search again"
+                : "Search for VibeTV"}
+          </span>
+        </button>
+        {searchFailed ? (
+          <button
+            className="inline-flex min-h-11 items-center justify-center border border-[#747A60] bg-transparent px-5 text-sm font-bold text-[#1B1B1B] transition hover:bg-[#EDEDED]"
+            onClick={onSetUpAnother}
+            type="button"
+          >
+            Set up another VibeTV
+          </button>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -183,7 +273,9 @@ function StatusBadge({
   tone: ReadinessTone;
 }) {
   return (
-    <ControlCenterStatusIcon variant={tone === "ready" ? "complete" : "neutral"}>
+    <ControlCenterStatusIcon
+      variant={tone === "ready" ? "complete" : "neutral"}
+    >
       {children}
     </ControlCenterStatusIcon>
   );
@@ -215,7 +307,9 @@ function StatusRow({
             </span>
           ) : null}
         </div>
-        {detail ? <div className="mt-1 text-sm text-[#444933]">{detail}</div> : null}
+        {detail ? (
+          <div className="mt-1 text-sm text-[#444933]">{detail}</div>
+        ) : null}
       </dd>
     </div>
   );
