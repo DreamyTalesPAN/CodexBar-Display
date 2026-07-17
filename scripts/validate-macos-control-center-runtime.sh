@@ -101,7 +101,7 @@ fi
 [[ "$(uname -s)" == "Darwin" ]] || die "real runtime validation requires macOS"
 (( EUID != 0 )) || die "real runtime validation must run in the logged-in GUI user session"
 
-for command in codesign curl defaults ditto launchctl lsof open plutil ps python3 spctl; do
+for command in cat codesign curl defaults ditto launchctl lsof open paste plutil ps python3 sort spctl; do
   command -v "$command" >/dev/null 2>&1 || die "required command is unavailable: $command"
 done
 
@@ -262,6 +262,7 @@ WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-runtime-validation.XXXXXX")"
 CLEANUP_ARMED=1
 REQUEST_LOG="$WORK_DIR/fake-device.requests"
 PORT_FILE="$WORK_DIR/fake-device.port"
+FAKE_DEVICE_PAIRING_TOKEN="codex-runtime-validation-token"
 FIRMWARE_VERSIONS="$ROOT/release/firmware-versions.json"
 [[ -f "$FIRMWARE_VERSIONS" ]] || die "release firmware versions are missing: $FIRMWARE_VERSIONS"
 FAKE_DEVICE_FIRMWARE="$(python3 - "$FIRMWARE_VERSIONS" <<'PY'
@@ -287,14 +288,14 @@ print(version)
 PY
 )"
 
-python3 - "$PORT_FILE" "$REQUEST_LOG" "$FAKE_DEVICE_FIRMWARE" <<'PY' &
+python3 - "$PORT_FILE" "$REQUEST_LOG" "$FAKE_DEVICE_FIRMWARE" "$FAKE_DEVICE_PAIRING_TOKEN" <<'PY' &
 import json
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
-port_file, request_log, firmware = sys.argv[1:]
+port_file, request_log, firmware, pairing_token = sys.argv[1:]
 
 class Handler(BaseHTTPRequestHandler):
     def record(self, path):
@@ -325,7 +326,10 @@ class Handler(BaseHTTPRequestHandler):
         length = min(int(self.headers.get("Content-Length", "0")), 1024 * 1024)
         self.rfile.read(length)
         if path == "/frame":
-            self.reply({"ok":True})
+            if self.headers.get("X-VibeTV-Token") != pairing_token:
+                self.reply({"error":"pairing token required"}, 401)
+            else:
+                self.reply({"ok":True})
         else:
             self.reply({"error":"not found"}, 404)
 
@@ -350,11 +354,14 @@ done
 FAKE_PORT="$(cat "$PORT_FILE")"
 
 mkdir -p "$APP_SUPPORT"
-python3 - "$APP_SUPPORT/config.json" "$FAKE_PORT" <<'PY'
+python3 - "$APP_SUPPORT/config.json" "$FAKE_PORT" "$FAKE_DEVICE_PAIRING_TOKEN" <<'PY'
 import json
 import sys
 with open(sys.argv[1], "w", encoding="utf-8") as output:
-    json.dump({"deviceTarget": f"http://127.0.0.1:{sys.argv[2]}"}, output)
+    json.dump({
+        "deviceTarget": f"http://127.0.0.1:{sys.argv[2]}",
+        "deviceToken": sys.argv[3],
+    }, output)
     output.write("\n")
 PY
 chmod 600 "$APP_SUPPORT/config.json"
@@ -388,7 +395,26 @@ while (( SECONDS < deadline )); do
   fi
   sleep 0.5
 done
-[[ -n "$SERVICE_PID" ]] || die "runtime did not reach the signed-app SMAppService/port/status/frame contract before timeout"
+if [[ -z "$SERVICE_PID" ]]; then
+  printf 'runtime validation diagnostics: ui_pids=%s service_pid=%s listener_pids=%s\n' \
+    "$(ui_pids | paste -sd, -)" \
+    "$(service_pid 2>/dev/null || true)" \
+    "$(listener_pids | paste -sd, -)" >&2
+  if [[ -s "$STATUS_FILE" ]]; then
+    printf '%s\n' 'runtime validation status response:' >&2
+    cat "$STATUS_FILE" >&2
+    printf '\n' >&2
+  else
+    printf '%s\n' 'runtime validation status response: <unavailable>' >&2
+  fi
+  if [[ -s "$REQUEST_LOG" ]]; then
+    printf '%s\n' 'runtime validation fake-device requests:' >&2
+    sort -u "$REQUEST_LOG" >&2
+  else
+    printf '%s\n' 'runtime validation fake-device requests: <none>' >&2
+  fi
+  die "runtime did not reach the signed-app SMAppService/port/status/frame contract before timeout"
+fi
 
 kill -TERM "$UI_PID"
 for _ in $(seq 1 40); do
