@@ -5,7 +5,6 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 import type {
   DeviceInfo,
-  UsageProviderInfo,
   UsageSnapshot,
 } from "./control-center-types";
 import {
@@ -46,6 +45,7 @@ type DisplayFrameSnapshot = {
 };
 
 type DisplayFrame = {
+  v?: number;
   provider?: string;
   label?: string;
   session?: number;
@@ -172,18 +172,16 @@ type SpriteRect = {
 };
 
 export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
-  const provider = currentUsageProvider(usage);
   const themeId = activeThemeId(device);
   const displayStreamReady = Boolean(device?.ready && device.stream?.healthy);
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
   );
   const effectiveDisplayFrame = displayStreamReady ? displayFrame : null;
-  const frame = hasRenderableUsage(effectiveDisplayFrame?.frame)
+  const frame = hasRenderableUsage(effectiveDisplayFrame)
     ? buildFrameData(
-        provider,
         effectiveDisplayFrame?.savedAt || usage?.generatedAt,
-        effectiveDisplayFrame?.frame,
+        effectiveDisplayFrame.frame,
       )
     : null;
   const [packState, setPackState] = useState<ThemePackState | null>(null);
@@ -701,23 +699,17 @@ function ThemeUsageLoading() {
   );
 }
 
-function currentUsageProvider(
-  usage: UsageSnapshot | null,
-): UsageProviderInfo | null {
-  const providers = usage?.providers || [];
-  if (providers.length === 0) {
-    return null;
-  }
-  return (
-    providers.find((provider) => provider.id === usage?.currentProvider) ||
-    providers[0]
-  );
-}
-
 function hasRenderableUsage(
-  displayFrame: DisplayFrame | undefined,
-): boolean {
-  if (!displayFrame) {
+  snapshot: DisplayFrameSnapshot | null | undefined,
+): snapshot is DisplayFrameSnapshot & { ok: true; frame: DisplayFrame } {
+  const displayFrame = snapshot?.frame;
+  if (
+    snapshot?.ok !== true ||
+    !displayFrame ||
+    typeof displayFrame.v !== "number" ||
+    !Number.isInteger(displayFrame.v) ||
+    displayFrame.v < 1
+  ) {
     return false;
   }
   const hasProvider = [displayFrame.provider, displayFrame.label].some(
@@ -734,29 +726,23 @@ function hasRenderableUsage(
 }
 
 function buildFrameData(
-  provider: UsageProviderInfo | null,
-  generatedAt?: string,
-  displayFrame?: DisplayFrame,
+  generatedAt: string | undefined,
+  displayFrame: DisplayFrame,
 ): FrameData {
   const now = generatedAt ? new Date(generatedAt) : new Date();
   const usableDate = Number.isNaN(now.getTime()) ? new Date() : now;
-  const sourceUsageMode = frameUsageMode(displayFrame, provider);
+  const sourceUsageMode = frameUsageMode(displayFrame);
   return {
-    provider: displayFrame?.provider || provider?.id || "",
-    label:
-      displayFrame?.label ||
-      provider?.label ||
-      displayFrame?.provider ||
-      provider?.id ||
-      "",
-    session: clampPercent(displayFrame?.session ?? provider?.session),
-    weekly: clampPercent(displayFrame?.weekly ?? provider?.weekly),
-    resetSecs: displayFrame?.resetSecs ?? provider?.resetSecs ?? 0,
+    provider: displayFrame.provider || "",
+    label: displayFrame.label || displayFrame.provider || "",
+    session: clampPercent(displayFrame.session),
+    weekly: clampPercent(displayFrame.weekly),
+    resetSecs: displayFrame.resetSecs ?? 0,
     usageMode: sourceUsageMode,
-    activity: displayFrame?.activity || provider?.activity || "idle",
-    sessionTokens: displayFrame?.sessionTokens ?? provider?.sessionTokens ?? 0,
-    weekTokens: displayFrame?.weekTokens ?? provider?.weekTokens ?? 0,
-    totalTokens: displayFrame?.totalTokens ?? provider?.totalTokens ?? 0,
+    activity: displayFrame.activity || "idle",
+    sessionTokens: displayFrame.sessionTokens ?? 0,
+    weekTokens: displayFrame.weekTokens ?? 0,
+    totalTokens: displayFrame.totalTokens ?? 0,
     time: new Intl.DateTimeFormat("de-DE", {
       hour: "2-digit",
       minute: "2-digit",
@@ -770,12 +756,11 @@ function buildFrameData(
 
 function frameUsageMode(
   displayFrame: DisplayFrame | undefined,
-  provider: UsageProviderInfo | null,
 ): string {
   if (displayFrame?.usageMode === "remaining" || displayFrame?.usageMode === "used") {
     return displayFrame.usageMode;
   }
-  return provider?.usageMode === "remaining" ? "remaining" : "used";
+  return "used";
 }
 
 function activeThemeId(device: DeviceInfo | null): string {

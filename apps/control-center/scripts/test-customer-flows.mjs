@@ -307,6 +307,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testOverviewRejectsInvalidDisplayFrame(browser, appContext.appUrl);
     await testProviderReadinessCustomerStates(browser, appContext.appUrl);
     await testOverviewKeepsTransientConnectionCustomerFriendly(
       browser,
@@ -2024,6 +2025,20 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
       activeTheme: "synthwave",
       firmware: "1.0.32",
     },
+    displayFrameResponse: {
+      ok: true,
+      savedAt: "2026-06-29T10:47:46Z",
+      source: "last-sent-frame",
+      frame: {
+        v: 1,
+        provider: "codex",
+        label: "Codex",
+        weekly: 63,
+        resetSecs: 5400,
+        usageMode: "used",
+        activity: "coding",
+      },
+    },
     usageResponse: {
       ok: true,
       generatedAt: "2026-06-29T10:47:46Z",
@@ -2035,7 +2050,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
           id: "codex",
           label: "Codex",
           source: "oauth",
-          session: 0,
+          session: 27,
           weekly: 63,
           resetSecs: 5400,
           usageMode: "used",
@@ -2162,6 +2177,59 @@ async function testOverviewShowsUsageLoadingUntilRealUsage(browser, appUrl) {
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testOverviewRejectsInvalidDisplayFrame(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.33",
+    displayFrameResponse: {
+      ok: true,
+      frame: {
+        provider: "codex",
+        label: "Codex",
+      },
+    },
+    device: {
+      ...companionDevice,
+      activeTheme: "synthwave",
+      firmware: "1.0.32",
+    },
+    usageResponse: {
+      ok: true,
+      generatedAt: "2026-06-29T10:47:46Z",
+      source: "codexbar-display",
+      usageMode: "used",
+      currentProvider: "codex",
+      providers: [
+        {
+          id: "codex",
+          label: "Codex",
+          session: 27,
+          weekly: 63,
+          usageMode: "used",
+        },
+      ],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
+  await page
+    .getByRole("img", { name: "Loading VibeTV usage preview" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page
+      .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
+      .count()) === 0,
+    "Overview must reject a 200 display frame without a protocol version",
+  );
+
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -2890,6 +2958,7 @@ async function routeCompanionOnline(
     usageResponse,
     usageStatus = 200,
     displayFrameStatus = 200,
+    displayFrameResponse,
     repairError = false,
     selectError = false,
     searchDevices,
@@ -3150,6 +3219,14 @@ async function routeCompanionOnline(
           status: displayFrameStatus,
           contentType: "application/json",
           body: JSON.stringify({ ok: false }),
+        });
+        return;
+      }
+      if (displayFrameResponse !== undefined) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(displayFrameResponse),
         });
         return;
       }
@@ -3540,6 +3617,7 @@ function displayFrameFromUsageResponse(usageResponse) {
   const session = clampPercent(provider.session);
   const weekly = clampPercent(provider.weekly);
   return {
+    v: 1,
     provider: provider.id,
     label: provider.label || provider.id,
     ...(session > 0 ? { session } : {}),
