@@ -6,10 +6,10 @@
   "version": "1.0.0",
   "minFirmware": "1.0.24",
   "themeSpec": {
-    "path": "/themes/u/synthwa-1-cf338e.json",
+    "path": "/themes/u/synthwa-1-6b39a3.json",
     "file": "theme.json",
-    "bytes": 743,
-    "sha256": "9520d1d5c42f303bd7e082406da3384df59037bbd89de5d4c6f257f54ef2419e",
+    "bytes": 731,
+    "sha256": "2bdf2859c2e8c37c35980bc44c6064a0aa74d9a485b6d4166290c9ac0d62396e",
     "contentType": "application/json"
   },
   "assets": [

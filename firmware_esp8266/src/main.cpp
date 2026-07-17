@@ -11,7 +11,6 @@
 #include "../../firmware_shared/app_transport.h"
 #include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "boot_recovery_policy.h"
-#include "frame_render_policy.h"
 #include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
 
@@ -24,9 +23,9 @@
 #endif
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-const char kThemeFeatureJSON[] = "[\"theme\",\"theme-spec-v1\"]";
+const char kThemeFeatureJSON[] = "[\"theme-spec-v1\"]";
 #else
-const char kThemeFeatureJSON[] = "[\"theme\"]";
+const char kThemeFeatureJSON[] = "[]";
 #endif
 
 namespace {
@@ -188,6 +187,8 @@ unsigned long rebootAtMs = 0;
 bool bootRecoveryCounterNeedsClear = false;
 unsigned long bootRecoveryClearAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
+bool pendingWifiRender = false;
+codexbar_display::core::SerialConsumeEvent pendingWifiRenderEvent;
 bool frameStaleStatusRendered = false;
 bool captiveDnsStarted = false;
 unsigned long wifiDisconnectedAtMs = 0;
@@ -206,7 +207,8 @@ uint32_t bootResetCounter = 0;
 void addCorsHeaders();
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-b3c3f7.json";
+constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-e4fe6b.json";
+constexpr const char* kPreviousDefaultThemeSpecPath = "/themes/u/mini-cl-1-b3c3f7.json";
 constexpr const char* kLegacyDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
 constexpr const char* kDefaultThemeSpecId = "mini-classic";
 constexpr int kDefaultThemeSpecRev = 1;
@@ -649,6 +651,20 @@ String displayErrorMessage(const String& message) {
   return "Open App";
 }
 
+void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event) {
+  const bool maybeThemeSpecPartial = event.themeSpecPartialRender && !runtimeCtx.screenDirty;
+  const unsigned long partialStartUs = maybeThemeSpecPartial ? micros() : 0;
+  const unsigned long partialSuccessesBefore =
+      maybeThemeSpecPartial ? renderer.DebugSnapshot().themeSpecPartialSuccesses : 0;
+  renderer.OnFrameAccepted(runtimeCtx, event);
+  if (maybeThemeSpecPartial) {
+    const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
+    if (snapshot.themeSpecPartialSuccesses > partialSuccessesBefore && !runtimeCtx.screenDirty) {
+      recordRenderPartial("theme_spec_frame", micros() - partialStartUs);
+    }
+  }
+}
+
 void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, const char* transport) {
   if (statusScreenLocked()) {
     Serial.printf("frame_ignored transport=%s reason=status_screen_locked\n", transport);
@@ -684,29 +700,15 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
 #endif
   }
 
-  // Never render a WiFi frame from inside ESP8266WebServer::handleClient().
-  // ThemeSpec partial rendering can decode assets and touch the TFT for long
-  // enough to starve the WiFi stack or hardware watchdog. Marking the screen
-  // dirty makes RendererESP8266::OnFrameAccepted skip its synchronous partial
-  // path; the normal main-loop render block will draw the accepted frame on
-  // the next iteration. USB keeps its existing low-latency partial path.
-  const bool deferVisualRender =
-      codexbar_display::esp8266::FrameRenderPolicy::ShouldDeferToMainLoop(
-          transport != nullptr && strcmp(transport, "wifi") == 0,
-          event.visualChanged);
-  if (deferVisualRender) {
-    runtimeCtx.screenDirty = true;
-  }
-  const bool maybeThemeSpecPartial = event.themeSpecPartialRender && !runtimeCtx.screenDirty;
-  const unsigned long partialStartUs = maybeThemeSpecPartial ? micros() : 0;
-  const unsigned long partialSuccessesBefore =
-      maybeThemeSpecPartial ? renderer.DebugSnapshot().themeSpecPartialSuccesses : 0;
-  renderer.OnFrameAccepted(runtimeCtx, event);
-  if (maybeThemeSpecPartial) {
-    const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
-    if (snapshot.themeSpecPartialSuccesses > partialSuccessesBefore && !runtimeCtx.screenDirty) {
-      recordRenderPartial("theme_spec_frame", micros() - partialStartUs);
-    }
+  const bool wifiTransport = transport != nullptr && strcmp(transport, "wifi") == 0;
+  if (wifiTransport && event.visualChanged) {
+    // ESP8266WebServer invokes this from handleClient(). Keep all display work
+    // out of that callback; the event is consumed before any new frame can
+    // replace the runtime state at the start of the next loop.
+    pendingWifiRenderEvent = event;
+    pendingWifiRender = true;
+  } else if (!wifiTransport) {
+    renderAcceptedFrame(event);
   }
   Serial.printf("frame_received transport=%s\n", transport);
 }
@@ -1852,14 +1854,12 @@ bool readStoredThemeSpec(const String& path, String& raw, String& error) {
   return true;
 }
 
-bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String& fallbackTheme, String& error) {
+bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String& error) {
   JsonDocument filter;
   filter["themeId"] = true;
   filter["id"] = true;
   filter["themeRev"] = true;
   filter["rev"] = true;
-  filter["fallbackTheme"] = true;
-  filter["fb"] = true;
 
   JsonDocument doc;
   const DeserializationError err = deserializeJson(doc, raw, DeserializationOption::Filter(filter));
@@ -1889,22 +1889,10 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
     return false;
   }
 
-  const char* fallback = nullptr;
-  if (spec["fallbackTheme"].is<const char*>()) {
-    fallback = spec["fallbackTheme"].as<const char*>();
-  } else if (spec["fb"].is<const char*>()) {
-    fallback = spec["fb"].as<const char*>();
-  }
-  if (fallback != nullptr) {
-    String normalized;
-    if (codexbar_display::theme::NormalizeThemeName(String(fallback), normalized)) {
-      fallbackTheme = normalized;
-    }
-  }
   return true;
 }
 
-void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev, const String& fallbackTheme) {
+void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev) {
   renderer.ResetGifStateForAssetUpdate();
   close_all_fs();
 
@@ -1919,11 +1907,6 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
   next.themeSpecId = themeId;
   next.themeSpecRev = themeRev;
   next.themeSpecRaw = "";
-  if (fallbackTheme.length() > 0) {
-    next.hasTheme = true;
-    next.theme = fallbackTheme;
-  }
-
   runtimeCtx.runtime.cachedThemeId = themeId;
   runtimeCtx.runtime.cachedThemeRev = themeRev;
   runtimeCtx.runtime.cachedThemeSpecRaw = raw;
@@ -1939,7 +1922,6 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
   event.hadFrame = hadFrame;
   event.themeSpecChanged = true;
   event.visualChanged = !hadFrame || codexbar_display::core::FrameVisualChanged(previous, next) || event.themeSpecChanged;
-  event.themeChanged = hadFrame && codexbar_display::core::FrameThemeChanged(previous, next);
   markFrameAccepted(event, "theme");
 }
 
@@ -1949,8 +1931,7 @@ bool activateStoredThemePath(const String& path, String& themeId, int& themeRev,
     return false;
   }
 
-  String fallbackTheme;
-  if (!themeSpecMetadata(raw, themeId, themeRev, fallbackTheme, error)) {
+  if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
     return false;
   }
   if (!saveActiveThemeSpecPath(path)) {
@@ -1958,7 +1939,7 @@ bool activateStoredThemePath(const String& path, String& themeId, int& themeRev,
     return false;
   }
 
-  activateStoredThemeSpec(path, raw, themeId, themeRev, fallbackTheme);
+  activateStoredThemeSpec(path, raw, themeId, themeRev);
   return true;
 }
 
@@ -2038,8 +2019,7 @@ bool loadStoredThemeSpecCacheFromPath(const String& path) {
 
   String themeId;
   int themeRev = 0;
-  String fallbackTheme;
-  if (!themeSpecMetadata(raw, themeId, themeRev, fallbackTheme, error)) {
+  if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
     Serial.printf("theme_cache_load_failed path=%s err=%s\n", path.c_str(), error.c_str());
     return false;
   }
@@ -2059,6 +2039,11 @@ void loadDefaultStoredThemeSpecCache() {
     return;
   }
   if (loadStoredThemeSpecCacheFromPath(kDefaultThemeSpecPath)) {
+    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
+    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
+    return;
+  }
+  if (loadStoredThemeSpecCacheFromPath(kPreviousDefaultThemeSpecPath)) {
     runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
     runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
     return;
@@ -2497,7 +2482,7 @@ void handleFrame() {
   }
 
   codexbar_display::core::SerialConsumeEvent event;
-  if (!codexbar_display::core::ConsumeFrameLine(runtimeCtx.runtime, body.c_str(), millis(), true, event) ||
+  if (!codexbar_display::core::ConsumeFrameLine(runtimeCtx.runtime, body.c_str(), millis(), event) ||
       !event.frameAccepted) {
     addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "frame was not accepted");
@@ -2737,8 +2722,14 @@ void loop() {
   bool rendered = false;
   unsigned long renderDurationUs = 0;
 
+  if (pendingWifiRender) {
+    const codexbar_display::core::SerialConsumeEvent event = pendingWifiRenderEvent;
+    pendingWifiRender = false;
+    renderAcceptedFrame(event);
+  }
+
   codexbar_display::core::SerialConsumeEvent event;
-  if (codexbar_display::app::ConsumeSerial(runtimeCtx, true, millis(), event)) {
+  if (codexbar_display::app::ConsumeSerial(runtimeCtx, millis(), event)) {
     markFrameAccepted(event, "usb");
   }
 

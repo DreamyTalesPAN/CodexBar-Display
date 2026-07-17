@@ -83,7 +83,6 @@ class RendererESP8266 : public app::Renderer {
   void DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const String& text);
   void TickActive(app::RuntimeContext& ctx) override;
   void DrawError(app::RuntimeContext& ctx, const String& message) override;
-  bool DrawTopLine(app::RuntimeContext& ctx);
   void DrawUsage(app::RuntimeContext& ctx) override;
   void DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) override;
 };

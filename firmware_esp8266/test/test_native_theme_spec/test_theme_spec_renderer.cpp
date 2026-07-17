@@ -31,7 +31,6 @@ using codexbar_display::themespec::kThemeSpecFieldReset;
 using codexbar_display::themespec::kThemeSpecFieldSession;
 using codexbar_display::themespec::kThemeSpecFieldWeekly;
 using codexbar_display::core::ConsumeFrameLine;
-using codexbar_display::core::KeepLastThemeSpecFrameAfterPartialRenderFailure;
 using codexbar_display::core::RuntimeState;
 using codexbar_display::core::SerialConsumeEvent;
 using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
@@ -1091,15 +1090,15 @@ void testFrameActivityDefaultsToCodingWhenUsageChanges() {
   SerialConsumeEvent event;
 
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
 
   const char* idleFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleFrame, 2000, event));
   TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
 
   const char* codingFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":120,"weekTokens":220,"totalTokens":340})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codingFrame, 3000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codingFrame, 3000, event));
   TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
 }
 
@@ -1108,18 +1107,34 @@ void testThemeSpecActivityChangeUsesPartialRenderEvent() {
   SerialConsumeEvent event;
 
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"themeSpec":{"themeSpecVersion":1,"themeId":"codex-state-assets","themeRev":1,"primitives":[{"type":"sprite","x":1,"y":2,"width":3,"height":4,"stateAssets":{"idle":"/themes/demo/idle.cba","coding":"/themes/demo/coding.cba"}}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_FALSE(event.themeSpecPartialRender);
   TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
 
   const char* codingFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"activity":"coding"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codingFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codingFrame, 2000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(event.themeSpecCacheHit);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
   TEST_ASSERT_EQUAL_UINT32(kThemeSpecFieldActivity, event.themeSpecChangedFields);
   TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+}
+
+void testLegacyThemeFieldsAreIgnored() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"theme":"mini","fb":"mini","themeSpec":{"v":1,"id":"mini-transport","rev":1,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{session}%"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
+
+  const char* nextFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"theme":"crt","fb":"classic"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, nextFrame, 2000, event));
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
 }
 
 void testStoredThemeActivationLiveFrameUsesPartialRenderEvent() {
@@ -1133,8 +1148,6 @@ void testStoredThemeActivationLiveFrameUsesPartialRenderEvent() {
   state.current.weekly = 20;
   state.current.resetSecs = 3600;
   state.current.activity = "idle";
-  state.current.hasTheme = true;
-  state.current.theme = "mini";
   state.current.hasThemeSpec = true;
   state.current.themeSpecId = "clippy";
   state.current.themeSpecRev = 1;
@@ -1143,66 +1156,32 @@ void testStoredThemeActivationLiveFrameUsesPartialRenderEvent() {
 
   SerialConsumeEvent event;
   const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":3600,"usageMode":"remaining","activity":"coding"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(event.themeSpecCacheHit);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
 }
 
-void testThemeSpecPartialFailurePolicyKeepsLastFrameClean() {
-  RuntimeState state;
-  state.cachedThemeId = "clippy";
-  state.cachedThemeRev = 1;
-  state.cachedThemeSpecRaw = R"JSON({"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2}],"fb":"mini","bg":"#000000"})JSON";
-  state.current.provider = "codex";
-  state.current.label = "Codex";
-  state.current.session = 10;
-  state.current.weekly = 20;
-  state.current.resetSecs = 3600;
-  state.current.activity = "idle";
-  state.current.hasTheme = true;
-  state.current.theme = "mini";
-  state.current.hasThemeSpec = true;
-  state.current.themeSpecId = "clippy";
-  state.current.themeSpecRev = 1;
-  state.current.themeSpecRaw = "";
-  state.hasFrame = true;
-
-  SerialConsumeEvent event;
-  const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":3600,"usageMode":"remaining","activity":"coding"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, true, event));
-  TEST_ASSERT_TRUE(event.visualChanged);
-  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
-
-  bool screenDirty = false;
-  const bool partialRenderFailed = true;
-  if (event.visualChanged && partialRenderFailed &&
-      !KeepLastThemeSpecFrameAfterPartialRenderFailure(state.current, event)) {
-    screenDirty = true;
-  }
-  TEST_ASSERT_FALSE(screenDirty);
-}
-
-void testThemeSpecErrorFrameKeepsCachedThemeVisible() {
+void testThemeSpecErrorFrameUsesFullRender() {
   RuntimeState state;
   SerialConsumeEvent event;
 
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":3600,"themeSpec":{"v":1,"id":"mini-transport","rev":1,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"cached"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_FALSE(state.current.hasError);
   TEST_ASSERT_TRUE(state.cachedThemeSpecRaw.indexOf("cached") >= 0);
 
   const char* errorFrame = R"JSON({"v":2,"error":"runtime/cycle-timeout"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 2000, true, event));
-  TEST_ASSERT_FALSE(state.current.hasError);
-  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
-  TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
-  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
-  TEST_ASSERT_FALSE(event.visualChanged);
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 2000, event));
+  TEST_ASSERT_TRUE(state.current.hasError);
+  TEST_ASSERT_FALSE(state.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
 }
 
-void testThemeSpecErrorFrameRestoresCachedThemeAfterPlainFrame() {
+void testThemeSpecErrorFrameDoesNotReplaceItselfWithCachedTheme() {
   RuntimeState state;
   SerialConsumeEvent event;
   state.cachedThemeId = "mini-transport";
@@ -1210,17 +1189,15 @@ void testThemeSpecErrorFrameRestoresCachedThemeAfterPlainFrame() {
   state.cachedThemeSpecRaw = R"JSON({"v":1,"id":"mini-transport","rev":1,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"cached"}]})JSON";
   state.current.provider = "codex";
   state.current.label = "Codex";
-  state.current.hasTheme = true;
-  state.current.theme = "mini";
   state.hasFrame = true;
 
   const char* errorFrame = R"JSON({"v":2,"error":"runtime/cycle-timeout"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 2000, true, event));
-  TEST_ASSERT_FALSE(state.current.hasError);
-  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
-  TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
-  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 2000, event));
+  TEST_ASSERT_TRUE(state.current.hasError);
+  TEST_ASSERT_FALSE(state.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(event.themeSpecCacheHit);
   TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
 }
 
 void testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset() {
@@ -1228,11 +1205,11 @@ void testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset() {
   SerialConsumeEvent event;
 
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":3600,"activity":"idle","usageMode":"remaining","themeSpec":{"v":1,"id":"clippy-like","rev":1,"p":[{"t":"sp","x":0,"y":0,"w":240,"h":240,"a":"/themes/u/cp-bg.cbi"},{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":27,"y":166,"w":146,"h":14,"b":"s"},{"t":"tx","x":181,"y":158,"v":"{session}%","s":2},{"t":"p","x":27,"y":212,"w":146,"h":14,"b":"w"},{"t":"tx","x":181,"y":204,"v":"{weekly}%","s":2},{"t":"tx","x":27,"y":230,"v":"{reset}","s":1}],"fb":"mini","bg":"#000000"}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_FALSE(event.themeSpecPartialRender);
 
   const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":21,"resetSecs":3540,"activity":"coding","usageMode":"remaining"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(event.themeSpecCacheHit);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
@@ -1253,17 +1230,17 @@ void testThemeSpecIgnoresUpdateMetadataForVisualDirty() {
   SerialConsumeEvent event;
 
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300,"update":{"available":false,"status":"current","latestVersion":"1.0.17"},"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"progress","x":0,"y":0,"width":80,"height":8,"binding":"session"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
 
   const char* updateOnlyFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300,"update":{"available":false,"status":"current","latestVersion":"1.0.18"}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, updateOnlyFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, updateOnlyFrame, 2000, event));
   TEST_ASSERT_FALSE(event.visualChanged);
   TEST_ASSERT_FALSE(event.themeSpecPartialRender);
 
   const char* liveAndUpdateFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":300,"update":{"available":false,"status":"current","latestVersion":"1.0.19"}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveAndUpdateFrame, 3000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveAndUpdateFrame, 3000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
   TEST_ASSERT_TRUE(event.themeSpecChangedFields & kThemeSpecFieldSession);
@@ -1274,13 +1251,13 @@ void testThemeSpecCacheCarriesLayoutAcrossLiveFrames() {
   SerialConsumeEvent event;
 
   const char* studioFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":94,"weekly":87,"resetSecs":5394,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"{session}%"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, studioFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, studioFrame, 1000, event));
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
   TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("{session}%") >= 0);
 
   const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":96,"weekly":99,"resetSecs":4200,"usageMode":"remaining","theme":"mini"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, event));
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_TRUE(event.themeSpecCacheHit);
   TEST_ASSERT_EQUAL_INT(96, state.current.session);
@@ -1295,7 +1272,7 @@ void testCompactThemeSpecFrameIsCached() {
   SerialConsumeEvent event;
 
   const char* frame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":94,"weekly":87,"resetSecs":5394,"themeSpec":{"v":1,"id":"mini-transport","rev":1,"fb":"mini","p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{s}%"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frame, 1000, event));
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_EQUAL_STRING("mini-transport", state.current.themeSpecId.c_str());
   TEST_ASSERT_EQUAL_INT(1, state.current.themeSpecRev);
@@ -1307,12 +1284,12 @@ void testThemeSpecUpdateAvailabilityDirtiesOnlyLabelField() {
   SerialConsumeEvent event;
 
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300,"update":{"available":false,"status":"current","latestVersion":"1.0.17"},"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":0,"y":0,"binding":"label"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
 
   const char* updateFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300,"update":{"available":true,"status":"update_available","latestVersion":"1.0.20"}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, updateFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, updateFrame, 2000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
   TEST_ASSERT_EQUAL_UINT32(kThemeSpecFieldLabel, event.themeSpecChangedFields);
@@ -1323,12 +1300,12 @@ void testThemeSpecMissingUpdateAfterAvailableDirtiesLabelField() {
   SerialConsumeEvent event;
 
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300,"update":{"available":true,"status":"update_available","latestVersion":"1.0.20"},"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":0,"y":0,"binding":"label"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_TRUE(state.current.updateAvailable);
 
   const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":300})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 2000, event));
   TEST_ASSERT_TRUE(event.visualChanged);
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
   TEST_ASSERT_EQUAL_UINT32(kThemeSpecFieldLabel, event.themeSpecChangedFields);
@@ -1341,15 +1318,15 @@ void testThemeSpecCacheUpdatesRawWhenSameRevisionIsResent() {
   SerialConsumeEvent event;
 
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"first"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("first") >= 0);
 
   const char* editedFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":21,"resetSecs":31,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"edited"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, editedFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, editedFrame, 2000, event));
   TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("edited") >= 0);
 
   const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":12,"weekly":22,"resetSecs":32})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 3000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 3000, event));
   TEST_ASSERT_EQUAL_INT(0, state.current.themeSpecRaw.length());
   TEST_ASSERT_TRUE(ThemeSpecRawForFrame(state, state.current).indexOf("edited") >= 0);
   TEST_ASSERT_FALSE(ThemeSpecRawForFrame(state, state.current).indexOf("first") >= 0);
@@ -1360,7 +1337,7 @@ void testThemeSpecMetadataOnlyFrameKeepsPreviousRenderableRaw() {
   SerialConsumeEvent event;
 
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"cached"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("cached") >= 0);
 
   state.cachedThemeId = "";
@@ -1368,7 +1345,7 @@ void testThemeSpecMetadataOnlyFrameKeepsPreviousRenderableRaw() {
   state.cachedThemeSpecRaw = "";
 
   const char* metadataOnlyFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, metadataOnlyFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, metadataOnlyFrame, 2000, event));
   TEST_ASSERT_TRUE(event.themeSpecCacheHit);
   TEST_ASSERT_EQUAL_INT(0, state.current.themeSpecRaw.length());
   TEST_ASSERT_TRUE(ThemeSpecRawForFrame(state, state.current).indexOf("cached") >= 0);
@@ -1379,11 +1356,11 @@ void testUnknownMetadataOnlyThemeSpecDoesNotBlankPreviousRenderableRaw() {
   SerialConsumeEvent event;
 
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"clippy","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"cached"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("cached") >= 0);
 
   const char* metadataOnlyFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"clippy","themeRev":2}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, metadataOnlyFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, metadataOnlyFrame, 2000, event));
   TEST_ASSERT_TRUE(event.themeSpecCacheHit);
   TEST_ASSERT_EQUAL_STRING("clippy", state.current.themeSpecId.c_str());
   TEST_ASSERT_EQUAL_INT(1, state.current.themeSpecRev);
@@ -1396,12 +1373,12 @@ void testUnconfirmedThemeSpecNullKeepsCachedLayout() {
   SerialConsumeEvent event;
 
   const char* studioFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"cached"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, studioFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, studioFrame, 1000, event));
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("cached") >= 0);
 
   const char* accidentalClearFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":21,"resetSecs":31,"theme":"mini","themeSpec":null})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, accidentalClearFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, accidentalClearFrame, 2000, event));
   TEST_ASSERT_FALSE(event.themeSpecChanged);
   TEST_ASSERT_TRUE(event.themeSpecCacheHit);
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
@@ -1415,12 +1392,12 @@ void testConfirmedThemeSpecNullClearsCachedLayout() {
   SerialConsumeEvent event;
 
   const char* studioFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":30,"themeSpec":{"themeSpecVersion":1,"themeId":"mini-transport","themeRev":1,"primitives":[{"type":"text","x":1,"y":2,"fontSize":1,"text":"cached"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, studioFrame, 1000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, studioFrame, 1000, event));
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_TRUE(state.current.themeSpecRaw.indexOf("cached") >= 0);
 
   const char* clearFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":21,"resetSecs":31,"theme":"mini","themeSpec":null,"confirmClearThemeSpec":true})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, clearFrame, 2000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, clearFrame, 2000, event));
   TEST_ASSERT_TRUE(event.themeSpecChanged);
   TEST_ASSERT_FALSE(event.themeSpecCacheHit);
   TEST_ASSERT_FALSE(state.current.hasThemeSpec);
@@ -1428,7 +1405,7 @@ void testConfirmedThemeSpecNullClearsCachedLayout() {
   TEST_ASSERT_EQUAL_STRING("", state.current.themeSpecRaw.c_str());
 
   const char* liveFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":12,"weekly":22,"resetSecs":32,"theme":"mini"})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 3000, true, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, liveFrame, 3000, event));
   TEST_ASSERT_FALSE(event.themeSpecCacheHit);
   TEST_ASSERT_FALSE(state.current.hasThemeSpec);
 }
@@ -1529,10 +1506,10 @@ int main() {
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
+  RUN_TEST(testLegacyThemeFieldsAreIgnored);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
-  RUN_TEST(testThemeSpecPartialFailurePolicyKeepsLastFrameClean);
-  RUN_TEST(testThemeSpecErrorFrameKeepsCachedThemeVisible);
-  RUN_TEST(testThemeSpecErrorFrameRestoresCachedThemeAfterPlainFrame);
+  RUN_TEST(testThemeSpecErrorFrameUsesFullRender);
+  RUN_TEST(testThemeSpecErrorFrameDoesNotReplaceItselfWithCachedTheme);
   RUN_TEST(testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset);
   RUN_TEST(testThemeSpecIgnoresUpdateMetadataForVisualDirty);
   RUN_TEST(testThemeSpecUpdateAvailabilityDirtiesOnlyLabelField);

@@ -22,25 +22,8 @@ namespace esp8266 {
 
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 
-enum class GifLayoutMode : uint8_t {
-  BottomRightMini,
-  FullscreenCenter,
-  FullscreenCenterLower,
-  TopRightOverlay,
-  Explicit,
-};
-
-enum class GifFailureSlot : uint8_t {
-  MiniTheme = 0,
-  Reserved1 = 1,
-  Reserved2 = 2,
-  Reserved3 = 3,
-};
-
 struct GifPlaybackRequest {
   const char* assetPath = nullptr;
-  GifLayoutMode layoutMode = GifLayoutMode::BottomRightMini;
-  GifFailureSlot failureSlot = GifFailureSlot::MiniTheme;
   int x = 0;
   int y = 0;
   int width = 0;
@@ -68,33 +51,14 @@ struct GifCoreStatusSnapshot {
 class GifCoreESP8266 {
  public:
 #if !CODEXBAR_DISPLAY_GIF_CORE
-  void Setup(const char* preloadAssetPath = nullptr) { (void)preloadAssetPath; }
-  void Stop() {}
+  void Setup() {}
   void ReleaseMemory() {}
-  bool PrepareDecoder() { return false; }
-  void ResetFrameSchedule() {}
   void ResetForAssetUpdate() {}
-
-  bool EnsureReady(TFT_eSPI& tft, const GifPlaybackRequest& request) {
-    (void)tft;
-    (void)request;
-    return false;
-  }
 
   bool Tick(TFT_eSPI& tft, const GifPlaybackRequest& request, bool forceFrame) {
     (void)tft;
     (void)request;
     (void)forceFrame;
-    return false;
-  }
-
-  int ReservedWidthFor(const char* assetPath, int fallbackWidth) const {
-    (void)assetPath;
-    return fallbackWidth;
-  }
-
-  bool IsCurrentAssetPresent(const char* assetPath) const {
-    (void)assetPath;
     return false;
   }
 
@@ -105,26 +69,16 @@ class GifCoreESP8266 {
     return snapshot;
   }
 #else
-  void Setup(const char* preloadAssetPath = nullptr);
-  void Stop();
+  void Setup();
   void ReleaseMemory();
-  bool PrepareDecoder();
-  void ResetFrameSchedule();
   void ResetForAssetUpdate();
-
-  bool EnsureReady(TFT_eSPI& tft, const GifPlaybackRequest& request);
   bool Tick(TFT_eSPI& tft, const GifPlaybackRequest& request, bool forceFrame);
-
-  int ReservedWidthFor(const char* assetPath, int fallbackWidth) const;
-  bool IsCurrentAssetPresent(const char* assetPath) const;
   GifCoreStatusSnapshot StatusSnapshot() const;
 
  private:
   using GifFailureGuard = GifFailureGuardState;
 
   static constexpr int kMaxLinePixels = 240;
-  static constexpr uint8_t kFailureGuardSlots = 4;
-
   static GifCoreESP8266* activeInstance_;
 
   static void* OpenCallback(const char* filename, int32_t* fileSize);
@@ -135,10 +89,9 @@ class GifCoreESP8266 {
 
   void DrawCallbackImpl(GIFDRAW* draw);
 
-  GifFailureGuard& GuardForSlot(GifFailureSlot slot);
-  void NoteFailure(GifFailureSlot slot, const char* path, const char* stage);
-  void NoteSuccess(GifFailureSlot slot, const char* path);
-  bool IsBlocked(GifFailureSlot slot, const char* path);
+  void NoteFailure(const char* path, const char* stage);
+  void NoteSuccess(const char* path);
+  bool IsBlocked(const char* path);
 
   bool EnsureStorage(const char* path);
   void ConfigureDrawRect(TFT_eSPI& tft, const GifPlaybackRequest& request);
@@ -148,6 +101,7 @@ class GifCoreESP8266 {
   void DrawScaledCallbackImpl(GIFDRAW* draw);
   bool EnsureDecoder();
   void ReleaseDecoder();
+  void Stop();
 
   AnimatedGIF* decoder_ = nullptr;
   File file_;
@@ -164,14 +118,13 @@ class GifCoreESP8266 {
   int drawWidth_ = 0;
   int drawHeight_ = 0;
   bool hasBackgroundColor_ = false;
+  bool firstFrameCoversCanvasOpaque_ = false;
   uint16_t backgroundColor_ = 0x0000;
   String assetPath_ = "";
   String lastErrorPath_ = "";
   String lastErrorStage_ = "";
   unsigned int lastErrorFailures_ = 0;
-  GifLayoutMode layoutMode_ = GifLayoutMode::BottomRightMini;
-  GifFailureSlot failureSlot_ = GifFailureSlot::MiniTheme;
-  GifFailureGuard guards_[kFailureGuardSlots];
+  GifFailureGuard guard_;
   TFT_eSPI* tft_ = nullptr;
   uint16_t lineBuffer_[kMaxLinePixels];
 #endif

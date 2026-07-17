@@ -21,7 +21,6 @@ const MAX_PRIMITIVES = 32;
 const COLOR_RE = /^#[A-Fa-f0-9]{6}$/;
 const THEME_ID_RE = /^[a-z0-9][a-z0-9\-_]{2,63}$/;
 const FIXED_THEME_REV = 1;
-const FIXED_FALLBACK_THEME = "mini";
 const THEME_PACK_MIN_FIRMWARE = "1.0.24";
 const DEFAULT_TARGET_ORIGIN = "";
 const TARGET_STORAGE_KEY = "codexbar.themeStudio.targetOrigin";
@@ -196,7 +195,6 @@ interface ThemeSpec {
   themeSpecVersion: 1;
   themeId: string;
   themeRev: number;
-  fallbackTheme?: "classic" | "crt" | "mini";
   bgColor?: string;
   primitives: Primitive[];
 }
@@ -2119,7 +2117,6 @@ const COZY_MEADOW_SPEC: ThemeSpec = {
   themeSpecVersion: 1,
   themeId: "cozy-meadow",
   themeRev: FIXED_THEME_REV,
-  fallbackTheme: FIXED_FALLBACK_THEME,
   bgColor: "#9DE7F7",
   primitives: [
     { type: "sprite", x: 0, y: 0, width: 240, height: 240, assetPath: COZY_BACKGROUND_SPRITE_PATH },
@@ -2140,7 +2137,6 @@ const CLAUDE_CREATURE_SPEC: ThemeSpec = {
   themeSpecVersion: 1,
   themeId: "claude-creature",
   themeRev: FIXED_THEME_REV,
-  fallbackTheme: FIXED_FALLBACK_THEME,
   bgColor: "#000000",
   primitives: [
     { type: "text", x: 9, y: 8, text: "{label} Usage", font: 2, fontSize: 1, color: "#FF9B7B" },
@@ -2175,7 +2171,6 @@ const CLIPPY_SPEC: ThemeSpec = {
   themeSpecVersion: 1,
   themeId: "clippy",
   themeRev: FIXED_THEME_REV,
-  fallbackTheme: FIXED_FALLBACK_THEME,
   bgColor: "#000000",
   primitives: [
     { type: "sprite", x: 0, y: 0, width: 240, height: 240, assetPath: CLIPPY_BACKGROUND_SPRITE_PATH },
@@ -2235,7 +2230,6 @@ const SYNTHWAVE_SPEC: ThemeSpec = {
   themeSpecVersion: 1,
   themeId: "synthwave",
   themeRev: FIXED_THEME_REV,
-  fallbackTheme: FIXED_FALLBACK_THEME,
   bgColor: "#050014",
   primitives: [
     { type: "sprite", x: 0, y: 0, width: 240, height: 128, assetPath: SYNTHWAVE_TOP_SPRITE_PATH },
@@ -2329,7 +2323,6 @@ const initialSpec: ThemeSpec = {
   themeSpecVersion: 1,
   themeId: "mini-classic",
   themeRev: FIXED_THEME_REV,
-  fallbackTheme: FIXED_FALLBACK_THEME,
   bgColor: "#000000",
   primitives: [
     { type: "text", x: 75, y: 4, binding: "label", fontSize: 3, color: "#999999" },
@@ -2461,7 +2454,7 @@ function loadSavedThemes(): SavedTheme[] {
       .filter(isSavedTheme)
       .map((theme) => {
         const spec = cloneSpec(theme.spec);
-        normalizeMiniThemeSpec(spec);
+        normalizeThemeSpec(spec);
         return { ...theme, spec };
       })
       .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
@@ -2494,7 +2487,7 @@ function loadCurrentThemeDraft(): CurrentThemeDraft | null {
       return null;
     }
     const spec = cloneSpec(parsed.spec);
-    normalizeMiniThemeSpec(spec);
+    normalizeThemeSpec(spec);
     return {
       spec,
       selectedIndex: Math.max(-1, Math.min(parsed.selectedIndex, spec.primitives.length - 1)),
@@ -2597,7 +2590,7 @@ async function refreshWorkspaceThemes() {
         continue;
       }
       const spec = importThemeSpec(entry.spec);
-      normalizeMiniThemeSpec(spec);
+      normalizeThemeSpec(spec);
       const result = validateSpec(spec);
       if (result.errors.length > 0) {
         continue;
@@ -2968,17 +2961,16 @@ async function refreshDeviceProfile(): Promise<boolean> {
 }
 
 function syncJsonFromSpec() {
-  normalizeMiniThemeSpec(state.spec);
+  normalizeThemeSpec(state.spec);
   state.jsonText = prettyJson(state.spec);
   state.jsonDirty = false;
   validateCurrentSpec();
   persistCurrentThemeDraft();
 }
 
-function normalizeMiniThemeSpec(spec: ThemeSpec) {
+function normalizeThemeSpec(spec: ThemeSpec) {
   spec.themeSpecVersion = 1;
   spec.themeRev = FIXED_THEME_REV;
-  spec.fallbackTheme = FIXED_FALLBACK_THEME;
   if (!Array.isArray(spec.primitives)) {
     spec.primitives = [];
   }
@@ -3210,9 +3202,6 @@ function validateSpec(spec: ThemeSpec): { errors: string[]; warnings: string[] }
   }
   if (spec.themeRev !== FIXED_THEME_REV) {
     errors.push(`themeRev muss ${FIXED_THEME_REV} sein.`);
-  }
-  if (spec.fallbackTheme !== FIXED_FALLBACK_THEME) {
-    errors.push("fallbackTheme muss mini sein.");
   }
   if (spec.bgColor && !COLOR_RE.test(spec.bgColor)) {
     errors.push("Background muss #RRGGBB sein.");
@@ -6348,7 +6337,7 @@ function bindEvents() {
       if (primitive?.type === "text") {
         pushHistory();
         primitive.text = input.value;
-        normalizeMiniThemeSpec(state.spec);
+        normalizeThemeSpec(state.spec);
         state.jsonText = prettyJson(state.spec);
         state.jsonDirty = false;
         validateCurrentSpec();
@@ -6464,7 +6453,7 @@ function focusInlineTextEditor() {
 }
 
 function syncStateWithoutRender() {
-  normalizeMiniThemeSpec(state.spec);
+  normalizeThemeSpec(state.spec);
   state.jsonText = prettyJson(state.spec);
   state.jsonDirty = false;
   validateCurrentSpec();
@@ -7223,7 +7212,7 @@ function applyPendingJsonEdit(successNotice?: string): boolean {
   }
   try {
     const imported = importThemeSpec(JSON.parse(state.jsonText));
-    normalizeMiniThemeSpec(imported);
+    normalizeThemeSpec(imported);
     const result = validateSpec(imported);
     if (result.errors.length > 0) {
       state.notice = `JSON not applied: ${result.errors.slice(0, 3).join(" ")}`;
@@ -7263,7 +7252,6 @@ function importThemeSpec(value: unknown): ThemeSpec {
     themeSpecVersion: 1,
     themeId: stringValue(value.themeId) ?? stringValue(value.id) ?? "",
     themeRev: numberValue(value.themeRev) ?? numberValue(value.rev) ?? FIXED_THEME_REV,
-    fallbackTheme: (stringValue(value.fallbackTheme) ?? stringValue(value.fb) ?? FIXED_FALLBACK_THEME) as ThemeSpec["fallbackTheme"],
     bgColor: stringValue(value.bgColor) ?? stringValue(value.bg),
     primitives: primitives.map(importPrimitive),
   };
@@ -8548,9 +8536,6 @@ function buildDeviceThemeSpec(spec: ThemeSpec): Record<string, unknown> {
     rev: spec.themeRev,
     p: spec.primitives.map(buildDevicePrimitive),
   };
-  if (spec.fallbackTheme) {
-    compact.fb = spec.fallbackTheme;
-  }
   if (spec.bgColor) {
     compact.bg = spec.bgColor;
   }
@@ -8665,7 +8650,6 @@ function buildThemeSpecClearPayload(): Record<string, unknown> {
     weekly: frame.weekly,
     resetSecs: frame.resetSecs,
     usageMode: frame.usageMode,
-    theme: FIXED_FALLBACK_THEME,
     confirmClearThemeSpec: true,
     themeSpec: null,
   };

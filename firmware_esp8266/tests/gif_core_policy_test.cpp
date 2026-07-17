@@ -87,40 +87,6 @@ bool testBackoffResetOnSuccess() {
   return true;
 }
 
-bool testRequestSwitching() {
-  if (!expect(
-          !GifCorePolicy::RequestChanged("/mini.gif", 0, 0, "/mini.gif", 0, 0),
-          "identical request should not switch")) {
-    return false;
-  }
-
-  if (!expect(
-          GifCorePolicy::RequestChanged("/mini.gif", 0, 0, "/other.gif", 0, 0),
-          "asset path change should switch")) {
-    return false;
-  }
-
-  if (!expect(
-          GifCorePolicy::RequestChanged("/mini.gif", 0, 0, "/mini.gif", 1, 0),
-          "layout change should switch")) {
-    return false;
-  }
-
-  if (!expect(
-          GifCorePolicy::RequestChanged("/mini.gif", 0, 0, "/mini.gif", 0, 1),
-          "failure slot change should switch")) {
-    return false;
-  }
-
-  if (!expect(
-          !GifCorePolicy::RequestChanged(nullptr, 0, 0, "", 0, 0),
-          "null and empty path should be treated as equal")) {
-    return false;
-  }
-
-  return true;
-}
-
 bool testFitContainPreservesAspectRatio() {
   const auto wideBox = GifCorePolicy::FitContain(10, 20, 160, 80, 80, 80);
   if (!expect(wideBox.x == 50, "square gif in wide box should be horizontally centered")) {
@@ -399,7 +365,7 @@ bool testDecoderAllocationStaysInsideRealPlayback(
   }
   const std::string cacheFunction = renderer.substr(cacheStart, cacheEnd - cacheStart);
   if (!expect(
-          cacheFunction.find("PrepareDecoder(") == std::string::npos,
+          cacheFunction.find("EnsureDecoder(") == std::string::npos,
           "theme parsing must never allocate the GIF decoder")) {
     return false;
   }
@@ -411,7 +377,7 @@ bool testDecoderAllocationStaysInsideRealPlayback(
   }
 
   const std::size_t validation = gifCore.find("ValidateGifAssetFile(");
-  const std::size_t decoderAllocation = gifCore.find("if (!PrepareDecoder())", validation);
+  const std::size_t decoderAllocation = gifCore.find("if (!EnsureDecoder())", validation);
   if (!expect(
           validation != std::string::npos && decoderAllocation != std::string::npos &&
               validation < decoderAllocation,
@@ -419,7 +385,7 @@ bool testDecoderAllocationStaysInsideRealPlayback(
     return false;
   }
   if (!expect(
-          gifCore.find("if (!PrepareDecoder())", decoderAllocation + 1) == std::string::npos,
+          gifCore.find("if (!EnsureDecoder())", decoderAllocation + 1) == std::string::npos,
           "real GIF playback must be the only decoder allocation call site")) {
     return false;
   }
@@ -438,12 +404,14 @@ bool testGifLoopResetStaysAtomic(const char* gifCorePath) {
   const std::string resetBlock = gifCore.substr(loopReset, loopResetEnd - loopReset);
   const std::size_t transaction = resetBlock.find("display::DisplayTransaction transaction;");
   const std::size_t reset = resetBlock.find("decoder_->reset();");
+  const std::size_t safeCheck = resetBlock.find("if (!firstFrameCoversCanvasOpaque_)");
   const std::size_t clear = resetBlock.find("ClearDrawRect(tft);");
   const std::size_t firstFrame = resetBlock.find("decoder_->playFrame(false, &delayMs, nullptr);");
   return expect(
-      transaction != std::string::npos && reset != std::string::npos && clear != std::string::npos &&
-          firstFrame != std::string::npos && transaction < reset && reset < clear && clear < firstFrame,
-      "GIF loop clear and first frame must share one display transaction");
+      transaction != std::string::npos && reset != std::string::npos && safeCheck != std::string::npos &&
+          clear != std::string::npos && firstFrame != std::string::npos &&
+          transaction < reset && reset < safeCheck && safeCheck < clear && clear < firstFrame,
+      "GIF loop clear must be conditional while reset and first frame stay in one transaction");
 }
 
 bool testLegacyMiniThemeUsesLiveUsageMode(const char* mainPath) {
@@ -467,11 +435,13 @@ bool testLegacyMiniThemeUsesLiveUsageMode(const char* mainPath) {
   const std::string loader = mainSource.substr(loadStart, loadEnd - loadStart);
   const std::size_t active = loader.find("readActiveThemeSpecPath(activePath)");
   const std::size_t currentDefault = loader.find("loadStoredThemeSpecCacheFromPath(kDefaultThemeSpecPath)");
+  const std::size_t previousDefault = loader.find("loadStoredThemeSpecCacheFromPath(kPreviousDefaultThemeSpecPath)");
   const std::size_t legacyDefault = loader.find("loadStoredThemeSpecCacheFromPath(kLegacyDefaultThemeSpecPath)");
   return expect(
-      active != std::string::npos && currentDefault != std::string::npos && legacyDefault != std::string::npos &&
-          active < currentDefault && currentDefault < legacyDefault,
-      "a 1.0.36 filesystem without theme-active must fall back to its legacy Mini spec");
+      active != std::string::npos && currentDefault != std::string::npos &&
+          previousDefault != std::string::npos && legacyDefault != std::string::npos &&
+          active < currentDefault && currentDefault < previousDefault && previousDefault < legacyDefault,
+      "OTA filesystems must fall back through current, 1.0.37, then 1.0.36 Mini specs");
 }
 
 bool testInternalUploadPathIsRejected(const char* mainPath) {
@@ -505,9 +475,6 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testBackoffResetOnSuccess()) {
-    return 1;
-  }
-  if (!testRequestSwitching()) {
     return 1;
   }
   if (!testFitContainPreservesAspectRatio()) {

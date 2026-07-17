@@ -91,7 +91,7 @@ void loop() {
   unsigned long renderDurationUs = 0;
 
   codexbar_display::core::SerialConsumeEvent event;
-  if (codexbar_display::app::ConsumeSerial(runtimeCtx, false, millis(), event)) {
+  if (codexbar_display::app::ConsumeSerial(runtimeCtx, millis(), event)) {
     renderer.OnFrameAccepted(runtimeCtx, event);
     Serial.println("frame_received");
   }

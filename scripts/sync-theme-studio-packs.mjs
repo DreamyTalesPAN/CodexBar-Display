@@ -32,7 +32,6 @@ const themes = [
       v: 1,
       id: "synthwave",
       rev: 1,
-      fb: "mini",
       bg: "#050014",
       p: [
         { t: "sp", x: 0, y: 0, w: 240, h: 128, a: paths.synthTop },
@@ -59,7 +58,6 @@ const themes = [
       v: 1,
       id: "claude-creature",
       rev: 1,
-      fb: "mini",
       bg: "#000000",
       p: [
         { t: "tx", x: 9, y: 8, v: "{label} Usage", f: 2, s: 1, c: "#FF9B7B" },
@@ -97,7 +95,6 @@ const themes = [
       v: 1,
       id: "clippy",
       rev: 1,
-      fb: "mini",
       bg: "#000000",
       p: [
         { t: "sp", x: 0, y: 0, w: 240, h: 240, a: paths.clippyBg },

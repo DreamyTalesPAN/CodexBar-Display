@@ -963,8 +963,6 @@ class ThemeSpecSink final : public themespec::Sink {
   void DrawGif(const themespec::GifCommand& cmd) override {
     GifPlaybackRequest request;
     request.assetPath = cmd.assetPath;
-    request.layoutMode = GifLayoutMode::Explicit;
-    request.failureSlot = GifFailureSlot::Reserved1;
     request.x = cmd.x;
     request.y = cmd.y;
     request.width = cmd.width;

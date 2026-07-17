@@ -2,7 +2,6 @@
 
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 #include "renderer_esp8266_display_state.h"
-#include "theme_defs.h"
 #else
 #include "renderer_esp8266_probe.h"
 #endif
@@ -13,13 +12,7 @@ namespace esp8266 {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 namespace {
 
-constexpr const char* kDefaultGifAssetPath = "/themes/mini/mini.gif";
 constexpr uint16_t kBacklightPwmRange = 1023;
-
-const char* themeName(Theme theme) {
-  (void)theme;
-  return "mini";
-}
 
 uint8_t clampBrightnessPercent(uint8_t percent) {
   if (percent < 1) {
@@ -44,7 +37,7 @@ void RendererESP8266::Setup(app::RuntimeContext& ctx) {
 #endif
   display::Tft().init();
   display::Tft().setRotation(0);
-  display::GifCore().Setup(kDefaultGifAssetPath);
+  display::GifCore().Setup();
 #else
   probe::Setup(ctx);
 #endif
@@ -59,7 +52,7 @@ RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
     snapshot.themeSpecRev = display::CurrentFrame().themeSpecRev;
     snapshot.activeTheme = snapshot.themeSpecId.length() > 0 ? snapshot.themeSpecId : "theme-spec";
   } else {
-    snapshot.activeTheme = themeName(display::ActiveTheme());
+    snapshot.activeTheme = "theme-missing";
   }
   snapshot.themeSpecRenderOk = !snapshot.themeSpecActive || display::ThemeSpecRenderOk();
   snapshot.themeSpecRenderError = snapshot.themeSpecActive ? display::ThemeSpecRenderError() : "";
@@ -109,7 +102,7 @@ RendererHealthSnapshot RendererESP8266::HealthSnapshot() const {
                                ? display::CurrentFrame().themeSpecId
                                : "theme-spec";
   } else {
-    snapshot.activeTheme = themeName(display::ActiveTheme());
+    snapshot.activeTheme = "theme-missing";
   }
   snapshot.themeSpecRenderOk = !snapshot.themeSpecActive || display::ThemeSpecRenderOk();
   snapshot.themeSpecRenderError = snapshot.themeSpecActive ? display::ThemeSpecRenderError() : "";
@@ -190,14 +183,6 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
 
-  if (display::CurrentFrame().hasTheme) {
-    Theme frameTheme;
-    if (themeFromName(display::CurrentFrame().theme, frameTheme) && frameTheme != display::ActiveTheme()) {
-      display::ActiveTheme() = frameTheme;
-      display::ScreenDirty() = true;
-    }
-  }
-
   if (event.visualChanged) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     if (!display::ScreenDirty() &&
@@ -205,9 +190,6 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
         display::CurrentFrame().hasThemeSpec &&
         display::CurrentThemeSpecRenderedSuccessfully()) {
       if (display::RenderThemeSpecPartial(event.themeSpecChangedFields)) {
-        return;
-      }
-      if (core::KeepLastThemeSpecFrameAfterPartialRenderFailure(display::CurrentFrame(), event)) {
         return;
       }
     }
@@ -266,19 +248,19 @@ void RendererESP8266::DrawStatus(
     y = 6;
   }
 
-  display::SetClassicTextSize(titleSize);
+  display::SetTextSize(titleSize);
   tft.setTextColor(TFT_CYAN, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(title.c_str(), titleSize), y);
   tft.print(title);
 
   y += display::TextPixelHeight(titleSize) + 14;
-  display::SetClassicTextSize(lineSize);
+  display::SetTextSize(lineSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(line1.c_str(), lineSize), y);
   tft.print(line1);
 
   y += display::TextPixelHeight(lineSize) + 8;
-  display::SetClassicTextSize(line2Size);
+  display::SetTextSize(line2Size);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(line2.c_str(), line2Size), y);
   tft.print(line2);
@@ -322,31 +304,31 @@ void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const Stri
     y = 6;
   }
 
-  display::SetClassicTextSize(titleSize);
+  display::SetTextSize(titleSize);
   tft.setTextColor(TFT_CYAN, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(title, titleSize), y);
   tft.print(title);
 
   y += display::TextPixelHeight(titleSize) + 14;
-  display::SetClassicTextSize(actionSize);
+  display::SetTextSize(actionSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(action, actionSize), y);
   tft.print(action);
 
   y += display::TextPixelHeight(actionSize) + 4;
-  display::SetClassicTextSize(ssidSize);
+  display::SetTextSize(ssidSize);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(ssid.c_str(), ssidSize), y);
   tft.print(ssid);
 
   y += display::TextPixelHeight(ssidSize) + 10;
-  display::SetClassicTextSize(detailSize);
+  display::SetTextSize(detailSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(detail, detailSize), y);
   tft.print(detail);
 
   y += display::TextPixelHeight(detailSize) + 4;
-  display::SetClassicTextSize(addressSize);
+  display::SetTextSize(addressSize);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(address.c_str(), addressSize), y);
   tft.print(address);
@@ -391,19 +373,19 @@ void RendererESP8266::DrawConnectedSetupInstructions(
     y = 6;
   }
 
-  display::SetClassicTextSize(titleSize);
+  display::SetTextSize(titleSize);
   tft.setTextColor(TFT_CYAN, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(title, titleSize), y);
   tft.print(title);
 
   y += display::TextPixelHeight(titleSize) + 12;
-  display::SetClassicTextSize(actionSize);
+  display::SetTextSize(actionSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(action, actionSize), y);
   tft.print(action);
 
   y += display::TextPixelHeight(actionSize) + 10;
-  display::SetClassicTextSize(detailSize);
+  display::SetTextSize(detailSize);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   tft.setCursor(display::CenteredTextX(detail, detailSize), y);
   tft.print(detail);
@@ -476,16 +458,6 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
   DrawStatus(ctx, "VIBE TV", "Theme missing", "Install Theme");
 #else
   probe::Render(ctx);
-#endif
-}
-
-bool RendererESP8266::DrawTopLine(app::RuntimeContext& ctx) {
-#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
-  display::AttachContext(ctx);
-  return false;
-#else
-  (void)ctx;
-  return false;
 #endif
 }
 

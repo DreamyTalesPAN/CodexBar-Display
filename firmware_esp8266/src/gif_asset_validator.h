@@ -17,6 +17,7 @@ enum class GifValidationError : uint8_t {
 struct GifValidationInfo {
   uint16_t width = 0;
   uint16_t height = 0;
+  bool firstFrameCoversCanvasOpaque = false;
 };
 
 using GifReadAtCallback = size_t (*)(void* context, size_t offset, uint8_t* destination, size_t length);

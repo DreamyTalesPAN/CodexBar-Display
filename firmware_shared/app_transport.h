@@ -22,7 +22,6 @@ struct TransportConfig {
 
 inline bool ConsumeSerial(
     RuntimeContext& ctx,
-    bool allowTheme,
     unsigned long nowMillis,
     core::SerialConsumeEvent& outEvent) {
   outEvent = {};
@@ -35,7 +34,6 @@ inline bool ConsumeSerial(
             ctx.runtime,
             c,
             nowMillis,
-            allowTheme,
             event)) {
       outEvent = event;
       return true;

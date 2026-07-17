@@ -3,11 +3,7 @@
 #include <iterator>
 #include <string>
 
-#include "../src/frame_render_policy.h"
-
 namespace {
-
-using codexbar_display::esp8266::FrameRenderPolicy;
 
 bool expect(bool condition, const char* message) {
   if (!condition) {
@@ -22,27 +18,6 @@ std::string readFile(const char* path) {
   return std::string(
       std::istreambuf_iterator<char>(input),
       std::istreambuf_iterator<char>());
-}
-
-bool testTransportPolicy() {
-  if (!expect(
-          FrameRenderPolicy::ShouldDeferToMainLoop(true, true),
-          "visual WiFi frames must be deferred to the main loop")) {
-    return false;
-  }
-  if (!expect(
-          !FrameRenderPolicy::ShouldDeferToMainLoop(true, false),
-          "metadata-only WiFi frames must not create display work")) {
-    return false;
-  }
-  if (!expect(
-          !FrameRenderPolicy::ShouldDeferToMainLoop(false, true),
-          "USB visual frames must keep their existing render path")) {
-    return false;
-  }
-  return expect(
-      !FrameRenderPolicy::ShouldDeferToMainLoop(false, false),
-      "metadata-only USB frames must not create display work");
 }
 
 bool testWifiHandlerAcknowledgesBeforeDispatch(const std::string& source) {
@@ -62,7 +37,7 @@ bool testWifiHandlerAcknowledgesBeforeDispatch(const std::string& source) {
       "WiFi frame handler must ACK before dispatching accepted frame work");
 }
 
-bool testWifiDispatchForcesDeferredRender(const std::string& source) {
+bool testWifiDispatchStoresOnePendingEvent(const std::string& source) {
   const std::size_t dispatchStart = source.find("void markFrameAccepted(");
   const std::size_t dispatchEnd = source.find("\nconst char* transportCapabilitiesJSON", dispatchStart);
   if (!expect(
@@ -72,13 +47,25 @@ bool testWifiDispatchForcesDeferredRender(const std::string& source) {
   }
 
   const std::string dispatch = source.substr(dispatchStart, dispatchEnd - dispatchStart);
-  const std::size_t policy = dispatch.find("FrameRenderPolicy::ShouldDeferToMainLoop");
-  const std::size_t dirty = dispatch.find("runtimeCtx.screenDirty = true", policy);
-  const std::size_t renderer = dispatch.find("renderer.OnFrameAccepted", policy);
+  const std::size_t wifiCheck = dispatch.find("if (wifiTransport && event.visualChanged)");
+  const std::size_t store = dispatch.find("pendingWifiRenderEvent = event", wifiCheck);
+  const std::size_t pending = dispatch.find("pendingWifiRender = true", store);
+  const std::size_t directRender = dispatch.find("renderAcceptedFrame(event)", pending);
   return expect(
-      policy != std::string::npos && dirty != std::string::npos &&
-          renderer != std::string::npos && dirty < renderer,
-      "WiFi visual frames must mark the screen dirty before renderer dispatch");
+      wifiCheck != std::string::npos && store != std::string::npos && pending != std::string::npos &&
+          directRender != std::string::npos && wifiCheck < store && store < pending && pending < directRender,
+      "WiFi visual frames must store one pending event while non-WiFi frames render directly");
+}
+
+bool testPendingWifiRenderRunsBeforeUsb(const std::string& source) {
+  const std::size_t loopStart = source.find("void loop()");
+  const std::size_t pending = source.find("if (pendingWifiRender)", loopStart);
+  const std::size_t render = source.find("renderAcceptedFrame(event)", pending);
+  const std::size_t usb = source.find("ConsumeSerial(runtimeCtx, millis(), event)", render);
+  return expect(
+      loopStart != std::string::npos && pending != std::string::npos && render != std::string::npos &&
+          usb != std::string::npos && pending < render && render < usb,
+      "the pending WiFi event must render before USB can replace the current frame");
 }
 
 }  // namespace
@@ -90,9 +77,9 @@ int main(int argc, char** argv) {
   }
 
   const std::string source = readFile(argv[1]);
-  if (!testTransportPolicy() ||
-      !testWifiHandlerAcknowledgesBeforeDispatch(source) ||
-      !testWifiDispatchForcesDeferredRender(source)) {
+  if (!testWifiHandlerAcknowledgesBeforeDispatch(source) ||
+      !testWifiDispatchStoresOnePendingEvent(source) ||
+      !testPendingWifiRenderRunsBeforeUsb(source)) {
     return 1;
   }
 
