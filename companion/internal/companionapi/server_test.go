@@ -305,17 +305,14 @@ func TestValidateRepairIdentityRejectsSetupAndBackgroundMismatch(t *testing.T) {
 	}
 }
 
-func TestDeviceIdentityMatchUsesStableIDOrLegacyActiveTarget(t *testing.T) {
+func TestDeviceIdentityMatchRequiresStableDeviceID(t *testing.T) {
 	cfg := runtimeconfig.Config{DeviceTarget: "http://192.168.178.72"}
 	hello := protocol.DeviceHello{DeviceID: "esp8266-123abc", NetworkMode: "station"}
-	if !deviceIdentityMatches(cfg, "http://192.168.178.72", hello) {
-		t.Fatal("a legacy paired target must remain the active reconnect candidate")
-	}
-	if deviceIdentityMatches(cfg, "http://192.168.178.73", hello) {
-		t.Fatal("a legacy config must not activate a different target")
+	if deviceIdentityMatches(cfg, hello) {
+		t.Fatal("a legacy target must not activate a device without stable identity")
 	}
 	cfg.DeviceID = "ESP8266-123ABC"
-	if !deviceIdentityMatches(cfg, "http://192.168.178.99", hello) {
+	if !deviceIdentityMatches(cfg, hello) {
 		t.Fatal("stable device identity must remain known after its IP changes")
 	}
 }
@@ -4471,6 +4468,43 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	}
 	if cfg.DeviceTarget != "" || cfg.DeviceToken != "" || cfg.DeviceID != "" || len(cfg.KnownDevices) != 0 {
 		t.Fatalf("expected reset to remove every stored device profile, got %+v", cfg)
+	}
+}
+
+func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
+	initial := runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	}
+	server := newTestServer(t, initial)
+	server.updateJobs["active-update"] = &firmwareUpdateJob{
+		ID:    "active-update",
+		Phase: "installing",
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "firmware_update_in_progress" {
+		t.Fatalf("error code=%q want firmware_update_in_progress", response.Error.Code)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceTarget != initial.DeviceTarget || cfg.DeviceToken != initial.DeviceToken || cfg.DeviceID != initial.DeviceID {
+		t.Fatalf("active update reset mutated config: %+v", cfg)
 	}
 }
 

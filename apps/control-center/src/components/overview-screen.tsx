@@ -144,7 +144,7 @@ export function OverviewScreen({
               </button>
             </div>
           ) : null}
-          {needsReconnect ? (
+          {needsReconnect && busyAction !== "firmware-update" ? (
             <ConnectionRecovery
               busyAction={busyAction}
               deviceSearchState={deviceSearchState}

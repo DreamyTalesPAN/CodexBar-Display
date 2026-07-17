@@ -567,8 +567,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         payload.settings?.display?.brightnessPercent ?? null;
       setBrightness(loadedBrightness);
       if (payload.device) {
-        mergeDevice(payload.device);
-        setDeviceState(payload.device.paired ? "paired" : "online");
         if (
           !initialThemeId &&
           payload.device.activeTheme &&
@@ -577,10 +575,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           )
         ) {
           setSelectedThemeId(payload.device.activeTheme);
-        }
-        if (payload.device.target) {
-          setDeviceTarget(payload.device.target);
-          rememberDeviceTarget(payload.device.target);
         }
       }
       addEvent({
@@ -621,7 +615,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     initialThemeId,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
-    mergeDevice,
     runCompanion,
   ]);
 
@@ -1458,14 +1451,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const savedValue =
           payload.settings?.display?.brightnessPercent ?? value;
         setBrightness(savedValue);
-        if (payload.device) {
-          mergeDevice(payload.device);
-          setDeviceState(payload.device.paired ? "paired" : "online");
-          if (payload.device.target) {
-            setDeviceTarget(payload.device.target);
-            rememberDeviceTarget(payload.device.target);
-          }
-        }
         addEvent({
           label: "Brightness saved",
           detail: `Display brightness is set to ${savedValue}%.`,
@@ -1500,7 +1485,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
-      mergeDevice,
       runCompanion,
     ],
   );

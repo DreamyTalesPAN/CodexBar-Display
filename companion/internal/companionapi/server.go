@@ -152,6 +152,7 @@ type Server struct {
 	pauseDisplayStream     func(bool)
 	wakeDisplayStream      func()
 	firmwareUpdateActive   atomic.Bool
+	firmwareUpdateStartMu  sync.Mutex
 	configMu               sync.Mutex
 	selectionMu            sync.Mutex
 	selectionStateMu       sync.RWMutex
@@ -2240,6 +2241,18 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, ok := s.activeFirmwareUpdateJob(); ok {
+		writeError(
+			w,
+			http.StatusConflict,
+			"firmware_update_in_progress",
+			"VibeTV update is still running.",
+			"Wait for the update to finish before setting up another VibeTV.",
+		)
+		return
+	}
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
@@ -3248,6 +3261,8 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
 	cfg, hello, ok := s.requireDevice(w, r)
 	if !ok {
 		return
@@ -4926,7 +4941,7 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 			Firmware:    hello.Firmware,
 			NetworkMode: hello.NetworkMode,
 			Known:       deviceIdentityIsKnown(cfg, hello),
-			Active:      deviceIdentityMatches(cfg, found.target, hello),
+			Active:      deviceIdentityMatches(cfg, hello),
 		}
 		if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
 			byIdentity[key] = entry
@@ -4980,14 +4995,10 @@ func sortedDeviceSearchEntries(byIdentity map[string]deviceSearchEntry) []device
 	return devices
 }
 
-func deviceIdentityMatches(cfg runtimeconfig.Config, target string, hello protocol.DeviceHello) bool {
+func deviceIdentityMatches(cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
 	wantID := strings.TrimSpace(cfg.DeviceID)
 	gotID := strings.TrimSpace(hello.DeviceID)
-	if wantID != "" {
-		return gotID != "" && strings.EqualFold(wantID, gotID)
-	}
-	wantTarget := normalizeTarget(cfg.DeviceTarget)
-	return wantTarget != "" && wantTarget == normalizeTarget(target)
+	return wantID != "" && gotID != "" && strings.EqualFold(wantID, gotID)
 }
 
 func deviceIdentityIsKnown(cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
