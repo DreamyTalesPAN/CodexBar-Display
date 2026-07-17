@@ -248,6 +248,19 @@ EOF
   die "real app builds need --companion-binary path/to/${COMPANION_NAME}"
 }
 
+verify_companion_version() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    return 0
+  fi
+
+  local companion="${APP_DIR}/Contents/Helpers/${COMPANION_NAME}"
+  local expected="${VERSION#v}"
+  local actual
+  actual="$("$companion" version --short 2>/dev/null || true)"
+  [[ "$actual" == "$expected" ]] \
+    || die "Companion version ${actual:-unknown} does not match Mac App version ${expected}"
+}
+
 copy_runtime_agent_plist() {
   local target="$1"
   [[ -f "$RUNTIME_AGENT_PLIST" ]] || die "runtime LaunchAgent plist not found: ${RUNTIME_AGENT_PLIST}"
@@ -388,6 +401,7 @@ main() {
   copy_codexbar_distribution "${resources_dir}/CodexBar"
   copy_control_center_static "${resources_dir}/control-center"
   copy_companion_binary "$helpers_dir"
+  verify_companion_version
   copy_runtime_agent_plist "${launch_agents_dir}/${RUNTIME_AGENT_PLIST_NAME}"
   cp "${ROOT}/macos/VibeTVControlCenter/VibeTVControlCenter.entitlements" "${resources_dir}/VibeTVControlCenter.entitlements"
 

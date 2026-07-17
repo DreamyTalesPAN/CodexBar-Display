@@ -23,6 +23,7 @@ import type {
   DeviceState,
   DeviceInfo,
   ProviderSetupInfo,
+  SupportDiagnostics,
 } from "./control-center-types";
 import { ControlCenterButton } from "./control-center-button";
 import { DeviceTargetForm } from "./device-target-form";
@@ -31,6 +32,7 @@ import {
   ProviderSetupCard,
   providerSetupIsReady,
 } from "./provider-setup-card";
+import { SupportReportActions } from "./support-report-actions";
 
 type SetupScreenProps = {
   busyAction?: string | null;
@@ -55,6 +57,8 @@ type SetupScreenProps = {
   macAppRelease?: CompanionReleaseInfo | null;
   previewStep?: "mac-app" | null;
   providerSetup?: ProviderSetupInfo | null;
+  diagnostics?: SupportDiagnostics | null;
+  onCreateSupportReport?: () => void;
   requiresMacAppMigration?: boolean;
   showIntro?: boolean;
   setupComplete: boolean;
@@ -86,6 +90,8 @@ export function SetupScreen({
   macAppRelease = null,
   previewStep,
   providerSetup,
+  diagnostics,
+  onCreateSupportReport,
   requiresMacAppMigration = false,
   showIntro = true,
   setupComplete,
@@ -445,6 +451,16 @@ export function SetupScreen({
             </SetupStep>
           ) : null}
         </ol>
+
+        {!hostedMode ? (
+          <div className="border-t border-[#747A60] py-6">
+            <SupportReportActions
+              busyAction={busyAction}
+              diagnostics={diagnostics}
+              onCreate={onCreateSupportReport}
+            />
+          </div>
+        ) : null}
       </section>
     </div>
   );

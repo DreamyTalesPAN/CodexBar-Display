@@ -5,7 +5,6 @@ import {
   BarChart3,
   FileText,
   Grid2X2,
-  ListChecks,
   RefreshCw,
   SlidersHorizontal,
 } from "lucide-react";
@@ -28,11 +27,6 @@ type ControlCenterShellProps = {
 };
 
 const NAV_ITEMS: ShellNavItem[] = [
-  {
-    id: "setup",
-    label: "Setup",
-    icon: <ListChecks size={22} aria-hidden />,
-  },
   {
     id: "overview",
     label: "Overview",

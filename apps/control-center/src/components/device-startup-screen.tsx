@@ -6,14 +6,17 @@ import type {
   ApiError,
   DeviceCandidate,
   DeviceSearchState,
+  SupportDiagnostics,
 } from "./control-center-types";
+import { SupportReportActions } from "./support-report-actions";
 
 type Props = {
   busyAction?: string | null;
   deviceCandidates: DeviceCandidate[];
   deviceSearchState: DeviceSearchState;
   lastError?: ApiError | null;
-  onDecline: () => void;
+  diagnostics?: SupportDiagnostics | null;
+  onCreateSupportReport?: () => void;
   onSearch: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
 };
@@ -23,47 +26,43 @@ export function DeviceStartupScreen({
   deviceCandidates,
   deviceSearchState,
   lastError,
-  onDecline,
+  diagnostics,
+  onCreateSupportReport,
   onSearch,
   onSelect,
 }: Props) {
-  const selecting = busyAction === "select";
-  const reconnecting = busyAction === "repair";
+  const connecting = busyAction === "select" || busyAction === "repair";
   const searching =
-    deviceSearchState === "searching" || busyAction === "search";
-  const alternate =
-    deviceSearchState === "alternate" && deviceCandidates.length === 1;
-  const multiple = deviceSearchState === "multiple";
+    !connecting &&
+    (deviceSearchState === "idle" ||
+      deviceSearchState === "searching" ||
+      busyAction === "search");
+  const choosing =
+    !connecting &&
+    deviceSearchState === "multiple" &&
+    deviceCandidates.length > 1;
+  const connectionFailed = deviceSearchState === "repair-failed";
+  const failed =
+    deviceSearchState === "not-found" || deviceSearchState === "failed";
 
-  let title = "Reconnecting to your VibeTV";
-  let detail = "Checking your last connected VibeTV and your WiFi.";
-
-  if (searching) {
-    title = "Looking for your VibeTV";
-    detail = "Searching your WiFi for your last connected VibeTV and alternatives.";
-  } else if (selecting) {
-    title = "Connecting to VibeTV";
-    detail = "Connecting the selected VibeTV and waiting for a fresh image.";
-  } else if (reconnecting) {
-    title = "Reconnecting to your VibeTV";
-    detail = "Your saved VibeTV was found. Waiting for a fresh image.";
-  } else if (alternate) {
-    title = "Another VibeTV was found";
-    detail =
-      "Your last connected VibeTV is not available. Connect to this VibeTV instead?";
-  } else if (multiple) {
-    title = "Choose a VibeTV";
-    detail =
-      "Your last connected VibeTV is not available. Choose another VibeTV to connect.";
-  } else if (
-    deviceSearchState === "not-found" ||
-    deviceSearchState === "failed" ||
-    deviceSearchState === "repair-failed"
-  ) {
-    title = "VibeTV was not found";
-    detail =
-      "Make sure VibeTV and this Mac are on the same WiFi, then search again.";
-  }
+  const title = connecting
+    ? "Connecting to VibeTV"
+    : choosing
+      ? "Choose a VibeTV"
+      : connectionFailed
+        ? "VibeTV could not connect"
+      : failed
+        ? "VibeTV was not found"
+        : "Looking for a VibeTV";
+  const detail = connecting
+    ? "Your VibeTV was found. Control Center is connecting now."
+    : choosing
+      ? "More than one VibeTV was found. Choose yours."
+      : connectionFailed
+        ? "VibeTV was found, but Control Center could not connect. Search again to retry."
+      : failed
+        ? "Make sure VibeTV and this Mac are on the same WiFi, then search again."
+        : "Searching this WiFi for VibeTV for up to 30 seconds.";
 
   return (
     <main
@@ -71,7 +70,7 @@ export function DeviceStartupScreen({
       data-testid="device-startup-screen"
     >
       <section
-        aria-busy={searching || selecting || reconnecting}
+        aria-busy={searching || connecting}
         aria-live="polite"
         className="grid w-full max-w-[720px] gap-7 text-center"
       >
@@ -88,7 +87,7 @@ export function DeviceStartupScreen({
           </p>
         </div>
 
-        {alternate || multiple ? (
+        {choosing ? (
           <div className="grid gap-3 text-left">
             {deviceCandidates.map((candidate) => (
               <div
@@ -97,9 +96,7 @@ export function DeviceStartupScreen({
               >
                 <DeviceCandidateDetails candidate={candidate} />
                 <ControlCenterButton
-                  busy={selecting}
-                  busyLabel="Connecting"
-                  disabled={Boolean(busyAction) && !selecting}
+                  disabled={Boolean(busyAction)}
                   fullWidth
                   icon={<Monitor size={18} aria-hidden />}
                   label="Connect this VibeTV"
@@ -112,7 +109,7 @@ export function DeviceStartupScreen({
           </div>
         ) : null}
 
-        {lastError && !searching ? (
+        {lastError && (failed || connectionFailed) ? (
           <div
             className="grid gap-1 border border-[#747A60] px-4 py-3 text-left text-sm text-[#444933]"
             role="alert"
@@ -124,60 +121,42 @@ export function DeviceStartupScreen({
           </div>
         ) : null}
 
-        {searching || selecting || reconnecting ? (
-          <div className="flex min-h-12 items-center justify-center gap-3 text-base font-semibold text-[#444933]" role="status">
+        {searching || connecting ? (
+          <div
+            className="flex min-h-12 items-center justify-center gap-3 text-base font-semibold text-[#444933]"
+            role="status"
+          >
             <Loader2 className="animate-spin" size={20} aria-hidden />
-            <span>
-              {selecting
-                ? "Connecting…"
-                : reconnecting
-                  ? "Reconnecting…"
-                  : "Searching…"}
-            </span>
+            <span>{connecting ? "Connecting…" : "Searching…"}</span>
           </div>
         ) : null}
 
-        {alternate || multiple ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <ControlCenterButton
-              disabled={Boolean(busyAction)}
-              fullWidth
-              label="Not now"
-              onClick={onDecline}
-              size="large"
-              variant="secondary"
-            />
-            <ControlCenterButton
-              disabled={Boolean(busyAction)}
-              fullWidth
-              icon={<RefreshCw size={18} aria-hidden />}
-              label="Search again"
-              onClick={onSearch}
-              size="large"
-              variant="secondary"
-            />
-          </div>
-        ) : deviceSearchState === "not-found" ||
-          deviceSearchState === "failed" ||
-          deviceSearchState === "repair-failed" ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <ControlCenterButton
-              fullWidth
-              icon={<RefreshCw size={18} aria-hidden />}
-              label="Search again"
-              onClick={onSearch}
-              size="large"
-              variant="primary"
-            />
-            <ControlCenterButton
-              fullWidth
-              label="Not now"
-              onClick={onDecline}
-              size="large"
-              variant="secondary"
-            />
-          </div>
+        {choosing ? (
+          <ControlCenterButton
+            disabled={Boolean(busyAction)}
+            fullWidth
+            icon={<RefreshCw size={18} aria-hidden />}
+            label="Search again"
+            onClick={onSearch}
+            size="large"
+            variant="secondary"
+          />
+        ) : failed || connectionFailed ? (
+          <ControlCenterButton
+            fullWidth
+            icon={<RefreshCw size={18} aria-hidden />}
+            label="Search again"
+            onClick={onSearch}
+            size="large"
+            variant="primary"
+          />
         ) : null}
+
+        <SupportReportActions
+          busyAction={busyAction}
+          diagnostics={diagnostics}
+          onCreate={onCreateSupportReport}
+        />
       </section>
     </main>
   );

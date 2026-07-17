@@ -2,6 +2,7 @@ import Cocoa
 import CryptoKit
 import Foundation
 import ServiceManagement
+import UniformTypeIdentifiers
 import WebKit
 #if canImport(Sparkle)
 import Sparkle
@@ -923,6 +924,158 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         }
     }
 
+    @objc private func createNativeSupportReport() {
+        guard let report = nativeSupportReportData() else {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Support report could not be created"
+            alert.informativeText = "Try again, or open the support log instead."
+            alert.runModal()
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "vibetv-support-report-\(timestampForBackup()).json"
+        panel.directoryURL = FileManager.default.urls(
+            for: .downloadsDirectory,
+            in: .userDomainMask
+        ).first
+
+        let save: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else {
+                return
+            }
+            do {
+                try report.write(to: url, options: .atomic)
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } catch {
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = "Support report could not be saved"
+                alert.informativeText = (error as NSError).localizedDescription
+                alert.runModal()
+            }
+        }
+
+        if let window {
+            panel.beginSheetModal(for: window, completionHandler: save)
+        } else {
+            save(panel.runModal())
+        }
+    }
+
+    private func nativeSupportReportData() -> Data? {
+        let fileManager = FileManager.default
+        let helperURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers", isDirectory: true)
+            .appendingPathComponent("codexbar-display")
+        let appSignatureValid = runCommandCapturingOutput(
+            executable: "/usr/bin/codesign",
+            arguments: ["--verify", "--deep", "--strict", Bundle.main.bundleURL.path]
+        ).exitStatus == 0
+        let helperSignatureValid = runCommandCapturingOutput(
+            executable: "/usr/bin/codesign",
+            arguments: ["--verify", "--strict", helperURL.path]
+        ).exitStatus == 0
+        let appGatekeeperAccepted = runCommandCapturingOutput(
+            executable: "/usr/sbin/spctl",
+            arguments: ["--assess", "--type", "execute", Bundle.main.bundleURL.path]
+        ).exitStatus == 0
+        let codexBarURL = existingCodexBarApp()
+        let report: [String: Any] = [
+            "generatedAt": ISO8601DateFormatter().string(from: Date()),
+            "reportType": "native_installation",
+            "macOS": ProcessInfo.processInfo.operatingSystemVersionString,
+            "app": [
+                "version": Bundle.main.object(
+                    forInfoDictionaryKey: "CFBundleShortVersionString"
+                ) as? String ?? "unknown",
+                "build": Bundle.main.object(
+                    forInfoDictionaryKey: "CFBundleVersion"
+                ) as? String ?? "unknown",
+                "path": Bundle.main.bundleURL.path,
+                "installedInApplications": isInstalledApplicationsBundle(Bundle.main.bundleURL),
+                "signatureValid": appSignatureValid,
+                "gatekeeperAccepted": appGatekeeperAccepted,
+                "localPreviewRuntime": usesLocalPreviewRuntime,
+            ],
+            "runtime": [
+                "label": activeRuntimeLaunchAgentLabel,
+                "serviceStatus": runtimeServiceStatusDescription(),
+                "listenerOwnership": verifyRuntimeListenerOwnership().description,
+                "helperExists": fileManager.isExecutableFile(atPath: helperURL.path),
+                "helperSignatureValid": helperSignatureValid,
+                "recentCrashReports": recentRuntimeCrashReportNames(),
+            ],
+            "codexBar": [
+                "installed": codexBarURL != nil,
+                "path": codexBarURL?.path ?? "not found",
+            ],
+        ]
+        return try? JSONSerialization.data(
+            withJSONObject: report,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+    }
+
+    private func runtimeServiceStatusDescription() -> String {
+        if usesLocalPreviewRuntime {
+            let result = runCommandCapturingOutput(
+                executable: "/bin/launchctl",
+                arguments: [
+                    "print",
+                    launchctlServiceTarget(
+                        uid: getuid(),
+                        label: previewRuntimeLaunchAgentLabel
+                    ),
+                ]
+            )
+            return result.exitStatus == 0 ? "loaded" : "not loaded"
+        }
+        switch runtimeService.status {
+        case .enabled:
+            return "enabled"
+        case .requiresApproval:
+            return "requires approval"
+        case .notRegistered:
+            return "not registered"
+        case .notFound:
+            return "not found"
+        @unknown default:
+            return "unknown"
+        }
+    }
+
+    private func recentRuntimeCrashReportNames() -> [String] {
+        let directory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        return urls
+            .filter {
+                $0.lastPathComponent.hasPrefix("codexbar-display-")
+                    && $0.pathExtension == "ips"
+            }
+            .sorted {
+                let left = try? $0.resourceValues(
+                    forKeys: [.contentModificationDateKey]
+                ).contentModificationDate
+                let right = try? $1.resourceValues(
+                    forKeys: [.contentModificationDateKey]
+                ).contentModificationDate
+                return (left ?? .distantPast) > (right ?? .distantPast)
+            }
+            .prefix(3)
+            .map(\.lastPathComponent)
+    }
+
     @objc private func reloadControlCenter() {
         scheduledReload?.cancel()
         scheduledReload = nil
@@ -1104,14 +1257,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         retry.isHidden = !failed
 
         let support = NSButton(
-            title: "Open support log",
+            title: "Create report",
             target: self,
-            action: #selector(openSupportLog)
+            action: #selector(createNativeSupportReport)
         )
         support.bezelStyle = .rounded
         support.isHidden = !failed
 
-        let actions = NSStackView(views: [retry, support])
+        let supportLog = NSButton(
+            title: "Open support log",
+            target: self,
+            action: #selector(openSupportLog)
+        )
+        supportLog.bezelStyle = .rounded
+        supportLog.isHidden = !failed
+
+        let actions = NSStackView(views: [retry, support, supportLog])
         actions.orientation = .horizontal
         actions.alignment = .centerY
         actions.spacing = 12

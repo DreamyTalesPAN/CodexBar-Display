@@ -616,6 +616,9 @@ required_source = [
     "pendingNativeUpdateIsExpired(",
     "discardMismatchedPendingNativeUpdate()",
     "presentInstallationStatus(",
+    "@objc private func createNativeSupportReport()",
+    '"reportType": "native_installation"',
+    'title: "Create report"',
     'title: "Finishing installation…"',
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
     'codexBarPinnedVersion = "0.44.0"',
@@ -955,6 +958,8 @@ PY
     || die "native app shell must back up old LaunchAgents during migration"
   grep -qF "SMAppService.agent" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must manage its persistent runtime with SMAppService"
+  grep -qF "verify_companion_version" "${ROOT}/scripts/build-macos-control-center-app.sh" \
+    || die "macOS app builds must reject a Companion with the wrong version"
 
   grep -qF "test-macos-control-center-app-bundle.sh" "${ROOT}/.github/workflows/ci.yml" \
     || die "CI must run the macOS app/DMG dry-run test"

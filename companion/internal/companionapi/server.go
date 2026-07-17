@@ -52,13 +52,14 @@ const (
 	deviceConnectionRetrying  = "reconnecting"
 	deviceConnectionSetup     = "setup_required"
 	deviceTimeout             = 15 * time.Second
+	deviceSearchWindow        = 30 * time.Second
 	discoveryProbeTime        = 1500 * time.Millisecond
 	deviceProbeCacheTime      = 750 * time.Millisecond
 	deviceReconnectGraceTime  = 45 * time.Second
 	deviceReconnectRepairTime = 60 * time.Second
 	repairDiscoveryAttempts   = 3
 	repairDiscoveryRetryGap   = 1200 * time.Millisecond
-	subnetProbeLimit          = 32
+	subnetProbeLimit          = 64
 	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
 	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
 	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
@@ -87,7 +88,11 @@ const (
 
 var deviceHealthProbeTime = 2 * time.Second
 var firmwareHealthVerifyTime = 30 * time.Second
-var subnetProbeTime = 450 * time.Millisecond
+
+// The real ESP8266 answers /hello well below this limit, while one second still
+// leaves enough margin for a busy device. With 64 workers a /24 scan finishes
+// in roughly four seconds, so a 30-second search gets several complete passes.
+var subnetProbeTime = time.Second
 var errMacAppActionRequired = errors.New("mac app installation requires customer action")
 
 var printDisplayStreamService = func(ctx context.Context, service string) ([]byte, error) {
@@ -2546,21 +2551,42 @@ func (s *Server) selectDevice(
 	if known, ok := previous.KnownDevice(expectedDeviceID); ok {
 		selected.DeviceToken = known.DeviceToken
 	}
+	if strings.TrimSpace(selected.DeviceToken) != "" {
+		if _, healthErr := s.getHealth(ctx, target, selected.DeviceToken); healthErr != nil {
+			selected.DeviceToken = ""
+		}
+	}
+	if strings.TrimSpace(selected.DeviceToken) == "" {
+		token, pairErr := s.pair(ctx, target)
+		if pairErr != nil {
+			return deviceInfo{}, s.rollbackDeviceSelection(
+				ctx,
+				previous,
+				&repairStageError{stage: "pair", err: pairErr},
+			)
+		}
+		selected.DeviceToken = token
+	}
 	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
 		current.SetActiveDevice(selected)
 	}); err != nil {
 		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, &repairStageError{stage: "config", err: err})
 	}
-
-	device, repairErr := s.repairDeviceOnceLocked(ctx, target, expectedDeviceID, false)
-	if repairErr != nil {
-		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, repairErr)
+	if err := s.startDisplayStream(ctx, target); err != nil {
+		return deviceInfo{}, s.rollbackDeviceSelection(
+			ctx,
+			previous,
+			&repairStageError{stage: "display-stream", err: err},
+		)
 	}
 	if err := runtimeconfig.CommitDeviceSelection(s.home); err != nil {
 		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, &repairStageError{stage: "config", err: err})
 	}
 	s.endPendingDeviceSelection()
-	return device, nil
+	device := deviceFromHello(target, selected.DeviceToken, hello)
+	device.ConnectionState = deviceConnectionReady
+	device.LastSeenAt = s.currentTime().Format(time.RFC3339Nano)
+	return s.withDisplayStream(ctx, target, device), nil
 }
 
 func (s *Server) rollbackDeviceSelection(
@@ -4741,10 +4767,14 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 }
 
 func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) []deviceSearchEntry {
+	searchCtx, cancel := context.WithTimeout(ctx, deviceSearchWindow)
+	defer cancel()
+
 	byIdentity := make(map[string]deviceSearchEntry)
-	for attempt := 0; attempt < repairDiscoveryAttempts; attempt++ {
+	hasSavedIdentity := strings.TrimSpace(cfg.DeviceID) != ""
+	for {
 		foundKnown := false
-		for _, entry := range s.searchDevicesOnce(ctx, cfg, explicitTarget) {
+		for _, entry := range s.searchDevicesOnce(searchCtx, cfg, explicitTarget) {
 			key := deviceSearchIdentityKey(entry)
 			if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
 				byIdentity[key] = entry
@@ -4753,14 +4783,19 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 				foundKnown = true
 			}
 		}
-		if foundKnown {
+		// A clean customer install has no saved device identity to prefer. Once
+		// that first scan finds a VibeTV, return it immediately instead of
+		// repeating the full /24 subnet scan until the UI request nearly times
+		// out. Recovery with a saved identity still gets the bounded retries so
+		// a briefly busy known device wins over an unknown alternative.
+		if foundKnown || (!hasSavedIdentity && len(byIdentity) > 0) {
 			return sortedDeviceSearchEntries(byIdentity)
 		}
-		if attempt+1 >= repairDiscoveryAttempts {
+		if searchCtx.Err() != nil {
 			break
 		}
 		select {
-		case <-ctx.Done():
+		case <-searchCtx.Done():
 			return sortedDeviceSearchEntries(byIdentity)
 		case <-time.After(repairDiscoveryRetryGap):
 		}
@@ -4775,7 +4810,13 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 			candidates = append(candidates, target)
 		}
 	}
-	candidates = append(candidates, cfg.DeviceTarget, s.configuredDefaultWiFiTarget())
+	// Probe every remembered VibeTV before the subnet fan-out. This keeps known
+	// devices fast, including the case where more than one saved VibeTV is online.
+	candidates = append(candidates, cfg.DeviceTarget)
+	for _, known := range cfg.KnownDevices {
+		candidates = append(candidates, known.Target)
+	}
+	candidates = append(candidates, s.configuredDefaultWiFiTarget())
 	if s.subnetTargets != nil {
 		candidates = append(candidates, s.subnetTargets()...)
 	}

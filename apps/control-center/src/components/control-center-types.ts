@@ -185,7 +185,6 @@ export type DeviceInfo = {
 };
 
 export type ActiveTab =
-  | "setup"
   | "overview"
   | "usage"
   | "settings"

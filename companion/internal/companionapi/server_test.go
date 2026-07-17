@@ -277,6 +277,141 @@ func TestDeviceSearchRetriesTransientKnownDeviceFailure(t *testing.T) {
 	}
 }
 
+func TestDeviceSearchReturnsFirstFoundDeviceImmediatelyWithoutSavedIdentity(t *testing.T) {
+	var helloCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		helloCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"first-customer-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+
+	devices := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if len(devices) != 1 || devices[0].DeviceID != "first-customer-device" {
+		t.Fatalf("expected first customer VibeTV, got %+v", devices)
+	}
+	if helloCalls.Load() != 1 {
+		t.Fatalf("expected first successful scan to return immediately, got %d hello calls", helloCalls.Load())
+	}
+}
+
+func TestDeviceSearchRetriesCleanCustomerScanUntilDeviceAppears(t *testing.T) {
+	var helloCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if helloCalls.Add(1) == 1 {
+			http.Error(w, "wifi still settling", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"late-customer-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+
+	devices := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if len(devices) != 1 || devices[0].DeviceID != "late-customer-device" {
+		t.Fatalf("expected later customer scan to find VibeTV, got %+v", devices)
+	}
+	if helloCalls.Load() != 2 {
+		t.Fatalf("expected a second complete scan, got %d hello calls", helloCalls.Load())
+	}
+}
+
+func TestDeviceSearchProbesEveryRememberedVibeTV(t *testing.T) {
+	device := func(id string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, id)
+		}))
+	}
+	first := device("active-device")
+	defer first.Close()
+	second := device("other-device")
+	defer second.Close()
+
+	cfg := runtimeconfig.Config{
+		DeviceID:     "active-device",
+		DeviceTarget: first.URL,
+		KnownDevices: []runtimeconfig.KnownDevice{
+			{DeviceID: "active-device", Target: first.URL},
+			{DeviceID: "other-device", Target: second.URL},
+		},
+	}
+	server := newTestServer(t, cfg)
+	server.subnetTargets = func() []string { return nil }
+
+	devices := server.searchDevices(context.Background(), cfg, "")
+	if len(devices) != 2 {
+		t.Fatalf("expected every remembered VibeTV to be probed, got %+v", devices)
+	}
+}
+
+func TestDeviceSearchUsesThirtySecondWindow(t *testing.T) {
+	if deviceSearchWindow != 30*time.Second {
+		t.Fatalf("device search window=%s want=30s", deviceSearchWindow)
+	}
+}
+
+func TestDeviceSearchWaitsForSlowStartingWiFiDevice(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		time.Sleep(800 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"slow-starting-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+
+	devices := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if len(devices) != 1 || devices[0].DeviceID != "slow-starting-device" {
+		t.Fatalf("expected slow-starting customer VibeTV, got %+v", devices)
+	}
+}
+
+func TestDeviceSelectFinishesWithoutWaitingForARenderedFrame(t *testing.T) {
+	const deviceID = "customer-device"
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, deviceID)
+		case "/api/pair":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"customer-token"}`))
+		default:
+			t.Fatalf("selection waited on unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	var streamTarget string
+	server.refreshStream = func(_ context.Context, target string) error {
+		streamTarget = target
+		return nil
+	}
+
+	selected, err := server.selectDevice(context.Background(), device.URL, deviceID)
+	if err != nil {
+		t.Fatalf("select device: %v", err)
+	}
+	if !selected.Connected || !selected.Paired || selected.DeviceID != deviceID {
+		t.Fatalf("unexpected selected device: %+v", selected)
+	}
+	if streamTarget != device.URL {
+		t.Fatalf("display stream target=%q want %q", streamTarget, device.URL)
+	}
+}
+
 func TestPairingStreamErrorClearsPairedState(t *testing.T) {
 	got := withDisplayStreamInfo(
 		deviceInfo{Connected: true, Paired: true},
