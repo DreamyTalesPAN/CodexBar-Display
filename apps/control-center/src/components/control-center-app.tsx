@@ -142,6 +142,8 @@ type FirmwareUpdateStatus = {
   error?: string;
 };
 
+type RepairConnectionOutcome = "ready" | "waiting" | "failed";
+
 type FirmwareUpdateResponse = {
   job?: FirmwareUpdateJob;
 };
@@ -809,7 +811,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       try {
         if (companionStatus === "missing") {
           handleCompanionUnavailableForRepair(quiet);
-          return false;
+          return "failed" as RepairConnectionOutcome;
         }
         if (companionStatus !== "online") {
           try {
@@ -848,7 +850,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               if (deviceSetupIsUsable(statusPayload.device)) {
                 void loadSettings();
               }
-              return true;
+              return "ready" as RepairConnectionOutcome;
             }
           } catch (statusError) {
             const normalized = normalizeCaughtError(
@@ -868,7 +870,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             } else {
               handleCompanionUnavailableForRepair(quiet);
             }
-            return false;
+            return "failed" as RepairConnectionOutcome;
           }
         }
         const payload = await runCompanion<{ device: DeviceInfo }>(
@@ -904,9 +906,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           rememberDeviceTarget(payload.device.target);
         }
         const ready = deviceStartupConnectionIsReady(payload.device);
-        if (payload.device.connected && !ready) {
-          setLastError(displayNotReadyError());
-        }
+        const outcome: RepairConnectionOutcome = ready
+          ? "ready"
+          : payload.device.connected && payload.device.paired
+            ? "waiting"
+            : "failed";
         addEvent({
           label: quiet ? "Connection repaired" : "VibeTV connection fixed",
           detail: ready
@@ -919,7 +923,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (ready) {
           void loadSettings();
         }
-        return ready;
+        return outcome;
       } catch (error) {
         const normalized = normalizeCaughtError(
           error,
@@ -930,6 +934,39 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         } else if (isCompanionMissingError(normalized)) {
           markCompanionUnavailable();
         } else {
+          try {
+            const statusPayload = await runCompanion<{
+              device?: DeviceInfo;
+            }>("/v1/status", undefined, { preserveLastError: true });
+            const statusDevice = statusPayload.device;
+            const targetMatches =
+              !target ||
+              (Boolean(statusDevice?.target) &&
+                normalizeDeviceTarget(statusDevice?.target || "") === target);
+            const identityMatches =
+              !options?.expectedDeviceId ||
+              statusDevice?.deviceId === options.expectedDeviceId;
+            if (
+              statusDevice?.connected &&
+              statusDevice.paired &&
+              targetMatches &&
+              identityMatches
+            ) {
+              mergeDevice(statusDevice);
+              setDeviceState("paired");
+              if (statusDevice.target) {
+                setDeviceTarget(statusDevice.target);
+                rememberDeviceTarget(statusDevice.target);
+              }
+              setLastError(null);
+              return deviceStartupConnectionIsReady(statusDevice)
+                ? "ready"
+                : "waiting";
+            }
+          } catch {
+            // Keep the original repair error when the read-only status check
+            // cannot prove that the expected VibeTV is connected and paired.
+          }
           setCompanionStatus("online");
           void refreshCompanionFeatures();
           setDevice(target ? { target, connected: false } : null);
@@ -943,7 +980,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             tone: "attention",
           });
         }
-        return false;
+        return "failed" as RepairConnectionOutcome;
       } finally {
         setBusyAction(null);
       }
@@ -1000,11 +1037,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setDeviceState("paired");
           return;
         }
-        const repaired = await repairConnection({
+        const outcome = await repairConnection({
           targetOverride: selected.target,
           expectedDeviceId: selected.deviceId,
         });
-        if (!repaired) {
+        if (outcome === "waiting") {
+          setDeviceSearchState("waiting");
+        } else if (outcome === "failed") {
           setDeviceSearchState("repair-failed");
         }
         return;
@@ -1126,8 +1165,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     void repairConnection({
       expectedDeviceId: device.deviceId,
       quiet: true,
-    }).then((repaired) => {
-      if (repaired) {
+    }).then((outcome) => {
+      if (outcome === "ready") {
+        return;
+      }
+      if (outcome === "waiting") {
+        setDeviceSearchState("waiting");
         return;
       }
       setActiveTab("overview");
@@ -2580,15 +2623,6 @@ function companionUnavailableError(): ApiError {
     message: "Mac App did not answer.",
     nextAction:
       "Quit VibeTV Control Center, then open it again from Applications. If it still does not answer, replace it with the latest Mac App from app.vibetv.shop.",
-  };
-}
-
-function displayNotReadyError(): ApiError {
-  return {
-    code: "DISPLAY_NOT_READY",
-    message: "VibeTV screen is not ready yet.",
-    nextAction:
-      "Keep VibeTV powered on and connected to the same WiFi, then run Fix connection again.",
   };
 }
 

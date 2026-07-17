@@ -76,6 +76,7 @@ export type DeviceCandidate = {
 export type DeviceSearchState =
   | "idle"
   | "searching"
+  | "waiting"
   | "alternate"
   | "multiple"
   | "declined"

@@ -797,22 +797,33 @@ async function testLocalWifiVerificationWithoutFrameStaysInSetup(
   const repairRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { connected: false, paired: false, ready: false },
-    onRepair: (postData) => {
-      repairRequests.push(postData || "");
-      return reachableUnreadyDevice;
+    repairError: true,
+    repairErrorDevice: {
+      ...reachableUnreadyDevice,
+      deviceId: "fixture-device-1",
+    },
+    onRequest: (pathname, method) => {
+      if (method === "POST" && pathname === "/v1/device/repair") {
+        repairRequests.push(pathname);
+      }
     },
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "VibeTV was not found" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByRole("button", { name: "Search again" }).waitFor({
+  await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor({
     timeout: 10_000,
   });
   assert(
+    (await page.getByRole("heading", { name: "VibeTV was not found" }).count()) === 0,
+    "A paired VibeTV waiting for usage must not be reported as missing",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Search again" }).count()) === 0,
+    "A paired VibeTV waiting for usage must keep polling instead of asking for another scan",
+  );
+  assert(
     repairRequests.length === 1,
-    `A reachable VibeTV without a display frame must not be accepted or retried automatically, got ${repairRequests.length} attempts`,
+    `A reachable VibeTV without a display frame must not retry automatically, got ${repairRequests.length} attempts`,
   );
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) === 0,
@@ -4299,6 +4310,7 @@ async function routeCompanionOnline(
     usageStatus = 200,
     displayFrameStatus = 200,
     repairError = false,
+    repairErrorDevice,
     selectError = false,
     searchDevices,
     searchDelayMs = 0,
@@ -4684,6 +4696,9 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/device/repair") {
       if (repairError) {
+        if (repairErrorDevice) {
+          currentDevice = repairErrorDevice;
+        }
         await route.fulfill({
           status: 404,
           contentType: "application/json",

@@ -33,6 +33,7 @@ export function DeviceStartupScreen({
   const reconnecting = busyAction === "repair";
   const searching =
     deviceSearchState === "searching" || busyAction === "search";
+  const waiting = deviceSearchState === "waiting";
   const alternate =
     deviceSearchState === "alternate" && deviceCandidates.length === 1;
   const multiple = deviceSearchState === "multiple";
@@ -50,6 +51,9 @@ export function DeviceStartupScreen({
   } else if (reconnecting) {
     title = "Reconnecting to your VibeTV";
     detail = "Your saved VibeTV was found. Waiting for a fresh image.";
+  } else if (waiting) {
+    title = "Connecting to VibeTV";
+    detail = "VibeTV was found. Waiting for the first usage data.";
   } else if (alternate) {
     title = "Another VibeTV was found";
     detail =
@@ -78,7 +82,7 @@ export function DeviceStartupScreen({
       data-testid="device-startup-screen"
     >
       <section
-        aria-busy={searching || selecting || reconnecting}
+        aria-busy={searching || selecting || reconnecting || waiting}
         aria-live="polite"
         className="grid w-full max-w-[720px] gap-7 text-center"
       >
@@ -133,7 +137,7 @@ export function DeviceStartupScreen({
           </div>
         ) : null}
 
-        {searching || selecting || reconnecting ? (
+        {searching || selecting || reconnecting || waiting ? (
           <div className="flex min-h-12 items-center justify-center gap-3 text-base font-semibold text-[#444933]" role="status">
             <Loader2 className="animate-spin" size={20} aria-hidden />
             <span>
@@ -141,6 +145,8 @@ export function DeviceStartupScreen({
                 ? "Connecting…"
                 : reconnecting
                   ? "Reconnecting…"
+                  : waiting
+                    ? "Waiting for usage…"
                   : "Searching…"}
             </span>
           </div>
