@@ -261,6 +261,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     () => localControlCenterPathForTheme(initialThemeId),
     [initialThemeId],
   );
+  const companionInstallationMode =
+    companionInfo?.installationMode ||
+    (companionInfo?.features?.macAppSelfUpdateEnabled === true
+      ? "legacy"
+      : undefined);
+  const requiresMacAppMigration = Boolean(
+    companionStatus === "online" && companionInstallationMode === "legacy",
+  );
 
   const handleDeviceTargetChange = useCallback((target: string) => {
     setDeviceTarget(target);
@@ -1538,9 +1546,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (
       hostedSetup ||
       setupPreviewStep ||
+      requiresMacAppMigration ||
       companionStatus !== "online" ||
-      !device?.deviceId ||
-      (device.connected !== false &&
+      (device &&
+        device.connected !== false &&
         device.connectionState !== "reconnecting") ||
       deviceStartupConnectionIsReady(device) ||
       busyAction ||
@@ -1557,6 +1566,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device,
     deviceSearchState,
     hostedSetup,
+    requiresMacAppMigration,
     searchAndConnect,
     setupPreviewStep,
   ]);
@@ -2025,14 +2035,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           ...hostedCompanionRelease,
         }
       : hostedCompanionRelease || companionInfo?.update || null;
-  const companionInstallationMode =
-    companionInfo?.installationMode ||
-    (companionInfo?.features?.macAppSelfUpdateEnabled === true
-      ? "legacy"
-      : undefined);
-  const requiresMacAppMigration = Boolean(
-    companionStatus === "online" && companionInstallationMode === "legacy",
-  );
   const macAppMigrationAvailable = Boolean(
     requiresMacAppMigration &&
       availableMacAppDmgDownloadUrl(companionRelease),
@@ -2201,15 +2203,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   if (
-    hasSavedActiveDevice &&
+    companionStatus === "online" &&
+    !requiresMacAppMigration &&
     !deviceStartupConnectionIsReady(device) &&
-    !deviceStartupDismissed
+    !deviceStartupDismissed &&
+    deviceSearchState !== "not-found" &&
+    (deviceSearchState !== "idle" ||
+      !device ||
+      device.connected === false ||
+      device.connectionState === "reconnecting")
   ) {
     return (
       <DeviceStartupScreen
         busyAction={busyAction}
         deviceCandidates={deviceCandidates}
         deviceSearchState={deviceSearchState}
+        hasSavedActiveDevice={hasSavedActiveDevice}
         lastError={lastError}
         onDecline={() => {
           setDeviceCandidates([]);

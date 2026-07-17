@@ -86,13 +86,16 @@ export function SetupScreen({
     !forceMacAppStep &&
     !macAppMissing &&
     (macAppConfirmedState || macAppReady || setupComplete);
-  const deviceSelectionInProgress = deviceSearchState !== "idle";
+  const deviceSelectionInProgress =
+    deviceSearchState !== "idle" && deviceSearchState !== "not-found";
   const wifiConfirmed =
-    wifiConfirmedState ||
-    deviceSelectionInProgress ||
-    setupComplete ||
-    previewStep === "mac-app" ||
-    hostedMode;
+    deviceSearchState === "not-found"
+      ? false
+      : wifiConfirmedState ||
+        deviceSelectionInProgress ||
+        setupComplete ||
+        previewStep === "mac-app" ||
+        hostedMode;
   const dmgUrl = availableMacAppDmgDownloadUrl(macAppRelease);
   const macAppReleaseCheckFailed = Boolean(
     macAppRelease?.status === "check_failed" ||

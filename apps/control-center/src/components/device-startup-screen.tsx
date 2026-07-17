@@ -12,6 +12,7 @@ type Props = {
   busyAction?: string | null;
   deviceCandidates: DeviceCandidate[];
   deviceSearchState: DeviceSearchState;
+  hasSavedActiveDevice: boolean;
   lastError?: ApiError | null;
   onDecline: () => void;
   onSearch: () => void;
@@ -22,6 +23,7 @@ export function DeviceStartupScreen({
   busyAction,
   deviceCandidates,
   deviceSearchState,
+  hasSavedActiveDevice,
   lastError,
   onDecline,
   onSearch,
@@ -53,8 +55,9 @@ export function DeviceStartupScreen({
       "Your last connected VibeTV is not available. Connect to this VibeTV instead?";
   } else if (multiple) {
     title = "Choose a VibeTV";
-    detail =
-      "Your last connected VibeTV is not available. Choose another VibeTV to connect.";
+    detail = hasSavedActiveDevice
+      ? "Your last connected VibeTV is not available. Choose another VibeTV to connect."
+      : "More than one VibeTV was found. Choose the one you want to connect.";
   } else if (
     deviceSearchState === "not-found" ||
     deviceSearchState === "failed" ||

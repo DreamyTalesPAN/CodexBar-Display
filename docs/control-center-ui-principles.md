@@ -22,12 +22,14 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 1. The hosted website owns exactly one customer action: download the verified
    Mac App DMG. It never owns VibeTV WiFi, discovery, pairing, or local checks.
 2. The installed Mac App never asks the customer to download itself during
-   normal onboarding. A fresh setup begins with VibeTV WiFi instructions.
-3. During first-time setup, device discovery and verification start only after
-   the customer confirms that VibeTV joined WiFi. An existing unavailable
-   VibeTV is handled before the Control Center shell: reconnect the active
-   device automatically, search for alternatives read-only, and require an
-   explicit choice before switching device identity.
+   normal onboarding. A fresh setup searches the current WiFi for VibeTVs
+   before showing setup instructions.
+3. If the initial search finds no VibeTV, Setup shows the VibeTV WiFi
+   instructions and one `VibeTV is on WiFi` action. That action starts a fresh
+   device search. An existing unavailable VibeTV is handled before the Control
+   Center shell: reconnect the active device automatically, search for
+   alternatives read-only, and require an explicit choice before switching
+   device identity.
 4. An existing healthy setup opens Overview without setup writes or extra
    confirmation. Reconnect/search progress for an existing setup stays on the
    startup gate and never appears inside Overview or Setup.
