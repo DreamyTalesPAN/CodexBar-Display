@@ -308,6 +308,10 @@ async function main() {
       appContext.appUrl,
     );
     await testProviderReadinessCustomerStates(browser, appContext.appUrl);
+    await testOverviewKeepsTransientConnectionCustomerFriendly(
+      browser,
+      appContext.appUrl,
+    );
     await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
     await testThemeLibraryRendersThemeSpecPreviews(
       browser,
@@ -691,6 +695,33 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
 
     await page.goto(appUrl, { waitUntil: "domcontentloaded" });
     await page
+      .getByRole("heading", { name: "VibeTV is connected" })
+      .waitFor({ timeout: 10_000 });
+    await page
+      .getByText("Waiting for first image", { exact: true })
+      .waitFor({ timeout: 10_000 });
+    await page
+      .getByText("Start using any AI provider.", { exact: true })
+      .waitFor({ timeout: 10_000 });
+    assert(
+      (await page.getByText("AI provider", { exact: true }).count()) === 0,
+      "Overview must not guess or show an AI provider",
+    );
+    assert(
+      (await page.getByText("Claude", { exact: true }).count()) === 0,
+      "Overview must not present the first provider as the active provider",
+    );
+    assert(
+      (await page
+        .getByText("Waiting for the first accepted display frame.", {
+          exact: true,
+        })
+        .count()) === 0,
+      "Overview must not show technical stream details",
+    );
+
+    await page.getByRole("button", { name: "Usage" }).click();
+    await page
       .getByRole("heading", { name: "Connect an AI provider" })
       .first()
       .waitFor({ timeout: 10_000 });
@@ -718,10 +749,14 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
 
       await page.getByRole("button", { name: "Overview" }).click();
       await page
-        .getByRole("heading", { name: "Connect an AI provider" })
-        .first()
+        .getByRole("heading", { name: "VibeTV is connected" })
         .waitFor({ timeout: 10_000 });
-      await page.getByText("Waiting for AI usage").waitFor({ timeout: 10_000 });
+      assert(
+        (await page
+          .getByRole("heading", { name: "Connect an AI provider" })
+          .count()) === 0,
+        "Provider setup belongs on Usage, not Overview",
+      );
 
       await page.getByRole("button", { name: "Usage" }).click();
       await page
@@ -752,7 +787,59 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       0,
     "Ready providers must not show provider setup",
   );
+  assert(
+    (await readyPage.getByText("AI provider", { exact: true }).count()) === 0,
+    "Overview must not show a provider row even when providers are ready",
+  );
   await readyPage.close();
+}
+
+async function testOverviewKeepsTransientConnectionCustomerFriendly(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const technicalStreamDetail =
+    "Display stream could not find VibeTV and is reconnecting.";
+  await routeCompanionOnline(page, [], () => {}, {
+    device: {
+      ...reachableUnreadyDevice,
+      deviceId: "vibetv-customer",
+      connectionState: "reconnecting",
+      stream: {
+        healthy: false,
+        running: true,
+        detail: technicalStreamDetail,
+      },
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "VibeTV is connected" })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText("VibeTV connected", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Waiting for first image", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Start using any AI provider.", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("VibeTV unavailable", { exact: true }).count()) === 0,
+    "A connected VibeTV must not be labelled unavailable during first-frame startup",
+  );
+  assert(
+    (await page.getByText(technicalStreamDetail, { exact: true }).count()) === 0,
+    "Overview must keep reconnect details in Support",
+  );
+
+  await assertNoMobileOverflow(page);
+  await page.close();
 }
 
 function providerSetupFixture(status) {

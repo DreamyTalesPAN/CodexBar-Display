@@ -670,9 +670,9 @@ function ThemeSpecLoading({
 }) {
   const message =
     status === "error"
-      ? "ThemeSpec not available"
+      ? "Preview unavailable"
       : themeId
-        ? "Loading ThemeSpec"
+        ? "Loading preview"
         : "Waiting for theme";
   return (
     <div className="grid aspect-square w-full place-items-center border border-[#747A60] bg-[#111111] p-4 text-center font-mono text-sm font-bold uppercase text-[#CCFF00]">

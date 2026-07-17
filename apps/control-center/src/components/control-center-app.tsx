@@ -2263,17 +2263,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     >
       {activeShellTab === "overview" ? (
         <OverviewScreen
-          busyAction={busyAction}
           companionRelease={companionRelease}
           companionVersion={companionInfo?.version}
           companionStatus={companionStatus}
           device={device}
-          deviceState={deviceState}
           firmwareUpdate={effectiveFirmwareUpdate}
-          providerSetup={providerSetup}
-          onReloadImage={() => reloadDisplay()}
-          onOpenCodexBar={() => runProviderAction("open-codexbar")}
-          onRetryProviders={() => runProviderAction("retry")}
           requiresMacAppMigration={requiresMacAppMigration}
           usage={usage}
         />
