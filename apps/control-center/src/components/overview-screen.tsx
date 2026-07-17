@@ -35,6 +35,7 @@ type OverviewScreenProps = {
   deviceState: DeviceState;
   device: DeviceInfo | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
+  firmwareUpdateInProgress?: boolean;
   deviceSearchState: DeviceSearchState;
   usage?: UsageSnapshot | null;
   busyAction?: string | null;
@@ -53,6 +54,7 @@ export function OverviewScreen({
   device,
   deviceSearchState,
   firmwareUpdate,
+  firmwareUpdateInProgress = false,
   usage,
   onReloadImage,
   onSearchDevice,
@@ -144,7 +146,7 @@ export function OverviewScreen({
               </button>
             </div>
           ) : null}
-          {needsReconnect && busyAction !== "firmware-update" ? (
+          {needsReconnect && !firmwareUpdateInProgress ? (
             <ConnectionRecovery
               busyAction={busyAction}
               deviceSearchState={deviceSearchState}

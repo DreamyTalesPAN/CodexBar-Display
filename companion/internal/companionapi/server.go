@@ -350,9 +350,10 @@ type themeSpecHealth struct {
 }
 
 type statusResponse struct {
-	OK        bool       `json:"ok"`
-	Companion companion  `json:"companion"`
-	Device    deviceInfo `json:"device"`
+	OK             bool               `json:"ok"`
+	Companion      companion          `json:"companion"`
+	Device         deviceInfo         `json:"device"`
+	FirmwareUpdate *firmwareUpdateJob `json:"firmwareUpdate,omitempty"`
 }
 
 type deviceActionResponse struct {
@@ -1025,10 +1026,15 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		// is cancelled as soon as a later status probe sees the device again.
 		s.startConfiguredDeviceRecovery(cfg)
 	}
+	var firmwareUpdate *firmwareUpdateJob
+	if latest, ok := s.latestFirmwareUpdateJob(); ok {
+		firmwareUpdate = &latest
+	}
 	writeJSON(w, http.StatusOK, statusResponse{
-		OK:        true,
-		Companion: s.companionInfo(r.Context()),
-		Device:    device,
+		OK:             true,
+		Companion:      s.companionInfo(r.Context()),
+		Device:         device,
+		FirmwareUpdate: firmwareUpdate,
 	})
 }
 

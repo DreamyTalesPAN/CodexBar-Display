@@ -228,6 +228,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<FirmwareUpdateInfo | null>(null);
   const [firmwareUpdateStatus, setFirmwareUpdateStatus] =
     useState<FirmwareUpdateStatus | null>(null);
+  const firmwareUpdateInProgress =
+    firmwareUpdateStatus?.phase === "installing";
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [usageError, setUsageError] = useState<ApiError | null>(null);
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
@@ -648,6 +650,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const payload = await runCompanion<{
           companion?: CompanionInfo;
           device?: DeviceInfo;
+          firmwareUpdate?: FirmwareUpdateJob;
         }>("/v1/status", undefined, { preserveLastError: quiet });
         if (setupGeneration !== setupGenerationRef.current) {
           return;
@@ -660,6 +663,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
+        if (payload.firmwareUpdate) {
+          setFirmwareUpdateStatus(
+            firmwareUpdateStatusFromJob(payload.firmwareUpdate),
+          );
+          if (
+            payload.firmwareUpdate.phase === "installing" &&
+            !hasEnteredControlCenterRef.current
+          ) {
+            hasEnteredControlCenterRef.current = true;
+            setHasEnteredControlCenter(true);
+            setActiveTab("updates");
+          }
+        }
         if (
           shouldRedirectToLocalControlCenter() &&
           payload.companion?.installationMode !== "dmg"
@@ -791,6 +807,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const payload = await runCompanion<{
         companion?: CompanionInfo;
         device?: DeviceInfo;
+        firmwareUpdate?: FirmwareUpdateJob;
       }>("/v1/status", undefined, { preserveLastError: true });
       if (setupGeneration !== setupGenerationRef.current) {
         return;
@@ -800,6 +817,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
+      if (payload.firmwareUpdate) {
+        setFirmwareUpdateStatus(
+          firmwareUpdateStatusFromJob(payload.firmwareUpdate),
+        );
+      }
       if (payload.device?.target) {
         mergeDevice(payload.device);
         setDeviceTarget(payload.device.target);
@@ -1362,30 +1384,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const resetSetup = useCallback(async () => {
-    setupGenerationRef.current += 1;
     const setupGeneration = setupGenerationRef.current;
-    hasEnteredControlCenterRef.current = false;
     setBusyAction("reset-setup");
     setLastError(null);
-    forgetDeviceTarget();
-    setDeviceTarget("");
-    setDevice(null);
-    setDeviceState("unknown");
-    setDeviceCandidates([]);
-    setDeviceSearchState("idle");
-    setHasEnteredControlCenter(false);
-    setBrightness(null);
-    setLastInstall(undefined);
-    setThemeInstallStatus(null);
-    setSupportDiagnostics(null);
-    setFirmwareUpdate(null);
-    setUsage(null);
-    setUsageError(null);
-    didRunAutoDisplayReload.current = false;
-    didRunAutomaticDeviceSearch.current = false;
-    didRunSetupVerification.current = false;
-    setSetupPreviewStep(null);
-    setActiveTab("overview");
     try {
       const payload = await runCompanion<{
         companion?: CompanionInfo;
@@ -1394,6 +1395,28 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (setupGeneration !== setupGenerationRef.current) {
         return;
       }
+      setupGenerationRef.current += 1;
+      hasEnteredControlCenterRef.current = false;
+      forgetDeviceTarget();
+      setDeviceTarget("");
+      setDevice(null);
+      setDeviceState("unknown");
+      setDeviceCandidates([]);
+      setDeviceSearchState("idle");
+      setHasEnteredControlCenter(false);
+      setBrightness(null);
+      setLastInstall(undefined);
+      setThemeInstallStatus(null);
+      setSupportDiagnostics(null);
+      setFirmwareUpdate(null);
+      setFirmwareUpdateStatus(null);
+      setUsage(null);
+      setUsageError(null);
+      didRunAutoDisplayReload.current = false;
+      didRunAutomaticDeviceSearch.current = false;
+      didRunSetupVerification.current = false;
+      setSetupPreviewStep(null);
+      setActiveTab("overview");
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
       setThemeInstallEnabled(
@@ -1407,6 +1430,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         detail: "Local VibeTV connection was cleared.",
         tone: "unknown",
       });
+      setSetupResetVersion((current) => current + 1);
+      setBusyAction(null);
     } catch (error) {
       if (setupGeneration !== setupGenerationRef.current) {
         return;
@@ -1414,19 +1439,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const normalized = normalizeCaughtError(error, "Setup reset locally.");
       if (isLocalNetworkAccessError(normalized)) {
         markCompanionAccessBlocked();
-      } else {
+      } else if (isCompanionMissingError(normalized)) {
         markCompanionUnavailable();
+      } else {
+        setCompanionStatus("online");
+        setLastError(normalized);
       }
       addEvent({
-        label: "Setup restarted locally",
-        detail: "Mac App connection will be checked again.",
-        tone: "unknown",
+        label: "Setup was not restarted",
+        detail: normalized.nextAction,
+        tone: "attention",
       });
-    } finally {
-      if (setupGeneration === setupGenerationRef.current) {
-        setSetupResetVersion((current) => current + 1);
-        setBusyAction(null);
-      }
+      setBusyAction(null);
     }
   }, [
     addEvent,
@@ -1704,6 +1728,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       hostedSetup ||
       setupPreviewStep ||
       requiresMacAppMigration ||
+      firmwareUpdateInProgress ||
       companionStatus !== "online" ||
       device?.stream?.errorCode === "device_pairing_required" ||
       (device &&
@@ -1726,6 +1751,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus,
     device,
     deviceSearchState,
+    firmwareUpdateInProgress,
     hostedSetup,
     requiresMacAppMigration,
     searchAndConnect,
@@ -1778,7 +1804,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }, 5000);
 
     return () => window.clearInterval(timer);
-  }, [busyAction, checkCompanion, companionStatus, device, hostedSetup]);
+  }, [
+    busyAction,
+    checkCompanion,
+    companionStatus,
+    device,
+    hostedSetup,
+  ]);
 
   const deviceBoard = device?.board;
   const deviceFirmware = device?.firmware;
@@ -1857,35 +1889,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const startedAt = formatTime();
     const initialLogs = ["Preparing VibeTV update."];
     const applyUpdateJob = (job: FirmwareUpdateJob) => {
-      const phase =
-        job.phase === "complete"
-          ? "complete"
-          : job.phase === "attention"
-            ? "attention"
-            : job.phase === "error"
-              ? "error"
-              : "installing";
-      const logs = customerUpdateLogs(job.logs, initialLogs);
-      setFirmwareUpdateStatus({
-        phase,
-        stage: job.stage,
-        outcome: job.outcome,
-        retryAllowed: job.retryPolicy !== "power_cycle",
-        startedAt,
-        finishedAt:
-          phase === "complete" || phase === "attention" || phase === "error"
-            ? formatTime()
-            : undefined,
-        message:
-          job.error?.nextAction ||
-          job.message ||
-          logs[logs.length - 1] ||
-          initialLogs[0],
-        progress: clampProgress(job.progress),
-        logs,
-        result: job.result,
-        error: job.error?.nextAction,
-      });
+      setFirmwareUpdateStatus(firmwareUpdateStatusFromJob(job, startedAt));
     };
     setBusyAction("firmware-update");
     setFirmwareUpdateStatus({
@@ -2419,6 +2423,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           device={device}
           deviceState={deviceState}
           firmwareUpdate={effectiveFirmwareUpdate}
+          firmwareUpdateInProgress={firmwareUpdateInProgress}
           deviceSearchState={deviceSearchState}
           onSearchDevice={() => searchAndConnect("configured")}
           onSetUpAnotherDevice={resetSetup}
@@ -2615,6 +2620,40 @@ async function pollFirmwareUpdateJob({
     message: "VibeTV update is taking longer than expected.",
     nextAction: "Keep VibeTV powered on, then create a support report.",
   } satisfies ApiError;
+}
+
+function firmwareUpdateStatusFromJob(
+  job: FirmwareUpdateJob,
+  fallbackStartedAt = formatTime(),
+): FirmwareUpdateStatus {
+  const phase =
+    job.phase === "complete"
+      ? "complete"
+      : job.phase === "attention"
+        ? "attention"
+        : job.phase === "error"
+          ? "error"
+          : "installing";
+  const logs = customerUpdateLogs(job.logs);
+  const finished =
+    phase === "complete" || phase === "attention" || phase === "error";
+  return {
+    phase,
+    stage: job.stage,
+    outcome: job.outcome,
+    retryAllowed: job.retryPolicy !== "power_cycle",
+    startedAt: job.startedAt || fallbackStartedAt,
+    finishedAt: finished ? job.finishedAt || formatTime() : undefined,
+    message:
+      job.error?.nextAction ||
+      job.message ||
+      logs[logs.length - 1] ||
+      "Preparing VibeTV update.",
+    progress: clampProgress(job.progress),
+    logs,
+    result: job.result,
+    error: job.error?.nextAction,
+  };
 }
 
 function delay(ms: number): Promise<void> {

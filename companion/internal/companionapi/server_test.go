@@ -63,6 +63,46 @@ func TestStatusWorksWithoutDevice(t *testing.T) {
 	}
 }
 
+func TestStatusIncludesLatestFirmwareUpdateJob(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	startedAt := time.Now().UTC().Add(-time.Minute)
+	server.updateJobs["finished-update"] = &firmwareUpdateJob{
+		ID:        "finished-update",
+		Phase:     "complete",
+		Message:   "Update complete.",
+		Progress:  100,
+		StartedAt: startedAt,
+	}
+	server.updateJobs["active-update"] = &firmwareUpdateJob{
+		ID:        "active-update",
+		Phase:     "installing",
+		Stage:     "waiting_for_device",
+		Message:   "Restarting VibeTV.",
+		Progress:  85,
+		StartedAt: startedAt.Add(30 * time.Second),
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(
+		rec,
+		httptest.NewRequest(http.MethodGet, "/v1/status", nil),
+	)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.FirmwareUpdate == nil || got.FirmwareUpdate.ID != "active-update" {
+		t.Fatalf("expected latest firmware update in status, got %+v", got.FirmwareUpdate)
+	}
+	if got.FirmwareUpdate.Phase != "installing" || got.FirmwareUpdate.Progress != 85 {
+		t.Fatalf("unexpected firmware update snapshot: %+v", got.FirmwareUpdate)
+	}
+}
+
 func TestRuntimeHealthDoesNotProbeDeviceOrRelease(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("runtime health must not contact VibeTV, got %s", r.URL.Path)

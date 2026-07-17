@@ -365,6 +365,10 @@ async function main() {
     await testInitialHealthyStatusRaceAvoidsRepair(browser, appContext.appUrl);
     await testDelayedSettingsDoesNotResetActiveTab(browser, appContext.appUrl);
     await testSetupResetIgnoresInFlightStatus(browser, appContext.appUrl);
+    await testRejectedSetupResetKeepsConfiguredDevice(
+      browser,
+      appContext.appUrl,
+    );
     await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
       browser,
       appContext.appUrl,
@@ -412,6 +416,10 @@ async function main() {
     );
     await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
     await testThemeLibraryRendersThemeSpecPreviews(browser, appContext.appUrl);
+    await testReloadRestoresRunningFirmwareUpdate(
+      browser,
+      appContext.appUrl,
+    );
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
     await testFirmwareAttentionDoesNotOfferSecondFlash(
       browser,
@@ -1951,6 +1959,58 @@ async function testSetupResetIgnoresInFlightStatus(browser, appUrl) {
   await page.close();
 }
 
+async function testRejectedSetupResetKeepsConfiguredDevice(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const resetRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...reconnectingDevice,
+      deviceId: "known-device-1",
+      paired: true,
+    },
+    searchDevices: [],
+    onReset: () => resetRequests.push("reset"),
+    resetError: {
+      status: 409,
+      error: {
+        code: "firmware_update_in_progress",
+        message: "VibeTV update is still running.",
+        nextAction:
+          "Wait for the update to finish before setting up another VibeTV.",
+      },
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV was not found" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Open Control Center" }).click();
+  await page.getByRole("button", { name: "Search for VibeTV" }).click();
+  await page
+    .getByRole("button", { name: "Set up another VibeTV" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Set up another VibeTV" }).click();
+
+  await page.getByRole("navigation", { name: "Control Center" }).waitFor();
+  await page
+    .getByRole("button", { name: "Set up another VibeTV" })
+    .waitFor();
+  assert(
+    (await page.getByTestId("device-startup-screen").count()) === 0,
+    "A rejected setup reset must keep the current Control Center session",
+  );
+  assert(
+    resetRequests.length === 1,
+    `Rejected setup reset should be sent once, got ${resetRequests.length}`,
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
 async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   browser,
   appUrl,
@@ -2824,6 +2884,78 @@ async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testReloadRestoresRunningFirmwareUpdate(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const recoveryWrites = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      deviceId: "firmware-device-1",
+    },
+    onRequest: (pathname, method) => {
+      if (
+        method === "POST" &&
+        (pathname === "/v1/device/search" ||
+          pathname === "/v1/setup/reset")
+      ) {
+        recoveryWrites.push(pathname);
+      }
+    },
+    statusFirmwareUpdateJob: {
+      id: "update-job-from-another-window",
+      phase: "installing",
+      stage: "waiting_for_device",
+      message: "Restarting VibeTV.",
+      progress: 85,
+      startedAt: "2026-07-17T12:00:00.000Z",
+      logs: [
+        "Preparing VibeTV update.",
+        "Updating VibeTV.",
+        "Restarting VibeTV.",
+      ],
+    },
+    statusDeviceSequence: [
+      { ...companionDevice, deviceId: "firmware-device-1" },
+      {
+        ...reconnectingDevice,
+        deviceId: "firmware-device-1",
+        paired: true,
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Restarting VibeTV" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page
+      .getByRole("button", { name: /^Updates/ })
+      .getAttribute("aria-current")) === "page",
+    "A reloaded app must reopen the active firmware update",
+  );
+  await page.getByText("VibeTV unavailable", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Overview" }).click();
+  assert(
+    (await page.getByRole("button", { name: "Search for VibeTV" }).count()) ===
+      0 &&
+      (await page
+        .getByRole("button", { name: "Set up another VibeTV" })
+        .count()) === 0,
+    "A restored firmware update must hide every recovery write",
+  );
+  assert(
+    recoveryWrites.length === 0,
+    `A reload during firmware update must stay read-only, got ${recoveryWrites}`,
+  );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -4739,6 +4871,7 @@ async function routeCompanionOnline(
     onSearch,
     onRequest = () => {},
     onReset,
+    resetError,
     onUpdate,
     onMacAppUpdate,
     onThemeInstallRequest,
@@ -4763,6 +4896,7 @@ async function routeCompanionOnline(
     onSettingsResponse = () => {},
     statusDeviceSequence,
     firmwareStatusDeviceSequence,
+    statusFirmwareUpdateJob,
     statusFailuresAfter = 0,
   } = {},
 ) {
@@ -5189,6 +5323,17 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/setup/reset") {
       onReset?.(route.request().postData() || "", currentDevice);
+      if (resetError) {
+        await route.fulfill({
+          status: resetError.status || 409,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: resetError.error,
+          }),
+        });
+        return;
+      }
       currentDevice = { connected: false };
       await route.fulfill({
         status: 200,
@@ -5271,6 +5416,9 @@ async function routeCompanionOnline(
             companionRuntime,
           ),
           device: responseDevice,
+          ...(statusFirmwareUpdateJob
+            ? { firmwareUpdate: statusFirmwareUpdateJob }
+            : {}),
         }),
       });
       return;
