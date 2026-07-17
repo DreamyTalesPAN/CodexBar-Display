@@ -449,5 +449,17 @@ hash changed to `28095cf9`, proving that the legacy factory spec was upgraded in
 memory. The local firmware server was stopped, the manifest override was
 removed, and the signed runtime returned to the normal production feed.
 
-The physical no-gap GIF-loop observation is still pending operator
-confirmation before this corrected binary can count as the final visual gate.
+Final operator confirmation on 2026-07-17:
+
+- source commit: `217239a`;
+- firmware version: `1.0.37`;
+- size: `461296` bytes;
+- SHA-256:
+  `1583cb5120a7c68377aa2a1d384f89bc2cf1c616339a6fde0a3e853e121e2f54`;
+- the firmware was flashed over USB and its written hash was verified;
+- `/health` reported Mini Classic active, the Mini GIF present with an open
+  decoder, and no ThemeSpec or GIF error;
+- the operator visually confirmed on the physical VibeTV that the Mini GIF
+  looped without the previous disappearance or full-screen redraw.
+
+This closes the physical no-gap GIF-loop gate for the corrected firmware.
