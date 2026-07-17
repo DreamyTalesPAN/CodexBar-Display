@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
@@ -60,6 +61,7 @@ const (
 	repairDiscoveryAttempts   = 3
 	repairDiscoveryRetryGap   = 1200 * time.Millisecond
 	subnetProbeLimit          = 64
+	maxSubnetDiscoveryTargets = 65534
 	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
 	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
 	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
@@ -90,10 +92,12 @@ var deviceHealthProbeTime = 2 * time.Second
 var firmwareHealthVerifyTime = 30 * time.Second
 
 // The real ESP8266 answers /hello well below this limit, while one second still
-// leaves enough margin for a busy device. With 64 workers a /24 scan finishes
-// in roughly four seconds, so a 30-second search gets several complete passes.
+// leaves enough margin for a busy device. Candidates nearest to the Mac are
+// probed first so ordinary customer networks finish quickly even when their
+// configured IPv4 subnet is larger than /24.
 var subnetProbeTime = time.Second
 var errMacAppActionRequired = errors.New("mac app installation requires customer action")
+var errLocalNetworkAccessDenied = errors.New("local network access denied")
 
 var printDisplayStreamService = func(ctx context.Context, service string) ([]byte, error) {
 	return exec.CommandContext(ctx, "launchctl", "print", service).CombinedOutput()
@@ -2137,7 +2141,21 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	devices := s.searchDevices(r.Context(), cfg, strings.TrimSpace(req.Target))
+	devices, err := s.searchDevices(r.Context(), cfg, strings.TrimSpace(req.Target))
+	if err != nil {
+		if errors.Is(err, errLocalNetworkAccessDenied) {
+			writeError(
+				w,
+				http.StatusForbidden,
+				"local_network_access_denied",
+				"Local Network access is off for VibeTV Control Center.",
+				"Open System Settings > Privacy & Security > Local Network, allow VibeTV Control Center, then try again.",
+			)
+			return
+		}
+		writeInternalError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, struct {
 		OK      bool                `json:"ok"`
 		Devices []deviceSearchEntry `json:"devices"`
@@ -4766,7 +4784,7 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 	return "", protocol.DeviceHello{}, lastErr
 }
 
-func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) []deviceSearchEntry {
+func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
 	searchCtx, cancel := context.WithTimeout(ctx, deviceSearchWindow)
 	defer cancel()
 
@@ -4774,7 +4792,11 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 	hasSavedIdentity := strings.TrimSpace(cfg.DeviceID) != ""
 	for {
 		foundKnown := false
-		for _, entry := range s.searchDevicesOnce(searchCtx, cfg, explicitTarget) {
+		entries, err := s.searchDevicesOnce(searchCtx, cfg, explicitTarget)
+		if err != nil {
+			return sortedDeviceSearchEntries(byIdentity), err
+		}
+		for _, entry := range entries {
 			key := deviceSearchIdentityKey(entry)
 			if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
 				byIdentity[key] = entry
@@ -4789,21 +4811,21 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 		// out. Recovery with a saved identity still gets the bounded retries so
 		// a briefly busy known device wins over an unknown alternative.
 		if foundKnown || (!hasSavedIdentity && len(byIdentity) > 0) {
-			return sortedDeviceSearchEntries(byIdentity)
+			return sortedDeviceSearchEntries(byIdentity), nil
 		}
 		if searchCtx.Err() != nil {
 			break
 		}
 		select {
 		case <-searchCtx.Done():
-			return sortedDeviceSearchEntries(byIdentity)
+			return sortedDeviceSearchEntries(byIdentity), nil
 		case <-time.After(repairDiscoveryRetryGap):
 		}
 	}
-	return sortedDeviceSearchEntries(byIdentity)
+	return sortedDeviceSearchEntries(byIdentity), nil
 }
 
-func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) []deviceSearchEntry {
+func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
 	candidates := []string{}
 	if explicitTarget != "" {
 		if target, err := normalizeExplicitDeviceTarget(explicitTarget); err == nil {
@@ -4822,12 +4844,13 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 	}
 	candidates = uniqueStrings(candidates...)
 	if len(candidates) == 0 {
-		return []deviceSearchEntry{}
+		return []deviceSearchEntry{}, nil
 	}
 
 	type result struct {
 		target string
 		hello  protocol.DeviceHello
+		err    error
 	}
 	workers := subnetProbeLimit
 	if len(candidates) < workers {
@@ -4842,8 +4865,10 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 			defer wg.Done()
 			for candidate := range jobs {
 				hello, err := s.getHelloProbe(ctx, candidate, "", subnetProbeTime)
-				if err == nil {
-					results <- result{target: normalizeTarget(candidate), hello: hello.Normalize()}
+				select {
+				case results <- result{target: normalizeTarget(candidate), hello: hello.Normalize(), err: err}:
+				case <-ctx.Done():
+					return
 				}
 			}
 		}()
@@ -4865,6 +4890,12 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 
 	byIdentity := make(map[string]deviceSearchEntry)
 	for found := range results {
+		if found.err != nil {
+			if localNetworkPermissionError(found.err) {
+				return nil, errLocalNetworkAccessDenied
+			}
+			continue
+		}
 		hello := found.hello
 		if hello.NetworkMode == "setup" {
 			continue
@@ -4899,7 +4930,16 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 		}
 		return devices[i].Target < devices[j].Target
 	})
-	return devices
+	return devices, nil
+}
+
+func localNetworkPermissionError(err error) bool {
+	if errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
+		return true
+	}
+	detail := strings.ToLower(err.Error())
+	return strings.Contains(detail, "local network prohibited") ||
+		strings.Contains(detail, "local network denied")
 }
 
 func deviceSearchIdentityKey(entry deviceSearchEntry) string {
@@ -6562,29 +6602,79 @@ func localSubnetTargets() []string {
 	if err != nil {
 		return nil
 	}
-	var targets []string
+	var addrs []net.Addr
 	for _, iface := range interfaces {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
 			continue
 		}
-		addrs, err := iface.Addrs()
+		interfaceAddrs, err := iface.Addrs()
 		if err != nil {
 			continue
 		}
-		for _, addr := range addrs {
-			ip, _, ok := addrToIPv4(addr)
-			if !ok {
-				continue
-			}
-			for host := 1; host <= 254; host++ {
-				if int(ip[3]) == host {
-					continue
-				}
-				targets = append(targets, fmt.Sprintf("http://%d.%d.%d.%d", ip[0], ip[1], ip[2], host))
+		addrs = append(addrs, interfaceAddrs...)
+	}
+	return localSubnetTargetsFromAddrs(addrs)
+}
+
+func localSubnetTargetsFromAddrs(addrs []net.Addr) []string {
+	var targets []string
+	seen := make(map[string]struct{})
+	for _, addr := range addrs {
+		ip, network, ok := addrToIPv4(addr)
+		if !ok {
+			continue
+		}
+		mask := net.CIDRMask(24, 32)
+		if network != nil {
+			if ones, bits := network.Mask.Size(); bits == 32 && ones >= 8 {
+				mask = network.Mask
 			}
 		}
+		networkIP := ip.Mask(mask).To4()
+		if networkIP == nil {
+			continue
+		}
+		networkValue := ipv4Uint32(networkIP)
+		hostValue := ipv4Uint32(ip)
+		maskValue := ipv4Uint32(net.IP(mask).To4())
+		broadcastValue := networkValue | ^maskValue
+		if hostValue <= networkValue || hostValue >= broadcastValue {
+			continue
+		}
+		lowerHosts := hostValue - networkValue - 1
+		upperHosts := broadcastValue - hostValue - 1
+		for offset := uint32(1); (offset <= lowerHosts || offset <= upperHosts) && len(targets) < maxSubnetDiscoveryTargets; offset++ {
+			if offset <= lowerHosts {
+				candidate := hostValue - offset
+				target := "http://" + uint32IPv4(candidate).String()
+				if _, exists := seen[target]; !exists {
+					seen[target] = struct{}{}
+					targets = append(targets, target)
+				}
+			}
+			if offset <= upperHosts && len(targets) < maxSubnetDiscoveryTargets {
+				candidate := hostValue + offset
+				target := "http://" + uint32IPv4(candidate).String()
+				if _, exists := seen[target]; !exists {
+					seen[target] = struct{}{}
+					targets = append(targets, target)
+				}
+			}
+		}
+		if len(targets) >= maxSubnetDiscoveryTargets {
+			break
+		}
 	}
-	return uniqueStrings(targets...)
+	return targets
+}
+
+func ipv4Uint32(ip net.IP) uint32 {
+	ip = ip.To4()
+	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
+}
+
+func uint32IPv4(value uint32) net.IP {
+	return net.IPv4(byte(value>>24), byte(value>>16), byte(value>>8), byte(value))
 }
 
 func addrToIPv4(addr net.Addr) (net.IP, *net.IPNet, bool) {

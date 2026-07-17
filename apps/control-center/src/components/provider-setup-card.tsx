@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Loader2,
   RefreshCw,
+  Wrench,
 } from "lucide-react";
 import { ControlCenterButton } from "./control-center-button";
 import type {
@@ -18,6 +19,7 @@ type ProviderSetupCardProps = {
   busyAction?: string | null;
   providerSetup: ProviderSetupInfo;
   onOpenCodexBar?: () => void;
+  onRepairCodexBar?: () => void;
   onRetry?: () => void;
 };
 
@@ -25,12 +27,14 @@ export function ProviderSetupCard({
   busyAction,
   providerSetup,
   onOpenCodexBar,
+  onRepairCodexBar,
   onRetry,
 }: ProviderSetupCardProps) {
   const checking =
     providerSetup.status === "checking" || busyAction === "providers-retry";
   const issues = providerIssues(providerSetup);
   const ready = providerSetupIsReady(providerSetup);
+  const repairNeeded = providerSetupNeedsCodexBarRepair(providerSetup);
 
   if (ready) {
     return (
@@ -97,6 +101,17 @@ export function ProviderSetupCard({
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
+        {repairNeeded && onRepairCodexBar ? (
+          <ControlCenterButton
+            disabled={checking}
+            fullWidth
+            icon={<Wrench size={18} aria-hidden />}
+            label="Repair CodexBar"
+            onClick={onRepairCodexBar}
+            size="large"
+            variant="primary"
+          />
+        ) : null}
         {onOpenCodexBar ? (
           <ControlCenterButton
             busy={busyAction === "providers-open"}
@@ -107,7 +122,7 @@ export function ProviderSetupCard({
             label="Open CodexBar"
             onClick={onOpenCodexBar}
             size="large"
-            variant="primary"
+            variant={repairNeeded ? "secondary" : "primary"}
           />
         ) : null}
         {onRetry ? (
@@ -126,6 +141,13 @@ export function ProviderSetupCard({
       </div>
     </section>
   );
+}
+
+export function providerSetupNeedsCodexBarRepair(
+  providerSetup: ProviderSetupInfo | null | undefined,
+): boolean {
+  const status = normalizeStatus(providerSetup?.engine?.status);
+  return status === "not_configured" || status === "engine_error";
 }
 
 export function providerSetupIsReady(

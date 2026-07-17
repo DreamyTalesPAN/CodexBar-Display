@@ -30,6 +30,7 @@ type UsageScreenProps = {
   usageError?: ApiError | null;
   onRefresh?: () => void;
   onOpenCodexBar?: () => void;
+  onRepairCodexBar?: () => void;
   onRetryProviders?: () => void;
   providerSetup?: ProviderSetupInfo | null;
 };
@@ -41,6 +42,7 @@ export function UsageScreen({
   usageError,
   onRefresh,
   onOpenCodexBar,
+  onRepairCodexBar,
   onRetryProviders,
   providerSetup,
 }: UsageScreenProps) {
@@ -93,6 +95,7 @@ export function UsageScreen({
             <ProviderSetupCard
               busyAction={busyAction}
               onOpenCodexBar={onOpenCodexBar}
+              onRepairCodexBar={onRepairCodexBar}
               onRetry={onRetryProviders}
               providerSetup={providerSetup}
             />

@@ -52,6 +52,7 @@ type SetupScreenProps = {
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
   onOpenCodexBar?: () => void;
+  onRepairCodexBar?: () => void;
   onRetryProviders?: () => void;
   hostedMode?: boolean;
   macAppRelease?: CompanionReleaseInfo | null;
@@ -85,6 +86,7 @@ export function SetupScreen({
   onRepairConnection,
   onResetSetup,
   onOpenCodexBar,
+  onRepairCodexBar,
   onRetryProviders,
   hostedMode = false,
   macAppRelease = null,
@@ -444,6 +446,7 @@ export function SetupScreen({
                 <ProviderSetupCard
                   busyAction={busyAction}
                   onOpenCodexBar={onOpenCodexBar}
+                  onRepairCodexBar={onRepairCodexBar}
                   onRetry={onRetryProviders}
                   providerSetup={providerSetup}
                 />

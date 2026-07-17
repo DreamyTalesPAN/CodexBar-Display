@@ -549,6 +549,7 @@ async function testStartupStateMachine(browser, appUrl) {
   await testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl);
   await testMultipleVibeTVsRequireAChoice(browser, appUrl);
   await testMissingVibeTVOffersRetry(browser, appUrl);
+  await testDeniedLocalNetworkShowsRecovery(browser, appUrl);
 }
 
 async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
@@ -661,6 +662,35 @@ async function testMissingVibeTVOffersRetry(browser, appUrl) {
   await page.close();
 }
 
+async function testDeniedLocalNetworkShowsRecovery(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    searchError: {
+      code: "local_network_access_denied",
+      message: "Local Network access is off for VibeTV Control Center.",
+      nextAction:
+        "Open System Settings > Privacy & Security > Local Network, allow VibeTV Control Center, then try again.",
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByText("Local Network access is off for VibeTV Control Center.", {
+      exact: true,
+    })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText(
+      "Open System Settings > Privacy & Security > Local Network, allow VibeTV Control Center, then try again.",
+      { exact: true },
+    )
+    .waitFor({ timeout: 10_000 });
+  await page.close();
+}
+
 async function testProviderReadinessCustomerStates(browser, appUrl) {
   const cases = [
     {
@@ -681,6 +711,10 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       status: "config_error",
       expected:
         "CodexBar could not save its provider settings. Open CodexBar and finish provider setup there.",
+    },
+    {
+      status: "not_configured",
+      expected: "No usable AI provider is configured yet.",
     },
   ];
 
@@ -733,6 +767,11 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     assert(
       (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
       `${fixture.status} must not offer Fix connection`,
+    );
+    assert(
+      (await page.getByRole("button", { name: "Repair CodexBar" }).count()) ===
+        (fixture.status === "not_configured" ? 1 : 0),
+      `${fixture.status} must expose CodexBar repair only when the engine is missing`,
     );
 
     if (fixture.status === "auth_required") {
@@ -843,11 +882,15 @@ async function testOverviewKeepsTransientConnectionCustomerFriendly(
 }
 
 function providerSetupFixture(status) {
+  const engineProblem = ["config_error", "not_configured", "engine_error"].includes(
+    status,
+  );
+  const codexBarProblem = ["not_configured", "engine_error"].includes(status);
   return {
     status: "setup_required",
     checkedAt: "2026-07-17T17:00:00Z",
     engine: {
-      status: status === "config_error" ? "config_error" : "ready",
+      status: engineProblem ? status : "ready",
       version: "0.44.0",
       path: "/Users/customer/Applications/CodexBar.app",
       source: "bundled",
@@ -855,10 +898,13 @@ function providerSetupFixture(status) {
     },
     providers: [
       {
-        id: "claude",
-        label: "Claude",
+        id: codexBarProblem ? "codexbar" : "claude",
+        label: codexBarProblem ? "CodexBar" : "Claude",
         enabled: true,
         status,
+        detail: codexBarProblem
+          ? "No usable AI provider is configured yet."
+          : undefined,
       },
     ],
   };
@@ -2847,6 +2893,7 @@ async function routeCompanionOnline(
     repairError = false,
     selectError = false,
     searchDevices,
+    searchError,
     searchDelayMs = 0,
     firstStatusDelayMs = 0,
     statusDeviceSequence,
@@ -3183,6 +3230,14 @@ async function routeCompanionOnline(
     if (pathname === "/v1/device/search") {
       if (searchDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, searchDelayMs));
+      }
+      if (searchError) {
+        await route.fulfill({
+          status: 403,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false, error: searchError }),
+        });
+        return;
       }
       const devices =
         onSearch?.(currentDevice) ||

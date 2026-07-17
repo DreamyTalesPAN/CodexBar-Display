@@ -15,6 +15,7 @@ import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
   isLocalCompanionOrigin,
+  launchCodexBarRepair,
   localizeCompanionAssetUrl,
   localControlCenterUrl,
   needsLoopbackTargetAddressSpace,
@@ -2205,6 +2206,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }}
       onResetSetup={resetSetup}
       onOpenCodexBar={() => runProviderAction("open-codexbar")}
+      onRepairCodexBar={launchCodexBarRepair}
       onRetryProviders={() => runProviderAction("retry")}
       onCreateSupportReport={loadSupportDiagnostics}
     />
@@ -2279,6 +2281,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           companionStatus={companionStatus}
           onRefresh={() => refreshUsage()}
           onOpenCodexBar={() => runProviderAction("open-codexbar")}
+          onRepairCodexBar={launchCodexBarRepair}
           onRetryProviders={() => runProviderAction("retry")}
           providerSetup={providerSetup}
           usage={usage}

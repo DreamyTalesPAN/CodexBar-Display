@@ -58,6 +58,10 @@ func runURLSchemeTests() {
         "a restored legacy runtime must keep the WebView closed until native installation succeeds"
     )
     require(
+        !RuntimePreparationOutcome.codexBarRepairRequired.shouldReloadControlCenter,
+        "a failed CodexBar installation must keep customer setup blocked"
+    )
+    require(
         !RuntimePreparationOutcome.keepCurrentPage.shouldReloadControlCenter,
         "uncertain runtime state must not force a misleading WebView refresh"
     )
@@ -106,6 +110,20 @@ func runURLSchemeTests() {
         require(
             !isCheckForUpdatesURL(URL(string: rejectedUpdateURL)!),
             "unexpected update action must be rejected: \(rejectedUpdateURL)"
+        )
+    }
+    require(
+        isRepairCodexBarURL(URL(string: "vibetv://repair-codexbar")!),
+        "the exact native CodexBar repair action must be accepted"
+    )
+    for rejectedRepairURL in [
+        "vibetv://repair-codexbar/extra",
+        "vibetv://repair-codexbar?force=true",
+        "https://repair-codexbar",
+    ] {
+        require(
+            !isRepairCodexBarURL(URL(string: rejectedRepairURL)!),
+            "unexpected CodexBar repair action must be rejected: \(rejectedRepairURL)"
         )
     }
     require(
