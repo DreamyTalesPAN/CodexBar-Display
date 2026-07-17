@@ -15,15 +15,11 @@ static_assert(sizeof(AnimatedGIF) <= 15U * 1024U, "AnimatedGIF decoder exceeds t
 
 namespace {
 
-constexpr int kLayoutMargin = 8;
-constexpr int kLayoutLowerOffset = 35;
-
 }  // namespace
 
 GifCoreESP8266* GifCoreESP8266::activeInstance_ = nullptr;
 
-void GifCoreESP8266::Setup(const char* preloadAssetPath) {
-  (void)preloadAssetPath;
+void GifCoreESP8266::Setup() {
   activeInstance_ = this;
   if (!fsMounted_) {
     fsMounted_ = LittleFS.begin();
@@ -46,6 +42,7 @@ void GifCoreESP8266::Stop() {
   drawHeight_ = 0;
   hasBackgroundColor_ = false;
   backgroundColor_ = 0x0000;
+  firstFrameCoversCanvasOpaque_ = false;
 }
 
 void GifCoreESP8266::ReleaseMemory() {
@@ -58,10 +55,6 @@ void GifCoreESP8266::ReleaseMemory() {
   lastErrorStage_ = "";
   lastErrorFailures_ = 0;
   lastFailureAtMs_ = 0;
-}
-
-bool GifCoreESP8266::PrepareDecoder() {
-  return EnsureDecoder();
 }
 
 bool GifCoreESP8266::EnsureDecoder() {
@@ -80,10 +73,6 @@ void GifCoreESP8266::ReleaseDecoder() {
   decoder_ = nullptr;
 }
 
-void GifCoreESP8266::ResetFrameSchedule() {
-  nextFrameAtMs_ = 0;
-}
-
 void GifCoreESP8266::ResetForAssetUpdate() {
   ReleaseMemory();
   fsMounted_ = false;
@@ -93,31 +82,20 @@ void GifCoreESP8266::ResetForAssetUpdate() {
   lastErrorStage_ = "";
   lastErrorFailures_ = 0;
   lastFailureAtMs_ = 0;
-  for (uint8_t i = 0; i < kFailureGuardSlots; ++i) {
-    guards_[i] = GifFailureGuard();
-  }
+  guard_ = GifFailureGuard();
 }
 
-GifCoreESP8266::GifFailureGuard& GifCoreESP8266::GuardForSlot(GifFailureSlot slot) {
-  uint8_t idx = static_cast<uint8_t>(slot);
-  if (idx >= kFailureGuardSlots) {
-    idx = 0;
-  }
-  return guards_[idx];
-}
-
-void GifCoreESP8266::NoteFailure(GifFailureSlot slot, const char* path, const char* stage) {
+void GifCoreESP8266::NoteFailure(const char* path, const char* stage) {
   if (path == nullptr || path[0] == '\0') {
     return;
   }
 
-  GifFailureGuard& guard = GuardForSlot(slot);
-  const uint8_t failuresBefore = guard.consecutiveFailures;
-  const bool enteredBackoff = GifCorePolicy::RecordFailure(guard, millis());
+  const uint8_t failuresBefore = guard_.consecutiveFailures;
+  const bool enteredBackoff = GifCorePolicy::RecordFailure(guard_, millis());
   const unsigned int reportedFailures = enteredBackoff
                                             ? static_cast<unsigned int>(
                                                   failuresBefore + (failuresBefore < 255 ? 1 : 0))
-                                            : static_cast<unsigned int>(guard.consecutiveFailures);
+                                                  : static_cast<unsigned int>(guard_.consecutiveFailures);
   lastErrorPath_ = path;
   lastErrorStage_ = stage != nullptr ? stage : "unknown";
   lastErrorFailures_ = reportedFailures;
@@ -136,25 +114,23 @@ void GifCoreESP8266::NoteFailure(GifFailureSlot slot, const char* path, const ch
   Serial.printf("gif_playback_backoff path=%s retry_in_ms=%lu\n", path, GifCorePolicy::kFailureBackoffMs);
 }
 
-void GifCoreESP8266::NoteSuccess(GifFailureSlot slot, const char* path) {
+void GifCoreESP8266::NoteSuccess(const char* path) {
   if (path == nullptr || path[0] == '\0') {
     return;
   }
-  GifFailureGuard& guard = GuardForSlot(slot);
-  GifCorePolicy::RecordSuccess(guard);
+  GifCorePolicy::RecordSuccess(guard_);
   lastErrorPath_ = "";
   lastErrorStage_ = "";
   lastErrorFailures_ = 0;
   lastFailureAtMs_ = 0;
 }
 
-bool GifCoreESP8266::IsBlocked(GifFailureSlot slot, const char* path) {
+bool GifCoreESP8266::IsBlocked(const char* path) {
   if (path == nullptr || path[0] == '\0') {
     return true;
   }
 
-  GifFailureGuard& guard = GuardForSlot(slot);
-  return GifCorePolicy::IsBlocked(guard, millis());
+  return GifCorePolicy::IsBlocked(guard_, millis());
 }
 
 bool GifCoreESP8266::EnsureStorage(const char* path) {
@@ -169,30 +145,14 @@ bool GifCoreESP8266::EnsureStorage(const char* path) {
 }
 
 void GifCoreESP8266::ConfigureDrawRect(TFT_eSPI& tft, const GifPlaybackRequest& request) {
-  drawWidth_ = gifWidth_;
-  drawHeight_ = gifHeight_;
-
-  if (request.layoutMode == GifLayoutMode::Explicit) {
-    const int boxWidth = request.width > 0 ? request.width : gifWidth_;
-    const int boxHeight = request.height > 0 ? request.height : gifHeight_;
-    const GifDrawRect rect = GifCorePolicy::FitContain(request.x, request.y, boxWidth, boxHeight, gifWidth_, gifHeight_);
-    drawX_ = rect.x;
-    drawY_ = rect.y;
-    drawWidth_ = rect.width;
-    drawHeight_ = rect.height;
-  } else if (request.layoutMode == GifLayoutMode::BottomRightMini) {
-    drawX_ = tft.width() - gifWidth_ - kLayoutMargin;
-    drawY_ = tft.height() - gifHeight_ - kLayoutMargin;
-  } else if (request.layoutMode == GifLayoutMode::FullscreenCenter) {
-    drawX_ = (tft.width() - gifWidth_) / 2;
-    drawY_ = (tft.height() - gifHeight_) / 2;
-  } else if (request.layoutMode == GifLayoutMode::FullscreenCenterLower) {
-    drawX_ = (tft.width() - gifWidth_) / 2;
-    drawY_ = ((tft.height() - gifHeight_) / 2) + kLayoutLowerOffset;
-  } else {
-    drawX_ = tft.width() - gifWidth_ - kLayoutMargin;
-    drawY_ = kLayoutMargin;
-  }
+  const int boxWidth = request.width > 0 ? request.width : gifWidth_;
+  const int boxHeight = request.height > 0 ? request.height : gifHeight_;
+  const GifDrawRect rect =
+      GifCorePolicy::FitContain(request.x, request.y, boxWidth, boxHeight, gifWidth_, gifHeight_);
+  drawX_ = rect.x;
+  drawY_ = rect.y;
+  drawWidth_ = rect.width;
+  drawHeight_ = rect.height;
 
   if (drawX_ < 0) {
     drawX_ = 0;
@@ -229,37 +189,29 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
     return false;
   }
 
-  if (IsBlocked(request.failureSlot, request.assetPath)) {
-    Stop();
-    return false;
-  }
-
   tft_ = &tft;
   hasBackgroundColor_ = request.hasBackgroundColor;
   backgroundColor_ = request.backgroundColor;
 
   const String requestPath(request.assetPath);
-  if (GifCorePolicy::RequestChanged(
-          assetPath_.c_str(),
-          static_cast<uint8_t>(layoutMode_),
-          static_cast<uint8_t>(failureSlot_),
-          requestPath.c_str(),
-          static_cast<uint8_t>(request.layoutMode),
-          static_cast<uint8_t>(request.failureSlot))) {
+  if (assetPath_ != requestPath) {
     Stop();
     assetPath_ = requestPath;
-    layoutMode_ = request.layoutMode;
-    failureSlot_ = request.failureSlot;
+  }
+
+  if (IsBlocked(request.assetPath)) {
+    Stop();
+    return false;
   }
 
   if (!EnsureStorage(request.assetPath)) {
-    NoteFailure(request.failureSlot, request.assetPath, "fs_mount");
+    NoteFailure(request.assetPath, "fs_mount");
     Stop();
     return false;
   }
 
   if (!filePresent_) {
-    NoteFailure(request.failureSlot, request.assetPath, "missing_file");
+    NoteFailure(request.assetPath, "missing_file");
     Stop();
     return false;
   }
@@ -274,7 +226,6 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
       ValidateGifAssetFile(request.assetPath, kMaxThemeGifLzwBits, &validationInfo);
   if (validationError != GifValidationError::None) {
     NoteFailure(
-        request.failureSlot,
         request.assetPath,
         validationError == GifValidationError::LzwCodeSizeExceeded ? "lzw_profile" : "invalid_gif");
     Stop();
@@ -284,10 +235,11 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
   Stop();
   gifWidth_ = validationInfo.width;
   gifHeight_ = validationInfo.height;
+  firstFrameCoversCanvasOpaque_ = validationInfo.firstFrameCoversCanvasOpaque;
   ConfigureDrawRect(tft, request);
 
-  if (!PrepareDecoder()) {
-    NoteFailure(request.failureSlot, request.assetPath, "decoder_alloc");
+  if (!EnsureDecoder()) {
+    NoteFailure(request.assetPath, "decoder_alloc");
     Stop();
     return false;
   }
@@ -300,7 +252,7 @@ bool GifCoreESP8266::EnsurePlayback(TFT_eSPI& tft, const GifPlaybackRequest& req
           ReadCallback,
           SeekCallback,
           DrawCallback)) {
-    NoteFailure(request.failureSlot, request.assetPath, "decoder_open");
+    NoteFailure(request.assetPath, "decoder_open");
     Stop();
     return false;
   }
@@ -329,18 +281,20 @@ bool GifCoreESP8266::PlayFrame(TFT_eSPI& tft, bool forceFrame) {
 
   if (!played) {
     if (decoder_ == nullptr) {
-      NoteFailure(failureSlot_, assetPath_.c_str(), "decoder_missing");
+      NoteFailure(assetPath_.c_str(), "decoder_missing");
       Stop();
       return false;
     }
-    decoder_->reset();
-    ClearDrawRect(tft);
     {
       display::DisplayTransaction transaction;
+      decoder_->reset();
+      if (!firstFrameCoversCanvasOpaque_) {
+        ClearDrawRect(tft);
+      }
       played = decoder_->playFrame(false, &delayMs, nullptr);
     }
     if (!played) {
-      NoteFailure(failureSlot_, assetPath_.c_str(), "frame_decode");
+      NoteFailure(assetPath_.c_str(), "frame_decode");
       Stop();
       return false;
     }
@@ -351,12 +305,8 @@ bool GifCoreESP8266::PlayFrame(TFT_eSPI& tft, bool forceFrame) {
   }
 
   nextFrameAtMs_ = frameStartMs + static_cast<unsigned long>(delayMs);
-  NoteSuccess(failureSlot_, assetPath_.c_str());
+  NoteSuccess(assetPath_.c_str());
   return true;
-}
-
-bool GifCoreESP8266::EnsureReady(TFT_eSPI& tft, const GifPlaybackRequest& request) {
-  return EnsurePlayback(tft, request);
 }
 
 bool GifCoreESP8266::Tick(TFT_eSPI& tft, const GifPlaybackRequest& request, bool forceFrame) {
@@ -364,26 +314,6 @@ bool GifCoreESP8266::Tick(TFT_eSPI& tft, const GifPlaybackRequest& request, bool
     return false;
   }
   return PlayFrame(tft, forceFrame);
-}
-
-int GifCoreESP8266::ReservedWidthFor(const char* assetPath, int fallbackWidth) const {
-  if (assetPath == nullptr || assetPath_[0] == '\0' || assetPath_ != assetPath) {
-    return fallbackWidth;
-  }
-  if (decoderOpen_ && gifWidth_ > 0) {
-    return gifWidth_;
-  }
-  if (filePresent_ && gifWidth_ > 0) {
-    return gifWidth_;
-  }
-  return fallbackWidth;
-}
-
-bool GifCoreESP8266::IsCurrentAssetPresent(const char* assetPath) const {
-  if (assetPath == nullptr || assetPath[0] == '\0' || assetPath_ != assetPath) {
-    return false;
-  }
-  return filePresent_;
 }
 
 GifCoreStatusSnapshot GifCoreESP8266::StatusSnapshot() const {
@@ -399,13 +329,10 @@ GifCoreStatusSnapshot GifCoreESP8266::StatusSnapshot() const {
   snapshot.lastErrorFailures = lastErrorFailures_;
 
   const unsigned long now = millis();
-  const GifFailureGuard& guard = guards_[static_cast<uint8_t>(failureSlot_) < kFailureGuardSlots
-                                             ? static_cast<uint8_t>(failureSlot_)
-                                             : 0];
-  snapshot.consecutiveFailures = guard.consecutiveFailures;
-  if (guard.backoffUntilMs != 0 && static_cast<long>(now - guard.backoffUntilMs) < 0) {
+  snapshot.consecutiveFailures = guard_.consecutiveFailures;
+  if (guard_.backoffUntilMs != 0 && static_cast<long>(now - guard_.backoffUntilMs) < 0) {
     snapshot.blocked = true;
-    snapshot.backoffRemainingMs = guard.backoffUntilMs - now;
+    snapshot.backoffRemainingMs = guard_.backoffUntilMs - now;
   }
   if (lastFailureAtMs_ != 0) {
     snapshot.lastErrorAgeMs = now - lastFailureAtMs_;

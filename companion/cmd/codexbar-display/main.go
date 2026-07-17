@@ -327,10 +327,8 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 			wakeDisplayWorker()
 			return nil
 		},
-		PauseDisplayStream: func(paused bool) {
-			deviceWrites.setPaused(paused)
-			wakeDisplayWorker()
-		},
+		PauseDisplayStream: deviceWrites.setPaused,
+		WakeDisplayStream:  wakeDisplayWorker,
 	})
 	if err != nil {
 		return err

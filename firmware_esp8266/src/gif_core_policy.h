@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stdint.h>
-#include <string.h>
 
 namespace codexbar_display {
 namespace esp8266 {
@@ -99,27 +98,6 @@ class GifCorePolicy {
     return rect;
   }
 
-  static bool RequestChanged(
-      const char* currentPath,
-      uint8_t currentLayout,
-      uint8_t currentSlot,
-      const char* requestedPath,
-      uint8_t requestedLayout,
-      uint8_t requestedSlot) {
-    const char* current = currentPath != nullptr ? currentPath : "";
-    const char* requested = requestedPath != nullptr ? requestedPath : "";
-
-    if (strcmp(current, requested) != 0) {
-      return true;
-    }
-    if (currentLayout != requestedLayout) {
-      return true;
-    }
-    if (currentSlot != requestedSlot) {
-      return true;
-    }
-    return false;
-  }
 };
 
 }  // namespace esp8266

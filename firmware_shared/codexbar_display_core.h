@@ -4,8 +4,6 @@
 #include <ArduinoJson.h>
 #include <cstring>
 
-#include "theme_registry.h"
-
 #ifndef CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 #define CODEXBAR_DISPLAY_THEME_SPEC_RENDERER 0
 #endif
@@ -33,8 +31,6 @@ struct Frame {
   String activity;
   String timeText;
   String dateText;
-  bool hasTheme = false;
-  String theme;
   bool clearThemeSpec = false;
   bool hasThemeSpec = false;
   String themeSpecId;
@@ -73,27 +69,11 @@ struct SerialConsumeEvent {
   bool frameAccepted = false;
   bool hadFrame = false;
   bool visualChanged = false;
-  bool themeChanged = false;
   bool themeSpecChanged = false;
   bool themeSpecCacheHit = false;
   bool themeSpecPartialRender = false;
   uint32_t themeSpecChangedFields = 0;
 };
-
-inline bool KeepLastThemeSpecFrameAfterPartialRenderFailure(const Frame& current, const SerialConsumeEvent& event) {
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  return event.visualChanged &&
-         event.themeSpecPartialRender &&
-         current.hasThemeSpec &&
-         !current.hasError &&
-         !event.themeChanged &&
-         !event.themeSpecChanged;
-#else
-  (void)current;
-  (void)event;
-  return false;
-#endif
-}
 
 inline int ClampPct(int value) {
   if (value < 0) {
@@ -300,10 +280,9 @@ inline bool ThemeSpecCanUsePartialRender(
     const String& themeSpecRaw,
     bool hadFrame,
     bool visualChanged,
-    bool themeChanged,
     bool themeSpecChanged) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  if (!hadFrame || !visualChanged || themeChanged || themeSpecChanged || previous.hasError || next.hasError) {
+  if (!hadFrame || !visualChanged || themeSpecChanged || previous.hasError || next.hasError) {
     return false;
   }
   if (!previous.hasThemeSpec || !next.hasThemeSpec || next.clearThemeSpec) {
@@ -324,7 +303,6 @@ inline bool ThemeSpecCanUsePartialRender(
   (void)themeSpecRaw;
   (void)hadFrame;
   (void)visualChanged;
-  (void)themeChanged;
   (void)themeSpecChanged;
   return false;
 #endif
@@ -401,7 +379,7 @@ inline String FormatDuration(int64_t secs) {
   return String(minutes) + "m";
 }
 
-inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
+inline bool ParseFrameLine(const char* line, Frame& out) {
   JsonDocument doc;
   const DeserializationError err = deserializeJson(doc, line);
   if (err) {
@@ -409,12 +387,6 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     out.hasError = true;
     out.error = String("bad json: ") + err.c_str();
     return true;
-  }
-
-  bool hasTheme = false;
-  String themeName;
-  if (allowTheme && doc["theme"].is<const char*>()) {
-    hasTheme = theme::NormalizeThemeName(String(doc["theme"].as<const char*>()), themeName);
   }
 
   bool hasThemeSpec = false;
@@ -449,19 +421,6 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     themeSpecRev = static_cast<int>(spec["themeRev"] | spec["rev"] | 0);
     hasThemeSpec = (themeSpecId.length() > 0 && themeSpecRev > 0);
 
-    const char* fallback = nullptr;
-    if (spec["fallbackTheme"].is<const char*>()) {
-      fallback = spec["fallbackTheme"].as<const char*>();
-    } else if (spec["fb"].is<const char*>()) {
-      fallback = spec["fb"].as<const char*>();
-    }
-    if (allowTheme && !hasTheme && fallback != nullptr) {
-      String fallbackTheme;
-      if (theme::NormalizeThemeName(String(fallback), fallbackTheme)) {
-        hasTheme = true;
-        themeName = fallbackTheme;
-      }
-    }
   }
 
   bool hasUsageMode = false;
@@ -513,8 +472,6 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
     out.activity = activity;
     out.timeText = String(doc["time"] | "");
     out.dateText = String(doc["date"] | "");
-    out.hasTheme = hasTheme;
-    out.theme = themeName;
     out.clearThemeSpec = clearThemeSpec;
     out.hasThemeSpec = hasThemeSpec;
     out.themeSpecId = themeSpecId;
@@ -546,8 +503,6 @@ inline bool ParseFrameLine(const char* line, bool allowTheme, Frame& out) {
   out.hasUsageMode = hasUsageMode;
   out.usageMode = usageMode;
   out.activity = activity;
-  out.hasTheme = hasTheme;
-  out.theme = themeName;
   out.clearThemeSpec = clearThemeSpec;
   out.hasThemeSpec = hasThemeSpec;
   out.themeSpecId = themeSpecId;
@@ -614,36 +569,8 @@ inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
 #endif
 }
 
-inline bool FrameThemeChanged(const Frame& previous, const Frame& next) {
-  if (!next.hasTheme) {
-    return false;
-  }
-  if (!previous.hasTheme) {
-    return true;
-  }
-  return previous.theme != next.theme;
-}
-
 inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previous, Frame& next, SerialConsumeEvent& outEvent) {
   if (next.hasError) {
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    if (previous.hasThemeSpec) {
-      next = previous;
-      next.themeSpecRaw = "";
-      outEvent.themeSpecCacheHit = true;
-    } else if (runtimeState.cachedThemeRev > 0 &&
-               ThemeSpecRawLooksRenderable(runtimeState.cachedThemeSpecRaw)) {
-      next = previous;
-      next.hasError = false;
-      next.error = "";
-      next.clearThemeSpec = false;
-      next.hasThemeSpec = true;
-      next.themeSpecId = runtimeState.cachedThemeId;
-      next.themeSpecRev = runtimeState.cachedThemeRev;
-      next.themeSpecRaw = "";
-      outEvent.themeSpecCacheHit = true;
-    }
-#endif
     return;
   }
 
@@ -746,7 +673,6 @@ inline bool ConsumeFrameLine(
     RuntimeState& runtimeState,
     const char* line,
     unsigned long nowMillis,
-    bool allowTheme,
     SerialConsumeEvent& outEvent) {
   outEvent = {};
   if (line == nullptr || line[0] == '\0') {
@@ -754,7 +680,7 @@ inline bool ConsumeFrameLine(
   }
 
   Frame next;
-  if (!ParseFrameLine(line, allowTheme, next)) {
+  if (!ParseFrameLine(line, next)) {
     return false;
   }
 
@@ -767,7 +693,6 @@ inline bool ConsumeFrameLine(
   outEvent.hadFrame = runtimeState.hasFrame;
   const String& themeSpecRaw = ThemeSpecRawForFrame(runtimeState, next);
   outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChangedWithThemeSpecRaw(previous, next, themeSpecRaw) || outEvent.themeSpecChanged;
-  outEvent.themeChanged = outEvent.hadFrame && FrameThemeChanged(previous, next);
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   outEvent.themeSpecChangedFields = ThemeSpecLiveChangedFields(previous, next);
   outEvent.themeSpecPartialRender = ThemeSpecCanUsePartialRender(
@@ -776,7 +701,6 @@ inline bool ConsumeFrameLine(
       themeSpecRaw,
       outEvent.hadFrame,
       outEvent.visualChanged,
-      outEvent.themeChanged,
       outEvent.themeSpecChanged);
 #endif
 
@@ -793,7 +717,6 @@ inline bool ConsumeSerialByte(
     RuntimeState& runtimeState,
     char c,
     unsigned long nowMillis,
-    bool allowTheme,
     SerialConsumeEvent& outEvent) {
   outEvent = {};
 
@@ -812,7 +735,7 @@ inline bool ConsumeSerialByte(
 
   lineState.buffer[lineState.len] = '\0';
   if (!lineState.overflowed && lineState.len > 0) {
-    (void)ConsumeFrameLine(runtimeState, lineState.buffer, nowMillis, allowTheme, outEvent);
+    (void)ConsumeFrameLine(runtimeState, lineState.buffer, nowMillis, outEvent);
   }
 
   lineState.len = 0;

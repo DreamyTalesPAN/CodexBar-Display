@@ -410,12 +410,13 @@ source=Developer ID"
 )
 
 main() {
-  local tmp app dmg stage sign_output
+  local tmp app preview_app dmg stage sign_output
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-macos-test.XXXXXX")"
   TMP_TEST_DIR="$tmp"
   trap cleanup EXIT
 
   app="${tmp}/VibeTV Control Center.app"
+  preview_app="${tmp}/VibeTV Control Center Preview.app"
   dmg="${tmp}/VibeTV-Control-Center-v1.2.3.dmg"
   stage="${tmp}/dmg-stage"
 
@@ -437,6 +438,15 @@ main() {
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
   assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
   assert_file "${app}/Contents/Frameworks/Sparkle.framework/README.txt"
+
+  "${ROOT}/scripts/build-macos-control-center-app.sh" \
+    --dry-run \
+    --local-preview \
+    --version "1.2.3-preview.146" \
+    --build "146" \
+    --output "$preview_app" >/dev/null
+  [[ "$(plutil -extract VibeTVLocalPreviewRuntime raw -o - "${preview_app}/Contents/Info.plist")" == "true" ]] \
+    || die "local preview bundle must opt into its isolated preview runtime"
 
   python3 - \
     "${app}/Contents/Info.plist" \
@@ -460,6 +470,7 @@ expected = {
     "SUEnableAutomaticChecks": False,
     "SUFeedURL": "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/appcast.xml",
     "SUPublicEDKey": "2txeIAd+ofTbffzPR5hy5J4lvGX8LGclIdG82es1qPA=",
+    "VibeTVLocalPreviewRuntime": False,
 }
 
 for key, value in expected.items():
@@ -555,16 +566,16 @@ required_source = [
     "try runtimeService.register()",
     "runtimeService.unregister(completionHandler:",
     "runtimeServiceNeedsRefresh(",
+    'previewRuntimeLaunchAgentLabel =',
+    'localPreviewRuntimeInfoKey = "VibeTVLocalPreviewRuntime"',
+    'registerLocalPreviewRuntimeService()',
+    'unregisterLocalPreviewRuntimeService()',
+    '"CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL":',
     'runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"',
     'runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"',
-    'runtimeDeviceStatusURLString = "http://127.0.0.1:47832/v1/status"',
-    'runtimeDeviceRepairURLString = "http://127.0.0.1:47832/v1/device/repair"',
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",
-    "let devicePreparation = await prepareExistingDeviceConnectionWithRetries(",
-    "guard let statusRequest = makeExistingDeviceStatusRequest()",
-    "requireFreshFullFrame: !legacyStates.isEmpty || !legacyApps.isEmpty",
-    "var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)",
+    "timeout: runtimeInitialHealthTimeout",
     "shouldRetryRuntimeRegistration(",
     "shouldRunRuntimeValidationUnregister(",
     '"--vibetv-validation-unregister-runtime"',
@@ -628,13 +639,22 @@ prepare_start = source.find("private func startRuntimePreparation()")
 prepare_end = source.find("@objc private func retryRuntimePreparation()", prepare_start)
 preparation_method = source[prepare_start:prepare_end]
 status_start = preparation_method.find("presentInstallationStatus(")
+preflight_call = preparation_method.find("await self?.performLocalNetworkPrivacyPreflight()")
+preparation_task = preparation_method.find("preparationTask = Task")
 prepare_runtime = preparation_method.find("let outcome = await self.prepareCompanion()")
 native_case = preparation_method.find("case .nativeRuntimeReady:", prepare_runtime)
 webview_after_verify = preparation_method.find("self.presentControlCenter()", native_case)
 legacy_case = preparation_method.find("case .legacyRuntimeRestored:", native_case)
-if not (0 <= status_start < prepare_runtime < native_case < webview_after_verify < legacy_case):
+if not (
+    0 <= status_start < preflight_call < preparation_task < prepare_runtime
+    < native_case < webview_after_verify < legacy_case
+):
     raise SystemExit(
         "native app must keep the WebView closed until app, runtime, and listener verification succeeds"
+    )
+if "await self.performLocalNetworkPrivacyPreflight()" in preparation_method:
+    raise SystemExit(
+        "local-network privacy preflight must run in parallel and never block runtime preparation"
     )
 
 if "shouldRetryControlCenterNavigation(error)" not in source:
@@ -674,52 +694,60 @@ if "guard !installationRequired, installationReady else" not in present_source:
         "native app must prevent every unverified launch from creating a WebView"
     )
 
+create_window_start = source.find("private func createWindow()")
+create_window_end = source.find("private func makeMainWindow()", create_window_start)
+create_window_source = source[create_window_start:create_window_end]
+if "loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)" not in create_window_source:
+    raise SystemExit(
+        "native app must bypass stale Control Center HTML on the first verified WebView load"
+    )
+
 registration = source.find("guard await ensureBundledRuntimeServiceRegistered()")
 stop_legacy = source.find("if !stopLegacyLaunchAgents(legacyStates)")
 health_gate = source.find("var health = await waitForHealthyRuntime")
-device_preparation = source.find(
-    "let devicePreparation = await prepareExistingDeviceConnectionWithRetries(",
-    health_gate,
-)
 legacy_app_migration = source.find(
     "let migratedLegacyApps = await migrateLegacyAppsAfterHealthyRuntime",
     health_gate,
 )
 persist_version = source.find("recordCurrentRuntimeBundleVersion()", health_gate)
 if not (
-    0 <= stop_legacy < registration < health_gate < device_preparation
+    0 <= stop_legacy < registration < health_gate
     < legacy_app_migration < persist_version
 ):
     raise SystemExit(
-        "native app must stop legacy writers, register, pass health, repair the existing device, migrate old apps, then persist"
+        "native app must stop legacy writers, register, pass local runtime health, migrate old apps, then persist"
     )
-
 prepare_start = source.find("private func prepareCompanion() async")
 prepare_end = source.find("private func ensureBundledRuntimeServiceRegistered()", prepare_start)
 prepare_method = source[prepare_start:prepare_end]
+if "/v1/device/repair" in prepare_method or "prepareExistingDeviceConnection" in prepare_method:
+    raise SystemExit(
+        "native installation must not probe, pair, or repair a VibeTV"
+    )
 native_ready = prepare_method.find("return .nativeRuntimeReady")
 if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):
     raise SystemExit(
         "native runtime must pass the health and ownership gate before triggering a fresh WebView load"
+    )
+if "timeout: runtimeInitialHealthTimeout" not in prepare_method:
+    raise SystemExit(
+        "native runtime must detect a stale first Service Management launch before the full retry timeout"
     )
 retry_gate = prepare_method.find("if shouldRetryRuntimeRegistration(")
 retry_unregister = prepare_method.find("await unregisterBundledRuntimeService()", retry_gate)
 retry_register = prepare_method.find("registerBundledRuntimeService()", retry_unregister)
 retry_health = prepare_method.find("health = await waitForHealthyRuntime", retry_register)
 final_health_gate = prepare_method.find("guard runtimeHealthGatePassed(health)", retry_health)
-final_device_preparation = prepare_method.find(
-    "let devicePreparation = await prepareExistingDeviceConnectionWithRetries(",
-    final_health_gate,
-)
+first_native_ready = prepare_method.find("return .nativeRuntimeReady", final_health_gate)
 if not (
     prepare_method.count("if shouldRetryRuntimeRegistration(") == 1
     and 0 <= retry_gate < retry_unregister < retry_register < retry_health
-    < final_health_gate < final_device_preparation
+    < final_health_gate < first_native_ready
 ):
     raise SystemExit(
         "native runtime may perform exactly one unregister/register/health recovery before the final gate"
     )
-if "runtimeService.status == .enabled" in prepare_method[retry_health:final_device_preparation]:
+if "runtimeService.status == .enabled" in prepare_method[retry_health:first_native_ready]:
     raise SystemExit(
         "proven runtime health must not be rejected by a stale Service Management status"
     )
@@ -778,6 +806,10 @@ health_method = source[
     source.find("private func waitForHealthyRuntime("):
     source.find("private func currentCompanionVersion()")
 ]
+if "timeout: TimeInterval = runtimeHealthTimeout" not in health_method:
+    raise SystemExit(
+        "native runtime recovery must retain the full health timeout after the fast first check"
+    )
 if health_method.find("evaluateRuntimeHealth(") > health_method.find(
     "verifyRuntimeListenerOwnership()"
 ):

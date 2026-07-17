@@ -52,7 +52,6 @@ export type ThemeStudioSpec = {
   themeSpecVersion: 1;
   themeId: string;
   themeRev: number;
-  fallbackTheme?: "mini" | "classic" | "crt" | string;
   bgColor?: string;
   primitives: ThemeStudioPrimitive[];
 };
@@ -114,7 +113,6 @@ type ZipSourceFile = {
 
 const DISPLAY_SIZE = 240;
 const FIXED_THEME_REV = 1;
-const FIXED_FALLBACK_THEME = "mini";
 const MAX_STORED_THEME_SPEC_BYTES = 4096;
 const MAX_THEME_PRIMITIVES = 32;
 const MAX_GIF_BYTES = 24 * 1024;
@@ -243,7 +241,6 @@ export function createBlankThemeSpec(): ThemeStudioSpec {
     themeSpecVersion: 1,
     themeId: "my-theme",
     themeRev: FIXED_THEME_REV,
-    fallbackTheme: FIXED_FALLBACK_THEME,
     bgColor: "#000000",
     primitives: [
       {
@@ -263,7 +260,6 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
     themeSpecVersion: 1,
     themeId: "mini-classic",
     themeRev: FIXED_THEME_REV,
-    fallbackTheme: FIXED_FALLBACK_THEME,
     bgColor: "#000000",
     primitives: [
       {
@@ -371,10 +367,6 @@ export function importThemeSpec(value: unknown): ThemeStudioSpec {
     themeId: stringValue(value.themeId) ?? stringValue(value.id) ?? "",
     themeRev:
       numberValue(value.themeRev) ?? numberValue(value.rev) ?? FIXED_THEME_REV,
-    fallbackTheme:
-      stringValue(value.fallbackTheme) ??
-      stringValue(value.fb) ??
-      FIXED_FALLBACK_THEME,
     bgColor: normalizeColor(
       colorStringValue(value.bgColor) ??
         colorStringValue(value.backgroundColor) ??
@@ -387,11 +379,17 @@ export function importThemeSpec(value: unknown): ThemeStudioSpec {
 }
 
 export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
-  const next = cloneThemeSpec(spec);
+  const next = cloneThemeSpec(spec) as ThemeStudioSpec & {
+    fallbackTheme?: unknown;
+    fb?: unknown;
+  };
   next.themeSpecVersion = 1;
   next.themeId = slugThemeId(next.themeId || "custom-mini");
   next.themeRev = FIXED_THEME_REV;
-  next.fallbackTheme = FIXED_FALLBACK_THEME;
+  // Older Theme Studio documents may still contain the retired fallback
+  // metadata. Keep those documents importable, but never persist or export it.
+  delete next.fallbackTheme;
+  delete next.fb;
   next.bgColor = normalizeColor(next.bgColor) || "#000000";
   next.primitives = Array.isArray(next.primitives) ? next.primitives : [];
   next.primitives = next.primitives.map((primitive) => ({
@@ -439,9 +437,6 @@ export function validateThemeSpec(
   }
   if (normalized.themeRev !== FIXED_THEME_REV) {
     errors.push(`Theme revision must be ${FIXED_THEME_REV}.`);
-  }
-  if (normalized.fallbackTheme !== FIXED_FALLBACK_THEME) {
-    errors.push("Fallback theme must be mini.");
   }
   if (normalized.bgColor && !COLOR_RE.test(normalized.bgColor)) {
     errors.push("Background color must use #RRGGBB.");
@@ -868,9 +863,6 @@ function buildDeviceThemeSpec(spec: ThemeStudioSpec): Record<string, unknown> {
     rev: normalized.themeRev,
     p: normalized.primitives.map(buildDevicePrimitive),
   };
-  if (normalized.fallbackTheme) {
-    compact.fb = normalized.fallbackTheme;
-  }
   if (normalized.bgColor) {
     compact.bg = normalized.bgColor;
   }

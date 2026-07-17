@@ -8,26 +8,26 @@ import Sparkle
 
 private let controlCenterURLString = "http://127.0.0.1:47832/control-center"
 private let runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"
-private let runtimeDeviceStatusURLString = "http://127.0.0.1:47832/v1/status"
-private let runtimeDeviceRepairURLString = "http://127.0.0.1:47832/v1/device/repair"
 private let nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"
 private let controlCenterURLScheme = "vibetv"
 private let controlCenterURLHost = "open-control-center"
 private let checkForUpdatesURLHost = "check-for-updates"
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
 private let runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"
+private let previewRuntimeLaunchAgentLabel =
+    "shop.vibetv.control-center.preview-runtime"
 private let runtimeLaunchAgentPlistName = "shop.vibetv.control-center.runtime.plist"
+private let localPreviewRuntimeInfoKey = "VibeTVLocalPreviewRuntime"
+private let localPreviewRuntimePlistName = "preview-runtime.plist"
 private let runtimeRegisteredVersionDefaultsKey =
     "shop.vibetv.control-center.runtime.registered-bundle-version"
 private let pendingNativeUpdateFileName = "pending-native-update.json"
 private let pendingNativeUpdateMaximumAge: TimeInterval = 30 * 60
+private let runtimeInitialHealthTimeout: TimeInterval = 8
 private let runtimeHealthTimeout: TimeInterval = 35
 private let runtimeHealthRequestTimeout: TimeInterval = 5
-private let runtimeDeviceRepairTimeout: TimeInterval = 90
-private let runtimeDeviceRepairMaxAttempts = 3
 private let localNetworkPrivacyProbeURLString = "http://192.168.4.1/hello"
 private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
-private let runtimeDeviceRepairRetryDelay: Duration = .seconds(3)
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
 private let runtimeValidationUnregisterArgument =
     "--vibetv-validation-unregister-runtime"
@@ -176,22 +176,6 @@ func makeLocalNetworkPrivacyProbeRequest(
     return request
 }
 
-func makeExistingDeviceStatusRequest(
-    urlString: String = runtimeDeviceStatusURLString,
-    timeout: TimeInterval = runtimeHealthRequestTimeout
-) -> URLRequest? {
-    guard let url = URL(string: urlString) else {
-        return nil
-    }
-    var request = URLRequest(
-        url: url,
-        cachePolicy: .reloadIgnoringLocalCacheData,
-        timeoutInterval: timeout
-    )
-    request.httpMethod = "GET"
-    return request
-}
-
 func normalizedCompanionVersion(_ raw: String) -> String {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.lowercased().hasPrefix("v") {
@@ -304,130 +288,8 @@ private struct RuntimeStatusPayload: Decodable {
         }
     }
 
-    struct Device: Decodable {
-        let target: String?
-        let paired: Bool?
-        let ready: Bool
-        let connectionState: String?
-    }
-
     let ok: Bool
     let companion: Companion
-    let device: Device?
-}
-
-private struct RuntimeDeviceRepairPayload: Decodable {
-    struct Device: Decodable {
-        let ready: Bool
-    }
-
-    let ok: Bool
-    let device: Device
-}
-
-enum ExistingDeviceStatusEvaluation: Equatable {
-    case ready
-    case notConfigured
-    case needsRepair
-    case failed(String)
-}
-
-enum ExistingDevicePreparationOutcome: Equatable, CustomStringConvertible {
-    case ready
-    case notConfigured
-    case retryableFailure(String)
-    case failed(String)
-
-    var description: String {
-        switch self {
-        case .ready:
-            return "ready"
-        case .notConfigured:
-            return "not configured"
-        case .retryableFailure(let detail):
-            return "retryable failure: \(detail)"
-        case .failed(let detail):
-            return "failed: \(detail)"
-        }
-    }
-
-    var failureDetail: String? {
-        switch self {
-        case .retryableFailure(let detail), .failed(let detail):
-            return detail
-        case .ready, .notConfigured:
-            return nil
-        }
-    }
-}
-
-func evaluateExistingDeviceStatus(
-    data: Data,
-    httpStatus: Int
-) -> ExistingDeviceStatusEvaluation {
-    guard (200..<300).contains(httpStatus) else {
-        return .failed("unexpected HTTP status \(httpStatus)")
-    }
-    guard let payload = try? JSONDecoder().decode(RuntimeStatusPayload.self, from: data),
-          payload.ok else {
-        return .failed("invalid or unhealthy status JSON")
-    }
-    let target = payload.device?.target?
-        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    guard !target.isEmpty else {
-        return .notConfigured
-    }
-    if payload.device?.ready == true || payload.device?.connectionState == "reconnecting" {
-        return .ready
-    }
-    return .needsRepair
-}
-
-func evaluateExistingDeviceRepair(
-    data: Data,
-    httpStatus: Int
-) -> ExistingDevicePreparationOutcome {
-    guard (200..<300).contains(httpStatus) else {
-        return .failed("unexpected HTTP status \(httpStatus)")
-    }
-    guard let payload = try? JSONDecoder().decode(
-        RuntimeDeviceRepairPayload.self,
-        from: data
-    ), payload.ok else {
-        return .failed("invalid or unsuccessful repair JSON")
-    }
-    guard payload.device.ready else {
-        return .failed("VibeTV did not confirm a fresh full display frame")
-    }
-    return .ready
-}
-
-func shouldRepairExistingDevice(
-    _ evaluation: ExistingDeviceStatusEvaluation,
-    requireFreshFullFrame: Bool
-) -> Bool {
-    switch evaluation {
-    case .needsRepair:
-        return true
-    case .ready:
-        return requireFreshFullFrame
-    case .notConfigured, .failed:
-        return false
-    }
-}
-
-func shouldRetryExistingDevicePreparation(
-    _ outcome: ExistingDevicePreparationOutcome,
-    attempt: Int,
-    maximumAttempts: Int
-) -> Bool {
-    guard attempt < maximumAttempts else {
-        return false
-    }
-    if case .retryableFailure = outcome {
-        return true
-    }
-    return false
 }
 
 enum RuntimeHealthEvaluation: Equatable, CustomStringConvertible {
@@ -867,6 +729,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationRequired: Bool {
         requiresApplicationInstallation(Bundle.main.bundleURL)
     }
+    private var usesLocalPreviewRuntime: Bool {
+        Bundle.main.object(
+            forInfoDictionaryKey: localPreviewRuntimeInfoKey
+        ) as? Bool == true
+    }
+    private var activeRuntimeLaunchAgentLabel: String {
+        usesLocalPreviewRuntime
+            ? previewRuntimeLaunchAgentLabel
+            : runtimeLaunchAgentLabel
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -930,11 +802,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             detail: "Checking the Mac App and its background runtime.",
             failed: false
         )
+        Task { [weak self] in
+            await self?.performLocalNetworkPrivacyPreflight()
+        }
         preparationTask = Task { [weak self] in
             guard let self else {
                 return
             }
-            await self.performLocalNetworkPrivacyPreflight()
             let outcome = await self.prepareCompanion()
             self.preparationTask = nil
             switch outcome {
@@ -1081,7 +955,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         self.window = window
         self.webView = webView
-        loadControlCenter()
+        // The local server can keep the same URL across app updates. Always
+        // fetch the freshly bundled UI instead of reviving an older cached
+        // Control Center whose device-selection logic may be stale.
+        loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)
     }
 
     private func makeMainWindow() -> NSWindow {
@@ -1279,7 +1156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         // Repair an already-overlapping installation before migration. Apple's
         // unregister call terminates the running app-managed LaunchAgent.
-        if hasLoadedLegacyWriter, runtimeService.status == .enabled {
+        if hasLoadedLegacyWriter, bundledRuntimeServiceIsEnabled() {
             guard await unregisterBundledRuntimeService() else {
                 NSLog(
                     "VibeTV Control Center could not stop the app-managed runtime before legacy migration"
@@ -1303,7 +1180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             if !legacyStates.isEmpty {
                 let reason = "the app-managed runtime could not be registered"
                 let restored: Bool
-                if runtimeService.status == .enabled {
+                if bundledRuntimeServiceIsEnabled() {
                     restored = await rollbackToLegacyAgents(legacyStates, reason: reason)
                 } else {
                     restored = restoreLegacyAgents(legacyStates, reason: reason)
@@ -1313,10 +1190,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return .keepCurrentPage
         }
 
-        var health = await waitForHealthyRuntime(expectedVersion: expectedVersion)
+        // Detect a failed first runtime launch quickly, then use the existing
+        // bounded unregister/register recovery. The recovery attempt still
+        // receives the full health timeout below.
+        var health = await waitForHealthyRuntime(
+            expectedVersion: expectedVersion,
+            timeout: runtimeInitialHealthTimeout
+        )
         if shouldRetryRuntimeRegistration(
             after: health,
-            serviceEnabled: runtimeService.status == .enabled
+            serviceEnabled: bundledRuntimeServiceIsEnabled()
         ) {
             NSLog(
                 "VibeTV Control Center runtime did not become reachable; refreshing its Service Management registration once: \(health)"
@@ -1348,26 +1231,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return .keepCurrentPage
         }
         clearPendingNativeUpdate()
-
-        let devicePreparation = await prepareExistingDeviceConnectionWithRetries(
-            requireFreshFullFrame: !legacyStates.isEmpty || !legacyApps.isEmpty
-        )
-        if let detail = devicePreparation.failureDetail {
-            NSLog(
-                "VibeTV Control Center kept legacy artifacts because the existing VibeTV connection could not be repaired automatically: \(detail)"
-            )
-            if !legacyStates.isEmpty {
-                let restored = await rollbackToLegacyAgents(
-                    legacyStates,
-                    reason: "existing VibeTV repair failed: \(detail)"
-                )
-                return restored ? .legacyRuntimeRestored : .keepCurrentPage
-            }
-            return .nativeRuntimeReady
-        }
-        NSLog(
-            "VibeTV Control Center existing device preparation completed: \(devicePreparation)"
-        )
 
         if legacyStates.isEmpty {
             let migratedLegacyApps = await migrateLegacyAppsAfterHealthyRuntime(legacyApps)
@@ -1436,97 +1299,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 
-    private func prepareExistingDeviceConnectionWithRetries(
-        requireFreshFullFrame: Bool
-    ) async -> ExistingDevicePreparationOutcome {
-        var attempt = 1
-        var outcome = await prepareExistingDeviceConnection(
-            requireFreshFullFrame: requireFreshFullFrame
-        )
-        while shouldRetryExistingDevicePreparation(
-            outcome,
-            attempt: attempt,
-            maximumAttempts: runtimeDeviceRepairMaxAttempts
-        ) {
-            NSLog(
-                "VibeTV Control Center device preparation attempt \(attempt) failed transiently: \(outcome); retrying"
-            )
-            try? await Task<Never, Never>.sleep(for: runtimeDeviceRepairRetryDelay)
-            attempt += 1
-            outcome = await prepareExistingDeviceConnection(
-                requireFreshFullFrame: requireFreshFullFrame
-            )
-        }
-        return outcome
-    }
-
-    private func prepareExistingDeviceConnection(
-        requireFreshFullFrame: Bool
-    ) async -> ExistingDevicePreparationOutcome {
-        guard let statusRequest = makeExistingDeviceStatusRequest(),
-              let repairURL = URL(string: runtimeDeviceRepairURLString) else {
-            return .failed("invalid local device preparation URL")
-        }
-        let statusResult: (Data, URLResponse)
-        do {
-            statusResult = try await URLSession.shared.data(
-                for: statusRequest
-            )
-        } catch {
-            return .retryableFailure((error as NSError).localizedDescription)
-        }
-        let (statusData, statusResponse) = statusResult
-        guard let statusHTTP = statusResponse as? HTTPURLResponse else {
-            return .retryableFailure("local status response was not HTTP")
-        }
-
-        let statusEvaluation = evaluateExistingDeviceStatus(
-            data: statusData,
-            httpStatus: statusHTTP.statusCode
-        )
-        switch statusEvaluation {
-        case .ready:
-            if !shouldRepairExistingDevice(
-                statusEvaluation,
-                requireFreshFullFrame: requireFreshFullFrame
-            ) {
-                return .ready
-            }
-        case .notConfigured:
-            return .notConfigured
-        case .failed(let detail):
-            return .retryableFailure(detail)
-        case .needsRepair:
-            break
-        }
-
-        var repairRequest = URLRequest(
-            url: repairURL,
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            timeoutInterval: runtimeDeviceRepairTimeout
-        )
-        repairRequest.httpMethod = "POST"
-        repairRequest.httpBody = Data("{}".utf8)
-        repairRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let repairResult: (Data, URLResponse)
-        do {
-            repairResult = try await URLSession.shared.data(
-                for: repairRequest
-            )
-        } catch {
-            return .failed((error as NSError).localizedDescription)
-        }
-        let (repairData, repairResponse) = repairResult
-        guard let repairHTTP = repairResponse as? HTTPURLResponse else {
-            return .failed("local repair response was not HTTP")
-        }
-        return evaluateExistingDeviceRepair(
-            data: repairData,
-            httpStatus: repairHTTP.statusCode
-        )
-    }
-
     private func ensureBundledRuntimeServiceRegistered() async -> Bool {
+        if usesLocalPreviewRuntime {
+            // An ad-hoc preview cannot satisfy the Developer ID launch
+            // constraint retained by SMAppService from a production install.
+            // Isolate previews behind their own user LaunchAgent instead.
+            _ = launchctlExitStatus([
+                "bootout",
+                launchctlServiceTarget(
+                    uid: getuid(),
+                    label: runtimeLaunchAgentLabel
+                ),
+            ])
+            guard await unregisterLocalPreviewRuntimeService() else {
+                return false
+            }
+            return registerLocalPreviewRuntimeService()
+        }
         switch runtimeService.status {
         case .enabled:
             if runtimeServiceNeedsRefresh(
@@ -1553,6 +1342,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     private func registerBundledRuntimeService() -> Bool {
+        if usesLocalPreviewRuntime {
+            return registerLocalPreviewRuntimeService()
+        }
         do {
             try runtimeService.register()
         } catch {
@@ -1578,6 +1370,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     private func unregisterBundledRuntimeService() async -> Bool {
+        if usesLocalPreviewRuntime {
+            return await unregisterLocalPreviewRuntimeService()
+        }
         switch runtimeService.status {
         case .notRegistered, .notFound:
             return true
@@ -1610,14 +1405,118 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 
+    private func bundledRuntimeServiceIsEnabled() -> Bool {
+        if usesLocalPreviewRuntime {
+            return legacyServiceIsLoaded(label: previewRuntimeLaunchAgentLabel)
+        }
+        return runtimeService.status == .enabled
+    }
+
+    private func registerLocalPreviewRuntimeService() -> Bool {
+        let fileManager = FileManager.default
+        let helperURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers", isDirectory: true)
+            .appendingPathComponent("codexbar-display")
+        guard fileManager.isExecutableFile(atPath: helperURL.path) else {
+            NSLog("VibeTV Control Center preview runtime helper is missing")
+            return false
+        }
+
+        let plistURL = applicationSupportURL()
+            .appendingPathComponent(localPreviewRuntimePlistName)
+        let environment = [
+            "CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE": "168h",
+            "CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL":
+                previewRuntimeLaunchAgentLabel,
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "VIBETV_DISABLE_MAC_APP_SELF_UPDATE": "1",
+            "VIBETV_MAC_APP_BUILD": Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleVersion"
+            ) as? String ?? "",
+            "VIBETV_MAC_APP_VERSION": Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String ?? "",
+        ]
+        let plist: [String: Any] = [
+            "Label": previewRuntimeLaunchAgentLabel,
+            "Program": helperURL.path,
+            "ProgramArguments": [
+                helperURL.path,
+                "daemon",
+                "--transport",
+                "wifi",
+                "--interval",
+                "30s",
+                "--api-addr",
+                "127.0.0.1:47832",
+                "--api-dev-origin",
+                "http://127.0.0.1:47832",
+            ],
+            "EnvironmentVariables": environment,
+            "RunAtLoad": true,
+            "KeepAlive": true,
+            "ProcessType": "Background",
+            "ThrottleInterval": 10,
+        ]
+
+        do {
+            try fileManager.createDirectory(
+                at: applicationSupportURL(),
+                withIntermediateDirectories: true
+            )
+            let data = try PropertyListSerialization.data(
+                fromPropertyList: plist,
+                format: .xml,
+                options: 0
+            )
+            try data.write(to: plistURL, options: .atomic)
+        } catch {
+            NSLog(
+                "VibeTV Control Center could not write its preview runtime plist: \(error)"
+            )
+            return false
+        }
+
+        let status = launchctlExitStatus([
+            "bootstrap",
+            "gui/\(getuid())",
+            plistURL.path,
+        ])
+        guard status == 0 else {
+            let exitDescription = status.map(String.init) ?? "unknown"
+            NSLog(
+                "VibeTV Control Center could not bootstrap its local preview runtime: exit=\(exitDescription)"
+            )
+            return false
+        }
+        return legacyServiceIsLoaded(label: previewRuntimeLaunchAgentLabel)
+    }
+
+    private func unregisterLocalPreviewRuntimeService() async -> Bool {
+        let service = launchctlServiceTarget(
+            uid: getuid(),
+            label: previewRuntimeLaunchAgentLabel
+        )
+        _ = launchctlExitStatus(["bootout", service])
+        guard !legacyServiceIsLoaded(
+            label: previewRuntimeLaunchAgentLabel
+        ) else {
+            NSLog("VibeTV Control Center could not stop its local preview runtime")
+            return false
+        }
+        try? await Task<Never, Never>.sleep(for: .milliseconds(250))
+        return true
+    }
+
     private func waitForHealthyRuntime(
-        expectedVersion: String
+        expectedVersion: String,
+        timeout: TimeInterval = runtimeHealthTimeout
     ) async -> RuntimeHealthEvaluation {
         guard let statusURL = URL(string: runtimeHealthURLString) else {
             return .requestFailed("invalid local status URL")
         }
 
-        let deadline = Date().addingTimeInterval(runtimeHealthTimeout)
+        let deadline = Date().addingTimeInterval(timeout)
         var lastEvaluation: RuntimeHealthEvaluation = .requestFailed("no response")
         repeat {
             var request = URLRequest(
@@ -1643,7 +1542,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                         forInfoDictionaryKey: "CFBundleVersion"
                     ) as? String,
                     expectedAppPath: Bundle.main.bundleURL.path,
-                    expectedRuntimeOwner: runtimeLaunchAgentLabel
+                    expectedRuntimeOwner: activeRuntimeLaunchAgentLabel
                 )
                 if case .healthy = lastEvaluation {
                     let ownership = verifyRuntimeListenerOwnership()
@@ -1894,7 +1793,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             executable: "/bin/launchctl",
             arguments: [
                 "print",
-                "gui/\(getuid())/\(runtimeLaunchAgentLabel)",
+                "gui/\(getuid())/\(activeRuntimeLaunchAgentLabel)",
             ]
         )
         guard let servicePID = parseLaunchctlServicePID(launchctl.output),

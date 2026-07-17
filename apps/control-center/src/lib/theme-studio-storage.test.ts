@@ -48,7 +48,6 @@ function record(overrides: Partial<UserThemeRecord> = {}): UserThemeRecord {
       packName: "My Theme",
       spec: {
         bgColor: "#000000",
-        fallbackTheme: "mini",
         primitives: [{ color: "#FFFFFF", text: "Hi", type: "text", x: 1, y: 2 }],
         themeId: "my-theme",
         themeRev: 1,
