@@ -308,6 +308,65 @@ func TestDeviceSearchReportsDeniedLocalNetworkAccess(t *testing.T) {
 	}
 }
 
+func TestLocalNetworkPermissionDenialRecognizesFastDarwinHostUnreachableFailures(t *testing.T) {
+	wrapped := fmt.Errorf("connect: %w", syscall.EHOSTUNREACH)
+	if !possibleLocalNetworkPermissionError(wrapped, "darwin", 10*time.Millisecond) {
+		t.Fatal("Darwin EHOSTUNREACH must be treated as a possible local-network denial")
+	}
+	if possibleLocalNetworkPermissionError(wrapped, "linux", 10*time.Millisecond) {
+		t.Fatal("EHOSTUNREACH must not be treated as a permission signal outside Darwin")
+	}
+	if !localNetworkPermissionDeniedByProbeErrors(
+		localNetworkDenialMinimumSamples,
+		localNetworkDenialMinimumSamples,
+	) {
+		t.Fatal("a complete burst of immediate Darwin failures must report denied access")
+	}
+	if localNetworkPermissionDeniedByProbeErrors(1, 1) {
+		t.Fatal("one unreachable device is not proof of denied local-network access")
+	}
+	if possibleLocalNetworkPermissionError(
+		wrapped,
+		"darwin",
+		localNetworkDenialProbeMaxElapsed+time.Millisecond,
+	) {
+		t.Fatal("slow unreachable hosts are not proof of denied local-network access")
+	}
+}
+
+func TestDeviceSearchReportsFastDarwinHostUnreachableBurstAsDeniedAccess(t *testing.T) {
+	oldGOOS := localNetworkPermissionGOOS
+	localNetworkPermissionGOOS = "darwin"
+	t.Cleanup(func() { localNetworkPermissionGOOS = oldGOOS })
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.defaultWiFiTarget = func() string { return "" }
+	targets := make([]string, 0, localNetworkDenialMinimumSamples)
+	for host := 1; host <= localNetworkDenialMinimumSamples; host++ {
+		targets = append(targets, fmt.Sprintf("http://192.168.50.%d", host))
+	}
+	server.subnetTargets = func() []string { return targets }
+	server.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, syscall.EHOSTUNREACH
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "local_network_access_denied" {
+		t.Fatalf("unexpected local-network error: %+v", got)
+	}
+}
+
 func TestDeviceSearchReturnsFirstFoundDeviceImmediatelyWithoutSavedIdentity(t *testing.T) {
 	var helloCalls atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -444,7 +503,7 @@ func TestLocalSubnetTargetsUseConfiguredNetworkMask(t *testing.T) {
 	}
 }
 
-func TestLocalSubnetTargetsCoverPrivateSlash16(t *testing.T) {
+func TestLocalSubnetTargetsCapPrivateSlash16AtScannableSlash23(t *testing.T) {
 	_, network, err := net.ParseCIDR("10.42.200.42/16")
 	if err != nil {
 		t.Fatal(err)
@@ -455,11 +514,59 @@ func TestLocalSubnetTargetsCoverPrivateSlash16(t *testing.T) {
 	for _, target := range targets {
 		seen[target] = true
 	}
-	if !seen["http://10.42.1.20"] || !seen["http://10.42.250.20"] {
-		t.Fatal("/16 scan did not cover the configured private subnet")
+	if !seen["http://10.42.201.20"] {
+		t.Fatal("large-subnet scan did not include the adjacent /24")
 	}
-	if len(targets) != 65533 {
-		t.Fatalf("/16 scan targets=%d want=65533 usable peers", len(targets))
+	for _, outsidePracticalScan := range []string{
+		"http://10.42.1.20",
+		"http://10.42.250.20",
+	} {
+		if seen[outsidePracticalScan] {
+			t.Fatalf("large-subnet scan claimed an unscannable target %s", outsidePracticalScan)
+		}
+	}
+	if len(targets) != 509 {
+		t.Fatalf("large-subnet scan targets=%d want=509 scannable peers", len(targets))
+	}
+}
+
+func TestDeviceSearchActuallyProbesFarEdgeOfSlash23(t *testing.T) {
+	_, network, err := net.ParseCIDR("192.168.10.42/23")
+	if err != nil {
+		t.Fatal(err)
+	}
+	network.IP = net.ParseIP("192.168.10.42")
+	targets := localSubnetTargetsFromAddrs([]net.Addr{network})
+	const deviceHost = "192.168.11.254"
+	var attempts atomic.Int32
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.defaultWiFiTarget = func() string { return "" }
+	server.subnetTargets = func() []string { return targets }
+	server.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		attempts.Add(1)
+		if req.URL.Hostname() != deviceHost {
+			return nil, errors.New("offline")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(
+				`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"far-edge-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`,
+			)),
+			Request: req,
+		}, nil
+	})
+
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].DeviceID != "far-edge-device" {
+		t.Fatalf("expected far-edge /23 VibeTV, got %+v", devices)
+	}
+	if got, want := int(attempts.Load()), len(targets); got != want {
+		t.Fatalf("search attempted %d targets; want every one of %d", got, want)
 	}
 }
 

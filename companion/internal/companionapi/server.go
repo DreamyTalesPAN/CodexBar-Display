@@ -17,6 +17,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -61,7 +62,8 @@ const (
 	repairDiscoveryAttempts   = 3
 	repairDiscoveryRetryGap   = 1200 * time.Millisecond
 	subnetProbeLimit          = 64
-	maxSubnetDiscoveryTargets = 65534
+	maxSubnetDiscoveryPrefix  = 23
+	maxSubnetDiscoveryTargets = 510
 	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
 	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
 	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
@@ -96,8 +98,14 @@ var firmwareHealthVerifyTime = 30 * time.Second
 // probed first so ordinary customer networks finish quickly even when their
 // configured IPv4 subnet is larger than /24.
 var subnetProbeTime = time.Second
+var localNetworkPermissionGOOS = runtime.GOOS
 var errMacAppActionRequired = errors.New("mac app installation requires customer action")
 var errLocalNetworkAccessDenied = errors.New("local network access denied")
+
+const (
+	localNetworkDenialMinimumSamples  = 8
+	localNetworkDenialProbeMaxElapsed = 250 * time.Millisecond
+)
 
 var printDisplayStreamService = func(ctx context.Context, service string) ([]byte, error) {
 	return exec.CommandContext(ctx, "launchctl", "print", service).CombinedOutput()
@@ -4848,9 +4856,10 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 	}
 
 	type result struct {
-		target string
-		hello  protocol.DeviceHello
-		err    error
+		target  string
+		hello   protocol.DeviceHello
+		err     error
+		elapsed time.Duration
 	}
 	workers := subnetProbeLimit
 	if len(candidates) < workers {
@@ -4864,9 +4873,15 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 		go func() {
 			defer wg.Done()
 			for candidate := range jobs {
+				started := time.Now()
 				hello, err := s.getHelloProbe(ctx, candidate, "", subnetProbeTime)
 				select {
-				case results <- result{target: normalizeTarget(candidate), hello: hello.Normalize(), err: err}:
+				case results <- result{
+					target:  normalizeTarget(candidate),
+					hello:   hello.Normalize(),
+					err:     err,
+					elapsed: time.Since(started),
+				}:
 				case <-ctx.Done():
 					return
 				}
@@ -4889,10 +4904,20 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 	}()
 
 	byIdentity := make(map[string]deviceSearchEntry)
+	probeResults := 0
+	possibleDeniedResults := 0
 	for found := range results {
+		probeResults++
 		if found.err != nil {
 			if localNetworkPermissionError(found.err) {
 				return nil, errLocalNetworkAccessDenied
+			}
+			if possibleLocalNetworkPermissionError(
+				found.err,
+				localNetworkPermissionGOOS,
+				found.elapsed,
+			) {
+				possibleDeniedResults++
 			}
 			continue
 		}
@@ -4917,6 +4942,12 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 			byIdentity[key] = entry
 		}
 	}
+	if localNetworkPermissionDeniedByProbeErrors(
+		probeResults,
+		possibleDeniedResults,
+	) {
+		return nil, errLocalNetworkAccessDenied
+	}
 	devices := make([]deviceSearchEntry, 0, len(byIdentity))
 	for _, entry := range byIdentity {
 		devices = append(devices, entry)
@@ -4940,6 +4971,17 @@ func localNetworkPermissionError(err error) bool {
 	detail := strings.ToLower(err.Error())
 	return strings.Contains(detail, "local network prohibited") ||
 		strings.Contains(detail, "local network denied")
+}
+
+func possibleLocalNetworkPermissionError(err error, goos string, elapsed time.Duration) bool {
+	return goos == "darwin" &&
+		errors.Is(err, syscall.EHOSTUNREACH) &&
+		elapsed <= localNetworkDenialProbeMaxElapsed
+}
+
+func localNetworkPermissionDeniedByProbeErrors(total, possibleDenied int) bool {
+	return total >= localNetworkDenialMinimumSamples &&
+		possibleDenied == total
 }
 
 func deviceSearchIdentityKey(entry deviceSearchEntry) string {
@@ -6627,7 +6669,15 @@ func localSubnetTargetsFromAddrs(addrs []net.Addr) []string {
 		mask := net.CIDRMask(24, 32)
 		if network != nil {
 			if ones, bits := network.Mask.Size(); bits == 32 && ones >= 8 {
-				mask = network.Mask
+				// A full /16 contains more hosts than the bounded customer search
+				// can truthfully probe. Scan at most the Mac's surrounding /23:
+				// this still covers an adjacent /24 and every generated target fits
+				// comfortably inside the 30-second search window.
+				if ones < maxSubnetDiscoveryPrefix {
+					mask = net.CIDRMask(maxSubnetDiscoveryPrefix, 32)
+				} else {
+					mask = network.Mask
+				}
 			}
 		}
 		networkIP := ip.Mask(mask).To4()

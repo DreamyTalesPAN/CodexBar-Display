@@ -116,6 +116,18 @@ func runURLSchemeTests() {
         isRepairCodexBarURL(URL(string: "vibetv://repair-codexbar")!),
         "the exact native CodexBar repair action must be accepted"
     )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://repair-codexbar")!
+        ) == .repairCodexBar,
+        "the WebView repair URL must route to the native CodexBar repair action"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://check-for-updates")!
+        ) == .checkForUpdates,
+        "the WebView update URL must route to the native Sparkle action"
+    )
     for rejectedRepairURL in [
         "vibetv://repair-codexbar/extra",
         "vibetv://repair-codexbar?force=true",
@@ -126,6 +138,12 @@ func runURLSchemeTests() {
             "unexpected CodexBar repair action must be rejected: \(rejectedRepairURL)"
         )
     }
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "https://app.vibetv.shop/control-center")!
+        ) == nil,
+        "ordinary WebView navigation must not trigger a native action"
+    )
     require(
         isApprovedDMGDownloadURL(
             URL(

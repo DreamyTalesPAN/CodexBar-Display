@@ -93,6 +93,21 @@ func isRepairCodexBarURL(_ url: URL) -> Bool {
     return true
 }
 
+enum NativeControlCenterAction: Equatable {
+    case checkForUpdates
+    case repairCodexBar
+}
+
+func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
+    if isCheckForUpdatesURL(url) {
+        return .checkForUpdates
+    }
+    if isRepairCodexBarURL(url) {
+        return .repairCodexBar
+    }
+    return nil
+}
+
 func isApprovedDMGDownloadURL(_ url: URL) -> Bool {
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
           components.scheme?.lowercased() == "https",
@@ -2684,15 +2699,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
     ) {
-        guard navigationAction.navigationType == .linkActivated,
-              let url = navigationAction.request.url else {
+        guard let url = navigationAction.request.url else {
             decisionHandler(.allow)
             return
         }
 
-        if isCheckForUpdatesURL(url) {
+        if let action = nativeControlCenterAction(for: url) {
             decisionHandler(.cancel)
-            checkForUpdates()
+            switch action {
+            case .checkForUpdates:
+                checkForUpdates()
+            case .repairCodexBar:
+                beginCodexBarRepair()
+            }
+            return
+        }
+
+        guard navigationAction.navigationType == .linkActivated else {
+            decisionHandler(.allow)
             return
         }
 
