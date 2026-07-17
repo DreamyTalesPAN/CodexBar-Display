@@ -6,8 +6,6 @@ import {
   CircleHelp,
   Download,
   Monitor,
-  RefreshCw,
-  SlidersHorizontal,
   Wifi,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -17,10 +15,8 @@ import {
 } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import {
-  deviceImageIsStuck,
   type CompanionStatus,
   type DeviceInfo,
-  type DeviceState,
   type ReadinessTone,
   type UsageSnapshot,
 } from "./control-center-types";
@@ -31,38 +27,24 @@ type OverviewScreenProps = {
   companionVersion?: string;
   companionRelease?: CompanionReleaseInfo | null;
   companionStatus: CompanionStatus;
-  deviceState: DeviceState;
   device: DeviceInfo | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
   usage?: UsageSnapshot | null;
-  busyAction?: string | null;
-  onReloadImage?: () => void;
   requiresMacAppMigration?: boolean;
 };
 
 export function OverviewScreen({
-  busyAction,
   companionVersion,
   companionRelease,
   companionStatus,
-  deviceState,
   device,
   firmwareUpdate,
   usage,
-  onReloadImage,
   requiresMacAppMigration = false,
 }: OverviewScreenProps) {
-  const imageStuck = deviceImageIsStuck(device);
-  const reloadingImage = busyAction === "reload-display";
-  const ready = Boolean(device?.ready && !imageStuck);
-  const healthDetail = deviceHealthDetail(device);
-  const hero = buildHeroCopy({
-    companionStatus,
-    ready,
-    reachable: Boolean(device?.connected),
-    imageStuck,
-    reloadingImage,
-  });
+  const connected = deviceIsConnected(device);
+  const displayReady = Boolean(device?.ready);
+  const hero = buildHeroCopy(companionStatus, connected);
   const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const macAppMigrationUrl = requiresMacAppMigration
@@ -98,8 +80,13 @@ export function OverviewScreen({
             <StatusRow
               icon={<Monitor size={18} aria-hidden />}
               label="VibeTV"
-              detail={imageStuck ? imageStuckDetail(device) : healthDetail}
-              value={labelForDevice(deviceState, device, reloadingImage)}
+              value={connected ? "Connected" : "Not connected"}
+            />
+            <StatusRow
+              icon={<Monitor size={18} aria-hidden />}
+              label="Display"
+              detail={displayReady ? undefined : "Start using any AI provider."}
+              value={displayReady ? "Live" : "Waiting for first image"}
             />
             <StatusRow
               badge={firmwareUpdateAvailable ? "Update" : undefined}
@@ -110,23 +97,6 @@ export function OverviewScreen({
           </dl>
           {requiresMacAppMigration ? (
             <MacAppMigrationCard downloadUrl={macAppMigrationUrl} />
-          ) : null}
-          {imageStuck && onReloadImage ? (
-            <div className="mt-7">
-              <button
-                className="inline-flex min-h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#CCFF00] px-5 text-sm font-bold text-[#1B1B1B] transition hover:bg-[#ABD600] disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={reloadingImage}
-                onClick={onReloadImage}
-                type="button"
-              >
-                <RefreshCw
-                  className={reloadingImage ? "animate-spin" : undefined}
-                  size={18}
-                  aria-hidden
-                />
-                <span>{reloadingImage ? "Reloading image" : "Reload image"}</span>
-              </button>
-            </div>
           ) : null}
         </div>
 
@@ -221,56 +191,21 @@ function StatusRow({
   );
 }
 
-function buildHeroCopy({
-  companionStatus,
-  ready,
-  reachable,
-  imageStuck,
-  reloadingImage,
-}: {
-  companionStatus: CompanionStatus;
-  ready: boolean;
-  reachable: boolean;
-  imageStuck: boolean;
-  reloadingImage: boolean;
-}) {
-  if (reloadingImage) {
-    return {
-      title: "VibeTV is updating image",
-      tone: "attention" as ReadinessTone,
-      icon: <RefreshCw className="animate-spin" size={34} aria-hidden />,
-    };
-  }
-  if (imageStuck) {
-    return {
-      title: "Image is stuck",
-      tone: "attention" as ReadinessTone,
-      icon: <RefreshCw size={34} aria-hidden />,
-    };
-  }
-  if (ready) {
+function buildHeroCopy(
+  companionStatus: CompanionStatus,
+  connected: boolean,
+) {
+  if (connected) {
     return {
       title: "VibeTV is connected",
       tone: "ready" as ReadinessTone,
       icon: <Check size={38} aria-hidden />,
     };
   }
-  if (reachable) {
-    return {
-      title: "VibeTV screen is not ready",
-      tone: "attention" as ReadinessTone,
-      icon: <SlidersHorizontal size={34} aria-hidden />,
-    };
-  }
   return {
     title: companionStatus === "missing" ? "Setup needed" : "VibeTV status",
     tone: "attention" as ReadinessTone,
-    icon:
-      companionStatus === "missing" ? (
-        <CircleHelp size={36} aria-hidden />
-      ) : (
-        <SlidersHorizontal size={34} aria-hidden />
-      ),
+    icon: <CircleHelp size={36} aria-hidden />,
   };
 }
 
@@ -287,55 +222,6 @@ function labelForCompanion(
   return "Waiting for Mac App";
 }
 
-function labelForDevice(
-  state: DeviceState,
-  device: DeviceInfo | null,
-  reloadingImage: boolean,
-): string {
-  if (reloadingImage) {
-    return "Reloading image";
-  }
-  if (deviceImageIsStuck(device)) {
-    return "Image is stuck";
-  }
-  if (device?.connectionState === "reconnecting") {
-    return "Unavailable";
-  }
-  if (device?.ready) {
-    return "Connected";
-  }
-  if (device?.connected) {
-    return "Found";
-  }
-  if (state === "offline") {
-    return "Offline";
-  }
-  return "Waiting for device";
-}
-
-function imageStuckDetail(device: DeviceInfo | null): string {
-  const error = device?.display?.themeSpec?.renderError?.trim();
-  if (error === "low_heap_full_render") {
-    return "The connection works. VibeTV is freeing memory and redrawing the image.";
-  }
-  return "The connection works, but VibeTV could not redraw the current screen.";
-}
-
-function deviceHealthDetail(device: DeviceInfo | null): string | undefined {
-  const resetReason = device?.health?.resetReason?.trim();
-  if (resetReason && resetReason.toLowerCase() === "exception") {
-    return "VibeTV restarted after a firmware exception. If this keeps happening, reconnect power and run setup again.";
-  }
-  if (device?.connectionState === "reconnecting") {
-    return "VibeTV is currently unavailable.";
-  }
-  if (device?.connected && device.health?.error) {
-    return "VibeTV is reachable, but health details are temporarily unavailable.";
-  }
-  if (device?.connected && !device.ready) {
-    return device.stream?.running && !device.stream.healthy
-      ? "VibeTV is reachable, but the Mac App has not delivered the first image yet."
-      : "VibeTV is reachable, but the first image has not appeared yet.";
-  }
-  return undefined;
+function deviceIsConnected(device: DeviceInfo | null): boolean {
+  return Boolean(device?.connected && (device.deviceId || device.target));
 }

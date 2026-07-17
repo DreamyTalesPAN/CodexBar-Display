@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -265,15 +267,364 @@ func TestDeviceSearchRetriesTransientKnownDeviceFailure(t *testing.T) {
 	})
 	server.subnetTargets = func() []string { return nil }
 
-	devices := server.searchDevices(context.Background(), runtimeconfig.Config{
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{
 		DeviceTarget: device.URL,
 		DeviceID:     "esp8266-retry",
 	}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(devices) != 1 || !devices[0].Known || devices[0].DeviceID != "esp8266-retry" {
 		t.Fatalf("expected transiently busy known VibeTV on retry, got %+v", devices)
 	}
 	if helloCalls.Load() != 2 {
 		t.Fatalf("expected exactly one bounded retry, got %d hello calls", helloCalls.Load())
+	}
+}
+
+func TestDeviceSearchReportsDeniedLocalNetworkAccess(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.defaultWiFiTarget = func() string { return "" }
+	server.subnetTargets = func() []string { return []string{"http://192.168.1.20"} }
+	server.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, syscall.EACCES
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "local_network_access_denied" ||
+		!strings.Contains(got.Error.NextAction, "Privacy & Security > Local Network") {
+		t.Fatalf("unexpected local-network recovery: %+v", got)
+	}
+}
+
+func TestLocalNetworkPermissionDenialRecognizesFastDarwinHostUnreachableFailures(t *testing.T) {
+	wrapped := fmt.Errorf("connect: %w", syscall.EHOSTUNREACH)
+	if !possibleLocalNetworkPermissionError(wrapped, "darwin", 10*time.Millisecond) {
+		t.Fatal("Darwin EHOSTUNREACH must be treated as a possible local-network denial")
+	}
+	if possibleLocalNetworkPermissionError(wrapped, "linux", 10*time.Millisecond) {
+		t.Fatal("EHOSTUNREACH must not be treated as a permission signal outside Darwin")
+	}
+	if !localNetworkPermissionDeniedByProbeErrors(
+		localNetworkDenialMinimumSamples,
+		localNetworkDenialMinimumSamples,
+	) {
+		t.Fatal("a complete burst of immediate Darwin failures must report denied access")
+	}
+	if localNetworkPermissionDeniedByProbeErrors(1, 1) {
+		t.Fatal("one unreachable device is not proof of denied local-network access")
+	}
+	if possibleLocalNetworkPermissionError(
+		wrapped,
+		"darwin",
+		localNetworkDenialProbeMaxElapsed+time.Millisecond,
+	) {
+		t.Fatal("slow unreachable hosts are not proof of denied local-network access")
+	}
+}
+
+func TestDeviceSearchReportsFastDarwinHostUnreachableBurstAsDeniedAccess(t *testing.T) {
+	oldGOOS := localNetworkPermissionGOOS
+	localNetworkPermissionGOOS = "darwin"
+	t.Cleanup(func() { localNetworkPermissionGOOS = oldGOOS })
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.defaultWiFiTarget = func() string { return "" }
+	targets := make([]string, 0, localNetworkDenialMinimumSamples)
+	for host := 1; host <= localNetworkDenialMinimumSamples; host++ {
+		targets = append(targets, fmt.Sprintf("http://192.168.50.%d", host))
+	}
+	server.subnetTargets = func() []string { return targets }
+	server.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, syscall.EHOSTUNREACH
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "local_network_access_denied" {
+		t.Fatalf("unexpected local-network error: %+v", got)
+	}
+}
+
+func TestDeviceSearchReturnsFirstFoundDeviceImmediatelyWithoutSavedIdentity(t *testing.T) {
+	var helloCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		helloCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"first-customer-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].DeviceID != "first-customer-device" {
+		t.Fatalf("expected first customer VibeTV, got %+v", devices)
+	}
+	if helloCalls.Load() != 1 {
+		t.Fatalf("expected first successful scan to return immediately, got %d hello calls", helloCalls.Load())
+	}
+}
+
+func TestDeviceSearchRetriesCleanCustomerScanUntilDeviceAppears(t *testing.T) {
+	var helloCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if helloCalls.Add(1) == 1 {
+			http.Error(w, "wifi still settling", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"late-customer-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].DeviceID != "late-customer-device" {
+		t.Fatalf("expected later customer scan to find VibeTV, got %+v", devices)
+	}
+	if helloCalls.Load() != 2 {
+		t.Fatalf("expected a second complete scan, got %d hello calls", helloCalls.Load())
+	}
+}
+
+func TestDeviceSearchProbesEveryRememberedVibeTV(t *testing.T) {
+	device := func(id string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, id)
+		}))
+	}
+	first := device("active-device")
+	defer first.Close()
+	second := device("other-device")
+	defer second.Close()
+
+	cfg := runtimeconfig.Config{
+		DeviceID:     "active-device",
+		DeviceTarget: first.URL,
+		KnownDevices: []runtimeconfig.KnownDevice{
+			{DeviceID: "active-device", Target: first.URL},
+			{DeviceID: "other-device", Target: second.URL},
+		},
+	}
+	server := newTestServer(t, cfg)
+	server.subnetTargets = func() []string { return nil }
+
+	devices, err := server.searchDevices(context.Background(), cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 2 {
+		t.Fatalf("expected every remembered VibeTV to be probed, got %+v", devices)
+	}
+}
+
+func TestDeviceSearchActuallyWaitsThirtySecondsWhenNothingIsFound(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return nil }
+	server.defaultWiFiTarget = func() string { return "" }
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	started := time.Now()
+	server.Handler().ServeHTTP(rec, req)
+	elapsed := time.Since(started)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Devices []deviceSearchEntry `json:"devices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Devices) != 0 {
+		t.Fatalf("expected no VibeTV, got %+v", got.Devices)
+	}
+	if elapsed < 29*time.Second || elapsed > 35*time.Second {
+		t.Fatalf("empty customer search took %s; want approximately 30s", elapsed)
+	}
+}
+
+func TestLocalSubnetTargetsUseConfiguredNetworkMask(t *testing.T) {
+	_, network, err := net.ParseCIDR("192.168.10.42/23")
+	if err != nil {
+		t.Fatal(err)
+	}
+	network.IP = net.ParseIP("192.168.10.42")
+	targets := localSubnetTargetsFromAddrs([]net.Addr{network})
+	seen := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		seen[target] = true
+	}
+	if !seen["http://192.168.11.20"] {
+		t.Fatal("/23 scan did not include the adjacent /24")
+	}
+	for _, excluded := range []string{
+		"http://192.168.10.0",
+		"http://192.168.10.42",
+		"http://192.168.11.255",
+	} {
+		if seen[excluded] {
+			t.Fatalf("scan included excluded address %s", excluded)
+		}
+	}
+}
+
+func TestLocalSubnetTargetsCapPrivateSlash16AtScannableSlash23(t *testing.T) {
+	_, network, err := net.ParseCIDR("10.42.200.42/16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	network.IP = net.ParseIP("10.42.200.42")
+	targets := localSubnetTargetsFromAddrs([]net.Addr{network})
+	seen := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		seen[target] = true
+	}
+	if !seen["http://10.42.201.20"] {
+		t.Fatal("large-subnet scan did not include the adjacent /24")
+	}
+	for _, outsidePracticalScan := range []string{
+		"http://10.42.1.20",
+		"http://10.42.250.20",
+	} {
+		if seen[outsidePracticalScan] {
+			t.Fatalf("large-subnet scan claimed an unscannable target %s", outsidePracticalScan)
+		}
+	}
+	if len(targets) != 509 {
+		t.Fatalf("large-subnet scan targets=%d want=509 scannable peers", len(targets))
+	}
+}
+
+func TestDeviceSearchActuallyProbesFarEdgeOfSlash23(t *testing.T) {
+	_, network, err := net.ParseCIDR("192.168.10.42/23")
+	if err != nil {
+		t.Fatal(err)
+	}
+	network.IP = net.ParseIP("192.168.10.42")
+	targets := localSubnetTargetsFromAddrs([]net.Addr{network})
+	const deviceHost = "192.168.11.254"
+	var attempts atomic.Int32
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.defaultWiFiTarget = func() string { return "" }
+	server.subnetTargets = func() []string { return targets }
+	server.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		attempts.Add(1)
+		if req.URL.Hostname() != deviceHost {
+			return nil, errors.New("offline")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(
+				`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"far-edge-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`,
+			)),
+			Request: req,
+		}, nil
+	})
+
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].DeviceID != "far-edge-device" {
+		t.Fatalf("expected far-edge /23 VibeTV, got %+v", devices)
+	}
+	if got, want := int(attempts.Load()), len(targets); got != want {
+		t.Fatalf("search attempted %d targets; want every one of %d", got, want)
+	}
+}
+
+func TestDeviceSearchWaitsForSlowStartingWiFiDevice(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		time.Sleep(800 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"slow-starting-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].DeviceID != "slow-starting-device" {
+		t.Fatalf("expected slow-starting customer VibeTV, got %+v", devices)
+	}
+}
+
+func TestDeviceSelectFinishesWithoutWaitingForARenderedFrame(t *testing.T) {
+	const deviceID = "customer-device"
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, deviceID)
+		case "/api/pair":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"customer-token"}`))
+		default:
+			t.Fatalf("selection waited on unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	var streamTarget string
+	server.refreshStream = func(_ context.Context, target string) error {
+		streamTarget = target
+		return nil
+	}
+
+	selected, err := server.selectDevice(context.Background(), device.URL, deviceID)
+	if err != nil {
+		t.Fatalf("select device: %v", err)
+	}
+	if !selected.Connected || !selected.Paired || selected.DeviceID != deviceID {
+		t.Fatalf("unexpected selected device: %+v", selected)
+	}
+	if streamTarget != device.URL {
+		t.Fatalf("display stream target=%q want %q", streamTarget, device.URL)
 	}
 }
 
@@ -5875,6 +6226,16 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
 		return githubRelease{TagName: "v1.0.0"}, nil
 	}
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{
+			Status: "ready",
+			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Providers: []codexbar.ProviderReadiness{{
+				ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderReady,
+			}},
+		}
+	}
+	server.openCodexBar = func(context.Context) error { return nil }
 	server.subnetTargets = func() []string {
 		return nil
 	}

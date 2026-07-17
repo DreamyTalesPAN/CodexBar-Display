@@ -3,14 +3,12 @@
 import {
   Activity,
   AlertTriangle,
-  Clipboard,
-  Download,
-  FileText,
   Clock,
   RefreshCw,
 } from "lucide-react";
-import { useMemo, useState } from "react";
 import type { SupportDiagnostics } from "./control-center-types";
+import { providerSetupStatusLabel } from "./provider-setup-card";
+import { SupportReportActions } from "./support-report-actions";
 
 export type LogEvent = {
   id: string;
@@ -40,43 +38,6 @@ export function LogsScreen({
   onRefresh,
   busyAction,
 }: LogsScreenProps) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
-    "idle",
-  );
-  const diagnosticsText = useMemo(
-    () => (diagnostics ? JSON.stringify(diagnostics, null, 2) : ""),
-    [diagnostics],
-  );
-
-  async function copyDiagnostics() {
-    if (!diagnosticsText) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(diagnosticsText);
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-  }
-
-  function downloadDiagnostics() {
-    if (!diagnosticsText) {
-      return;
-    }
-    const blob = new Blob([diagnosticsText], {
-      type: "application/json;charset=utf-8",
-    });
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = supportReportFilename(diagnostics?.generatedAt);
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.URL.revokeObjectURL(url);
-  }
-
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="border-b border-[#747A60] py-10">
@@ -84,45 +45,11 @@ export function LogsScreen({
           <h3 className="text-base font-bold text-[#1B1B1B]">
             Support report
           </h3>
-          <div className="flex flex-wrap gap-3">
-            {onLoadDiagnostics ? (
-              <button
-                className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={busyAction === "diagnostics"}
-                onClick={onLoadDiagnostics}
-                type="button"
-              >
-                {busyAction === "diagnostics" ? (
-                  <RefreshCw className="animate-spin" size={18} />
-                ) : (
-                  <FileText size={18} aria-hidden />
-                )}
-                <span>
-                  {busyAction === "diagnostics" ? "Creating" : "Create report"}
-                </span>
-              </button>
-            ) : null}
-            {diagnosticsText ? (
-              <>
-                <button
-                  className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
-                  onClick={copyDiagnostics}
-                  type="button"
-                >
-                  <Clipboard size={18} aria-hidden />
-                  <span>{copyState === "copied" ? "Copied" : "Copy report"}</span>
-                </button>
-                <button
-                  className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
-                  onClick={downloadDiagnostics}
-                  type="button"
-                >
-                  <Download size={18} aria-hidden />
-                  <span>Download report</span>
-                </button>
-              </>
-            ) : null}
-          </div>
+          <SupportReportActions
+            busyAction={busyAction}
+            diagnostics={diagnostics}
+            onCreate={onLoadDiagnostics}
+          />
         </div>
 
         {diagnostics ? (
@@ -135,6 +62,14 @@ export function LogsScreen({
               <DiagnosticFact
                 label="Mac App"
                 value={diagnostics.companion?.version || "Unknown"}
+              />
+              <DiagnosticFact
+                label="CodexBar"
+                value={formatCodexBarStatus(diagnostics)}
+              />
+              <DiagnosticFact
+                label="AI provider"
+                value={providerSetupStatusLabel(diagnostics.providerSetup)}
               />
               <DiagnosticFact
                 label="VibeTV address"
@@ -184,11 +119,6 @@ export function LogsScreen({
             Create a support report when support asks for it.
           </div>
         )}
-        {copyState === "failed" ? (
-          <div className="mt-4 border border-[#747A60] bg-[#EEEEEE] p-4 text-sm text-[#444933]">
-            Copy failed. Use the browser clipboard permission and try again.
-          </div>
-        ) : null}
       </section>
 
       <section className="border-b border-[#747A60] py-10">
@@ -319,10 +249,16 @@ function formatDiagnosticTime(value?: string): string {
   }).format(date);
 }
 
-function supportReportFilename(value?: string): string {
-  const timestamp = value ? new Date(value) : new Date();
-  const safeTimestamp = Number.isNaN(timestamp.getTime())
-    ? "session"
-    : timestamp.toISOString().replace(/[:.]/g, "-");
-  return `vibetv-support-report-${safeTimestamp}.json`;
+function formatCodexBarStatus(diagnostics: SupportDiagnostics): string {
+  const engine = diagnostics.providerSetup?.engine;
+  if (!engine) {
+    return "Unknown";
+  }
+  if (engine.status === "ready") {
+    return engine.version ? `Ready ${engine.version}` : "Ready";
+  }
+  if (engine.status === "config_error") {
+    return "Settings need attention";
+  }
+  return "Setup needed";
 }

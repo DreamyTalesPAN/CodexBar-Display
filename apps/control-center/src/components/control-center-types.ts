@@ -48,9 +48,52 @@ export type CompanionInfo = {
   };
 };
 
+export type ProviderReadinessStatus =
+  | "ready"
+  | "auth_required"
+  | "permission_required"
+  | "no_usage_available"
+  | "timeout"
+  | "config_error"
+  | "engine_error"
+  | "not_configured"
+  | string;
+
+export type ProviderReadinessInfo = {
+  id: string;
+  label?: string;
+  enabled?: boolean;
+  status: ProviderReadinessStatus;
+  detail?: string;
+  errorCode?: string;
+  nextAction?: string;
+};
+
+export type ProviderSetupInfo = {
+  status?: "ready" | "checking" | "setup_required" | string;
+  checkedAt?: string;
+  currentProvider?: string;
+  detail?: string;
+  errorCode?: string;
+  nextAction?: string;
+  engine?: {
+    status?: "ready" | "not_configured" | "config_error" | string;
+    version?: string;
+    path?: string;
+    source?: "bundled" | "system" | "override" | string;
+    configPath?: string;
+    configWritable?: boolean;
+    detail?: string;
+    errorCode?: string;
+    nextAction?: string;
+  };
+  providers?: ProviderReadinessInfo[];
+};
+
 export type SupportDiagnostics = {
   generatedAt?: string;
   companion?: CompanionInfo;
+  providerSetup?: ProviderSetupInfo;
   device?: DeviceInfo;
   checks?: Array<{
     name: string;
@@ -142,7 +185,6 @@ export type DeviceInfo = {
 };
 
 export type ActiveTab =
-  | "setup"
   | "overview"
   | "usage"
   | "settings"

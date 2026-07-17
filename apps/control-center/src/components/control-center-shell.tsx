@@ -5,17 +5,14 @@ import {
   BarChart3,
   FileText,
   Grid2X2,
-  ListChecks,
   RefreshCw,
   SlidersHorizontal,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import {
-  deviceImageIsStuck,
-  deviceSetupIsUsable,
-  type ActiveTab,
-  type DeviceInfo,
-  type ShellNavItem,
+import type {
+  ActiveTab,
+  DeviceInfo,
+  ShellNavItem,
 } from "./control-center-types";
 
 type ControlCenterShellProps = {
@@ -28,11 +25,6 @@ type ControlCenterShellProps = {
 };
 
 const NAV_ITEMS: ShellNavItem[] = [
-  {
-    id: "setup",
-    label: "Setup",
-    icon: <ListChecks size={22} aria-hidden />,
-  },
   {
     id: "overview",
     label: "Overview",
@@ -73,17 +65,11 @@ export function ControlCenterShell({
   disabledTabs = [],
   updateAvailable = false,
 }: ControlCenterShellProps) {
-  const imageStuck = deviceImageIsStuck(device);
-  const setupConnected = deviceSetupIsUsable(device);
-  const reconnecting = device?.connectionState === "reconnecting";
-  const targetLabel = reconnecting
-    ? "VibeTV unavailable"
-    : setupConnected
-    ? imageStuck
-      ? "Image is stuck"
-      : device?.target?.replace(/^https?:\/\//, "") || "VibeTV connected"
-    : "Setup needed";
-  const targetDotClass = setupConnected && !reconnecting && !imageStuck ? "bg-[#CCFF00]" : "bg-[#747A60]";
+  const connected = Boolean(
+    device?.connected && (device.deviceId || device.target),
+  );
+  const targetLabel = connected ? "VibeTV connected" : "VibeTV not connected";
+  const targetDotClass = connected ? "bg-[#CCFF00]" : "bg-[#747A60]";
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
 
