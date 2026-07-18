@@ -1,8 +1,12 @@
 "use client";
 
 import { Clipboard, Download, FileText, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { SupportDiagnostics } from "./control-center-types";
+import {
+  downloadSupportReport,
+  serializeSupportReport,
+} from "./support-report";
 
 type Props = {
   busyAction?: string | null;
@@ -18,10 +22,9 @@ export function SupportReportActions({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
-  const diagnosticsText = useMemo(
-    () => (diagnostics ? JSON.stringify(diagnostics, null, 2) : ""),
-    [diagnostics],
-  );
+  const diagnosticsText = diagnostics
+    ? serializeSupportReport(diagnostics)
+    : "";
 
   async function copyDiagnostics() {
     if (!diagnosticsText) {
@@ -39,17 +42,9 @@ export function SupportReportActions({
     if (!diagnosticsText) {
       return;
     }
-    const blob = new Blob([diagnosticsText], {
-      type: "application/json;charset=utf-8",
-    });
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = supportReportFilename(diagnostics?.generatedAt);
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.URL.revokeObjectURL(url);
+    if (diagnostics) {
+      downloadSupportReport(diagnostics);
+    }
   }
 
   return (
@@ -103,12 +98,4 @@ export function SupportReportActions({
       ) : null}
     </div>
   );
-}
-
-function supportReportFilename(value?: string): string {
-  const timestamp = value ? new Date(value) : new Date();
-  const safeTimestamp = Number.isNaN(timestamp.getTime())
-    ? "session"
-    : timestamp.toISOString().replace(/[:.]/g, "-");
-  return `vibetv-support-report-${safeTimestamp}.json`;
 }

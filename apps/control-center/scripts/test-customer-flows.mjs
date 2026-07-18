@@ -930,6 +930,9 @@ async function testHostedEntryShowsMacAppDownload(
   await page.getByRole("heading", { name: "Get the VibeTV Mac App" }).waitFor({
     timeout: 10_000,
   });
+  await page.getByRole("button", { name: "Create report" }).waitFor({
+    timeout: 10_000,
+  });
   assert(
     (await page.getByRole("button", { name: "VibeTV is on WiFi" }).count()) ===
       0,
@@ -963,6 +966,14 @@ async function testHostedEntryShowsMacAppDownload(
   assert(
     companionRequests.length === 0,
     `Hosted entry must not probe the local Mac App, got ${JSON.stringify(companionRequests)}`,
+  );
+  await page.getByRole("button", { name: "Create report" }).click();
+  await page.getByRole("button", { name: "Copy report" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    companionRequests.some((pathname) => pathname === "/v1/diagnostics"),
+    "Creating a hosted setup report should try the local Mac App once",
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1082,6 +1093,9 @@ async function testInitialHealthyStatusRaceAvoidsRepair(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Starting Control Center" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Create report" }).waitFor({
     timeout: 10_000,
   });
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
@@ -1958,6 +1972,16 @@ async function testLegacyMigrationDoesNotBlockFirmwareUpdate(browser, appUrl) {
 
 async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value) => {
+          globalThis.__copiedSupportReport = value;
+        },
+      },
+    });
+  });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests);
 
@@ -1986,6 +2010,39 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   await page.getByText("VibeTV address", { exact: true }).waitFor({
     timeout: 10_000,
   });
+  await page.getByText("VibeTVs on WiFi", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByText("1 found", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  await page
+    .getByRole("region", { name: "VibeTVs found on this WiFi" })
+    .getByText("wifi-vibetv", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Copy report" }).click();
+  const copiedReport = await page.evaluate(
+    () => globalThis.__copiedSupportReport || "",
+  );
+  for (const secret of [
+    "raw-token",
+    "raw-api-key",
+    "raw-basic",
+    "raw-header",
+    "raw-env",
+    "raw-query",
+    "raw-userinfo",
+  ]) {
+    assert(
+      !copiedReport.includes(secret),
+      `Copied support report leaked synthetic secret ${secret}`,
+    );
+  }
+  assert(
+    copiedReport.includes('"token": "[redacted]"') &&
+      copiedReport.includes('"apiKey": "[redacted]"'),
+    "Copied support report should replace synthetic secrets with redaction markers",
+  );
   assert(
     (await page.getByText("Companion", { exact: false }).count()) === 0,
     "Support report should not show internal Companion naming",
@@ -2024,7 +2081,13 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
       ...companionDevice,
       activeTheme: "synthwave",
       firmware: "1.0.32",
+      ready: false,
+      stream: {
+        healthy: false,
+        running: false,
+      },
     },
+    displayFrameUnavailableResponses: 1,
     displayFrameResponse: {
       ok: true,
       savedAt: "2026-06-29T10:47:46Z",
@@ -2071,7 +2134,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
     .getByRole("img", {
       name: /Rendered VibeTV theme synthwave showing Codex, 0% session used, 63% weekly used/,
     })
-    .waitFor({ timeout: 10_000 });
+    .waitFor({ timeout: 4_000 });
   const renderedTheme = page.getByRole("img", {
     name: /Rendered VibeTV theme synthwave/,
   });
@@ -2959,6 +3022,7 @@ async function routeCompanionOnline(
     usageStatus = 200,
     displayFrameStatus = 200,
     displayFrameResponse,
+    displayFrameUnavailableResponses = 0,
     repairError = false,
     selectError = false,
     searchDevices,
@@ -2981,6 +3045,7 @@ async function routeCompanionOnline(
   let macAppUpdateStatusIndex = 0;
   let macAppUpdateStatusFailuresRemaining = macAppUpdateStatusFailures;
   let statusRequestCount = 0;
+  let displayFrameRequestCount = 0;
   let currentProviderSetup = providerSetup;
   const handler = async (route) => {
     const pathname = companionPath(route);
@@ -3214,6 +3279,15 @@ async function routeCompanionOnline(
       return;
     }
     if (pathname === "/v1/display-frame/latest") {
+      displayFrameRequestCount += 1;
+      if (displayFrameRequestCount <= displayFrameUnavailableResponses) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false }),
+        });
+        return;
+      }
       if (displayFrameStatus !== 200) {
         await route.fulfill({
           status: displayFrameStatus,
@@ -3503,7 +3577,41 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify({
           ok: true,
+          schemaVersion: 2,
+          reportType: "control_center",
           generatedAt: "2026-06-19T12:00:00.000Z",
+          environment: {
+            os: "darwin",
+            arch: "arm64",
+            goVersion: "go1.25",
+            pid: 123,
+          },
+          configuration: {
+            deviceTarget: "http://192.168.178.163",
+            deviceId: "wifi-vibetv",
+            hasPairingToken: true,
+            knownDeviceCount: 1,
+          },
+          networkDiscovery: {
+            attempted: true,
+            vibeTVFound: true,
+            devices: [
+              {
+                target: "http://192.168.178.163",
+                deviceId: "wifi-vibetv",
+                board: "esp8266_smalltv_st7789",
+                firmware: "1.0.32",
+                networkMode: "station",
+                known: true,
+                active: true,
+              },
+            ],
+          },
+          debug: {
+            token: "raw-token",
+            apiKey: "raw-api-key",
+            log: "Authorization: Basic raw-basic X-VibeTV-Token: raw-header CODEXBAR_DISPLAY_DEVICE_TOKEN=raw-env https://example.test/?token=raw-query https://alice:raw-userinfo@example.test/path",
+          },
           companion: companionPayload(
             currentCompanionVersion,
             companionFeatures,

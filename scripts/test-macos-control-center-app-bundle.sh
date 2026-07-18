@@ -618,6 +618,12 @@ required_source = [
     "presentInstallationStatus(",
     "@objc private func createNativeSupportReport()",
     '"reportType": "native_installation"',
+    '"controlCenterDiagnostics": decodedJSONOrProcessOutput(companionDiagnostics)',
+    '"recentLogs": recentTextFiles(',
+    '"backgroundItems": filteredBackgroundItems(',
+    'Task.detached(priority: .userInitiated)',
+    'withJSONObject: redactReportValue(report)',
+    '"--max-time", "40"',
     'title: "Create report"',
     'title: "Finishing installation…"',
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
@@ -639,10 +645,14 @@ required_source = [
     ".reloadIgnoringLocalCacheData",
     'alert.addButton(withTitle: "Open Applications")',
     'alert.addButton(withTitle: "Quit")',
+    'alert.addButton(withTitle: "Create report")',
 ]
 for snippet in required_source:
     if snippet not in source:
         raise SystemExit(f"native app is missing required behavior: {snippet}")
+
+if "support.isHidden = !failed" in source:
+    raise SystemExit("Create report must remain visible on every native setup screen")
 
 launch_start = source.find("func applicationDidFinishLaunching(")
 launch_end = source.find("func application(_ application:", launch_start)

@@ -766,6 +766,57 @@ private struct ProcessOutput {
     let output: String
 }
 
+private func captureProcessOutput(
+    executable: String,
+    arguments: [String]
+) -> ProcessOutput {
+    let process = Process()
+    let outputPipe = Pipe()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
+    process.standardOutput = outputPipe
+    process.standardError = outputPipe
+    do {
+        try process.run()
+        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return ProcessOutput(
+            exitStatus: process.terminationStatus,
+            output: String(data: data, encoding: .utf8) ?? ""
+        )
+    } catch {
+        NSLog(
+            "VibeTV Control Center could not run \(executable) \(arguments.joined(separator: " ")): \(error)"
+        )
+        return ProcessOutput(exitStatus: nil, output: "")
+    }
+}
+
+private struct NativeSupportReportSnapshot: Sendable {
+    let generatedAt: String
+    let setupTitle: String
+    let setupDetail: String
+    let setupFailed: Bool
+    let installationReady: Bool
+    let codexBarRepairRequired: Bool
+    let macOS: String
+    let architecture: String
+    let processIdentifier: Int32
+    let physicalMemory: UInt64
+    let lowPowerMode: Bool
+    let appVersion: String
+    let appBuild: String
+    let appPath: String
+    let installedInApplications: Bool
+    let localPreviewRuntime: Bool
+    let helperPath: String
+    let runtimeLabel: String
+    let runtimeRegistrationStatus: String
+    let codexBarPath: String?
+    let supportDirectoryPath: String
+    let crashDirectoryPath: String
+}
+
 struct PendingNativeUpdate: Codable, Equatable {
     let version: String
     let build: String
@@ -837,6 +888,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private var preparationTask: Task<Void, Never>?
     private var installationReady = false
     private var codexBarRepairRequired = false
+    private var installationStatusTitle = "Starting Control Center"
+    private var installationStatusDetail = "Preparing the Mac App."
+    private var installationStatusFailed = false
 #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -996,15 +1050,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     @objc private func createNativeSupportReport() {
-        guard let report = nativeSupportReportData() else {
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "Support report could not be created"
-            alert.informativeText = "Try again, or open the support log instead."
-            alert.runModal()
-            return
-        }
-
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.canCreateDirectories = true
@@ -1014,19 +1059,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             in: .userDomainMask
         ).first
 
-        let save: (NSApplication.ModalResponse) -> Void = { response in
-            guard response == .OK, let url = panel.url else {
+        let save: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .OK, let url = panel.url, let self else {
                 return
             }
-            do {
-                try report.write(to: url, options: .atomic)
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            } catch {
-                let alert = NSAlert()
-                alert.alertStyle = .warning
-                alert.messageText = "Support report could not be saved"
-                alert.informativeText = (error as NSError).localizedDescription
-                alert.runModal()
+            let snapshot = self.nativeSupportReportSnapshot()
+            Task { [weak self] in
+                let report = await Task.detached(priority: .userInitiated) {
+                    Self.nativeSupportReportData(snapshot: snapshot)
+                }.value
+                guard let self else {
+                    return
+                }
+                guard let report else {
+                    self.presentSupportReportError(
+                        title: "Support report could not be created",
+                        detail: "Try again, or open the support log instead."
+                    )
+                    return
+                }
+                do {
+                    try report.write(to: url, options: .atomic)
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                } catch {
+                    self.presentSupportReportError(
+                        title: "Support report could not be saved",
+                        detail: (error as NSError).localizedDescription
+                    )
+                }
             }
         }
 
@@ -1037,74 +1097,151 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         }
     }
 
-    private func nativeSupportReportData() -> Data? {
-        let fileManager = FileManager.default
+    private func presentSupportReportError(title: String, detail: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.runModal()
+    }
+
+    private func nativeSupportReportSnapshot() -> NativeSupportReportSnapshot {
         let helperURL = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers", isDirectory: true)
             .appendingPathComponent("codexbar-display")
-        let appSignatureValid = runCommandCapturingOutput(
+        return NativeSupportReportSnapshot(
+            generatedAt: ISO8601DateFormatter().string(from: Date()),
+            setupTitle: installationStatusTitle,
+            setupDetail: installationStatusDetail,
+            setupFailed: installationStatusFailed,
+            installationReady: installationReady,
+            codexBarRepairRequired: codexBarRepairRequired,
+            macOS: ProcessInfo.processInfo.operatingSystemVersionString,
+            architecture: machineArchitecture(),
+            processIdentifier: ProcessInfo.processInfo.processIdentifier,
+            physicalMemory: ProcessInfo.processInfo.physicalMemory,
+            lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            appVersion: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String ?? "unknown",
+            appBuild: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleVersion"
+            ) as? String ?? "unknown",
+            appPath: Bundle.main.bundleURL.path,
+            installedInApplications: isInstalledApplicationsBundle(Bundle.main.bundleURL),
+            localPreviewRuntime: usesLocalPreviewRuntime,
+            helperPath: helperURL.path,
+            runtimeLabel: activeRuntimeLaunchAgentLabel,
+            runtimeRegistrationStatus: runtimeRegistrationStatusDescription(),
+            codexBarPath: existingCodexBarApp()?.path,
+            supportDirectoryPath: applicationSupportURL().path,
+            crashDirectoryPath: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)
+                .path
+        )
+    }
+
+    nonisolated private static func nativeSupportReportData(
+        snapshot: NativeSupportReportSnapshot
+    ) -> Data? {
+        let fileManager = FileManager.default
+        let helperURL = URL(fileURLWithPath: snapshot.helperPath)
+        let appSignature = captureProcessOutput(
             executable: "/usr/bin/codesign",
-            arguments: ["--verify", "--deep", "--strict", Bundle.main.bundleURL.path]
-        ).exitStatus == 0
-        let helperSignatureValid = runCommandCapturingOutput(
+            arguments: ["--verify", "--deep", "--strict", "--verbose=2", snapshot.appPath]
+        )
+        let helperSignature = captureProcessOutput(
             executable: "/usr/bin/codesign",
-            arguments: ["--verify", "--strict", helperURL.path]
-        ).exitStatus == 0
-        let appGatekeeperAccepted = runCommandCapturingOutput(
+            arguments: ["--verify", "--strict", "--verbose=2", helperURL.path]
+        )
+        let appGatekeeper = captureProcessOutput(
             executable: "/usr/sbin/spctl",
-            arguments: ["--assess", "--type", "execute", Bundle.main.bundleURL.path]
-        ).exitStatus == 0
-        let codexBarURL = existingCodexBarApp()
+            arguments: ["--assess", "--type", "execute", "--verbose=4", snapshot.appPath]
+        )
+        let launchAgent = captureProcessOutput(
+            executable: "/bin/launchctl",
+            arguments: ["print", launchctlServiceTarget(uid: getuid(), label: snapshot.runtimeLabel)]
+        )
+        let listener = captureProcessOutput(
+            executable: "/usr/sbin/lsof",
+            arguments: ["-nP", "-iTCP@127.0.0.1:47832", "-sTCP:LISTEN"]
+        )
+        let backgroundItems = captureProcessOutput(
+            executable: "/usr/bin/sfltool",
+            arguments: ["dumpbtm"]
+        )
+        let companionDiagnostics = captureProcessOutput(
+            executable: "/usr/bin/curl",
+            arguments: ["--silent", "--show-error", "--max-time", "40", "http://127.0.0.1:47832/v1/diagnostics"]
+        )
         let report: [String: Any] = [
-            "generatedAt": ISO8601DateFormatter().string(from: Date()),
+            "schemaVersion": 2,
+            "generatedAt": snapshot.generatedAt,
             "reportType": "native_installation",
-            "macOS": ProcessInfo.processInfo.operatingSystemVersionString,
+            "setupScreen": [
+                "title": snapshot.setupTitle,
+                "detail": snapshot.setupDetail,
+                "failed": snapshot.setupFailed,
+                "installationReady": snapshot.installationReady,
+                "codexBarRepairRequired": snapshot.codexBarRepairRequired,
+            ],
+            "system": [
+                "macOS": snapshot.macOS,
+                "architecture": snapshot.architecture,
+                "processIdentifier": snapshot.processIdentifier,
+                "physicalMemory": snapshot.physicalMemory,
+                "lowPowerMode": snapshot.lowPowerMode,
+            ],
             "app": [
-                "version": Bundle.main.object(
-                    forInfoDictionaryKey: "CFBundleShortVersionString"
-                ) as? String ?? "unknown",
-                "build": Bundle.main.object(
-                    forInfoDictionaryKey: "CFBundleVersion"
-                ) as? String ?? "unknown",
-                "path": Bundle.main.bundleURL.path,
-                "installedInApplications": isInstalledApplicationsBundle(Bundle.main.bundleURL),
-                "signatureValid": appSignatureValid,
-                "gatekeeperAccepted": appGatekeeperAccepted,
-                "localPreviewRuntime": usesLocalPreviewRuntime,
+                "version": snapshot.appVersion,
+                "build": snapshot.appBuild,
+                "path": snapshot.appPath,
+                "installedInApplications": snapshot.installedInApplications,
+                "signature": processOutputReport(appSignature),
+                "gatekeeper": processOutputReport(appGatekeeper),
+                "localPreviewRuntime": snapshot.localPreviewRuntime,
             ],
             "runtime": [
-                "label": activeRuntimeLaunchAgentLabel,
-                "serviceStatus": runtimeServiceStatusDescription(),
-                "listenerOwnership": verifyRuntimeListenerOwnership().description,
+                "label": snapshot.runtimeLabel,
+                "serviceStatus": snapshot.localPreviewRuntime
+                    ? (launchAgent.exitStatus == 0 ? "loaded" : "not loaded")
+                    : snapshot.runtimeRegistrationStatus,
+                "listenerOwnership": runtimeListenerOwnership(
+                    launchAgent: launchAgent
+                ),
                 "helperExists": fileManager.isExecutableFile(atPath: helperURL.path),
-                "helperSignatureValid": helperSignatureValid,
-                "recentCrashReports": recentRuntimeCrashReportNames(),
+                "helperSignature": processOutputReport(helperSignature),
+                "launchAgent": processOutputReport(launchAgent),
+                "listener": processOutputReport(listener),
+                "backgroundItems": filteredBackgroundItems(
+                    backgroundItems.output,
+                    runtimeLabel: snapshot.runtimeLabel
+                ),
+                "recentCrashReports": recentTextFiles(
+                    in: URL(fileURLWithPath: snapshot.crashDirectoryPath, isDirectory: true),
+                    matching: "codexbar-display-",
+                    limit: 3
+                ),
+                "recentLogs": recentTextFiles(
+                    in: URL(fileURLWithPath: snapshot.supportDirectoryPath, isDirectory: true)
+                        .appendingPathComponent("logs", isDirectory: true),
+                    matching: nil,
+                    limit: 6
+                ),
             ],
             "codexBar": [
-                "installed": codexBarURL != nil,
-                "path": codexBarURL?.path ?? "not found",
+                "installed": snapshot.codexBarPath != nil,
+                "path": snapshot.codexBarPath ?? "not found",
             ],
+            "controlCenterDiagnostics": decodedJSONOrProcessOutput(companionDiagnostics),
         ]
         return try? JSONSerialization.data(
-            withJSONObject: report,
+            withJSONObject: redactReportValue(report),
             options: [.prettyPrinted, .sortedKeys]
         )
     }
 
-    private func runtimeServiceStatusDescription() -> String {
-        if usesLocalPreviewRuntime {
-            let result = runCommandCapturingOutput(
-                executable: "/bin/launchctl",
-                arguments: [
-                    "print",
-                    launchctlServiceTarget(
-                        uid: getuid(),
-                        label: previewRuntimeLaunchAgentLabel
-                    ),
-                ]
-            )
-            return result.exitStatus == 0 ? "loaded" : "not loaded"
-        }
+    private func runtimeRegistrationStatusDescription() -> String {
         switch runtimeService.status {
         case .enabled:
             return "enabled"
@@ -1119,32 +1256,181 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         }
     }
 
-    private func recentRuntimeCrashReportNames() -> [String] {
-        let directory = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)
+    nonisolated private static func runtimeListenerOwnership(
+        launchAgent: ProcessOutput
+    ) -> String {
+        guard let servicePID = parseLaunchctlServicePID(launchAgent.output),
+              launchAgent.exitStatus == 0 else {
+            return evaluateRuntimeOwnership(
+                launchctlExitStatus: launchAgent.exitStatus,
+                launchctlOutput: launchAgent.output,
+                lsofExitStatus: nil,
+                lsofOutput: ""
+            ).description
+        }
+        let lsof = captureProcessOutput(
+            executable: "/usr/sbin/lsof",
+            arguments: [
+                "-nP",
+                "-a",
+                "-p",
+                String(servicePID),
+                "-iTCP@127.0.0.1:47832",
+                "-sTCP:LISTEN",
+                "-Fp",
+            ]
+        )
+        return evaluateRuntimeOwnership(
+            launchctlExitStatus: launchAgent.exitStatus,
+            launchctlOutput: launchAgent.output,
+            lsofExitStatus: lsof.exitStatus,
+            lsofOutput: lsof.output
+        ).description
+    }
+
+    nonisolated private static func recentTextFiles(
+        in directory: URL,
+        matching prefix: String?,
+        limit: Int
+    ) -> [[String: Any]] {
         guard let urls = try? FileManager.default.contentsOfDirectory(
             at: directory,
-            includingPropertiesForKeys: [.contentModificationDateKey],
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
             options: [.skipsHiddenFiles]
         ) else {
             return []
         }
         return urls
-            .filter {
-                $0.lastPathComponent.hasPrefix("codexbar-display-")
-                    && $0.pathExtension == "ips"
-            }
+            .filter { prefix == nil || $0.lastPathComponent.hasPrefix(prefix!) }
             .sorted {
-                let left = try? $0.resourceValues(
-                    forKeys: [.contentModificationDateKey]
-                ).contentModificationDate
-                let right = try? $1.resourceValues(
-                    forKeys: [.contentModificationDateKey]
-                ).contentModificationDate
+                let left = try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+                let right = try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
                 return (left ?? .distantPast) > (right ?? .distantPast)
             }
-            .prefix(3)
-            .map(\.lastPathComponent)
+            .prefix(limit)
+            .map { url in
+                let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+                return [
+                    "name": url.lastPathComponent,
+                    "modifiedAt": values?.contentModificationDate.map { ISO8601DateFormatter().string(from: $0) } ?? "unknown",
+                    "bytes": values?.fileSize ?? 0,
+                    "tail": tailText(at: url, maximumBytes: 64 * 1024),
+                ]
+            }
+    }
+
+    nonisolated private static func tailText(at url: URL, maximumBytes: UInt64) -> String {
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            return "unavailable"
+        }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        try? handle.seek(toOffset: size > maximumBytes ? size - maximumBytes : 0)
+        let data = (try? handle.readToEnd()) ?? Data()
+        return String(data: data, encoding: .utf8) ?? "unreadable"
+    }
+
+    nonisolated private static func processOutputReport(_ result: ProcessOutput) -> [String: Any] {
+        [
+            "exitStatus": result.exitStatus.map(Int.init) ?? -1,
+            "output": boundedText(result.output, maximumCharacters: 64 * 1024),
+        ]
+    }
+
+    nonisolated private static func decodedJSONOrProcessOutput(_ result: ProcessOutput) -> Any {
+        guard result.exitStatus == 0,
+              let data = result.output.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data) else {
+            return processOutputReport(result)
+        }
+        return value
+    }
+
+    nonisolated private static func filteredBackgroundItems(
+        _ output: String,
+        runtimeLabel: String
+    ) -> String {
+        let blocks = output.components(separatedBy: "\n\n")
+        let relevant = blocks.filter { block in
+            let value = block.lowercased()
+            return value.contains("shop.vibetv.control-center")
+                || value.contains("codexbar-display")
+                || value.contains(runtimeLabel.lowercased())
+        }
+        return boundedText(relevant.joined(separator: "\n\n"), maximumCharacters: 64 * 1024)
+    }
+
+    nonisolated private static func boundedText(_ value: String, maximumCharacters: Int) -> String {
+        guard value.count > maximumCharacters else {
+            return value
+        }
+        return "…[truncated]\n" + String(value.suffix(maximumCharacters))
+    }
+
+    nonisolated static func redactReportValue(_ value: Any, key: String? = nil) -> Any {
+        if let key, isSensitiveReportKey(key), !(value is Bool) {
+            return "[redacted]"
+        }
+        if let dictionary = value as? [String: Any] {
+            return Dictionary(uniqueKeysWithValues: dictionary.map { entry in
+                (entry.key, redactReportValue(entry.value, key: entry.key))
+            })
+        }
+        if let array = value as? [Any] {
+            return array.map { redactReportValue($0) }
+        }
+        if let text = value as? String {
+            return redactSensitiveReportText(text)
+        }
+        return value
+    }
+
+    nonisolated private static func isSensitiveReportKey(_ key: String) -> Bool {
+        let normalized = key
+            .replacingOccurrences(
+                of: "([a-z0-9])([A-Z])",
+                with: "$1_$2",
+                options: .regularExpression
+            )
+            .replacingOccurrences(of: "-", with: "_")
+            .lowercased()
+        if normalized == "token" || normalized == "api_key" {
+            return true
+        }
+        return normalized.range(
+            of: "(^|_)(authorization|cookie|password|secret|access_token|refresh_token|device_token|pairing_token)(_|$)",
+            options: .regularExpression
+        ) != nil
+    }
+
+    nonisolated private static func redactSensitiveReportText(_ value: String) -> String {
+        let patterns = [
+            #"(?i)([a-z][a-z0-9+.-]*://[^/\s:@]+:)[^@/\s]+@"#,
+            #"(?i)(\b(?:bearer|basic)\s+)[^\s,;}]+"#,
+            #"(?i)([\"']?(?:[a-z0-9.]+[_-])*(?:authorization|cookie|password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|device[_-]?token|pairing[_-]?token|token)[\"']?\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)"#,
+            #"(?i)([?&](?:token|api[_-]?key|access[_-]?token|refresh[_-]?token|secret)=)[^&#\s]*"#,
+        ]
+        return patterns.reduce(value) { current, pattern in
+            guard let expression = try? NSRegularExpression(pattern: pattern) else {
+                return current
+            }
+            let range = NSRange(current.startIndex..<current.endIndex, in: current)
+            return expression.stringByReplacingMatches(
+                in: current,
+                range: range,
+                withTemplate: "$1[redacted]"
+            )
+        }
+    }
+
+    private func machineArchitecture() -> String {
+#if arch(arm64)
+        return "arm64"
+#elseif arch(x86_64)
+        return "x86_64"
+#else
+        return "unknown"
+#endif
     }
 
     @objc private func reloadControlCenter() {
@@ -1215,6 +1501,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     private func presentInstallationRequiredAlert() {
+        installationStatusTitle = "Move VibeTV Control Center to Applications"
+        installationStatusDetail = "The app is not running from Applications."
+        installationStatusFailed = true
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = "Move VibeTV Control Center to Applications"
@@ -1225,8 +1514,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             """
         alert.addButton(withTitle: "Open Applications")
         alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Create report")
 
-        if alert.runModal() == .alertFirstButtonReturn {
+        var response = alert.runModal()
+        while response == .alertThirdButtonReturn {
+            createNativeSupportReport()
+            response = alert.runModal()
+        }
+        if response == .alertFirstButtonReturn {
             let applicationsURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
             if !NSWorkspace.shared.open(applicationsURL) {
                 NSLog("VibeTV Control Center could not open /Applications in Finder")
@@ -1281,6 +1576,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         failed: Bool,
         retryTitle: String = "Try again"
     ) {
+        installationStatusTitle = title
+        installationStatusDetail = detail
+        installationStatusFailed = failed
         let window = window ?? makeMainWindow()
         let container = NSView()
         container.wantsLayer = true
@@ -1334,7 +1632,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             action: #selector(createNativeSupportReport)
         )
         support.bezelStyle = .rounded
-        support.isHidden = !failed
+        support.isHidden = false
 
         let supportLog = NSButton(
             title: "Open support log",
@@ -2404,26 +2702,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         executable: String,
         arguments: [String]
     ) -> ProcessOutput {
-        let process = Process()
-        let outputPipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = outputPipe
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            return ProcessOutput(
-                exitStatus: process.terminationStatus,
-                output: String(data: data, encoding: .utf8) ?? ""
-            )
-        } catch {
-            NSLog(
-                "VibeTV Control Center could not run \(executable) \(arguments.joined(separator: " ")): \(error)"
-            )
-            return ProcessOutput(exitStatus: nil, output: "")
-        }
+        captureProcessOutput(executable: executable, arguments: arguments)
     }
 
     private func launchctlExitStatus(_ arguments: [String]) -> Int32? {

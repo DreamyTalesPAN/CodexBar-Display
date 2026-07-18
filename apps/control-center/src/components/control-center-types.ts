@@ -91,7 +91,30 @@ export type ProviderSetupInfo = {
 };
 
 export type SupportDiagnostics = {
+  ok?: boolean;
+  schemaVersion?: number;
+  reportType?: string;
   generatedAt?: string;
+  environment?: {
+    os?: string;
+    arch?: string;
+    goVersion?: string;
+    pid?: number;
+  };
+  configuration?: {
+    deviceTarget?: string;
+    deviceId?: string;
+    hasPairingToken?: boolean;
+    knownDeviceCount?: number;
+  };
+  networkDiscovery?: {
+    attempted?: boolean;
+    complete?: boolean;
+    vibeTVFound?: boolean;
+    devices?: DeviceCandidate[];
+    errorCode?: string;
+    detail?: string;
+  };
   companion?: CompanionInfo;
   providerSetup?: ProviderSetupInfo;
   device?: DeviceInfo;
@@ -102,6 +125,42 @@ export type SupportDiagnostics = {
     errorCode?: string;
     nextAction?: string;
   }>;
+  client?: {
+    environment: {
+      userAgent?: string;
+      platform?: string;
+      language?: string;
+      online?: boolean;
+      viewport?: string;
+      timezone?: string;
+      visibility?: string;
+      page?: string;
+    };
+    state: SupportReportClientState;
+  };
+  collectionErrors?: Array<{
+    source: string;
+    message: string;
+  }>;
+};
+
+export type SupportReportClientState = {
+  runtimeSurface: "unknown" | "hosted-setup" | "local-control-center";
+  activeTab: ActiveTab;
+  companionStatus: CompanionStatus;
+  companion?: CompanionInfo | null;
+  deviceState: DeviceState;
+  deviceTarget?: string;
+  device?: DeviceInfo | null;
+  deviceSearchState: DeviceSearchState;
+  deviceCandidates: DeviceCandidate[];
+  providerSetup?: ProviderSetupInfo | null;
+  lastError?: ApiError | null;
+  recentEvents: ControlCenterEvent[];
+  firmwareUpdate?: unknown;
+  firmwareUpdateStatus?: unknown;
+  themeInstallStatus?: unknown;
+  usage?: UsageSnapshot | null;
 };
 
 export type DeviceState = "unknown" | "online" | "offline" | "paired";

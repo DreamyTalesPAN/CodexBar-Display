@@ -50,6 +50,8 @@ import {
 } from "./provider-setup-card";
 import { SetupScreen } from "./setup-screen";
 import { SettingsScreen } from "./settings-screen";
+import { SupportReportActions } from "./support-report-actions";
+import { collectSupportReport } from "./support-report";
 import { ThemeLibraryScreen } from "./theme-library-screen";
 import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
@@ -1972,32 +1974,57 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const loadSupportDiagnostics = useCallback(async () => {
     setBusyAction("diagnostics");
     try {
-      const payload = await runCompanion<SupportDiagnostics>("/v1/diagnostics");
-      setSupportDiagnostics(payload);
-      setCompanionStatus("online");
-      setCompanionInfo(payload.companion || null);
-      setProviderSetup(payload.providerSetup || null);
-      setThemeInstallEnabled(
-        Boolean(payload.companion?.features?.themeInstallEnabled),
+      const payload = await collectSupportReport(
+        () => runCompanion<SupportDiagnostics>("/v1/diagnostics"),
+        {
+          runtimeSurface,
+          activeTab,
+          companionStatus,
+          companion: companionInfo,
+          deviceState,
+          deviceTarget,
+          device,
+          deviceSearchState,
+          deviceCandidates,
+          providerSetup,
+          lastError,
+          recentEvents: events,
+          firmwareUpdate,
+          firmwareUpdateStatus,
+          themeInstallStatus,
+          usage,
+        },
       );
-      if (payload.device) {
-        mergeDevice(payload.device);
-        if (payload.device.target) {
-          setDeviceTarget(payload.device.target);
-          rememberDeviceTarget(payload.device.target);
-        }
-        setDeviceState(
-          payload.device.paired
-            ? "paired"
-            : payload.device.connected
-              ? "online"
-              : "unknown",
+      setSupportDiagnostics(payload);
+      const partial = Boolean(payload.collectionErrors?.length);
+      if (!partial) {
+        setCompanionStatus("online");
+        setCompanionInfo(payload.companion || null);
+        setProviderSetup(payload.providerSetup || null);
+        setThemeInstallEnabled(
+          Boolean(payload.companion?.features?.themeInstallEnabled),
         );
+        if (payload.device) {
+          mergeDevice(payload.device);
+          if (payload.device.target) {
+            setDeviceTarget(payload.device.target);
+            rememberDeviceTarget(payload.device.target);
+          }
+          setDeviceState(
+            payload.device.paired
+              ? "paired"
+              : payload.device.connected
+                ? "online"
+                : "unknown",
+          );
+        }
       }
       addEvent({
-        label: "Support report ready",
-        detail: `${payload.checks?.length || 0} items ready for support.`,
-        tone: payload.checks?.some((check) => check.status === "fail")
+        label: partial ? "Support report ready with gaps" : "Support report ready",
+        detail: partial
+          ? "Browser and setup details were saved even though the Mac App did not answer."
+          : `${payload.checks?.length || 0} items ready for support.`,
+        tone: partial || payload.checks?.some((check) => check.status === "fail")
           ? "attention"
           : "ready",
       });
@@ -2020,10 +2047,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, [
     addEvent,
+    activeTab,
+    companionInfo,
+    companionStatus,
+    device,
+    deviceCandidates,
+    deviceSearchState,
+    deviceState,
+    deviceTarget,
+    events,
+    firmwareUpdate,
+    firmwareUpdateStatus,
+    lastError,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
     mergeDevice,
+    providerSetup,
     runCompanion,
+    runtimeSurface,
+    themeInstallStatus,
+    usage,
   ]);
 
   useEffect(() => {
@@ -2213,7 +2256,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   if (runtimeSurface === "unknown") {
-    return <ControlCenterBootScreen />;
+    return (
+      <ControlCenterBootScreen
+        busyAction={busyAction}
+        diagnostics={supportDiagnostics}
+        onCreateSupportReport={loadSupportDiagnostics}
+      />
+    );
   }
 
   if (runtimeSurface === "hosted-setup") {
@@ -2228,7 +2277,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   if (!initialCompanionCheckComplete) {
-    return <ControlCenterBootScreen />;
+    return (
+      <ControlCenterBootScreen
+        busyAction={busyAction}
+        diagnostics={supportDiagnostics}
+        onCreateSupportReport={loadSupportDiagnostics}
+      />
+    );
   }
 
   if (!deviceOperational) {
@@ -2353,19 +2408,34 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 }
 
-function ControlCenterBootScreen() {
+function ControlCenterBootScreen({
+  busyAction,
+  diagnostics,
+  onCreateSupportReport,
+}: {
+  busyAction?: string | null;
+  diagnostics?: SupportDiagnostics | null;
+  onCreateSupportReport: () => void;
+}) {
   return (
     <main className="grid min-h-screen place-items-center bg-[#F9F9F9] px-6 text-[#1B1B1B]">
-      <div className="text-center">
-        <div className="text-[clamp(3rem,7vw,5rem)] font-black uppercase leading-none tracking-normal">
-          VIBETV
+      <div className="grid gap-8 text-center">
+        <div>
+          <div className="text-[clamp(3rem,7vw,5rem)] font-black uppercase leading-none tracking-normal">
+            VIBETV
+          </div>
+          <h1 className="mt-8 text-[clamp(2rem,4vw,3.25rem)] font-black leading-tight">
+            Starting Control Center
+          </h1>
+          <p className="mt-3 text-base text-[#444933] sm:text-lg">
+            Checking the Mac App and your last connected VibeTV.
+          </p>
         </div>
-        <h1 className="mt-8 text-[clamp(2rem,4vw,3.25rem)] font-black leading-tight">
-          Starting Control Center
-        </h1>
-        <p className="mt-3 text-base text-[#444933] sm:text-lg">
-          Checking the Mac App and your last connected VibeTV.
-        </p>
+        <SupportReportActions
+          busyAction={busyAction}
+          diagnostics={diagnostics}
+          onCreate={onCreateSupportReport}
+        />
       </div>
     </main>
   );

@@ -3410,6 +3410,12 @@ func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	if !got.OK || got.Companion.Status != "ready" || got.GeneratedAt == "" {
 		t.Fatalf("unexpected diagnostics response: %+v", got)
 	}
+	if got.SchemaVersion != 2 || got.ReportType != "control_center" {
+		t.Fatalf("expected versioned control center report, got %+v", got)
+	}
+	if got.Environment.OS == "" || got.Environment.Arch == "" || got.Environment.GoVersion == "" {
+		t.Fatalf("expected runtime environment, got %+v", got.Environment)
+	}
 	if got.Device.Connected || got.Device.Target != "" {
 		t.Fatalf("expected no connected device target, got %+v", got.Device)
 	}
@@ -3418,9 +3424,86 @@ func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	}
 }
 
+func TestDiagnosticsFindsVibeTVOnWiFiWithoutSelectingIt(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"wifi-vibetv","board":"esp8266-smalltv-st7789","firmware":"1.0.31","networkMode":"station"}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil)
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got diagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.NetworkDiscovery.Attempted || !got.NetworkDiscovery.Complete || !got.NetworkDiscovery.Found || len(got.NetworkDiscovery.Devices) != 1 {
+		t.Fatalf("expected one VibeTV in read-only WiFi search, got %+v", got.NetworkDiscovery)
+	}
+	if got.NetworkDiscovery.Devices[0].DeviceID != "wifi-vibetv" {
+		t.Fatalf("unexpected discovered VibeTV: %+v", got.NetworkDiscovery.Devices[0])
+	}
+	if !hasDiagnosticCheck(got.Checks, "network_discovery", "pass") {
+		t.Fatalf("expected discovery pass check, got %+v", got.Checks)
+	}
+	saved, err := server.config()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if saved.DeviceTarget != "" || saved.DeviceID != "" || len(saved.KnownDevices) != 0 {
+		t.Fatalf("diagnostics must not select or remember a VibeTV, got %+v", saved)
+	}
+}
+
+func TestDiagnosticsMarksTimedOutWiFiSearchIncomplete(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer device.Close()
+
+	previousTimeout := diagnosticsDiscoveryTime
+	diagnosticsDiscoveryTime = 20 * time.Millisecond
+	t.Cleanup(func() { diagnosticsDiscoveryTime = previousTimeout })
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil)
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got diagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.NetworkDiscovery.Attempted || got.NetworkDiscovery.Complete || got.NetworkDiscovery.Found {
+		t.Fatalf("expected an incomplete WiFi search, got %+v", got.NetworkDiscovery)
+	}
+	if got.NetworkDiscovery.ErrorCode != "device_search_incomplete" {
+		t.Fatalf("expected incomplete search error, got %+v", got.NetworkDiscovery)
+	}
+	if !hasDiagnosticCheck(got.Checks, "network_discovery", "attention") {
+		t.Fatalf("expected discovery attention check, got %+v", got.Checks)
+	}
+}
+
 func TestDiagnosticsReportsDeviceWithoutLeakingToken(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+		if got := r.Header.Get("X-VibeTV-Token"); got != "" && got != "pair-token" {
 			t.Fatalf("expected pairing token header for device request, got %q", got)
 		}
 		switch r.URL.Path {
@@ -3428,6 +3511,9 @@ func TestDiagnosticsReportsDeviceWithoutLeakingToken(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
 		case "/health":
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Fatalf("expected pairing token header for health request, got %q", got)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"synthwave"},"settings":{"display":{"brightnessPercent":40}}}`))
 		default:
@@ -3455,6 +3541,9 @@ func TestDiagnosticsReportsDeviceWithoutLeakingToken(t *testing.T) {
 	}
 	if !got.Device.Connected || !got.Device.Paired || got.Device.ActiveTheme != "synthwave" {
 		t.Fatalf("unexpected device diagnostics: %+v", got.Device)
+	}
+	if !got.Configuration.HasPairingToken || got.Configuration.DeviceTarget != device.URL {
+		t.Fatalf("expected redacted configuration summary, got %+v", got.Configuration)
 	}
 	if !hasDiagnosticCheck(got.Checks, "device_hello", "pass") {
 		t.Fatalf("expected hello pass check, got %+v", got.Checks)
