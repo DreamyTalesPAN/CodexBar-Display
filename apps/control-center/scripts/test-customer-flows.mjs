@@ -2024,7 +2024,13 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
       ...companionDevice,
       activeTheme: "synthwave",
       firmware: "1.0.32",
+      ready: false,
+      stream: {
+        healthy: false,
+        running: false,
+      },
     },
+    displayFrameUnavailableResponses: 1,
     displayFrameResponse: {
       ok: true,
       savedAt: "2026-06-29T10:47:46Z",
@@ -2071,7 +2077,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
     .getByRole("img", {
       name: /Rendered VibeTV theme synthwave showing Codex, 0% session used, 63% weekly used/,
     })
-    .waitFor({ timeout: 10_000 });
+    .waitFor({ timeout: 4_000 });
   const renderedTheme = page.getByRole("img", {
     name: /Rendered VibeTV theme synthwave/,
   });
@@ -2959,6 +2965,7 @@ async function routeCompanionOnline(
     usageStatus = 200,
     displayFrameStatus = 200,
     displayFrameResponse,
+    displayFrameUnavailableResponses = 0,
     repairError = false,
     selectError = false,
     searchDevices,
@@ -2981,6 +2988,7 @@ async function routeCompanionOnline(
   let macAppUpdateStatusIndex = 0;
   let macAppUpdateStatusFailuresRemaining = macAppUpdateStatusFailures;
   let statusRequestCount = 0;
+  let displayFrameRequestCount = 0;
   let currentProviderSetup = providerSetup;
   const handler = async (route) => {
     const pathname = companionPath(route);
@@ -3214,6 +3222,15 @@ async function routeCompanionOnline(
       return;
     }
     if (pathname === "/v1/display-frame/latest") {
+      displayFrameRequestCount += 1;
+      if (displayFrameRequestCount <= displayFrameUnavailableResponses) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false }),
+        });
+        return;
+      }
       if (displayFrameStatus !== 200) {
         await route.fulfill({
           status: displayFrameStatus,
