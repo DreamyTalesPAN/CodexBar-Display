@@ -212,6 +212,8 @@ function ProviderPreferencesPanel({
                       </Badge>
                       {item.health.service === "outage" ? (
                         <Badge variant="destructive">Service outage</Badge>
+                      ) : item.health.service === "degraded" ? (
+                        <Badge variant="secondary">Service degraded</Badge>
                       ) : null}
                       {attentionExplanation ? (
                         <Tooltip>
@@ -278,6 +280,9 @@ function providerAttentionExplanation(
   }
   if (item.health.service === "outage") {
     return `${provider} is reporting an outage. Your setup may be fine; try again when the service is back online.`;
+  }
+  if (item.health.service === "degraded") {
+    return `${provider} is reporting a service problem. Usage updates may be delayed until the service recovers.`;
   }
   return null;
 }
