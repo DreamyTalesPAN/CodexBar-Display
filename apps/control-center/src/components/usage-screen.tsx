@@ -210,9 +210,9 @@ function ProviderPreferencesPanel({
                       <Badge variant={healthBadgeVariant(item.health.state)}>
                         {healthLabel(item.health.state)}
                       </Badge>
-                      <Badge variant={serviceBadgeVariant(item.health.service)}>
-                        {serviceLabel(item.health.service)}
-                      </Badge>
+                      {item.health.service === "outage" ? (
+                        <Badge variant="destructive">Service outage</Badge>
+                      ) : null}
                       {attentionExplanation ? (
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -279,9 +279,6 @@ function providerAttentionExplanation(
   if (item.health.service === "outage") {
     return `${provider} is reporting an outage. Your setup may be fine; try again when the service is back online.`;
   }
-  if (item.health.service === "degraded") {
-    return `${provider} is reporting a service problem. Usage updates may be delayed until the service recovers.`;
-  }
   return null;
 }
 
@@ -306,26 +303,6 @@ function healthBadgeVariant(state: string): "default" | "secondary" | "destructi
     return "default";
   }
   return "secondary";
-}
-
-function serviceLabel(service: string): string {
-  const labels: Record<string, string> = {
-    operational: "Service online",
-    degraded: "Service degraded",
-    outage: "Service outage",
-    unknown: "Service unknown",
-  };
-  return labels[service] || "Service unknown";
-}
-
-function serviceBadgeVariant(service: string): "secondary" | "destructive" | "outline" {
-  if (service === "outage") {
-    return "destructive";
-  }
-  if (service === "degraded") {
-    return "secondary";
-  }
-  return "outline";
 }
 
 function TokenUsageOverTimePanel({
