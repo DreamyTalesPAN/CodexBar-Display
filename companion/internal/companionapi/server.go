@@ -515,12 +515,39 @@ func (e *statusAPIError) Error() string {
 }
 
 type diagnosticsResponse struct {
-	OK            bool                   `json:"ok"`
-	GeneratedAt   string                 `json:"generatedAt"`
-	Companion     companion              `json:"companion"`
-	Device        deviceInfo             `json:"device"`
-	ProviderSetup codexbar.ProviderSetup `json:"providerSetup"`
-	Checks        []diagnosticCheck      `json:"checks"`
+	OK               bool                     `json:"ok"`
+	SchemaVersion    int                      `json:"schemaVersion"`
+	ReportType       string                   `json:"reportType"`
+	GeneratedAt      string                   `json:"generatedAt"`
+	Environment      diagnosticsEnvironment   `json:"environment"`
+	Configuration    diagnosticsConfiguration `json:"configuration"`
+	NetworkDiscovery diagnosticsDiscovery     `json:"networkDiscovery"`
+	Companion        companion                `json:"companion"`
+	Device           deviceInfo               `json:"device"`
+	ProviderSetup    codexbar.ProviderSetup   `json:"providerSetup"`
+	Checks           []diagnosticCheck        `json:"checks"`
+}
+
+type diagnosticsEnvironment struct {
+	OS        string `json:"os"`
+	Arch      string `json:"arch"`
+	GoVersion string `json:"goVersion"`
+	PID       int    `json:"pid"`
+}
+
+type diagnosticsConfiguration struct {
+	DeviceTarget     string `json:"deviceTarget,omitempty"`
+	DeviceID         string `json:"deviceId,omitempty"`
+	HasPairingToken  bool   `json:"hasPairingToken"`
+	KnownDeviceCount int    `json:"knownDeviceCount"`
+}
+
+type diagnosticsDiscovery struct {
+	Attempted bool                `json:"attempted"`
+	Found     bool                `json:"vibeTVFound"`
+	Devices   []deviceSearchEntry `json:"devices"`
+	ErrorCode string              `json:"errorCode,omitempty"`
+	Detail    string              `json:"detail,omitempty"`
 }
 
 type diagnosticCheck struct {
@@ -1363,6 +1390,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	providerSetup := s.currentProviderSetup(r.Context(), false)
+	discovery := s.diagnosticsNetworkDiscovery(r.Context(), cfg)
 	checks := []diagnosticCheck{
 		{
 			Name:   "companion_api",
@@ -1370,6 +1398,32 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Detail: "Companion API is responding on loopback.",
 		},
 		providerDiagnosticCheck(providerSetup),
+		discoveryDiagnosticCheck(discovery),
+	}
+	writeReport := func(device deviceInfo) {
+		writeJSON(w, http.StatusOK, diagnosticsResponse{
+			OK:            true,
+			SchemaVersion: 2,
+			ReportType:    "control_center",
+			GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+			Environment: diagnosticsEnvironment{
+				OS:        runtime.GOOS,
+				Arch:      runtime.GOARCH,
+				GoVersion: runtime.Version(),
+				PID:       os.Getpid(),
+			},
+			Configuration: diagnosticsConfiguration{
+				DeviceTarget:     publicTarget(cfg.DeviceTarget),
+				DeviceID:         strings.TrimSpace(cfg.DeviceID),
+				HasPairingToken:  strings.TrimSpace(cfg.DeviceToken) != "",
+				KnownDeviceCount: len(cfg.KnownDevices),
+			},
+			NetworkDiscovery: discovery,
+			Companion:        s.companionInfo(r.Context()),
+			Device:           device,
+			ProviderSetup:    providerSetup,
+			Checks:           checks,
+		})
 	}
 	if themeInstallEnabled() {
 		checks = append(checks, diagnosticCheck{
@@ -1400,14 +1454,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			ErrorCode:  "device_target_missing",
 			NextAction: "Run device discovery or enter the exact VibeTV target in the VibeTV target field.",
 		})
-		writeJSON(w, http.StatusOK, diagnosticsResponse{
-			OK:            true,
-			GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
-			Companion:     s.companionInfo(r.Context()),
-			Device:        device,
-			ProviderSetup: providerSetup,
-			Checks:        checks,
-		})
+		writeReport(device)
 		return
 	}
 
@@ -1425,14 +1472,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			ErrorCode:  "device_hello_failed",
 			NextAction: "Keep VibeTV powered on, then run discovery again.",
 		})
-		writeJSON(w, http.StatusOK, diagnosticsResponse{
-			OK:            true,
-			GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
-			Companion:     s.companionInfo(r.Context()),
-			Device:        device,
-			ProviderSetup: providerSetup,
-			Checks:        checks,
-		})
+		writeReport(device)
 		return
 	}
 
@@ -1511,14 +1551,55 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, diagnosticsResponse{
-		OK:            true,
-		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
-		Companion:     s.companionInfo(r.Context()),
-		Device:        device,
-		ProviderSetup: providerSetup,
-		Checks:        checks,
-	})
+	writeReport(device)
+}
+
+func (s *Server) diagnosticsNetworkDiscovery(ctx context.Context, cfg runtimeconfig.Config) diagnosticsDiscovery {
+	searchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	devices, err := s.searchDevicesOnce(searchCtx, cfg, "")
+	result := diagnosticsDiscovery{
+		Attempted: true,
+		Devices:   devices,
+		Found:     len(devices) > 0,
+	}
+	if result.Devices == nil {
+		result.Devices = []deviceSearchEntry{}
+	}
+	if err != nil {
+		result.ErrorCode = "device_search_failed"
+		if errors.Is(err, errLocalNetworkAccessDenied) {
+			result.ErrorCode = "local_network_access_denied"
+		}
+		result.Detail = sanitizeErrorDetail(err)
+	}
+	return result
+}
+
+func discoveryDiagnosticCheck(discovery diagnosticsDiscovery) diagnosticCheck {
+	if discovery.ErrorCode != "" {
+		return diagnosticCheck{
+			Name:       "network_discovery",
+			Status:     "attention",
+			Detail:     discovery.Detail,
+			ErrorCode:  discovery.ErrorCode,
+			NextAction: "Allow Local Network access for VibeTV Control Center, then create the report again.",
+		}
+	}
+	if !discovery.Found {
+		return diagnosticCheck{
+			Name:       "network_discovery",
+			Status:     "attention",
+			Detail:     "No VibeTV answered the read-only WiFi search.",
+			ErrorCode:  "vibetv_not_found_on_wifi",
+			NextAction: "Keep VibeTV powered on and connected to the same WiFi as this Mac.",
+		}
+	}
+	return diagnosticCheck{
+		Name:   "network_discovery",
+		Status: "pass",
+		Detail: fmt.Sprintf("Found %d VibeTV device(s) on WiFi.", len(discovery.Devices)),
+	}
 }
 
 func (s *Server) companionInfo(ctx context.Context) companion {

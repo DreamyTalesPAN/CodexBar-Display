@@ -930,6 +930,9 @@ async function testHostedEntryShowsMacAppDownload(
   await page.getByRole("heading", { name: "Get the VibeTV Mac App" }).waitFor({
     timeout: 10_000,
   });
+  await page.getByRole("button", { name: "Create report" }).waitFor({
+    timeout: 10_000,
+  });
   assert(
     (await page.getByRole("button", { name: "VibeTV is on WiFi" }).count()) ===
       0,
@@ -963,6 +966,14 @@ async function testHostedEntryShowsMacAppDownload(
   assert(
     companionRequests.length === 0,
     `Hosted entry must not probe the local Mac App, got ${JSON.stringify(companionRequests)}`,
+  );
+  await page.getByRole("button", { name: "Create report" }).click();
+  await page.getByRole("button", { name: "Copy report" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    companionRequests.some((pathname) => pathname === "/v1/diagnostics"),
+    "Creating a hosted setup report should try the local Mac App once",
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1082,6 +1093,9 @@ async function testInitialHealthyStatusRaceAvoidsRepair(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Starting Control Center" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Create report" }).waitFor({
     timeout: 10_000,
   });
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
@@ -1986,6 +2000,16 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   await page.getByText("VibeTV address", { exact: true }).waitFor({
     timeout: 10_000,
   });
+  await page.getByText("VibeTVs on WiFi", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByText("1 found", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  await page
+    .getByRole("region", { name: "VibeTVs found on this WiFi" })
+    .getByText("wifi-vibetv", { exact: true })
+    .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByText("Companion", { exact: false }).count()) === 0,
     "Support report should not show internal Companion naming",
@@ -3520,7 +3544,36 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify({
           ok: true,
+          schemaVersion: 2,
+          reportType: "control_center",
           generatedAt: "2026-06-19T12:00:00.000Z",
+          environment: {
+            os: "darwin",
+            arch: "arm64",
+            goVersion: "go1.25",
+            pid: 123,
+          },
+          configuration: {
+            deviceTarget: "http://192.168.178.163",
+            deviceId: "wifi-vibetv",
+            hasPairingToken: true,
+            knownDeviceCount: 1,
+          },
+          networkDiscovery: {
+            attempted: true,
+            vibeTVFound: true,
+            devices: [
+              {
+                target: "http://192.168.178.163",
+                deviceId: "wifi-vibetv",
+                board: "esp8266_smalltv_st7789",
+                firmware: "1.0.32",
+                networkMode: "station",
+                known: true,
+                active: true,
+              },
+            ],
+          },
           companion: companionPayload(
             currentCompanionVersion,
             companionFeatures,

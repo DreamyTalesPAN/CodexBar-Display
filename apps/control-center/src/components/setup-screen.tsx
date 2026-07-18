@@ -240,6 +240,13 @@ export function SetupScreen({
             </div>
           </div>
         </section>
+        <div className="py-6">
+          <SupportReportActions
+            busyAction={busyAction}
+            diagnostics={diagnostics}
+            onCreate={onCreateSupportReport}
+          />
+        </div>
       </div>
     );
   }
@@ -455,15 +462,13 @@ export function SetupScreen({
           ) : null}
         </ol>
 
-        {!hostedMode ? (
-          <div className="border-t border-[#747A60] py-6">
-            <SupportReportActions
-              busyAction={busyAction}
-              diagnostics={diagnostics}
-              onCreate={onCreateSupportReport}
-            />
-          </div>
-        ) : null}
+        <div className="border-t border-[#747A60] py-6">
+          <SupportReportActions
+            busyAction={busyAction}
+            diagnostics={diagnostics}
+            onCreate={onCreateSupportReport}
+          />
+        </div>
       </section>
     </div>
   );

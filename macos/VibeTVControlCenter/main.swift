@@ -837,6 +837,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private var preparationTask: Task<Void, Never>?
     private var installationReady = false
     private var codexBarRepairRequired = false
+    private var installationStatusTitle = "Starting Control Center"
+    private var installationStatusDetail = "Preparing the Mac App."
+    private var installationStatusFailed = false
 #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -1042,23 +1045,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         let helperURL = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers", isDirectory: true)
             .appendingPathComponent("codexbar-display")
-        let appSignatureValid = runCommandCapturingOutput(
+        let appSignature = runCommandCapturingOutput(
             executable: "/usr/bin/codesign",
-            arguments: ["--verify", "--deep", "--strict", Bundle.main.bundleURL.path]
-        ).exitStatus == 0
-        let helperSignatureValid = runCommandCapturingOutput(
+            arguments: ["--verify", "--deep", "--strict", "--verbose=2", Bundle.main.bundleURL.path]
+        )
+        let helperSignature = runCommandCapturingOutput(
             executable: "/usr/bin/codesign",
-            arguments: ["--verify", "--strict", helperURL.path]
-        ).exitStatus == 0
-        let appGatekeeperAccepted = runCommandCapturingOutput(
+            arguments: ["--verify", "--strict", "--verbose=2", helperURL.path]
+        )
+        let appGatekeeper = runCommandCapturingOutput(
             executable: "/usr/sbin/spctl",
-            arguments: ["--assess", "--type", "execute", Bundle.main.bundleURL.path]
-        ).exitStatus == 0
+            arguments: ["--assess", "--type", "execute", "--verbose=4", Bundle.main.bundleURL.path]
+        )
+        let launchAgent = runCommandCapturingOutput(
+            executable: "/bin/launchctl",
+            arguments: ["print", launchctlServiceTarget(uid: getuid(), label: activeRuntimeLaunchAgentLabel)]
+        )
+        let listener = runCommandCapturingOutput(
+            executable: "/usr/sbin/lsof",
+            arguments: ["-nP", "-iTCP@127.0.0.1:47832", "-sTCP:LISTEN"]
+        )
+        let backgroundItems = runCommandCapturingOutput(
+            executable: "/usr/bin/sfltool",
+            arguments: ["dumpbtm"]
+        )
+        let companionDiagnostics = runCommandCapturingOutput(
+            executable: "/usr/bin/curl",
+            arguments: ["--silent", "--show-error", "--max-time", "8", "http://127.0.0.1:47832/v1/diagnostics"]
+        )
         let codexBarURL = existingCodexBarApp()
         let report: [String: Any] = [
+            "schemaVersion": 2,
             "generatedAt": ISO8601DateFormatter().string(from: Date()),
             "reportType": "native_installation",
-            "macOS": ProcessInfo.processInfo.operatingSystemVersionString,
+            "setupScreen": [
+                "title": installationStatusTitle,
+                "detail": installationStatusDetail,
+                "failed": installationStatusFailed,
+                "installationReady": installationReady,
+                "codexBarRepairRequired": codexBarRepairRequired,
+            ],
+            "system": [
+                "macOS": ProcessInfo.processInfo.operatingSystemVersionString,
+                "architecture": machineArchitecture(),
+                "processIdentifier": ProcessInfo.processInfo.processIdentifier,
+                "physicalMemory": ProcessInfo.processInfo.physicalMemory,
+                "lowPowerMode": ProcessInfo.processInfo.isLowPowerModeEnabled,
+            ],
             "app": [
                 "version": Bundle.main.object(
                     forInfoDictionaryKey: "CFBundleShortVersionString"
@@ -1068,8 +1101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
                 ) as? String ?? "unknown",
                 "path": Bundle.main.bundleURL.path,
                 "installedInApplications": isInstalledApplicationsBundle(Bundle.main.bundleURL),
-                "signatureValid": appSignatureValid,
-                "gatekeeperAccepted": appGatekeeperAccepted,
+                "signature": processOutputReport(appSignature),
+                "gatekeeper": processOutputReport(appGatekeeper),
                 "localPreviewRuntime": usesLocalPreviewRuntime,
             ],
             "runtime": [
@@ -1077,13 +1110,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
                 "serviceStatus": runtimeServiceStatusDescription(),
                 "listenerOwnership": verifyRuntimeListenerOwnership().description,
                 "helperExists": fileManager.isExecutableFile(atPath: helperURL.path),
-                "helperSignatureValid": helperSignatureValid,
-                "recentCrashReports": recentRuntimeCrashReportNames(),
+                "helperSignature": processOutputReport(helperSignature),
+                "launchAgent": processOutputReport(launchAgent),
+                "listener": processOutputReport(listener),
+                "backgroundItems": filteredBackgroundItems(backgroundItems.output),
+                "recentCrashReports": recentRuntimeCrashReports(),
+                "recentLogs": recentSupportLogs(),
             ],
             "codexBar": [
                 "installed": codexBarURL != nil,
                 "path": codexBarURL?.path ?? "not found",
             ],
+            "controlCenterDiagnostics": decodedJSONOrProcessOutput(companionDiagnostics),
         ]
         return try? JSONSerialization.data(
             withJSONObject: report,
@@ -1119,32 +1157,104 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         }
     }
 
-    private func recentRuntimeCrashReportNames() -> [String] {
+    private func recentRuntimeCrashReports() -> [[String: Any]] {
         let directory = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)
+        return recentTextFiles(in: directory, matching: "codexbar-display-", limit: 3)
+    }
+
+    private func recentSupportLogs() -> [[String: Any]] {
+        recentTextFiles(
+            in: applicationSupportURL().appendingPathComponent("logs", isDirectory: true),
+            matching: nil,
+            limit: 6
+        )
+    }
+
+    private func recentTextFiles(
+        in directory: URL,
+        matching prefix: String?,
+        limit: Int
+    ) -> [[String: Any]] {
         guard let urls = try? FileManager.default.contentsOfDirectory(
             at: directory,
-            includingPropertiesForKeys: [.contentModificationDateKey],
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
             options: [.skipsHiddenFiles]
         ) else {
             return []
         }
         return urls
-            .filter {
-                $0.lastPathComponent.hasPrefix("codexbar-display-")
-                    && $0.pathExtension == "ips"
-            }
+            .filter { prefix == nil || $0.lastPathComponent.hasPrefix(prefix!) }
             .sorted {
-                let left = try? $0.resourceValues(
-                    forKeys: [.contentModificationDateKey]
-                ).contentModificationDate
-                let right = try? $1.resourceValues(
-                    forKeys: [.contentModificationDateKey]
-                ).contentModificationDate
+                let left = try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+                let right = try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
                 return (left ?? .distantPast) > (right ?? .distantPast)
             }
-            .prefix(3)
-            .map(\.lastPathComponent)
+            .prefix(limit)
+            .map { url in
+                let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+                return [
+                    "name": url.lastPathComponent,
+                    "modifiedAt": values?.contentModificationDate.map { ISO8601DateFormatter().string(from: $0) } ?? "unknown",
+                    "bytes": values?.fileSize ?? 0,
+                    "tail": tailText(at: url, maximumBytes: 64 * 1024),
+                ]
+            }
+    }
+
+    private func tailText(at url: URL, maximumBytes: UInt64) -> String {
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            return "unavailable"
+        }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        try? handle.seek(toOffset: size > maximumBytes ? size - maximumBytes : 0)
+        let data = (try? handle.readToEnd()) ?? Data()
+        return String(data: data, encoding: .utf8) ?? "unreadable"
+    }
+
+    private func processOutputReport(_ result: ProcessOutput) -> [String: Any] {
+        [
+            "exitStatus": result.exitStatus.map(Int.init) ?? -1,
+            "output": boundedText(result.output, maximumCharacters: 64 * 1024),
+        ]
+    }
+
+    private func decodedJSONOrProcessOutput(_ result: ProcessOutput) -> Any {
+        guard result.exitStatus == 0,
+              let data = result.output.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data) else {
+            return processOutputReport(result)
+        }
+        return value
+    }
+
+    private func filteredBackgroundItems(_ output: String) -> String {
+        let blocks = output.components(separatedBy: "\n\n")
+        let relevant = blocks.filter { block in
+            let value = block.lowercased()
+            return value.contains("shop.vibetv.control-center")
+                || value.contains("codexbar-display")
+                || value.contains(activeRuntimeLaunchAgentLabel.lowercased())
+        }
+        return boundedText(relevant.joined(separator: "\n\n"), maximumCharacters: 64 * 1024)
+    }
+
+    private func boundedText(_ value: String, maximumCharacters: Int) -> String {
+        guard value.count > maximumCharacters else {
+            return value
+        }
+        return "…[truncated]\n" + String(value.suffix(maximumCharacters))
+    }
+
+    private func machineArchitecture() -> String {
+#if arch(arm64)
+        return "arm64"
+#elseif arch(x86_64)
+        return "x86_64"
+#else
+        return "unknown"
+#endif
     }
 
     @objc private func reloadControlCenter() {
@@ -1215,6 +1325,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     private func presentInstallationRequiredAlert() {
+        installationStatusTitle = "Move VibeTV Control Center to Applications"
+        installationStatusDetail = "The app is not running from Applications."
+        installationStatusFailed = true
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = "Move VibeTV Control Center to Applications"
@@ -1225,8 +1338,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             """
         alert.addButton(withTitle: "Open Applications")
         alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Create report")
 
-        if alert.runModal() == .alertFirstButtonReturn {
+        var response = alert.runModal()
+        while response == .alertThirdButtonReturn {
+            createNativeSupportReport()
+            response = alert.runModal()
+        }
+        if response == .alertFirstButtonReturn {
             let applicationsURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
             if !NSWorkspace.shared.open(applicationsURL) {
                 NSLog("VibeTV Control Center could not open /Applications in Finder")
@@ -1281,6 +1400,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         failed: Bool,
         retryTitle: String = "Try again"
     ) {
+        installationStatusTitle = title
+        installationStatusDetail = detail
+        installationStatusFailed = failed
         let window = window ?? makeMainWindow()
         let container = NSView()
         container.wantsLayer = true
@@ -1334,7 +1456,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             action: #selector(createNativeSupportReport)
         )
         support.bezelStyle = .rounded
-        support.isHidden = !failed
+        support.isHidden = false
 
         let supportLog = NSButton(
             title: "Open support log",
@@ -2409,7 +2531,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.standardOutput = outputPipe
-        process.standardError = FileHandle.nullDevice
+        process.standardError = outputPipe
         do {
             try process.run()
             let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
