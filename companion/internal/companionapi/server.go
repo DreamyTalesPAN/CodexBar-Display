@@ -17,11 +17,13 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo"
@@ -53,13 +55,16 @@ const (
 	deviceConnectionRetrying  = "reconnecting"
 	deviceConnectionSetup     = "setup_required"
 	deviceTimeout             = 15 * time.Second
+	deviceSearchWindow        = 30 * time.Second
 	discoveryProbeTime        = 1500 * time.Millisecond
 	deviceProbeCacheTime      = 750 * time.Millisecond
 	deviceReconnectGraceTime  = 45 * time.Second
 	deviceReconnectRepairTime = 60 * time.Second
 	repairDiscoveryAttempts   = 3
 	repairDiscoveryRetryGap   = 1200 * time.Millisecond
-	subnetProbeLimit          = 32
+	subnetProbeLimit          = 64
+	maxSubnetDiscoveryPrefix  = 23
+	maxSubnetDiscoveryTargets = 510
 	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
 	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
 	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
@@ -89,8 +94,21 @@ const (
 
 var deviceHealthProbeTime = 2 * time.Second
 var firmwareHealthVerifyTime = 30 * time.Second
-var subnetProbeTime = 450 * time.Millisecond
+var diagnosticsDiscoveryTime = 5 * time.Second
+
+// The real ESP8266 answers /hello well below this limit, while one second still
+// leaves enough margin for a busy device. Candidates nearest to the Mac are
+// probed first so ordinary customer networks finish quickly even when their
+// configured IPv4 subnet is larger than /24.
+var subnetProbeTime = time.Second
+var localNetworkPermissionGOOS = runtime.GOOS
 var errMacAppActionRequired = errors.New("mac app installation requires customer action")
+var errLocalNetworkAccessDenied = errors.New("local network access denied")
+
+const (
+	localNetworkDenialMinimumSamples  = 8
+	localNetworkDenialProbeMaxElapsed = 250 * time.Millisecond
+)
 
 var printDisplayStreamService = func(ctx context.Context, service string) ([]byte, error) {
 	return exec.CommandContext(ctx, "launchctl", "print", service).CombinedOutput()
@@ -183,6 +201,11 @@ type Server struct {
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
 	fetchUsage             func(context.Context) ([]codexbar.ParsedFrame, error)
+	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
+	openCodexBar           func(context.Context) error
+	providerSetupMu        sync.Mutex
+	providerSetupCache     codexbar.ProviderSetup
+	providerSetupCachedAt  time.Time
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
 	updateMacApp           func(context.Context, string, string, macAppUpdateRequest, io.Writer) error
 	fetchMacAppRelease     func(context.Context) (githubRelease, error)
@@ -350,10 +373,11 @@ type themeSpecHealth struct {
 }
 
 type statusResponse struct {
-	OK             bool               `json:"ok"`
-	Companion      companion          `json:"companion"`
-	Device         deviceInfo         `json:"device"`
-	FirmwareUpdate *firmwareUpdateJob `json:"firmwareUpdate,omitempty"`
+	OK             bool                   `json:"ok"`
+	Companion      companion              `json:"companion"`
+	Device         deviceInfo             `json:"device"`
+	ProviderSetup  codexbar.ProviderSetup `json:"providerSetup"`
+	FirmwareUpdate *firmwareUpdateJob     `json:"firmwareUpdate,omitempty"`
 }
 
 type deviceActionResponse struct {
@@ -498,11 +522,40 @@ func (e *statusAPIError) Error() string {
 }
 
 type diagnosticsResponse struct {
-	OK          bool              `json:"ok"`
-	GeneratedAt string            `json:"generatedAt"`
-	Companion   companion         `json:"companion"`
-	Device      deviceInfo        `json:"device"`
-	Checks      []diagnosticCheck `json:"checks"`
+	OK               bool                     `json:"ok"`
+	SchemaVersion    int                      `json:"schemaVersion"`
+	ReportType       string                   `json:"reportType"`
+	GeneratedAt      string                   `json:"generatedAt"`
+	Environment      diagnosticsEnvironment   `json:"environment"`
+	Configuration    diagnosticsConfiguration `json:"configuration"`
+	NetworkDiscovery diagnosticsDiscovery     `json:"networkDiscovery"`
+	Companion        companion                `json:"companion"`
+	Device           deviceInfo               `json:"device"`
+	ProviderSetup    codexbar.ProviderSetup   `json:"providerSetup"`
+	Checks           []diagnosticCheck        `json:"checks"`
+}
+
+type diagnosticsEnvironment struct {
+	OS        string `json:"os"`
+	Arch      string `json:"arch"`
+	GoVersion string `json:"goVersion"`
+	PID       int    `json:"pid"`
+}
+
+type diagnosticsConfiguration struct {
+	DeviceTarget     string `json:"deviceTarget,omitempty"`
+	DeviceID         string `json:"deviceId,omitempty"`
+	HasPairingToken  bool   `json:"hasPairingToken"`
+	KnownDeviceCount int    `json:"knownDeviceCount"`
+}
+
+type diagnosticsDiscovery struct {
+	Attempted bool                `json:"attempted"`
+	Complete  bool                `json:"complete"`
+	Found     bool                `json:"vibeTVFound"`
+	Devices   []deviceSearchEntry `json:"devices"`
+	ErrorCode string              `json:"errorCode,omitempty"`
+	Detail    string              `json:"detail,omitempty"`
 }
 
 type diagnosticCheck struct {
@@ -771,6 +824,8 @@ func New(opts Options) (*Server, error) {
 		installationMode:      macAppInstallationMode(),
 		loadUsage:             daemon.LoadPersistedUsage,
 		fetchUsage:            codexbar.FetchAllProviders,
+		probeProviderSetup:    codexbar.ProbeProviderSetup,
+		openCodexBar:          codexbar.OpenApp,
 		updateFirmware:        runFirmwareUpdateCommand,
 		updateMacApp:          runMacAppUpdateCommand,
 		fetchMacAppRelease:    fetchLatestMacAppRelease,
@@ -815,6 +870,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/usage", s.handleUsage)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
+	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)
+	mux.HandleFunc("/v1/providers/open-codexbar", s.handleOpenCodexBar)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/search", s.handleDeviceSearch)
 	mux.HandleFunc("/v1/device/select", s.handleDeviceSelect)
@@ -1034,6 +1091,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		OK:             true,
 		Companion:      s.companionInfo(r.Context()),
 		Device:         device,
+		ProviderSetup:  s.currentProviderSetup(r.Context(), false),
 		FirmwareUpdate: firmwareUpdate,
 	})
 }
@@ -1344,12 +1402,45 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	discoveryResult := make(chan diagnosticsDiscovery, 1)
+	go func() {
+		discoveryResult <- s.diagnosticsNetworkDiscovery(r.Context(), cfg)
+	}()
+	providerSetup := s.currentProviderSetup(r.Context(), false)
+	discovery := <-discoveryResult
 	checks := []diagnosticCheck{
 		{
 			Name:   "companion_api",
 			Status: "pass",
 			Detail: "Companion API is responding on loopback.",
 		},
+		providerDiagnosticCheck(providerSetup),
+		discoveryDiagnosticCheck(discovery),
+	}
+	writeReport := func(device deviceInfo) {
+		writeJSON(w, http.StatusOK, diagnosticsResponse{
+			OK:            true,
+			SchemaVersion: 2,
+			ReportType:    "control_center",
+			GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+			Environment: diagnosticsEnvironment{
+				OS:        runtime.GOOS,
+				Arch:      runtime.GOARCH,
+				GoVersion: runtime.Version(),
+				PID:       os.Getpid(),
+			},
+			Configuration: diagnosticsConfiguration{
+				DeviceTarget:     publicTarget(cfg.DeviceTarget),
+				DeviceID:         strings.TrimSpace(cfg.DeviceID),
+				HasPairingToken:  strings.TrimSpace(cfg.DeviceToken) != "",
+				KnownDeviceCount: len(cfg.KnownDevices),
+			},
+			NetworkDiscovery: discovery,
+			Companion:        s.companionInfo(r.Context()),
+			Device:           device,
+			ProviderSetup:    providerSetup,
+			Checks:           checks,
+		})
 	}
 	if themeInstallEnabled() {
 		checks = append(checks, diagnosticCheck{
@@ -1380,13 +1471,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			ErrorCode:  "device_target_missing",
 			NextAction: "Run device discovery or enter the exact VibeTV target in the VibeTV target field.",
 		})
-		writeJSON(w, http.StatusOK, diagnosticsResponse{
-			OK:          true,
-			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			Companion:   s.companionInfo(r.Context()),
-			Device:      device,
-			Checks:      checks,
-		})
+		writeReport(device)
 		return
 	}
 
@@ -1404,13 +1489,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			ErrorCode:  "device_hello_failed",
 			NextAction: "Keep VibeTV powered on, then run discovery again.",
 		})
-		writeJSON(w, http.StatusOK, diagnosticsResponse{
-			OK:          true,
-			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			Companion:   s.companionInfo(r.Context()),
-			Device:      device,
-			Checks:      checks,
-		})
+		writeReport(device)
 		return
 	}
 
@@ -1462,6 +1541,14 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Status: "pass",
 			Detail: device.Stream.Detail,
 		})
+	} else if device.Stream != nil && device.Stream.ErrorCode == "provider_setup_required" {
+		checks = append(checks, diagnosticCheck{
+			Name:       "display_stream",
+			Status:     "attention",
+			Detail:     device.Stream.Detail,
+			ErrorCode:  "provider_setup_required",
+			NextAction: "Connect an AI provider in CodexBar, then click Check again.",
+		})
 	} else {
 		checks = append(checks, diagnosticCheck{
 			Name:       "display_stream",
@@ -1481,13 +1568,65 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, diagnosticsResponse{
-		OK:          true,
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Companion:   s.companionInfo(r.Context()),
-		Device:      device,
-		Checks:      checks,
-	})
+	writeReport(device)
+}
+
+func (s *Server) diagnosticsNetworkDiscovery(ctx context.Context, cfg runtimeconfig.Config) diagnosticsDiscovery {
+	searchCtx, cancel := context.WithTimeout(ctx, diagnosticsDiscoveryTime)
+	defer cancel()
+	devices, err := s.searchDevicesOnce(searchCtx, cfg, "")
+	if err == nil && searchCtx.Err() != nil {
+		err = searchCtx.Err()
+	}
+	result := diagnosticsDiscovery{
+		Attempted: true,
+		Complete:  err == nil,
+		Devices:   devices,
+		Found:     len(devices) > 0,
+	}
+	if result.Devices == nil {
+		result.Devices = []deviceSearchEntry{}
+	}
+	if err != nil {
+		result.ErrorCode = "device_search_failed"
+		if errors.Is(err, errLocalNetworkAccessDenied) {
+			result.ErrorCode = "local_network_access_denied"
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			result.ErrorCode = "device_search_incomplete"
+		}
+		result.Detail = sanitizeErrorDetail(err)
+	}
+	return result
+}
+
+func discoveryDiagnosticCheck(discovery diagnosticsDiscovery) diagnosticCheck {
+	if discovery.ErrorCode != "" {
+		nextAction := "Keep VibeTV powered on and connected to the same WiFi, then create the report again."
+		if discovery.ErrorCode == "local_network_access_denied" {
+			nextAction = "Allow Local Network access for VibeTV Control Center, then create the report again."
+		}
+		return diagnosticCheck{
+			Name:       "network_discovery",
+			Status:     "attention",
+			Detail:     discovery.Detail,
+			ErrorCode:  discovery.ErrorCode,
+			NextAction: nextAction,
+		}
+	}
+	if !discovery.Found {
+		return diagnosticCheck{
+			Name:       "network_discovery",
+			Status:     "attention",
+			Detail:     "No VibeTV answered the read-only WiFi search.",
+			ErrorCode:  "vibetv_not_found_on_wifi",
+			NextAction: "Keep VibeTV powered on and connected to the same WiFi as this Mac.",
+		}
+	}
+	return diagnosticCheck{
+		Name:   "network_discovery",
+		Status: "pass",
+		Detail: fmt.Sprintf("Found %d VibeTV device(s) on WiFi.", len(discovery.Devices)),
+	}
 }
 
 func (s *Server) companionInfo(ctx context.Context) companion {
@@ -2118,7 +2257,21 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	devices := s.searchDevices(r.Context(), cfg, strings.TrimSpace(req.Target))
+	devices, err := s.searchDevices(r.Context(), cfg, strings.TrimSpace(req.Target))
+	if err != nil {
+		if errors.Is(err, errLocalNetworkAccessDenied) {
+			writeError(
+				w,
+				http.StatusForbidden,
+				"local_network_access_denied",
+				"Local Network access is off for VibeTV Control Center.",
+				"Open System Settings > Privacy & Security > Local Network, allow VibeTV Control Center, then try again.",
+			)
+			return
+		}
+		writeInternalError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, struct {
 		OK      bool                `json:"ok"`
 		Devices []deviceSearchEntry `json:"devices"`
@@ -2544,21 +2697,42 @@ func (s *Server) selectDevice(
 	if known, ok := previous.KnownDevice(expectedDeviceID); ok {
 		selected.DeviceToken = known.DeviceToken
 	}
+	if strings.TrimSpace(selected.DeviceToken) != "" {
+		if _, healthErr := s.getHealth(ctx, target, selected.DeviceToken); healthErr != nil {
+			selected.DeviceToken = ""
+		}
+	}
+	if strings.TrimSpace(selected.DeviceToken) == "" {
+		token, pairErr := s.pair(ctx, target)
+		if pairErr != nil {
+			return deviceInfo{}, s.rollbackDeviceSelection(
+				ctx,
+				previous,
+				&repairStageError{stage: "pair", err: pairErr},
+			)
+		}
+		selected.DeviceToken = token
+	}
 	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
 		current.SetActiveDevice(selected)
 	}); err != nil {
 		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, &repairStageError{stage: "config", err: err})
 	}
-
-	device, repairErr := s.repairDeviceOnceLocked(ctx, target, expectedDeviceID, false)
-	if repairErr != nil {
-		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, repairErr)
+	if err := s.startDisplayStream(ctx, target); err != nil {
+		return deviceInfo{}, s.rollbackDeviceSelection(
+			ctx,
+			previous,
+			&repairStageError{stage: "display-stream", err: err},
+		)
 	}
 	if err := runtimeconfig.CommitDeviceSelection(s.home); err != nil {
 		return deviceInfo{}, s.rollbackDeviceSelection(ctx, previous, &repairStageError{stage: "config", err: err})
 	}
 	s.endPendingDeviceSelection()
-	return device, nil
+	device := deviceFromHello(target, selected.DeviceToken, hello)
+	device.ConnectionState = deviceConnectionReady
+	device.LastSeenAt = s.currentTime().Format(time.RFC3339Nano)
+	return s.withDisplayStream(ctx, target, device), nil
 }
 
 func (s *Server) rollbackDeviceSelection(
@@ -4848,11 +5022,19 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 	return "", protocol.DeviceHello{}, lastErr
 }
 
-func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) []deviceSearchEntry {
+func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
+	searchCtx, cancel := context.WithTimeout(ctx, deviceSearchWindow)
+	defer cancel()
+
 	byIdentity := make(map[string]deviceSearchEntry)
-	for attempt := 0; attempt < repairDiscoveryAttempts; attempt++ {
+	hasSavedIdentity := strings.TrimSpace(cfg.DeviceID) != ""
+	for {
 		foundKnown := false
-		for _, entry := range s.searchDevicesOnce(ctx, cfg, explicitTarget) {
+		entries, err := s.searchDevicesOnce(searchCtx, cfg, explicitTarget)
+		if err != nil {
+			return sortedDeviceSearchEntries(byIdentity), err
+		}
+		for _, entry := range entries {
 			key := deviceSearchIdentityKey(entry)
 			if prior, ok := byIdentity[key]; !ok || (!prior.Known && entry.Known) {
 				byIdentity[key] = entry
@@ -4861,40 +5043,53 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 				foundKnown = true
 			}
 		}
-		if foundKnown {
-			return sortedDeviceSearchEntries(byIdentity)
+		// A clean customer install has no saved device identity to prefer. Once
+		// that first scan finds a VibeTV, return it immediately instead of
+		// repeating the full /24 subnet scan until the UI request nearly times
+		// out. Recovery with a saved identity still gets the bounded retries so
+		// a briefly busy known device wins over an unknown alternative.
+		if foundKnown || (!hasSavedIdentity && len(byIdentity) > 0) {
+			return sortedDeviceSearchEntries(byIdentity), nil
 		}
-		if attempt+1 >= repairDiscoveryAttempts {
+		if searchCtx.Err() != nil {
 			break
 		}
 		select {
-		case <-ctx.Done():
-			return sortedDeviceSearchEntries(byIdentity)
+		case <-searchCtx.Done():
+			return sortedDeviceSearchEntries(byIdentity), nil
 		case <-time.After(repairDiscoveryRetryGap):
 		}
 	}
-	return sortedDeviceSearchEntries(byIdentity)
+	return sortedDeviceSearchEntries(byIdentity), nil
 }
 
-func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) []deviceSearchEntry {
+func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
 	candidates := []string{}
 	if explicitTarget != "" {
 		if target, err := normalizeExplicitDeviceTarget(explicitTarget); err == nil {
 			candidates = append(candidates, target)
 		}
 	}
-	candidates = append(candidates, cfg.DeviceTarget, s.configuredDefaultWiFiTarget())
+	// Probe every remembered VibeTV before the subnet fan-out. This keeps known
+	// devices fast, including the case where more than one saved VibeTV is online.
+	candidates = append(candidates, cfg.DeviceTarget)
+	for _, known := range cfg.KnownDevices {
+		candidates = append(candidates, known.Target)
+	}
+	candidates = append(candidates, s.configuredDefaultWiFiTarget())
 	if s.subnetTargets != nil {
 		candidates = append(candidates, s.subnetTargets()...)
 	}
 	candidates = uniqueStrings(candidates...)
 	if len(candidates) == 0 {
-		return []deviceSearchEntry{}
+		return []deviceSearchEntry{}, nil
 	}
 
 	type result struct {
-		target string
-		hello  protocol.DeviceHello
+		target  string
+		hello   protocol.DeviceHello
+		err     error
+		elapsed time.Duration
 	}
 	workers := subnetProbeLimit
 	if len(candidates) < workers {
@@ -4908,9 +5103,17 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 		go func() {
 			defer wg.Done()
 			for candidate := range jobs {
+				started := time.Now()
 				hello, err := s.getHelloProbe(ctx, candidate, "", subnetProbeTime)
-				if err == nil {
-					results <- result{target: normalizeTarget(candidate), hello: hello.Normalize()}
+				select {
+				case results <- result{
+					target:  normalizeTarget(candidate),
+					hello:   hello.Normalize(),
+					err:     err,
+					elapsed: time.Since(started),
+				}:
+				case <-ctx.Done():
+					return
 				}
 			}
 		}()
@@ -4931,7 +5134,23 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 	}()
 
 	byIdentity := make(map[string]deviceSearchEntry)
+	probeResults := 0
+	possibleDeniedResults := 0
 	for found := range results {
+		probeResults++
+		if found.err != nil {
+			if localNetworkPermissionError(found.err) {
+				return nil, errLocalNetworkAccessDenied
+			}
+			if possibleLocalNetworkPermissionError(
+				found.err,
+				localNetworkPermissionGOOS,
+				found.elapsed,
+			) {
+				possibleDeniedResults++
+			}
+			continue
+		}
 		hello := found.hello
 		if hello.NetworkMode == "setup" {
 			continue
@@ -4953,6 +5172,12 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 			byIdentity[key] = entry
 		}
 	}
+	if localNetworkPermissionDeniedByProbeErrors(
+		probeResults,
+		possibleDeniedResults,
+	) {
+		return nil, errLocalNetworkAccessDenied
+	}
 	devices := make([]deviceSearchEntry, 0, len(byIdentity))
 	for _, entry := range byIdentity {
 		devices = append(devices, entry)
@@ -4966,7 +5191,27 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 		}
 		return devices[i].Target < devices[j].Target
 	})
-	return devices
+	return devices, nil
+}
+
+func localNetworkPermissionError(err error) bool {
+	if errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
+		return true
+	}
+	detail := strings.ToLower(err.Error())
+	return strings.Contains(detail, "local network prohibited") ||
+		strings.Contains(detail, "local network denied")
+}
+
+func possibleLocalNetworkPermissionError(err error, goos string, elapsed time.Duration) bool {
+	return goos == "darwin" &&
+		errors.Is(err, syscall.EHOSTUNREACH) &&
+		elapsed <= localNetworkDenialProbeMaxElapsed
+}
+
+func localNetworkPermissionDeniedByProbeErrors(total, possibleDenied int) bool {
+	return total >= localNetworkDenialMinimumSamples &&
+		possibleDenied == total
 }
 
 func deviceSearchIdentityKey(entry deviceSearchEntry) string {
@@ -6321,7 +6566,10 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 			op := displayStreamLogValue(line, "op")
 			detail := "Display stream hit an error after the last frame and is reconnecting."
 			code := "display_stream_failed"
-			if op == "send-line" {
+			if displayStreamLogValue(line, "code") == "runtime/no-providers" || strings.Contains(line, "runtime/no-providers") {
+				detail = "VibeTV is connected, but no AI provider is ready yet."
+				code = "provider_setup_required"
+			} else if op == "send-line" {
 				detail = "Display stream could not send to VibeTV and is reconnecting."
 				code = "display_send_failed"
 			} else if op == "resolve-target" {
@@ -6626,29 +6874,87 @@ func localSubnetTargets() []string {
 	if err != nil {
 		return nil
 	}
-	var targets []string
+	var addrs []net.Addr
 	for _, iface := range interfaces {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
 			continue
 		}
-		addrs, err := iface.Addrs()
+		interfaceAddrs, err := iface.Addrs()
 		if err != nil {
 			continue
 		}
-		for _, addr := range addrs {
-			ip, _, ok := addrToIPv4(addr)
-			if !ok {
-				continue
-			}
-			for host := 1; host <= 254; host++ {
-				if int(ip[3]) == host {
-					continue
+		addrs = append(addrs, interfaceAddrs...)
+	}
+	return localSubnetTargetsFromAddrs(addrs)
+}
+
+func localSubnetTargetsFromAddrs(addrs []net.Addr) []string {
+	var targets []string
+	seen := make(map[string]struct{})
+	for _, addr := range addrs {
+		ip, network, ok := addrToIPv4(addr)
+		if !ok {
+			continue
+		}
+		mask := net.CIDRMask(24, 32)
+		if network != nil {
+			if ones, bits := network.Mask.Size(); bits == 32 && ones >= 8 {
+				// A full /16 contains more hosts than the bounded customer search
+				// can truthfully probe. Scan at most the Mac's surrounding /23:
+				// this still covers an adjacent /24 and every generated target fits
+				// comfortably inside the 30-second search window.
+				if ones < maxSubnetDiscoveryPrefix {
+					mask = net.CIDRMask(maxSubnetDiscoveryPrefix, 32)
+				} else {
+					mask = network.Mask
 				}
-				targets = append(targets, fmt.Sprintf("http://%d.%d.%d.%d", ip[0], ip[1], ip[2], host))
 			}
 		}
+		networkIP := ip.Mask(mask).To4()
+		if networkIP == nil {
+			continue
+		}
+		networkValue := ipv4Uint32(networkIP)
+		hostValue := ipv4Uint32(ip)
+		maskValue := ipv4Uint32(net.IP(mask).To4())
+		broadcastValue := networkValue | ^maskValue
+		if hostValue <= networkValue || hostValue >= broadcastValue {
+			continue
+		}
+		lowerHosts := hostValue - networkValue - 1
+		upperHosts := broadcastValue - hostValue - 1
+		for offset := uint32(1); (offset <= lowerHosts || offset <= upperHosts) && len(targets) < maxSubnetDiscoveryTargets; offset++ {
+			if offset <= lowerHosts {
+				candidate := hostValue - offset
+				target := "http://" + uint32IPv4(candidate).String()
+				if _, exists := seen[target]; !exists {
+					seen[target] = struct{}{}
+					targets = append(targets, target)
+				}
+			}
+			if offset <= upperHosts && len(targets) < maxSubnetDiscoveryTargets {
+				candidate := hostValue + offset
+				target := "http://" + uint32IPv4(candidate).String()
+				if _, exists := seen[target]; !exists {
+					seen[target] = struct{}{}
+					targets = append(targets, target)
+				}
+			}
+		}
+		if len(targets) >= maxSubnetDiscoveryTargets {
+			break
+		}
 	}
-	return uniqueStrings(targets...)
+	return targets
+}
+
+func ipv4Uint32(ip net.IP) uint32 {
+	ip = ip.To4()
+	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
+}
+
+func uint32IPv4(value uint32) net.IP {
+	return net.IPv4(byte(value>>24), byte(value>>16), byte(value>>8), byte(value))
 }
 
 func addrToIPv4(addr net.Addr) (net.IP, *net.IPNet, bool) {

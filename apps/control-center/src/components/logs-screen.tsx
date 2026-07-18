@@ -3,14 +3,12 @@
 import {
   Activity,
   AlertTriangle,
-  Clipboard,
-  Download,
-  FileText,
   Clock,
   RefreshCw,
 } from "lucide-react";
-import { useMemo, useState } from "react";
 import type { SupportDiagnostics } from "./control-center-types";
+import { providerSetupStatusLabel } from "./provider-setup-card";
+import { SupportReportActions } from "./support-report-actions";
 
 export type LogEvent = {
   id: string;
@@ -40,43 +38,6 @@ export function LogsScreen({
   onRefresh,
   busyAction,
 }: LogsScreenProps) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
-    "idle",
-  );
-  const diagnosticsText = useMemo(
-    () => (diagnostics ? JSON.stringify(diagnostics, null, 2) : ""),
-    [diagnostics],
-  );
-
-  async function copyDiagnostics() {
-    if (!diagnosticsText) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(diagnosticsText);
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-  }
-
-  function downloadDiagnostics() {
-    if (!diagnosticsText) {
-      return;
-    }
-    const blob = new Blob([diagnosticsText], {
-      type: "application/json;charset=utf-8",
-    });
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = supportReportFilename(diagnostics?.generatedAt);
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.URL.revokeObjectURL(url);
-  }
-
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="border-b border-[#747A60] py-10">
@@ -84,45 +45,11 @@ export function LogsScreen({
           <h3 className="text-base font-bold text-[#1B1B1B]">
             Support report
           </h3>
-          <div className="flex flex-wrap gap-3">
-            {onLoadDiagnostics ? (
-              <button
-                className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={busyAction === "diagnostics"}
-                onClick={onLoadDiagnostics}
-                type="button"
-              >
-                {busyAction === "diagnostics" ? (
-                  <RefreshCw className="animate-spin" size={18} />
-                ) : (
-                  <FileText size={18} aria-hidden />
-                )}
-                <span>
-                  {busyAction === "diagnostics" ? "Creating" : "Create report"}
-                </span>
-              </button>
-            ) : null}
-            {diagnosticsText ? (
-              <>
-                <button
-                  className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
-                  onClick={copyDiagnostics}
-                  type="button"
-                >
-                  <Clipboard size={18} aria-hidden />
-                  <span>{copyState === "copied" ? "Copied" : "Copy report"}</span>
-                </button>
-                <button
-                  className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
-                  onClick={downloadDiagnostics}
-                  type="button"
-                >
-                  <Download size={18} aria-hidden />
-                  <span>Download report</span>
-                </button>
-              </>
-            ) : null}
-          </div>
+          <SupportReportActions
+            busyAction={busyAction}
+            diagnostics={diagnostics}
+            onCreate={onLoadDiagnostics}
+          />
         </div>
 
         {diagnostics ? (
@@ -134,7 +61,19 @@ export function LogsScreen({
               />
               <DiagnosticFact
                 label="Mac App"
-                value={diagnostics.companion?.version || "Unknown"}
+                value={formatAppVersion(diagnostics)}
+              />
+              <DiagnosticFact
+                label="Background runtime"
+                value={formatRuntimeVersion(diagnostics)}
+              />
+              <DiagnosticFact
+                label="CodexBar"
+                value={formatCodexBarStatus(diagnostics)}
+              />
+              <DiagnosticFact
+                label="AI provider"
+                value={providerSetupStatusLabel(diagnostics.providerSetup)}
               />
               <DiagnosticFact
                 label="VibeTV address"
@@ -148,47 +87,94 @@ export function LogsScreen({
                     : "Not connected"
                 }
               />
+              <DiagnosticFact
+                label="VibeTV firmware"
+                value={diagnostics.device?.firmware || "Unknown"}
+              />
+              <DiagnosticFact
+                label="VibeTV ID"
+                value={
+                  diagnostics.device?.deviceId ||
+                  diagnostics.configuration?.deviceId ||
+                  "Unknown"
+                }
+              />
+              <DiagnosticFact
+                label="Paired and ready"
+                value={formatDeviceReadiness(diagnostics)}
+              />
+              <DiagnosticFact
+                label="VibeTVs on WiFi"
+                value={formatNetworkDiscovery(diagnostics)}
+              />
             </dl>
-            <ol className="grid gap-0 border-y border-[#747A60]">
-              {(diagnostics.checks || []).map((check) => (
-                <li
-                  className="grid gap-3 border-b border-[#747A60] py-4 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)]"
-                  key={`${check.name}-${check.status}`}
-                >
-                  <div>
-                    <span className="inline-flex min-h-8 items-center border border-[#747A60] bg-[#F9F9F9] px-3 text-xs font-bold uppercase text-[#1B1B1B]">
-                      {check.status}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-bold text-[#1B1B1B]">
-                      {formatCheckName(check.name)}
+            <div className="grid content-start gap-6">
+              {diagnostics.networkDiscovery?.devices?.length ? (
+                <section aria-labelledby="wifi-vibetvs-heading">
+                  <h4
+                    className="mb-3 text-sm font-bold text-[#1B1B1B]"
+                    id="wifi-vibetvs-heading"
+                  >
+                    VibeTVs found on this WiFi
+                  </h4>
+                  <ul className="grid gap-0 border-y border-[#747A60]">
+                    {diagnostics.networkDiscovery.devices.map((candidate) => (
+                      <li
+                        className="grid gap-1 border-b border-[#747A60] py-3 text-sm last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto]"
+                        key={`${candidate.deviceId || "device"}-${candidate.target}`}
+                      >
+                        <span className="break-words font-bold text-[#1B1B1B]">
+                          {candidate.deviceId || candidate.board || "VibeTV"}
+                        </span>
+                        <span className="break-words text-[#444933]">
+                          {formatDeviceAddress(candidate.target)}
+                          {candidate.active
+                            ? " · Active"
+                            : candidate.known
+                              ? " · Known"
+                              : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+              <ol className="grid gap-0 border-y border-[#747A60]">
+                {(diagnostics.checks || []).map((check) => (
+                  <li
+                    className="grid gap-3 border-b border-[#747A60] py-4 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)]"
+                    key={`${check.name}-${check.status}`}
+                  >
+                    <div>
+                      <span className="inline-flex min-h-8 items-center border border-[#747A60] bg-[#F9F9F9] px-3 text-xs font-bold uppercase text-[#1B1B1B]">
+                        {check.status}
+                      </span>
                     </div>
-                    {check.detail ? (
-                      <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-                        {formatCustomerSupportText(check.detail)}
+                    <div className="min-w-0">
+                      <div className="font-bold text-[#1B1B1B]">
+                        {formatCheckName(check.name)}
                       </div>
-                    ) : null}
-                    {check.nextAction ? (
-                      <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-                        {formatCustomerSupportText(check.nextAction)}
-                      </div>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
-            </ol>
+                      {check.detail ? (
+                        <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
+                          {formatCustomerSupportText(check.detail)}
+                        </div>
+                      ) : null}
+                      {check.nextAction ? (
+                        <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
+                          {formatCustomerSupportText(check.nextAction)}
+                        </div>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
           </div>
         ) : (
           <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
             Create a support report when support asks for it.
           </div>
         )}
-        {copyState === "failed" ? (
-          <div className="mt-4 border border-[#747A60] bg-[#EEEEEE] p-4 text-sm text-[#444933]">
-            Copy failed. Use the browser clipboard permission and try again.
-          </div>
-        ) : null}
       </section>
 
       <section className="border-b border-[#747A60] py-10">
@@ -319,10 +305,55 @@ function formatDiagnosticTime(value?: string): string {
   }).format(date);
 }
 
-function supportReportFilename(value?: string): string {
-  const timestamp = value ? new Date(value) : new Date();
-  const safeTimestamp = Number.isNaN(timestamp.getTime())
-    ? "session"
-    : timestamp.toISOString().replace(/[:.]/g, "-");
-  return `vibetv-support-report-${safeTimestamp}.json`;
+function formatCodexBarStatus(diagnostics: SupportDiagnostics): string {
+  const engine = diagnostics.providerSetup?.engine;
+  if (!engine) {
+    return "Unknown";
+  }
+  if (engine.status === "ready") {
+    return engine.version ? `Ready ${engine.version}` : "Ready";
+  }
+  if (engine.status === "config_error") {
+    return "Settings need attention";
+  }
+  return "Setup needed";
+}
+
+function formatAppVersion(diagnostics: SupportDiagnostics): string {
+  const app = diagnostics.companion?.app;
+  const version = app?.version || diagnostics.companion?.version;
+  if (!version) {
+    return "Unknown";
+  }
+  return app?.build ? `${version} (${app.build})` : version;
+}
+
+function formatRuntimeVersion(diagnostics: SupportDiagnostics): string {
+  const runtime = diagnostics.companion?.runtime;
+  if (!runtime?.version) {
+    return "Unknown";
+  }
+  return runtime.commit
+    ? `${runtime.version} · ${runtime.commit.slice(0, 10)}`
+    : runtime.version;
+}
+
+function formatDeviceReadiness(diagnostics: SupportDiagnostics): string {
+  const device = diagnostics.device;
+  if (!device?.paired) {
+    return device?.connected ? "Connected, not paired" : "Not paired";
+  }
+  return device.ready ? "Paired and ready" : "Paired, not ready";
+}
+
+function formatNetworkDiscovery(diagnostics: SupportDiagnostics): string {
+  const discovery = diagnostics.networkDiscovery;
+  if (!discovery?.attempted) {
+    return "Not checked";
+  }
+  if (discovery.errorCode) {
+    return "Search needs attention";
+  }
+  const count = discovery.devices?.length || 0;
+  return count === 0 ? "None found" : `${count} found`;
 }

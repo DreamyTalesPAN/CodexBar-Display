@@ -6,7 +6,9 @@ import type {
   ApiError,
   DeviceCandidate,
   DeviceSearchState,
+  SupportDiagnostics,
 } from "./control-center-types";
+import { SupportReportActions } from "./support-report-actions";
 
 type Props = {
   busyAction?: string | null;
@@ -14,6 +16,8 @@ type Props = {
   deviceSearchState: DeviceSearchState;
   hasConfiguredDevice: boolean;
   lastError?: ApiError | null;
+  diagnostics?: SupportDiagnostics | null;
+  onCreateSupportReport?: () => void;
   onDecline: () => void;
   onSearch: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
@@ -25,6 +29,8 @@ export function DeviceStartupScreen({
   deviceSearchState,
   hasConfiguredDevice,
   lastError,
+  diagnostics,
+  onCreateSupportReport,
   onDecline,
   onSearch,
   onSelect,
@@ -106,9 +112,7 @@ export function DeviceStartupScreen({
               >
                 <DeviceCandidateDetails candidate={candidate} />
                 <ControlCenterButton
-                  busy={selecting}
-                  busyLabel="Connecting"
-                  disabled={Boolean(busyAction) && !selecting}
+                  disabled={Boolean(busyAction)}
                   fullWidth
                   icon={<Monitor size={18} aria-hidden />}
                   label="Connect this VibeTV"
@@ -154,15 +158,21 @@ export function DeviceStartupScreen({
         ) : null}
 
         {multiple ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <ControlCenterButton
-              disabled={Boolean(busyAction)}
-              fullWidth
-              label="Not now"
-              onClick={onDecline}
-              size="large"
-              variant="secondary"
-            />
+          <div
+            className={
+              hasConfiguredDevice ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"
+            }
+          >
+            {hasConfiguredDevice ? (
+              <ControlCenterButton
+                disabled={Boolean(busyAction)}
+                fullWidth
+                label="Open Control Center"
+                onClick={onDecline}
+                size="large"
+                variant="secondary"
+              />
+            ) : null}
             <ControlCenterButton
               disabled={Boolean(busyAction)}
               fullWidth
@@ -185,7 +195,11 @@ export function DeviceStartupScreen({
         ) : configuredDeviceNotFound ||
           deviceSearchState === "failed" ||
           deviceSearchState === "repair-failed" ? (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div
+            className={
+              hasConfiguredDevice ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"
+            }
+          >
             <ControlCenterButton
               fullWidth
               icon={<RefreshCw size={18} aria-hidden />}
@@ -194,15 +208,23 @@ export function DeviceStartupScreen({
               size="large"
               variant="primary"
             />
-            <ControlCenterButton
-              fullWidth
-              label={hasConfiguredDevice ? "Open Control Center" : "Not now"}
-              onClick={onDecline}
-              size="large"
-              variant="secondary"
-            />
+            {hasConfiguredDevice ? (
+              <ControlCenterButton
+                fullWidth
+                label="Open Control Center"
+                onClick={onDecline}
+                size="large"
+                variant="secondary"
+              />
+            ) : null}
           </div>
         ) : null}
+
+        <SupportReportActions
+          busyAction={busyAction}
+          diagnostics={diagnostics}
+          onCreate={onCreateSupportReport}
+        />
       </section>
     </main>
   );

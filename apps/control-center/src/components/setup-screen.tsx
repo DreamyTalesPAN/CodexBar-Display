@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BarChart3,
   Check,
   Clipboard,
   Download,
@@ -20,10 +21,15 @@ import type {
   DeviceCandidate,
   DeviceSearchState,
   DeviceState,
+  DeviceInfo,
+  ProviderSetupInfo,
+  SupportDiagnostics,
 } from "./control-center-types";
 import { ControlCenterButton } from "./control-center-button";
 import { DeviceTargetForm } from "./device-target-form";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
+import { ProviderSetupCard, providerSetupIsReady } from "./provider-setup-card";
+import { SupportReportActions } from "./support-report-actions";
 
 type SetupScreenProps = {
   busyAction?: string | null;
@@ -31,6 +37,7 @@ type SetupScreenProps = {
   deviceCandidates?: DeviceCandidate[];
   deviceSearchState?: DeviceSearchState;
   deviceState: DeviceState;
+  device: DeviceInfo | null;
   deviceTarget: string;
   lastError?: ApiError | null;
   onCheckCompanion?: () => void | Promise<void>;
@@ -41,15 +48,21 @@ type SetupScreenProps = {
   onDeclineDevice?: () => void;
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
+  onOpenCodexBar?: () => void;
+  onRepairCodexBar?: () => void;
+  onRetryProviders?: () => void;
   hostedMode?: boolean;
   macAppRelease?: CompanionReleaseInfo | null;
   previewStep?: "mac-app" | null;
+  providerSetup?: ProviderSetupInfo | null;
+  diagnostics?: SupportDiagnostics | null;
+  onCreateSupportReport?: () => void;
   requiresMacAppMigration?: boolean;
   showIntro?: boolean;
   setupComplete: boolean;
 };
 
-type StepId = "wifi" | "mac-app" | "finish";
+type StepId = "wifi" | "mac-app" | "finish" | "provider";
 type StepState = "active" | "blocked" | "complete" | "pending";
 
 export function SetupScreen({
@@ -58,6 +71,7 @@ export function SetupScreen({
   deviceCandidates = [],
   deviceSearchState = "idle",
   deviceState,
+  device,
   deviceTarget,
   lastError,
   onCheckCompanion,
@@ -68,9 +82,15 @@ export function SetupScreen({
   onDeclineDevice,
   onRepairConnection,
   onResetSetup,
+  onOpenCodexBar,
+  onRepairCodexBar,
+  onRetryProviders,
   hostedMode = false,
   macAppRelease = null,
   previewStep,
+  providerSetup,
+  diagnostics,
+  onCreateSupportReport,
   requiresMacAppMigration = false,
   showIntro = true,
   setupComplete,
@@ -86,16 +106,23 @@ export function SetupScreen({
     !forceMacAppStep &&
     !macAppMissing &&
     (macAppConfirmedState || macAppReady || setupComplete);
-  const deviceSelectionInProgress =
-    deviceSearchState !== "idle" && deviceSearchState !== "not-found";
+  const deviceSelectionInProgress = deviceSearchState !== "idle";
+  const deviceConnectionComplete = Boolean(
+    setupComplete ||
+    (device?.connected &&
+      device.paired &&
+      device.connectionState !== "reconnecting"),
+  );
+  const providerPending = Boolean(
+    providerSetup && !providerSetupIsReady(providerSetup),
+  );
   const wifiConfirmed =
-    deviceSearchState === "not-found"
-      ? false
-      : wifiConfirmedState ||
-        deviceSelectionInProgress ||
-        setupComplete ||
-        previewStep === "mac-app" ||
-        hostedMode;
+    wifiConfirmedState ||
+    deviceSelectionInProgress ||
+    (providerPending && deviceConnectionComplete) ||
+    setupComplete ||
+    previewStep === "mac-app" ||
+    hostedMode;
   const dmgUrl = availableMacAppDmgDownloadUrl(macAppRelease);
   const macAppReleaseCheckFailed = Boolean(
     macAppRelease?.status === "check_failed" ||
@@ -123,8 +150,19 @@ export function SetupScreen({
     () =>
       hostedMode
         ? "mac-app"
-        : previewStep || (setupComplete || wifiConfirmed ? "finish" : "wifi"),
-    [hostedMode, previewStep, setupComplete, wifiConfirmed],
+        : previewStep ||
+          (!wifiConfirmed
+            ? "wifi"
+            : deviceConnectionComplete && providerPending
+              ? "provider"
+              : "finish"),
+    [
+      hostedMode,
+      previewStep,
+      deviceConnectionComplete,
+      providerPending,
+      wifiConfirmed,
+    ],
   );
   const stepStates = useMemo(
     () =>
@@ -133,6 +171,9 @@ export function SetupScreen({
         forceMacAppStep,
         macAppConfirmed,
         macAppReady,
+        deviceConnectionComplete,
+        providerReady: providerSetupIsReady(providerSetup),
+        providerVisible: Boolean(providerSetup),
         setupComplete,
         wifiConfirmed,
       }),
@@ -141,6 +182,8 @@ export function SetupScreen({
       forceMacAppStep,
       macAppConfirmed,
       macAppReady,
+      deviceConnectionComplete,
+      providerSetup,
       setupComplete,
       wifiConfirmed,
     ],
@@ -190,6 +233,13 @@ export function SetupScreen({
             </div>
           </div>
         </section>
+        <div className="py-6">
+          <SupportReportActions
+            busyAction={busyAction}
+            diagnostics={diagnostics}
+            onCreate={onCreateSupportReport}
+          />
+        </div>
       </div>
     );
   }
@@ -382,7 +432,34 @@ export function SetupScreen({
               ) : null}
             </SetupStep>
           ) : null}
+
+          {!hostedMode && !forceMacAppStep && providerSetup ? (
+            <SetupStep
+              icon={<BarChart3 size={22} aria-hidden />}
+              index={3}
+              state={stepStates.provider}
+              title="Connect an AI provider"
+            >
+              {activeStep === "provider" ? (
+                <ProviderSetupCard
+                  busyAction={busyAction}
+                  onOpenCodexBar={onOpenCodexBar}
+                  onRepairCodexBar={onRepairCodexBar}
+                  onRetry={onRetryProviders}
+                  providerSetup={providerSetup}
+                />
+              ) : null}
+            </SetupStep>
+          ) : null}
         </ol>
+
+        <div className="border-t border-[#747A60] py-6">
+          <SupportReportActions
+            busyAction={busyAction}
+            diagnostics={diagnostics}
+            onCreate={onCreateSupportReport}
+          />
+        </div>
       </section>
     </div>
   );
@@ -780,6 +857,9 @@ function buildStepStates({
   forceMacAppStep,
   macAppConfirmed,
   macAppReady,
+  deviceConnectionComplete,
+  providerReady,
+  providerVisible,
   setupComplete,
   wifiConfirmed,
 }: {
@@ -787,6 +867,9 @@ function buildStepStates({
   forceMacAppStep: boolean;
   macAppConfirmed: boolean;
   macAppReady: boolean;
+  deviceConnectionComplete: boolean;
+  providerReady: boolean;
+  providerVisible: boolean;
   setupComplete: boolean;
   wifiConfirmed: boolean;
 }): Record<StepId, StepState> {
@@ -808,11 +891,20 @@ function buildStepStates({
             : "blocked",
     finish: forceMacAppStep
       ? "blocked"
-      : setupComplete
+      : setupComplete || deviceConnectionComplete
         ? "complete"
         : activeStep === "finish"
           ? "active"
           : "blocked",
+    provider: !providerVisible
+      ? "blocked"
+      : setupComplete || providerReady
+        ? "complete"
+        : activeStep === "provider"
+          ? "active"
+          : deviceConnectionComplete
+            ? "pending"
+            : "blocked",
   };
 }
 

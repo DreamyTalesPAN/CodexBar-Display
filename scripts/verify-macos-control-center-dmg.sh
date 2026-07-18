@@ -2,6 +2,7 @@
 set -euo pipefail
 
 APP_NAME="VibeTV Control Center"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DMG_PATH=""
 DRY_RUN=0
 MOUNT_DIR=""
@@ -227,6 +228,7 @@ dry-run: planned distribution verification for ${DMG_PATH}:
   spctl --assess --type open --context context:primary-signature --verbose=4 "${DMG_PATH}"
   hdiutil attach -readonly -nobrowse -noautoopen "${DMG_PATH}"
   codesign --verify --deep --strict --verbose=2 "<mount>/${APP_NAME}.app"
+  verify the pinned CodexBar ZIP, manifest, and MIT license resource
   syspolicy_check distribution "<mount>/${APP_NAME}.app" (allow only the exact outer-DMG ticket diagnostic)
   spctl --assess --type execute --verbose=4 "<mount>/${APP_NAME}.app"
 EOF
@@ -266,6 +268,7 @@ MOUNTED_APP="${MOUNT_DIR}/${APP_NAME}.app"
   || die "DMG Applications symlink does not point to /Applications"
 
 codesign --verify --deep --strict --verbose=2 "$MOUNTED_APP"
+"${ROOT}/scripts/verify-bundled-codexbar.sh" --app "$MOUNTED_APP"
 verify_mounted_app_gatekeeper
 
 printf 'post-notarization distribution checks passed for DMG: %s\n' "$DMG_PATH"

@@ -101,6 +101,9 @@ jobs:
             --companion-binary "tmp/macos-release/codexbar-display" \
             --output "dist/macos/VibeTV Control Center.app"
 
+          ./scripts/verify-bundled-codexbar.sh \
+            --app "dist/macos/VibeTV Control Center.app"
+
           ./scripts/sign-notarize-macos-control-center.sh \
             --app "dist/macos/VibeTV Control Center.app" \
             --sign-app-only \
