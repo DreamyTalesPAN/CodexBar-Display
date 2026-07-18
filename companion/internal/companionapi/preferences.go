@@ -114,12 +114,15 @@ func (s *Server) handlePreference(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.providerPreferences.cached = nil
-	settings, err = s.providerSettingsLocked(r.Context(), true)
-	if err != nil {
-		writeProviderPreferencesReadError(w, err)
-		return
+	for i := range settings {
+		if settings[i].ID == providerID {
+			settings[i].Enabled = enabled
+			settings[i].Health = codexbar.ProviderHealthChecking
+			settings[i].Service = codexbar.ProviderServiceUnknown
+			break
+		}
 	}
+	s.providerPreferences.cached = nil
 	for _, item := range s.providerDescriptors(settings) {
 		if item.ID == settingID {
 			writeJSON(w, http.StatusOK, preferenceResponse{OK: true, Item: item})
@@ -206,7 +209,7 @@ func providerHealthMessage(state codexbar.ProviderHealthState) string {
 	case codexbar.ProviderHealthAuthRequired:
 		return "Sign in again for this provider."
 	case codexbar.ProviderHealthSetupRequired:
-		return "Finish setting up this provider."
+		return "CodexBar cannot read usage from this provider yet."
 	case codexbar.ProviderHealthUnavailable:
 		return "Provider is not responding right now."
 	default:

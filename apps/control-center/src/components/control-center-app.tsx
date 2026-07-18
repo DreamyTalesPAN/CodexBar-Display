@@ -1975,6 +1975,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const updateProviderPreference = useCallback(
     async (item: PreferenceDescriptor, value: boolean) => {
       setPendingPreferenceIds((current) => new Set(current).add(item.id));
+      setProviderPreferences((current) =>
+        (current || []).map((preference) =>
+          preference.id === item.id
+            ? {
+                ...preference,
+                value,
+                health: value
+                  ? {
+                      ...preference.health,
+                      state: "checking",
+                      service: "unknown",
+                      message: "Checking provider status.",
+                    }
+                  : {
+                      ...preference.health,
+                      state: "disabled",
+                      service: "unknown",
+                      message: "Provider is off.",
+                    },
+              }
+            : preference,
+        ),
+      );
       try {
         const payload = await runCompanion<{ item: PreferenceDescriptor }>(
           `/v1/preferences/${encodeURIComponent(item.id)}`,
@@ -1986,11 +2009,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           ),
         );
         setProviderPreferencesError(null);
-        await Promise.all([
+        void Promise.all([
           refreshProviderPreferences({ quiet: true }),
           refreshUsage({ quiet: true }),
         ]);
       } catch (error) {
+        setProviderPreferences((current) =>
+          (current || []).map((preference) =>
+            preference.id === item.id ? item : preference,
+          ),
+        );
         setProviderPreferencesError(
           normalizeCaughtError(error, "Provider could not be updated."),
         );

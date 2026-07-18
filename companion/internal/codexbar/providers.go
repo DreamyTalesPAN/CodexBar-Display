@@ -73,24 +73,12 @@ func ProviderSettingsErrorKindOf(err error) ProviderSettingsErrorKind {
 // FetchProviderSettings reads CodexBar's dynamic provider inventory and joins
 // best-effort health. Provider errors are classified here and never exposed.
 func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
-	bin, err := FindBinary()
+	settings, bin, err := fetchProviderInventory(ctx)
 	if err != nil {
-		return nil, providerSettingsError(ProviderSettingsErrorUnavailable, err)
-	}
-	if err := checkProviderSettingsVersion(ctx, bin); err != nil {
-		return nil, providerSettingsError(ProviderSettingsErrorVersion, err)
+		return nil, err
 	}
 
 	timeout := commandTimeout()
-	raw, err := runProviderCommandFn(ctx, timeout, bin, "config", "providers", "--json")
-	if err != nil {
-		return nil, providerSettingsError(ProviderSettingsErrorUnavailable, err)
-	}
-	settings, err := parseProviderSettings(raw)
-	if err != nil {
-		return nil, providerSettingsError(ProviderSettingsErrorUnavailable, err)
-	}
-
 	healthRaw, healthErr := runProviderCommandFn(ctx, timeout, bin, "usage", "--json", "--status", "--web-timeout", "8")
 	health := parseProviderHealth(healthRaw)
 	for i := range settings {
@@ -107,10 +95,31 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 	return settings, nil
 }
 
+func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, error) {
+	bin, err := FindBinary()
+	if err != nil {
+		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
+	}
+	if err := checkProviderSettingsVersion(ctx, bin); err != nil {
+		return nil, "", providerSettingsError(ProviderSettingsErrorVersion, err)
+	}
+
+	timeout := commandTimeout()
+	raw, err := runProviderCommandFn(ctx, timeout, bin, "config", "providers", "--json")
+	if err != nil {
+		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
+	}
+	settings, err := parseProviderSettings(raw)
+	if err != nil {
+		return nil, "", providerSettingsError(ProviderSettingsErrorUnavailable, err)
+	}
+	return settings, bin, nil
+}
+
 // SetProviderEnabled validates the exact provider ID against CodexBar's live
 // inventory before invoking the CLI with separate process arguments.
 func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) error {
-	settings, err := FetchProviderSettings(ctx)
+	settings, bin, err := fetchProviderInventory(ctx)
 	if err != nil {
 		return err
 	}
@@ -125,10 +134,6 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 		return providerSettingsError(ProviderSettingsErrorUnavailable, errors.New("unknown provider"))
 	}
 
-	bin, err := FindBinary()
-	if err != nil {
-		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
-	}
 	action := "disable"
 	if enabled {
 		action = "enable"

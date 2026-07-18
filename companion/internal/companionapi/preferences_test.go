@@ -68,7 +68,7 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 	}
 }
 
-func TestPreferencePatchWritesAndReturnsFreshEffectiveValue(t *testing.T) {
+func TestPreferencePatchWritesWithoutWaitingForHealthRefresh(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	enabled := false
 	loads := 0
@@ -97,8 +97,8 @@ func TestPreferencePatchWritesAndReturnsFreshEffectiveValue(t *testing.T) {
 	}
 	var response preferenceResponse
 	_ = json.Unmarshal(recorder.Body.Bytes(), &response)
-	if response.Item.Value != true || response.Item.Health.State != "auth_required" || loads != 2 {
-		t.Fatalf("expected fresh enabled value after two loads, got %#v loads=%d", response.Item, loads)
+	if response.Item.Value != true || response.Item.Health.State != "checking" || loads != 1 {
+		t.Fatalf("expected immediate enabled value after one load, got %#v loads=%d", response.Item, loads)
 	}
 }
 

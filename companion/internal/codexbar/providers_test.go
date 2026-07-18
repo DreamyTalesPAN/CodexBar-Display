@@ -99,6 +99,11 @@ func TestSetProviderEnabledUsesExactProcessArguments(t *testing.T) {
 	if !reflect.DeepEqual(calls[len(calls)-1], want) {
 		t.Fatalf("unexpected write args: got %v want %v", calls[len(calls)-1], want)
 	}
+	for _, call := range calls {
+		if call[0] == "usage" {
+			t.Fatalf("provider writes must not wait for usage refresh: %v", calls)
+		}
+	}
 }
 
 func TestSetProviderEnabledRejectsUnknownProviderBeforeWrite(t *testing.T) {

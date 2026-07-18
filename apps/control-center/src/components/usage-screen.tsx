@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   BarChart3,
+  Info,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -45,6 +46,11 @@ import {
 } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type {
   ApiError,
@@ -195,6 +201,7 @@ function ProviderPreferencesPanel({
             {providers.map((item) => {
               const pending = pendingIds.has(item.id);
               const checked = item.value === true;
+              const attentionExplanation = providerAttentionExplanation(item);
               return (
                 <Item key={item.id} variant="outline" className="min-h-16 flex-nowrap">
                   <ItemContent className="min-w-0">
@@ -206,6 +213,22 @@ function ProviderPreferencesPanel({
                       <Badge variant={serviceBadgeVariant(item.health.service)}>
                         {serviceLabel(item.health.service)}
                       </Badge>
+                      {attentionExplanation ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              aria-label={`Explain status for ${item.label}`}
+                              className="-my-2 inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              type="button"
+                            >
+                              <Info className="size-4" aria-hidden />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-72 leading-relaxed">
+                            {attentionExplanation}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : null}
                     </ItemTitle>
                     <ItemDescription>{item.health.message}</ItemDescription>
                   </ItemContent>
@@ -237,6 +260,29 @@ function providerHealthPriority(item: PreferenceDescriptor): number {
     return 0;
   }
   return item.value === true ? 1 : 2;
+}
+
+function providerAttentionExplanation(
+  item: PreferenceDescriptor,
+): string | null {
+  const provider = item.label;
+  switch (item.health.state) {
+    case "auth_required":
+      return `${provider} is enabled, but its sign-in is no longer valid. Open ${provider}, sign in again, then use it once.`;
+    case "setup_required":
+      return `${provider} is enabled, but CodexBar cannot read usage yet. Open ${provider}, finish setup or sign in if asked, then use it once.`;
+    case "stale":
+      return `VibeTV is showing the last saved ${provider} usage because live usage cannot be read. Open ${provider} and check that you are still signed in.`;
+    case "unavailable":
+      return `CodexBar cannot read ${provider} right now. This can be temporary; open ${provider} and check that it is working and signed in.`;
+  }
+  if (item.health.service === "outage") {
+    return `${provider} is reporting an outage. Your setup may be fine; try again when the service is back online.`;
+  }
+  if (item.health.service === "degraded") {
+    return `${provider} is reporting a service problem. Usage updates may be delayed until the service recovers.`;
+  }
+  return null;
 }
 
 function healthLabel(state: string): string {
