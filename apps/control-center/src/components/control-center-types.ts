@@ -109,6 +109,7 @@ export type SupportDiagnostics = {
   };
   networkDiscovery?: {
     attempted?: boolean;
+    complete?: boolean;
     vibeTVFound?: boolean;
     devices?: DeviceCandidate[];
     errorCode?: string;

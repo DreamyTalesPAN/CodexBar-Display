@@ -92,6 +92,7 @@ const (
 
 var deviceHealthProbeTime = 2 * time.Second
 var firmwareHealthVerifyTime = 30 * time.Second
+var diagnosticsDiscoveryTime = 5 * time.Second
 
 // The real ESP8266 answers /hello well below this limit, while one second still
 // leaves enough margin for a busy device. Candidates nearest to the Mac are
@@ -544,6 +545,7 @@ type diagnosticsConfiguration struct {
 
 type diagnosticsDiscovery struct {
 	Attempted bool                `json:"attempted"`
+	Complete  bool                `json:"complete"`
 	Found     bool                `json:"vibeTVFound"`
 	Devices   []deviceSearchEntry `json:"devices"`
 	ErrorCode string              `json:"errorCode,omitempty"`
@@ -1389,8 +1391,12 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	discoveryResult := make(chan diagnosticsDiscovery, 1)
+	go func() {
+		discoveryResult <- s.diagnosticsNetworkDiscovery(r.Context(), cfg)
+	}()
 	providerSetup := s.currentProviderSetup(r.Context(), false)
-	discovery := s.diagnosticsNetworkDiscovery(r.Context(), cfg)
+	discovery := <-discoveryResult
 	checks := []diagnosticCheck{
 		{
 			Name:   "companion_api",
@@ -1555,11 +1561,15 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) diagnosticsNetworkDiscovery(ctx context.Context, cfg runtimeconfig.Config) diagnosticsDiscovery {
-	searchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	searchCtx, cancel := context.WithTimeout(ctx, diagnosticsDiscoveryTime)
 	defer cancel()
 	devices, err := s.searchDevicesOnce(searchCtx, cfg, "")
+	if err == nil && searchCtx.Err() != nil {
+		err = searchCtx.Err()
+	}
 	result := diagnosticsDiscovery{
 		Attempted: true,
+		Complete:  err == nil,
 		Devices:   devices,
 		Found:     len(devices) > 0,
 	}
@@ -1570,6 +1580,8 @@ func (s *Server) diagnosticsNetworkDiscovery(ctx context.Context, cfg runtimecon
 		result.ErrorCode = "device_search_failed"
 		if errors.Is(err, errLocalNetworkAccessDenied) {
 			result.ErrorCode = "local_network_access_denied"
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			result.ErrorCode = "device_search_incomplete"
 		}
 		result.Detail = sanitizeErrorDetail(err)
 	}
@@ -1578,12 +1590,16 @@ func (s *Server) diagnosticsNetworkDiscovery(ctx context.Context, cfg runtimecon
 
 func discoveryDiagnosticCheck(discovery diagnosticsDiscovery) diagnosticCheck {
 	if discovery.ErrorCode != "" {
+		nextAction := "Keep VibeTV powered on and connected to the same WiFi, then create the report again."
+		if discovery.ErrorCode == "local_network_access_denied" {
+			nextAction = "Allow Local Network access for VibeTV Control Center, then create the report again."
+		}
 		return diagnosticCheck{
 			Name:       "network_discovery",
 			Status:     "attention",
 			Detail:     discovery.Detail,
 			ErrorCode:  discovery.ErrorCode,
-			NextAction: "Allow Local Network access for VibeTV Control Center, then create the report again.",
+			NextAction: nextAction,
 		}
 	}
 	if !discovery.Found {

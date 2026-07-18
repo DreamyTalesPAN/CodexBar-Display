@@ -3448,7 +3448,7 @@ func TestDiagnosticsFindsVibeTVOnWiFiWithoutSelectingIt(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if !got.NetworkDiscovery.Attempted || !got.NetworkDiscovery.Found || len(got.NetworkDiscovery.Devices) != 1 {
+	if !got.NetworkDiscovery.Attempted || !got.NetworkDiscovery.Complete || !got.NetworkDiscovery.Found || len(got.NetworkDiscovery.Devices) != 1 {
 		t.Fatalf("expected one VibeTV in read-only WiFi search, got %+v", got.NetworkDiscovery)
 	}
 	if got.NetworkDiscovery.Devices[0].DeviceID != "wifi-vibetv" {
@@ -3463,6 +3463,41 @@ func TestDiagnosticsFindsVibeTVOnWiFiWithoutSelectingIt(t *testing.T) {
 	}
 	if saved.DeviceTarget != "" || saved.DeviceID != "" || len(saved.KnownDevices) != 0 {
 		t.Fatalf("diagnostics must not select or remember a VibeTV, got %+v", saved)
+	}
+}
+
+func TestDiagnosticsMarksTimedOutWiFiSearchIncomplete(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer device.Close()
+
+	previousTimeout := diagnosticsDiscoveryTime
+	diagnosticsDiscoveryTime = 20 * time.Millisecond
+	t.Cleanup(func() { diagnosticsDiscoveryTime = previousTimeout })
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil)
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got diagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.NetworkDiscovery.Attempted || got.NetworkDiscovery.Complete || got.NetworkDiscovery.Found {
+		t.Fatalf("expected an incomplete WiFi search, got %+v", got.NetworkDiscovery)
+	}
+	if got.NetworkDiscovery.ErrorCode != "device_search_incomplete" {
+		t.Fatalf("expected incomplete search error, got %+v", got.NetworkDiscovery)
+	}
+	if !hasDiagnosticCheck(got.Checks, "network_discovery", "attention") {
+		t.Fatalf("expected discovery attention check, got %+v", got.Checks)
 	}
 }
 

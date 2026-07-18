@@ -1972,6 +1972,16 @@ async function testLegacyMigrationDoesNotBlockFirmwareUpdate(browser, appUrl) {
 
 async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value) => {
+          globalThis.__copiedSupportReport = value;
+        },
+      },
+    });
+  });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests);
 
@@ -2010,6 +2020,29 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
     .getByRole("region", { name: "VibeTVs found on this WiFi" })
     .getByText("wifi-vibetv", { exact: true })
     .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Copy report" }).click();
+  const copiedReport = await page.evaluate(
+    () => globalThis.__copiedSupportReport || "",
+  );
+  for (const secret of [
+    "raw-token",
+    "raw-api-key",
+    "raw-basic",
+    "raw-header",
+    "raw-env",
+    "raw-query",
+    "raw-userinfo",
+  ]) {
+    assert(
+      !copiedReport.includes(secret),
+      `Copied support report leaked synthetic secret ${secret}`,
+    );
+  }
+  assert(
+    copiedReport.includes('"token": "[redacted]"') &&
+      copiedReport.includes('"apiKey": "[redacted]"'),
+    "Copied support report should replace synthetic secrets with redaction markers",
+  );
   assert(
     (await page.getByText("Companion", { exact: false }).count()) === 0,
     "Support report should not show internal Companion naming",
@@ -3573,6 +3606,11 @@ async function routeCompanionOnline(
                 active: true,
               },
             ],
+          },
+          debug: {
+            token: "raw-token",
+            apiKey: "raw-api-key",
+            log: "Authorization: Basic raw-basic X-VibeTV-Token: raw-header CODEXBAR_DISPLAY_DEVICE_TOKEN=raw-env https://example.test/?token=raw-query https://alice:raw-userinfo@example.test/path",
           },
           companion: companionPayload(
             currentCompanionVersion,

@@ -9,6 +9,32 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    let redactedReport = AppDelegate.redactReportValue([
+        "token": "raw-token",
+        "apiKey": "raw-api-key",
+        "hasPairingToken": true,
+        "sessionTokens": 1234,
+        "log": "Authorization: Basic raw-basic X-VibeTV-Token: raw-header CODEXBAR_DISPLAY_DEVICE_TOKEN=raw-env https://example.test/?token=raw-query https://alice:raw-userinfo@example.test/path",
+    ]) as! [String: Any]
+    require(
+        redactedReport["token"] as? String == "[redacted]"
+            && redactedReport["apiKey"] as? String == "[redacted]",
+        "support report must redact generic token and API key fields"
+    )
+    require(
+        redactedReport["hasPairingToken"] as? Bool == true
+            && redactedReport["sessionTokens"] as? Int == 1234,
+        "support report must preserve safe booleans and usage token counts"
+    )
+    let redactedLog = redactedReport["log"] as? String ?? ""
+    require(
+        !redactedLog.contains("raw-basic")
+            && !redactedLog.contains("raw-header")
+            && !redactedLog.contains("raw-env")
+            && !redactedLog.contains("raw-query")
+            && !redactedLog.contains("raw-userinfo"),
+        "support report must redact secrets embedded in log strings"
+    )
     require(
         isCompatibleCodexBarVersion("0.23.0"),
         "the minimum supported CodexBar version must be compatible"

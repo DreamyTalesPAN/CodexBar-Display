@@ -99,6 +99,9 @@ function redactSensitiveValues(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(redactSensitiveValues);
   }
+  if (typeof value === "string") {
+    return redactSensitiveText(value);
+  }
   if (!value || typeof value !== "object") {
     return value;
   }
@@ -114,7 +117,27 @@ function redactSensitiveValues(value: unknown): unknown {
 
 function isSensitiveKey(key: string): boolean {
   const normalized = key.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+  if (normalized === "token" || normalized === "api_key") {
+    return true;
+  }
   return /(^|_)(authorization|cookie|password|secret|access_token|refresh_token|device_token|pairing_token)($|_)/.test(
     normalized,
   );
+}
+
+function redactSensitiveText(value: string): string {
+  return value
+    .replace(
+      /([a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:)[^@/\s]+@/gi,
+      "$1[redacted]@",
+    )
+    .replace(/(\b(?:bearer|basic)\s+)[^\s,;}]+/gi, "$1[redacted]")
+    .replace(
+      /((?:^|[\s,{])["']?(?:[a-z0-9.]+[_-])*(?:authorization|cookie|password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|device[_-]?token|pairing[_-]?token|token)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gim,
+      "$1[redacted]",
+    )
+    .replace(
+      /([?&](?:token|api[_-]?key|access[_-]?token|refresh[_-]?token|secret)=)[^&#\s]*/gi,
+      "$1[redacted]",
+    );
 }
