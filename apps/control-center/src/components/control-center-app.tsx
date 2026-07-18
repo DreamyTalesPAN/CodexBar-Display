@@ -33,6 +33,7 @@ import {
   deviceImageIsStuck,
   deviceSetupIsUsable,
   deviceStartupConnectionIsReady,
+  normalizeDeviceConnection,
   type ActiveTab,
   type ApiError,
   type CompanionInfo,
@@ -277,11 +278,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, []);
 
   const mergeDevice = useCallback((next: DeviceInfo) => {
-    if (deviceStartupConnectionIsReady(next)) {
+    const normalized = normalizeDeviceConnection(next);
+    if (deviceStartupConnectionIsReady(normalized)) {
       didRunAutomaticDeviceSearch.current = false;
       setDeviceStartupDismissed(false);
     }
-    setDevice((current) => mergeDeviceInfo(current, next));
+    setDevice((current) => mergeDeviceInfo(current, normalized));
   }, []);
 
   const addEvent = useCallback(

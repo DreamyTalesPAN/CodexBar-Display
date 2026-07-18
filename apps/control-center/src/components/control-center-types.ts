@@ -310,12 +310,25 @@ export function deviceSetupIsUsable(device: DeviceInfo | null | undefined) {
   return device?.ready === true;
 }
 
+export function normalizeDeviceConnection(device: DeviceInfo): DeviceInfo {
+  if (device.connected === true && device.stream?.healthy === true) {
+    return {
+      ...device,
+      paired: true,
+      ready: true,
+      connectionState: "ready",
+    };
+  }
+  return device;
+}
+
 export function deviceStartupConnectionIsReady(
   device: DeviceInfo | null | undefined,
 ) {
+  const normalized = device ? normalizeDeviceConnection(device) : device;
   return Boolean(
-    deviceSetupIsUsable(device) &&
-      device?.connectionState !== "reconnecting" &&
-      device?.connected !== false,
+    deviceSetupIsUsable(normalized) &&
+      normalized?.connectionState !== "reconnecting" &&
+      normalized?.connected !== false,
   );
 }
