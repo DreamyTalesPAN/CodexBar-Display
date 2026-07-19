@@ -178,9 +178,8 @@ export type DeviceCandidate = {
 export type DeviceSearchState =
   | "idle"
   | "searching"
-  | "alternate"
+  | "waiting"
   | "multiple"
-  | "declined"
   | "not-found"
   | "repair-failed"
   | "failed";
@@ -232,10 +231,23 @@ export type DeviceInfo = {
         minPercent?: number;
         maxPercent?: number;
       };
+      widthPx?: number;
+      heightPx?: number;
     };
     theme?: {
       supportsThemeSpecV1?: boolean;
+      supportsStoredThemes?: boolean;
+      maxThemeSpecBytes?: number;
+      maxStoredThemeSpecBytes?: number;
+      maxThemePrimitives?: number;
+      maxThemeGifAssets?: number;
       maxThemeGifBytes?: number;
+      maxThemeGifWidth?: number;
+      maxThemeGifHeight?: number;
+      maxThemeGifPixels?: number;
+      maxThemeGifLzwBits?: number;
+      supportedPrimitiveTypes?: string[];
+      builtinThemes?: string[];
     };
     transport?: {
       active?: string;
@@ -244,12 +256,7 @@ export type DeviceInfo = {
 };
 
 export type ActiveTab =
-  | "overview"
-  | "usage"
-  | "settings"
-  | "theme-library"
-  | "updates"
-  | "logs";
+  "overview" | "usage" | "settings" | "theme-library" | "updates" | "logs";
 
 export type ReadinessTone = "ready" | "attention" | "unknown";
 
@@ -403,7 +410,7 @@ export function deviceStartupConnectionIsReady(
 ) {
   return Boolean(
     deviceSetupIsUsable(device) &&
-      device?.connectionState !== "reconnecting" &&
-      device?.connected !== false,
+    device?.connectionState !== "reconnecting" &&
+    device?.connected !== false,
   );
 }

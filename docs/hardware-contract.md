@@ -43,7 +43,7 @@ Companion negotiation:
 - The setup flow stores home WiFi credentials and restarts the device.
 - Connected devices expose their current IP in `/hello` discovery, show `WiFi connected!` plus `app.vibetv.shop`, serve the local setup hub on that IP, and wait for the Mac App.
 - Connected devices expose customer-facing display settings directly on their current IP. The MVP setting is brightness on supported hardware.
-- `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response from browser tools such as Theme Studio; omit it for the built-in IP-based form redirect. `GET /health` is the readback and support-diagnostics path.
+- `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect. `GET /health` is the readback and support-diagnostics path.
 - Connected devices expose `POST /api/pair` to create or rotate a local LAN pairing token. After pairing, write APIs require `X-VibeTV-Token` or the built-in form/raw-OTA `token` query parameter. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
 - Companion runtime discovers the current device IP and verifies the stable `deviceId`; it does not use a hostname default.
 - Saved WiFi credentials can be cleared from the local web UI with `POST /reset-wifi`.

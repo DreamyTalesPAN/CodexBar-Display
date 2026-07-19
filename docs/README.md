@@ -15,9 +15,6 @@ Center on the customer's Mac.
 
 - [Control Center readiness](control-center-customer-readiness.md): launch-readiness checks and support flow.
 - [Control Center UI principles](control-center-ui-principles.md): customer-facing UI rules.
-- [Control Center command console spec](control-center-command-console-spec.md): deeper command/API surface notes.
-- [Control Center feature backlog](control-center-feature-backlog.md): open product and implementation work.
-- [Control Center hardware evidence](control-center-hardware-test-evidence.md): approved hardware-write test notes.
 
 ## Device And Release Docs
 
@@ -36,7 +33,7 @@ Center on the customer's Mac.
 - [Theme development guide](theme-dev-guide.md): hardware-safe ThemeSpec and asset rules.
 - [Theme shop notes](vibetv-shopify-theme-shop.md): Shopify catalog and Control Center integration.
 
-## Old Flow Notes
+## Product Wording
 
 Some internal docs still mention legacy LaunchAgent or direct installer details
 because they are useful for migration and support. For customer-facing copy,

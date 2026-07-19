@@ -27,6 +27,32 @@ body {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
+/* Theme Studio owns the full app canvas while it is open inside Theme Library. */
+.control-center-shell:has([data-theme-studio-root]) .control-center-shell__layout {
+  display: block;
+}
+
+.control-center-shell:has([data-theme-studio-root]) .control-center-shell__sidebar,
+.control-center-shell:has([data-theme-studio-root]) .control-center-shell__header {
+  display: none;
+}
+
+.control-center-shell:has([data-theme-studio-root]) .control-center-shell__content {
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 button,
 input {
   letter-spacing: 0;

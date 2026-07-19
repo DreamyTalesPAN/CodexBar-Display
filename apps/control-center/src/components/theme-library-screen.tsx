@@ -1,25 +1,48 @@
 "use client";
 
 import {
+  Edit3,
   Library,
   Lock,
   Monitor,
+  Plus,
   RefreshCw,
   ShieldCheck,
+  Trash2,
   Wifi,
   X,
 } from "lucide-react";
-import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
+import {
+  createBlankThemeSpec,
+  importThemeSpec,
+  normalizeThemeSpec,
+  type ThemeStudioAsset,
+} from "@/lib/theme-studio";
+import {
+  clearThemeStudioRecovery,
+  loadThemeStudioRecovery,
+  loadUserThemes,
+  writeUserThemes,
+  type ThemeStudioRecovery,
+  type UserThemeRecord,
+} from "@/lib/theme-studio-storage";
+import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilities";
 import type { ThemeProduct } from "@/lib/themes";
 import { ControlCenterButton } from "./control-center-button";
-import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import { themeRenderPackUrl } from "./control-center-runtime";
 import {
   ThemeSpecPreview,
   type ThemeRenderPack,
 } from "./live-vibetv-preview";
+import {
+  ThemeStudioScreen,
+  type ThemeStudioEditorTheme,
+  type ThemeStudioInstallPayload,
+  type ThemeStudioSavePayload,
+} from "./theme-studio-screen";
 
 export type ThemeLibraryCompanionStatus = "unknown" | "online" | "missing";
 
@@ -29,6 +52,16 @@ export type ThemeLibraryDeviceInfo = {
   board?: string;
   firmware?: string;
   activeTheme?: string;
+  capabilities?: {
+    display?: {
+      heightPx?: number;
+      widthPx?: number;
+    };
+    theme?: Omit<
+      ThemeStudioDeviceCapabilities,
+      "displayHeightPx" | "displayWidthPx"
+    >;
+  };
 };
 
 type ThemeInstallBlocker = {
@@ -37,6 +70,22 @@ type ThemeInstallBlocker = {
   readinessDetail?: string;
   readinessIcon?: ReactNode;
 };
+
+type ThemeLibraryItem =
+  | {
+      kind: "custom";
+      custom: UserThemeRecord;
+      id: string;
+      themeId: string;
+      title: string;
+    }
+  | {
+      kind: "published";
+      id: string;
+      product: ThemeProduct;
+      themeId: string;
+      title: string;
+    };
 
 export type ThemeInstallResult = {
   themeId: string;
@@ -74,7 +123,8 @@ export type ThemeLibraryScreenProps = {
   requestedThemeId?: string;
   storefrontConfigured: boolean;
   onSelectTheme: (themeId: string) => void;
-  onInstallTheme: (theme: ThemeProduct) => void;
+  onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
+  onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
 };
 
 export function ThemeLibraryScreen({
@@ -85,21 +135,50 @@ export function ThemeLibraryScreen({
   catalogIssue,
   device,
   installStatus,
-  installEntry,
   lastInstall,
   requestedThemeId,
   companionStatus,
   storefrontConfigured,
   themeInstallEnabled,
+  onInstallCustomTheme,
   onSelectTheme,
   onInstallTheme,
 }: ThemeLibraryScreenProps) {
   const visibleThemes = themes;
-  const [previewTheme, setPreviewTheme] = useState<ThemeProduct | null>(null);
+  const [userThemes, setUserThemes] = useState<UserThemeRecord[]>([]);
+  const [recovery, setRecovery] = useState<ThemeStudioRecovery | null>(null);
+  const [editingTheme, setEditingTheme] =
+    useState<ThemeStudioEditorTheme | null>(null);
+  const [libraryError, setLibraryError] = useState("");
+  const [storageWarning, setStorageWarning] = useState("");
+  const [storageLocked, setStorageLocked] = useState(false);
+  const [deleteTheme, setDeleteTheme] = useState<UserThemeRecord | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const deleteReturnFocusRef = useRef<HTMLElement | null>(null);
+  const libraryHeadingRef = useRef<HTMLHeadingElement>(null);
+  const [loadingEditorThemeId, setLoadingEditorThemeId] = useState("");
+  const [preparingInstallThemeId, setPreparingInstallThemeId] = useState("");
+  const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
+  const libraryThemes: ThemeLibraryItem[] = [
+    ...userThemes.map((custom) => ({
+      kind: "custom" as const,
+      custom,
+      id: custom.id,
+      themeId: custom.document.spec.themeId,
+      title: custom.document.packName,
+    })),
+    ...visibleThemes.map((product) => ({
+      kind: "published" as const,
+      id: product.id,
+      product,
+      themeId: product.themeId,
+      title: product.title,
+    })),
+  ];
   const displayTheme =
     selectedTheme ||
     visibleThemes.find((theme) => theme.themeId === selectedThemeId);
-  const catalogEmpty = visibleThemes.length === 0;
+  const catalogEmpty = libraryThemes.length === 0;
   const requestedThemeMissing = Boolean(
     requestedThemeId && selectedThemeId === requestedThemeId && !displayTheme,
   );
@@ -117,40 +196,282 @@ export function ThemeLibraryScreen({
         selectedTheme: displayTheme,
         themeInstallEnabled,
       });
-  const setupBlocked =
-    companionStatus !== "online" ||
-    !device?.connected ||
-    !device.paired;
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const themesResult = loadUserThemes();
+      if (themesResult.ok) {
+        setUserThemes(themesResult.value.themes);
+      } else {
+        setUserThemes(themesResult.data?.themes || []);
+        setStorageLocked(true);
+        setStorageWarning(themesResult.error.message);
+      }
+
+      const recoveryResult = loadThemeStudioRecovery();
+      if (recoveryResult.ok) {
+        setRecovery(recoveryResult.value);
+      } else {
+        setRecovery(recoveryResult.data || null);
+        setStorageLocked(true);
+        setStorageWarning((current) =>
+          current
+            ? `${current} ${recoveryResult.error.message}`
+            : recoveryResult.error.message,
+        );
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function persistUserThemes(next: UserThemeRecord[]) {
+    if (storageLocked) {
+      throw new Error(
+        storageWarning || "Browser storage must be repaired before saving themes.",
+      );
+    }
+    const result = writeUserThemes(next);
+    if (!result.ok) {
+      setLibraryError(result.error.message);
+      throw new Error(result.error.message);
+    }
+    setUserThemes(result.value.themes);
+  }
+
+  function openBlankTheme() {
+    const existingIds = allThemeIds(themes, userThemes);
+    const spec = createBlankThemeSpec();
+    spec.themeId = uniqueThemeId("my-theme", existingIds);
+    setLibraryError("");
+    setEditingTheme({
+      assets: {},
+      packName: "New Theme",
+      source: "blank",
+      spec,
+    });
+  }
+
+  async function openThemeEditor(item: ThemeLibraryItem) {
+    setLibraryError("");
+    if (item.kind === "custom") {
+      setEditingTheme({
+        assets: item.custom.document.assets,
+        libraryId: item.custom.id,
+        packName: item.custom.document.packName,
+        source: "custom",
+        spec: item.custom.document.spec,
+      });
+      return;
+    }
+
+    setLoadingEditorThemeId(item.themeId);
+    try {
+      const payload = await fetchThemePackForEditing(item.product.themeId);
+      const spec = importThemeSpec(payload.spec);
+      const existingIds = allThemeIds(themes, userThemes);
+      spec.themeId = uniqueThemeId(`${item.product.themeId}-custom`, existingIds);
+      setEditingTheme({
+        assets: payload.assets || {},
+        libraryId: item.product.themeId,
+        packName: `${payload.name || item.product.title} Custom`,
+        source: "published",
+        spec,
+      });
+    } catch (error) {
+      setLibraryError(
+        error instanceof Error ? error.message : "Theme could not be opened.",
+      );
+    } finally {
+      setLoadingEditorThemeId("");
+    }
+  }
+
+  async function saveThemeFromEditor(payload: ThemeStudioSavePayload) {
+    const now = new Date().toISOString();
+    const currentId = payload.libraryId
+      ? userThemes.find((theme) => theme.id === payload.libraryId)?.id
+      : undefined;
+    const existingIds = allThemeIds(themes, userThemes, currentId);
+    const spec = normalizeThemeSpec(payload.spec);
+    spec.themeId = uniqueThemeId(spec.themeId, existingIds);
+    const id = currentId || spec.themeId;
+    const nextRecord: UserThemeRecord = {
+      document: {
+        assets: payload.assets,
+        packName: payload.packName || titleFromThemeId(spec.themeId),
+        spec,
+      },
+      id,
+      originThemeId:
+        payload.source === "published"
+          ? payload.libraryId || undefined
+          : userThemes.find((theme) => theme.id === currentId)?.originThemeId,
+      updatedAt: now,
+    };
+    const next = [
+      nextRecord,
+      ...userThemes.filter((theme) => theme.id !== id),
+    ];
+    persistUserThemes(next);
+    const cleared = clearThemeStudioRecovery();
+    if (cleared.ok) {
+      setRecovery(null);
+    }
+    return {
+      document: nextRecord.document,
+      libraryId: id,
+      savedAt: now,
+    };
+  }
+
+  function resumeRecovery() {
+    if (!recovery) {
+      return;
+    }
+    const matchingCustom =
+      recovery.source === "custom" && recovery.libraryId
+        ? userThemes.find((theme) => theme.id === recovery.libraryId)
+        : undefined;
+    setLibraryError("");
+    setEditingTheme({
+      assets: recovery.document.assets,
+      libraryId:
+        matchingCustom?.id ||
+        (recovery.source === "published" ? recovery.libraryId : undefined),
+      packName: recovery.document.packName,
+      source:
+        recovery.source === "custom" && !matchingCustom
+          ? "blank"
+          : recovery.source,
+      recovered: true,
+      spec: recovery.document.spec,
+    });
+  }
+
+  function discardRecovery() {
+    const result = clearThemeStudioRecovery();
+    if (!result.ok) {
+      setLibraryError(result.error.message);
+      return;
+    }
+    setRecovery(null);
+  }
+
+  function confirmDeleteTheme() {
+    if (!deleteTheme) {
+      return;
+    }
+    try {
+      persistUserThemes(userThemes.filter((theme) => theme.id !== deleteTheme.id));
+      setDeleteTheme(null);
+      setDeleteError("");
+      window.setTimeout(() => libraryHeadingRef.current?.focus(), 0);
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "Theme could not be deleted.",
+      );
+    }
+  }
+
+  function requestDeleteTheme(theme: UserThemeRecord) {
+    deleteReturnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setDeleteError("");
+    setDeleteTheme(theme);
+  }
+
+  function cancelDeleteTheme() {
+    setDeleteTheme(null);
+    setDeleteError("");
+    window.setTimeout(() => deleteReturnFocusRef.current?.focus(), 0);
+  }
+
+  async function installLibraryTheme(item: ThemeLibraryItem) {
+    setLibraryError("");
+    onSelectTheme(item.themeId);
+    if (item.kind === "published") {
+      await onInstallTheme(item.product);
+      return;
+    }
+
+    setPreparingInstallThemeId(item.themeId);
+    try {
+      await onInstallCustomTheme({
+        assets: item.custom.document.assets,
+        packName: item.custom.document.packName,
+        spec: item.custom.document.spec,
+      });
+    } catch (error) {
+      setLibraryError(
+        error instanceof Error ? error.message : "Theme could not be prepared.",
+      );
+    } finally {
+      setPreparingInstallThemeId("");
+    }
+  }
+
+  if (editingTheme) {
+    return (
+      <ThemeStudioScreen
+        deviceCapabilities={themeStudioCapabilitiesFromDevice(device)}
+        initialTheme={editingTheme}
+        onBackToLibrary={() => setEditingTheme(null)}
+        onInstallTheme={onInstallCustomTheme}
+        onRecoveryDiscarded={() => setRecovery(null)}
+        onSaveToLibrary={saveThemeFromEditor}
+        saveBlockedReason={storageLocked ? storageWarning : undefined}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[1180px]">
-      <section className="min-h-[330px] border-b border-[#747A60] py-10">
-        <div className="min-w-0">
-          <div className="flex items-start gap-5">
-            <HeroIcon>
-              <Library size={36} aria-hidden />
-            </HeroIcon>
-            <div className="min-w-0">
-              <h2 className="max-w-[520px] text-[clamp(2.7rem,4.8vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-                {catalogEmpty
-                  ? "Theme catalog unavailable"
-                  : requestedThemeMissing
-                    ? "Theme not available"
-                    : "Choose a theme"}
-              </h2>
-              {installEntry && requestedThemeMissing ? (
-                <p className="mt-4 max-w-[640px] text-base leading-7 text-[#444933]">
-                  This theme is not available right now. Choose another theme
-                  below.
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </div>
+      <section className="grid gap-5 border-b border-[#747A60] py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <h2
+          className="truncate text-3xl font-black leading-tight text-[#1B1B1B] outline-none"
+          ref={libraryHeadingRef}
+          tabIndex={-1}
+        >
+          Themes
+        </h2>
+        <ControlCenterButton
+          icon={<Plus size={18} aria-hidden />}
+          label="Create Theme"
+          onClick={openBlankTheme}
+          variant="primary"
+        />
       </section>
 
-      {!setupBlocked ? (
-        <section className="border-b border-[#747A60] py-8">
+      <section className="border-b border-[#747A60] py-8">
+        {storageWarning ? (
+          <div
+            className="mb-5 flex gap-3 border border-[#8A5A00] bg-[#FFF2CC] p-4 text-sm text-[#5F3D00]"
+            role="alert"
+          >
+            <Lock className="mt-0.5 shrink-0" size={18} aria-hidden />
+            <div>
+              <div className="font-bold">Theme storage needs attention</div>
+              <div className="mt-1 leading-6">{storageWarning}</div>
+            </div>
+          </div>
+        ) : null}
+        {libraryError ? (
+          <div
+            className="mb-5 flex gap-3 border border-[#7D2633] bg-[#FFE3E8] p-4 text-sm text-[#7D2633]"
+            role="alert"
+          >
+            <Lock className="mt-0.5 shrink-0" size={18} aria-hidden />
+            <div>{libraryError}</div>
+          </div>
+        ) : null}
+        {recovery ? (
+          <RecoveryCard
+            onDiscard={discardRecovery}
+            onResume={resumeRecovery}
+            recovery={recovery}
+          />
+        ) : null}
         {catalogEmpty ? (
           <CatalogEmptyState
             catalogIssue={catalogIssue}
@@ -166,28 +487,31 @@ export function ThemeLibraryScreen({
             ) : null}
 
             <ul className="divide-y divide-[#747A60] border-y border-[#747A60]">
-              {visibleThemes.map((theme) => (
+              {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
                   device={device}
                   displayThemeId={displayTheme?.themeId}
+                  item={theme}
                   installStatus={installStatus}
                   key={theme.themeId}
                   lastInstall={lastInstall}
-                  onInstallTheme={onInstallTheme}
+                  loadingEditorThemeId={loadingEditorThemeId}
+                  onEditTheme={openThemeEditor}
+                  onDeleteTheme={requestDeleteTheme}
+                  onInstallTheme={installLibraryTheme}
                   onPreviewTheme={setPreviewTheme}
-                  onSelectTheme={onSelectTheme}
+                  preparingInstallThemeId={preparingInstallThemeId}
                   selectedThemeId={selectedThemeId}
-                  theme={theme}
                   themeInstallBlockedReason={readiness.buttonReason}
                   themeInstallEnabled={themeInstallEnabled}
+                  themeStorageLocked={storageLocked}
                 />
               ))}
             </ul>
           </>
         )}
-        </section>
-      ) : null}
+      </section>
 
       {previewTheme ? (
         <div
@@ -215,6 +539,154 @@ export function ThemeLibraryScreen({
           </div>
         </div>
       ) : null}
+      {deleteTheme ? (
+        <DeleteThemeDialog
+          error={deleteError}
+          onCancel={cancelDeleteTheme}
+          onConfirm={confirmDeleteTheme}
+          theme={deleteTheme}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function themeStudioCapabilitiesFromDevice(
+  device: ThemeLibraryDeviceInfo | null,
+): ThemeStudioDeviceCapabilities | undefined {
+  if (!device?.capabilities) {
+    return undefined;
+  }
+  return {
+    ...device.capabilities.theme,
+    displayHeightPx: device.capabilities.display?.heightPx,
+    displayWidthPx: device.capabilities.display?.widthPx,
+  };
+}
+
+function RecoveryCard({
+  onDiscard,
+  onResume,
+  recovery,
+}: {
+  onDiscard: () => void;
+  onResume: () => void;
+  recovery: ThemeStudioRecovery;
+}) {
+  return (
+    <div className="mb-6 grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div className="min-w-0">
+        <div className="text-base font-bold text-[#1B1B1B]">
+          Continue your unsaved theme
+        </div>
+        <p className="mt-1 text-sm leading-6 text-[#444933]">
+          {recovery.document.packName} was last changed {formatRecoveryTime(recovery.updatedAt)}.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ControlCenterButton
+          label="Discard"
+          onClick={onDiscard}
+          variant="secondary"
+        />
+        <ControlCenterButton
+          label="Resume"
+          onClick={onResume}
+          variant="primary"
+        />
+      </div>
+    </div>
+  );
+}
+
+function DeleteThemeDialog({
+  error,
+  onCancel,
+  onConfirm,
+  theme,
+}: {
+  error: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  theme: UserThemeRecord;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  function handleDialogKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+    if (event.key !== "Tab") {
+      return;
+    }
+    const buttons = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLButtonElement>(
+        "button:not([disabled])",
+      ) || [],
+    );
+    if (buttons.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  return (
+    <div
+      aria-labelledby="delete-theme-title"
+      aria-modal="true"
+      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#1B1B1B]/80 p-4 sm:p-6"
+      onKeyDown={handleDialogKeyDown}
+      ref={dialogRef}
+      role="dialog"
+    >
+      <div className="w-full max-w-[520px] border border-[#747A60] bg-[#F9F9F9] p-5">
+        <h3
+          className="text-2xl font-black text-[#1B1B1B]"
+          id="delete-theme-title"
+        >
+          Delete {theme.document.packName}?
+        </h3>
+        <p className="mt-3 text-sm leading-6 text-[#444933]">
+          This deletes the local library copy only. It does not remove or change
+          the theme currently active on VibeTV.
+        </p>
+        {error ? (
+          <div
+            className="mt-4 border border-[#7D2633] bg-[#FFE3E8] p-3 text-sm text-[#7D2633]"
+            role="alert"
+          >
+            {error}
+          </div>
+        ) : null}
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <button
+            autoFocus
+            className="h-12 border border-[#747A60] bg-[#F9F9F9] px-4 text-base font-semibold text-[#1B1B1B] hover:bg-[#EEEEEE]"
+            onClick={onCancel}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="h-12 border border-[#7D2633] bg-[#7D2633] px-4 text-base font-semibold text-white hover:bg-[#5F1824]"
+            onClick={onConfirm}
+            type="button"
+          >
+            Delete local copy
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -301,103 +773,151 @@ function ThemeListItem({
   busyAction,
   device,
   displayThemeId,
+  item,
   installStatus,
   lastInstall,
+  loadingEditorThemeId,
+  onDeleteTheme,
+  onEditTheme,
   onInstallTheme,
   onPreviewTheme,
-  onSelectTheme,
+  preparingInstallThemeId,
   selectedThemeId,
-  theme,
   themeInstallBlockedReason,
   themeInstallEnabled,
+  themeStorageLocked,
 }: {
   busyAction: string | null;
   device: ThemeLibraryDeviceInfo | null;
   displayThemeId?: string;
+  item: ThemeLibraryItem;
   installStatus?: ThemeInstallStatus | null;
   lastInstall?: ThemeInstallResult;
-  onInstallTheme: (theme: ThemeProduct) => void;
-  onPreviewTheme: (theme: ThemeProduct) => void;
-  onSelectTheme: (themeId: string) => void;
+  loadingEditorThemeId: string;
+  onDeleteTheme: (theme: UserThemeRecord) => void;
+  onEditTheme: (item: ThemeLibraryItem) => void;
+  onInstallTheme: (item: ThemeLibraryItem) => void;
+  onPreviewTheme: (theme: ThemeLibraryItem) => void;
+  preparingInstallThemeId: string;
   selectedThemeId: string;
-  theme: ThemeProduct;
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
+  themeStorageLocked: boolean;
 }) {
+  const theme = item.kind === "published" ? item.product : null;
+  const isCustom = item.kind === "custom";
   const installed =
-    lastInstall?.themeId === theme.themeId ||
-    device?.activeTheme === theme.themeId;
-  const installInFlight = busyAction === "install";
-  const actionInFlight = Boolean(busyAction);
-  const visibleInstallStatus = installStatus?.themeId === theme.themeId;
-  const blocker = buildThemeInstallBlocker({
-    device,
-    theme,
-    themeInstallBlockedReason,
-    themeInstallEnabled,
-  });
+    lastInstall?.themeId === item.themeId || device?.activeTheme === item.themeId;
+  const installInFlight =
+    busyAction === "install" || installStatus?.phase === "installing";
+  const preparingInstall = preparingInstallThemeId === item.themeId;
+  const actionInFlight = Boolean(
+    busyAction || preparingInstallThemeId || installInFlight,
+  );
+  const visibleInstallStatus = Boolean(
+    installStatus?.themeId === item.themeId,
+  );
+  const blocker = theme
+    ? buildThemeInstallBlocker({
+        device,
+        theme,
+        themeInstallBlockedReason,
+        themeInstallEnabled,
+      })
+    : buildCustomThemeInstallBlocker({
+        device,
+        themeInstallBlockedReason,
+        themeInstallEnabled,
+      });
   const blockedLabel = labelForInstallBlocker(blocker);
   const disabled = actionInFlight || installed || Boolean(blocker);
-  const canSelectInstead =
-    !actionInFlight &&
-    !installed &&
-    Boolean(blocker) &&
-    theme.themeId !== displayThemeId;
-  const title = canSelectInstead
-    ? `Select ${theme.title}`
-    : disabled
+  const title = disabled
       ? installDisabledReason({
           actionInFlight,
           installInFlight,
           installed,
           blocker,
         })
-      : `Install ${theme.title}`;
+      : `Install ${item.title}`;
+  const loadingEdit = loadingEditorThemeId === item.themeId;
 
   return (
-    <li className={theme.themeId === displayThemeId ? "bg-[#EEEEEE]" : ""}>
+    <li className={item.themeId === displayThemeId ? "bg-[#EEEEEE]" : ""}>
       <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-4 py-4 transition sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:items-center sm:gap-5">
         <button
-          aria-label={`Preview ${theme.title}`}
+          aria-label={`Preview ${item.title}`}
           className="text-left"
-          onClick={() => onPreviewTheme(theme)}
+          onClick={() => onPreviewTheme(item)}
           type="button"
         >
-          <ThemePreview theme={theme} />
+          <ThemePreview theme={item} />
         </button>
         <div className="min-w-0">
           <div className="truncate text-lg font-bold text-[#1B1B1B]">
-            {theme.title}
+            {item.title}
+          </div>
+          <div className="mt-1 text-xs font-black uppercase text-[#5E7200]">
+            {isCustom ? "Custom" : "Published"}
           </div>
         </div>
-        <button
-          className="col-span-2 h-11 min-w-[96px] border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-70 sm:col-span-1 sm:mr-3 sm:h-10"
-          disabled={disabled && !canSelectInstead}
-          onClick={() => {
-            onSelectTheme(theme.themeId);
-            if (!blocker) {
-              onInstallTheme(theme);
-            }
-          }}
-          title={title}
-          type="button"
+        <div
+          className={`col-span-2 grid gap-2 sm:col-span-1 sm:mr-3 ${
+            isCustom ? "sm:grid-cols-3" : "sm:grid-cols-2"
+          }`}
         >
-          {labelForInstallButton({
-            actionInFlight,
-            blockedLabel,
-            canSelectInstead,
-            installInFlight,
-            installed,
-            selected: theme.themeId === selectedThemeId,
-            disabled,
-          })}
-        </button>
+          <ControlCenterButton
+            busy={loadingEdit}
+            disabled={Boolean(loadingEditorThemeId) && !loadingEdit}
+            icon={<Edit3 size={16} aria-hidden />}
+            label={loadingEdit ? "Opening" : "Edit"}
+            onClick={() => void onEditTheme(item)}
+            size="compact"
+            variant="secondary"
+          />
+          <button
+            className="h-11 min-w-[96px] border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-70 sm:h-10"
+            disabled={disabled}
+            onClick={() => {
+              if (!blocker) {
+                onInstallTheme(item);
+              }
+            }}
+            title={title}
+            type="button"
+          >
+            {labelForInstallButton({
+              actionInFlight,
+              blockedLabel,
+              installInFlight: installInFlight || preparingInstall,
+              installed,
+              selected: item.themeId === selectedThemeId,
+              disabled,
+            })}
+          </button>
+          {item.kind === "custom" ? (
+            <button
+              aria-label={`Delete ${item.title}`}
+              className="inline-flex h-11 min-w-[96px] items-center justify-center gap-2 border border-[#7D2633] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#7D2633] transition hover:bg-[#FFE3E8] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-70 sm:h-10"
+              disabled={themeStorageLocked}
+              onClick={() => onDeleteTheme(item.custom)}
+              title={
+                themeStorageLocked
+                  ? "Theme storage needs attention before deleting themes."
+                  : `Delete ${item.title}`
+              }
+              type="button"
+            >
+              <Trash2 size={16} aria-hidden />
+              <span>Delete</span>
+            </button>
+          ) : null}
+        </div>
       </div>
       {visibleInstallStatus ? (
         <InlineInstallProgress
           canRetry={!disabled}
-          onRetry={() => onInstallTheme(theme)}
-          status={installStatus}
+          onRetry={() => onInstallTheme(item)}
+          status={installStatus!}
         />
       ) : null}
     </li>
@@ -493,7 +1013,6 @@ function clampInstallProgress(value: number | undefined): number {
 function labelForInstallButton({
   actionInFlight,
   blockedLabel,
-  canSelectInstead,
   disabled,
   installInFlight,
   installed,
@@ -501,7 +1020,6 @@ function labelForInstallButton({
 }: {
   actionInFlight: boolean;
   blockedLabel: string;
-  canSelectInstead: boolean;
   disabled: boolean;
   installInFlight: boolean;
   installed: boolean;
@@ -516,13 +1034,43 @@ function labelForInstallButton({
   if (installed) {
     return "Installed";
   }
-  if (canSelectInstead) {
-    return "Select";
-  }
   if (disabled) {
+    if (blockedLabel === "Setup First" || blockedLabel === "Connect First") {
+      return "Install";
+    }
     return blockedLabel;
   }
   return "Install";
+}
+
+function buildCustomThemeInstallBlocker({
+  device,
+  themeInstallBlockedReason,
+  themeInstallEnabled,
+}: {
+  device: ThemeLibraryDeviceInfo | null;
+  themeInstallBlockedReason: string;
+  themeInstallEnabled: boolean;
+}): ThemeInstallBlocker | null {
+  if (!device?.connected) {
+    return { reason: themeInstallBlockedReason || "Connect VibeTV first." };
+  }
+  if (!device.paired) {
+    return {
+      reason: "Connect VibeTV first.",
+      readinessTitle: "VibeTV connection required",
+      readinessDetail:
+        "This VibeTV is reachable, but theme install requires a completed connection first.",
+      readinessIcon: <Lock size={22} aria-hidden />,
+    };
+  }
+  if (!themeInstallEnabled) {
+    return {
+      reason:
+        themeInstallBlockedReason || "Theme installs are not available right now.",
+    };
+  }
+  return null;
 }
 
 function labelForInstallBlocker(blocker: ThemeInstallBlocker | null): string {
@@ -829,20 +1377,12 @@ function parseVersion(value: string): number[] {
   return matches.map((part) => Number(part));
 }
 
-function HeroIcon({ children }: { children: ReactNode }) {
-  return (
-    <ControlCenterStatusIcon variant="neutral">
-      {children}
-    </ControlCenterStatusIcon>
-  );
-}
-
 function ThemePreview({
   large,
   theme,
 }: {
   large?: boolean;
-  theme: ThemeProduct;
+  theme: ThemeLibraryItem;
 }) {
   const [packState, setPackState] = useState<{
     pack: ThemeRenderPack | null;
@@ -857,14 +1397,28 @@ function ThemePreview({
     ? "relative block aspect-square w-full overflow-hidden border border-[#747A60] bg-[#EEEEEE]"
     : "relative block size-24 overflow-hidden border border-[#747A60] bg-[#EEEEEE]";
   const themeId = theme.themeId;
-  const pack =
-    packState.themeId === themeId && packState.status === "ready"
-      ? packState.pack
+  const customPack =
+    theme.kind === "custom"
+      ? {
+          ok: true,
+          themeId,
+          name: theme.title,
+          spec: theme.custom.document.spec,
+          assets: theme.custom.document.assets,
+        }
       : null;
+  const pack =
+    customPack ||
+    (packState.themeId === themeId && packState.status === "ready"
+      ? packState.pack
+      : null);
   const status =
-    packState.themeId === themeId ? packState.status : "loading";
+    customPack ? "ready" : packState.themeId === themeId ? packState.status : "loading";
 
   useEffect(() => {
+    if (theme.kind === "custom") {
+      return;
+    }
     if (!themeId) {
       return;
     }
@@ -892,11 +1446,96 @@ function ThemePreview({
       });
 
     return () => controller.abort();
-  }, [themeId]);
+  }, [theme.kind, themeId]);
 
   return (
     <span className={className}>
-      <ThemeSpecPreview pack={pack} status={status} themeId={themeId} />
+      <ThemeSpecPreview
+        animate={Boolean(large)}
+        pack={pack}
+        status={status}
+        themeId={themeId}
+      />
     </span>
   );
+}
+
+async function fetchThemePackForEditing(themeId: string): Promise<{
+  assets?: Record<string, ThemeStudioAsset>;
+  name?: string;
+  spec: unknown;
+}> {
+  const response = await fetch(themeRenderPackUrl(themeId));
+  if (!response.ok) {
+    throw new Error("Theme could not be opened.");
+  }
+  const payload = (await response.json()) as {
+    assets?: Record<string, ThemeStudioAsset>;
+    name?: string;
+    spec?: unknown;
+  };
+  if (!payload.spec) {
+    throw new Error("Theme could not be opened.");
+  }
+  return { assets: payload.assets || {}, name: payload.name, spec: payload.spec };
+}
+
+function allThemeIds(
+  publishedThemes: ThemeProduct[],
+  userThemes: UserThemeRecord[],
+  exceptUserThemeId?: string,
+): string[] {
+  return [
+    ...publishedThemes.map((theme) => theme.themeId),
+    ...userThemes
+      .filter((theme) => theme.id !== exceptUserThemeId)
+      .map((theme) => theme.document.spec.themeId),
+  ];
+}
+
+function formatRecoveryTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "recently";
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function uniqueThemeId(base: string, existingIds: string[]): string {
+  const used = new Set(existingIds.map((id) => slugThemeId(id)));
+  const cleanBase = slugThemeId(base || "my-theme");
+  if (!used.has(cleanBase)) {
+    return cleanBase;
+  }
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${cleanBase}-${index}`;
+    if (!used.has(candidate)) {
+      return candidate;
+    }
+  }
+  return `${cleanBase}-${Date.now()}`;
+}
+
+function slugThemeId(value: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  if (slug.length >= 3 && /^[a-z0-9]/.test(slug)) {
+    return slug;
+  }
+  return "my-theme";
+}
+
+function titleFromThemeId(themeId: string): string {
+  return themeId
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }

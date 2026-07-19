@@ -34,6 +34,14 @@ npm run test:customer-smoke
 
 Run `npm run test:customer-flows` for state changes, navigation/action changes, API behavior changes, or before claiming merge readiness.
 
+For Theme Studio changes, the focused safety flow checks the local render-pack
+path, the Companion ZIP install route, the absence of direct VibeTV writes, and
+the disabled AI surface:
+
+```bash
+npm run test:theme-studio-safety
+```
+
 Build the static Control Center bundle that gets embedded into the Mac App release binary:
 
 ```bash
@@ -83,8 +91,9 @@ For local development, install the Mac App service from the repository root:
 
 That starts the normal VibeTV Mac App background service with the local Control
 Center API built in. It is a development/support path and is not shown in the
-customer setup UI. See `docs/control-center-customer-readiness.md` for the
-support flow.
+customer setup UI. See
+[`docs/control-center-customer-readiness.md`](../../docs/control-center-customer-readiness.md)
+for the support flow.
 
 The legacy operator command is:
 

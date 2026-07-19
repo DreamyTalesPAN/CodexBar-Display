@@ -876,8 +876,14 @@ func shouldRetryControlCenterNavigation(_ error: Error) -> Bool {
     return !(error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled)
 }
 
+struct InstallationStatus {
+    let title: String
+    let detail: String
+    let failed: Bool
+}
+
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate {
     private var window: NSWindow?
     private var webView: WKWebView?
     private var activeNavigation: WKNavigation?
@@ -886,7 +892,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private var reloadAttempts = 0
     private var scheduledReload: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
+    private var closePreparationInFlight = false
+    private var allowPreparedWindowClose = false
+    private var scheduledCloseFallback: DispatchWorkItem?
     private var installationReady = false
+    private var installationStatus: InstallationStatus?
     private var codexBarRepairRequired = false
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
@@ -956,6 +966,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         }
         if installationReady {
             presentControlCenter()
+        } else if let status = installationStatus {
+            presentInstallationStatus(
+                title: status.title,
+                detail: status.detail,
+                failed: status.failed
+            )
         } else {
             window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -985,6 +1001,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             case .nativeRuntimeReady:
                 self.codexBarRepairRequired = false
                 self.installationReady = true
+                self.installationStatus = nil
                 _ = self.urlRouter.markReady()
                 self.presentControlCenter()
             case .legacyRuntimeRestored:
@@ -1551,6 +1568,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
         self.window = window
         self.webView = webView
+        closePreparationInFlight = false
+        allowPreparedWindowClose = false
+        scheduledCloseFallback?.cancel()
+        scheduledCloseFallback = nil
         // The local server can keep the same URL across app updates. Always
         // fetch the freshly bundled UI instead of reviving an older cached
         // Control Center whose device-selection logic may be stale.
@@ -1566,6 +1587,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         )
         window.title = "VibeTV Control Center"
         window.center()
+        window.delegate = self
         window.isReleasedWhenClosed = false
         return window
     }
@@ -1576,11 +1598,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         failed: Bool,
         retryTitle: String = "Try again"
     ) {
+        installationStatus = InstallationStatus(
+            title: title,
+            detail: detail,
+            failed: failed
+        )
         installationStatusTitle = title
         installationStatusDetail = detail
         installationStatusFailed = failed
         let window = window ?? makeMainWindow()
         let container = NSView()
+        // This screen intentionally uses a fixed light surface and dark text.
+        // Keep inherited AppKit controls (spinner and buttons) in the matching
+        // appearance so they do not render white-on-white in macOS Dark Mode.
+        container.appearance = NSAppearance(named: .aqua)
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor(
             calibratedRed: 0.976,
@@ -1666,6 +1697,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === window else {
+            return
+        }
+
+        scheduledReload?.cancel()
+        scheduledReload = nil
+        closePreparationInFlight = false
+        allowPreparedWindowClose = false
+        scheduledCloseFallback?.cancel()
+        scheduledCloseFallback = nil
+        activeNavigation = nil
+        webView?.stopLoading()
+        webView?.navigationDelegate = nil
+        closingWindow.delegate = nil
+        closingWindow.contentView = nil
+        webView = nil
+        window = nil
+    }
+
+    func windowShouldClose(_ closingWindow: NSWindow) -> Bool {
+        guard closingWindow === window, let webView else {
+            return true
+        }
+        if allowPreparedWindowClose {
+            allowPreparedWindowClose = false
+            return true
+        }
+        if closePreparationInFlight {
+            return false
+        }
+
+        closePreparationInFlight = true
+        let fallback = DispatchWorkItem { [weak self, weak closingWindow] in
+            guard let self, let closingWindow else {
+                return
+            }
+            NSLog("VibeTV Control Center timed out flushing browser state before closing")
+            self.finishPreparedWindowClose(closingWindow)
+        }
+        scheduledCloseFallback = fallback
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: fallback)
+        let script = "window.dispatchEvent(new Event('vibetv:native-window-will-close')); true"
+        webView.evaluateJavaScript(script) { [weak self, weak closingWindow] _, error in
+            guard let self, let closingWindow, closingWindow === self.window else {
+                return
+            }
+            self.scheduledCloseFallback?.cancel()
+            self.scheduledCloseFallback = nil
+            if let error {
+                NSLog("VibeTV Control Center could not flush browser state before closing: \(error.localizedDescription)")
+            }
+            self.finishPreparedWindowClose(closingWindow)
+        }
+        return false
+    }
+
+    private func finishPreparedWindowClose(_ closingWindow: NSWindow) {
+        guard closingWindow === window, closePreparationInFlight else {
+            return
+        }
+        scheduledCloseFallback?.cancel()
+        scheduledCloseFallback = nil
+        closePreparationInFlight = false
+        allowPreparedWindowClose = true
+        closingWindow.performClose(nil)
     }
 
     private func loadControlCenter(

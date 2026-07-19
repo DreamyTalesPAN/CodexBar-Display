@@ -1,6 +1,7 @@
 package themeinstall
 
 import (
+	"archive/zip"
 	"bytes"
 	"compress/lzw"
 	"context"
@@ -34,6 +35,123 @@ func TestResolveSourceRejectsPackAndCatalog(t *testing.T) {
 	_, err := ResolveSource("https://example.com/theme.zip", "https://example.com/catalog.json", "")
 	if err == nil {
 		t.Fatal("expected error for packUrl plus catalogUrl")
+	}
+}
+
+func TestInstallLoadsInMemoryPackBytesBeforeDeviceAccess(t *testing.T) {
+	_, err := Install(context.Background(), Options{
+		PackBytes: []byte("not a zip"),
+		Target:    "http://127.0.0.1:1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "open theme pack zip") {
+		t.Fatalf("expected malformed in-memory ZIP error, got %v", err)
+	}
+}
+
+func TestInstallUsesValidInMemoryPackBytes(t *testing.T) {
+	withFastActivationRetries(t)
+	packBytes := zipMinimalThemePack(t, writeMinimalThemePack(t))
+	const activePath = "/themes/u/synth.json"
+	currentActivePath := "/themes/u/claude.json"
+	server := themeInstallDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/theme/active":
+			currentActivePath = activePath
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			writeThemeHealth(t, w, currentActivePath)
+		}
+	})
+	defer server.Close()
+
+	var out bytes.Buffer
+	result, err := Install(context.Background(), Options{
+		PackBytes:          packBytes,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		Out:                &out,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame:     testLiveFrame,
+		Verbose:            true,
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
+	}
+	if result.ThemeID != "synthwave" || result.ActivePath != activePath {
+		t.Fatalf("unexpected in-memory install result: %+v", result)
+	}
+	if !strings.Contains(out.String(), "Theme source: local upload") {
+		t.Fatalf("expected local upload source log, got:\n%s", out.String())
+	}
+}
+
+func TestInstallRejectsOversizedGIFBeforeDeviceWrite(t *testing.T) {
+	packBytes := zipThemePackFiles(t, map[string]string{
+		"manifest.json": `{
+			"kind":"vibetv-theme-pack",
+			"schemaVersion":1,
+			"id":"gif-theme",
+			"name":"GIF Theme",
+			"themeSpec":{"path":"/themes/u/gif.json","file":"theme.json"},
+			"assets":[{"path":"/themes/u/gif.gif","file":"assets/gif.gif"}]
+		}`,
+		"theme.json":     `{"v":1,"id":"gif-theme","rev":1,"fb":"mini","p":[{"t":"g","x":0,"y":0,"w":80,"h":80,"a":"/themes/u/gif.gif"}]}`,
+		"assets/gif.gif": strings.Repeat("x", 9),
+	})
+
+	writes := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" || r.Method != http.MethodGet {
+			writes++
+			t.Fatalf("unexpected device write before compatibility validation: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"kind":"hello",
+			"protocolVersion":2,
+			"board":"esp8266-smalltv-st7789",
+			"features":["theme","theme-spec-v1"],
+			"capabilities":{"theme":{
+				"supportsThemeSpecV1":true,
+				"supportsStoredThemes":true,
+				"maxThemeSpecBytes":2048,
+				"maxStoredThemeSpecBytes":4096,
+				"maxThemePrimitives":32,
+				"maxThemeGifAssets":1,
+				"maxThemeGifBytes":8,
+				"maxThemeGifWidth":80,
+				"maxThemeGifHeight":80,
+				"maxThemeGifPixels":6400,
+				"builtinThemes":["mini"]
+			}}
+		}`))
+	}))
+	defer server.Close()
+
+	_, err := Install(context.Background(), Options{
+		PackBytes:          packBytes,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "GIF asset") {
+		t.Fatalf("expected GIF compatibility error, got %v", err)
+	}
+	if writes != 0 {
+		t.Fatalf("expected no device writes, got %d", writes)
+	}
+}
+
+func TestInstallRejectsAmbiguousInMemoryPackSource(t *testing.T) {
+	_, err := Install(context.Background(), Options{
+		PackBytes: []byte("not a zip"),
+		PackURL:   "https://example.com/theme.zip",
+		Target:    "http://127.0.0.1:1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "either pack bytes") {
+		t.Fatalf("expected ambiguous pack source error, got %v", err)
 	}
 }
 
@@ -299,6 +417,7 @@ func TestInstallEnforcesGIFLZWCapabilityBeforeUpload(t *testing.T) {
 
 	t.Run("advertised eleven bit limit rejects before upload", func(t *testing.T) {
 		var uploadAttempts atomic.Int32
+		var firmwareUpdateAttempts atomic.Int32
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/hello" {
 				writeThemeHelloWithLZWLimit(t, w, ptrTo(11))
@@ -312,16 +431,22 @@ func TestInstallEnforcesGIFLZWCapabilityBeforeUpload(t *testing.T) {
 		defer server.Close()
 
 		_, err := Install(context.Background(), Options{
-			PackURL:            packDir,
-			Target:             server.URL,
-			SkipFirmwareUpdate: true,
-			HTTPClient:         server.Client(),
+			PackURL:    packDir,
+			Target:     server.URL,
+			HTTPClient: server.Client(),
+			FirmwareUpdater: func(context.Context, string, string) error {
+				firmwareUpdateAttempts.Add(1)
+				return nil
+			},
 		})
 		if err == nil || !strings.Contains(err.Error(), "requires LZW code width 12 bits") {
 			t.Fatalf("expected 12-bit GIF capability error, got %v", err)
 		}
 		if got := uploadAttempts.Load(); got != 0 {
 			t.Fatalf("expected capability rejection before upload, got %d upload attempts", got)
+		}
+		if got := firmwareUpdateAttempts.Load(); got != 0 {
+			t.Fatalf("expected capability rejection before firmware update, got %d update attempts", got)
 		}
 	})
 
@@ -692,6 +817,48 @@ func writeMinimalThemePack(t *testing.T) string {
 	return dir
 }
 
+func zipMinimalThemePack(t *testing.T, dir string) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for _, name := range []string{"manifest.json", "theme.json"} {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return append([]byte(nil), buffer.Bytes()...)
+}
+
+func zipThemePackFiles(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for name, contents := range files {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(contents)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return append([]byte(nil), buffer.Bytes()...)
+}
+
 func writeGIFThemePack(t *testing.T, gif []byte) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -846,7 +1013,7 @@ func writeThemeHello(t *testing.T, w http.ResponseWriter) {
 		"features":["theme","theme-spec-v1"],
 		"maxFrameBytes":1024,
 		"capabilities":{
-			"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":4096,"maxThemePrimitives":32},
+			"theme":{"supportsThemeSpecV1":true,"supportsStoredThemes":true,"maxThemeSpecBytes":2048,"maxStoredThemeSpecBytes":4096,"maxThemePrimitives":32},
 			"transport":{"active":"wifi"}
 		}
 	}`))

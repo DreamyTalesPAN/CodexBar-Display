@@ -50,7 +50,6 @@ export function OverviewScreen({
   const macAppMigrationUrl = requiresMacAppMigration
     ? availableMacAppDmgDownloadUrl(companionRelease)
     : undefined;
-
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="grid min-h-[500px] items-center gap-8 border-b border-[#747A60] py-8 lg:grid-cols-[minmax(0,520px)_minmax(420px,1fr)] lg:py-9">
@@ -153,7 +152,9 @@ function StatusBadge({
   tone: ReadinessTone;
 }) {
   return (
-    <ControlCenterStatusIcon variant={tone === "ready" ? "complete" : "neutral"}>
+    <ControlCenterStatusIcon
+      variant={tone === "ready" ? "complete" : "neutral"}
+    >
       {children}
     </ControlCenterStatusIcon>
   );
@@ -185,16 +186,15 @@ function StatusRow({
             </span>
           ) : null}
         </div>
-        {detail ? <div className="mt-1 text-sm text-[#444933]">{detail}</div> : null}
+        {detail ? (
+          <div className="mt-1 text-sm text-[#444933]">{detail}</div>
+        ) : null}
       </dd>
     </div>
   );
 }
 
-function buildHeroCopy(
-  companionStatus: CompanionStatus,
-  connected: boolean,
-) {
+function buildHeroCopy(companionStatus: CompanionStatus, connected: boolean) {
   if (connected) {
     return {
       title: "VibeTV is connected",

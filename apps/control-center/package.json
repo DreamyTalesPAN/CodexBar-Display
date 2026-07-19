@@ -10,7 +10,10 @@
     "lint": "eslint",
     "check:customer-ui-copy": "node scripts/check-customer-ui-copy.mjs",
     "check:ui-review": "node ../../scripts/check-control-center-ui-review-gate.mjs",
+    "test:unit": "vitest run",
     "test:customer-smoke": "node scripts/test-customer-flows.mjs --smoke",
+    "test:theme-studio": "node scripts/test-theme-studio-flows.mjs",
+    "test:theme-studio-safety": "npm run test:theme-studio",
     "test:customer-flows": "node scripts/test-customer-flows.mjs"
   },
   "dependencies": {
@@ -31,6 +34,7 @@
     "eslint-config-next": "16.2.9",
     "playwright": "^1.60.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

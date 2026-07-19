@@ -82,7 +82,8 @@ func maxGIFLZWCodeWidth(data []byte) (int, error) {
 			if err != nil {
 				return 0, err
 			}
-			bits, err := validateGIFLZW(compressed, minimumCodeSize)
+			expectedPixels := uint64(width) * uint64(height)
+			bits, err := validateGIFLZW(compressed, minimumCodeSize, expectedPixels)
 			if err != nil {
 				return 0, fmt.Errorf("invalid image LZW stream: %w", err)
 			}
@@ -146,9 +147,12 @@ func (r *gifLSBCodeReader) read(width int) (int, error) {
 	return code, nil
 }
 
-func validateGIFLZW(data []byte, minimumCodeSize int) (int, error) {
+func validateGIFLZW(data []byte, minimumCodeSize int, expectedPixels uint64) (int, error) {
 	if minimumCodeSize < 2 || minimumCodeSize > 8 {
 		return 0, fmt.Errorf("minimum code size %d is outside 2..8", minimumCodeSize)
+	}
+	if expectedPixels == 0 {
+		return 0, errors.New("image has no pixels")
 	}
 	clearCode := 1 << uint(minimumCodeSize)
 	eoiCode := clearCode + 1
@@ -156,9 +160,12 @@ func validateGIFLZW(data []byte, minimumCodeSize int) (int, error) {
 	width := minimumCodeSize + 1
 	nextCode := clearCode + 2
 	maxBits := width
+	codeLengths := make([]uint64, 1<<maxGIFLZWCodeBits)
 	havePrevious := false
 	haveClear := false
 	haveData := false
+	var previousLength uint64
+	var emittedPixels uint64
 
 	for {
 		code, err := reader.read(width)
@@ -172,6 +179,7 @@ func validateGIFLZW(data []byte, minimumCodeSize int) (int, error) {
 			width = minimumCodeSize + 1
 			nextCode = clearCode + 2
 			havePrevious = false
+			previousLength = 0
 			haveClear = true
 			continue
 		}
@@ -182,25 +190,48 @@ func validateGIFLZW(data []byte, minimumCodeSize int) (int, error) {
 			if !haveData {
 				return 0, errors.New("end-of-information code appears before image data")
 			}
+			if emittedPixels != expectedPixels {
+				return 0, fmt.Errorf("decoded pixel count does not match image dimensions: got=%d expected=%d", emittedPixels, expectedPixels)
+			}
 			return maxBits, nil
 		}
 		if !havePrevious {
 			if code >= clearCode {
 				return 0, fmt.Errorf("first code after clear is not a literal: %d", code)
 			}
+			if emittedPixels >= expectedPixels {
+				return 0, fmt.Errorf("decoded pixel count exceeds image dimensions: got>%d", expectedPixels)
+			}
 			havePrevious = true
 			haveData = true
+			previousLength = 1
+			emittedPixels++
 			continue
 		}
 		if code > nextCode {
 			return 0, fmt.Errorf("code %d exceeds next dictionary code %d", code, nextCode)
 		}
+		var outputLength uint64
+		switch {
+		case code < clearCode:
+			outputLength = 1
+		case code < nextCode:
+			outputLength = codeLengths[code]
+		default:
+			outputLength = previousLength + 1
+		}
+		if outputLength == 0 || emittedPixels > expectedPixels || outputLength > expectedPixels-emittedPixels {
+			return 0, fmt.Errorf("decoded pixel count exceeds image dimensions: got>%d", expectedPixels)
+		}
+		emittedPixels += outputLength
 		if nextCode < 1<<maxGIFLZWCodeBits {
+			codeLengths[nextCode] = previousLength + 1
 			nextCode++
 			if nextCode == 1<<uint(width) && width < maxGIFLZWCodeBits {
 				width++
 			}
 		}
+		previousLength = outputLength
 		haveData = true
 	}
 }

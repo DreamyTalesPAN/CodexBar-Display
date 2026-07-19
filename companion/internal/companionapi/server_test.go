@@ -1,6 +1,7 @@
 package companionapi
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -30,6 +31,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 )
 
 func TestStatusWorksWithoutDevice(t *testing.T) {
@@ -60,6 +62,91 @@ func TestStatusWorksWithoutDevice(t *testing.T) {
 	}
 	if got.Device.Connected {
 		t.Fatalf("expected disconnected device without probing, got %+v", got.Device)
+	}
+}
+
+func TestStatusIncludesLatestFirmwareUpdateJob(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	startedAt := time.Now().UTC().Add(-time.Minute)
+	server.updateJobs["finished-update"] = &firmwareUpdateJob{
+		ID:        "finished-update",
+		Phase:     "complete",
+		Message:   "Update complete.",
+		Progress:  100,
+		StartedAt: startedAt,
+	}
+	server.updateJobs["active-update"] = &firmwareUpdateJob{
+		ID:        "active-update",
+		Phase:     "installing",
+		Stage:     "waiting_for_device",
+		Message:   "Restarting VibeTV.",
+		Progress:  85,
+		StartedAt: startedAt.Add(30 * time.Second),
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(
+		rec,
+		httptest.NewRequest(http.MethodGet, "/v1/status", nil),
+	)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.FirmwareUpdate == nil || got.FirmwareUpdate.ID != "active-update" {
+		t.Fatalf("expected latest firmware update in status, got %+v", got.FirmwareUpdate)
+	}
+	if got.FirmwareUpdate.Phase != "installing" || got.FirmwareUpdate.Progress != 85 {
+		t.Fatalf("unexpected firmware update snapshot: %+v", got.FirmwareUpdate)
+	}
+}
+
+func TestStatusIncludesLatestThemeInstallJob(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	startedAt := time.Now().UTC().Add(-time.Minute)
+	server.installJobs["finished-theme"] = &themeInstallJob{
+		ID:        "finished-theme",
+		ThemeID:   "mini",
+		ThemeName: "Mini",
+		Phase:     "complete",
+		Progress:  100,
+		StartedAt: startedAt,
+	}
+	server.installJobs["active-theme"] = &themeInstallJob{
+		ID:        "active-theme",
+		ThemeID:   "clippy",
+		ThemeName: "Clippy",
+		Phase:     "installing",
+		Message:   "Uploading theme files.",
+		Progress:  40,
+		StartedAt: startedAt.Add(30 * time.Second),
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(
+		rec,
+		httptest.NewRequest(http.MethodGet, "/v1/status", nil),
+	)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ThemeInstall == nil || got.ThemeInstall.ID != "active-theme" {
+		t.Fatalf("expected latest theme install in status, got %+v", got.ThemeInstall)
+	}
+	if got.ThemeInstall.ThemeID != "clippy" || got.ThemeInstall.ThemeName != "Clippy" {
+		t.Fatalf("expected resumable theme identity, got %+v", got.ThemeInstall)
+	}
+	if got.ThemeInstall.Phase != "installing" || got.ThemeInstall.Progress != 40 {
+		t.Fatalf("unexpected theme install snapshot: %+v", got.ThemeInstall)
 	}
 }
 
@@ -654,11 +741,11 @@ func TestValidateRepairIdentityRejectsSetupAndBackgroundMismatch(t *testing.T) {
 	}
 }
 
-func TestDeviceIdentityKnownRequiresStableDeviceID(t *testing.T) {
+func TestDeviceIdentityMatchRequiresStableDeviceID(t *testing.T) {
 	cfg := runtimeconfig.Config{DeviceTarget: "http://192.168.178.72"}
 	hello := protocol.DeviceHello{DeviceID: "esp8266-123abc", NetworkMode: "station"}
 	if deviceIdentityMatches(cfg, hello) {
-		t.Fatal("a legacy target match must not claim a stable known identity")
+		t.Fatal("a legacy target must not activate a device without stable identity")
 	}
 	cfg.DeviceID = "ESP8266-123ABC"
 	if !deviceIdentityMatches(cfg, hello) {
@@ -2339,6 +2426,74 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 	server.Handler().ServeHTTP(theme, themeReq)
 	if theme.Code != http.StatusOK || !strings.Contains(theme.Body.String(), "synthwave") {
 		t.Fatalf("expected embedded theme render pack, got %d body=%s", theme.Code, theme.Body.String())
+	}
+}
+
+func TestCustomThemeRenderPackPersistsAcrossCompanionRestart(t *testing.T) {
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.home = home
+	if err := server.persistThemeRenderPack(testThemePackZip(t)); err != nil {
+		t.Fatalf("persist custom theme render pack: %v", err)
+	}
+
+	restarted := newTestServer(t, runtimeconfig.Config{})
+	restarted.home = home
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/theme-packs/render/cozy-meadow.json", nil)
+	restarted.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected persisted render pack status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("expected persisted render pack to disable caching, got %q", got)
+	}
+	var got themeRenderPack
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode persisted render pack: %v", err)
+	}
+	if !got.OK || got.ThemeID != "cozy-meadow" || got.SpecPath != "/themes/u/cm.json" {
+		t.Fatalf("unexpected persisted render pack: %+v", got)
+	}
+	if !strings.Contains(string(got.Spec), `"id":"cozy-meadow"`) {
+		t.Fatalf("expected persisted custom spec, got %s", string(got.Spec))
+	}
+}
+
+func TestCustomThemeRenderPackPersistsWhenDisplayRefreshFails(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.home = home
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{
+			ThemeID:    "cozy-meadow",
+			ActivePath: "/themes/u/cm.json",
+		}, nil
+	}
+	server.refreshStream = func(context.Context, string) error {
+		return errors.New("display stream unavailable")
+	}
+
+	_, err := server.runThemeInstall(
+		context.Background(),
+		runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"},
+		themeInstallRequest{ThemeID: "cozy-meadow", PackBytes: testThemePackZip(t)},
+		io.Discard,
+	)
+	if err == nil {
+		t.Fatal("expected display stream refresh to fail after theme activation")
+	}
+
+	restarted := newTestServer(t, runtimeconfig.Config{})
+	restarted.home = home
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/theme-packs/render/cozy-meadow.json", nil)
+	restarted.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected preview cache after partial install failure, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -4909,6 +5064,43 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	}
 }
 
+func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
+	initial := runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	}
+	server := newTestServer(t, initial)
+	server.updateJobs["active-update"] = &firmwareUpdateJob{
+		ID:    "active-update",
+		Phase: "installing",
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "firmware_update_in_progress" {
+		t.Fatalf("error code=%q want firmware_update_in_progress", response.Error.Code)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceTarget != initial.DeviceTarget || cfg.DeviceToken != initial.DeviceToken || cfg.DeviceID != initial.DeviceID {
+		t.Fatalf("active update reset mutated config: %+v", cfg)
+	}
+}
+
 func TestDeviceDiscoverDoesNotFallbackWhenExplicitTargetFails(t *testing.T) {
 	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusServiceUnavailable)
@@ -5347,6 +5539,9 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	if gotOpts.ThemeID != "cozy-meadow" || gotOpts.PackURL != "https://example.com/cozy.zip" {
 		t.Fatalf("install did not receive theme source: %+v", gotOpts)
 	}
+	if gotOpts.PackBytes != nil {
+		t.Fatalf("JSON install unexpectedly received in-memory pack bytes: %d", len(gotOpts.PackBytes))
+	}
 	if !strings.Contains(gotOpts.Target, "token=") {
 		t.Fatalf("expected target to include pairing token for transport auth, got %q", gotOpts.Target)
 	}
@@ -5409,6 +5604,307 @@ func TestThemeInstallCapturesRenderBaselineBeforeActivation(t *testing.T) {
 	if _, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, io.Discard); err != nil {
 		t.Fatalf("run theme install: %v", err)
 	}
+}
+
+func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	zipBytes := testThemePackZip(t)
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	gotOpts := make(chan themeinstall.Options, 1)
+	server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		gotOpts <- opts
+		return themeinstall.Result{
+			ThemeID:       "cozy-meadow",
+			PackID:        "cozy-meadow",
+			Name:          "Cozy Meadow",
+			ActivePath:    "/themes/u/cm.json",
+			ThemeRevision: 1,
+		}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true&themeId=cozy-meadow&themeName=Cozy%20Meadow", bytes.NewReader(zipBytes))
+	req.Header.Set("Content-Type", "application/zip")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started themeInstallJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+	if started.Job.ID == "" {
+		t.Fatalf("expected async install job, got %+v", started.Job)
+	}
+	if started.Job.ThemeID != "cozy-meadow" || started.Job.ThemeName != "Cozy Meadow" {
+		t.Fatalf("expected resumable theme identity, got %+v", started.Job)
+	}
+
+	select {
+	case opts := <-gotOpts:
+		if opts.ThemeID != "cozy-meadow" || opts.PackURL != "" || opts.CatalogURL != "" {
+			t.Fatalf("unexpected in-memory theme source: %+v", opts)
+		}
+		if !bytes.Equal(opts.PackBytes, zipBytes) {
+			t.Fatalf("install received different ZIP bytes: got=%d want=%d", len(opts.PackBytes), len(zipBytes))
+		}
+		if !opts.SkipFirmwareUpdate {
+			t.Fatal("expected in-memory theme install to skip firmware update by default")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for async in-memory install")
+	}
+
+	for attempt := 0; attempt < 50; attempt++ {
+		status := httptest.NewRecorder()
+		statusReq := httptest.NewRequest(http.MethodGet, "/v1/themes/install/status?jobId="+started.Job.ID, nil)
+		server.Handler().ServeHTTP(status, statusReq)
+		if status.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d body=%s", status.Code, status.Body.String())
+		}
+		var got themeInstallJobResponse
+		if err := json.Unmarshal(status.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status response: %v", err)
+		}
+		if got.Job.Phase == "complete" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("in-memory theme install job did not complete")
+}
+
+func TestDecodeThemeInstallZipSetsAndClearsReadDeadline(t *testing.T) {
+	zipBytes := testThemePackZip(t)
+	rec := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true", bytes.NewReader(zipBytes))
+	req.Header.Set("Content-Type", "application/zip")
+
+	got, ok := decodeThemeInstallRequest(rec, req)
+	if !ok {
+		t.Fatalf("expected ZIP request to decode, got status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !got.Async || !bytes.Equal(got.PackBytes, zipBytes) {
+		t.Fatalf("unexpected decoded ZIP request: async=%v bytes=%d", got.Async, len(got.PackBytes))
+	}
+	if len(rec.readDeadlines) != 2 {
+		t.Fatalf("expected set and reset read deadlines, got %+v", rec.readDeadlines)
+	}
+	if rec.readDeadlines[0].IsZero() {
+		t.Fatal("expected non-zero ZIP upload read deadline")
+	}
+	if !rec.readDeadlines[1].IsZero() {
+		t.Fatalf("expected ZIP upload read deadline reset, got %s", rec.readDeadlines[1])
+	}
+}
+
+func TestDecodeThemeInstallJSONDoesNotSetReadDeadline(t *testing.T) {
+	rec := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip","async":true}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	got, ok := decodeThemeInstallRequest(rec, req)
+	if !ok || !got.Async || got.ThemeID != "cozy-meadow" {
+		t.Fatalf("unexpected decoded JSON request: ok=%v got=%+v body=%s", ok, got, rec.Body.String())
+	}
+	if len(rec.readDeadlines) != 0 {
+		t.Fatalf("JSON install should not set a ZIP read deadline, got %+v", rec.readDeadlines)
+	}
+}
+
+func TestThemeInstallZipTimeoutReleasesInstallGuard(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	rec := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true", timeoutReader{})
+	req.Header.Set("Content-Type", "application/zip")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestTimeout {
+		t.Fatalf("expected status 408, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode timeout response: %v", err)
+	}
+	if got.OK || got.Error.Code != "theme_pack_upload_timeout" {
+		t.Fatalf("unexpected timeout response: %+v", got)
+	}
+	if rec.Header().Get("Connection") != "close" {
+		t.Fatalf("timed-out upload should close the connection, got headers=%v", rec.Header())
+	}
+	if len(rec.readDeadlines) != 2 || rec.readDeadlines[0].IsZero() || !rec.readDeadlines[1].IsZero() {
+		t.Fatalf("expected timeout path to set and reset read deadline, got %+v", rec.readDeadlines)
+	}
+
+	retry := httptest.NewRecorder()
+	retryReq := httptest.NewRequest(http.MethodPost, "/v1/themes/install", bytes.NewReader([]byte("not a zip")))
+	retryReq.Header.Set("Content-Type", "application/zip")
+	server.Handler().ServeHTTP(retry, retryReq)
+	if retry.Code != http.StatusBadRequest {
+		t.Fatalf("expected released guard to process retry as invalid ZIP, got %d body=%s", retry.Code, retry.Body.String())
+	}
+	if err := json.Unmarshal(retry.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode retry response: %v", err)
+	}
+	if got.Error.Code != "invalid_theme_pack" {
+		t.Fatalf("expected invalid ZIP after released guard, got %+v", got)
+	}
+}
+
+func TestThemeInstallZipRejectsInvalidBodiesBeforeDeviceGate(t *testing.T) {
+	var deviceCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deviceCalls.Add(1)
+		http.Error(w, "unexpected device request", http.StatusInternalServerError)
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		t.Fatal("install should not be called for an invalid ZIP")
+		return themeinstall.Result{}, nil
+	}
+
+	tests := []struct {
+		name       string
+		body       []byte
+		length     int64
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "empty", body: nil, wantStatus: http.StatusBadRequest, wantCode: "empty_theme_pack"},
+		{name: "malformed", body: []byte("not a zip"), wantStatus: http.StatusBadRequest, wantCode: "invalid_theme_pack"},
+		{name: "oversized", body: []byte("small"), length: int64(themepack.MaxZipBytes) + 1, wantStatus: http.StatusRequestEntityTooLarge, wantCode: "theme_pack_too_large"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			beforeDeviceCalls := deviceCalls.Load()
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", bytes.NewReader(test.body))
+			req.Header.Set("Content-Type", "application/zip")
+			if test.length > 0 {
+				req.ContentLength = test.length
+			}
+			server.Handler().ServeHTTP(rec, req)
+			if rec.Code != test.wantStatus {
+				t.Fatalf("expected status %d, got %d body=%s", test.wantStatus, rec.Code, rec.Body.String())
+			}
+			var got errorResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if got.OK || got.Error.Code != test.wantCode {
+				t.Fatalf("unexpected error response: %+v", got)
+			}
+			if gotCalls := deviceCalls.Load(); gotCalls != beforeDeviceCalls {
+				t.Fatalf("invalid ZIP touched device gates: calls=%d", gotCalls-beforeDeviceCalls)
+			}
+		})
+	}
+}
+
+func TestThemeInstallZipHonorsDisabledGate(t *testing.T) {
+	t.Setenv(themeInstallDisableEnv, "1")
+	var deviceCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deviceCalls.Add(1)
+		http.Error(w, "unexpected device request", http.StatusInternalServerError)
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		t.Fatal("install should not be called while theme install is disabled")
+		return themeinstall.Result{}, nil
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true", bytes.NewReader(testThemePackZip(t)))
+	req.Header.Set("Content-Type", "application/zip")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "theme_install_disabled" {
+		t.Fatalf("unexpected disabled response: %+v", got)
+	}
+	if gotCalls := deviceCalls.Load(); gotCalls != 0 {
+		t.Fatalf("disabled ZIP install touched device gates: calls=%d", gotCalls)
+	}
+}
+
+func TestThemeInstallRejectsConcurrentZipBeforeReadingBody(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	installStarted := make(chan struct{})
+	releaseInstall := make(chan struct{})
+	var installCalls atomic.Int32
+	server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		if installCalls.Add(1) == 1 {
+			close(installStarted)
+		}
+		<-releaseInstall
+		return themeinstall.Result{ThemeID: "cozy-meadow", PackID: "cozy-meadow"}, nil
+	}
+
+	first := httptest.NewRecorder()
+	firstReq := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true", bytes.NewReader(testThemePackZip(t)))
+	firstReq.Header.Set("Content-Type", "application/zip")
+	server.Handler().ServeHTTP(first, firstReq)
+	if first.Code != http.StatusAccepted {
+		close(releaseInstall)
+		t.Fatalf("expected first status 202, got %d body=%s", first.Code, first.Body.String())
+	}
+	select {
+	case <-installStarted:
+	case <-time.After(time.Second):
+		close(releaseInstall)
+		t.Fatal("timed out waiting for first install to start")
+	}
+
+	body := &readCountingReader{}
+	second := httptest.NewRecorder()
+	secondReq := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true", body)
+	secondReq.Header.Set("Content-Type", "application/zip")
+	server.Handler().ServeHTTP(second, secondReq)
+	if second.Code != http.StatusConflict {
+		close(releaseInstall)
+		t.Fatalf("expected concurrent status 409, got %d body=%s", second.Code, second.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &got); err != nil {
+		close(releaseInstall)
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Error.Code != "theme_install_in_progress" {
+		close(releaseInstall)
+		t.Fatalf("unexpected concurrent response: %+v", got)
+	}
+	if reads := body.reads.Load(); reads != 0 {
+		close(releaseInstall)
+		t.Fatalf("concurrent ZIP body was read before rejection: reads=%d", reads)
+	}
+	if calls := installCalls.Load(); calls != 1 {
+		close(releaseInstall)
+		t.Fatalf("expected one active install, got %d", calls)
+	}
+	close(releaseInstall)
+	for attempt := 0; attempt < 50; attempt++ {
+		if job, ok := server.latestThemeInstallJob(); ok && job.Phase != "installing" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("active install did not finish after release")
 }
 
 func TestThemeInstallAsyncReportsCustomerProgress(t *testing.T) {
@@ -6370,6 +6866,37 @@ func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
 }
 
+type readCountingReader struct {
+	reads atomic.Int32
+}
+
+func (r *readCountingReader) Read([]byte) (int, error) {
+	r.reads.Add(1)
+	return 0, io.EOF
+}
+
+type readDeadlineRecorder struct {
+	*httptest.ResponseRecorder
+	readDeadlines []time.Time
+}
+
+func (r *readDeadlineRecorder) SetReadDeadline(deadline time.Time) error {
+	r.readDeadlines = append(r.readDeadlines, deadline)
+	return nil
+}
+
+type timeoutReader struct{}
+
+func (timeoutReader) Read([]byte) (int, error) {
+	return 0, timeoutReadError{}
+}
+
+type timeoutReadError struct{}
+
+func (timeoutReadError) Error() string   { return "read timeout" }
+func (timeoutReadError) Timeout() bool   { return true }
+func (timeoutReadError) Temporary() bool { return true }
+
 func newHelloDeviceServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -6447,6 +6974,38 @@ func newThemeInstallReadyDeviceServer(t *testing.T) *httptest.Server {
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
 	}))
+}
+
+func testThemePackZip(t *testing.T) []byte {
+	t.Helper()
+	files := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "manifest.json",
+			data: `{"kind":"vibetv-theme-pack","schemaVersion":1,"id":"cozy-meadow","name":"Cozy Meadow","themeSpec":{"path":"/themes/u/cm.json","file":"theme.json"}}`,
+		},
+		{
+			name: "theme.json",
+			data: `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":"OK","s":1}]}`,
+		},
+	}
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for _, file := range files {
+		entry, err := writer.Create(file.name)
+		if err != nil {
+			t.Fatalf("create ZIP entry %s: %v", file.name, err)
+		}
+		if _, err := io.WriteString(entry, file.data); err != nil {
+			t.Fatalf("write ZIP entry %s: %v", file.name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close theme ZIP: %v", err)
+	}
+	return append([]byte(nil), buffer.Bytes()...)
 }
 
 func hasDiagnosticCheck(checks []diagnosticCheck, name, status string) bool {

@@ -59,6 +59,26 @@ func TestValidateAgainstCapabilitiesRejectsMalformedReferencedGIF(t *testing.T) 
 	}
 }
 
+func TestValidateAgainstCapabilitiesRejectsGIFWithEarlyEOI(t *testing.T) {
+	gif := testGIFWithLiteralCodesAndPixelCount(t, 1, false, 2)
+	pack := testGIFPack(t, gif)
+
+	err := pack.ValidateAgainstCapabilities(testGIFCapabilities(0))
+	if err == nil || !strings.Contains(err.Error(), "decoded pixel count does not match image dimensions") {
+		t.Fatalf("expected early EOI pixel-count error, got %v", err)
+	}
+}
+
+func TestValidateAgainstCapabilitiesRejectsGIFWithTooManyPixels(t *testing.T) {
+	gif := testGIFWithLiteralCodesAndPixelCount(t, 2, false, 1)
+	pack := testGIFPack(t, gif)
+
+	err := pack.ValidateAgainstCapabilities(testGIFCapabilities(0))
+	if err == nil || !strings.Contains(err.Error(), "decoded pixel count exceeds image dimensions") {
+		t.Fatalf("expected excess pixel-count error, got %v", err)
+	}
+}
+
 func testGIFPack(t *testing.T, gif []byte) *Pack {
 	t.Helper()
 	raw := []byte(`{"v":1,"id":"test-gif","rev":1,"fb":"mini","p":[{"t":"g","x":0,"y":0,"w":1,"h":1,"a":"/themes/u/test.gif"}]}`)
@@ -95,6 +115,18 @@ func testGIFCapabilities(maxLZWBits int) protocol.DeviceCapabilities {
 
 func testGIFWithLiteralCodes(t *testing.T, literalCount int, resetBeforeEOI bool) []byte {
 	t.Helper()
+	expectedPixels := literalCount
+	if resetBeforeEOI {
+		expectedPixels++
+	}
+	return testGIFWithLiteralCodesAndPixelCount(t, literalCount, resetBeforeEOI, expectedPixels)
+}
+
+func testGIFWithLiteralCodesAndPixelCount(t *testing.T, literalCount int, resetBeforeEOI bool, expectedPixels int) []byte {
+	t.Helper()
+	if literalCount <= 0 || expectedPixels <= 0 {
+		t.Fatalf("literal and expected pixel counts must be positive: literals=%d expected=%d", literalCount, expectedPixels)
+	}
 	const minimumCodeSize = 8
 	clearCode := 1 << minimumCodeSize
 	codes := make([]int, 0, literalCount+4)
@@ -107,14 +139,15 @@ func testGIFWithLiteralCodes(t *testing.T, literalCount int, resetBeforeEOI bool
 	}
 	codes = append(codes, clearCode+1)
 	compressed := packTestGIFCodes(t, minimumCodeSize, codes)
+	width, height := testGIFDimensions(t, expectedPixels)
 
 	gif := []byte("GIF89a")
 	gif = append(gif,
-		0x01, 0x00, 0x01, 0x00, // logical width and height
+		byte(width), byte(width>>8), byte(height), byte(height>>8), // logical width and height
 		0x80, 0x00, 0x00, // global table present, two entries
 		0x00, 0x00, 0x00, 0xff, 0xff, 0xff,
 		0x21, 0xfe, 0x03, 'L', 'Z', 'W', 0x00, // comment extension
-		0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+		0x2c, 0x00, 0x00, 0x00, 0x00, byte(width), byte(width>>8), byte(height), byte(height>>8),
 		0x80, // local table present, two entries
 		0x00, 0x00, 0x00, 0xff, 0xff, 0xff,
 		minimumCodeSize,
@@ -129,6 +162,21 @@ func testGIFWithLiteralCodes(t *testing.T, literalCount int, resetBeforeEOI bool
 		compressed = compressed[size:]
 	}
 	return append(gif, 0x00, 0x3b)
+}
+
+func testGIFDimensions(t *testing.T, pixels int) (int, int) {
+	t.Helper()
+	width := 1
+	for candidate := 1; candidate <= pixels/candidate; candidate++ {
+		if pixels%candidate == 0 {
+			width = candidate
+		}
+	}
+	height := pixels / width
+	if width > 0xffff || height > 0xffff {
+		t.Fatalf("test GIF dimensions exceed uint16: pixels=%d width=%d height=%d", pixels, width, height)
+	}
+	return width, height
 }
 
 func packTestGIFCodes(t *testing.T, minimumCodeSize int, codes []int) []byte {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +37,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
 )
@@ -79,6 +81,7 @@ const (
 	firmwareUpdateJobTime     = 10 * time.Minute
 	macAppUpdateJobTime       = 8 * time.Minute
 	usageFallbackFetchTime    = 15 * time.Second
+	themeRenderPackDir        = "theme-render-packs"
 	macAppInstallerURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
 	macAppReleaseAPIEnvVar    = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
 	macAppReleaseAPIURL       = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
@@ -88,9 +91,11 @@ const (
 	macAppBuildEnv            = "VIBETV_MAC_APP_BUILD"
 	firmwareManifestEnvVar    = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
 	firmwareReleaseTimeout    = 5 * time.Second
+	themePackUploadReadTime   = 30 * time.Second
 )
 
 var deviceHealthProbeTime = 2 * time.Second
+var themeRenderPackIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{2,63}$`)
 var firmwareHealthVerifyTime = 30 * time.Second
 var diagnosticsDiscoveryTime = 5 * time.Second
 
@@ -168,6 +173,7 @@ type Server struct {
 	pauseDisplayStream     func(bool)
 	wakeDisplayStream      func()
 	firmwareUpdateActive   atomic.Bool
+	firmwareUpdateStartMu  sync.Mutex
 	configMu               sync.Mutex
 	selectionMu            sync.Mutex
 	selectionStateMu       sync.RWMutex
@@ -208,6 +214,7 @@ type Server struct {
 	fetchMacAppRelease     func(context.Context) (githubRelease, error)
 	installJobsMu          sync.Mutex
 	installJobs            map[string]*themeInstallJob
+	themeInstallActive     bool
 	nextInstallJob         uint64
 	updateJobsMu           sync.Mutex
 	updateJobs             map[string]*firmwareUpdateJob
@@ -369,10 +376,12 @@ type themeSpecHealth struct {
 }
 
 type statusResponse struct {
-	OK            bool                   `json:"ok"`
-	Companion     companion              `json:"companion"`
-	Device        deviceInfo             `json:"device"`
-	ProviderSetup codexbar.ProviderSetup `json:"providerSetup"`
+	OK             bool                   `json:"ok"`
+	Companion      companion              `json:"companion"`
+	Device         deviceInfo             `json:"device"`
+	ProviderSetup  codexbar.ProviderSetup `json:"providerSetup"`
+	ThemeInstall   *themeInstallJob       `json:"themeInstall,omitempty"`
+	FirmwareUpdate *firmwareUpdateJob     `json:"firmwareUpdate,omitempty"`
 }
 
 type deviceActionResponse struct {
@@ -392,7 +401,9 @@ type deviceSearchEntry struct {
 
 type themeInstallRequest struct {
 	ThemeID            string `json:"themeId"`
+	ThemeName          string `json:"themeName"`
 	PackURL            string `json:"packUrl"`
+	PackBytes          []byte `json:"-"`
 	CatalogURL         string `json:"catalogUrl"`
 	SkipFirmwareUpdate *bool  `json:"skipFirmwareUpdate"`
 	Async              bool   `json:"async"`
@@ -400,6 +411,8 @@ type themeInstallRequest struct {
 
 type themeInstallJob struct {
 	ID         string               `json:"id"`
+	ThemeID    string               `json:"themeId,omitempty"`
+	ThemeName  string               `json:"themeName,omitempty"`
 	Phase      string               `json:"phase"`
 	Message    string               `json:"message"`
 	Progress   int                  `json:"progress"`
@@ -892,6 +905,7 @@ func (s *Server) registerControlCenterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/control-center/", s.handleControlCenter)
 	mux.HandleFunc("/_next/", s.handleControlCenterAsset)
 	mux.HandleFunc("/images/", s.handleControlCenterAsset)
+	mux.HandleFunc("/theme-packs/render/", s.handleThemeRenderPack)
 	mux.HandleFunc("/theme-packs/", s.handleControlCenterAsset)
 	mux.HandleFunc("/favicon.ico", s.handleControlCenterAsset)
 	mux.HandleFunc("/install-control-center-companion.sh", s.handleControlCenterAsset)
@@ -940,6 +954,25 @@ func (s *Server) handleControlCenterAsset(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.serveControlCenterFile(w, r, assetPath)
+}
+
+func (s *Server) handleThemeRenderPack(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet, http.MethodHead) {
+		return
+	}
+	themeID := themeRenderPackID(r.URL.Path)
+	if themeID != "" {
+		if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil {
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if r.Method == http.MethodGet {
+				_, _ = w.Write(data)
+			}
+			return
+		}
+	}
+	s.handleControlCenterAsset(w, r)
 }
 
 func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, assetPath string) bool {
@@ -1077,11 +1110,21 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		// is cancelled as soon as a later status probe sees the device again.
 		s.startConfiguredDeviceRecovery(cfg)
 	}
+	var firmwareUpdate *firmwareUpdateJob
+	if latest, ok := s.latestFirmwareUpdateJob(); ok {
+		firmwareUpdate = &latest
+	}
+	var themeInstall *themeInstallJob
+	if latest, ok := s.latestThemeInstallJob(); ok {
+		themeInstall = &latest
+	}
 	writeJSON(w, http.StatusOK, statusResponse{
-		OK:            true,
-		Companion:     s.companionInfo(r.Context()),
-		Device:        device,
-		ProviderSetup: s.currentProviderSetup(r.Context(), false),
+		OK:             true,
+		Companion:      s.companionInfo(r.Context()),
+		Device:         device,
+		ProviderSetup:  s.currentProviderSetup(r.Context(), false),
+		ThemeInstall:   themeInstall,
+		FirmwareUpdate: firmwareUpdate,
 	})
 }
 
@@ -2389,6 +2432,18 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, ok := s.activeFirmwareUpdateJob(); ok {
+		writeError(
+			w,
+			http.StatusConflict,
+			"firmware_update_in_progress",
+			"VibeTV update is still running.",
+			"Wait for the update to finish before setting up another VibeTV.",
+		)
+		return
+	}
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
@@ -3134,11 +3189,21 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	var req themeInstallRequest
-	if !decodeJSON(w, r, &req) {
+	if !s.tryStartThemeInstall() {
+		writeError(w, http.StatusConflict, "theme_install_in_progress", "Another theme install is already running.", "Wait for the current theme install to finish, then retry.")
 		return
 	}
-	if strings.TrimSpace(req.ThemeID) == "" && strings.TrimSpace(req.PackURL) == "" {
+	releaseInstall := true
+	defer func() {
+		if releaseInstall {
+			s.finishThemeInstall()
+		}
+	}()
+	req, ok := decodeThemeInstallRequest(w, r)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(req.ThemeID) == "" && strings.TrimSpace(req.PackURL) == "" && req.PackBytes == nil {
 		writeError(w, http.StatusBadRequest, "missing_theme_source", "themeId or packUrl is required.", "Select a theme and retry.")
 		return
 	}
@@ -3170,8 +3235,9 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Async {
-		job := s.createThemeInstallJob()
+		job := s.createThemeInstallJob(req)
 		s.startThemeInstallJob(r.Context(), job.ID, cfg, req)
+		releaseInstall = false
 		writeJSON(w, http.StatusAccepted, themeInstallJobResponse{OK: true, Job: job})
 		return
 	}
@@ -3187,6 +3253,86 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		Result themeinstall.Result `json:"result"`
 		Logs   []string            `json:"logs,omitempty"`
 	}{OK: true, Result: result, Logs: splitInstallLog(installLog.String())})
+}
+
+func decodeThemeInstallRequest(w http.ResponseWriter, r *http.Request) (themeInstallRequest, bool) {
+	var req themeInstallRequest
+	contentType := strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0])
+	if !strings.EqualFold(contentType, "application/zip") {
+		return req, decodeJSON(w, r, &req)
+	}
+
+	async := false
+	if raw := strings.TrimSpace(r.URL.Query().Get("async")); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_theme_install_request", "Theme install request is invalid.", "Try the theme install again.")
+			return themeInstallRequest{}, false
+		}
+		async = parsed
+	}
+	if r.ContentLength > themepack.MaxZipBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "theme_pack_too_large", "Theme file is too large.", "Export a smaller theme, then try again.")
+		return themeInstallRequest{}, false
+	}
+	packBytes, ok := readThemePackUpload(w, r)
+	if !ok {
+		return themeInstallRequest{}, false
+	}
+	if len(packBytes) == 0 {
+		writeError(w, http.StatusBadRequest, "empty_theme_pack", "Theme file is empty.", "Export the theme again, then retry.")
+		return themeInstallRequest{}, false
+	}
+	if len(packBytes) > themepack.MaxZipBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "theme_pack_too_large", "Theme file is too large.", "Export a smaller theme, then try again.")
+		return themeInstallRequest{}, false
+	}
+	if _, err := themepack.LoadZipBytes(packBytes); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_theme_pack", "Theme file is invalid.", "Export the theme again, then retry.")
+		return themeInstallRequest{}, false
+	}
+
+	return themeInstallRequest{
+		ThemeID:   strings.TrimSpace(r.URL.Query().Get("themeId")),
+		ThemeName: strings.TrimSpace(r.URL.Query().Get("themeName")),
+		PackBytes: packBytes,
+		Async:     async,
+	}, true
+}
+
+func readThemePackUpload(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	controller := http.NewResponseController(w)
+	deadlineSet := false
+	if err := controller.SetReadDeadline(time.Now().Add(themePackUploadReadTime)); err != nil {
+		if !errors.Is(err, http.ErrNotSupported) {
+			writeError(w, http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the Mac App, then retry.")
+			return nil, false
+		}
+	} else {
+		deadlineSet = true
+	}
+
+	packBytes, readErr := io.ReadAll(io.LimitReader(r.Body, int64(themepack.MaxZipBytes)+1))
+	var resetErr error
+	if deadlineSet {
+		resetErr = controller.SetReadDeadline(time.Time{})
+	}
+	if readErr != nil {
+		var timeoutErr net.Error
+		if errors.Is(readErr, os.ErrDeadlineExceeded) || (errors.As(readErr, &timeoutErr) && timeoutErr.Timeout()) {
+			w.Header().Set("Connection", "close")
+			writeError(w, http.StatusRequestTimeout, "theme_pack_upload_timeout", "Theme upload took too long.", "Export the theme again, then retry.")
+			return nil, false
+		}
+		writeError(w, http.StatusBadRequest, "invalid_theme_pack", "Theme file could not be read.", "Export the theme again, then retry.")
+		return nil, false
+	}
+	if resetErr != nil {
+		w.Header().Set("Connection", "close")
+		writeError(w, http.StatusInternalServerError, "theme_pack_upload_unavailable", "Theme upload is unavailable.", "Restart the Mac App, then retry.")
+		return nil, false
+	}
+	return packBytes, true
 }
 
 func (s *Server) handleThemeInstallStatus(w http.ResponseWriter, r *http.Request) {
@@ -3328,6 +3474,8 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
 	cfg, hello, ok := s.requireDevice(w, r)
 	if !ok {
 		return
@@ -3481,6 +3629,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	result, err := s.installTheme(ctx, themeinstall.Options{
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
+		PackBytes:          req.PackBytes,
 		CatalogURL:         strings.TrimSpace(req.CatalogURL),
 		Target:             targetWithToken(cfg.DeviceTarget, cfg.DeviceToken),
 		SkipFirmwareUpdate: skipFirmwareUpdate,
@@ -3504,6 +3653,13 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	})
 	if err != nil {
 		return themeinstall.Result{}, err
+	}
+	if len(req.PackBytes) > 0 {
+		if err := s.persistThemeRenderPack(req.PackBytes); err != nil {
+			fmt.Fprintf(out, "Preview cache: unavailable (%v)\n", err)
+		} else {
+			fmt.Fprintln(out, "Preview cache: ready")
+		}
 	}
 	fmt.Fprintln(out, "Refreshing display stream...")
 	resumeStream()
@@ -3564,7 +3720,110 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	return result, nil
 }
 
-func (s *Server) createThemeInstallJob() themeInstallJob {
+type themeRenderPackAsset struct {
+	ContentType string `json:"contentType"`
+	Data        string `json:"data"`
+	Encoding    string `json:"encoding"`
+}
+
+type themeRenderPack struct {
+	OK       bool                            `json:"ok"`
+	ThemeID  string                          `json:"themeId"`
+	Name     string                          `json:"name"`
+	Spec     json.RawMessage                 `json:"spec"`
+	SpecPath string                          `json:"specPath"`
+	Assets   map[string]themeRenderPackAsset `json:"assets"`
+}
+
+func (s *Server) persistThemeRenderPack(packBytes []byte) error {
+	pack, err := themepack.LoadZipBytes(packBytes)
+	if err != nil {
+		return err
+	}
+	themeID := strings.TrimSpace(pack.ThemeSpec.ThemeID)
+	if !themeRenderPackIDPattern.MatchString(themeID) {
+		return fmt.Errorf("invalid render pack theme id %q", themeID)
+	}
+	assets := make(map[string]themeRenderPackAsset, len(pack.Assets))
+	for _, asset := range pack.Assets {
+		contentType := strings.TrimSpace(asset.Entry.ContentType)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		textAsset := strings.HasPrefix(strings.ToLower(contentType), "text/") ||
+			strings.EqualFold(path.Ext(asset.Entry.File), ".cbi") ||
+			strings.EqualFold(path.Ext(asset.Entry.File), ".cba")
+		encoding := "base64"
+		data := base64.StdEncoding.EncodeToString(asset.Data)
+		if textAsset {
+			encoding = "text"
+			data = string(asset.Data)
+		}
+		assets[asset.Entry.Path] = themeRenderPackAsset{
+			ContentType: contentType,
+			Data:        data,
+			Encoding:    encoding,
+		}
+	}
+	payload, err := json.Marshal(themeRenderPack{
+		OK:       true,
+		ThemeID:  themeID,
+		Name:     strings.TrimSpace(pack.Manifest.Name),
+		Spec:     json.RawMessage(pack.ThemeSpecRaw),
+		SpecPath: strings.TrimSpace(pack.ThemeSpecFile.Entry.Path),
+		Assets:   assets,
+	})
+	if err != nil {
+		return err
+	}
+	destination := s.themeRenderPackPath(themeID)
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".theme-render-pack-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(payload); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, destination)
+}
+
+func (s *Server) themeRenderPackPath(themeID string) string {
+	return filepath.Join(
+		s.home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
+		themeRenderPackDir,
+		themeID+".json",
+	)
+}
+
+func themeRenderPackID(requestPath string) string {
+	const prefix = "/theme-packs/render/"
+	if !strings.HasPrefix(requestPath, prefix) || !strings.HasSuffix(requestPath, ".json") {
+		return ""
+	}
+	themeID := strings.TrimSuffix(strings.TrimPrefix(requestPath, prefix), ".json")
+	if strings.Contains(themeID, "/") || !themeRenderPackIDPattern.MatchString(themeID) {
+		return ""
+	}
+	return themeID
+}
+
+func (s *Server) createThemeInstallJob(req themeInstallRequest) themeInstallJob {
 	s.installJobsMu.Lock()
 	defer s.installJobsMu.Unlock()
 	if s.installJobs == nil {
@@ -3574,6 +3833,8 @@ func (s *Server) createThemeInstallJob() themeInstallJob {
 	id := fmt.Sprintf("theme-install-%d-%d", time.Now().UnixNano(), s.nextInstallJob)
 	job := &themeInstallJob{
 		ID:        id,
+		ThemeID:   strings.TrimSpace(req.ThemeID),
+		ThemeName: strings.TrimSpace(req.ThemeName),
 		Phase:     "installing",
 		Message:   "Preparing theme install.",
 		Progress:  5,
@@ -3584,8 +3845,25 @@ func (s *Server) createThemeInstallJob() themeInstallJob {
 	return cloneThemeInstallJob(job)
 }
 
+func (s *Server) tryStartThemeInstall() bool {
+	s.installJobsMu.Lock()
+	defer s.installJobsMu.Unlock()
+	if s.themeInstallActive {
+		return false
+	}
+	s.themeInstallActive = true
+	return true
+}
+
+func (s *Server) finishThemeInstall() {
+	s.installJobsMu.Lock()
+	s.themeInstallActive = false
+	s.installJobsMu.Unlock()
+}
+
 func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req themeInstallRequest) {
 	go func() {
+		defer s.finishThemeInstall()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		writer := &themeInstallProgressWriter{server: s, jobID: jobID}
@@ -3635,6 +3913,22 @@ func (s *Server) themeInstallJobSnapshot(jobID string) (themeInstallJob, bool) {
 		return themeInstallJob{}, false
 	}
 	return cloneThemeInstallJob(job), true
+}
+
+func (s *Server) latestThemeInstallJob() (themeInstallJob, bool) {
+	s.installJobsMu.Lock()
+	defer s.installJobsMu.Unlock()
+	var latest *themeInstallJob
+	for _, job := range s.installJobs {
+		if job == nil || (latest != nil && !job.StartedAt.After(latest.StartedAt)) {
+			continue
+		}
+		latest = job
+	}
+	if latest == nil {
+		return themeInstallJob{}, false
+	}
+	return cloneThemeInstallJob(latest), true
 }
 
 func cloneThemeInstallJob(job *themeInstallJob) themeInstallJob {

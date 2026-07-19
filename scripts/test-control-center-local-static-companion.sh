@@ -53,6 +53,19 @@ print(match.group(1))
 PY
 }
 
+expect_http_status() {
+  local expected="$1"
+  local method="$2"
+  local url="$3"
+  local actual
+  actual="$(curl -sS -o /dev/null -w '%{http_code}' -X "$method" "$url")"
+  [[ "$actual" == "$expected" ]] \
+    || {
+      printf 'error: expected %s %s to return %s, got %s\n' "$method" "$url" "$expected" "$actual" >&2
+      exit 1
+    }
+}
+
 main() {
   local companion_copy static_dir port base_url index_file asset_path
 
@@ -89,6 +102,14 @@ main() {
   asset_path="$(extract_next_asset_path "$index_file")"
   curl -fsS "${base_url}${asset_path}" >/dev/null
   curl -fsS "${base_url}/theme-packs/vibetv-theme-packs.json" >/dev/null
+  curl -fsS "${base_url}/theme-packs/render/mini-classic.json" \
+    | grep -F '"spec"' >/dev/null \
+    || {
+      printf 'error: local Theme Studio render pack is unavailable\n' >&2
+      exit 1
+    }
+  expect_http_status 404 POST "${base_url}/api/ai-theme"
+  expect_http_status 404 POST "${base_url}/api/custom-theme-pack"
 
   printf 'local static Control Center Companion test passed\n'
 }

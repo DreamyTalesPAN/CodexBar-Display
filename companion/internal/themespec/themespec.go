@@ -119,6 +119,17 @@ func Validate(spec Spec) error {
 }
 
 func ValidateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.DeviceCapabilities) error {
+	return validateAgainstCapabilities(spec, raw, caps, caps.MaxThemeSpecBytes)
+}
+
+// ValidateStoredAgainstCapabilities validates a ThemeSpec that will be
+// uploaded as a stored theme. Newer firmware advertises a separate, larger
+// stored-spec limit; older firmware falls back to the inline-spec limit.
+func ValidateStoredAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.DeviceCapabilities) error {
+	return validateAgainstCapabilities(spec, raw, caps, caps.StoredThemeSpecBytesLimit())
+}
+
+func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.DeviceCapabilities, maxSpecBytes int) error {
 	spec = normalizeSpec(spec)
 	if !caps.Known {
 		return errUnknownCapability
@@ -126,8 +137,8 @@ func ValidateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 	if !caps.SupportsThemeSpecV1 {
 		return errors.New("device does not advertise theme-spec-v1 support")
 	}
-	if caps.MaxThemeSpecBytes > 0 && len(raw) > caps.MaxThemeSpecBytes {
-		return fmt.Errorf("theme spec payload exceeds device limit: size=%d limit=%d", len(raw), caps.MaxThemeSpecBytes)
+	if maxSpecBytes > 0 && len(raw) > maxSpecBytes {
+		return fmt.Errorf("theme spec payload exceeds device limit: size=%d limit=%d", len(raw), maxSpecBytes)
 	}
 	if caps.MaxThemePrimitives > 0 && len(spec.Primitives) > caps.MaxThemePrimitives {
 		return fmt.Errorf(

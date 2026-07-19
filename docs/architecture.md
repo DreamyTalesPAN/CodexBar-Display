@@ -96,8 +96,10 @@ daemon. API language belongs in developer and operator docs.
 
 1. Control Center reads the public theme catalog from Shopify.
 2. Each theme maps to a VibeTV theme-pack ID.
-3. The Mac App resolves the theme pack from GitHub catalog artifacts when needed.
-4. The Mac App uploads theme assets to VibeTV over local WiFi.
+3. Published themes use catalog artifacts; Theme Studio sends its generated ZIP
+   directly to the loopback Mac App without a hosted API or temporary URL.
+4. The Mac App validates the pack and device readiness, then uploads the theme
+   assets to VibeTV over local WiFi.
 5. VibeTV activates the stored ThemeSpec and keeps receiving live usage frames.
 
 Theme install and firmware update are separate flows. Theme install must not
@@ -124,4 +126,5 @@ silently flash firmware.
 - Usage collector: `companion/internal/codexbar`
 - Device daemon/frame sending: `companion/internal/daemon`
 - Firmware: `firmware_esp8266`
-- Theme Studio: `tools/theme-studio`
+- Theme Studio UI: `apps/control-center/src/components/theme-studio-screen.tsx`
+- Theme Studio domain and ZIP logic: `apps/control-center/src/lib/theme-studio.ts`

@@ -27,9 +27,13 @@ import (
 const (
 	Kind          = "vibetv-theme-pack"
 	SchemaVersion = 1
+	// MaxZipBytes limits compressed theme-pack ZIP input.
+	MaxZipBytes = 32 << 20
+	// MaxUncompressedZipBytes limits total expanded ZIP content.
+	MaxUncompressedZipBytes = 32 << 20
 
 	maxDevicePathChars = 31
-	maxRemotePackBytes = 32 << 20
+	maxZipEntries      = 256
 )
 
 var packIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{2,63}$`)
@@ -71,7 +75,7 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 	if p == nil {
 		return errors.New("theme pack is nil")
 	}
-	if err := themespec.ValidateAgainstCapabilities(p.ThemeSpec, p.ThemeSpecRaw, caps); err != nil {
+	if err := themespec.ValidateStoredAgainstCapabilities(p.ThemeSpec, p.ThemeSpecRaw, caps); err != nil {
 		return err
 	}
 	gifRefs := referencedGIFAssets(p.ThemeSpec)
@@ -142,12 +146,9 @@ func loadRemoteZip(packURL string) (*Pack, error) {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return nil, fmt.Errorf("download theme pack zip: status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxRemotePackBytes+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxZipBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read theme pack zip: %w", err)
-	}
-	if len(data) > maxRemotePackBytes {
-		return nil, fmt.Errorf("theme pack zip too large: got>%d limit=%d", maxRemotePackBytes, maxRemotePackBytes)
 	}
 	return loadZipBytes(packURL, data)
 }
@@ -161,7 +162,19 @@ func loadZip(packPath string) (*Pack, error) {
 	return loadZipFiles(reader.File)
 }
 
+// LoadZipBytes validates and loads an in-memory theme-pack ZIP. The same size
+// limit applies to remote and locally uploaded packs.
+func LoadZipBytes(data []byte) (*Pack, error) {
+	return loadZipBytes("memory", data)
+}
+
 func loadZipBytes(source string, data []byte) (*Pack, error) {
+	if len(data) == 0 {
+		return nil, errors.New("theme pack zip is empty")
+	}
+	if len(data) > MaxZipBytes {
+		return nil, fmt.Errorf("theme pack zip too large: got=%d limit=%d", len(data), MaxZipBytes)
+	}
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, fmt.Errorf("open theme pack zip %s: %w", source, err)
@@ -170,6 +183,9 @@ func loadZipBytes(source string, data []byte) (*Pack, error) {
 }
 
 func loadZipFiles(zipFiles []*zip.File) (*Pack, error) {
+	if err := validateZipEntries(zipFiles, MaxUncompressedZipBytes); err != nil {
+		return nil, err
+	}
 	files := make(map[string]*zip.File, len(zipFiles))
 	for _, file := range zipFiles {
 		clean, err := cleanPackFile(file.Name)
@@ -188,8 +204,37 @@ func loadZipFiles(zipFiles []*zip.File) (*Pack, error) {
 			return nil, err
 		}
 		defer rc.Close()
-		return io.ReadAll(rc)
+		data, err := io.ReadAll(io.LimitReader(rc, MaxUncompressedZipBytes+1))
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > MaxUncompressedZipBytes {
+			return nil, fmt.Errorf("theme pack ZIP entry %s is too large", name)
+		}
+		return data, nil
 	})
+}
+
+func validateZipEntries(zipFiles []*zip.File, maxUncompressedBytes int) error {
+	if len(zipFiles) > maxZipEntries {
+		return fmt.Errorf("theme pack ZIP has too many entries: got=%d limit=%d", len(zipFiles), maxZipEntries)
+	}
+	limit := uint64(maxUncompressedBytes)
+	var total uint64
+	for _, file := range zipFiles {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+		size := file.UncompressedSize64
+		if size > limit {
+			return fmt.Errorf("theme pack ZIP entry %s is too large: got=%d limit=%d", file.Name, size, limit)
+		}
+		if total > limit-size {
+			return fmt.Errorf("theme pack ZIP expands beyond limit: got>%d limit=%d", limit, limit)
+		}
+		total += size
+	}
+	return nil
 }
 
 func loadFromReader(readFile func(string) ([]byte, error)) (*Pack, error) {

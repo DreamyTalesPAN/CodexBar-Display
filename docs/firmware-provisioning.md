@@ -127,7 +127,6 @@ If only filesystem needs to be refreshed after the initial factory OTA:
 - `--dry-run` prints uploads and smoke commands without changing the device.
 - `SHA256SUMS` is checked before every `flash`.
 - Use `--skip-health` only while firmware `/health` is still being integrated.
-- Keep `tools/theme-studio/` out of firmware provisioning work.
 
 ## Recovery Limitation
 
