@@ -100,6 +100,8 @@ type InstallableTheme = Pick<ThemeProduct, "packUrl" | "themeId" | "title"> & {
 
 type ThemeInstallJob = {
   id: string;
+  themeId?: string;
+  themeName?: string;
   phase: "installing" | "complete" | "error";
   message?: string;
   progress?: number;
@@ -259,6 +261,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const automaticPairingRepairKey = useRef("");
   const lastCompanionRequestAt = useRef(0);
   const statusPollInFlight = useRef(false);
+  const themeInstallPollJobRef = useRef("");
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
       id: "session-start",
@@ -629,6 +632,112 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
   ]);
 
+  const applyThemeInstallJob = useCallback(
+    (
+      job: ThemeInstallJob,
+      fallback?: { startedAt?: string; themeId?: string; title?: string },
+    ) => {
+      const status = themeInstallStatusFromJob(job, catalog.themes, fallback);
+      setThemeInstallStatus(status);
+      if (job.phase === "installing" && status.themeId) {
+        setSelectedThemeId(status.themeId);
+      }
+      if (job.phase === "complete" && job.result) {
+        setLastInstall(job.result);
+        if (job.result.themeId) {
+          setDevice((current) =>
+            current
+              ? { ...current, activeTheme: job.result?.themeId }
+              : current,
+          );
+        }
+      }
+      return status;
+    },
+    [catalog.themes],
+  );
+
+  const resumeThemeInstallJob = useCallback(
+    async (job: ThemeInstallJob) => {
+      const initialStatus = applyThemeInstallJob(job);
+      if (job.phase !== "installing" || themeInstallPollJobRef.current) {
+        return;
+      }
+
+      themeInstallPollJobRef.current = job.id;
+      setBusyAction("install");
+      try {
+        const finishedJob = await pollThemeInstallJob({
+          applyInstallJob: (nextJob) => applyThemeInstallJob(nextJob),
+          jobId: job.id,
+          runCompanion,
+        });
+        const finishedStatus = applyThemeInstallJob(finishedJob);
+        if (finishedJob.phase === "error") {
+          if (finishedJob.error) {
+            setLastError(finishedJob.error);
+          }
+          addEvent({
+            label: "Theme install needs attention",
+            detail:
+              finishedJob.error?.nextAction ||
+              finishedStatus.message ||
+              "Keep VibeTV powered on and retry the install.",
+            tone: "attention",
+          });
+          return;
+        }
+        setLastError(null);
+        addEvent({
+          label: "Theme installed",
+          detail: finishedJob.result?.name || finishedStatus.title,
+          tone: "ready",
+        });
+      } catch (error) {
+        const normalized = normalizeCaughtError(
+          error,
+          "Theme install needs attention.",
+        );
+        if (isLocalNetworkAccessError(normalized)) {
+          markCompanionAccessBlocked();
+        } else if (isCompanionMissingError(normalized)) {
+          markCompanionUnavailable();
+        }
+        setLastError(normalized);
+        setThemeInstallStatus({
+          ...initialStatus,
+          phase: "error",
+          finishedAt: formatTime(),
+          message: normalized.nextAction,
+          progress: 100,
+          logs: [
+            ...initialStatus.logs,
+            normalized.message,
+            normalized.nextAction,
+          ],
+          error: themeInstallErrorText(normalized),
+        });
+        addEvent({
+          label: "Theme install needs attention",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
+      } finally {
+        if (themeInstallPollJobRef.current === job.id) {
+          themeInstallPollJobRef.current = "";
+        }
+        setBusyAction((current) => (current === "install" ? null : current));
+      }
+    },
+    [
+      addEvent,
+      applyThemeInstallJob,
+      markCompanionAccessBlocked,
+      markCompanionUnavailable,
+      runCompanion,
+    ],
+  );
+
   const verifyLocalControlCenterAvailable = useCallback(async () => {
     const requestUrl = localControlCenterUrl(localControlCenterPath);
     const requestInit: LocalNetworkRequestInit = {
@@ -659,6 +768,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const payload = await runCompanion<{
           companion?: CompanionInfo;
           device?: DeviceInfo;
+          themeInstall?: ThemeInstallJob;
           firmwareUpdate?: FirmwareUpdateJob;
           providerSetup?: ProviderSetupInfo;
         }>("/v1/status", undefined, { preserveLastError: quiet });
@@ -674,6 +784,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
+        if (payload.themeInstall) {
+          applyThemeInstallJob(payload.themeInstall);
+          if (payload.themeInstall.phase === "installing") {
+            if (!hasEnteredControlCenterRef.current) {
+              hasEnteredControlCenterRef.current = true;
+              setHasEnteredControlCenter(true);
+            }
+            setActiveTab("theme-library");
+            void resumeThemeInstallJob(payload.themeInstall);
+          }
+        }
         if (payload.firmwareUpdate) {
           setFirmwareUpdateStatus(
             firmwareUpdateStatusFromJob(payload.firmwareUpdate),
@@ -798,12 +919,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [
       addEvent,
+      applyThemeInstallJob,
       companionStatus,
       loadSettings,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
       mergeDevice,
       runCompanion,
+      resumeThemeInstallJob,
       verifyLocalControlCenterAvailable,
     ],
   );
@@ -818,6 +941,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const payload = await runCompanion<{
         companion?: CompanionInfo;
         device?: DeviceInfo;
+        themeInstall?: ThemeInstallJob;
         firmwareUpdate?: FirmwareUpdateJob;
         providerSetup?: ProviderSetupInfo;
       }>("/v1/status", undefined, { preserveLastError: true });
@@ -830,6 +954,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
+      if (payload.themeInstall) {
+        applyThemeInstallJob(payload.themeInstall);
+        if (payload.themeInstall.phase === "installing") {
+          void resumeThemeInstallJob(payload.themeInstall);
+        }
+      }
       if (payload.firmwareUpdate) {
         setFirmwareUpdateStatus(
           firmwareUpdateStatusFromJob(payload.firmwareUpdate),
@@ -867,9 +997,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       statusPollInFlight.current = false;
     }
   }, [
+    applyThemeInstallJob,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
     mergeDevice,
+    resumeThemeInstallJob,
     runCompanion,
   ]);
 
@@ -1559,6 +1691,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setSelectedThemeId(theme.themeId);
       const startedAt = formatTime();
       const initialLogs = ["Preparing theme install."];
+      let installJobId = "";
       const applyInstallJob = (job: ThemeInstallJob) => {
         const phase =
           job.phase === "complete"
@@ -1606,7 +1739,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (uploadedPack) {
           const body = new ArrayBuffer(uploadedPack.byteLength);
           new Uint8Array(body).set(uploadedPack);
-          requestPath += "?async=true";
+          requestPath += `?${new URLSearchParams({
+            async: "true",
+            themeId: theme.themeId,
+            themeName: theme.title,
+          }).toString()}`;
           requestInit = {
             method: "POST",
             body,
@@ -1617,6 +1754,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             method: "POST",
             body: JSON.stringify({
               themeId: theme.themeId,
+              themeName: theme.title,
               packUrl: localizeCompanionAssetUrl(theme.packUrl),
               skipFirmwareUpdate: true,
               async: true,
@@ -1630,6 +1768,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         let result = payload.result;
         let logs = customerInstallLogs(payload.logs, initialLogs);
         if (payload.job) {
+          installJobId = payload.job.id;
+          themeInstallPollJobRef.current = installJobId;
           applyInstallJob(payload.job);
           const finishedJob = await pollThemeInstallJob({
             applyInstallJob,
@@ -1710,6 +1850,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
         return false;
       } finally {
+        if (themeInstallPollJobRef.current === installJobId) {
+          themeInstallPollJobRef.current = "";
+        }
         setBusyAction(null);
       }
     },
@@ -2800,6 +2943,46 @@ async function pollFirmwareUpdateJob({
     message: "VibeTV update is taking longer than expected.",
     nextAction: "Keep VibeTV powered on, then create a support report.",
   } satisfies ApiError;
+}
+
+function themeInstallStatusFromJob(
+  job: ThemeInstallJob,
+  themes: ThemeProduct[],
+  fallback: { startedAt?: string; themeId?: string; title?: string } = {},
+): ThemeInstallStatus {
+  const phase =
+    job.phase === "complete"
+      ? "complete"
+      : job.phase === "error"
+        ? "error"
+        : "installing";
+  const themeId = job.result?.themeId || job.themeId || fallback.themeId || "";
+  const catalogTitle = themes.find((theme) => theme.themeId === themeId)?.title;
+  const title =
+    job.result?.name ||
+    job.themeName ||
+    fallback.title ||
+    catalogTitle ||
+    themeId ||
+    "Theme";
+  const logs = customerInstallLogs(job.logs);
+  const finished = phase === "complete" || phase === "error";
+  return {
+    phase,
+    themeId,
+    title,
+    startedAt: job.startedAt || fallback.startedAt || formatTime(),
+    finishedAt: finished ? job.finishedAt || formatTime() : undefined,
+    message:
+      job.error?.nextAction ||
+      job.message ||
+      logs[logs.length - 1] ||
+      "Preparing theme install.",
+    progress: clampProgress(job.progress),
+    logs,
+    result: job.result,
+    error: job.error ? themeInstallErrorText(job.error) : undefined,
+  };
 }
 
 function firmwareUpdateStatusFromJob(

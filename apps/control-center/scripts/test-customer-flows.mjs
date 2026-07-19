@@ -429,6 +429,7 @@ async function main() {
     await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
     await testThemeLibraryRendersThemeSpecPreviews(browser, appContext.appUrl);
     await testReloadRestoresRunningFirmwareUpdate(browser, appContext.appUrl);
+    await testReloadRestoresRunningThemeInstall(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
     await testFirmwareAttentionDoesNotOfferSecondFlash(
       browser,
@@ -2980,6 +2981,84 @@ async function testReloadRestoresRunningFirmwareUpdate(browser, appUrl) {
   await page.close();
 }
 
+async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  let installStatusRequests = 0;
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    onRequest: (pathname) => {
+      if (pathname === "/v1/themes/install/status") {
+        installStatusRequests += 1;
+      }
+    },
+    statusThemeInstallJob: {
+      id: "theme-job-from-closed-window",
+      themeId: "synthwave",
+      themeName: "Fixture Synthwave Theme",
+      phase: "installing",
+      message: "Uploading theme files.",
+      progress: 40,
+      startedAt: "2026-07-18T12:00:00.000Z",
+      logs: ["Preparing theme files.", "Uploading theme files."],
+    },
+    installStatusSequence: [
+      {
+        phase: "installing",
+        message: "Uploaded theme file 1.",
+        progress: 55,
+        logs: [
+          "Preparing theme files.",
+          "Uploading theme files.",
+          "Uploaded theme file 1.",
+        ],
+      },
+      {
+        phase: "complete",
+        message: "Theme is active on VibeTV.",
+        progress: 100,
+        logs: [
+          "Preparing theme files.",
+          "Uploading theme files.",
+          "Uploaded theme file 1.",
+          "Theme is active on VibeTV.",
+        ],
+        result: {
+          themeId: "synthwave",
+          packId: "synthwave",
+          name: "Fixture Synthwave Theme",
+          activePath: "/themes/u/synthwave.json",
+          themeRev: 1,
+        },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByText("Uploaded theme file 1.", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page
+      .getByRole("button", { name: /^(Themes|Theme Library)$/ })
+      .getAttribute("aria-current")) === "page",
+    "A reopened app must return to the running theme install",
+  );
+  await page
+    .getByText("Theme is active on VibeTV.", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    installStatusRequests >= 2,
+    `A reopened app must resume polling the existing theme job, got ${installStatusRequests} polls`,
+  );
+  assert(
+    installRequests.length === 0,
+    "Restoring a theme install must not start a second install request",
+  );
+  await page.close();
+}
+
 async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
@@ -4246,7 +4325,17 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
 
   await page.getByText("Advanced", { exact: true }).click();
   await page.getByLabel("Name", { exact: true }).fill("Recovery scratch");
-  await page.waitForTimeout(400);
+  const closeRecovery = await page.evaluate(() => {
+    window.dispatchEvent(new Event("vibetv:native-window-will-close"));
+    const raw = window.localStorage.getItem(
+      "vibetv.controlCenter.themeStudioDraft",
+    );
+    return raw ? JSON.parse(raw) : null;
+  });
+  assert(
+    closeRecovery?.recovery?.document?.packName === "Recovery scratch",
+    "Native window close must synchronously flush the latest Theme Studio draft",
+  );
   await page.getByRole("button", { name: "Library", exact: true }).click();
   await page.getByRole("dialog", { name: "Save your changes?" }).waitFor();
   await page.getByRole("button", { name: "Discard", exact: true }).click();
@@ -5044,6 +5133,7 @@ async function routeCompanionOnline(
     onSettingsResponse = () => {},
     statusDeviceSequence,
     firmwareStatusDeviceSequence,
+    statusThemeInstallJob,
     statusFirmwareUpdateJob,
     statusFailuresAfter = 0,
     providerSetup = readyProviderSetup(),
@@ -5053,7 +5143,8 @@ async function routeCompanionOnline(
 ) {
   let currentDevice = device;
   let currentCompanionVersion = companionVersion;
-  let activeInstallJobId = "";
+  let activeInstallJobId = statusThemeInstallJob?.id || "";
+  let currentStatusThemeInstallJob = statusThemeInstallJob;
   let installStatusIndex = 0;
   let activeUpdateJobId = "";
   let updateStatusIndex = 0;
@@ -5250,6 +5341,14 @@ async function routeCompanionOnline(
         sequence[Math.min(installStatusIndex, sequence.length - 1)] ||
         fallbackStatus;
       installStatusIndex += 1;
+      currentStatusThemeInstallJob = {
+        ...(currentStatusThemeInstallJob || {}),
+        id: activeInstallJobId || "install-job-1",
+        startedAt:
+          currentStatusThemeInstallJob?.startedAt ||
+          "2026-06-23T12:00:00.000Z",
+        ...nextStatus,
+      };
       if (nextStatus.phase === "complete" && nextStatus.result?.themeId) {
         currentDevice = {
           ...currentDevice,
@@ -5261,11 +5360,7 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify({
           ok: true,
-          job: {
-            id: activeInstallJobId || "install-job-1",
-            startedAt: "2026-06-23T12:00:00.000Z",
-            ...nextStatus,
-          },
+          job: currentStatusThemeInstallJob,
         }),
       });
       return;
@@ -5285,19 +5380,24 @@ async function routeCompanionOnline(
       const parsed = parseJSON(postData);
       if (parsed?.async || requestUrl.searchParams.get("async") === "true") {
         activeInstallJobId = "install-job-1";
+        currentStatusThemeInstallJob = {
+          id: activeInstallJobId,
+          themeId:
+            requestUrl.searchParams.get("themeId") || parsed?.themeId || "",
+          themeName:
+            requestUrl.searchParams.get("themeName") || parsed?.themeName || "",
+          phase: "installing",
+          message: "Preparing theme files.",
+          progress: 10,
+          startedAt: "2026-06-23T12:00:00.000Z",
+          logs: ["Preparing theme files."],
+        };
         await route.fulfill({
           status: 202,
           contentType: "application/json",
           body: JSON.stringify({
             ok: true,
-            job: {
-              id: activeInstallJobId,
-              phase: "installing",
-              message: "Preparing theme files.",
-              progress: 10,
-              startedAt: "2026-06-23T12:00:00.000Z",
-              logs: ["Preparing theme files."],
-            },
+            job: currentStatusThemeInstallJob,
           }),
         });
         return;
@@ -5618,6 +5718,9 @@ async function routeCompanionOnline(
           device: responseDevice,
           ...(statusFirmwareUpdateJob
             ? { firmwareUpdate: statusFirmwareUpdateJob }
+            : {}),
+          ...(currentStatusThemeInstallJob
+            ? { themeInstall: currentStatusThemeInstallJob }
             : {}),
         }),
       });

@@ -377,6 +377,7 @@ type statusResponse struct {
 	Companion      companion              `json:"companion"`
 	Device         deviceInfo             `json:"device"`
 	ProviderSetup  codexbar.ProviderSetup `json:"providerSetup"`
+	ThemeInstall   *themeInstallJob       `json:"themeInstall,omitempty"`
 	FirmwareUpdate *firmwareUpdateJob     `json:"firmwareUpdate,omitempty"`
 }
 
@@ -397,6 +398,7 @@ type deviceSearchEntry struct {
 
 type themeInstallRequest struct {
 	ThemeID            string `json:"themeId"`
+	ThemeName          string `json:"themeName"`
 	PackURL            string `json:"packUrl"`
 	PackBytes          []byte `json:"-"`
 	CatalogURL         string `json:"catalogUrl"`
@@ -406,6 +408,8 @@ type themeInstallRequest struct {
 
 type themeInstallJob struct {
 	ID         string               `json:"id"`
+	ThemeID    string               `json:"themeId,omitempty"`
+	ThemeName  string               `json:"themeName,omitempty"`
 	Phase      string               `json:"phase"`
 	Message    string               `json:"message"`
 	Progress   int                  `json:"progress"`
@@ -1087,11 +1091,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if latest, ok := s.latestFirmwareUpdateJob(); ok {
 		firmwareUpdate = &latest
 	}
+	var themeInstall *themeInstallJob
+	if latest, ok := s.latestThemeInstallJob(); ok {
+		themeInstall = &latest
+	}
 	writeJSON(w, http.StatusOK, statusResponse{
 		OK:             true,
 		Companion:      s.companionInfo(r.Context()),
 		Device:         device,
 		ProviderSetup:  s.currentProviderSetup(r.Context(), false),
+		ThemeInstall:   themeInstall,
 		FirmwareUpdate: firmwareUpdate,
 	})
 }
@@ -3203,7 +3212,7 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Async {
-		job := s.createThemeInstallJob()
+		job := s.createThemeInstallJob(req)
 		s.startThemeInstallJob(r.Context(), job.ID, cfg, req)
 		releaseInstall = false
 		writeJSON(w, http.StatusAccepted, themeInstallJobResponse{OK: true, Job: job})
@@ -3262,6 +3271,7 @@ func decodeThemeInstallRequest(w http.ResponseWriter, r *http.Request) (themeIns
 
 	return themeInstallRequest{
 		ThemeID:   strings.TrimSpace(r.URL.Query().Get("themeId")),
+		ThemeName: strings.TrimSpace(r.URL.Query().Get("themeName")),
 		PackBytes: packBytes,
 		Async:     async,
 	}, true
@@ -3680,7 +3690,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	return result, nil
 }
 
-func (s *Server) createThemeInstallJob() themeInstallJob {
+func (s *Server) createThemeInstallJob(req themeInstallRequest) themeInstallJob {
 	s.installJobsMu.Lock()
 	defer s.installJobsMu.Unlock()
 	if s.installJobs == nil {
@@ -3690,6 +3700,8 @@ func (s *Server) createThemeInstallJob() themeInstallJob {
 	id := fmt.Sprintf("theme-install-%d-%d", time.Now().UnixNano(), s.nextInstallJob)
 	job := &themeInstallJob{
 		ID:        id,
+		ThemeID:   strings.TrimSpace(req.ThemeID),
+		ThemeName: strings.TrimSpace(req.ThemeName),
 		Phase:     "installing",
 		Message:   "Preparing theme install.",
 		Progress:  5,
@@ -3768,6 +3780,22 @@ func (s *Server) themeInstallJobSnapshot(jobID string) (themeInstallJob, bool) {
 		return themeInstallJob{}, false
 	}
 	return cloneThemeInstallJob(job), true
+}
+
+func (s *Server) latestThemeInstallJob() (themeInstallJob, bool) {
+	s.installJobsMu.Lock()
+	defer s.installJobsMu.Unlock()
+	var latest *themeInstallJob
+	for _, job := range s.installJobs {
+		if job == nil || (latest != nil && !job.StartedAt.After(latest.StartedAt)) {
+			continue
+		}
+		latest = job
+	}
+	if latest == nil {
+		return themeInstallJob{}, false
+	}
+	return cloneThemeInstallJob(latest), true
 }
 
 func cloneThemeInstallJob(job *themeInstallJob) themeInstallJob {

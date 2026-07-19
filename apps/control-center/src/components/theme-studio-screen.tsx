@@ -102,6 +102,7 @@ const COLOR_FALLBACK = "#000000";
 const DEFAULT_GIF_SIZE = 80;
 const MAX_TEXT_FONT_SIZE = 30;
 const RETIRED_AI_THEME_STORAGE_PREFIX = "vibetv.controlCenter.aiTheme";
+const NATIVE_WINDOW_WILL_CLOSE_EVENT = "vibetv:native-window-will-close";
 
 export type ThemeStudioEditorSource = "blank" | "custom" | "published";
 
@@ -159,6 +160,10 @@ export function ThemeStudioScreen({
   const gifInputRef = useRef<HTMLInputElement>(null);
   const libraryButtonRef = useRef<HTMLDivElement>(null);
   const recoveryWrittenRef = useRef(Boolean(initialTheme?.recovered));
+  const recoverySnapshotRef = useRef<{
+    dirty: boolean;
+    document: ThemeStudioDocument;
+  } | null>(null);
   const spriteInputRef = useRef<HTMLInputElement>(null);
   const libraryIdRef = useRef(initialTheme?.libraryId);
   const sourceRef = useRef<ThemeStudioEditorSource>(
@@ -179,6 +184,10 @@ export function ThemeStudioScreen({
     Boolean(initialTheme?.recovered),
   );
   const dirty = recoveryDirty || isThemeStudioDirty(editorState);
+  recoverySnapshotRef.current = {
+    dirty,
+    document: editorState.present,
+  };
   const [selectedIndices, setSelectedIndices] = useState<number[]>([0]);
   const [jsonText, setJsonText] = useState(() =>
     prettyJson(createStarterThemeSpec()),
@@ -336,6 +345,30 @@ export function ThemeStudioScreen({
     },
     [updateDocument],
   );
+
+  const persistThemeStudioRecovery = useCallback(() => {
+    const snapshot = recoverySnapshotRef.current;
+    if (!snapshot?.dirty) {
+      return true;
+    }
+    const result = writeThemeStudioRecovery({
+      document: snapshot.document,
+      libraryId: libraryIdRef.current,
+      originThemeId:
+        sourceRef.current === "published" ? libraryIdRef.current : undefined,
+      source: sourceRef.current,
+      updatedAt: new Date().toISOString(),
+    });
+    if (!result.ok) {
+      setLibraryStatus({
+        tone: "attention",
+        message: result.error.message,
+      });
+      return false;
+    }
+    recoveryWrittenRef.current = true;
+    return true;
+  }, []);
 
   async function saveThemeToLibrary(): Promise<boolean> {
     if (!onSaveToLibrary) {
@@ -811,12 +844,25 @@ export function ThemeStudioScreen({
       return;
     }
     function handleBeforeUnload(event: BeforeUnloadEvent) {
+      persistThemeStudioRecovery();
       event.preventDefault();
       event.returnValue = "";
     }
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [dirty]);
+  }, [dirty, persistThemeStudioRecovery]);
+
+  useEffect(() => {
+    window.addEventListener(
+      NATIVE_WINDOW_WILL_CLOSE_EVENT,
+      persistThemeStudioRecovery,
+    );
+    return () =>
+      window.removeEventListener(
+        NATIVE_WINDOW_WILL_CLOSE_EVENT,
+        persistThemeStudioRecovery,
+      );
+  }, [persistThemeStudioRecovery]);
 
   useEffect(() => {
     if (!dirty) {

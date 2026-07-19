@@ -972,6 +972,12 @@ PY
     || die "native app shell must observe window closure"
   grep -qF "func windowWillClose" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must tear down closed Control Center windows"
+  grep -qF "func windowShouldClose" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native app shell must prepare browser state before closing"
+  grep -qF "vibetv:native-window-will-close" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native app shell must flush Theme Studio recovery before releasing the WebView"
+  grep -qF "allowPreparedWindowClose" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native app shell must close only after browser-state preparation completes"
   grep -qF "webView = nil" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must release the WebView when its window closes"
   grep -qF "verify_companion_version" "${ROOT}/scripts/build-macos-control-center-app.sh" \

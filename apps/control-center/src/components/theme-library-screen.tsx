@@ -808,9 +808,12 @@ function ThemeListItem({
   const isCustom = item.kind === "custom";
   const installed =
     lastInstall?.themeId === item.themeId || device?.activeTheme === item.themeId;
-  const installInFlight = busyAction === "install";
+  const installInFlight =
+    busyAction === "install" || installStatus?.phase === "installing";
   const preparingInstall = preparingInstallThemeId === item.themeId;
-  const actionInFlight = Boolean(busyAction || preparingInstallThemeId);
+  const actionInFlight = Boolean(
+    busyAction || preparingInstallThemeId || installInFlight,
+  );
   const visibleInstallStatus = Boolean(
     installStatus?.themeId === item.themeId,
   );

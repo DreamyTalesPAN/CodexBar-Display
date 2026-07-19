@@ -105,6 +105,51 @@ func TestStatusIncludesLatestFirmwareUpdateJob(t *testing.T) {
 	}
 }
 
+func TestStatusIncludesLatestThemeInstallJob(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	startedAt := time.Now().UTC().Add(-time.Minute)
+	server.installJobs["finished-theme"] = &themeInstallJob{
+		ID:        "finished-theme",
+		ThemeID:   "mini",
+		ThemeName: "Mini",
+		Phase:     "complete",
+		Progress:  100,
+		StartedAt: startedAt,
+	}
+	server.installJobs["active-theme"] = &themeInstallJob{
+		ID:        "active-theme",
+		ThemeID:   "clippy",
+		ThemeName: "Clippy",
+		Phase:     "installing",
+		Message:   "Uploading theme files.",
+		Progress:  40,
+		StartedAt: startedAt.Add(30 * time.Second),
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(
+		rec,
+		httptest.NewRequest(http.MethodGet, "/v1/status", nil),
+	)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ThemeInstall == nil || got.ThemeInstall.ID != "active-theme" {
+		t.Fatalf("expected latest theme install in status, got %+v", got.ThemeInstall)
+	}
+	if got.ThemeInstall.ThemeID != "clippy" || got.ThemeInstall.ThemeName != "Clippy" {
+		t.Fatalf("expected resumable theme identity, got %+v", got.ThemeInstall)
+	}
+	if got.ThemeInstall.Phase != "installing" || got.ThemeInstall.Progress != 40 {
+		t.Fatalf("unexpected theme install snapshot: %+v", got.ThemeInstall)
+	}
+}
+
 func TestRuntimeHealthDoesNotProbeDeviceOrRelease(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("runtime health must not contact VibeTV, got %s", r.URL.Path)
@@ -5512,7 +5557,7 @@ func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true&themeId=cozy-meadow", bytes.NewReader(zipBytes))
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true&themeId=cozy-meadow&themeName=Cozy%20Meadow", bytes.NewReader(zipBytes))
 	req.Header.Set("Content-Type", "application/zip")
 	server.Handler().ServeHTTP(rec, req)
 
@@ -5525,6 +5570,9 @@ func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	}
 	if started.Job.ID == "" {
 		t.Fatalf("expected async install job, got %+v", started.Job)
+	}
+	if started.Job.ThemeID != "cozy-meadow" || started.Job.ThemeName != "Cozy Meadow" {
+		t.Fatalf("expected resumable theme identity, got %+v", started.Job)
 	}
 
 	select {

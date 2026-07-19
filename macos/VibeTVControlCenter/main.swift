@@ -892,6 +892,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var reloadAttempts = 0
     private var scheduledReload: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
+    private var closePreparationInFlight = false
+    private var allowPreparedWindowClose = false
+    private var scheduledCloseFallback: DispatchWorkItem?
     private var installationReady = false
     private var installationStatus: InstallationStatus?
     private var codexBarRepairRequired = false
@@ -1565,6 +1568,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         self.window = window
         self.webView = webView
+        closePreparationInFlight = false
+        allowPreparedWindowClose = false
+        scheduledCloseFallback?.cancel()
+        scheduledCloseFallback = nil
         // The local server can keep the same URL across app updates. Always
         // fetch the freshly bundled UI instead of reviving an older cached
         // Control Center whose device-selection logic may be stale.
@@ -1696,6 +1703,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         scheduledReload?.cancel()
         scheduledReload = nil
+        closePreparationInFlight = false
+        allowPreparedWindowClose = false
+        scheduledCloseFallback?.cancel()
+        scheduledCloseFallback = nil
         activeNavigation = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
@@ -1703,6 +1714,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         closingWindow.contentView = nil
         webView = nil
         window = nil
+    }
+
+    func windowShouldClose(_ closingWindow: NSWindow) -> Bool {
+        guard closingWindow === window, let webView else {
+            return true
+        }
+        if allowPreparedWindowClose {
+            allowPreparedWindowClose = false
+            return true
+        }
+        if closePreparationInFlight {
+            return false
+        }
+
+        closePreparationInFlight = true
+        let fallback = DispatchWorkItem { [weak self, weak closingWindow] in
+            guard let self, let closingWindow else {
+                return
+            }
+            NSLog("VibeTV Control Center timed out flushing browser state before closing")
+            self.finishPreparedWindowClose(closingWindow)
+        }
+        scheduledCloseFallback = fallback
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: fallback)
+        let script = "window.dispatchEvent(new Event('vibetv:native-window-will-close')); true"
+        webView.evaluateJavaScript(script) { [weak self, weak closingWindow] _, error in
+            guard let self, let closingWindow, closingWindow === self.window else {
+                return
+            }
+            self.scheduledCloseFallback?.cancel()
+            self.scheduledCloseFallback = nil
+            if let error {
+                NSLog("VibeTV Control Center could not flush browser state before closing: \(error.localizedDescription)")
+            }
+            self.finishPreparedWindowClose(closingWindow)
+        }
+        return false
+    }
+
+    private func finishPreparedWindowClose(_ closingWindow: NSWindow) {
+        guard closingWindow === window, closePreparationInFlight else {
+            return
+        }
+        scheduledCloseFallback?.cancel()
+        scheduledCloseFallback = nil
+        closePreparationInFlight = false
+        allowPreparedWindowClose = true
+        closingWindow.performClose(nil)
     }
 
     private func loadControlCenter(
