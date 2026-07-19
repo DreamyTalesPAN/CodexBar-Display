@@ -2460,6 +2460,43 @@ func TestCustomThemeRenderPackPersistsAcrossCompanionRestart(t *testing.T) {
 	}
 }
 
+func TestCustomThemeRenderPackPersistsWhenDisplayRefreshFails(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.home = home
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{
+			ThemeID:    "cozy-meadow",
+			ActivePath: "/themes/u/cm.json",
+		}, nil
+	}
+	server.refreshStream = func(context.Context, string) error {
+		return errors.New("display stream unavailable")
+	}
+
+	_, err := server.runThemeInstall(
+		context.Background(),
+		runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"},
+		themeInstallRequest{ThemeID: "cozy-meadow", PackBytes: testThemePackZip(t)},
+		io.Discard,
+	)
+	if err == nil {
+		t.Fatal("expected display stream refresh to fail after theme activation")
+	}
+
+	restarted := newTestServer(t, runtimeconfig.Config{})
+	restarted.home = home
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/theme-packs/render/cozy-meadow.json", nil)
+	restarted.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected preview cache after partial install failure, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestDMGControlCenterRetiresExternalBrowserUI(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.installationMode = "dmg"

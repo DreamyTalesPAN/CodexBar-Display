@@ -3654,6 +3654,13 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	if err != nil {
 		return themeinstall.Result{}, err
 	}
+	if len(req.PackBytes) > 0 {
+		if err := s.persistThemeRenderPack(req.PackBytes); err != nil {
+			fmt.Fprintf(out, "Preview cache: unavailable (%v)\n", err)
+		} else {
+			fmt.Fprintln(out, "Preview cache: ready")
+		}
+	}
 	fmt.Fprintln(out, "Refreshing display stream...")
 	resumeStream()
 	streamStartedAt := time.Now().UTC()
@@ -3710,13 +3717,6 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		}
 	}
 	fmt.Fprintln(out, "Display stream: refreshed and rendered")
-	if len(req.PackBytes) > 0 {
-		if err := s.persistThemeRenderPack(req.PackBytes); err != nil {
-			fmt.Fprintf(out, "Preview cache: unavailable (%v)\n", err)
-		} else {
-			fmt.Fprintln(out, "Preview cache: ready")
-		}
-	}
 	return result, nil
 }
 
