@@ -12,6 +12,7 @@ import {
   needsLoopbackTargetAddressSpace,
   themeRenderPackUrl,
 } from "./control-center-runtime";
+import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
 
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
@@ -29,11 +30,13 @@ export type ThemeRenderPack = {
   themeId?: string;
   name?: string;
   spec?: ThemeSpec;
+  specPath?: string;
   assets?: Record<string, ThemePackAsset>;
 };
 
 type ThemePackState = {
   themeId: string;
+  themeSpecPath: string;
   pack: ThemeRenderPack | null;
   status: "ready" | "error";
 };
@@ -173,6 +176,7 @@ type SpriteRect = {
 
 export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   const themeId = activeThemeId(device);
+  const themeSpecPath = device?.display?.themeSpec?.path || "";
   const deviceConnected = Boolean(device?.connected);
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
@@ -185,16 +189,34 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
       )
     : null;
   const [packState, setPackState] = useState<ThemePackState | null>(null);
-  const pack = packState?.themeId === themeId ? packState.pack : null;
+  const pack =
+    packState?.themeId === themeId &&
+    packState.themeSpecPath === themeSpecPath
+      ? packState.pack
+      : null;
   const packStatus: "idle" | "loading" | "ready" | "error" = !themeId
     ? "idle"
-    : packState?.themeId === themeId
+    : packState?.themeId === themeId &&
+        packState.themeSpecPath === themeSpecPath
       ? packState.status
       : "loading";
 
   useEffect(() => {
     if (!themeId) {
       return;
+    }
+
+    const localPack = loadLocalThemeRenderPack(themeId, themeSpecPath);
+    if (localPack) {
+      const timer = window.setTimeout(() => {
+        setPackState({
+          themeId,
+          themeSpecPath,
+          pack: localPack,
+          status: "ready",
+        });
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
 
     const controller = new AbortController();
@@ -208,21 +230,32 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
         return response.json() as Promise<ThemeRenderPack>;
       })
       .then((payload) => {
+        const receivedSpecPath = (payload?.specPath || "").trim();
+        const exactThemeRevision =
+          !themeSpecPath ||
+          !receivedSpecPath ||
+          receivedSpecPath === themeSpecPath;
         setPackState({
           themeId,
-          pack: payload,
-          status: payload?.spec ? "ready" : "error",
+          themeSpecPath,
+          pack: exactThemeRevision ? payload : null,
+          status: payload?.spec && exactThemeRevision ? "ready" : "error",
         });
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
         }
-        setPackState({ themeId, pack: null, status: "error" });
+        setPackState({
+          themeId,
+          themeSpecPath,
+          pack: null,
+          status: "error",
+        });
       });
 
     return () => controller.abort();
-  }, [themeId]);
+  }, [themeId, themeSpecPath]);
 
   useEffect(() => {
     if (!deviceConnected) {

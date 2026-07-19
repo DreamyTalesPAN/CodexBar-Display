@@ -2429,6 +2429,37 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 	}
 }
 
+func TestCustomThemeRenderPackPersistsAcrossCompanionRestart(t *testing.T) {
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.home = home
+	if err := server.persistThemeRenderPack(testThemePackZip(t)); err != nil {
+		t.Fatalf("persist custom theme render pack: %v", err)
+	}
+
+	restarted := newTestServer(t, runtimeconfig.Config{})
+	restarted.home = home
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/theme-packs/render/cozy-meadow.json", nil)
+	restarted.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected persisted render pack status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("expected persisted render pack to disable caching, got %q", got)
+	}
+	var got themeRenderPack
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode persisted render pack: %v", err)
+	}
+	if !got.OK || got.ThemeID != "cozy-meadow" || got.SpecPath != "/themes/u/cm.json" {
+		t.Fatalf("unexpected persisted render pack: %+v", got)
+	}
+	if !strings.Contains(string(got.Spec), `"id":"cozy-meadow"`) {
+		t.Fatalf("expected persisted custom spec, got %s", string(got.Spec))
+	}
+}
+
 func TestDMGControlCenterRetiresExternalBrowserUI(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.installationMode = "dmg"
@@ -5830,6 +5861,13 @@ func TestThemeInstallRejectsConcurrentZipBeforeReadingBody(t *testing.T) {
 		t.Fatalf("expected one active install, got %d", calls)
 	}
 	close(releaseInstall)
+	for attempt := 0; attempt < 50; attempt++ {
+		if job, ok := server.latestThemeInstallJob(); ok && job.Phase != "installing" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("active install did not finish after release")
 }
 
 func TestThemeInstallAsyncReportsCustomerProgress(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -80,6 +81,7 @@ const (
 	firmwareUpdateJobTime     = 10 * time.Minute
 	macAppUpdateJobTime       = 8 * time.Minute
 	usageFallbackFetchTime    = 15 * time.Second
+	themeRenderPackDir        = "theme-render-packs"
 	macAppInstallerURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
 	macAppReleaseAPIEnvVar    = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
 	macAppReleaseAPIURL       = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
@@ -93,6 +95,7 @@ const (
 )
 
 var deviceHealthProbeTime = 2 * time.Second
+var themeRenderPackIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{2,63}$`)
 var firmwareHealthVerifyTime = 30 * time.Second
 var diagnosticsDiscoveryTime = 5 * time.Second
 
@@ -902,6 +905,7 @@ func (s *Server) registerControlCenterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/control-center/", s.handleControlCenter)
 	mux.HandleFunc("/_next/", s.handleControlCenterAsset)
 	mux.HandleFunc("/images/", s.handleControlCenterAsset)
+	mux.HandleFunc("/theme-packs/render/", s.handleThemeRenderPack)
 	mux.HandleFunc("/theme-packs/", s.handleControlCenterAsset)
 	mux.HandleFunc("/favicon.ico", s.handleControlCenterAsset)
 	mux.HandleFunc("/install-control-center-companion.sh", s.handleControlCenterAsset)
@@ -950,6 +954,25 @@ func (s *Server) handleControlCenterAsset(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.serveControlCenterFile(w, r, assetPath)
+}
+
+func (s *Server) handleThemeRenderPack(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet, http.MethodHead) {
+		return
+	}
+	themeID := themeRenderPackID(r.URL.Path)
+	if themeID != "" {
+		if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil {
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if r.Method == http.MethodGet {
+				_, _ = w.Write(data)
+			}
+			return
+		}
+	}
+	s.handleControlCenterAsset(w, r)
 }
 
 func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, assetPath string) bool {
@@ -3687,7 +3710,117 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		}
 	}
 	fmt.Fprintln(out, "Display stream: refreshed and rendered")
+	if len(req.PackBytes) > 0 {
+		if err := s.persistThemeRenderPack(req.PackBytes); err != nil {
+			fmt.Fprintf(out, "Preview cache: unavailable (%v)\n", err)
+		} else {
+			fmt.Fprintln(out, "Preview cache: ready")
+		}
+	}
 	return result, nil
+}
+
+type themeRenderPackAsset struct {
+	ContentType string `json:"contentType"`
+	Data        string `json:"data"`
+	Encoding    string `json:"encoding"`
+}
+
+type themeRenderPack struct {
+	OK       bool                            `json:"ok"`
+	ThemeID  string                          `json:"themeId"`
+	Name     string                          `json:"name"`
+	Spec     json.RawMessage                 `json:"spec"`
+	SpecPath string                          `json:"specPath"`
+	Assets   map[string]themeRenderPackAsset `json:"assets"`
+}
+
+func (s *Server) persistThemeRenderPack(packBytes []byte) error {
+	pack, err := themepack.LoadZipBytes(packBytes)
+	if err != nil {
+		return err
+	}
+	themeID := strings.TrimSpace(pack.ThemeSpec.ThemeID)
+	if !themeRenderPackIDPattern.MatchString(themeID) {
+		return fmt.Errorf("invalid render pack theme id %q", themeID)
+	}
+	assets := make(map[string]themeRenderPackAsset, len(pack.Assets))
+	for _, asset := range pack.Assets {
+		contentType := strings.TrimSpace(asset.Entry.ContentType)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		textAsset := strings.HasPrefix(strings.ToLower(contentType), "text/") ||
+			strings.EqualFold(path.Ext(asset.Entry.File), ".cbi") ||
+			strings.EqualFold(path.Ext(asset.Entry.File), ".cba")
+		encoding := "base64"
+		data := base64.StdEncoding.EncodeToString(asset.Data)
+		if textAsset {
+			encoding = "text"
+			data = string(asset.Data)
+		}
+		assets[asset.Entry.Path] = themeRenderPackAsset{
+			ContentType: contentType,
+			Data:        data,
+			Encoding:    encoding,
+		}
+	}
+	payload, err := json.Marshal(themeRenderPack{
+		OK:       true,
+		ThemeID:  themeID,
+		Name:     strings.TrimSpace(pack.Manifest.Name),
+		Spec:     json.RawMessage(pack.ThemeSpecRaw),
+		SpecPath: strings.TrimSpace(pack.ThemeSpecFile.Entry.Path),
+		Assets:   assets,
+	})
+	if err != nil {
+		return err
+	}
+	destination := s.themeRenderPackPath(themeID)
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".theme-render-pack-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(payload); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, destination)
+}
+
+func (s *Server) themeRenderPackPath(themeID string) string {
+	return filepath.Join(
+		s.home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
+		themeRenderPackDir,
+		themeID+".json",
+	)
+}
+
+func themeRenderPackID(requestPath string) string {
+	const prefix = "/theme-packs/render/"
+	if !strings.HasPrefix(requestPath, prefix) || !strings.HasSuffix(requestPath, ".json") {
+		return ""
+	}
+	themeID := strings.TrimSuffix(strings.TrimPrefix(requestPath, prefix), ".json")
+	if strings.Contains(themeID, "/") || !themeRenderPackIDPattern.MatchString(themeID) {
+		return ""
+	}
+	return themeID
 }
 
 func (s *Server) createThemeInstallJob(req themeInstallRequest) themeInstallJob {

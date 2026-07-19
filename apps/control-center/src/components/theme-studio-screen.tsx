@@ -976,6 +976,11 @@ export function ThemeStudioScreen({
       return;
     }
 
+    // Keep the exact directly installed edit available to the Overview preview.
+    // Installation remains allowed if storage is unavailable; the persistence
+    // helper already surfaces that problem in the Theme Studio status.
+    void persistThemeStudioRecovery();
+
     setSending(true);
     setDeviceStatus({
       tone: "unknown",
