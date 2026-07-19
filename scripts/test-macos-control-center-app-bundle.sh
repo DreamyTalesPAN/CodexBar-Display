@@ -974,6 +974,8 @@ PY
     || die "native app shell must tear down closed Control Center windows"
   grep -qF "func windowShouldClose" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must prepare browser state before closing"
+  grep -qF "container.appearance = NSAppearance(named: .aqua)" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native installation status must keep AppKit controls visible in Dark Mode"
   grep -qF "vibetv:native-window-will-close" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must flush Theme Studio recovery before releasing the WebView"
   grep -qF "allowPreparedWindowClose" "${ROOT}/macos/VibeTVControlCenter/main.swift" \

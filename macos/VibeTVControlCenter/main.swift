@@ -1608,6 +1608,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         installationStatusFailed = failed
         let window = window ?? makeMainWindow()
         let container = NSView()
+        // This screen intentionally uses a fixed light surface and dark text.
+        // Keep inherited AppKit controls (spinner and buttons) in the matching
+        // appearance so they do not render white-on-white in macOS Dark Mode.
+        container.appearance = NSAppearance(named: .aqua)
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor(
             calibratedRed: 0.976,
