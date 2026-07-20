@@ -11,7 +11,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -255,9 +254,6 @@ function UsageProviderTile({
             ) : null}
           </CardDescription>
         ) : null}
-        <CardAction className="shrink-0 text-right text-sm font-semibold">
-          {formatReset(provider.resetSecs)}
-        </CardAction>
       </CardHeader>
 
       <CardContent>
@@ -283,8 +279,8 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
 
   return (
     <div className="grid gap-4">
-      <UsageBar label="Session" mode={provider.usageMode} value={provider.session} />
-      <UsageBar label="Weekly" mode={provider.usageMode} value={provider.weekly} />
+      <UsageBar label="Session" mode={provider.usageMode} resetSecs={provider.resetSecs} value={provider.session} />
+      <UsageBar label="Weekly" mode={provider.usageMode} resetSecs={provider.resetSecs} value={provider.weekly} />
     </div>
   );
 }
@@ -292,20 +288,26 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
 function UsageBar({
   label,
   mode,
+  resetSecs,
   value,
 }: {
   label: string;
   mode?: string;
+  resetSecs?: number;
   value: number;
 }) {
   const percent = clampPercent(value);
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between gap-4 text-sm">
-        <span className="font-bold text-[#1B1B1B]">{label}</span>
-        <span className="font-semibold text-[#444933]">
-          {percent}% {usageModeShortLabel(mode)}
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
+        <span className="font-bold text-[#1B1B1B]">
+          {label}: {percent}% {usageModeShortLabel(mode)}
         </span>
+        {resetSecs ? (
+          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
+            {formatReset(resetSecs)}
+          </span>
+        ) : null}
       </div>
       <Progress
         aria-label={`${label}: ${percent}% ${usageModeShortLabel(mode)}`}
@@ -384,12 +386,15 @@ function UsageWindowBar({
   const percent = clampPercent(window.usedPercent);
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between gap-4 text-sm">
-        <span className="font-bold text-[#1B1B1B]">{window.label}</span>
-        <span className="text-right font-semibold text-[#444933]">
-          {percent}% {usageModeShortLabel(mode)}
-          {window.resetSecs ? ` · ${formatReset(window.resetSecs)}` : ""}
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
+        <span className="font-bold text-[#1B1B1B]">
+          {window.label}: {percent}% {usageModeShortLabel(mode)}
         </span>
+        {window.resetSecs ? (
+          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
+            {formatReset(window.resetSecs)}
+          </span>
+        ) : null}
       </div>
       <Progress
         aria-label={`${window.label}: ${percent}% ${usageModeShortLabel(mode)}`}
