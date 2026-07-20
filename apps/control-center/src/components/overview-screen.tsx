@@ -97,6 +97,7 @@ export function OverviewScreen({
               <span>{hero.badge}</span>
             </Badge>
             <h2
+              aria-label={ready ? "VibeTV is connected" : undefined}
               className="text-4xl font-black tracking-tight md:text-5xl"
               id="vibetv-overview-title"
             >

@@ -26,6 +26,7 @@ export type SettingsScreenProps = {
   brightness: number | null;
   busyAction: string | null;
   onBrightnessChange: (value: number) => void;
+  onResetSetup: () => void;
   onSaveBrightness: (value: number) => void;
 };
 
@@ -34,6 +35,7 @@ export function SettingsScreen({
   brightness,
   busyAction,
   onBrightnessChange,
+  onResetSetup,
   onSaveBrightness,
 }: SettingsScreenProps) {
   const brightnessSupport =
@@ -97,6 +99,28 @@ export function SettingsScreen({
               </Button>
             </Field>
           </FieldGroup>
+        </CardContent>
+      </Card>
+
+      <Card className="border-0">
+        <CardHeader>
+          <CardTitle>Setup</CardTitle>
+          <CardDescription>Connect this Mac to another VibeTV.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            disabled={localActionBusy}
+            onClick={onResetSetup}
+            type="button"
+            variant="outline"
+          >
+            {busyAction === "reset-setup" ? (
+              <Spinner data-icon="inline-start" />
+            ) : null}
+            <span>
+              {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
+            </span>
+          </Button>
         </CardContent>
       </Card>
     </div>

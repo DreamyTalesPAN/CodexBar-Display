@@ -1791,7 +1791,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     "completed setup should not remain in the main navigation",
   );
   await clickNavigation(page, "Settings");
-  await page.getByRole("heading", { name: "Connected VibeTV" }).waitFor({
+  await page.getByRole("heading", { name: "Display" }).waitFor({
     timeout: 10_000,
   });
   await page.getByRole("button", { name: "Run setup again" }).waitFor({

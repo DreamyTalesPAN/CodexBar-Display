@@ -2309,6 +2309,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           busyAction={busyAction}
           device={device}
           onBrightnessChange={setBrightness}
+          onResetSetup={resetSetup}
           onSaveBrightness={saveBrightness}
         />
       ) : null}

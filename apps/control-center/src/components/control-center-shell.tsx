@@ -141,10 +141,10 @@ export function ControlCenterShell({
         <SidebarInset className="control-center-shell control-center-shell__main min-w-0">
           <header className="control-center-shell__header flex min-h-[72px] items-center justify-between gap-4 bg-background px-4 py-3 md:h-[86px] md:px-6 lg:px-10 lg:py-0">
             <div className="flex min-w-0 items-center gap-3">
-              <SidebarTrigger aria-label="Toggle navigation" className="shrink-0" />
+              <SidebarTrigger aria-label="Open navigation" className="shrink-0" />
               <h1 className="truncate text-base font-semibold text-foreground md:text-xl">
                 {activeTab === "setup"
-                  ? "Set up your VibeTV"
+                  ? "Setup"
                   : NAV_ITEMS.find((item) => item.id === activeTab)?.label ||
                     "Overview"}
               </h1>
