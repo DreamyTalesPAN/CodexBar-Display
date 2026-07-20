@@ -80,6 +80,20 @@ validate_app_bundle() {
   [[ -d "${APP_DIR}/Contents/MacOS" ]] || die "app bundle is missing Contents/MacOS"
   find "${APP_DIR}/Contents/MacOS" -mindepth 1 -maxdepth 1 -type f -perm -111 | grep -q . \
     || die "app bundle has no executable file under Contents/MacOS"
+
+  if command -v codesign >/dev/null 2>&1; then
+    local signature_details preview_runtime
+    signature_details="$(codesign --display --verbose=4 "$APP_DIR" 2>&1 || true)"
+    if [[ "$signature_details" == *"Signature=adhoc"* ]]; then
+      preview_runtime="$(
+        /usr/libexec/PlistBuddy \
+          -c 'Print :VibeTVLocalPreviewRuntime' \
+          "${APP_DIR}/Contents/Info.plist" 2>/dev/null || true
+      )"
+      [[ "$preview_runtime" == "true" ]] \
+        || die "ad-hoc apps must be built with --local-preview so launchd does not apply the production runtime constraint"
+    fi
+  fi
 }
 
 prepare_staging_dir() {

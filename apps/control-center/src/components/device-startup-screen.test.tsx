@@ -14,7 +14,8 @@ describe("DeviceStartupScreen", () => {
             firmware: "1.0.37",
           },
         ]}
-        deviceSearchState="alternate"
+        deviceSearchState="multiple"
+        hasConfiguredDevice
         onDecline={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}

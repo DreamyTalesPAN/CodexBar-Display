@@ -436,6 +436,9 @@ main() {
   [[ ! -e "${app}/Contents/Resources/companion" ]] \
     || die "Mach-O helpers must not be stored in the Resources directory"
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.44.0.zip"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.44.0.manifest.json"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-LICENSE.txt"
   assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
   assert_file "${app}/Contents/Frameworks/Sparkle.framework/README.txt"
 
@@ -467,6 +470,7 @@ expected = {
     "CFBundleShortVersionString": "1.2.3",
     "CFBundleVersion": "146",
     "CFBundlePackageType": "APPL",
+    "LSMinimumSystemVersion": "14.0",
     "SUEnableAutomaticChecks": False,
     "SUFeedURL": "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/appcast.xml",
     "SUPublicEDKey": "2txeIAd+ofTbffzPR5hy5J4lvGX8LGclIdG82es1qPA=",
@@ -557,6 +561,7 @@ if stop_legacy > register_runtime:
 
 required_source = [
     "import ServiceManagement",
+    "import CryptoKit",
     "import Sparkle",
     "SPUStandardUpdaterController(",
     "SPUUpdaterDelegate",
@@ -611,16 +616,43 @@ required_source = [
     "pendingNativeUpdateIsExpired(",
     "discardMismatchedPendingNativeUpdate()",
     "presentInstallationStatus(",
+    "@objc private func createNativeSupportReport()",
+    '"reportType": "native_installation"',
+    '"controlCenterDiagnostics": decodedJSONOrProcessOutput(companionDiagnostics)',
+    '"recentLogs": recentTextFiles(',
+    '"backgroundItems": filteredBackgroundItems(',
+    'Task.detached(priority: .userInitiated)',
+    'withJSONObject: redactReportValue(report)',
+    '"--max-time", "40"',
+    'title: "Create report"',
     'title: "Finishing installation…"',
+    'codexBarBundleIdentifier = "com.steipete.codexbar"',
+    'codexBarPinnedVersion = "0.44.0"',
+    'codexBarMinimumCompatibleVersion = "0.23.0"',
+    'codexBarPinnedTeamIdentifier = "Y5PE65HELJ"',
+    'CodexBar-macos-universal-0.44.0.zip',
+    'bootstrapCodexBar()',
+    'arguments: ["--verify", "--deep", "--strict", "--verbose=2", appURL.path]',
+    'arguments: ["--assess", "--type", "execute", "--verbose=4", appURL.path]',
+    'arguments: ["-x", "-k", archiveURL.path, stagingURL.path]',
+    'try fileManager.moveItem(at: stagedAppURL, to: targetURL)',
+    'configuration.activates = false',
+    'environment["CODEXBAR_CONFIG"] = configURL.path',
+    '[.posixPermissions: 0o700]',
+    '[.posixPermissions: 0o600]',
     'title: "Installation needs attention"',
     "activeNavigation = webView?.load(",
     ".reloadIgnoringLocalCacheData",
     'alert.addButton(withTitle: "Open Applications")',
     'alert.addButton(withTitle: "Quit")',
+    'alert.addButton(withTitle: "Create report")',
 ]
 for snippet in required_source:
     if snippet not in source:
         raise SystemExit(f"native app is missing required behavior: {snippet}")
+
+if "support.isHidden = !failed" in source:
+    raise SystemExit("Create report must remain visible on every native setup screen")
 
 launch_start = source.find("func applicationDidFinishLaunching(")
 launch_end = source.find("func application(_ application:", launch_start)
@@ -917,6 +949,12 @@ PY
     || die "Sparkle distribution version must stay pinned"
   grep -qF 'SHA256="1cb340cbbef04c6c0d162078610c25e2221031d794a3449d89f2f56f4df77c95"' "${ROOT}/scripts/fetch-sparkle.sh" \
     || die "Sparkle distribution checksum must stay pinned"
+  grep -qF 'VERSION="0.44.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
+    || die "CodexBar distribution version must stay pinned"
+  grep -qF 'SHA256="958c4b3fc64367d833b6e26df98d262b16384a52dcf6b8181f9b98091505671f"' "${ROOT}/scripts/fetch-codexbar.sh" \
+    || die "CodexBar distribution checksum must stay pinned"
+  grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/release.yml" \
+    || die "release workflow must verify the bundled CodexBar payload"
   grep -qF 'generate_appcast' "${ROOT}/.github/workflows/release.yml" \
     || die "release workflow must generate a Sparkle appcast"
   grep -qF 'sparkle:edSignature=' "${ROOT}/.github/workflows/release.yml" \
@@ -934,8 +972,18 @@ PY
     || die "native app shell must observe window closure"
   grep -qF "func windowWillClose" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must tear down closed Control Center windows"
+  grep -qF "func windowShouldClose" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native app shell must prepare browser state before closing"
+  grep -qF "container.appearance = NSAppearance(named: .aqua)" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native installation status must keep AppKit controls visible in Dark Mode"
+  grep -qF "vibetv:native-window-will-close" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native app shell must flush Theme Studio recovery before releasing the WebView"
+  grep -qF "allowPreparedWindowClose" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
+    || die "native app shell must close only after browser-state preparation completes"
   grep -qF "webView = nil" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must release the WebView when its window closes"
+  grep -qF "verify_companion_version" "${ROOT}/scripts/build-macos-control-center-app.sh" \
+    || die "macOS app builds must reject a Companion with the wrong version"
 
   grep -qF "test-macos-control-center-app-bundle.sh" "${ROOT}/.github/workflows/ci.yml" \
     || die "CI must run the macOS app/DMG dry-run test"

@@ -488,7 +488,7 @@ Firmware bench envs:
 
 ## Versioning and Release Notes
 
-- SemVer is `1.x` for companion and firmware lines in the current pre-release track.
+- Companion and firmware releases use SemVer `1.x`.
 - Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
 - Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.

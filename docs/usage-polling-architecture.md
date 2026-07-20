@@ -128,9 +128,7 @@ Look for:
 
 | UTC timestamp | Machine load | Command | Real seconds | Providers returned | Notes |
 |---|---|---|---:|---:|---|
-| 2026-03-04T10:21:00Z | high (parallel video render) | `codexbar usage --json --web-timeout 8` | 45.55 | 2 | matched device values |
-| 2026-03-04T10:13:00Z | high | `codexbar usage --json --web-timeout 8` | 46.69 | 2 | collector stable |
-| 2026-03-04T10:08:00Z | very high | `codexbar usage --json --web-timeout 8` | 93.75 | 1 | still within 10m collector budget |
+| `<timestamp>` | `<idle or loaded>` | `codexbar usage --json --web-timeout 8` | `<seconds>` | `<count>` | `<result>` |
 
 ## Tuning Checklist
 

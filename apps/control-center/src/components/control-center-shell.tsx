@@ -27,8 +27,6 @@ import {
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import {
-  deviceImageIsStuck,
-  deviceSetupIsUsable,
   type ActiveTab,
   type DeviceInfo,
   type ShellNavItem,
@@ -86,18 +84,12 @@ export function ControlCenterShell({
   headerAction,
   updateAvailable = false,
 }: ControlCenterShellProps) {
-  const imageStuck = deviceImageIsStuck(device);
-  const setupConnected = deviceSetupIsUsable(device);
-  const reconnecting = device?.connectionState === "reconnecting";
-  const targetLabel = reconnecting
-    ? "VibeTV unavailable"
-    : setupConnected
-    ? imageStuck
-      ? "Image is stuck"
-      : device?.target?.replace(/^https?:\/\//, "") || "VibeTV connected"
-    : "Setup needed";
-  const targetDotClass = setupConnected && !reconnecting && !imageStuck ? "bg-primary" : "bg-border";
-  const mobileTargetLabel = targetLabel === "Setup needed" ? "Needs setup" : targetLabel;
+  const connected = Boolean(
+    device?.connected && (device.deviceId || device.target),
+  );
+  const targetLabel = connected ? "VibeTV connected" : "VibeTV not connected";
+  const targetDotClass = connected ? "bg-primary" : "bg-border";
+  const mobileTargetLabel = connected ? "Connected" : "Not connected";
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
   return (
@@ -143,10 +135,8 @@ export function ControlCenterShell({
             <div className="flex min-w-0 items-center gap-3">
               <SidebarTrigger aria-label="Open navigation" className="shrink-0" />
               <h1 className="truncate text-base font-semibold text-foreground md:text-xl">
-                {activeTab === "setup"
-                  ? "Setup"
-                  : NAV_ITEMS.find((item) => item.id === activeTab)?.label ||
-                    "Overview"}
+                {NAV_ITEMS.find((item) => item.id === activeTab)?.label ||
+                  "Overview"}
               </h1>
             </div>
 

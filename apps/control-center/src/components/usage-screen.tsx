@@ -5,7 +5,7 @@ import {
   BarChart3,
   RefreshCw,
 } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -36,17 +36,27 @@ import { cn } from "@/lib/utils";
 import type {
   ApiError,
   CompanionStatus,
+  ProviderSetupInfo,
   UsageCostDay,
   UsageProviderInfo,
   UsageSnapshot,
   UsageWindowInfo,
 } from "./control-center-types";
+import {
+  ProviderSetupCard,
+  providerSetupNeedsAction,
+} from "./provider-setup-card";
 
 type UsageScreenProps = {
   busyAction?: string | null;
   companionStatus: CompanionStatus;
   usage: UsageSnapshot | null;
   usageError?: ApiError | null;
+  onRefresh?: () => void;
+  onOpenCodexBar?: () => void;
+  onRepairCodexBar?: () => void;
+  onRetryProviders?: () => void;
+  providerSetup?: ProviderSetupInfo | null;
 };
 
 export function UsageScreen({
@@ -54,6 +64,10 @@ export function UsageScreen({
   companionStatus,
   usage,
   usageError,
+  onOpenCodexBar,
+  onRepairCodexBar,
+  onRetryProviders,
+  providerSetup,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
   const providers = filterVisibleProviders(
@@ -61,13 +75,32 @@ export function UsageScreen({
     usage?.currentProvider,
   );
   const hasProviders = providers.length > 0;
+  const providerActionRequired = providerSetupNeedsAction(providerSetup);
+  const costProvider =
+    providers.find(
+      (provider) => provider.id === "codex" && providerHasCost(provider),
+    ) || providers.find((provider) => providerHasCost(provider));
 
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="py-10">
-        {usageError ? (
+        {providerActionRequired && providerSetup ? (
+          <div className="mb-6">
+            <ProviderSetupCard
+              busyAction={busyAction}
+              onOpenCodexBar={onOpenCodexBar}
+              onRepairCodexBar={onRepairCodexBar}
+              onRetry={onRetryProviders}
+              providerSetup={providerSetup}
+            />
+          </div>
+        ) : null}
+
+        {usageError && !providerActionRequired ? (
           <Alert className="mb-6 bg-muted"><AlertTriangle /><AlertTitle>{usageError.message}</AlertTitle><AlertDescription>{usageError.nextAction}</AlertDescription></Alert>
         ) : null}
+
+        {costProvider ? <CodexCostPanel provider={costProvider} /> : null}
 
         {hasProviders ? (
           <TokenUsageOverTimePanel providers={providers} />
@@ -81,7 +114,7 @@ export function UsageScreen({
               </li>
             ))}
           </ol>
-        ) : usageError ? null : (
+        ) : usageError || providerActionRequired ? null : (
           <UsageEmptyState
             companionStatus={companionStatus}
             refreshing={refreshing}
@@ -92,28 +125,113 @@ export function UsageScreen({
   );
 }
 
+function CodexCostPanel({ provider }: { provider: UsageProviderInfo }) {
+  const cost = provider.cost;
+  if (!cost) {
+    return null;
+  }
+
+  const days = normalizeCostDays(cost.daily || []);
+  const maxCost = Math.max(...days.map((day) => day.totalCostUSD || 0), 0);
+  const todayCost = finiteNumber(cost.todayCostUSD)
+    ? cost.todayCostUSD
+    : latestCostDay(days)?.totalCostUSD;
+  const last30DaysCost = finiteNumber(cost.last30DaysCostUSD)
+    ? cost.last30DaysCostUSD
+    : days.reduce((sum, day) => sum + (day.totalCostUSD || 0), 0);
+  const last30DaysTokens = finiteNumber(cost.last30DaysTokens)
+    ? cost.last30DaysTokens
+    : days.reduce((sum, day) => sum + (day.totalTokens || 0), 0);
+  const latestTokens = finiteNumber(cost.latestTokens)
+    ? cost.latestTokens
+    : provider.sessionTokens || 0;
+  const resetCredits = provider.resetCredits;
+  const topModel = cost.topModel?.trim();
+
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle>Limit Reset Credits</CardTitle>
+        {resetCredits?.nextExpiresAt ? (
+          <CardDescription>
+            Manual resets expire {formatExpiryDate(resetCredits.nextExpiresAt)}
+          </CardDescription>
+        ) : null}
+        <Badge>{formatResetCreditCount(resetCredits?.availableCount)}</Badge>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid gap-4 border-t pt-4 sm:grid-cols-2 lg:grid-cols-4">
+          <UsageCostMetric label="Today" value={formatCurrency(todayCost, cost.currencyCode)} />
+          <UsageCostMetric label="30d cost" value={formatCurrency(last30DaysCost, cost.currencyCode)} />
+          <UsageCostMetric label="30d tokens" value={formatTokenCount(last30DaysTokens)} />
+          <UsageCostMetric label="Latest tokens" value={formatTokenCount(latestTokens)} />
+        </dl>
+
+        {days.length > 0 ? (
+          <div aria-label={`Codex cost over time for ${provider.label || provider.id}`} className="mt-6" role="img">
+            <div className="flex h-32 items-end gap-1 border-b pb-1">
+              {days.map((day) => (
+                <CostHistoryBar currencyCode={cost.currencyCode} day={day} key={day.day} maxCost={maxCost} />
+              ))}
+            </div>
+            <div className="mt-2 flex justify-between gap-3 text-xs font-semibold text-muted-foreground">
+              <span>{formatDayLabel(days[0].day)}</span>
+              <span>{formatDayLabel(days[days.length - 1].day)}</span>
+            </div>
+          </div>
+        ) : null}
+
+        {topModel ? (
+          <div className="mt-5 border-t pt-4 text-sm font-semibold text-muted-foreground">
+            Top model: <span className="font-bold text-foreground">{topModel}</span>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function UsageCostMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-bold uppercase text-muted-foreground">{label}</dt>
+      <dd className="mt-1 break-words text-xl font-black">{value}</dd>
+    </div>
+  );
+}
+
+function CostHistoryBar({
+  currencyCode,
+  day,
+  maxCost,
+}: {
+  currencyCode?: string;
+  day: UsageCostDay;
+  maxCost: number;
+}) {
+  const value = day.totalCostUSD || 0;
+  const height = maxCost > 0 ? Math.max((value / maxCost) * 100, 5) : 0;
+  const tooltip = `${formatDayLabel(day.day)} · ${formatCurrency(value, currencyCode)} · ${formatTokenCount(day.totalTokens || 0)}`;
+
+  return (
+    <div aria-label={tooltip} className="group relative flex h-full min-w-0 flex-1 items-end" tabIndex={0}>
+      <span className="block w-full min-w-[5px] border bg-primary" style={{ height: `${height}%` }} />
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border bg-popover px-2 py-1 text-xs font-bold shadow-sm group-focus:block group-hover:block">
+        {tooltip}
+      </span>
+    </div>
+  );
+}
+
 function TokenUsageOverTimePanel({
   providers,
 }: {
   providers: UsageProviderInfo[];
 }) {
-  const lastAvailableHistories = useRef<ProviderTokenHistory[]>([]);
   const currentProviderHistories = getProviderTokenHistories(providers);
   const hasCurrentData = currentProviderHistories.length > 0;
-
-  useEffect(() => {
-    const nextHistories = getProviderTokenHistories(providers);
-    if (nextHistories.length > 0) {
-      lastAvailableHistories.current = nextHistories;
-    }
-  }, [providers]);
-
-  const providerHistories = hasCurrentData
+  const displayedHistories = hasCurrentData
     ? currentProviderHistories
-    : lastAvailableHistories.current;
-  const hasLastAvailableData = providerHistories.length > 0;
-  const displayedHistories = hasLastAvailableData
-    ? providerHistories
     : providers.map((provider) => ({ days: [], provider }));
 
   const { chartConfig, chartData, series } =
@@ -217,9 +335,7 @@ function TokenUsageOverTimePanel({
                   <Badge variant="secondary">No data</Badge>
                 </EmptyTitle>
                 <EmptyDescription>
-                  {hasLastAvailableData
-                    ? "Showing the last available token history."
-                    : "Token history is temporarily unavailable."}
+                  Token history is temporarily unavailable.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -632,6 +748,50 @@ function formatTokenCount(value: number): string {
 
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function normalizeCostDays(days: UsageCostDay[]) {
+  return days
+    .filter(
+      (day) =>
+        Boolean(day.day) &&
+        (finiteNumber(day.totalCostUSD) || finiteNumber(day.totalTokens)),
+    )
+    .sort((a, b) => a.day.localeCompare(b.day))
+    .slice(-30);
+}
+
+function latestCostDay(days: UsageCostDay[]): UsageCostDay | undefined {
+  return days.at(-1);
+}
+
+function formatCurrency(value?: number, currencyCode?: string): string {
+  if (!finiteNumber(value)) {
+    return "—";
+  }
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currencyCode || "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatResetCreditCount(value?: number): string {
+  if (!finiteNumber(value)) {
+    return "Manual resets unavailable";
+  }
+  return `${value} manual ${value === 1 ? "reset" : "resets"} available`;
+}
+
+function formatExpiryDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(date);
 }
 
 function providerStatusLabel(description?: string): string {

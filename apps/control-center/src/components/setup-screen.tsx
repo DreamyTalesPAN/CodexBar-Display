@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BarChart3,
   Check,
   CircleHelp,
   Clipboard,
@@ -24,9 +25,14 @@ import type {
   DeviceCandidate,
   DeviceSearchState,
   DeviceState,
+  DeviceInfo,
+  ProviderSetupInfo,
+  SupportDiagnostics,
 } from "./control-center-types";
 import { DeviceTargetForm } from "./device-target-form";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
+import { ProviderSetupCard, providerSetupIsReady } from "./provider-setup-card";
+import { SupportReportActions } from "./support-report-actions";
 
 type SetupScreenProps = {
   busyAction?: string | null;
@@ -34,6 +40,7 @@ type SetupScreenProps = {
   deviceCandidates?: DeviceCandidate[];
   deviceSearchState?: DeviceSearchState;
   deviceState: DeviceState;
+  device: DeviceInfo | null;
   deviceTarget: string;
   lastError?: ApiError | null;
   onCheckCompanion?: () => void | Promise<void>;
@@ -44,15 +51,21 @@ type SetupScreenProps = {
   onDeclineDevice?: () => void;
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
+  onOpenCodexBar?: () => void;
+  onRepairCodexBar?: () => void;
+  onRetryProviders?: () => void;
   hostedMode?: boolean;
   macAppRelease?: CompanionReleaseInfo | null;
   previewStep?: "mac-app" | null;
+  providerSetup?: ProviderSetupInfo | null;
+  diagnostics?: SupportDiagnostics | null;
+  onCreateSupportReport?: () => void;
   requiresMacAppMigration?: boolean;
   showIntro?: boolean;
   setupComplete: boolean;
 };
 
-type StepId = "wifi" | "mac-app" | "finish";
+type StepId = "wifi" | "mac-app" | "finish" | "provider";
 type StepState = "active" | "blocked" | "complete" | "pending";
 
 export function SetupScreen({
@@ -61,6 +74,7 @@ export function SetupScreen({
   deviceCandidates = [],
   deviceSearchState = "idle",
   deviceState,
+  device,
   deviceTarget,
   lastError,
   onCheckCompanion,
@@ -71,9 +85,15 @@ export function SetupScreen({
   onDeclineDevice,
   onRepairConnection,
   onResetSetup,
+  onOpenCodexBar,
+  onRepairCodexBar,
+  onRetryProviders,
   hostedMode = false,
   macAppRelease = null,
   previewStep,
+  providerSetup,
+  diagnostics,
+  onCreateSupportReport,
   requiresMacAppMigration = false,
   showIntro = true,
   setupComplete,
@@ -90,16 +110,26 @@ export function SetupScreen({
     !macAppMissing &&
     (macAppConfirmedState || macAppReady || setupComplete);
   const deviceSelectionInProgress = deviceSearchState !== "idle";
+  const deviceConnectionComplete = Boolean(
+    setupComplete ||
+    (device?.connected &&
+      device.paired &&
+      device.connectionState !== "reconnecting"),
+  );
+  const providerPending = Boolean(
+    providerSetup && !providerSetupIsReady(providerSetup),
+  );
   const wifiConfirmed =
     wifiConfirmedState ||
     deviceSelectionInProgress ||
+    (providerPending && deviceConnectionComplete) ||
     setupComplete ||
     previewStep === "mac-app" ||
     hostedMode;
   const dmgUrl = availableMacAppDmgDownloadUrl(macAppRelease);
   const macAppReleaseCheckFailed = Boolean(
     macAppRelease?.status === "check_failed" ||
-      macAppRelease?.dmgDownloadStatus === "check_failed",
+    macAppRelease?.dmgDownloadStatus === "check_failed",
   );
   const macAppStepTitle = hostedMode
     ? dmgUrl
@@ -109,11 +139,7 @@ export function SetupScreen({
       ? "Update available"
       : "Update not ready";
   const showControlCenterLauncher =
-    !hostedMode &&
-    showIntro &&
-    !previewStep &&
-    !lastError &&
-    setupComplete;
+    !hostedMode && showIntro && !previewStep && !lastError && setupComplete;
   const migrationNotice = requiresMacAppMigration ? (
     <LegacyMacAppMigrationNotice
       checkFailed={macAppReleaseCheckFailed}
@@ -127,11 +153,17 @@ export function SetupScreen({
     () =>
       hostedMode
         ? "mac-app"
-        : previewStep || (setupComplete || wifiConfirmed ? "finish" : "wifi"),
+        : previewStep ||
+          (!wifiConfirmed
+            ? "wifi"
+            : deviceConnectionComplete && providerPending
+              ? "provider"
+              : "finish"),
     [
       hostedMode,
       previewStep,
-      setupComplete,
+      deviceConnectionComplete,
+      providerPending,
       wifiConfirmed,
     ],
   );
@@ -142,6 +174,9 @@ export function SetupScreen({
         forceMacAppStep,
         macAppConfirmed,
         macAppReady,
+        deviceConnectionComplete,
+        providerReady: providerSetupIsReady(providerSetup),
+        providerVisible: Boolean(providerSetup),
         setupComplete,
         wifiConfirmed,
       }),
@@ -150,6 +185,8 @@ export function SetupScreen({
       forceMacAppStep,
       macAppConfirmed,
       macAppReady,
+      deviceConnectionComplete,
+      providerSetup,
       setupComplete,
       wifiConfirmed,
     ],
@@ -206,6 +243,13 @@ export function SetupScreen({
             </div>
           </div>
         </section>
+        <div className="py-6">
+          <SupportReportActions
+            busyAction={busyAction}
+            diagnostics={diagnostics}
+            onCreate={onCreateSupportReport}
+          />
+        </div>
       </div>
     );
   }
@@ -325,9 +369,7 @@ export function SetupScreen({
                         <a href={dmgUrl} onClick={() => setDmgDownloadStarted(true)}>
                         <Download data-icon="inline-start" />
                         <span>
-                          {hostedMode
-                            ? "Download Mac App"
-                            : "Update"}
+                          {hostedMode ? "Download Mac App" : "Update"}
                         </span>
                         </a>
                       </Button>
@@ -406,7 +448,34 @@ export function SetupScreen({
               ) : null}
             </SetupStep>
           ) : null}
+
+          {!hostedMode && !forceMacAppStep && providerSetup ? (
+            <SetupStep
+              icon={<BarChart3 size={22} aria-hidden />}
+              index={3}
+              state={stepStates.provider}
+              title="Connect an AI provider"
+            >
+              {activeStep === "provider" ? (
+                <ProviderSetupCard
+                  busyAction={busyAction}
+                  onOpenCodexBar={onOpenCodexBar}
+                  onRepairCodexBar={onRepairCodexBar}
+                  onRetry={onRetryProviders}
+                  providerSetup={providerSetup}
+                />
+              ) : null}
+            </SetupStep>
+          ) : null}
         </ol>
+
+        <div className="border-t border-[#747A60] py-6">
+          <SupportReportActions
+            busyAction={busyAction}
+            diagnostics={diagnostics}
+            onCreate={onCreateSupportReport}
+          />
+        </div>
       </section>
     </div>
   );
@@ -502,67 +571,11 @@ function FinishSetupContent({
     );
   }
 
-  if (deviceSearchState === "alternate" && deviceCandidates[0]) {
-    const candidate = deviceCandidates[0];
-    return (
-      <div className="grid gap-5" aria-live="polite">
-        <div className="grid gap-2">
-          <h4 className="text-xl font-black text-[#1B1B1B]">
-            VibeTV found
-          </h4>
-          <p className="text-sm leading-6 text-[#444933]">
-            Connect to this VibeTV?
-          </p>
-        </div>
-        <DeviceCandidateCard candidate={candidate} />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Button
-            className="w-full"
-            disabled={Boolean(busyAction) && busyAction !== "select"}
-            onClick={() => onSelectDevice?.(candidate)}
-            size="lg"
-            type="button"
-          >
-            {busyAction === "select" ? (
-              <Spinner data-icon="inline-start" />
-            ) : (
-              <Monitor data-icon="inline-start" aria-hidden />
-            )}
-            <span>{busyAction === "select" ? "Connecting" : "Connect this VibeTV"}</span>
-          </Button>
-          <Button
-            className="w-full"
-            disabled={Boolean(busyAction)}
-            onClick={onDeclineDevice}
-            size="lg"
-            type="button"
-            variant="outline"
-          >
-            Not now
-          </Button>
-          <Button
-            className="w-full"
-            disabled={Boolean(busyAction)}
-            onClick={onSearchDevices}
-            size="lg"
-            type="button"
-            variant="outline"
-          >
-            <RefreshCw data-icon="inline-start" aria-hidden />
-            <span>Search again</span>
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   if (deviceSearchState === "multiple") {
     return (
       <div className="grid gap-4">
         <div className="grid gap-2">
-          <h4 className="text-xl font-black text-[#1B1B1B]">
-            Choose a VibeTV
-          </h4>
+          <h4 className="text-xl font-black text-[#1B1B1B]">Choose a VibeTV</h4>
           <p className="text-sm leading-6 text-[#444933]">
             More than one VibeTV was found. Choose the one you want to connect.
           </p>
@@ -614,26 +627,6 @@ function FinishSetupContent({
             <span>Search again</span>
           </Button>
         </div>
-      </div>
-    );
-  }
-
-  if (deviceSearchState === "declined") {
-    return (
-      <div className="grid gap-4">
-        <p className="text-sm leading-6 text-[#444933]">
-          No VibeTV is selected. You can search again when you are ready.
-        </p>
-        <Button
-          className="w-full"
-          onClick={onSearchDevices}
-          size="lg"
-          type="button"
-          variant="outline"
-        >
-          <RefreshCw data-icon="inline-start" aria-hidden />
-          <span>Search again</span>
-        </Button>
       </div>
     );
   }
@@ -715,19 +708,7 @@ function FinishSetupContent({
   );
 }
 
-function DeviceCandidateCard({ candidate }: { candidate: DeviceCandidate }) {
-  return (
-    <div className="border border-[#747A60] bg-[#F9F9F9] p-4">
-      <DeviceCandidateDetails candidate={candidate} />
-    </div>
-  );
-}
-
-function DeviceCandidateDetails({
-  candidate,
-}: {
-  candidate: DeviceCandidate;
-}) {
+function DeviceCandidateDetails({ candidate }: { candidate: DeviceCandidate }) {
   const address = candidateAddress(candidate.target);
   return (
     <div className="min-w-0">
@@ -825,6 +806,9 @@ function buildStepStates({
   forceMacAppStep,
   macAppConfirmed,
   macAppReady,
+  deviceConnectionComplete,
+  providerReady,
+  providerVisible,
   setupComplete,
   wifiConfirmed,
 }: {
@@ -832,6 +816,9 @@ function buildStepStates({
   forceMacAppStep: boolean;
   macAppConfirmed: boolean;
   macAppReady: boolean;
+  deviceConnectionComplete: boolean;
+  providerReady: boolean;
+  providerVisible: boolean;
   setupComplete: boolean;
   wifiConfirmed: boolean;
 }): Record<StepId, StepState> {
@@ -853,11 +840,20 @@ function buildStepStates({
             : "blocked",
     finish: forceMacAppStep
       ? "blocked"
-      : setupComplete
+      : setupComplete || deviceConnectionComplete
         ? "complete"
         : activeStep === "finish"
           ? "active"
           : "blocked",
+    provider: !providerVisible
+      ? "blocked"
+      : setupComplete || providerReady
+        ? "complete"
+        : activeStep === "provider"
+          ? "active"
+          : deviceConnectionComplete
+            ? "pending"
+            : "blocked",
   };
 }
 

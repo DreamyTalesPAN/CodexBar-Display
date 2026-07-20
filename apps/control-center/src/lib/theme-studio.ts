@@ -387,8 +387,8 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
   next.themeSpecVersion = 1;
   next.themeId = slugThemeId(next.themeId || "custom-mini");
   next.themeRev = FIXED_THEME_REV;
-  // Older documents may still contain retired fallback metadata. Keep those
-  // documents importable, but never persist or export it.
+  // Older Theme Studio documents may still contain the retired fallback
+  // metadata. Keep those documents importable, but never persist or export it.
   delete next.fallbackTheme;
   delete next.fb;
   next.bgColor = normalizeColor(next.bgColor) || "#000000";

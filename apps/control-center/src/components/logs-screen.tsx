@@ -4,16 +4,13 @@ import {
   Activity,
   AlertTriangle,
   ArrowUpFromLine,
-  Clipboard,
   Clock,
-  Download,
-  FileText,
   Monitor,
   Palette,
   RefreshCw,
   Wifi,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,7 +32,6 @@ import {
 } from "@/components/ui/empty";
 import {
   Item,
-  ItemActions,
   ItemContent,
   ItemDescription,
   ItemGroup,
@@ -43,9 +39,10 @@ import {
   ItemSeparator,
   ItemTitle,
 } from "@/components/ui/item";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import type { DeviceInfo, SupportDiagnostics } from "./control-center-types";
+import { providerSetupStatusLabel } from "./provider-setup-card";
+import { SupportReportActions } from "./support-report-actions";
 
 export type LogEvent = {
   id: string;
@@ -79,48 +76,7 @@ export function LogsScreen({
   onRunSetupAgain,
   busyAction,
 }: LogsScreenProps) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
-    "idle",
-  );
-  const diagnosticsText = useMemo(
-    () => (diagnostics ? JSON.stringify(diagnostics, null, 2) : ""),
-    [diagnostics],
-  );
   const deviceConnected = Boolean(device?.connected);
-  const deviceStatus = deviceConnected
-    ? device?.connectionState === "reconnecting"
-      ? "Reconnecting"
-      : "Connected"
-    : "Not connected";
-
-  async function copyDiagnostics() {
-    if (!diagnosticsText) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(diagnosticsText);
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-  }
-
-  function downloadDiagnostics() {
-    if (!diagnosticsText) {
-      return;
-    }
-    const blob = new Blob([diagnosticsText], {
-      type: "application/json;charset=utf-8",
-    });
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = supportReportFilename(diagnostics?.generatedAt);
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.URL.revokeObjectURL(url);
-  }
 
   return (
     <div className="mx-auto grid max-w-[1180px] gap-6 py-8">
@@ -135,7 +91,7 @@ export function LogsScreen({
             </CardDescription>
             <CardAction>
               <Badge variant={deviceConnected ? "default" : "outline"}>
-                {deviceStatus}
+                {deviceConnected ? "Connected" : "Not connected"}
               </Badge>
             </CardAction>
           </CardHeader>
@@ -144,13 +100,13 @@ export function LogsScreen({
               <SupportDeviceFact
                 icon={<Monitor aria-hidden />}
                 label="Device"
-                value={deviceLabel(device)}
+                value={device?.deviceId || device?.board || "Not available"}
               />
               <ItemSeparator />
               <SupportDeviceFact
                 icon={<Wifi aria-hidden />}
                 label="Address"
-                value={deviceAddress(device)}
+                value={formatDeviceAddress(device?.target)}
               />
               <ItemSeparator />
               <SupportDeviceFact
@@ -180,11 +136,7 @@ export function LogsScreen({
                 ) : (
                   <RefreshCw data-icon="inline-start" aria-hidden />
                 )}
-                <span>
-                  {busyAction === "reset-setup"
-                    ? "Resetting setup"
-                    : "Run setup again"}
-                </span>
+                {busyAction === "reset-setup" ? "Resetting setup" : "Run setup again"}
               </Button>
             </CardFooter>
           ) : null}
@@ -196,222 +148,132 @@ export function LogsScreen({
             <CardDescription>
               Create a local diagnostic snapshot when support asks for it.
             </CardDescription>
+            <CardAction>
+              <SupportReportActions
+                busyAction={busyAction}
+                diagnostics={diagnostics}
+                onCreate={onLoadDiagnostics}
+              />
+            </CardAction>
           </CardHeader>
-
-          <CardContent className="grid flex-1 gap-5">
+          <CardContent>
             {diagnostics ? (
-              <>
+              <div className="grid gap-5">
                 <dl className="grid gap-2 sm:grid-cols-2">
-                  <DiagnosticFact
-                    label="Generated"
-                    value={formatDiagnosticTime(diagnostics.generatedAt)}
-                  />
-                  <DiagnosticFact
-                    label="Mac App"
-                    value={diagnostics.companion?.version || "Unknown"}
-                  />
-                  <DiagnosticFact
-                    label="VibeTV address"
-                    value={formatDeviceAddress(diagnostics.device?.target)}
-                  />
+                  <DiagnosticFact label="Generated" value={formatDiagnosticTime(diagnostics.generatedAt)} />
+                  <DiagnosticFact label="Mac App" value={formatAppVersion(diagnostics)} />
+                  <DiagnosticFact label="Background runtime" value={formatRuntimeVersion(diagnostics)} />
+                  <DiagnosticFact label="CodexBar" value={formatCodexBarStatus(diagnostics)} />
+                  <DiagnosticFact label="AI provider" value={providerSetupStatusLabel(diagnostics.providerSetup)} />
+                  <DiagnosticFact label="VibeTV address" value={formatDeviceAddress(diagnostics.device?.target)} />
                   <DiagnosticFact
                     label="Device"
-                    value={
-                      diagnostics.device?.connected
-                        ? diagnostics.device.board || "Connected"
-                        : "Not connected"
-                    }
+                    value={diagnostics.device?.connected ? diagnostics.device.board || "Connected" : "Not connected"}
                   />
+                  <DiagnosticFact label="VibeTV firmware" value={diagnostics.device?.firmware || "Unknown"} />
+                  <DiagnosticFact
+                    label="VibeTV ID"
+                    value={diagnostics.device?.deviceId || diagnostics.configuration?.deviceId || "Unknown"}
+                  />
+                  <DiagnosticFact label="Paired and ready" value={formatDeviceReadiness(diagnostics)} />
+                  <DiagnosticFact label="VibeTVs on WiFi" value={formatNetworkDiscovery(diagnostics)} />
                 </dl>
+
+                {diagnostics.networkDiscovery?.devices?.length ? (
+                  <section aria-labelledby="wifi-vibetvs-heading">
+                    <h4 className="mb-3 text-sm font-bold" id="wifi-vibetvs-heading">
+                      VibeTVs found on this WiFi
+                    </h4>
+                    <ItemGroup>
+                      {diagnostics.networkDiscovery.devices.map((candidate) => (
+                        <Item key={`${candidate.deviceId || "device"}-${candidate.target}`} variant="outline">
+                          <ItemMedia variant="icon"><Wifi aria-hidden /></ItemMedia>
+                          <ItemContent>
+                            <ItemTitle>{candidate.deviceId || candidate.board || "VibeTV"}</ItemTitle>
+                            <ItemDescription>
+                              {formatDeviceAddress(candidate.target)}
+                              {candidate.active ? " · Active" : candidate.known ? " · Known" : ""}
+                            </ItemDescription>
+                          </ItemContent>
+                        </Item>
+                      ))}
+                    </ItemGroup>
+                  </section>
+                ) : null}
+
                 <ItemGroup>
                   {(diagnostics.checks || []).map((check) => (
-                    <Item
-                      key={`${check.name}-${check.status}`}
-                      size="sm"
-                      variant="outline"
-                    >
+                    <Item key={`${check.name}-${check.status}`} variant="outline">
                       <ItemMedia>
-                        <Badge
-                          className="min-h-8 uppercase"
-                          variant={
-                            check.status === "pass"
-                              ? "default"
-                              : check.status === "fail"
-                                ? "destructive"
-                                : "outline"
-                          }
-                        >
+                        <Badge variant={check.status === "pass" ? "default" : check.status === "fail" ? "destructive" : "outline"}>
                           {check.status}
                         </Badge>
                       </ItemMedia>
                       <ItemContent>
                         <ItemTitle>{formatCheckName(check.name)}</ItemTitle>
-                        {check.detail ? (
-                          <ItemDescription className="line-clamp-none break-words">
-                            {formatCustomerSupportText(check.detail)}
-                          </ItemDescription>
-                        ) : null}
-                        {check.nextAction ? (
-                          <ItemDescription className="line-clamp-none break-words">
-                            {formatCustomerSupportText(check.nextAction)}
-                          </ItemDescription>
-                        ) : null}
+                        {check.detail ? <ItemDescription className="line-clamp-none break-words">{formatCustomerSupportText(check.detail)}</ItemDescription> : null}
+                        {check.nextAction ? <ItemDescription className="line-clamp-none break-words">{formatCustomerSupportText(check.nextAction)}</ItemDescription> : null}
                       </ItemContent>
                     </Item>
                   ))}
                 </ItemGroup>
-              </>
+              </div>
             ) : (
-              <Empty className="min-h-32 bg-muted/30 px-4 py-6">
+              <Empty className="border">
                 <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <FileText aria-hidden />
-                  </EmptyMedia>
-                  <EmptyTitle>No report created</EmptyTitle>
-                  <EmptyDescription>
-                    Reports stay local until you copy or download them.
-                  </EmptyDescription>
+                  <EmptyMedia variant="icon"><AlertTriangle aria-hidden /></EmptyMedia>
+                  <EmptyTitle>No support report yet</EmptyTitle>
+                  <EmptyDescription>Create one when support asks for it.</EmptyDescription>
                 </EmptyHeader>
               </Empty>
             )}
-            {copyState === "failed" ? (
-              <Alert>
-                <AlertTriangle aria-hidden />
-                <AlertTitle>Copy failed</AlertTitle>
-                <AlertDescription>
-                  Use the browser clipboard permission and try again.
-                </AlertDescription>
-              </Alert>
-            ) : null}
           </CardContent>
-
-          {diagnosticsText || onLoadDiagnostics ? (
-            <CardFooter className="flex-col items-stretch gap-2 sm:flex-row sm:justify-end">
-              {diagnosticsText ? (
-                <>
-                  <Button
-                    onClick={copyDiagnostics}
-                    type="button"
-                    variant="outline"
-                  >
-                    <Clipboard data-icon="inline-start" aria-hidden />
-                    <span>
-                      {copyState === "copied" ? "Copied" : "Copy report"}
-                    </span>
-                  </Button>
-                  <Button
-                    onClick={downloadDiagnostics}
-                    type="button"
-                    variant="outline"
-                  >
-                    <Download data-icon="inline-start" aria-hidden />
-                    <span>Download report</span>
-                  </Button>
-                </>
-              ) : null}
-              {onLoadDiagnostics ? (
-                <Button
-                  disabled={busyAction === "diagnostics"}
-                  onClick={onLoadDiagnostics}
-                  type="button"
-                >
-                  {busyAction === "diagnostics" ? (
-                    <Spinner data-icon="inline-start" />
-                  ) : (
-                    <FileText data-icon="inline-start" aria-hidden />
-                  )}
-                  <span>
-                    {busyAction === "diagnostics"
-                      ? "Creating"
-                      : diagnosticsText
-                        ? "Refresh report"
-                        : "Create report"}
-                  </span>
-                </Button>
-              ) : null}
-            </CardFooter>
-          ) : null}
         </Card>
       </div>
 
-      <Card className="border-0">
+      <Card>
         <CardHeader>
           <CardTitle>Recent activity</CardTitle>
-          <CardDescription>
-            Local Control Center events from this session.
-          </CardDescription>
-          <CardAction>
-            {onRefresh ? (
-              <Button
-                disabled={busyAction === "logs"}
-                onClick={onRefresh}
-                type="button"
-                variant="outline"
-              >
-                {busyAction === "logs" ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <RefreshCw data-icon="inline-start" aria-hidden />
-                )}
-                <span>
-                  {busyAction === "logs" ? "Refreshing..." : "Refresh"}
-                </span>
+          <CardDescription>Connection and setup activity from this session.</CardDescription>
+          {onRefresh ? (
+            <CardAction>
+              <Button disabled={busyAction === "logs"} onClick={onRefresh} size="sm" variant="outline">
+                {busyAction === "logs" ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" aria-hidden />}
+                {busyAction === "logs" ? "Refreshing" : "Refresh"}
               </Button>
-            ) : null}
-          </CardAction>
+            </CardAction>
+          ) : null}
         </CardHeader>
-
         <CardContent className="grid gap-4">
           {lastError ? (
-            <Alert variant="destructive">
+            <Alert>
               <AlertTriangle aria-hidden />
-              <AlertTitle>
-                {formatCustomerSupportText(lastError.message)}
-              </AlertTitle>
-              <AlertDescription>
-                {formatCustomerSupportText(lastError.nextAction)}
-              </AlertDescription>
+              <AlertTitle>{formatCustomerSupportText(lastError.message)}</AlertTitle>
+              <AlertDescription>{formatCustomerSupportText(lastError.nextAction)}</AlertDescription>
             </Alert>
           ) : null}
-
           {events.length ? (
-            <ScrollArea className="max-h-80">
-              <ItemGroup className="pr-3">
-                {events.map((event) => (
-                  <Item key={event.id} variant="muted">
-                    <ItemMedia variant="icon">
-                      <Activity aria-hidden />
-                    </ItemMedia>
-                    <ItemContent>
-                      <ItemTitle className="break-words">
-                        {formatCustomerSupportText(event.label)}
-                      </ItemTitle>
-                      {event.detail ? (
-                        <ItemDescription className="line-clamp-none break-words">
-                          {formatCustomerSupportText(event.detail)}
-                        </ItemDescription>
-                      ) : null}
-                    </ItemContent>
-                    <ItemActions>
-                      <Badge variant="outline">
-                        <Clock aria-hidden />
-                        {event.timestamp || "Session"}
-                      </Badge>
-                    </ItemActions>
-                  </Item>
-                ))}
-              </ItemGroup>
-            </ScrollArea>
+            <ItemGroup>
+              {events.map((event) => (
+                <Item key={event.id} variant="outline">
+                  <ItemMedia variant="icon"><Activity aria-hidden /></ItemMedia>
+                  <ItemContent>
+                    <ItemTitle>{formatCustomerSupportText(event.label)}</ItemTitle>
+                    {event.detail ? <ItemDescription className="line-clamp-none break-words">{formatCustomerSupportText(event.detail)}</ItemDescription> : null}
+                  </ItemContent>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Clock size={15} aria-hidden />
+                    <span>{event.timestamp || "Session"}</span>
+                  </div>
+                </Item>
+              ))}
+            </ItemGroup>
           ) : (
-            <Empty className="min-h-52">
+            <Empty className="border">
               <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <Activity aria-hidden />
-                </EmptyMedia>
+                <EmptyMedia variant="icon"><Activity aria-hidden /></EmptyMedia>
                 <EmptyTitle>No recent activity</EmptyTitle>
-                <EmptyDescription>
-                  New Control Center events will appear here.
-                </EmptyDescription>
+                <EmptyDescription>Connection activity will appear here.</EmptyDescription>
               </EmptyHeader>
             </Empty>
           )}
@@ -421,69 +283,36 @@ export function LogsScreen({
   );
 }
 
-function DiagnosticFact({ label, value }: { label: string; value: string }) {
+function SupportDeviceFact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <Item variant="muted">
-      <ItemContent>
-        <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-        <dd className="break-words font-medium text-foreground">{value}</dd>
-      </ItemContent>
-    </Item>
-  );
-}
-
-function SupportDeviceFact({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <Item role="listitem" size="sm">
+    <Item size="sm">
       <ItemMedia variant="icon">{icon}</ItemMedia>
       <ItemContent>
         <ItemDescription>{label}</ItemDescription>
-        <ItemTitle>{value}</ItemTitle>
+        <ItemTitle className="break-words">{value}</ItemTitle>
       </ItemContent>
     </Item>
   );
 }
 
-function deviceLabel(device: DeviceInfo | null | undefined): string {
-  if (device?.deviceId) {
-    return `VibeTV ${device.deviceId}`;
-  }
-  return device?.connected ? "Current VibeTV" : "Not connected";
-}
-
-function deviceAddress(device: DeviceInfo | null | undefined): string {
-  return device?.target?.replace(/^https?:\/\//, "") || "Not available";
-}
-
-function activeThemeLabel(device: DeviceInfo | null | undefined): string {
-  const theme = device?.activeTheme?.trim();
-  if (!theme) {
-    return device?.connected ? "Default" : "Not available";
-  }
-  return theme
-    .split(/[-_]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+function DiagnosticFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border p-3">
+      <dt className="text-xs font-semibold uppercase text-muted-foreground">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-medium">{value}</dd>
+    </div>
+  );
 }
 
 function formatCheckName(name: string): string {
-  if (name.trim().toLowerCase() === "companion") {
-    return "Mac App";
-  }
-  return name
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+  if (name.trim().toLowerCase() === "companion") return "Mac App";
+  return formatCustomerSupportText(
+    name
+      .split("_")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" "),
+  );
 }
 
 function formatCustomerSupportText(value: string): string {
@@ -495,12 +324,9 @@ function formatCustomerSupportText(value: string): string {
     .replace(/\blocal\s+API\b/gi, "Mac App")
     .replace(/\bAPI\b/g, "app")
     .replace(/\btarget\b/gi, "VibeTV address")
-    .replace(/\bpack\s*URL\b/gi, "theme download")
-    .replace(/\bpackUrl\b/g, "theme download")
     .replace(/\bCOMPANION_UNREACHABLE\b/g, "Mac App needs setup")
     .replace(/\bCLIENT_ERROR\b/g, "Something needs attention")
     .replace(/\bHTTP_\d+\b/g, "Connection failed")
-    .replace(/\bVibeTV-Companion-API-\S+/g, "Mac App installer")
     .replace(/https?:\/\/\S+/g, "saved link");
 }
 
@@ -509,24 +335,49 @@ function formatDeviceAddress(value?: string): string {
 }
 
 function formatDiagnosticTime(value?: string): string {
-  if (!value) {
-    return "Unknown";
-  }
+  if (!value) return "Unknown";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat("de-DE", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(date);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date);
 }
 
-function supportReportFilename(value?: string): string {
-  const timestamp = value ? new Date(value) : new Date();
-  const safeTimestamp = Number.isNaN(timestamp.getTime())
-    ? "session"
-    : timestamp.toISOString().replace(/[:.]/g, "-");
-  return `vibetv-support-report-${safeTimestamp}.json`;
+function formatCodexBarStatus(diagnostics: SupportDiagnostics): string {
+  const engine = diagnostics.providerSetup?.engine;
+  if (!engine) return "Unknown";
+  if (engine.status === "ready") return engine.version ? `Ready ${engine.version}` : "Ready";
+  if (engine.status === "config_error") return "Settings need attention";
+  return "Setup needed";
+}
+
+function formatAppVersion(diagnostics: SupportDiagnostics): string {
+  const app = diagnostics.companion?.app;
+  const version = app?.version || diagnostics.companion?.version;
+  if (!version) return "Unknown";
+  return app?.build ? `${version} (${app.build})` : version;
+}
+
+function formatRuntimeVersion(diagnostics: SupportDiagnostics): string {
+  const runtime = diagnostics.companion?.runtime;
+  if (!runtime?.version) return "Unknown";
+  return runtime.commit ? `${runtime.version} · ${runtime.commit.slice(0, 10)}` : runtime.version;
+}
+
+function formatDeviceReadiness(diagnostics: SupportDiagnostics): string {
+  const reportDevice = diagnostics.device;
+  if (!reportDevice?.paired) return reportDevice?.connected ? "Connected, not paired" : "Not paired";
+  return reportDevice.ready ? "Paired and ready" : "Paired, not ready";
+}
+
+function formatNetworkDiscovery(diagnostics: SupportDiagnostics): string {
+  const discovery = diagnostics.networkDiscovery;
+  if (!discovery?.attempted) return "Not checked";
+  if (discovery.errorCode) return "Search needs attention";
+  const count = discovery.devices?.length || 0;
+  return count === 0 ? "None found" : `${count} found`;
+}
+
+function activeThemeLabel(device: DeviceInfo | null | undefined): string {
+  const theme = device?.activeTheme?.trim();
+  if (!theme) return device?.connected ? "Default" : "Not available";
+  return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }

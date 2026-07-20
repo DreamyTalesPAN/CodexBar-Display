@@ -102,16 +102,23 @@ export function UpdatesScreen({
   busyAction,
   updateStatus,
 }: UpdatesScreenProps) {
+  const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   const installedFirmware =
-    firmwareUpdate?.installedFirmware || device?.firmware || "Unknown";
+    updateStatus?.result?.firmware ||
+    firmwareUpdate?.installedFirmware ||
+    device?.firmware ||
+    "Unknown";
   const canCheckFirmware = Boolean(device?.board && device?.firmware);
   const checking = Boolean(canCheckFirmware && !firmwareUpdate);
   const macAppRunning = companionStatus === "online";
   const checkingMacApp = Boolean(macAppRunning && !companionRelease);
   const checkingUpdates = checking || checkingMacApp;
   const latestFirmware =
-    firmwareUpdate?.latestFirmware || (checking ? "Checking" : "Not available");
-  const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
+    updateStatus?.result?.firmware ||
+    firmwareUpdate?.latestFirmware ||
+    (checking ? "Checking" : "Not available");
+  const updateAvailable =
+    !firmwareUpdateCompleted && hasFirmwareUpdate(firmwareUpdate);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
@@ -131,8 +138,9 @@ export function UpdatesScreen({
   const anyUpdateAvailable =
     updateAvailable || macAppDownloadAction || macAppNativeAction;
   const refreshing = busyAction === "firmware-check";
-  const installingUpdate =
-    busyAction === "firmware-update" || updateStatus?.phase === "installing";
+  const installingUpdate = updateStatus
+    ? updateStatus.phase === "installing"
+    : busyAction === "firmware-update";
   const installingAnyUpdate = installingUpdate;
   const creatingReport = busyAction === "diagnostics";
   const macAppCheckFailed =
@@ -140,7 +148,9 @@ export function UpdatesScreen({
     (companionRelease?.status === "check_failed" ||
       companionRelease?.dmgDownloadStatus === "check_failed");
   const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
-  const status = checking
+  const status = firmwareUpdateCompleted
+    ? "Up to date"
+    : checking
     ? "Checking"
     : firmwareCheckFailed
       ? "Check failed"
@@ -161,6 +171,14 @@ export function UpdatesScreen({
       : companionInfo?.app?.version || companionVersion || "Unknown";
   const companionAvailable =
     companionRelease?.latestVersion || companionRelease?.release || "Checking";
+  const pageStatusHeading =
+    macAppCheckFailed || firmwareCheckFailed
+      ? "Update check failed"
+      : anyUpdateAvailable
+        ? "Update available"
+        : checkingUpdates
+          ? "Checking updates"
+          : "Up to date";
 
   async function runPrimaryUpdate() {
     if (updateAvailable) {
@@ -185,6 +203,7 @@ export function UpdatesScreen({
 
   return (
     <div className="mx-auto flex max-w-[1040px] flex-col gap-4 py-4">
+      <h2 className="text-2xl font-black">{pageStatusHeading}</h2>
       <div className="grid gap-4 lg:grid-cols-2">
         <UpdateCard
           description="Software running on this Mac."
@@ -481,6 +500,12 @@ function UpdateCard({
             label={latestLabel}
             highlighted={updateAvailable}
             value={latestValue}
+          />
+          <VersionItem
+            icon={<ShieldCheck aria-hidden />}
+            label="Status"
+            highlighted={updateAvailable}
+            value={status}
           />
         </ItemGroup>
         {children}

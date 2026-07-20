@@ -9,6 +9,72 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    let redactedReport = AppDelegate.redactReportValue([
+        "token": "raw-token",
+        "apiKey": "raw-api-key",
+        "hasPairingToken": true,
+        "sessionTokens": 1234,
+        "log": "Authorization: Basic raw-basic X-VibeTV-Token: raw-header CODEXBAR_DISPLAY_DEVICE_TOKEN=raw-env https://example.test/?token=raw-query https://alice:raw-userinfo@example.test/path",
+    ]) as! [String: Any]
+    require(
+        redactedReport["token"] as? String == "[redacted]"
+            && redactedReport["apiKey"] as? String == "[redacted]",
+        "support report must redact generic token and API key fields"
+    )
+    require(
+        redactedReport["hasPairingToken"] as? Bool == true
+            && redactedReport["sessionTokens"] as? Int == 1234,
+        "support report must preserve safe booleans and usage token counts"
+    )
+    let redactedLog = redactedReport["log"] as? String ?? ""
+    require(
+        !redactedLog.contains("raw-basic")
+            && !redactedLog.contains("raw-header")
+            && !redactedLog.contains("raw-env")
+            && !redactedLog.contains("raw-query")
+            && !redactedLog.contains("raw-userinfo"),
+        "support report must redact secrets embedded in log strings"
+    )
+    require(
+        isCompatibleCodexBarVersion("0.23.0"),
+        "the minimum supported CodexBar version must be compatible"
+    )
+    require(
+        isCompatibleCodexBarVersion("0.45.0"),
+        "a newer CodexBar version must be reusable"
+    )
+    require(
+        isCompatibleCodexBarVersion("0.43.0"),
+        "an existing CodexBar 0.43 installation must remain reusable"
+    )
+    require(
+        !isCompatibleCodexBarVersion("0.22.0"),
+        "an unsupported CodexBar version must not replace the pinned bootstrap"
+    )
+    let codexBarCandidates = codexBarInstalledAppCandidates(
+        homeDirectory: URL(fileURLWithPath: "/Users/customer", isDirectory: true)
+    )
+    require(
+        codexBarCandidates.map(\.path) == [
+            "/Applications/CodexBar.app",
+            "/Users/customer/Applications/CodexBar.app",
+        ],
+        "CodexBar discovery must prefer the shared app and then the user app"
+    )
+    let config = try! JSONSerialization.jsonObject(
+        with: defaultCodexBarConfigData()
+    ) as! [String: Any]
+    let providers = config["providers"] as! [[String: Any]]
+    require(
+        providers.compactMap { $0["id"] as? String } == [
+            "codex", "claude", "cursor", "gemini", "copilot",
+        ],
+        "fresh installs must seed only the common supported providers"
+    )
+    require(
+        providers.allSatisfy { $0["enabled"] as? Bool == true },
+        "fresh-install providers must be enabled before the first probe"
+    )
     require(
         RuntimePreparationOutcome.nativeRuntimeReady.shouldReloadControlCenter,
         "healthy native runtime must refresh the WebView"
@@ -16,6 +82,10 @@ func runURLSchemeTests() {
     require(
         !RuntimePreparationOutcome.legacyRuntimeRestored.shouldReloadControlCenter,
         "a restored legacy runtime must keep the WebView closed until native installation succeeds"
+    )
+    require(
+        !RuntimePreparationOutcome.codexBarRepairRequired.shouldReloadControlCenter,
+        "a failed CodexBar installation must keep customer setup blocked"
     )
     require(
         !RuntimePreparationOutcome.keepCurrentPage.shouldReloadControlCenter,
@@ -68,6 +138,38 @@ func runURLSchemeTests() {
             "unexpected update action must be rejected: \(rejectedUpdateURL)"
         )
     }
+    require(
+        isRepairCodexBarURL(URL(string: "vibetv://repair-codexbar")!),
+        "the exact native CodexBar repair action must be accepted"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://repair-codexbar")!
+        ) == .repairCodexBar,
+        "the WebView repair URL must route to the native CodexBar repair action"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://check-for-updates")!
+        ) == .checkForUpdates,
+        "the WebView update URL must route to the native Sparkle action"
+    )
+    for rejectedRepairURL in [
+        "vibetv://repair-codexbar/extra",
+        "vibetv://repair-codexbar?force=true",
+        "https://repair-codexbar",
+    ] {
+        require(
+            !isRepairCodexBarURL(URL(string: rejectedRepairURL)!),
+            "unexpected CodexBar repair action must be rejected: \(rejectedRepairURL)"
+        )
+    }
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "https://app.vibetv.shop/control-center")!
+        ) == nil,
+        "ordinary WebView navigation must not trigger a native action"
+    )
     require(
         isApprovedDMGDownloadURL(
             URL(

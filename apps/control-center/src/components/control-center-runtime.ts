@@ -1,13 +1,22 @@
 export const COMPANION_URL = "http://127.0.0.1:47832";
 export const LOCAL_CONTROL_CENTER_LAUNCHER_URL =
   "vibetv://open-control-center";
+export const REPAIR_CODEXBAR_URL = "vibetv://repair-codexbar";
 
 export function launchLocalControlCenterApp(): void {
+  launchNativeControlCenterAction(LOCAL_CONTROL_CENTER_LAUNCHER_URL);
+}
+
+export function launchCodexBarRepair(): void {
+  launchNativeControlCenterAction(REPAIR_CODEXBAR_URL);
+}
+
+function launchNativeControlCenterAction(url: string): void {
   if (typeof document === "undefined") {
     return;
   }
   const launcher = document.createElement("a");
-  launcher.href = LOCAL_CONTROL_CENTER_LAUNCHER_URL;
+  launcher.href = url;
   launcher.hidden = true;
   document.body.appendChild(launcher);
   launcher.click();

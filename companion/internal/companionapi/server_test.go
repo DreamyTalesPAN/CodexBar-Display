@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -60,6 +62,91 @@ func TestStatusWorksWithoutDevice(t *testing.T) {
 	}
 	if got.Device.Connected {
 		t.Fatalf("expected disconnected device without probing, got %+v", got.Device)
+	}
+}
+
+func TestStatusIncludesLatestFirmwareUpdateJob(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	startedAt := time.Now().UTC().Add(-time.Minute)
+	server.updateJobs["finished-update"] = &firmwareUpdateJob{
+		ID:        "finished-update",
+		Phase:     "complete",
+		Message:   "Update complete.",
+		Progress:  100,
+		StartedAt: startedAt,
+	}
+	server.updateJobs["active-update"] = &firmwareUpdateJob{
+		ID:        "active-update",
+		Phase:     "installing",
+		Stage:     "waiting_for_device",
+		Message:   "Restarting VibeTV.",
+		Progress:  85,
+		StartedAt: startedAt.Add(30 * time.Second),
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(
+		rec,
+		httptest.NewRequest(http.MethodGet, "/v1/status", nil),
+	)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.FirmwareUpdate == nil || got.FirmwareUpdate.ID != "active-update" {
+		t.Fatalf("expected latest firmware update in status, got %+v", got.FirmwareUpdate)
+	}
+	if got.FirmwareUpdate.Phase != "installing" || got.FirmwareUpdate.Progress != 85 {
+		t.Fatalf("unexpected firmware update snapshot: %+v", got.FirmwareUpdate)
+	}
+}
+
+func TestStatusIncludesLatestThemeInstallJob(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	startedAt := time.Now().UTC().Add(-time.Minute)
+	server.installJobs["finished-theme"] = &themeInstallJob{
+		ID:        "finished-theme",
+		ThemeID:   "mini",
+		ThemeName: "Mini",
+		Phase:     "complete",
+		Progress:  100,
+		StartedAt: startedAt,
+	}
+	server.installJobs["active-theme"] = &themeInstallJob{
+		ID:        "active-theme",
+		ThemeID:   "clippy",
+		ThemeName: "Clippy",
+		Phase:     "installing",
+		Message:   "Uploading theme files.",
+		Progress:  40,
+		StartedAt: startedAt.Add(30 * time.Second),
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(
+		rec,
+		httptest.NewRequest(http.MethodGet, "/v1/status", nil),
+	)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ThemeInstall == nil || got.ThemeInstall.ID != "active-theme" {
+		t.Fatalf("expected latest theme install in status, got %+v", got.ThemeInstall)
+	}
+	if got.ThemeInstall.ThemeID != "clippy" || got.ThemeInstall.ThemeName != "Clippy" {
+		t.Fatalf("expected resumable theme identity, got %+v", got.ThemeInstall)
+	}
+	if got.ThemeInstall.Phase != "installing" || got.ThemeInstall.Progress != 40 {
+		t.Fatalf("unexpected theme install snapshot: %+v", got.ThemeInstall)
 	}
 }
 
@@ -115,7 +202,7 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 				sawTokenlessHello = true
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"saved-device","capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
 		case "/health":
 			if r.Header.Get("X-VibeTV-Token") != "" {
 				http.Error(w, "stale token", http.StatusForbidden)
@@ -130,7 +217,7 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	}))
 	defer device.Close()
 
-	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "stale-token"})
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "stale-token", DeviceID: "saved-device"})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
 
@@ -154,6 +241,52 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	}
 	if !sawStaleHello || !sawTokenlessHello || !sawTokenlessHealth {
 		t.Fatalf("expected stale hello, tokenless hello, and tokenless health probes; stale=%t tokenlessHello=%t tokenlessHealth=%t", sawStaleHello, sawTokenlessHello, sawTokenlessHealth)
+	}
+}
+
+func TestStatusDoesNotAdoptDifferentDeviceAtConfiguredAddress(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"replacement-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			t.Fatal("status must not inspect the replacement device as the saved device")
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	initial := runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "saved-token",
+		DeviceID:     "saved-device",
+	}
+	server := newTestServer(t, initial)
+	var configWrites atomic.Int32
+	server.saveConfig = func(_ string, _ runtimeconfig.Config) error {
+		configWrites.Add(1)
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.DeviceID != initial.DeviceID || got.Device.Target != initial.DeviceTarget {
+		t.Fatalf("saved device identity was replaced: %+v", got.Device)
+	}
+	if got.Device.Connected || got.Device.Ready || got.Device.ConnectionState != deviceConnectionRetrying {
+		t.Fatalf("replacement at saved address must leave saved device reconnecting: %+v", got.Device)
+	}
+	if configWrites.Load() != 0 {
+		t.Fatalf("read-only identity mismatch wrote config %d times", configWrites.Load())
 	}
 }
 
@@ -267,15 +400,364 @@ func TestDeviceSearchRetriesTransientKnownDeviceFailure(t *testing.T) {
 	})
 	server.subnetTargets = func() []string { return nil }
 
-	devices := server.searchDevices(context.Background(), runtimeconfig.Config{
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{
 		DeviceTarget: device.URL,
 		DeviceID:     "esp8266-retry",
 	}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(devices) != 1 || !devices[0].Known || devices[0].DeviceID != "esp8266-retry" {
 		t.Fatalf("expected transiently busy known VibeTV on retry, got %+v", devices)
 	}
 	if helloCalls.Load() != 2 {
 		t.Fatalf("expected exactly one bounded retry, got %d hello calls", helloCalls.Load())
+	}
+}
+
+func TestDeviceSearchReportsDeniedLocalNetworkAccess(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.defaultWiFiTarget = func() string { return "" }
+	server.subnetTargets = func() []string { return []string{"http://192.168.1.20"} }
+	server.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, syscall.EACCES
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "local_network_access_denied" ||
+		!strings.Contains(got.Error.NextAction, "Privacy & Security > Local Network") {
+		t.Fatalf("unexpected local-network recovery: %+v", got)
+	}
+}
+
+func TestLocalNetworkPermissionDenialRecognizesFastDarwinHostUnreachableFailures(t *testing.T) {
+	wrapped := fmt.Errorf("connect: %w", syscall.EHOSTUNREACH)
+	if !possibleLocalNetworkPermissionError(wrapped, "darwin", 10*time.Millisecond) {
+		t.Fatal("Darwin EHOSTUNREACH must be treated as a possible local-network denial")
+	}
+	if possibleLocalNetworkPermissionError(wrapped, "linux", 10*time.Millisecond) {
+		t.Fatal("EHOSTUNREACH must not be treated as a permission signal outside Darwin")
+	}
+	if !localNetworkPermissionDeniedByProbeErrors(
+		localNetworkDenialMinimumSamples,
+		localNetworkDenialMinimumSamples,
+	) {
+		t.Fatal("a complete burst of immediate Darwin failures must report denied access")
+	}
+	if localNetworkPermissionDeniedByProbeErrors(1, 1) {
+		t.Fatal("one unreachable device is not proof of denied local-network access")
+	}
+	if possibleLocalNetworkPermissionError(
+		wrapped,
+		"darwin",
+		localNetworkDenialProbeMaxElapsed+time.Millisecond,
+	) {
+		t.Fatal("slow unreachable hosts are not proof of denied local-network access")
+	}
+}
+
+func TestDeviceSearchReportsFastDarwinHostUnreachableBurstAsDeniedAccess(t *testing.T) {
+	oldGOOS := localNetworkPermissionGOOS
+	localNetworkPermissionGOOS = "darwin"
+	t.Cleanup(func() { localNetworkPermissionGOOS = oldGOOS })
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.defaultWiFiTarget = func() string { return "" }
+	targets := make([]string, 0, localNetworkDenialMinimumSamples)
+	for host := 1; host <= localNetworkDenialMinimumSamples; host++ {
+		targets = append(targets, fmt.Sprintf("http://192.168.50.%d", host))
+	}
+	server.subnetTargets = func() []string { return targets }
+	server.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, syscall.EHOSTUNREACH
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "local_network_access_denied" {
+		t.Fatalf("unexpected local-network error: %+v", got)
+	}
+}
+
+func TestDeviceSearchReturnsFirstFoundDeviceImmediatelyWithoutSavedIdentity(t *testing.T) {
+	var helloCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		helloCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"first-customer-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].DeviceID != "first-customer-device" {
+		t.Fatalf("expected first customer VibeTV, got %+v", devices)
+	}
+	if helloCalls.Load() != 1 {
+		t.Fatalf("expected first successful scan to return immediately, got %d hello calls", helloCalls.Load())
+	}
+}
+
+func TestDeviceSearchRetriesCleanCustomerScanUntilDeviceAppears(t *testing.T) {
+	var helloCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if helloCalls.Add(1) == 1 {
+			http.Error(w, "wifi still settling", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"late-customer-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].DeviceID != "late-customer-device" {
+		t.Fatalf("expected later customer scan to find VibeTV, got %+v", devices)
+	}
+	if helloCalls.Load() != 2 {
+		t.Fatalf("expected a second complete scan, got %d hello calls", helloCalls.Load())
+	}
+}
+
+func TestDeviceSearchProbesEveryRememberedVibeTV(t *testing.T) {
+	device := func(id string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, id)
+		}))
+	}
+	first := device("active-device")
+	defer first.Close()
+	second := device("other-device")
+	defer second.Close()
+
+	cfg := runtimeconfig.Config{
+		DeviceID:     "active-device",
+		DeviceTarget: first.URL,
+		KnownDevices: []runtimeconfig.KnownDevice{
+			{DeviceID: "active-device", Target: first.URL},
+			{DeviceID: "other-device", Target: second.URL},
+		},
+	}
+	server := newTestServer(t, cfg)
+	server.subnetTargets = func() []string { return nil }
+
+	devices, err := server.searchDevices(context.Background(), cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 2 {
+		t.Fatalf("expected every remembered VibeTV to be probed, got %+v", devices)
+	}
+}
+
+func TestDeviceSearchActuallyWaitsThirtySecondsWhenNothingIsFound(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return nil }
+	server.defaultWiFiTarget = func() string { return "" }
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	started := time.Now()
+	server.Handler().ServeHTTP(rec, req)
+	elapsed := time.Since(started)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Devices []deviceSearchEntry `json:"devices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Devices) != 0 {
+		t.Fatalf("expected no VibeTV, got %+v", got.Devices)
+	}
+	if elapsed < 29*time.Second || elapsed > 35*time.Second {
+		t.Fatalf("empty customer search took %s; want approximately 30s", elapsed)
+	}
+}
+
+func TestLocalSubnetTargetsUseConfiguredNetworkMask(t *testing.T) {
+	_, network, err := net.ParseCIDR("192.168.10.42/23")
+	if err != nil {
+		t.Fatal(err)
+	}
+	network.IP = net.ParseIP("192.168.10.42")
+	targets := localSubnetTargetsFromAddrs([]net.Addr{network})
+	seen := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		seen[target] = true
+	}
+	if !seen["http://192.168.11.20"] {
+		t.Fatal("/23 scan did not include the adjacent /24")
+	}
+	for _, excluded := range []string{
+		"http://192.168.10.0",
+		"http://192.168.10.42",
+		"http://192.168.11.255",
+	} {
+		if seen[excluded] {
+			t.Fatalf("scan included excluded address %s", excluded)
+		}
+	}
+}
+
+func TestLocalSubnetTargetsCapPrivateSlash16AtScannableSlash23(t *testing.T) {
+	_, network, err := net.ParseCIDR("10.42.200.42/16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	network.IP = net.ParseIP("10.42.200.42")
+	targets := localSubnetTargetsFromAddrs([]net.Addr{network})
+	seen := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		seen[target] = true
+	}
+	if !seen["http://10.42.201.20"] {
+		t.Fatal("large-subnet scan did not include the adjacent /24")
+	}
+	for _, outsidePracticalScan := range []string{
+		"http://10.42.1.20",
+		"http://10.42.250.20",
+	} {
+		if seen[outsidePracticalScan] {
+			t.Fatalf("large-subnet scan claimed an unscannable target %s", outsidePracticalScan)
+		}
+	}
+	if len(targets) != 509 {
+		t.Fatalf("large-subnet scan targets=%d want=509 scannable peers", len(targets))
+	}
+}
+
+func TestDeviceSearchActuallyProbesFarEdgeOfSlash23(t *testing.T) {
+	_, network, err := net.ParseCIDR("192.168.10.42/23")
+	if err != nil {
+		t.Fatal(err)
+	}
+	network.IP = net.ParseIP("192.168.10.42")
+	targets := localSubnetTargetsFromAddrs([]net.Addr{network})
+	const deviceHost = "192.168.11.254"
+	var attempts atomic.Int32
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.defaultWiFiTarget = func() string { return "" }
+	server.subnetTargets = func() []string { return targets }
+	server.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		attempts.Add(1)
+		if req.URL.Hostname() != deviceHost {
+			return nil, errors.New("offline")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(
+				`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"far-edge-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`,
+			)),
+			Request: req,
+		}, nil
+	})
+
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].DeviceID != "far-edge-device" {
+		t.Fatalf("expected far-edge /23 VibeTV, got %+v", devices)
+	}
+	if got, want := int(attempts.Load()), len(targets); got != want {
+		t.Fatalf("search attempted %d targets; want every one of %d", got, want)
+	}
+}
+
+func TestDeviceSearchWaitsForSlowStartingWiFiDevice(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		time.Sleep(800 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"slow-starting-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].DeviceID != "slow-starting-device" {
+		t.Fatalf("expected slow-starting customer VibeTV, got %+v", devices)
+	}
+}
+
+func TestDeviceSelectFinishesWithoutWaitingForARenderedFrame(t *testing.T) {
+	const deviceID = "customer-device"
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, deviceID)
+		case "/api/pair":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"customer-token"}`))
+		default:
+			t.Fatalf("selection waited on unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	var streamTarget string
+	server.refreshStream = func(_ context.Context, target string) error {
+		streamTarget = target
+		return nil
+	}
+
+	selected, err := server.selectDevice(context.Background(), device.URL, deviceID)
+	if err != nil {
+		t.Fatalf("select device: %v", err)
+	}
+	if !selected.Connected || !selected.Paired || selected.DeviceID != deviceID {
+		t.Fatalf("unexpected selected device: %+v", selected)
+	}
+	if streamTarget != device.URL {
+		t.Fatalf("display stream target=%q want %q", streamTarget, device.URL)
 	}
 }
 
@@ -305,11 +787,11 @@ func TestValidateRepairIdentityRejectsSetupAndBackgroundMismatch(t *testing.T) {
 	}
 }
 
-func TestDeviceIdentityKnownRequiresStableDeviceID(t *testing.T) {
+func TestDeviceIdentityMatchRequiresStableDeviceID(t *testing.T) {
 	cfg := runtimeconfig.Config{DeviceTarget: "http://192.168.178.72"}
 	hello := protocol.DeviceHello{DeviceID: "esp8266-123abc", NetworkMode: "station"}
 	if deviceIdentityMatches(cfg, hello) {
-		t.Fatal("a legacy target match must not claim a stable known identity")
+		t.Fatal("a legacy target must not activate a device without stable identity")
 	}
 	cfg.DeviceID = "ESP8266-123ABC"
 	if !deviceIdentityMatches(cfg, hello) {
@@ -2049,6 +2531,74 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 	}
 }
 
+func TestCustomThemeRenderPackPersistsAcrossCompanionRestart(t *testing.T) {
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.home = home
+	if err := server.persistThemeRenderPack(testThemePackZip(t)); err != nil {
+		t.Fatalf("persist custom theme render pack: %v", err)
+	}
+
+	restarted := newTestServer(t, runtimeconfig.Config{})
+	restarted.home = home
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/theme-packs/render/cozy-meadow.json", nil)
+	restarted.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected persisted render pack status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("expected persisted render pack to disable caching, got %q", got)
+	}
+	var got themeRenderPack
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode persisted render pack: %v", err)
+	}
+	if !got.OK || got.ThemeID != "cozy-meadow" || got.SpecPath != "/themes/u/cm.json" {
+		t.Fatalf("unexpected persisted render pack: %+v", got)
+	}
+	if !strings.Contains(string(got.Spec), `"id":"cozy-meadow"`) {
+		t.Fatalf("expected persisted custom spec, got %s", string(got.Spec))
+	}
+}
+
+func TestCustomThemeRenderPackPersistsWhenDisplayRefreshFails(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.home = home
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{
+			ThemeID:    "cozy-meadow",
+			ActivePath: "/themes/u/cm.json",
+		}, nil
+	}
+	server.refreshStream = func(context.Context, string) error {
+		return errors.New("display stream unavailable")
+	}
+
+	_, err := server.runThemeInstall(
+		context.Background(),
+		runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"},
+		themeInstallRequest{ThemeID: "cozy-meadow", PackBytes: testThemePackZip(t)},
+		io.Discard,
+	)
+	if err == nil {
+		t.Fatal("expected display stream refresh to fail after theme activation")
+	}
+
+	restarted := newTestServer(t, runtimeconfig.Config{})
+	restarted.home = home
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/theme-packs/render/cozy-meadow.json", nil)
+	restarted.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected preview cache after partial install failure, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestDMGControlCenterRetiresExternalBrowserUI(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.installationMode = "dmg"
@@ -3117,6 +3667,12 @@ func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	if !got.OK || got.Companion.Status != "ready" || got.GeneratedAt == "" {
 		t.Fatalf("unexpected diagnostics response: %+v", got)
 	}
+	if got.SchemaVersion != 2 || got.ReportType != "control_center" {
+		t.Fatalf("expected versioned control center report, got %+v", got)
+	}
+	if got.Environment.OS == "" || got.Environment.Arch == "" || got.Environment.GoVersion == "" {
+		t.Fatalf("expected runtime environment, got %+v", got.Environment)
+	}
 	if got.Device.Connected || got.Device.Target != "" {
 		t.Fatalf("expected no connected device target, got %+v", got.Device)
 	}
@@ -3125,9 +3681,86 @@ func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	}
 }
 
+func TestDiagnosticsFindsVibeTVOnWiFiWithoutSelectingIt(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"wifi-vibetv","board":"esp8266-smalltv-st7789","firmware":"1.0.31","networkMode":"station"}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil)
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got diagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.NetworkDiscovery.Attempted || !got.NetworkDiscovery.Complete || !got.NetworkDiscovery.Found || len(got.NetworkDiscovery.Devices) != 1 {
+		t.Fatalf("expected one VibeTV in read-only WiFi search, got %+v", got.NetworkDiscovery)
+	}
+	if got.NetworkDiscovery.Devices[0].DeviceID != "wifi-vibetv" {
+		t.Fatalf("unexpected discovered VibeTV: %+v", got.NetworkDiscovery.Devices[0])
+	}
+	if !hasDiagnosticCheck(got.Checks, "network_discovery", "pass") {
+		t.Fatalf("expected discovery pass check, got %+v", got.Checks)
+	}
+	saved, err := server.config()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if saved.DeviceTarget != "" || saved.DeviceID != "" || len(saved.KnownDevices) != 0 {
+		t.Fatalf("diagnostics must not select or remember a VibeTV, got %+v", saved)
+	}
+}
+
+func TestDiagnosticsMarksTimedOutWiFiSearchIncomplete(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer device.Close()
+
+	previousTimeout := diagnosticsDiscoveryTime
+	diagnosticsDiscoveryTime = 20 * time.Millisecond
+	t.Cleanup(func() { diagnosticsDiscoveryTime = previousTimeout })
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string { return []string{device.URL} }
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil)
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got diagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.NetworkDiscovery.Attempted || got.NetworkDiscovery.Complete || got.NetworkDiscovery.Found {
+		t.Fatalf("expected an incomplete WiFi search, got %+v", got.NetworkDiscovery)
+	}
+	if got.NetworkDiscovery.ErrorCode != "device_search_incomplete" {
+		t.Fatalf("expected incomplete search error, got %+v", got.NetworkDiscovery)
+	}
+	if !hasDiagnosticCheck(got.Checks, "network_discovery", "attention") {
+		t.Fatalf("expected discovery attention check, got %+v", got.Checks)
+	}
+}
+
 func TestDiagnosticsReportsDeviceWithoutLeakingToken(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+		if got := r.Header.Get("X-VibeTV-Token"); got != "" && got != "pair-token" {
 			t.Fatalf("expected pairing token header for device request, got %q", got)
 		}
 		switch r.URL.Path {
@@ -3135,6 +3768,9 @@ func TestDiagnosticsReportsDeviceWithoutLeakingToken(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
 		case "/health":
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Fatalf("expected pairing token header for health request, got %q", got)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"synthwave"},"settings":{"display":{"brightnessPercent":40}}}`))
 		default:
@@ -3162,6 +3798,9 @@ func TestDiagnosticsReportsDeviceWithoutLeakingToken(t *testing.T) {
 	}
 	if !got.Device.Connected || !got.Device.Paired || got.Device.ActiveTheme != "synthwave" {
 		t.Fatalf("unexpected device diagnostics: %+v", got.Device)
+	}
+	if !got.Configuration.HasPairingToken || got.Configuration.DeviceTarget != device.URL {
+		t.Fatalf("expected redacted configuration summary, got %+v", got.Configuration)
 	}
 	if !hasDiagnosticCheck(got.Checks, "device_hello", "pass") {
 		t.Fatalf("expected hello pass check, got %+v", got.Checks)
@@ -4527,6 +5166,43 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	}
 }
 
+func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
+	initial := runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	}
+	server := newTestServer(t, initial)
+	server.updateJobs["active-update"] = &firmwareUpdateJob{
+		ID:    "active-update",
+		Phase: "installing",
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "firmware_update_in_progress" {
+		t.Fatalf("error code=%q want firmware_update_in_progress", response.Error.Code)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceTarget != initial.DeviceTarget || cfg.DeviceToken != initial.DeviceToken || cfg.DeviceID != initial.DeviceID {
+		t.Fatalf("active update reset mutated config: %+v", cfg)
+	}
+}
+
 func TestDeviceDiscoverDoesNotFallbackWhenExplicitTargetFails(t *testing.T) {
 	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusServiceUnavailable)
@@ -5051,7 +5727,7 @@ func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true&themeId=cozy-meadow", bytes.NewReader(zipBytes))
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true&themeId=cozy-meadow&themeName=Cozy%20Meadow", bytes.NewReader(zipBytes))
 	req.Header.Set("Content-Type", "application/zip")
 	server.Handler().ServeHTTP(rec, req)
 
@@ -5064,6 +5740,9 @@ func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	}
 	if started.Job.ID == "" {
 		t.Fatalf("expected async install job, got %+v", started.Job)
+	}
+	if started.Job.ThemeID != "cozy-meadow" || started.Job.ThemeName != "Cozy Meadow" {
+		t.Fatalf("expected resumable theme identity, got %+v", started.Job)
 	}
 
 	select {
@@ -5321,6 +6000,13 @@ func TestThemeInstallRejectsConcurrentZipBeforeReadingBody(t *testing.T) {
 		t.Fatalf("expected one active install, got %d", calls)
 	}
 	close(releaseInstall)
+	for attempt := 0; attempt < 50; attempt++ {
+		if job, ok := server.latestThemeInstallJob(); ok && job.Phase != "installing" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("active install did not finish after release")
 }
 
 func TestThemeInstallAsyncReportsCustomerProgress(t *testing.T) {
@@ -6227,6 +6913,16 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
 		return githubRelease{TagName: "v1.0.0"}, nil
 	}
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{
+			Status: "ready",
+			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Providers: []codexbar.ProviderReadiness{{
+				ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderReady,
+			}},
+		}
+	}
+	server.openCodexBar = func(context.Context) error { return nil }
 	server.subnetTargets = func() []string {
 		return nil
 	}
