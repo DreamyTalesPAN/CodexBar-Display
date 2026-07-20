@@ -48,11 +48,11 @@ void test_scan_keeps_only_ten_strongest_networks() {
   TEST_ASSERT_FALSE(contains(BuildNetworkOptionsHTML(state), "Too weak"));
 }
 
-void test_signal_labels_are_customer_friendly() {
-  TEST_ASSERT_EQUAL_STRING("Strong signal", SignalLabel(-60));
-  TEST_ASSERT_EQUAL_STRING("Good signal", SignalLabel(-61));
-  TEST_ASSERT_EQUAL_STRING("Good signal", SignalLabel(-75));
-  TEST_ASSERT_EQUAL_STRING("Weak signal", SignalLabel(-76));
+void test_signal_labels_use_traffic_lights() {
+  TEST_ASSERT_EQUAL_STRING("🟢", SignalLabel(-60));
+  TEST_ASSERT_EQUAL_STRING("🟡", SignalLabel(-61));
+  TEST_ASSERT_EQUAL_STRING("🟡", SignalLabel(-75));
+  TEST_ASSERT_EQUAL_STRING("🔴", SignalLabel(-76));
 }
 
 void test_wifi_statuses_map_to_retryable_errors() {
@@ -84,6 +84,8 @@ void test_options_escape_ssids_and_stay_inside_budget() {
   TEST_ASSERT_LESS_OR_EQUAL_UINT32(kMaxOptionsHtmlBytes, html.length());
   TEST_ASSERT_TRUE(contains(html, "Home&lt;&amp;&quot;"));
   TEST_ASSERT_FALSE(contains(html, "2.4 GHz compatible"));
+  TEST_ASSERT_TRUE(contains(html, "🟢"));
+  TEST_ASSERT_FALSE(contains(html, "Strong signal"));
 }
 
 void test_page_uses_inline_band_guidance_and_links_to_public_support() {
@@ -107,6 +109,10 @@ void test_page_uses_inline_band_guidance_and_links_to_public_support() {
   TEST_ASSERT_EQUAL_STRING("https://vibetv.shop/pages/setup", kSupportUrl);
   TEST_ASSERT_TRUE(contains(server.output, "https://vibetv.shop/pages/setup"));
   TEST_ASSERT_TRUE(contains(server.output, "target=\"_blank\" rel=\"noopener noreferrer\""));
+  TEST_ASSERT_TRUE(contains(server.output, "location.hostname==='captive.apple.com'"));
+  TEST_ASSERT_TRUE(contains(server.output, "aria-controls=\"support-note\" aria-expanded=\"false\""));
+  TEST_ASSERT_TRUE(contains(server.output, "role=\"status\" hidden"));
+  TEST_ASSERT_TRUE(contains(server.output, "Close this setup window and disconnect from VibeTV-Setup."));
   TEST_ASSERT_TRUE(contains(server.output, "My Wi-Fi isn't shown"));
   TEST_ASSERT_TRUE(contains(server.output, "Check the password and try again."));
   TEST_ASSERT_FALSE(contains(server.output, "Smart Connect"));
@@ -176,7 +182,7 @@ int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_scan_filters_deduplicates_and_sorts);
   RUN_TEST(test_scan_keeps_only_ten_strongest_networks);
-  RUN_TEST(test_signal_labels_are_customer_friendly);
+  RUN_TEST(test_signal_labels_use_traffic_lights);
   RUN_TEST(test_wifi_statuses_map_to_retryable_errors);
   RUN_TEST(test_options_escape_ssids_and_stay_inside_budget);
   RUN_TEST(test_page_uses_inline_band_guidance_and_links_to_public_support);

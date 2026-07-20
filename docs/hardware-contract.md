@@ -45,7 +45,9 @@ Companion negotiation:
 - The setup UI lists only 2.4 GHz scan results, supports an explicit re-scan,
   and keeps manual SSID entry available for hidden networks.
 - `My Wi-Fi isn't shown` links to the public support page delivered by issue
-  #192 at `https://vibetv.shop/pages/setup`.
+  #192 at `https://vibetv.shop/pages/setup`. In Apple's captive login window,
+  where external pages cannot be opened reliably, it instead tells the user to
+  leave `VibeTV-Setup` and open that same address in Safari.
 - The setup flow stores home WiFi credentials and restarts the device.
 - Connected devices expose their current IP in `/hello` discovery, show `WiFi connected!` plus `app.vibetv.shop`, serve the local setup hub on that IP, and wait for the Mac App.
 - Connected devices expose customer-facing display settings directly on their current IP. The MVP setting is brightness on supported hardware.
