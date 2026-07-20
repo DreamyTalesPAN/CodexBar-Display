@@ -1896,7 +1896,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       try {
         const payload = await runCompanion<UsageSnapshot>(
-          "/v1/usage",
+          quiet ? "/v1/usage" : "/v1/usage?refresh=1",
           undefined,
           { preserveLastError: quiet },
         );

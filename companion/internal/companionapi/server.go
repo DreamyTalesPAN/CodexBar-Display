@@ -75,6 +75,7 @@ const (
 	firmwareUpdateJobTime     = 10 * time.Minute
 	macAppUpdateJobTime       = 8 * time.Minute
 	usageFallbackFetchTime    = 15 * time.Second
+	usageDirectCacheTime      = 5 * time.Minute
 	macAppInstallerURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
 	macAppReleaseAPIEnvVar    = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
 	macAppReleaseAPIURL       = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
@@ -182,6 +183,9 @@ type Server struct {
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
 	fetchUsage             func(context.Context) ([]codexbar.ParsedFrame, error)
+	usageCacheMu           sync.RWMutex
+	usageCache             *usageResponse
+	usageCacheAt           time.Time
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
 	updateMacApp           func(context.Context, string, string, macAppUpdateRequest, io.Writer) error
 	fetchMacAppRelease     func(context.Context) (githubRelease, error)
@@ -1210,13 +1214,20 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	writeUsage := func(resp usageResponse) {
 		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
 	}
+	forceRefresh := r.URL.Query().Get("refresh") == "1"
+	if !forceRefresh {
+		if cached, ok := s.cachedDirectUsage(now); ok {
+			writeUsage(cached)
+			return
+		}
+	}
 	var persisted usageResponse
 	havePersisted := false
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok && len(usage.Providers) > 0 {
 			persisted = usageResponseFromPersisted(now, usage)
 			havePersisted = len(persisted.Providers) > 0
-			if usageResponseHasFreshProvider(persisted) {
+			if usageResponseHasFreshProvider(persisted) && !forceRefresh {
 				writeUsage(persisted)
 				return
 			}
@@ -1250,11 +1261,58 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := usageResponseFromParsed(now, providers)
+	if havePersisted {
+		resp = mergePersistedUsageDetails(resp, persisted)
+	}
 	if len(resp.Providers) == 0 && havePersisted {
 		writeUsage(persisted)
 		return
 	}
+	s.cacheDirectUsage(resp, now)
 	writeUsage(resp)
+}
+
+func (s *Server) cachedDirectUsage(now time.Time) (usageResponse, bool) {
+	s.usageCacheMu.RLock()
+	defer s.usageCacheMu.RUnlock()
+	if s.usageCache == nil || now.Sub(s.usageCacheAt) > usageDirectCacheTime {
+		return usageResponse{}, false
+	}
+	return *s.usageCache, true
+}
+
+func (s *Server) cacheDirectUsage(resp usageResponse, now time.Time) {
+	s.usageCacheMu.Lock()
+	defer s.usageCacheMu.Unlock()
+	s.usageCache = &resp
+	s.usageCacheAt = now
+}
+
+func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
+	previous := make(map[string]usageProviderInfo, len(persisted.Providers))
+	for _, provider := range persisted.Providers {
+		previous[provider.ID] = provider
+	}
+	for i := range fresh.Providers {
+		provider := &fresh.Providers[i]
+		cached, ok := previous[provider.ID]
+		if !ok {
+			continue
+		}
+		if provider.SessionTokens == 0 {
+			provider.SessionTokens = cached.SessionTokens
+		}
+		if provider.WeekTokens == 0 {
+			provider.WeekTokens = cached.WeekTokens
+		}
+		if provider.TotalTokens == 0 {
+			provider.TotalTokens = cached.TotalTokens
+		}
+		if provider.Cost == nil {
+			provider.Cost = cached.Cost
+		}
+	}
+	return fresh
 }
 
 func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request) {

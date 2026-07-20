@@ -1098,6 +1098,62 @@ func TestUsageHonorsCodexBarRemainingPreference(t *testing.T) {
 	}
 }
 
+func TestUsageRefreshBypassesPersistedSnapshotAndCachesFreshResult(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 20, 14, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider: "codex",
+				Frame:    protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used", SessionTokens: 1234, WeekTokens: 5678, TotalTokens: 9000},
+				Meta: codexbar.ProviderUsageMeta{
+					Windows: []codexbar.UsageWindow{{ID: "secondary", Label: "Weekly", UsedPercent: 36}},
+					Cost:    &codexbar.ProviderCostUsage{Daily: []codexbar.ProviderCostDay{{Day: "2026-07-20", TotalTokens: 1234}}},
+				},
+				CollectedAt: now,
+			}},
+		}, true
+	}
+	fetches := 0
+	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		fetches++
+		return []codexbar.ParsedFrame{{
+			Provider: "codex",
+			Frame:    protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
+			Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{
+				{ID: "secondary", Label: "Weekly", UsedPercent: 36},
+				{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", UsedPercent: 0, WindowMinutes: 10080},
+			}},
+		}}, nil
+	}
+
+	for _, path := range []string{"/v1/usage?refresh=1", "/v1/usage"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200 for %s, got %d body=%s", path, rec.Code, rec.Body.String())
+		}
+		var got usageResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode response for %s: %v", path, err)
+		}
+		if len(got.Providers) != 1 || len(got.Providers[0].Windows) != 2 || got.Providers[0].Windows[1].Label != "Codex Spark Weekly" {
+			t.Fatalf("expected fresh Codex Spark window for %s, got %+v", path, got.Providers)
+		}
+		if got.Providers[0].SessionTokens != 1234 || got.Providers[0].WeekTokens != 5678 || got.Providers[0].TotalTokens != 9000 {
+			t.Fatalf("expected persisted token history for %s, got %+v", path, got.Providers[0])
+		}
+		if got.Providers[0].Cost == nil || len(got.Providers[0].Cost.Daily) != 1 {
+			t.Fatalf("expected persisted cost history for %s, got %+v", path, got.Providers[0].Cost)
+		}
+	}
+	if fetches != 1 {
+		t.Fatalf("expected one direct fetch followed by cached usage, got %d", fetches)
+	}
+}
+
 func TestDisplayFrameLatestReturnsPersistedLastGoodFrame(t *testing.T) {
 	t.Setenv(displayStreamOutLogEnv, filepath.Join(t.TempDir(), "missing.log"))
 	server := newTestServer(t, runtimeconfig.Config{})
