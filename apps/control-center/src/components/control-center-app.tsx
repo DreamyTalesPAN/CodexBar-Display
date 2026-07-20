@@ -43,6 +43,7 @@ import {
   type DeviceInfo,
   type DeviceSearchState,
   type DeviceState,
+  type PreferenceDescriptor,
   type SupportDiagnostics,
   type UsageSnapshot,
 } from "./control-center-types";
@@ -235,6 +236,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<FirmwareUpdateStatus | null>(null);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [usageError, setUsageError] = useState<ApiError | null>(null);
+  const [providerPreferences, setProviderPreferences] = useState<
+    PreferenceDescriptor[] | null
+  >(null);
+  const [providerPreferencesError, setProviderPreferencesError] =
+    useState<ApiError | null>(null);
+  const [pendingPreferenceIds, setPendingPreferenceIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
@@ -1944,6 +1953,86 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ],
   );
 
+  const refreshProviderPreferences = useCallback(
+    async (options?: { quiet?: boolean }) => {
+      try {
+        const payload = await runCompanion<{ items: PreferenceDescriptor[] }>(
+          "/v1/preferences?section=providers",
+          undefined,
+          { preserveLastError: Boolean(options?.quiet) },
+        );
+        setProviderPreferences(payload.items || []);
+        setProviderPreferencesError(null);
+      } catch (error) {
+        setProviderPreferencesError(
+          normalizeCaughtError(error, "Provider settings need attention."),
+        );
+      }
+    },
+    [runCompanion],
+  );
+
+  const updateProviderPreference = useCallback(
+    async (item: PreferenceDescriptor, value: boolean) => {
+      setPendingPreferenceIds((current) => new Set(current).add(item.id));
+      setProviderPreferences((current) =>
+        (current || []).map((preference) =>
+          preference.id === item.id
+            ? {
+                ...preference,
+                value,
+                health: value
+                  ? {
+                      ...preference.health,
+                      state: "checking",
+                      service: "unknown",
+                      message: "Checking provider status.",
+                    }
+                  : {
+                      ...preference.health,
+                      state: "disabled",
+                      service: "unknown",
+                      message: "Provider is off.",
+                    },
+              }
+            : preference,
+        ),
+      );
+      try {
+        const payload = await runCompanion<{ item: PreferenceDescriptor }>(
+          `/v1/preferences/${encodeURIComponent(item.id)}`,
+          { method: "PATCH", body: JSON.stringify({ value }) },
+        );
+        setProviderPreferences((current) =>
+          (current || []).map((preference) =>
+            preference.id === payload.item.id ? payload.item : preference,
+          ),
+        );
+        setProviderPreferencesError(null);
+        void Promise.all([
+          refreshProviderPreferences({ quiet: true }),
+          refreshUsage({ quiet: true }),
+        ]);
+      } catch (error) {
+        setProviderPreferences((current) =>
+          (current || []).map((preference) =>
+            preference.id === item.id ? item : preference,
+          ),
+        );
+        setProviderPreferencesError(
+          normalizeCaughtError(error, "Provider could not be updated."),
+        );
+      } finally {
+        setPendingPreferenceIds((current) => {
+          const next = new Set(current);
+          next.delete(item.id);
+          return next;
+        });
+      }
+    },
+    [refreshProviderPreferences, refreshUsage, runCompanion],
+  );
+
   const loadSupportDiagnostics = useCallback(async () => {
     setBusyAction("diagnostics");
     try {
@@ -2151,6 +2240,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     };
   }, [activeShellTab, companionStatus, refreshUsage]);
 
+  useEffect(() => {
+    if (activeShellTab !== "usage" || companionStatus !== "online") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void refreshProviderPreferences({ quiet: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeShellTab, companionStatus, refreshProviderPreferences]);
+
   const renderSetupScreen = (showIntro: boolean) => (
     <SetupScreen
       key={setupResetVersion}
@@ -2252,7 +2351,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               <Button
                 aria-label="Refresh usage"
                 disabled={busyAction === "usage"}
-                onClick={() => void refreshUsage()}
+                onClick={() =>
+                  void Promise.all([
+                    refreshUsage(),
+                    refreshProviderPreferences(),
+                  ])
+                }
                 size="icon"
                 type="button"
                 variant="ghost"
@@ -2298,8 +2402,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         <UsageScreen
           busyAction={busyAction}
           companionStatus={companionStatus}
+          pendingPreferenceIds={pendingPreferenceIds}
+          preferences={providerPreferences}
+          preferencesError={providerPreferencesError}
           usage={usage}
           usageError={usageError}
+          onPreferenceChange={updateProviderPreference}
         />
       ) : null}
 
