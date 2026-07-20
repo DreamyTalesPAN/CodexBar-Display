@@ -105,14 +105,14 @@ void test_page_uses_inline_band_guidance_and_links_to_public_support() {
   TEST_ASSERT_TRUE(contains(server.output, "Search again"));
   TEST_ASSERT_TRUE(contains(server.output, "Searching…"));
   TEST_ASSERT_TRUE(server.output.find("Connect</button>") < server.output.find("Search again</button>"));
-  TEST_ASSERT_EQUAL_STRING("https://vibetv.shop/pages/setup", kSupportUrl);
-  TEST_ASSERT_TRUE(contains(server.output, "https://vibetv.shop/pages/setup"));
+  TEST_ASSERT_EQUAL_STRING("https://www.vibetv.shop/setup", kSupportUrl);
+  TEST_ASSERT_TRUE(contains(server.output, "https://www.vibetv.shop/setup"));
   TEST_ASSERT_TRUE(contains(server.output, "target=\"_blank\" rel=\"noopener noreferrer\""));
-  TEST_ASSERT_TRUE(contains(server.output, "location.hostname==='captive.apple.com'"));
-  TEST_ASSERT_TRUE(contains(server.output, "aria-controls=\"support-note\" aria-expanded=\"false\""));
-  TEST_ASSERT_TRUE(contains(server.output, "role=\"status\" hidden"));
-  TEST_ASSERT_TRUE(contains(server.output, "Close this setup window and disconnect from VibeTV-Setup."));
-  TEST_ASSERT_TRUE(contains(server.output, "My Wi-Fi isn't shown"));
+  TEST_ASSERT_TRUE(contains(server.output, "Troubleshooting: www.vibetv.shop/setup"));
+  TEST_ASSERT_FALSE(contains(server.output, "location.hostname==='captive.apple.com'"));
+  TEST_ASSERT_FALSE(contains(server.output, "support-note"));
+  TEST_ASSERT_FALSE(contains(server.output, "Close this setup window and disconnect from VibeTV-Setup."));
+  TEST_ASSERT_FALSE(contains(server.output, "My Wi-Fi isn't shown"));
   TEST_ASSERT_TRUE(contains(server.output, "Check the password and try again."));
   TEST_ASSERT_FALSE(contains(server.output, "Smart Connect"));
   TEST_ASSERT_FALSE(contains(server.output, "Band Steering"));
@@ -129,7 +129,7 @@ void test_page_publishes_no_placeholder_without_support_url() {
   SendSetupPage(server, state, nullptr, "192.168.4.1");
 
   TEST_ASSERT_TRUE(contains(server.output, "No networks found."));
-  TEST_ASSERT_FALSE(contains(server.output, "My Wi-Fi isn't shown"));
+  TEST_ASSERT_FALSE(contains(server.output, "Troubleshooting:"));
   TEST_ASSERT_FALSE(contains(server.output, "href=\"\""));
 }
 
