@@ -38,7 +38,6 @@ import type {
   ApiError,
   CompanionStatus,
   UsageCostDay,
-  UsagePaceInfo,
   UsageProviderInfo,
   UsageSnapshot,
   UsageWindowInfo,
@@ -277,7 +276,6 @@ function UsageProviderTile({
 
         <UsageMetaGrid provider={provider} />
         <ExtraWindows provider={provider} />
-        <PaceRows pace={provider.pace || []} />
         <TokenRow provider={provider} />
       </CardContent>
     </Card>
@@ -413,36 +411,6 @@ function UsageWindowBar({
         className="h-2"
         value={percent}
       />
-    </div>
-  );
-}
-
-function PaceRows({ pace }: { pace: UsagePaceInfo[] }) {
-  const visible = pace.filter((item) => item.summary || item.stage);
-  if (visible.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="mt-5">
-      <div className="mb-3 text-xs font-bold uppercase text-[#506600]">
-        Pace
-      </div>
-      <div className="grid gap-2">
-        {visible.map((item) => (
-          <div
-            className="grid gap-2 text-sm text-[#444933] sm:grid-cols-[88px_minmax(0,1fr)]"
-            key={item.window}
-          >
-            <span className="font-bold text-[#1B1B1B]">
-              {paceWindowLabel(item.window)}
-            </span>
-            <span className="break-words">
-              {item.summary || paceFallbackSummary(item)}
-            </span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -693,22 +661,4 @@ function formatDayLabel(day: string): string {
     month: "short",
     day: "numeric",
   }).format(date);
-}
-
-function paceWindowLabel(window: string): string {
-  if (window === "primary") {
-    return "Session";
-  }
-  if (window === "secondary") {
-    return "Weekly";
-  }
-  return window ? window[0].toUpperCase() + window.slice(1) : "Window";
-}
-
-function paceFallbackSummary(item: UsagePaceInfo): string {
-  const stage = item.stage || "Pace";
-  if (typeof item.expectedUsedPercent === "number") {
-    return `${stage} · expected ${item.expectedUsedPercent}% used`;
-  }
-  return stage;
 }
