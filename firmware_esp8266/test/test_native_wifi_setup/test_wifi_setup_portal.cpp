@@ -100,6 +100,7 @@ void test_page_omits_frequency_guidance_and_supports_optional_external_link() {
   TEST_ASSERT_FALSE(contains(server.output, "Choose a 2.4 GHz Wi-Fi network."));
   TEST_ASSERT_TRUE(contains(server.output, "Search again"));
   TEST_ASSERT_TRUE(contains(server.output, "Searching…"));
+  TEST_ASSERT_TRUE(server.output.find("Connect</button>") < server.output.find("Search again</button>"));
   TEST_ASSERT_TRUE(contains(server.output, "https://support.example/wifi"));
   TEST_ASSERT_TRUE(contains(server.output, "My Wi-Fi isn't shown"));
   TEST_ASSERT_TRUE(contains(server.output, "Check the password and try again."));
