@@ -86,7 +86,7 @@ void test_options_escape_ssids_and_stay_inside_budget() {
   TEST_ASSERT_FALSE(contains(html, "2.4 GHz compatible"));
 }
 
-void test_page_omits_frequency_guidance_and_links_to_public_support() {
+void test_page_uses_inline_band_guidance_and_links_to_public_support() {
   State state;
   TEST_ASSERT_TRUE(BeginScan(state));
   TEST_ASSERT_TRUE(AddScanResult(state, "Home", -45, 6));
@@ -98,6 +98,8 @@ void test_page_omits_frequency_guidance_and_links_to_public_support() {
 
   TEST_ASSERT_EQUAL_INT(200, server.status);
   TEST_ASSERT_FALSE(contains(server.output, "Choose a 2.4 GHz Wi-Fi network."));
+  TEST_ASSERT_TRUE(contains(server.output, "Only 2.4 GHz networks are shown."));
+  TEST_ASSERT_TRUE(contains(server.output, "aria-describedby=\"setup-status wifi-band-help\""));
   TEST_ASSERT_FALSE(contains(server.output, "VibeTV Setup"));
   TEST_ASSERT_TRUE(contains(server.output, "Search again"));
   TEST_ASSERT_TRUE(contains(server.output, "Searching…"));
@@ -176,7 +178,7 @@ int main(int, char**) {
   RUN_TEST(test_signal_labels_are_customer_friendly);
   RUN_TEST(test_wifi_statuses_map_to_retryable_errors);
   RUN_TEST(test_options_escape_ssids_and_stay_inside_budget);
-  RUN_TEST(test_page_omits_frequency_guidance_and_links_to_public_support);
+  RUN_TEST(test_page_uses_inline_band_guidance_and_links_to_public_support);
   RUN_TEST(test_page_publishes_no_placeholder_without_support_url);
   RUN_TEST(test_generic_reconnect_error_does_not_render_an_empty_ssid);
   RUN_TEST(test_qr_fixture_is_stable);
