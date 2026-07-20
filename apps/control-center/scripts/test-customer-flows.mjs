@@ -13,6 +13,7 @@ const viewport = { width: 390, height: 844 };
 const desktopViewport = { width: 1280, height: 900 };
 const themeStudioViewport = { width: 1180, height: 820 };
 const smokeOnly = process.argv.includes("--smoke");
+const providerSettingsOnly = process.argv.includes("--provider-settings");
 const migrationScreenshotDir =
   process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
 const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
@@ -238,6 +239,11 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (providerSettingsOnly) {
+      await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+      console.log("control-center provider settings test passed");
+      return;
+    }
     await testStartupStateMachine(browser, appContext.appUrl);
     if (wifiRescanOnly) {
       await testLocalWifiSetupRescansAfterNoResults(browser, appContext.appUrl);
@@ -416,6 +422,7 @@ async function main() {
       appContext.appUrl,
     );
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
+    await testUsageManagesProviderPreferences(browser, appContext.appUrl);
     await testUsageShowsMacAppUpdateForOldMacApp(browser, appContext.appUrl);
     await testRunSetupAgainReturnsToWifiOnboarding(browser, appContext.appUrl);
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
@@ -2736,7 +2743,103 @@ async function testUsageShowsMacAppUpdateForOldMacApp(browser, appUrl) {
   await page.close();
 }
 
-async function testRunSetupAgainReturnsToWifiOnboarding(browser, appUrl) {
+async function testUsageManagesProviderPreferences(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    preferencePatchDelayMs: 200,
+    preferencePatchFailureIds: ["codexbar.providers.claude.enabled"],
+    preferencesResponse: {
+      ok: true,
+      items: [
+        {
+          id: "codexbar.providers.codex.enabled",
+          section: "providers",
+          owner: "codexbar",
+          type: "boolean",
+          label: "Codex",
+          value: true,
+          writable: true,
+          health: {
+            state: "healthy",
+            service: "operational",
+            message: "Provider is working.",
+          },
+        },
+        {
+          id: "codexbar.providers.copilot.enabled",
+          section: "providers",
+          owner: "codexbar",
+          type: "boolean",
+          label: "GitHub Copilot",
+          value: false,
+          writable: true,
+          health: {
+            state: "disabled",
+            service: "unknown",
+            message: "Provider is off.",
+          },
+        },
+        {
+          id: "codexbar.providers.claude.enabled",
+          section: "providers",
+          owner: "codexbar",
+          type: "boolean",
+          label: "Claude",
+          value: true,
+          writable: true,
+          health: {
+            state: "auth_required",
+            service: "outage",
+            message: "Sign in again for this provider.",
+          },
+        },
+      ],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Usage");
+  const panel = page.locator('[aria-labelledby="provider-settings-title"]');
+  await panel.getByText("Sign-in needed").waitFor({ timeout: 10_000 });
+  await panel.getByText("Service outage").waitFor({ timeout: 10_000 });
+  await panel.getByText("GitHub Copilot").waitFor({ timeout: 10_000 });
+
+  const itemLabels = await panel
+    .locator('[data-slot="item-title"] > span:first-child')
+    .allTextContents();
+  assert(itemLabels[0] === "Claude", "providers needing attention should sort first");
+
+  const search = panel.getByLabel("Search AI providers");
+  await search.fill("Copilot");
+  assert((await panel.getByText("Codex", { exact: true }).count()) === 0, "provider search should filter the list");
+  await search.fill("");
+
+  const enableCopilot = panel.getByRole("switch", { name: "Enable GitHub Copilot" });
+  await enableCopilot.click();
+  assert(await enableCopilot.isDisabled(), "changed provider should be pending");
+  assert(
+    !(await panel.getByRole("switch", { name: "Disable Codex" }).isDisabled()),
+    "unrelated provider should stay interactive",
+  );
+  await panel.getByRole("switch", { name: "Disable GitHub Copilot" }).waitFor({ timeout: 10_000 });
+
+  await panel.getByRole("switch", { name: "Disable Claude" }).click();
+  await page.getByText("This provider could not be updated.").waitFor({ timeout: 10_000 });
+  assert(
+    await panel.getByRole("switch", { name: "Disable Claude" }).isChecked(),
+    "failed update must keep the previous value",
+  );
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testRunSetupAgainReturnsToWifiOnboarding(
+  browser,
+  appUrl,
+) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -5365,6 +5468,10 @@ async function routeCompanionOnline(
     deviceAfterFirmwareUpdate,
     usageResponse,
     usageStatus = 200,
+    preferencesResponse,
+    preferencesStatus = 200,
+    preferencePatchDelayMs = 0,
+    preferencePatchFailureIds = [],
     displayFrameStatus = 200,
     displayFrameResponse,
     displayFrameUnavailableResponses = 0,
@@ -5404,6 +5511,27 @@ async function routeCompanionOnline(
   let displayFrameRequestCount = 0;
   let settingsRequestCount = 0;
   let currentProviderSetup = providerSetup;
+  let currentPreferences = structuredClone(
+    preferencesResponse || {
+      ok: true,
+      items: [
+        {
+          id: "codexbar.providers.codex.enabled",
+          section: "providers",
+          owner: "codexbar",
+          type: "boolean",
+          label: "Codex",
+          value: true,
+          writable: true,
+          health: {
+            state: "healthy",
+            service: "operational",
+            message: "Provider is working.",
+          },
+        },
+      ],
+    },
+  );
   const handler = async (route) => {
     const pathname = companionPath(route);
     onRequest(pathname, route.request().method());
@@ -5742,6 +5870,66 @@ async function routeCompanionOnline(
             ],
           },
         ),
+      });
+      return;
+    }
+    if (pathname === "/v1/preferences") {
+      await route.fulfill({
+        status: preferencesStatus,
+        contentType: "application/json",
+        body: JSON.stringify(
+          preferencesStatus === 200
+            ? currentPreferences
+            : {
+                ok: false,
+                error: {
+                  code: "provider_preferences_unavailable",
+                  message: "Provider settings are not available right now.",
+                  nextAction: "Make sure the Mac App is open, then try again.",
+                },
+              },
+        ),
+      });
+      return;
+    }
+    if (pathname.startsWith("/v1/preferences/")) {
+      const settingId = decodeURIComponent(pathname.slice("/v1/preferences/".length));
+      if (preferencePatchDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, preferencePatchDelayMs));
+      }
+      if (preferencePatchFailureIds.includes(settingId)) {
+        await route.fulfill({
+          status: 502,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: {
+              code: "preference_write_failed",
+              message: "This provider could not be updated.",
+              nextAction: "Try again in a moment.",
+            },
+          }),
+        });
+        return;
+      }
+      const request = parseJSON(route.request().postData() || "") || {};
+      const item = currentPreferences.items.find((entry) => entry.id === settingId);
+      if (!item || typeof request.value !== "boolean") {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false }),
+        });
+        return;
+      }
+      item.value = request.value;
+      item.health = request.value
+        ? { state: "healthy", service: "operational", message: "Provider is working." }
+        : { state: "disabled", service: "unknown", message: "Provider is off." };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, item }),
       });
       return;
     }

@@ -213,6 +213,7 @@ type Server struct {
 	providerSetupMu        sync.Mutex
 	providerSetupCache     codexbar.ProviderSetup
 	providerSetupCachedAt  time.Time
+	providerPreferences    providerPreferencesState
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
 	updateMacApp           func(context.Context, string, string, macAppUpdateRequest, io.Writer) error
 	fetchMacAppRelease     func(context.Context) (githubRelease, error)
@@ -837,12 +838,16 @@ func New(opts Options) (*Server, error) {
 		fetchUsage:            codexbar.FetchAllProviders,
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
 		openCodexBar:          codexbar.OpenApp,
-		updateFirmware:        runFirmwareUpdateCommand,
-		updateMacApp:          runMacAppUpdateCommand,
-		fetchMacAppRelease:    fetchLatestMacAppRelease,
-		installJobs:           make(map[string]*themeInstallJob),
-		updateJobs:            make(map[string]*firmwareUpdateJob),
-		macAppUpdateJobs:      make(map[string]*macAppUpdateJob),
+		providerPreferences: providerPreferencesState{
+			load: codexbar.FetchProviderSettings,
+			set:  codexbar.SetProviderEnabled,
+		},
+		updateFirmware:     runFirmwareUpdateCommand,
+		updateMacApp:       runMacAppUpdateCommand,
+		fetchMacAppRelease: fetchLatestMacAppRelease,
+		installJobs:        make(map[string]*themeInstallJob),
+		updateJobs:         make(map[string]*firmwareUpdateJob),
+		macAppUpdateJobs:   make(map[string]*macAppUpdateJob),
 	}, nil
 }
 
@@ -879,6 +884,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
+	mux.HandleFunc("/v1/preferences", s.handlePreferences)
+	mux.HandleFunc("/v1/preferences/", s.handlePreference)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)
@@ -1029,7 +1036,7 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 		if origin != "" && allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 			if strings.EqualFold(strings.TrimSpace(r.Header.Get("Access-Control-Request-Private-Network")), "true") {
 				w.Header().Set("Access-Control-Allow-Private-Network", "true")

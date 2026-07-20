@@ -2446,6 +2446,9 @@ func TestCORSAllowedAndForeignOrigins(t *testing.T) {
 	if got := allowed.Header().Get("Access-Control-Allow-Origin"); got != "https://app.vibetv.shop" {
 		t.Fatalf("expected allowed origin header, got %q", got)
 	}
+	if got := allowed.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, http.MethodPatch) {
+		t.Fatalf("expected PATCH in allowed methods, got %q", got)
+	}
 
 	previewOrigin := "https://codex-vibetv-control-center-120qndufj-paul-anduschus-projects.vercel.app"
 	preview := httptest.NewRecorder()
