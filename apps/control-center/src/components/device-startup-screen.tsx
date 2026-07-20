@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Monitor, RefreshCw } from "lucide-react";
-import { ControlCenterButton } from "./control-center-button";
+import { Button } from "@/components/ui/button";
 import type {
   ApiError,
   DeviceCandidate,
@@ -96,17 +96,19 @@ export function DeviceStartupScreen({
                 key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
               >
                 <DeviceCandidateDetails candidate={candidate} />
-                <ControlCenterButton
-                  busy={selecting}
-                  busyLabel="Connecting"
-                  disabled={Boolean(busyAction) && !selecting}
-                  fullWidth
-                  icon={<Monitor size={18} aria-hidden />}
-                  label="Connect this VibeTV"
+                <Button
+                  className="w-full"
+                  disabled={Boolean(busyAction)}
                   onClick={() => onSelect(candidate)}
-                  size="large"
-                  variant="primary"
-                />
+                  size="lg"
+                >
+                  {selecting ? (
+                    <Loader2 className="animate-spin" aria-hidden />
+                  ) : (
+                    <Monitor aria-hidden />
+                  )}
+                  {selecting ? "Connecting" : "Connect this VibeTV"}
+                </Button>
               </div>
             ))}
           </div>
@@ -139,43 +141,46 @@ export function DeviceStartupScreen({
 
         {alternate || multiple ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            <ControlCenterButton
+            <Button
+              className="w-full"
               disabled={Boolean(busyAction)}
-              fullWidth
-              label="Not now"
               onClick={onDecline}
-              size="large"
-              variant="secondary"
-            />
-            <ControlCenterButton
+              size="lg"
+              variant="outline"
+            >
+              Not now
+            </Button>
+            <Button
+              className="w-full"
               disabled={Boolean(busyAction)}
-              fullWidth
-              icon={<RefreshCw size={18} aria-hidden />}
-              label="Search again"
               onClick={onSearch}
-              size="large"
-              variant="secondary"
-            />
+              size="lg"
+              variant="outline"
+            >
+              <RefreshCw aria-hidden />
+              Search again
+            </Button>
           </div>
         ) : deviceSearchState === "not-found" ||
           deviceSearchState === "failed" ||
           deviceSearchState === "repair-failed" ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            <ControlCenterButton
-              fullWidth
-              icon={<RefreshCw size={18} aria-hidden />}
-              label="Search again"
+            <Button
+              className="w-full"
               onClick={onSearch}
-              size="large"
-              variant="primary"
-            />
-            <ControlCenterButton
-              fullWidth
-              label="Not now"
+              size="lg"
+            >
+              <RefreshCw aria-hidden />
+              Search again
+            </Button>
+            <Button
+              className="w-full"
               onClick={onDecline}
-              size="large"
-              variant="secondary"
-            />
+              size="lg"
+              variant="outline"
+            >
+              Not now
+            </Button>
           </div>
         ) : null}
       </section>
