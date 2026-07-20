@@ -98,6 +98,7 @@ void test_page_omits_frequency_guidance_and_links_to_public_support() {
 
   TEST_ASSERT_EQUAL_INT(200, server.status);
   TEST_ASSERT_FALSE(contains(server.output, "Choose a 2.4 GHz Wi-Fi network."));
+  TEST_ASSERT_FALSE(contains(server.output, "VibeTV Setup"));
   TEST_ASSERT_TRUE(contains(server.output, "Search again"));
   TEST_ASSERT_TRUE(contains(server.output, "Searching…"));
   TEST_ASSERT_TRUE(server.output.find("Connect</button>") < server.output.find("Search again</button>"));
