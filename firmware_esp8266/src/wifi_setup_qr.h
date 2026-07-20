@@ -7,6 +7,8 @@ namespace esp8266 {
 namespace wifi_setup {
 
 constexpr char kSetupQrPayload[] = "WIFI:T:nopass;S:VibeTV-Setup;;";
+constexpr char kSetupQrStep1[] = "1. Scan with phone";
+constexpr char kSetupQrStep2Prefix[] = "2. Open in browser: ";
 constexpr uint8_t kSetupQrModules = 29;
 constexpr uint8_t kSetupQrQuietZoneModules = 4;
 

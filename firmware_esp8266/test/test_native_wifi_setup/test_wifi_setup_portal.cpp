@@ -149,6 +149,10 @@ void test_generic_reconnect_error_does_not_render_an_empty_ssid() {
 
 void test_qr_fixture_is_stable() {
   TEST_ASSERT_EQUAL_STRING("WIFI:T:nopass;S:VibeTV-Setup;;", kSetupQrPayload);
+  TEST_ASSERT_EQUAL_STRING("1. Scan with phone", kSetupQrStep1);
+  TEST_ASSERT_EQUAL_STRING("2. Open in browser: ", kSetupQrStep2Prefix);
+  const String browserStep = String(kSetupQrStep2Prefix) + "192.168.4.1";
+  TEST_ASSERT_EQUAL_STRING("2. Open in browser: 192.168.4.1", browserStep.c_str());
   unsigned int darkModules = 0;
   for (uint8_t row = 0; row < kSetupQrModules; ++row) {
     for (uint8_t column = 0; column < kSetupQrModules; ++column) {

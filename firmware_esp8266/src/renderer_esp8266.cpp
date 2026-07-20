@@ -277,6 +277,7 @@ void RendererESP8266::DrawStatus(
 
 void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const String& ssid, const String& address) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  (void)ssid;
   display::AttachContext(ctx);
 
   TFT_eSPI& tft = display::Tft();
@@ -306,32 +307,25 @@ void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const Stri
     }
   }
 
-  const char* scanText = "Scan to join WiFi";
-  const char* openText = "Page opens automatically";
-  const String manualText = String("Or open ") + address;
-  int y = qrY + kQrPixels + 4;
+  const String browserText = String(wifi_setup::kSetupQrStep2Prefix) + address;
+  constexpr int kStep1TextSize = 2;
+  constexpr int kStep2TextSize = 1;
+  constexpr int kStepGap = 8;
+  const int instructionTop = qrY + kQrPixels;
+  const int instructionHeight =
+      display::TextPixelHeight(kStep1TextSize) + kStepGap +
+      display::TextPixelHeight(kStep2TextSize);
+  int y = instructionTop + (tft.height() - instructionTop - instructionHeight) / 2;
 
-  display::SetTextSize(1);
+  display::SetTextSize(kStep1TextSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(scanText, 1), y);
-  tft.print(scanText);
+  tft.setCursor(display::CenteredTextX(wifi_setup::kSetupQrStep1, kStep1TextSize), y);
+  tft.print(wifi_setup::kSetupQrStep1);
 
-  y += display::TextPixelHeight(1) + 3;
-  const int ssidSize = display::ChooseTextSizeToFit(ssid.c_str(), 2, 1, tft.width() - 8);
-  display::SetTextSize(ssidSize);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(ssid.c_str(), ssidSize), y);
-  tft.print(ssid);
-
-  y += display::TextPixelHeight(ssidSize) + 3;
-  display::SetTextSize(1);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(openText, 1), y);
-  tft.print(openText);
-
-  y += display::TextPixelHeight(1) + 3;
-  tft.setCursor(display::CenteredTextX(manualText.c_str(), 1), y);
-  tft.print(manualText);
+  y += display::TextPixelHeight(kStep1TextSize) + kStepGap;
+  display::SetTextSize(kStep2TextSize);
+  tft.setCursor(display::CenteredTextX(browserText.c_str(), kStep2TextSize), y);
+  tft.print(browserText);
 
   ctx.lastRenderedSecs = -1;
   ctx.lastRenderedMinuteBucket = -1;
