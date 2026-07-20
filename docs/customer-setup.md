@@ -32,7 +32,7 @@ The Control Center website guides both parts.
 
 1. Plug VibeTV into power.
 2. Wait until the display shows `VibeTV-Setup`.
-3. Scan the QR code on VibeTV, or open WiFi settings on your phone or Mac.
+3. Open WiFi settings on your phone or Mac.
 4. Join the `VibeTV-Setup` WiFi network.
 5. If the setup page opens automatically, use it.
 6. If it does not open, go to `http://192.168.4.1`.

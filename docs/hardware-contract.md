@@ -40,9 +40,8 @@ Companion negotiation:
 - Devices ship with firmware installed.
 - Fresh or failed WiFi devices start an open `VibeTV-Setup` access point.
 - Setup UI is served at `http://192.168.4.1` through the setup access point and captive DNS.
-- The device setup screen shows a fixed WiFi QR code for the open
-  `VibeTV-Setup` access point followed only by `1. Scan with phone` and
-  `2. Open in browser: 192.168.4.1`.
+- The device setup screen tells the customer to join the open `VibeTV-Setup`
+  access point manually and open `192.168.4.1`.
 - The setup UI lists only 2.4 GHz scan results, supports an explicit re-scan,
   and keeps manual SSID entry available for hidden networks.
 - `My Wi-Fi isn't shown` links to the public support page delivered by issue

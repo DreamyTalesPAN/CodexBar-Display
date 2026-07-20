@@ -1,5 +1,4 @@
 #include "renderer_esp8266.h"
-#include "wifi_setup_qr.h"
 
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 #include "renderer_esp8266_display_state.h"
@@ -277,7 +276,6 @@ void RendererESP8266::DrawStatus(
 
 void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const String& ssid, const String& address) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
-  (void)ssid;
   display::AttachContext(ctx);
 
   TFT_eSPI& tft = display::Tft();
@@ -286,57 +284,61 @@ void RendererESP8266::DrawSetupInstructions(app::RuntimeContext& ctx, const Stri
   tft.setTextWrap(false);
   tft.setTextFont(1);
 
-  constexpr int kModulePixels = 4;
-  constexpr int kQrPixels =
-      (wifi_setup::kSetupQrModules + 2 * wifi_setup::kSetupQrQuietZoneModules) * kModulePixels;
-  const int qrX = (tft.width() - kQrPixels) / 2;
-  const int qrY = 2;
-  display::PrimitiveFillRect(qrX, qrY, kQrPixels, kQrPixels, TFT_WHITE);
-  const int modulesX = qrX + wifi_setup::kSetupQrQuietZoneModules * kModulePixels;
-  const int modulesY = qrY + wifi_setup::kSetupQrQuietZoneModules * kModulePixels;
-  for (uint8_t row = 0; row < wifi_setup::kSetupQrModules; ++row) {
-    for (uint8_t column = 0; column < wifi_setup::kSetupQrModules; ++column) {
-      if (wifi_setup::SetupQrModuleIsDark(row, column)) {
-        display::PrimitiveFillRect(
-            modulesX + column * kModulePixels,
-            modulesY + row * kModulePixels,
-            kModulePixels,
-            kModulePixels,
-            TFT_BLACK);
-      }
-    }
+  const char* title = "USE PHONE";
+  const char* action = "Join WiFi:";
+  const char* detail = "Open:";
+  const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
+  const int ssidSize = display::ChooseTextSizeToFit(ssid.c_str(), 3, 2, tft.width() - 8);
+  const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);
+  const int detailSize = display::ChooseTextSizeToFit(detail, 2, 1, tft.width() - 14);
+  const int addressSize = display::ChooseTextSizeToFit(address.c_str(), 2, 1, tft.width() - 8);
+
+  const int totalH =
+      display::TextPixelHeight(titleSize) + 14 +
+      display::TextPixelHeight(actionSize) + 4 +
+      display::TextPixelHeight(ssidSize) + 10 +
+      display::TextPixelHeight(detailSize) + 4 +
+      display::TextPixelHeight(addressSize);
+  int y = (tft.height() - totalH) / 2;
+  if (y < 6) {
+    y = 6;
   }
 
-  const String browserText = String(wifi_setup::kSetupQrStep2Prefix) + address;
-  constexpr int kStep1TextSize = 2;
-  constexpr int kStep2TextSize = 1;
-  constexpr int kStepGap = 8;
-  const int instructionTop = qrY + kQrPixels;
-  const int instructionHeight =
-      display::TextPixelHeight(kStep1TextSize) + kStepGap +
-      display::TextPixelHeight(kStep2TextSize);
-  int y = instructionTop + (tft.height() - instructionTop - instructionHeight) / 2;
+  display::SetTextSize(titleSize);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(title, titleSize), y);
+  tft.print(title);
 
-  display::SetTextSize(kStep1TextSize);
+  y += display::TextPixelHeight(titleSize) + 14;
+  display::SetTextSize(actionSize);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(wifi_setup::kSetupQrStep1, kStep1TextSize), y);
-  tft.print(wifi_setup::kSetupQrStep1);
+  tft.setCursor(display::CenteredTextX(action, actionSize), y);
+  tft.print(action);
 
-  y += display::TextPixelHeight(kStep1TextSize) + kStepGap;
-  display::SetTextSize(kStep2TextSize);
-  tft.setCursor(display::CenteredTextX(browserText.c_str(), kStep2TextSize), y);
-  tft.print(browserText);
+  y += display::TextPixelHeight(actionSize) + 4;
+  display::SetTextSize(ssidSize);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(ssid.c_str(), ssidSize), y);
+  tft.print(ssid);
+
+  y += display::TextPixelHeight(ssidSize) + 10;
+  display::SetTextSize(detailSize);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(detail, detailSize), y);
+  tft.print(detail);
+
+  y += display::TextPixelHeight(detailSize) + 4;
+  display::SetTextSize(addressSize);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(address.c_str(), addressSize), y);
+  tft.print(address);
 
   ctx.lastRenderedSecs = -1;
   ctx.lastRenderedMinuteBucket = -1;
   ctx.screenDirty = false;
 #else
   (void)ctx;
-  Serial.printf(
-      "probe_setup ssid=%s address=%s qr=%s\n",
-      ssid.c_str(),
-      address.c_str(),
-      wifi_setup::kSetupQrPayload);
+  Serial.printf("probe_setup ssid=%s address=%s\n", ssid.c_str(), address.c_str());
 #endif
 }
 

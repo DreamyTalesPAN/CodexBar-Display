@@ -4,7 +4,6 @@
 #include <cstdlib>
 
 #include "../../src/wifi_setup_portal.cpp"
-#include "../../src/wifi_setup_qr.h"
 
 namespace {
 
@@ -147,23 +146,6 @@ void test_generic_reconnect_error_does_not_render_an_empty_ssid() {
   TEST_ASSERT_FALSE(contains(server.output, "<strong></strong>"));
 }
 
-void test_qr_fixture_is_stable() {
-  TEST_ASSERT_EQUAL_STRING("WIFI:T:nopass;S:VibeTV-Setup;;", kSetupQrPayload);
-  TEST_ASSERT_EQUAL_STRING("1. Scan with phone", kSetupQrStep1);
-  TEST_ASSERT_EQUAL_STRING("2. Open in browser: ", kSetupQrStep2Prefix);
-  const String browserStep = String(kSetupQrStep2Prefix) + "192.168.4.1";
-  TEST_ASSERT_EQUAL_STRING("2. Open in browser: 192.168.4.1", browserStep.c_str());
-  unsigned int darkModules = 0;
-  for (uint8_t row = 0; row < kSetupQrModules; ++row) {
-    for (uint8_t column = 0; column < kSetupQrModules; ++column) {
-      if (SetupQrModuleIsDark(row, column)) {
-        ++darkModules;
-      }
-    }
-  }
-  TEST_ASSERT_EQUAL_UINT(423, darkModules);
-}
-
 }  // namespace
 
 void setUp() {}
@@ -192,6 +174,5 @@ int main(int, char**) {
   RUN_TEST(test_page_uses_inline_band_guidance_and_links_to_public_support);
   RUN_TEST(test_page_publishes_no_placeholder_without_support_url);
   RUN_TEST(test_generic_reconnect_error_does_not_render_an_empty_ssid);
-  RUN_TEST(test_qr_fixture_is_stable);
   return UNITY_END();
 }
