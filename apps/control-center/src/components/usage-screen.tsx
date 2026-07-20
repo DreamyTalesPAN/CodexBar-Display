@@ -261,24 +261,31 @@ function UsageProviderTile({
       </CardHeader>
 
       <CardContent>
-        <div className="grid gap-4">
-          <UsageBar
-            label="Session"
-            mode={provider.usageMode}
-            value={provider.session}
-          />
-          <UsageBar
-            label="Weekly"
-            mode={provider.usageMode}
-            value={provider.weekly}
-          />
-        </div>
+        <ProviderUsageBars provider={provider} />
 
         <UsageMetaGrid provider={provider} />
-        <ExtraWindows provider={provider} />
         <TokenRow provider={provider} />
       </CardContent>
     </Card>
+  );
+}
+
+function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
+  if (provider.windows?.length) {
+    return (
+      <div className="grid gap-4">
+        {provider.windows.map((window) => (
+          <UsageWindowBar key={window.id} mode={provider.usageMode} window={window} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4">
+      <UsageBar label="Session" mode={provider.usageMode} value={provider.session} />
+      <UsageBar label="Weekly" mode={provider.usageMode} value={provider.weekly} />
+    </div>
   );
 }
 
@@ -364,28 +371,6 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
         </div>
       ))}
     </dl>
-  );
-}
-
-function ExtraWindows({ provider }: { provider: UsageProviderInfo }) {
-  const extra = (provider.windows || []).filter(
-    (window) => window.id !== "primary" && window.id !== "secondary",
-  );
-  if (extra.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="mt-5">
-      <div className="mb-3 text-xs font-bold uppercase text-[#506600]">
-        More windows
-      </div>
-      <div className="grid gap-4">
-        {extra.map((window) => (
-          <UsageWindowBar key={window.id} mode={provider.usageMode} window={window} />
-        ))}
-      </div>
-    </div>
   );
 }
 

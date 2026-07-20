@@ -160,6 +160,37 @@ func TestParseProviderPayloadKeepsCodexBarUsageMeta(t *testing.T) {
 	}
 }
 
+func TestParseProviderPayloadReadsExtraRateWindows(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"codex",
+			"usage":{
+				"primary":null,
+				"secondary":{"usedPercent":35,"windowMinutes":10080},
+				"extraRateWindows":[
+					{
+						"id":"codex-spark-weekly",
+						"title":"Codex Spark Weekly",
+						"window":{"usedPercent":0,"windowMinutes":10080,"resetsAt":"2099-01-02T01:00:00Z"}
+					}
+				]
+			}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	windows := parsed[0].Meta.Windows
+	if len(windows) != 2 {
+		t.Fatalf("expected weekly and Codex Spark windows, got %+v", windows)
+	}
+	if windows[1].ID != "codex-spark-weekly" || windows[1].Label != "Codex Spark Weekly" || windows[1].UsedPercent != 0 || windows[1].WindowMinutes != 10080 || windows[1].ResetSec <= 0 {
+		t.Fatalf("expected nested Codex Spark window, got %+v", windows[1])
+	}
+}
+
 func TestParseProviderPayloadReadsCodexDailyBreakdown(t *testing.T) {
 	raw := []byte(`[
 		{

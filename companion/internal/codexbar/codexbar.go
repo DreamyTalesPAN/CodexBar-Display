@@ -983,6 +983,12 @@ func parseUsageWindows(payload map[string]any) []UsageWindow {
 	if !ok {
 		extra, ok = payload["extra"]
 	}
+	if !ok {
+		extra, ok = getPath(payload, "usage.extraRateWindows")
+	}
+	if !ok {
+		extra, ok = payload["extraRateWindows"]
+	}
 	if ok {
 		windows = append(windows, parseExtraUsageWindows(extra)...)
 	}
@@ -1024,7 +1030,11 @@ func parseExtraUsageWindows(raw any) []UsageWindow {
 			if label == "" {
 				label = humanLabel(id)
 			}
-			if window, ok := parseUsageWindowMap(itemMap, id, label); ok {
+			windowMap := itemMap
+			if nested, ok := itemMap["window"].(map[string]any); ok {
+				windowMap = nested
+			}
+			if window, ok := parseUsageWindowMap(windowMap, id, label); ok {
 				out = append(out, window)
 			}
 		}
