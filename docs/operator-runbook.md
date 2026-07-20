@@ -72,6 +72,50 @@ codexbar-display install-update \
   --confirm-live-update
 ```
 
+Before an operator-triggered OTA, prove that the target, stored `deviceId`, and
+pairing token all describe the same VibeTV. This is especially important after
+changing `--target`, moving between test devices, or running a development
+Companion:
+
+1. Keep only the normal Companion on `127.0.0.1:47832`; stop any development
+   Companion on `127.0.0.1:47833`.
+2. Read `GET http://<device-ip>/hello` and compare its `deviceId` with
+   `deviceId` in
+   `~/Library/Application Support/codexbar-display/config.json`.
+3. Validate the stored token without printing it:
+
+```bash
+VIBETV_CONFIG="$HOME/Library/Application Support/codexbar-display/config.json"
+VIBETV_TOKEN="$(jq -r '.deviceToken // empty' "$VIBETV_CONFIG")"
+curl -fsS -o /dev/null \
+  -H "X-VibeTV-Token: ${VIBETV_TOKEN}" \
+  http://<device-ip>/hello
+unset VIBETV_TOKEN
+```
+
+An HTTP `401`/`403`, an empty token, or a different `deviceId` means the stored
+pairing belongs to another device. With explicit approval for this device,
+repair it before OTA:
+
+```bash
+curl -fsS --max-time 90 \
+  -X POST http://127.0.0.1:47832/v1/device/repair \
+  -H 'Content-Type: application/json' \
+  --data '{"target":"http://<device-ip>","forcePair":true}'
+```
+
+Repeat the authenticated `/hello` check and start `install-update` only after it
+returns `200` with the expected `deviceId`.
+
+The RAW updater can report only `broken pipe` when firmware rejects a stale
+token immediately after the request headers. That message does not prove that
+firmware bytes were accepted. Still treat it as a potentially interrupted OTA:
+do not retry in the same boot, disconnect power for 10 seconds, repair pairing,
+validate authenticated `/hello`, and then retry once.
+
+Do not use `scripts/vibetv-provision.sh` or `POST /update` when `/hello` already
+identifies a VibeTV runtime. Those are GeekMagic factory-provisioning paths.
+
 ### USB recovery flash path
 
 Use only when a device is physically attached with a working data-capable USB serial connection and WiFi OTA is not available. This path flashes release firmware, not a local source build:
