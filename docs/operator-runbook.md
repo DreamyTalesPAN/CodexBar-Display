@@ -209,11 +209,15 @@ During normal operation the display uses explicit support states:
 
 Before packaging a device for a customer, clear local provisioning WiFi credentials with `POST /reset-wifi` while the device is still reachable. After reboot, the display must show both setup steps on one screen: connect to `VibeTV-Setup`, then open `192.168.4.1` in a browser.
 
-QR codes are deferred. They would be useful on the setup and connected screens, but adding QR generation to the ESP8266 firmware is a larger dependency and rendering-risk item. Keep the plain IP/host display as the supported customer path for now.
+The setup screen includes a fixed offline WiFi QR code for the open
+`VibeTV-Setup` access point. The QR code does not contain a public URL and does
+not replace the manual `VibeTV-Setup` plus `192.168.4.1` fallback shown on the
+same screen.
 
 Smoke checklist for #53:
 - Boot device and confirm the first screen says `Starting`.
-- Clear WiFi and confirm setup AP screen shows `VibeTV-Setup` plus the setup IP.
+- Clear WiFi and confirm the setup AP screen shows the WiFi QR code,
+  `VibeTV-Setup`, and the setup IP.
 - Save WiFi and confirm the connecting screen shows `Connecting WiFi` plus the SSID.
 - After WiFi connects, confirm the waiting screen shows only `WiFi connected!`, `Now go to:`, and `app.vibetv.shop`.
 - Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.

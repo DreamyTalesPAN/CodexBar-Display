@@ -40,6 +40,13 @@ Companion negotiation:
 - Devices ship with firmware installed.
 - Fresh or failed WiFi devices start an open `VibeTV-Setup` access point.
 - Setup UI is served at `http://192.168.4.1` through the setup access point and captive DNS.
+- The device setup screen shows a fixed WiFi QR code for the open
+  `VibeTV-Setup` access point plus the manual SSID and `192.168.4.1` fallback.
+- The setup UI lists only 2.4 GHz scan results, supports an explicit re-scan,
+  and keeps manual SSID entry available for hidden networks.
+- The optional `My Wi-Fi isn't shown` link is compiled only when
+  `CODEXBAR_DISPLAY_WIFI_SUPPORT_URL` contains the final public URL delivered
+  by issue #192. Firmware builds without that value publish no placeholder URL.
 - The setup flow stores home WiFi credentials and restarts the device.
 - Connected devices expose their current IP in `/hello` discovery, show `WiFi connected!` plus `app.vibetv.shop`, serve the local setup hub on that IP, and wait for the Mac App.
 - Connected devices expose customer-facing display settings directly on their current IP. The MVP setting is brightness on supported hardware.
