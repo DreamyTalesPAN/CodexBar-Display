@@ -106,6 +106,7 @@ void test_page_uses_inline_band_guidance_and_links_to_public_support() {
   TEST_ASSERT_TRUE(server.output.find("Connect</button>") < server.output.find("Search again</button>"));
   TEST_ASSERT_EQUAL_STRING("https://vibetv.shop/pages/setup", kSupportUrl);
   TEST_ASSERT_TRUE(contains(server.output, "https://vibetv.shop/pages/setup"));
+  TEST_ASSERT_TRUE(contains(server.output, "target=\"_blank\" rel=\"noopener noreferrer\""));
   TEST_ASSERT_TRUE(contains(server.output, "My Wi-Fi isn't shown"));
   TEST_ASSERT_TRUE(contains(server.output, "Check the password and try again."));
   TEST_ASSERT_FALSE(contains(server.output, "Smart Connect"));

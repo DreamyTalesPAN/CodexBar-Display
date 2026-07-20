@@ -281,10 +281,10 @@ void SendSetupPage(
 
   if (supportUrl != nullptr && supportUrl[0] != '\0') {
     String help;
-    help.reserve(strlen(supportUrl) + 96);
+    help.reserve(strlen(supportUrl) + 136);
     help += F("<a class=\"help\" href=\"");
     help += HtmlEscape(String(supportUrl));
-    help += F("\">My Wi-Fi isn't shown</a>");
+    help += F("\" target=\"_blank\" rel=\"noopener noreferrer\">My Wi-Fi isn't shown</a>");
     sendDynamic(server, help);
   }
 
