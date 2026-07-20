@@ -126,15 +126,11 @@ export function DeviceStartupScreen({
           </div>
         ) : null}
 
-        {searching || selecting || reconnecting ? (
+        {searching || reconnecting ? (
           <div className="flex min-h-12 items-center justify-center gap-3 text-base font-semibold text-[#444933]" role="status">
             <Loader2 className="animate-spin" size={20} aria-hidden />
             <span>
-              {selecting
-                ? "Connecting…"
-                : reconnecting
-                  ? "Reconnecting…"
-                  : "Searching…"}
+              {reconnecting ? "Reconnecting…" : "Searching…"}
             </span>
           </div>
         ) : null}
