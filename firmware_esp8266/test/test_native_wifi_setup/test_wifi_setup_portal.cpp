@@ -86,7 +86,7 @@ void test_options_escape_ssids_and_stay_inside_budget() {
   TEST_ASSERT_FALSE(contains(html, "2.4 GHz compatible"));
 }
 
-void test_page_has_only_short_guidance_and_optional_external_link() {
+void test_page_omits_frequency_guidance_and_supports_optional_external_link() {
   State state;
   TEST_ASSERT_TRUE(BeginScan(state));
   TEST_ASSERT_TRUE(AddScanResult(state, "Home", -45, 6));
@@ -97,7 +97,7 @@ void test_page_has_only_short_guidance_and_optional_external_link() {
   SendSetupPage(server, state, "https://support.example/wifi", "192.168.4.1");
 
   TEST_ASSERT_EQUAL_INT(200, server.status);
-  TEST_ASSERT_TRUE(contains(server.output, "Choose a 2.4 GHz Wi-Fi network."));
+  TEST_ASSERT_FALSE(contains(server.output, "Choose a 2.4 GHz Wi-Fi network."));
   TEST_ASSERT_TRUE(contains(server.output, "Search again"));
   TEST_ASSERT_TRUE(contains(server.output, "Searching…"));
   TEST_ASSERT_TRUE(contains(server.output, "https://support.example/wifi"));
@@ -173,7 +173,7 @@ int main(int, char**) {
   RUN_TEST(test_signal_labels_are_customer_friendly);
   RUN_TEST(test_wifi_statuses_map_to_retryable_errors);
   RUN_TEST(test_options_escape_ssids_and_stay_inside_budget);
-  RUN_TEST(test_page_has_only_short_guidance_and_optional_external_link);
+  RUN_TEST(test_page_omits_frequency_guidance_and_supports_optional_external_link);
   RUN_TEST(test_page_publishes_no_placeholder_without_support_url);
   RUN_TEST(test_generic_reconnect_error_does_not_render_an_empty_ssid);
   RUN_TEST(test_qr_fixture_is_stable);
