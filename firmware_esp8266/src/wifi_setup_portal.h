@@ -10,6 +10,7 @@ namespace wifi_setup {
 constexpr size_t kMaxSsidBytes = 33;
 constexpr uint8_t kMaxNetworks = 10;
 constexpr size_t kMaxOptionsHtmlBytes = 900;
+extern const char kSupportUrl[];
 
 enum class ScanStatus : uint8_t {
   NotStarted,

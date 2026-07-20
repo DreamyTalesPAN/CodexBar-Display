@@ -80,11 +80,6 @@ const char kActiveThemeSpecPathFile[] = "/theme-active";
 const char kAssetUploadTemporaryPath[] = "/.asset-upload.tmp";
 const char kDeviceAuthHeader[] = "X-VibeTV-Token";
 const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
-#ifdef CODEXBAR_DISPLAY_WIFI_SUPPORT_URL
-const char kWifiTroubleshootingUrl[] = CODEXBAR_DISPLAY_WIFI_SUPPORT_URL;
-#else
-const char* const kWifiTroubleshootingUrl = nullptr;
-#endif
 constexpr uint8_t kFirmwareUpdateNoticeTextCount = 3;
 constexpr uint8_t kFirmwareUpdateNoticeProviderPhase = 0;
 constexpr uint8_t kFirmwareUpdateNoticeAvailablePhase = 1;
@@ -1158,7 +1153,7 @@ void handleRoot() {
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
         webServer,
         setupWifiState,
-        kWifiTroubleshootingUrl,
+        codexbar_display::esp8266::wifi_setup::kSupportUrl,
         kSetupAddress);
     return;
   }
@@ -1177,7 +1172,7 @@ void handleCaptivePortalProbe() {
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
         webServer,
         setupWifiState,
-        kWifiTroubleshootingUrl,
+        codexbar_display::esp8266::wifi_setup::kSupportUrl,
         kSetupAddress);
     return;
   }
@@ -1200,7 +1195,7 @@ void handleSaveWifi() {
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
         webServer,
         setupWifiState,
-        kWifiTroubleshootingUrl,
+        codexbar_display::esp8266::wifi_setup::kSupportUrl,
         kSetupAddress,
         400);
     return;
@@ -1213,7 +1208,7 @@ void handleSaveWifi() {
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
         webServer,
         setupWifiState,
-        kWifiTroubleshootingUrl,
+        codexbar_display::esp8266::wifi_setup::kSupportUrl,
         kSetupAddress,
         400);
     return;

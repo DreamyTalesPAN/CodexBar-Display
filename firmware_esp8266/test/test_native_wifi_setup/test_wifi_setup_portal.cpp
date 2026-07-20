@@ -86,7 +86,7 @@ void test_options_escape_ssids_and_stay_inside_budget() {
   TEST_ASSERT_FALSE(contains(html, "2.4 GHz compatible"));
 }
 
-void test_page_omits_frequency_guidance_and_supports_optional_external_link() {
+void test_page_omits_frequency_guidance_and_links_to_public_support() {
   State state;
   TEST_ASSERT_TRUE(BeginScan(state));
   TEST_ASSERT_TRUE(AddScanResult(state, "Home", -45, 6));
@@ -94,14 +94,15 @@ void test_page_omits_frequency_guidance_and_supports_optional_external_link() {
   SetConnectionError(state, ConnectionError::WrongPassword, "Home");
 
   ESP8266WebServer server;
-  SendSetupPage(server, state, "https://support.example/wifi", "192.168.4.1");
+  SendSetupPage(server, state, kSupportUrl, "192.168.4.1");
 
   TEST_ASSERT_EQUAL_INT(200, server.status);
   TEST_ASSERT_FALSE(contains(server.output, "Choose a 2.4 GHz Wi-Fi network."));
   TEST_ASSERT_TRUE(contains(server.output, "Search again"));
   TEST_ASSERT_TRUE(contains(server.output, "Searching…"));
   TEST_ASSERT_TRUE(server.output.find("Connect</button>") < server.output.find("Search again</button>"));
-  TEST_ASSERT_TRUE(contains(server.output, "https://support.example/wifi"));
+  TEST_ASSERT_EQUAL_STRING("https://vibetv.shop/pages/setup", kSupportUrl);
+  TEST_ASSERT_TRUE(contains(server.output, "https://vibetv.shop/pages/setup"));
   TEST_ASSERT_TRUE(contains(server.output, "My Wi-Fi isn't shown"));
   TEST_ASSERT_TRUE(contains(server.output, "Check the password and try again."));
   TEST_ASSERT_FALSE(contains(server.output, "Smart Connect"));
@@ -163,7 +164,7 @@ int main(int, char**) {
     AddScanResult(state, "Guest", -81, 1);
     FinishScan(state, 3);
     ESP8266WebServer server;
-    SendSetupPage(server, state, "https://support.example/wifi", "192.168.4.1");
+    SendSetupPage(server, state, kSupportUrl, "192.168.4.1");
     std::fwrite(server.output.data(), 1, server.output.size(), stdout);
     return 0;
   }
@@ -174,7 +175,7 @@ int main(int, char**) {
   RUN_TEST(test_signal_labels_are_customer_friendly);
   RUN_TEST(test_wifi_statuses_map_to_retryable_errors);
   RUN_TEST(test_options_escape_ssids_and_stay_inside_budget);
-  RUN_TEST(test_page_omits_frequency_guidance_and_supports_optional_external_link);
+  RUN_TEST(test_page_omits_frequency_guidance_and_links_to_public_support);
   RUN_TEST(test_page_publishes_no_placeholder_without_support_url);
   RUN_TEST(test_generic_reconnect_error_does_not_render_an_empty_ssid);
   RUN_TEST(test_qr_fixture_is_stable);
