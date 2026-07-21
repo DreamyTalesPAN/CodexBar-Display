@@ -11,6 +11,13 @@ struct WifiSecurityPolicy {
     return (physicalSetupAuthorized && setupTokenValid) ||
         (devicePaired && deviceTokenValid);
   }
+
+  static bool AllowsPairing(
+      bool devicePaired,
+      bool deviceTokenValid,
+      bool physicalPairingWindowOpen) {
+    return (devicePaired && deviceTokenValid) || physicalPairingWindowOpen;
+  }
 };
 
 }  // namespace codexbar_display::esp8266

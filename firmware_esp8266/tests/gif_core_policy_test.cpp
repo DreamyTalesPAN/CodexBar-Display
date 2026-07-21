@@ -189,11 +189,56 @@ bool testWifiCredentialWritesRequirePhysicalSetupOrCurrentToken() {
       "automatic setup, missing nonces, and missing device tokens must deny WiFi changes");
 }
 
+bool testPairingRequiresCurrentTokenOrPhysicalWindow() {
+  if (!expect(
+          WifiSecurityPolicy::AllowsPairing(true, true, false),
+          "a paired device must allow rotation with its current token")) {
+    return false;
+  }
+  if (!expect(
+          WifiSecurityPolicy::AllowsPairing(false, false, true) &&
+              WifiSecurityPolicy::AllowsPairing(true, false, true),
+          "a physical pairing window must allow first pairing and recovery")) {
+    return false;
+  }
+  return expect(
+      !WifiSecurityPolicy::AllowsPairing(false, false, false) &&
+          !WifiSecurityPolicy::AllowsPairing(true, false, false),
+      "unconfirmed first pairing and unauthorized rotation must be denied");
+}
+
+bool testPairingHandlerAuthorizesBeforeTokenMutation(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t handler = mainSource.find("void handlePairingAPI()");
+  const std::size_t authorization = mainSource.find("WifiSecurityPolicy::AllowsPairing", handler);
+  const std::size_t tokenGeneration = mainSource.find("generateAuthToken()", handler);
+  const std::size_t tokenSave = mainSource.find("saveDeviceAuthToken(token)", handler);
+  return expect(
+      authorization != std::string::npos && tokenGeneration != std::string::npos &&
+          tokenSave != std::string::npos && authorization < tokenGeneration && tokenGeneration < tokenSave,
+      "pairing must authorize before generating and saving a replacement token");
+}
+
+bool testConnectedPageNeverRendersPairingSecret(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t pageStart = mainSource.find("String connectedPageHTML()");
+  const std::size_t pageEnd = mainSource.find("void handleRoot()", pageStart);
+  if (pageStart == std::string::npos || pageEnd == std::string::npos) {
+    return false;
+  }
+  const std::string page = mainSource.substr(pageStart, pageEnd - pageStart);
+  return expect(
+      page.find("deviceAuthToken") == std::string::npos &&
+          page.find("/api/pair") == std::string::npos &&
+          page.find("tokenQuery") == std::string::npos,
+      "the unauthenticated device page must never render pairing secrets or rotation forms");
+}
+
 bool testWifiHandlersAuthorizeBeforeStorageMutation(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t saveHandler = mainSource.find("void handleSaveWifi()");
   const std::size_t saveAuthorization = mainSource.find("if (!authorizeWifiCredentialWrite())", saveHandler);
-  const std::size_t saveMutation = mainSource.find("saveWifiCredentials(ssid, password)", saveHandler);
+  const std::size_t saveMutation = mainSource.find("saveWifiCredentials(", saveHandler);
   const std::size_t resetHandler = mainSource.find("void handleResetWifi()");
   const std::size_t resetAuthorization = mainSource.find("if (!authorizeWifiCredentialWrite())", resetHandler);
   const std::size_t resetMutation = mainSource.find("clearWifiCredentials()", resetHandler);
@@ -563,6 +608,9 @@ int main(int argc, char** argv) {
   if (!testWifiCredentialWritesRequirePhysicalSetupOrCurrentToken()) {
     return 1;
   }
+  if (!testPairingRequiresCurrentTokenOrPhysicalWindow()) {
+    return 1;
+  }
   if (!testAnimatedAssetScanYieldsEveryFourRows()) {
     return 1;
   }
@@ -591,6 +639,12 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testWifiHandlersAuthorizeBeforeStorageMutation(argv[3])) {
+    return 1;
+  }
+  if (!testPairingHandlerAuthorizesBeforeTokenMutation(argv[3])) {
+    return 1;
+  }
+  if (!testConnectedPageNeverRendersPairingSecret(argv[3])) {
     return 1;
   }
   if (!testFirmwareUsesIPDiscoveryInsteadOfMdns(argv[3])) {

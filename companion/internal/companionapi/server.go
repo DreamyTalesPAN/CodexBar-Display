@@ -2500,7 +2500,7 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		}
 		target = discoveredTarget
 	}
-	token, err := s.pair(r.Context(), target)
+	token, err := s.pair(r.Context(), target, cfg.DeviceToken)
 	if err != nil && requestedTarget == "" {
 		discoveredTarget, _, discoverErr := s.discover(r.Context(), cfg, "")
 		if discoverErr != nil {
@@ -2509,7 +2509,7 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		}
 		if discoveredTarget != target {
 			target = discoveredTarget
-			token, err = s.pair(r.Context(), target)
+			token, err = s.pair(r.Context(), target, cfg.DeviceToken)
 		}
 	}
 	if err != nil {
@@ -2710,7 +2710,7 @@ func (s *Server) selectDevice(
 		}
 	}
 	if strings.TrimSpace(selected.DeviceToken) == "" {
-		token, pairErr := s.pair(ctx, target)
+		token, pairErr := s.pair(ctx, target, "")
 		if pairErr != nil {
 			return deviceInfo{}, s.rollbackDeviceSelection(
 				ctx,
@@ -2838,7 +2838,7 @@ func (s *Server) repairDeviceOnceLocked(
 	token := strings.TrimSpace(cfg.DeviceToken)
 	pairedDuringRepair := false
 	if forcePair || token == "" || tokenStale {
-		token, err = s.pair(ctx, target)
+		token, err = s.pair(ctx, target, token)
 		if err != nil {
 			return deviceInfo{}, &repairStageError{stage: "pair", err: err}
 		}
@@ -2871,7 +2871,7 @@ func (s *Server) repairDeviceOnceLocked(
 	}
 	if !stream.Healthy && stream.ErrorCode == "device_pairing_required" && !pairedDuringRepair {
 		pauseStream()
-		token, err = s.pair(ctx, target)
+		token, err = s.pair(ctx, target, token)
 		if err != nil {
 			return deviceInfo{}, &repairStageError{stage: "pair", err: err}
 		}
@@ -5838,7 +5838,7 @@ func (s *Server) updateBrightness(ctx context.Context, target, token string, bri
 	return response.Settings, nil
 }
 
-func (s *Server) pair(ctx context.Context, target string) (string, error) {
+func (s *Server) pair(ctx context.Context, target, currentToken string) (string, error) {
 	s.pairMu.Lock()
 	defer s.pairMu.Unlock()
 
@@ -5856,12 +5856,15 @@ func (s *Server) pair(ctx context.Context, target string) (string, error) {
 		if s.pairAttemptTimeout > 0 {
 			attemptCtx, cancel = context.WithTimeout(ctx, s.pairAttemptTimeout)
 		}
-		token, err := s.pairOnce(attemptCtx, target)
+		token, err := s.pairOnce(attemptCtx, target, currentToken)
 		cancel()
 		if err == nil {
 			return token, nil
 		}
 		lastErr = err
+		if pairingAuthorizationRejected(err) {
+			break
+		}
 		if attempt == attempts {
 			break
 		}
@@ -5874,7 +5877,7 @@ func (s *Server) pair(ctx context.Context, target string) (string, error) {
 	return "", fmt.Errorf("pairing failed after %d attempts: %w", attempts, lastErr)
 }
 
-func (s *Server) pairOnce(ctx context.Context, target string) (string, error) {
+func (s *Server) pairOnce(ctx context.Context, target, currentToken string) (string, error) {
 	pairURL, err := url.Parse(endpoint(target, "/api/pair"))
 	if err != nil {
 		return "", err
@@ -5887,6 +5890,7 @@ func (s *Server) pairOnce(ctx context.Context, target string) (string, error) {
 		return "", err
 	}
 	req.Close = true
+	applyDeviceToken(req, currentToken)
 	var response struct {
 		OK    bool   `json:"ok"`
 		Token string `json:"token"`
@@ -5899,6 +5903,16 @@ func (s *Server) pairOnce(ctx context.Context, target string) (string, error) {
 		return "", errors.New("pairing response did not include token")
 	}
 	return token, nil
+}
+
+func pairingAuthorizationRejected(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "status=401") ||
+		strings.Contains(message, "status=403") ||
+		strings.Contains(message, "status=429")
 }
 
 func (s *Server) startDisplayStream(ctx context.Context, target string) error {

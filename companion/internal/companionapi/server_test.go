@@ -5372,7 +5372,7 @@ func TestPairRetriesLostResponsesWithBoundedEmptyRequests(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{})
 			server.pairAttempts = 3
 			server.pairRetryGap = 0
-			token, err := server.pair(context.Background(), device.URL)
+			token, err := server.pair(context.Background(), device.URL, "")
 			if tt.wantError {
 				if err == nil || !strings.Contains(err.Error(), "pairing failed after 3 attempts") {
 					t.Fatalf("expected bounded pairing error, got token=%q err=%v", token, err)
@@ -5402,7 +5402,7 @@ func TestPairAttemptTimeoutBoundsHungResponses(t *testing.T) {
 	server.pairAttemptTimeout = 25 * time.Millisecond
 	server.pairRetryGap = 0
 	startedAt := time.Now()
-	token, err := server.pair(context.Background(), device.URL)
+	token, err := server.pair(context.Background(), device.URL, "")
 	if err == nil || token != "" {
 		t.Fatalf("expected hung pairing to fail, got token=%q err=%v", token, err)
 	}
@@ -5411,6 +5411,31 @@ func TestPairAttemptTimeoutBoundsHungResponses(t *testing.T) {
 	}
 	if elapsed := time.Since(startedAt); elapsed > time.Second {
 		t.Fatalf("bounded pairing took %s", elapsed)
+	}
+}
+
+func TestPairSendsCurrentTokenAndDoesNotRetryAuthorizationFailure(t *testing.T) {
+	var attempts atomic.Int32
+	var gotToken string
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		gotToken = r.Header.Get("X-VibeTV-Token")
+		http.Error(w, "current pairing token required", http.StatusUnauthorized)
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.pairAttempts = 3
+	server.pairRetryGap = 0
+	_, err := server.pair(context.Background(), device.URL, "current-token")
+	if err == nil {
+		t.Fatal("expected pairing authorization failure")
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("pair attempts=%d want 1", attempts.Load())
+	}
+	if gotToken != "current-token" {
+		t.Fatalf("pair auth header=%q want current-token", gotToken)
 	}
 }
 
