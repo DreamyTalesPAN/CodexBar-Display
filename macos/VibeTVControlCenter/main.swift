@@ -938,6 +938,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationReady = false
     private var installationStatus: InstallationStatus?
     private var codexBarRepairRequired = false
+    private var codexBarAutoRepairAttempted = false
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
@@ -1035,11 +1036,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             guard let self else {
                 return
             }
-            let outcome = await self.prepareCompanion()
+            let outcome = await self.prepareCompanionWithAutomaticCodexBarRepair()
             self.preparationTask = nil
             switch outcome {
             case .nativeRuntimeReady:
                 self.codexBarRepairRequired = false
+                self.codexBarAutoRepairAttempted = false
                 self.installationReady = true
                 self.installationStatus = nil
                 _ = self.urlRouter.markReady()
@@ -1068,6 +1070,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 )
             }
         }
+    }
+
+    private func prepareCompanionWithAutomaticCodexBarRepair() async -> RuntimePreparationOutcome {
+        let outcome = await prepareCompanion()
+        guard outcome == .codexBarRepairRequired,
+              !codexBarAutoRepairAttempted else {
+            return outcome
+        }
+        codexBarAutoRepairAttempted = true
+        guard repairCodexBarInstallation() else {
+            return outcome
+        }
+        return await prepareCompanion()
     }
 
     @objc private func retryRuntimePreparation() {
@@ -1577,13 +1592,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             guard let self else {
                 return
             }
-            let outcome = await self.prepareCompanion()
+            let outcome = await self.prepareCompanionWithAutomaticCodexBarRepair()
             self.preparationTask = nil
             guard outcome == .nativeRuntimeReady else {
                 self.notifyRuntimeRepairResult(success: false)
                 return
             }
             self.codexBarRepairRequired = false
+            self.codexBarAutoRepairAttempted = false
             self.installationReady = true
             self.installationStatus = nil
             self.notifyRuntimeRepairResult(success: true)
@@ -3216,7 +3232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         _ webView: WKWebView,
         runOpenPanelWith parameters: WKOpenPanelParameters,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping ([URL]?) -> Void
+        completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = !parameters.allowsDirectories
