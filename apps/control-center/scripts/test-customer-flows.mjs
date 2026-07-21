@@ -237,6 +237,7 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    await assertSupportChatDisabled(browser, appContext.appUrl);
     await testStartupStateMachine(browser, appContext.appUrl);
     if (themeStudioSafetyOnly) {
       await testThemeStudioUsesLocalRenderAndCompanionInstall(
@@ -680,6 +681,17 @@ async function newCustomerPage(browser, appUrl, options) {
     origin: appUrl,
   });
   return page;
+}
+
+async function assertSupportChatDisabled(browser, appUrl) {
+  const page = await browser.newPage({ viewport });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(500);
+  assert(
+    (await page.getByRole("button", { name: "Customer Service" }).count()) === 0,
+    "Customer Service should stay hidden when the feature flag is disabled",
+  );
+  await page.close();
 }
 
 async function testStartupStateMachine(browser, appUrl) {
