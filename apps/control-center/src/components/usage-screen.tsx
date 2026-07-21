@@ -76,10 +76,6 @@ export function UsageScreen({
   );
   const hasProviders = providers.length > 0;
   const providerActionRequired = providerSetupNeedsAction(providerSetup);
-  const costProvider =
-    providers.find(
-      (provider) => provider.id === "codex" && providerHasCost(provider),
-    ) || providers.find((provider) => providerHasCost(provider));
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -99,8 +95,6 @@ export function UsageScreen({
         {usageError && !providerActionRequired ? (
           <Alert className="mb-6 bg-muted"><AlertTriangle /><AlertTitle>{usageError.message}</AlertTitle><AlertDescription>{usageError.nextAction}</AlertDescription></Alert>
         ) : null}
-
-        {costProvider ? <CodexCostPanel provider={costProvider} /> : null}
 
         {hasProviders ? (
           <TokenUsageOverTimePanel providers={providers} />
@@ -125,104 +119,6 @@ export function UsageScreen({
   );
 }
 
-function CodexCostPanel({ provider }: { provider: UsageProviderInfo }) {
-  const cost = provider.cost;
-  if (!cost) {
-    return null;
-  }
-
-  const days = normalizeCostDays(cost.daily || []);
-  const maxCost = Math.max(...days.map((day) => day.totalCostUSD || 0), 0);
-  const todayCost = finiteNumber(cost.todayCostUSD)
-    ? cost.todayCostUSD
-    : latestCostDay(days)?.totalCostUSD;
-  const last30DaysCost = finiteNumber(cost.last30DaysCostUSD)
-    ? cost.last30DaysCostUSD
-    : days.reduce((sum, day) => sum + (day.totalCostUSD || 0), 0);
-  const last30DaysTokens = finiteNumber(cost.last30DaysTokens)
-    ? cost.last30DaysTokens
-    : days.reduce((sum, day) => sum + (day.totalTokens || 0), 0);
-  const latestTokens = finiteNumber(cost.latestTokens)
-    ? cost.latestTokens
-    : provider.sessionTokens || 0;
-  const resetCredits = provider.resetCredits;
-  const topModel = cost.topModel?.trim();
-
-  return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle>Limit Reset Credits</CardTitle>
-        {resetCredits?.nextExpiresAt ? (
-          <CardDescription>
-            Manual resets expire {formatExpiryDate(resetCredits.nextExpiresAt)}
-          </CardDescription>
-        ) : null}
-        <Badge>{formatResetCreditCount(resetCredits?.availableCount)}</Badge>
-      </CardHeader>
-      <CardContent>
-        <dl className="grid gap-4 border-t pt-4 sm:grid-cols-2 lg:grid-cols-4">
-          <UsageCostMetric label="Today" value={formatCurrency(todayCost, cost.currencyCode)} />
-          <UsageCostMetric label="30d cost" value={formatCurrency(last30DaysCost, cost.currencyCode)} />
-          <UsageCostMetric label="30d tokens" value={formatTokenCount(last30DaysTokens)} />
-          <UsageCostMetric label="Latest tokens" value={formatTokenCount(latestTokens)} />
-        </dl>
-
-        {days.length > 0 ? (
-          <div aria-label={`Codex cost over time for ${provider.label || provider.id}`} className="mt-6" role="img">
-            <div className="flex h-32 items-end gap-1 border-b pb-1">
-              {days.map((day) => (
-                <CostHistoryBar currencyCode={cost.currencyCode} day={day} key={day.day} maxCost={maxCost} />
-              ))}
-            </div>
-            <div className="mt-2 flex justify-between gap-3 text-xs font-semibold text-muted-foreground">
-              <span>{formatDayLabel(days[0].day)}</span>
-              <span>{formatDayLabel(days[days.length - 1].day)}</span>
-            </div>
-          </div>
-        ) : null}
-
-        {topModel ? (
-          <div className="mt-5 border-t pt-4 text-sm font-semibold text-muted-foreground">
-            Top model: <span className="font-bold text-foreground">{topModel}</span>
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function UsageCostMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs font-bold uppercase text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-xl font-black">{value}</dd>
-    </div>
-  );
-}
-
-function CostHistoryBar({
-  currencyCode,
-  day,
-  maxCost,
-}: {
-  currencyCode?: string;
-  day: UsageCostDay;
-  maxCost: number;
-}) {
-  const value = day.totalCostUSD || 0;
-  const height = maxCost > 0 ? Math.max((value / maxCost) * 100, 5) : 0;
-  const tooltip = `${formatDayLabel(day.day)} · ${formatCurrency(value, currencyCode)} · ${formatTokenCount(day.totalTokens || 0)}`;
-
-  return (
-    <div aria-label={tooltip} className="group relative flex h-full min-w-0 flex-1 items-end" tabIndex={0}>
-      <span className="block w-full min-w-[5px] border bg-primary" style={{ height: `${height}%` }} />
-      <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border bg-popover px-2 py-1 text-xs font-bold shadow-sm group-focus:block group-hover:block">
-        {tooltip}
-      </span>
-    </div>
-  );
-}
-
 function TokenUsageOverTimePanel({
   providers,
 }: {
@@ -239,110 +135,119 @@ function TokenUsageOverTimePanel({
   const providerNames = displayedHistories.map(
     ({ provider }) => provider.label || provider.id,
   );
+  const last30DaysTokens = getLast30DaysTokenTotal(providers);
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle>Tokens used over time</CardTitle>
-        <CardDescription>
-          {hasCurrentData ? (
-            <>
-              Daily tokens by provider{" · "}
-              {formatProviderHistorySummary(
-                currentProviderHistories.length,
-                providers.length,
-              )}{" · "}
-              {chartData.length} days
-            </>
-          ) : (
-            "Daily tokens by provider · No current data"
-          )}
-        </CardDescription>
-      </CardHeader>
+    <>
+      <section
+        aria-labelledby="total-tokens-heading"
+        className="mb-6 px-4 text-center"
+      >
+        <h2
+          className="text-sm font-bold uppercase tracking-wide text-muted-foreground"
+          id="total-tokens-heading"
+        >
+          Total tokens in the last 30 days
+        </h2>
+        <p className="mt-2 break-words text-3xl font-black tracking-tight tabular-nums sm:text-5xl">
+          {formatFullTokenCount(last30DaysTokens)}
+        </p>
+        {last30DaysTokens !== null ? (
+          <p className="mx-auto mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-muted-foreground">
+            {formatTokenCountInWords(last30DaysTokens)} tokens
+          </p>
+        ) : null}
+      </section>
 
-      <CardContent>
-        <div className="relative min-h-52">
-          <ChartContainer
-            aria-hidden={!hasCurrentData}
-            aria-label={`Daily tokens used over time for ${providerNames.join(", ")}`}
-            className={cn(
-              "h-52 w-full overflow-hidden px-2 pt-3 transition-opacity",
-              !hasCurrentData && "pointer-events-none opacity-25 grayscale",
-            )}
-            config={chartConfig}
-            role="img"
-          >
-            <AreaChart
-              accessibilityLayer
-              data={chartData}
-              margin={{ top: 8, right: 10, bottom: 0, left: 10 }}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Tokens used over time</CardTitle>
+        </CardHeader>
+
+        <CardContent>
+          <div className="relative min-h-52">
+            <ChartContainer
+              aria-hidden={!hasCurrentData}
+              aria-label={`Daily tokens used over time for ${providerNames.join(", ")}`}
+              className={cn(
+                "h-52 w-full overflow-hidden px-2 pt-3 transition-opacity",
+                !hasCurrentData && "pointer-events-none opacity-25 grayscale",
+              )}
+              config={chartConfig}
+              role="img"
             >
-              <CartesianGrid vertical={false} />
-              <XAxis
-                axisLine={false}
-                dataKey="day"
-                interval="preserveStartEnd"
-                minTickGap={28}
-                tickFormatter={formatDayLabel}
-                tickLine={false}
-                tickMargin={8}
-              />
-              <YAxis
-                axisLine={false}
-                tickFormatter={formatTokenCount}
-                tickLine={false}
-                tickMargin={8}
-                width={48}
-              />
-              <ChartTooltip
-                content={
-                  <ChartTooltipContent
-                    labelFormatter={(value) => formatDayLabel(String(value))}
-                  />
-                }
-                cursor={false}
-              />
-              <ChartLegend
-                content={
-                  <ChartLegendContent className="flex-wrap gap-x-4 gap-y-2 pb-1" />
-                }
-              />
-              {series.map((item) => (
-                <Area
-                  activeDot={{ r: 4 }}
-                  connectNulls={false}
-                  dataKey={item.dataKey}
-                  fill={`var(--color-${item.dataKey})`}
-                  fillOpacity={0.12}
-                  isAnimationActive={false}
-                  key={item.dataKey}
-                  stroke={`var(--color-${item.dataKey})`}
-                  strokeWidth={2}
-                  type="monotone"
+              <AreaChart
+                accessibilityLayer
+                data={chartData}
+                margin={{ top: 8, right: 10, bottom: 0, left: 10 }}
+              >
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  axisLine={false}
+                  dataKey="day"
+                  interval="preserveStartEnd"
+                  minTickGap={28}
+                  tickFormatter={formatDayLabel}
+                  tickLine={false}
+                  tickMargin={8}
                 />
-              ))}
-            </AreaChart>
-          </ChartContainer>
+                <YAxis
+                  axisLine={false}
+                  tickFormatter={formatTokenCount}
+                  tickLine={false}
+                  tickMargin={8}
+                  width={48}
+                />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(value) => formatDayLabel(String(value))}
+                    />
+                  }
+                  cursor={false}
+                />
+                <ChartLegend
+                  content={
+                    <ChartLegendContent className="flex-wrap gap-x-4 gap-y-2 pb-1" />
+                  }
+                />
+                {series.map((item) => (
+                  <Area
+                    activeDot={{ r: 4 }}
+                    connectNulls={false}
+                    dataKey={item.dataKey}
+                    fill={`var(--color-${item.dataKey})`}
+                    fillOpacity={0.12}
+                    isAnimationActive={false}
+                    key={item.dataKey}
+                    stroke={`var(--color-${item.dataKey})`}
+                    strokeWidth={2}
+                    type="monotone"
+                  />
+                ))}
+              </AreaChart>
+            </ChartContainer>
 
-          {!hasCurrentData ? (
-            <Empty
-              aria-live="polite"
-              className="absolute inset-0 min-h-0 bg-transparent p-4"
-              role="status"
-            >
-              <EmptyHeader>
-                <EmptyTitle>
-                  <Badge variant="secondary">No data</Badge>
-                </EmptyTitle>
-                <EmptyDescription>
-                  Token history is temporarily unavailable.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
+            {!hasCurrentData ? (
+              <Empty
+                aria-live="polite"
+                className="absolute inset-0 min-h-0 bg-transparent p-4"
+                role="status"
+              >
+                <EmptyHeader>
+                  <EmptyTitle>
+                    <Badge variant="secondary">No data</Badge>
+                  </EmptyTitle>
+                  <EmptyDescription>
+                    Token history is temporarily unavailable.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+    </>
   );
 }
 
@@ -372,7 +277,7 @@ function UsageProviderTile({
         ) : null}
       </CardHeader>
 
-      <CardContent>
+      <CardContent className="flex flex-1 flex-col">
         <ProviderUsageBars provider={provider} />
 
         <UsageMetaGrid provider={provider} />
@@ -446,7 +351,7 @@ function TokenRow({ provider }: { provider: UsageProviderInfo }) {
   }
 
   return (
-    <div className="mt-5">
+    <div className="mt-auto pt-5">
       <h4 className="mb-3 text-sm font-bold text-foreground">Token usage</h4>
       <dl className="grid gap-3 sm:grid-cols-3">
         {items.map(([label, value]) => (
@@ -647,6 +552,27 @@ function getProviderTokenHistories(
   });
 }
 
+function getLast30DaysTokenTotal(
+  providers: UsageProviderInfo[],
+): number | null {
+  const providerTotals = providers.flatMap((provider) => {
+    const reportedTotal = provider.cost?.last30DaysTokens;
+    if (finiteNumber(reportedTotal) && reportedTotal >= 0) {
+      return [reportedTotal];
+    }
+
+    const days = normalizeTokenHistory(provider.cost?.daily || []);
+    if (days.length === 0) {
+      return [];
+    }
+    return [days.reduce((sum, day) => sum + (day.totalTokens || 0), 0)];
+  });
+
+  return providerTotals.length > 0
+    ? providerTotals.reduce((sum, total) => sum + total, 0)
+    : null;
+}
+
 const usageProviderChartColors = [
   "var(--chart-1)",
   "var(--chart-2)",
@@ -693,16 +619,6 @@ function buildProviderTokenChart(
   return { chartConfig, chartData, series };
 }
 
-function formatProviderHistorySummary(
-  historyCount: number,
-  providerCount: number,
-): string {
-  if (historyCount === providerCount) {
-    return `${historyCount} ${historyCount === 1 ? "provider" : "providers"}`;
-  }
-  return `${historyCount} of ${providerCount} providers with history`;
-}
-
 function StatusPill({ children }: { children: ReactNode }) {
   return (
     <Badge className="min-h-6 uppercase" variant="secondary">
@@ -746,52 +662,107 @@ function formatTokenCount(value: number): string {
     }).format(value);
 }
 
-function finiteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function normalizeCostDays(days: UsageCostDay[]) {
-  return days
-    .filter(
-      (day) =>
-        Boolean(day.day) &&
-        (finiteNumber(day.totalCostUSD) || finiteNumber(day.totalTokens)),
-    )
-    .sort((a, b) => a.day.localeCompare(b.day))
-    .slice(-30);
-}
-
-function latestCostDay(days: UsageCostDay[]): UsageCostDay | undefined {
-  return days.at(-1);
-}
-
-function formatCurrency(value?: number, currencyCode?: string): string {
+function formatFullTokenCount(value: number | null): string {
   if (!finiteNumber(value)) {
     return "—";
   }
   return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: currencyCode || "USD",
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 0,
   }).format(value);
 }
 
-function formatResetCreditCount(value?: number): string {
-  if (!finiteNumber(value)) {
-    return "Manual resets unavailable";
+const tokenNumberOnes = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
+] as const;
+
+const tokenNumberTens = [
+  "",
+  "",
+  "twenty",
+  "thirty",
+  "forty",
+  "fifty",
+  "sixty",
+  "seventy",
+  "eighty",
+  "ninety",
+] as const;
+
+const tokenNumberScales = [
+  "",
+  "thousand",
+  "million",
+  "billion",
+  "trillion",
+  "quadrillion",
+] as const;
+
+function formatTokenCountInWords(value: number): string {
+  const roundedValue = Math.round(value);
+  if (!Number.isSafeInteger(roundedValue) || roundedValue < 0) {
+    return "unavailable";
   }
-  return `${value} manual ${value === 1 ? "reset" : "resets"} available`;
+  if (roundedValue === 0) {
+    return tokenNumberOnes[0];
+  }
+
+  const groups: string[] = [];
+  let remaining = roundedValue;
+  let scaleIndex = 0;
+  while (remaining > 0) {
+    const chunk = remaining % 1000;
+    if (chunk > 0) {
+      const scale = tokenNumberScales[scaleIndex];
+      groups.unshift(
+        [formatTokenNumberChunk(chunk), scale].filter(Boolean).join(" "),
+      );
+    }
+    remaining = Math.floor(remaining / 1000);
+    scaleIndex += 1;
+  }
+  return groups.join(" ");
 }
 
-function formatExpiryDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
+function formatTokenNumberChunk(value: number): string {
+  const words: string[] = [];
+  const hundreds = Math.floor(value / 100);
+  const remainder = value % 100;
+
+  if (hundreds > 0) {
+    words.push(`${tokenNumberOnes[hundreds]} hundred`);
   }
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  }).format(date);
+  if (remainder > 0 && remainder < 20) {
+    words.push(tokenNumberOnes[remainder]);
+  } else if (remainder >= 20) {
+    const tens = tokenNumberTens[Math.floor(remainder / 10)];
+    const ones = remainder % 10;
+    words.push(ones > 0 ? `${tens}-${tokenNumberOnes[ones]}` : tens);
+  }
+
+  return words.join(" ");
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function providerStatusLabel(description?: string): string {

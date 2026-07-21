@@ -393,7 +393,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testUsageShowsCodexCostHistory(browser, appContext.appUrl);
+    await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageShowsMacAppUpdateForOldMacApp(browser, appContext.appUrl);
     await testRunSetupAgainReturnsToWifiOnboarding(browser, appContext.appUrl);
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
@@ -2356,7 +2356,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
   await page.close();
 }
 
-async function testUsageShowsCodexCostHistory(browser, appUrl) {
+async function testUsagePrioritizesProviderTokenHistory(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -2453,34 +2453,85 @@ async function testUsageShowsCodexCostHistory(browser, appUrl) {
             },
           ],
         },
+        {
+          id: "claude",
+          label: "Claude",
+          source: "oauth",
+          session: 0,
+          weekly: 6,
+          resetSecs: 10_800,
+          usageMode: "used",
+          weekTokens: 19_176_330,
+          totalTokens: 19_176_330,
+          cost: {
+            currencyCode: "USD",
+            updatedAt: "2026-06-29T10:47:46Z",
+            last30DaysTokens: 19_176_330,
+            daily: [
+              {
+                day: "2026-06-29",
+                totalCostUSD: 8.69,
+                totalTokens: 19_176_330,
+                models: [
+                  {
+                    name: "claude-opus-4-8",
+                    totalTokens: 19_176_330,
+                    costUSD: 8.69,
+                  },
+                ],
+              },
+            ],
+          },
+        },
       ],
     },
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await clickNavigation(page, "Usage");
-  await page.getByRole("heading", { name: "Limit Reset Credits" }).waitFor({
+  const tokenChartHeading = page.getByRole("heading", {
+    name: "Tokens used over time",
+  });
+  await tokenChartHeading.waitFor({
     timeout: 10_000,
   });
   await page
-    .getByText("3 manual resets available")
+    .getByText("4,319,176,330", { exact: true })
     .waitFor({ timeout: 10_000 });
   await page
-    .getByText("Manual resets expire Jul 12")
+    .getByText(
+      "four billion three hundred nineteen million one hundred seventy-six thousand three hundred thirty tokens",
+      { exact: true },
+    )
     .waitFor({ timeout: 10_000 });
-  await page
-    .getByText("$72.42", { exact: true })
-    .first()
-    .waitFor({ timeout: 10_000 });
-  await page.getByText("$3,694.16").waitFor({ timeout: 10_000 });
-  await page.getByText("4.3B").first().waitFor({ timeout: 10_000 });
-  await page.getByText("77M").first().waitFor({ timeout: 10_000 });
-  await page.getByText("Top model: gpt-5.5").waitFor({ timeout: 10_000 });
-  await page.getByLabel("Jun 29 · $72.42 · 77M").hover();
-  await page.getByText("Jun 29 · $72.42 · 77M").waitFor({ timeout: 10_000 });
-  await page.getByRole("heading", { name: "Codex" }).waitFor({
+  assert(
+    (await page.getByText("Daily tokens by provider", { exact: false }).count()) ===
+      0,
+    "Usage should not show the removed token chart subtitle",
+  );
+  const providerHeading = page.getByRole("heading", { name: "Codex" });
+  await providerHeading.waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await page.getByRole("heading", { name: "Limit Reset Credits" }).count()) ===
+      0,
+    "Usage should not show Codex-specific reset credits",
+  );
+  assert(
+    (await page.getByText("3 manual resets available").count()) === 0,
+    "Usage should not show manual reset metadata",
+  );
+  assert(
+    (await page.getByText("Top model: gpt-5.5").count()) === 0,
+    "Usage should not show the removed Codex cost summary",
+  );
+  const tokenChartBox = await tokenChartHeading.boundingBox();
+  const providerBox = await providerHeading.boundingBox();
+  assert(
+    tokenChartBox && providerBox && tokenChartBox.y < providerBox.y,
+    "The provider-neutral token chart should be the primary Usage metric",
+  );
 
   await captureMigrationScreenshot(page, "05-usage-desktop.png");
   assertNoInstallRequests(installRequests);
@@ -2580,6 +2631,17 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   await dmgUpdateLink.waitFor({
     timeout: 10_000,
   });
+  const updateCardBadges = page.locator(
+    '[data-slot="card-action"] [data-slot="badge"]',
+  );
+  const updateCardBadgeLabels = await updateCardBadges.allTextContents();
+  assert(
+    updateCardBadgeLabels.length > 0 &&
+      updateCardBadgeLabels.every(
+        (label) => label.trim() === "Update available",
+      ),
+    `Update cards must only show Update available badges, got ${JSON.stringify(updateCardBadgeLabels)}`,
+  );
   assert(
     assetName(await dmgUpdateLink.getAttribute("href")) ===
       "VibeTV-Control-Center.dmg",
@@ -2651,15 +2713,15 @@ async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
   await page.getByText("Installed", { exact: true }).waitFor({ timeout: 10_000 });
   await page.getByText("Available", { exact: true }).waitFor({ timeout: 10_000 });
-  await page.getByText("Status", { exact: true }).first().waitFor({ timeout: 10_000 });
   assert(
-    (await page.getByText("App build", { exact: true }).count()) === 0 &&
+    (await page.getByText("Status", { exact: true }).count()) === 0 &&
+      (await page.getByText("App build", { exact: true }).count()) === 0 &&
       (await page.getByText("Background version", { exact: true }).count()) === 0 &&
       (await page.getByText("Background service", { exact: true }).count()) === 0 &&
       (await page.getByText("shop.vibetv.control-center.runtime").count()) === 0 &&
       (await page.getByText("PID 174").count()) === 0 &&
       (await page.getByText("abcdef12").count()) === 0,
-    "Updates must keep internal Mac App details out of customer copy",
+    "Updates must omit status and internal Mac App details from customer copy",
   );
   assert(
     (await page.getByRole("link", { name: "Update" }).count()) === 1,
@@ -2814,6 +2876,12 @@ async function testDmgInstallStaysUpToDateAtSameVersion(browser, appUrl) {
   await page.getByRole("heading", { name: "Up to date" }).waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await page
+      .locator('[data-slot="card-action"] [data-slot="badge"]')
+      .count()) === 0,
+    "Up-to-date cards must not show status badges",
+  );
   assert(
     (await page.getByRole("link", { name: "Update" }).count()) === 0,
     "Current DMG install must not show a migration download",

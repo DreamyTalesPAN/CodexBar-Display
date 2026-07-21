@@ -148,23 +148,6 @@ export function UpdatesScreen({
     (companionRelease?.status === "check_failed" ||
       companionRelease?.dmgDownloadStatus === "check_failed");
   const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
-  const status = firmwareUpdateCompleted
-    ? "Up to date"
-    : checking
-    ? "Checking"
-    : firmwareCheckFailed
-      ? "Check failed"
-      : !canCheckFirmware && !firmwareUpdate
-        ? "Not available"
-        : updateAvailable
-          ? "Update available"
-          : "Up to date";
-  const companionReleaseStatus = companionReleaseLabel({
-    macAppRunning,
-    migrationReady: macAppMigrationReady,
-    migrationRequired: requiresMacAppMigration,
-    release: companionRelease,
-  });
   const companionInstalled =
     companionStatus === "missing"
       ? "Not running"
@@ -211,9 +194,8 @@ export function UpdatesScreen({
           installedValue={companionInstalled}
           latestLabel="Available"
           latestValue={companionAvailable}
-          status={companionReleaseStatus}
           title="Mac App"
-          updateAvailable={macAppUpdateAvailable || requiresMacAppMigration}
+          updateAvailable={macAppUpdateAvailable || macAppMigrationReady}
         />
 
         <UpdateCard
@@ -222,7 +204,6 @@ export function UpdatesScreen({
           installedValue={installedFirmware}
           latestLabel="Available firmware"
           latestValue={latestFirmware}
-          status={status}
           title="Firmware update"
           updateAvailable={updateAvailable}
         >
@@ -461,7 +442,6 @@ function UpdateCard({
   installedValue,
   latestLabel,
   latestValue,
-  status,
   title,
   updateAvailable = false,
 }: {
@@ -471,7 +451,6 @@ function UpdateCard({
   installedValue: string;
   latestLabel: string;
   latestValue: string;
-  status: string;
   title: string;
   updateAvailable?: boolean;
 }) {
@@ -480,13 +459,11 @@ function UpdateCard({
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
-        <CardAction>
-          <Badge
-            variant={updateAvailable ? "default" : statusBadgeVariant(status)}
-          >
-            {status}
-          </Badge>
-        </CardAction>
+        {updateAvailable ? (
+          <CardAction>
+            <Badge>Update available</Badge>
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <ItemGroup>
@@ -500,12 +477,6 @@ function UpdateCard({
             label={latestLabel}
             highlighted={updateAvailable}
             value={latestValue}
-          />
-          <VersionItem
-            icon={<ShieldCheck aria-hidden />}
-            label="Status"
-            highlighted={updateAvailable}
-            value={status}
           />
         </ItemGroup>
         {children}
@@ -536,82 +507,6 @@ function VersionItem({
       </ItemActions>
     </Item>
   );
-}
-
-function statusBadgeVariant(
-  status: string,
-): "default" | "secondary" | "destructive" {
-  const normalized = status.toLowerCase();
-  if (normalized.includes("fail")) {
-    return "destructive";
-  }
-  if (normalized.includes("checking") || normalized.includes("not available")) {
-    return "secondary";
-  }
-  if (
-    normalized.includes("available") ||
-    normalized.includes("complete") ||
-    normalized.includes("connected") ||
-    normalized.includes("current") ||
-    normalized.includes("needed") ||
-    normalized.includes("online") ||
-    normalized.includes("ready") ||
-    normalized.includes("saved") ||
-    normalized.includes("success") ||
-    normalized.includes("waiting") ||
-    normalized.includes("up to date") ||
-    normalized.includes("valid") ||
-    normalized.includes("setup")
-  ) {
-    return "default";
-  }
-  return "secondary";
-}
-
-function companionReleaseLabel({
-  macAppRunning,
-  migrationReady,
-  migrationRequired,
-  release,
-}: {
-  macAppRunning: boolean;
-  migrationReady: boolean;
-  migrationRequired: boolean;
-  release: CompanionReleaseInfo | null;
-}): string {
-  if (macAppRunning) {
-    if (migrationRequired) {
-      if (
-        release?.status === "check_failed" ||
-        release?.dmgDownloadStatus === "check_failed"
-      ) {
-        return "Check failed";
-      }
-      return migrationReady ? "Update available" : "Update not ready";
-    }
-    if (release?.updateAvailable) {
-      return availableMacAppDmgDownloadUrl(release)
-        ? "Update available"
-        : "Update waiting";
-    }
-    if (
-      release?.status === "check_failed" ||
-      release?.dmgDownloadStatus === "check_failed"
-    ) {
-      return "Check failed";
-    }
-    return "Ready";
-  }
-  if (!release) {
-    return "Checking";
-  }
-  if (release.status === "available") {
-    return "Setup needed";
-  }
-  if (release.status === "missing_asset") {
-    return "Setup needed";
-  }
-  return "Check failed";
 }
 
 function clampUpdateProgress(value: number | undefined): number {
