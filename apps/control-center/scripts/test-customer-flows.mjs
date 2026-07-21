@@ -243,6 +243,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testAIThemeBuilderCandidateFlow(browser, appContext.appUrl);
       console.log("control-center Theme Studio safety test passed");
       return;
     }
@@ -4648,6 +4649,123 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   assert(
     await page.getByRole("button", { name: "Save theme" }).isDisabled(),
     "invalid recovery data should lock theme saving until it is handled",
+  );
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.close();
+}
+
+async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
+  const localAppUrl = "http://127.0.0.1:47832/control-center";
+  const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+  const generationRequests = [];
+  let credential = "";
+
+  await routeLocalCompanionAppThroughLocalNext(page, appUrl);
+  await routeCompanionOnline(page, [], () => {}, {
+    companionVersion: "1.0.33",
+    device: { ...companionDevice, firmware: "1.0.32" },
+  });
+  await page.route("**/v1/ai-theme/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/ai-theme/capabilities") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          enabled: true,
+          providers: [
+            { id: "openai", configured: credential !== "" },
+            { id: "anthropic", configured: false },
+          ],
+        }),
+      });
+      return;
+    }
+    if (pathname.endsWith("/credential") && route.request().method() === "PUT") {
+      credential = JSON.parse(route.request().postData() || "{}").apiKey || "";
+      await route.fulfill({ status: 200, contentType: "application/json", body: `{"configured":true}` });
+      return;
+    }
+    if (pathname.endsWith("/verify")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: `{"verified":true}` });
+      return;
+    }
+    if (pathname === "/v1/ai-theme/generations") {
+      generationRequests.push(JSON.parse(route.request().postData() || "{}"));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          packName: "AI Candidate",
+          notes: "A safe isolated candidate.",
+          spec: {
+            themeSpecVersion: 1,
+            themeId: "ai-candidate",
+            themeRev: 1,
+            bgColor: "#050014",
+            primitives: [
+              { type: "progress", x: 20, y: 70, width: 200, height: 16, binding: "session", color: "#FF2BD6" },
+              { type: "progress", x: 20, y: 110, width: 200, height: 16, binding: "weekly", color: "#00F5FF" },
+            ],
+          },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 404, body: "not found" });
+  });
+
+  await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /^(Themes|Theme Library)$/ }).click();
+  await page.getByRole("button", { name: "Create Theme" }).click();
+  await page.getByRole("heading", { name: "AI Theme Builder" }).waitFor();
+  const originalName = await page.locator("[data-theme-studio-root] h3").first().textContent();
+  const keyInput = page.getByLabel("OpenAI key");
+  await keyInput.fill("sk-playwright-temporary-key-123456789");
+  await page.getByRole("button", { name: "Save and verify key" }).click();
+  await page.getByText("Key verified and stored by the local app.").waitFor();
+  assert(credential.length > 0, "AI setup should send the key to the local Companion");
+  assert((await keyInput.count()) === 0, "AI key input should leave browser state after setup");
+  assert(
+    !(await page.evaluate((value) => Object.values(window.localStorage).some((entry) => String(entry).includes(value)), credential)),
+    "AI credentials must never be written to localStorage",
+  );
+
+  const prompt = page.getByLabel("AI theme prompt");
+  await prompt.fill("Create a neon usage theme");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByText("Candidate ready. Review it before applying.").waitFor();
+  assert(
+    (await page.locator("[data-theme-studio-root] h3").first().textContent()) === originalName,
+    "AI candidate must remain isolated before Apply",
+  );
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await page.getByRole("heading", { name: "AI Candidate" }).waitFor();
+  const undo = page.getByRole("button", { name: "Undo" });
+  assert(await undo.isEnabled(), "Apply should create one undo step");
+  await undo.click();
+  assert(
+    (await page.locator("[data-theme-studio-root] h3").first().textContent()) === originalName,
+    "one Undo should restore the document from before Apply",
+  );
+
+  await page.getByLabel("Generation mode").click();
+  await page.getByRole("option", { name: "Improve current theme" }).click();
+  await prompt.fill("Improve the spacing");
+  await page.getByRole("button", { name: "Improve", exact: true }).click();
+  await page.getByText("Candidate ready. Review it before applying.").waitFor();
+  assert(generationRequests.at(-1)?.baseSpec, "Improve must send the current non-secret ThemeSpec");
+  await page.getByRole("button", { name: "Regenerate", exact: true }).click();
+  await page.getByText("Candidate ready. Review it before applying.").waitFor();
+  await prompt.fill("Make it calmer");
+  await page.getByRole("button", { name: "Refine", exact: true }).click();
+  await page.getByText("Candidate ready. Review it before applying.").waitFor();
+  const nameBeforeDiscard = await page.locator("[data-theme-studio-root] h3").first().textContent();
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  assert(
+    (await page.locator("[data-theme-studio-root] h3").first().textContent()) === nameBeforeDiscard,
+    "Discard must not change the editor document",
   );
 
   await page.unrouteAll({ behavior: "ignoreErrors" });

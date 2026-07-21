@@ -158,3 +158,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: The user explicitly ordered issue #173 to be implemented and the resulting PR #198 CI to be fixed in the Claude session on 2026-07-21.
 - Approved customer-visible result: Update checks treat prerelease builds as older than the matching final release, so a Mac App or VibeTV running an RC build is offered the final update instead of wrongly showing up to date. A version value that cannot be interpreted shows the existing check-failed state with a clear message instead of a wrong update decision. Theme Library firmware requirements use the same version ordering. No new customer controls and no new technical copy appear.
 - Approved files: the hosted firmware and Mac App update check routes, `theme-library-screen.tsx`, the shared version comparison in `lib/semver.ts`, and their route and unit tests.
+
+## 2026-07-21 — Secure AI Theme Builder beta
+
+- User approval: The user explicitly approved the complete Issue #151 implementation plan in the Codex task on 2026-07-21, including the English customer copy and beta-only feature flag.
+- Approved customer-visible result: Theme Studio offers a local AI side panel only when the Companion reports the beta feature enabled. Customers can configure their own OpenAI or Anthropic key, create or improve a prompt-only candidate, refine or regenerate it, and explicitly Apply or Discard it. The candidate never changes the editor before Apply.
+- Approved files: the Theme Studio AI panel, local AI client/history helpers, AI-specific tests and fixtures, Companion AI routes and provider adapters, credential storage, and the AI architecture, threat-model, and setup documentation.

@@ -14,6 +14,7 @@ import {
   Palette,
   RefreshCw,
   Send,
+  Sparkles,
   Square,
   Type,
 } from "lucide-react";
@@ -61,6 +62,7 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { fetchAIThemeCapabilities } from "@/lib/ai-theme";
 import {
   buildThemePack,
   createStarterThemeSpec,
@@ -130,6 +132,7 @@ import {
   textPrimitiveNaturalWidth,
   titleFromThemeId,
 } from "./theme-studio/editor-geometry";
+import { AIThemePanel } from "./theme-studio/ai-theme-panel";
 import type { ThemeRenderPack } from "./live-vibetv-preview";
 import { themeRenderPackUrl } from "./control-center-runtime";
 
@@ -255,6 +258,15 @@ export function ThemeStudioScreen({
       ? { message: saveBlockedReason, tone: "attention" }
       : null,
   );
+  const [aiThemeAvailable, setAIThemeAvailable] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchAIThemeCapabilities(controller.signal)
+      .then((capabilities) => setAIThemeAvailable(capabilities.enabled))
+      .catch(() => setAIThemeAvailable(false));
+    return () => controller.abort();
+  }, []);
 
   const validation = useMemo(
     () => validateThemeSpec(spec, assets),
@@ -1133,6 +1145,44 @@ export function ThemeStudioScreen({
             sending={sending}
             showSave={Boolean(onSaveToLibrary)}
           />
+          {aiThemeAvailable ? (
+            <div className="hidden lg:block 2xl:hidden">
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button type="button" variant="outline">
+                    <Sparkles data-icon="inline-start" aria-hidden />
+                    AI Theme
+                  </Button>
+                </SheetTrigger>
+                <SheetContent
+                  className="w-[380px] overflow-y-auto sm:max-w-[380px]"
+                  side="right"
+                >
+                  <SheetHeader>
+                    <SheetTitle>AI Theme Builder</SheetTitle>
+                    <SheetDescription>Create or improve an isolated candidate.</SheetDescription>
+                  </SheetHeader>
+                  <div className="p-4">
+                    <AIThemePanel
+                      currentSpec={spec}
+                      key={`sheet-${spec.themeId}`}
+                      onApply={(nextCandidate) =>
+                        replaceLoadedTheme({
+                          assets,
+                          packName: nextCandidate.packName,
+                          spec: nextCandidate.spec,
+                          status: {
+                            tone: "ready",
+                            message: "AI candidate applied as one undo step.",
+                          },
+                        })
+                      }
+                    />
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-2 lg:hidden">
             <Sheet>
               <SheetTrigger asChild>
@@ -1203,10 +1253,34 @@ export function ThemeStudioScreen({
                 </div>
               </SheetContent>
             </Sheet>
+            {aiThemeAvailable ? (
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button className="col-span-2" variant="outline">
+                    <Sparkles data-icon="inline-start" />AI Theme
+                  </Button>
+                </SheetTrigger>
+                <SheetContent className="overflow-y-auto" side="right">
+                  <SheetHeader>
+                    <SheetTitle>AI Theme Builder</SheetTitle>
+                    <SheetDescription>Create or improve an isolated candidate.</SheetDescription>
+                  </SheetHeader>
+                  <div className="p-4">
+                    <AIThemePanel
+                      currentSpec={spec}
+                      key={`mobile-ai-${spec.themeId}`}
+                      onApply={(nextCandidate) =>
+                        replaceLoadedTheme({ assets, packName: nextCandidate.packName, spec: nextCandidate.spec })
+                      }
+                    />
+                  </div>
+                </SheetContent>
+              </Sheet>
+            ) : null}
           </div>
         </header>
 
-        <section className="grid min-h-0 items-start gap-4 lg:h-full lg:grid-cols-[240px_minmax(360px,1fr)_300px] lg:overflow-hidden 2xl:grid-cols-[300px_minmax(560px,1fr)_360px]">
+        <section className="grid min-h-0 items-start gap-4 lg:h-full lg:grid-cols-[240px_minmax(360px,1fr)_300px] lg:overflow-hidden 2xl:grid-cols-[260px_minmax(460px,1fr)_300px_340px]">
           <aside className="order-2 hidden lg:order-1 lg:block lg:h-full lg:min-h-0">
             <Card className="h-full min-h-0" size="sm">
               <CardHeader>
@@ -1659,6 +1733,26 @@ export function ThemeStudioScreen({
               />
             ) : null}
           </aside>
+
+          <div className="order-4 hidden min-h-0 2xl:block 2xl:h-full">
+            {aiThemeAvailable ? (
+              <AIThemePanel
+                currentSpec={spec}
+                key={spec.themeId}
+                onApply={(nextCandidate) =>
+                  replaceLoadedTheme({
+                    assets,
+                    packName: nextCandidate.packName,
+                    spec: nextCandidate.spec,
+                    status: {
+                      tone: "ready",
+                      message: "AI candidate applied as one undo step.",
+                    },
+                  })
+                }
+              />
+            ) : null}
+          </div>
         </section>
       </section>
 

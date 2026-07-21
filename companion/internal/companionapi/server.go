@@ -151,6 +151,8 @@ type Options struct {
 	RefreshDisplayStream func(context.Context, string) error
 	PauseDisplayStream   func(bool)
 	WakeDisplayStream    func()
+	AIThemeSecretStore   SecretStore
+	AIThemeHTTPClient    *http.Client
 }
 
 type Server struct {
@@ -230,6 +232,7 @@ type Server struct {
 	macAppReleaseChecked   bool
 	macAppReleaseCheckedAt time.Time
 	macAppReleaseCache     companionReleaseInfo
+	aiTheme                *aiThemeState
 }
 
 type apiError struct {
@@ -843,6 +846,7 @@ func New(opts Options) (*Server, error) {
 		installJobs:           make(map[string]*themeInstallJob),
 		updateJobs:            make(map[string]*firmwareUpdateJob),
 		macAppUpdateJobs:      make(map[string]*macAppUpdateJob),
+		aiTheme:               newAIThemeState(opts.AIThemeSecretStore, opts.AIThemeHTTPClient),
 	}, nil
 }
 
@@ -876,6 +880,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.registerControlCenterRoutes(mux)
+	s.registerAIThemeRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
@@ -1029,7 +1034,7 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 		if origin != "" && allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 			if strings.EqualFold(strings.TrimSpace(r.Header.Get("Access-Control-Request-Private-Network")), "true") {
 				w.Header().Set("Access-Control-Allow-Private-Network", "true")
