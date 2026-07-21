@@ -80,10 +80,13 @@ const char kActiveThemeSpecPathFile[] = "/theme-active";
 const char kAssetUploadTemporaryPath[] = "/.asset-upload.tmp";
 const char kDeviceAuthHeader[] = "X-VibeTV-Token";
 const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
-constexpr uint8_t kFirmwareUpdateNoticeTextCount = 3;
-constexpr uint8_t kFirmwareUpdateNoticeProviderPhase = 0;
-constexpr uint8_t kFirmwareUpdateNoticeAvailablePhase = 1;
-constexpr uint8_t kFirmwareUpdateNoticeAppPhase = 2;
+// Customer copy for the update notice. The installed VibeTV Mac App is the
+// only supported update destination; never point customers at a hosted URL.
+const char kFirmwareUpdateAvailableText[] = "Update available";
+const char kFirmwareUpdateMacAppText[] = "Open VibeTV Mac App";
+constexpr unsigned long kFirmwareUpdateOverlayVisibleMs = 30000UL;
+constexpr unsigned long kFirmwareUpdateOverlayHiddenMs = 60000UL;
+constexpr unsigned long kFirmwareUpdateSurfaceRecheckMs = 1000UL;
 
 String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
@@ -134,9 +137,12 @@ struct FirmwareUpdateState {
   String lastError;
   unsigned long lastCheckedAtMs = 0;
   unsigned long nextCheckAtMs = 0;
-  bool noticeVisible = false;
-  uint8_t noticePhase = 0;
-  unsigned long noticeLastToggleAtMs = 0;
+  // Frame-driven gate: true while the Mac App reports an available update.
+  // Cleared when a frame arrives without update info or with a current
+  // firmware, which also removes the notice.
+  bool noticeEnabled = false;
+  codexbar_display::updatenotice::State notice;
+  unsigned long noticeSurfaceCheckedAtMs = 0;
 };
 
 struct OtaUploadDiagnostics {
@@ -481,8 +487,8 @@ void markFirmwareUpdateNoticeDirty() {
 }
 
 bool shouldShowFirmwareUpdateNotice() {
-  return firmwareUpdate.available &&
-         firmwareUpdate.noticeVisible &&
+  return firmwareUpdate.noticeEnabled &&
+         firmwareUpdate.notice.visible &&
          !setupMode &&
          !waitStatusRendered &&
          !frameStaleStatusRendered &&
@@ -492,14 +498,13 @@ bool shouldShowFirmwareUpdateNotice() {
 }
 
 const char* currentFirmwareUpdateNoticeText() {
-  if (firmwareUpdate.noticePhase >= kFirmwareUpdateNoticeTextCount) {
-    firmwareUpdate.noticePhase = 0;
-  }
-  if (firmwareUpdate.noticePhase == kFirmwareUpdateNoticeAvailablePhase) {
-    return "Update available";
-  }
-  if (firmwareUpdate.noticePhase == kFirmwareUpdateNoticeAppPhase) {
-    return kCustomerAppHost;
+  switch (codexbar_display::updatenotice::CurrentPhase(firmwareUpdate.notice)) {
+    case codexbar_display::updatenotice::Phase::Available:
+      return kFirmwareUpdateAvailableText;
+    case codexbar_display::updatenotice::Phase::MacApp:
+      return kFirmwareUpdateMacAppText;
+    case codexbar_display::updatenotice::Phase::Provider:
+      break;
   }
 
   const codexbar_display::core::Frame& frame = codexbar_display::app::CurrentFrame(runtimeCtx);
@@ -524,24 +529,29 @@ void drawFirmwareUpdateNotice() {
   firmwareUpdateNoticeDirty = false;
 }
 
-void clearFirmwareUpdateNotice() {
-  if (!firmwareUpdate.noticeVisible) {
+void restoreFirmwareUpdateNoticeSurface() {
+  if (!codexbar_display::app::HasFrame(runtimeCtx) ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError ||
+      waitStatusRendered ||
+      frameStaleStatusRendered) {
     return;
   }
-  firmwareUpdate.noticeVisible = false;
-  firmwareUpdate.noticePhase = 0;
-  firmwareUpdate.noticeLastToggleAtMs = 0;
-  firmwareUpdateNoticeDirty = false;
-  if (codexbar_display::app::HasFrame(runtimeCtx) &&
-      !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
-      !waitStatusRendered &&
-      !frameStaleStatusRendered) {
+  if (!renderer.ClearFirmwareUpdateNoticeSurface(runtimeCtx)) {
     runtimeCtx.screenDirty = true;
   }
 }
 
+void clearFirmwareUpdateNotice() {
+  const codexbar_display::updatenotice::TickResult result =
+      codexbar_display::updatenotice::Deactivate(firmwareUpdate.notice);
+  firmwareUpdateNoticeDirty = false;
+  if (result.restore) {
+    restoreFirmwareUpdateNoticeSurface();
+  }
+}
+
 void maintainFirmwareUpdateNotice() {
-  if (!firmwareUpdate.available ||
+  if (!firmwareUpdate.noticeEnabled ||
       setupMode ||
       frameStaleStatusRendered ||
       !codexbar_display::app::HasFrame(runtimeCtx) ||
@@ -550,17 +560,34 @@ void maintainFirmwareUpdateNotice() {
     clearFirmwareUpdateNotice();
     return;
   }
-  if (!firmwareUpdate.noticeVisible) {
-    return;
-  }
+
   const unsigned long nowMs = millis();
-  if (firmwareUpdate.noticeLastToggleAtMs == 0) {
-    firmwareUpdate.noticeLastToggleAtMs = nowMs;
-    return;
+  // Surface detection walks the ThemeSpec, so re-check it at most once per
+  // second: once to activate the notice, afterwards to follow theme changes.
+  if (firmwareUpdate.noticeSurfaceCheckedAtMs == 0 ||
+      (nowMs - firmwareUpdate.noticeSurfaceCheckedAtMs) >= kFirmwareUpdateSurfaceRecheckMs) {
+    firmwareUpdate.noticeSurfaceCheckedAtMs = nowMs == 0 ? 1 : nowMs;
+    const codexbar_display::updatenotice::TickResult activated =
+        codexbar_display::updatenotice::Activate(
+            firmwareUpdate.notice, renderer.FirmwareUpdateNoticeSurface(runtimeCtx), nowMs);
+    if (activated.restore) {
+      restoreFirmwareUpdateNoticeSurface();
+    }
+    if (activated.draw) {
+      markFirmwareUpdateNoticeDirty();
+    }
   }
-  if ((nowMs - firmwareUpdate.noticeLastToggleAtMs) >= kFirmwareUpdateNoticeToggleMs) {
-    firmwareUpdate.noticeLastToggleAtMs = nowMs;
-    firmwareUpdate.noticePhase = (firmwareUpdate.noticePhase + 1) % kFirmwareUpdateNoticeTextCount;
+
+  codexbar_display::updatenotice::Config config;
+  config.phaseToggleMs = kFirmwareUpdateNoticeToggleMs;
+  config.overlayVisibleMs = kFirmwareUpdateOverlayVisibleMs;
+  config.overlayHiddenMs = kFirmwareUpdateOverlayHiddenMs;
+  const codexbar_display::updatenotice::TickResult ticked =
+      codexbar_display::updatenotice::Tick(firmwareUpdate.notice, config, nowMs);
+  if (ticked.restore) {
+    restoreFirmwareUpdateNoticeSurface();
+  }
+  if (ticked.draw) {
     markFirmwareUpdateNoticeDirty();
   }
 }
@@ -572,6 +599,7 @@ void applyFrameUpdateState() {
 
   const codexbar_display::core::Frame& frame = codexbar_display::app::CurrentFrame(runtimeCtx);
   if (!frame.hasUpdateAvailable) {
+    firmwareUpdate.noticeEnabled = false;
     clearFirmwareUpdateNotice();
     return;
   }
@@ -592,15 +620,17 @@ void applyFrameUpdateState() {
   firmwareUpdate.lastStatus = nextStatus;
 
   if (!firmwareUpdate.available) {
+    firmwareUpdate.noticeEnabled = false;
     clearFirmwareUpdateNotice();
     return;
   }
-  if (!firmwareUpdate.noticeVisible || changed) {
-    firmwareUpdate.noticeVisible = true;
-    firmwareUpdate.noticePhase = 0;
-    firmwareUpdate.noticeLastToggleAtMs = millis();
-    markFirmwareUpdateNoticeDirty();
+  if (changed) {
+    // Restart the notice cycle for a new update state; the next maintain pass
+    // re-activates it on the current theme's surface.
+    clearFirmwareUpdateNotice();
+    firmwareUpdate.noticeSurfaceCheckedAtMs = 0;
   }
+  firmwareUpdate.noticeEnabled = true;
 }
 
 void drawWaitingForCompanionStatus() {
@@ -663,6 +693,11 @@ void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event
   const unsigned long partialSuccessesBefore =
       maybeThemeSpecPartial ? renderer.DebugSnapshot().themeSpecPartialSuccesses : 0;
   renderer.OnFrameAccepted(runtimeCtx, event);
+  if (shouldShowFirmwareUpdateNotice()) {
+    // A frame-driven partial repaint may have painted theme content over the
+    // visible notice (label line or overlay bar); re-assert it next loop.
+    markFirmwareUpdateNoticeDirty();
+  }
   if (maybeThemeSpecPartial) {
     const codexbar_display::esp8266::RendererDebugSnapshot snapshot = renderer.DebugSnapshot();
     if (snapshot.themeSpecPartialSuccesses > partialSuccessesBefore && !runtimeCtx.screenDirty) {

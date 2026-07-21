@@ -3,6 +3,7 @@
 #include <Arduino.h>
 
 #include "../../firmware_shared/app_renderer.h"
+#include "../../firmware_shared/update_notice_policy.h"
 
 namespace codexbar_display {
 namespace esp8266 {
@@ -81,6 +82,12 @@ class RendererESP8266 : public app::Renderer {
   void DrawSetupInstructions(app::RuntimeContext& ctx, const String& ssid, const String& address);
   void DrawConnectedSetupInstructions(app::RuntimeContext& ctx, const String& host, const String& fallbackIp);
   void DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const String& text);
+  // Which notice surface the active theme offers: label swap, overlay bar, or
+  // none (no ThemeSpec rendered / no safe bar area free of animations).
+  updatenotice::Surface FirmwareUpdateNoticeSurface(app::RuntimeContext& ctx);
+  // Removes the notice with a bounded repaint. Returns false when only a full
+  // redraw could restore the theme; the caller then marks the screen dirty.
+  bool ClearFirmwareUpdateNoticeSurface(app::RuntimeContext& ctx);
   void TickActive(app::RuntimeContext& ctx) override;
   void DrawError(app::RuntimeContext& ctx, const String& message) override;
   void DrawUsage(app::RuntimeContext& ctx) override;

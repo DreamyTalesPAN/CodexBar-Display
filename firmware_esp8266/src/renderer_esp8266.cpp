@@ -399,24 +399,121 @@ void RendererESP8266::DrawConnectedSetupInstructions(
 #endif
 }
 
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+namespace {
+
+// Y position of the currently drawn overlay bar, or -1 when none is on
+// screen. Remembered so the clear pass repaints exactly the covered strip
+// even if the preferred placement changes between draw and clear.
+int lastDrawnOverlayBarY = -1;
+
+void drawFirmwareUpdateOverlayBar(const String& text, int y) {
+  TFT_eSPI& tft = display::Tft();
+  display::DisplayTransaction transaction;
+  display::PrimitiveFillRect(0, y, tft.width(), display::kFirmwareUpdateNoticeBarHeight, TFT_BLACK);
+  tft.setTextWrap(false);
+  tft.setTextFont(1);
+  const int textSize = display::ChooseTextSizeToFit(text.c_str(), 2, 1, tft.width() - 8);
+  display::SetTextSize(textSize);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  int textY = y + (display::kFirmwareUpdateNoticeBarHeight - display::TextPixelHeight(textSize)) / 2;
+  if (textY < y) {
+    textY = y;
+  }
+  tft.setCursor(display::CenteredTextX(text.c_str(), textSize), textY);
+  tft.print(text);
+}
+
+}  // namespace
+#endif
+#endif
+
+updatenotice::Surface RendererESP8266::FirmwareUpdateNoticeSurface(app::RuntimeContext& ctx) {
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  display::AttachContext(ctx);
+  if (!display::CurrentFrame().hasThemeSpec) {
+    return updatenotice::Surface::None;
+  }
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (!display::CurrentThemeSpecRenderedSuccessfully()) {
+    return updatenotice::Surface::None;
+  }
+  const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
+  if (core::ThemeSpecUsesBinding(raw, "label", "l")) {
+    return updatenotice::Surface::Label;
+  }
+  if (display::FirmwareUpdateOverlayBarPlacement().valid) {
+    return updatenotice::Surface::Overlay;
+  }
+#endif
+  return updatenotice::Surface::None;
+#else
+  return app::HasFrame(ctx) && app::CurrentFrame(ctx).hasThemeSpec
+             ? updatenotice::Surface::Label
+             : updatenotice::Surface::None;
+#endif
+}
+
 void RendererESP8266::DrawFirmwareUpdateNotice(app::RuntimeContext& ctx, const String& text) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
-  if (display::CurrentFrame().hasThemeSpec) {
+  (void)text;
+  if (!display::CurrentFrame().hasThemeSpec) {
+    return;
+  }
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-    const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
-    if (display::CurrentThemeSpecRenderedSuccessfully() &&
-        core::ThemeSpecUsesBinding(raw, "label", "l")) {
+  switch (FirmwareUpdateNoticeSurface(ctx)) {
+    case updatenotice::Surface::Label:
       if (!display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldLabel, text.c_str())) {
         display::ScreenDirty() = true;
       }
+      return;
+    case updatenotice::Surface::Overlay: {
+      const display::FirmwareUpdateOverlayPlacement placement = display::FirmwareUpdateOverlayBarPlacement();
+      if (!placement.valid) {
+        return;
+      }
+      drawFirmwareUpdateOverlayBar(text, placement.y);
+      lastDrawnOverlayBarY = placement.y;
+      return;
     }
-#endif
-    return;
+    case updatenotice::Surface::None:
+      return;
   }
+#endif
 #else
   (void)ctx;
   Serial.printf("probe_update_notice text=%s\n", text.c_str());
+#endif
+}
+
+bool RendererESP8266::ClearFirmwareUpdateNoticeSurface(app::RuntimeContext& ctx) {
+#ifndef CODEXBAR_DISPLAY_PROBE_ONLY
+  display::AttachContext(ctx);
+  if (!display::CurrentFrame().hasThemeSpec) {
+    return true;
+  }
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  const int overlayY = lastDrawnOverlayBarY;
+  lastDrawnOverlayBarY = -1;
+  if (overlayY >= 0) {
+    return display::RenderThemeSpecRegion(
+        0, overlayY, display::Tft().width(), display::kFirmwareUpdateNoticeBarHeight);
+  }
+  const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
+  if (display::CurrentThemeSpecRenderedSuccessfully() &&
+      core::ThemeSpecUsesBinding(raw, "label", "l")) {
+    return display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldLabel);
+  }
+  return true;
+#else
+  return true;
+#endif
+#else
+  (void)ctx;
+  Serial.printf("probe_update_notice_clear\n");
+  return true;
 #endif
 }
 

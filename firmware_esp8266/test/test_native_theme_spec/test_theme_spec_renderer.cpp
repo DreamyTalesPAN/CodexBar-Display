@@ -1,5 +1,6 @@
 #include "../../../firmware_shared/theme_spec_renderer_core.h"
 #include "../../../firmware_shared/codexbar_display_core.h"
+#include "../../../firmware_shared/update_notice_policy.h"
 #include "../../src/theme_spec_runtime_policy.h"
 
 #include <string>
@@ -17,9 +18,12 @@ using codexbar_display::themespec::RectCommand;
 using codexbar_display::themespec::CompileThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpecHasGifAssets;
+using codexbar_display::themespec::AnyAnimatedCompiledPrimitiveOverlaps;
+using codexbar_display::themespec::Bounds;
 using codexbar_display::themespec::RenderCompiledThemeSpec;
 using codexbar_display::themespec::RenderCompiledThemeSpecAnimatedPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecChangedPrimitives;
+using codexbar_display::themespec::RenderCompiledThemeSpecRegionPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecStaticPrimitives;
 using codexbar_display::themespec::ReleaseCompiledThemeSpec;
 using codexbar_display::themespec::Sink;
@@ -404,7 +408,7 @@ void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
 
   FrameData frame = testFrame();
   frame.updateAvailable = true;
-  frame.updateNotice = "app.vibetv.shop";
+  frame.updateNotice = "Open VibeTV Mac App";
 
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
@@ -429,13 +433,13 @@ void testChangedLabelPassUsesSynchronizedUpdateNoticeText() {
   FrameData frame = testFrame();
   frame.updateAvailable = true;
   frame.showUpdateNotice = true;
-  frame.updateNotice = "app.vibetv.shop";
+  frame.updateNotice = "Open VibeTV Mac App";
 
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderChangedSpec(spec, frame, kThemeSpecFieldLabel, sink));
   TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
-  TEST_ASSERT_EQUAL_STRING("app.vibetv.shop", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Open VibeTV Mac App", sink.commands[2].text.c_str());
 }
 
 void testChangedLabelPassCanRestoreProviderText() {
@@ -459,6 +463,235 @@ void testChangedLabelPassCanRestoreProviderText() {
   TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
   TEST_ASSERT_EQUAL_STRING("Codex", sink.commands[2].text.c_str());
+}
+
+bool renderRegionSpec(
+    const char* spec,
+    const FrameData& frame,
+    const Bounds& region,
+    RecordingSink& sink,
+    const char** error = nullptr,
+    bool* skippedAnimated = nullptr) {
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  if (!CompileThemeSpec(spec, doc, scene)) {
+    return false;
+  }
+  const bool ok = RenderCompiledThemeSpecRegionPrimitives(scene, frame, region, sink, error, skippedAnimated);
+  ReleaseCompiledThemeSpec(scene);
+  return ok;
+}
+
+// A theme without a label binding: static text top and bottom plus a GIF in
+// the middle, mirroring a custom ThemeSpec that needs the overlay-bar notice.
+const char* kOverlayRegionSpec = R"JSON({
+  "v": 1,
+  "id": "no-label",
+  "rev": 1,
+  "bg": "#000000",
+  "p": [
+    {"t":"tx","x":0,"y":4,"w":240,"v":"{session}%","s":2,"al":"center","c":"#CCFF00"},
+    {"t":"g","x":80,"y":100,"w":76,"h":76,"a":"/themes/mini/mini.gif"},
+    {"t":"tx","x":0,"y":210,"w":240,"v":"Reset in {reset}","s":2,"al":"center","c":"#999999"}
+  ]
+})JSON";
+
+void testRegionRepaintRedrawsOnlyOverlappingPrimitives() {
+  Bounds region;
+  region.x = 0;
+  region.y = 0;
+  region.width = 240;
+  region.height = 24;
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderRegionSpec(kOverlayRegionSpec, testFrame(), region, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(0, sink.commands[0].y);
+  TEST_ASSERT_EQUAL_INT(24, sink.commands[0].height);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_INT(240, sink.commands[1].width);
+  TEST_ASSERT_EQUAL_INT(24, sink.commands[1].height);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
+  TEST_ASSERT_EQUAL_STRING("97%", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands[3].type));
+}
+
+void testRegionRepaintSkipsAnimatedPrimitivesButReportsThem() {
+  Bounds region;
+  region.x = 0;
+  region.y = 90;
+  region.width = 240;
+  region.height = 24;
+
+  RecordingSink sink;
+  bool skippedAnimated = false;
+  TEST_ASSERT_TRUE(renderRegionSpec(kOverlayRegionSpec, testFrame(), region, sink, nullptr, &skippedAnimated));
+  TEST_ASSERT_TRUE(skippedAnimated);
+  for (const RecordedCommand& cmd : sink.commands) {
+    TEST_ASSERT_NOT_EQUAL(static_cast<int>(CommandType::Gif), static_cast<int>(cmd.type));
+  }
+}
+
+void testRegionRepaintWithoutOverlapFillsBackgroundOnly() {
+  Bounds region;
+  region.x = 0;
+  region.y = 40;
+  region.width = 240;
+  region.height = 24;
+
+  RecordingSink sink;
+  const char* error = nullptr;
+  TEST_ASSERT_FALSE(renderRegionSpec(kOverlayRegionSpec, testFrame(), region, sink, &error));
+  TEST_ASSERT_EQUAL_STRING("no_overlap_rendered", error);
+  TEST_ASSERT_EQUAL_UINT32(3, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_INT(40, sink.commands[1].y);
+}
+
+void testAnimatedOverlapQueryFindsGifOnlyInsideItsBounds() {
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(kOverlayRegionSpec, doc, scene));
+
+  Bounds top;
+  top.x = 0;
+  top.y = 0;
+  top.width = 240;
+  top.height = 24;
+  TEST_ASSERT_FALSE(AnyAnimatedCompiledPrimitiveOverlaps(scene, testFrame(), top));
+
+  Bounds middle;
+  middle.x = 0;
+  middle.y = 100;
+  middle.width = 240;
+  middle.height = 24;
+  TEST_ASSERT_TRUE(AnyAnimatedCompiledPrimitiveOverlaps(scene, testFrame(), middle));
+
+  ReleaseCompiledThemeSpec(scene);
+}
+
+using codexbar_display::updatenotice::Activate;
+using codexbar_display::updatenotice::CurrentPhase;
+using codexbar_display::updatenotice::Deactivate;
+using codexbar_display::updatenotice::Phase;
+using codexbar_display::updatenotice::Surface;
+using codexbar_display::updatenotice::Tick;
+using UpdateNoticeConfig = codexbar_display::updatenotice::Config;
+using UpdateNoticeState = codexbar_display::updatenotice::State;
+using UpdateNoticeTickResult = codexbar_display::updatenotice::TickResult;
+
+UpdateNoticeConfig testNoticeConfig() {
+  UpdateNoticeConfig config;
+  config.phaseToggleMs = 1500;
+  config.overlayVisibleMs = 10000;
+  config.overlayHiddenMs = 60000;
+  return config;
+}
+
+void testUpdateNoticeLabelSurfaceStaysVisibleAndRotatesPhases() {
+  UpdateNoticeState state;
+  UpdateNoticeTickResult result = Activate(state, Surface::Label, 1000);
+  TEST_ASSERT_TRUE(result.draw);
+  TEST_ASSERT_FALSE(result.restore);
+  TEST_ASSERT_TRUE(state.visible);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Phase::Provider), static_cast<int>(CurrentPhase(state)));
+
+  result = Tick(state, testNoticeConfig(), 2000);
+  TEST_ASSERT_FALSE(result.draw);
+
+  result = Tick(state, testNoticeConfig(), 2500);
+  TEST_ASSERT_TRUE(result.draw);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Phase::Available), static_cast<int>(CurrentPhase(state)));
+
+  result = Tick(state, testNoticeConfig(), 4000);
+  TEST_ASSERT_TRUE(result.draw);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Phase::MacApp), static_cast<int>(CurrentPhase(state)));
+
+  result = Tick(state, testNoticeConfig(), 5500);
+  TEST_ASSERT_TRUE(result.draw);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Phase::Provider), static_cast<int>(CurrentPhase(state)));
+
+  // The label surface never leaves the screen while the update is available.
+  for (unsigned long at = 6000; at < 200000; at += 700) {
+    result = Tick(state, testNoticeConfig(), at);
+    TEST_ASSERT_FALSE(result.restore);
+    TEST_ASSERT_TRUE(state.visible);
+  }
+}
+
+void testUpdateNoticeOverlaySurfaceDutyCyclesVisibility() {
+  UpdateNoticeState state;
+  UpdateNoticeTickResult result = Activate(state, Surface::Overlay, 0);
+  TEST_ASSERT_TRUE(result.draw);
+  TEST_ASSERT_TRUE(state.visible);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Phase::Available), static_cast<int>(CurrentPhase(state)));
+
+  // Two-phase rotation while the overlay window is visible.
+  result = Tick(state, testNoticeConfig(), 1500);
+  TEST_ASSERT_TRUE(result.draw);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Phase::MacApp), static_cast<int>(CurrentPhase(state)));
+  result = Tick(state, testNoticeConfig(), 3000);
+  TEST_ASSERT_TRUE(result.draw);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Phase::Available), static_cast<int>(CurrentPhase(state)));
+
+  // The visible window ends after overlayVisibleMs and asks for a restore.
+  result = Tick(state, testNoticeConfig(), 10000);
+  TEST_ASSERT_TRUE(result.restore);
+  TEST_ASSERT_FALSE(result.draw);
+  TEST_ASSERT_FALSE(state.visible);
+
+  // Hidden window: no draws until overlayHiddenMs elapses.
+  result = Tick(state, testNoticeConfig(), 40000);
+  TEST_ASSERT_FALSE(result.draw);
+  TEST_ASSERT_FALSE(result.restore);
+  TEST_ASSERT_FALSE(state.visible);
+
+  result = Tick(state, testNoticeConfig(), 70000);
+  TEST_ASSERT_TRUE(result.draw);
+  TEST_ASSERT_TRUE(state.visible);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Phase::Available), static_cast<int>(CurrentPhase(state)));
+}
+
+void testUpdateNoticeDeactivateRestoresOnlyWhenVisible() {
+  UpdateNoticeState state;
+  (void)Activate(state, Surface::Overlay, 0);
+  TEST_ASSERT_TRUE(state.visible);
+
+  UpdateNoticeTickResult result = Deactivate(state);
+  TEST_ASSERT_TRUE(result.restore);
+  TEST_ASSERT_FALSE(state.active);
+  TEST_ASSERT_FALSE(state.visible);
+
+  // Hidden overlay window: firmware became current while the bar was hidden.
+  (void)Activate(state, Surface::Overlay, 0);
+  (void)Tick(state, testNoticeConfig(), 10000);
+  TEST_ASSERT_FALSE(state.visible);
+  result = Deactivate(state);
+  TEST_ASSERT_FALSE(result.restore);
+  TEST_ASSERT_FALSE(state.active);
+}
+
+void testUpdateNoticeSurfaceChangeRestoresOldSurface() {
+  UpdateNoticeState state;
+  (void)Activate(state, Surface::Label, 0);
+  TEST_ASSERT_TRUE(state.visible);
+
+  // Theme switch: label binding disappeared, overlay takes over.
+  UpdateNoticeTickResult result = Activate(state, Surface::Overlay, 5000);
+  TEST_ASSERT_TRUE(result.restore);
+  TEST_ASSERT_TRUE(result.draw);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Surface::Overlay), static_cast<int>(state.surface));
+
+  // Re-activating with the same surface is a no-op.
+  result = Activate(state, Surface::Overlay, 6000);
+  TEST_ASSERT_FALSE(result.draw);
+  TEST_ASSERT_FALSE(result.restore);
+
+  // No surface at all (theme not renderable): notice leaves the screen.
+  result = Activate(state, Surface::None, 7000);
+  TEST_ASSERT_TRUE(result.restore);
+  TEST_ASSERT_FALSE(state.active);
 }
 
 void testRendersCompactCommandsAndBindings() {
@@ -1483,6 +1716,14 @@ int main() {
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
   RUN_TEST(testChangedLabelPassCanRestoreProviderText);
+  RUN_TEST(testRegionRepaintRedrawsOnlyOverlappingPrimitives);
+  RUN_TEST(testRegionRepaintSkipsAnimatedPrimitivesButReportsThem);
+  RUN_TEST(testRegionRepaintWithoutOverlapFillsBackgroundOnly);
+  RUN_TEST(testAnimatedOverlapQueryFindsGifOnlyInsideItsBounds);
+  RUN_TEST(testUpdateNoticeLabelSurfaceStaysVisibleAndRotatesPhases);
+  RUN_TEST(testUpdateNoticeOverlaySurfaceDutyCyclesVisibility);
+  RUN_TEST(testUpdateNoticeDeactivateRestoresOnlyWhenVisible);
+  RUN_TEST(testUpdateNoticeSurfaceChangeRestoresOldSurface);
   RUN_TEST(testRendersCompactCommandsAndBindings);
   RUN_TEST(testCompactTextWidthMapsToMaxWidthForAlignment);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
