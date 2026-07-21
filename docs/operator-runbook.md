@@ -72,10 +72,15 @@ codexbar-display install-update \
   --confirm-live-update
 ```
 
-Before an operator-triggered OTA, prove that the target, stored `deviceId`, and
-pairing token all describe the same VibeTV. This is especially important after
-changing `--target`, moving between test devices, or running a development
-Companion:
+`install-update` automatically proves that the target, `deviceId`, and pairing
+token all describe the same VibeTV before it opens an OTA connection. It first
+pins tokenless `/hello`, validates the stored token with authenticated `/hello`,
+repairs a `401`/`403` once, repeats identity validation, and only then persists
+the complete identity tuple and starts the upload.
+
+The following read-only checks are useful when diagnosing an older build or a
+preflight failure, especially after changing `--target`, moving between test
+devices, or running a development Companion:
 
 1. Keep only the normal Companion on `127.0.0.1:47832`; stop any development
    Companion on `127.0.0.1:47833`.
@@ -94,8 +99,9 @@ unset VIBETV_TOKEN
 ```
 
 An HTTP `401`/`403`, an empty token, or a different `deviceId` means the stored
-pairing belongs to another device. With explicit approval for this device,
-repair it before OTA:
+pairing cannot be trusted for that target. The current `install-update` command
+repairs an authentication rejection before OTA. For manual recovery, with
+explicit approval for this device, use:
 
 ```bash
 curl -fsS --max-time 90 \
@@ -104,14 +110,15 @@ curl -fsS --max-time 90 \
   --data '{"target":"http://<device-ip>","forcePair":true}'
 ```
 
-Repeat the authenticated `/hello` check and start `install-update` only after it
-returns `200` with the expected `deviceId`.
+Repeat the authenticated `/hello` check after manual recovery. Do not bypass an
+`install-update` preflight failure.
 
-The RAW updater can report only `broken pipe` when firmware rejects a stale
-token immediately after the request headers. That message does not prove that
-firmware bytes were accepted. Still treat it as a potentially interrupted OTA:
-do not retry in the same boot, disconnect power for 10 seconds, repair pairing,
-validate authenticated `/hello`, and then retry once.
+Older updaters can report only `broken pipe` when firmware rejects a stale token
+immediately after the request headers. The current preflight prevents that stale
+token from reaching RAW OTA. Any `broken pipe` after RAW has opened must still
+be treated as a potentially interrupted OTA: do not retry in the same boot,
+disconnect power for 10 seconds, and then let `install-update` repeat the full
+preflight before retrying once.
 
 Do not use `scripts/vibetv-provision.sh` or `POST /update` when `/hello` already
 identifies a VibeTV runtime. Those are GeekMagic factory-provisioning paths.
