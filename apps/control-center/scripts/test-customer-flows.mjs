@@ -17,6 +17,8 @@ const migrationScreenshotDir =
   process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
 const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
 let displayStateDir = "";
+const fixturePackSHA256 = "a".repeat(64);
+const fixturePackBytes = 1234;
 
 const catalogFixture = {
   themes: [
@@ -26,6 +28,8 @@ const catalogFixture = {
       description:
         "A neon pixel theme with a retro grid, usage bars, and high-contrast desk display previews.",
       downloadUrl: "https://cdn.example.test/synthwave.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
     },
@@ -35,6 +39,8 @@ const catalogFixture = {
       description:
         "A classic desktop-style theme with a windowed usage screen and animated Clippy visuals.",
       downloadUrl: "https://cdn.example.test/clippy.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
     },
@@ -44,6 +50,8 @@ const catalogFixture = {
       description:
         "A warm pixel display theme built around Claude usage, session state, and reset timing.",
       downloadUrl: "https://cdn.example.test/claude-creature.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
     },
@@ -61,6 +69,8 @@ const catalogFixture = {
       description:
         "A catalog theme that is only compatible with the ESP32 VibeTV hardware profile.",
       downloadUrl: "https://cdn.example.test/esp32-only.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
       compatibleBoards: ["esp32_lilygo_t_display_s3"],
       requiresFirmware: "1.0.0",
     },
@@ -70,6 +80,8 @@ const catalogFixture = {
       description:
         "A catalog theme that needs newer VibeTV firmware than the connected device currently reports.",
       downloadUrl: "https://cdn.example.test/future-firmware.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "9.9.9",
     },

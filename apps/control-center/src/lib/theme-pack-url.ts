@@ -7,7 +7,10 @@ export function isRemoteThemePackUrl(raw?: string | null): boolean {
   try {
     const parsed = new URL(value);
     return (
-      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      (parsed.protocol === "https:" ||
+        (parsed.protocol === "http:" &&
+          parsed.origin === "http://127.0.0.1:47832" &&
+          parsed.pathname.startsWith("/theme-packs/"))) &&
       Boolean(parsed.hostname) &&
       !parsed.username &&
       !parsed.password

@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -688,10 +690,10 @@ func TestThemeValidateSupportsWiFiTransport(t *testing.T) {
 	}
 }
 
-func TestThemePackInstallSupportsPackURL(t *testing.T) {
+func TestThemePackInstallSupportsVerifiedPackMetadata(t *testing.T) {
 	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
-	downloadedPack := false
+	packPath, packSHA256, packSizeBytes := writeTestThemePackZip(t, packZip)
 	firmwareUpdated := false
 	uploaded := map[string]int{}
 	activated := false
@@ -706,10 +708,6 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/cozy-meadow.zip":
-			downloadedPack = true
-			w.Header().Set("Content-Type", "application/zip")
-			_, _ = w.Write(packZip)
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
@@ -743,7 +741,9 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 
 	output, err := captureStdout(t, func() error {
 		return runThemePackInstall([]string{
-			"--pack", server.URL + "/cozy-meadow.zip",
+			"--pack", packPath,
+			"--pack-sha256", packSHA256,
+			"--pack-size-bytes", strconv.FormatInt(packSizeBytes, 10),
 			"--target", server.URL,
 		})
 	})
@@ -767,9 +767,6 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 		}
 	}
 
-	if !downloadedPack {
-		t.Fatalf("expected theme pack URL to be downloaded")
-	}
 	if !firmwareUpdated {
 		t.Fatalf("expected firmware update before theme pack install")
 	}
@@ -784,6 +781,7 @@ func TestThemePackInstallSupportsPackURL(t *testing.T) {
 func TestThemePackInstallLogsConciseRetry(t *testing.T) {
 	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
+	packPath, _, _ := writeTestThemePackZip(t, packZip)
 	assetAttempts := 0
 	uploaded := map[string]int{}
 
@@ -819,7 +817,7 @@ func TestThemePackInstallLogsConciseRetry(t *testing.T) {
 
 	output, err := captureStdout(t, func() error {
 		return runThemePackInstall([]string{
-			"--pack", server.URL + "/cozy-meadow.zip",
+			"--pack", packPath,
 			"--target", server.URL,
 			"--skip-firmware-update",
 		})
@@ -844,6 +842,7 @@ func TestThemePackInstallLogsConciseRetry(t *testing.T) {
 func TestThemePackInstallWrapsUploadFailureForCustomers(t *testing.T) {
 	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
+	packPath, _, _ := writeTestThemePackZip(t, packZip)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -869,7 +868,7 @@ func TestThemePackInstallWrapsUploadFailureForCustomers(t *testing.T) {
 
 	output, err := captureStdout(t, func() error {
 		return runThemePackInstall([]string{
-			"--pack", server.URL + "/cozy-meadow.zip",
+			"--pack", packPath,
 			"--target", server.URL,
 			"--skip-firmware-update",
 		})
@@ -894,6 +893,7 @@ func TestThemePackInstallWrapsUploadFailureForCustomers(t *testing.T) {
 func TestThemePackInstallVerboseShowsDetails(t *testing.T) {
 	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
+	packPath, _, _ := writeTestThemePackZip(t, packZip)
 	uploaded := map[string]int{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -920,7 +920,7 @@ func TestThemePackInstallVerboseShowsDetails(t *testing.T) {
 
 	output, err := captureStdout(t, func() error {
 		return runThemePackInstall([]string{
-			"--pack", server.URL + "/cozy-meadow.zip",
+			"--pack", packPath,
 			"--target", server.URL,
 			"--skip-firmware-update",
 			"--verbose",
@@ -948,8 +948,12 @@ func TestThemePackInstallVerboseShowsDetails(t *testing.T) {
 func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
-	downloadedCatalog := false
-	downloadedPack := false
+	packPath, packSHA256, packSizeBytes := writeTestThemePackZip(t, packZip)
+	catalogPath := filepath.Join(filepath.Dir(packPath), "catalog.json")
+	catalog := fmt.Sprintf(`{"schemaVersion":1,"themes":[{"id":"cozy-meadow","title":"Cozy Meadow","themeRev":1,"downloadAsset":"cozy-meadow.zip","sha256":"%s","bytes":%d}]}`, packSHA256, packSizeBytes)
+	if err := os.WriteFile(catalogPath, []byte(catalog), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	firmwareUpdated := false
 	uploaded := map[string]int{}
 	activated := false
@@ -964,14 +968,6 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/catalog.json":
-			downloadedCatalog = true
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"schemaVersion":1,"themes":[{"id":"cozy-meadow","title":"Cozy Meadow","themeRev":1,"downloadAsset":"cozy-meadow.zip"}]}`))
-		case "/cozy-meadow.zip":
-			downloadedPack = true
-			w.Header().Set("Content-Type", "application/zip")
-			_, _ = w.Write(packZip)
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"maxFrameBytes":2048,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1200,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi","usb"]}}}`))
@@ -994,15 +990,12 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 	defer server.Close()
 
 	err := runThemePackInstall([]string{
-		"--catalog", server.URL + "/catalog.json",
+		"--catalog", catalogPath,
 		"--theme", "cozy-meadow",
 		"--target", server.URL,
 	})
 	if err != nil {
 		t.Fatalf("runThemePackInstall returned error: %v", err)
-	}
-	if !downloadedCatalog || !downloadedPack {
-		t.Fatalf("expected catalog and pack downloads, catalog=%t pack=%t", downloadedCatalog, downloadedPack)
 	}
 	if !firmwareUpdated {
 		t.Fatalf("expected firmware update before theme pack install")
@@ -1018,6 +1011,7 @@ func TestThemePackInstallSupportsCatalogTheme(t *testing.T) {
 func TestThemePackInstallFailsBeforeActivationWhenUploadHealthFails(t *testing.T) {
 	disableThemePackUploadSettleDelay(t)
 	packZip := buildTestThemePackZip(t)
+	packPath, _, _ := writeTestThemePackZip(t, packZip)
 	activated := false
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1046,7 +1040,7 @@ func TestThemePackInstallFailsBeforeActivationWhenUploadHealthFails(t *testing.T
 
 	_, err := captureStdout(t, func() error {
 		return runThemePackInstall([]string{
-			"--pack", server.URL + "/cozy-meadow.zip",
+			"--pack", packPath,
 			"--target", server.URL,
 			"--skip-firmware-update",
 		})
@@ -1109,6 +1103,16 @@ func buildTestThemePackZip(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+func writeTestThemePackZip(t *testing.T, data []byte) (string, string, int64) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "cozy-meadow.zip")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	return path, hex.EncodeToString(digest[:]), int64(len(data))
 }
 
 func disableThemePackUploadSettleDelay(t *testing.T) {

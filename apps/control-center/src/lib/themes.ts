@@ -18,6 +18,8 @@ export type ThemeProduct = {
   themeVersion?: string;
   manifestUrl?: string;
   packUrl?: string;
+  packSha256?: string;
+  packSizeBytes?: number;
   compatibleBoards?: string[];
   requiresFirmware?: string;
   source: ThemeSource;
@@ -67,6 +69,8 @@ type ShopifyProduct = {
   legacyManifestUrl?: ShopifyMetafield;
   packUrl?: ShopifyMetafield;
   legacyPackUrl?: ShopifyMetafield;
+  packSha256?: ShopifyMetafield;
+  packSizeBytes?: ShopifyMetafield;
   compatibleBoards?: ShopifyMetafield;
   legacyCompatibleBoards?: ShopifyMetafield;
   requiresFirmware?: ShopifyMetafield;
@@ -98,6 +102,8 @@ type ThemePackCatalog = {
     version?: string;
     compatibleBoards?: string[];
     requiresFirmware?: string;
+    sha256?: string;
+    bytes?: number;
   }>;
 };
 
@@ -262,6 +268,8 @@ function mapShopifyProduct(
       product.packUrl?.value?.trim() ||
       product.legacyPackUrl?.value?.trim() ||
       undefined,
+    packSha256: product.packSha256?.value?.trim().toLowerCase() || undefined,
+    packSizeBytes: positiveInteger(product.packSizeBytes?.value),
     compatibleBoards: splitList(
       product.compatibleBoards?.value || product.legacyCompatibleBoards?.value,
     ),
@@ -345,6 +353,8 @@ function mapThemePackCatalogEntry(
       theme.version || (theme.themeRev ? `rev ${theme.themeRev}` : undefined),
     manifestUrl: theme.manifestUrl,
     packUrl,
+    packSha256: theme.sha256?.trim().toLowerCase(),
+    packSizeBytes: theme.bytes,
     compatibleBoards: theme.compatibleBoards,
     requiresFirmware: theme.requiresFirmware,
     source: "github-catalog",
@@ -392,6 +402,8 @@ async function enrichThemesWithGitHubCatalog(
           theme.compatibleBoards || fallback.compatibleBoards,
         manifestUrl: theme.manifestUrl || fallback.manifestUrl,
         packUrl: chooseThemePackUrl(theme.packUrl, fallback.packUrl),
+        packSha256: theme.packSha256 || fallback.packSha256,
+        packSizeBytes: theme.packSizeBytes || fallback.packSizeBytes,
         requiresFirmware:
           theme.requiresFirmware || fallback.requiresFirmware,
         themeVersion: theme.themeVersion || fallback.themeVersion,
@@ -471,6 +483,11 @@ function splitList(value: string | undefined | null): string[] | undefined {
   return parts?.length ? parts : undefined;
 }
 
+function positiveInteger(value: string | undefined | null): number | undefined {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 function titleFromThemeId(themeId: string): string {
   return themeId
     .split(/[-_]/)
@@ -522,6 +539,12 @@ const SHOPIFY_THEMES_QUERY = `#graphql
               value
             }
             legacyPackUrl: metafield(namespace: "theme", key: "pack_url") {
+              value
+            }
+            packSha256: metafield(namespace: "vibetv", key: "pack_sha256") {
+              value
+            }
+            packSizeBytes: metafield(namespace: "vibetv", key: "pack_size_bytes") {
               value
             }
             compatibleBoards: metafield(namespace: "vibetv", key: "compatible_boards") {

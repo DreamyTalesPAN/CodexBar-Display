@@ -94,7 +94,10 @@ type InstallResponse = {
   logs?: string[];
 };
 
-type InstallableTheme = Pick<ThemeProduct, "packUrl" | "themeId" | "title"> & {
+type InstallableTheme = Pick<
+  ThemeProduct,
+  "packUrl" | "packSha256" | "packSizeBytes" | "themeId" | "title"
+> & {
   packBytes?: Uint8Array;
 };
 
@@ -1756,6 +1759,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               themeId: theme.themeId,
               themeName: theme.title,
               packUrl: localizeCompanionAssetUrl(theme.packUrl),
+              packSha256: theme.packSha256,
+              packSizeBytes: theme.packSizeBytes,
               skipFirmwareUpdate: true,
               async: true,
             }),

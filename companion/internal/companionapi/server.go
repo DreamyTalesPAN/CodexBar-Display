@@ -404,6 +404,8 @@ type themeInstallRequest struct {
 	ThemeName          string `json:"themeName"`
 	PackURL            string `json:"packUrl"`
 	PackBytes          []byte `json:"-"`
+	PackSHA256         string `json:"packSha256"`
+	PackSizeBytes      int64  `json:"packSizeBytes"`
 	CatalogURL         string `json:"catalogUrl"`
 	SkipFirmwareUpdate *bool  `json:"skipFirmwareUpdate"`
 	Async              bool   `json:"async"`
@@ -3173,11 +3175,16 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	req, err := s.resolveEmbeddedThemePack(r, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_theme_pack_url", "Theme pack URL is invalid.", "Reload the theme catalog, then try again.")
+		return
+	}
 	if strings.TrimSpace(req.ThemeID) == "" && strings.TrimSpace(req.PackURL) == "" && req.PackBytes == nil {
 		writeError(w, http.StatusBadRequest, "missing_theme_source", "themeId or packUrl is required.", "Select a theme and retry.")
 		return
 	}
-	if !validRemoteThemePackURL(req.PackURL) {
+	if !validRemoteThemePackURL(req.PackURL) || !validRemoteThemePackURL(req.CatalogURL) {
 		writeError(
 			w,
 			http.StatusBadRequest,
@@ -3610,6 +3617,8 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
 		PackBytes:          req.PackBytes,
+		PackSHA256:         strings.TrimSpace(req.PackSHA256),
+		PackSizeBytes:      req.PackSizeBytes,
 		CatalogURL:         strings.TrimSpace(req.CatalogURL),
 		Target:             targetWithToken(cfg.DeviceTarget, cfg.DeviceToken),
 		SkipFirmwareUpdate: skipFirmwareUpdate,
@@ -4942,7 +4951,37 @@ func validRemoteThemePackURL(raw string) bool {
 	if parsed.User != nil || strings.TrimSpace(parsed.Host) == "" {
 		return false
 	}
-	return strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")
+	return strings.EqualFold(parsed.Scheme, "https")
+}
+
+func (s *Server) resolveEmbeddedThemePack(r *http.Request, req themeInstallRequest) (themeInstallRequest, error) {
+	raw := strings.TrimSpace(req.PackURL)
+	if raw == "" {
+		return req, nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return req, nil
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") || !strings.EqualFold(parsed.Host, r.Host) {
+		return req, nil
+	}
+	assetPath, ok := normalizeControlCenterAssetPath(parsed.Path)
+	if !ok || !strings.HasPrefix(assetPath, "theme-packs/") || !strings.HasSuffix(strings.ToLower(assetPath), ".zip") {
+		return req, errors.New("invalid embedded theme pack path")
+	}
+	info, err := fs.Stat(s.controlCenterFS, assetPath)
+	if err != nil || info.IsDir() || info.Size() <= 0 || info.Size() > themepack.MaxZipBytes {
+		return req, errors.New("embedded theme pack unavailable")
+	}
+	data, err := fs.ReadFile(s.controlCenterFS, assetPath)
+	if err != nil || len(data) == 0 || len(data) > themepack.MaxZipBytes {
+		return req, errors.New("embedded theme pack unavailable")
+	}
+	req.PackURL = ""
+	req.CatalogURL = ""
+	req.PackBytes = data
+	return req, nil
 }
 
 func (s *Server) config() (runtimeconfig.Config, error) {

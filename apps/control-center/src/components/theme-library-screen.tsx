@@ -1286,6 +1286,18 @@ function themeMetadataBlocker(theme: ThemeProduct): ThemeInstallBlocker | null {
       readinessIcon: <Library size={22} aria-hidden />,
     };
   }
+  if (
+    !theme.packSha256?.match(/^[a-f0-9]{64}$/i) ||
+    !theme.packSizeBytes ||
+    theme.packSizeBytes <= 0
+  ) {
+    return {
+      reason: "Theme could not be verified.",
+      readinessTitle: "Theme unavailable",
+      readinessDetail: "Reload the theme catalog, then try again.",
+      readinessIcon: <Library size={22} aria-hidden />,
+    };
+  }
   return null;
 }
 

@@ -5631,7 +5631,7 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 		return nil
 	}
 
-	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip"}`)
+	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip","packSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","packSizeBytes":1234}`)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
 	req.Header.Set("Content-Type", "application/json")
@@ -5641,7 +5641,7 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if gotOpts.ThemeID != "cozy-meadow" || gotOpts.PackURL != "https://example.com/cozy.zip" {
+	if gotOpts.ThemeID != "cozy-meadow" || gotOpts.PackURL != "https://example.com/cozy.zip" || gotOpts.PackSHA256 != strings.Repeat("a", 64) || gotOpts.PackSizeBytes != 1234 {
 		t.Fatalf("install did not receive theme source: %+v", gotOpts)
 	}
 	if gotOpts.PackBytes != nil {
@@ -6687,6 +6687,48 @@ func TestThemeInstallRejectsInvalidPackURLBeforeGate(t *testing.T) {
 	}
 	if got.OK || got.Error.Code != "invalid_theme_pack_url" {
 		t.Fatalf("unexpected invalid pack URL response: %+v", got)
+	}
+}
+
+func TestResolveEmbeddedThemePackReadsOnlyOwnBundledZip(t *testing.T) {
+	data := testThemePackZip(t)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.controlCenterFS = fstest.MapFS{
+		"theme-packs/cozy.zip": &fstest.MapFile{Data: data},
+	}
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47832/v1/themes/install", nil)
+	resolved, err := server.resolveEmbeddedThemePack(req, themeInstallRequest{
+		PackURL: "http://127.0.0.1:47832/theme-packs/cozy.zip",
+	})
+	if err != nil {
+		t.Fatalf("resolve embedded pack: %v", err)
+	}
+	if resolved.PackURL != "" || !bytes.Equal(resolved.PackBytes, data) {
+		t.Fatalf("embedded pack was not converted to trusted bytes: %+v", resolved)
+	}
+
+	foreign, err := server.resolveEmbeddedThemePack(req, themeInstallRequest{
+		PackURL: "http://127.0.0.1:9000/private.zip",
+	})
+	if err != nil {
+		t.Fatalf("foreign URL should be left for remote policy: %v", err)
+	}
+	if foreign.PackURL == "" || foreign.PackBytes != nil {
+		t.Fatalf("foreign loopback URL was treated as an embedded asset: %+v", foreign)
+	}
+}
+
+func TestThemeInstallRejectsInsecureRemotePackURL(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"http://169.254.169.254/latest/meta-data"}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_theme_pack_url") {
+		t.Fatalf("expected insecure pack URL rejection, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

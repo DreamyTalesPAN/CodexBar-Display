@@ -1,6 +1,6 @@
 # VibeTV Theme Packs
 
-A theme pack is the downloadable unit for customer themes. GitHub hosts the published catalog and ZIPs; the VibeTV companion installs them over WiFi from a local file, local directory, or direct HTTP(S) ZIP URL.
+A theme pack is the downloadable unit for customer themes. GitHub hosts the published catalog and ZIPs; the VibeTV companion installs them over WiFi from a local file, local directory, or a verified catalog entry.
 
 The source of truth lives in `theme-packs/<theme-id>/` as plain files. The customer-facing GitHub artifacts live in `dist/theme-packs/` and are committed so the default install command can resolve packs from GitHub.
 
@@ -37,7 +37,8 @@ Rules:
 - Device paths must be 31 characters or shorter because ESP8266 LittleFS paths are short.
 - ThemeSpec `gif` and `sprite` primitives must reference files listed in `assets`.
 - ESP8266 GIF assets are intentionally small: one `.gif` per ThemeSpec, max 24 KiB, max 80x80 draw box.
-- Optional `bytes` and `sha256` fields pin downloaded files when packs are published.
+- Published catalog entries require `bytes` and `sha256`. The Companion verifies both before parsing a ZIP.
+- Remote catalogs and packs require HTTPS and must resolve only to public network addresses. Redirects are checked again; private, loopback, link-local, multicast, and carrier-grade NAT targets are rejected.
 
 ## CLI
 
@@ -79,12 +80,6 @@ For theme-only tests, skip firmware update explicitly:
 
 ```bash
 go run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/cozy-meadow --target http://<device-ip> --skip-firmware-update
-```
-
-Install a ZIP directly from GitHub:
-
-```bash
-go run ./cmd/codexbar-display theme-pack install --pack https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-cozy-meadow.zip --target http://<device-ip> --skip-firmware-update
 ```
 
 Install by catalog theme ID:

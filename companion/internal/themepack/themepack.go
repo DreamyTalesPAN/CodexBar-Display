@@ -108,12 +108,21 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 }
 
 func Load(packPath string) (*Pack, error) {
+	return LoadVerified(packPath, "", 0)
+}
+
+// LoadVerified loads a pack and verifies publisher catalog metadata before
+// parsing any ZIP entries. Remote packs always require both values.
+func LoadVerified(packPath, expectedSHA256 string, expectedBytes int64) (*Pack, error) {
 	packPath = strings.TrimSpace(packPath)
 	if packPath == "" {
 		return nil, errors.New("missing theme pack path")
 	}
 	if isHTTPURL(packPath) {
-		return loadRemoteZip(packPath)
+		if strings.TrimSpace(expectedSHA256) == "" || expectedBytes <= 0 {
+			return nil, errors.New("remote theme pack requires catalog sha256 and byte size")
+		}
+		return loadRemoteZip(packPath, expectedSHA256, expectedBytes)
 	}
 	info, err := os.Stat(packPath)
 	if err != nil {
@@ -124,7 +133,17 @@ func Load(packPath string) (*Pack, error) {
 			return os.ReadFile(filepath.Join(packPath, filepath.FromSlash(name)))
 		})
 	}
-	return loadZip(packPath)
+	if strings.TrimSpace(expectedSHA256) == "" && expectedBytes <= 0 {
+		return loadZip(packPath)
+	}
+	data, err := os.ReadFile(packPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := verifyPackArchive(data, expectedSHA256, expectedBytes); err != nil {
+		return nil, err
+	}
+	return loadZipBytes(packPath, data)
 }
 
 func isHTTPURL(raw string) bool {
@@ -135,8 +154,15 @@ func isHTTPURL(raw string) bool {
 	return strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")
 }
 
-func loadRemoteZip(packURL string) (*Pack, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+func loadRemoteZip(packURL, expectedSHA256 string, expectedBytes int64) (*Pack, error) {
+	if err := validatePublicHTTPSReference(packURL); err != nil {
+		return nil, fmt.Errorf("download theme pack zip: %w", err)
+	}
+	client := secureRemoteClient(30 * time.Second)
+	return loadRemoteZipWithClient(client, packURL, expectedSHA256, expectedBytes)
+}
+
+func loadRemoteZipWithClient(client *http.Client, packURL, expectedSHA256 string, expectedBytes int64) (*Pack, error) {
 	resp, err := client.Get(packURL)
 	if err != nil {
 		return nil, fmt.Errorf("download theme pack zip: %w", err)
@@ -150,7 +176,28 @@ func loadRemoteZip(packURL string) (*Pack, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read theme pack zip: %w", err)
 	}
+	if err := verifyPackArchive(data, expectedSHA256, expectedBytes); err != nil {
+		return nil, err
+	}
 	return loadZipBytes(packURL, data)
+}
+
+func verifyPackArchive(data []byte, expectedSHA256 string, expectedBytes int64) error {
+	if expectedBytes <= 0 || int64(len(data)) != expectedBytes {
+		return fmt.Errorf("theme pack byte size mismatch: got=%d expected=%d", len(data), expectedBytes)
+	}
+	expectedSHA256 = strings.ToLower(strings.TrimSpace(expectedSHA256))
+	if len(expectedSHA256) != sha256.Size*2 {
+		return errors.New("theme pack expected sha256 is invalid")
+	}
+	if _, err := hex.DecodeString(expectedSHA256); err != nil {
+		return errors.New("theme pack expected sha256 is invalid")
+	}
+	got := sha256.Sum256(data)
+	if hex.EncodeToString(got[:]) != expectedSHA256 {
+		return fmt.Errorf("theme pack sha256 mismatch: got=%s expected=%s", hex.EncodeToString(got[:]), expectedSHA256)
+	}
+	return nil
 }
 
 func loadZip(packPath string) (*Pack, error) {
@@ -165,6 +212,14 @@ func loadZip(packPath string) (*Pack, error) {
 // LoadZipBytes validates and loads an in-memory theme-pack ZIP. The same size
 // limit applies to remote and locally uploaded packs.
 func LoadZipBytes(data []byte) (*Pack, error) {
+	return loadZipBytes("memory", data)
+}
+
+// LoadZipBytesVerified validates publisher metadata before parsing ZIP entries.
+func LoadZipBytesVerified(data []byte, expectedSHA256 string, expectedBytes int64) (*Pack, error) {
+	if err := verifyPackArchive(data, expectedSHA256, expectedBytes); err != nil {
+		return nil, err
+	}
 	return loadZipBytes("memory", data)
 }
 
