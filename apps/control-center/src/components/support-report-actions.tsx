@@ -2,6 +2,8 @@
 
 import { Clipboard, Download, FileText, RefreshCw } from "lucide-react";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import type { SupportDiagnostics } from "./control-center-types";
 import {
   downloadSupportReport,
@@ -25,6 +27,12 @@ export function SupportReportActions({
   const diagnosticsText = diagnostics
     ? serializeSupportReport(diagnostics)
     : "";
+  const creating = busyAction === "diagnostics";
+
+  function createDiagnostics() {
+    setCopyState("idle");
+    onCreate?.();
+  }
 
   async function copyDiagnostics() {
     if (!diagnosticsText) {
@@ -48,53 +56,65 @@ export function SupportReportActions({
   }
 
   return (
-    <div className="grid gap-3" data-testid="support-report-actions">
-      <div className="flex flex-wrap justify-center gap-3">
-        {onCreate ? (
-          <button
-            className="inline-flex min-h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={Boolean(busyAction)}
-            onClick={onCreate}
-            type="button"
-          >
-            {busyAction === "diagnostics" ? (
-              <RefreshCw className="animate-spin" size={18} aria-hidden />
-            ) : (
-              <FileText size={18} aria-hidden />
-            )}
-            <span>
-              {busyAction === "diagnostics" ? "Creating" : "Create report"}
-            </span>
-          </button>
-        ) : null}
-        {diagnosticsText ? (
+    <div
+      aria-live="polite"
+      className="grid gap-3"
+      data-testid="support-report-actions"
+    >
+      <div className="grid gap-3 sm:flex sm:flex-wrap">
+        {creating ? (
+          <Button className="w-full sm:w-auto" disabled type="button">
+            <Spinner data-icon="inline-start" />
+            <span>Creating report</span>
+          </Button>
+        ) : diagnosticsText ? (
           <>
-            <button
-              className="inline-flex min-h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
+            <Button
+              className="w-full sm:w-auto"
               onClick={copyDiagnostics}
               type="button"
+              variant="outline"
             >
-              <Clipboard size={18} aria-hidden />
-              <span>{copyState === "copied" ? "Copied" : "Copy report"}</span>
-            </button>
-            <button
-              className="inline-flex min-h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
+              <Clipboard data-icon="inline-start" aria-hidden />
+              <span>{copyState === "copied" ? "Copied" : "Copy"}</span>
+            </Button>
+            <Button
+              className="w-full sm:w-auto"
               onClick={downloadDiagnostics}
               type="button"
+              variant="outline"
             >
-              <Download size={18} aria-hidden />
-              <span>Download report</span>
-            </button>
+              <Download data-icon="inline-start" aria-hidden />
+              <span>Download</span>
+            </Button>
+            {onCreate ? (
+              <Button
+                className="w-full sm:w-auto"
+                disabled={Boolean(busyAction)}
+                onClick={createDiagnostics}
+                type="button"
+              >
+                <RefreshCw data-icon="inline-start" aria-hidden />
+                <span>Create again</span>
+              </Button>
+            ) : null}
           </>
+        ) : onCreate ? (
+          <Button
+            className="w-full sm:w-auto"
+            disabled={Boolean(busyAction)}
+            onClick={createDiagnostics}
+            type="button"
+          >
+            <FileText data-icon="inline-start" aria-hidden />
+            <span>Create report</span>
+          </Button>
         ) : null}
       </div>
       {copyState === "failed" ? (
-        <div
-          className="border border-[#747A60] bg-[#EEEEEE] p-3 text-center text-sm text-[#444933]"
-          role="alert"
-        >
+        <p className="text-sm text-destructive" role="alert">
           Copy failed. Check the clipboard permission and try again.
-        </div>
+        </p>
       ) : null}
     </div>
   );

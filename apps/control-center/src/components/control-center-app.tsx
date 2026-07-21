@@ -655,6 +655,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
   ]);
 
+  useEffect(() => {
+    if (activeTab !== "settings" || !device?.connected) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void loadSettings();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, device?.connected, device?.target, loadSettings]);
+
   const applyThemeInstallJob = useCallback(
     (
       job: ThemeInstallJob,
@@ -2881,10 +2891,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           busyAction={busyAction}
           companionStatus={companionStatus}
           onRefresh={() => refreshUsage()}
-          onOpenCodexBar={() => runProviderAction("open-codexbar")}
-          onRepairCodexBar={launchCodexBarRepair}
-          onRetryProviders={() => runProviderAction("retry")}
-          providerSetup={providerSetup}
           usage={usage}
           usageError={usageError}
         />

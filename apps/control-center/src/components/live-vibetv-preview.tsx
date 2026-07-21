@@ -396,7 +396,7 @@ function ThemeSpecSVG({
   return (
     <svg
       aria-label={`Rendered VibeTV theme ${themeId} showing ${frame.label}, ${frame.session}% session ${frame.usageMode}, ${frame.weekly}% weekly ${frame.usageMode}`}
-      className="aspect-square w-full bg-black [image-rendering:pixelated]"
+      className="size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"
     >
@@ -457,7 +457,10 @@ function ThemePrimitiveNode({
     const text = renderTextPrimitive(primitive, frame);
     const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const fontSize = themeFontSize(primitive.font || primitive.f, primitive.fontSize || primitive.s);
-    const textAnchor = svgTextAnchor(primitive.align || primitive.al);
+    // Firmware only applies text alignment inside an explicit width. Without
+    // one, x remains the text's left edge regardless of the selected alignment.
+    const textAnchor =
+      maxWidth > 0 ? svgTextAnchor(primitive.align || primitive.al) : "start";
     const textX = alignedTextX(x, maxWidth, textAnchor);
     return (
       <text

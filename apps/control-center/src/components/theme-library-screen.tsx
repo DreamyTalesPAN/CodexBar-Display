@@ -34,7 +34,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -552,10 +551,12 @@ export function ThemeLibraryScreen({
 
       {previewTheme ? (
         <Dialog open onOpenChange={(open) => !open && setPreviewTheme(null)}>
-          <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-[640px] overflow-y-auto sm:max-w-[640px]">
+          <DialogContent
+            aria-describedby={undefined}
+            className="max-h-[calc(100dvh-2rem)] max-w-[640px] overflow-y-auto sm:max-w-[640px]"
+          >
             <DialogHeader>
               <DialogTitle className="truncate text-2xl font-black">{previewTheme.title}</DialogTitle>
-              <DialogDescription>Theme preview at the VibeTV display ratio.</DialogDescription>
             </DialogHeader>
             <ThemePreview large theme={previewTheme} />
           </DialogContent>
@@ -800,7 +801,7 @@ function ThemeListItem({
       role="listitem"
       variant={item.themeId === displayThemeId ? "muted" : "outline"}
     >
-      <ItemMedia className="w-24">
+      <ItemMedia className="w-28 sm:w-36">
         <Button
           aria-label={`Preview ${item.title}`}
           className="h-auto w-full justify-start p-0"
@@ -1343,7 +1344,7 @@ function ThemePreview({
   });
   const className = large
     ? "relative block aspect-square w-full overflow-hidden border border-border bg-muted"
-    : "relative block size-24 overflow-hidden border border-border bg-muted";
+    : "relative block size-28 overflow-hidden border border-border bg-muted sm:size-36";
   const themeId = theme.themeId;
   const customPack =
     theme.kind === "custom"

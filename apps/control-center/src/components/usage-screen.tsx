@@ -36,16 +36,11 @@ import { cn } from "@/lib/utils";
 import type {
   ApiError,
   CompanionStatus,
-  ProviderSetupInfo,
   UsageCostDay,
   UsageProviderInfo,
   UsageSnapshot,
   UsageWindowInfo,
 } from "./control-center-types";
-import {
-  ProviderSetupCard,
-  providerSetupNeedsAction,
-} from "./provider-setup-card";
 
 type UsageScreenProps = {
   busyAction?: string | null;
@@ -53,10 +48,6 @@ type UsageScreenProps = {
   usage: UsageSnapshot | null;
   usageError?: ApiError | null;
   onRefresh?: () => void;
-  onOpenCodexBar?: () => void;
-  onRepairCodexBar?: () => void;
-  onRetryProviders?: () => void;
-  providerSetup?: ProviderSetupInfo | null;
 };
 
 export function UsageScreen({
@@ -64,10 +55,6 @@ export function UsageScreen({
   companionStatus,
   usage,
   usageError,
-  onOpenCodexBar,
-  onRepairCodexBar,
-  onRetryProviders,
-  providerSetup,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
   const providers = filterVisibleProviders(
@@ -75,24 +62,11 @@ export function UsageScreen({
     usage?.currentProvider,
   );
   const hasProviders = providers.length > 0;
-  const providerActionRequired = providerSetupNeedsAction(providerSetup);
 
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="py-10">
-        {providerActionRequired && providerSetup ? (
-          <div className="mb-6">
-            <ProviderSetupCard
-              busyAction={busyAction}
-              onOpenCodexBar={onOpenCodexBar}
-              onRepairCodexBar={onRepairCodexBar}
-              onRetry={onRetryProviders}
-              providerSetup={providerSetup}
-            />
-          </div>
-        ) : null}
-
-        {usageError && !providerActionRequired ? (
+        {usageError ? (
           <Alert className="mb-6 bg-muted"><AlertTriangle /><AlertTitle>{usageError.message}</AlertTitle><AlertDescription>{usageError.nextAction}</AlertDescription></Alert>
         ) : null}
 
@@ -108,7 +82,7 @@ export function UsageScreen({
               </li>
             ))}
           </ol>
-        ) : usageError || providerActionRequired ? null : (
+        ) : usageError ? null : (
           <UsageEmptyState
             companionStatus={companionStatus}
             refreshing={refreshing}

@@ -1130,60 +1130,28 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
 
     await clickNavigation(page, "Usage");
     await page
-      .getByRole("heading", { name: "Connect an AI provider" })
-      .first()
+      .getByRole("heading", { name: "Codex", exact: true })
       .waitFor({ timeout: 10_000 });
-    await page.getByText(fixture.expected).first().waitFor({ timeout: 10_000 });
     assert(
-      (await page.getByText("VibeTV screen is not ready").count()) === 0,
-      `${fixture.status} must not be presented as a VibeTV screen problem`,
-    );
-    assert(
-      (await page.getByRole("button", { name: "Fix connection" }).count()) ===
-        0,
-      `${fixture.status} must not offer Fix connection`,
-    );
-    assert(
-      (await page.getByRole("button", { name: "Repair CodexBar" }).count()) ===
-        (fixture.status === "not_configured" ? 1 : 0),
-      `${fixture.status} must expose CodexBar repair only when the engine is missing`,
-    );
-
-    if (fixture.status === "auth_required") {
-      await page.getByRole("button", { name: "Open CodexBar" }).click();
-      await page.getByRole("button", { name: "Check again" }).click();
-      assert(
-        requests.includes("POST /v1/providers/open-codexbar"),
-        "Open CodexBar must call the provider action",
-      );
-      assert(
-        requests.includes("POST /v1/providers/retry"),
-        "Check again must retry provider detection",
-      );
-
-      await clickNavigation(page, "Overview");
-      await page
-        .getByRole("heading", { name: "VibeTV is connected" })
-        .waitFor({ timeout: 10_000 });
-      assert(
-        (await page
-          .getByRole("heading", { name: "Connect an AI provider" })
-          .count()) === 0,
-        "Provider setup belongs on Usage, not Overview",
-      );
-
-      await clickNavigation(page, "Usage");
-      await page
+      (await page
         .getByRole("heading", { name: "Connect an AI provider" })
-        .first()
-        .waitFor({ timeout: 10_000 });
+        .count()) === 0,
+      `${fixture.status} must not show the removed provider repair box on Usage`,
+    );
+    assert(
+      (await page.getByText(fixture.expected).count()) === 0,
+      `${fixture.status} must not expose provider repair detail on Usage`,
+    );
+    for (const action of ["Open CodexBar", "Check again", "Repair CodexBar"]) {
       assert(
-        (await page
-          .getByText("No provider usage is available yet.")
-          .count()) === 0,
-        "Provider setup must replace the generic empty usage state",
+        (await page.getByRole("button", { name: action }).count()) === 0,
+        `${fixture.status} must not show ${action} on Usage`,
       );
     }
+    assert(
+      requests.every((request) => !request.includes("/v1/providers/")),
+      `${fixture.status} must not trigger provider repair requests from Usage`,
+    );
 
     await assertNoMobileOverflow(page);
     await page.close();
@@ -1854,7 +1822,7 @@ async function testHostedEntryShowsMacAppDownload(
     `Hosted entry must not probe the local Mac App, got ${JSON.stringify(companionRequests)}`,
   );
   await page.getByRole("button", { name: "Create report" }).click();
-  await page.getByRole("button", { name: "Copy report" }).waitFor({
+  await page.getByRole("button", { name: "Copy", exact: true }).waitFor({
     timeout: 10_000,
   });
   assert(
@@ -2474,9 +2442,14 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let settingsCalls = 0;
-  await routeCompanionOnline(page, installRequests, () => {
-    settingsCalls += 1;
-  });
+  await routeCompanionOnline(
+    page,
+    installRequests,
+    () => {
+      settingsCalls += 1;
+    },
+    { settingsBrightnessSequence: [null, 50] },
+  );
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await waitForCondition(
@@ -2488,6 +2461,15 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
   await page.getByRole("heading", { name: "Display" }).waitFor({
     timeout: 10_000,
   });
+  await waitForCondition(
+    () => settingsCalls >= 2,
+    "opening Settings should retry brightness loading",
+  );
+  await page.getByText("50%", { exact: true }).waitFor({ timeout: 10_000 });
+  assert(
+    await page.getByRole("slider", { name: "Brightness" }).isEnabled(),
+    "brightness slider should be enabled after the Settings retry",
+  );
 
   const hiddenCustomerText = [
     "Connection controls",
@@ -3418,7 +3400,7 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   await clickNavigation(page, "Updates");
   await page
     .getByRole("status")
-    .filter({ hasText: /Updating VibeTV|Restarting VibeTV/ })
+    .filter({ hasText: /Updating VibeTV|Restarting VibeTV|Update complete/ })
     .waitFor({ timeout: 10_000 });
   await page
     .getByRole("status")
@@ -3707,35 +3689,36 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   });
 
   assert(
-    (await page.getByRole("button", { name: "Copy report" }).count()) === 0,
+    (await page.getByRole("button", { name: "Copy", exact: true }).count()) === 0,
     "Support report should not show Copy before a report is loaded",
   );
   assert(
-    (await page.getByRole("button", { name: "Download report" }).count()) === 0,
+    (await page.getByRole("button", { name: "Download", exact: true }).count()) === 0,
     "Support report should not show Download before a report is loaded",
   );
 
   await page.getByRole("button", { name: "Create report" }).click();
-  await page.getByRole("button", { name: "Copy report" }).waitFor({
+  await page.getByRole("button", { name: "Copy", exact: true }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Download report" }).waitFor({
+  await page.getByRole("button", { name: "Download", exact: true }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("VibeTV address", { exact: true }).waitFor({
+  await page.getByRole("button", { name: "Create again" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("VibeTVs on WiFi", { exact: true }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByText("1 found", { exact: true }).waitFor({
-    timeout: 10_000,
-  });
-  await page
-    .getByRole("region", { name: "VibeTVs found on this WiFi" })
-    .getByText("wifi-vibetv", { exact: true })
-    .waitFor({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Copy report" }).click();
+  for (const hiddenDetail of [
+    "Background runtime",
+    "VibeTVs on WiFi",
+    "Provider Setup",
+    "Theme Install Gate",
+  ]) {
+    assert(
+      (await page.getByText(hiddenDetail, { exact: true }).count()) === 0,
+      `Support screen should keep report detail out of the regular UI: ${hiddenDetail}`,
+    );
+  }
+  await page.getByRole("button", { name: "Copy", exact: true }).click();
   const copiedReport = await page.evaluate(
     () => globalThis.__copiedSupportReport || "",
   );
@@ -5351,6 +5334,7 @@ async function routeCompanionOnline(
     firstStatusDelayMs = 0,
     statusDelayAfterFirstMs = 0,
     settingsDelayMs = 0,
+    settingsBrightnessSequence,
     onSettingsResponse = () => {},
     statusDeviceSequence,
     firmwareStatusDeviceSequence,
@@ -5375,6 +5359,7 @@ async function routeCompanionOnline(
   let statusRequestCount = 0;
   let firmwareStatusIndex = 0;
   let displayFrameRequestCount = 0;
+  let settingsRequestCount = 0;
   let currentProviderSetup = providerSetup;
   const handler = async (route) => {
     const pathname = companionPath(route);
@@ -5958,6 +5943,12 @@ async function routeCompanionOnline(
     if (pathname === "/v1/settings") {
       onSettings();
       const responseDevice = currentDevice;
+      const brightnessPercent = settingsBrightnessSequence?.length
+        ? settingsBrightnessSequence[
+            Math.min(settingsRequestCount, settingsBrightnessSequence.length - 1)
+          ]
+        : 50;
+      settingsRequestCount += 1;
       if (settingsDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, settingsDelayMs));
       }
@@ -5966,7 +5957,7 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify({
           ok: true,
-          settings: { display: { brightnessPercent: 50 } },
+          settings: { display: { brightnessPercent } },
           device: responseDevice,
         }),
       });
