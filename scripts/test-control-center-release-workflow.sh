@@ -344,6 +344,17 @@ main() {
   assert_contains "$release_installer" 'run_quiet "$BIN_PATH" install-update' \
     "installer must hide firmware update command output by default"
 
+  # Firmware update copy reaches customers through the manifest message, so it
+  # must name the VibeTV Mac App instead of sending them to a hosted URL.
+  local firmware_versions
+  firmware_versions="$(cat "${ROOT}/release/firmware-versions.json")"
+  assert_not_contains "$firmware_versions" "vibetv.shop" \
+    "firmware update messages must not send customers to a hosted URL"
+  assert_contains "$firmware_versions" "VibeTV Mac App" \
+    "firmware update messages must name the VibeTV Mac App"
+  assert_not_contains "$(grep '"message"' "$WORKFLOW")" "vibetv.shop" \
+    "release workflow firmware message fallback must not send customers to a hosted URL"
+
   printf 'control-center release workflow test passed\n'
 }
 

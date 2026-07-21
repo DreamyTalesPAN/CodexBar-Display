@@ -567,10 +567,10 @@ func runInstallUpdate(args []string) (retErr error) {
 		HelloVerified:     true,
 	})
 
-	deviceToken, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, false)
+	deviceToken, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, deviceID)
 	if err != nil {
 		return &commandError{
-			Op:   "pair-device",
+			Op:   "device-auth-preflight",
 			Code: errcode.UpgradeFlashFirmware,
 			Err:  err,
 			Hint: "keep VibeTV powered and on the same WiFi, then retry",
@@ -593,39 +593,22 @@ func runInstallUpdate(args []string) (retErr error) {
 		uploadErr,
 	)
 	if uploadErr != nil {
-		if firmwareOTAAuthError(uploadErr) {
-			refreshedToken, pairErr := ensureFirmwareUpdateDeviceToken(ctx, home, base, true)
-			if pairErr == nil {
-				uploadErr = uploadFirmwareOTAFn(ctx, base, imagePath, refreshedToken)
-				uploadErr = recoverInterruptedFirmwareUpload(
-					ctx,
-					base,
-					targetVersion,
-					deviceID,
-					uploadErr,
-				)
-			} else {
-				uploadErr = fmt.Errorf("%w; repair pairing failed: %v", uploadErr, pairErr)
-			}
+		hint := "keep VibeTV powered and on the same WiFi, then retry"
+		if errors.Is(uploadErr, errFirmwareUploadRestartRequired) {
+			hint = "disconnect VibeTV from power for 10 seconds, reconnect it, wait until the picture returns, then retry once"
+			emitFirmwareUpdateEvent(firmwareUpdateEvent{
+				Stage:       "uploading",
+				RetryPolicy: "power_cycle",
+				Firmware:    targetVersion,
+				Target:      base,
+				DeviceID:    deviceID,
+			})
 		}
-		if uploadErr != nil {
-			hint := "keep VibeTV powered and on the same WiFi, then retry"
-			if errors.Is(uploadErr, errFirmwareUploadRestartRequired) {
-				hint = "disconnect VibeTV from power for 10 seconds, reconnect it, wait until the picture returns, then retry once"
-				emitFirmwareUpdateEvent(firmwareUpdateEvent{
-					Stage:       "uploading",
-					RetryPolicy: "power_cycle",
-					Firmware:    targetVersion,
-					Target:      base,
-					DeviceID:    deviceID,
-				})
-			}
-			return &commandError{
-				Op:   "ota-upload",
-				Code: errcode.UpgradeFlashFirmware,
-				Err:  uploadErr,
-				Hint: hint,
-			}
+		return &commandError{
+			Op:   "ota-upload",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  uploadErr,
+			Hint: hint,
 		}
 	}
 	emitFirmwareUpdateEvent(firmwareUpdateEvent{
@@ -670,7 +653,7 @@ func runInstallUpdate(args []string) (retErr error) {
 	})
 	if verifiedBase != base {
 		base = verifiedBase
-		if _, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, false); err != nil {
+		if _, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, deviceID); err != nil {
 			fmt.Printf("warning: firmware updated, but saving the rediscovered VibeTV address failed: %v\n", err)
 		}
 	}
@@ -678,42 +661,63 @@ func runInstallUpdate(args []string) (retErr error) {
 	return nil
 }
 
-func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base string, forcePair bool) (string, error) {
+func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base, expectedDeviceID string) (string, error) {
+	base = strings.TrimSpace(base)
+	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
+	if expectedDeviceID == "" {
+		return "", errors.New("VibeTV /hello response did not include deviceId")
+	}
+
 	cfg, err := runtimeconfig.Load(home)
 	if err != nil {
 		return "", err
 	}
 
-	changed := false
-	if shouldStoreFirmwareUpdateTarget(cfg.DeviceTarget, base) {
-		cfg.DeviceTarget = strings.TrimSpace(base)
-		changed = true
+	token := ""
+	if known, ok := cfg.KnownDevice(expectedDeviceID); ok {
+		token = strings.TrimSpace(known.DeviceToken)
 	}
-
-	token := strings.TrimSpace(cfg.DeviceToken)
-	if token == "" || forcePair {
+	if token == "" {
+		token = strings.TrimSpace(cfg.DeviceToken)
+	}
+	paired := false
+	if token == "" {
 		token, err = pairFirmwareUpdateDevice(ctx, base)
 		if err != nil {
 			return "", err
 		}
-		cfg.DeviceToken = token
-		changed = true
+		paired = true
 	}
 
-	if changed {
-		if err := runtimeconfig.Save(home, cfg); err != nil {
-			return "", err
+	authenticatedHello, err := fetchDeviceHelloHTTPWithToken(ctx, base, token)
+	if err != nil && firmwareOTAAuthError(err) && !paired {
+		token, err = pairFirmwareUpdateDevice(ctx, base)
+		if err != nil {
+			return "", fmt.Errorf("repair VibeTV pairing: %w", err)
 		}
+		authenticatedHello, err = fetchDeviceHelloHTTPWithToken(ctx, base, token)
+	}
+	if err != nil {
+		return "", fmt.Errorf("authenticate VibeTV /hello: %w", err)
+	}
+	actualDeviceID := strings.TrimSpace(authenticatedHello.DeviceID)
+	if !strings.EqualFold(actualDeviceID, expectedDeviceID) {
+		return "", fmt.Errorf(
+			"authenticated VibeTV identity changed before OTA: expected=%q got=%q",
+			expectedDeviceID,
+			actualDeviceID,
+		)
+	}
+
+	cfg.SetActiveDevice(runtimeconfig.KnownDevice{
+		DeviceID:    expectedDeviceID,
+		Target:      base,
+		DeviceToken: token,
+	})
+	if err := runtimeconfig.Save(home, cfg); err != nil {
+		return "", err
 	}
 	return token, nil
-}
-
-func shouldStoreFirmwareUpdateTarget(current, next string) bool {
-	next = strings.TrimSpace(next)
-	if next == "" || strings.TrimSpace(current) == next {
-		return false
-	}
-	return true
 }
 
 func waitForHTTPFirmwareVersionWithDiscovery(ctx context.Context, home, base, version, deviceID string, timeout time.Duration) (string, error) {
@@ -824,9 +828,15 @@ func firmwareOTAAuthError(err error) bool {
 	if err == nil {
 		return false
 	}
+	var httpErr *firmwareDeviceHTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden
+	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "401") ||
+		strings.Contains(msg, "403") ||
 		strings.Contains(msg, "unauthorized") ||
+		strings.Contains(msg, "forbidden") ||
 		strings.Contains(msg, "pairing token required")
 }
 
@@ -1310,19 +1320,76 @@ func normalizeHTTPBaseURL(raw string) (string, error) {
 }
 
 func fetchDeviceHelloHTTP(ctx context.Context, base string) (protocol.DeviceHello, error) {
+	return fetchDeviceHelloHTTPWithToken(ctx, base, "")
+}
+
+type firmwareDeviceHTTPError struct {
+	Operation  string
+	StatusCode int
+	Status     string
+	Body       string
+}
+
+type redactedFirmwareDeviceTokenError struct {
+	err   error
+	token string
+}
+
+func (e *redactedFirmwareDeviceTokenError) Error() string {
+	if e == nil || e.err == nil {
+		return ""
+	}
+	message := e.err.Error()
+	for _, secret := range []string{e.token, url.QueryEscape(e.token), url.PathEscape(e.token)} {
+		if secret != "" {
+			message = strings.ReplaceAll(message, secret, "[REDACTED]")
+		}
+	}
+	return message
+}
+
+func (e *redactedFirmwareDeviceTokenError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func (e *firmwareDeviceHTTPError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s returned %s body=%q", e.Operation, e.Status, e.Body)
+}
+
+func fetchDeviceHelloHTTPWithToken(ctx context.Context, base, token string) (protocol.DeviceHello, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/hello", nil)
 	if err != nil {
 		return protocol.DeviceHello{}, err
 	}
 	req.Header.Set("User-Agent", "codexbar-display-update")
+	if token = strings.TrimSpace(token); token != "" {
+		applyFirmwareUpdateToken(req, token)
+		query := req.URL.Query()
+		query.Set("token", token)
+		req.URL.RawQuery = query.Encode()
+	}
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
+		if token != "" {
+			err = &redactedFirmwareDeviceTokenError{err: err, token: token}
+		}
 		return protocol.DeviceHello{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return protocol.DeviceHello{}, fmt.Errorf("GET /hello returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+		return protocol.DeviceHello{}, &firmwareDeviceHTTPError{
+			Operation:  "GET /hello",
+			StatusCode: resp.StatusCode,
+			Status:     resp.Status,
+			Body:       strings.TrimSpace(string(body)),
+		}
 	}
 	var hello protocol.DeviceHello
 	if err := json.NewDecoder(resp.Body).Decode(&hello); err != nil {

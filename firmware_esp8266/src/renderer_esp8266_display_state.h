@@ -104,10 +104,25 @@ int CenteredTextX(const char* text, int textSize);
 void SetTextSize(int size);
 const char* ProviderLabelText();
 
+// Height of the firmware update overlay bar drawn over themes without a
+// label binding. Bounded so the notice never covers more than one edge strip.
+constexpr int kFirmwareUpdateNoticeBarHeight = 24;
+
+struct FirmwareUpdateOverlayPlacement {
+  bool valid = false;
+  int y = 0;
+};
+
 bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
 bool ThemeSpecAnimationWorkPending();
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText = nullptr);
+// Repaints one bounded display region from the cached ThemeSpec scene without
+// a full-screen redraw. Used to remove the update-notice overlay bar.
+bool RenderThemeSpecRegion(int x, int y, int width, int height);
+// Picks a bar position (top preferred, bottom fallback) that no animated
+// GIF/sprite primitive repaints, so animations keep rendering correctly.
+FirmwareUpdateOverlayPlacement FirmwareUpdateOverlayBarPlacement();
 void ResetThemeSpecSpriteCaches();
 bool ThemeSpecFullRenderRetryPending();
 bool CurrentThemeSpecRenderedSuccessfully();

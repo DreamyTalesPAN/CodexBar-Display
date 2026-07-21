@@ -59,6 +59,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
 import {
   createBlankThemeSpec,
@@ -1278,7 +1279,12 @@ function themeFirmwareBlocker(
   if (!required) {
     return null;
   }
-  if (!device.firmware) {
+  const requiredParsed = parseSemVer(required);
+  if (!requiredParsed) {
+    return null;
+  }
+  const deviceParsed = device.firmware ? parseSemVer(device.firmware) : null;
+  if (!deviceParsed) {
     return {
       reason: "Check VibeTV first.",
       readinessTitle: "Check VibeTV first",
@@ -1286,7 +1292,7 @@ function themeFirmwareBlocker(
       readinessIcon: <RefreshCw size={22} aria-hidden />,
     };
   }
-  if (compareVersions(device.firmware, required) >= 0) {
+  if (compareSemVer(deviceParsed, requiredParsed) >= 0) {
     return null;
   }
   return {
@@ -1302,27 +1308,6 @@ function normalizeBoard(value: string): string {
     .trim()
     .toLowerCase()
     .replace(/[_\s]+/g, "-");
-}
-
-function compareVersions(left: string, right: string): number {
-  const leftParts = parseVersion(left);
-  const rightParts = parseVersion(right);
-  const maxLength = Math.max(leftParts.length, rightParts.length, 3);
-  for (let index = 0; index < maxLength; index += 1) {
-    const diff = (leftParts[index] || 0) - (rightParts[index] || 0);
-    if (diff !== 0) {
-      return diff;
-    }
-  }
-  return 0;
-}
-
-function parseVersion(value: string): number[] {
-  const matches = value.match(/\d+/g);
-  if (!matches?.length) {
-    return [0, 0, 0];
-  }
-  return matches.map((part) => Number(part));
 }
 
 function ThemePreview({

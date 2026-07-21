@@ -7,6 +7,12 @@ handlers.
 ## Safety invariants
 
 - Pin the device URL and `deviceId` before downloading or uploading firmware.
+- Treat device URL, `deviceId`, and pairing token as one identity tuple. When a
+  target changes, update all three together; never reuse an unverified token
+  from the previous target.
+- Validate the selected token with an authenticated `GET /hello` against the
+  pinned device before opening the RAW OTA connection. A `401`/`403` must repair
+  pairing and repeat identity validation before any firmware body is sent.
 - Validate the selected manifest artifact and SHA-256 before opening the OTA
   connection.
 - Pause the display stream for the complete upload. The Control Center uses its
@@ -45,8 +51,8 @@ HTTP `404`. A timeout is not proof that no firmware bytes reached the device.
 ## Failure and retry state machine
 
 1. A connection refusal before RAW is available may fall back to multipart.
-2. An authentication rejection may repair pairing because the firmware handler
-   rejects it before `Update.begin()`.
+2. An authentication rejection during the mandatory preflight repairs pairing
+   and repeats authenticated identity validation before opening RAW OTA.
 3. A broken pipe, reset, EOF, or other interrupted RAW upload first waits for
    the target version to return. This covers a successful flash whose response
    was lost.
@@ -54,6 +60,13 @@ HTTP `404`. A timeout is not proof that no firmware bytes reached the device.
    disconnect power for 10 seconds and retry only after the picture returns.
 5. Never switch to multipart or automatically resend in the same boot after an
    interrupted RAW upload.
+
+The firmware validates OTA authentication immediately after reading the request
+headers and closes the connection before `Update.begin()` when the token is
+wrong. A sender that reads the HTTP response only after writing the complete
+body can therefore surface the early `401` merely as `EPIPE`/`broken pipe`.
+This is why authenticated `/hello` is a required preflight rather than an
+upload-error recovery optimization.
 
 ## Firmware receiver requirements from 1.0.37 onward
 

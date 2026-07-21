@@ -196,6 +196,10 @@ jobs:
         working-directory: firmware_esp8266
         run: pio test -e native_theme_spec_renderer
 
+      - name: Test WiFi setup portal
+        working-directory: firmware_esp8266
+        run: pio test -e native_wifi_setup
+
       - name: Test firmware size budget checker
         run: ./scripts/test-firmware-size-budget.sh
 

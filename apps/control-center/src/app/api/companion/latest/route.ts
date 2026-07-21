@@ -1,4 +1,9 @@
 import type { CompanionReleaseInfo } from "@/lib/companion-release";
+import {
+  compareSemVer,
+  parseSemVer,
+  type ParsedSemVer,
+} from "@/lib/semver";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +48,21 @@ export async function GET(request: Request) {
     url.searchParams.get("version")?.trim() || "",
   );
   const checkedAt = new Date().toISOString();
+  const installedParsed = installedVersion
+    ? parseSemVer(installedVersion)
+    : null;
+  if (installedVersion && !installedParsed) {
+    return publicJson({
+      checkedAt,
+      status: "check_failed",
+      installedVersion,
+      updateAvailable: false,
+      message: `Installed Mac App version "${installedVersion}" is not a valid version.`,
+      dmgDownloadStatus: "check_failed",
+    } satisfies CompanionReleaseInfo);
+  }
   const previewRelease = previewMacAppRelease(
+    installedParsed,
     installedVersion,
     checkedAt,
   );
@@ -55,11 +74,12 @@ export async function GET(request: Request) {
     const release = await fetchLatestRelease();
     const releaseTag = release.tag_name?.trim() || "";
     const latestVersion = normalizeVersion(releaseTag);
+    const latestParsed = latestVersion ? parseSemVer(latestVersion) : null;
     const dmgDownloadEnabled = macAppDmgDownloadEnabled();
     const dmgAsset = dmgDownloadEnabled
       ? verifiedDmgAsset(release, releaseTag)
       : null;
-    if (!latestVersion) {
+    if (!latestVersion || !latestParsed) {
       return publicJson({
         checkedAt,
         status: "check_failed",
@@ -72,7 +92,7 @@ export async function GET(request: Request) {
     }
 
     const updateAvailable = Boolean(
-      installedVersion && compareSemver(latestVersion, installedVersion) > 0,
+      installedParsed && compareSemVer(latestParsed, installedParsed) > 0,
     );
 
     return publicJson({
@@ -105,6 +125,7 @@ export async function GET(request: Request) {
 }
 
 function previewMacAppRelease(
+  installedParsed: ParsedSemVer | null,
   installedVersion: string,
   checkedAt: string,
 ): CompanionReleaseInfo | null {
@@ -114,15 +135,16 @@ function previewMacAppRelease(
   const latestVersion = exactSemver(
     process.env[PREVIEW_MAC_APP_VERSION] || "",
   );
+  const latestParsed = latestVersion ? parseSemVer(latestVersion) : null;
   const dmgDownloadUrl = verifiedPreviewDmgUrl(
     process.env[PREVIEW_MAC_APP_DMG_URL] || "",
   );
-  if (!latestVersion || !dmgDownloadUrl) {
+  if (!latestVersion || !latestParsed || !dmgDownloadUrl) {
     return null;
   }
 
   const updateAvailable = Boolean(
-    installedVersion && compareSemver(latestVersion, installedVersion) > 0,
+    installedParsed && compareSemVer(latestParsed, installedParsed) > 0,
   );
   return {
     checkedAt,
@@ -305,26 +327,6 @@ function tokenFingerprint(token: string): string {
     hash = Math.imul(hash, 0x01000193);
   }
   return `auth-${(hash >>> 0).toString(16)}`;
-}
-
-function compareSemver(left: string, right: string): number {
-  const leftParts = parseSemver(left);
-  const rightParts = parseSemver(right);
-  for (let index = 0; index < 3; index += 1) {
-    const diff = leftParts[index] - rightParts[index];
-    if (diff !== 0) {
-      return diff;
-    }
-  }
-  return 0;
-}
-
-function parseSemver(version: string): [number, number, number] {
-  const match = version.trim().replace(/^v/i, "").match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!match) {
-    return [0, 0, 0];
-  }
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
 function normalizeVersion(version: string): string {
