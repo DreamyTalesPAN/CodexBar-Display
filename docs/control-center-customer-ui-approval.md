@@ -146,3 +146,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: The user explicitly approved the exact Theme Studio result with accessible tabs on 2026-07-16; the current CI repair changes only the automated wait for that already approved result.
 - Approved customer-visible result: The approved Theme Studio remains visually and functionally unchanged. Pressing `ArrowRight` on the `Project` tab selects `Assets`, and the regression test waits for Radix's asynchronous focus transition before checking the result.
 - Approved files: The Theme Studio keyboard assertion in `test-customer-flows.mjs`.
+
+## 2026-07-21 — Stable Overview preview assertion
+
+- User approval: The user explicitly approved the exact Overview theme rendering with real zero-percent usage on 2026-07-18; the current CI repair changes only the automated wait for that already approved result.
+- Approved customer-visible result: The approved Overview remains visually and functionally unchanged. The regression test allows the same standard 10-second CI window for the device image layout before it checks the already rendered Synthwave preview.
+- Approved files: The Overview preview assertion in `test-customer-flows.mjs`.

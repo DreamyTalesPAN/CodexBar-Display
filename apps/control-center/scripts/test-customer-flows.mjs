@@ -3702,7 +3702,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
     .getByRole("img", {
       name: /Rendered VibeTV theme synthwave showing Codex, 0% session used, 63% weekly used/,
     })
-    .waitFor({ timeout: 4_000 });
+    .waitFor({ timeout: 10_000 });
   const renderedTheme = page.getByRole("img", {
     name: /Rendered VibeTV theme synthwave/,
   });
