@@ -16,6 +16,7 @@ const smokeOnly = process.argv.includes("--smoke");
 const migrationScreenshotDir =
   process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
 const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
+const wifiRescanOnly = process.argv.includes("--wifi-rescan");
 let displayStateDir = "";
 
 const catalogFixture = {
@@ -238,6 +239,11 @@ async function main() {
     });
     app = appContext.app;
     await testStartupStateMachine(browser, appContext.appUrl);
+    if (wifiRescanOnly) {
+      await testLocalWifiSetupRescansAfterNoResults(browser, appContext.appUrl);
+      console.log("control-center WiFi rescan test passed");
+      return;
+    }
     if (themeStudioSafetyOnly) {
       await testThemeStudioUsesLocalRenderAndCompanionInstall(
         browser,
@@ -906,9 +912,10 @@ async function testLocalWifiSetupRescansAfterNoResults(browser, appUrl) {
   );
   assert(searchRequests === 1, "Fresh setup should search automatically once");
   await page.getByRole("button", { name: "VibeTV is on WiFi" }).click();
-  await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
+  await waitForCondition(
+    () => searchRequests === 2,
+    "WiFi confirmation should start a fresh scan",
+  );
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
