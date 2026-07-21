@@ -127,6 +127,46 @@ func runURLSchemeTests() {
         isCheckForUpdatesURL(URL(string: "vibetv://check-for-updates")!),
         "the exact native Sparkle action must be accepted"
     )
+    require(
+        isRestartControlCenterURL(URL(string: "vibetv://restart-control-center")!),
+        "the exact native restart action must be accepted"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://restart-control-center")!
+        ) == .restartControlCenter,
+        "the WebView restart URL must route to the native restart action"
+    )
+    for rejectedRestartURL in [
+        "vibetv://restart-control-center/extra",
+        "vibetv://restart-control-center?force=true",
+        "https://restart-control-center",
+    ] {
+        require(
+            !isRestartControlCenterURL(URL(string: rejectedRestartURL)!),
+            "unexpected restart action must be rejected: \(rejectedRestartURL)"
+        )
+    }
+    require(
+        isRepairRuntimeURL(URL(string: "vibetv://repair-runtime")!),
+        "the exact native runtime repair action must be accepted"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://repair-runtime")!
+        ) == .repairRuntime,
+        "the WebView repair URL must route to the native runtime repair action"
+    )
+    for rejectedRuntimeRepairURL in [
+        "vibetv://repair-runtime/extra",
+        "vibetv://repair-runtime?force=true",
+        "https://repair-runtime",
+    ] {
+        require(
+            !isRepairRuntimeURL(URL(string: rejectedRuntimeRepairURL)!),
+            "unexpected runtime repair action must be rejected: \(rejectedRuntimeRepairURL)"
+        )
+    }
     for rejectedUpdateURL in [
         "vibetv://check-for-updates/extra",
         "vibetv://check-for-updates?channel=beta",

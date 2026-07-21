@@ -23,11 +23,13 @@ import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
   isLocalCompanionOrigin,
+  isNativeControlCenterApp,
   launchCodexBarRepair,
-  launchLocalControlCenterApp,
   localizeCompanionAssetUrl,
   localControlCenterUrl,
   needsLoopbackTargetAddressSpace,
+  repairLocalControlCenterRuntime,
+  restartLocalControlCenterApp,
   shouldRedirectToLocalControlCenter,
   shouldUseHostedSetupShell,
 } from "./control-center-runtime";
@@ -53,6 +55,7 @@ import { DeviceStartupScreen } from "./device-startup-screen";
 import { useCompanionRelease } from "./companion-installer-actions";
 import { HostedSetupShell } from "./hosted-setup-shell";
 import { LogsScreen } from "./logs-screen";
+import { MacAppRecoveryScreen } from "./mac-app-recovery-screen";
 import { OverviewScreen } from "./overview-screen";
 import {
   providerSetupIsReady,
@@ -75,6 +78,9 @@ const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 90_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
+const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
+const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 55_000;
+const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
@@ -260,6 +266,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(
     readInitialKnownDeviceContext,
   );
+  const [runtimeRecoveryPhase, setRuntimeRecoveryPhase] = useState<
+    "repairing" | "failed"
+  >("repairing");
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
@@ -272,6 +281,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const automaticPairingRepairKey = useRef("");
   const lastCompanionRequestAt = useRef(0);
   const statusPollInFlight = useRef(false);
+  const runtimeRepairAttempted = useRef(false);
+  const runtimeRepairTimeout = useRef<number | null>(null);
   const themeInstallPollJobRef = useRef("");
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
@@ -2514,6 +2525,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     deviceOperational,
   );
   const hasConfiguredDevice = deviceIsConfigured(device);
+  const needsRuntimeRecovery = Boolean(
+    companionStatus === "missing" &&
+      (hasConfiguredDevice || hasEnteredControlCenter),
+  );
   const controlCenterAvailable = Boolean(
     deviceOperational || hasEnteredControlCenter,
   );
@@ -2525,6 +2540,81 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const activeShellTab = disabledTabs.includes(activeTab)
     ? "overview"
     : activeTab;
+
+  const clearRuntimeRepairTimeout = useCallback(() => {
+    if (runtimeRepairTimeout.current !== null) {
+      window.clearTimeout(runtimeRepairTimeout.current);
+      runtimeRepairTimeout.current = null;
+    }
+  }, []);
+
+  const requestRuntimeRepair = useCallback(() => {
+    clearRuntimeRepairTimeout();
+    setRuntimeRecoveryPhase("repairing");
+    if (!isNativeControlCenterApp()) {
+      void checkCompanion({ quiet: true }).finally(() => {
+        setRuntimeRecoveryPhase("failed");
+      });
+      return;
+    }
+    runtimeRepairAttempted.current = true;
+    repairLocalControlCenterRuntime();
+    runtimeRepairTimeout.current = window.setTimeout(() => {
+      runtimeRepairTimeout.current = null;
+      setRuntimeRecoveryPhase("failed");
+    }, NATIVE_RUNTIME_REPAIR_TIMEOUT_MS);
+  }, [checkCompanion, clearRuntimeRepairTimeout]);
+
+  useEffect(() => {
+    if (!needsRuntimeRecovery) {
+      clearRuntimeRepairTimeout();
+      runtimeRepairAttempted.current = false;
+      const resetTimer = window.setTimeout(() => {
+        setRuntimeRecoveryPhase("repairing");
+      }, 0);
+      return () => window.clearTimeout(resetTimer);
+    }
+    if (!isNativeControlCenterApp()) {
+      const failureTimer = window.setTimeout(() => {
+        setRuntimeRecoveryPhase("failed");
+      }, 0);
+      return () => window.clearTimeout(failureTimer);
+    }
+    if (runtimeRepairAttempted.current) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      requestRuntimeRepair();
+    }, LAUNCHD_RECOVERY_GRACE_MS);
+    return () => window.clearTimeout(timer);
+  }, [
+    clearRuntimeRepairTimeout,
+    needsRuntimeRecovery,
+    requestRuntimeRepair,
+  ]);
+
+  useEffect(() => {
+    const handleRuntimeRepairResult = (event: Event) => {
+      const detail = (event as CustomEvent<{ success?: boolean }>).detail;
+      clearRuntimeRepairTimeout();
+      if (detail?.success) {
+        void checkCompanion({ quiet: true });
+        return;
+      }
+      setRuntimeRecoveryPhase("failed");
+    };
+    window.addEventListener(
+      NATIVE_RUNTIME_REPAIR_RESULT_EVENT,
+      handleRuntimeRepairResult,
+    );
+    return () => {
+      window.removeEventListener(
+        NATIVE_RUNTIME_REPAIR_RESULT_EVENT,
+        handleRuntimeRepairResult,
+      );
+      clearRuntimeRepairTimeout();
+    };
+  }, [checkCompanion, clearRuntimeRepairTimeout]);
 
   useEffect(() => {
     if (!deviceOperational || hasEnteredControlCenterRef.current) {
@@ -2682,6 +2772,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     );
   }
 
+  if (needsRuntimeRecovery) {
+    return (
+      <MacAppRecoveryScreen
+        checking={busyAction === "status"}
+        phase={runtimeRecoveryPhase}
+        onRestart={restartLocalControlCenterApp}
+        onRetry={requestRuntimeRepair}
+      />
+    );
+  }
+
   if (
     !hasEnteredControlCenter &&
     (companionStatus !== "online" ||
@@ -2765,14 +2866,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     >
       {activeShellTab === "overview" ? (
         <OverviewScreen
-          busyAction={busyAction}
           companionRelease={companionRelease}
           companionVersion={companionInfo?.version}
           companionStatus={companionStatus}
           device={device}
           firmwareUpdate={effectiveFirmwareUpdate}
-          onCheckCompanion={() => void checkCompanion()}
-          onOpenMacApp={launchLocalControlCenterApp}
           requiresMacAppMigration={requiresMacAppMigration}
           usage={usage}
         />

@@ -276,7 +276,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testRunningCompanionOutageKeepsControlCenterOpen(
+      await testRunningCompanionOutageBlocksControlCenter(
         browser,
         appContext.appUrl,
       );
@@ -373,7 +373,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testRunningCompanionOutageKeepsControlCenterOpen(
+    await testRunningCompanionOutageBlocksControlCenter(
       browser,
       appContext.appUrl,
     );
@@ -1479,7 +1479,7 @@ async function testLegacyTargetDoesNotAutoconnectDiscoveredIdentity(
   await page.close();
 }
 
-async function testRunningCompanionOutageKeepsControlCenterOpen(
+async function testRunningCompanionOutageBlocksControlCenter(
   browser,
   appUrl,
 ) {
@@ -1505,27 +1505,28 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   await page.getByRole("button", { name: "Overview", exact: true }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Not reachable", { exact: true }).waitFor({
-    timeout: 12_000,
-  });
+  await page
+    .getByRole("heading", { name: "VibeTV Control Center needs attention" })
+    .waitFor({
+      timeout: 12_000,
+    });
   assert(
-    (await page.getByRole("button", { name: "Overview", exact: true }).count()) === 1,
-    "A running session must keep the Control Center shell when the Mac App stops answering",
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "A running session must block Control Center navigation when the background service stops answering",
   );
   assert(
     (await page.getByTestId("device-startup-screen").count()) === 0,
-    "A Mac App outage must not return a running session to the startup screen",
+    "A background service outage must not return a running session to VibeTV startup",
   );
-  await page.getByText("VibeTV not connected", { exact: true }).waitFor();
   await waitForCondition(
     () => settingsResponses > 0,
     "The delayed settings response should arrive after the outage",
   );
   await page.waitForTimeout(250);
   assert(
-    (await page.getByText("VibeTV not connected", { exact: true }).count()) ===
-      1,
-    "A stale settings response must not restore a disconnected device",
+    (await page.getByTestId("mac-app-recovery-screen").count()) === 1,
+    "A stale settings response must not dismiss background service recovery",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -1602,7 +1603,9 @@ async function testKnownDeviceCompanionRecoveryRehydratesStatusAndUsage(
       }
     },
   });
-  await page.getByRole("button", { name: "Try again" }).click();
+  await page
+    .getByRole("button", { name: "Try automatic repair again" })
+    .click();
   await page
     .getByRole("heading", { name: "VibeTV is connected" })
     .waitFor({ timeout: 10_000 });
@@ -1625,14 +1628,22 @@ async function testKnownDeviceCompanionRecoveryRehydratesStatusAndUsage(
 
 async function assertKnownDeviceMacAppOutage(page) {
   await page
-    .getByRole("heading", { name: "Mac App is not reachable" })
+    .getByRole("heading", { name: "VibeTV Control Center needs attention" })
     .waitFor({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Open Mac App" }).waitFor();
-  await page.getByRole("button", { name: "Try again" }).waitFor();
+  await page
+    .getByRole("button", { name: "Restart Control Center" })
+    .waitFor();
+  await page
+    .getByRole("button", { name: "Try automatic repair again" })
+    .waitFor();
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      1,
-    "A known-device Mac App outage must stay in the Control Center",
+      0,
+    "A known-device Mac App outage must block Control Center navigation",
+  );
+  assert(
+    (await page.getByTestId("mac-app-recovery-screen").count()) === 1,
+    "A known-device Mac App outage must render the focused recovery screen",
   );
   assert(
     (await page

@@ -13,6 +13,8 @@ private let runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"
 private let nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"
 private let controlCenterURLScheme = "vibetv"
 private let controlCenterURLHost = "open-control-center"
+private let restartControlCenterURLHost = "restart-control-center"
+private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
 private let repairCodexBarURLHost = "repair-codexbar"
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
@@ -78,6 +80,36 @@ func isCheckForUpdatesURL(_ url: URL) -> Bool {
     return true
 }
 
+func isRestartControlCenterURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == restartControlCenterURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
+}
+
+func isRepairRuntimeURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == repairRuntimeURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
+}
+
 func isRepairCodexBarURL(_ url: URL) -> Bool {
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
           components.scheme?.lowercased() == controlCenterURLScheme,
@@ -94,11 +126,19 @@ func isRepairCodexBarURL(_ url: URL) -> Bool {
 }
 
 enum NativeControlCenterAction: Equatable {
+    case restartControlCenter
+    case repairRuntime
     case checkForUpdates
     case repairCodexBar
 }
 
 func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
+    if isRestartControlCenterURL(url) {
+        return .restartControlCenter
+    }
+    if isRepairRuntimeURL(url) {
+        return .repairRuntime
+    }
     if isCheckForUpdatesURL(url) {
         return .checkForUpdates
     }
@@ -1504,6 +1544,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         alert.informativeText = "Install the latest signed VibeTV Control Center from app.vibetv.shop."
         alert.runModal()
 #endif
+    }
+
+    private func restartControlCenter() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.addsToRecentItems = false
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(
+            at: Bundle.main.bundleURL,
+            configuration: configuration
+        ) { application, error in
+            DispatchQueue.main.async {
+                guard application != nil, error == nil else {
+                    let detail = error?.localizedDescription
+                        ?? "new app instance was not created"
+                    NSLog(
+                        "VibeTV Control Center could not restart: \(detail)"
+                    )
+                    return
+                }
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    private func beginRuntimeRepair() {
+        guard preparationTask == nil else {
+            return
+        }
+        preparationTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+            let outcome = await self.prepareCompanion()
+            self.preparationTask = nil
+            guard outcome == .nativeRuntimeReady else {
+                self.notifyRuntimeRepairResult(success: false)
+                return
+            }
+            self.codexBarRepairRequired = false
+            self.installationReady = true
+            self.installationStatus = nil
+            self.notifyRuntimeRepairResult(success: true)
+            self.loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)
+        }
+    }
+
+    private func notifyRuntimeRepairResult(success: Bool) {
+        let value = success ? "true" : "false"
+        let script = "window.dispatchEvent(new CustomEvent('vibetv:runtime-repair-result', { detail: { success: \(value) } })); true"
+        webView?.evaluateJavaScript(script) { _, error in
+            if let error {
+                NSLog(
+                    "VibeTV Control Center could not report runtime repair result: \(error.localizedDescription)"
+                )
+            }
+        }
     }
 
     private func presentControlCenter() {
@@ -3086,6 +3183,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if let action = nativeControlCenterAction(for: url) {
             decisionHandler(.cancel)
             switch action {
+            case .restartControlCenter:
+                restartControlCenter()
+            case .repairRuntime:
+                beginRuntimeRepair()
             case .checkForUpdates:
                 checkForUpdates()
             case .repairCodexBar:
