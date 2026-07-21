@@ -84,7 +84,7 @@ const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-
 // only supported update destination; never point customers at a hosted URL.
 const char kFirmwareUpdateAvailableText[] = "Update available";
 const char kFirmwareUpdateMacAppText[] = "Open VibeTV Mac App";
-constexpr unsigned long kFirmwareUpdateOverlayVisibleMs = 10000UL;
+constexpr unsigned long kFirmwareUpdateOverlayVisibleMs = 30000UL;
 constexpr unsigned long kFirmwareUpdateOverlayHiddenMs = 60000UL;
 constexpr unsigned long kFirmwareUpdateSurfaceRecheckMs = 1000UL;
 
