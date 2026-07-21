@@ -1,10 +1,12 @@
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <string>
 
 #include "../src/gif_core_policy.h"
 #include "../src/boot_recovery_policy.h"
+#include "../src/asset_path_policy.h"
 #include "../src/theme_spec_runtime_policy.h"
 
 namespace {
@@ -13,6 +15,7 @@ using codexbar_display::esp8266::GifCorePolicy;
 using codexbar_display::esp8266::GifFailureGuardState;
 using codexbar_display::esp8266::BootRecoveryPolicy;
 using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
+using codexbar_display::esp8266::AssetPathPolicy;
 
 bool expect(bool cond, const char* message) {
   if (!cond) {
@@ -124,6 +127,40 @@ bool testBootRecoveryOnlyCountsPhysicalResets() {
     if (!expect(
             !BootRecoveryPolicy::CountsAsPhysicalReset(reason),
             "watchdog, exception, software and deep-sleep resets must not count")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool testAssetWritesStayInsideThemeNamespace() {
+  const char* allowed[] = {
+      "/themes/u/mini.json",
+      "/themes/mini/mini.gif",
+  };
+  for (const char* path : allowed) {
+    if (!expect(
+            AssetPathPolicy::IsMutableThemeAsset(path, std::strlen(path)),
+            "theme asset path must remain writable")) {
+      return false;
+    }
+  }
+
+  const char* blocked[] = {
+      "/auth",
+      "/s",
+      "/theme-active",
+      "/.asset-upload.tmp",
+      "/foo",
+      "/themes/",
+      "/themes//bad.gif",
+      "/themes/../auth",
+      "/themes/u/bad?.gif",
+  };
+  for (const char* path : blocked) {
+    if (!expect(
+            !AssetPathPolicy::IsMutableThemeAsset(path, std::strlen(path)),
+            "internal or malformed path must not be writable")) {
       return false;
     }
   }
@@ -444,17 +481,19 @@ bool testLegacyMiniThemeUsesLiveUsageMode(const char* mainPath) {
       "OTA filesystems must fall back through current, 1.0.37, then 1.0.36 Mini specs");
 }
 
-bool testInternalUploadPathIsRejected(const char* mainPath) {
+bool testAssetHandlersUseThemeNamespacePolicy(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
-  const std::size_t pathValidation = mainSource.find("if (!isSafeAssetPath(assetUploadPath))");
-  const std::size_t reservedValidation =
-      mainSource.find("if (assetUploadPath == kAssetUploadTemporaryPath)", pathValidation);
+  const std::size_t uploadValidation = mainSource.find("if (!isMutableThemeAssetPath(assetUploadPath))");
   const std::size_t temporaryOpen =
-      mainSource.find("LittleFS.open(kAssetUploadTemporaryPath, \"w\")", reservedValidation);
+      mainSource.find("LittleFS.open(kAssetUploadTemporaryPath, \"w\")", uploadValidation);
+  const std::size_t deleteHandler = mainSource.find("void handleAssetDelete()");
+  const std::size_t deleteValidation = mainSource.find("if (!isMutableThemeAssetPath(path))", deleteHandler);
+  const std::size_t deleteCall = mainSource.find("LittleFS.remove(path)", deleteValidation);
   return expect(
-      pathValidation != std::string::npos && reservedValidation != std::string::npos &&
-          temporaryOpen != std::string::npos && reservedValidation < temporaryOpen,
-      "the internal staging path must be rejected before opening an external upload");
+      uploadValidation != std::string::npos && temporaryOpen != std::string::npos &&
+          uploadValidation < temporaryOpen && deleteValidation != std::string::npos &&
+          deleteCall != std::string::npos && deleteValidation < deleteCall,
+      "upload and delete handlers must enforce the theme namespace before filesystem writes");
 }
 
 bool testFirmwareUsesIPDiscoveryInsteadOfMdns(const char* mainPath) {
@@ -483,6 +522,9 @@ int main(int argc, char** argv) {
   if (!testBootRecoveryOnlyCountsPhysicalResets()) {
     return 1;
   }
+  if (!testAssetWritesStayInsideThemeNamespace()) {
+    return 1;
+  }
   if (!testAnimatedAssetScanYieldsEveryFourRows()) {
     return 1;
   }
@@ -507,7 +549,7 @@ int main(int argc, char** argv) {
   if (!testLegacyMiniThemeUsesLiveUsageMode(argv[3])) {
     return 1;
   }
-  if (!testInternalUploadPathIsRejected(argv[3])) {
+  if (!testAssetHandlersUseThemeNamespacePolicy(argv[3])) {
     return 1;
   }
   if (!testFirmwareUsesIPDiscoveryInsteadOfMdns(argv[3])) {

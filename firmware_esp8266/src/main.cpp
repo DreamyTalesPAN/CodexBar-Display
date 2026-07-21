@@ -11,6 +11,7 @@
 #include "../../firmware_shared/app_transport.h"
 #include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "boot_recovery_policy.h"
+#include "asset_path_policy.h"
 #include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
 #include "wifi_setup_portal.h"
@@ -64,7 +65,6 @@ constexpr unsigned long kRawOtaProgressTimeoutMs = 30000UL;
 constexpr size_t kRawOtaReadBufferBytes = 512;
 constexpr uint8_t kBootRecoveryThreshold = 3;
 constexpr uint8_t kBootRecoveryUploadMarker = 0xA5;
-constexpr size_t kMaxAssetPathBytes = 32;
 constexpr size_t kMaxStoredThemeSpecBytes = 4096;
 constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxThemeSpecGifAssetBytes;
 constexpr uint8_t kDefaultBrightnessPercent = 100;
@@ -1295,27 +1295,11 @@ void handleHello() {
 }
 
 bool isSafeAssetPath(const String& path) {
-  if (path.length() == 0 || path.length() >= kMaxAssetPathBytes || path.charAt(0) != '/') {
-    return false;
-  }
-  if (path.indexOf("..") >= 0 || path.indexOf("//") >= 0) {
-    return false;
-  }
-  if (path.endsWith("/")) {
-    return false;
-  }
-  for (size_t i = 0; i < path.length(); ++i) {
-    const char c = path.charAt(i);
-    const bool ok =
-        (c >= 'a' && c <= 'z') ||
-        (c >= 'A' && c <= 'Z') ||
-        (c >= '0' && c <= '9') ||
-        c == '/' || c == '-' || c == '_' || c == '.';
-    if (!ok) {
-      return false;
-    }
-  }
-  return true;
+  return codexbar_display::esp8266::AssetPathPolicy::IsSafeSyntax(path.c_str(), path.length());
+}
+
+bool isMutableThemeAssetPath(const String& path) {
+  return codexbar_display::esp8266::AssetPathPolicy::IsMutableThemeAsset(path.c_str(), path.length());
 }
 
 bool ensureAssetParentDirs(const String& path) {
@@ -1363,6 +1347,9 @@ void appendAssetEntriesJSON(String& out, const String& dirPath, bool& first, Str
     const String path = normalizedAssetListPath(dirPath, dir.fileName());
     if (dir.isDirectory()) {
       appendAssetEntriesJSON(out, path, first, seen, depth + 1);
+      continue;
+    }
+    if (!isMutableThemeAssetPath(path)) {
       continue;
     }
     const String seenToken = "|" + path + "|";
@@ -1667,12 +1654,8 @@ void handleAssetUpload() {
       setAssetUploadError("unauthorized");
       return;
     }
-    if (!isSafeAssetPath(assetUploadPath)) {
+    if (!isMutableThemeAssetPath(assetUploadPath)) {
       setAssetUploadError("invalid asset path");
-      return;
-    }
-    if (assetUploadPath == kAssetUploadTemporaryPath) {
-      setAssetUploadError("reserved asset path");
       return;
     }
     if (assetUploadContentLengthWouldExceedLimits(upload)) {
@@ -1767,7 +1750,7 @@ void handleAssetDelete() {
   }
   String path = webServer.arg("path");
   path.trim();
-  if (!isSafeAssetPath(path)) {
+  if (!isMutableThemeAssetPath(path)) {
     addCorsHeaders();
     webServer.send(400, "text/plain; charset=utf-8", "invalid asset path");
     return;
