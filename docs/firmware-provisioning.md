@@ -2,6 +2,11 @@
 
 This runbook describes the repeatable OTA provisioning flow for Vibe TV devices with the GeekMagic factory firmware already installed.
 
+> **Stop if `GET /hello` succeeds.** A device that returns VibeTV JSON from
+> `http://<ip>/hello` is no longer a GeekMagic factory device. Do not send that
+> device to this runbook's `/update` endpoint. Use `codexbar-display
+> install-update` as documented in `docs/operator-runbook.md` instead.
+
 The first OTA pass uses the GeekMagic updater at `http://<ip>/update` with multipart field `firmware`. After that, CodexBar Display firmware is expected to expose:
 
 - `GET /health`
@@ -13,6 +18,24 @@ The first OTA pass uses the GeekMagic updater at `http://<ip>/update` with multi
 - `POST /frame` for smoke frames
 
 The tooling does not store WiFi passwords or other secrets.
+
+## Choose the updater before writing
+
+Run these read-only probes before selecting a flash command:
+
+```bash
+curl -sS -o /tmp/vibetv-hello.json -w 'hello=%{http_code}\n' \
+  http://<device-ip>/hello
+curl -sS -o /dev/null -w 'factory-update=%{http_code}\n' \
+  http://<device-ip>/update
+```
+
+- `GET /hello -> 200` with VibeTV JSON: use `codexbar-display install-update`.
+  Never use the GeekMagic `/update` path for this device.
+- `GET /hello -> 404` and `GET /update -> 200`: the GeekMagic factory
+  provisioning flow in this document is the correct path.
+- Any other combination: stop and identify the running firmware before sending
+  an upload. Do not try update endpoints until one works.
 
 ## Build an OTA Package
 
