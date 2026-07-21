@@ -17,5 +17,6 @@ describe("SetupStatusScreen", () => {
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('data-slot="spinner"');
     expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('class="sr-only"');
   });
 });

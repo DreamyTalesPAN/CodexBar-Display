@@ -4,6 +4,7 @@ import { Clipboard, Download, FileText, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import type { SupportDiagnostics } from "./control-center-types";
 import {
   downloadSupportReport,
@@ -11,6 +12,7 @@ import {
 } from "./support-report";
 
 type Props = {
+  align?: "start" | "center";
   busyAction?: string | null;
   diagnostics?: SupportDiagnostics | null;
   emphasis?: "primary" | "secondary";
@@ -18,6 +20,7 @@ type Props = {
 };
 
 export function SupportReportActions({
+  align = "start",
   busyAction,
   diagnostics,
   emphasis = "primary",
@@ -65,10 +68,15 @@ export function SupportReportActions({
 
   return (
     <div
-      className="grid gap-3"
+      className={cn("grid gap-3", align === "center" && "justify-items-center")}
       data-testid="support-report-actions"
     >
-      <div className="grid gap-3 sm:flex sm:flex-wrap">
+      <div
+        className={cn(
+          "grid w-full gap-3 sm:flex sm:w-auto sm:flex-wrap",
+          align === "center" && "sm:justify-center",
+        )}
+      >
         {creating ? (
           <Button
             className="w-full sm:w-auto"
@@ -131,7 +139,13 @@ export function SupportReportActions({
         </p>
       ) : null}
       {copyState === "failed" ? (
-        <p className="text-sm text-destructive" role="alert">
+        <p
+          className={cn(
+            "text-sm text-destructive",
+            align === "center" && "text-center",
+          )}
+          role="alert"
+        >
           Copy failed. Check the clipboard permission and try again.
         </p>
       ) : null}

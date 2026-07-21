@@ -168,8 +168,10 @@ export function DeviceStartupScreen({
       description={detail}
       footer={
         <SupportReportActions
+          align="center"
           busyAction={busyAction}
           diagnostics={diagnostics}
+          emphasis="secondary"
           onCreate={onCreateSupportReport}
         />
       }

@@ -2980,6 +2980,7 @@ function ControlCenterBootScreen({
       description="Checking the Mac App and your last connected VibeTV."
       footer={
         <SupportReportActions
+          align="center"
           busyAction={busyAction}
           emphasis="secondary"
           diagnostics={diagnostics}

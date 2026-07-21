@@ -14,9 +14,15 @@ describe("SupportReportActions", () => {
 
   it("allows the boot screen to lower report emphasis", () => {
     const html = renderToStaticMarkup(
-      <SupportReportActions emphasis="secondary" onCreate={vi.fn()} />,
+      <SupportReportActions
+        align="center"
+        emphasis="secondary"
+        onCreate={vi.fn()}
+      />,
     );
 
     expect(html).toContain('data-variant="secondary"');
+    expect(html).toContain("justify-items-center");
+    expect(html).toContain("sm:justify-center");
   });
 });

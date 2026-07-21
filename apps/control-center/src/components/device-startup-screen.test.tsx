@@ -45,4 +45,24 @@ describe("DeviceStartupScreen", () => {
     expect(html).toContain("Connecting</span></button>");
     expect(html).not.toContain("Connecting…");
   });
+
+  it("matches boot UI while reconnecting", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        busyAction="repair"
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        hasConfiguredDevice
+        onCreateSupportReport={vi.fn()}
+        onDecline={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('data-slot="spinner"');
+    expect(html).toContain('data-variant="secondary"');
+    expect(html).toContain("justify-items-center");
+    expect(html).toContain('class="sr-only">Reconnecting…</span>');
+  });
 });

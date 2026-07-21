@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { ControlCenterBrand } from "./control-center-brand";
-import { Spinner } from "@/components/ui/spinner";
 
 type Props = {
   actions?: ReactNode;
@@ -23,7 +23,7 @@ export function SetupStatusScreen({
   description,
   footer,
   statusLabel,
-  statusVisible = true,
+  statusVisible = false,
   testId,
   title,
   visual,
@@ -59,9 +59,9 @@ export function SetupStatusScreen({
           </div>
         ) : null}
 
-        {children}
-        {actions}
-        {footer}
+        {children ? <div className="w-full">{children}</div> : null}
+        {actions ? <div className="mx-auto w-full">{actions}</div> : null}
+        {footer ? <div className="mx-auto w-full">{footer}</div> : null}
       </section>
     </main>
   );
