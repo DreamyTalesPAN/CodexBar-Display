@@ -779,6 +779,7 @@ func New(opts Options) (*Server, error) {
 	origins := map[string]struct{}{
 		appOrigin:        {},
 		defaultDevOrigin: {},
+		"http://" + addr: {},
 	}
 	for _, origin := range opts.AllowedOrigins {
 		origin = strings.TrimSpace(origin)
@@ -1022,6 +1023,10 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
 		allowed := s.isAllowedOrigin(origin)
+		if origin != "" && !allowed {
+			writeError(w, http.StatusForbidden, "cors_origin_not_allowed", "Origin is not allowed.", "Open the hosted VibeTV app or the configured local dev origin.")
+			return
+		}
 		if origin != "" && allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
@@ -1032,10 +1037,6 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 			}
 		}
 		if r.Method == http.MethodOptions {
-			if origin != "" && !allowed {
-				writeError(w, http.StatusForbidden, "cors_origin_not_allowed", "Origin is not allowed.", "Open the hosted VibeTV app or the configured local dev origin.")
-				return
-			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

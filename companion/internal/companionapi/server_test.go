@@ -2278,12 +2278,92 @@ func TestCORSAllowedAndForeignOrigins(t *testing.T) {
 		t.Fatalf("expected preview origin header %q, got %q", previewOrigin, got)
 	}
 
+	loopbackOrigin := "http://127.0.0.1:47832"
+	loopback := httptest.NewRecorder()
+	loopbackReq := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	loopbackReq.Header.Set("Origin", loopbackOrigin)
+	server.Handler().ServeHTTP(loopback, loopbackReq)
+	if loopback.Code != http.StatusOK {
+		t.Fatalf("expected loopback origin status 200, got %d body=%s", loopback.Code, loopback.Body.String())
+	}
+	if got := loopback.Header().Get("Access-Control-Allow-Origin"); got != loopbackOrigin {
+		t.Fatalf("expected loopback origin header %q, got %q", loopbackOrigin, got)
+	}
+
 	foreign := httptest.NewRecorder()
 	foreignReq := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
 	foreignReq.Header.Set("Origin", "https://evil.example")
 	server.Handler().ServeHTTP(foreign, foreignReq)
+	if foreign.Code != http.StatusForbidden {
+		t.Fatalf("expected foreign origin status 403, got %d body=%s", foreign.Code, foreign.Body.String())
+	}
 	if got := foreign.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Fatalf("expected no CORS header for foreign origin, got %q", got)
+	}
+	var got errorResponse
+	if err := json.Unmarshal(foreign.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode foreign origin error: %v", err)
+	}
+	if got.OK || got.Error.Code != "cors_origin_not_allowed" {
+		t.Fatalf("unexpected foreign origin error: %+v", got)
+	}
+}
+
+func TestCORSRejectsForeignPostBeforeHandlerSideEffects(t *testing.T) {
+	initial := runtimeconfig.Config{
+		DeviceID:     "device-1",
+		DeviceTarget: "http://192.0.2.10",
+		DeviceToken:  "pair-token",
+		KnownDevices: []runtimeconfig.KnownDevice{{
+			DeviceID:    "device-1",
+			Target:      "http://192.0.2.10",
+			DeviceToken: "pair-token",
+		}},
+	}
+	server := newTestServer(t, initial)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/reset", strings.NewReader("reset=1"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "https://evil.example")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected foreign POST status 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	current, err := server.config()
+	if err != nil {
+		t.Fatalf("load config after rejected foreign POST: %v", err)
+	}
+	if current.DeviceID != initial.DeviceID ||
+		current.DeviceTarget != initial.DeviceTarget ||
+		current.DeviceToken != initial.DeviceToken ||
+		len(current.KnownDevices) != len(initial.KnownDevices) {
+		t.Fatalf("foreign POST changed device configuration: before=%+v after=%+v", initial, current)
+	}
+}
+
+func TestCORSAllowsLoopbackPostFromNativeControlCenter(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceID:     "device-1",
+		DeviceTarget: "http://192.0.2.10",
+		DeviceToken:  "pair-token",
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:47832")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected loopback POST status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	current, err := server.config()
+	if err != nil {
+		t.Fatalf("load config after loopback POST: %v", err)
+	}
+	if current.DeviceID != "" || current.DeviceTarget != "" || current.DeviceToken != "" {
+		t.Fatalf("expected allowed loopback POST to reset device configuration, got %+v", current)
 	}
 }
 
