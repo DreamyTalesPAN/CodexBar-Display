@@ -17,6 +17,8 @@ const migrationScreenshotDir =
   process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
 const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
 let displayStateDir = "";
+const fixturePackSHA256 = "a".repeat(64);
+const fixturePackBytes = 1234;
 
 const catalogFixture = {
   themes: [
@@ -26,6 +28,8 @@ const catalogFixture = {
       description:
         "A neon pixel theme with a retro grid, usage bars, and high-contrast desk display previews.",
       downloadUrl: "https://cdn.example.test/synthwave.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
     },
@@ -35,6 +39,8 @@ const catalogFixture = {
       description:
         "A classic desktop-style theme with a windowed usage screen and animated Clippy visuals.",
       downloadUrl: "https://cdn.example.test/clippy.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
     },
@@ -44,6 +50,8 @@ const catalogFixture = {
       description:
         "A warm pixel display theme built around Claude usage, session state, and reset timing.",
       downloadUrl: "https://cdn.example.test/claude-creature.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
     },
@@ -61,6 +69,8 @@ const catalogFixture = {
       description:
         "A catalog theme that is only compatible with the ESP32 VibeTV hardware profile.",
       downloadUrl: "https://cdn.example.test/esp32-only.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
       compatibleBoards: ["esp32_lilygo_t_display_s3"],
       requiresFirmware: "1.0.0",
     },
@@ -70,6 +80,8 @@ const catalogFixture = {
       description:
         "A catalog theme that needs newer VibeTV firmware than the connected device currently reports.",
       downloadUrl: "https://cdn.example.test/future-firmware.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "9.9.9",
     },
@@ -130,6 +142,14 @@ const companionDevice = {
   board: "esp8266_smalltv_st7789",
   firmware: "1.0.32",
   activeTheme: "clippy",
+  capabilities: {
+    auth: {
+      paired: true,
+      tokenHeader: "X-VibeTV-Token",
+      pairingWindowOpen: false,
+      pairingWindowSeconds: 0,
+    },
+  },
   stream: {
     healthy: true,
     running: true,
@@ -352,7 +372,15 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testFailedPairingErrorDoesNotLoop(browser, appContext.appUrl);
+    await testClosedPairingWindowShowsPhysicalRecovery(
+      browser,
+      appContext.appUrl,
+    );
+    await testRejectedPairingTokenUsesTypedRecovery(
+      browser,
+      appContext.appUrl,
+    );
+    await testPairingRateLimitDoesNotResetWifi(browser, appContext.appUrl);
     await testLocalReachableWithoutFrameOpensOverview(
       browser,
       appContext.appUrl,
@@ -398,6 +426,7 @@ async function main() {
     await testRunSetupAgainReturnsToWifiOnboarding(browser, appContext.appUrl);
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
+    await testMacAppUpdatePrecedesFirmwareUpdate(browser, appContext.appUrl);
     await testNativeMacAppUpdateUsesSparkleAction(browser, appContext.appUrl);
     await testLegacyInstallMigratesToDmgAtSameVersion(
       browser,
@@ -1514,6 +1543,14 @@ async function testRunningPairingErrorRepairsAutomaticallyOnce(
       deviceId: "known-device-1",
       paired: false,
       ready: false,
+      capabilities: {
+        ...companionDevice.capabilities,
+        auth: {
+          ...companionDevice.capabilities.auth,
+          pairingWindowOpen: true,
+          pairingWindowSeconds: 120,
+        },
+      },
       stream: {
         healthy: false,
         running: true,
@@ -1552,7 +1589,7 @@ async function testRunningPairingErrorRepairsAutomaticallyOnce(
   await page.close();
 }
 
-async function testFailedPairingErrorDoesNotLoop(browser, appUrl) {
+async function testClosedPairingWindowShowsPhysicalRecovery(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let repairRequests = 0;
@@ -1562,13 +1599,21 @@ async function testFailedPairingErrorDoesNotLoop(browser, appUrl) {
       deviceId: "known-device-failed",
       paired: false,
       ready: false,
+      capabilities: {
+        ...companionDevice.capabilities,
+        auth: {
+          ...companionDevice.capabilities.auth,
+          paired: true,
+          pairingWindowOpen: false,
+          pairingWindowSeconds: 0,
+        },
+      },
       stream: {
         healthy: false,
         running: true,
         errorCode: "device_pairing_required",
       },
     },
-    repairError: true,
     onRequest: (pathname, method) => {
       if (pathname === "/v1/device/repair" && method === "POST") {
         repairRequests += 1;
@@ -1577,21 +1622,112 @@ async function testFailedPairingErrorDoesNotLoop(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+  await page
+    .getByRole("heading", { name: "Pairing needs physical recovery." })
+    .waitFor({
     timeout: 10_000,
   });
-  await waitForCondition(
-    () => repairRequests === 1,
-    "The pairing error should trigger one automatic repair",
+  assert(
+    repairRequests === 0,
+    `A clearly closed pairing window must not trigger a doomed repair, got ${repairRequests}`,
   );
-  await page.waitForTimeout(6_000);
+  assert(
+    (await page
+      .getByText(
+        "Unplug VibeTV during early boot three times in a row. Then connect VibeTV to WiFi again and pair it in Control Center.",
+        { exact: true },
+      )
+      .count()) === 1,
+    "Closed pairing must show the complete three-restart recovery",
+  );
+  assert(
+    (await page.getByText(/same WiFi|search again/i).count()) === 0,
+    "Closed pairing must not be explained as a WiFi search problem",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testRejectedPairingTokenUsesTypedRecovery(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  let repairRequests = 0;
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      deviceId: "known-device-token-rejected",
+      paired: false,
+      ready: false,
+      capabilities: undefined,
+      stream: {
+        healthy: false,
+        running: true,
+        errorCode: "device_pairing_required",
+      },
+    },
+    repairError: {
+      status: 409,
+      code: "pairing_token_rejected",
+      message: "The saved pairing token was rejected.",
+      nextAction: "Try again.",
+    },
+    onRequest: (pathname, method) => {
+      if (pathname === "/v1/device/repair" && method === "POST") {
+        repairRequests += 1;
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByText(
+      "Unplug VibeTV during early boot three times in a row. Then connect VibeTV to WiFi again and pair it in Control Center.",
+      { exact: true },
+    )
+    .waitFor({ timeout: 10_000 });
   assert(
     repairRequests === 1,
-    `One pairing error must trigger at most one automatic repair, got ${repairRequests}`,
+    `A missing auth block may try once before using the typed 401 recovery, got ${repairRequests}`,
   );
   assert(
-    (await page.getByTestId("device-startup-screen").count()) === 0,
-    "A failed pairing repair must not reopen first-run setup for a known VibeTV",
+    (await page.getByText(/same WiFi|then try again/i).count()) === 0,
+    "A rejected token must not fall back to generic WiFi retry copy",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testPairingRateLimitDoesNotResetWifi(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      deviceId: "known-device-pairing-limited",
+      paired: false,
+      ready: false,
+      capabilities: undefined,
+      stream: {
+        healthy: false,
+        running: true,
+        errorCode: "device_pairing_required",
+      },
+    },
+    repairError: {
+      status: 429,
+      code: "pairing_rate_limited",
+      message: "Too many pairing attempts.",
+      nextAction: "Try again later.",
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByText("Wait one minute, then try pairing again.", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText(/early boot three times|connect VibeTV to WiFi again/i).count()) === 0,
+    "A temporary pairing limit must not tell the customer to reset WiFi",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -2611,6 +2747,52 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   assert(
     macAppUpdateRequests.length === 0,
     "DMG update must never call the legacy /v1/mac-app/update endpoint",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testMacAppUpdatePrecedesFirmwareUpdate(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const firmwareUpdateRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.44",
+    companionApp: {
+      version: "1.0.44",
+      build: "144",
+      path: "/Applications/VibeTV Control Center.app",
+      installationMode: "dmg",
+      installedInApplications: true,
+    },
+    device: { ...companionDevice, firmware: "1.0.32" },
+    onUpdate: (postData) => {
+      firmwareUpdateRequests.push(postData || "");
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Updates" }).click();
+  const updateLink = page.getByRole("link", { name: "Update" });
+  await updateLink.waitFor({ timeout: 10_000 });
+  assert(
+    (await updateLink.getAttribute("href")) === "vibetv://check-for-updates",
+    "When both updates exist, the single Update action must open the Mac App updater first",
+  );
+  await page
+    .getByText(
+      "Update the Mac App first. The VibeTV firmware update comes next.",
+      { exact: true },
+    )
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("Update Mac App first", { exact: true }).count()) ===
+      1,
+    "Firmware status must stay blocked until the Mac App update is complete",
+  );
+  assert(
+    firmwareUpdateRequests.length === 0,
+    `Opening Updates must not start firmware before the Mac App, got ${firmwareUpdateRequests.length} requests`,
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -5581,16 +5763,25 @@ async function routeCompanionOnline(
         if (repairErrorDevice) {
           currentDevice = repairErrorDevice;
         }
+        const error =
+          typeof repairError === "object"
+            ? repairError
+            : {
+                status: 404,
+                code: "device_not_found",
+                message: "No VibeTV device was found.",
+                nextAction:
+                  "Make sure VibeTV is powered on and run Fix connection again.",
+              };
         await route.fulfill({
-          status: 404,
+          status: error.status || 502,
           contentType: "application/json",
           body: JSON.stringify({
             ok: false,
             error: {
-              code: "device_not_found",
-              message: "No VibeTV device was found.",
-              nextAction:
-                "Make sure VibeTV is powered on and run Fix connection again.",
+              code: error.code,
+              message: error.message,
+              nextAction: error.nextAction,
             },
           }),
         });

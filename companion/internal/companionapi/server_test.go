@@ -202,7 +202,7 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 				sawTokenlessHello = true
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","capabilities":{"theme":{"supportsThemeSpecV1":true},"auth":{"paired":true,"tokenHeader":"X-VibeTV-Token","pairingWindowOpen":true,"pairingWindowSeconds":1742},"transport":{"active":"wifi"}}}`))
 		case "/health":
 			if r.Header.Get("X-VibeTV-Token") != "" {
 				http.Error(w, "stale token", http.StatusForbidden)
@@ -238,6 +238,15 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	}
 	if got.Device.ActiveTheme != "mini" {
 		t.Fatalf("expected tokenless health probe to populate device health, got %+v", got.Device)
+	}
+	if got.Device.Capabilities == nil || got.Device.Capabilities.Auth == nil {
+		t.Fatalf("expected device API to preserve auth capabilities, got %+v", got.Device.Capabilities)
+	}
+	if !got.Device.Capabilities.Auth.Paired || !got.Device.Capabilities.Auth.PairingWindowOpen || got.Device.Capabilities.Auth.PairingWindowSeconds != 1742 {
+		t.Fatalf("unexpected pairing window capabilities: %+v", got.Device.Capabilities.Auth)
+	}
+	if got.Device.Capabilities.Auth.TokenHeader != "X-VibeTV-Token" {
+		t.Fatalf("unexpected pairing token header descriptor: %+v", got.Device.Capabilities.Auth)
 	}
 	if !sawStaleHello || !sawTokenlessHello || !sawTokenlessHealth {
 		t.Fatalf("expected stale hello, tokenless hello, and tokenless health probes; stale=%t tokenlessHello=%t tokenlessHealth=%t", sawStaleHello, sawTokenlessHello, sawTokenlessHealth)
@@ -2278,12 +2287,92 @@ func TestCORSAllowedAndForeignOrigins(t *testing.T) {
 		t.Fatalf("expected preview origin header %q, got %q", previewOrigin, got)
 	}
 
+	loopbackOrigin := "http://127.0.0.1:47832"
+	loopback := httptest.NewRecorder()
+	loopbackReq := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	loopbackReq.Header.Set("Origin", loopbackOrigin)
+	server.Handler().ServeHTTP(loopback, loopbackReq)
+	if loopback.Code != http.StatusOK {
+		t.Fatalf("expected loopback origin status 200, got %d body=%s", loopback.Code, loopback.Body.String())
+	}
+	if got := loopback.Header().Get("Access-Control-Allow-Origin"); got != loopbackOrigin {
+		t.Fatalf("expected loopback origin header %q, got %q", loopbackOrigin, got)
+	}
+
 	foreign := httptest.NewRecorder()
 	foreignReq := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
 	foreignReq.Header.Set("Origin", "https://evil.example")
 	server.Handler().ServeHTTP(foreign, foreignReq)
+	if foreign.Code != http.StatusForbidden {
+		t.Fatalf("expected foreign origin status 403, got %d body=%s", foreign.Code, foreign.Body.String())
+	}
 	if got := foreign.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Fatalf("expected no CORS header for foreign origin, got %q", got)
+	}
+	var got errorResponse
+	if err := json.Unmarshal(foreign.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode foreign origin error: %v", err)
+	}
+	if got.OK || got.Error.Code != "cors_origin_not_allowed" {
+		t.Fatalf("unexpected foreign origin error: %+v", got)
+	}
+}
+
+func TestCORSRejectsForeignPostBeforeHandlerSideEffects(t *testing.T) {
+	initial := runtimeconfig.Config{
+		DeviceID:     "device-1",
+		DeviceTarget: "http://192.0.2.10",
+		DeviceToken:  "pair-token",
+		KnownDevices: []runtimeconfig.KnownDevice{{
+			DeviceID:    "device-1",
+			Target:      "http://192.0.2.10",
+			DeviceToken: "pair-token",
+		}},
+	}
+	server := newTestServer(t, initial)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/reset", strings.NewReader("reset=1"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "https://evil.example")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected foreign POST status 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	current, err := server.config()
+	if err != nil {
+		t.Fatalf("load config after rejected foreign POST: %v", err)
+	}
+	if current.DeviceID != initial.DeviceID ||
+		current.DeviceTarget != initial.DeviceTarget ||
+		current.DeviceToken != initial.DeviceToken ||
+		len(current.KnownDevices) != len(initial.KnownDevices) {
+		t.Fatalf("foreign POST changed device configuration: before=%+v after=%+v", initial, current)
+	}
+}
+
+func TestCORSAllowsLoopbackPostFromNativeControlCenter(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceID:     "device-1",
+		DeviceTarget: "http://192.0.2.10",
+		DeviceToken:  "pair-token",
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:47832")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected loopback POST status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	current, err := server.config()
+	if err != nil {
+		t.Fatalf("load config after loopback POST: %v", err)
+	}
+	if current.DeviceID != "" || current.DeviceTarget != "" || current.DeviceToken != "" {
+		t.Fatalf("expected allowed loopback POST to reset device configuration, got %+v", current)
 	}
 }
 
@@ -5292,7 +5381,7 @@ func TestPairRetriesLostResponsesWithBoundedEmptyRequests(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{})
 			server.pairAttempts = 3
 			server.pairRetryGap = 0
-			token, err := server.pair(context.Background(), device.URL)
+			token, err := server.pair(context.Background(), device.URL, "")
 			if tt.wantError {
 				if err == nil || !strings.Contains(err.Error(), "pairing failed after 3 attempts") {
 					t.Fatalf("expected bounded pairing error, got token=%q err=%v", token, err)
@@ -5322,7 +5411,7 @@ func TestPairAttemptTimeoutBoundsHungResponses(t *testing.T) {
 	server.pairAttemptTimeout = 25 * time.Millisecond
 	server.pairRetryGap = 0
 	startedAt := time.Now()
-	token, err := server.pair(context.Background(), device.URL)
+	token, err := server.pair(context.Background(), device.URL, "")
 	if err == nil || token != "" {
 		t.Fatalf("expected hung pairing to fail, got token=%q err=%v", token, err)
 	}
@@ -5331,6 +5420,132 @@ func TestPairAttemptTimeoutBoundsHungResponses(t *testing.T) {
 	}
 	if elapsed := time.Since(startedAt); elapsed > time.Second {
 		t.Fatalf("bounded pairing took %s", elapsed)
+	}
+}
+
+func TestPairSendsCurrentTokenAndDoesNotRetryAuthorizationFailure(t *testing.T) {
+	var attempts atomic.Int32
+	var gotToken string
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		gotToken = r.Header.Get("X-VibeTV-Token")
+		http.Error(w, "current pairing token required", http.StatusUnauthorized)
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.pairAttempts = 3
+	server.pairRetryGap = 0
+	_, err := server.pair(context.Background(), device.URL, "current-token")
+	if err == nil {
+		t.Fatal("expected pairing authorization failure")
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("pair attempts=%d want 1", attempts.Load())
+	}
+	if gotToken != "current-token" {
+		t.Fatalf("pair auth header=%q want current-token", gotToken)
+	}
+	var authorizationErr *pairingAuthorizationError
+	if !errors.As(err, &authorizationErr) || authorizationErr.statusCode != http.StatusUnauthorized {
+		t.Fatalf("expected typed pairing authorization error, got %T %v", err, err)
+	}
+}
+
+func TestPairTypesEveryAuthorizationStatusWithoutRetry(t *testing.T) {
+	for _, statusCode := range []int{
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusTooManyRequests,
+	} {
+		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+			var attempts atomic.Int32
+			device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempts.Add(1)
+				http.Error(w, "pairing denied", statusCode)
+			}))
+			defer device.Close()
+
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.pairAttempts = 3
+			server.pairRetryGap = 0
+			_, err := server.pair(context.Background(), device.URL, "saved-token")
+			if err == nil {
+				t.Fatal("expected pairing authorization failure")
+			}
+			if attempts.Load() != 1 {
+				t.Fatalf("pair attempts=%d want=1", attempts.Load())
+			}
+			var authorizationErr *pairingAuthorizationError
+			if !errors.As(err, &authorizationErr) || authorizationErr.statusCode != statusCode {
+				t.Fatalf("expected typed status %d, got %T %v", statusCode, err, err)
+			}
+		})
+	}
+}
+
+func TestWriteRepairErrorMapsPairingAuthorizationStatus(t *testing.T) {
+	tests := []struct {
+		name           string
+		deviceStatus   int
+		responseStatus int
+		code           string
+		nextAction     string
+	}{
+		{
+			name:           "saved token rejected",
+			deviceStatus:   http.StatusUnauthorized,
+			responseStatus: http.StatusConflict,
+			code:           "pairing_token_rejected",
+			nextAction:     "three times",
+		},
+		{
+			name:           "physical window closed",
+			deviceStatus:   http.StatusForbidden,
+			responseStatus: http.StatusConflict,
+			code:           "pairing_window_closed",
+			nextAction:     "three times",
+		},
+		{
+			name:           "rate limited",
+			deviceStatus:   http.StatusTooManyRequests,
+			responseStatus: http.StatusTooManyRequests,
+			code:           "pairing_rate_limited",
+			nextAction:     "Wait one minute",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			deviceErr := &deviceHTTPError{statusCode: test.deviceStatus, body: "pairing denied"}
+			err := &repairStageError{
+				stage: "pair",
+				err: &pairingAuthorizationError{
+					statusCode: test.deviceStatus,
+					err:        deviceErr,
+				},
+			}
+			rec := httptest.NewRecorder()
+
+			writeRepairError(rec, err)
+
+			if rec.Code != test.responseStatus {
+				t.Fatalf("status=%d want=%d body=%s", rec.Code, test.responseStatus, rec.Body.String())
+			}
+			var got errorResponse
+			if decodeErr := json.Unmarshal(rec.Body.Bytes(), &got); decodeErr != nil {
+				t.Fatalf("decode response: %v", decodeErr)
+			}
+			if got.Error.Code != test.code {
+				t.Fatalf("code=%q want=%q body=%s", got.Error.Code, test.code, rec.Body.String())
+			}
+			if !strings.Contains(got.Error.NextAction, test.nextAction) {
+				t.Fatalf("nextAction=%q missing %q", got.Error.NextAction, test.nextAction)
+			}
+			if strings.Contains(strings.ToLower(got.Error.Message+" "+got.Error.NextAction), "expired") {
+				t.Fatalf("pairing response must not claim expiry: %+v", got.Error)
+			}
+		})
 	}
 }
 
@@ -5526,7 +5741,7 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 		return nil
 	}
 
-	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip"}`)
+	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"https://example.com/cozy.zip","packSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","packSizeBytes":1234}`)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
 	req.Header.Set("Content-Type", "application/json")
@@ -5536,7 +5751,7 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if gotOpts.ThemeID != "cozy-meadow" || gotOpts.PackURL != "https://example.com/cozy.zip" {
+	if gotOpts.ThemeID != "cozy-meadow" || gotOpts.PackURL != "https://example.com/cozy.zip" || gotOpts.PackSHA256 != strings.Repeat("a", 64) || gotOpts.PackSizeBytes != 1234 {
 		t.Fatalf("install did not receive theme source: %+v", gotOpts)
 	}
 	if gotOpts.PackBytes != nil {
@@ -6582,6 +6797,48 @@ func TestThemeInstallRejectsInvalidPackURLBeforeGate(t *testing.T) {
 	}
 	if got.OK || got.Error.Code != "invalid_theme_pack_url" {
 		t.Fatalf("unexpected invalid pack URL response: %+v", got)
+	}
+}
+
+func TestResolveEmbeddedThemePackReadsOnlyOwnBundledZip(t *testing.T) {
+	data := testThemePackZip(t)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.controlCenterFS = fstest.MapFS{
+		"theme-packs/cozy.zip": &fstest.MapFile{Data: data},
+	}
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47832/v1/themes/install", nil)
+	resolved, err := server.resolveEmbeddedThemePack(req, themeInstallRequest{
+		PackURL: "http://127.0.0.1:47832/theme-packs/cozy.zip",
+	})
+	if err != nil {
+		t.Fatalf("resolve embedded pack: %v", err)
+	}
+	if resolved.PackURL != "" || !bytes.Equal(resolved.PackBytes, data) {
+		t.Fatalf("embedded pack was not converted to trusted bytes: %+v", resolved)
+	}
+
+	foreign, err := server.resolveEmbeddedThemePack(req, themeInstallRequest{
+		PackURL: "http://127.0.0.1:9000/private.zip",
+	})
+	if err != nil {
+		t.Fatalf("foreign URL should be left for remote policy: %v", err)
+	}
+	if foreign.PackURL == "" || foreign.PackBytes != nil {
+		t.Fatalf("foreign loopback URL was treated as an embedded asset: %+v", foreign)
+	}
+}
+
+func TestThemeInstallRejectsInsecureRemotePackURL(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	body := strings.NewReader(`{"themeId":"cozy-meadow","packUrl":"http://169.254.169.254/latest/meta-data"}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_theme_pack_url") {
+		t.Fatalf("expected insecure pack URL rejection, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

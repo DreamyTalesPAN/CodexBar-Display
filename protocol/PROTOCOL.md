@@ -87,20 +87,22 @@ When the ESP8266 is connected to WiFi, it serves:
 - `GET /health`: returns current WiFi/filesystem/display diagnostics plus `system.freeHeap`, `system.bootId`, `system.uptimeMs`, `system.resetCount`, `system.resetReason`, and ThemeSpec render status fields (`renderOk`, `renderError`, `renderFailures`). A changed `bootId` proves a reboot; `uptimeMs` lets the Companion calculate the reset timestamp using the Mac clock.
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This updates the cached display/diagnostic update state. On built-in themes, `available=true` renders a firmware-level notice that cycles through the provider, `Update available`, and `app.vibetv.shop`. ThemeSpec themes receive the same values through the existing `{label}` / `label` binding. The ESP8266 firmware must not fetch public HTTPS manifests directly.
-- `POST /reset-wifi`: clears saved WiFi credentials and restarts the device into setup mode.
-- `POST /api/pair`: creates or rotates the local LAN pairing token. Include `api=1` for a JSON/CORS response (`{"ok":true,"token":"..."}`); omit it for the built-in IP-based form redirect.
+- `POST /reset-wifi`: with the current pairing token, clears saved WiFi credentials and restarts the device into setup mode.
+- `POST /api/pair`: creates or rotates the local LAN pairing token. Rotation requires the current token. First pairing or lost-token recovery requires the short physical pairing window opened by initial WiFi setup or three-reset recovery. Include `api=1` for a JSON response (`{"ok":true,"token":"..."}`).
 - `POST /api/settings`: updates persisted device settings. Form field `b` sets display brightness percent. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect.
-- `GET /assets`: returns mounted filesystem status and a generic list of stored asset paths/sizes.
+- `GET /assets`: returns mounted filesystem status and stored `/themes/` asset paths/sizes. Internal firmware control files are never listed.
 - `POST /assets?path=/themes/<short-id>/<asset>`: uploads one theme asset using multipart field `asset`.
 - `DELETE /assets?path=/themes/<short-id>/<asset>`: deletes one stored asset. Firmware rejects deletion of the currently active stored ThemeSpec.
 - `POST /theme/active`: activates a stored ThemeSpec JSON file uploaded via `/assets`. Body: `{"path":"/themes/u/<short-id>.json"}`. This loads the spec into the firmware cache, so future `/frame` requests can stay small and only include live usage values. The response and `/health` diagnostics include a content `hash` for firmware that supports stored-theme verification.
 
 Pairing/auth:
-- Fresh unpaired devices keep write APIs open for backwards compatibility.
-- Once `/api/pair` has created a token, write APIs require `X-VibeTV-Token: <token>` or a `token=<token>` query parameter for built-in browser forms and raw OTA.
-- Protected write APIs are `POST /frame`, `POST /api/settings`, `POST /assets`, `DELETE /assets`, `POST /theme/active`, and firmware/filesystem OTA upload paths.
+- Initial WiFi setup and three-reset physical recovery open one 30-minute pairing window after reboot. The first successful pair consumes it.
+- An unpaired device outside that window rejects pairing. A paired device requires its current token to rotate identity.
+- Protected write APIs require `X-VibeTV-Token: <token>` or the documented query fallback used by native tooling and raw OTA.
+- Protected write APIs include `POST /frame`, `POST /api/settings`, WiFi credential writes, `POST /assets`, `DELETE /assets`, `POST /theme/active`, and firmware/filesystem OTA upload paths.
 - Read APIs such as `GET /hello`, `GET /health`, and `GET /assets` stay open for diagnostics.
-- This is a local-network pairing token, not a cloud security boundary. Anyone who can reach the device IP can rotate the token locally.
+- The unauthenticated device page never renders the pairing token. WiFi `/hello` reports `capabilities.auth.paired`, `tokenHeader`, `pairingWindowOpen`, and `pairingWindowSeconds`; it never reports the token value.
+- An automatically started setup access point is read-only. Its recovery page explains that three interrupted early boots are required before WiFi credentials can be changed.
 
 Installable customer themes use VibeTV Theme Packs: a directory or `.zip` with `manifest.json`, one ThemeSpec JSON file, and optional asset files. See `docs/theme-packs.md`.
 
@@ -114,7 +116,7 @@ Example:
 
 ```bash
 curl http://192.168.178.123/hello
-TOKEN="$(curl -fsS -X POST -d api=1 http://192.168.178.123/api/pair | jq -r .token)"
+TOKEN="$(curl -fsS -X POST -d api=1 http://192.168.178.123/api/pair | jq -r .token)" # during physical pairing window
 curl -X POST -H "X-VibeTV-Token: $TOKEN" -F asset=@theme.json 'http://192.168.178.123/assets?path=/themes/u/cozy-1-a1b2c3.json'
 curl -X POST -H "X-VibeTV-Token: $TOKEN" -H 'Content-Type: text/plain' --data '{"path":"/themes/u/cozy-1-a1b2c3.json"}' \
   http://192.168.178.123/theme/active

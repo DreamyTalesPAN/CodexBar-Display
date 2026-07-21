@@ -263,6 +263,37 @@ type repairStageError struct {
 	err   error
 }
 
+type deviceHTTPError struct {
+	statusCode int
+	body       string
+}
+
+func (e *deviceHTTPError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("device status=%d body=%q", e.statusCode, e.body)
+}
+
+type pairingAuthorizationError struct {
+	statusCode int
+	err        error
+}
+
+func (e *pairingAuthorizationError) Error() string {
+	if e == nil || e.err == nil {
+		return "pairing authorization rejected"
+	}
+	return e.err.Error()
+}
+
+func (e *pairingAuthorizationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
 type deviceRepairFlight struct {
 	done   chan struct{}
 	device deviceInfo
@@ -404,6 +435,8 @@ type themeInstallRequest struct {
 	ThemeName          string `json:"themeName"`
 	PackURL            string `json:"packUrl"`
 	PackBytes          []byte `json:"-"`
+	PackSHA256         string `json:"packSha256"`
+	PackSizeBytes      int64  `json:"packSizeBytes"`
 	CatalogURL         string `json:"catalogUrl"`
 	SkipFirmwareUpdate *bool  `json:"skipFirmwareUpdate"`
 	Async              bool   `json:"async"`
@@ -768,6 +801,9 @@ func New(opts Options) (*Server, error) {
 			return nil, fmt.Errorf("resolve home directory: %w", err)
 		}
 	}
+	if permissionsErr := runtimeconfig.RestrictPermissions(home); permissionsErr != nil {
+		return nil, fmt.Errorf("restrict runtime config permissions: %w", permissionsErr)
+	}
 	if _, recoverErr := runtimeconfig.RecoverPendingDeviceSelection(home); recoverErr != nil {
 		return nil, fmt.Errorf("recover pending device selection: %w", recoverErr)
 	}
@@ -779,6 +815,7 @@ func New(opts Options) (*Server, error) {
 	origins := map[string]struct{}{
 		appOrigin:        {},
 		defaultDevOrigin: {},
+		"http://" + addr: {},
 	}
 	for _, origin := range opts.AllowedOrigins {
 		origin = strings.TrimSpace(origin)
@@ -1022,6 +1059,10 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
 		allowed := s.isAllowedOrigin(origin)
+		if origin != "" && !allowed {
+			writeError(w, http.StatusForbidden, "cors_origin_not_allowed", "Origin is not allowed.", "Open the hosted VibeTV app or the configured local dev origin.")
+			return
+		}
 		if origin != "" && allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
@@ -1032,10 +1073,6 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 			}
 		}
 		if r.Method == http.MethodOptions {
-			if origin != "" && !allowed {
-				writeError(w, http.StatusForbidden, "cors_origin_not_allowed", "Origin is not allowed.", "Open the hosted VibeTV app or the configured local dev origin.")
-				return
-			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -2496,7 +2533,7 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		}
 		target = discoveredTarget
 	}
-	token, err := s.pair(r.Context(), target)
+	token, err := s.pair(r.Context(), target, cfg.DeviceToken)
 	if err != nil && requestedTarget == "" {
 		discoveredTarget, _, discoverErr := s.discover(r.Context(), cfg, "")
 		if discoverErr != nil {
@@ -2505,11 +2542,11 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		}
 		if discoveredTarget != target {
 			target = discoveredTarget
-			token, err = s.pair(r.Context(), target)
+			token, err = s.pair(r.Context(), target, cfg.DeviceToken)
 		}
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", "Keep VibeTV powered on, then retry pairing.")
+		writePairingError(w, err, "Keep VibeTV powered on, then retry pairing.")
 		return
 	}
 	hello, _ := s.getHello(r.Context(), target, token)
@@ -2706,7 +2743,7 @@ func (s *Server) selectDevice(
 		}
 	}
 	if strings.TrimSpace(selected.DeviceToken) == "" {
-		token, pairErr := s.pair(ctx, target)
+		token, pairErr := s.pair(ctx, target, "")
 		if pairErr != nil {
 			return deviceInfo{}, s.rollbackDeviceSelection(
 				ctx,
@@ -2834,7 +2871,7 @@ func (s *Server) repairDeviceOnceLocked(
 	token := strings.TrimSpace(cfg.DeviceToken)
 	pairedDuringRepair := false
 	if forcePair || token == "" || tokenStale {
-		token, err = s.pair(ctx, target)
+		token, err = s.pair(ctx, target, token)
 		if err != nil {
 			return deviceInfo{}, &repairStageError{stage: "pair", err: err}
 		}
@@ -2867,7 +2904,7 @@ func (s *Server) repairDeviceOnceLocked(
 	}
 	if !stream.Healthy && stream.ErrorCode == "device_pairing_required" && !pairedDuringRepair {
 		pauseStream()
-		token, err = s.pair(ctx, target)
+		token, err = s.pair(ctx, target, token)
 		if err != nil {
 			return deviceInfo{}, &repairStageError{stage: "pair", err: err}
 		}
@@ -3013,17 +3050,12 @@ func (s *Server) recoveredConfigDeviceTargets() []string {
 		return nil
 	}
 	configDir := filepath.Dir(runtimeconfig.ConfigPath(home))
-	patterns := []string{
-		"config.before-*.json",
-		"config.backup-*.json",
-		"config.json.backup-*",
-	}
 	type candidateFile struct {
 		path    string
 		modTime time.Time
 	}
 	files := []candidateFile{}
-	for _, pattern := range patterns {
+	for _, pattern := range runtimeconfig.ConfigBackupFilePatterns() {
 		matches, err := filepath.Glob(filepath.Join(configDir, pattern))
 		if err != nil {
 			continue
@@ -3174,11 +3206,16 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	req, err := s.resolveEmbeddedThemePack(r, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_theme_pack_url", "Theme pack URL is invalid.", "Reload the theme catalog, then try again.")
+		return
+	}
 	if strings.TrimSpace(req.ThemeID) == "" && strings.TrimSpace(req.PackURL) == "" && req.PackBytes == nil {
 		writeError(w, http.StatusBadRequest, "missing_theme_source", "themeId or packUrl is required.", "Select a theme and retry.")
 		return
 	}
-	if !validRemoteThemePackURL(req.PackURL) {
+	if !validRemoteThemePackURL(req.PackURL) || !validRemoteThemePackURL(req.CatalogURL) {
 		writeError(
 			w,
 			http.StatusBadRequest,
@@ -3611,6 +3648,8 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
 		PackBytes:          req.PackBytes,
+		PackSHA256:         strings.TrimSpace(req.PackSHA256),
+		PackSizeBytes:      req.PackSizeBytes,
 		CatalogURL:         strings.TrimSpace(req.CatalogURL),
 		Target:             targetWithToken(cfg.DeviceTarget, cfg.DeviceToken),
 		SkipFirmwareUpdate: skipFirmwareUpdate,
@@ -4943,7 +4982,37 @@ func validRemoteThemePackURL(raw string) bool {
 	if parsed.User != nil || strings.TrimSpace(parsed.Host) == "" {
 		return false
 	}
-	return strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")
+	return strings.EqualFold(parsed.Scheme, "https")
+}
+
+func (s *Server) resolveEmbeddedThemePack(r *http.Request, req themeInstallRequest) (themeInstallRequest, error) {
+	raw := strings.TrimSpace(req.PackURL)
+	if raw == "" {
+		return req, nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return req, nil
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") || !strings.EqualFold(parsed.Host, r.Host) {
+		return req, nil
+	}
+	assetPath, ok := normalizeControlCenterAssetPath(parsed.Path)
+	if !ok || !strings.HasPrefix(assetPath, "theme-packs/") || !strings.HasSuffix(strings.ToLower(assetPath), ".zip") {
+		return req, errors.New("invalid embedded theme pack path")
+	}
+	info, err := fs.Stat(s.controlCenterFS, assetPath)
+	if err != nil || info.IsDir() || info.Size() <= 0 || info.Size() > themepack.MaxZipBytes {
+		return req, errors.New("embedded theme pack unavailable")
+	}
+	data, err := fs.ReadFile(s.controlCenterFS, assetPath)
+	if err != nil || len(data) == 0 || len(data) > themepack.MaxZipBytes {
+		return req, errors.New("embedded theme pack unavailable")
+	}
+	req.PackURL = ""
+	req.CatalogURL = ""
+	req.PackBytes = data
+	return req, nil
 }
 
 func (s *Server) config() (runtimeconfig.Config, error) {
@@ -5839,7 +5908,7 @@ func (s *Server) updateBrightness(ctx context.Context, target, token string, bri
 	return response.Settings, nil
 }
 
-func (s *Server) pair(ctx context.Context, target string) (string, error) {
+func (s *Server) pair(ctx context.Context, target, currentToken string) (string, error) {
 	s.pairMu.Lock()
 	defer s.pairMu.Unlock()
 
@@ -5857,12 +5926,15 @@ func (s *Server) pair(ctx context.Context, target string) (string, error) {
 		if s.pairAttemptTimeout > 0 {
 			attemptCtx, cancel = context.WithTimeout(ctx, s.pairAttemptTimeout)
 		}
-		token, err := s.pairOnce(attemptCtx, target)
+		token, err := s.pairOnce(attemptCtx, target, currentToken)
 		cancel()
 		if err == nil {
 			return token, nil
 		}
 		lastErr = err
+		if pairingAuthorizationRejected(err) {
+			break
+		}
 		if attempt == attempts {
 			break
 		}
@@ -5875,7 +5947,7 @@ func (s *Server) pair(ctx context.Context, target string) (string, error) {
 	return "", fmt.Errorf("pairing failed after %d attempts: %w", attempts, lastErr)
 }
 
-func (s *Server) pairOnce(ctx context.Context, target string) (string, error) {
+func (s *Server) pairOnce(ctx context.Context, target, currentToken string) (string, error) {
 	pairURL, err := url.Parse(endpoint(target, "/api/pair"))
 	if err != nil {
 		return "", err
@@ -5888,11 +5960,16 @@ func (s *Server) pairOnce(ctx context.Context, target string) (string, error) {
 		return "", err
 	}
 	req.Close = true
+	applyDeviceToken(req, currentToken)
 	var response struct {
 		OK    bool   `json:"ok"`
 		Token string `json:"token"`
 	}
 	if err := s.do(req, &response); err != nil {
+		var responseErr *deviceHTTPError
+		if errors.As(err, &responseErr) && isPairingAuthorizationStatus(responseErr.statusCode) {
+			return "", &pairingAuthorizationError{statusCode: responseErr.statusCode, err: err}
+		}
 		return "", err
 	}
 	token := strings.TrimSpace(response.Token)
@@ -5900,6 +5977,25 @@ func (s *Server) pairOnce(ctx context.Context, target string) (string, error) {
 		return "", errors.New("pairing response did not include token")
 	}
 	return token, nil
+}
+
+func pairingAuthorizationRejected(err error) bool {
+	_, ok := pairingAuthorizationStatus(err)
+	return ok
+}
+
+func pairingAuthorizationStatus(err error) (int, bool) {
+	var authorizationErr *pairingAuthorizationError
+	if !errors.As(err, &authorizationErr) || !isPairingAuthorizationStatus(authorizationErr.statusCode) {
+		return 0, false
+	}
+	return authorizationErr.statusCode, true
+}
+
+func isPairingAuthorizationStatus(statusCode int) bool {
+	return statusCode == http.StatusUnauthorized ||
+		statusCode == http.StatusForbidden ||
+		statusCode == http.StatusTooManyRequests
 }
 
 func (s *Server) startDisplayStream(ctx context.Context, target string) error {
@@ -5968,7 +6064,10 @@ func (s *Server) do(req *http.Request, out any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("device status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+		return &deviceHTTPError{
+			statusCode: resp.StatusCode,
+			body:       strings.TrimSpace(string(body)),
+		}
 	}
 	if out == nil {
 		return nil
@@ -6059,7 +6158,7 @@ func writeRepairError(w http.ResponseWriter, err error) {
 			writeInternalError(w, err)
 			return
 		case "pair":
-			writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", "Keep VibeTV powered on, then retry Fix connection.")
+			writePairingError(w, err, "Keep VibeTV powered on, then retry Fix connection.")
 			return
 		case "display-stream":
 			writeError(w, http.StatusBadGateway, "display_stream_repair_failed", "Mac App could not refresh the VibeTV display stream.", "Run setup again or restart the Mac App, then retry Fix connection.")
@@ -6070,6 +6169,41 @@ func writeRepairError(w http.ResponseWriter, err error) {
 		}
 	}
 	writeDeviceNotFound(w)
+}
+
+func writePairingError(w http.ResponseWriter, err error, genericNextAction string) {
+	statusCode, ok := pairingAuthorizationStatus(err)
+	if !ok {
+		writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", genericNextAction)
+		return
+	}
+
+	switch statusCode {
+	case http.StatusUnauthorized:
+		writeError(
+			w,
+			http.StatusConflict,
+			"pairing_token_rejected",
+			"VibeTV rejected the saved pairing token.",
+			"Interrupt VibeTV during early boot three times, reconnect it to Wi-Fi, then try again.",
+		)
+	case http.StatusForbidden:
+		writeError(
+			w,
+			http.StatusConflict,
+			"pairing_window_closed",
+			"VibeTV is not accepting a new pairing.",
+			"Interrupt VibeTV during early boot three times, reconnect it to Wi-Fi, then try again.",
+		)
+	case http.StatusTooManyRequests:
+		writeError(
+			w,
+			http.StatusTooManyRequests,
+			"pairing_rate_limited",
+			"VibeTV is temporarily limiting pairing attempts.",
+			"Wait one minute, then try pairing again.",
+		)
+	}
 }
 
 func writeInvalidDeviceTarget(w http.ResponseWriter) {

@@ -152,6 +152,8 @@ CONTROL_CENTER_ENABLE_MAC_APP_DMG_DOWNLOAD=0
 
 Use either `SHOPIFY_STOREFRONT_PRIVATE_TOKEN` for a Headless private token or `SHOPIFY_STOREFRONT_ACCESS_TOKEN` for a public token. `CONTROL_CENTER_GITHUB_TOKEN` is optional, server-side only, and keeps GitHub release version checks away from anonymous rate limits. If Shopify env vars are missing, the app shows a configuration warning and no installable themes. Set `CONTROL_CENTER_ALLOW_CATALOG_FALLBACK=1` only for explicit local development with repo catalog data.
 
+Installable Shopify theme products need the `vibetv.pack_url`, `vibetv.pack_sha256`, and `vibetv.pack_size_bytes` metafields. Known repository themes may inherit the checksum and byte size from the verified GitHub catalog; a theme without integrity metadata remains unavailable.
+
 Keep `CONTROL_CENTER_ENABLE_MAC_APP_DMG_DOWNLOAD=0` until the latest GitHub
 release contains a signed, notarized, non-empty
 `VibeTV-Control-Center.dmg` asset. Setting it to `1` only allows the hosted
