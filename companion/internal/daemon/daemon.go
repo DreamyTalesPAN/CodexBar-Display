@@ -922,16 +922,7 @@ func selectFirmwareUpdate(caps protocol.DeviceCapabilities, manifest firmwareMan
 }
 
 func firmwareReleaseNewerThanCurrent(latest, current versioning.SemVer) bool {
-	if latest.Major != current.Major {
-		return latest.Major > current.Major
-	}
-	if latest.Minor != current.Minor {
-		return latest.Minor > current.Minor
-	}
-	if latest.Patch != current.Patch {
-		return latest.Patch > current.Patch
-	}
-	return false
+	return latest.Compare(current) > 0
 }
 
 func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {

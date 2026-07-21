@@ -35,6 +35,39 @@ func TestSemVerComparePreRelease(t *testing.T) {
 	}
 }
 
+func TestSemVerComparePrecedence(t *testing.T) {
+	cases := []struct {
+		left  string
+		right string
+		want  int
+	}{
+		{"1.0.44-rc.16", "1.0.44", -1},
+		{"1.0.36-rc.2", "1.0.36", -1},
+		{"1.0.44-beta.3", "1.0.44-rc.1", -1},
+		{"1.0.44-rc.2", "1.0.44-rc.10", -1},
+		{"1.0.44-alpha", "1.0.44-alpha.1", -1},
+		{"1.0.44-1", "1.0.44-alpha", -1},
+		{"1.0.44", "1.0.44", 0},
+		{"1.0.44+build7", "1.0.44", 0},
+		{"1.0.44-rc.1+build7", "1.0.44-rc.1", 0},
+		{"1.0.44", "1.0.44-rc.16", 1},
+		{"1.0.45-rc.1", "1.0.44", 1},
+	}
+	for _, tc := range cases {
+		left, err := ParseSemVer(tc.left)
+		if err != nil {
+			t.Fatalf("parse %q: %v", tc.left, err)
+		}
+		right, err := ParseSemVer(tc.right)
+		if err != nil {
+			t.Fatalf("parse %q: %v", tc.right, err)
+		}
+		if got := left.Compare(right); got != tc.want {
+			t.Fatalf("Compare(%q, %q) = %d, want %d", tc.left, tc.right, got, tc.want)
+		}
+	}
+}
+
 func TestCompatibilityMatrixAllowsV1(t *testing.T) {
 	ok, rule, err := IsCompatible("1.2.0", "1.9.4", 1)
 	if err != nil {
