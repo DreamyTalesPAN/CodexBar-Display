@@ -173,12 +173,13 @@ curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s
 
 ## Reset WiFi
 
-If VibeTV is reachable in the browser, open the local device page and use
-`Reset WiFi Setup`.
+Use the recovery or setup action shown in Control Center while the paired
+VibeTV is reachable.
 
-If the device is not reachable, unplug power during early boot three times in a
-row. On the next boot, VibeTV clears saved WiFi credentials and starts
-`VibeTV-Setup`.
+If the pairing window has closed or the saved pairing token was lost, unplug
+VibeTV during early boot three times in a row. On the next boot, VibeTV clears
+saved WiFi credentials and starts `VibeTV-Setup`. Connect it to WiFi again,
+then pair it in Control Center.
 
 ## Important
 

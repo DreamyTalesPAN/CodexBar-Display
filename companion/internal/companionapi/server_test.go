@@ -202,7 +202,7 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 				sawTokenlessHello = true
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","capabilities":{"theme":{"supportsThemeSpecV1":true},"auth":{"paired":true,"tokenHeader":"X-VibeTV-Token","pairingWindowOpen":true,"pairingWindowSeconds":1742},"transport":{"active":"wifi"}}}`))
 		case "/health":
 			if r.Header.Get("X-VibeTV-Token") != "" {
 				http.Error(w, "stale token", http.StatusForbidden)
@@ -238,6 +238,15 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	}
 	if got.Device.ActiveTheme != "mini" {
 		t.Fatalf("expected tokenless health probe to populate device health, got %+v", got.Device)
+	}
+	if got.Device.Capabilities == nil || got.Device.Capabilities.Auth == nil {
+		t.Fatalf("expected device API to preserve auth capabilities, got %+v", got.Device.Capabilities)
+	}
+	if !got.Device.Capabilities.Auth.Paired || !got.Device.Capabilities.Auth.PairingWindowOpen || got.Device.Capabilities.Auth.PairingWindowSeconds != 1742 {
+		t.Fatalf("unexpected pairing window capabilities: %+v", got.Device.Capabilities.Auth)
+	}
+	if got.Device.Capabilities.Auth.TokenHeader != "X-VibeTV-Token" {
+		t.Fatalf("unexpected pairing token header descriptor: %+v", got.Device.Capabilities.Auth)
 	}
 	if !sawStaleHello || !sawTokenlessHello || !sawTokenlessHealth {
 		t.Fatalf("expected stale hello, tokenless hello, and tokenless health probes; stale=%t tokenlessHello=%t tokenlessHealth=%t", sawStaleHello, sawTokenlessHello, sawTokenlessHealth)
@@ -5436,6 +5445,107 @@ func TestPairSendsCurrentTokenAndDoesNotRetryAuthorizationFailure(t *testing.T) 
 	}
 	if gotToken != "current-token" {
 		t.Fatalf("pair auth header=%q want current-token", gotToken)
+	}
+	var authorizationErr *pairingAuthorizationError
+	if !errors.As(err, &authorizationErr) || authorizationErr.statusCode != http.StatusUnauthorized {
+		t.Fatalf("expected typed pairing authorization error, got %T %v", err, err)
+	}
+}
+
+func TestPairTypesEveryAuthorizationStatusWithoutRetry(t *testing.T) {
+	for _, statusCode := range []int{
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusTooManyRequests,
+	} {
+		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+			var attempts atomic.Int32
+			device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempts.Add(1)
+				http.Error(w, "pairing denied", statusCode)
+			}))
+			defer device.Close()
+
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.pairAttempts = 3
+			server.pairRetryGap = 0
+			_, err := server.pair(context.Background(), device.URL, "saved-token")
+			if err == nil {
+				t.Fatal("expected pairing authorization failure")
+			}
+			if attempts.Load() != 1 {
+				t.Fatalf("pair attempts=%d want=1", attempts.Load())
+			}
+			var authorizationErr *pairingAuthorizationError
+			if !errors.As(err, &authorizationErr) || authorizationErr.statusCode != statusCode {
+				t.Fatalf("expected typed status %d, got %T %v", statusCode, err, err)
+			}
+		})
+	}
+}
+
+func TestWriteRepairErrorMapsPairingAuthorizationStatus(t *testing.T) {
+	tests := []struct {
+		name           string
+		deviceStatus   int
+		responseStatus int
+		code           string
+		nextAction     string
+	}{
+		{
+			name:           "saved token rejected",
+			deviceStatus:   http.StatusUnauthorized,
+			responseStatus: http.StatusConflict,
+			code:           "pairing_token_rejected",
+			nextAction:     "three times",
+		},
+		{
+			name:           "physical window closed",
+			deviceStatus:   http.StatusForbidden,
+			responseStatus: http.StatusConflict,
+			code:           "pairing_window_closed",
+			nextAction:     "three times",
+		},
+		{
+			name:           "rate limited",
+			deviceStatus:   http.StatusTooManyRequests,
+			responseStatus: http.StatusTooManyRequests,
+			code:           "pairing_rate_limited",
+			nextAction:     "Wait one minute",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			deviceErr := &deviceHTTPError{statusCode: test.deviceStatus, body: "pairing denied"}
+			err := &repairStageError{
+				stage: "pair",
+				err: &pairingAuthorizationError{
+					statusCode: test.deviceStatus,
+					err:        deviceErr,
+				},
+			}
+			rec := httptest.NewRecorder()
+
+			writeRepairError(rec, err)
+
+			if rec.Code != test.responseStatus {
+				t.Fatalf("status=%d want=%d body=%s", rec.Code, test.responseStatus, rec.Body.String())
+			}
+			var got errorResponse
+			if decodeErr := json.Unmarshal(rec.Body.Bytes(), &got); decodeErr != nil {
+				t.Fatalf("decode response: %v", decodeErr)
+			}
+			if got.Error.Code != test.code {
+				t.Fatalf("code=%q want=%q body=%s", got.Error.Code, test.code, rec.Body.String())
+			}
+			if !strings.Contains(got.Error.NextAction, test.nextAction) {
+				t.Fatalf("nextAction=%q missing %q", got.Error.NextAction, test.nextAction)
+			}
+			if strings.Contains(strings.ToLower(got.Error.Message+" "+got.Error.NextAction), "expired") {
+				t.Fatalf("pairing response must not claim expiry: %+v", got.Error)
+			}
+		})
 	}
 }
 

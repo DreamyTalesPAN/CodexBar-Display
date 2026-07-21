@@ -67,7 +67,7 @@ constexpr unsigned long kBootRecoveryStableMs = 30000UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr unsigned long kRawOtaProgressTimeoutMs = 30000UL;
-constexpr unsigned long kPhysicalPairingWindowMs = 5UL * 60UL * 1000UL;
+constexpr unsigned long kPhysicalPairingWindowMs = 30UL * 60UL * 1000UL;
 constexpr size_t kRawOtaReadBufferBytes = 512;
 constexpr uint8_t kBootRecoveryThreshold = 3;
 constexpr uint8_t kBootRecoveryUploadMarker = 0xA5;
@@ -1254,6 +1254,13 @@ String connectedPageHTML() {
 void handleRoot() {
   webServer.keepAlive(false);
   if (setupMode) {
+    if (!physicalSetupAuthorized) {
+      codexbar_display::esp8266::wifi_setup::SendRecoveryPage(
+          webServer,
+          codexbar_display::esp8266::wifi_setup::kSupportUrl,
+          kSetupAddress);
+      return;
+    }
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
         webServer,
         setupWifiState,
@@ -1274,6 +1281,13 @@ void redirectToSetupRoot() {
 void handleCaptivePortalProbe() {
   webServer.keepAlive(false);
   if (setupMode) {
+    if (!physicalSetupAuthorized) {
+      codexbar_display::esp8266::wifi_setup::SendRecoveryPage(
+          webServer,
+          codexbar_display::esp8266::wifi_setup::kSupportUrl,
+          kSetupAddress);
+      return;
+    }
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
         webServer,
         setupWifiState,
@@ -1386,7 +1400,7 @@ void handleHello() {
   }
 
   String out;
-  out.reserve(620);
+  out.reserve(760);
   out += "{\"kind\":\"hello\",\"protocolVersion\":2,\"board\":\"";
   out += CODEXBAR_DISPLAY_BOARD_ID;
   out += "\",\"deviceId\":\"";
@@ -1409,6 +1423,8 @@ void handleHello() {
   out += themeCapabilitiesJSON(false, true);
 #endif
 #endif
+  out += ",";
+  appendAuthStatusJSON(out);
   out += ",\"transport\":{\"active\":\"wifi\"}}}";
   webServer.send(200, "application/json", out);
 }

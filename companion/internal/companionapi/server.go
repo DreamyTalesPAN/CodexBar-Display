@@ -263,6 +263,37 @@ type repairStageError struct {
 	err   error
 }
 
+type deviceHTTPError struct {
+	statusCode int
+	body       string
+}
+
+func (e *deviceHTTPError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("device status=%d body=%q", e.statusCode, e.body)
+}
+
+type pairingAuthorizationError struct {
+	statusCode int
+	err        error
+}
+
+func (e *pairingAuthorizationError) Error() string {
+	if e == nil || e.err == nil {
+		return "pairing authorization rejected"
+	}
+	return e.err.Error()
+}
+
+func (e *pairingAuthorizationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
 type deviceRepairFlight struct {
 	done   chan struct{}
 	device deviceInfo
@@ -2515,7 +2546,7 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", "Keep VibeTV powered on, then retry pairing.")
+		writePairingError(w, err, "Keep VibeTV powered on, then retry pairing.")
 		return
 	}
 	hello, _ := s.getHello(r.Context(), target, token)
@@ -5935,6 +5966,10 @@ func (s *Server) pairOnce(ctx context.Context, target, currentToken string) (str
 		Token string `json:"token"`
 	}
 	if err := s.do(req, &response); err != nil {
+		var responseErr *deviceHTTPError
+		if errors.As(err, &responseErr) && isPairingAuthorizationStatus(responseErr.statusCode) {
+			return "", &pairingAuthorizationError{statusCode: responseErr.statusCode, err: err}
+		}
 		return "", err
 	}
 	token := strings.TrimSpace(response.Token)
@@ -5945,13 +5980,22 @@ func (s *Server) pairOnce(ctx context.Context, target, currentToken string) (str
 }
 
 func pairingAuthorizationRejected(err error) bool {
-	if err == nil {
-		return false
+	_, ok := pairingAuthorizationStatus(err)
+	return ok
+}
+
+func pairingAuthorizationStatus(err error) (int, bool) {
+	var authorizationErr *pairingAuthorizationError
+	if !errors.As(err, &authorizationErr) || !isPairingAuthorizationStatus(authorizationErr.statusCode) {
+		return 0, false
 	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "status=401") ||
-		strings.Contains(message, "status=403") ||
-		strings.Contains(message, "status=429")
+	return authorizationErr.statusCode, true
+}
+
+func isPairingAuthorizationStatus(statusCode int) bool {
+	return statusCode == http.StatusUnauthorized ||
+		statusCode == http.StatusForbidden ||
+		statusCode == http.StatusTooManyRequests
 }
 
 func (s *Server) startDisplayStream(ctx context.Context, target string) error {
@@ -6020,7 +6064,10 @@ func (s *Server) do(req *http.Request, out any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("device status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+		return &deviceHTTPError{
+			statusCode: resp.StatusCode,
+			body:       strings.TrimSpace(string(body)),
+		}
 	}
 	if out == nil {
 		return nil
@@ -6111,7 +6158,7 @@ func writeRepairError(w http.ResponseWriter, err error) {
 			writeInternalError(w, err)
 			return
 		case "pair":
-			writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", "Keep VibeTV powered on, then retry Fix connection.")
+			writePairingError(w, err, "Keep VibeTV powered on, then retry Fix connection.")
 			return
 		case "display-stream":
 			writeError(w, http.StatusBadGateway, "display_stream_repair_failed", "Mac App could not refresh the VibeTV display stream.", "Run setup again or restart the Mac App, then retry Fix connection.")
@@ -6122,6 +6169,41 @@ func writeRepairError(w http.ResponseWriter, err error) {
 		}
 	}
 	writeDeviceNotFound(w)
+}
+
+func writePairingError(w http.ResponseWriter, err error, genericNextAction string) {
+	statusCode, ok := pairingAuthorizationStatus(err)
+	if !ok {
+		writeError(w, http.StatusBadGateway, "pair_failed", "VibeTV pairing failed.", genericNextAction)
+		return
+	}
+
+	switch statusCode {
+	case http.StatusUnauthorized:
+		writeError(
+			w,
+			http.StatusConflict,
+			"pairing_token_rejected",
+			"VibeTV rejected the saved pairing token.",
+			"Interrupt VibeTV during early boot three times, reconnect it to Wi-Fi, then try again.",
+		)
+	case http.StatusForbidden:
+		writeError(
+			w,
+			http.StatusConflict,
+			"pairing_window_closed",
+			"VibeTV is not accepting a new pairing.",
+			"Interrupt VibeTV during early boot three times, reconnect it to Wi-Fi, then try again.",
+		)
+	case http.StatusTooManyRequests:
+		writeError(
+			w,
+			http.StatusTooManyRequests,
+			"pairing_rate_limited",
+			"VibeTV is temporarily limiting pairing attempts.",
+			"Wait one minute, then try pairing again.",
+		)
+	}
 }
 
 func writeInvalidDeviceTarget(w http.ResponseWriter) {

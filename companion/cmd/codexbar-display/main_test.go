@@ -22,6 +22,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
@@ -687,6 +688,73 @@ func TestThemeValidateSupportsWiFiTransport(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("runThemeValidate returned error: %v", err)
+	}
+}
+
+func TestThemePackValidateKeepsLocalPackBehavior(t *testing.T) {
+	packPath, _, _ := writeTestThemePackZip(t, buildTestThemePackZip(t))
+
+	output, err := captureStdout(t, func() error {
+		return runThemePackValidate([]string{"--pack", packPath})
+	})
+	if err != nil {
+		t.Fatalf("runThemePackValidate returned error: %v", err)
+	}
+	if !strings.Contains(output, `theme-pack valid: id=cozy-meadow name="Cozy Meadow"`) {
+		t.Fatalf("unexpected validation output: %s", output)
+	}
+}
+
+func TestThemePackValidatePassesRemoteIntegrityMetadata(t *testing.T) {
+	packPath, packSHA256, packSizeBytes := writeTestThemePackZip(t, buildTestThemePackZip(t))
+	pack, err := themepack.Load(packPath)
+	if err != nil {
+		t.Fatalf("load test theme pack: %v", err)
+	}
+
+	previous := themePackValidateLoadFn
+	t.Cleanup(func() { themePackValidateLoadFn = previous })
+	var gotPath, gotSHA256 string
+	var gotSizeBytes int64
+	themePackValidateLoadFn = func(packPath, expectedSHA256 string, expectedBytes int64) (*themepack.Pack, error) {
+		gotPath = packPath
+		gotSHA256 = expectedSHA256
+		gotSizeBytes = expectedBytes
+		return pack, nil
+	}
+
+	remoteURL := "https://themes.example/vibetv-theme-cozy-meadow.zip"
+	if err := runThemePackValidate([]string{
+		"--pack", remoteURL,
+		"--pack-sha256", packSHA256,
+		"--pack-size-bytes", strconv.FormatInt(packSizeBytes, 10),
+	}); err != nil {
+		t.Fatalf("runThemePackValidate returned error: %v", err)
+	}
+	if gotPath != remoteURL || gotSHA256 != packSHA256 || gotSizeBytes != packSizeBytes {
+		t.Fatalf("unexpected verified load arguments: path=%q sha256=%q bytes=%d", gotPath, gotSHA256, gotSizeBytes)
+	}
+}
+
+func TestThemePackValidateRequiresRemoteIntegrityMetadata(t *testing.T) {
+	err := runThemePackValidate([]string{
+		"--pack", "https://themes.example/vibetv-theme-cozy-meadow.zip",
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires catalog sha256 and byte size") {
+		t.Fatalf("expected missing remote integrity metadata error, got %v", err)
+	}
+}
+
+func TestThemePackValidateRejectsIntegrityMismatch(t *testing.T) {
+	packPath, _, packSizeBytes := writeTestThemePackZip(t, buildTestThemePackZip(t))
+
+	err := runThemePackValidate([]string{
+		"--pack", packPath,
+		"--pack-sha256", strings.Repeat("0", 64),
+		"--pack-size-bytes", strconv.FormatInt(packSizeBytes, 10),
+	})
+	if err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
+		t.Fatalf("expected SHA-256 mismatch, got %v", err)
 	}
 }
 

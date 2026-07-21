@@ -234,6 +234,54 @@ bool testConnectedPageNeverRendersPairingSecret(const char* mainPath) {
       "the unauthenticated device page must never render pairing secrets or rotation forms");
 }
 
+bool testWifiHelloReportsPairingWindowWithoutSecrets(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t handler = mainSource.find("void handleHello()");
+  const std::size_t handlerEnd = mainSource.find("bool isSafeAssetPath", handler);
+  if (handler == std::string::npos || handlerEnd == std::string::npos) {
+    return false;
+  }
+  const std::string helloHandler = mainSource.substr(handler, handlerEnd - handler);
+  return expect(
+      helloHandler.find("appendAuthStatusJSON(out)") != std::string::npos &&
+          helloHandler.find("deviceAuthToken") == std::string::npos,
+      "WiFi hello must report pairing status and window timing without exposing the token");
+}
+
+bool testPhysicalPairingWindowIsThirtyMinutesAndOneUse(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t duration = mainSource.find(
+      "kPhysicalPairingWindowMs = 30UL * 60UL * 1000UL");
+  const std::size_t markerConsumer = mainSource.find("consumePhysicalPairingSetupMarker()");
+  const std::size_t markerClear = mainSource.find(
+      "EEPROM.put(kPairingSetupMarkerOffset, static_cast<uint32_t>(0))",
+      markerConsumer);
+  const std::size_t pairHandler = mainSource.find("void handlePairingAPI()");
+  const std::size_t windowConsumed = mainSource.find(
+      "physicalPairingWindowExpiresAtMs = 0",
+      pairHandler);
+  return expect(
+      duration != std::string::npos && markerConsumer != std::string::npos &&
+          markerClear != std::string::npos && pairHandler != std::string::npos &&
+          windowConsumed != std::string::npos,
+      "physical pairing must stay time-bounded, one-shot across reboot, and consumed by first pairing");
+}
+
+bool testAutomaticSetupAccessPointRoutesToRecoveryPage(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t rootHandler = mainSource.find("void handleRoot()");
+  const std::size_t rootEnd = mainSource.find("void redirectToSetupRoot()", rootHandler);
+  if (rootHandler == std::string::npos || rootEnd == std::string::npos) {
+    return false;
+  }
+  const std::string root = mainSource.substr(rootHandler, rootEnd - rootHandler);
+  return expect(
+      root.find("if (!physicalSetupAuthorized)") != std::string::npos &&
+          root.find("SendRecoveryPage(") != std::string::npos &&
+          mainSource.find("startSetupAccessPoint(false)") != std::string::npos,
+      "an automatic untrusted setup AP must render recovery guidance instead of the writable setup form");
+}
+
 bool testWifiHandlersAuthorizeBeforeStorageMutation(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t saveHandler = mainSource.find("void handleSaveWifi()");
@@ -645,6 +693,15 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testConnectedPageNeverRendersPairingSecret(argv[3])) {
+    return 1;
+  }
+  if (!testWifiHelloReportsPairingWindowWithoutSecrets(argv[3])) {
+    return 1;
+  }
+  if (!testPhysicalPairingWindowIsThirtyMinutesAndOneUse(argv[3])) {
+    return 1;
+  }
+  if (!testAutomaticSetupAccessPointRoutesToRecoveryPage(argv[3])) {
     return 1;
   }
   if (!testFirmwareUsesIPDiscoveryInsteadOfMdns(argv[3])) {

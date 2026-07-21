@@ -106,6 +106,9 @@ export function UpdatesScreen({
   const macAppDownloadAction =
     macAppMigrationReady || (macAppUpdateAvailable && !nativeMacUpdateReady);
   const macAppNativeAction = nativeMacUpdateReady;
+  const macAppMustUpdateFirst =
+    macAppDownloadAction || macAppNativeAction;
+  const firmwareUpdateBlocked = updateAvailable && macAppMustUpdateFirst;
   const anyUpdateAvailable =
     updateAvailable || macAppDownloadAction || macAppNativeAction;
   const needsAttention = anyUpdateAvailable || requiresMacAppMigration;
@@ -139,9 +142,11 @@ export function UpdatesScreen({
       ? "Check failed"
       : !canCheckFirmware && !firmwareUpdate
         ? "Not available"
-        : updateAvailable
-          ? "Update available"
-          : "Up to date";
+        : firmwareUpdateBlocked
+          ? "Update Mac App first"
+          : updateAvailable
+            ? "Update available"
+            : "Up to date";
   const companionReleaseStatus = companionReleaseLabel({
     macAppRunning,
     migrationReady: macAppMigrationReady,
@@ -156,17 +161,21 @@ export function UpdatesScreen({
     companionRelease?.latestVersion || companionRelease?.release || "Checking";
 
   async function runPrimaryUpdate() {
-    if (updateAvailable) {
-      await onInstallUpdate?.();
-      return;
-    }
-
     if (macAppCheckFailed) {
       await onCheckUpdates?.();
       return;
     }
 
     if (macAppDownloadAction) {
+      return;
+    }
+
+    if (macAppMustUpdateFirst) {
+      return;
+    }
+
+    if (updateAvailable) {
+      await onInstallUpdate?.();
       return;
     }
 
@@ -201,22 +210,26 @@ export function UpdatesScreen({
               Boolean(busyAction && busyAction !== "firmware-check")
             }
             downloadUrl={macAppDownloadUrl}
-            nativeUpdateUrl={macAppNativeAction ? "vibetv://check-for-updates" : undefined}
+            nativeUpdateUrl={
+              macAppNativeAction ? "vibetv://check-for-updates" : undefined
+            }
             installingFirmware={installingUpdate}
-            firmwareUpdateAvailable={updateAvailable}
+            firmwareUpdateAvailable={
+              updateAvailable && !firmwareUpdateBlocked
+            }
             macAppCheckFailed={macAppCheckFailed}
             macAppMigrationRequired={requiresMacAppMigration}
             macAppMigrationReady={macAppMigrationReady}
             macAppUpdateAvailable={macAppUpdateAvailable}
             onClick={runPrimaryUpdate}
             updateReady={Boolean(
-              updateAvailable
-                ? onInstallUpdate
-                : macAppCheckFailed
+              macAppCheckFailed
                 ? onCheckUpdates
-                : requiresMacAppMigration || macAppUpdateAvailable
-                ? macAppDownloadReady
-                : anyUpdateAvailable || onCheckUpdates,
+                : macAppMustUpdateFirst
+                  ? macAppNativeAction || macAppDownloadReady
+                  : updateAvailable
+                    ? onInstallUpdate
+                    : anyUpdateAvailable || onCheckUpdates,
             )}
           />
         </div>
@@ -283,11 +296,17 @@ export function UpdatesScreen({
           />
         </dl>
 
+        {firmwareUpdateBlocked ? (
+          <p className="mt-4 text-sm leading-6 text-[#444933]" role="status">
+            Update the Mac App first. The VibeTV firmware update comes next.
+          </p>
+        ) : null}
+
         {updateStatus ? (
           <InlineUpdateProgress
             creatingReport={creatingReport}
             onCreateReport={onCreateReport}
-            onRetry={onInstallUpdate}
+            onRetry={firmwareUpdateBlocked ? undefined : onInstallUpdate}
             status={updateStatus}
           />
         ) : null}

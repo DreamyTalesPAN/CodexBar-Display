@@ -61,6 +61,11 @@ void SendSetupPage(
     const char* setupAddress,
     const char* setupToken,
     int statusCode = 200);
+void SendRecoveryPage(
+    ESP8266WebServer& server,
+    const char* supportUrl,
+    const char* setupAddress,
+    int statusCode = 200);
 
 }  // namespace wifi_setup
 }  // namespace esp8266

@@ -156,7 +156,13 @@ type FirmwareUpdateStatus = {
   error?: string;
 };
 
-type RepairConnectionOutcome = "ready" | "waiting" | "failed" | "stale";
+type RepairConnectionOutcome =
+  | "ready"
+  | "waiting"
+  | "failed"
+  | "pairing-recovery"
+  | "pairing-rate-limited"
+  | "stale";
 type DeviceSearchMode = "onboarding" | "configured";
 
 type FirmwareUpdateResponse = {
@@ -1157,9 +1163,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return "stale" as RepairConnectionOutcome;
         }
-        const normalized = normalizeCaughtError(
-          error,
-          "VibeTV connection needs attention.",
+        const normalized = pairingErrorForCustomer(
+          normalizeCaughtError(
+            error,
+            "VibeTV connection needs attention.",
+          ),
         );
         if (isLocalNetworkAccessError(normalized)) {
           markCompanionAccessBlocked();
@@ -1207,13 +1215,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setDevice((current) => markDeviceDisconnected(current, target));
           setDeviceState("offline");
         }
-        if (!quiet) {
+        if (!quiet || isPairingAttentionError(normalized)) {
           setLastError(normalized);
           addEvent({
             label: "Fix connection needs attention",
             detail: normalized.nextAction,
             tone: "attention",
           });
+        }
+        if (isPhysicalPairingRecoveryError(normalized)) {
+          return "pairing-recovery" as RepairConnectionOutcome;
+        }
+        if (normalized.code === "pairing_rate_limited") {
+          return "pairing-rate-limited" as RepairConnectionOutcome;
         }
         return "failed" as RepairConnectionOutcome;
       } finally {
@@ -1305,6 +1319,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }
           if (outcome === "waiting") {
             setDeviceSearchState("waiting");
+          } else if (
+            outcome === "pairing-recovery" ||
+            outcome === "pairing-rate-limited"
+          ) {
+            setDeviceSearchState("idle");
           } else if (outcome === "failed") {
             setDeviceSearchState("repair-failed");
           }
@@ -1404,12 +1423,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return;
         }
-        const normalized = normalizeCaughtError(
-          error,
-          "The selected VibeTV could not be connected.",
+        const normalized = pairingErrorForCustomer(
+          normalizeCaughtError(
+            error,
+            "The selected VibeTV could not be connected.",
+          ),
         );
         setLastError(normalized);
-        setDeviceSearchState("repair-failed");
+        setDeviceSearchState(
+          isPairingAttentionError(normalized) ? "idle" : "repair-failed",
+        );
         addEvent({
           label: "VibeTV selection failed",
           detail: normalized.nextAction,
@@ -1432,6 +1455,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         automaticPairingRepairKey.current = "";
       }
       return;
+    }
+    if (
+      deviceNeedsPhysicalPairingRecovery(
+        device?.stream?.errorCode,
+        device?.capabilities?.auth?.pairingWindowOpen,
+        device?.capabilities?.auth?.pairingWindowSeconds,
+      )
+    ) {
+      automaticPairingRepairKey.current = `${device.deviceId || "unknown"}:${
+        device.target || "unknown"
+      }`;
+      const recoveryCode = device.capabilities?.auth?.paired
+        ? "pairing_token_rejected"
+        : "pairing_window_closed";
+      const timer = window.setTimeout(() => {
+        setDeviceSearchState("idle");
+        setLastError(physicalPairingRecoveryError(recoveryCode));
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
     if (
       !device?.deviceId ||
@@ -1457,6 +1499,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceSearchState("waiting");
         return;
       }
+      if (
+        outcome === "pairing-recovery" ||
+        outcome === "pairing-rate-limited"
+      ) {
+        setDeviceSearchState("idle");
+        return;
+      }
       setDeviceSearchState("repair-failed");
       setLastError({
         code: "device_pairing_repair_failed",
@@ -1468,6 +1517,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     busyAction,
     companionStatus,
     device?.deviceId,
+    device?.capabilities?.auth?.paired,
+    device?.capabilities?.auth?.pairingWindowOpen,
+    device?.capabilities?.auth?.pairingWindowSeconds,
     device?.ready,
     device?.stream?.errorCode,
     device?.target,
@@ -2508,6 +2560,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const controlCenterAvailable = Boolean(
     deviceOperational || hasEnteredControlCenter,
   );
+  const pairingAttention = isPairingAttentionError(lastError)
+    ? lastError
+    : null;
   const disabledTabs: ActiveTab[] = controlCenterAvailable
     ? imageNeedsReload
       ? ["settings", "theme-library", "updates"]
@@ -2730,6 +2785,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setActiveTab(tab);
       }}
     >
+      {pairingAttention ? (
+        <PairingAttentionNotice error={pairingAttention} />
+      ) : null}
       {activeShellTab === "overview" ? (
         <OverviewScreen
           companionRelease={companionRelease}
@@ -2818,6 +2876,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         />
       ) : null}
     </ControlCenterShell>
+  );
+}
+
+function PairingAttentionNotice({ error }: { error: ApiError }) {
+  return (
+    <section
+      aria-labelledby="pairing-attention-title"
+      className="mx-auto mt-6 grid max-w-[1180px] gap-2 border border-[#747A60] bg-[#F9F9F9] p-4 text-[#1B1B1B]"
+      role="alert"
+    >
+      <h2 className="text-lg font-black" id="pairing-attention-title">
+        {error.message}
+      </h2>
+      <p className="max-w-[760px] text-sm leading-6 text-[#444933]">
+        {error.nextAction}
+      </p>
+    </section>
   );
 }
 
@@ -3104,6 +3179,62 @@ function normalizeCaughtError(
   };
 }
 
+function pairingErrorForCustomer(error: ApiError): ApiError {
+  if (isPhysicalPairingRecoveryError(error)) {
+    return physicalPairingRecoveryError(error.code);
+  }
+  if (error.code === "pairing_rate_limited") {
+    return {
+      code: error.code,
+      message: "Pairing is paused for a moment.",
+      nextAction: "Wait one minute, then try pairing again.",
+    };
+  }
+  return error;
+}
+
+function physicalPairingRecoveryError(code: string): ApiError {
+  return {
+    code,
+    message: "Pairing needs physical recovery.",
+    nextAction:
+      "Unplug VibeTV during early boot three times in a row. Then connect VibeTV to WiFi again and pair it in Control Center.",
+  };
+}
+
+function isPhysicalPairingRecoveryError(
+  error?: ApiError | null,
+): boolean {
+  return (
+    error?.code === "pairing_window_closed" ||
+    error?.code === "pairing_token_rejected"
+  );
+}
+
+function isPairingAttentionError(error?: ApiError | null): boolean {
+  return (
+    isPhysicalPairingRecoveryError(error) ||
+    error?.code === "pairing_rate_limited"
+  );
+}
+
+function deviceNeedsPhysicalPairingRecovery(
+  pairingErrorCode?: string,
+  pairingWindowOpen?: boolean,
+  pairingWindowSeconds?: number,
+): boolean {
+  if (pairingErrorCode !== "device_pairing_required") {
+    return false;
+  }
+  const windowStateKnown =
+    typeof pairingWindowOpen === "boolean" ||
+    typeof pairingWindowSeconds === "number";
+  const windowOpen =
+    pairingWindowOpen === true &&
+    (pairingWindowSeconds === undefined || pairingWindowSeconds > 0);
+  return windowStateKnown && !windowOpen;
+}
+
 function normalizeUsageError(error: ApiError): ApiError {
   if (error.code === "HTTP_404") {
     return {
@@ -3317,6 +3448,7 @@ function mergeDeviceCapabilities(
   return {
     ...current,
     ...next,
+    auth: next.auth ? { ...current.auth, ...next.auth } : current.auth,
     display: next.display
       ? {
           ...current.display,

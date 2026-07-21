@@ -40,6 +40,7 @@ const defaultThemeCatalogURL = themeinstall.DefaultCatalogURL
 
 var themePackUploadSettleDelay = 750 * time.Millisecond
 var themePackInstallFetchLiveFrameFn = codexbar.FetchFirstFrame
+var themePackValidateLoadFn = themepack.LoadVerified
 var displayWorkerRestartDelay = 5 * time.Second
 var openControlCenterStartLaunchAgentFn = startLaunchAgent
 var openControlCenterOpenURLFn = openURLWithMacOpen
@@ -124,7 +125,7 @@ func printUsage() {
 	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display theme-pack catalog [--catalog https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json]")
-	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip-or-url")
+	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip-or-url [--pack-sha256 hex --pack-size-bytes n]")
 	fmt.Println("  codexbar-display theme-pack install (--pack path/to/theme-pack-dir-or.zip-or-url [--pack-sha256 hex --pack-size-bytes n] | --catalog url --theme theme-id) [--target http://<device-ip>] [--firmware-manifest-url url] [--skip-firmware-update] [--allow-unknown-capabilities] [--verbose]")
 	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
@@ -1087,10 +1088,16 @@ func runThemePackCatalog(args []string) error {
 func runThemePackValidate(args []string) error {
 	fs := flag.NewFlagSet("theme-pack validate", flag.ContinueOnError)
 	packPath := fs.String("pack", "", "path or HTTP(S) URL to VibeTV theme pack directory or zip")
+	packSHA256 := fs.String("pack-sha256", "", "expected SHA-256 for a remote theme pack")
+	packSizeBytes := fs.Int64("pack-size-bytes", 0, "expected byte size for a remote theme pack")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	pack, err := themepack.Load(strings.TrimSpace(*packPath))
+	pack, err := themePackValidateLoadFn(
+		strings.TrimSpace(*packPath),
+		strings.TrimSpace(*packSHA256),
+		*packSizeBytes,
+	)
 	if err != nil {
 		return err
 	}

@@ -147,6 +147,25 @@ void test_generic_reconnect_error_does_not_render_an_empty_ssid() {
   TEST_ASSERT_FALSE(contains(server.output, "<strong></strong>"));
 }
 
+void test_automatic_setup_ap_renders_read_only_recovery_page() {
+  ESP8266WebServer server;
+  SendRecoveryPage(server, kSupportUrl, "192.168.4.1");
+
+  TEST_ASSERT_EQUAL_INT(200, server.status);
+  TEST_ASSERT_TRUE(contains(server.output, "Wi-Fi recovery required"));
+  TEST_ASSERT_TRUE(contains(server.output, "Wi-Fi changes are locked"));
+  TEST_ASSERT_TRUE(contains(server.output, "three interrupted early boots"));
+  TEST_ASSERT_TRUE(contains(server.output, "VibeTV-Setup"));
+  TEST_ASSERT_TRUE(contains(server.output, "http://192.168.4.1"));
+  TEST_ASSERT_TRUE(contains(server.output, "https://vibetv.shop/pages/setup"));
+  TEST_ASSERT_FALSE(contains(server.output, "<form"));
+  TEST_ASSERT_FALSE(contains(server.output, "action=\"/save\""));
+  TEST_ASSERT_FALSE(contains(server.output, "action=\"/scan\""));
+  TEST_ASSERT_FALSE(contains(server.output, "name=\"password\""));
+  TEST_ASSERT_FALSE(contains(server.output, "Search again"));
+  TEST_ASSERT_FALSE(contains(server.output, "Connect</button>"));
+}
+
 }  // namespace
 
 void setUp() {}
@@ -175,5 +194,6 @@ int main(int, char**) {
   RUN_TEST(test_page_uses_inline_band_guidance_and_links_to_public_support);
   RUN_TEST(test_page_publishes_no_placeholder_without_support_url);
   RUN_TEST(test_generic_reconnect_error_does_not_render_an_empty_ssid);
+  RUN_TEST(test_automatic_setup_ap_renders_read_only_recovery_page);
   return UNITY_END();
 }

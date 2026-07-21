@@ -4,6 +4,14 @@
     "esp8266_smalltv_st7789": "1.0.0",
     "lilygo_t_display_s3": "1.0.0"
   },
+  "featureRequirements": {
+    "pairingTokenRotation": {
+      "firmwareMin": "1.0.38",
+      "companionMin": "1.0.50",
+      "updateOrder": "companion-first",
+      "notes": "Existing valid tokens continue to work. Pairing rotation and lost-token recovery on firmware 1.0.38 or newer require Companion/Mac App 1.0.50 or newer, so update the Mac App before firmware."
+    }
+  },
   "rules": [
     {
       "name": "v2-usb-first",

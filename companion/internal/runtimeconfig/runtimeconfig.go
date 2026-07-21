@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
@@ -25,6 +26,18 @@ var configBackupFilePatterns = []string{
 	"config.backup-*.json",
 	"config.json.backup-*",
 }
+
+type permissionMigrationState struct {
+	mu       sync.Mutex
+	complete bool
+}
+
+type permissionMigrationCache struct {
+	states  sync.Map
+	migrate func(home, configPath, configDir string) error
+}
+
+var processPermissionMigrations permissionMigrationCache
 
 type Config struct {
 	Theme        string        `json:"theme,omitempty"`
@@ -103,6 +116,44 @@ func RestrictPermissions(home string) error {
 	}
 	configPath := ConfigPath(home)
 	configDir := filepath.Dir(configPath)
+	return processPermissionMigrations.ensure(home, configPath, configDir)
+}
+
+func (c *permissionMigrationCache) ensure(home, configPath, configDir string) error {
+	if existing, ok := c.states.Load(configDir); ok {
+		return existing.(*permissionMigrationState).ensure(c.migration(), home, configPath, configDir)
+	}
+	state := &permissionMigrationState{}
+	actual, _ := c.states.LoadOrStore(configDir, state)
+	return actual.(*permissionMigrationState).ensure(c.migration(), home, configPath, configDir)
+}
+
+func (c *permissionMigrationCache) migration() func(string, string, string) error {
+	if c.migrate != nil {
+		return c.migrate
+	}
+	return restrictPermissions
+}
+
+func (s *permissionMigrationState) ensure(
+	migrate func(string, string, string) error,
+	home,
+	configPath,
+	configDir string,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.complete {
+		return nil
+	}
+	if err := migrate(home, configPath, configDir); err != nil {
+		return err
+	}
+	s.complete = true
+	return nil
+}
+
+func restrictPermissions(home, configPath, configDir string) error {
 	if err := os.Chmod(configDir, privateConfigDirMode); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("restrict runtime config dir permissions: %w", err)
 	}

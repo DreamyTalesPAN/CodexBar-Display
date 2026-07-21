@@ -162,4 +162,4 @@ Provisioned Vibe TV firmware supports two WiFi setup reset paths:
 - An authenticated `POST /reset-wifi` clears saved WiFi credentials and restarts into setup mode while the device is reachable on the local network.
 - Three interrupted early boots clear saved WiFi credentials and restart `VibeTV-Setup` when the device is no longer reachable on the local network.
 
-Saving WiFi during initial setup or physical recovery opens a one-use pairing window for five minutes after reboot. Ordinary network loss does not authorize WiFi changes or token rotation.
+Saving WiFi during initial setup or physical recovery opens a one-use pairing window for 30 minutes after reboot. Ordinary network loss does not authorize WiFi changes or token rotation.

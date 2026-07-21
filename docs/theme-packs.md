@@ -74,6 +74,18 @@ Validate a downloaded pack:
 go run ./cmd/codexbar-display theme-pack validate --pack ../theme-packs/cozy-meadow
 ```
 
+Local directories and ZIP files do not need catalog metadata. To validate a
+remote ZIP, pass the SHA-256 and byte size from a trusted catalog entry. Remote
+downloads require HTTPS and are rejected before parsing when either value is
+missing or does not match:
+
+```bash
+go run ./cmd/codexbar-display theme-pack validate \
+  --pack https://example.com/vibetv-theme-cozy-meadow.zip \
+  --pack-sha256 <64-character-hex-sha256> \
+  --pack-size-bytes <exact-byte-size>
+```
+
 Install it on a connected VibeTV only during an explicit hardware test window. Theme pack install uploads files to the ESP8266 over WiFi and can destabilize weak firmware/network states. Do not use it as a routine smoke test.
 
 For theme-only tests, skip firmware update explicitly:

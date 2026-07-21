@@ -396,14 +396,13 @@ async function enrichThemesWithGitHubCatalog(
       if (!fallback) {
         return theme;
       }
+      const packMetadata = chooseCompleteThemePackMetadata(theme, fallback);
       return {
         ...theme,
         compatibleBoards:
           theme.compatibleBoards || fallback.compatibleBoards,
         manifestUrl: theme.manifestUrl || fallback.manifestUrl,
-        packUrl: chooseThemePackUrl(theme.packUrl, fallback.packUrl),
-        packSha256: theme.packSha256 || fallback.packSha256,
-        packSizeBytes: theme.packSizeBytes || fallback.packSizeBytes,
+        ...packMetadata,
         requiresFirmware:
           theme.requiresFirmware || fallback.requiresFirmware,
         themeVersion: theme.themeVersion || fallback.themeVersion,
@@ -455,17 +454,38 @@ function resolveCatalogUrl(raw: string | undefined): string | undefined {
   }
 }
 
-function chooseThemePackUrl(
-  primary?: string,
-  fallback?: string,
-): string | undefined {
-  if (isRemoteThemePackUrl(primary)) {
-    return primary?.trim();
+export function chooseCompleteThemePackMetadata(
+  primary: Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes">,
+  fallback: Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes">,
+): Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes"> {
+  if (hasCompleteThemePackMetadata(primary)) {
+    return normalizeThemePackMetadata(primary);
   }
-  if (isRemoteThemePackUrl(fallback)) {
-    return fallback?.trim();
+  if (hasCompleteThemePackMetadata(fallback)) {
+    return normalizeThemePackMetadata(fallback);
   }
-  return primary?.trim() || fallback?.trim() || undefined;
+  return normalizeThemePackMetadata(primary);
+}
+
+function hasCompleteThemePackMetadata(
+  theme: Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes">,
+): boolean {
+  return (
+    isRemoteThemePackUrl(theme.packUrl) &&
+    /^[a-f0-9]{64}$/i.test(theme.packSha256?.trim() || "") &&
+    Number.isSafeInteger(theme.packSizeBytes) &&
+    (theme.packSizeBytes || 0) > 0
+  );
+}
+
+function normalizeThemePackMetadata(
+  theme: Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes">,
+): Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes"> {
+  return {
+    packUrl: theme.packUrl?.trim() || undefined,
+    packSha256: theme.packSha256?.trim().toLowerCase() || undefined,
+    packSizeBytes: theme.packSizeBytes,
+  };
 }
 
 function formatMoney(amount: number, currency: string): string {

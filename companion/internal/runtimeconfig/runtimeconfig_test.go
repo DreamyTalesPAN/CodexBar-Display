@@ -1,9 +1,12 @@
 package runtimeconfig
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -94,6 +97,75 @@ func TestRestrictPermissionsMigratesJournalAndRecognizedBackups(t *testing.T) {
 	assertPermissions(t, dir, privateConfigDirMode)
 	for _, path := range paths {
 		assertPermissions(t, path, privateConfigFileMode)
+	}
+}
+
+func TestPermissionMigrationCacheRunsSuccessfulMigrationOnceAcrossConcurrentLoads(t *testing.T) {
+	var calls atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	cache := permissionMigrationCache{
+		migrate: func(_, _, _ string) error {
+			if calls.Add(1) == 1 {
+				close(started)
+				<-release
+			}
+			return nil
+		},
+	}
+
+	const workers = 24
+	errorsByWorker := make(chan error, workers)
+	var workersReady sync.WaitGroup
+	workersReady.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			workersReady.Done()
+			errorsByWorker <- cache.ensure("/tmp/home", "/tmp/config-home/config.json", "/tmp/config-home")
+		}()
+	}
+	workersReady.Wait()
+	<-started
+	close(release)
+	for i := 0; i < workers; i++ {
+		if err := <-errorsByWorker; err != nil {
+			t.Fatalf("concurrent migration failed: %v", err)
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("successful migration calls=%d want=1", got)
+	}
+	if err := cache.ensure("/tmp/home", "/tmp/config-home/config.json", "/tmp/config-home"); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("cached migration calls=%d want=1", got)
+	}
+}
+
+func TestPermissionMigrationCacheRetriesAfterFailure(t *testing.T) {
+	var calls atomic.Int32
+	wantErr := errors.New("chmod failed")
+	cache := permissionMigrationCache{
+		migrate: func(_, _, _ string) error {
+			if calls.Add(1) == 1 {
+				return wantErr
+			}
+			return nil
+		},
+	}
+
+	if err := cache.ensure("/tmp/home", "/tmp/retry-config-home/config.json", "/tmp/retry-config-home"); !errors.Is(err, wantErr) {
+		t.Fatalf("first migration error=%v want=%v", err, wantErr)
+	}
+	if err := cache.ensure("/tmp/home", "/tmp/retry-config-home/config.json", "/tmp/retry-config-home"); err != nil {
+		t.Fatalf("retry migration failed: %v", err)
+	}
+	if err := cache.ensure("/tmp/home", "/tmp/retry-config-home/config.json", "/tmp/retry-config-home"); err != nil {
+		t.Fatalf("cached migration failed: %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("migration calls=%d want=2", got)
 	}
 }
 
