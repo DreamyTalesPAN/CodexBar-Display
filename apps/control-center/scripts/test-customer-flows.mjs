@@ -4194,6 +4194,12 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     "selecting an element should not create an undo step",
   );
   await page.getByRole("tab", { name: "Project" }).press("ArrowRight");
+  await page.waitForFunction(
+    () =>
+      document
+        .getElementById("theme-studio-tab-assets")
+        ?.getAttribute("aria-selected") === "true",
+  );
   assert(
     (await page
       .getByRole("tab", { name: "Assets" })
