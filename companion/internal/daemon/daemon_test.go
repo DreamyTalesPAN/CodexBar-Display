@@ -1703,7 +1703,7 @@ func TestRunCycleWithDepsPreservesFirmwareUpdateNoticeForLegacyDevice(t *testing
 				LatestVersion: "1.0.20",
 				Status:        "update_available",
 				Severity:      "recommended",
-				Message:       strings.Repeat("Firmware update available. Open app.vibetv.shop. ", 20),
+				Message:       strings.Repeat("Firmware update available. Open the VibeTV Mac App. ", 20),
 				FirmwareURL:   "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.20/" + strings.Repeat("codexbar-display-firmware-esp8266-smalltv-st7789-", 10) + "v1.0.20.bin.gz",
 				SHA256:        strings.Repeat("a", 128),
 			}, nil
