@@ -24,6 +24,7 @@ import {
   companionRequestUrl,
   isLocalCompanionOrigin,
   launchCodexBarRepair,
+  launchLocalControlCenterApp,
   localizeCompanionAssetUrl,
   localControlCenterUrl,
   needsLoopbackTargetAddressSpace,
@@ -256,11 +257,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     readLocalSetupPreviewStep,
   );
   const [setupResetVersion, setSetupResetVersion] = useState(0);
-  const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(false);
+  const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(
+    readInitialKnownDeviceContext,
+  );
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
-  const hasEnteredControlCenterRef = useRef(false);
+  const hasEnteredControlCenterRef = useRef(readInitialKnownDeviceContext());
   const setupGenerationRef = useRef(0);
   const didRunInitialConnectionCheck = useRef(false);
   const didRunAutomaticDeviceSearch = useRef(false);
@@ -2762,11 +2765,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     >
       {activeShellTab === "overview" ? (
         <OverviewScreen
+          busyAction={busyAction}
           companionRelease={companionRelease}
           companionVersion={companionInfo?.version}
           companionStatus={companionStatus}
           device={device}
           firmwareUpdate={effectiveFirmwareUpdate}
+          onCheckCompanion={() => void checkCompanion()}
+          onOpenMacApp={launchLocalControlCenterApp}
           requiresMacAppMigration={requiresMacAppMigration}
           usage={usage}
         />
@@ -3379,6 +3385,21 @@ function readInitialDeviceTarget(): string {
     );
   } catch {
     return "";
+  }
+}
+
+function readInitialKnownDeviceContext(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return Boolean(
+      normalizeDeviceTarget(
+        window.localStorage.getItem(DEVICE_TARGET_STORAGE_KEY) || "",
+      ),
+    );
+  } catch {
+    return false;
   }
 }
 

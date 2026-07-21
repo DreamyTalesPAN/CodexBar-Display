@@ -280,6 +280,14 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testKnownDeviceCompanionOutageSurvivesReloadAndSecondWindow(
+        browser,
+        appContext.appUrl,
+      );
+      await testKnownDeviceCompanionRecoveryRehydratesStatusAndUsage(
+        browser,
+        appContext.appUrl,
+      );
       await testLocalExistingSetupOpensOverviewWithoutRepair(
         browser,
         appContext.appUrl,
@@ -366,6 +374,14 @@ async function main() {
       appContext.appUrl,
     );
     await testRunningCompanionOutageKeepsControlCenterOpen(
+      browser,
+      appContext.appUrl,
+    );
+    await testKnownDeviceCompanionOutageSurvivesReloadAndSecondWindow(
+      browser,
+      appContext.appUrl,
+    );
+    await testKnownDeviceCompanionRecoveryRehydratesStatusAndUsage(
       browser,
       appContext.appUrl,
     );
@@ -722,6 +738,12 @@ async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
   assert(
     (await page.getByText("Browser permission needed.").count()) === 0,
     "setup should not show browser permission copy",
+  );
+  assert(
+    (await page.evaluate(() =>
+      window.localStorage.getItem("vibetv.controlCenter.deviceTarget"),
+    )) === null,
+    "A genuine fresh setup must not invent known-device context",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -1483,7 +1505,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   await page.getByRole("button", { name: "Overview", exact: true }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Needs install", { exact: true }).waitFor({
+  await page.getByText("Not reachable", { exact: true }).waitFor({
     timeout: 12_000,
   });
   assert(
@@ -1507,6 +1529,129 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   );
   assertNoInstallRequests(installRequests);
   await page.close();
+}
+
+async function testKnownDeviceCompanionOutageSurvivesReloadAndSecondWindow(
+  browser,
+  appUrl,
+) {
+  const context = await browser.newContext({ viewport: desktopViewport });
+  await context.grantPermissions(["local-network-access"], { origin: appUrl });
+  const firstPage = await context.newPage();
+  const installRequests = [];
+  const knownDevice = {
+    ...companionDevice,
+    connectionState: "ready",
+    deviceId: "known-reload-device",
+  };
+  await routeCompanionOnline(firstPage, installRequests, () => {}, {
+    device: knownDevice,
+  });
+
+  await firstPage.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await firstPage
+    .getByRole("heading", { name: "VibeTV is connected" })
+    .waitFor({ timeout: 10_000 });
+  await firstPage.unrouteAll({ behavior: "ignoreErrors" });
+  await routeCompanionMissing(firstPage, installRequests);
+  await firstPage.reload({ waitUntil: "domcontentloaded" });
+  await assertKnownDeviceMacAppOutage(firstPage);
+
+  const secondPage = await context.newPage();
+  await routeCompanionMissing(secondPage, installRequests);
+  await secondPage.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await assertKnownDeviceMacAppOutage(secondPage);
+
+  assertNoInstallRequests(installRequests);
+  await context.close();
+}
+
+async function testKnownDeviceCompanionRecoveryRehydratesStatusAndUsage(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const deviceWriteRequests = [];
+  const knownDevice = {
+    ...companionDevice,
+    connectionState: "ready",
+    deviceId: "known-recovery-device",
+  };
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: knownDevice,
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "VibeTV is connected" })
+    .waitFor({ timeout: 10_000 });
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await routeCompanionMissing(page, installRequests);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await assertKnownDeviceMacAppOutage(page);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: knownDevice,
+    onRequest: (pathname, method) => {
+      if (method === "POST" && pathname.startsWith("/v1/device/")) {
+        deviceWriteRequests.push(pathname);
+      }
+    },
+  });
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page
+    .getByRole("heading", { name: "VibeTV is connected" })
+    .waitFor({ timeout: 10_000 });
+  await clickNavigation(page, "Usage");
+  await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
+  await page.getByText("Codex", { exact: true }).first().waitFor();
+  assert(
+    (await page.evaluate(() =>
+      window.localStorage.getItem("vibetv.controlCenter.deviceTarget"),
+    )) === knownDevice.target,
+    "Companion recovery must keep the saved VibeTV target",
+  );
+  assert(
+    deviceWriteRequests.length === 0,
+    `Companion recovery should rehydrate from status without device writes, got ${deviceWriteRequests}`,
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function assertKnownDeviceMacAppOutage(page) {
+  await page
+    .getByRole("heading", { name: "Mac App is not reachable" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Open Mac App" }).waitFor();
+  await page.getByRole("button", { name: "Try again" }).waitFor();
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      1,
+    "A known-device Mac App outage must stay in the Control Center",
+  );
+  assert(
+    (await page
+      .getByRole("heading", { name: "Set up your VibeTV" })
+      .count()) === 0,
+    "A known-device Mac App outage must not render first-run setup",
+  );
+  assert(
+    (await page.getByText("Plug VibeTV into power.").count()) === 0,
+    "A known-device Mac App outage must not show WiFi onboarding",
+  );
+  assert(
+    Boolean(
+      await page.evaluate(() =>
+        window.localStorage.getItem("vibetv.controlCenter.deviceTarget"),
+      ),
+    ),
+    "A known-device Mac App outage must preserve the saved VibeTV target",
+  );
 }
 
 async function testRunningPairingErrorRepairsAutomaticallyOnce(

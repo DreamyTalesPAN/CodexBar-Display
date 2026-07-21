@@ -7,6 +7,7 @@ import {
   CircleHelp,
   Download,
   Monitor,
+  RefreshCw,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,7 @@ import type {
 import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
+  busyAction?: string | null;
   companionVersion?: string;
   companionRelease?: CompanionReleaseInfo | null;
   companionStatus: CompanionStatus;
@@ -47,9 +49,12 @@ type OverviewScreenProps = {
   firmwareUpdate?: FirmwareUpdateInfo | null;
   usage?: UsageSnapshot | null;
   requiresMacAppMigration?: boolean;
+  onCheckCompanion?: () => void;
+  onOpenMacApp?: () => void;
 };
 
 export function OverviewScreen({
+  busyAction,
   companionVersion,
   companionRelease,
   companionStatus,
@@ -57,6 +62,8 @@ export function OverviewScreen({
   firmwareUpdate,
   usage,
   requiresMacAppMigration = false,
+  onCheckCompanion,
+  onOpenMacApp,
 }: OverviewScreenProps) {
   const connected = deviceIsConnected(device);
   const displayReady = Boolean(device?.ready);
@@ -124,8 +131,60 @@ export function OverviewScreen({
         {requiresMacAppMigration ? (
           <MacAppMigrationCard downloadUrl={macAppMigrationUrl} />
         ) : null}
+        {companionStatus === "missing" ? (
+          <MacAppUnavailableCard
+            checking={busyAction === "status"}
+            onOpenMacApp={onOpenMacApp}
+            onRetry={onCheckCompanion}
+          />
+        ) : null}
       </section>
     </div>
+  );
+}
+
+function MacAppUnavailableCard({
+  checking,
+  onOpenMacApp,
+  onRetry,
+}: {
+  checking: boolean;
+  onOpenMacApp?: () => void;
+  onRetry?: () => void;
+}) {
+  return (
+    <Card
+      aria-labelledby="mac-app-unavailable-title"
+      className="mx-auto mt-4 max-w-[1040px]"
+    >
+      <CardHeader>
+        <CardTitle id="mac-app-unavailable-title">
+          Mac App is not reachable
+        </CardTitle>
+        <CardDescription>
+          Your VibeTV setup is still saved. Open VibeTV Control Center on this
+          Mac, then try again. You do not need to set up WiFi again.
+        </CardDescription>
+      </CardHeader>
+      <CardFooter className="flex-wrap gap-3">
+        <Button disabled={!onOpenMacApp} onClick={onOpenMacApp} size="lg">
+          <AppWindow aria-hidden />
+          Open Mac App
+        </Button>
+        <Button
+          disabled={checking || !onRetry}
+          onClick={onRetry}
+          size="lg"
+          variant="outline"
+        >
+          <RefreshCw
+            className={checking ? "animate-spin" : undefined}
+            aria-hidden
+          />
+          {checking ? "Checking" : "Try again"}
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }
 
@@ -197,7 +256,8 @@ function buildHeroCopy(
     };
   }
   return {
-    badge: companionStatus === "missing" ? "Setup needed" : "Not connected",
+    badge:
+      companionStatus === "missing" ? "Mac App offline" : "Not connected",
     badgeVariant: "outline" as const,
     icon: <CircleHelp data-icon="inline-start" aria-hidden />,
   };
@@ -211,7 +271,7 @@ function labelForCompanion(
     return companionVersion ? `Online ${companionVersion}` : "Online";
   }
   if (status === "missing") {
-    return "Needs install";
+    return "Not reachable";
   }
   return "Waiting for Mac App";
 }
