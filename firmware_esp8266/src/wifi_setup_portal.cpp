@@ -17,7 +17,8 @@ const char kPageStart[] PROGMEM = R"HTML(<!doctype html><html lang="en"><head><m
 
 const char kScanForm[] PROGMEM = R"HTML(<form class="scan-form" method="post" action="/scan" onsubmit="const b=this.querySelector('button');if(b.disabled)return false;b.disabled=true;b.textContent='Searching…';b.setAttribute('aria-busy','true')"><button class="secondary" type="submit">Search again</button></form>)HTML";
 
-const char kFieldsStart[] PROGMEM = R"HTML(<form method="post" action="/save"><label for="ssid">Wi-Fi network</label><p id="wifi-band-help" class="field-help">Only 2.4 GHz networks are shown.</p><select id="ssid" name="ssid" aria-describedby="setup-status wifi-band-help">)HTML";
+const char kFieldsStart[] PROGMEM = R"HTML(<form method="post" action="/save"><input type="hidden" name="setup_token" value=")HTML";
+const char kFieldsAfterToken[] PROGMEM = R"HTML("><label for="ssid">Wi-Fi network</label><p id="wifi-band-help" class="field-help">Only 2.4 GHz networks are shown.</p><select id="ssid" name="ssid" aria-describedby="setup-status wifi-band-help">)HTML";
 const char kFieldsManual[] PROGMEM = R"HTML(</select><label for="custom_ssid">Hidden network</label><input id="custom_ssid" name="custom_ssid" maxlength="32" autocomplete="off" placeholder="Enter Wi-Fi name" aria-describedby="setup-status")HTML";
 const char kFieldsPassword[] PROGMEM = R"HTML(><label for="password">Password</label><input id="password" name="password" type="password" maxlength="64" autocomplete="current-password" aria-describedby="setup-status"><div class="actions"><button class="primary" type="submit">Connect</button></div></form>)HTML";
 const char kPageEnd[] PROGMEM = R"HTML(</section><p class="foot">Setup address: http://)HTML";
@@ -256,6 +257,7 @@ void SendSetupPage(
     const State& state,
     const char* supportUrl,
     const char* setupAddress,
+    const char* setupToken,
     int statusCode) {
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   server.send(statusCode, "text/html; charset=utf-8", "");
@@ -265,6 +267,8 @@ void SendSetupPage(
   sendDynamic(server, scanStatusHTML(state));
   server.sendContent_P(PSTR("</div>"));
   server.sendContent_P(kFieldsStart);
+  sendDynamic(server, HtmlEscape(String(setupToken == nullptr ? "" : setupToken)));
+  server.sendContent_P(kFieldsAfterToken);
   sendDynamic(server, BuildNetworkOptionsHTML(state));
   server.sendContent_P(kFieldsManual);
 

@@ -95,7 +95,7 @@ void test_page_uses_inline_band_guidance_and_links_to_public_support() {
   SetConnectionError(state, ConnectionError::WrongPassword, "Home");
 
   ESP8266WebServer server;
-  SendSetupPage(server, state, kSupportUrl, "192.168.4.1");
+  SendSetupPage(server, state, kSupportUrl, "192.168.4.1", "setup-nonce");
 
   TEST_ASSERT_EQUAL_INT(200, server.status);
   TEST_ASSERT_FALSE(contains(server.output, "Choose a 2.4 GHz Wi-Fi network."));
@@ -118,6 +118,7 @@ void test_page_uses_inline_band_guidance_and_links_to_public_support() {
   TEST_ASSERT_FALSE(contains(server.output, "Band Steering"));
   TEST_ASSERT_FALSE(contains(server.output, "5 GHz"));
   TEST_ASSERT_FALSE(contains(server.output, "compatible"));
+  TEST_ASSERT_TRUE(contains(server.output, "name=\"setup_token\" value=\"setup-nonce\""));
 }
 
 void test_page_publishes_no_placeholder_without_support_url() {
@@ -126,7 +127,7 @@ void test_page_publishes_no_placeholder_without_support_url() {
   FinishScan(state, 0);
 
   ESP8266WebServer server;
-  SendSetupPage(server, state, nullptr, "192.168.4.1");
+  SendSetupPage(server, state, nullptr, "192.168.4.1", "setup-nonce");
 
   TEST_ASSERT_TRUE(contains(server.output, "No networks found."));
   TEST_ASSERT_FALSE(contains(server.output, "Troubleshooting:"));
@@ -140,7 +141,7 @@ void test_generic_reconnect_error_does_not_render_an_empty_ssid() {
   SetConnectionError(state, ConnectionError::ConnectionFailed);
 
   ESP8266WebServer server;
-  SendSetupPage(server, state, nullptr, "192.168.4.1");
+  SendSetupPage(server, state, nullptr, "192.168.4.1", "setup-nonce");
 
   TEST_ASSERT_TRUE(contains(server.output, "Could not reconnect to Wi-Fi."));
   TEST_ASSERT_FALSE(contains(server.output, "<strong></strong>"));
@@ -160,7 +161,7 @@ int main(int, char**) {
     AddScanResult(state, "Guest", -81, 1);
     FinishScan(state, 3);
     ESP8266WebServer server;
-    SendSetupPage(server, state, kSupportUrl, "192.168.4.1");
+    SendSetupPage(server, state, kSupportUrl, "192.168.4.1", "setup-nonce");
     std::fwrite(server.output.data(), 1, server.output.size(), stdout);
     return 0;
   }

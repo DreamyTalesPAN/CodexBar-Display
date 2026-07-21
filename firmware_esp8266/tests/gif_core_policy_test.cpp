@@ -8,6 +8,7 @@
 #include "../src/boot_recovery_policy.h"
 #include "../src/asset_path_policy.h"
 #include "../src/theme_spec_runtime_policy.h"
+#include "../src/wifi_security_policy.h"
 
 namespace {
 
@@ -16,6 +17,9 @@ using codexbar_display::esp8266::GifFailureGuardState;
 using codexbar_display::esp8266::BootRecoveryPolicy;
 using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
 using codexbar_display::esp8266::AssetPathPolicy;
+using codexbar_display::esp8266::WifiSecurityPolicy;
+
+std::string readFile(const char* path);
 
 bool expect(bool cond, const char* message) {
   if (!cond) {
@@ -167,6 +171,39 @@ bool testAssetWritesStayInsideThemeNamespace() {
   return true;
 }
 
+bool testWifiCredentialWritesRequirePhysicalSetupOrCurrentToken() {
+  if (!expect(
+          WifiSecurityPolicy::AllowsCredentialWrite(true, true, false, false),
+          "physical setup with its nonce must allow WiFi changes")) {
+    return false;
+  }
+  if (!expect(
+          WifiSecurityPolicy::AllowsCredentialWrite(false, false, true, true),
+          "a paired device with its current token must allow WiFi changes")) {
+    return false;
+  }
+  return expect(
+      !WifiSecurityPolicy::AllowsCredentialWrite(true, false, false, false) &&
+          !WifiSecurityPolicy::AllowsCredentialWrite(false, false, false, false) &&
+          !WifiSecurityPolicy::AllowsCredentialWrite(false, false, true, false),
+      "automatic setup, missing nonces, and missing device tokens must deny WiFi changes");
+}
+
+bool testWifiHandlersAuthorizeBeforeStorageMutation(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t saveHandler = mainSource.find("void handleSaveWifi()");
+  const std::size_t saveAuthorization = mainSource.find("if (!authorizeWifiCredentialWrite())", saveHandler);
+  const std::size_t saveMutation = mainSource.find("saveWifiCredentials(ssid, password)", saveHandler);
+  const std::size_t resetHandler = mainSource.find("void handleResetWifi()");
+  const std::size_t resetAuthorization = mainSource.find("if (!authorizeWifiCredentialWrite())", resetHandler);
+  const std::size_t resetMutation = mainSource.find("clearWifiCredentials()", resetHandler);
+  return expect(
+      saveAuthorization != std::string::npos && saveMutation != std::string::npos &&
+          saveAuthorization < saveMutation && resetAuthorization != std::string::npos &&
+          resetMutation != std::string::npos && resetAuthorization < resetMutation,
+      "WiFi handlers must authorize before changing credentials");
+}
+
 bool testAnimatedAssetScanYieldsEveryFourRows() {
   for (int row = 1; row <= 32; ++row) {
     const bool expected = (row % 4) == 0;
@@ -178,8 +215,6 @@ bool testAnimatedAssetScanYieldsEveryFourRows() {
   }
   return true;
 }
-
-std::string readFile(const char* path);
 
 bool testAnimatedFrameOffsetsAreIndexedOneFrameAtATime() {
   if (!expect(
@@ -525,6 +560,9 @@ int main(int argc, char** argv) {
   if (!testAssetWritesStayInsideThemeNamespace()) {
     return 1;
   }
+  if (!testWifiCredentialWritesRequirePhysicalSetupOrCurrentToken()) {
+    return 1;
+  }
   if (!testAnimatedAssetScanYieldsEveryFourRows()) {
     return 1;
   }
@@ -550,6 +588,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testAssetHandlersUseThemeNamespacePolicy(argv[3])) {
+    return 1;
+  }
+  if (!testWifiHandlersAuthorizeBeforeStorageMutation(argv[3])) {
     return 1;
   }
   if (!testFirmwareUsesIPDiscoveryInsteadOfMdns(argv[3])) {

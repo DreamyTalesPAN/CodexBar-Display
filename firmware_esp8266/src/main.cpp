@@ -12,6 +12,7 @@
 #include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "boot_recovery_policy.h"
 #include "asset_path_policy.h"
+#include "wifi_security_policy.h"
 #include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
 #include "wifi_setup_portal.h"
@@ -174,6 +175,8 @@ struct DeviceSettings {
 bool httpServerStarted = false;
 bool rawOtaServerStarted = false;
 bool setupMode = false;
+bool physicalSetupAuthorized = false;
+String setupAuthorizationToken;
 bool waitStatusRendered = false;
 bool otaUploadSucceeded = false;
 bool otaUploadInProgress = false;
@@ -433,6 +436,35 @@ bool requestHasValidAuth() {
     return true;
   }
   return requestAuthToken() == deviceAuthToken;
+}
+
+bool requestHasCurrentDeviceToken() {
+  return deviceAuthConfigured() && requestAuthToken() == deviceAuthToken;
+}
+
+bool requestHasValidSetupAuthorization() {
+  String token = webServer.arg("setup_token");
+  token.trim();
+  return setupMode && physicalSetupAuthorized &&
+      setupAuthorizationToken.length() > 0 && token == setupAuthorizationToken;
+}
+
+bool authorizeWifiCredentialWrite() {
+  if (codexbar_display::esp8266::WifiSecurityPolicy::AllowsCredentialWrite(
+          physicalSetupAuthorized,
+          requestHasValidSetupAuthorization(),
+          deviceAuthConfigured(),
+          requestHasCurrentDeviceToken())) {
+    return true;
+  }
+  addCorsHeaders();
+  if (deviceAuthConfigured()) {
+    webServer.sendHeader("WWW-Authenticate", "VibeTV token");
+    webServer.send(401, "text/plain; charset=utf-8", "pairing token required");
+  } else {
+    webServer.send(403, "text/plain; charset=utf-8", "physical setup confirmation required");
+  }
+  return false;
 }
 
 bool requireWriteAuth() {
@@ -861,7 +893,7 @@ bool readWifiCredentials(WifiCredentials& creds) {
   return String(creds.ssid).length() > 0;
 }
 
-void saveWifiCredentials(const String& ssid, const String& password) {
+bool saveWifiCredentials(const String& ssid, const String& password) {
   EEPROM.begin(kEepromBytes);
   EEPROM.put(0, kWifiCredsMagic);
   for (size_t i = 0; i < kWifiSsidBytes; ++i) {
@@ -870,7 +902,7 @@ void saveWifiCredentials(const String& ssid, const String& password) {
   for (size_t i = 0; i < kWifiPasswordBytes; ++i) {
     EEPROM.write(4 + kWifiSsidBytes + i, i < password.length() ? password.charAt(i) : 0);
   }
-  EEPROM.commit();
+  return EEPROM.commit();
 }
 
 void clearWifiCredentials() {
@@ -1053,8 +1085,9 @@ WifiConnectAttempt connectToSdkWifiConfig(const String& alreadyAttemptedSsid = S
 
   const String password = WiFi.psk();
   if (ssid.length() < kWifiSsidBytes && password.length() < kWifiPasswordBytes) {
-    saveWifiCredentials(ssid, password);
-    Serial.printf("wifi_sdk_credentials_imported ssid=%s\n", ssid.c_str());
+    if (saveWifiCredentials(ssid, password)) {
+      Serial.printf("wifi_sdk_credentials_imported ssid=%s\n", ssid.c_str());
+    }
   }
 
   Serial.printf("wifi_connected source=sdk ssid=%s ip=%s\n", ssid.c_str(), WiFi.localIP().toString().c_str());
@@ -1154,7 +1187,8 @@ void handleRoot() {
         webServer,
         setupWifiState,
         codexbar_display::esp8266::wifi_setup::kSupportUrl,
-        kSetupAddress);
+        kSetupAddress,
+        setupAuthorizationToken.c_str());
     return;
   }
   webServer.send(200, "text/html; charset=utf-8", connectedPageHTML());
@@ -1173,7 +1207,8 @@ void handleCaptivePortalProbe() {
         webServer,
         setupWifiState,
         codexbar_display::esp8266::wifi_setup::kSupportUrl,
-        kSetupAddress);
+        kSetupAddress,
+        setupAuthorizationToken.c_str());
     return;
   }
   redirectToSetupRoot();
@@ -1181,6 +1216,9 @@ void handleCaptivePortalProbe() {
 
 void handleSaveWifi() {
   webServer.keepAlive(false);
+  if (!authorizeWifiCredentialWrite()) {
+    return;
+  }
   String ssid = webServer.arg("custom_ssid");
   ssid.trim();
   if (ssid.length() == 0) {
@@ -1197,6 +1235,7 @@ void handleSaveWifi() {
         setupWifiState,
         codexbar_display::esp8266::wifi_setup::kSupportUrl,
         kSetupAddress,
+        setupAuthorizationToken.c_str(),
         400);
     return;
   }
@@ -1210,12 +1249,16 @@ void handleSaveWifi() {
         setupWifiState,
         codexbar_display::esp8266::wifi_setup::kSupportUrl,
         kSetupAddress,
+        setupAuthorizationToken.c_str(),
         400);
     return;
   }
 
   codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
-  saveWifiCredentials(ssid, password);
+  if (!saveWifiCredentials(ssid, password)) {
+    webServer.send(500, "text/plain; charset=utf-8", "WiFi settings could not be saved");
+    return;
+  }
   Serial.printf("wifi_credentials_saved ssid=%s\n", ssid.c_str());
   webServer.send(200, "text/html; charset=utf-8", "<!doctype html><p>Saved. Vibe TV is restarting.</p>");
   delay(500);
@@ -1239,6 +1282,10 @@ void handleResetWifi() {
   webServer.keepAlive(false);
   if (webServer.method() != HTTP_POST) {
     webServer.send(405, "text/plain; charset=utf-8", "method not allowed");
+    return;
+  }
+
+  if (!authorizeWifiCredentialWrite()) {
     return;
   }
 
@@ -2566,8 +2613,10 @@ void startHttpServer() {
   Serial.println("raw_ota_server_started port=8081 path=/update/firmware.raw");
 }
 
-void startSetupAccessPoint() {
+void startSetupAccessPoint(bool authorizePhysicalSetup) {
   setupMode = true;
+  physicalSetupAuthorized = authorizePhysicalSetup;
+  setupAuthorizationToken = authorizePhysicalSetup ? generateAuthToken() : String();
   resetWifiReconnectState();
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(kSetupApSsid);
@@ -2630,7 +2679,7 @@ void maintainWifiConnection() {
         setupWifiState,
         codexbar_display::esp8266::wifi_setup::ConnectionError::ConnectionFailed,
         WiFi.SSID());
-    startSetupAccessPoint();
+    startSetupAccessPoint(false);
   }
 }
 
@@ -2743,7 +2792,7 @@ void setup() {
           codexbar_display::esp8266::wifi_setup::ConnectionErrorFromWifiStatus(failedAttempt.status),
           failedAttempt.ssid);
     }
-    startSetupAccessPoint();
+    startSetupAccessPoint(forceSetupMode || !failedAttempt.attempted);
   }
 }
 
