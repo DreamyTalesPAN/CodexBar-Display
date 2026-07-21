@@ -972,7 +972,9 @@ private final class ShadcnSpinnerView: NSView {
         }
         let animation = CABasicAnimation(keyPath: "transform.rotation.z")
         animation.fromValue = 0
-        animation.toValue = CGFloat.pi * 2
+        // AppKit's layer coordinates invert the CSS visual direction. Use a
+        // negative rotation so this matches shadcn's clockwise animate-spin.
+        animation.toValue = -CGFloat.pi * 2
         animation.duration = 0.8
         animation.repeatCount = .infinity
         animation.isRemovedOnCompletion = false
