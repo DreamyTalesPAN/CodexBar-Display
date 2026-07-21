@@ -11,6 +11,7 @@
 #include <LittleFS.h>
 
 #include <cstdio>
+#include <cstring>
 #include <new>
 
 #include "../../firmware_shared/theme_spec_renderer_core.h"
@@ -1054,7 +1055,7 @@ const char* usageModeText() {
 }
 
 const char* themeSpecUpdateNoticeText() {
-  return "app.vibetv.shop";
+  return "Open VibeTV Mac App";
 }
 
 themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nullptr) {
@@ -1207,6 +1208,65 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   return true;
 }
 
+bool RenderThemeSpecRegion(int x, int y, int width, int height) {
+  const String& raw = currentThemeSpecRaw();
+  if (!CurrentFrame().hasThemeSpec || !codexbar_display::core::ThemeSpecRawLooksRenderable(raw)) {
+    return false;
+  }
+  if (!hasThemeSpecHeap(false)) {
+    return false;
+  }
+  if (!ensureThemeSpecSceneCached(raw)) {
+    return false;
+  }
+
+  themespec::Bounds region;
+  region.x = x;
+  region.y = y;
+  region.width = width;
+  region.height = height;
+  const auto frameData = currentThemeSpecFrameData();
+  ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly, true);
+  const char* regionError = nullptr;
+  if (themespec::RenderCompiledThemeSpecRegionPrimitives(
+          cachedThemeSpecScene, frameData, region, sink, &regionError, nullptr)) {
+    return true;
+  }
+  // The background fill already restored a region no primitive overlaps.
+  return regionError != nullptr && strcmp(regionError, "no_overlap_rendered") == 0;
+}
+
+FirmwareUpdateOverlayPlacement FirmwareUpdateOverlayBarPlacement() {
+  FirmwareUpdateOverlayPlacement placement;
+  const String& raw = currentThemeSpecRaw();
+  if (!CurrentFrame().hasThemeSpec || !codexbar_display::core::ThemeSpecRawLooksRenderable(raw)) {
+    return placement;
+  }
+  if (!ensureThemeSpecSceneCached(raw)) {
+    return placement;
+  }
+
+  const auto frameData = currentThemeSpecFrameData();
+  themespec::Bounds bar;
+  bar.x = 0;
+  bar.width = Tft().width();
+  bar.height = kFirmwareUpdateNoticeBarHeight;
+  bar.y = 0;
+  if (!themespec::AnyAnimatedCompiledPrimitiveOverlaps(cachedThemeSpecScene, frameData, bar)) {
+    placement.valid = true;
+    placement.y = bar.y;
+    return placement;
+  }
+  // Animated GIF/sprite frames repaint their full bounds on every tick and
+  // would fight with an overlay drawn on top. Fall back to the bottom edge.
+  bar.y = Tft().height() - bar.height;
+  if (!themespec::AnyAnimatedCompiledPrimitiveOverlaps(cachedThemeSpecScene, frameData, bar)) {
+    placement.valid = true;
+    placement.y = bar.y;
+  }
+  return placement;
+}
+
 void ResetThemeSpecSpriteCaches() {
   resetAnimatedSpriteCaches();
   releaseCbaFrameBuffer();
@@ -1298,6 +1358,18 @@ bool ThemeSpecFullRenderRetryPending() {
 
 bool CurrentThemeSpecRenderedSuccessfully() {
   return false;
+}
+
+bool RenderThemeSpecRegion(int x, int y, int width, int height) {
+  (void)x;
+  (void)y;
+  (void)width;
+  (void)height;
+  return false;
+}
+
+FirmwareUpdateOverlayPlacement FirmwareUpdateOverlayBarPlacement() {
+  return FirmwareUpdateOverlayPlacement{};
 }
 
 bool ThemeSpecRenderOk() {
