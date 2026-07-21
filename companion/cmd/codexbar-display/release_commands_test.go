@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1002,6 +1003,37 @@ func TestEnsureFirmwareUpdateDeviceTokenStoresValidatedIdentityTuple(t *testing.
 	known, ok := cfg.KnownDevice("device-new")
 	if !ok || known.Target != server.URL || known.DeviceToken != "pair-token" {
 		t.Fatalf("expected validated known-device tuple, got %+v", cfg.KnownDevices)
+	}
+}
+
+func TestFetchDeviceHelloHTTPWithTokenRedactsTokenFromTransportError(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	token := "pair token/with+symbols"
+	transportErr := errors.New("connection refused")
+	releaseHTTPClient = releaseHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, &url.Error{
+			Op:  "Get",
+			URL: req.URL.String(),
+			Err: transportErr,
+		}
+	})
+
+	_, err := fetchDeviceHelloHTTPWithToken(context.Background(), "http://192.0.2.10", token)
+	if err == nil {
+		t.Fatal("expected authenticated hello transport error")
+	}
+	if strings.Contains(err.Error(), token) || strings.Contains(err.Error(), url.QueryEscape(token)) {
+		t.Fatalf("authenticated hello error leaked pairing token: %v", err)
+	}
+	if !strings.Contains(err.Error(), "[REDACTED]") {
+		t.Fatalf("expected pairing token placeholder, got: %v", err)
+	}
+	if !errors.Is(err, transportErr) {
+		t.Fatalf("expected original transport error to remain unwrap-compatible, got: %v", err)
 	}
 }
 
@@ -2022,6 +2054,12 @@ func repoRoot(t *testing.T) string {
 
 type fakeReleaseHTTPClient struct {
 	responses map[string]string
+}
+
+type releaseHTTPDoerFunc func(*http.Request) (*http.Response, error)
+
+func (fn releaseHTTPDoerFunc) Do(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }
 
 func (f fakeReleaseHTTPClient) Do(req *http.Request) (*http.Response, error) {

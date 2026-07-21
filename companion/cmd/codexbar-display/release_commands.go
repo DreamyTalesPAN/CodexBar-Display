@@ -1330,6 +1330,31 @@ type firmwareDeviceHTTPError struct {
 	Body       string
 }
 
+type redactedFirmwareDeviceTokenError struct {
+	err   error
+	token string
+}
+
+func (e *redactedFirmwareDeviceTokenError) Error() string {
+	if e == nil || e.err == nil {
+		return ""
+	}
+	message := e.err.Error()
+	for _, secret := range []string{e.token, url.QueryEscape(e.token), url.PathEscape(e.token)} {
+		if secret != "" {
+			message = strings.ReplaceAll(message, secret, "[REDACTED]")
+		}
+	}
+	return message
+}
+
+func (e *redactedFirmwareDeviceTokenError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
 func (e *firmwareDeviceHTTPError) Error() string {
 	if e == nil {
 		return ""
@@ -1351,6 +1376,9 @@ func fetchDeviceHelloHTTPWithToken(ctx context.Context, base, token string) (pro
 	}
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
+		if token != "" {
+			err = &redactedFirmwareDeviceTokenError{err: err, token: token}
+		}
 		return protocol.DeviceHello{}, err
 	}
 	defer resp.Body.Close()
