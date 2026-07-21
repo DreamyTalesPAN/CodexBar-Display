@@ -1318,22 +1318,25 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
 	}
 	forceRefresh := r.URL.Query().Get("refresh") == "1"
-	if !forceRefresh {
-		if cached, ok := s.cachedDirectUsage(now); ok {
-			writeUsage(cached)
-			return
-		}
-	}
 	var persisted usageResponse
 	havePersisted := false
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok && len(usage.Providers) > 0 {
 			persisted = usageResponseFromPersisted(now, usage)
 			havePersisted = len(persisted.Providers) > 0
-			if usageResponseHasFreshProvider(persisted) && !forceRefresh {
-				writeUsage(persisted)
-				return
+		}
+	}
+	if !forceRefresh {
+		if cached, ok := s.cachedDirectUsage(now); ok {
+			if havePersisted {
+				cached = mergePersistedUsageDetails(cached, persisted)
 			}
+			writeUsage(cached)
+			return
+		}
+		if havePersisted && usageResponseHasFreshProvider(persisted) {
+			writeUsage(persisted)
+			return
 		}
 	}
 

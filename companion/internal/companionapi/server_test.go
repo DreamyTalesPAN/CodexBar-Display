@@ -1636,6 +1636,82 @@ func TestUsageRefreshBypassesPersistedSnapshotAndCachesFreshResult(t *testing.T)
 	}
 }
 
+func TestUsageCachePicksUpTokenHistoryCollectedAfterFirstResponse(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	historyReady := false
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		if !historyReady {
+			return daemon.PersistedUsage{}, false
+		}
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider: "codex",
+				Frame: protocol.Frame{
+					Provider:      "codex",
+					Label:         "Codex",
+					Weekly:        36,
+					UsageMode:     "used",
+					SessionTokens: 1234,
+					WeekTokens:    5678,
+					TotalTokens:   9000,
+				},
+				Meta: codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{
+					Daily: []codexbar.ProviderCostDay{{Day: "2026-07-21", TotalTokens: 1234}},
+				}},
+				CollectedAt: now,
+			}},
+		}, true
+	}
+	fetches := 0
+	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		fetches++
+		return []codexbar.ParsedFrame{{
+			Provider: "codex",
+			Frame: protocol.Frame{
+				Provider:  "codex",
+				Label:     "Codex",
+				Weekly:    36,
+				UsageMode: "used",
+			},
+		}}, nil
+	}
+
+	first := httptest.NewRecorder()
+	server.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+	if first.Code != http.StatusOK {
+		t.Fatalf("expected first response 200, got %d body=%s", first.Code, first.Body.String())
+	}
+	var initial usageResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &initial); err != nil {
+		t.Fatalf("decode first response: %v", err)
+	}
+	if len(initial.Providers) != 1 || initial.Providers[0].Cost != nil {
+		t.Fatalf("expected initial response without history, got %+v", initial.Providers)
+	}
+
+	historyReady = true
+	second := httptest.NewRecorder()
+	server.Handler().ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if second.Code != http.StatusOK {
+		t.Fatalf("expected second response 200, got %d body=%s", second.Code, second.Body.String())
+	}
+	var enriched usageResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &enriched); err != nil {
+		t.Fatalf("decode second response: %v", err)
+	}
+	if len(enriched.Providers) != 1 || enriched.Providers[0].Cost == nil || len(enriched.Providers[0].Cost.Daily) != 1 {
+		t.Fatalf("expected cached response enriched with collected history, got %+v", enriched.Providers)
+	}
+	if enriched.Providers[0].SessionTokens != 1234 || enriched.Providers[0].WeekTokens != 5678 || enriched.Providers[0].TotalTokens != 9000 {
+		t.Fatalf("expected cached response enriched with token totals, got %+v", enriched.Providers[0])
+	}
+	if fetches != 1 {
+		t.Fatalf("expected cached second response without another direct fetch, got %d fetches", fetches)
+	}
+}
+
 func TestDisplayFrameLatestReturnsPersistedLastGoodFrame(t *testing.T) {
 	t.Setenv(displayStreamOutLogEnv, filepath.Join(t.TempDir(), "missing.log"))
 	server := newTestServer(t, runtimeconfig.Config{})
