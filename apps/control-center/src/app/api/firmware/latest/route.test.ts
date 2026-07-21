@@ -24,7 +24,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("GET /api/firmware/latest", () => {
+describe("firmware update check route", () => {
   it("offers the final release to an installed RC", async () => {
     stubManifest({
       release: "v1.0.36",

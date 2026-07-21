@@ -32,7 +32,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("GET /api/companion/latest", () => {
+describe("Mac App update check route", () => {
   it("offers the final release to an installed RC", async () => {
     stubRelease("v1.0.44");
 
