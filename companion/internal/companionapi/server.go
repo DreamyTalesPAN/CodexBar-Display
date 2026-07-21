@@ -1803,41 +1803,12 @@ func normalizeMacAppReleaseVersion(raw string) string {
 }
 
 func compareMacAppReleaseVersions(left, right string) int {
-	leftParts, leftOK := parseMacAppReleaseVersion(left)
-	rightParts, rightOK := parseMacAppReleaseVersion(right)
-	if !leftOK || !rightOK {
+	leftVersion, leftErr := versioning.ParseSemVer(normalizeMacAppReleaseVersion(left))
+	rightVersion, rightErr := versioning.ParseSemVer(normalizeMacAppReleaseVersion(right))
+	if leftErr != nil || rightErr != nil {
 		return 0
 	}
-	for i := 0; i < 3; i++ {
-		if leftParts[i] > rightParts[i] {
-			return 1
-		}
-		if leftParts[i] < rightParts[i] {
-			return -1
-		}
-	}
-	return 0
-}
-
-func parseMacAppReleaseVersion(version string) ([3]int, bool) {
-	var parts [3]int
-	normalized := normalizeMacAppReleaseVersion(version)
-	if normalized == "" {
-		return parts, false
-	}
-	core := strings.SplitN(normalized, "-", 2)[0]
-	segments := strings.Split(core, ".")
-	if len(segments) != 3 {
-		return parts, false
-	}
-	for i, segment := range segments {
-		value, err := strconv.Atoi(segment)
-		if err != nil {
-			return parts, false
-		}
-		parts[i] = value
-	}
-	return parts, true
+	return leftVersion.Compare(rightVersion)
 }
 
 func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usageResponse {
@@ -3370,6 +3341,18 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	installedVersion, installedErr := versioning.ParseSemVer(installedFirmware)
+	if installedErr != nil {
+		writeJSON(w, http.StatusOK, firmwareLatestResponse{
+			CheckedAt:         checkedAt,
+			InstalledFirmware: installedFirmware,
+			UpdateAvailable:   false,
+			Status:            "check_failed",
+			Message:           fmt.Sprintf("Installed firmware version %q is not a valid version.", installedFirmware),
+		})
+		return
+	}
+
 	manifest, err := s.fetchFirmwareReleaseManifest(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusOK, firmwareLatestResponse{
@@ -3381,8 +3364,8 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	artifact := latestFirmwareArtifactForBoard(manifest, board)
-	if strings.TrimSpace(artifact.FirmwareVersion) == "" {
+	artifact, latestVersion, hasArtifact := latestFirmwareArtifactForBoard(manifest, board)
+	if !hasArtifact {
 		writeJSON(w, http.StatusOK, firmwareLatestResponse{
 			CheckedAt:         checkedAt,
 			InstalledFirmware: installedFirmware,
@@ -3394,7 +3377,7 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updateAvailable := firmwareVersionCompare(artifact.FirmwareVersion, installedFirmware) > 0
+	updateAvailable := latestVersion.Compare(installedVersion) > 0
 	message := "Firmware is up to date."
 	status := "current"
 	if updateAvailable {
@@ -3442,28 +3425,26 @@ func (s *Server) fetchFirmwareReleaseManifest(ctx context.Context) (firmwareRele
 	return manifest, nil
 }
 
-func latestFirmwareArtifactForBoard(manifest firmwareReleaseManifest, board string) firmwareReleaseArtifact {
+func latestFirmwareArtifactForBoard(manifest firmwareReleaseManifest, board string) (firmwareReleaseArtifact, versioning.SemVer, bool) {
 	normalizedBoard := strings.ToLower(strings.TrimSpace(board))
 	var latest firmwareReleaseArtifact
+	var latestVersion versioning.SemVer
+	found := false
 	for _, artifact := range manifest.Artifacts {
 		if strings.ToLower(strings.TrimSpace(artifact.Board)) != normalizedBoard {
 			continue
 		}
-		if strings.TrimSpace(latest.FirmwareVersion) == "" ||
-			firmwareVersionCompare(artifact.FirmwareVersion, latest.FirmwareVersion) > 0 {
+		version, err := versioning.ParseSemVer(artifact.FirmwareVersion)
+		if err != nil {
+			continue
+		}
+		if !found || version.Compare(latestVersion) > 0 {
 			latest = artifact
+			latestVersion = version
+			found = true
 		}
 	}
-	return latest
-}
-
-func firmwareVersionCompare(left, right string) int {
-	leftVersion, leftErr := versioning.ParseSemVer(left)
-	rightVersion, rightErr := versioning.ParseSemVer(right)
-	if leftErr != nil || rightErr != nil {
-		return strings.Compare(strings.TrimSpace(left), strings.TrimSpace(right))
-	}
-	return leftVersion.Compare(rightVersion)
+	return latest, latestVersion, found
 }
 
 func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Request) {

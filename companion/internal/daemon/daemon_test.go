@@ -1761,17 +1761,30 @@ func TestSelectFirmwareUpdateComparesBoardRelease(t *testing.T) {
 		t.Fatalf("expected current state, got %+v", current)
 	}
 
-	devCurrent, err := selectFirmwareUpdate(protocol.DeviceCapabilities{
+	prereleaseUpdate, err := selectFirmwareUpdate(protocol.DeviceCapabilities{
 		Board:    "esp8266-smalltv-st7789",
 		Firmware: "1.0.1-dev",
 	}, firmwareManifest{Artifacts: []firmwareArtifact{
 		{Board: "esp8266-smalltv-st7789", FirmwareVersion: "1.0.1"},
 	}})
 	if err != nil {
-		t.Fatalf("select dev current: %v", err)
+		t.Fatalf("select prerelease update: %v", err)
 	}
-	if devCurrent.Available || devCurrent.Status != "current" {
-		t.Fatalf("expected dev build for same release to be current, got %+v", devCurrent)
+	if !prereleaseUpdate.Available || prereleaseUpdate.Status != "update_available" {
+		t.Fatalf("expected prerelease build to be offered the matching final release, got %+v", prereleaseUpdate)
+	}
+
+	rcUpdate, err := selectFirmwareUpdate(protocol.DeviceCapabilities{
+		Board:    "esp8266-smalltv-st7789",
+		Firmware: "1.0.36-rc.2",
+	}, firmwareManifest{Artifacts: []firmwareArtifact{
+		{Board: "esp8266-smalltv-st7789", FirmwareVersion: "1.0.36"},
+	}})
+	if err != nil {
+		t.Fatalf("select rc update: %v", err)
+	}
+	if !rcUpdate.Available || rcUpdate.LatestVersion != "1.0.36" || rcUpdate.Status != "update_available" {
+		t.Fatalf("expected RC firmware to be offered the matching final release, got %+v", rcUpdate)
 	}
 
 	nextRelease, err := selectFirmwareUpdate(protocol.DeviceCapabilities{

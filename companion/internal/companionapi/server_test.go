@@ -7025,3 +7025,133 @@ func diagnosticCheckDetail(checks []diagnosticCheck, name string) string {
 	}
 	return ""
 }
+
+func TestStatusOffersFinalMacAppReleaseToInstalledPrerelease(t *testing.T) {
+	t.Setenv(macAppVersionEnv, "1.0.44-rc.16")
+	t.Setenv(macAppBuildEnv, "4416")
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{TagName: "v1.0.44"}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.Companion.Update.UpdateAvailable {
+		t.Fatalf("expected RC install to be offered the final release, got %+v", got.Companion.Update)
+	}
+	if got.Companion.Update.LatestVersion != "1.0.44" || got.Companion.Update.InstalledVersion != "1.0.44-rc.16" {
+		t.Fatalf("unexpected Mac App update versions: %+v", got.Companion.Update)
+	}
+}
+
+func TestStatusKeepsExactFinalMacAppReleaseCurrent(t *testing.T) {
+	t.Setenv(macAppVersionEnv, "1.0.44")
+	t.Setenv(macAppBuildEnv, "4400")
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{TagName: "v1.0.44"}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Companion.Update.UpdateAvailable {
+		t.Fatalf("expected exact final release to stay current, got %+v", got.Companion.Update)
+	}
+}
+
+func TestCompareMacAppReleaseVersionsSemVerPrecedence(t *testing.T) {
+	cases := []struct {
+		left  string
+		right string
+		want  int
+	}{
+		{"1.0.44", "1.0.44-rc.16", 1},
+		{"1.0.44-rc.16", "1.0.44", -1},
+		{"1.0.44-beta.1", "1.0.44-rc.1", -1},
+		{"1.0.44-rc.2", "1.0.44-rc.10", -1},
+		{"v1.0.45", "1.0.44", 1},
+		{"1.0.44", "1.0.44", 0},
+		{"not-a-version", "1.0.44", 0},
+		{"1.0.44", "", 0},
+	}
+	for _, tc := range cases {
+		if got := compareMacAppReleaseVersions(tc.left, tc.right); got != tc.want {
+			t.Fatalf("compareMacAppReleaseVersions(%q, %q) = %d, want %d", tc.left, tc.right, got, tc.want)
+		}
+	}
+}
+
+func TestFirmwareLatestOffersFinalReleaseToPrerelease(t *testing.T) {
+	manifest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"release":"v1.0.36","artifacts":[{"board":"esp8266_smalltv_st7789","firmwareVersion":"1.0.36"},{"board":"esp8266_smalltv_st7789","firmwareVersion":"broken"}]}`))
+	}))
+	defer manifest.Close()
+	t.Setenv(firmwareManifestEnvVar, manifest.URL+"/firmware-manifest.json")
+	server := newTestServer(t, runtimeconfig.Config{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266_smalltv_st7789&firmware=1.0.36-rc.2", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.UpdateAvailable || got.LatestFirmware != "1.0.36" || got.Status != "update_available" {
+		t.Fatalf("expected RC firmware to be offered the final release, got %+v", got)
+	}
+
+	current := httptest.NewRecorder()
+	currentReq := httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266_smalltv_st7789&firmware=1.0.36", nil)
+	server.Handler().ServeHTTP(current, currentReq)
+	var currentGot firmwareLatestResponse
+	if err := json.Unmarshal(current.Body.Bytes(), &currentGot); err != nil {
+		t.Fatalf("decode current response: %v", err)
+	}
+	if currentGot.UpdateAvailable || currentGot.Status != "current" {
+		t.Fatalf("expected exact final firmware to stay current, got %+v", currentGot)
+	}
+}
+
+func TestFirmwareLatestRejectsMalformedInstalledVersion(t *testing.T) {
+	manifest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("manifest must not be fetched for a malformed installed version")
+	}))
+	defer manifest.Close()
+	t.Setenv(firmwareManifestEnvVar, manifest.URL+"/firmware-manifest.json")
+	server := newTestServer(t, runtimeconfig.Config{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp8266_smalltv_st7789&firmware=banana", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.UpdateAvailable || got.Status != "check_failed" {
+		t.Fatalf("expected malformed installed version to fail visibly, got %+v", got)
+	}
+	if !strings.Contains(got.Message, "banana") {
+		t.Fatalf("expected message to name the malformed version, got %q", got.Message)
+	}
+}
