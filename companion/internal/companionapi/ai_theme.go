@@ -3,53 +3,79 @@ package companionapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themespec"
 )
 
 const (
-	aiThemeEnabledEnv     = "VIBETV_AI_THEME_ENABLED"
-	aiThemeDevEnv         = "VIBETV_AI_THEME_DEV_ORIGINS"
-	aiThemePromptLimit    = 2000
-	aiThemeHistoryLimit   = 10
-	aiThemePrimitiveLimit = 16
-	aiThemeResponseLimit  = 128 << 10
-	aiThemeOutputTokens   = 4096
-	aiThemeTimeout        = 45 * time.Second
-	aiThemeRateWindow     = 10 * time.Minute
-	aiThemeRateLimit      = 5
-	openAIEndpoint        = "https://api.openai.com/v1/responses"
-	openAIModel           = "gpt-5.6-terra"
-	anthropicEndpoint     = "https://api.anthropic.com/v1/messages"
-	anthropicModel        = "claude-sonnet-5"
+	aiThemeEnabledEnv          = "VIBETV_AI_THEME_ENABLED"
+	aiThemeDevEnv              = "VIBETV_AI_THEME_DEV_ORIGINS"
+	aiThemePromptLimit         = 2000
+	aiThemeHistoryLimit        = 10
+	aiThemeJSONResponseLimit   = 128 << 10
+	aiThemeImageResponseLimit  = 8 << 20
+	aiThemeConceptRequestLimit = 12 << 20
+	aiThemeOutputTokens        = 2048
+	aiThemeTimeout             = 120 * time.Second
+	aiThemeRateWindow          = 10 * time.Minute
+	aiThemeRateLimit           = 5
+	openAIEndpoint             = "https://api.openai.com/v1/responses"
+	openAIImageEndpoint        = "https://api.openai.com/v1/images/generations"
+	openAIImageEditEndpoint    = "https://api.openai.com/v1/images/edits"
+	openAIModel                = "gpt-5.6-terra"
+	openAIImageModel           = "gpt-image-2"
 )
+
+var aiThemeColorPattern = regexp.MustCompile(`^#[A-Fa-f0-9]{6}$`)
 
 type aiThemeMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
-type aiThemeGenerationRequest struct {
-	ProviderID string           `json:"providerId"`
-	Mode       string           `json:"mode"`
-	Prompt     string           `json:"prompt"`
-	BaseSpec   json.RawMessage  `json:"baseSpec,omitempty"`
-	History    []aiThemeMessage `json:"history,omitempty"`
+
+type aiThemeStyle struct {
+	PackName        string `json:"packName"`
+	Title           string `json:"title"`
+	Notes           string `json:"notes"`
+	ArtPrompt       string `json:"artPrompt"`
+	BackgroundColor string `json:"backgroundColor"`
+	PanelColor      string `json:"panelColor"`
+	TextColor       string `json:"textColor"`
+	SessionColor    string `json:"sessionColor"`
+	WeeklyColor     string `json:"weeklyColor"`
+	ProgressStyle   string `json:"progressStyle"`
+	BorderRadius    int    `json:"borderRadius"`
 }
-type aiThemeCandidate struct {
-	PackName string          `json:"packName"`
-	Spec     json.RawMessage `json:"spec"`
-	Notes    string          `json:"notes"`
+
+type aiThemePreviousConcept struct {
+	ImageBase64      string       `json:"imageBase64"`
+	ImageContentType string       `json:"imageContentType"`
+	Style            aiThemeStyle `json:"style"`
 }
+
+type aiThemeConceptRequest struct {
+	Prompt   string                  `json:"prompt"`
+	History  []aiThemeMessage        `json:"history,omitempty"`
+	Previous *aiThemePreviousConcept `json:"previous,omitempty"`
+}
+
+type aiThemeConcept struct {
+	ImageBase64      string       `json:"imageBase64"`
+	ImageContentType string       `json:"imageContentType"`
+	Style            aiThemeStyle `json:"style"`
+}
+
 type aiThemeCredentialRequest struct {
 	APIKey string `json:"apiKey"`
 }
@@ -70,17 +96,20 @@ func newAIThemeState(store SecretStore, client *http.Client) *aiThemeState {
 		store = keyringSecretStore{}
 	}
 	if client == nil {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		client = &http.Client{Transport: transport}
+		client = &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
 	}
 	clientCopy := *client
 	clientCopy.Timeout = aiThemeTimeout
 	clientCopy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &aiThemeState{
-		enabled:    strings.EqualFold(strings.TrimSpace(os.Getenv(aiThemeEnabledEnv)), "true") || strings.TrimSpace(os.Getenv(aiThemeEnabledEnv)) == "1",
-		devOrigins: strings.EqualFold(strings.TrimSpace(os.Getenv(aiThemeDevEnv)), "true") || strings.TrimSpace(os.Getenv(aiThemeDevEnv)) == "1",
-		store:      store, client: &clientCopy, now: time.Now,
+		enabled: envBool(aiThemeEnabledEnv), devOrigins: envBool(aiThemeDevEnv),
+		store: store, client: &clientCopy, now: time.Now,
 	}
+}
+
+func envBool(name string) bool {
+	value := strings.TrimSpace(os.Getenv(name))
+	return strings.EqualFold(value, "true") || value == "1"
 }
 
 func (s *Server) registerAIThemeRoutes(mux *http.ServeMux) {
@@ -131,8 +160,8 @@ func (s *Server) handleAITheme(w http.ResponseWriter, r *http.Request) {
 		writeAIThemeError(w, http.StatusNotFound, "feature_disabled")
 		return
 	}
-	if path == "/v1/ai-theme/generations" {
-		s.handleAIThemeGeneration(w, r)
+	if path == "/v1/ai-theme/concepts" {
+		s.handleAIThemeConcept(w, r)
 		return
 	}
 	const prefix = "/v1/ai-theme/providers/"
@@ -141,15 +170,15 @@ func (s *Server) handleAITheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(path, prefix), "/")
-	if len(parts) != 2 || !validAIThemeProvider(parts[0]) {
+	if len(parts) != 2 || parts[0] != "openai" {
 		http.NotFound(w, r)
 		return
 	}
 	switch parts[1] {
 	case "credential":
-		s.handleAIThemeCredential(w, r, parts[0])
+		s.handleAIThemeCredential(w, r)
 	case "verify":
-		s.handleAIThemeVerify(w, r, parts[0])
+		s.handleAIThemeVerify(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -159,15 +188,15 @@ func (s *Server) handleAIThemeCapabilities(w http.ResponseWriter, r *http.Reques
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	providers := []map[string]any{}
-	for _, id := range []string{"openai", "anthropic"} {
-		_, err := s.aiTheme.store.Get(id)
-		providers = append(providers, map[string]any{"id": id, "configured": err == nil})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": s.aiTheme.enabled, "providers": providers, "limits": map[string]int{"promptCharacters": aiThemePromptLimit, "historyTurns": aiThemeHistoryLimit, "localMessages": 20, "generatedPrimitives": aiThemePrimitiveLimit}})
+	_, err := s.aiTheme.store.Get("openai")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled":   s.aiTheme.enabled,
+		"providers": []map[string]any{{"id": "openai", "configured": err == nil}},
+		"limits":    map[string]int{"promptCharacters": aiThemePromptLimit, "historyTurns": aiThemeHistoryLimit, "localMessages": 20},
+	})
 }
 
-func (s *Server) handleAIThemeCredential(w http.ResponseWriter, r *http.Request, provider string) {
+func (s *Server) handleAIThemeCredential(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPut:
 		var req aiThemeCredentialRequest
@@ -179,13 +208,13 @@ func (s *Server) handleAIThemeCredential(w http.ResponseWriter, r *http.Request,
 			writeAIThemeError(w, http.StatusBadRequest, "credential_invalid")
 			return
 		}
-		if err := s.aiTheme.store.Set(provider, key); err != nil {
+		if err := s.aiTheme.store.Set("openai", key); err != nil {
 			writeAIThemeError(w, http.StatusInternalServerError, "credential_store_failed")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"configured": true})
 	case http.MethodDelete:
-		err := s.aiTheme.store.Delete(provider)
+		err := s.aiTheme.store.Delete("openai")
 		if err != nil && !errors.Is(err, ErrSecretNotFound) {
 			writeAIThemeError(w, http.StatusInternalServerError, "credential_delete_failed")
 			return
@@ -196,29 +225,25 @@ func (s *Server) handleAIThemeCredential(w http.ResponseWriter, r *http.Request,
 	}
 }
 
-func (s *Server) handleAIThemeVerify(w http.ResponseWriter, r *http.Request, provider string) {
+func (s *Server) handleAIThemeVerify(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	key, err := s.aiTheme.store.Get(provider)
+	key, err := s.aiTheme.store.Get("openai")
 	if err != nil {
 		writeAIThemeError(w, http.StatusBadRequest, "credential_missing")
 		return
 	}
-	endpoint := "https://api.openai.com/v1/models/" + openAIModel
-	if provider == "anthropic" {
-		endpoint = "https://api.anthropic.com/v1/models/" + anthropicModel
-	}
-	req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, endpoint, nil)
-	setAIThemeHeaders(req, provider, key)
+	req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, "https://api.openai.com/v1/models/"+openAIImageModel, nil)
+	setOpenAIHeaders(req, key)
 	resp, err := s.aiTheme.client.Do(req)
 	if err != nil {
 		writeAIThemeError(w, http.StatusBadGateway, providerErrorCode(err, 0))
 		return
 	}
 	defer resp.Body.Close()
-	read, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, aiThemeResponseLimit+1))
-	if read > aiThemeResponseLimit {
+	read, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, aiThemeJSONResponseLimit+1))
+	if read > aiThemeJSONResponseLimit {
 		writeAIThemeError(w, http.StatusBadGateway, "provider_response_too_large")
 		return
 	}
@@ -229,7 +254,7 @@ func (s *Server) handleAIThemeVerify(w http.ResponseWriter, r *http.Request, pro
 	writeJSON(w, http.StatusOK, map[string]any{"verified": true})
 }
 
-func (s *Server) handleAIThemeGeneration(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAIThemeConcept(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
@@ -238,48 +263,50 @@ func (s *Server) handleAIThemeGeneration(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	defer s.aiTheme.endGeneration()
-	var req aiThemeGenerationRequest
+	r.Body = http.MaxBytesReader(w, r.Body, aiThemeConceptRequestLimit)
+	var req aiThemeConceptRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	req.ProviderID = strings.TrimSpace(strings.ToLower(req.ProviderID))
 	req.Prompt = strings.TrimSpace(req.Prompt)
-	if !validAIThemeProvider(req.ProviderID) || (req.Mode != "create" && req.Mode != "improve") || req.Prompt == "" || len([]rune(req.Prompt)) > aiThemePromptLimit || len(req.History) > aiThemeHistoryLimit {
+	if req.Prompt == "" || len([]rune(req.Prompt)) > aiThemePromptLimit || len(req.History) > aiThemeHistoryLimit || !validAIThemeHistory(req.History) {
 		writeAIThemeError(w, http.StatusBadRequest, "request_invalid")
 		return
 	}
-	if !validAIThemeHistory(req.History) {
-		writeAIThemeError(w, http.StatusBadRequest, "request_invalid")
-		return
+	var previous []byte
+	if req.Previous != nil {
+		var err error
+		previous, err = validateConceptImage(req.Previous.ImageBase64, req.Previous.ImageContentType)
+		if err != nil || validateAIThemeStyle(req.Previous.Style) != nil {
+			writeAIThemeError(w, http.StatusBadRequest, "previous_concept_invalid")
+			return
+		}
 	}
-	if req.Mode == "improve" && len(req.BaseSpec) == 0 {
-		writeAIThemeError(w, http.StatusBadRequest, "base_spec_required")
-		return
-	}
-	if len(req.BaseSpec) > 4096 || bytes.Contains(bytes.ToLower(req.BaseSpec), []byte("base64")) || bytes.Contains(bytes.ToLower(req.BaseSpec), []byte("http")) {
-		writeAIThemeError(w, http.StatusBadRequest, "base_spec_invalid")
-		return
-	}
-	key, err := s.aiTheme.store.Get(req.ProviderID)
+	key, err := s.aiTheme.store.Get("openai")
 	if err != nil {
 		writeAIThemeError(w, http.StatusBadRequest, "credential_missing")
 		return
 	}
-	candidate, raw, err := s.aiTheme.generate(r.Context(), key, req, "")
+	style, raw, err := s.aiTheme.planConcept(r.Context(), key, req, "")
 	if err == nil {
-		err = validateAIThemeCandidate(candidate, req)
+		err = validateAIThemeStyle(style)
 	}
 	if err != nil && raw != "" {
-		candidate, _, err = s.aiTheme.generate(r.Context(), key, req, "Repair this invalid candidate exactly once. Return a valid candidate only. Validation error: "+safeValidationError(err)+"\nInvalid candidate: "+boundedRepairCandidate(raw))
+		style, _, err = s.aiTheme.planConcept(r.Context(), key, req, "Repair the invalid blueprint once. Validation error: "+safeValidationError(err)+"\nInvalid blueprint: "+boundedRepairCandidate(raw))
 		if err == nil {
-			err = validateAIThemeCandidate(candidate, req)
+			err = validateAIThemeStyle(style)
 		}
 	}
 	if err != nil {
 		writeAIThemeError(w, providerStatusFromError(err), providerErrorCode(err, 0))
 		return
 	}
-	writeJSON(w, http.StatusOK, candidate)
+	image, err := s.aiTheme.createConceptImage(r.Context(), key, style, previous)
+	if err != nil {
+		writeAIThemeError(w, providerStatusFromError(err), providerErrorCode(err, 0))
+		return
+	}
+	writeJSON(w, http.StatusOK, aiThemeConcept{ImageBase64: image, ImageContentType: "image/png", Style: style})
 }
 
 func (a *aiThemeState) beginGeneration() bool {
@@ -304,221 +331,206 @@ func (a *aiThemeState) beginGeneration() bool {
 	a.active = true
 	return true
 }
+
 func (a *aiThemeState) endGeneration() { a.mu.Lock(); a.active = false; a.mu.Unlock() }
 
-func (a *aiThemeState) generate(ctx context.Context, key string, req aiThemeGenerationRequest, repair string) (aiThemeCandidate, string, error) {
+func (a *aiThemeState) planConcept(ctx context.Context, key string, req aiThemeConceptRequest, repair string) (aiThemeStyle, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, aiThemeTimeout)
 	defer cancel()
-	prompt := buildAIThemePrompt(req, repair)
-	var body map[string]any
-	endpoint := openAIEndpoint
-	if req.ProviderID == "openai" {
-		body = map[string]any{"model": openAIModel, "store": false, "max_output_tokens": aiThemeOutputTokens, "input": []any{map[string]any{"role": "system", "content": []any{map[string]any{"type": "input_text", "text": aiThemeSystemPrompt}}}, map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": prompt}}}}, "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "vibetv_theme_candidate", "strict": true, "schema": aiThemeCandidateSchema()}}}
-	} else {
-		endpoint = anthropicEndpoint
-		body = map[string]any{"model": anthropicModel, "max_tokens": aiThemeOutputTokens, "system": aiThemeSystemPrompt, "messages": []any{map[string]any{"role": "user", "content": prompt}}, "output_config": map[string]any{"format": map[string]any{"type": "json_schema", "schema": aiThemeCandidateSchema()}}}
+	prompt := buildAIThemePlanningPrompt(req, repair)
+	body := map[string]any{
+		"model": openAIModel, "store": false, "max_output_tokens": aiThemeOutputTokens,
+		"input": []any{
+			map[string]any{"role": "system", "content": []any{map[string]any{"type": "input_text", "text": aiThemeSystemPrompt}}},
+			map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": prompt}}},
+		},
+		"text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "vibetv_screenmaster_blueprint", "strict": true, "schema": aiThemeStyleSchema()}},
 	}
 	encoded, _ := json.Marshal(body)
-	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
-	setAIThemeHeaders(httpReq, req.ProviderID, key)
+	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, openAIEndpoint, bytes.NewReader(encoded))
+	setOpenAIHeaders(httpReq, key)
 	httpReq.Header.Set("Content-Type", "application/json")
 	resp, err := a.client.Do(httpReq)
 	if err != nil {
-		return aiThemeCandidate{}, "", err
+		return aiThemeStyle{}, "", err
 	}
 	defer resp.Body.Close()
-	rawBody, err := io.ReadAll(io.LimitReader(resp.Body, aiThemeResponseLimit+1))
+	rawBody, err := io.ReadAll(io.LimitReader(resp.Body, aiThemeJSONResponseLimit+1))
 	if err != nil {
-		return aiThemeCandidate{}, "", err
+		return aiThemeStyle{}, "", err
 	}
-	if len(rawBody) > aiThemeResponseLimit {
-		return aiThemeCandidate{}, "", errors.New("provider_response_too_large")
+	if len(rawBody) > aiThemeJSONResponseLimit {
+		return aiThemeStyle{}, "", errors.New("provider_response_too_large")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return aiThemeCandidate{}, "", fmt.Errorf("provider_status_%d", resp.StatusCode)
+		return aiThemeStyle{}, "", fmt.Errorf("provider_status_%d", resp.StatusCode)
 	}
-	text, err := extractAIThemeText(req.ProviderID, rawBody)
+	text, err := extractOpenAIText(rawBody)
 	if err != nil {
-		return aiThemeCandidate{}, "", err
+		return aiThemeStyle{}, "", err
 	}
-	var candidate aiThemeCandidate
-	if err := json.Unmarshal([]byte(text), &candidate); err != nil {
-		return aiThemeCandidate{}, text, errors.New("provider_malformed_response")
+	var style aiThemeStyle
+	if json.Unmarshal([]byte(text), &style) != nil {
+		return aiThemeStyle{}, text, errors.New("provider_malformed_response")
 	}
-	return candidate, text, nil
+	return style, text, nil
 }
 
-func setAIThemeHeaders(req *http.Request, provider, key string) {
-	if provider == "openai" {
-		req.Header.Set("Authorization", "Bearer "+key)
+func (a *aiThemeState) createConceptImage(ctx context.Context, key string, style aiThemeStyle, previous []byte) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, aiThemeTimeout)
+	defer cancel()
+	prompt := "Create only the illustration for a tiny physical 240x240 desk display. Make a text-free, front-on 15:8 composition with one strong recognizable silhouette, large simple shapes, few details and a limited cohesive palette. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. The image will occupy the top 240x128 pixels. " + style.ArtPrompt
+	var request *http.Request
+	if len(previous) == 0 {
+		body, _ := json.Marshal(map[string]any{"model": openAIImageModel, "prompt": prompt, "size": "1920x1024", "quality": "high", "output_format": "png", "n": 1})
+		request, _ = http.NewRequestWithContext(ctx, http.MethodPost, openAIImageEndpoint, bytes.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
 	} else {
-		req.Header.Set("x-api-key", key)
-		req.Header.Set("anthropic-version", "2023-06-01")
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		_ = writer.WriteField("model", openAIImageModel)
+		_ = writer.WriteField("prompt", prompt)
+		_ = writer.WriteField("size", "1920x1024")
+		_ = writer.WriteField("quality", "high")
+		_ = writer.WriteField("output_format", "png")
+		part, err := writer.CreateFormFile("image", "previous.png")
+		if err != nil {
+			return "", err
+		}
+		if _, err = part.Write(previous); err != nil {
+			return "", err
+		}
+		_ = writer.Close()
+		request, _ = http.NewRequestWithContext(ctx, http.MethodPost, openAIImageEditEndpoint, &body)
+		request.Header.Set("Content-Type", writer.FormDataContentType())
 	}
+	setOpenAIHeaders(request, key)
+	resp, err := a.client.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, aiThemeImageResponseLimit+1))
+	if err != nil {
+		return "", err
+	}
+	if len(raw) > aiThemeImageResponseLimit {
+		return "", errors.New("image_response_too_large")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("image_provider_status_%d", resp.StatusCode)
+	}
+	var payload struct {
+		Data []struct {
+			Base64 string `json:"b64_json"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &payload) != nil || len(payload.Data) != 1 {
+		return "", errors.New("provider_malformed_response")
+	}
+	if _, err := validateConceptImage(payload.Data[0].Base64, "image/png"); err != nil {
+		return "", err
+	}
+	return payload.Data[0].Base64, nil
 }
 
-func extractAIThemeText(provider string, body []byte) (string, error) {
-	if provider == "anthropic" {
-		var v struct {
+func setOpenAIHeaders(req *http.Request, key string) { req.Header.Set("Authorization", "Bearer "+key) }
+
+func extractOpenAIText(body []byte) (string, error) {
+	var value struct {
+		Output []struct {
 			Content []struct{ Type, Text string } `json:"content"`
-		}
-		if json.Unmarshal(body, &v) != nil {
-			return "", errors.New("provider_malformed_response")
-		}
-		for _, c := range v.Content {
-			if c.Type == "text" {
-				return c.Text, nil
-			}
-		}
-	} else {
-		var v struct {
-			Output []struct {
-				Content []struct{ Type, Text string } `json:"content"`
-			} `json:"output"`
-		}
-		if json.Unmarshal(body, &v) != nil {
-			return "", errors.New("provider_malformed_response")
-		}
-		for _, o := range v.Output {
-			for _, c := range o.Content {
-				if c.Type == "output_text" {
-					return c.Text, nil
-				}
+		} `json:"output"`
+	}
+	if json.Unmarshal(body, &value) != nil {
+		return "", errors.New("provider_malformed_response")
+	}
+	for _, output := range value.Output {
+		for _, content := range output.Content {
+			if content.Type == "output_text" {
+				return content.Text, nil
 			}
 		}
 	}
 	return "", errors.New("provider_malformed_response")
 }
 
-const aiThemeSystemPrompt = "You design safe declarative 240x240 VibeTV themes. Return only the requested JSON. Use at most 16 primitives. New themes may use rect, text, progress, and pixels only. Never emit URLs, base64, asset paths, secrets, or executable content. Preserve useful usage bindings such as session and weekly when improving a theme."
+const aiThemeSystemPrompt = `You are the lead UI designer for a physical 240 by 240 pixel desk display, not an app or product mock-up. Plan one premium static firmware theme. The client owns all geometry, text and live data. You only choose a concise title, colors, atmosphere, bar treatment and a text-free illustration prompt. The illustration must use a strong silhouette, large simple shapes, minimal details and remain readable from across a desk. Never request text, numbers, UI, progress bars, a device, a desk or product photography in the illustration. Return only the strict JSON blueprint.`
 
-func buildAIThemePrompt(req aiThemeGenerationRequest, repair string) string {
+func buildAIThemePlanningPrompt(req aiThemeConceptRequest, repair string) string {
 	if repair != "" {
 		return repair
 	}
 	var b strings.Builder
-	b.WriteString("Mode: ")
-	b.WriteString(req.Mode)
-	b.WriteString("\nRequest: ")
-	b.WriteString(req.Prompt)
-	if len(req.BaseSpec) > 0 {
-		b.WriteString("\nExisting ThemeSpec (asset bytes are intentionally omitted): ")
-		b.Write(req.BaseSpec)
+	if req.Previous == nil {
+		b.WriteString("Create one new static screenmaster concept.\n")
+	} else {
+		b.WriteString("Refine the existing concept while preserving what the user did not ask to change.\nPrevious blueprint: ")
+		previous, _ := json.Marshal(req.Previous.Style)
+		b.Write(previous)
+		b.WriteByte('\n')
 	}
+	b.WriteString("Request: ")
+	b.WriteString(req.Prompt)
 	if len(req.History) > 0 {
 		b.WriteString("\nRecent conversation:\n")
-		for _, m := range req.History {
-			b.WriteString(m.Role)
+		for _, message := range req.History {
+			b.WriteString(message.Role)
 			b.WriteString(": ")
-			b.WriteString(m.Content)
+			b.WriteString(message.Content)
 			b.WriteByte('\n')
 		}
 	}
 	return b.String()
 }
 
-func validateAIThemeCandidate(candidate aiThemeCandidate, req aiThemeGenerationRequest) error {
-	if strings.TrimSpace(candidate.PackName) == "" || len(candidate.Spec) == 0 {
-		return errors.New("candidate_missing_fields")
+func validateAIThemeStyle(style aiThemeStyle) error {
+	if strings.TrimSpace(style.PackName) == "" || strings.TrimSpace(style.Title) == "" || strings.TrimSpace(style.Notes) == "" || strings.TrimSpace(style.ArtPrompt) == "" {
+		return errors.New("blueprint_missing_fields")
 	}
-	if len([]rune(candidate.PackName)) > 80 || len([]rune(candidate.Notes)) > 500 {
-		return errors.New("candidate_fields_too_large")
+	if len([]rune(style.PackName)) > 48 || len([]rune(style.Title)) > 18 || len([]rune(style.Notes)) > 300 || len([]rune(style.ArtPrompt)) > 1000 {
+		return errors.New("blueprint_fields_too_large")
 	}
-	if len(candidate.Spec) > 4096 || bytes.Contains(bytes.ToLower(candidate.Spec), []byte("http")) || bytes.Contains(bytes.ToLower(candidate.Spec), []byte("base64")) {
-		return errors.New("candidate_forbidden_content")
-	}
-	spec, _, err := themespec.Parse(candidate.Spec)
-	if err != nil {
-		return err
-	}
-	if err = themespec.Validate(spec); err != nil {
-		return err
-	}
-	if len(spec.Primitives) > aiThemePrimitiveLimit {
-		return errors.New("candidate_too_many_primitives")
-	}
-	allowedAssets := map[string]struct{}{}
-	requiredBindings := map[string]bool{}
-	if req.Mode == "improve" {
-		base, _, baseErr := themespec.Parse(req.BaseSpec)
-		if baseErr != nil {
-			return errors.New("base_spec_invalid")
-		}
-		for _, primitive := range base.Primitives {
-			collectAIThemeAssets(primitive, allowedAssets)
-			if primitive.Binding == "session" || primitive.Binding == "weekly" {
-				requiredBindings[primitive.Binding] = true
-			}
+	for _, color := range []string{style.BackgroundColor, style.PanelColor, style.TextColor, style.SessionColor, style.WeeklyColor} {
+		if !aiThemeColorPattern.MatchString(color) {
+			return errors.New("blueprint_invalid_color")
 		}
 	}
-	for _, p := range spec.Primitives {
-		if p.X < 0 || p.Y < 0 || p.X > 239 || p.Y > 239 || p.Width < 0 || p.Height < 0 || p.X+p.Width > 240 || p.Y+p.Height > 240 {
-			return errors.New("candidate_out_of_bounds")
-		}
-		if req.Mode == "create" && p.Type != "rect" && p.Type != "text" && p.Type != "progress" && p.Type != "pixels" {
-			return errors.New("candidate_unsupported_primitive")
-		}
-		if req.Mode == "create" && (p.AssetPath != "" || len(p.StateAssets) > 0) {
-			return errors.New("candidate_new_asset_reference")
-		}
-		if req.Mode == "improve" {
-			candidateAssets := map[string]struct{}{}
-			collectAIThemeAssets(p, candidateAssets)
-			for asset := range candidateAssets {
-				if _, ok := allowedAssets[asset]; !ok {
-					return errors.New("candidate_new_asset_reference")
-				}
-			}
-			if p.Binding == "session" || p.Binding == "weekly" {
-				delete(requiredBindings, p.Binding)
-			}
-		}
+	if style.ProgressStyle != "solid" && style.ProgressStyle != "segments" {
+		return errors.New("blueprint_invalid_progress_style")
 	}
-	if len(requiredBindings) > 0 {
-		return errors.New("candidate_usage_binding_removed")
+	if style.BorderRadius < 0 || style.BorderRadius > 7 {
+		return errors.New("blueprint_invalid_radius")
 	}
 	return nil
 }
 
-func collectAIThemeAssets(primitive themespec.Primitive, assets map[string]struct{}) {
-	if primitive.AssetPath != "" {
-		assets[primitive.AssetPath] = struct{}{}
+func validateConceptImage(value, contentType string) ([]byte, error) {
+	if contentType != "image/png" || value == "" {
+		return nil, errors.New("image_invalid")
 	}
-	for _, asset := range primitive.StateAssets {
-		if asset != "" {
-			assets[asset] = struct{}{}
-		}
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil || len(decoded) == 0 || len(decoded) > aiThemeImageResponseLimit || len(decoded) < 8 || !bytes.Equal(decoded[:8], []byte{137, 80, 78, 71, 13, 10, 26, 10}) {
+		return nil, errors.New("image_invalid")
 	}
+	return decoded, nil
 }
 
-func aiThemeCandidateSchema() map[string]any {
-	coordinateProperties := func(kind string) map[string]any {
-		return map[string]any{"type": map[string]any{"type": "string", "const": kind}, "x": map[string]any{"type": "integer", "minimum": 0, "maximum": 239}, "y": map[string]any{"type": "integer", "minimum": 0, "maximum": 239}}
-	}
-	object := func(kind string, extra map[string]any) map[string]any {
-		properties := coordinateProperties(kind)
-		required := []string{"type", "x", "y"}
-		for name, value := range extra {
-			properties[name] = value
-			required = append(required, name)
-		}
-		return map[string]any{"type": "object", "additionalProperties": false, "properties": properties, "required": required}
-	}
+func aiThemeStyleSchema() map[string]any {
 	color := map[string]any{"type": "string", "pattern": "^#[A-Fa-f0-9]{6}$"}
-	dimension := map[string]any{"type": "integer", "minimum": 1, "maximum": 240}
-	primitive := map[string]any{"anyOf": []any{
-		object("rect", map[string]any{"width": dimension, "height": dimension, "color": color, "bgColor": color, "borderColor": color, "borderRadius": map[string]any{"type": "integer", "minimum": 0, "maximum": 120}}),
-		object("text", map[string]any{"text": map[string]any{"type": "string", "maxLength": 120}, "binding": map[string]any{"type": "string", "maxLength": 32}, "fontSize": map[string]any{"type": "integer", "minimum": 1, "maximum": 8}, "color": color, "bgColor": color}),
-		object("progress", map[string]any{"width": dimension, "height": dimension, "binding": map[string]any{"type": "string", "maxLength": 32}, "color": color, "bgColor": color, "borderColor": color, "borderRadius": map[string]any{"type": "integer", "minimum": 0, "maximum": 120}}),
-		object("pixels", map[string]any{"width": dimension, "height": dimension, "data": map[string]any{"type": "string", "maxLength": 2048}, "p": map[string]any{"type": "array", "maxItems": 16, "items": color}, "r": map[string]any{"type": "array", "maxItems": 32, "items": map[string]any{"type": "string", "maxLength": 64}}}),
-		object("gif", map[string]any{"width": dimension, "height": dimension, "assetPath": map[string]any{"type": "string", "maxLength": 31}}),
-		object("sprite", map[string]any{"width": dimension, "height": dimension, "assetPath": map[string]any{"type": "string", "maxLength": 31}}),
-	}}
-	spec := map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"themeSpecVersion": map[string]any{"type": "integer", "const": 1}, "themeId": map[string]any{"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$"}, "themeRev": map[string]any{"type": "integer", "minimum": 1}, "bgColor": color, "primitives": map[string]any{"type": "array", "minItems": 1, "maxItems": 16, "items": primitive}}, "required": []string{"themeSpecVersion", "themeId", "themeRev", "bgColor", "primitives"}}
-	return map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"packName": map[string]any{"type": "string", "maxLength": 80}, "spec": spec, "notes": map[string]any{"type": "string", "maxLength": 500}}, "required": []string{"packName", "spec", "notes"}}
+	return map[string]any{
+		"type": "object", "additionalProperties": false,
+		"properties": map[string]any{
+			"packName": map[string]any{"type": "string", "maxLength": 48}, "title": map[string]any{"type": "string", "maxLength": 18},
+			"notes": map[string]any{"type": "string", "maxLength": 300}, "artPrompt": map[string]any{"type": "string", "maxLength": 1000},
+			"backgroundColor": color, "panelColor": color, "textColor": color, "sessionColor": color, "weeklyColor": color,
+			"progressStyle": map[string]any{"type": "string", "enum": []string{"solid", "segments"}},
+			"borderRadius":  map[string]any{"type": "integer", "minimum": 0, "maximum": 7},
+		},
+		"required": []string{"packName", "title", "notes", "artPrompt", "backgroundColor", "panelColor", "textColor", "sessionColor", "weeklyColor", "progressStyle", "borderRadius"},
+	}
 }
 
-func validAIThemeProvider(id string) bool { return id == "openai" || id == "anthropic" }
 func validAIThemeHistory(history []aiThemeMessage) bool {
 	total := 0
 	for _, message := range history {
@@ -529,10 +541,10 @@ func validAIThemeHistory(history []aiThemeMessage) bool {
 	}
 	return total <= aiThemePromptLimit*aiThemeHistoryLimit
 }
+
 func boundedRepairCandidate(value string) string {
-	const limit = 8192
-	if len(value) > limit {
-		return value[:limit]
+	if len(value) > 8192 {
+		return value[:8192]
 	}
 	return value
 }
@@ -563,19 +575,23 @@ func providerStatusFromError(err error) int {
 	return http.StatusBadGateway
 }
 func providerErrorCode(err error, status int) string {
-	if status == 401 || status == 403 || strings.Contains(errorString(err), "401") || strings.Contains(errorString(err), "403") {
+	value := errorString(err)
+	if strings.Contains(value, "image_provider_status_401") || strings.Contains(value, "image_provider_status_403") {
+		return "image_generation_unavailable"
+	}
+	if status == 401 || status == 403 || strings.Contains(value, "provider_status_401") || strings.Contains(value, "provider_status_403") {
 		return "provider_auth_failed"
 	}
-	if status == 429 || strings.Contains(errorString(err), "429") {
+	if status == 429 || strings.Contains(value, "429") {
 		return "provider_rate_limited"
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return "provider_timeout"
 	}
-	if strings.Contains(errorString(err), "too_large") {
+	if strings.Contains(value, "too_large") {
 		return "provider_response_too_large"
 	}
-	if strings.Contains(errorString(err), "malformed") {
+	if strings.Contains(value, "malformed") || strings.Contains(value, "image_invalid") {
 		return "provider_invalid_response"
 	}
 	return "provider_unavailable"

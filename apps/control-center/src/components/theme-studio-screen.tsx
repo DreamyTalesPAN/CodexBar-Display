@@ -63,8 +63,10 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
+  AI_THEME_SCREENMASTER_ASSET_PATH,
   fetchAIThemeCapabilities,
   type AIThemeCandidate,
+  type AIThemeSession,
 } from "@/lib/ai-theme";
 import {
   buildThemePack,
@@ -262,8 +264,8 @@ export function ThemeStudioScreen({
       : null,
   );
   const [aiThemeAvailable, setAIThemeAvailable] = useState(false);
-  const [aiThemeCandidate, setAIThemeCandidate] =
-    useState<AIThemeCandidate | null>(null);
+  const [aiThemeSession, setAIThemeSession] = useState<AIThemeSession | null>(null);
+  const aiThemeCandidate = aiThemeSession?.candidate || null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -306,7 +308,7 @@ export function ThemeStudioScreen({
     () =>
       aiThemeCandidate
         ? {
-            assets: {},
+            assets: aiThemeCandidate.assets,
             name: aiThemeCandidate.packName,
             ok: true,
             spec: aiThemeCandidate.spec,
@@ -372,7 +374,7 @@ export function ThemeStudioScreen({
       type: markSaved ? "load" : "update",
     });
     setSelectedIndices(normalized.primitives.length > 0 ? [0] : []);
-    setAIThemeCandidate(null);
+    setAIThemeSession(null);
     setJsonText(prettyJson(normalized));
     setJsonDirty(false);
     if (status) {
@@ -386,7 +388,7 @@ export function ThemeStudioScreen({
 
   function applyAIThemeCandidate(nextCandidate: AIThemeCandidate) {
     replaceLoadedTheme({
-      assets,
+      assets: nextCandidate.assets,
       packName: nextCandidate.packName,
       spec: nextCandidate.spec,
       status: {
@@ -427,6 +429,11 @@ export function ThemeStudioScreen({
   const persistThemeStudioRecovery = useCallback(() => {
     const snapshot = recoverySnapshotRef.current;
     if (!snapshot?.dirty) {
+      return true;
+    }
+    if (snapshot.document.assets[AI_THEME_SCREENMASTER_ASSET_PATH]) {
+      clearThemeStudioRecovery();
+      recoveryWrittenRef.current = false;
       return true;
     }
     const result = writeThemeStudioRecovery({
@@ -965,6 +972,11 @@ export function ThemeStudioScreen({
       }
     }
     const timer = window.setTimeout(() => {
+      if (editorState.present.assets[AI_THEME_SCREENMASTER_ASSET_PATH]) {
+        clearThemeStudioRecovery();
+        recoveryWrittenRef.current = false;
+        return;
+      }
       const result = writeThemeStudioRecovery({
         document: editorState.present,
         libraryId: libraryIdRef.current,
@@ -1195,11 +1207,11 @@ export function ThemeStudioScreen({
                   </SheetHeader>
                   <div className="p-4">
                     <AIThemePanel
-                      candidate={aiThemeCandidate}
                       currentSpec={spec}
                       key={`sheet-${spec.themeId}`}
                       onApply={applyAIThemeCandidate}
-                      onCandidateChange={setAIThemeCandidate}
+                      onSessionChange={setAIThemeSession}
+                      session={aiThemeSession}
                     />
                   </div>
                 </SheetContent>
@@ -1290,11 +1302,11 @@ export function ThemeStudioScreen({
                   </SheetHeader>
                   <div className="p-4">
                     <AIThemePanel
-                      candidate={aiThemeCandidate}
                       currentSpec={spec}
                       key={`mobile-ai-${spec.themeId}`}
                       onApply={applyAIThemeCandidate}
-                      onCandidateChange={setAIThemeCandidate}
+                      onSessionChange={setAIThemeSession}
+                      session={aiThemeSession}
                     />
                   </div>
                 </SheetContent>
@@ -1615,9 +1627,11 @@ export function ThemeStudioScreen({
 
           <main className="order-1 grid min-h-0 min-w-0 place-items-center lg:order-2 lg:h-full">
             <div className="grid w-full justify-items-center gap-2">
-              {aiThemeCandidate ? (
+              {aiThemeSession ? (
                 <Badge data-ai-candidate-preview variant="secondary">
-                  AI Candidate Preview – not applied
+                  {aiThemeSession.built
+                    ? "AI Theme Build – not applied"
+                    : "AI Screenmaster Concept – not applied"}
                 </Badge>
               ) : null}
               <EditableThemePreview
@@ -1768,11 +1782,11 @@ export function ThemeStudioScreen({
           <div className="order-4 hidden min-h-0 2xl:block 2xl:h-full">
             {aiThemeAvailable ? (
               <AIThemePanel
-                candidate={aiThemeCandidate}
                 currentSpec={spec}
                 key={spec.themeId}
                 onApply={applyAIThemeCandidate}
-                onCandidateChange={setAIThemeCandidate}
+                onSessionChange={setAIThemeSession}
+                session={aiThemeSession}
               />
             ) : null}
           </div>

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AI_THEME_LOCAL_HISTORY_LIMIT,
+  buildAIThemeCandidateFromRGBA,
+  encodeAIThemeCBI1,
   loadAIThemeHistory,
   saveAIThemeHistory,
   type AIThemeMessage,
@@ -20,8 +22,8 @@ describe("AI theme history", () => {
       createdAt: new Date(index * 1000).toISOString(),
       role: index % 2 ? "assistant" : "user",
     }));
-    saveAIThemeHistory("theme-a", history, storage as Storage);
-    expect(loadAIThemeHistory("theme-a", storage as Storage)).toHaveLength(
+    saveAIThemeHistory("theme-a", history, storage);
+    expect(loadAIThemeHistory("theme-a", storage)).toHaveLength(
       AI_THEME_LOCAL_HISTORY_LIMIT,
     );
     expect([...storage.values.values()].join(" ")).not.toContain("apiKey");
@@ -29,7 +31,41 @@ describe("AI theme history", () => {
 
   it("isolates history by theme id", () => {
     const storage = new MemoryStorage();
-    saveAIThemeHistory("one", [{ content: "one", createdAt: "now", role: "user" }], storage as Storage);
-    expect(loadAIThemeHistory("two", storage as Storage)).toEqual([]);
+    saveAIThemeHistory("one", [{ content: "one", createdAt: "now", role: "user" }], storage);
+    expect(loadAIThemeHistory("two", storage)).toEqual([]);
+  });
+
+  it("converts exactly 30,720 pixels into a maximum 26-color CBI1 screenmaster", () => {
+    const rgba = new Uint8ClampedArray(240 * 128 * 4);
+    for (let pixel = 0; pixel < 240 * 128; pixel += 1) {
+      rgba[pixel * 4] = pixel % 256;
+      rgba[pixel * 4 + 1] = (pixel * 3) % 256;
+      rgba[pixel * 4 + 2] = (pixel * 7) % 256;
+      rgba[pixel * 4 + 3] = 255;
+    }
+    const encoded = encodeAIThemeCBI1(rgba);
+    const lines = encoded.split("\n");
+    expect(lines[0]).toBe("CBI1");
+    expect(lines[1]).toBe("240 128");
+    expect(Number(lines[2])).toBeLessThanOrEqual(26);
+  });
+
+  it("builds both Remaining bars and percentage labels without changing the concept", () => {
+    const imageBase64 = "not-persisted-image";
+    const candidate = buildAIThemeCandidateFromRGBA({
+      imageBase64,
+      imageContentType: "image/png",
+      style: {
+        artPrompt: "A large cat under a moon.", backgroundColor: "#081426", borderRadius: 3,
+        notes: "Moon cat", packName: "Moon Cat", panelColor: "#101F36",
+        progressStyle: "segments", sessionColor: "#F6B85F", textColor: "#FFF3CF",
+        title: "CAT MODE", weeklyColor: "#EF6A8A",
+      },
+    }, new Uint8ClampedArray(240 * 128 * 4));
+    expect(candidate.spec.primitives.filter((item) => item.type === "progress").map((item) => item.binding)).toEqual(["session", "weekly"]);
+    expect(candidate.spec.primitives.filter((item) => item.type === "text").map((item) => item.text)).toContain("{session}%");
+    expect(candidate.spec.primitives.filter((item) => item.type === "text").map((item) => item.text)).toContain("{weekly}%");
+    expect(Object.values(candidate.assets)[0]?.data.startsWith("CBI1\n240 128\n")).toBe(true);
+    expect(JSON.stringify(candidate)).not.toContain(imageBase64);
   });
 });

@@ -3,6 +3,7 @@ package companionapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -31,11 +32,11 @@ func (s *memorySecretStore) Set(account, secret string) error {
 func (s *memorySecretStore) Get(account string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v, ok := s.values[account]
+	value, ok := s.values[account]
 	if !ok {
 		return "", ErrSecretNotFound
 	}
-	return v, nil
+	return value, nil
 }
 func (s *memorySecretStore) Delete(account string) error {
 	s.mu.Lock()
@@ -54,8 +55,7 @@ func (f aiRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { re
 func newAIThemeTestServer(t *testing.T, store SecretStore, transport http.RoundTripper) *Server {
 	t.Helper()
 	t.Setenv(aiThemeEnabledEnv, "1")
-	client := &http.Client{Transport: transport, Timeout: time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	server, err := New(Options{Addr: DefaultAddr, Home: t.TempDir(), AIThemeSecretStore: store, AIThemeHTTPClient: client})
+	server, err := New(Options{Addr: DefaultAddr, Home: t.TempDir(), AIThemeSecretStore: store, AIThemeHTTPClient: &http.Client{Transport: transport}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,32 +70,44 @@ func aiRequest(method, path, body string) *http.Request {
 	return req
 }
 
-func TestAIThemeCredentialLifecycleDoesNotReturnSecret(t *testing.T) {
+func validAIStyleJSON() string {
+	return `{"packName":"Moon Cat","title":"CAT MODE","notes":"Warm moonlit cat.","artPrompt":"A large orange pixel cat beneath a cream moon on deep navy.","backgroundColor":"#081426","panelColor":"#101F36","textColor":"#FFF3CF","sessionColor":"#F6B85F","weeklyColor":"#EF6A8A","progressStyle":"segments","borderRadius":3}`
+}
+
+func tinyPNGBase64() string {
+	return base64.StdEncoding.EncodeToString([]byte{137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0})
+}
+
+func response(status int, body []byte, request *http.Request) *http.Response {
+	return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header), Request: request}
+}
+
+func TestAIThemeCredentialLifecycleAndCapabilitiesAreOpenAIOnly(t *testing.T) {
 	store := newMemorySecretStore()
-	server := newAIThemeTestServer(t, store, aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{}`)), Header: make(http.Header), Request: r}, nil
-	}))
+	server := newAIThemeTestServer(t, store, aiRoundTripFunc(func(r *http.Request) (*http.Response, error) { return response(200, []byte(`{}`), r), nil }))
 	put := httptest.NewRecorder()
 	server.Handler().ServeHTTP(put, aiRequest(http.MethodPut, "/v1/ai-theme/providers/openai/credential", `{"apiKey":"sk-test-12345678901234567890"}`))
-	if put.Code != 200 {
+	if put.Code != 200 || strings.Contains(put.Body.String(), "sk-test") {
 		t.Fatalf("put=%d %s", put.Code, put.Body.String())
 	}
-	if strings.Contains(put.Body.String(), "sk-test") {
-		t.Fatal("credential leaked in response")
+	capabilities := httptest.NewRecorder()
+	server.Handler().ServeHTTP(capabilities, aiRequest(http.MethodGet, "/v1/ai-theme/capabilities", ""))
+	if !strings.Contains(capabilities.Body.String(), `"id":"openai"`) || strings.Contains(capabilities.Body.String(), "anthropic") {
+		t.Fatalf("capabilities=%s", capabilities.Body.String())
 	}
-	cap := httptest.NewRecorder()
-	server.Handler().ServeHTTP(cap, aiRequest(http.MethodGet, "/v1/ai-theme/capabilities", ""))
-	if !strings.Contains(cap.Body.String(), `"configured":true`) {
-		t.Fatalf("capabilities=%s", cap.Body.String())
+	verify := httptest.NewRecorder()
+	server.Handler().ServeHTTP(verify, aiRequest(http.MethodPost, "/v1/ai-theme/providers/openai/verify", ""))
+	if verify.Code != 200 {
+		t.Fatalf("verify=%d %s", verify.Code, verify.Body.String())
 	}
-	del := httptest.NewRecorder()
-	server.Handler().ServeHTTP(del, aiRequest(http.MethodDelete, "/v1/ai-theme/providers/openai/credential", ""))
-	if del.Code != 200 {
-		t.Fatalf("delete=%d %s", del.Code, del.Body.String())
+	deleteRecorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(deleteRecorder, aiRequest(http.MethodDelete, "/v1/ai-theme/providers/openai/credential", ""))
+	if deleteRecorder.Code != 200 {
+		t.Fatalf("delete=%d", deleteRecorder.Code)
 	}
 }
 
-func TestAIThemeGuardRejectsRemoteHostAndOrigin(t *testing.T) {
+func TestAIThemeGuardAndDisabledDefault(t *testing.T) {
 	server := newAIThemeTestServer(t, newMemorySecretStore(), aiRoundTripFunc(func(*http.Request) (*http.Response, error) { return nil, errors.New("unused") }))
 	for _, tc := range []struct{ host, origin string }{{"example.com", "https://app.vibetv.shop"}, {"127.0.0.1:47832", "https://evil.example"}, {"127.0.0.1:47832", defaultDevOrigin}} {
 		req := httptest.NewRequest(http.MethodGet, "http://"+tc.host+"/v1/ai-theme/capabilities", nil)
@@ -107,72 +119,90 @@ func TestAIThemeGuardRejectsRemoteHostAndOrigin(t *testing.T) {
 			t.Fatalf("host=%s origin=%s got %d", tc.host, tc.origin, w.Code)
 		}
 	}
-}
-
-func TestAIThemeIsDisabledByDefault(t *testing.T) {
 	t.Setenv(aiThemeEnabledEnv, "")
-	server, err := New(Options{Addr: DefaultAddr, Home: t.TempDir(), AIThemeSecretStore: newMemorySecretStore()})
+	disabled, err := New(Options{Addr: DefaultAddr, Home: t.TempDir(), AIThemeSecretStore: newMemorySecretStore()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	capabilities := httptest.NewRecorder()
-	server.Handler().ServeHTTP(capabilities, aiRequest(http.MethodGet, "/v1/ai-theme/capabilities", ""))
-	if capabilities.Code != http.StatusOK || !strings.Contains(capabilities.Body.String(), `"enabled":false`) {
-		t.Fatalf("capabilities=%d %s", capabilities.Code, capabilities.Body.String())
-	}
-	generation := httptest.NewRecorder()
-	server.Handler().ServeHTTP(generation, aiRequest(http.MethodPost, "/v1/ai-theme/generations", `{}`))
-	if generation.Code != http.StatusNotFound || !strings.Contains(generation.Body.String(), "feature_disabled") {
-		t.Fatalf("generation=%d %s", generation.Code, generation.Body.String())
+	w := httptest.NewRecorder()
+	disabled.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/concepts", `{}`))
+	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "feature_disabled") {
+		t.Fatalf("disabled=%d %s", w.Code, w.Body.String())
 	}
 }
 
-func TestAIThemeGenerationUsesFixedOpenAIEndpointAndRepairsOnce(t *testing.T) {
+func TestAIThemeConceptUsesFixedPlannerAndImageModels(t *testing.T) {
 	store := newMemorySecretStore()
-	_ = store.Set("openai", "sk-test-12345678901234567890")
-	valid := `{"packName":"Cat","spec":{"themeSpecVersion":1,"themeId":"cat-pixels","themeRev":1,"primitives":[{"type":"rect","x":10,"y":10,"width":8,"height":8,"color":"#FFFFFF"}]},"notes":"Pixel cat"}`
-	invalid := `{"packName":"Bad","spec":{"themeSpecVersion":1,"themeId":"bad","themeRev":1,"primitives":[{"type":"rect","x":239,"y":0,"width":20,"height":20}]},"notes":"bad"}`
+	secret := "sk-test-12345678901234567890"
+	_ = store.Set("openai", secret)
 	var calls int
-	var expected aiThemeCandidate
-	if err := json.Unmarshal([]byte(valid), &expected); err != nil {
-		t.Fatal(err)
-	}
-	if err := validateAIThemeCandidate(expected, aiThemeGenerationRequest{Mode: "create"}); err != nil {
-		t.Fatalf("valid fixture rejected: %v", err)
-	}
 	server := newAIThemeTestServer(t, store, aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
-		if r.URL.String() != openAIEndpoint {
-			t.Errorf("unexpected endpoint %s", r.URL)
-		}
-		if r.Header.Get("Authorization") != "Bearer sk-test-12345678901234567890" {
+		if r.Header.Get("Authorization") != "Bearer "+secret {
 			t.Error("missing auth")
 		}
 		body, _ := io.ReadAll(r.Body)
-		if bytes.Contains(body, []byte("sk-test")) {
-			t.Error("key leaked into JSON body")
+		if bytes.Contains(body, []byte(secret)) {
+			t.Error("secret leaked into request body")
 		}
-		text := invalid
-		if calls == 2 {
-			text = valid
+		if calls == 1 {
+			if r.URL.String() != openAIEndpoint || !bytes.Contains(body, []byte(openAIModel)) || !bytes.Contains(body, []byte(`"strict":true`)) {
+				t.Fatalf("planner request url=%s body=%s", r.URL, body)
+			}
+			payload, _ := json.Marshal(map[string]any{"output": []any{map[string]any{"content": []any{map[string]any{"type": "output_text", "text": validAIStyleJSON()}}}}})
+			return response(200, payload, r), nil
 		}
-		payload, _ := json.Marshal(map[string]any{
-			"output": []any{map[string]any{
-				"content": []any{map[string]any{"type": "output_text", "text": text}},
-			}},
-		})
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(payload)), Header: make(http.Header), Request: r}, nil
+		if r.URL.String() != openAIImageEndpoint || !bytes.Contains(body, []byte(openAIImageModel)) || !bytes.Contains(body, []byte(`"size":"1920x1024"`)) {
+			t.Fatalf("image request url=%s body=%s", r.URL, body)
+		}
+		payload, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"b64_json": tinyPNGBase64()}}})
+		return response(200, payload, r), nil
 	}))
 	w := httptest.NewRecorder()
-	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/generations", `{"providerId":"openai","mode":"create","prompt":"Eine Pixelkatze"}`))
-	if w.Code != 200 {
-		t.Fatalf("generation=%d %s", w.Code, w.Body.String())
+	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/concepts", `{"prompt":"A premium cat theme","history":[{"role":"user","content":"warm colors"}]}`))
+	if w.Code != 200 || calls != 2 || !strings.Contains(w.Body.String(), `"imageContentType":"image/png"`) {
+		t.Fatalf("concept=%d calls=%d %s", w.Code, calls, w.Body.String())
 	}
-	if calls != 2 {
-		t.Fatalf("expected one repair, calls=%d", calls)
+}
+
+func TestAIThemeConceptEditUsesPreviousPNGWithoutLoggingIt(t *testing.T) {
+	store := newMemorySecretStore()
+	_ = store.Set("openai", "sk-test-12345678901234567890")
+	var editBody []byte
+	var contentType string
+	calls := 0
+	server := newAIThemeTestServer(t, store, aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			payload, _ := json.Marshal(map[string]any{"output": []any{map[string]any{"content": []any{map[string]any{"type": "output_text", "text": validAIStyleJSON()}}}}})
+			return response(200, payload, r), nil
+		}
+		if r.URL.String() != openAIImageEditEndpoint {
+			t.Fatalf("edit url=%s", r.URL)
+		}
+		contentType = r.Header.Get("Content-Type")
+		editBody, _ = io.ReadAll(r.Body)
+		payload, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"b64_json": tinyPNGBase64()}}})
+		return response(200, payload, r), nil
+	}))
+	request := map[string]any{"prompt": "Make it warmer", "previous": map[string]any{"imageBase64": tinyPNGBase64(), "imageContentType": "image/png", "style": json.RawMessage(validAIStyleJSON())}}
+	body, _ := json.Marshal(request)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/concepts", string(body)))
+	if w.Code != 200 || !strings.HasPrefix(contentType, "multipart/form-data;") || !bytes.Contains(editBody, []byte(`filename="previous.png"`)) || !bytes.Contains(editBody, []byte(openAIImageModel)) {
+		t.Fatalf("edit=%d content-type=%s", w.Code, contentType)
 	}
-	if !strings.Contains(w.Body.String(), `"packName":"Cat"`) {
-		t.Fatalf("candidate=%s", w.Body.String())
+}
+
+func TestAIThemeRejectsOversizedAndUnavailableImages(t *testing.T) {
+	if _, err := validateConceptImage(base64.StdEncoding.EncodeToString(make([]byte, aiThemeImageResponseLimit+1)), "image/png"); err == nil {
+		t.Fatal("oversized image accepted")
+	}
+	if got := providerErrorCode(errors.New("image_provider_status_403"), 0); got != "image_generation_unavailable" {
+		t.Fatalf("code=%s", got)
+	}
+	if got := providerErrorCode(context.DeadlineExceeded, 0); got != "provider_timeout" {
+		t.Fatalf("timeout=%s", got)
 	}
 }
 
@@ -202,44 +232,13 @@ func TestAIThemeRateLimitAndCancellation(t *testing.T) {
 func TestAIThemeProviderErrorsAreRedacted(t *testing.T) {
 	secret := "sk-secret-value-that-must-not-leak"
 	store := newMemorySecretStore()
-	_ = store.Set("anthropic", secret)
+	_ = store.Set("openai", secret)
 	server := newAIThemeTestServer(t, store, aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(`{"error":"` + secret + `"}`)), Header: make(http.Header), Request: r}, nil
+		return response(401, []byte(`{"error":"`+secret+`"}`), r), nil
 	}))
 	w := httptest.NewRecorder()
-	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/providers/anthropic/verify", ""))
-	if w.Code != 401 {
-		t.Fatalf("status=%d", w.Code)
-	}
-	if strings.Contains(w.Body.String(), secret) {
-		t.Fatal("secret leaked")
-	}
-	if !strings.Contains(w.Body.String(), "provider_auth_failed") {
+	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/providers/openai/verify", ""))
+	if w.Code != 401 || strings.Contains(w.Body.String(), secret) || !strings.Contains(w.Body.String(), "provider_auth_failed") {
 		t.Fatalf("body=%s", w.Body.String())
-	}
-}
-
-func TestAIThemeAnthropicGenerationUsesMessagesAndStrictFormat(t *testing.T) {
-	store := newMemorySecretStore()
-	_ = store.Set("anthropic", "anthropic-test-123456789012345")
-	candidate := `{"packName":"Finance","spec":{"themeSpecVersion":1,"themeId":"ai-finance","themeRev":1,"bgColor":"#071A2B","primitives":[{"type":"progress","x":16,"y":96,"width":208,"height":18,"binding":"session","color":"#54D2D2","bgColor":"#163A55","borderColor":"#54D2D2","borderRadius":2}]},"notes":"Finance"}`
-	server := newAIThemeTestServer(t, store, aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.String() != anthropicEndpoint {
-			t.Errorf("endpoint=%s", r.URL)
-		}
-		if r.Header.Get("x-api-key") == "" {
-			t.Error("missing Anthropic key")
-		}
-		body, _ := io.ReadAll(r.Body)
-		if !bytes.Contains(body, []byte(`"output_config"`)) || !bytes.Contains(body, []byte(`"json_schema"`)) {
-			t.Errorf("missing strict format: %s", body)
-		}
-		payload, _ := json.Marshal(map[string]any{"content": []any{map[string]any{"type": "text", "text": candidate}}})
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(payload)), Header: make(http.Header), Request: r}, nil
-	}))
-	w := httptest.NewRecorder()
-	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/generations", `{"providerId":"anthropic","mode":"create","prompt":"finance"}`))
-	if w.Code != http.StatusOK {
-		t.Fatalf("generation=%d %s", w.Code, w.Body.String())
 	}
 }
