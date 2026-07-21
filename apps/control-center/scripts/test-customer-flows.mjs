@@ -4660,6 +4660,8 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
   const generationRequests = [];
   let credential = "";
+  let verificationShouldFail = false;
+  let verificationRequests = 0;
 
   await routeLocalCompanionAppThroughLocalNext(page, appUrl);
   await routeCompanionOnline(page, [], () => {}, {
@@ -4688,11 +4690,20 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
       return;
     }
     if (pathname.endsWith("/verify")) {
-      await route.fulfill({ status: 200, contentType: "application/json", body: `{"verified":true}` });
+      verificationRequests += 1;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await route.fulfill({
+        status: verificationShouldFail ? 401 : 200,
+        contentType: "application/json",
+        body: verificationShouldFail
+          ? `{"error":{"code":"provider_auth_failed"}}`
+          : `{"verified":true}`,
+      });
       return;
     }
     if (pathname === "/v1/ai-theme/generations") {
       generationRequests.push(JSON.parse(route.request().postData() || "{}"));
+      await new Promise((resolve) => setTimeout(resolve, 250));
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -4723,25 +4734,60 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   const originalName = await page.locator("[data-theme-studio-root] h3").first().textContent();
   const keyInput = page.getByLabel("OpenAI key");
   await keyInput.fill("sk-playwright-temporary-key-123456789");
-  await page.getByRole("button", { name: "Save and verify key" }).click();
-  await page.getByText("Key verified and stored by the local app.").waitFor();
+  await page.getByRole("button", { name: "Store key" }).click();
+  await page.getByText("Key stored securely. Test it before generating.").waitFor();
   assert(credential.length > 0, "AI setup should send the key to the local Companion");
   assert((await keyInput.count()) === 0, "AI key input should leave browser state after setup");
   assert(
     !(await page.evaluate((value) => Object.values(window.localStorage).some((entry) => String(entry).includes(value)), credential)),
     "AI credentials must never be written to localStorage",
   );
+  const testKey = page.getByRole("button", { name: "Test key" });
+  await testKey.click();
+  const testingKey = page.getByRole("button", { name: "Testing…" });
+  await testingKey.waitFor();
+  assert(await testingKey.isDisabled(), "key testing should disable repeat verification");
+  await page.getByText("Key verified.").waitFor();
+  assert(verificationRequests === 1, "key testing should make one verification request");
+
+  verificationShouldFail = true;
+  await testKey.click();
+  await testingKey.waitFor();
+  await page.getByText("The provider rejected this key.").waitFor();
+  verificationShouldFail = false;
+  await testKey.click();
+  await page.getByText("Key verified.").waitFor();
 
   const prompt = page.getByLabel("AI theme prompt");
   await prompt.fill("Create a neon usage theme");
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  const create = page.getByRole("button", { name: "Create", exact: true });
+  await create.evaluate((button) => {
+    button.click();
+    button.click();
+  });
+  const creating = page.getByRole("button", { name: "Creating…", exact: true });
+  await creating.waitFor();
+  assert(await creating.isDisabled(), "generation should become busy immediately");
+  await page.getByText("Creating an isolated candidate…").waitFor();
   await page.getByText("Candidate ready. Review it before applying.").waitFor();
+  assert(generationRequests.length === 1, "double-clicking Create must start only one generation");
   assert(
     (await page.locator("[data-theme-studio-root] h3").first().textContent()) === originalName,
     "AI candidate must remain isolated before Apply",
   );
+  await page.getByText("AI Candidate Preview – not applied", { exact: true }).waitFor();
+  const candidatePreview = page.getByLabel("AI candidate theme preview");
+  await candidatePreview.getByLabel(/Rendered VibeTV theme ai-candidate/).waitFor();
+  assert(
+    (await candidatePreview.getByLabel("Editable 240x240 preview").count()) === 0,
+    "candidate preview must not expose editable overlays",
+  );
   await page.getByRole("button", { name: "Apply", exact: true }).click();
   await page.getByRole("heading", { name: "AI Candidate" }).waitFor();
+  assert(
+    (await page.getByText("AI Candidate Preview – not applied", { exact: true }).count()) === 0,
+    "Apply should restore the editable preview",
+  );
   const undo = page.getByRole("button", { name: "Undo" });
   assert(await undo.isEnabled(), "Apply should create one undo step");
   await undo.click();
@@ -4749,6 +4795,7 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
     (await page.locator("[data-theme-studio-root] h3").first().textContent()) === originalName,
     "one Undo should restore the document from before Apply",
   );
+  assert(await undo.isDisabled(), "Apply should add exactly one undo step");
 
   await page.getByLabel("Generation mode").click();
   await page.getByRole("option", { name: "Improve current theme" }).click();
@@ -4763,9 +4810,31 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   await page.getByText("Candidate ready. Review it before applying.").waitFor();
   const nameBeforeDiscard = await page.locator("[data-theme-studio-root] h3").first().textContent();
   await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await page.getByLabel("Editable 240x240 preview").waitFor();
   assert(
     (await page.locator("[data-theme-studio-root] h3").first().textContent()) === nameBeforeDiscard,
     "Discard must not change the editor document",
+  );
+  assert(
+    (await page.getByText("AI Candidate Preview – not applied", { exact: true }).count()) === 0,
+    "Discard should restore the normal preview",
+  );
+
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.getByRole("button", { name: "AI Theme", exact: true }).click();
+  const aiSheet = page.getByRole("dialog");
+  await aiSheet.getByText("Key stored securely. Test it before generating.").waitFor();
+  await aiSheet.getByLabel("AI theme prompt").fill("Create a compact mobile theme");
+  await aiSheet.getByRole("button", { name: "Create", exact: true }).click();
+  await aiSheet.getByText("Candidate ready. Review it before applying.").waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByText("AI Candidate Preview – not applied", { exact: true }).waitFor();
+  await page.getByLabel("AI candidate theme preview").waitFor();
+  await page.getByRole("button", { name: "AI Theme", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Discard", exact: true }).click();
+  assert(
+    (await page.getByText("AI Candidate Preview – not applied", { exact: true }).count()) === 0,
+    "mobile Sheet should keep and discard the shared candidate consistently",
   );
 
   await page.unrouteAll({ behavior: "ignoreErrors" });

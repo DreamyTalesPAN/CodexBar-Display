@@ -57,6 +57,7 @@ export function EditableThemePreview({
   onSelect,
   onSelectMany,
   pack,
+  readOnly = false,
   selectedIndex,
   selectedIndices,
   spec,
@@ -69,6 +70,7 @@ export function EditableThemePreview({
   onSelect: (index: number, additive?: boolean) => void;
   onSelectMany: (indices: number[]) => void;
   pack: ThemeRenderPack;
+  readOnly?: boolean;
   selectedIndex: number;
   selectedIndices: number[];
   spec: ThemeStudioSpec;
@@ -295,22 +297,27 @@ export function EditableThemePreview({
   });
 
   return (
-    <div className="relative aspect-square w-full max-w-[480px] overflow-hidden border border-[#1B1B1B] bg-black p-0">
+    <div
+      aria-label={readOnly ? "AI candidate theme preview" : undefined}
+      className="relative aspect-square w-full max-w-[480px] overflow-hidden border border-[#1B1B1B] bg-black p-0"
+      data-preview-mode={readOnly ? "candidate" : "editor"}
+    >
       <ThemeSpecPreview
         animate={!prefersReducedMotion}
         pack={pack}
         status="ready"
         themeId={spec.themeId}
       />
-      <svg
-        aria-label="Editable 240x240 preview"
-        className="absolute inset-0 h-full w-full [touch-action:none]"
-        onPointerCancel={() => stopDrag("cancel")}
-        onPointerMove={movePointer}
-        onPointerUp={finishPointer}
-        ref={svgRef}
-        viewBox="0 0 240 240"
-      >
+      {readOnly ? null : (
+        <svg
+          aria-label="Editable 240x240 preview"
+          className="absolute inset-0 h-full w-full [touch-action:none]"
+          onPointerCancel={() => stopDrag("cancel")}
+          onPointerMove={movePointer}
+          onPointerUp={finishPointer}
+          ref={svgRef}
+          viewBox="0 0 240 240"
+        >
         <rect
           aria-hidden="true"
           className="cursor-crosshair"
@@ -391,7 +398,8 @@ export function EditableThemePreview({
             y={selectionBox.y}
           />
         ) : null}
-      </svg>
+        </svg>
+      )}
     </div>
   );
 }

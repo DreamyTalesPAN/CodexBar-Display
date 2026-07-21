@@ -62,7 +62,10 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { fetchAIThemeCapabilities } from "@/lib/ai-theme";
+import {
+  fetchAIThemeCapabilities,
+  type AIThemeCandidate,
+} from "@/lib/ai-theme";
 import {
   buildThemePack,
   createStarterThemeSpec,
@@ -259,6 +262,8 @@ export function ThemeStudioScreen({
       : null,
   );
   const [aiThemeAvailable, setAIThemeAvailable] = useState(false);
+  const [aiThemeCandidate, setAIThemeCandidate] =
+    useState<AIThemeCandidate | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -296,6 +301,19 @@ export function ThemeStudioScreen({
       assets,
     }),
     [assets, packName, spec],
+  );
+  const candidatePreviewPack = useMemo<ThemeRenderPack | null>(
+    () =>
+      aiThemeCandidate
+        ? {
+            assets: {},
+            name: aiThemeCandidate.packName,
+            ok: true,
+            spec: aiThemeCandidate.spec,
+            themeId: aiThemeCandidate.spec.themeId,
+          }
+        : null,
+    [aiThemeCandidate],
   );
   const referencedAssets = useMemo(() => referencedThemeAssetPaths(spec), [spec]);
 
@@ -354,6 +372,7 @@ export function ThemeStudioScreen({
       type: markSaved ? "load" : "update",
     });
     setSelectedIndices(normalized.primitives.length > 0 ? [0] : []);
+    setAIThemeCandidate(null);
     setJsonText(prettyJson(normalized));
     setJsonDirty(false);
     if (status) {
@@ -362,6 +381,18 @@ export function ThemeStudioScreen({
     setExportStatus({
       tone: "unknown",
       message: "Export is ready after validation.",
+    });
+  }
+
+  function applyAIThemeCandidate(nextCandidate: AIThemeCandidate) {
+    replaceLoadedTheme({
+      assets,
+      packName: nextCandidate.packName,
+      spec: nextCandidate.spec,
+      status: {
+        tone: "ready",
+        message: "AI candidate applied as one undo step.",
+      },
     });
   }
 
@@ -1164,19 +1195,11 @@ export function ThemeStudioScreen({
                   </SheetHeader>
                   <div className="p-4">
                     <AIThemePanel
+                      candidate={aiThemeCandidate}
                       currentSpec={spec}
                       key={`sheet-${spec.themeId}`}
-                      onApply={(nextCandidate) =>
-                        replaceLoadedTheme({
-                          assets,
-                          packName: nextCandidate.packName,
-                          spec: nextCandidate.spec,
-                          status: {
-                            tone: "ready",
-                            message: "AI candidate applied as one undo step.",
-                          },
-                        })
-                      }
+                      onApply={applyAIThemeCandidate}
+                      onCandidateChange={setAIThemeCandidate}
                     />
                   </div>
                 </SheetContent>
@@ -1267,11 +1290,11 @@ export function ThemeStudioScreen({
                   </SheetHeader>
                   <div className="p-4">
                     <AIThemePanel
+                      candidate={aiThemeCandidate}
                       currentSpec={spec}
                       key={`mobile-ai-${spec.themeId}`}
-                      onApply={(nextCandidate) =>
-                        replaceLoadedTheme({ assets, packName: nextCandidate.packName, spec: nextCandidate.spec })
-                      }
+                      onApply={applyAIThemeCandidate}
+                      onCandidateChange={setAIThemeCandidate}
                     />
                   </div>
                 </SheetContent>
@@ -1591,56 +1614,64 @@ export function ThemeStudioScreen({
           </aside>
 
           <main className="order-1 grid min-h-0 min-w-0 place-items-center lg:order-2 lg:h-full">
-            <EditableThemePreview
-              onInteractionCancel={() =>
-                dispatchEditor({ type: "cancel_transaction" })
-              }
-              onInteractionCommit={() =>
-                dispatchEditor({ type: "commit_transaction" })
-              }
-              onInteractionStart={() =>
-                dispatchEditor({ type: "begin_transaction" })
-              }
-              onMoveMany={(moves) => {
-                updateSpec((draft) => {
-                  for (const move of moves) {
-                    const primitive = draft.primitives[move.index];
-                    if (!primitive) {
-                      continue;
+            <div className="grid w-full justify-items-center gap-2">
+              {aiThemeCandidate ? (
+                <Badge data-ai-candidate-preview variant="secondary">
+                  AI Candidate Preview – not applied
+                </Badge>
+              ) : null}
+              <EditableThemePreview
+                onInteractionCancel={() =>
+                  dispatchEditor({ type: "cancel_transaction" })
+                }
+                onInteractionCommit={() =>
+                  dispatchEditor({ type: "commit_transaction" })
+                }
+                onInteractionStart={() =>
+                  dispatchEditor({ type: "begin_transaction" })
+                }
+                onMoveMany={(moves) => {
+                  updateSpec((draft) => {
+                    for (const move of moves) {
+                      const primitive = draft.primitives[move.index];
+                      if (!primitive) {
+                        continue;
+                      }
+                      primitive.x = move.x;
+                      primitive.y = move.y;
                     }
-                    primitive.x = move.x;
-                    primitive.y = move.y;
-                  }
-                });
-              }}
-              onResize={(index, size) =>
-                updatePrimitive(index, (primitive) => {
-                  const width = clampInt(size.width, 1, DISPLAY_SIZE - primitive.x);
-                  const height = clampInt(size.height, 1, DISPLAY_SIZE - primitive.y);
-                  if (primitive.type === "text") {
-                    const fontSize = clampInt(
-                      textPrimitiveFontSizeFromVisualHeight(primitive, height),
-                      1,
-                      MAX_TEXT_FONT_SIZE,
-                    );
-                    primitive.fontSize = fontSize;
-                    primitive.width = Math.max(
-                      width,
-                      textPrimitiveNaturalWidth(primitive, fontSize),
-                    );
-                    return;
-                  }
-                  primitive.width = width;
-                  primitive.height = height;
-                })
-              }
-              onSelect={selectPrimitiveIndex}
-              onSelectMany={selectPrimitiveIndices}
-              pack={previewPack}
-              selectedIndex={selectedIndex}
-              selectedIndices={visibleSelectedIndices}
-              spec={spec}
-            />
+                  });
+                }}
+                onResize={(index, size) =>
+                  updatePrimitive(index, (primitive) => {
+                    const width = clampInt(size.width, 1, DISPLAY_SIZE - primitive.x);
+                    const height = clampInt(size.height, 1, DISPLAY_SIZE - primitive.y);
+                    if (primitive.type === "text") {
+                      const fontSize = clampInt(
+                        textPrimitiveFontSizeFromVisualHeight(primitive, height),
+                        1,
+                        MAX_TEXT_FONT_SIZE,
+                      );
+                      primitive.fontSize = fontSize;
+                      primitive.width = Math.max(
+                        width,
+                        textPrimitiveNaturalWidth(primitive, fontSize),
+                      );
+                      return;
+                    }
+                    primitive.width = width;
+                    primitive.height = height;
+                  })
+                }
+                onSelect={selectPrimitiveIndex}
+                onSelectMany={selectPrimitiveIndices}
+                pack={candidatePreviewPack || previewPack}
+                readOnly={Boolean(aiThemeCandidate)}
+                selectedIndex={aiThemeCandidate ? -1 : selectedIndex}
+                selectedIndices={aiThemeCandidate ? [] : visibleSelectedIndices}
+                spec={aiThemeCandidate?.spec || spec}
+              />
+            </div>
           </main>
 
           <aside className="order-3 hidden gap-4 rounded-[var(--radius-card)] border bg-card p-4 lg:grid lg:max-h-full lg:overflow-y-auto">
@@ -1737,19 +1768,11 @@ export function ThemeStudioScreen({
           <div className="order-4 hidden min-h-0 2xl:block 2xl:h-full">
             {aiThemeAvailable ? (
               <AIThemePanel
+                candidate={aiThemeCandidate}
                 currentSpec={spec}
                 key={spec.themeId}
-                onApply={(nextCandidate) =>
-                  replaceLoadedTheme({
-                    assets,
-                    packName: nextCandidate.packName,
-                    spec: nextCandidate.spec,
-                    status: {
-                      tone: "ready",
-                      message: "AI candidate applied as one undo step.",
-                    },
-                  })
-                }
+                onApply={applyAIThemeCandidate}
+                onCandidateChange={setAIThemeCandidate}
               />
             ) : null}
           </div>
