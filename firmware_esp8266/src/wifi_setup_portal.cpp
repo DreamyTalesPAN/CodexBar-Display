@@ -7,7 +7,7 @@ namespace codexbar_display {
 namespace esp8266 {
 namespace wifi_setup {
 
-const char kSupportUrl[] = "https://www.vibetv.shop/setup";
+const char kSupportUrl[] = "https://vibetv.shop/pages/setup";
 
 namespace {
 
@@ -284,7 +284,7 @@ void SendSetupPage(
     help.reserve(strlen(supportUrl) + 160);
     help += F("<a class=\"help\" href=\"");
     help += HtmlEscape(String(supportUrl));
-    help += F("\" target=\"_blank\" rel=\"noopener noreferrer\">Troubleshooting: www.vibetv.shop/setup</a>");
+    help += F("\" target=\"_blank\" rel=\"noopener noreferrer\">Troubleshooting: vibetv.shop/pages/setup</a>");
     sendDynamic(server, help);
   }
 

@@ -105,10 +105,10 @@ void test_page_uses_inline_band_guidance_and_links_to_public_support() {
   TEST_ASSERT_TRUE(contains(server.output, "Search again"));
   TEST_ASSERT_TRUE(contains(server.output, "Searching…"));
   TEST_ASSERT_TRUE(server.output.find("Connect</button>") < server.output.find("Search again</button>"));
-  TEST_ASSERT_EQUAL_STRING("https://www.vibetv.shop/setup", kSupportUrl);
-  TEST_ASSERT_TRUE(contains(server.output, "https://www.vibetv.shop/setup"));
+  TEST_ASSERT_EQUAL_STRING("https://vibetv.shop/pages/setup", kSupportUrl);
+  TEST_ASSERT_TRUE(contains(server.output, "https://vibetv.shop/pages/setup"));
   TEST_ASSERT_TRUE(contains(server.output, "target=\"_blank\" rel=\"noopener noreferrer\""));
-  TEST_ASSERT_TRUE(contains(server.output, "Troubleshooting: www.vibetv.shop/setup"));
+  TEST_ASSERT_TRUE(contains(server.output, "Troubleshooting: vibetv.shop/pages/setup"));
   TEST_ASSERT_FALSE(contains(server.output, "location.hostname==='captive.apple.com'"));
   TEST_ASSERT_FALSE(contains(server.output, "support-note"));
   TEST_ASSERT_FALSE(contains(server.output, "Close this setup window and disconnect from VibeTV-Setup."));
