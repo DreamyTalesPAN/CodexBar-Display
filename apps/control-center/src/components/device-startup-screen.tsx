@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Loader2, Monitor, RefreshCw } from "lucide-react";
+import { Check, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type {
   ApiError,
@@ -9,6 +9,11 @@ import type {
   SupportDiagnostics,
 } from "./control-center-types";
 import { SupportReportActions } from "./support-report-actions";
+import {
+  DeviceCandidateList,
+  WifiSetupInstructions,
+} from "./setup-device-components";
+import { SetupStatusScreen } from "./setup-status-screen";
 
 type Props = {
   busyAction?: string | null;
@@ -92,53 +97,94 @@ export function DeviceStartupScreen({
       "Make sure VibeTV and this Mac are on the same WiFi, then search again.";
   }
 
-  return (
-    <main
-      className="grid min-h-screen place-items-center bg-[#F9F9F9] px-6 py-12 text-[#1B1B1B]"
-      data-testid="device-startup-screen"
+  const statusLabel = reconnecting
+    ? "Reconnecting…"
+    : waiting
+      ? "Waiting for usage…"
+      : searching
+        ? "Searching…"
+        : undefined;
+
+  const actions = choosing ? (
+    <div
+      className={
+        hasConfiguredDevice ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"
+      }
     >
-      <section
-        aria-busy={searching || selecting || reconnecting || waiting}
-        aria-live="polite"
-        className="grid w-full max-w-[720px] gap-7 text-center"
+      {hasConfiguredDevice ? (
+        <Button
+          className="w-full"
+          disabled={Boolean(busyAction)}
+          onClick={onDecline}
+          size="lg"
+          variant="outline"
+        >
+          Open Control Center
+        </Button>
+      ) : null}
+      <Button
+        className="w-full"
+        disabled={Boolean(busyAction)}
+        onClick={onSearch}
+        size="lg"
+        variant="outline"
       >
-        <div className="text-[clamp(3rem,7vw,5rem)] font-black uppercase leading-none tracking-normal">
-          VIBETV
-        </div>
+        <RefreshCw aria-hidden />
+        Search again
+      </Button>
+    </div>
+  ) : wifiSetupNeeded ? (
+    <Button className="w-full" onClick={onSearch} size="lg">
+      <Check aria-hidden />
+      VibeTV is on WiFi
+    </Button>
+  ) : configuredDeviceNotFound || searchFailed || repairFailed ? (
+    <div
+      className={
+        hasConfiguredDevice ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"
+      }
+    >
+      <Button className="w-full" onClick={onSearch} size="lg">
+        <RefreshCw aria-hidden />
+        Search again
+      </Button>
+      {hasConfiguredDevice ? (
+        <Button
+          className="w-full"
+          onClick={onDecline}
+          size="lg"
+          variant="outline"
+        >
+          Open Control Center
+        </Button>
+      ) : null}
+    </div>
+  ) : null;
 
-        <div className="grid gap-3">
-          <h1 className="text-[clamp(2rem,4vw,3.25rem)] font-black leading-tight">
-            {title}
-          </h1>
-          <p className="mx-auto max-w-[620px] text-base leading-7 text-[#444933] sm:text-lg">
-            {detail}
-          </p>
-        </div>
-
+  return (
+    <SetupStatusScreen
+      actions={actions}
+      busy={searching || selecting || reconnecting || waiting}
+      description={detail}
+      footer={
+        <SupportReportActions
+          busyAction={busyAction}
+          diagnostics={diagnostics}
+          onCreate={onCreateSupportReport}
+        />
+      }
+      statusLabel={statusLabel}
+      testId="device-startup-screen"
+      title={title}
+    >
+      <>
         {choosing ? (
-          <div className="grid gap-3 text-left">
-            {deviceCandidates.map((candidate) => (
-              <div
-                className="grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-                key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
-              >
-                <DeviceCandidateDetails candidate={candidate} />
-                <Button
-                  className="w-full"
-                  disabled={Boolean(busyAction)}
-                  onClick={() => onSelect(candidate)}
-                  size="lg"
-                >
-                  {selecting ? (
-                    <Loader2 className="animate-spin" aria-hidden />
-                  ) : (
-                    <Monitor aria-hidden />
-                  )}
-                  {selecting ? "Connecting" : "Connect this VibeTV"}
-                </Button>
-              </div>
-            ))}
-          </div>
+          <DeviceCandidateList
+            busy={Boolean(busyAction)}
+            candidates={deviceCandidates}
+            onSelect={onSelect}
+            selecting={selecting}
+          />
         ) : null}
 
         {wifiSetupNeeded ? <WifiSetupInstructions /> : null}
@@ -155,133 +201,7 @@ export function DeviceStartupScreen({
           </div>
         ) : null}
 
-        {searching || reconnecting || waiting ? (
-          <div
-            className="flex min-h-12 items-center justify-center gap-3 text-base font-semibold text-[#444933]"
-            role="status"
-          >
-            <Loader2 className="animate-spin" size={20} aria-hidden />
-            <span>
-              {reconnecting
-                ? "Reconnecting…"
-                : waiting
-                  ? "Waiting for usage…"
-                  : "Searching…"}
-            </span>
-          </div>
-        ) : null}
-
-        {choosing ? (
-          <div
-            className={
-              hasConfiguredDevice ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"
-            }
-          >
-            {hasConfiguredDevice ? (
-              <Button
-                className="w-full"
-                disabled={Boolean(busyAction)}
-                onClick={onDecline}
-                size="lg"
-                variant="outline"
-              >
-                Open Control Center
-              </Button>
-            ) : null}
-            <Button
-              className="w-full"
-              disabled={Boolean(busyAction)}
-              onClick={onSearch}
-              size="lg"
-              variant="outline"
-            >
-              <RefreshCw aria-hidden />
-              Search again
-            </Button>
-          </div>
-        ) : wifiSetupNeeded ? (
-          <Button className="w-full" onClick={onSearch} size="lg">
-            <Check aria-hidden />
-            VibeTV is on WiFi
-          </Button>
-        ) : configuredDeviceNotFound || searchFailed || repairFailed ? (
-          <div
-            className={
-              hasConfiguredDevice ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"
-            }
-          >
-            <Button className="w-full" onClick={onSearch} size="lg">
-              <RefreshCw aria-hidden />
-              Search again
-            </Button>
-            {hasConfiguredDevice ? (
-              <Button
-                className="w-full"
-                onClick={onDecline}
-                size="lg"
-                variant="outline"
-              >
-                Open Control Center
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-
-        <SupportReportActions
-          busyAction={busyAction}
-          diagnostics={diagnostics}
-          onCreate={onCreateSupportReport}
-        />
-      </section>
-    </main>
+      </>
+    </SetupStatusScreen>
   );
-}
-
-function WifiSetupInstructions() {
-  return (
-    <div className="border-y border-[#747A60] py-6 text-left sm:px-6">
-      <ol className="grid gap-3 text-base leading-7 text-[#444933] sm:text-lg">
-        <li>1. Plug VibeTV into power.</li>
-        <li>2. Wait until VibeTV shows VibeTV-Setup.</li>
-        <li>3. Take your phone.</li>
-        <li>
-          4. Open WiFi settings and join <strong>VibeTV-Setup</strong>.
-        </li>
-        <li>
-          5. If the browser does not open automatically, open{" "}
-          <strong>192.168.4.1</strong> on your phone.
-        </li>
-        <li>6. Choose your home WiFi and save.</li>
-        <li>7. Wait until VibeTV says WiFi connected, then continue here.</li>
-      </ol>
-    </div>
-  );
-}
-
-function DeviceCandidateDetails({ candidate }: { candidate: DeviceCandidate }) {
-  const address = candidateAddress(candidate.target);
-  return (
-    <div className="min-w-0">
-      <p className="break-words text-lg font-black text-[#1B1B1B]">
-        VibeTV {candidate.deviceId || address}
-      </p>
-      <p className="mt-1 break-words text-sm leading-6 text-[#444933]">
-        IP address: {address}
-        {candidate.firmware ? ` · Firmware ${candidate.firmware}` : ""}
-      </p>
-      {candidate.known ? (
-        <p className="mt-1 text-sm font-bold text-[#506600]">
-          Previously connected
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function candidateAddress(target: string): string {
-  try {
-    return new URL(target).hostname || target;
-  } catch {
-    return target.replace(/^https?:\/\//i, "").replace(/\/$/, "");
-  }
 }

@@ -23,7 +23,7 @@ describe("DeviceStartupScreen", () => {
     );
 
     expect(html).toContain("animate-spin");
-    expect(html).toContain("Connecting</button>");
+    expect(html).toContain("Connecting</span></button>");
     expect(html).not.toContain("Connecting…");
   });
 });

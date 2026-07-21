@@ -1821,7 +1821,14 @@ async function testHostedEntryShowsMacAppDownload(
     companionRequests.length === 0,
     `Hosted entry must not probe the local Mac App, got ${JSON.stringify(companionRequests)}`,
   );
-  await page.getByRole("button", { name: "Create report" }).click();
+  const createReportButton = page.getByRole("button", {
+    name: "Create report",
+  });
+  assert(
+    (await createReportButton.getAttribute("data-variant")) === "default",
+    "Hosted setup should keep Create report primary",
+  );
+  await createReportButton.click();
   await page.getByRole("button", { name: "Copy", exact: true }).waitFor({
     timeout: 10_000,
   });
@@ -2238,9 +2245,26 @@ async function testInitialHealthyStatusRaceAvoidsRepair(browser, appUrl) {
   await page.getByRole("heading", { name: "Starting Control Center" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Create report" }).waitFor({
+  const bootStatus = page.getByRole("status", {
+    name: "Checking the Mac App and your last connected VibeTV.",
+  });
+  await bootStatus.waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await page.getByRole("status").count()) === 1,
+    "Starting Control Center should expose one focused live status",
+  );
+  const createReportButton = page.getByRole("button", {
+    name: "Create report",
+  });
+  await createReportButton.waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await createReportButton.getAttribute("data-variant")) === "secondary",
+    "Starting Control Center should keep Create report secondary",
+  );
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
@@ -3697,16 +3721,28 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
     "Support report should not show Download before a report is loaded",
   );
 
-  await page.getByRole("button", { name: "Create report" }).click();
+  const createReportButton = page.getByRole("button", {
+    name: "Create report",
+  });
+  assert(
+    (await createReportButton.getAttribute("data-variant")) === "default",
+    "Support screen should keep Create report primary",
+  );
+  await createReportButton.click();
   await page.getByRole("button", { name: "Copy", exact: true }).waitFor({
     timeout: 10_000,
   });
   await page.getByRole("button", { name: "Download", exact: true }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Create again" }).waitFor({
+  const createAgainButton = page.getByRole("button", { name: "Create again" });
+  await createAgainButton.waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await createAgainButton.getAttribute("data-variant")) === "default",
+    "Support screen should keep Create again primary",
+  );
   for (const hiddenDetail of [
     "Background runtime",
     "VibeTVs on WiFi",

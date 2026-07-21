@@ -920,6 +920,7 @@ struct InstallationStatus {
     let title: String
     let detail: String
     let failed: Bool
+    let retryTitle: String
 }
 
 @MainActor
@@ -974,8 +975,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         _ = updaterController
 #endif
         presentInstallationStatus(
-            title: "Finishing installation…",
-            detail: "Checking the Mac App and its background runtime.",
+            title: "Starting Control Center",
+            detail: "Checking the Mac App and your last connected VibeTV.",
             failed: false
         )
         startRuntimePreparation()
@@ -1011,7 +1012,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             presentInstallationStatus(
                 title: status.title,
                 detail: status.detail,
-                failed: status.failed
+                failed: status.failed,
+                retryTitle: status.retryTitle
             )
         } else {
             window?.makeKeyAndOrderFront(nil)
@@ -1025,8 +1027,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
         presentInstallationStatus(
-            title: "Finishing installation…",
-            detail: "Checking the Mac App and its background runtime.",
+            title: "Starting Control Center",
+            detail: "Checking the Mac App and your last connected VibeTV.",
             failed: false
         )
         Task { [weak self] in
@@ -1715,7 +1717,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         installationStatus = InstallationStatus(
             title: title,
             detail: detail,
-            failed: failed
+            failed: failed,
+            retryTitle: retryTitle
         )
         installationStatusTitle = title
         installationStatusDetail = detail
@@ -1792,7 +1795,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         actions.alignment = .centerY
         actions.spacing = 12
 
-        let stack = NSStackView(views: [brand, progress, titleLabel, detailLabel, actions])
+        let stack = NSStackView(views: [brand, titleLabel, detailLabel, progress, actions])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 18

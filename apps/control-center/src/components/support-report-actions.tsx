@@ -13,12 +13,14 @@ import {
 type Props = {
   busyAction?: string | null;
   diagnostics?: SupportDiagnostics | null;
+  emphasis?: "primary" | "secondary";
   onCreate?: () => void;
 };
 
 export function SupportReportActions({
   busyAction,
   diagnostics,
+  emphasis = "primary",
   onCreate,
 }: Props) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
@@ -28,6 +30,12 @@ export function SupportReportActions({
     ? serializeSupportReport(diagnostics)
     : "";
   const creating = busyAction === "diagnostics";
+  const createButtonVariant = emphasis === "secondary" ? "secondary" : "default";
+  const statusMessage = creating
+    ? "Creating report"
+    : copyState === "copied"
+      ? "Report copied"
+      : "";
 
   function createDiagnostics() {
     setCopyState("idle");
@@ -57,13 +65,17 @@ export function SupportReportActions({
 
   return (
     <div
-      aria-live="polite"
       className="grid gap-3"
       data-testid="support-report-actions"
     >
       <div className="grid gap-3 sm:flex sm:flex-wrap">
         {creating ? (
-          <Button className="w-full sm:w-auto" disabled type="button">
+          <Button
+            className="w-full sm:w-auto"
+            disabled
+            type="button"
+            variant={createButtonVariant}
+          >
             <Spinner data-icon="inline-start" />
             <span>Creating report</span>
           </Button>
@@ -93,6 +105,7 @@ export function SupportReportActions({
                 disabled={Boolean(busyAction)}
                 onClick={createDiagnostics}
                 type="button"
+                variant={createButtonVariant}
               >
                 <RefreshCw data-icon="inline-start" aria-hidden />
                 <span>Create again</span>
@@ -105,12 +118,18 @@ export function SupportReportActions({
             disabled={Boolean(busyAction)}
             onClick={createDiagnostics}
             type="button"
+            variant={createButtonVariant}
           >
             <FileText data-icon="inline-start" aria-hidden />
             <span>Create report</span>
           </Button>
         ) : null}
       </div>
+      {statusMessage ? (
+        <p aria-live="polite" className="sr-only" role="status">
+          {statusMessage}
+        </p>
+      ) : null}
       {copyState === "failed" ? (
         <p className="text-sm text-destructive" role="alert">
           Copy failed. Check the clipboard permission and try again.

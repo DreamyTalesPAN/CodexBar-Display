@@ -62,6 +62,7 @@ import {
   providerSetupNeedsAction,
 } from "./provider-setup-card";
 import { SetupScreen } from "./setup-screen";
+import { SetupStatusScreen } from "./setup-status-screen";
 import { SettingsScreen } from "./settings-screen";
 import { SupportReportActions } from "./support-report-actions";
 import { collectSupportReport } from "./support-report";
@@ -2974,26 +2975,21 @@ function ControlCenterBootScreen({
   onCreateSupportReport: () => void;
 }) {
   return (
-    <main className="grid min-h-screen place-items-center bg-[#F9F9F9] px-6 text-[#1B1B1B]">
-      <div className="grid gap-8 text-center">
-        <div>
-          <div className="text-[clamp(3rem,7vw,5rem)] font-black uppercase leading-none tracking-normal">
-            VIBETV
-          </div>
-          <h1 className="mt-8 text-[clamp(2rem,4vw,3.25rem)] font-black leading-tight">
-            Starting Control Center
-          </h1>
-          <p className="mt-3 text-base text-[#444933] sm:text-lg">
-            Checking the Mac App and your last connected VibeTV.
-          </p>
-        </div>
+    <SetupStatusScreen
+      busy
+      description="Checking the Mac App and your last connected VibeTV."
+      footer={
         <SupportReportActions
           busyAction={busyAction}
+          emphasis="secondary"
           diagnostics={diagnostics}
           onCreate={onCreateSupportReport}
         />
-      </div>
-    </main>
+      }
+      statusLabel="Checking the Mac App and your last connected VibeTV."
+      statusVisible={false}
+      title="Starting Control Center"
+    />
   );
 }
 
