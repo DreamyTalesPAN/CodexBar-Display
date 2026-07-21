@@ -34,6 +34,96 @@ func TestLoadMigratesActiveDeviceIntoKnownDevices(t *testing.T) {
 	}
 }
 
+func TestSaveRestrictsConfigAndDirectoryPermissions(t *testing.T) {
+	home := t.TempDir()
+	if err := Save(home, Config{DeviceID: "device-a", DeviceToken: "secret-token"}); err != nil {
+		t.Fatal(err)
+	}
+
+	assertPermissions(t, ConfigPath(home), privateConfigFileMode)
+	assertPermissions(t, filepath.Dir(ConfigPath(home)), privateConfigDirMode)
+}
+
+func TestLoadMigratesExistingConfigPermissions(t *testing.T) {
+	home := t.TempDir()
+	path := ConfigPath(home)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"deviceToken":"secret-token"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(home); err != nil {
+		t.Fatal(err)
+	}
+
+	assertPermissions(t, path, privateConfigFileMode)
+	assertPermissions(t, filepath.Dir(path), privateConfigDirMode)
+}
+
+func TestRestrictPermissionsMigratesJournalAndRecognizedBackups(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Dir(ConfigPath(home))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{
+		deviceSelectionJournalPath(home),
+		filepath.Join(dir, "config.before-upgrade.json"),
+		filepath.Join(dir, "config.backup-20260721.json"),
+		filepath.Join(dir, "config.json.backup-old"),
+	}
+	for _, path := range paths {
+		if err := os.WriteFile(path, []byte(`{"deviceToken":"secret-token"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := RestrictPermissions(home); err != nil {
+		t.Fatal(err)
+	}
+	assertPermissions(t, dir, privateConfigDirMode)
+	for _, path := range paths {
+		assertPermissions(t, path, privateConfigFileMode)
+	}
+}
+
+func TestLoadRestrictsPermissionsBeforeReportingInvalidConfig(t *testing.T) {
+	home := t.TempDir()
+	path := ConfigPath(home)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"deviceToken":`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(home); err == nil {
+		t.Fatal("expected invalid config to fail")
+	}
+	assertPermissions(t, path, privateConfigFileMode)
+	assertPermissions(t, filepath.Dir(path), privateConfigDirMode)
+}
+
+func assertPermissions(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("unexpected permissions for %s: got=%#o want=%#o", path, got, want)
+	}
+}
+
 func TestSetActiveDeviceKeepsPreviousDeviceKnown(t *testing.T) {
 	cfg := Config{
 		DeviceID:     "device-a",

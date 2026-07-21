@@ -768,6 +768,9 @@ func New(opts Options) (*Server, error) {
 			return nil, fmt.Errorf("resolve home directory: %w", err)
 		}
 	}
+	if permissionsErr := runtimeconfig.RestrictPermissions(home); permissionsErr != nil {
+		return nil, fmt.Errorf("restrict runtime config permissions: %w", permissionsErr)
+	}
 	if _, recoverErr := runtimeconfig.RecoverPendingDeviceSelection(home); recoverErr != nil {
 		return nil, fmt.Errorf("recover pending device selection: %w", recoverErr)
 	}
@@ -3014,17 +3017,12 @@ func (s *Server) recoveredConfigDeviceTargets() []string {
 		return nil
 	}
 	configDir := filepath.Dir(runtimeconfig.ConfigPath(home))
-	patterns := []string{
-		"config.before-*.json",
-		"config.backup-*.json",
-		"config.json.backup-*",
-	}
 	type candidateFile struct {
 		path    string
 		modTime time.Time
 	}
 	files := []candidateFile{}
-	for _, pattern := range patterns {
+	for _, pattern := range runtimeconfig.ConfigBackupFilePatterns() {
 		matches, err := filepath.Glob(filepath.Join(configDir, pattern))
 		if err != nil {
 			continue
