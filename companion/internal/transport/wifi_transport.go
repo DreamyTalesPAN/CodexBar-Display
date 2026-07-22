@@ -249,6 +249,7 @@ func (t WiFiTransport) DeviceHealthSnapshot(target string) (DeviceHealthSnapshot
 }
 
 func (t WiFiTransport) PairDevice(target string) (string, error) {
+	currentToken := deviceAuthTokenForTarget(target)
 	base, err := normalizeWiFiTarget(target)
 	if err != nil {
 		return "", err
@@ -256,12 +257,15 @@ func (t WiFiTransport) PairDevice(target string) (string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= pairDeviceAttempts; attempt++ {
 		attemptCtx, cancel := context.WithTimeout(context.Background(), defaultWiFiTimeout)
-		token, pairErr := t.pairDeviceOnce(attemptCtx, base)
+		token, pairErr := t.pairDeviceOnce(attemptCtx, base, currentToken)
 		cancel()
 		if pairErr == nil {
 			return token, nil
 		}
 		lastErr = pairErr
+		if pairDeviceAuthorizationRejected(pairErr) {
+			break
+		}
 		if attempt < pairDeviceAttempts {
 			time.Sleep(pairDeviceRetryDelay)
 		}
@@ -269,7 +273,7 @@ func (t WiFiTransport) PairDevice(target string) (string, error) {
 	return "", fmt.Errorf("pair device failed after %d attempts: %w", pairDeviceAttempts, lastErr)
 }
 
-func (t WiFiTransport) pairDeviceOnce(ctx context.Context, base string) (string, error) {
+func (t WiFiTransport) pairDeviceOnce(ctx context.Context, base, currentToken string) (string, error) {
 	pairURL, err := url.Parse(base + "/api/pair")
 	if err != nil {
 		return "", fmt.Errorf("build device pair URL: %w", err)
@@ -280,6 +284,9 @@ func (t WiFiTransport) pairDeviceOnce(ctx context.Context, base string) (string,
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pairURL.String(), nil)
 	if err != nil {
 		return "", fmt.Errorf("build device pair request: %w", err)
+	}
+	if currentToken != "" {
+		req.Header.Set(deviceAuthHeader, currentToken)
 	}
 	req.Close = true
 	resp, err := t.client.Do(req)
@@ -303,6 +310,16 @@ func (t WiFiTransport) pairDeviceOnce(ctx context.Context, base string) (string,
 		return "", fmt.Errorf("pairing response did not include token")
 	}
 	return token, nil
+}
+
+func pairDeviceAuthorizationRejected(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "status=401") ||
+		strings.Contains(message, "status=403") ||
+		strings.Contains(message, "status=429")
 }
 
 func (t WiFiTransport) SendLine(target string, line []byte) error {

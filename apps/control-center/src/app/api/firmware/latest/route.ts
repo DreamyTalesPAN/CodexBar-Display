@@ -1,4 +1,5 @@
 import type { FirmwareUpdateInfo } from "@/lib/firmware";
+import { compareSemVer, parseSemVer, type ParsedSemVer } from "@/lib/semver";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,17 @@ export async function GET(request: Request) {
     } satisfies FirmwareUpdateInfo);
   }
 
+  const installedParsed = parseSemVer(installedFirmware);
+  if (!installedParsed) {
+    return Response.json({
+      checkedAt,
+      installedFirmware,
+      updateAvailable: false,
+      status: "check_failed",
+      message: `Installed firmware version "${installedFirmware}" is not a valid version.`,
+    } satisfies FirmwareUpdateInfo);
+  }
+
   try {
     const manifest = await fetchFirmwareManifest();
     const artifact = selectLatestArtifactForBoard(manifest, board);
@@ -48,8 +60,19 @@ export async function GET(request: Request) {
       } satisfies FirmwareUpdateInfo);
     }
 
-    const comparison = compareSemver(artifact.firmwareVersion, installedFirmware);
-    const updateAvailable = comparison > 0;
+    const latestParsed = parseSemVer(artifact.firmwareVersion);
+    if (!latestParsed) {
+      return Response.json({
+        checkedAt,
+        installedFirmware,
+        release: manifest.release,
+        updateAvailable: false,
+        status: "check_failed",
+        message: `Published firmware version "${artifact.firmwareVersion}" is not a valid version.`,
+      } satisfies FirmwareUpdateInfo);
+    }
+
+    const updateAvailable = compareSemVer(latestParsed, installedParsed) > 0;
 
     return Response.json({
       checkedAt,
@@ -94,31 +117,22 @@ function selectLatestArtifactForBoard(
   board: string,
 ): FirmwareArtifact | undefined {
   const normalizedBoard = normalize(board);
-  return (manifest.artifacts || [])
-    .filter((artifact) => normalize(artifact.board) === normalizedBoard)
-    .sort((a, b) =>
-      compareSemver(b.firmwareVersion || "0.0.0", a.firmwareVersion || "0.0.0"),
-    )[0];
-}
-
-function compareSemver(left: string, right: string): number {
-  const leftParts = parseSemver(left);
-  const rightParts = parseSemver(right);
-  for (let index = 0; index < 3; index += 1) {
-    const diff = leftParts[index] - rightParts[index];
-    if (diff !== 0) {
-      return diff;
+  let latestArtifact: FirmwareArtifact | undefined;
+  let latestParsed: ParsedSemVer | undefined;
+  for (const artifact of manifest.artifacts || []) {
+    if (normalize(artifact.board) !== normalizedBoard) {
+      continue;
+    }
+    const parsed = parseSemVer(artifact.firmwareVersion || "");
+    if (!parsed) {
+      continue;
+    }
+    if (!latestParsed || compareSemVer(parsed, latestParsed) > 0) {
+      latestParsed = parsed;
+      latestArtifact = artifact;
     }
   }
-  return 0;
-}
-
-function parseSemver(version: string): [number, number, number] {
-  const match = version.trim().replace(/^v/i, "").match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!match) {
-    return [0, 0, 0];
-  }
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
+  return latestArtifact;
 }
 
 function normalize(value?: string): string {

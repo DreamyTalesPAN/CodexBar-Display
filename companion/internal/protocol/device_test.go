@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -103,6 +104,43 @@ func TestCapabilitiesFromHelloMapsGIFLZWLimitFromJSON(t *testing.T) {
 	caps := CapabilitiesFromHello(hello)
 	if !caps.Known || caps.MaxThemeGifLzwBits != 11 {
 		t.Fatalf("expected mapped 11-bit GIF LZW capability, got %+v", caps)
+	}
+}
+
+func TestDeviceHelloPreservesPairingWindowCapabilities(t *testing.T) {
+	var hello DeviceHello
+	if err := json.Unmarshal([]byte(`{"kind":"hello","capabilities":{"auth":{"paired":true,"tokenHeader":" X-VibeTV-Token ","pairingWindowOpen":true,"pairingWindowSeconds":1799}}}`), &hello); err != nil {
+		t.Fatalf("decode hello: %v", err)
+	}
+	hello = hello.Normalize()
+	if hello.Capabilities.Auth == nil {
+		t.Fatal("expected auth capabilities")
+	}
+	if !hello.Capabilities.Auth.Paired || !hello.Capabilities.Auth.PairingWindowOpen {
+		t.Fatalf("unexpected pairing state: %+v", hello.Capabilities.Auth)
+	}
+	if hello.Capabilities.Auth.TokenHeader != "X-VibeTV-Token" || hello.Capabilities.Auth.PairingWindowSeconds != 1799 {
+		t.Fatalf("unexpected normalized auth capabilities: %+v", hello.Capabilities.Auth)
+	}
+
+	encoded, err := json.Marshal(hello.Capabilities)
+	if err != nil {
+		t.Fatalf("encode capabilities: %v", err)
+	}
+	for _, field := range []string{`"paired":true`, `"tokenHeader":"X-VibeTV-Token"`, `"pairingWindowOpen":true`, `"pairingWindowSeconds":1799`} {
+		if !strings.Contains(string(encoded), field) {
+			t.Fatalf("encoded auth capabilities missing %s: %s", field, encoded)
+		}
+	}
+}
+
+func TestDeviceHelloClearsClosedPairingWindowSeconds(t *testing.T) {
+	hello := (DeviceHello{Capabilities: CapabilityBlock{Auth: &AuthCapabilities{
+		PairingWindowOpen:    false,
+		PairingWindowSeconds: 120,
+	}}}).Normalize()
+	if hello.Capabilities.Auth == nil || hello.Capabilities.Auth.PairingWindowSeconds != 0 {
+		t.Fatalf("closed pairing window retained seconds: %+v", hello.Capabilities.Auth)
 	}
 }
 

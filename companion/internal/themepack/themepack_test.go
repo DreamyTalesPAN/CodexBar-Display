@@ -2,6 +2,9 @@ package themepack
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -129,7 +132,8 @@ func TestLoadHTTPZipThemePack(t *testing.T) {
 	}))
 	defer server.Close()
 
-	pack, err := Load(server.URL + "/cozy-meadow.zip")
+	digest := sha256.Sum256(zipData)
+	pack, err := loadRemoteZipWithClient(server.Client(), server.URL+"/cozy-meadow.zip", hex.EncodeToString(digest[:]), int64(len(zipData)))
 	if err != nil {
 		t.Fatalf("Load http zip returned error: %v", err)
 	}
@@ -144,7 +148,7 @@ func TestLoadHTTPZipRejectsBadStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := Load(server.URL + "/missing.zip")
+	_, err := loadRemoteZipWithClient(server.Client(), server.URL+"/missing.zip", strings.Repeat("a", 64), 1)
 	if err == nil || !strings.Contains(err.Error(), "status=404") {
 		t.Fatalf("expected http status error, got %v", err)
 	}
@@ -156,14 +160,21 @@ func TestLoadCatalogResolvesRelativeDownloadAsset(t *testing.T) {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"schemaVersion":1,"themes":[{"id":"cozy-meadow","title":"Cozy Meadow","themeRev":1,"downloadAsset":"vibetv-theme-cozy-meadow.zip","bytes":905}]}`))
+		_, _ = w.Write([]byte(`{"schemaVersion":1,"themes":[{"id":"cozy-meadow","title":"Cozy Meadow","themeRev":1,"downloadAsset":"vibetv-theme-cozy-meadow.zip","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":905}]}`))
 	}))
 	defer server.Close()
 
 	catalogURL := server.URL + "/assets/vibetv-theme-packs.json"
-	catalog, err := LoadCatalog(catalogURL)
+	raw, err := readRemoteCatalog(server.Client(), catalogURL)
 	if err != nil {
-		t.Fatalf("LoadCatalog returned error: %v", err)
+		t.Fatalf("readRemoteCatalog returned error: %v", err)
+	}
+	var catalog Catalog
+	if err := json.Unmarshal(raw, &catalog); err != nil {
+		t.Fatalf("parse catalog: %v", err)
+	}
+	if err := validateCatalog(catalog); err != nil {
+		t.Fatalf("validate catalog: %v", err)
 	}
 	theme, err := catalog.FindTheme("cozy-meadow")
 	if err != nil {

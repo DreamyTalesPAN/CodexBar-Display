@@ -357,7 +357,7 @@ jobs:
                       "asset": asset,
                       "sha256": sha,
                       "severity": str(artifact.get("severity") or "recommended"),
-                      "message": str(artifact.get("message") or "Firmware update available. Open app.vibetv.shop."),
+                      "message": str(artifact.get("message") or "Firmware update available. Open the VibeTV Mac App."),
                       "firmwareUrl": f"https://github.com/{repo}/releases/download/v{version}/{asset}",
                   }
               )
@@ -409,3 +409,17 @@ jobs:
             dist/macos/*.dmg
             dist/macos/appcast.xml
             dist/checksums-*.txt
+
+  verify-release-canary:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build-and-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify prerelease installs are offered the final release
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: ./scripts/verify-release-canary.sh --version "${VERSION#v}"

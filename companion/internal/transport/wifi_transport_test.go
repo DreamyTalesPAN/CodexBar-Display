@@ -284,6 +284,40 @@ func TestWiFiTransportPairDeviceRetriesLostResponses(t *testing.T) {
 	}
 }
 
+func TestWiFiTransportPairDeviceSendsCurrentTokenForRotation(t *testing.T) {
+	var gotToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.Header.Get(deviceAuthHeader)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"token":"rotated-token"}`))
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	token, err := transport.PairDevice(server.URL + "?token=current-token")
+	if err != nil {
+		t.Fatalf("PairDevice returned error: %v", err)
+	}
+	if token != "rotated-token" || gotToken != "current-token" {
+		t.Fatalf("token=%q auth=%q", token, gotToken)
+	}
+}
+
+func TestWiFiTransportPairDeviceDoesNotRetryAuthorizationFailures(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		http.Error(w, "physical pairing confirmation required", http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	_, err := transport.PairDevice(server.URL)
+	if err == nil || attempts.Load() != 1 {
+		t.Fatalf("err=%v attempts=%d want one denied attempt", err, attempts.Load())
+	}
+}
+
 func TestWiFiTransportResolveTargetAddsHTTPDefault(t *testing.T) {
 	transport := NewWiFiTransportWithClient(nil)
 	target, err := transport.ResolvePort("192.168.178.123")

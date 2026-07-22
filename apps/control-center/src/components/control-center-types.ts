@@ -225,6 +225,12 @@ export type DeviceInfo = {
     };
   };
   capabilities?: {
+    auth?: {
+      paired?: boolean;
+      tokenHeader?: string;
+      pairingWindowOpen?: boolean;
+      pairingWindowSeconds?: number;
+    };
     display?: {
       brightness?: {
         supported?: boolean;

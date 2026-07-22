@@ -1,9 +1,12 @@
 package runtimeconfig
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -31,6 +34,165 @@ func TestLoadMigratesActiveDeviceIntoKnownDevices(t *testing.T) {
 	device := cfg.KnownDevices[0]
 	if device.DeviceID != "device-a" || device.Target != "192.168.1.20" || device.DeviceToken != "saved-token" {
 		t.Fatalf("unexpected migrated device: %+v", device)
+	}
+}
+
+func TestSaveRestrictsConfigAndDirectoryPermissions(t *testing.T) {
+	home := t.TempDir()
+	if err := Save(home, Config{DeviceID: "device-a", DeviceToken: "secret-token"}); err != nil {
+		t.Fatal(err)
+	}
+
+	assertPermissions(t, ConfigPath(home), privateConfigFileMode)
+	assertPermissions(t, filepath.Dir(ConfigPath(home)), privateConfigDirMode)
+}
+
+func TestLoadMigratesExistingConfigPermissions(t *testing.T) {
+	home := t.TempDir()
+	path := ConfigPath(home)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"deviceToken":"secret-token"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(home); err != nil {
+		t.Fatal(err)
+	}
+
+	assertPermissions(t, path, privateConfigFileMode)
+	assertPermissions(t, filepath.Dir(path), privateConfigDirMode)
+}
+
+func TestRestrictPermissionsMigratesJournalAndRecognizedBackups(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Dir(ConfigPath(home))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{
+		deviceSelectionJournalPath(home),
+		filepath.Join(dir, "config.before-upgrade.json"),
+		filepath.Join(dir, "config.backup-20260721.json"),
+		filepath.Join(dir, "config.json.backup-old"),
+	}
+	for _, path := range paths {
+		if err := os.WriteFile(path, []byte(`{"deviceToken":"secret-token"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := RestrictPermissions(home); err != nil {
+		t.Fatal(err)
+	}
+	assertPermissions(t, dir, privateConfigDirMode)
+	for _, path := range paths {
+		assertPermissions(t, path, privateConfigFileMode)
+	}
+}
+
+func TestPermissionMigrationCacheRunsSuccessfulMigrationOnceAcrossConcurrentLoads(t *testing.T) {
+	var calls atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	cache := permissionMigrationCache{
+		migrate: func(_, _, _ string) error {
+			if calls.Add(1) == 1 {
+				close(started)
+				<-release
+			}
+			return nil
+		},
+	}
+
+	const workers = 24
+	errorsByWorker := make(chan error, workers)
+	var workersReady sync.WaitGroup
+	workersReady.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			workersReady.Done()
+			errorsByWorker <- cache.ensure("/tmp/home", "/tmp/config-home/config.json", "/tmp/config-home")
+		}()
+	}
+	workersReady.Wait()
+	<-started
+	close(release)
+	for i := 0; i < workers; i++ {
+		if err := <-errorsByWorker; err != nil {
+			t.Fatalf("concurrent migration failed: %v", err)
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("successful migration calls=%d want=1", got)
+	}
+	if err := cache.ensure("/tmp/home", "/tmp/config-home/config.json", "/tmp/config-home"); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("cached migration calls=%d want=1", got)
+	}
+}
+
+func TestPermissionMigrationCacheRetriesAfterFailure(t *testing.T) {
+	var calls atomic.Int32
+	wantErr := errors.New("chmod failed")
+	cache := permissionMigrationCache{
+		migrate: func(_, _, _ string) error {
+			if calls.Add(1) == 1 {
+				return wantErr
+			}
+			return nil
+		},
+	}
+
+	if err := cache.ensure("/tmp/home", "/tmp/retry-config-home/config.json", "/tmp/retry-config-home"); !errors.Is(err, wantErr) {
+		t.Fatalf("first migration error=%v want=%v", err, wantErr)
+	}
+	if err := cache.ensure("/tmp/home", "/tmp/retry-config-home/config.json", "/tmp/retry-config-home"); err != nil {
+		t.Fatalf("retry migration failed: %v", err)
+	}
+	if err := cache.ensure("/tmp/home", "/tmp/retry-config-home/config.json", "/tmp/retry-config-home"); err != nil {
+		t.Fatalf("cached migration failed: %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("migration calls=%d want=2", got)
+	}
+}
+
+func TestLoadRestrictsPermissionsBeforeReportingInvalidConfig(t *testing.T) {
+	home := t.TempDir()
+	path := ConfigPath(home)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"deviceToken":`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(home); err == nil {
+		t.Fatal("expected invalid config to fail")
+	}
+	assertPermissions(t, path, privateConfigFileMode)
+	assertPermissions(t, filepath.Dir(path), privateConfigDirMode)
+}
+
+func assertPermissions(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("unexpected permissions for %s: got=%#o want=%#o", path, got, want)
 	}
 }
 
