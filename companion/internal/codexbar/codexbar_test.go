@@ -114,6 +114,13 @@ func TestParseAllProvidersRejectsUnidentifiedGlobalError(t *testing.T) {
 	}
 }
 
+func TestParseAllProvidersRejectsOfficialGlobalCLIError(t *testing.T) {
+	_, err := parseAllProviders([]byte(`[{"provider":"cli","source":"cli","error":{"kind":"runtime","message":"global failure","code":1}}]`))
+	if !errors.Is(err, errGlobalCLI) {
+		t.Fatalf("expected official CLI error to remain global, got %v", err)
+	}
+}
+
 func TestParseProviderPayloadKeepsCodexBarUsageMeta(t *testing.T) {
 	raw := []byte(`[
 		{
@@ -1064,7 +1071,7 @@ func TestFetchAllProvidersKeepsMixedJSONOnNonzeroExitWithoutFallback(t *testing.
 			return nil, errors.New("fallback must not run")
 		}
 		return []byte(`[
-			{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":7},"secondary":{"usedPercent":13}}},
+			{"provider":"claude","source":"oauth","usage":{"primary":{"usedPercent":7},"secondary":{"usedPercent":13}}},
 			{"provider":"gemini","label":"Gemini","source":"oauth-api","error":{"kind":"provider","message":"sensitive upstream detail"}}
 		]`), errors.New("exit status 1")
 	}
@@ -1076,11 +1083,40 @@ func TestFetchAllProvidersKeepsMixedJSONOnNonzeroExitWithoutFallback(t *testing.
 	if fallbackCalls != 0 {
 		t.Fatalf("expected no Codex-only fallback, got %d calls", fallbackCalls)
 	}
-	if len(parsed) != 2 || providerKey(parsed[0]) != "codex" || providerKey(parsed[1]) != "gemini" {
+	if len(parsed) != 2 || providerKey(parsed[0]) != "claude" || providerKey(parsed[1]) != "gemini" {
 		t.Fatalf("unexpected mixed provider results: %#v", parsed)
 	}
 	if !parsed[1].Frame.UsageUnavailable || parsed[1].Frame.Error != "" {
 		t.Fatalf("expected sanitized unavailable Gemini result, got %#v", parsed[1])
+	}
+}
+
+func TestFetchAllProvidersReturnsRuntimeErrorForOfficialGlobalCLIError(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() { runUsageCommandFn = originalRunUsageCommand }()
+
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	var fallbackCalls int
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		argLine := strings.Join(args, " ")
+		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
+			fallbackCalls++
+			return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":7}}}]`), nil
+		}
+		return []byte(`[{"provider":"cli","source":"cli","error":{"kind":"runtime","message":"sensitive global detail","code":1}}]`), errors.New("exit status 1")
+	}
+
+	parsed, err := FetchAllProviders(context.Background())
+	if err == nil {
+		t.Fatalf("expected global CLI error, got providers %#v", parsed)
+	}
+	if got := FetchErrorKindOf(err); got != FetchErrorCommand {
+		t.Fatalf("expected global CLI error to remain a runtime command error, got %s", got)
+	}
+	if fallbackCalls != 0 {
+		t.Fatalf("expected no Codex-only fallback for a global CLI error, got %d calls", fallbackCalls)
 	}
 }
 
@@ -1302,6 +1338,9 @@ func TestFetchErrorKindOf(t *testing.T) {
 }
 
 func TestClassifyParseError(t *testing.T) {
+	if got := classifyParseError(errGlobalCLI); got != FetchErrorCommand {
+		t.Fatalf("expected global CLI error to be a command error, got %s", got)
+	}
 	if got := classifyParseError(ErrNoProviders); got != FetchErrorNoProviders {
 		t.Fatalf("expected no-providers kind, got %s", got)
 	}

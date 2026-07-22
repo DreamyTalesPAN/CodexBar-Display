@@ -35,6 +35,7 @@ var systemAppBinaryPaths = []string{
 var (
 	ErrNoProviders             = errors.New("codexbar returned no providers")
 	ErrUnexpectedProviderShape = errors.New("unexpected provider payload")
+	errGlobalCLI               = errors.New("codexbar returned a global cli error")
 )
 
 var runUsageCommandFn = runUsageCommand
@@ -103,6 +104,9 @@ func wrapFetchError(kind FetchErrorKind, err error) error {
 }
 
 func classifyParseError(err error) FetchErrorKind {
+	if errors.Is(err, errGlobalCLI) {
+		return FetchErrorCommand
+	}
 	if errors.Is(err, ErrNoProviders) {
 		return FetchErrorNoProviders
 	}
@@ -223,7 +227,7 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 
 	// A non-zero exit may still contain useful provider rows. Fall back only
 	// when the aggregate payload itself is unusable.
-	if parseErr != nil {
+	if parseErr != nil && !errors.Is(parseErr, errGlobalCLI) {
 		fallbackCtx, fallbackCancel := fallbackContext(ctx)
 		defer fallbackCancel()
 		if fallback, ok := fetchCodexCLIOnly(fallbackCtx, cliFallbackTimeout(timeout), bin); ok {
@@ -244,7 +248,6 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 		return nil, wrapFetchError(classifyParseError(parseErr), parseErr)
 	}
 
-	allParsed = repairCodexFromCLI(ctx, timeout, bin, allParsed)
 	allParsed = mergeTokenStats(ctx, allParsed, bin)
 
 	for i := range allParsed {
@@ -639,6 +642,7 @@ func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
 	}
 
 	var result []ParsedFrame
+	var globalCLIError bool
 	for _, providerAny := range providers {
 		payload, ok := providerAny.(map[string]any)
 		if !ok {
@@ -646,12 +650,18 @@ func parseAllProviders(raw []byte) ([]ParsedFrame, error) {
 		}
 		parsed, err := parseProviderPayload(payload)
 		if err != nil {
+			if errors.Is(err, errGlobalCLI) {
+				globalCLIError = true
+			}
 			continue
 		}
 		result = append(result, parsed)
 	}
 
 	if len(result) == 0 {
+		if globalCLIError {
+			return nil, errGlobalCLI
+		}
 		return nil, ErrUnexpectedProviderShape
 	}
 	return result, nil
@@ -670,10 +680,14 @@ func parseUsageJSON(raw []byte) (ParsedFrame, error) {
 
 func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 	if providerPayloadHasError(payload) {
+		provider := strings.TrimSpace(strings.ToLower(firstString(payload, "provider", "id", "slug", "name")))
+		source := strings.TrimSpace(strings.ToLower(firstString(payload, "source")))
+		if provider == "cli" && source == "cli" {
+			return ParsedFrame{}, errGlobalCLI
+		}
 		if recovered, ok := recoverCodexFrameFromErrorPayload(payload); ok {
 			return recovered, nil
 		}
-		provider := strings.TrimSpace(strings.ToLower(firstString(payload, "provider", "id", "slug", "name")))
 		if provider == "" {
 			return ParsedFrame{}, errors.New("provider error payload has no identity")
 		}
@@ -689,7 +703,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 				UsageUnavailable: true,
 			},
 			Provider: provider,
-			Source:   firstString(payload, "source"),
+			Source:   source,
 			Stale:    true,
 		}, nil
 	}
