@@ -26,6 +26,20 @@ func TestParseProviderSettingsIncludesDisabledProviders(t *testing.T) {
 	}
 }
 
+func TestParseProviderSettingsRejectsUnsafeProviderIDs(t *testing.T) {
+	settings, err := parseProviderSettings([]byte(`[
+		{"provider":"claude","enabled":true},
+		{"provider":"claude/../../secret","enabled":true},
+		{"provider":"codex;open /tmp/secret","enabled":true}
+	]`))
+	if err != nil {
+		t.Fatalf("parse settings: %v", err)
+	}
+	if len(settings) != 1 || settings[0].ID != "claude" {
+		t.Fatalf("expected only safe provider ID, got %#v", settings)
+	}
+}
+
 func TestParseProviderHealthClassifiesSafeStatesAndService(t *testing.T) {
 	health := parseProviderHealth([]byte(`[
 		{"provider":"codex","status":{"indicator":"none"},"usage":{"primary":{"usedPercent":5}}},
@@ -65,7 +79,7 @@ func TestFetchProviderSettingsUsesStatusEvenAfterNonzeroExit(t *testing.T) {
 }
 
 func TestFetchProviderSettingsRequiresFeatureVersion(t *testing.T) {
-	withProviderCommandTestBinary(t, "0.28.0")
+	withProviderCommandTestBinary(t, "0.26.9")
 	_, err := FetchProviderSettings(context.Background())
 	if err == nil || ProviderSettingsErrorKindOf(err) != ProviderSettingsErrorVersion {
 		t.Fatalf("expected version error, got %v", err)
@@ -95,7 +109,7 @@ func TestSetProviderEnabledUsesExactProcessArguments(t *testing.T) {
 	if err := SetProviderEnabled(context.Background(), "claude", true); err != nil {
 		t.Fatalf("enable provider: %v", err)
 	}
-	want := []string{"config", "enable", "--provider", "claude", "--json"}
+	want := []string{"config", "enable", "--provider", "claude"}
 	if !reflect.DeepEqual(calls[len(calls)-1], want) {
 		t.Fatalf("unexpected write args: got %v want %v", calls[len(calls)-1], want)
 	}

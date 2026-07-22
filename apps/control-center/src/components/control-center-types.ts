@@ -391,20 +391,52 @@ export type PreferenceHealthState =
   | "auth_required"
   | "setup_required"
   | "stale"
+  | "service_outage"
   | "unavailable"
   | "checking"
   | "disabled"
   | string;
 
+export type PreferenceType =
+  | "boolean"
+  | "enum"
+  | "integer"
+  | "duration"
+  | "string"
+  | "secret"
+  | "action";
+
+export type PreferenceValue = boolean | number | string | null;
+
 export type PreferenceDescriptor = {
   id: string;
   section: string;
-  owner: string;
-  type: string;
+  owner: "codexbar" | "vibetv" | "device";
+  type: PreferenceType;
   label: string;
-  value: unknown;
+  value: PreferenceValue;
+  effectiveValue: PreferenceValue;
+  allowsDefault: boolean;
+  options?: Array<{ value: string; label: string }>;
+  constraints?: {
+    min?: number;
+    max?: number;
+    step?: number;
+    unit?: string;
+  };
+  availability: {
+    state: "available" | "unavailable" | "unsupported";
+    message?: string;
+  };
+  requiredCapability?: string;
+  writeStrategy:
+    | "codexbar_command"
+    | "vibetv_override"
+    | "device_api"
+    | "secure_session";
   writable: boolean;
-  health: {
+  secretState?: "configured" | "not_configured";
+  health?: {
     state: PreferenceHealthState;
     service: "operational" | "degraded" | "outage" | "unknown" | string;
     message: string;

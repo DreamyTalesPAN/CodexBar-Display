@@ -23,6 +23,7 @@ Center on the customer's Mac.
 - [Firmware guardrails](firmware-guardrails.md): firmware safety rules.
 - [Operator runbook](operator-runbook.md): support, recovery, and smoke-test procedures.
 - [Usage polling architecture](usage-polling-architecture.md): usage collection and latency behavior.
+- [Preferences registry](preferences.md): typed local settings descriptors and the provider adapter.
 - [Token usage support matrix](token-usage-support-matrix.md): token stats by provider shape.
 - [Protocol](../protocol/PROTOCOL.md): frame protocol and payload details.
 

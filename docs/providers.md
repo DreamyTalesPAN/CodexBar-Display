@@ -131,3 +131,14 @@ For VibeTV behavior, use:
 - [Usage polling architecture](usage-polling-architecture.md)
 - [Token usage support matrix](token-usage-support-matrix.md)
 - [Architecture](architecture.md)
+
+## Provider Management
+
+The Usage screen lists the complete provider inventory reported by the local
+VibeTV Mac App, including disabled providers. Its switches change the real
+CodexBar provider configuration; VibeTV does not keep a second provider list or
+provider-selection setting.
+
+The local API uses the typed [preferences registry](preferences.md). It returns
+only safe health classifications. Raw provider errors and credentials never
+reach the browser.

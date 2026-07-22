@@ -2409,6 +2409,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             ? {
                 ...preference,
                 value,
+                effectiveValue: value,
                 health: value
                   ? {
                       ...preference.health,

@@ -2759,6 +2759,10 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
           type: "boolean",
           label: "Codex",
           value: true,
+          effectiveValue: true,
+          allowsDefault: false,
+          availability: { state: "available" },
+          writeStrategy: "codexbar_command",
           writable: true,
           health: {
             state: "healthy",
@@ -2773,6 +2777,10 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
           type: "boolean",
           label: "GitHub Copilot",
           value: false,
+          effectiveValue: false,
+          allowsDefault: false,
+          availability: { state: "available" },
+          writeStrategy: "codexbar_command",
           writable: true,
           health: {
             state: "disabled",
@@ -2787,6 +2795,10 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
           type: "boolean",
           label: "Claude",
           value: true,
+          effectiveValue: true,
+          allowsDefault: false,
+          availability: { state: "available" },
+          writeStrategy: "codexbar_command",
           writable: true,
           health: {
             state: "auth_required",
@@ -2817,12 +2829,18 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
 
   const enableCopilot = panel.getByRole("switch", { name: "Enable GitHub Copilot" });
   await enableCopilot.click();
-  assert(await enableCopilot.isDisabled(), "changed provider should be pending");
+  const pendingCopilot = panel.getByRole("switch", {
+    name: "Disable GitHub Copilot",
+  });
+  assert(await pendingCopilot.isDisabled(), "changed provider should be pending");
   assert(
     !(await panel.getByRole("switch", { name: "Disable Codex" }).isDisabled()),
     "unrelated provider should stay interactive",
   );
-  await panel.getByRole("switch", { name: "Disable GitHub Copilot" }).waitFor({ timeout: 10_000 });
+  await panel
+    .getByLabel("Updating GitHub Copilot")
+    .waitFor({ state: "hidden", timeout: 10_000 });
+  assert(await pendingCopilot.isEnabled(), "changed provider should become interactive again");
 
   await panel.getByRole("switch", { name: "Disable Claude" }).click();
   await page.getByText("This provider could not be updated.").waitFor({ timeout: 10_000 });
@@ -5522,6 +5540,10 @@ async function routeCompanionOnline(
           type: "boolean",
           label: "Codex",
           value: true,
+          effectiveValue: true,
+          allowsDefault: false,
+          availability: { state: "available" },
+          writeStrategy: "codexbar_command",
           writable: true,
           health: {
             state: "healthy",

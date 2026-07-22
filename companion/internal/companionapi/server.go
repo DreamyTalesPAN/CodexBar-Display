@@ -214,6 +214,7 @@ type Server struct {
 	providerSetupCache     codexbar.ProviderSetup
 	providerSetupCachedAt  time.Time
 	providerPreferences    providerPreferencesState
+	preferenceAdapters     []preferenceAdapter
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
 	updateMacApp           func(context.Context, string, string, macAppUpdateRequest, io.Writer) error
 	fetchMacAppRelease     func(context.Context) (githubRelease, error)

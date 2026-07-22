@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const minProviderSettingsVersion = "0.29"
+const minProviderSettingsVersion = "0.27.0"
 
 var runProviderCommandFn = runUsageCommand
 
@@ -138,7 +138,7 @@ func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) er
 	if enabled {
 		action = "enable"
 	}
-	_, err = runProviderCommandFn(ctx, commandTimeout(), bin, "config", action, "--provider", providerID, "--json")
+	_, err = runProviderCommandFn(ctx, commandTimeout(), bin, "config", action, "--provider", providerID)
 	if err != nil {
 		return providerSettingsError(ProviderSettingsErrorUnavailable, err)
 	}
@@ -178,7 +178,7 @@ func parseProviderSettings(raw []byte) ([]ProviderSetting, error) {
 	seen := make(map[string]struct{}, len(inventory))
 	for _, item := range inventory {
 		id := strings.TrimSpace(strings.ToLower(item.Provider))
-		if id == "" {
+		if !validProviderID(id) {
 			continue
 		}
 		if _, ok := seen[id]; ok {
@@ -208,6 +208,21 @@ func parseProviderSettings(raw []byte) ([]ProviderSetting, error) {
 	return settings, nil
 }
 
+func validProviderID(id string) bool {
+	if id == "" || len(id) > 80 {
+		return false
+	}
+	for _, character := range id {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= '0' && character <= '9') ||
+			character == '-' || character == '_' || character == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 type providerHealth struct {
 	health  ProviderHealthState
 	service ProviderServiceState
@@ -230,7 +245,7 @@ func parseProviderHealth(raw []byte) map[string]providerHealth {
 		}
 		state := ProviderHealthHealthy
 		if providerPayloadHasError(payload) {
-			state = classifyProviderHealth(providerErrorText(payload["error"]))
+			state = classifyProviderHealth(providerHealthErrorText(payload["error"]))
 		}
 		result[id] = providerHealth{
 			health:  state,
@@ -240,7 +255,7 @@ func parseProviderHealth(raw []byte) map[string]providerHealth {
 	return result
 }
 
-func providerErrorText(value any) string {
+func providerHealthErrorText(value any) string {
 	switch current := value.(type) {
 	case string:
 		return current

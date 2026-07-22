@@ -44,7 +44,6 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
@@ -60,6 +59,7 @@ import type {
   UsageSnapshot,
   UsageWindowInfo,
 } from "./control-center-types";
+import { PreferenceControl } from "./preference-control";
 
 type UsageScreenProps = {
   busyAction?: string | null;
@@ -74,6 +74,12 @@ type UsageScreenProps = {
     item: PreferenceDescriptor,
     value: boolean,
   ) => void | Promise<void>;
+};
+
+type ProviderPreferenceDescriptor = PreferenceDescriptor & {
+  type: "boolean";
+  value: boolean;
+  health: NonNullable<PreferenceDescriptor["health"]>;
 };
 
 export function UsageScreen({
@@ -145,13 +151,12 @@ function ProviderPreferencesPanel({
   const providers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return (items || [])
+      .filter(isProviderPreference)
       .filter(
         (item) =>
-          item.section === "providers" &&
-          item.type === "boolean" &&
-          (!normalizedQuery ||
+          !normalizedQuery ||
             item.label.toLowerCase().includes(normalizedQuery) ||
-            item.id.toLowerCase().includes(normalizedQuery)),
+            item.id.toLowerCase().includes(normalizedQuery),
       )
       .sort((a, b) => {
         const priority = providerHealthPriority(a) - providerHealthPriority(b);
@@ -209,7 +214,8 @@ function ProviderPreferencesPanel({
                       <Badge variant={healthBadgeVariant(item.health.state)}>
                         {healthLabel(item.health.state)}
                       </Badge>
-                      {item.health.service === "outage" ? (
+                      {item.health.service === "outage" &&
+                      item.health.state !== "service_outage" ? (
                         <Badge variant="destructive">Service outage</Badge>
                       ) : item.health.service === "degraded" ? (
                         <Badge variant="secondary">Service degraded</Badge>
@@ -235,11 +241,15 @@ function ProviderPreferencesPanel({
                   </ItemContent>
                   <ItemActions className="min-w-12 justify-end">
                     {pending ? <Spinner aria-label={`Updating ${item.label}`} /> : null}
-                    <Switch
-                      aria-label={`${checked ? "Disable" : "Enable"} ${item.label}`}
-                      checked={checked}
-                      disabled={!item.writable || pending}
-                      onCheckedChange={(value) => void onChange(item, value)}
+                    <PreferenceControl
+                      booleanLabel={`${checked ? "Disable" : "Enable"} ${item.label}`}
+                      descriptor={item}
+                      disabled={pending}
+                      onChange={(value) => {
+                        if (typeof value === "boolean") {
+                          void onChange(item, value);
+                        }
+                      }}
                     />
                   </ItemActions>
                 </Item>
@@ -256,26 +266,37 @@ function ProviderPreferencesPanel({
   );
 }
 
-function providerHealthPriority(item: PreferenceDescriptor): number {
+function providerHealthPriority(item: ProviderPreferenceDescriptor): number {
   if (["auth_required", "setup_required", "stale", "unavailable"].includes(item.health.state)) {
     return 0;
   }
   return item.value === true ? 1 : 2;
 }
 
-function providerAttentionExplanation(
+function isProviderPreference(
   item: PreferenceDescriptor,
+): item is ProviderPreferenceDescriptor {
+  return (
+    item.section === "providers" &&
+    item.type === "boolean" &&
+    typeof item.value === "boolean" &&
+    Boolean(item.health)
+  );
+}
+
+function providerAttentionExplanation(
+  item: ProviderPreferenceDescriptor,
 ): string | null {
   const provider = item.label;
   switch (item.health.state) {
     case "auth_required":
       return `${provider} is enabled, but its sign-in is no longer valid. Open ${provider}, sign in again, then use it once.`;
     case "setup_required":
-      return `${provider} is enabled, but CodexBar cannot read usage yet. Open ${provider}, finish setup or sign in if asked, then use it once.`;
+      return `${provider} is enabled, but the VibeTV Mac App cannot read usage yet. Open ${provider}, finish setup or sign in if asked, then use it once.`;
     case "stale":
       return `VibeTV is showing the last saved ${provider} usage because live usage cannot be read. Open ${provider} and check that you are still signed in.`;
     case "unavailable":
-      return `CodexBar cannot read ${provider} right now. This can be temporary; open ${provider} and check that it is working and signed in.`;
+      return `The VibeTV Mac App cannot read ${provider} right now. This can be temporary; open ${provider} and check that it is working and signed in.`;
   }
   if (item.health.service === "outage") {
     return `${provider} is reporting an outage. Your setup may be fine; try again when the service is back online.`;
@@ -292,6 +313,7 @@ function healthLabel(state: string): string {
     auth_required: "Sign-in needed",
     setup_required: "Setup needed",
     stale: "Stale",
+    service_outage: "Service outage",
     unavailable: "Unavailable",
     checking: "Checking",
     disabled: "Off",
