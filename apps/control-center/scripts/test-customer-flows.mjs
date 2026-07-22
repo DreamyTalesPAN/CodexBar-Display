@@ -3277,6 +3277,22 @@ async function testUsagePrioritizesProviderTokenHistory(browser, appUrl) {
       { exact: true },
     )
     .waitFor({ timeout: 10_000 });
+  const tokenUsageRefresh = page.getByRole("button", {
+    name: "Refresh token usage",
+  });
+  const refreshResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname.endsWith("/v1/usage") &&
+      new URL(response.url()).searchParams.get("refresh") === "1",
+  );
+  await tokenUsageRefresh.click();
+  const usageResponse = await refreshResponse;
+  assert(usageResponse.ok(), "Token usage refresh should return successfully");
+  await tokenUsageRefresh.click({ trial: true });
+  assert(
+    await tokenUsageRefresh.isEnabled(),
+    "Token usage refresh should become available again after the request finishes",
+  );
   assert(
     (await page.getByText("Daily tokens by provider", { exact: false }).count()) ===
       0,
