@@ -21,14 +21,6 @@
       "type": "string",
       "minLength": 1
     },
-    "sessionLabel": {
-      "type": "string",
-      "minLength": 1
-    },
-    "weeklyLabel": {
-      "type": "string",
-      "minLength": 1
-    },
     "session": {
       "type": "integer",
       "minimum": 0,
@@ -43,7 +35,7 @@
       "type": "integer",
       "minimum": 0
     },
-    "stale": {
+    "usageUnavailable": {
       "type": "boolean"
     },
     "usageMode": {

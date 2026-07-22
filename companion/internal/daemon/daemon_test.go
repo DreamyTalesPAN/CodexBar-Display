@@ -897,7 +897,7 @@ func TestRunCycleWithDepsRateLimitsPersistedLastGoodWrites(t *testing.T) {
 	}
 }
 
-func TestRunWithDepsIgnoresExpiredPersistedLastGood(t *testing.T) {
+func TestRunWithDepsBootstrapsFromExpiredPersistedLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	savedAt := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
@@ -926,18 +926,15 @@ func TestRunWithDepsIgnoresExpiredPersistedLastGood(t *testing.T) {
 			return nil
 		},
 	})
-	if err == nil {
-		t.Fatalf("expected provider error after expired persisted frame is ignored")
+	if err != nil {
+		t.Fatalf("expected stale bootstrap frame to avoid hard error, got %v", err)
 	}
 	if len(sentLine) == 0 {
-		t.Fatalf("expected customer-facing error frame to be sent")
+		t.Fatalf("expected stale bootstrap frame to be sent")
 	}
 	frame := decodeFrameLine(t, sentLine)
-	if frame.Error != string(runtimeErrorCodexbarCmd) {
-		t.Fatalf("expected provider error frame, got %+v", frame)
-	}
-	if frame.Provider != "" || frame.Session != 0 || frame.Weekly != 0 || frame.ResetSec != 0 {
-		t.Fatalf("expected expired usage values to be suppressed, got %+v", frame)
+	if frame.Provider != stale.Provider || frame.Session != stale.Session || frame.Weekly != stale.Weekly {
+		t.Fatalf("expected stale bootstrap frame, got %+v", frame)
 	}
 }
 
@@ -2011,7 +2008,7 @@ func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 	}
 }
 
-func TestRunCycleWithDepsRejectsExpiredLastGoodFrameDuringFetchFailure(t *testing.T) {
+func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -2045,19 +2042,22 @@ func TestRunCycleWithDepsRejectsExpiredLastGoodFrameDuringFetchFailure(t *testin
 	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
 		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("transient failure")}
 	}
-	if err := runCycleWithDeps(context.Background(), "", state, deps); err == nil {
-		t.Fatalf("expected fetch error after last-good frame expired")
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected stale-last-good fallback to avoid hard error, got %v", err)
 	}
 
 	if len(lines) != 2 {
 		t.Fatalf("expected two sent frames, got %d", len(lines))
 	}
 	second := decodeFrameLine(t, lines[1])
-	if second.Error != string(runtimeErrorCodexbarCmd) {
-		t.Fatalf("expected provider error frame, got %q", second.Error)
+	if second.Error != "" {
+		t.Fatalf("expected stale-good provider frame, got error %q", second.Error)
 	}
-	if second.Provider != "" || second.Session != 0 || second.Weekly != 0 || second.ResetSec != 0 {
-		t.Fatalf("expected expired usage values to be suppressed, got %+v", second)
+	if second.Provider != "codex" {
+		t.Fatalf("expected stale codex frame, got %q", second.Provider)
+	}
+	if !second.UsageUnavailable {
+		t.Fatalf("expected expired last-good usage to be unavailable, got %+v", second)
 	}
 }
 
@@ -2108,36 +2108,8 @@ func TestRunCycleWithDepsUsesLastGoodFrameWhenNoProvidersAfterSelection(t *testi
 	if second.Provider != "codex" {
 		t.Fatalf("expected stale codex frame, got %q", second.Provider)
 	}
-	if !second.Stale {
-		t.Fatalf("expected bounded last-good fallback to be visibly stale, got %+v", second)
-	}
-}
-
-func TestSelectCycleFrameMarksStaleProviderSnapshotForStatusRendering(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	now := time.Date(2026, 7, 22, 8, 0, 0, 0, time.UTC)
-	state := &runtimeState{selector: codexbar.NewProviderSelector()}
-	parsed := testParsedFrame("gemini", 70, 30, 3600)
-	parsed.CollectedAt = now.Add(-2 * time.Minute)
-	parsed.Stale = true
-
-	result := selectCycleFrameFromProviders(
-		state,
-		[]codexbar.ParsedFrame{parsed},
-		now,
-		runtimeDeps{logf: func(string, ...any) {}}.withDefaults(),
-		"select-provider",
-		"collector-empty",
-		"",
-		"collector",
-	)
-
-	if !result.frame.Stale || result.usageFresh {
-		t.Fatalf("expected stale provider snapshot to be marked non-current, got %+v", result)
-	}
-	if state.hasLastGood {
-		t.Fatalf("expected stale provider snapshot not to replace last-good state")
+	if second.UsageUnavailable {
+		t.Fatalf("expected two-minute last-good frame to keep visible values, got %+v", second)
 	}
 }
 
@@ -2675,22 +2647,26 @@ func TestRunWithDepsResetsRetryBackoffAfterSleepWakeGap(t *testing.T) {
 	beforeGap := start.Add(2 * time.Second)
 	afterGap := start.Add(2*time.Minute + 5*time.Second)
 	afterGapNext := start.Add(2*time.Minute + 7*time.Second)
+	nowValues := []time.Time{
+		start, start,
+		beforeGap, beforeGap,
+		afterGap, afterGap, // sleep/wake-sized wall clock gap
+		afterGapNext, afterGapNext,
+	}
+	nowIdx := 0
+
 	var delays []time.Duration
 	afterCalls := 0
 	never := make(chan time.Time)
 
 	err := runWithDeps(ctx, Options{Interval: 60 * time.Second}, runtimeDeps{
 		now: func() time.Time {
-			switch afterCalls {
-			case 0:
-				return start
-			case 1:
-				return beforeGap
-			case 2:
-				return afterGap
-			default:
-				return afterGapNext
+			if nowIdx >= len(nowValues) {
+				return nowValues[len(nowValues)-1]
 			}
+			current := nowValues[nowIdx]
+			nowIdx++
+			return current
 		},
 		after: func(d time.Duration) <-chan time.Time {
 			delays = append(delays, d)
@@ -2848,8 +2824,105 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 
 	current = current.Add(3 * time.Hour)
 	expired := collector.providerFrames(current)
-	if len(expired) != 0 {
-		t.Fatalf("expected snapshots to expire by max age, got %#v", expired)
+	if len(expired) != 2 || !expired[0].Frame.UsageUnavailable || !expired[1].Frame.UsageUnavailable {
+		t.Fatalf("expected old provider snapshots to remain as unavailable carriers, got %#v", expired)
+	}
+	if expired[0].Frame.Session != 14 || expired[1].Frame.Session != 28 {
+		t.Fatalf("expected old values to remain available for progress rendering, got %#v", expired)
+	}
+}
+
+func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	current := now
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"gemini"},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+	unavailable := codexbar.ParsedFrame{
+		Provider: "gemini",
+		Source:   "oauth-api",
+		Stale:    true,
+		Frame: protocol.Frame{
+			Provider:         "gemini",
+			Label:            "Gemini",
+			UsageUnavailable: true,
+		},
+	}
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{unavailable}, nil
+	}
+	collector.collectOnce(context.Background())
+	if frames := collector.providerFrames(current); len(frames) != 1 || frames[0].Provider != "gemini" || !frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 0 {
+		t.Fatalf("expected neutral cold-start Gemini error, got %#v", frames)
+	}
+
+	current = current.Add(time.Second)
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("gemini", 73, 21, 3600)}, nil
+	}
+	collector.collectOnce(context.Background())
+	freshAt := current
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{unavailable}, nil
+	}
+
+	for _, age := range []time.Duration{65 * time.Second, 9*time.Minute + 59*time.Second} {
+		current = freshAt.Add(age)
+		collector.collectOnce(context.Background())
+		frames := collector.providerFrames(current)
+		if len(frames) != 1 || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 73 {
+			t.Fatalf("expected buffered last-good values at %s, got %#v", age, frames)
+		}
+	}
+
+	current = freshAt.Add(10*time.Minute + time.Second)
+	collector.collectOnce(context.Background())
+	frames := collector.providerFrames(current)
+	if len(frames) != 1 || !frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 73 {
+		t.Fatalf("expected unavailable Gemini with held values after ten minutes, got %#v", frames)
+	}
+	current = freshAt.Add(4 * 24 * time.Hour)
+	frames = collector.providerFrames(current)
+	if len(frames) != 1 || frames[0].Provider != "gemini" || !frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 73 {
+		t.Fatalf("expected multi-day support snapshot to keep Gemini as unavailable carrier, got %#v", frames)
+	}
+
+	collectedAt := collector.providers["gemini"].Collected
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"gemini": {SessionTokens: 123, UpdatedAt: current},
+		}, true
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	if got := collector.providers["gemini"]; !got.Frame.UsageUnavailable || !got.Collected.Equal(collectedAt) {
+		t.Fatalf("token stats made unavailable quota look fresh: %#v", got)
+	}
+
+	current = current.Add(time.Second)
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("gemini", 12, 34, 7200)}, nil
+	}
+	collector.collectOnce(context.Background())
+	frames = collector.providerFrames(current)
+	if len(frames) != 1 || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 12 {
+		t.Fatalf("expected immediate recovery from unavailable state, got %#v", frames)
+	}
+}
+
+func TestPreferAvailableProvidersDoesNotLetUnavailableDisplaceFresh(t *testing.T) {
+	providers := preferAvailableProviders([]codexbar.ParsedFrame{
+		{Provider: "gemini", Frame: protocol.Frame{Provider: "gemini", UsageUnavailable: true}},
+		testParsedFrame("codex", 17, 42, 3600),
+	})
+	if len(providers) != 1 || providers[0].Provider != "codex" {
+		t.Fatalf("expected only fresh Codex to remain selectable, got %#v", providers)
 	}
 }
 

@@ -35,11 +35,9 @@ Collector is aggregate-first:
 3. If aggregate still fails, try codex CLI-only fallback (`--provider codex --source cli`).
 4. If no usable payload exists, daemon serves last-good frame (stale-while-revalidate).
 
-Last-good reuse is bounded by `CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE`. A fallback
-frame is marked `stale`, so current firmware shows `Usage unavailable` and
-`Open Mac App` instead of rendering old percentages or an expired reset as
-current. Persisted frames older than the configured maximum are ignored at
-startup and cannot become an unbounded runtime fallback.
+A non-zero aggregate exit does not discard parseable provider results. Valid
+usage rows and sanitized provider-error rows may coexist; the Codex-only
+fallback runs only when the aggregate payload is unusable.
 
 Notes:
 
@@ -69,6 +67,12 @@ Provider selection in render cycles uses CodexBar token/usage deltas + sticky/cu
 
 - previous provider snapshots can still be used,
 - then persisted last-good frame fallback is used within max-age window.
+
+Inside the default 10-minute last-good window, cached numbers remain normally
+visible. After it, provider identity and last numeric values remain as
+ThemeSpec/progress carriers while `usageUnavailable` makes session/weekly text
+render as `??` and reset text as `Reset unavailable`. Token-stat refreshes do
+not refresh quota snapshot age.
 
 ## Runtime Defaults and Env Knobs
 

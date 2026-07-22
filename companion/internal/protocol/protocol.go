@@ -11,12 +11,10 @@ type Frame struct {
 	V                     int             `json:"v"`
 	Provider              string          `json:"provider,omitempty"`
 	Label                 string          `json:"label,omitempty"`
-	SessionLabel          string          `json:"sessionLabel,omitempty"`
-	WeeklyLabel           string          `json:"weeklyLabel,omitempty"`
 	Session               int             `json:"session,omitempty"`
 	Weekly                int             `json:"weekly,omitempty"`
 	ResetSec              int64           `json:"resetSecs,omitempty"`
-	Stale                 bool            `json:"stale,omitempty"`
+	UsageUnavailable      bool            `json:"usageUnavailable,omitempty"`
 	UsageMode             string          `json:"usageMode,omitempty"`
 	Time                  string          `json:"time,omitempty"`
 	Date                  string          `json:"date,omitempty"`
@@ -77,8 +75,6 @@ func (f Frame) Normalize() Frame {
 	}
 	f.Time = strings.TrimSpace(f.Time)
 	f.Date = strings.TrimSpace(f.Date)
-	f.SessionLabel = strings.TrimSpace(f.SessionLabel)
-	f.WeeklyLabel = strings.TrimSpace(f.WeeklyLabel)
 	f.Activity = normalizeActivity(f.Activity)
 	f.Theme = theme.Normalize(f.Theme)
 	if len(f.ThemeSpec) > 0 && !json.Valid(f.ThemeSpec) {

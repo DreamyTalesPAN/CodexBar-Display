@@ -72,7 +72,7 @@ func TestParseUsageJSONHandlesLeadingGarbageBeforeJSON(t *testing.T) {
 	}
 }
 
-func TestParseAllProvidersSkipsProviderErrorPayloads(t *testing.T) {
+func TestParseAllProvidersKeepsSanitizedProviderErrorPayloads(t *testing.T) {
 	raw := []byte(`[
 		{
 			"provider":"codex",
@@ -93,11 +93,24 @@ func TestParseAllProvidersSkipsProviderErrorPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseAllProviders failed: %v", err)
 	}
-	if len(parsed) != 1 {
-		t.Fatalf("expected exactly one usable provider, got %d", len(parsed))
+	if len(parsed) != 2 {
+		t.Fatalf("expected usage and provider error results, got %d", len(parsed))
 	}
 	if got := providerKey(parsed[0]); got != "codex" {
-		t.Fatalf("expected codex provider after filtering error payloads, got %q", got)
+		t.Fatalf("expected codex usage provider, got %q", got)
+	}
+	if got := providerKey(parsed[1]); got != "cursor" || !parsed[1].Frame.UsageUnavailable {
+		t.Fatalf("expected sanitized unavailable cursor result, got %#v", parsed[1])
+	}
+	if parsed[1].Frame.Error != "" || parsed[1].Frame.Session != 0 || parsed[1].Frame.Weekly != 0 {
+		t.Fatalf("provider error leaked into usage frame: %#v", parsed[1].Frame)
+	}
+}
+
+func TestParseAllProvidersRejectsUnidentifiedGlobalError(t *testing.T) {
+	_, err := parseAllProviders([]byte(`[{"error":{"kind":"runtime","message":"global failure"}}]`))
+	if err == nil {
+		t.Fatal("expected unidentified global error to remain a parse failure")
 	}
 }
 
@@ -157,71 +170,6 @@ func TestParseProviderPayloadKeepsCodexBarUsageMeta(t *testing.T) {
 	}
 	if meta.Windows[3].ID != "codereview" || meta.Windows[3].Label != "Code review" || meta.Windows[3].UsedPercent != 7 {
 		t.Fatalf("expected extra code review window, got %+v", meta.Windows[3])
-	}
-}
-
-func TestParseProviderPayloadMapsGeminiModelQuotaLabels(t *testing.T) {
-	raw := []byte(`[
-		{
-			"provider":"gemini",
-			"source":"oauth-api",
-			"usage":{
-				"primary":{"usedPercent":70,"windowMinutes":1440,"resetsAt":"2099-01-01T01:00:00Z"},
-				"secondary":{"usedPercent":30,"windowMinutes":1440,"resetsAt":"2099-01-01T02:00:00Z"},
-				"tertiary":{"usedPercent":40,"windowMinutes":1440,"resetsAt":"2099-01-01T03:00:00Z"}
-			}
-		}
-	]`)
-
-	parsed, err := parseAllProviders(raw)
-	if err != nil {
-		t.Fatalf("parseAllProviders failed: %v", err)
-	}
-	if len(parsed) != 1 {
-		t.Fatalf("expected one Gemini provider, got %d", len(parsed))
-	}
-	provider := parsed[0]
-	if provider.Frame.SessionLabel != "Pro" || provider.Frame.WeeklyLabel != "Flash" {
-		t.Fatalf("expected Gemini frame labels Pro/Flash, got %+v", provider.Frame)
-	}
-	if len(provider.Meta.Windows) != 3 {
-		t.Fatalf("expected three Gemini windows, got %+v", provider.Meta.Windows)
-	}
-	want := []string{"Pro", "Flash", "Flash Lite"}
-	for i, label := range want {
-		if provider.Meta.Windows[i].Label != label {
-			t.Fatalf("window[%d] label=%q, expected %q", i, provider.Meta.Windows[i].Label, label)
-		}
-	}
-}
-
-func TestParseProviderPayloadDoesNotFabricateMissingGeminiTier(t *testing.T) {
-	raw := []byte(`[
-		{
-			"provider":"gemini",
-			"usage":{
-				"secondary":{"usedPercent":95,"windowMinutes":1440},
-				"tertiary":{"usedPercent":40,"windowMinutes":1440}
-			}
-		}
-	]`)
-
-	parsed, err := parseAllProviders(raw)
-	if err != nil {
-		t.Fatalf("parseAllProviders failed: %v", err)
-	}
-	if len(parsed[0].Meta.Windows) != 2 {
-		t.Fatalf("expected only reported Gemini tiers, got %+v", parsed[0].Meta.Windows)
-	}
-	if parsed[0].Meta.Windows[0].ID != "secondary" || parsed[0].Meta.Windows[0].Label != "Flash" {
-		t.Fatalf("expected Flash secondary tier first, got %+v", parsed[0].Meta.Windows)
-	}
-	if parsed[0].Meta.Windows[1].ID != "tertiary" || parsed[0].Meta.Windows[1].Label != "Flash Lite" {
-		t.Fatalf("expected Flash Lite tertiary tier, got %+v", parsed[0].Meta.Windows)
-	}
-	if parsed[0].Frame.Session != 95 || parsed[0].Frame.SessionLabel != "Flash" ||
-		parsed[0].Frame.Weekly != 40 || parsed[0].Frame.WeeklyLabel != "Flash Lite" {
-		t.Fatalf("expected reported Gemini tiers to fill the two display lanes, got %+v", parsed[0].Frame)
 	}
 }
 
@@ -1101,6 +1049,41 @@ func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testin
 	}
 }
 
+func TestFetchAllProvidersKeepsMixedJSONOnNonzeroExitWithoutFallback(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() { runUsageCommandFn = originalRunUsageCommand }()
+
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	var fallbackCalls int
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		argLine := strings.Join(args, " ")
+		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
+			fallbackCalls++
+			return nil, errors.New("fallback must not run")
+		}
+		return []byte(`[
+			{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":7},"secondary":{"usedPercent":13}}},
+			{"provider":"gemini","label":"Gemini","source":"oauth-api","error":{"kind":"provider","message":"sensitive upstream detail"}}
+		]`), errors.New("exit status 1")
+	}
+
+	parsed, err := FetchAllProviders(context.Background())
+	if err != nil {
+		t.Fatalf("expected useful mixed JSON despite nonzero exit, got %v", err)
+	}
+	if fallbackCalls != 0 {
+		t.Fatalf("expected no Codex-only fallback, got %d calls", fallbackCalls)
+	}
+	if len(parsed) != 2 || providerKey(parsed[0]) != "codex" || providerKey(parsed[1]) != "gemini" {
+		t.Fatalf("unexpected mixed provider results: %#v", parsed)
+	}
+	if !parsed[1].Frame.UsageUnavailable || parsed[1].Frame.Error != "" {
+		t.Fatalf("expected sanitized unavailable Gemini result, got %#v", parsed[1])
+	}
+}
+
 func TestFetchAllProvidersDoesNotRetryByStartingCodexBarApp(t *testing.T) {
 	stubSupportedCodexBarVersion(t)
 
@@ -1196,7 +1179,7 @@ func TestFetchAllProvidersUsesDetachedContextForCLIFallback(t *testing.T) {
 	}
 }
 
-func TestFetchProviderScopedUsageDetailedRejectsProviderErrorPayload(t *testing.T) {
+func TestFetchProviderScopedUsageDetailedReturnsSanitizedProviderError(t *testing.T) {
 	originalRunUsageCommand := runUsageCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
@@ -1209,8 +1192,12 @@ func TestFetchProviderScopedUsageDetailedRejectsProviderErrorPayload(t *testing.
 		]`), errors.New("exit status 1")
 	}
 
-	if _, err := fetchProviderScopedUsageDetailed(context.Background(), 5*time.Second, "/bin/sh", "cursor", 8, ""); err == nil {
-		t.Fatalf("expected provider-scoped usage to reject error-only payload")
+	parsed, err := fetchProviderScopedUsageDetailed(context.Background(), 5*time.Second, "/bin/sh", "cursor", 8, "")
+	if err != nil {
+		t.Fatalf("expected provider-scoped error result, got %v", err)
+	}
+	if providerKey(parsed) != "cursor" || !parsed.Frame.UsageUnavailable || parsed.Frame.Error != "" {
+		t.Fatalf("unexpected sanitized provider result: %#v", parsed)
 	}
 }
 

@@ -24,11 +24,6 @@ them:
 If a provider does not expose one of those fields, VibeTV skips that field
 instead of guessing.
 
-Gemini is provider-specific: its primary, secondary, and tertiary quota lanes
-are daily model-family limits named `Pro`, `Flash`, and `Flash Lite`. Standard
-themes use the first two available Gemini lanes and keep the generic
-`Session`/`Weekly` labels for providers that do not define custom lane names.
-
 ## Common AI Builder Providers
 
 These are the providers most relevant to the VibeTV desk-display story:

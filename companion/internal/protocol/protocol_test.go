@@ -82,6 +82,24 @@ func TestFrameNormalizeKeepsNegotiatedV2(t *testing.T) {
 	}
 }
 
+func TestFrameMarshalUsageUnavailableIsOptional(t *testing.T) {
+	available, err := (Frame{V: 2, Provider: "gemini"}).MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal available frame: %v", err)
+	}
+	if strings.Contains(string(available), "usageUnavailable") {
+		t.Fatalf("expected false availability field to stay omitted, got %s", available)
+	}
+
+	unavailable, err := (Frame{V: 2, Provider: "gemini", UsageUnavailable: true}).MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal unavailable frame: %v", err)
+	}
+	if !strings.Contains(string(unavailable), `"usageUnavailable":true`) {
+		t.Fatalf("expected unavailable field, got %s", unavailable)
+	}
+}
+
 func TestFrameNormalizeKeepsSafeActivity(t *testing.T) {
 	frame := Frame{
 		Provider: "codex",
@@ -92,31 +110,6 @@ func TestFrameNormalizeKeepsSafeActivity(t *testing.T) {
 	normalized := frame.Normalize()
 	if normalized.Activity != "coding" {
 		t.Fatalf("expected normalized activity coding, got %q", normalized.Activity)
-	}
-}
-
-func TestFrameMarshalKeepsProviderLabelsAndStaleState(t *testing.T) {
-	frame := Frame{
-		V:            2,
-		Provider:     "gemini",
-		Label:        "Gemini",
-		SessionLabel: " Pro ",
-		WeeklyLabel:  " Flash ",
-		Session:      70,
-		Weekly:       30,
-		Stale:        true,
-	}
-
-	line, err := frame.MarshalLine()
-	if err != nil {
-		t.Fatalf("MarshalLine returned error: %v", err)
-	}
-	var got Frame
-	if err := json.Unmarshal(line, &got); err != nil {
-		t.Fatalf("decode frame: %v", err)
-	}
-	if got.SessionLabel != "Pro" || got.WeeklyLabel != "Flash" || !got.Stale {
-		t.Fatalf("expected provider labels and stale state to round-trip, got %+v", got)
 	}
 }
 

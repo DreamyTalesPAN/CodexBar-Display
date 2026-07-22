@@ -1062,14 +1062,13 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   themespec::FrameData frame;
   frame.provider = CurrentFrame().provider.c_str();
   frame.label = ProviderLabelText();
-  frame.sessionLabel = CurrentFrame().sessionLabel.c_str();
-  frame.weeklyLabel = CurrentFrame().weeklyLabel.c_str();
   frame.updateAvailable = CurrentFrame().updateAvailable;
   frame.showUpdateNotice = updateNoticeText != nullptr && updateNoticeText[0] != '\0';
   frame.updateNotice = frame.showUpdateNotice ? updateNoticeText : themeSpecUpdateNoticeText();
   frame.session = CurrentFrame().session;
   frame.weekly = CurrentFrame().weekly;
   frame.resetSecs = CurrentRemainingSecs();
+  frame.usageUnavailable = CurrentFrame().usageUnavailable;
   frame.usageMode = usageModeText();
   frame.activity = CurrentFrame().activity.c_str();
   frame.time = CurrentFrame().timeText.c_str();

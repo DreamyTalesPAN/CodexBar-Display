@@ -1365,8 +1365,6 @@ func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
 					Frame: protocol.Frame{
 						Provider:      "codex",
 						Label:         "Codex",
-						SessionLabel:  "Session",
-						WeeklyLabel:   "Weekly",
 						Session:       28,
 						Weekly:        59,
 						ResetSec:      5400,
@@ -1447,9 +1445,6 @@ func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
 	}
 	if provider.Session != 28 || provider.Weekly != 59 || provider.ResetSec != 5400 {
 		t.Fatalf("unexpected provider usage: %+v", provider)
-	}
-	if provider.SessionLabel != "Session" || provider.WeeklyLabel != "Weekly" {
-		t.Fatalf("unexpected provider lane labels: %+v", provider)
 	}
 	if provider.SessionTokens != 1234 || provider.WeekTokens != 5678 || provider.TotalTokens != 9000 {
 		t.Fatalf("unexpected token stats: %+v", provider)

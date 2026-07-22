@@ -199,55 +199,6 @@ FrameData testFrame() {
   return frame;
 }
 
-bool renderSpec(const char* spec, const FrameData& frame, RecordingSink& sink);
-
-void testProviderLaneLabelsAndUnavailableResetBinding() {
-  FrameData frame = testFrame();
-  frame.provider = "gemini";
-  frame.label = "Gemini";
-  frame.sessionLabel = "Pro";
-  frame.weeklyLabel = "Flash";
-  frame.resetSecs = 0;
-
-  RecordingSink sink;
-  TEST_ASSERT_TRUE(renderSpec(
-      R"JSON({"v":1,"id":"gemini-labels","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"{sl}|{wl}|{rs}"}]})JSON",
-      frame,
-      sink));
-  TEST_ASSERT_EQUAL_INT(2, sink.commands.size());
-  TEST_ASSERT_EQUAL_STRING("Pro|Flash|Reset unavailable", sink.commands[1].text.c_str());
-}
-
-void testLegacyStandardThemeLabelsUseProviderLaneNames() {
-  FrameData frame = testFrame();
-  frame.provider = "gemini";
-  frame.label = "Gemini";
-  frame.sessionLabel = "Pro";
-  frame.weeklyLabel = "Flash";
-  frame.resetSecs = 0;
-
-  RecordingSink sink;
-  TEST_ASSERT_TRUE(renderSpec(
-      R"JSON({"v":1,"id":"gemini-legacy-labels","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"Session {usageMode}"},{"t":"tx","x":0,"y":20,"v":"WEEKLY"},{"t":"tx","x":0,"y":40,"v":"Reset in {reset}"}]})JSON",
-      frame,
-      sink));
-  TEST_ASSERT_EQUAL_INT(4, sink.commands.size());
-  TEST_ASSERT_EQUAL_STRING("Pro remaining", sink.commands[1].text.c_str());
-  TEST_ASSERT_EQUAL_STRING("Flash", sink.commands[2].text.c_str());
-  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[3].text.c_str());
-
-  RecordingSink defaultSink;
-  const FrameData defaultFrame = testFrame();
-  TEST_ASSERT_TRUE(renderSpec(
-      R"JSON({"v":1,"id":"default-legacy-labels","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"Session {usageMode}"},{"t":"tx","x":0,"y":20,"v":"WEEKLY"},{"t":"tx","x":0,"y":40,"v":"Reset in {reset}"}]})JSON",
-      defaultFrame,
-      defaultSink));
-  TEST_ASSERT_EQUAL_INT(4, defaultSink.commands.size());
-  TEST_ASSERT_EQUAL_STRING("Session remaining", defaultSink.commands[1].text.c_str());
-  TEST_ASSERT_EQUAL_STRING("WEEKLY", defaultSink.commands[2].text.c_str());
-  TEST_ASSERT_EQUAL_STRING("Reset in 1h 29m", defaultSink.commands[3].text.c_str());
-}
-
 bool renderSpec(const char* spec, const FrameData& frame, RecordingSink& sink) {
   JsonDocument doc;
   CompiledThemeSpec scene;
@@ -442,6 +393,38 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_INT(2, pixels.height);
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, pixels.color);
   TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
+}
+
+void testUsageUnavailableKeepsThemeAndProgress() {
+  const char* spec = R"JSON({"v":1,"id":"usage-unavailable","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l"},{"t":"tx","x":0,"y":20,"b":"s"},{"t":"tx","x":0,"y":40,"v":"{weekly}% left"},{"t":"tx","x":0,"y":60,"v":"Reset in {reset}"},{"t":"p","x":0,"y":80,"w":100,"h":8,"b":"s"}]})JSON";
+
+  FrameData frame;
+  frame.label = "Gemini";
+  frame.session = 73;
+  frame.weekly = 21;
+  frame.resetSecs = 3600;
+  frame.usageUnavailable = true;
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(6, sink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("Gemini", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("??", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("??% left", sink.commands[3].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[4].text.c_str());
+  TEST_ASSERT_EQUAL_INT(73, sink.commands[5].percent);
+
+  FrameData coldStart = frame;
+  coldStart.session = 0;
+  RecordingSink coldStartSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, coldStart, coldStartSink));
+  TEST_ASSERT_EQUAL_INT(0, coldStartSink.commands[5].percent);
+
+  frame.usageUnavailable = false;
+  frame.resetSecs = 0;
+  char reset[32] = {0};
+  codexbar_display::themespec::BoundValue("reset", frame, reset, sizeof(reset));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", reset);
 }
 
 void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
@@ -1463,21 +1446,6 @@ void testThemeSpecErrorFrameUsesFullRender() {
   TEST_ASSERT_FALSE(event.themeSpecPartialRender);
 }
 
-void testThemeSpecStaleFrameUsesFullStatusRender() {
-  RuntimeState state;
-  SerialConsumeEvent event;
-
-  const char* firstFrame = R"JSON({"v":2,"provider":"gemini","label":"Gemini","sessionLabel":"Pro","weeklyLabel":"Flash","session":70,"weekly":30,"resetSecs":3600,"themeSpec":{"v":1,"id":"mini-transport","rev":1,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{sl} {session}%"}]}})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
-  TEST_ASSERT_FALSE(state.current.stale);
-
-  const char* staleFrame = R"JSON({"v":2,"provider":"gemini","label":"Gemini","sessionLabel":"Pro","weeklyLabel":"Flash","session":70,"weekly":30,"resetSecs":3600,"stale":true})JSON";
-  TEST_ASSERT_TRUE(ConsumeFrameLine(state, staleFrame, 2000, event));
-  TEST_ASSERT_TRUE(state.current.stale);
-  TEST_ASSERT_TRUE(event.visualChanged);
-  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
-}
-
 void testThemeSpecErrorFrameDoesNotReplaceItselfWithCachedTheme() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -1775,10 +1743,9 @@ void testAnimatedSpriteFrameOffsetsAreIndexedOneFrameAtATime() {
 int main() {
   UNITY_BEGIN();
   RUN_TEST(testInvalidSpecsReturnFalse);
-  RUN_TEST(testProviderLaneLabelsAndUnavailableResetBinding);
-  RUN_TEST(testLegacyStandardThemeLabelsUseProviderLaneNames);
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);
+  RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
   RUN_TEST(testChangedLabelPassCanRestoreProviderText);
@@ -1816,7 +1783,6 @@ int main() {
   RUN_TEST(testLegacyThemeFieldsAreIgnored);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
   RUN_TEST(testThemeSpecErrorFrameUsesFullRender);
-  RUN_TEST(testThemeSpecStaleFrameUsesFullStatusRender);
   RUN_TEST(testThemeSpecErrorFrameDoesNotReplaceItselfWithCachedTheme);
   RUN_TEST(testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset);
   RUN_TEST(testThemeSpecIgnoresUpdateMetadataForVisualDirty);
