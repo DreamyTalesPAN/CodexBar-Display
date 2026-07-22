@@ -9,6 +9,8 @@ describe("DeviceStartupScreen", () => {
         busyAction="search"
         deviceCandidates={[]}
         deviceSearchState="searching"
+        deviceTarget="http://192.168.178.72/hello"
+        onPair={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -32,6 +34,7 @@ describe("DeviceStartupScreen", () => {
           },
         ]}
         deviceSearchState="multiple"
+        onPair={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -49,6 +52,7 @@ describe("DeviceStartupScreen", () => {
         deviceCandidates={[]}
         deviceSearchState="waiting"
         onCreateSupportReport={vi.fn()}
+        onPair={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -58,6 +62,7 @@ describe("DeviceStartupScreen", () => {
     expect(html).toContain('data-variant="secondary"');
     expect(html).toContain("justify-items-center");
     expect(html).toContain('class="sr-only">Reconnecting…</span>');
+    expect(html).not.toContain('data-slot="card"');
   });
 
   it("uses shadcn recovery UI and names the action that is actually shown", () => {
@@ -70,15 +75,36 @@ describe("DeviceStartupScreen", () => {
           message: "VibeTV pairing failed.",
           nextAction: "Keep VibeTV powered on, then retry Fix connection.",
         }}
+        onPair={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
     );
 
-    expect(html).toContain('data-slot="card"');
+    expect(html).not.toContain('data-slot="card"');
     expect(html).toContain('data-slot="alert"');
     expect(html).toContain("Keep VibeTV powered on, then search again.");
     expect(html).not.toContain("retry Fix connection");
+  });
+
+  it("keeps support report creation enabled while searching", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        busyAction="search"
+        deviceCandidates={[]}
+        deviceSearchState="searching"
+        deviceTarget="http://192.168.178.72/hello"
+        onCreateSupportReport={vi.fn()}
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Create report</span></button>");
+    expect(html).not.toContain('disabled=""');
+    expect(html).toContain('value="192.168.178.72"');
+    expect(html).not.toContain('value="http://192.168.178.72/hello"');
   });
 
   it("does not flash WiFi setup while a manual target is connecting", () => {
@@ -90,6 +116,7 @@ describe("DeviceStartupScreen", () => {
         deviceTarget="172.30.0.31"
         onDeviceTargetChange={vi.fn()}
         onManualTarget={vi.fn()}
+        onPair={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -114,6 +141,7 @@ describe("DeviceStartupScreen", () => {
         }}
         onDeviceTargetChange={vi.fn()}
         onManualTarget={vi.fn()}
+        onPair={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,

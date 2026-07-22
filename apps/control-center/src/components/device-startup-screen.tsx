@@ -33,8 +33,10 @@ type Props = {
   onCreateSupportReport?: () => void;
   onDeviceTargetChange?: (target: string) => void;
   onManualTarget?: (target: string) => void;
+  onPair: () => void;
   onSearch: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
+  supportReportBusy?: boolean;
 };
 
 export function DeviceStartupScreen({
@@ -47,8 +49,10 @@ export function DeviceStartupScreen({
   onCreateSupportReport,
   onDeviceTargetChange,
   onManualTarget,
+  onPair,
   onSearch,
   onSelect,
+  supportReportBusy = false,
 }: Props) {
   const selecting = busyAction === "select";
   const manualConnecting = busyAction === "manual-target";
@@ -136,7 +140,7 @@ export function DeviceStartupScreen({
   ) : searchFailed || repairFailed || pairingAttention ? (
     <StartupActions
       busy={Boolean(busyAction)}
-      onSearch={onSearch}
+      onSearch={pairingAttention ? onPair : onSearch}
       searchLabel={pairingAttention ? "Pair again" : "Search again"}
     />
   ) : null;
@@ -177,7 +181,7 @@ export function DeviceStartupScreen({
       footer={
         <SupportReportActions
           align="center"
-          busyAction={busyAction}
+          creating={supportReportBusy}
           diagnostics={diagnostics}
           emphasis="secondary"
           onCreate={onCreateSupportReport}

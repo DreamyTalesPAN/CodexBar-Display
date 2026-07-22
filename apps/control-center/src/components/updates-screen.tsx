@@ -86,6 +86,7 @@ export type UpdatesScreenProps = {
   requiresMacAppMigration?: boolean;
   busyAction?: string | null;
   updateStatus?: FirmwareUpdateStatus | null;
+  supportReportBusy?: boolean;
 };
 
 export function UpdatesScreen({
@@ -101,6 +102,7 @@ export function UpdatesScreen({
   requiresMacAppMigration = false,
   busyAction,
   updateStatus,
+  supportReportBusy = false,
 }: UpdatesScreenProps) {
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   const installedFirmware =
@@ -145,7 +147,7 @@ export function UpdatesScreen({
     ? updateStatus.phase === "installing"
     : busyAction === "firmware-update";
   const installingAnyUpdate = installingUpdate;
-  const creatingReport = busyAction === "diagnostics";
+  const creatingReport = supportReportBusy;
   const macAppCheckFailed =
     macAppRunning &&
     (companionRelease?.status === "check_failed" ||

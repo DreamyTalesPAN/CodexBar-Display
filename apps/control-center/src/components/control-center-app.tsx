@@ -260,6 +260,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [deviceTarget, setDeviceTarget] = useState(readInitialDeviceTarget);
   const [brightness, setBrightness] = useState<number | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
   const [themeInstallStatus, setThemeInstallStatus] =
@@ -298,6 +299,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const didRunAutomaticDeviceSearch = useRef(false);
   const didRunAutoDisplayReload = useRef(false);
   const didRunSetupVerification = useRef(false);
+  const pendingPairingCandidate = useRef<DeviceCandidate | null>(null);
   const lastCompanionRequestAt = useRef(0);
   const statusPollInFlight = useRef(false);
   const runtimeRepairAttempted = useRef(false);
@@ -1279,6 +1281,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setupGeneration === setupGenerationRef.current &&
         searchAttempt === deviceSearchAttemptRef.current;
       setBusyAction("search");
+      pendingPairingCandidate.current = null;
       setDeviceCandidates([]);
       setDeviceSearchState("searching");
       setLastError(null);
@@ -1341,6 +1344,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return;
       }
       const setupGeneration = setupGenerationRef.current;
+      pendingPairingCandidate.current = candidate;
       setBusyAction("select");
       setLastError(null);
       try {
@@ -1360,6 +1364,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         mergeDevice(payload.device);
         setDeviceCandidates([]);
+        pendingPairingCandidate.current = null;
         setDeviceSearchState("idle");
         setDeviceState(payload.device.paired ? "paired" : "online");
         if (payload.device.target) {
@@ -2347,7 +2352,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const loadSupportDiagnostics = useCallback(async () => {
     const setupGeneration = setupGenerationRef.current;
-    setBusyAction("diagnostics");
+    setSupportReportBusy(true);
     try {
       const payload = await collectSupportReport(
         () => runCompanion<SupportDiagnostics>("/v1/diagnostics"),
@@ -2427,9 +2432,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         tone: "attention",
       });
     } finally {
-      if (setupGeneration === setupGenerationRef.current) {
-        setBusyAction(null);
-      }
+      setSupportReportBusy(false);
     }
   }, [
     addEvent,
@@ -2689,6 +2692,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       requiresMacAppMigration={requiresMacAppMigration}
       showIntro={showIntro}
       setupComplete={setupComplete}
+      supportReportBusy={supportReportBusy}
       device={device}
       diagnostics={supportDiagnostics}
       onCheckCompanion={checkCompanion}
@@ -2716,9 +2720,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   if (runtimeSurface === "unknown") {
     return (
       <ControlCenterBootScreen
-        busyAction={busyAction}
         diagnostics={supportDiagnostics}
         onCreateSupportReport={loadSupportDiagnostics}
+        supportReportBusy={supportReportBusy}
       />
     );
   }
@@ -2737,9 +2741,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   if (!initialCompanionCheckComplete) {
     return (
       <ControlCenterBootScreen
-        busyAction={busyAction}
         diagnostics={supportDiagnostics}
         onCreateSupportReport={loadSupportDiagnostics}
+        supportReportBusy={supportReportBusy}
       />
     );
   }
@@ -2782,10 +2786,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           void connectManualTarget(target);
         }}
         onCreateSupportReport={loadSupportDiagnostics}
+        onPair={() => {
+          const candidate = pendingPairingCandidate.current;
+          setLastError(null);
+          void repairConnection({
+            targetOverride: candidate?.target || deviceTarget,
+            expectedDeviceId: candidate?.deviceId,
+            forcePair: true,
+          });
+        }}
         onSearch={() => void searchAndConnect()}
         onSelect={(candidate) => {
           void selectAndConnectDevice(candidate);
         }}
+        supportReportBusy={supportReportBusy}
       />
     );
   }
@@ -2920,6 +2934,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }}
           onInstallUpdate={installFirmwareUpdate}
           requiresMacAppMigration={requiresMacAppMigration}
+          supportReportBusy={supportReportBusy}
           updateStatus={firmwareUpdateStatus}
         />
       ) : null}
@@ -2934,6 +2949,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onLoadDiagnostics={loadSupportDiagnostics}
           onRefresh={checkCompanion}
           onRunSetupAgain={resetSetup}
+          supportReportBusy={supportReportBusy}
         />
       ) : null}
     </ControlCenterShell>
@@ -2973,13 +2989,13 @@ function PairingAttentionDialog({
 }
 
 function ControlCenterBootScreen({
-  busyAction,
   diagnostics,
   onCreateSupportReport,
+  supportReportBusy,
 }: {
-  busyAction?: string | null;
   diagnostics?: SupportDiagnostics | null;
   onCreateSupportReport: () => void;
+  supportReportBusy: boolean;
 }) {
   return (
     <SetupStatusScreen
@@ -2988,7 +3004,7 @@ function ControlCenterBootScreen({
       footer={
         <SupportReportActions
           align="center"
-          busyAction={busyAction}
+          creating={supportReportBusy}
           emphasis="secondary"
           diagnostics={diagnostics}
           onCreate={onCreateSupportReport}

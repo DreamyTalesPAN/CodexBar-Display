@@ -16,7 +16,8 @@ describe("SetupStatusScreen", () => {
     expect(html.match(/role="status"/g)).toHaveLength(1);
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('data-slot="spinner"');
-    expect(html).toContain('data-slot="card"');
+    expect(html).not.toContain('data-slot="card"');
+    expect(html).toContain("bg-background");
     expect(html).toContain('aria-hidden="true"');
     expect(html).toContain('class="sr-only"');
   });

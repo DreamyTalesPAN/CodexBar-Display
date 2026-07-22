@@ -886,8 +886,8 @@ async function testLocalWifiVerificationFailureStaysInSetup(browser, appUrl) {
   });
   const startupScreen = page.getByTestId("device-startup-screen");
   assert(
-    (await startupScreen.locator('[data-slot="card"]').count()) === 1,
-    "Failed startup recovery should use the shadcn card layout",
+    (await startupScreen.locator('[data-slot="card"]').count()) === 0,
+    "Failed startup recovery should use the shared cardless setup layout",
   );
   assert(
     (await startupScreen.locator('[data-slot="alert"]').count()) === 1,
@@ -1378,7 +1378,7 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
   const requests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { connected: false, paired: false },
-    searchDelayMs: 750,
+    searchDelayMs: 3_000,
     searchDevices: [],
     onSearch: (_device, postData) => {
       const target = parseJSON(postData)?.target;
@@ -1427,6 +1427,18 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
     searchStatusPrecedesInput,
     "The automatic-search spinner must appear before manual IP entry",
   );
+  const createReportButton = page.getByRole("button", {
+    name: "Create report",
+  });
+  assert(
+    await createReportButton.isEnabled(),
+    "Support report creation must stay enabled while device search is running",
+  );
+  await createReportButton.click();
+  await page.getByRole("button", { name: "Copy", exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor();
   await page.getByLabel("VibeTV address").fill("172.30.12.34");
   await page.getByRole("button", { name: "Connect VibeTV" }).click();
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
@@ -1581,7 +1593,7 @@ async function testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
   appUrl,
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
-  const repairRequests = [];
+  const deviceWriteRequests = [];
   await routeCompanionOnline(page, [], () => {}, {
     device: { connected: false, paired: false, ready: false },
     searchDevices: [
@@ -1599,9 +1611,17 @@ async function testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
       message: "VibeTV is already paired.",
       nextAction: "Restart VibeTV to reopen pairing.",
     },
-    onRequest: (pathname, method) => {
-      if (pathname === "/v1/device/select" && method === "POST") {
-        repairRequests.push(pathname);
+    onRepair: () => ({
+      ...companionDevice,
+      target: "http://172.30.0.31",
+      deviceId: "14799300",
+    }),
+    onRequest: (pathname, method, body) => {
+      if (
+        method === "POST" &&
+        (pathname === "/v1/device/select" || pathname === "/v1/device/repair")
+      ) {
+        deviceWriteRequests.push({ pathname, body: parseJSON(body) });
       }
     },
   });
@@ -1614,9 +1634,20 @@ async function testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
   await page
     .getByRole("heading", { name: "VibeTV needs to be paired again" })
     .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Pair again" }).click();
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
   assert(
-    repairRequests.length === 1,
-    `A fresh install should pair once after selection, got ${repairRequests.length}`,
+    deviceWriteRequests.length === 2,
+    `Selection and explicit re-pair should write exactly twice, got ${JSON.stringify(deviceWriteRequests)}`,
+  );
+  assert(
+    deviceWriteRequests[1]?.pathname === "/v1/device/repair" &&
+      deviceWriteRequests[1]?.body?.forcePair === true &&
+      deviceWriteRequests[1]?.body?.target === "http://172.30.0.31" &&
+      deviceWriteRequests[1]?.body?.expectedDeviceId === "14799300",
+    `Pair again must force-pair the selected VibeTV, got ${JSON.stringify(deviceWriteRequests[1])}`,
   );
   assert(
     (await page.getByText("Open WiFi settings and join", { exact: false }).count()) ===

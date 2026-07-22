@@ -61,6 +61,7 @@ export type LogsScreenProps = {
   onRefresh?: () => void;
   onRunSetupAgain?: () => void;
   busyAction?: string | null;
+  supportReportBusy?: boolean;
 };
 
 export function LogsScreen({
@@ -72,6 +73,7 @@ export function LogsScreen({
   onRefresh,
   onRunSetupAgain,
   busyAction,
+  supportReportBusy = false,
 }: LogsScreenProps) {
   const deviceConnected = deviceIsReady(device);
 
@@ -141,7 +143,7 @@ export function LogsScreen({
           </CardHeader>
           <CardContent className="flex flex-1 items-center">
             <SupportReportActions
-              busyAction={busyAction}
+              creating={supportReportBusy}
               diagnostics={diagnostics}
               onCreate={onLoadDiagnostics}
             />

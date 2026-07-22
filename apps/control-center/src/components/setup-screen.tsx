@@ -61,6 +61,7 @@ type SetupScreenProps = {
   requiresMacAppMigration?: boolean;
   showIntro?: boolean;
   setupComplete: boolean;
+  supportReportBusy?: boolean;
 };
 
 type StepId = "wifi" | "mac-app" | "finish";
@@ -90,6 +91,7 @@ export function SetupScreen({
   requiresMacAppMigration = false,
   showIntro = true,
   setupComplete,
+  supportReportBusy = false,
 }: SetupScreenProps) {
   const [wifiConfirmedState, setWifiConfirmedState] = useState(false);
   const [dmgDownloadStarted, setDmgDownloadStarted] = useState(false);
@@ -199,7 +201,7 @@ export function SetupScreen({
         />
         <div className="py-6">
           <SupportReportActions
-            busyAction={busyAction}
+            creating={supportReportBusy}
             diagnostics={diagnostics}
             onCreate={onCreateSupportReport}
           />
@@ -346,7 +348,7 @@ export function SetupScreen({
 
         <div className="border-t border-border py-6">
           <SupportReportActions
-            busyAction={busyAction}
+            creating={supportReportBusy}
             diagnostics={diagnostics}
             onCreate={onCreateSupportReport}
           />

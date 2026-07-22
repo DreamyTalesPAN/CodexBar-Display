@@ -16,6 +16,7 @@ import type { ApiError } from "./control-center-types";
 import {
   DEVICE_TARGET_PLACEHOLDER,
   deviceTargetHelpText,
+  formatDeviceTargetInput,
   normalizeManualDeviceTarget,
 } from "./device-target-copy";
 
@@ -90,7 +91,6 @@ export function DeviceTargetForm({
             className="h-12 font-mono text-base"
             disabled={formDisabled}
             id={id}
-            inputMode="decimal"
             onChange={(event) => {
               setValidationError("");
               onChange?.(event.target.value);
@@ -98,7 +98,7 @@ export function DeviceTargetForm({
             placeholder={DEVICE_TARGET_PLACEHOLDER}
             spellCheck={false}
             type="text"
-            value={value}
+            value={formatDeviceTargetInput(value)}
           />
           {validationError ? (
             <FieldError id={`${id}-error`}>
