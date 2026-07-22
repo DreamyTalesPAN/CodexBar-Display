@@ -127,13 +127,6 @@ struct WifiCredentials {
   char password[kWifiPasswordBytes] = {0};
 };
 
-struct WifiConnectAttempt {
-  bool attempted = false;
-  bool connected = false;
-  String ssid;
-  int status = WL_IDLE_STATUS;
-};
-
 struct FirmwareUpdateState {
   bool available = false;
   String latestVersion;
@@ -1079,10 +1072,7 @@ uint32_t incrementBootResetCounter() {
   return counter;
 }
 
-WifiConnectAttempt connectToSavedWifi(const WifiCredentials& creds) {
-  WifiConnectAttempt result;
-  result.attempted = true;
-  result.ssid = creds.ssid;
+bool connectToSavedWifi(const WifiCredentials& creds) {
   Serial.printf("wifi_connect ssid=%s\n", creds.ssid);
   drawWifiConnectingStatus(creds.ssid);
   WiFi.mode(WIFI_STA);
@@ -1094,29 +1084,23 @@ WifiConnectAttempt connectToSavedWifi(const WifiCredentials& creds) {
     Serial.print(".");
   }
   Serial.println();
-  result.status = static_cast<int>(WiFi.status());
-
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("wifi_connect_failed status=%d\n", result.status);
-    return result;
+    Serial.printf("wifi_connect_failed status=%d\n", static_cast<int>(WiFi.status()));
+    return false;
   }
 
   Serial.printf("wifi_connected ssid=%s ip=%s\n", creds.ssid, WiFi.localIP().toString().c_str());
   drawWaitingForCompanionStatus();
-  result.connected = true;
-  return result;
+  return true;
 }
 
-WifiConnectAttempt connectToSdkWifiConfig() {
-  WifiConnectAttempt result;
+bool connectToSdkWifiConfig() {
   WiFi.mode(WIFI_STA);
   const String ssid = WiFi.SSID();
   if (ssid.length() == 0) {
     Serial.println("wifi_sdk_config_missing");
-    return result;
+    return false;
   }
-  result.attempted = true;
-  result.ssid = ssid;
   Serial.printf("wifi_sdk_connect ssid=%s\n", ssid.c_str());
   drawWifiConnectingStatus(ssid);
   WiFi.begin();
@@ -1127,11 +1111,9 @@ WifiConnectAttempt connectToSdkWifiConfig() {
     Serial.print(".");
   }
   Serial.println();
-  result.status = static_cast<int>(WiFi.status());
-
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("wifi_sdk_connect_failed status=%d\n", result.status);
-    return result;
+    Serial.printf("wifi_sdk_connect_failed status=%d\n", static_cast<int>(WiFi.status()));
+    return false;
   }
 
   const String password = WiFi.psk();
@@ -1148,8 +1130,7 @@ WifiConnectAttempt connectToSdkWifiConfig() {
 
   Serial.printf("wifi_connected source=sdk ssid=%s ip=%s\n", ssid.c_str(), WiFi.localIP().toString().c_str());
   drawWaitingForCompanionStatus();
-  result.connected = true;
-  return result;
+  return true;
 }
 
 bool scanSetupNetworks() {
@@ -1162,6 +1143,7 @@ bool scanSetupNetworks() {
   Serial.println("wifi_setup_scan_started");
   int networks = -2;
   WiFi.mode(setupMode ? WIFI_AP_STA : WIFI_STA);
+  WiFi.setAutoReconnect(false);
   WiFi.disconnect(false);
   delay(150);
 
@@ -1181,6 +1163,9 @@ bool scanSetupNetworks() {
   }
   WiFi.scanDelete();
   FinishScan(setupWifiState, networks);
+  if (setupMode) {
+    WiFi.mode(WIFI_AP);
+  }
   Serial.printf(
       "wifi_setup_scan_finished networks=%d visible=%u state=%u\n",
       networks,
@@ -1282,8 +1267,7 @@ void handleSaveWifi() {
   if (ssid.length() >= kWifiSsidBytes || password.length() >= kWifiPasswordBytes) {
     codexbar_display::esp8266::wifi_setup::SetConnectionError(
         setupWifiState,
-        codexbar_display::esp8266::wifi_setup::ConnectionError::InvalidCredentials,
-        ssid);
+        codexbar_display::esp8266::wifi_setup::ConnectionError::InvalidCredentials);
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
         webServer,
         setupWifiState,
@@ -2660,18 +2644,20 @@ void startHttpServer() {
 void startSetupAccessPoint() {
   setupMode = true;
   resetWifiReconnectState();
-  WiFi.mode(WIFI_AP_STA);
+  codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect(false);
+  WiFi.mode(WIFI_AP);
   WiFi.softAP(kSetupApSsid);
   Serial.printf("wifi_setup_ap ssid=VibeTV-Setup ip=%s\n", WiFi.softAPIP().toString().c_str());
-  scanSetupNetworks();
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
   captiveDnsStarted = true;
   Serial.printf("captive_dns_started port=%u ip=%s\n", kDnsPort, WiFi.softAPIP().toString().c_str());
+  startHttpServer();
   const unsigned long renderStartUs = micros();
   renderer.DrawSetupInstructions(runtimeCtx, kSetupApSsid, WiFi.softAPIP().toString());
   recordRenderFull("setup", micros() - renderStartUs);
   waitStatusRendered = true;
-  startHttpServer();
 }
 
 void maintainWifiConnection() {
@@ -2722,14 +2708,6 @@ void maintainWifiConnection() {
 
   if ((nowMs - wifiDisconnectedAtMs) >= kWifiReconnectFallbackMs) {
     Serial.println("wifi_reconnect_failed action=setup_ap");
-    const unsigned long renderStartUs = micros();
-    renderer.DrawStatus(runtimeCtx, "VIBE TV SETUP", "WiFi unavailable", "Starting setup");
-    recordRenderFull("status", micros() - renderStartUs);
-    delay(750);
-    codexbar_display::esp8266::wifi_setup::SetConnectionError(
-        setupWifiState,
-        codexbar_display::esp8266::wifi_setup::ConnectionError::ConnectionFailed,
-        WiFi.SSID());
     startSetupAccessPoint();
   }
 }
@@ -2816,37 +2794,23 @@ void setup() {
   Serial.println("codexbar_display_ready_display");
 #endif
 
-  WifiConnectAttempt failedAttempt;
   bool wifiConnected = false;
   WifiCredentials creds;
-  if (readWifiCredentials(creds)) {
-    const WifiConnectAttempt savedAttempt = connectToSavedWifi(creds);
-    wifiConnected = savedAttempt.connected;
-    if (savedAttempt.attempted && !savedAttempt.connected) {
-      failedAttempt = savedAttempt;
-    }
+  const bool hasSavedWifi = readWifiCredentials(creds);
+  if (hasSavedWifi) {
+    wifiConnected = connectToSavedWifi(creds);
   }
 
   // SDK credentials are a one-time legacy import only. Never let stale SDK
   // credentials replace a failed explicit VibeTV Wi-Fi configuration.
-  if (!wifiConnected && !failedAttempt.attempted) {
-    const WifiConnectAttempt sdkAttempt = connectToSdkWifiConfig();
-    wifiConnected = sdkAttempt.connected;
-    if (sdkAttempt.attempted && !sdkAttempt.connected) {
-      failedAttempt = sdkAttempt;
-    }
+  if (!wifiConnected && !hasSavedWifi) {
+    wifiConnected = connectToSdkWifiConfig();
   }
 
   if (wifiConnected) {
     setupMode = false;
     startHttpServer();
   } else {
-    if (failedAttempt.attempted) {
-      codexbar_display::esp8266::wifi_setup::SetConnectionError(
-          setupWifiState,
-          codexbar_display::esp8266::wifi_setup::ConnectionErrorFromWifiStatus(failedAttempt.status),
-          failedAttempt.ssid);
-    }
     startSetupAccessPoint();
   }
 }

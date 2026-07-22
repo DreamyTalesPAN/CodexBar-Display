@@ -54,21 +54,6 @@ void test_signal_labels_use_traffic_lights() {
   TEST_ASSERT_EQUAL_STRING("🔴", SignalLabel(-76));
 }
 
-void test_wifi_statuses_map_to_retryable_errors() {
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(ConnectionError::WrongPassword),
-      static_cast<int>(ConnectionErrorFromWifiStatus(WL_WRONG_PASSWORD)));
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(ConnectionError::WrongPassword),
-      static_cast<int>(ConnectionErrorFromWifiStatus(WL_CONNECT_FAILED)));
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(ConnectionError::NetworkNotFound),
-      static_cast<int>(ConnectionErrorFromWifiStatus(WL_NO_SSID_AVAIL)));
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(ConnectionError::ConnectionFailed),
-      static_cast<int>(ConnectionErrorFromWifiStatus(WL_IDLE_STATUS)));
-}
-
 void test_options_escape_ssids_and_stay_inside_budget() {
   State state;
   TEST_ASSERT_TRUE(BeginScan(state));
@@ -92,7 +77,7 @@ void test_page_uses_inline_band_guidance_and_links_to_public_support() {
   TEST_ASSERT_TRUE(BeginScan(state));
   TEST_ASSERT_TRUE(AddScanResult(state, "Home", -45, 6));
   FinishScan(state, 1);
-  SetConnectionError(state, ConnectionError::WrongPassword, "Home");
+  SetConnectionError(state, ConnectionError::InvalidCredentials);
 
   ESP8266WebServer server;
   SendSetupPage(server, state, kSupportUrl, "192.168.4.1");
@@ -113,7 +98,7 @@ void test_page_uses_inline_band_guidance_and_links_to_public_support() {
   TEST_ASSERT_FALSE(contains(server.output, "support-note"));
   TEST_ASSERT_FALSE(contains(server.output, "Close this setup window and disconnect from VibeTV-Setup."));
   TEST_ASSERT_FALSE(contains(server.output, "My Wi-Fi isn't shown"));
-  TEST_ASSERT_TRUE(contains(server.output, "Check the password and try again."));
+  TEST_ASSERT_TRUE(contains(server.output, "The Wi-Fi name or password is too long."));
   TEST_ASSERT_FALSE(contains(server.output, "Smart Connect"));
   TEST_ASSERT_FALSE(contains(server.output, "Band Steering"));
   TEST_ASSERT_FALSE(contains(server.output, "5 GHz"));
@@ -132,19 +117,6 @@ void test_page_publishes_no_placeholder_without_support_url() {
   TEST_ASSERT_TRUE(contains(server.output, "No networks found."));
   TEST_ASSERT_FALSE(contains(server.output, "Troubleshooting:"));
   TEST_ASSERT_FALSE(contains(server.output, "href=\"\""));
-}
-
-void test_generic_reconnect_error_does_not_render_an_empty_ssid() {
-  State state;
-  BeginScan(state);
-  FinishScan(state, 0);
-  SetConnectionError(state, ConnectionError::ConnectionFailed);
-
-  ESP8266WebServer server;
-  SendSetupPage(server, state, nullptr, "192.168.4.1");
-
-  TEST_ASSERT_TRUE(contains(server.output, "Could not reconnect to Wi-Fi."));
-  TEST_ASSERT_FALSE(contains(server.output, "<strong></strong>"));
 }
 
 void test_automatic_setup_ap_renders_normal_writable_setup_page() {
@@ -171,6 +143,22 @@ void test_automatic_setup_ap_renders_normal_writable_setup_page() {
   TEST_ASSERT_FALSE(contains(server.output, "three interrupted early boots"));
 }
 
+void test_clean_automatic_fallback_does_not_render_or_prefill_old_ssid() {
+  State freshState;
+  State fallbackState;
+
+  ESP8266WebServer freshServer;
+  ESP8266WebServer fallbackServer;
+  SendSetupPage(freshServer, freshState, kSupportUrl, "192.168.4.1");
+  SendSetupPage(fallbackServer, fallbackState, kSupportUrl, "192.168.4.1");
+
+  TEST_ASSERT_EQUAL_STRING(freshServer.output.c_str(), fallbackServer.output.c_str());
+  TEST_ASSERT_FALSE(contains(fallbackServer.output, "Could not find"));
+  TEST_ASSERT_TRUE(contains(fallbackServer.output, "id=\"custom_ssid\" name=\"custom_ssid\""));
+  TEST_ASSERT_FALSE(contains(fallbackServer.output, "name=\"custom_ssid\" value="));
+  TEST_ASSERT_TRUE(contains(fallbackServer.output, "Search again"));
+}
+
 }  // namespace
 
 void setUp() {}
@@ -194,11 +182,10 @@ int main(int, char**) {
   RUN_TEST(test_scan_filters_deduplicates_and_sorts);
   RUN_TEST(test_scan_keeps_only_ten_strongest_networks);
   RUN_TEST(test_signal_labels_use_traffic_lights);
-  RUN_TEST(test_wifi_statuses_map_to_retryable_errors);
   RUN_TEST(test_options_escape_ssids_and_stay_inside_budget);
   RUN_TEST(test_page_uses_inline_band_guidance_and_links_to_public_support);
   RUN_TEST(test_page_publishes_no_placeholder_without_support_url);
-  RUN_TEST(test_generic_reconnect_error_does_not_render_an_empty_ssid);
   RUN_TEST(test_automatic_setup_ap_renders_normal_writable_setup_page);
+  RUN_TEST(test_clean_automatic_fallback_does_not_render_or_prefill_old_ssid);
   return UNITY_END();
 }

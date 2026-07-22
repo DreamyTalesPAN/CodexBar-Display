@@ -48,18 +48,6 @@ void sortNetworks(State& state) {
   }
 }
 
-bool containsSsid(const State& state, const char* ssid) {
-  if (ssid == nullptr || ssid[0] == '\0') {
-    return false;
-  }
-  for (uint8_t i = 0; i < state.networkCount; ++i) {
-    if (strcmp(state.networks[i].ssid, ssid) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
 void sendDynamic(ESP8266WebServer& server, const String& content) {
   if (content.length() > 0) {
     server.sendContent(content);
@@ -80,25 +68,6 @@ String connectionErrorHTML(const State& state) {
       break;
     case ConnectionError::InvalidCredentials:
       html += F("The Wi-Fi name or password is too long.");
-      break;
-    case ConnectionError::WrongPassword:
-      html += F("Could not connect to <strong>");
-      html += HtmlEscape(String(state.attemptedSsid));
-      html += F("</strong>. Check the password and try again.");
-      break;
-    case ConnectionError::NetworkNotFound:
-      html += F("Could not find <strong>");
-      html += HtmlEscape(String(state.attemptedSsid));
-      html += F("</strong>. Search again or enter the Wi-Fi name manually.");
-      break;
-    case ConnectionError::ConnectionFailed:
-      if (state.attemptedSsid[0] == '\0') {
-        html += F("Could not reconnect to Wi-Fi. Search again or enter the Wi-Fi name manually.");
-      } else {
-        html += F("Could not connect to <strong>");
-        html += HtmlEscape(String(state.attemptedSsid));
-        html += F("</strong>. Check the password or signal and try again.");
-      }
       break;
     case ConnectionError::None:
       break;
@@ -184,26 +153,12 @@ const char* SignalLabel(int32_t rssi) {
   return "🔴";
 }
 
-ConnectionError ConnectionErrorFromWifiStatus(int status) {
-  switch (status) {
-    case WL_WRONG_PASSWORD:
-    case WL_CONNECT_FAILED:
-      return ConnectionError::WrongPassword;
-    case WL_NO_SSID_AVAIL:
-      return ConnectionError::NetworkNotFound;
-    default:
-      return ConnectionError::ConnectionFailed;
-  }
-}
-
-void SetConnectionError(State& state, ConnectionError error, const String& attemptedSsid) {
+void SetConnectionError(State& state, ConnectionError error) {
   state.connectionError = error;
-  copySsid(state.attemptedSsid, attemptedSsid);
 }
 
 void ClearConnectionError(State& state) {
   state.connectionError = ConnectionError::None;
-  state.attemptedSsid[0] = '\0';
 }
 
 String HtmlEscape(const String& raw) {
@@ -232,9 +187,6 @@ String BuildNetworkOptionsHTML(const State& state) {
     option += F("<option value=\"");
     option += escapedSsid;
     option += '"';
-    if (state.attemptedSsid[0] != '\0' && strcmp(state.attemptedSsid, state.networks[i].ssid) == 0) {
-      option += F(" selected");
-    }
     option += '>';
     option += escapedSsid;
     option += F(" — ");
@@ -267,15 +219,6 @@ void SendSetupPage(
   server.sendContent_P(kFieldsStart);
   sendDynamic(server, BuildNetworkOptionsHTML(state));
   server.sendContent_P(kFieldsManual);
-
-  if (state.attemptedSsid[0] != '\0' && !containsSsid(state, state.attemptedSsid)) {
-    String value;
-    value.reserve(strlen(state.attemptedSsid) + 18);
-    value += F(" value=\"");
-    value += HtmlEscape(String(state.attemptedSsid));
-    value += '"';
-    sendDynamic(server, value);
-  }
   server.sendContent_P(kFieldsPassword);
   server.sendContent_P(kScanForm);
 

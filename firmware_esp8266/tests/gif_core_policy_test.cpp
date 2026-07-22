@@ -318,7 +318,7 @@ bool testFirstSetupPairingWindowIsThirtyMinutesAndOneUse(const char* mainPath) {
   const std::size_t unpairedSetup = mainSource.find(
       "!deviceAuthConfigured() || physicalPairingWindowOpen()",
       saveHandler);
-  const std::size_t sdkImport = mainSource.find("WifiConnectAttempt connectToSdkWifiConfig()");
+  const std::size_t sdkImport = mainSource.find("bool connectToSdkWifiConfig()");
   const std::size_t sdkFirstPairing = mainSource.find(
       "const bool firstPairing = !deviceAuthConfigured()",
       sdkImport);
@@ -354,6 +354,75 @@ bool testEverySetupAccessPointUsesWritableSetupPage(const char* mainPath) {
       "fresh setup and WiFi-failure setup must use the same writable setup page");
 }
 
+bool testSetupPortalIsReadyBeforeJoinInstructions(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t start = mainSource.find("void startSetupAccessPoint()");
+  const std::size_t end = mainSource.find("void maintainWifiConnection()", start);
+  if (start == std::string::npos || end == std::string::npos) {
+    return false;
+  }
+  const std::string body = mainSource.substr(start, end - start);
+  const std::size_t clearError = body.find("ClearConnectionError(setupWifiState)");
+  const std::size_t stopReconnect = body.find("WiFi.setAutoReconnect(false)");
+  const std::size_t disconnect = body.find("WiFi.disconnect(false)");
+  const std::size_t apOnly = body.find("WiFi.mode(WIFI_AP)");
+  const std::size_t accessPoint = body.find("WiFi.softAP(kSetupApSsid)");
+  const std::size_t dns = body.find("dnsServer.start(");
+  const std::size_t http = body.find("startHttpServer()");
+  const std::size_t joinInstructions = body.find("renderer.DrawSetupInstructions(");
+  return expect(
+      clearError < stopReconnect && stopReconnect < disconnect && disconnect < apOnly &&
+          apOnly < accessPoint && accessPoint < dns && dns < http &&
+          http < joinInstructions && body.find("scanSetupNetworks()") == std::string::npos,
+      "setup display may invite joining only after the old STA attempt is stopped and AP, DNS, and HTTP are ready");
+}
+
+bool testCaptiveFirstResponseNeverBlocksOnWifiScan(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t rootStart = mainSource.find("void handleRoot()");
+  const std::size_t rootEnd = mainSource.find("void redirectToSetupRoot()", rootStart);
+  const std::size_t probeStart = mainSource.find("void handleCaptivePortalProbe()");
+  const std::size_t probeEnd = mainSource.find("void handleSaveWifi()", probeStart);
+  const std::size_t scanStart = mainSource.find("void handleSetupWifiScan()");
+  const std::size_t scanEnd = mainSource.find("void handleResetWifi()", scanStart);
+  if (rootStart == std::string::npos || rootEnd == std::string::npos ||
+      probeStart == std::string::npos || probeEnd == std::string::npos ||
+      scanStart == std::string::npos || scanEnd == std::string::npos) {
+    return false;
+  }
+  const std::string root = mainSource.substr(rootStart, rootEnd - rootStart);
+  const std::string probe = mainSource.substr(probeStart, probeEnd - probeStart);
+  const std::string scan = mainSource.substr(scanStart, scanEnd - scanStart);
+  return expect(
+      root.find("SendSetupPage(") != std::string::npos &&
+          probe.find("SendSetupPage(") != std::string::npos &&
+          root.find("scanSetupNetworks()") == std::string::npos &&
+          probe.find("scanSetupNetworks()") == std::string::npos &&
+          scan.find("scanSetupNetworks()") != std::string::npos,
+      "iOS and other captive probes must get the normal setup form without a blocking scan; only Search again scans");
+}
+
+bool testAutomaticWifiFallbackNeverCarriesTheFailedSsid(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t setupStart = mainSource.find("void setup()");
+  const std::size_t setupEnd = mainSource.find("void loop()", setupStart);
+  const std::size_t maintainStart = mainSource.find("void maintainWifiConnection()");
+  const std::size_t maintainEnd = mainSource.find("#ifdef CODEXBAR_DISPLAY_RUNTIME_BENCH", maintainStart);
+  if (setupStart == std::string::npos || setupEnd == std::string::npos ||
+      maintainStart == std::string::npos || maintainEnd == std::string::npos) {
+    return false;
+  }
+  const std::string setup = mainSource.substr(setupStart, setupEnd - setupStart);
+  const std::string maintain = mainSource.substr(maintainStart, maintainEnd - maintainStart);
+  return expect(
+      setup.find("startSetupAccessPoint()") != std::string::npos &&
+          maintain.find("startSetupAccessPoint()") != std::string::npos &&
+          setup.find("SetConnectionError(") == std::string::npos &&
+          maintain.find("SetConnectionError(") == std::string::npos &&
+          maintain.find("WiFi.SSID()") == std::string::npos,
+      "automatic setup fallback must not show or prefill the failed SSID");
+}
+
 bool testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t handler = mainSource.find("void handleSaveWifi()");
@@ -365,7 +434,7 @@ bool testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(const char* m
       "webServer.send(200, \"text/html; charset=utf-8\"",
       handler);
   const std::size_t legacyImportGate = mainSource.find(
-      "if (!wifiConnected && !failedAttempt.attempted)");
+      "if (!wifiConnected && !hasSavedWifi)");
   if (handler == std::string::npos || handlerEnd == std::string::npos) {
     return false;
   }
@@ -899,6 +968,15 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testEverySetupAccessPointUsesWritableSetupPage(argv[3])) {
+    return 1;
+  }
+  if (!testSetupPortalIsReadyBeforeJoinInstructions(argv[3])) {
+    return 1;
+  }
+  if (!testCaptiveFirstResponseNeverBlocksOnWifiScan(argv[3])) {
+    return 1;
+  }
+  if (!testAutomaticWifiFallbackNeverCarriesTheFailedSsid(argv[3])) {
     return 1;
   }
   if (!testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(argv[3])) {

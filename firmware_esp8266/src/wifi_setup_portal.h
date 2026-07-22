@@ -24,9 +24,6 @@ enum class ConnectionError : uint8_t {
   None,
   MissingSsid,
   InvalidCredentials,
-  WrongPassword,
-  NetworkNotFound,
-  ConnectionFailed,
 };
 
 struct Network {
@@ -40,7 +37,6 @@ struct State {
   ScanStatus scanStatus = ScanStatus::NotStarted;
   bool scanInProgress = false;
   ConnectionError connectionError = ConnectionError::None;
-  char attemptedSsid[kMaxSsidBytes] = {0};
 };
 
 bool BeginScan(State& state);
@@ -48,8 +44,7 @@ bool AddScanResult(State& state, const String& ssid, int32_t rssi, int32_t chann
 void FinishScan(State& state, int rawNetworkCount);
 const char* SignalLabel(int32_t rssi);
 
-ConnectionError ConnectionErrorFromWifiStatus(int status);
-void SetConnectionError(State& state, ConnectionError error, const String& attemptedSsid = String());
+void SetConnectionError(State& state, ConnectionError error);
 void ClearConnectionError(State& state);
 
 String HtmlEscape(const String& raw);
