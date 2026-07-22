@@ -76,6 +76,53 @@ func TestRawFirmwareBodyWriterWaitsForBodyBlockAcks(t *testing.T) {
 	}
 }
 
+func TestFirmwareRawWritePauseKeepsLegacyReceiverPacing(t *testing.T) {
+	tests := []struct {
+		firmware string
+		want     time.Duration
+	}{
+		{firmware: "1.0.36", want: otaRawWritePause},
+		{firmware: "1.0.37", want: 0},
+		{firmware: "1.0.37-dev.90d0575", want: 0},
+		{firmware: "1.0.38", want: 0},
+		{firmware: "invalid", want: otaRawWritePause},
+	}
+	for _, test := range tests {
+		if got := firmwareRawWritePause(test.firmware); got != test.want {
+			t.Fatalf("firmware %q write pause = %s, want %s", test.firmware, got, test.want)
+		}
+	}
+}
+
+func TestWaitForHTTPFirmwareVersionBoundsHungProbe(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousProbeTimeout := firmwareHTTPVerifyProbeTimeout
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareHTTPVerifyProbeTimeout = previousProbeTimeout
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareHTTPVerifyProbeTimeout = 20 * time.Millisecond
+
+	startedAt := time.Now()
+	err := waitForHTTPFirmwareVersion(context.Background(), server.URL, "1.0.99", 75*time.Millisecond)
+	elapsed := time.Since(startedAt)
+	if err == nil {
+		t.Fatal("expected firmware verification timeout")
+	}
+	if elapsed > 250*time.Millisecond {
+		t.Fatalf("hung firmware probe exceeded bounded verification time: %s", elapsed)
+	}
+}
+
 func TestUploadFirmwareOTARawEarlyUnauthorizedSocketCloseIsUnsafe(t *testing.T) {
 	previousDial := firmwareRawDialContextFn
 	t.Cleanup(func() {
@@ -129,7 +176,7 @@ func TestUploadFirmwareOTARawEarlyUnauthorizedSocketCloseIsUnsafe(t *testing.T) 
 		t.Fatalf("write firmware fixture: %v", err)
 	}
 
-	err = uploadFirmwareOTARaw(context.Background(), "http://127.0.0.1", imagePath, "stale-token")
+	err = uploadFirmwareOTARaw(context.Background(), "http://127.0.0.1", imagePath, "stale-token", "1.0.37")
 	if err == nil {
 		t.Fatal("expected early unauthorized socket close to fail")
 	}
@@ -789,7 +836,7 @@ func TestRunInstallUpdateAlreadyCurrentSkipsOTAUpload(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	uploads := 0
-	uploadFirmwareOTAFn = func(context.Context, string, string, string) error {
+	uploadFirmwareOTAFn = func(context.Context, string, string, string, string) error {
 		uploads++
 		return nil
 	}
@@ -895,12 +942,15 @@ func TestRunInstallUpdateRediscoverAfterFirmwareRebootIPChange(t *testing.T) {
 	}
 
 	releaseHTTPClient = oldServer.Client()
-	uploadFirmwareOTAFn = func(_ context.Context, base string, _ string, token string) error {
+	uploadFirmwareOTAFn = func(_ context.Context, base string, _ string, token, currentFirmware string) error {
 		if base != oldServer.URL {
 			t.Fatalf("expected OTA upload to use old target %q, got %q", oldServer.URL, base)
 		}
 		if token != "pair-token" {
 			t.Fatalf("expected stored token, got %q", token)
+		}
+		if currentFirmware != "1.0.0" {
+			t.Fatalf("expected current firmware 1.0.0, got %q", currentFirmware)
 		}
 		oldOffline = true
 		return nil
@@ -1366,7 +1416,7 @@ func TestRunInstallUpdateRepairsStaleDeviceTokenBeforeOTA(t *testing.T) {
 	releaseHTTPClient = server.Client()
 
 	var uploadTokens []string
-	uploadFirmwareOTAFn = func(_ context.Context, _ string, _ string, token string) error {
+	uploadFirmwareOTAFn = func(_ context.Context, _ string, _ string, token, _ string) error {
 		uploadTokens = append(uploadTokens, token)
 		if token != "fresh-token" {
 			t.Fatalf("unexpected upload token %q", token)
@@ -1455,7 +1505,7 @@ func TestRunInstallUpdateStopsBeforeOTAOnNonAuthPreflightError(t *testing.T) {
 	releaseHTTPClient = server.Client()
 
 	uploadCalls := 0
-	uploadFirmwareOTAFn = func(context.Context, string, string, string) error {
+	uploadFirmwareOTAFn = func(context.Context, string, string, string, string) error {
 		uploadCalls++
 		return nil
 	}
@@ -1544,7 +1594,7 @@ func TestRunInstallUpdatePausesLaunchAgentDuringOTAAndRestarts(t *testing.T) {
 		}
 		return nil
 	}
-	uploadFirmwareOTAFn = func(_ context.Context, _ string, _ string, token string) error {
+	uploadFirmwareOTAFn = func(_ context.Context, _ string, _ string, token, _ string) error {
 		if stopCalls != 1 {
 			t.Fatalf("expected launch agent to be stopped before OTA, got %d stop calls", stopCalls)
 		}
@@ -1625,7 +1675,7 @@ func TestRunInstallUpdateCanSkipLaunchAgentPauseForLocalAPI(t *testing.T) {
 		restartCalls++
 		return nil
 	}
-	uploadFirmwareOTAFn = func(_ context.Context, _ string, _ string, token string) error {
+	uploadFirmwareOTAFn = func(_ context.Context, _ string, _ string, token, _ string) error {
 		if stopCalls != 0 {
 			t.Fatalf("local API update must not stop launch agent, got %d stop calls", stopCalls)
 		}

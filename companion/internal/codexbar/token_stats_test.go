@@ -2,6 +2,9 @@ package codexbar
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -74,6 +77,9 @@ func TestParseProviderTokenStats(t *testing.T) {
 func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
 	resetTokenStatsTestGlobals()
 	defer resetTokenStatsTestGlobals()
+	loadProviderTokenStatsCacheFn = func(time.Time) (map[string]ProviderTokenStats, bool) {
+		return nil, false
+	}
 
 	runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 		return []byte(`[
@@ -139,7 +145,96 @@ func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
 	}
 }
 
+func TestLoadProviderTokenStatsFromCostCache(t *testing.T) {
+	cacheRoot := t.TempDir()
+	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
+	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v10.json"), `{
+		"version":1,
+		"lastScanUnixMs":1784743200000,
+		"days":{
+			"2026-07-21":{"gpt-5.5":[10,20,30]},
+			"2026-07-22":{"gpt-5.6-sol":[100,200,300]}
+		}
+	}`)
+	writeCostCacheFixture(t, filepath.Join(cacheRoot, "claude-v5.json"), `{
+		"version":1,
+		"lastScanUnixMs":1784743200000,
+		"days":{"2026-07-22":{"claude-sonnet-4-6":[10,20,30,40,0,1,1,0]}}
+	}`)
+
+	stats, ok := loadProviderTokenStatsFromCostCacheAt(cacheRoot, now)
+	if !ok {
+		t.Fatal("expected cached token stats")
+	}
+	codex := stats["codex"]
+	if codex.SessionTokens != 600 || codex.WeekTokens != 660 || codex.TotalTokens != 660 {
+		t.Fatalf("unexpected cached Codex totals: %+v", codex)
+	}
+	if codex.Cost == nil || len(codex.Cost.Daily) != 2 || codex.Cost.TopModel != "gpt-5.6-sol" {
+		t.Fatalf("unexpected cached Codex history: %+v", codex.Cost)
+	}
+	claude := stats["claude"]
+	if claude.SessionTokens != 100 || claude.TotalTokens != 100 {
+		t.Fatalf("unexpected cached Claude totals: %+v", claude)
+	}
+}
+
+func TestFetchProviderTokenStatsRepairsTimedOutCostScanInBackground(t *testing.T) {
+	resetTokenStatsTestGlobals()
+	defer resetTokenStatsTestGlobals()
+
+	var cacheLoads atomic.Int32
+	loadProviderTokenStatsCacheFn = func(time.Time) (map[string]ProviderTokenStats, bool) {
+		if cacheLoads.Add(1) == 1 {
+			return nil, false
+		}
+		return map[string]ProviderTokenStats{
+			"codex": {TotalTokens: 100, Cost: &ProviderCostUsage{Last30DaysTokens: 100}},
+		}, true
+	}
+	backgroundStarted := make(chan struct{})
+	var calls atomic.Int32
+	runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		if calls.Add(1) == 1 {
+			return nil, context.DeadlineExceeded
+		}
+		close(backgroundStarted)
+		return []byte(`[{"provider":"codex","updatedAt":"2026-07-22T18:00:00Z","last30DaysTokens":900,"daily":[{"date":"2026-07-22","totalTokens":900}],"totals":{"totalTokens":900}}]`), nil
+	}
+
+	stats, ok := fetchProviderTokenStats(context.Background(), "/tmp/CodexBarCLI")
+	if !ok || stats["codex"].TotalTokens != 100 {
+		t.Fatalf("expected immediate disk-cache fallback, got %#v", stats)
+	}
+	select {
+	case <-backgroundStarted:
+	case <-time.After(time.Second):
+		t.Fatal("expected background cost repair to start")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if repaired, ok := tokenStatsCache.loadFresh(time.Now().UTC()); ok && repaired["codex"].TotalTokens == 900 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("expected background cost repair to replace cached history")
+}
+
+func writeCostCacheFixture(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write cost cache fixture: %v", err)
+	}
+}
+
 func resetTokenStatsTestGlobals() {
 	runCostCommandFn = runUsageCommand
+	loadProviderTokenStatsCacheFn = loadProviderTokenStatsFromCostCache
 	tokenStatsCache = providerTokenStatsCache{}
+	tokenStatsRepair.Lock()
+	tokenStatsRepair.running = false
+	tokenStatsRepair.nextAttempt = time.Time{}
+	tokenStatsRepair.Unlock()
 }

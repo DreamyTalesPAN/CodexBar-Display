@@ -11,8 +11,10 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -87,6 +89,7 @@ export function UsageScreen({
   companionStatus,
   usage,
   usageError,
+  onRefresh,
   preferences,
   preferencesError,
   pendingPreferenceIds,
@@ -107,7 +110,11 @@ export function UsageScreen({
         ) : null}
 
         {hasProviders ? (
-          <TokenUsageOverTimePanel providers={providers} />
+          <TokenUsageOverTimePanel
+            onRefresh={onRefresh}
+            providers={providers}
+            refreshing={refreshing}
+          />
         ) : null}
 
         {hasProviders ? (
@@ -332,9 +339,13 @@ function healthBadgeVariant(state: string): "default" | "secondary" | "destructi
 }
 
 function TokenUsageOverTimePanel({
+  onRefresh,
   providers,
+  refreshing,
 }: {
+  onRefresh?: () => void;
   providers: UsageProviderInfo[];
+  refreshing: boolean;
 }) {
   const currentProviderHistories = getProviderTokenHistories(providers);
   const hasCurrentData = currentProviderHistories.length > 0;
@@ -374,6 +385,24 @@ function TokenUsageOverTimePanel({
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Tokens used over time</CardTitle>
+          <CardAction>
+            <Button
+              aria-busy={refreshing}
+              aria-label="Refresh token usage"
+              disabled={refreshing || !onRefresh}
+              onClick={() => onRefresh?.()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {refreshing ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <RefreshCw data-icon="inline-start" aria-hidden />
+              )}
+              {refreshing ? "Refreshing" : "Refresh"}
+            </Button>
+          </CardAction>
         </CardHeader>
 
         <CardContent>
