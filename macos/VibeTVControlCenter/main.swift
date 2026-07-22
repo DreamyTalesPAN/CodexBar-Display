@@ -148,6 +148,10 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     return nil
 }
 
+func shouldHandleWebViewDownload(url: URL, requestedByWebContent: Bool) -> Bool {
+    requestedByWebContent && url.scheme?.lowercased() == "blob"
+}
+
 func isApprovedDMGDownloadURL(_ url: URL) -> Bool {
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
           components.scheme?.lowercased() == "https",
@@ -3327,11 +3331,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
 
-        if navigationAction.shouldPerformDownload {
-            decisionHandler(.download)
-            return
-        }
-
         if let action = nativeControlCenterAction(for: url) {
             decisionHandler(.cancel)
             switch action {
@@ -3344,6 +3343,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             case .repairCodexBar:
                 beginCodexBarRepair()
             }
+            return
+        }
+
+        if shouldHandleWebViewDownload(
+            url: url,
+            requestedByWebContent: navigationAction.shouldPerformDownload
+        ) {
+            decisionHandler(.download)
             return
         }
 
@@ -3393,24 +3400,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 completionHandler(nil)
                 return
             }
-            do {
-                if FileManager.default.fileExists(atPath: destination.path) {
-                    try FileManager.default.removeItem(at: destination)
-                }
-                completionHandler(destination)
-            } catch {
+            guard !FileManager.default.fileExists(atPath: destination.path) else {
                 self?.presentSupportReportError(
-                    title: "Download could not be saved",
-                    detail: (error as NSError).localizedDescription
+                    title: "A file with this name already exists",
+                    detail: "Choose a different filename to keep the existing file."
                 )
                 completionHandler(nil)
+                return
             }
+            completionHandler(destination)
         }
         if let window {
             panel.beginSheetModal(for: window, completionHandler: finish)
         } else {
             finish(panel.runModal())
         }
+    }
+
+    func download(
+        _ download: WKDownload,
+        didFailWithError error: Error,
+        resumeData: Data?
+    ) {
+        let error = error as NSError
+        guard error.domain != NSURLErrorDomain || error.code != NSURLErrorCancelled else {
+            return
+        }
+        presentSupportReportError(
+            title: "Download failed",
+            detail: error.localizedDescription
+        )
     }
 
     func webView(
