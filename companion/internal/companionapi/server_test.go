@@ -1235,8 +1235,12 @@ func TestDeviceSelectFailureRestoresPreviousActiveDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(cfg, initial) {
-		t.Fatalf("failed selection did not restore config: got=%+v want=%+v", cfg, initial)
+	if cfg.DeviceID != initial.DeviceID || cfg.DeviceTarget != initial.DeviceTarget || cfg.DeviceToken != initial.DeviceToken {
+		t.Fatalf("failed selection changed the active device: got=%+v want=%+v", cfg, initial)
+	}
+	known, ok := cfg.KnownDevice(deviceID)
+	if !ok || known.Target != device.URL || known.DeviceToken != "token-b" {
+		t.Fatalf("failed selection lost the issued pairing token: %+v", cfg.KnownDevices)
 	}
 	if !restoredStream.Load() {
 		t.Fatal("previous display stream was not restored")
@@ -5990,6 +5994,17 @@ func TestDevicePairReturnsErrorWhenDisplayStreamCannotStart(t *testing.T) {
 	if got.OK || got.Error.Code != "display_stream_repair_failed" || got.Error.NextAction == "" {
 		t.Fatalf("unexpected display stream error: %+v", got)
 	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	known, ok := cfg.KnownDevice("pairable-device")
+	if !ok || known.Target != device.URL || known.DeviceToken != "pair-token" {
+		t.Fatalf("display stream failure lost the issued pairing token: %+v", cfg.KnownDevices)
+	}
+	if cfg.DeviceID != "pairable-device" || cfg.DeviceTarget != device.URL || cfg.DeviceToken != "pair-token" {
+		t.Fatalf("display stream failure rolled back successful pairing: %+v", cfg)
+	}
 }
 
 func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
@@ -7465,7 +7480,7 @@ func newPairableDeviceServer(t *testing.T) *httptest.Server {
 				t.Fatalf("expected pairing token for hello, got %q", got)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","capabilities":{"transport":{"active":"wifi"}}}`))
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","deviceId":"pairable-device","capabilities":{"transport":{"active":"wifi"}}}`))
 		case "/api/pair":
 			if r.Method != http.MethodPost {
 				t.Fatalf("expected POST pair, got %s", r.Method)

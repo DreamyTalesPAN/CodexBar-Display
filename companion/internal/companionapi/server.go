@@ -2664,6 +2664,7 @@ func (s *Server) selectDevice(
 			)
 		}
 		selected.DeviceToken = token
+		previous.RememberDevice(selected)
 	}
 	baseline, err := s.captureDisplayRenderBaseline(ctx, target, selected.DeviceToken)
 	if err != nil {
@@ -2774,6 +2775,11 @@ func (s *Server) repairDeviceOnceLocked(
 	if err != nil {
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
 	}
+	if known, ok := cfg.KnownDevice(expectedDeviceID); ok {
+		cfg.DeviceID = known.DeviceID
+		cfg.DeviceTarget = known.Target
+		cfg.DeviceToken = known.DeviceToken
+	}
 	discoveryCfg := cfg
 	if forcePair {
 		discoveryCfg.DeviceToken = ""
@@ -2812,6 +2818,15 @@ func (s *Server) repairDeviceOnceLocked(
 		token, err = s.pair(ctx, target, token)
 		if err != nil {
 			return deviceInfo{}, &repairStageError{stage: "pair", err: err}
+		}
+		if _, err = s.updateConfig(func(current *runtimeconfig.Config) {
+			current.SetActiveDevice(runtimeconfig.KnownDevice{
+				DeviceID:    strings.TrimSpace(hello.DeviceID),
+				Target:      target,
+				DeviceToken: token,
+			})
+		}); err != nil {
+			return deviceInfo{}, &repairStageError{stage: "config", err: err}
 		}
 	}
 	s.clearDisplayVerification(target)
