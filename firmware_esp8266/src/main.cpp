@@ -533,7 +533,8 @@ void appendSettingsJSON(String& out) {
 
 void markFirmwareUpdateNoticeDirty() {
   if (!codexbar_display::app::HasFrame(runtimeCtx) ||
-      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).stale) {
     return;
   }
   if (!codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec) {
@@ -554,7 +555,8 @@ bool shouldShowFirmwareUpdateNotice() {
          !frameStaleStatusRendered &&
          codexbar_display::app::HasFrame(runtimeCtx) &&
          codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec &&
-         !codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
+         !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+         !codexbar_display::app::CurrentFrame(runtimeCtx).stale;
 }
 
 const char* currentFirmwareUpdateNoticeText() {
@@ -592,6 +594,7 @@ void drawFirmwareUpdateNotice() {
 void restoreFirmwareUpdateNoticeSurface() {
   if (!codexbar_display::app::HasFrame(runtimeCtx) ||
       codexbar_display::app::CurrentFrame(runtimeCtx).hasError ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).stale ||
       waitStatusRendered ||
       frameStaleStatusRendered) {
     return;
@@ -616,7 +619,8 @@ void maintainFirmwareUpdateNotice() {
       frameStaleStatusRendered ||
       !codexbar_display::app::HasFrame(runtimeCtx) ||
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec ||
-      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).stale) {
     clearFirmwareUpdateNotice();
     return;
   }
@@ -736,13 +740,13 @@ String displayErrorMessage(const String& message) {
     return "Install Mac App";
   }
   if (message == "runtime/no-providers") {
-    return "Open App";
+    return "Usage unavailable";
   }
-  if (message == "runtime/codexbar-cmd") {
-    return "Open App";
+  if (message == "runtime/codexbar-command") {
+    return "Usage unavailable";
   }
   if (message == "runtime/cycle-timeout") {
-    return "Open App";
+    return "Usage unavailable";
   }
   return "Open App";
 }
@@ -2933,6 +2937,7 @@ void loop() {
   if (!waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+      !codexbar_display::app::CurrentFrame(runtimeCtx).stale &&
       !runtimeCtx.screenDirty &&
       !frameStaleStatusRendered) {
     renderer.TickActive(runtimeCtx);
@@ -2959,6 +2964,7 @@ void loop() {
       !waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+      !codexbar_display::app::CurrentFrame(runtimeCtx).stale &&
       !runtimeCtx.screenDirty &&
       !frameStaleStatusRendered) {
     const unsigned long renderStartUs = micros();
@@ -2972,6 +2978,7 @@ void loop() {
       !waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+      !codexbar_display::app::CurrentFrame(runtimeCtx).stale &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec &&
       !runtimeCtx.screenDirty &&
       !frameStaleStatusRendered &&
@@ -3004,6 +3011,9 @@ void loop() {
           "VIBE TV",
           displayErrorMessage(codexbar_display::app::CurrentFrame(runtimeCtx).error),
           kCustomerAppHost);
+    } else if (codexbar_display::app::CurrentFrame(runtimeCtx).stale) {
+      fullKind = "usage_stale";
+      renderer.DrawStatus(runtimeCtx, "VIBE TV", "Usage unavailable", "Open Mac App");
     } else {
       fullKind = codexbar_display::app::CurrentFrame(runtimeCtx).hasThemeSpec ? "theme_spec_usage" : "usage";
       renderer.DrawUsage(runtimeCtx);

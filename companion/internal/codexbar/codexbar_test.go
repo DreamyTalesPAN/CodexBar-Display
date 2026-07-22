@@ -160,6 +160,71 @@ func TestParseProviderPayloadKeepsCodexBarUsageMeta(t *testing.T) {
 	}
 }
 
+func TestParseProviderPayloadMapsGeminiModelQuotaLabels(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"gemini",
+			"source":"oauth-api",
+			"usage":{
+				"primary":{"usedPercent":70,"windowMinutes":1440,"resetsAt":"2099-01-01T01:00:00Z"},
+				"secondary":{"usedPercent":30,"windowMinutes":1440,"resetsAt":"2099-01-01T02:00:00Z"},
+				"tertiary":{"usedPercent":40,"windowMinutes":1440,"resetsAt":"2099-01-01T03:00:00Z"}
+			}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("expected one Gemini provider, got %d", len(parsed))
+	}
+	provider := parsed[0]
+	if provider.Frame.SessionLabel != "Pro" || provider.Frame.WeeklyLabel != "Flash" {
+		t.Fatalf("expected Gemini frame labels Pro/Flash, got %+v", provider.Frame)
+	}
+	if len(provider.Meta.Windows) != 3 {
+		t.Fatalf("expected three Gemini windows, got %+v", provider.Meta.Windows)
+	}
+	want := []string{"Pro", "Flash", "Flash Lite"}
+	for i, label := range want {
+		if provider.Meta.Windows[i].Label != label {
+			t.Fatalf("window[%d] label=%q, expected %q", i, provider.Meta.Windows[i].Label, label)
+		}
+	}
+}
+
+func TestParseProviderPayloadDoesNotFabricateMissingGeminiTier(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"gemini",
+			"usage":{
+				"secondary":{"usedPercent":95,"windowMinutes":1440},
+				"tertiary":{"usedPercent":40,"windowMinutes":1440}
+			}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	if len(parsed[0].Meta.Windows) != 2 {
+		t.Fatalf("expected only reported Gemini tiers, got %+v", parsed[0].Meta.Windows)
+	}
+	if parsed[0].Meta.Windows[0].ID != "secondary" || parsed[0].Meta.Windows[0].Label != "Flash" {
+		t.Fatalf("expected Flash secondary tier first, got %+v", parsed[0].Meta.Windows)
+	}
+	if parsed[0].Meta.Windows[1].ID != "tertiary" || parsed[0].Meta.Windows[1].Label != "Flash Lite" {
+		t.Fatalf("expected Flash Lite tertiary tier, got %+v", parsed[0].Meta.Windows)
+	}
+	if parsed[0].Frame.Session != 95 || parsed[0].Frame.SessionLabel != "Flash" ||
+		parsed[0].Frame.Weekly != 40 || parsed[0].Frame.WeeklyLabel != "Flash Lite" {
+		t.Fatalf("expected reported Gemini tiers to fill the two display lanes, got %+v", parsed[0].Frame)
+	}
+}
+
 func TestParseProviderPayloadReadsCodexDailyBreakdown(t *testing.T) {
 	raw := []byte(`[
 		{

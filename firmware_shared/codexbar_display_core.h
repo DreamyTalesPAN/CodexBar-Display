@@ -20,12 +20,15 @@ constexpr size_t kFrameLineBufferBytes = 2048;
 struct Frame {
   String provider;
   String label;
+  String sessionLabel;
+  String weeklyLabel;
   int session = 0;
   int weekly = 0;
   int64_t resetSecs = 0;
   int64_t sessionTokens = 0;
   int64_t weekTokens = 0;
   int64_t totalTokens = 0;
+  bool stale = false;
   bool hasUsageMode = false;
   String usageMode;
   String activity;
@@ -210,6 +213,8 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
   return (ThemeSpecUsesBinding(raw, "provider", "pr") && previous.provider != next.provider) ||
          (usesLabel &&
           (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
+         previous.sessionLabel != next.sessionLabel ||
+         previous.weeklyLabel != next.weeklyLabel ||
          (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
          (ThemeSpecUsesBinding(raw, "weekly", "w") && previous.weekly != next.weekly) ||
          (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
@@ -235,6 +240,12 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
   }
   if (previous.label != next.label || previous.updateAvailable != next.updateAvailable) {
     fields |= themespec::kThemeSpecFieldLabel;
+  }
+  if (previous.sessionLabel != next.sessionLabel) {
+    fields |= themespec::kThemeSpecFieldSessionLabel;
+  }
+  if (previous.weeklyLabel != next.weeklyLabel) {
+    fields |= themespec::kThemeSpecFieldWeeklyLabel;
   }
   if (previous.session != next.session) {
     fields |= themespec::kThemeSpecFieldSession;
@@ -282,7 +293,7 @@ inline bool ThemeSpecCanUsePartialRender(
     bool visualChanged,
     bool themeSpecChanged) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  if (!hadFrame || !visualChanged || themeSpecChanged || previous.hasError || next.hasError) {
+  if (!hadFrame || !visualChanged || themeSpecChanged || previous.hasError || next.hasError || previous.stale || next.stale) {
     return false;
   }
   if (!previous.hasThemeSpec || !next.hasThemeSpec || next.clearThemeSpec) {
@@ -492,6 +503,8 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out = {};
   out.provider = String(doc["provider"] | "");
   out.label = String(doc["label"] | "Provider");
+  out.sessionLabel = String(doc["sessionLabel"] | "Session");
+  out.weeklyLabel = String(doc["weeklyLabel"] | "Weekly");
   out.session = ClampPct(doc["session"] | 0);
   out.weekly = ClampPct(doc["weekly"] | 0);
   out.resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(doc["resetSecs"] | 0));
@@ -500,6 +513,7 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | 0));
   out.weekTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["weekTokens"] | 0));
   out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | 0));
+  out.stale = doc["stale"] | false;
   out.hasUsageMode = hasUsageMode;
   out.usageMode = usageMode;
   out.activity = activity;
@@ -527,10 +541,18 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
   if (next.hasError) {
     return previous.error != next.error;
   }
+  if (previous.stale != next.stale) {
+    return true;
+  }
+  if (next.stale) {
+    return false;
+  }
   const bool dataChanged = next.hasThemeSpec
                                ? FrameThemeSpecDataVisualChanged(previous, next, themeSpecRaw)
                                : previous.provider != next.provider ||
                                      previous.label != next.label ||
+                                     previous.sessionLabel != next.sessionLabel ||
+                                     previous.weeklyLabel != next.weeklyLabel ||
                                      previous.session != next.session ||
                                      previous.weekly != next.weekly ||
                                      previous.sessionTokens != next.sessionTokens ||

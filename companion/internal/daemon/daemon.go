@@ -356,19 +356,13 @@ func bootstrapStateFromPersistedLastGood(state *runtimeState, now time.Time, dep
 		state.lastPersistedGood = frame
 		state.lastPersistedAt = savedAt
 		state.hasPersistedGood = true
-	} else if frame, savedAt, ok := loadPersistedLastGoodAnyAge(); ok {
-		state.lastGood = frame
-		state.lastGoodAt = savedAt
-		state.hasLastGood = true
-		state.lastPersistedGood = frame
-		state.lastPersistedAt = savedAt
-		state.hasPersistedGood = true
+	} else if _, savedAt, ok := loadPersistedLastGoodAnyAge(); ok {
 		age := now.Sub(savedAt)
 		if age < 0 {
 			age = 0
 		}
 		deps.logf(
-			"runtime event=last-good-bootstrap-stale saved_at=%s age=%s\n",
+			"runtime event=last-good-bootstrap-expired saved_at=%s age=%s action=ignored\n",
 			savedAt.UTC().Format(time.RFC3339),
 			age.Round(time.Second),
 		)
@@ -936,7 +930,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		result.failureKind = runtimeErrorNoProviders
 		result.failureOp = emptyProvidersOp
 		result.failureErr = codexbar.ErrNoProviders
-		return finalizeCycleResult(state, result)
+		return finalizeCycleResult(state, result, now)
 	}
 
 	decision, ok := state.selector.SelectWithDecision(allProviders)
@@ -944,7 +938,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		result.failureKind = runtimeErrorNoProviders
 		result.failureOp = "select-provider"
 		result.failureErr = codexbar.ErrNoProviders
-		return finalizeCycleResult(state, result)
+		return finalizeCycleResult(state, result, now)
 	}
 
 	result.frame = decision.Selected.Frame
@@ -952,23 +946,27 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	result.selectionDetail = decision.Detail
 	result.usageSource = usageSourceOrDefault(decision.Selected.Source, "codexbar")
 	result.usageFresh = !decision.Selected.Stale
+	result.frame.Stale = decision.Selected.Stale
 	collectedAt := decision.Selected.CollectedAt
 	if collectedAt.IsZero() {
 		collectedAt = now
 		decision.Selected.CollectedAt = collectedAt
 	}
-	updateLastGoodState(state, result.frame, collectedAt, deps)
+	if !decision.Selected.Stale {
+		updateLastGoodState(state, result.frame, collectedAt, deps)
+	}
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
 }
 
-func finalizeCycleResult(state *runtimeState, result cycleResult) cycleResult {
+func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time) cycleResult {
 	if result.failureErr == nil {
 		return result
 	}
 
-	if state != nil && state.hasLastGood {
+	if state != nil && state.hasLastGood && isLastGoodFreshAt(state.lastGoodAt, now, lastGoodMaxAge()) {
 		result.frame = state.lastGood
+		result.frame.Stale = true
 		result.usedLastGood = true
 		result.selectionReason = "stale-last-good"
 		result.selectionDetail = fmt.Sprintf("kind=%s", result.failureKind)
@@ -1272,7 +1270,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 		result.failureKind = runtimeErrorKindFromFetchErr(fetchErr)
 		result.failureOp = "fetch-usage"
 		result.failureErr = fetchErr
-		result = finalizeCycleResult(state, result)
+		result = finalizeCycleResult(state, result, deps.now())
 	} else {
 		result = selectCycleFrameFromProviders(
 			state,

@@ -95,6 +95,31 @@ func TestFrameNormalizeKeepsSafeActivity(t *testing.T) {
 	}
 }
 
+func TestFrameMarshalKeepsProviderLabelsAndStaleState(t *testing.T) {
+	frame := Frame{
+		V:            2,
+		Provider:     "gemini",
+		Label:        "Gemini",
+		SessionLabel: " Pro ",
+		WeeklyLabel:  " Flash ",
+		Session:      70,
+		Weekly:       30,
+		Stale:        true,
+	}
+
+	line, err := frame.MarshalLine()
+	if err != nil {
+		t.Fatalf("MarshalLine returned error: %v", err)
+	}
+	var got Frame
+	if err := json.Unmarshal(line, &got); err != nil {
+		t.Fatalf("decode frame: %v", err)
+	}
+	if got.SessionLabel != "Pro" || got.WeeklyLabel != "Flash" || !got.Stale {
+		t.Fatalf("expected provider labels and stale state to round-trip, got %+v", got)
+	}
+}
+
 func TestFrameNormalizeDropsUnsafeActivity(t *testing.T) {
 	frame := Frame{
 		Provider: "codex",

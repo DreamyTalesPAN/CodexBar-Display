@@ -1062,6 +1062,8 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   themespec::FrameData frame;
   frame.provider = CurrentFrame().provider.c_str();
   frame.label = ProviderLabelText();
+  frame.sessionLabel = CurrentFrame().sessionLabel.c_str();
+  frame.weeklyLabel = CurrentFrame().weeklyLabel.c_str();
   frame.updateAvailable = CurrentFrame().updateAvailable;
   frame.showUpdateNotice = updateNoticeText != nullptr && updateNoticeText[0] != '\0';
   frame.updateNotice = frame.showUpdateNotice ? updateNoticeText : themeSpecUpdateNoticeText();

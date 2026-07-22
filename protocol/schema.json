@@ -21,6 +21,14 @@
       "type": "string",
       "minLength": 1
     },
+    "sessionLabel": {
+      "type": "string",
+      "minLength": 1
+    },
+    "weeklyLabel": {
+      "type": "string",
+      "minLength": 1
+    },
     "session": {
       "type": "integer",
       "minimum": 0,
@@ -34,6 +42,9 @@
     "resetSecs": {
       "type": "integer",
       "minimum": 0
+    },
+    "stale": {
+      "type": "boolean"
     },
     "usageMode": {
       "type": "string",

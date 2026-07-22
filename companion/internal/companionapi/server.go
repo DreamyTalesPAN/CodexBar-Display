@@ -691,6 +691,8 @@ type usageProviderInfo struct {
 	ID                 string                   `json:"id"`
 	Label              string                   `json:"label"`
 	Source             string                   `json:"source,omitempty"`
+	SessionLabel       string                   `json:"sessionLabel,omitempty"`
+	WeeklyLabel        string                   `json:"weeklyLabel,omitempty"`
 	Session            int                      `json:"session"`
 	Weekly             int                      `json:"weekly"`
 	ResetSec           int64                    `json:"resetSecs,omitempty"`
@@ -1916,6 +1918,8 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		ID:                 id,
 		Label:              usageProviderLabel(id, frame.Label),
 		Source:             strings.TrimSpace(snapshot.Source),
+		SessionLabel:       strings.TrimSpace(frame.SessionLabel),
+		WeeklyLabel:        strings.TrimSpace(frame.WeeklyLabel),
 		Session:            frame.Session,
 		Weekly:             frame.Weekly,
 		ResetSec:           frame.ResetSec,
@@ -1950,6 +1954,8 @@ func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bo
 		ID:                 id,
 		Label:              usageProviderLabel(id, frame.Label),
 		Source:             strings.TrimSpace(parsed.Source),
+		SessionLabel:       strings.TrimSpace(frame.SessionLabel),
+		WeeklyLabel:        strings.TrimSpace(frame.WeeklyLabel),
 		Session:            frame.Session,
 		Weekly:             frame.Weekly,
 		ResetSec:           frame.ResetSec,

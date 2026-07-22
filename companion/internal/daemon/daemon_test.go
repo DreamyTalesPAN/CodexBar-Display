@@ -897,7 +897,7 @@ func TestRunCycleWithDepsRateLimitsPersistedLastGoodWrites(t *testing.T) {
 	}
 }
 
-func TestRunWithDepsBootstrapsFromExpiredPersistedLastGood(t *testing.T) {
+func TestRunWithDepsIgnoresExpiredPersistedLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	savedAt := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
@@ -926,15 +926,18 @@ func TestRunWithDepsBootstrapsFromExpiredPersistedLastGood(t *testing.T) {
 			return nil
 		},
 	})
-	if err != nil {
-		t.Fatalf("expected stale bootstrap frame to avoid hard error, got %v", err)
+	if err == nil {
+		t.Fatalf("expected provider error after expired persisted frame is ignored")
 	}
 	if len(sentLine) == 0 {
-		t.Fatalf("expected stale bootstrap frame to be sent")
+		t.Fatalf("expected customer-facing error frame to be sent")
 	}
 	frame := decodeFrameLine(t, sentLine)
-	if frame.Provider != stale.Provider || frame.Session != stale.Session || frame.Weekly != stale.Weekly {
-		t.Fatalf("expected stale bootstrap frame, got %+v", frame)
+	if frame.Error != string(runtimeErrorCodexbarCmd) {
+		t.Fatalf("expected provider error frame, got %+v", frame)
+	}
+	if frame.Provider != "" || frame.Session != 0 || frame.Weekly != 0 || frame.ResetSec != 0 {
+		t.Fatalf("expected expired usage values to be suppressed, got %+v", frame)
 	}
 }
 
@@ -2008,7 +2011,7 @@ func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 	}
 }
 
-func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing.T) {
+func TestRunCycleWithDepsRejectsExpiredLastGoodFrameDuringFetchFailure(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -2042,19 +2045,19 @@ func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing
 	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
 		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("transient failure")}
 	}
-	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
-		t.Fatalf("expected stale-last-good fallback to avoid hard error, got %v", err)
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err == nil {
+		t.Fatalf("expected fetch error after last-good frame expired")
 	}
 
 	if len(lines) != 2 {
 		t.Fatalf("expected two sent frames, got %d", len(lines))
 	}
 	second := decodeFrameLine(t, lines[1])
-	if second.Error != "" {
-		t.Fatalf("expected stale-good provider frame, got error %q", second.Error)
+	if second.Error != string(runtimeErrorCodexbarCmd) {
+		t.Fatalf("expected provider error frame, got %q", second.Error)
 	}
-	if second.Provider != "codex" {
-		t.Fatalf("expected stale codex frame, got %q", second.Provider)
+	if second.Provider != "" || second.Session != 0 || second.Weekly != 0 || second.ResetSec != 0 {
+		t.Fatalf("expected expired usage values to be suppressed, got %+v", second)
 	}
 }
 
@@ -2104,6 +2107,37 @@ func TestRunCycleWithDepsUsesLastGoodFrameWhenNoProvidersAfterSelection(t *testi
 	}
 	if second.Provider != "codex" {
 		t.Fatalf("expected stale codex frame, got %q", second.Provider)
+	}
+	if !second.Stale {
+		t.Fatalf("expected bounded last-good fallback to be visibly stale, got %+v", second)
+	}
+}
+
+func TestSelectCycleFrameMarksStaleProviderSnapshotForStatusRendering(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 22, 8, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	parsed := testParsedFrame("gemini", 70, 30, 3600)
+	parsed.CollectedAt = now.Add(-2 * time.Minute)
+	parsed.Stale = true
+
+	result := selectCycleFrameFromProviders(
+		state,
+		[]codexbar.ParsedFrame{parsed},
+		now,
+		runtimeDeps{logf: func(string, ...any) {}}.withDefaults(),
+		"select-provider",
+		"collector-empty",
+		"",
+		"collector",
+	)
+
+	if !result.frame.Stale || result.usageFresh {
+		t.Fatalf("expected stale provider snapshot to be marked non-current, got %+v", result)
+	}
+	if state.hasLastGood {
+		t.Fatalf("expected stale provider snapshot not to replace last-good state")
 	}
 }
 
@@ -2641,26 +2675,22 @@ func TestRunWithDepsResetsRetryBackoffAfterSleepWakeGap(t *testing.T) {
 	beforeGap := start.Add(2 * time.Second)
 	afterGap := start.Add(2*time.Minute + 5*time.Second)
 	afterGapNext := start.Add(2*time.Minute + 7*time.Second)
-	nowValues := []time.Time{
-		start, start,
-		beforeGap, beforeGap,
-		afterGap, afterGap, // sleep/wake-sized wall clock gap
-		afterGapNext, afterGapNext,
-	}
-	nowIdx := 0
-
 	var delays []time.Duration
 	afterCalls := 0
 	never := make(chan time.Time)
 
 	err := runWithDeps(ctx, Options{Interval: 60 * time.Second}, runtimeDeps{
 		now: func() time.Time {
-			if nowIdx >= len(nowValues) {
-				return nowValues[len(nowValues)-1]
+			switch afterCalls {
+			case 0:
+				return start
+			case 1:
+				return beforeGap
+			case 2:
+				return afterGap
+			default:
+				return afterGapNext
 			}
-			current := nowValues[nowIdx]
-			nowIdx++
-			return current
 		},
 		after: func(d time.Duration) <-chan time.Time {
 			delays = append(delays, d)

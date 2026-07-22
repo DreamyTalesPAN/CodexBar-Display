@@ -729,21 +729,66 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		label = "Provider"
 	}
 
+	meta := parseProviderUsageMeta(payload)
+	applyProviderWindowLabels(provider, &meta)
+	sessionLabel, weeklyLabel := "", ""
+	if strings.EqualFold(strings.TrimSpace(provider), "gemini") && len(meta.Windows) > 0 {
+		session, weekly, resetSecs, sessionLabel, weeklyLabel = geminiFrameLanes(meta.Windows)
+	}
+
 	return ParsedFrame{
 		Frame: protocol.Frame{
-			V:        1,
-			Provider: provider,
-			Label:    label,
-			Session:  session,
-			Weekly:   weekly,
-			ResetSec: resetSecs,
+			V:            1,
+			Provider:     provider,
+			Label:        label,
+			SessionLabel: sessionLabel,
+			WeeklyLabel:  weeklyLabel,
+			Session:      session,
+			Weekly:       weekly,
+			ResetSec:     resetSecs,
 		},
 		Provider:           provider,
 		Source:             source,
 		AccountEmail:       accountEmail,
-		Meta:               parseProviderUsageMeta(payload),
+		Meta:               meta,
 		ActivityObservedAt: activityObservedAt,
 	}, nil
+}
+
+func applyProviderWindowLabels(provider string, meta *ProviderUsageMeta) {
+	if meta == nil || !strings.EqualFold(strings.TrimSpace(provider), "gemini") {
+		return
+	}
+	for i := range meta.Windows {
+		switch strings.TrimSpace(strings.ToLower(meta.Windows[i].ID)) {
+		case "primary":
+			meta.Windows[i].Label = "Pro"
+		case "secondary":
+			meta.Windows[i].Label = "Flash"
+		case "tertiary":
+			meta.Windows[i].Label = "Flash Lite"
+		}
+	}
+}
+
+func geminiFrameLanes(windows []UsageWindow) (int, int, int64, string, string) {
+	if len(windows) == 0 {
+		return 0, 0, 0, "", ""
+	}
+	primary := windows[0]
+	secondary := UsageWindow{}
+	if len(windows) > 1 {
+		secondary = windows[1]
+	}
+	resetSec := primary.ResetSec
+	if resetSec == 0 {
+		resetSec = secondary.ResetSec
+	}
+	return primary.UsedPercent,
+		secondary.UsedPercent,
+		resetSec,
+		strings.TrimSpace(primary.Label),
+		strings.TrimSpace(secondary.Label)
 }
 
 func parseProviderUsageMeta(payload map[string]any) ProviderUsageMeta {

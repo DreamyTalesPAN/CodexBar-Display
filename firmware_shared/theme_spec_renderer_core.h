@@ -22,6 +22,8 @@ constexpr uint32_t kThemeSpecFieldDate = 1UL << 8;
 constexpr uint32_t kThemeSpecFieldSessionTokens = 1UL << 9;
 constexpr uint32_t kThemeSpecFieldWeekTokens = 1UL << 10;
 constexpr uint32_t kThemeSpecFieldTotalTokens = 1UL << 11;
+constexpr uint32_t kThemeSpecFieldSessionLabel = 1UL << 12;
+constexpr uint32_t kThemeSpecFieldWeeklyLabel = 1UL << 13;
 constexpr int kThemeSpecCanvasSize = 240;
 constexpr size_t kMaxThemeSpecGifAssets = 1;
 constexpr size_t kMaxThemeSpecGifAssetBytes = 24 * 1024;
@@ -38,6 +40,8 @@ inline void RenderYield() {
 struct FrameData {
   const char* provider = "";
   const char* label = "";
+  const char* sessionLabel = "Session";
+  const char* weeklyLabel = "Weekly";
   bool updateAvailable = false;
   bool showUpdateNotice = false;
   const char* updateNotice = "";
@@ -442,6 +446,14 @@ inline const char* LabelText(const FrameData& frame) {
   return SafeText(frame.label);
 }
 
+inline const char* SessionLabelText(const FrameData& frame) {
+  return SafeText(frame.sessionLabel)[0] == '\0' ? "Session" : SafeText(frame.sessionLabel);
+}
+
+inline const char* WeeklyLabelText(const FrameData& frame) {
+  return SafeText(frame.weeklyLabel)[0] == '\0' ? "Weekly" : SafeText(frame.weeklyLabel);
+}
+
 inline void BoundValue(const char* key, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -457,6 +469,14 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     std::snprintf(out, outSize, "%s", SafeText(frame.provider));
     return;
   }
+  if (std::strcmp(key, "sessionLabel") == 0 || std::strcmp(key, "sl") == 0) {
+    std::snprintf(out, outSize, "%s", SessionLabelText(frame));
+    return;
+  }
+  if (std::strcmp(key, "weeklyLabel") == 0 || std::strcmp(key, "wl") == 0) {
+    std::snprintf(out, outSize, "%s", WeeklyLabelText(frame));
+    return;
+  }
   if (std::strcmp(key, "session") == 0 || std::strcmp(key, "sessionPercent") == 0 || std::strcmp(key, "s") == 0) {
     std::snprintf(out, outSize, "%d", ClampPct(frame.session));
     return;
@@ -466,7 +486,21 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     return;
   }
   if (std::strcmp(key, "reset") == 0 || std::strcmp(key, "resetCountdown") == 0 || std::strcmp(key, "r") == 0) {
+    if (frame.resetSecs <= 0) {
+      std::snprintf(out, outSize, "Unavailable");
+      return;
+    }
     FormatDuration(frame.resetSecs, out, outSize);
+    return;
+  }
+  if (std::strcmp(key, "resetStatus") == 0 || std::strcmp(key, "rs") == 0) {
+    if (frame.resetSecs <= 0) {
+      std::snprintf(out, outSize, "Reset unavailable");
+      return;
+    }
+    char duration[24] = {0};
+    FormatDuration(frame.resetSecs, duration, sizeof(duration));
+    std::snprintf(out, outSize, "Reset in %s", duration);
     return;
   }
   if (std::strcmp(key, "usageMode") == 0 || std::strcmp(key, "u") == 0) {
@@ -509,6 +543,20 @@ inline void AppendText(char* out, size_t outSize, size_t& outLen, const char* te
   }
 }
 
+inline char LowerAscii(char value) {
+  return value >= 'A' && value <= 'Z' ? static_cast<char>(value - 'A' + 'a') : value;
+}
+
+inline bool StartsWithLaneLabel(const char* raw, const char* label, size_t labelLen) {
+  raw = SafeText(raw);
+  for (size_t i = 0; i < labelLen; ++i) {
+    if (raw[i] == '\0' || LowerAscii(raw[i]) != LowerAscii(label[i])) {
+      return false;
+    }
+  }
+  return raw[labelLen] == '\0' || raw[labelLen] == ' ';
+}
+
 inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -517,6 +565,18 @@ inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* ou
   raw = SafeText(raw);
 
   size_t outLen = 0;
+  if (frame.resetSecs <= 0 &&
+      (std::strcmp(raw, "Reset in {reset}") == 0 || std::strcmp(raw, "Resets in {reset}") == 0)) {
+    AppendText(out, outSize, outLen, "Reset unavailable");
+    return;
+  }
+  if (StartsWithLaneLabel(raw, "Session", 7) && std::strcmp(SessionLabelText(frame), "Session") != 0) {
+    AppendText(out, outSize, outLen, SessionLabelText(frame));
+    raw += 7;
+  } else if (StartsWithLaneLabel(raw, "Weekly", 6) && std::strcmp(WeeklyLabelText(frame), "Weekly") != 0) {
+    AppendText(out, outSize, outLen, WeeklyLabelText(frame));
+    raw += 6;
+  }
   for (size_t i = 0; raw[i] != '\0' && outLen + 1 < outSize;) {
     if (raw[i] == '{') {
       const char* close = std::strchr(raw + i + 1, '}');
@@ -577,13 +637,20 @@ inline bool BindingUsesField(const char* binding, uint32_t fields) {
   if ((fields & kThemeSpecFieldLabel) != 0 && StringEqualsAny(binding, "label", "providerLabel", "l")) {
     return true;
   }
+  if ((fields & kThemeSpecFieldSessionLabel) != 0 && StringEqualsAny(binding, "sessionLabel", "sl")) {
+    return true;
+  }
+  if ((fields & kThemeSpecFieldWeeklyLabel) != 0 && StringEqualsAny(binding, "weeklyLabel", "wl")) {
+    return true;
+  }
   if ((fields & kThemeSpecFieldSession) != 0 && StringEqualsAny(binding, "session", "sessionPercent", "s")) {
     return true;
   }
   if ((fields & kThemeSpecFieldWeekly) != 0 && StringEqualsAny(binding, "weekly", "weeklyPercent", "w")) {
     return true;
   }
-  if ((fields & kThemeSpecFieldReset) != 0 && StringEqualsAny(binding, "reset", "resetCountdown", "r")) {
+  if ((fields & kThemeSpecFieldReset) != 0 &&
+      (StringEqualsAny(binding, "reset", "resetCountdown", "r") || StringEqualsAny(binding, "resetStatus", "rs"))) {
     return true;
   }
   if ((fields & kThemeSpecFieldUsageMode) != 0 && StringEqualsAny(binding, "usageMode", "u")) {
@@ -613,9 +680,14 @@ inline bool BindingUsesField(const char* binding, uint32_t fields) {
 inline bool TextTemplateUsesField(const char* raw, uint32_t fields) {
   return ((fields & kThemeSpecFieldProvider) != 0 && TemplateUsesField(raw, "provider", "pr")) ||
          ((fields & kThemeSpecFieldLabel) != 0 && TemplateUsesField(raw, "label", "providerLabel", "l")) ||
+         ((fields & kThemeSpecFieldSessionLabel) != 0 &&
+          (TemplateUsesField(raw, "sessionLabel", "sl") || StartsWithLaneLabel(raw, "Session", 7))) ||
+         ((fields & kThemeSpecFieldWeeklyLabel) != 0 &&
+          (TemplateUsesField(raw, "weeklyLabel", "wl") || StartsWithLaneLabel(raw, "Weekly", 6))) ||
          ((fields & kThemeSpecFieldSession) != 0 && TemplateUsesField(raw, "session", "sessionPercent", "s")) ||
          ((fields & kThemeSpecFieldWeekly) != 0 && TemplateUsesField(raw, "weekly", "weeklyPercent", "w")) ||
-         ((fields & kThemeSpecFieldReset) != 0 && TemplateUsesField(raw, "reset", "resetCountdown", "r")) ||
+         ((fields & kThemeSpecFieldReset) != 0 &&
+          (TemplateUsesField(raw, "reset", "resetCountdown", "r") || TemplateUsesField(raw, "resetStatus", "rs"))) ||
          ((fields & kThemeSpecFieldUsageMode) != 0 && TemplateUsesField(raw, "usageMode", "u")) ||
          ((fields & kThemeSpecFieldActivity) != 0 && TemplateUsesField(raw, "activity", "act")) ||
          ((fields & kThemeSpecFieldTime) != 0 && TemplateUsesField(raw, "time", "tm")) ||
@@ -633,6 +705,12 @@ inline uint32_t BindingFieldMask(const char* binding) {
   if (StringEqualsAny(binding, "label", "providerLabel", "l")) {
     return kThemeSpecFieldLabel;
   }
+  if (StringEqualsAny(binding, "sessionLabel", "sl")) {
+    return kThemeSpecFieldSessionLabel;
+  }
+  if (StringEqualsAny(binding, "weeklyLabel", "wl")) {
+    return kThemeSpecFieldWeeklyLabel;
+  }
   if (StringEqualsAny(binding, "session", "sessionPercent", "s")) {
     return kThemeSpecFieldSession;
   }
@@ -640,6 +718,9 @@ inline uint32_t BindingFieldMask(const char* binding) {
     return kThemeSpecFieldWeekly;
   }
   if (StringEqualsAny(binding, "reset", "resetCountdown", "r")) {
+    return kThemeSpecFieldReset;
+  }
+  if (StringEqualsAny(binding, "resetStatus", "rs")) {
     return kThemeSpecFieldReset;
   }
   if (StringEqualsAny(binding, "usageMode", "u")) {
@@ -674,6 +755,18 @@ inline uint32_t TextTemplateFieldMask(const char* raw) {
   if (TemplateUsesField(raw, "label", "providerLabel", "l")) {
     fields |= kThemeSpecFieldLabel;
   }
+  if (TemplateUsesField(raw, "sessionLabel", "sl")) {
+    fields |= kThemeSpecFieldSessionLabel;
+  }
+  if (StartsWithLaneLabel(raw, "Session", 7)) {
+    fields |= kThemeSpecFieldSessionLabel;
+  }
+  if (TemplateUsesField(raw, "weeklyLabel", "wl")) {
+    fields |= kThemeSpecFieldWeeklyLabel;
+  }
+  if (StartsWithLaneLabel(raw, "Weekly", 6)) {
+    fields |= kThemeSpecFieldWeeklyLabel;
+  }
   if (TemplateUsesField(raw, "session", "sessionPercent", "s")) {
     fields |= kThemeSpecFieldSession;
   }
@@ -681,6 +774,9 @@ inline uint32_t TextTemplateFieldMask(const char* raw) {
     fields |= kThemeSpecFieldWeekly;
   }
   if (TemplateUsesField(raw, "reset", "resetCountdown", "r")) {
+    fields |= kThemeSpecFieldReset;
+  }
+  if (TemplateUsesField(raw, "resetStatus", "rs")) {
     fields |= kThemeSpecFieldReset;
   }
   if (TemplateUsesField(raw, "usageMode", "u")) {

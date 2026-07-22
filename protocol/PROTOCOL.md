@@ -23,9 +23,12 @@ Fields:
 - `v` (number, required): negotiated protocol version (`1` or `2`).
 - `provider` (string, optional): provider machine key.
 - `label` (string, optional): display label.
+- `sessionLabel` (string, optional): provider-aware label for the primary quota lane; defaults to `Session`.
+- `weeklyLabel` (string, optional): provider-aware label for the secondary quota lane; defaults to `Weekly`.
 - `session` (number, optional): session usage percent `0..100`.
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
+- `stale` (boolean, optional): marks fallback data as non-current; firmware renders a customer-facing unavailable state instead of numeric limits.
 - `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
@@ -212,7 +215,7 @@ Result:
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.
 - Firmware ticks down `resetSecs` locally between host updates.
-- Companion may resend the last known good frame during short CodexBar outages (current default max age: 10 minutes).
+- Companion may resend a last-good frame during short CodexBar outages only inside the configured max age (current default: 10 minutes), and marks that fallback as `stale` so firmware does not present its numbers as current.
 - If frame payload exceeds `maxFrameBytes`, companion drops `theme` first, then token stats, before falling back to an error frame.
 
 ## Local USB ThemeSpec Flow
