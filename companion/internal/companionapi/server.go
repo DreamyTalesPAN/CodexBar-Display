@@ -71,7 +71,7 @@ const (
 	displayStreamOutLogEnv    = runtimepaths.DisplayStreamOutLogEnv
 	displayStreamReadyAge     = 2 * time.Minute
 	displayVerificationAge    = 2 * time.Minute
-	displayStreamWaitTime     = 12 * time.Second
+	displayStreamWaitTime     = 30 * time.Second
 	displayRenderWaitTime     = 12 * time.Second
 	defaultPairAttempts       = 3
 	defaultPairAttemptTimeout = 5 * time.Second
@@ -5779,9 +5779,9 @@ func correlatedOverlayProvesUsage(
 		return false
 	}
 	fullAdvanced := currentFull > baselineFull && currentPartial >= baselinePartial
-	resetCountdownAdvanced := strings.TrimSpace(current.Render.LastKind) == "reset" &&
+	overlayPartialAdvanced := localOverlayRenderKind(current.Render.LastKind) &&
 		currentFull >= baselineFull && currentPartial > baselinePartial
-	if !fullAdvanced && !resetCountdownAdvanced {
+	if !fullAdvanced && !overlayPartialAdvanced {
 		return false
 	}
 	if !localOverlayRenderKind(current.Render.LastKind) || !renderSurfaceHealthy(current) {

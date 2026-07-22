@@ -7627,8 +7627,8 @@ async function assertCompanionRequestTimeoutContract() {
     "Ordinary Mac App requests must keep the 45 second timeout",
   );
   assert(
-    source.includes("const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 90_000;"),
-    "Device repair requests must allow up to 90 seconds",
+    source.includes("const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;"),
+    "Device repair requests must allow up to 120 seconds",
   );
   assert(
     source.includes("options?.timeoutMs ?? COMPANION_REQUEST_TIMEOUT_MS"),

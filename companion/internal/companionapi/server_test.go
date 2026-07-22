@@ -3641,8 +3641,8 @@ func TestCorrelatedOverlayProvesFirmware135FirstUsageRender(t *testing.T) {
 	}
 	updateNoticeOnly := resetCountdown
 	updateNoticeOnly.Render.LastKind = "update_notice"
-	if correlatedOverlayProvesUsage(baseline, updateNoticeOnly, stream, target) {
-		t.Fatal("a partial firmware update notice must not prove a fresh usage render")
+	if !correlatedOverlayProvesUsage(baseline, updateNoticeOnly, stream, target) {
+		t.Fatal("a fresh exact-target frame plus an advanced update notice must prove the active usage surface")
 	}
 
 	tests := []struct {
@@ -5840,7 +5840,7 @@ func TestWriteRepairErrorMapsPairingAuthorizationStatus(t *testing.T) {
 }
 
 func TestDefaultRepairDeadlineFitsExtendedUIRequestBudget(t *testing.T) {
-	const uiRequestBudget = 90 * time.Second
+	const uiRequestBudget = 120 * time.Second
 	renderBudget := displayRenderWaitTime
 	if deviceTimeout > renderBudget {
 		renderBudget = deviceTimeout
