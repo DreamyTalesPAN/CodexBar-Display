@@ -4,8 +4,12 @@ import {
   buildSupportChatMetadata,
   buildSupportChatMountOptions,
   clearSupportChatSession,
+  loadSupportChatEmail,
+  normalizeSupportChatEmail,
   resolveSupportChatConfig,
+  storeSupportChatEmail,
   SUPPORT_CHAT_COPY,
+  SUPPORT_CHAT_EMAIL_STORAGE_KEY,
   SUPPORT_CHAT_SESSION_STORAGE_KEY,
 } from "./support-chat";
 
@@ -70,6 +74,7 @@ describe("support chat request contract", () => {
     const metadata = buildSupportChatMetadata({
       appVersion: " 2.4.0 ",
       companionVersion: " 1.8.1 ",
+      customerEmail: " Test@Example.com ",
       deviceConnected: true,
       surface: "local-control-center",
       userAgent:
@@ -79,6 +84,7 @@ describe("support chat request contract", () => {
     expect(metadata).toEqual({
       appVersion: "2.4.0",
       companionVersion: "1.8.1",
+      customerEmail: "test@example.com",
       deviceConnected: true,
       platform: "windows",
       source: "vibetv-control-center",
@@ -150,14 +156,36 @@ describe("support chat request contract", () => {
 });
 
 describe("clearSupportChatSession", () => {
-  it("removes only the official n8n chat session key", () => {
+  it("removes the n8n session and conversation email", () => {
     const removeItem = vi.fn();
 
     clearSupportChatSession({ removeItem });
 
-    expect(removeItem).toHaveBeenCalledOnce();
+    expect(removeItem).toHaveBeenCalledTimes(2);
     expect(removeItem).toHaveBeenCalledWith(
       SUPPORT_CHAT_SESSION_STORAGE_KEY,
     );
+    expect(removeItem).toHaveBeenCalledWith(SUPPORT_CHAT_EMAIL_STORAGE_KEY);
+  });
+});
+
+describe("support chat email", () => {
+  it("normalizes valid addresses and rejects invalid input", () => {
+    expect(normalizeSupportChatEmail(" Test@Example.com ")).toBe("test@example.com");
+    expect(normalizeSupportChatEmail("not-an-email")).toBeNull();
+  });
+
+  it("stores, loads, and clears the conversation email", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      removeItem: (key: string) => values.delete(key),
+      setItem: (key: string, value: string) => values.set(key, value),
+    };
+
+    expect(storeSupportChatEmail(storage, " Test@Example.com ")).toBe("test@example.com");
+    expect(loadSupportChatEmail(storage)).toBe("test@example.com");
+    expect(storeSupportChatEmail(storage, "invalid")).toBe("");
+    expect(loadSupportChatEmail(storage)).toBe("");
   });
 });

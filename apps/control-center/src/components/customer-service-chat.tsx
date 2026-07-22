@@ -5,6 +5,7 @@ import "@n8n/chat/style.css";
 import { MessageCircle, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetContent,
@@ -18,6 +19,8 @@ import {
   buildSupportChatMetadata,
   buildSupportChatMountOptions,
   clearSupportChatSession,
+  loadSupportChatEmail,
+  storeSupportChatEmail,
   supportChatConfig,
   SUPPORT_CHAT_COPY,
   type SupportChatMetadata,
@@ -47,6 +50,7 @@ export function CustomerServiceChat({
     "idle",
   );
   const [requestFailed, setRequestFailed] = useState(false);
+  const [customerEmail, setCustomerEmail] = useState("");
   const [sessionMetadata, setSessionMetadata] =
     useState<SupportChatMetadata | null>(null);
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
@@ -129,12 +133,15 @@ export function CustomerServiceChat({
       open={open}
       onOpenChange={(nextOpen) => {
         if (nextOpen) {
+          const storedEmail = loadSupportChatEmail(window.localStorage);
+          setCustomerEmail(storedEmail);
           setMountState("loading");
           setRequestFailed(false);
           setSessionMetadata(
             buildSupportChatMetadata({
               appVersion,
               companionVersion,
+              customerEmail: storedEmail,
               deviceConnected,
               platformHint: window.navigator.platform,
               surface,
@@ -169,6 +176,10 @@ export function CustomerServiceChat({
               className="shrink-0"
               onClick={() => {
                 clearSupportChatSession(window.localStorage);
+                setCustomerEmail("");
+                setSessionMetadata((current) =>
+                  current ? { ...current, customerEmail: undefined } : current,
+                );
                 setMountState("loading");
                 setRequestFailed(false);
                 setMountVersion((version) => version + 1);
@@ -184,6 +195,35 @@ export function CustomerServiceChat({
           <SheetDescription className="sr-only">
             Chat with the VibeTV support assistant.
           </SheetDescription>
+          <div className="space-y-1.5 pt-3 text-left">
+            <label className="text-xs font-semibold text-[#1B1B1B]" htmlFor="support-email">
+              Email for replies
+            </label>
+            <Input
+              autoComplete="email"
+              className="h-10 rounded-xl border-[#D5D5D5] bg-[#F9F9F9] px-3 shadow-none focus-visible:border-[#506600] focus-visible:ring-[#506600]/15"
+              id="support-email"
+              onBlur={(event) => {
+                const email = storeSupportChatEmail(
+                  window.localStorage,
+                  event.currentTarget.value,
+                );
+                setCustomerEmail(email);
+                setSessionMetadata((current) =>
+                  current && current.customerEmail !== (email || undefined)
+                    ? { ...current, customerEmail: email || undefined }
+                    : current,
+                );
+              }}
+              onChange={(event) => setCustomerEmail(event.target.value)}
+              placeholder="you@example.com"
+              type="email"
+              value={customerEmail}
+            />
+            <p className="text-[11px] text-[#626262]">
+              We’ll use this only to reply to this support conversation.
+            </p>
+          </div>
         </SheetHeader>
 
         <div className="relative min-h-0 flex-1">
@@ -202,15 +242,15 @@ export function CustomerServiceChat({
           {showFallback ? (
             <p aria-live="polite" className="font-medium text-[#7D2633]" role="alert">
               Support is temporarily unavailable. Please try again or email{" "}
-              <a className="underline" href="mailto:service@dreamytales.com">
-                service@dreamytales.com
+              <a className="underline" href="mailto:vibetv@shop.com">
+                vibetv@shop.com
               </a>
               .
             </p>
           ) : null}
           <p>{SUPPORT_CHAT_COPY.notice}</p>
           <div className="flex flex-wrap gap-x-3 gap-y-1">
-            <a className="underline" href="mailto:service@dreamytales.com">
+            <a className="underline" href="mailto:vibetv@shop.com">
               Email support
             </a>
             <a

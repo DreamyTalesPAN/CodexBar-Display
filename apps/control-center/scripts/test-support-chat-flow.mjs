@@ -10,6 +10,7 @@ const nextBin = join(root, "node_modules", "next", "dist", "bin", "next");
 const allowedMetadataKeys = [
   "appVersion",
   "companionVersion",
+  "customerEmail",
   "deviceConnected",
   "platform",
   "source",
@@ -99,6 +100,21 @@ async function testMobileStreamingAndSessionFlow(browser, appUrl, fixture) {
 
   const firstSessionId = initialLoad.body.sessionId;
   assert(firstSessionId, "initial chat request has no sessionId");
+  const emailInput = page.getByLabel("Email for replies");
+  await emailInput.fill("Customer@Example.com");
+  await emailInput.blur();
+  await waitFor(
+    () => fixture.requests.filter(({ body }) => body.action === "loadPreviousSession").length === 2,
+    "session reload after saving the customer email",
+  );
+  const emailLoad = fixture.requests.filter(
+    ({ body }) => body.action === "loadPreviousSession",
+  )[1];
+  assert(
+    emailLoad.body.sessionId === firstSessionId &&
+      emailLoad.body.metadata.customerEmail === "customer@example.com",
+    "saving the email did not update metadata for the existing session",
+  );
   const input = page.getByPlaceholder("Type your question…");
   await input.fill("How do I reconnect my VibeTV?");
   await input.press("Enter");
@@ -117,31 +133,40 @@ async function testMobileStreamingAndSessionFlow(browser, appUrl, fixture) {
     firstSend.body.sessionId === firstSessionId,
     "sendMessage request did not reuse the loaded session",
   );
+  assert(
+    firstSend.body.metadata.customerEmail === "customer@example.com",
+    "sendMessage request did not include the normalized customer email",
+  );
 
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await trigger.click();
   await waitFor(
-    () => fixture.requests.filter(({ body }) => body.action === "loadPreviousSession").length === 2,
+    () => fixture.requests.filter(({ body }) => body.action === "loadPreviousSession").length === 3,
     "session reload after reopening chat",
   );
   const secondLoad = fixture.requests.filter(
     ({ body }) => body.action === "loadPreviousSession",
-  )[1];
+  )[2];
   assert(
     secondLoad.body.sessionId === firstSessionId,
     "reopening chat did not restore the existing session",
+  );
+  assert(
+    (await page.getByLabel("Email for replies").inputValue()) ===
+      "customer@example.com",
+    "reopening chat did not restore the conversation email",
   );
 
   await page
     .getByRole("button", { name: "Start a new support conversation" })
     .click();
   await waitFor(
-    () => fixture.requests.filter(({ body }) => body.action === "loadPreviousSession").length === 3,
+    () => fixture.requests.filter(({ body }) => body.action === "loadPreviousSession").length === 4,
     "session load after starting a new conversation",
   );
   const resetLoad = fixture.requests.filter(
     ({ body }) => body.action === "loadPreviousSession",
-  )[2];
+  )[3];
   assert(
     resetLoad.body.sessionId && resetLoad.body.sessionId !== firstSessionId,
     "New conversation did not create a fresh session",
@@ -150,6 +175,16 @@ async function testMobileStreamingAndSessionFlow(browser, appUrl, fixture) {
     (await page.evaluate(() => localStorage.getItem("n8n-chat/sessionId"))) ===
       resetLoad.body.sessionId,
     "fresh n8n sessionId was not persisted after reset",
+  );
+  assert(
+    (await page.evaluate(() =>
+      localStorage.getItem("vibetv-support/customerEmail"),
+    )) === null,
+    "New conversation did not clear the conversation email",
+  );
+  assert(
+    (await page.getByLabel("Email for replies").inputValue()) === "",
+    "New conversation did not clear the email field",
   );
 
   fixture.failNextSend();

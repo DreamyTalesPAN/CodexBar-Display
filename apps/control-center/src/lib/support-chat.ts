@@ -1,8 +1,9 @@
 export const SUPPORT_CHAT_SESSION_STORAGE_KEY = "n8n-chat/sessionId";
+export const SUPPORT_CHAT_EMAIL_STORAGE_KEY = "vibetv-support/customerEmail";
 
 export const SUPPORT_CHAT_COPY = {
   fallback:
-    "Support is temporarily unavailable. Please try again or email service@dreamytales.com.",
+    "Support is temporarily unavailable. Please try again or email vibetv@shop.com.",
   greeting: "Hi! I’m the VibeTV support assistant. How can I help?",
   notice:
     "AI-assisted support. Don’t share passwords, API keys, or payment details.",
@@ -24,6 +25,7 @@ export type SupportChatPlatform =
 export type SupportChatMetadata = {
   appVersion?: string;
   companionVersion?: string;
+  customerEmail?: string;
   deviceConnected: boolean;
   platform: SupportChatPlatform;
   source: "vibetv-control-center";
@@ -45,6 +47,7 @@ type PublicSupportChatEnvironment = {
 type SupportChatMetadataInput = {
   appVersion?: string | null;
   companionVersion?: string | null;
+  customerEmail?: string | null;
   deviceConnected: boolean;
   platformHint?: string;
   surface: SupportChatSurface;
@@ -102,6 +105,7 @@ export const supportChatConfig = resolveSupportChatConfig({
 export function buildSupportChatMetadata({
   appVersion,
   companionVersion,
+  customerEmail,
   deviceConnected,
   platformHint = "",
   surface,
@@ -111,6 +115,9 @@ export function buildSupportChatMetadata({
     ...(nonEmptyVersion(appVersion) ? { appVersion: appVersion.trim() } : {}),
     ...(nonEmptyVersion(companionVersion)
       ? { companionVersion: companionVersion.trim() }
+      : {}),
+    ...(normalizeSupportChatEmail(customerEmail)
+      ? { customerEmail: normalizeSupportChatEmail(customerEmail)! }
       : {}),
     deviceConnected,
     platform: detectSupportChatPlatform(userAgent, platformHint, surface),
@@ -164,6 +171,36 @@ export function clearSupportChatSession(
   storage: Pick<Storage, "removeItem">,
 ): void {
   storage.removeItem(SUPPORT_CHAT_SESSION_STORAGE_KEY);
+  storage.removeItem(SUPPORT_CHAT_EMAIL_STORAGE_KEY);
+}
+
+export function loadSupportChatEmail(
+  storage: Pick<Storage, "getItem">,
+): string {
+  return normalizeSupportChatEmail(
+    storage.getItem(SUPPORT_CHAT_EMAIL_STORAGE_KEY),
+  ) ?? "";
+}
+
+export function storeSupportChatEmail(
+  storage: Pick<Storage, "removeItem" | "setItem">,
+  value: string,
+): string {
+  const email = normalizeSupportChatEmail(value);
+  if (email) {
+    storage.setItem(SUPPORT_CHAT_EMAIL_STORAGE_KEY, email);
+    return email;
+  }
+  storage.removeItem(SUPPORT_CHAT_EMAIL_STORAGE_KEY);
+  return "";
+}
+
+export function normalizeSupportChatEmail(value?: string | null): string | null {
+  const candidate = value?.trim().toLowerCase();
+  if (!candidate || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate)) {
+    return null;
+  }
+  return candidate;
 }
 
 function normalizeSupportChatWebhookUrl(value?: string): string | null {

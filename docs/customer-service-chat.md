@@ -3,7 +3,8 @@
 The VibeTV Control Center embeds the official `@n8n/chat` client in the local
 Control Center, hosted setup, and recovery surfaces. The feature is disabled by
 default and connects directly to a published n8n Chat Trigger. The n8n workflow
-and support agent are managed separately from this repository.
+and support agent are managed separately from this repository. Customer and
+support replies are recorded in the `VibeTV Support` Airtable base.
 
 ## Control Center configuration
 
@@ -26,9 +27,10 @@ tokens, or other secrets in them.
 ## Client request contract
 
 The client uses the n8n defaults `sessionId` and `chatInput`. It persists the
-official `n8n-chat/sessionId` local-storage key across reloads. **New
-conversation** removes only that key and lets the chat client create a new
-session.
+official `n8n-chat/sessionId` local-storage key across reloads. An optional
+customer email is stored under `vibetv-support/customerEmail` for the same
+conversation. **New conversation** removes both values and lets the chat client
+create a new session.
 
 Each request contains only this metadata:
 
@@ -39,6 +41,7 @@ Each request contains only this metadata:
   "platform": "macos | windows | web | unknown",
   "appVersion": "optional",
   "companionVersion": "optional",
+  "customerEmail": "optional, explicitly entered by the customer",
   "deviceConnected": false
 }
 ```
@@ -70,11 +73,16 @@ Keep logging and other side effects on a side branch; an inline ticket, email,
 or database node after the agent would replace the last-node chat response.
 
 Rate limits, prompt-length limits, abuse protection, and support-agent safety
-belong in the n8n workflow. The agent may collect contact information and create
-a support ticket or email only after the customer explicitly confirms it. Wire
-error outputs for every fallible ticket or email node and attach a workflow-level
-error workflow so a production failure is visible in n8n instead of timing out
-silently.
+belong in the n8n workflow. Once the problem and email address are known, the
+agent creates a support ticket. n8n emails the internal review form to
+`paulanduschus@dreamytales.de` with `marcushaas@dreamytales.de` in CC. The
+reviewer can send the answer unchanged or have AI rewrite it in a friendly tone;
+the result is then sent to the customer without a second approval. Customer,
+agent, human, and outbound email messages are logged in Airtable.
+
+The customer-facing Gmail credential must authenticate the exact sender
+`vibetv@shop.com`; a display name or Reply-To value is not a substitute for the
+authenticated From address.
 
 ## Release check
 
