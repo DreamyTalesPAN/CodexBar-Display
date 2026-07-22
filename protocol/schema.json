@@ -35,6 +35,9 @@
       "type": "integer",
       "minimum": 0
     },
+    "usageUnavailable": {
+      "type": "boolean"
+    },
     "usageMode": {
       "type": "string",
       "enum": [

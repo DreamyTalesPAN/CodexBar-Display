@@ -395,6 +395,38 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
 }
 
+void testUsageUnavailableKeepsThemeAndProgress() {
+  const char* spec = R"JSON({"v":1,"id":"usage-unavailable","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l"},{"t":"tx","x":0,"y":20,"b":"s"},{"t":"tx","x":0,"y":40,"v":"{weekly}% left"},{"t":"tx","x":0,"y":60,"v":"Reset in {reset}"},{"t":"p","x":0,"y":80,"w":100,"h":8,"b":"s"}]})JSON";
+
+  FrameData frame;
+  frame.label = "Gemini";
+  frame.session = 73;
+  frame.weekly = 21;
+  frame.resetSecs = 3600;
+  frame.usageUnavailable = true;
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(6, sink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("Gemini", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("??", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("??% left", sink.commands[3].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[4].text.c_str());
+  TEST_ASSERT_EQUAL_INT(73, sink.commands[5].percent);
+
+  FrameData coldStart = frame;
+  coldStart.session = 0;
+  RecordingSink coldStartSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, coldStart, coldStartSink));
+  TEST_ASSERT_EQUAL_INT(0, coldStartSink.commands[5].percent);
+
+  frame.usageUnavailable = false;
+  frame.resetSecs = 0;
+  char reset[32] = {0};
+  codexbar_display::themespec::BoundValue("reset", frame, reset, sizeof(reset));
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", reset);
+}
+
 void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -1713,6 +1745,7 @@ int main() {
   RUN_TEST(testInvalidSpecsReturnFalse);
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);
+  RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
   RUN_TEST(testChangedLabelPassCanRestoreProviderText);

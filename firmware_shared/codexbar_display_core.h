@@ -23,6 +23,7 @@ struct Frame {
   int session = 0;
   int weekly = 0;
   int64_t resetSecs = 0;
+  bool usageUnavailable = false;
   int64_t sessionTokens = 0;
   int64_t weekTokens = 0;
   int64_t totalTokens = 0;
@@ -207,12 +208,16 @@ inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& nex
 inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& next, const String& raw) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   const bool usesLabel = ThemeSpecUsesBinding(raw, "label", "l");
+  const bool usesUsage = ThemeSpecUsesBinding(raw, "session", "s") ||
+                         ThemeSpecUsesBinding(raw, "weekly", "w") ||
+                         ThemeSpecUsesBinding(raw, "reset", "r");
   return (ThemeSpecUsesBinding(raw, "provider", "pr") && previous.provider != next.provider) ||
          (usesLabel &&
           (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
          (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
          (ThemeSpecUsesBinding(raw, "weekly", "w") && previous.weekly != next.weekly) ||
          (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
+         (usesUsage && previous.usageUnavailable != next.usageUnavailable) ||
          (ThemeSpecUsesBinding(raw, "usageMode", "u") &&
           (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode)) ||
          (ThemeSpecUsesActivity(raw) && previous.activity != next.activity) ||
@@ -244,6 +249,11 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
   }
   if (previous.resetSecs != next.resetSecs) {
     fields |= themespec::kThemeSpecFieldReset;
+  }
+  if (previous.usageUnavailable != next.usageUnavailable) {
+    fields |= themespec::kThemeSpecFieldSession |
+              themespec::kThemeSpecFieldWeekly |
+              themespec::kThemeSpecFieldReset;
   }
   if (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode) {
     fields |= themespec::kThemeSpecFieldUsageMode;
@@ -495,6 +505,7 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.session = ClampPct(doc["session"] | 0);
   out.weekly = ClampPct(doc["weekly"] | 0);
   out.resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(doc["resetSecs"] | 0));
+  out.usageUnavailable = doc["usageUnavailable"] | false;
   out.timeText = String(doc["time"] | "");
   out.dateText = String(doc["date"] | "");
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | 0));
@@ -533,6 +544,7 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
                                      previous.label != next.label ||
                                      previous.session != next.session ||
                                      previous.weekly != next.weekly ||
+                                     previous.usageUnavailable != next.usageUnavailable ||
                                      previous.sessionTokens != next.sessionTokens ||
                                      previous.weekTokens != next.weekTokens ||
                                      previous.totalTokens != next.totalTokens ||

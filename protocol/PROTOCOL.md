@@ -26,6 +26,7 @@ Fields:
 - `session` (number, optional): session usage percent `0..100`.
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
+- `usageUnavailable` (boolean, optional): current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
 - `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
@@ -212,7 +213,7 @@ Result:
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.
 - Firmware ticks down `resetSecs` locally between host updates.
-- Companion may resend the last known good frame during short CodexBar outages (current default max age: 10 minutes).
+- Companion may resend the last known good frame normally during short CodexBar outages (current default max age: 10 minutes). After that, it keeps provider identity and numeric progress carriers but sets `usageUnavailable:true`.
 - If frame payload exceeds `maxFrameBytes`, companion drops `theme` first, then token stats, before falling back to an error frame.
 
 ## Local USB ThemeSpec Flow

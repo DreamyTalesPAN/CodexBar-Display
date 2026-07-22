@@ -44,6 +44,7 @@ struct FrameData {
   int session = 0;
   int weekly = 0;
   int64_t resetSecs = 0;
+  bool usageUnavailable = false;
   const char* usageMode = "";
   const char* activity = "idle";
   const char* time = "";
@@ -458,15 +459,27 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     return;
   }
   if (std::strcmp(key, "session") == 0 || std::strcmp(key, "sessionPercent") == 0 || std::strcmp(key, "s") == 0) {
-    std::snprintf(out, outSize, "%d", ClampPct(frame.session));
+    if (frame.usageUnavailable) {
+      std::snprintf(out, outSize, "??");
+    } else {
+      std::snprintf(out, outSize, "%d", ClampPct(frame.session));
+    }
     return;
   }
   if (std::strcmp(key, "weekly") == 0 || std::strcmp(key, "weeklyPercent") == 0 || std::strcmp(key, "w") == 0) {
-    std::snprintf(out, outSize, "%d", ClampPct(frame.weekly));
+    if (frame.usageUnavailable) {
+      std::snprintf(out, outSize, "??");
+    } else {
+      std::snprintf(out, outSize, "%d", ClampPct(frame.weekly));
+    }
     return;
   }
   if (std::strcmp(key, "reset") == 0 || std::strcmp(key, "resetCountdown") == 0 || std::strcmp(key, "r") == 0) {
-    FormatDuration(frame.resetSecs, out, outSize);
+    if (frame.usageUnavailable || frame.resetSecs <= 0) {
+      std::snprintf(out, outSize, "Reset unavailable");
+    } else {
+      FormatDuration(frame.resetSecs, out, outSize);
+    }
     return;
   }
   if (std::strcmp(key, "usageMode") == 0 || std::strcmp(key, "u") == 0) {
@@ -515,6 +528,14 @@ inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* ou
   }
   out[0] = '\0';
   raw = SafeText(raw);
+
+  if ((frame.usageUnavailable || frame.resetSecs <= 0) &&
+      (std::strstr(raw, "{reset}") != nullptr ||
+       std::strstr(raw, "{resetCountdown}") != nullptr ||
+       std::strstr(raw, "{r}") != nullptr)) {
+    std::snprintf(out, outSize, "Reset unavailable");
+    return;
+  }
 
   size_t outLen = 0;
   for (size_t i = 0; raw[i] != '\0' && outLen + 1 < outSize;) {

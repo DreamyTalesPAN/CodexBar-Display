@@ -1068,6 +1068,7 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.session = CurrentFrame().session;
   frame.weekly = CurrentFrame().weekly;
   frame.resetSecs = CurrentRemainingSecs();
+  frame.usageUnavailable = CurrentFrame().usageUnavailable;
   frame.usageMode = usageModeText();
   frame.activity = CurrentFrame().activity.c_str();
   frame.time = CurrentFrame().timeText.c_str();

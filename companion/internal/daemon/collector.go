@@ -170,6 +170,25 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		}
 
 		frame.Provider = key
+		if frame.UsageUnavailable {
+			lastGood, exists := c.providers[key]
+			if exists && !lastGood.Frame.UsageUnavailable {
+				if isLastGoodFreshAt(lastGood.Collected, now, c.snapshotMaxAge) {
+					continue
+				}
+				lastGood.Frame.UsageUnavailable = true
+				c.providers[key] = lastGood
+			} else if !exists {
+				c.providers[key] = providerSnapshot{
+					Provider:  key,
+					Frame:     frame,
+					Source:    strings.TrimSpace(parsed.Source),
+					Collected: parsed.CollectedAt.UTC(),
+				}
+			}
+			updated = true
+			continue
+		}
 		snapshot := providerSnapshot{
 			Provider:           key,
 			Frame:              frame,
@@ -225,6 +244,17 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		}
 
 		snapshot, exists := c.providers[key]
+		if !exists {
+			snapshot = providerSnapshot{
+				Provider: key,
+				Frame: protocol.Frame{
+					Provider:         key,
+					Label:            key,
+					UsageUnavailable: true,
+				},
+				Source: strings.TrimSpace(stats.Source),
+			}
+		}
 		frame := snapshot.Frame.Normalize()
 		if strings.TrimSpace(frame.Provider) == "" {
 			frame.Provider = key
@@ -264,14 +294,10 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			Frame:              frame,
 			Source:             source,
 			Meta:               meta,
-			Collected:          now,
+			Collected:          snapshot.Collected,
 			ActivityObservedAt: activityObservedAt,
 		}
-		if exists {
-			updated++
-		} else {
-			updated++
-		}
+		updated++
 	}
 	c.mu.Unlock()
 
@@ -298,14 +324,13 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 		if !ok {
 			continue
 		}
-		if !snapshot.Collected.IsZero() && !isLastGoodFreshAt(snapshot.Collected, now, c.snapshotMaxAge) {
-			continue
-		}
-
 		frame := snapshot.Frame.Normalize()
 		frame.Provider = normalizeProviderKey(frame.Provider)
 		if frame.Provider == "" {
 			frame.Provider = key
+		}
+		if snapshot.Collected.IsZero() || !isLastGoodFreshAt(snapshot.Collected, now, c.snapshotMaxAge) {
+			frame.UsageUnavailable = true
 		}
 		frames = append(frames, codexbar.ParsedFrame{
 			Frame:              frame,
@@ -314,7 +339,7 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
-			Stale:              !c.snapshotIsFresh(snapshot, now),
+			Stale:              frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
 		})
 	}
 	return frames
