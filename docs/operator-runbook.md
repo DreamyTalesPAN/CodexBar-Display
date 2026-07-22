@@ -72,6 +72,57 @@ codexbar-display install-update \
   --confirm-live-update
 ```
 
+`install-update` automatically proves that the target, `deviceId`, and pairing
+token all describe the same VibeTV before it opens an OTA connection. It first
+pins tokenless `/hello`, validates the stored token with authenticated `/hello`,
+repairs a `401`/`403` once, repeats identity validation, and only then persists
+the complete identity tuple and starts the upload.
+
+The following read-only checks are useful when diagnosing an older build or a
+preflight failure, especially after changing `--target`, moving between test
+devices, or running a development Companion:
+
+1. Keep only the normal Companion on `127.0.0.1:47832`; stop any development
+   Companion on `127.0.0.1:47833`.
+2. Read `GET http://<device-ip>/hello` and compare its `deviceId` with
+   `deviceId` in
+   `~/Library/Application Support/codexbar-display/config.json`.
+3. Validate the stored token without printing it:
+
+```bash
+VIBETV_CONFIG="$HOME/Library/Application Support/codexbar-display/config.json"
+VIBETV_TOKEN="$(jq -r '.deviceToken // empty' "$VIBETV_CONFIG")"
+curl -fsS -o /dev/null \
+  -H "X-VibeTV-Token: ${VIBETV_TOKEN}" \
+  http://<device-ip>/hello
+unset VIBETV_TOKEN
+```
+
+An HTTP `401`/`403`, an empty token, or a different `deviceId` means the stored
+pairing cannot be trusted for that target. The current `install-update` command
+repairs an authentication rejection before OTA. For manual recovery, with
+explicit approval for this device, use:
+
+```bash
+curl -fsS --max-time 90 \
+  -X POST http://127.0.0.1:47832/v1/device/repair \
+  -H 'Content-Type: application/json' \
+  --data '{"target":"http://<device-ip>","forcePair":true}'
+```
+
+Repeat the authenticated `/hello` check after manual recovery. Do not bypass an
+`install-update` preflight failure.
+
+Older updaters can report only `broken pipe` when firmware rejects a stale token
+immediately after the request headers. The current preflight prevents that stale
+token from reaching RAW OTA. Any `broken pipe` after RAW has opened must still
+be treated as a potentially interrupted OTA: do not retry in the same boot,
+disconnect power for 10 seconds, and then let `install-update` repeat the full
+preflight before retrying once.
+
+Do not use `scripts/vibetv-provision.sh` or `POST /update` when `/hello` already
+identifies a VibeTV runtime. Those are GeekMagic factory-provisioning paths.
+
 ### USB recovery flash path
 
 Use only when a device is physically attached with a working data-capable USB serial connection and WiFi OTA is not available. This path flashes release firmware, not a local source build:
@@ -209,11 +260,13 @@ During normal operation the display uses explicit support states:
 
 Before packaging a device for a customer, clear local provisioning WiFi credentials with `POST /reset-wifi` while the device is still reachable. After reboot, the display must show both setup steps on one screen: connect to `VibeTV-Setup`, then open `192.168.4.1` in a browser.
 
-QR codes are deferred. They would be useful on the setup and connected screens, but adding QR generation to the ESP8266 firmware is a larger dependency and rendering-risk item. Keep the plain IP/host display as the supported customer path for now.
+The setup screen tells the customer to join the open `VibeTV-Setup` access
+point manually and open `192.168.4.1`.
 
 Smoke checklist for #53:
 - Boot device and confirm the first screen says `Starting`.
-- Clear WiFi and confirm setup AP screen shows `VibeTV-Setup` plus the setup IP.
+- Clear WiFi and confirm the setup AP screen shows `VibeTV-Setup` and the setup
+  IP without a QR code.
 - Save WiFi and confirm the connecting screen shows `Connecting WiFi` plus the SSID.
 - After WiFi connects, confirm the waiting screen shows only `WiFi connected!`, `Now go to:`, and `app.vibetv.shop`.
 - Send a USB frame and a WiFi `/frame` frame and confirm normal usage rendering still appears.

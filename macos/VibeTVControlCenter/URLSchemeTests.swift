@@ -9,6 +9,16 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    let repairStatus = InstallationStatus(
+        title: "CodexBar needs repair",
+        detail: "Repair CodexBar before continuing.",
+        failed: true,
+        retryTitle: "Repair CodexBar"
+    )
+    require(
+        repairStatus.retryTitle == "Repair CodexBar",
+        "native installation status must preserve its repair CTA across window reopening"
+    )
     let redactedReport = AppDelegate.redactReportValue([
         "token": "raw-token",
         "apiKey": "raw-api-key",

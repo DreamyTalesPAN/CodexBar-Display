@@ -18,6 +18,8 @@ export type ThemeProduct = {
   themeVersion?: string;
   manifestUrl?: string;
   packUrl?: string;
+  packSha256?: string;
+  packSizeBytes?: number;
   compatibleBoards?: string[];
   requiresFirmware?: string;
   source: ThemeSource;
@@ -67,6 +69,8 @@ type ShopifyProduct = {
   legacyManifestUrl?: ShopifyMetafield;
   packUrl?: ShopifyMetafield;
   legacyPackUrl?: ShopifyMetafield;
+  packSha256?: ShopifyMetafield;
+  packSizeBytes?: ShopifyMetafield;
   compatibleBoards?: ShopifyMetafield;
   legacyCompatibleBoards?: ShopifyMetafield;
   requiresFirmware?: ShopifyMetafield;
@@ -98,6 +102,8 @@ type ThemePackCatalog = {
     version?: string;
     compatibleBoards?: string[];
     requiresFirmware?: string;
+    sha256?: string;
+    bytes?: number;
   }>;
 };
 
@@ -262,6 +268,8 @@ function mapShopifyProduct(
       product.packUrl?.value?.trim() ||
       product.legacyPackUrl?.value?.trim() ||
       undefined,
+    packSha256: product.packSha256?.value?.trim().toLowerCase() || undefined,
+    packSizeBytes: positiveInteger(product.packSizeBytes?.value),
     compatibleBoards: splitList(
       product.compatibleBoards?.value || product.legacyCompatibleBoards?.value,
     ),
@@ -345,6 +353,8 @@ function mapThemePackCatalogEntry(
       theme.version || (theme.themeRev ? `rev ${theme.themeRev}` : undefined),
     manifestUrl: theme.manifestUrl,
     packUrl,
+    packSha256: theme.sha256?.trim().toLowerCase(),
+    packSizeBytes: theme.bytes,
     compatibleBoards: theme.compatibleBoards,
     requiresFirmware: theme.requiresFirmware,
     source: "github-catalog",
@@ -386,12 +396,13 @@ async function enrichThemesWithGitHubCatalog(
       if (!fallback) {
         return theme;
       }
+      const packMetadata = chooseCompleteThemePackMetadata(theme, fallback);
       return {
         ...theme,
         compatibleBoards:
           theme.compatibleBoards || fallback.compatibleBoards,
         manifestUrl: theme.manifestUrl || fallback.manifestUrl,
-        packUrl: chooseThemePackUrl(theme.packUrl, fallback.packUrl),
+        ...packMetadata,
         requiresFirmware:
           theme.requiresFirmware || fallback.requiresFirmware,
         themeVersion: theme.themeVersion || fallback.themeVersion,
@@ -443,17 +454,38 @@ function resolveCatalogUrl(raw: string | undefined): string | undefined {
   }
 }
 
-function chooseThemePackUrl(
-  primary?: string,
-  fallback?: string,
-): string | undefined {
-  if (isRemoteThemePackUrl(primary)) {
-    return primary?.trim();
+export function chooseCompleteThemePackMetadata(
+  primary: Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes">,
+  fallback: Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes">,
+): Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes"> {
+  if (hasCompleteThemePackMetadata(primary)) {
+    return normalizeThemePackMetadata(primary);
   }
-  if (isRemoteThemePackUrl(fallback)) {
-    return fallback?.trim();
+  if (hasCompleteThemePackMetadata(fallback)) {
+    return normalizeThemePackMetadata(fallback);
   }
-  return primary?.trim() || fallback?.trim() || undefined;
+  return normalizeThemePackMetadata(primary);
+}
+
+function hasCompleteThemePackMetadata(
+  theme: Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes">,
+): boolean {
+  return (
+    isRemoteThemePackUrl(theme.packUrl) &&
+    /^[a-f0-9]{64}$/i.test(theme.packSha256?.trim() || "") &&
+    Number.isSafeInteger(theme.packSizeBytes) &&
+    (theme.packSizeBytes || 0) > 0
+  );
+}
+
+function normalizeThemePackMetadata(
+  theme: Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes">,
+): Pick<ThemeProduct, "packUrl" | "packSha256" | "packSizeBytes"> {
+  return {
+    packUrl: theme.packUrl?.trim() || undefined,
+    packSha256: theme.packSha256?.trim().toLowerCase() || undefined,
+    packSizeBytes: theme.packSizeBytes,
+  };
 }
 
 function formatMoney(amount: number, currency: string): string {
@@ -469,6 +501,11 @@ function splitList(value: string | undefined | null): string[] | undefined {
     .map((part) => part.trim())
     .filter(Boolean);
   return parts?.length ? parts : undefined;
+}
+
+function positiveInteger(value: string | undefined | null): number | undefined {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function titleFromThemeId(themeId: string): string {
@@ -522,6 +559,12 @@ const SHOPIFY_THEMES_QUERY = `#graphql
               value
             }
             legacyPackUrl: metafield(namespace: "theme", key: "pack_url") {
+              value
+            }
+            packSha256: metafield(namespace: "vibetv", key: "pack_sha256") {
+              value
+            }
+            packSizeBytes: metafield(namespace: "vibetv", key: "pack_size_bytes") {
               value
             }
             compatibleBoards: metafield(namespace: "vibetv", key: "compatible_boards") {

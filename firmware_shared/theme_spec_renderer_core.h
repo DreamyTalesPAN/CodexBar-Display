@@ -44,6 +44,7 @@ struct FrameData {
   int session = 0;
   int weekly = 0;
   int64_t resetSecs = 0;
+  bool usageUnavailable = false;
   const char* usageMode = "";
   const char* activity = "idle";
   const char* time = "";
@@ -461,15 +462,27 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     return;
   }
   if (std::strcmp(key, "session") == 0 || std::strcmp(key, "sessionPercent") == 0 || std::strcmp(key, "s") == 0) {
-    std::snprintf(out, outSize, "%d", ClampPct(frame.session));
+    if (frame.usageUnavailable) {
+      std::snprintf(out, outSize, "??");
+    } else {
+      std::snprintf(out, outSize, "%d", ClampPct(frame.session));
+    }
     return;
   }
   if (std::strcmp(key, "weekly") == 0 || std::strcmp(key, "weeklyPercent") == 0 || std::strcmp(key, "w") == 0) {
-    std::snprintf(out, outSize, "%d", ClampPct(frame.weekly));
+    if (frame.usageUnavailable) {
+      std::snprintf(out, outSize, "??");
+    } else {
+      std::snprintf(out, outSize, "%d", ClampPct(frame.weekly));
+    }
     return;
   }
   if (std::strcmp(key, "reset") == 0 || std::strcmp(key, "resetCountdown") == 0 || std::strcmp(key, "r") == 0) {
-    FormatDuration(frame.resetSecs, out, outSize);
+    if (frame.usageUnavailable || frame.resetSecs <= 0) {
+      std::snprintf(out, outSize, "Reset unavailable");
+    } else {
+      FormatDuration(frame.resetSecs, out, outSize);
+    }
     return;
   }
   if (std::strcmp(key, "usageMode") == 0 || std::strcmp(key, "u") == 0) {
@@ -518,6 +531,14 @@ inline void RenderTextTemplate(const char* raw, const FrameData& frame, char* ou
   }
   out[0] = '\0';
   raw = SafeText(raw);
+
+  if ((frame.usageUnavailable || frame.resetSecs <= 0) &&
+      (std::strstr(raw, "{reset}") != nullptr ||
+       std::strstr(raw, "{resetCountdown}") != nullptr ||
+       std::strstr(raw, "{r}") != nullptr)) {
+    std::snprintf(out, outSize, "Reset unavailable");
+    return;
+  }
 
   size_t outLen = 0;
   for (size_t i = 0; raw[i] != '\0' && outLen + 1 < outSize;) {
@@ -1338,6 +1359,66 @@ inline bool RenderCompiledThemeSpecAnimatedPrimitives(const CompiledThemeSpec& s
   return rendered;
 }
 
+inline bool RenderCompiledThemeSpecRegionPrimitives(
+    const CompiledThemeSpec& scene,
+    const FrameData& frame,
+    const Bounds& region,
+    Sink& sink,
+    const char** error = nullptr,
+    bool* skippedAnimatedOverlap = nullptr) {
+  if (error != nullptr) {
+    *error = "";
+  }
+  if (skippedAnimatedOverlap != nullptr) {
+    *skippedAnimatedOverlap = false;
+  }
+  if (scene.primitiveCount == 0) {
+    if (error != nullptr) {
+      *error = "empty_scene";
+    }
+    return false;
+  }
+  if (region.width <= 0 || region.height <= 0) {
+    if (error != nullptr) {
+      *error = "empty_region";
+    }
+    return false;
+  }
+
+  sink.PrimeBackground(scene.bgColor);
+  sink.BeginClip(region.x, region.y, region.width, region.height);
+  RectCommand background;
+  background.x = region.x;
+  background.y = region.y;
+  background.width = region.width;
+  background.height = region.height;
+  background.color = scene.bgColor;
+  sink.FillRect(background);
+
+  bool rendered = false;
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    Bounds primitiveBounds;
+    const CompiledPrimitive& primitive = scene.primitives[i];
+    if (CompiledPrimitiveBounds(primitive, frame, false, primitiveBounds) &&
+        BoundsOverlap(region, primitiveBounds)) {
+      if (CompiledPrimitiveIsAnimated(primitive, frame)) {
+        if (skippedAnimatedOverlap != nullptr) {
+          *skippedAnimatedOverlap = true;
+        }
+        rendered = true;
+        continue;
+      }
+      rendered = DrawCompiledPrimitive(primitive, frame, sink) || rendered;
+      RenderYield();
+    }
+  }
+  sink.EndClip();
+  if (!rendered && error != nullptr) {
+    *error = "no_overlap_rendered";
+  }
+  return rendered;
+}
+
 inline bool RenderCompiledThemeSpecChangedPrimitives(
     const CompiledThemeSpec& scene,
     const FrameData& frame,
@@ -1394,38 +1475,25 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     return false;
   }
 
-  sink.PrimeBackground(scene.bgColor);
-  sink.BeginClip(dirty.x, dirty.y, dirty.width, dirty.height);
-  RectCommand background;
-  background.x = dirty.x;
-  background.y = dirty.y;
-  background.width = dirty.width;
-  background.height = dirty.height;
-  background.color = scene.bgColor;
-  sink.FillRect(background);
+  return RenderCompiledThemeSpecRegionPrimitives(scene, frame, dirty, sink, error, skippedAnimatedOverlap);
+}
 
-  bool rendered = false;
+inline bool AnyAnimatedCompiledPrimitiveOverlaps(
+    const CompiledThemeSpec& scene,
+    const FrameData& frame,
+    const Bounds& region) {
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
-    Bounds primitiveBounds;
     const CompiledPrimitive& primitive = scene.primitives[i];
+    if (!CompiledPrimitiveIsAnimated(primitive, frame)) {
+      continue;
+    }
+    Bounds primitiveBounds;
     if (CompiledPrimitiveBounds(primitive, frame, false, primitiveBounds) &&
-        BoundsOverlap(dirty, primitiveBounds)) {
-      if (CompiledPrimitiveIsAnimated(primitive, frame)) {
-        if (skippedAnimatedOverlap != nullptr) {
-          *skippedAnimatedOverlap = true;
-        }
-        rendered = true;
-        continue;
-      }
-      rendered = DrawCompiledPrimitive(primitive, frame, sink) || rendered;
-      RenderYield();
+        BoundsOverlap(region, primitiveBounds)) {
+      return true;
     }
   }
-  sink.EndClip();
-  if (!rendered && error != nullptr) {
-    *error = "no_overlap_rendered";
-  }
-  return rendered;
+  return false;
 }
 
 }  // namespace themespec

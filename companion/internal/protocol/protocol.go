@@ -14,6 +14,7 @@ type Frame struct {
 	Session               int             `json:"session,omitempty"`
 	Weekly                int             `json:"weekly,omitempty"`
 	ResetSec              int64           `json:"resetSecs,omitempty"`
+	UsageUnavailable      bool            `json:"usageUnavailable,omitempty"`
 	UsageMode             string          `json:"usageMode,omitempty"`
 	Time                  string          `json:"time,omitempty"`
 	Date                  string          `json:"date,omitempty"`

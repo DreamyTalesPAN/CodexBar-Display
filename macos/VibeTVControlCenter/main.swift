@@ -920,6 +920,80 @@ struct InstallationStatus {
     let title: String
     let detail: String
     let failed: Bool
+    let retryTitle: String
+}
+
+private enum NativeSetupButtonVariant {
+    case primary
+    case secondary
+    case outline
+}
+
+@MainActor
+private final class ShadcnSpinnerView: NSView {
+    private let arcLayer = CAShapeLayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configure()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configure()
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 20, height: 20)
+    }
+
+    override func layout() {
+        super.layout()
+        arcLayer.frame = bounds
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let radius = max(0, min(bounds.width, bounds.height) / 2 - 2)
+        let path = CGMutablePath()
+        path.addArc(
+            center: center,
+            radius: radius,
+            startAngle: -.pi / 2,
+            endAngle: .pi,
+            clockwise: false
+        )
+        arcLayer.path = path
+    }
+
+    func startAnimation() {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            return
+        }
+        guard arcLayer.animation(forKey: "shadcn-spinner") == nil else {
+            return
+        }
+        let animation = CABasicAnimation(keyPath: "transform.rotation.z")
+        animation.fromValue = 0
+        // AppKit's layer coordinates invert the CSS visual direction. Use a
+        // negative rotation so this matches shadcn's clockwise animate-spin.
+        animation.toValue = -CGFloat.pi * 2
+        animation.duration = 0.8
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        arcLayer.add(animation, forKey: "shadcn-spinner")
+    }
+
+    private func configure() {
+        wantsLayer = true
+        arcLayer.fillColor = NSColor.clear.cgColor
+        arcLayer.strokeColor = NSColor(
+            calibratedRed: 0.267,
+            green: 0.286,
+            blue: 0.200,
+            alpha: 1
+        ).cgColor
+        arcLayer.lineCap = .round
+        arcLayer.lineWidth = 2
+        layer?.addSublayer(arcLayer)
+    }
 }
 
 @MainActor
@@ -974,8 +1048,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         _ = updaterController
 #endif
         presentInstallationStatus(
-            title: "Finishing installation…",
-            detail: "Checking the Mac App and its background runtime.",
+            title: "Starting Control Center",
+            detail: "Checking the Mac App and your last connected VibeTV.",
             failed: false
         )
         startRuntimePreparation()
@@ -1011,7 +1085,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             presentInstallationStatus(
                 title: status.title,
                 detail: status.detail,
-                failed: status.failed
+                failed: status.failed,
+                retryTitle: status.retryTitle
             )
         } else {
             window?.makeKeyAndOrderFront(nil)
@@ -1025,8 +1100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
         presentInstallationStatus(
-            title: "Finishing installation…",
-            detail: "Checking the Mac App and its background runtime.",
+            title: "Starting Control Center",
+            detail: "Checking the Mac App and your last connected VibeTV.",
             failed: false
         )
         Task { [weak self] in
@@ -1706,6 +1781,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return window
     }
 
+    private func makeNativeSetupButton(
+        title: String,
+        action: Selector,
+        symbolName: String,
+        variant: NativeSetupButtonVariant
+    ) -> NSButton {
+        let button = NSButton(title: title, target: self, action: action)
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 8
+        button.layer?.masksToBounds = true
+        button.font = .systemFont(ofSize: 14, weight: .semibold)
+        button.contentTintColor = NSColor(calibratedWhite: 0.1, alpha: 1)
+        button.image = NSImage(
+            systemSymbolName: symbolName,
+            accessibilityDescription: nil
+        )
+        button.imagePosition = .imageLeading
+        button.imageHugsTitle = true
+        button.imageScaling = .scaleProportionallyDown
+        button.setAccessibilityLabel(title)
+
+        switch variant {
+        case .primary:
+            button.layer?.backgroundColor = NSColor(
+                calibratedRed: 0.8,
+                green: 1,
+                blue: 0,
+                alpha: 1
+            ).cgColor
+        case .secondary:
+            button.layer?.backgroundColor = NSColor(
+                calibratedWhite: 0.933,
+                alpha: 1
+            ).cgColor
+        case .outline:
+            button.layer?.backgroundColor = NSColor(
+                calibratedWhite: 0.976,
+                alpha: 1
+            ).cgColor
+            button.layer?.borderColor = NSColor(
+                calibratedWhite: 0.89,
+                alpha: 1
+            ).cgColor
+            button.layer?.borderWidth = 1
+        }
+
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.heightAnchor.constraint(equalToConstant: 44),
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 132),
+        ])
+        return button
+    }
+
     private func presentInstallationStatus(
         title: String,
         detail: String,
@@ -1715,16 +1845,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         installationStatus = InstallationStatus(
             title: title,
             detail: detail,
-            failed: failed
+            failed: failed,
+            retryTitle: retryTitle
         )
         installationStatusTitle = title
         installationStatusDetail = detail
         installationStatusFailed = failed
         let window = window ?? makeMainWindow()
         let container = NSView()
-        // This screen intentionally uses a fixed light surface and dark text.
-        // Keep inherited AppKit controls (spinner and buttons) in the matching
-        // appearance so they do not render white-on-white in macOS Dark Mode.
+        // This screen intentionally mirrors the shadcn loading state shown by
+        // the WebView once the local Control Center is available.
         container.appearance = NSAppearance(named: .aqua)
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor(
@@ -1753,38 +1883,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         detailLabel.alignment = .center
         detailLabel.maximumNumberOfLines = 3
 
-        let progress = NSProgressIndicator()
-        progress.style = .spinning
-        progress.controlSize = .large
+        let progress = ShadcnSpinnerView(
+            frame: NSRect(x: 0, y: 0, width: 20, height: 20)
+        )
         if failed {
             progress.isHidden = true
         } else {
-            progress.startAnimation(nil)
+            progress.startAnimation()
         }
 
-        let retry = NSButton(
+        let retry = makeNativeSetupButton(
             title: retryTitle,
-            target: self,
-            action: #selector(retryRuntimePreparation)
+            action: #selector(retryRuntimePreparation),
+            symbolName: "arrow.clockwise",
+            variant: .primary
         )
-        retry.bezelStyle = .rounded
         retry.keyEquivalent = "\r"
         retry.isHidden = !failed
 
-        let support = NSButton(
+        let support = makeNativeSetupButton(
             title: "Create report",
-            target: self,
-            action: #selector(createNativeSupportReport)
+            action: #selector(createNativeSupportReport),
+            symbolName: "doc.text",
+            variant: .secondary
         )
-        support.bezelStyle = .rounded
         support.isHidden = false
 
-        let supportLog = NSButton(
+        let supportLog = makeNativeSetupButton(
             title: "Open support log",
-            target: self,
-            action: #selector(openSupportLog)
+            action: #selector(openSupportLog),
+            symbolName: "doc.plaintext",
+            variant: .outline
         )
-        supportLog.bezelStyle = .rounded
         supportLog.isHidden = !failed
 
         let actions = NSStackView(views: [retry, support, supportLog])
@@ -1792,7 +1922,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         actions.alignment = .centerY
         actions.spacing = 12
 
-        let stack = NSStackView(views: [brand, progress, titleLabel, detailLabel, actions])
+        let stack = NSStackView(views: [brand, titleLabel, detailLabel, progress, actions])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 18

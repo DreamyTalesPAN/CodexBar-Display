@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
@@ -16,7 +17,27 @@ const (
 	configFileName                 = "config.json"
 	deviceSelectionJournalFileName = "device-selection-pending.json"
 	defaultTheme                   = "mini"
+	privateConfigDirMode           = 0o700
+	privateConfigFileMode          = 0o600
 )
+
+var configBackupFilePatterns = []string{
+	"config.before-*.json",
+	"config.backup-*.json",
+	"config.json.backup-*",
+}
+
+type permissionMigrationState struct {
+	mu       sync.Mutex
+	complete bool
+}
+
+type permissionMigrationCache struct {
+	states  sync.Map
+	migrate func(home, configPath, configDir string) error
+}
+
+var processPermissionMigrations permissionMigrationCache
 
 type Config struct {
 	Theme        string        `json:"theme,omitempty"`
@@ -64,6 +85,9 @@ func Load(home string) (Config, error) {
 	}
 
 	path := ConfigPath(home)
+	if err := RestrictPermissions(home); err != nil {
+		return Config{}, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -83,6 +107,81 @@ func Load(home string) (Config, error) {
 	return cfg, nil
 }
 
+// RestrictPermissions migrates an existing secret-bearing runtime config
+// before any caller reads it. Missing paths are valid for first-run installs.
+func RestrictPermissions(home string) error {
+	home = strings.TrimSpace(home)
+	if home == "" {
+		return errors.New("home directory is empty")
+	}
+	configPath := ConfigPath(home)
+	configDir := filepath.Dir(configPath)
+	return processPermissionMigrations.ensure(home, configPath, configDir)
+}
+
+func (c *permissionMigrationCache) ensure(home, configPath, configDir string) error {
+	if existing, ok := c.states.Load(configDir); ok {
+		return existing.(*permissionMigrationState).ensure(c.migration(), home, configPath, configDir)
+	}
+	state := &permissionMigrationState{}
+	actual, _ := c.states.LoadOrStore(configDir, state)
+	return actual.(*permissionMigrationState).ensure(c.migration(), home, configPath, configDir)
+}
+
+func (c *permissionMigrationCache) migration() func(string, string, string) error {
+	if c.migrate != nil {
+		return c.migrate
+	}
+	return restrictPermissions
+}
+
+func (s *permissionMigrationState) ensure(
+	migrate func(string, string, string) error,
+	home,
+	configPath,
+	configDir string,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.complete {
+		return nil
+	}
+	if err := migrate(home, configPath, configDir); err != nil {
+		return err
+	}
+	s.complete = true
+	return nil
+}
+
+func restrictPermissions(home, configPath, configDir string) error {
+	if err := os.Chmod(configDir, privateConfigDirMode); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("restrict runtime config dir permissions: %w", err)
+	}
+	for _, path := range []string{configPath, deviceSelectionJournalPath(home)} {
+		if err := restrictExistingConfigFilePermissions(path); err != nil {
+			return err
+		}
+	}
+	for _, pattern := range ConfigBackupFilePatterns() {
+		matches, err := filepath.Glob(filepath.Join(configDir, pattern))
+		if err != nil {
+			return fmt.Errorf("find runtime config backups: %w", err)
+		}
+		for _, match := range matches {
+			if err := restrictExistingConfigFilePermissions(match); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// ConfigBackupFilePatterns returns the recognized secret-bearing recovery
+// files. Callers use the same allowlist for recovery and permission migration.
+func ConfigBackupFilePatterns() []string {
+	return append([]string(nil), configBackupFilePatterns...)
+}
+
 func Save(home string, cfg Config) error {
 	home = strings.TrimSpace(home)
 	if home == "" {
@@ -92,7 +191,7 @@ func Save(home string, cfg Config) error {
 	cfg.Normalize()
 
 	path := ConfigPath(home)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := ensurePrivateConfigDir(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
@@ -103,14 +202,28 @@ func Save(home string, cfg Config) error {
 	payload = append(payload, '\n')
 
 	tmpPath := fmt.Sprintf("%s.tmp-%d", path, time.Now().UnixNano())
-	if err := os.WriteFile(tmpPath, payload, 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, payload, privateConfigFileMode); err != nil {
 		return fmt.Errorf("write temp runtime config: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("replace runtime config: %w", err)
 	}
-	return os.Chmod(path, 0o644)
+	return os.Chmod(path, privateConfigFileMode)
+}
+
+func ensurePrivateConfigDir(path string) error {
+	if err := os.MkdirAll(path, privateConfigDirMode); err != nil {
+		return err
+	}
+	return os.Chmod(path, privateConfigDirMode)
+}
+
+func restrictExistingConfigFilePermissions(path string) error {
+	if err := os.Chmod(path, privateConfigFileMode); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("restrict runtime config file permissions: %w", err)
+	}
+	return nil
 }
 
 // BeginDeviceSelection records the last committed configuration before a
@@ -124,7 +237,7 @@ func BeginDeviceSelection(home string, previous Config) error {
 	}
 	previous.Normalize()
 	path := deviceSelectionJournalPath(home)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := ensurePrivateConfigDir(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 	payload, err := json.MarshalIndent(previous, "", "  ")
@@ -133,14 +246,14 @@ func BeginDeviceSelection(home string, previous Config) error {
 	}
 	payload = append(payload, '\n')
 	tmpPath := fmt.Sprintf("%s.tmp-%d", path, time.Now().UnixNano())
-	if err := os.WriteFile(tmpPath, payload, 0o600); err != nil {
+	if err := os.WriteFile(tmpPath, payload, privateConfigFileMode); err != nil {
 		return fmt.Errorf("write device selection journal: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("replace device selection journal: %w", err)
 	}
-	return os.Chmod(path, 0o600)
+	return os.Chmod(path, privateConfigFileMode)
 }
 
 func CommitDeviceSelection(home string) error {
@@ -159,6 +272,9 @@ func RecoverPendingDeviceSelection(home string) (bool, error) {
 	home = strings.TrimSpace(home)
 	if home == "" {
 		return false, errors.New("home directory is empty")
+	}
+	if err := RestrictPermissions(home); err != nil {
+		return false, err
 	}
 	path := deviceSelectionJournalPath(home)
 	payload, err := os.ReadFile(path)

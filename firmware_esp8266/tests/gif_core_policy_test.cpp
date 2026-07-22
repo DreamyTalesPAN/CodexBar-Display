@@ -1,11 +1,15 @@
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <string>
 
 #include "../src/gif_core_policy.h"
 #include "../src/boot_recovery_policy.h"
+#include "../src/asset_path_policy.h"
+#include "../src/connected_setup_policy.h"
 #include "../src/theme_spec_runtime_policy.h"
+#include "../src/wifi_security_policy.h"
 
 namespace {
 
@@ -13,6 +17,11 @@ using codexbar_display::esp8266::GifCorePolicy;
 using codexbar_display::esp8266::GifFailureGuardState;
 using codexbar_display::esp8266::BootRecoveryPolicy;
 using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
+using codexbar_display::esp8266::AssetPathPolicy;
+using codexbar_display::esp8266::WifiSecurityPolicy;
+using codexbar_display::esp8266::ConnectedSetupPolicy;
+
+std::string readFile(const char* path);
 
 bool expect(bool cond, const char* message) {
   if (!cond) {
@@ -130,6 +139,166 @@ bool testBootRecoveryOnlyCountsPhysicalResets() {
   return true;
 }
 
+bool testAssetWritesStayInsideThemeNamespace() {
+  const char* allowed[] = {
+      "/themes/u/mini.json",
+      "/themes/mini/mini.gif",
+  };
+  for (const char* path : allowed) {
+    if (!expect(
+            AssetPathPolicy::IsMutableThemeAsset(path, std::strlen(path)),
+            "theme asset path must remain writable")) {
+      return false;
+    }
+  }
+
+  const char* blocked[] = {
+      "/auth",
+      "/s",
+      "/theme-active",
+      "/.asset-upload.tmp",
+      "/foo",
+      "/themes/",
+      "/themes//bad.gif",
+      "/themes/../auth",
+      "/themes/u/bad?.gif",
+  };
+  for (const char* path : blocked) {
+    if (!expect(
+            !AssetPathPolicy::IsMutableThemeAsset(path, std::strlen(path)),
+            "internal or malformed path must not be writable")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool testWifiCredentialWritesRequirePhysicalSetupOrCurrentToken() {
+  if (!expect(
+          WifiSecurityPolicy::AllowsCredentialWrite(true, true, false, false),
+          "physical setup with its nonce must allow WiFi changes")) {
+    return false;
+  }
+  if (!expect(
+          WifiSecurityPolicy::AllowsCredentialWrite(false, false, true, true),
+          "a paired device with its current token must allow WiFi changes")) {
+    return false;
+  }
+  return expect(
+      !WifiSecurityPolicy::AllowsCredentialWrite(true, false, false, false) &&
+          !WifiSecurityPolicy::AllowsCredentialWrite(false, false, false, false) &&
+          !WifiSecurityPolicy::AllowsCredentialWrite(false, false, true, false),
+      "automatic setup, missing nonces, and missing device tokens must deny WiFi changes");
+}
+
+bool testPairingRequiresCurrentTokenOrPhysicalWindow() {
+  if (!expect(
+          WifiSecurityPolicy::AllowsPairing(true, true, false),
+          "a paired device must allow rotation with its current token")) {
+    return false;
+  }
+  if (!expect(
+          WifiSecurityPolicy::AllowsPairing(false, false, true) &&
+              WifiSecurityPolicy::AllowsPairing(true, false, true),
+          "a physical pairing window must allow first pairing and recovery")) {
+    return false;
+  }
+  return expect(
+      !WifiSecurityPolicy::AllowsPairing(false, false, false) &&
+          !WifiSecurityPolicy::AllowsPairing(true, false, false),
+      "unconfirmed first pairing and unauthorized rotation must be denied");
+}
+
+bool testPairingHandlerAuthorizesBeforeTokenMutation(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t handler = mainSource.find("void handlePairingAPI()");
+  const std::size_t authorization = mainSource.find("WifiSecurityPolicy::AllowsPairing", handler);
+  const std::size_t tokenGeneration = mainSource.find("generateAuthToken()", handler);
+  const std::size_t tokenSave = mainSource.find("saveDeviceAuthToken(token)", handler);
+  return expect(
+      authorization != std::string::npos && tokenGeneration != std::string::npos &&
+          tokenSave != std::string::npos && authorization < tokenGeneration && tokenGeneration < tokenSave,
+      "pairing must authorize before generating and saving a replacement token");
+}
+
+bool testConnectedPageNeverRendersPairingSecret(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t pageStart = mainSource.find("String connectedPageHTML()");
+  const std::size_t pageEnd = mainSource.find("void handleRoot()", pageStart);
+  if (pageStart == std::string::npos || pageEnd == std::string::npos) {
+    return false;
+  }
+  const std::string page = mainSource.substr(pageStart, pageEnd - pageStart);
+  return expect(
+      page.find("deviceAuthToken") == std::string::npos &&
+          page.find("/api/pair") == std::string::npos &&
+          page.find("tokenQuery") == std::string::npos,
+      "the unauthenticated device page must never render pairing secrets or rotation forms");
+}
+
+bool testWifiHelloReportsPairingWindowWithoutSecrets(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t handler = mainSource.find("void handleHello()");
+  const std::size_t handlerEnd = mainSource.find("bool isSafeAssetPath", handler);
+  if (handler == std::string::npos || handlerEnd == std::string::npos) {
+    return false;
+  }
+  const std::string helloHandler = mainSource.substr(handler, handlerEnd - handler);
+  return expect(
+      helloHandler.find("appendAuthStatusJSON(out)") != std::string::npos &&
+          helloHandler.find("deviceAuthToken") == std::string::npos,
+      "WiFi hello must report pairing status and window timing without exposing the token");
+}
+
+bool testPhysicalPairingWindowIsThirtyMinutesAndOneUse(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t duration = mainSource.find(
+      "kPhysicalPairingWindowMs = 30UL * 60UL * 1000UL");
+  const std::size_t markerConsumer = mainSource.find("consumePhysicalPairingSetupMarker()");
+  const std::size_t markerClear = mainSource.find(
+      "EEPROM.put(kPairingSetupMarkerOffset, static_cast<uint32_t>(0))",
+      markerConsumer);
+  const std::size_t pairHandler = mainSource.find("void handlePairingAPI()");
+  const std::size_t windowConsumed = mainSource.find(
+      "physicalPairingWindowExpiresAtMs = 0",
+      pairHandler);
+  return expect(
+      duration != std::string::npos && markerConsumer != std::string::npos &&
+          markerClear != std::string::npos && pairHandler != std::string::npos &&
+          windowConsumed != std::string::npos,
+      "physical pairing must stay time-bounded, one-shot across reboot, and consumed by first pairing");
+}
+
+bool testAutomaticSetupAccessPointRoutesToRecoveryPage(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t rootHandler = mainSource.find("void handleRoot()");
+  const std::size_t rootEnd = mainSource.find("void redirectToSetupRoot()", rootHandler);
+  if (rootHandler == std::string::npos || rootEnd == std::string::npos) {
+    return false;
+  }
+  const std::string root = mainSource.substr(rootHandler, rootEnd - rootHandler);
+  return expect(
+      root.find("if (!physicalSetupAuthorized)") != std::string::npos &&
+          root.find("SendRecoveryPage(") != std::string::npos &&
+          mainSource.find("startSetupAccessPoint(false)") != std::string::npos,
+      "an automatic untrusted setup AP must render recovery guidance instead of the writable setup form");
+}
+
+bool testWifiHandlersAuthorizeBeforeStorageMutation(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t saveHandler = mainSource.find("void handleSaveWifi()");
+  const std::size_t saveAuthorization = mainSource.find("if (!authorizeWifiCredentialWrite())", saveHandler);
+  const std::size_t saveMutation = mainSource.find("saveWifiCredentials(", saveHandler);
+  const std::size_t resetHandler = mainSource.find("void handleResetWifi()");
+  const std::size_t resetAuthorization = mainSource.find("if (!authorizeWifiCredentialWrite())", resetHandler);
+  const std::size_t resetMutation = mainSource.find("clearWifiCredentials()", resetHandler);
+  return expect(
+      saveAuthorization != std::string::npos && saveMutation != std::string::npos &&
+          saveAuthorization < saveMutation && resetAuthorization != std::string::npos &&
+          resetMutation != std::string::npos && resetAuthorization < resetMutation,
+      "WiFi handlers must authorize before changing credentials");
+}
+
 bool testAnimatedAssetScanYieldsEveryFourRows() {
   for (int row = 1; row <= 32; ++row) {
     const bool expected = (row % 4) == 0;
@@ -141,8 +310,6 @@ bool testAnimatedAssetScanYieldsEveryFourRows() {
   }
   return true;
 }
-
-std::string readFile(const char* path);
 
 bool testAnimatedFrameOffsetsAreIndexedOneFrameAtATime() {
   if (!expect(
@@ -444,17 +611,19 @@ bool testLegacyMiniThemeUsesLiveUsageMode(const char* mainPath) {
       "OTA filesystems must fall back through current, 1.0.37, then 1.0.36 Mini specs");
 }
 
-bool testInternalUploadPathIsRejected(const char* mainPath) {
+bool testAssetHandlersUseThemeNamespacePolicy(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
-  const std::size_t pathValidation = mainSource.find("if (!isSafeAssetPath(assetUploadPath))");
-  const std::size_t reservedValidation =
-      mainSource.find("if (assetUploadPath == kAssetUploadTemporaryPath)", pathValidation);
+  const std::size_t uploadValidation = mainSource.find("if (!isMutableThemeAssetPath(assetUploadPath))");
   const std::size_t temporaryOpen =
-      mainSource.find("LittleFS.open(kAssetUploadTemporaryPath, \"w\")", reservedValidation);
+      mainSource.find("LittleFS.open(kAssetUploadTemporaryPath, \"w\")", uploadValidation);
+  const std::size_t deleteHandler = mainSource.find("void handleAssetDelete()");
+  const std::size_t deleteValidation = mainSource.find("if (!isMutableThemeAssetPath(path))", deleteHandler);
+  const std::size_t deleteCall = mainSource.find("LittleFS.remove(path)", deleteValidation);
   return expect(
-      pathValidation != std::string::npos && reservedValidation != std::string::npos &&
-          temporaryOpen != std::string::npos && reservedValidation < temporaryOpen,
-      "the internal staging path must be rejected before opening an external upload");
+      uploadValidation != std::string::npos && temporaryOpen != std::string::npos &&
+          uploadValidation < temporaryOpen && deleteValidation != std::string::npos &&
+          deleteCall != std::string::npos && deleteValidation < deleteCall,
+      "upload and delete handlers must enforce the theme namespace before filesystem writes");
 }
 
 bool testFirmwareUsesIPDiscoveryInsteadOfMdns(const char* mainPath) {
@@ -466,6 +635,36 @@ bool testFirmwareUsesIPDiscoveryInsteadOfMdns(const char* mainPath) {
           mainSource.find("WiFi.localIP().toString()") != std::string::npos &&
           mainSource.find("192.168.4.1") != std::string::npos,
       "firmware must expose setup and station endpoints by IP without mDNS");
+}
+
+bool testConnectedSetupAddressPolicy() {
+  return expect(
+             ConnectedSetupPolicy::IsStationIPv4("172.30.12.34") &&
+                 ConnectedSetupPolicy::IsStationIPv4("192.168.178.163"),
+             "connected setup must accept readable station IPv4 addresses") &&
+         expect(
+             !ConnectedSetupPolicy::IsStationIPv4("") &&
+                 !ConnectedSetupPolicy::IsStationIPv4("0.0.0.0") &&
+                 !ConnectedSetupPolicy::IsStationIPv4("192.168.4.1") &&
+                 !ConnectedSetupPolicy::IsStationIPv4("999.1.2.3") &&
+                 !ConnectedSetupPolicy::IsStationIPv4("not-an-ip"),
+             "connected setup must hide unavailable, AP-mode, and invalid IPv4 values");
+}
+
+bool testConnectedSetupRendererShowsSafeIpFallback(const char* rendererPath) {
+  const std::string renderer = readFile(rendererPath);
+  const std::size_t start = renderer.find("void RendererESP8266::DrawConnectedSetupInstructions(");
+  const std::size_t end = renderer.find("\n}\n\n#ifndef CODEXBAR_DISPLAY_PROBE_ONLY", start);
+  if (!expect(start != std::string::npos && end != std::string::npos, "connected setup renderer must remain testable")) {
+    return false;
+  }
+  const std::string function = renderer.substr(start, end - start);
+  return expect(
+      function.find("ConnectedSetupPolicy::IsStationIPv4") != std::string::npos &&
+          function.find("IP: ") != std::string::npos &&
+          function.find("IP unavailable") != std::string::npos &&
+          function.find("tft.print(ipLine)") != std::string::npos,
+      "connected setup renderer must display a validated IP line and an unavailable state");
 }
 
 }  // namespace
@@ -481,6 +680,15 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testBootRecoveryOnlyCountsPhysicalResets()) {
+    return 1;
+  }
+  if (!testAssetWritesStayInsideThemeNamespace()) {
+    return 1;
+  }
+  if (!testWifiCredentialWritesRequirePhysicalSetupOrCurrentToken()) {
+    return 1;
+  }
+  if (!testPairingRequiresCurrentTokenOrPhysicalWindow()) {
     return 1;
   }
   if (!testAnimatedAssetScanYieldsEveryFourRows()) {
@@ -507,10 +715,34 @@ int main(int argc, char** argv) {
   if (!testLegacyMiniThemeUsesLiveUsageMode(argv[3])) {
     return 1;
   }
-  if (!testInternalUploadPathIsRejected(argv[3])) {
+  if (!testAssetHandlersUseThemeNamespacePolicy(argv[3])) {
+    return 1;
+  }
+  if (!testWifiHandlersAuthorizeBeforeStorageMutation(argv[3])) {
+    return 1;
+  }
+  if (!testPairingHandlerAuthorizesBeforeTokenMutation(argv[3])) {
+    return 1;
+  }
+  if (!testConnectedPageNeverRendersPairingSecret(argv[3])) {
+    return 1;
+  }
+  if (!testWifiHelloReportsPairingWindowWithoutSecrets(argv[3])) {
+    return 1;
+  }
+  if (!testPhysicalPairingWindowIsThirtyMinutesAndOneUse(argv[3])) {
+    return 1;
+  }
+  if (!testAutomaticSetupAccessPointRoutesToRecoveryPage(argv[3])) {
     return 1;
   }
   if (!testFirmwareUsesIPDiscoveryInsteadOfMdns(argv[3])) {
+    return 1;
+  }
+  if (!testConnectedSetupAddressPolicy()) {
+    return 1;
+  }
+  if (!testConnectedSetupRendererShowsSafeIpFallback(argv[4])) {
     return 1;
   }
 

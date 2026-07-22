@@ -16,8 +16,9 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
 import type { CompanionStatus } from "./control-center-types";
+import { ControlCenterBrand } from "./control-center-brand";
+import { ShellConnectionStatus } from "./shell-connection-status";
 
 type HostedSetupShellProps = {
   children: ReactNode;
@@ -43,16 +44,12 @@ export function HostedSetupShell({
           <SidebarHeader className="border-b border-sidebar-border p-4 group-data-[collapsible=icon]:p-2">
             <div className="flex h-14 min-w-0 items-center px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
               <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-                <div className="text-2xl font-black uppercase leading-none">
-                  VIBE<span className="text-sidebar-primary">TV</span>
-                </div>
-                <div className="mt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-sidebar-foreground/65">
-                  Control Center
-                </div>
+                <ControlCenterBrand />
               </div>
-              <div className="hidden text-sm font-black text-sidebar-primary group-data-[collapsible=icon]:block">
-                VT
-              </div>
+              <ControlCenterBrand
+                className="hidden group-data-[collapsible=icon]:block"
+                variant="compact"
+              />
             </div>
           </SidebarHeader>
           <SidebarContent>
@@ -80,10 +77,11 @@ export function HostedSetupShell({
               <SidebarTrigger aria-label="Open navigation" className="shrink-0" />
               <h1 className="truncate text-base font-semibold md:text-xl">Setup</h1>
             </div>
-            <div className="inline-flex min-w-0 items-center gap-2 text-xs text-muted-foreground md:gap-3 md:text-base md:text-foreground">
-              <span className={cn("size-2 shrink-0 rounded-full", ready ? "bg-primary" : "bg-border")} />
-              <span className="truncate">{statusLabel}</span>
-            </div>
+            <ShellConnectionStatus
+              compactLabel={ready ? "Opening" : "Setup needed"}
+              label={statusLabel}
+              ready={ready}
+            />
           </header>
 
           <div className="px-5 py-0 sm:px-7 lg:px-10">{children}</div>

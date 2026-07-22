@@ -47,6 +47,8 @@ type PairTokenStore func(target, token string) error
 type Options struct {
 	PackURL             string
 	PackBytes           []byte
+	PackSHA256          string
+	PackSizeBytes       int64
 	CatalogURL          string
 	ThemeID             string
 	Target              string
@@ -129,11 +131,23 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		if strings.TrimSpace(opts.PackURL) != "" || strings.TrimSpace(opts.CatalogURL) != "" {
 			return Result{}, errors.New("use either pack bytes or packUrl/catalogUrl")
 		}
-		pack, err = themepack.LoadZipBytes(opts.PackBytes)
+		if strings.TrimSpace(opts.PackSHA256) != "" || opts.PackSizeBytes > 0 {
+			pack, err = themepack.LoadZipBytesVerified(opts.PackBytes, opts.PackSHA256, opts.PackSizeBytes)
+		} else {
+			pack, err = themepack.LoadZipBytes(opts.PackBytes)
+		}
 	} else {
-		resolvedPack, err = ResolveSource(strings.TrimSpace(opts.PackURL), strings.TrimSpace(opts.CatalogURL), strings.TrimSpace(opts.ThemeID))
+		var source ResolvedSource
+		source, err = resolveSource(
+			strings.TrimSpace(opts.PackURL),
+			strings.TrimSpace(opts.CatalogURL),
+			strings.TrimSpace(opts.ThemeID),
+			strings.TrimSpace(opts.PackSHA256),
+			opts.PackSizeBytes,
+		)
 		if err == nil {
-			pack, err = themepack.Load(resolvedPack)
+			resolvedPack = source.Path
+			pack, err = themepack.LoadVerified(source.Path, source.SHA256, source.Bytes)
 		}
 	}
 	if err != nil {
@@ -949,28 +963,47 @@ func stripTargetCredentials(target string) string {
 	return parsed.String()
 }
 
+type ResolvedSource struct {
+	Path   string
+	SHA256 string
+	Bytes  int64
+}
+
 func ResolveSource(packPath, catalogRef, themeID string) (string, error) {
+	resolved, err := resolveSource(packPath, catalogRef, themeID, "", 0)
+	return resolved.Path, err
+}
+
+func resolveSource(packPath, catalogRef, themeID, packSHA256 string, packSizeBytes int64) (ResolvedSource, error) {
 	if packPath != "" {
 		if catalogRef != "" {
-			return "", errors.New("use either packUrl or catalogUrl, not both")
+			return ResolvedSource{}, errors.New("use either packUrl or catalogUrl, not both")
 		}
-		return packPath, nil
+		return ResolvedSource{Path: packPath, SHA256: packSHA256, Bytes: packSizeBytes}, nil
 	}
 	if catalogRef == "" && themeID == "" {
-		return "", errors.New("missing theme pack source: pass packUrl or themeId")
+		return ResolvedSource{}, errors.New("missing theme pack source: pass packUrl or themeId")
 	}
 	if catalogRef == "" {
 		catalogRef = DefaultCatalogURL
 	}
 	catalog, err := themepack.LoadCatalog(catalogRef)
 	if err != nil {
-		return "", err
+		return ResolvedSource{}, err
 	}
 	theme, err := catalog.FindTheme(themeID)
 	if err != nil {
-		return "", err
+		return ResolvedSource{}, err
 	}
-	return themepack.ResolveThemeDownload(catalogRef, theme)
+	packPath, err = themepack.ResolveThemeDownload(catalogRef, theme)
+	if err != nil {
+		return ResolvedSource{}, err
+	}
+	return ResolvedSource{
+		Path:   packPath,
+		SHA256: strings.ToLower(strings.TrimSpace(theme.SHA256)),
+		Bytes:  theme.Bytes,
+	}, nil
 }
 
 func FallbackThemeSpecCapabilities() protocol.DeviceCapabilities {

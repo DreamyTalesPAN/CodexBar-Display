@@ -33,6 +33,10 @@ import { DeviceTargetForm } from "./device-target-form";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import { ProviderSetupCard, providerSetupIsReady } from "./provider-setup-card";
 import { SupportReportActions } from "./support-report-actions";
+import {
+  DeviceCandidateList,
+  WifiSetupInstructions,
+} from "./setup-device-components";
 
 type SetupScreenProps = {
   busyAction?: string | null;
@@ -214,35 +218,12 @@ export function SetupScreen({
     return (
       <div className="mx-auto max-w-[980px]">
         {migrationNotice}
-        <section className="py-8 lg:min-h-[330px] lg:py-12">
-          <div className="flex items-start gap-5">
-            <ControlCenterStatusIcon variant="complete">
-              <Check size={38} aria-hidden />
-            </ControlCenterStatusIcon>
-            <div className="min-w-0">
-              <h2 className="max-w-[520px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-                Setup complete
-              </h2>
-              <div className="mt-6">
-                <Button
-                  disabled={busyAction === "reset-setup"}
-                  onClick={onResetSetup}
-                  size="lg"
-                  type="button"
-                >
-                  {busyAction === "reset-setup" ? (
-                    <Spinner data-icon="inline-start" />
-                  ) : (
-                    <Clipboard data-icon="inline-start" aria-hidden />
-                  )}
-                  <span>
-                    {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
-                  </span>
-                </Button>
-              </div>
-            </div>
-          </div>
-        </section>
+        <SetupIntro
+          busyAction={busyAction}
+          hostedMode={hostedMode}
+          onResetSetup={onResetSetup}
+          setupComplete
+        />
         <div className="py-6">
           <SupportReportActions
             busyAction={busyAction}
@@ -258,50 +239,13 @@ export function SetupScreen({
     <div className="mx-auto max-w-[980px]">
       {migrationNotice}
       {showIntro ? (
-        <section className="py-8 lg:min-h-[330px] lg:py-12">
-          <div className="flex items-start gap-5">
-            <ControlCenterStatusIcon
-              variant={setupComplete ? "complete" : "neutral"}
-            >
-              {setupComplete ? (
-                <Check size={38} aria-hidden />
-              ) : (
-                <Clipboard size={34} aria-hidden />
-              )}
-            </ControlCenterStatusIcon>
-            <div className="min-w-0">
-              <h2 className="max-w-[520px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-                {setupComplete
-                  ? "Setup complete"
-                  : hostedMode
-                    ? "Get the VibeTV Mac App"
-                    : "Set up your VibeTV"}
-              </h2>
-              {setupComplete ? (
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <Button
-                    disabled={busyAction === "reset-setup"}
-                    onClick={onResetSetup}
-                    type="button"
-                    variant="outline"
-                  >
-                    {busyAction === "reset-setup" ? (
-                      <Spinner data-icon="inline-start" />
-                    ) : (
-                      <Clipboard data-icon="inline-start" aria-hidden />
-                    )}
-                    <span>
-                      {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
-                    </span>
-                  </Button>
-                </div>
-              ) : null}
-              {lastError && !macAppMissing ? (
-                <ErrorNote error={lastError} />
-              ) : null}
-            </div>
-          </div>
-        </section>
+        <SetupIntro
+          busyAction={busyAction}
+          error={lastError && !macAppMissing ? lastError : null}
+          hostedMode={hostedMode}
+          onResetSetup={onResetSetup}
+          setupComplete={setupComplete}
+        />
       ) : null}
 
       {!showIntro && lastError && !macAppMissing ? (
@@ -321,33 +265,10 @@ export function SetupScreen({
             >
               {activeStep === "wifi" ? (
                 <div className="grid gap-5">
-                  <ol className="grid gap-2 text-sm leading-6 text-[#444933]">
-                    <li>1. Plug VibeTV into power.</li>
-                    <li>2. Wait until VibeTV shows VibeTV-Setup.</li>
-                    <li>3. Take your phone.</li>
-                    <li>
-                      4. Open WiFi settings and join{" "}
-                      <strong className="font-black text-[#1B1B1B]">
-                        VibeTV-Setup
-                      </strong>
-                      .
-                    </li>
-                    <li>
-                      5. If the browser does not open automatically, open{" "}
-                      <strong className="font-black text-[#1B1B1B]">
-                        192.168.4.1
-                      </strong>{" "}
-                      on your phone.
-                    </li>
-                    <li>6. Choose your home WiFi and save.</li>
-                    <li>
-                      7. Wait until VibeTV says WiFi connected, then continue
-                      here.
-                    </li>
-                  </ol>
+                  <WifiSetupInstructions />
                   <Button className="w-full" onClick={confirmWifi} size="lg" type="button">
-                    <Check data-icon="inline-start" aria-hidden />
-                    <span>VibeTV is on WiFi</span>
+                    <RefreshCw data-icon="inline-start" aria-hidden />
+                    <span>Scan WiFi again</span>
                   </Button>
                 </div>
               ) : null}
@@ -481,6 +402,66 @@ export function SetupScreen({
   );
 }
 
+function SetupIntro({
+  busyAction,
+  error,
+  hostedMode,
+  onResetSetup,
+  setupComplete,
+}: {
+  busyAction?: string | null;
+  error?: ApiError | null;
+  hostedMode: boolean;
+  onResetSetup?: () => void;
+  setupComplete: boolean;
+}) {
+  return (
+    <section className="py-8 lg:min-h-[330px] lg:py-12">
+      <div className="flex items-start gap-5">
+        <ControlCenterStatusIcon
+          variant={setupComplete ? "complete" : "neutral"}
+        >
+          {setupComplete ? (
+            <Check size={38} aria-hidden />
+          ) : (
+            <Clipboard size={34} aria-hidden />
+          )}
+        </ControlCenterStatusIcon>
+        <div className="min-w-0">
+          <h2 className="max-w-[520px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
+            {setupComplete
+              ? "Setup complete"
+              : hostedMode
+                ? "Get the VibeTV Mac App"
+                : "Set up your VibeTV"}
+          </h2>
+          {setupComplete ? (
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button
+                disabled={busyAction === "reset-setup"}
+                onClick={onResetSetup}
+                size="lg"
+                type="button"
+                variant="outline"
+              >
+                {busyAction === "reset-setup" ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <Clipboard data-icon="inline-start" aria-hidden />
+                )}
+                <span>
+                  {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
+                </span>
+              </Button>
+            </div>
+          ) : null}
+          {error ? <ErrorNote error={error} /> : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function LegacyMacAppMigrationNotice({
   checkFailed,
   checking,
@@ -563,11 +544,20 @@ function FinishSetupContent({
 
   if (deviceSearchState === "searching" || busyAction === "search") {
     return (
-      <StatusNote
-        icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
-      >
-        Searching for VibeTVs on your WiFi...
-      </StatusNote>
+      <div className="grid gap-4">
+        <StatusNote
+          icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
+        >
+          Searching for VibeTVs on your WiFi...
+        </StatusNote>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onSubmit={onRepairConnection}
+        />
+      </div>
     );
   }
 
@@ -580,30 +570,13 @@ function FinishSetupContent({
             More than one VibeTV was found. Choose the one you want to connect.
           </p>
         </div>
-        <div className="grid gap-3">
-          {deviceCandidates.map((candidate) => (
-            <div
-              className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-              key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
-            >
-              <DeviceCandidateDetails candidate={candidate} />
-              <Button
-                disabled={Boolean(busyAction) && busyAction !== "select"}
-                onClick={() => onSelectDevice?.(candidate)}
-                size="lg"
-                type="button"
-                variant="outline"
-              >
-                {busyAction === "select" ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <Monitor data-icon="inline-start" aria-hidden />
-                )}
-                <span>{busyAction === "select" ? "Connecting" : "Connect this VibeTV"}</span>
-              </Button>
-            </div>
-          ))}
-        </div>
+        <DeviceCandidateList
+          busy={Boolean(busyAction) && busyAction !== "select"}
+          buttonVariant="outline"
+          candidates={deviceCandidates}
+          onSelect={(candidate) => onSelectDevice?.(candidate)}
+          selecting={busyAction === "select"}
+        />
         <div className="grid gap-3 sm:grid-cols-2">
           <Button
             className="w-full"
@@ -627,6 +600,13 @@ function FinishSetupContent({
             <span>Search again</span>
           </Button>
         </div>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onSubmit={onRepairConnection}
+        />
       </div>
     );
   }
@@ -634,17 +614,23 @@ function FinishSetupContent({
   if (deviceSearchState === "not-found") {
     return (
       <div className="grid gap-5">
-        <p className="text-sm leading-6 text-[#444933]">
-          No VibeTV was found automatically. Enter the address shown on the
-          VibeTV screen.
+        <p className="text-sm font-semibold leading-6 text-[#444933]">
+          We couldn&apos;t find your VibeTV. Enter the IP address shown on your
+          VibeTV screen:
         </p>
         <DeviceTargetForm
-          busy={busyAction === "repair"}
+          busy={busyAction === "manual-target" || busyAction === "select"}
           buttonLabel="Connect VibeTV"
           className="grid gap-4"
-          disabled={Boolean(busyAction)}
+          disabled={
+            Boolean(busyAction) &&
+            busyAction !== "search" &&
+            busyAction !== "manual-target" &&
+            busyAction !== "select"
+          }
           id="setup-device-target"
           lastError={lastError}
+          minimal
           onChange={onDeviceTargetChange}
           onSubmit={onRepairConnection}
           searchingLabel="Connecting"
@@ -657,10 +643,14 @@ function FinishSetupContent({
   if (deviceSearchState === "failed") {
     return (
       <div className="grid gap-4">
-        <p className="text-sm leading-6 text-[#444933]">
-          Automatic search could not finish. Make sure VibeTV and this Mac are
-          on the same WiFi, then try again.
-        </p>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onSubmit={onRepairConnection}
+          prompt="We couldn't find your VibeTV. Enter the IP address shown on your VibeTV screen:"
+        />
         <Button className="w-full" onClick={onSearchDevices} size="lg" type="button">
           <RefreshCw data-icon="inline-start" aria-hidden />
           <span>Try again</span>
@@ -672,10 +662,14 @@ function FinishSetupContent({
   if (deviceSearchState === "repair-failed") {
     return (
       <div className="grid gap-4">
-        <p className="text-sm leading-6 text-[#444933]">
-          VibeTV could not reconnect automatically. Make sure it is on the same
-          WiFi as this Mac, then try again.
-        </p>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onSubmit={onRepairConnection}
+          prompt="We couldn't reconnect your VibeTV. Enter the IP address shown on your VibeTV screen:"
+        />
         <Button className="w-full" onClick={onSearchDevices} size="lg" type="button">
           <RefreshCw data-icon="inline-start" aria-hidden />
           <span>Try again</span>
@@ -700,40 +694,60 @@ function FinishSetupContent({
   }
 
   return (
-    <StatusNote>
-      {deviceState === "offline"
-        ? "VibeTV is offline. Run setup again to search for it."
-        : "Waiting for automatic VibeTV search."}
-    </StatusNote>
-  );
-}
-
-function DeviceCandidateDetails({ candidate }: { candidate: DeviceCandidate }) {
-  const address = candidateAddress(candidate.target);
-  return (
-    <div className="min-w-0">
-      <p className="break-words text-base font-black text-[#1B1B1B]">
-        VibeTV {candidate.deviceId || address}
-      </p>
-      <p className="mt-1 break-words text-sm leading-6 text-[#444933]">
-        IP address: {address}
-        {candidate.firmware ? ` · Firmware ${candidate.firmware}` : ""}
-      </p>
-      {candidate.known ? (
-        <p className="mt-1 text-sm font-bold text-[#506600]">
-          Previously connected
-        </p>
-      ) : null}
+    <div className="grid gap-4">
+      <StatusNote>
+        {deviceState === "offline"
+          ? "VibeTV is offline. Run setup again to search for it."
+          : "Waiting for automatic VibeTV search."}
+      </StatusNote>
+      <ManualDeviceTargetOption
+        busyAction={busyAction}
+        deviceTarget={deviceTarget}
+        lastError={lastError}
+        onChange={onDeviceTargetChange}
+        onSubmit={onRepairConnection}
+      />
     </div>
   );
 }
 
-function candidateAddress(target: string): string {
-  try {
-    return new URL(target).hostname || target;
-  } catch {
-    return target.replace(/^https?:\/\//i, "").replace(/\/$/, "");
-  }
+function ManualDeviceTargetOption({
+  busyAction,
+  deviceTarget,
+  lastError,
+  onChange,
+  onSubmit,
+  prompt = "Or enter the IP address shown on your VibeTV screen:",
+}: {
+  busyAction?: string | null;
+  deviceTarget: string;
+  lastError?: ApiError | null;
+  onChange?: (target: string) => void;
+  onSubmit?: (targetOverride?: string) => void;
+  prompt?: string;
+}) {
+  const connecting =
+    busyAction === "manual-target" || busyAction === "select";
+  return (
+    <div className="grid gap-3">
+      <p className="text-sm font-semibold leading-6 text-[#444933]">
+        {prompt}
+      </p>
+      <DeviceTargetForm
+        busy={connecting}
+        buttonLabel="Connect VibeTV"
+        className="grid gap-4"
+        disabled={Boolean(busyAction) && busyAction !== "search" && !connecting}
+        id="setup-device-target"
+        lastError={lastError}
+        minimal
+        onChange={onChange}
+        onSubmit={onSubmit}
+        searchingLabel="Connecting"
+        value={deviceTarget}
+      />
+    </div>
+  );
 }
 
 function SetupStep({
@@ -751,10 +765,19 @@ function SetupStep({
 }) {
   const active = state === "active";
   const complete = state === "complete";
+  const stateLabel = complete
+    ? "complete"
+    : active
+      ? "current"
+      : state === "blocked"
+        ? "blocked"
+        : "pending";
   return (
     <li
+      aria-current={active ? "step" : undefined}
+      aria-disabled={state === "blocked" || undefined}
       className={`grid gap-4 border-b border-border px-0 py-5 last:border-b-0 md:grid-cols-[54px_minmax(0,1fr)] ${
-        state === "blocked" ? "opacity-45" : ""
+        state === "blocked" ? "opacity-70" : ""
       }`}
     >
       <ControlCenterStatusIcon
@@ -766,7 +789,7 @@ function SetupStep({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm font-bold uppercase text-[#506600]">
-            Step {index}
+            Step {index}<span className="sr-only">, {stateLabel}</span>
           </p>
           <h3 className="text-xl font-black text-[#1B1B1B]">{title}</h3>
         </div>

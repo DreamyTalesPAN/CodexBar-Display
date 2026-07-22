@@ -25,12 +25,13 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
 import {
   type ActiveTab,
   type DeviceInfo,
   type ShellNavItem,
 } from "./control-center-types";
+import { ControlCenterBrand } from "./control-center-brand";
+import { ShellConnectionStatus } from "./shell-connection-status";
 
 type ControlCenterShellProps = {
   activeTab: ActiveTab;
@@ -88,7 +89,6 @@ export function ControlCenterShell({
     device?.connected && (device.deviceId || device.target),
   );
   const targetLabel = connected ? "VibeTV connected" : "VibeTV not connected";
-  const targetDotClass = connected ? "bg-primary" : "bg-border";
   const mobileTargetLabel = connected ? "Connected" : "Not connected";
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
@@ -106,17 +106,11 @@ export function ControlCenterShell({
         <Sidebar className="control-center-shell__sidebar" collapsible="icon">
           <SidebarHeader className="border-b border-sidebar-border p-4 group-data-[collapsible=icon]:p-2">
             <BrandHomeButton onClick={() => onTabChange("overview")}>
-              <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-                <div className="text-2xl font-black uppercase leading-none">
-                  VIBE<span className="text-sidebar-primary">TV</span>
-                </div>
-                <div className="mt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-sidebar-foreground/65">
-                  Control Center
-                </div>
-              </div>
-              <div className="hidden text-sm font-black text-sidebar-primary group-data-[collapsible=icon]:block">
-                VT
-              </div>
+              <ControlCenterBrand className="group-data-[collapsible=icon]:hidden" />
+              <ControlCenterBrand
+                className="hidden group-data-[collapsible=icon]:block"
+                variant="compact"
+              />
             </BrandHomeButton>
           </SidebarHeader>
           <SidebarContent>
@@ -141,23 +135,11 @@ export function ControlCenterShell({
             </div>
 
             <div className="flex min-w-0 items-center gap-2">
-              <div
-                aria-live="polite"
-                className="hidden items-center gap-3 text-base text-foreground md:inline-flex"
-                role="status"
-              >
-                <span className={cn("size-2 rounded-full", targetDotClass)} />
-                <span>{targetLabel}</span>
-              </div>
-
-              <div
-                aria-live="polite"
-                className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground md:hidden"
-                role="status"
-              >
-                <span className={cn("size-1.5 rounded-full", targetDotClass)} />
-                <span className="max-w-32 truncate">{mobileTargetLabel}</span>
-              </div>
+              <ShellConnectionStatus
+                compactLabel={mobileTargetLabel}
+                label={targetLabel}
+                ready={connected}
+              />
               {headerAction}
             </div>
           </header>
