@@ -818,6 +818,15 @@ async function testLocalWifiVerificationFailureStaysInSetup(browser, appUrl) {
   await page.getByRole("button", { name: "Search again" }).waitFor({
     timeout: 10_000,
   });
+  const startupScreen = page.getByTestId("device-startup-screen");
+  assert(
+    (await startupScreen.locator('[data-slot="card"]').count()) === 1,
+    "Failed startup recovery should use the shadcn card layout",
+  );
+  assert(
+    (await startupScreen.locator('[data-slot="alert"]').count()) === 1,
+    "Failed startup recovery should use the shadcn alert",
+  );
   assert(
     repairRequests.length === 1,
     `Failed verification must not retry automatically, got ${repairRequests.length} attempts`,

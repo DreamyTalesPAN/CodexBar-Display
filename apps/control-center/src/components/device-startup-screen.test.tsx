@@ -65,4 +65,27 @@ describe("DeviceStartupScreen", () => {
     expect(html).toContain("justify-items-center");
     expect(html).toContain('class="sr-only">Reconnecting…</span>');
   });
+
+  it("uses shadcn recovery UI and names the action that is actually shown", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="repair-failed"
+        hasConfiguredDevice={false}
+        lastError={{
+          code: "pair_failed",
+          message: "VibeTV pairing failed.",
+          nextAction: "Keep VibeTV powered on, then retry Fix connection.",
+        }}
+        onDecline={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('data-slot="card"');
+    expect(html).toContain('data-slot="alert"');
+    expect(html).toContain("Keep VibeTV powered on, then search again.");
+    expect(html).not.toContain("retry Fix connection");
+  });
 });

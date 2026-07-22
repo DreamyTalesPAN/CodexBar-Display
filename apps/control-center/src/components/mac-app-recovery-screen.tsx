@@ -66,13 +66,7 @@ export function MacAppRecoveryScreen({
       }
       testId="mac-app-recovery-screen"
       title={title}
-      visual={
-        repairing ? null : (
-          <div className="mx-auto flex size-14 items-center justify-center rounded-full border border-[#747A60] bg-white">
-            <AppWindow size={24} aria-hidden />
-          </div>
-        )
-      }
+      visual={repairing ? null : <AppWindow aria-hidden />}
     />
   );
 }

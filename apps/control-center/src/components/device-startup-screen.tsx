@@ -1,6 +1,14 @@
 "use client";
 
-import { Check, RefreshCw } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  Monitor,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import type {
   ApiError,
@@ -105,6 +113,16 @@ export function DeviceStartupScreen({
         ? "Searching…"
         : undefined;
 
+  const visual = choosing ? (
+    <Monitor aria-hidden />
+  ) : wifiSetupNeeded ? (
+    <Wifi aria-hidden />
+  ) : configuredDeviceNotFound || searchFailed ? (
+    <WifiOff aria-hidden />
+  ) : repairFailed ? (
+    <CircleAlert aria-hidden />
+  ) : undefined;
+
   const actions = choosing ? (
     <div
       className={
@@ -178,6 +196,7 @@ export function DeviceStartupScreen({
       statusLabel={statusLabel}
       testId="device-startup-screen"
       title={title}
+      visual={visual}
     >
       <>
         {choosing ? (
@@ -192,18 +211,22 @@ export function DeviceStartupScreen({
         {wifiSetupNeeded ? <WifiSetupInstructions /> : null}
 
         {lastError && !searching ? (
-          <div
-            className="grid gap-1 border border-[#747A60] px-4 py-3 text-left text-sm text-[#444933]"
-            role="alert"
-          >
-            <strong className="font-black text-[#1B1B1B]">
-              {lastError.message}
-            </strong>
-            <span>{lastError.nextAction}</span>
-          </div>
+          <Alert>
+            <CircleAlert aria-hidden />
+            <AlertTitle>{lastError.message}</AlertTitle>
+            <AlertDescription>
+              {startupErrorNextAction(lastError, repairFailed)}
+            </AlertDescription>
+          </Alert>
         ) : null}
-
       </>
     </SetupStatusScreen>
   );
+}
+
+function startupErrorNextAction(error: ApiError, repairFailed: boolean) {
+  if (repairFailed && error.code === "pair_failed") {
+    return "Keep VibeTV powered on, then search again.";
+  }
+  return error.nextAction;
 }
