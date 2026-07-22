@@ -34,7 +34,11 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import type { DeviceInfo, SupportDiagnostics } from "./control-center-types";
+import {
+  deviceIsReady,
+  type DeviceInfo,
+  type SupportDiagnostics,
+} from "./control-center-types";
 import { SupportReportActions } from "./support-report-actions";
 
 export type LogEvent = {
@@ -57,6 +61,7 @@ export type LogsScreenProps = {
   onRefresh?: () => void;
   onRunSetupAgain?: () => void;
   busyAction?: string | null;
+  supportReportBusy?: boolean;
 };
 
 export function LogsScreen({
@@ -68,8 +73,9 @@ export function LogsScreen({
   onRefresh,
   onRunSetupAgain,
   busyAction,
+  supportReportBusy = false,
 }: LogsScreenProps) {
-  const deviceConnected = Boolean(device?.connected);
+  const deviceConnected = deviceIsReady(device);
 
   return (
     <div className="mx-auto grid max-w-[1180px] gap-4 py-6">
@@ -137,7 +143,7 @@ export function LogsScreen({
           </CardHeader>
           <CardContent className="flex flex-1 items-center">
             <SupportReportActions
-              busyAction={busyAction}
+              creating={supportReportBusy}
               diagnostics={diagnostics}
               onCreate={onLoadDiagnostics}
             />
@@ -230,6 +236,6 @@ function formatDeviceAddress(value?: string): string {
 
 function activeThemeLabel(device: DeviceInfo | null | undefined): string {
   const theme = device?.activeTheme?.trim();
-  if (!theme) return device?.connected ? "Default" : "Not available";
+  if (!theme) return deviceIsReady(device) ? "Default" : "Not available";
   return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }

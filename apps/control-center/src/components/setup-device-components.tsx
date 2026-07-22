@@ -1,18 +1,32 @@
 import { Monitor } from "lucide-react";
 import type { ComponentProps } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
 import type { DeviceCandidate } from "./control-center-types";
 
 export function WifiSetupInstructions() {
   return (
-    <div className="border-y border-[#747A60] py-6 text-left sm:px-6">
-      <ol className="grid list-decimal gap-3 pl-5 text-base leading-7 text-[#444933] sm:text-lg">
+    <Alert>
+      <Monitor aria-hidden />
+      <AlertTitle>Connect VibeTV to WiFi</AlertTitle>
+      <AlertDescription>
+        <ol className="grid list-decimal gap-2 pl-5">
         <li>Plug VibeTV into power.</li>
         <li>Wait until VibeTV shows VibeTV-Setup.</li>
-        <li>Take your phone.</li>
         <li>
-          Open WiFi settings and join <strong>VibeTV-Setup</strong>.
+            On your phone, open WiFi settings and join{" "}
+            <strong>VibeTV-Setup</strong>.
         </li>
         <li>
           If the browser does not open automatically, open{" "}
@@ -20,8 +34,9 @@ export function WifiSetupInstructions() {
         </li>
         <li>Choose your home WiFi and save.</li>
         <li>Wait until VibeTV says WiFi connected, then continue here.</li>
-      </ol>
-    </div>
+        </ol>
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -41,31 +56,30 @@ export function DeviceCandidateList({
   selecting = false,
 }: DeviceCandidateListProps) {
   return (
-    <div className="grid gap-3 text-left">
+    <ItemGroup className="grid gap-3 text-left">
       {candidates.map((candidate) => (
-        <div
-          className="grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+        <Item
           key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
+          variant="outline"
         >
+          <ItemMedia variant="icon">
+            <Monitor aria-hidden />
+          </ItemMedia>
           <DeviceCandidateDetails candidate={candidate} />
-          <Button
-            className="w-full"
-            disabled={busy}
-            onClick={() => onSelect(candidate)}
-            size="lg"
-            type="button"
-            variant={buttonVariant}
-          >
-            {selecting ? (
-              <Spinner data-icon="inline-start" />
-            ) : (
-              <Monitor data-icon="inline-start" aria-hidden />
-            )}
-            <span>{selecting ? "Connecting" : "Connect this VibeTV"}</span>
-          </Button>
-        </div>
+          <ItemActions>
+            <Button
+              disabled={busy}
+              onClick={() => onSelect(candidate)}
+              type="button"
+              variant={buttonVariant}
+            >
+              {selecting ? <Spinner data-icon="inline-start" /> : null}
+              <span>{selecting ? "Connecting" : "Connect"}</span>
+            </Button>
+          </ItemActions>
+        </Item>
       ))}
-    </div>
+    </ItemGroup>
   );
 }
 
@@ -76,20 +90,14 @@ export function DeviceCandidateDetails({
 }) {
   const address = candidateAddress(candidate.target);
   return (
-    <div className="min-w-0">
-      <p className="break-words text-base font-black text-[#1B1B1B] sm:text-lg">
-        VibeTV {candidate.deviceId || address}
-      </p>
-      <p className="mt-1 break-words text-sm leading-6 text-[#444933]">
+    <ItemContent>
+      <ItemTitle>VibeTV {candidate.deviceId || address}</ItemTitle>
+      <ItemDescription>
         IP address: {address}
         {candidate.firmware ? ` · Firmware ${candidate.firmware}` : ""}
-      </p>
-      {candidate.known ? (
-        <p className="mt-1 text-sm font-bold text-[#506600]">
-          Previously connected
-        </p>
-      ) : null}
-    </div>
+      </ItemDescription>
+      {candidate.known ? <Badge variant="secondary">Previously connected</Badge> : null}
+    </ItemContent>
   );
 }
 

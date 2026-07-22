@@ -9,8 +9,8 @@ describe("DeviceStartupScreen", () => {
         busyAction="search"
         deviceCandidates={[]}
         deviceSearchState="searching"
-        hasConfiguredDevice={false}
-        onDecline={vi.fn()}
+        deviceTarget="http://192.168.178.72/hello"
+        onPair={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -34,8 +34,7 @@ describe("DeviceStartupScreen", () => {
           },
         ]}
         deviceSearchState="multiple"
-        hasConfiguredDevice
-        onDecline={vi.fn()}
+        onPair={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -52,9 +51,8 @@ describe("DeviceStartupScreen", () => {
         busyAction="repair"
         deviceCandidates={[]}
         deviceSearchState="waiting"
-        hasConfiguredDevice
         onCreateSupportReport={vi.fn()}
-        onDecline={vi.fn()}
+        onPair={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -64,5 +62,95 @@ describe("DeviceStartupScreen", () => {
     expect(html).toContain('data-variant="secondary"');
     expect(html).toContain("justify-items-center");
     expect(html).toContain('class="sr-only">Reconnecting…</span>');
+    expect(html).not.toContain('data-slot="card"');
+  });
+
+  it("uses shadcn recovery UI and names the action that is actually shown", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="repair-failed"
+        lastError={{
+          code: "pair_failed",
+          message: "VibeTV pairing failed.",
+          nextAction: "Keep VibeTV powered on, then retry Fix connection.",
+        }}
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).not.toContain('data-slot="card"');
+    expect(html).toContain('data-slot="alert"');
+    expect(html).toContain("Keep VibeTV powered on, then search again.");
+    expect(html).not.toContain("retry Fix connection");
+  });
+
+  it("keeps support report creation enabled while searching", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        busyAction="search"
+        deviceCandidates={[]}
+        deviceSearchState="searching"
+        deviceTarget="http://192.168.178.72/hello"
+        onCreateSupportReport={vi.fn()}
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Create report</span></button>");
+    expect(html).not.toContain('disabled=""');
+    expect(html).toContain('value="192.168.178.72"');
+    expect(html).not.toContain('value="http://192.168.178.72/hello"');
+  });
+
+  it("does not flash WiFi setup while a manual target is connecting", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        busyAction="manual-target"
+        deviceCandidates={[]}
+        deviceSearchState="not-found"
+        deviceTarget="172.30.0.31"
+        onDeviceTargetChange={vi.fn()}
+        onManualTarget={vi.fn()}
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Connecting to VibeTV");
+    expect(html).not.toContain("Open WiFi settings");
+    expect(html).not.toContain("Scan WiFi again");
+  });
+
+  it("never exposes destructive recovery copy for a pairing error", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="not-found"
+        deviceTarget="172.30.0.31"
+        lastError={{
+          code: "pairing_window_closed",
+          message: "Pairing needs physical recovery.",
+          nextAction:
+            "Unplug VibeTV during early boot three times in a row. Then connect VibeTV to WiFi again and pair it in Control Center.",
+        }}
+        onDeviceTargetChange={vi.fn()}
+        onManualTarget={vi.fn()}
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("VibeTV needs to be paired again");
+    expect(html).not.toContain("Unplug VibeTV");
+    expect(html).not.toContain("three times");
+    expect(html).not.toContain("We couldn&#x27;t find your VibeTV");
+    expect(html).not.toContain("Open WiFi settings");
   });
 });

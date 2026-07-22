@@ -3,9 +3,11 @@
 import {
   AlertTriangle,
   BarChart3,
+  Info,
   RefreshCw,
+  Search,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -32,15 +34,32 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
+} from "@/components/ui/item";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type {
   ApiError,
   CompanionStatus,
+  PreferenceDescriptor,
   UsageCostDay,
   UsageProviderInfo,
   UsageSnapshot,
   UsageWindowInfo,
 } from "./control-center-types";
+import { PreferenceControl } from "./preference-control";
 
 type UsageScreenProps = {
   busyAction?: string | null;
@@ -48,6 +67,19 @@ type UsageScreenProps = {
   usage: UsageSnapshot | null;
   usageError?: ApiError | null;
   onRefresh?: () => void;
+  preferences: PreferenceDescriptor[] | null;
+  preferencesError?: ApiError | null;
+  pendingPreferenceIds: Set<string>;
+  onPreferenceChange: (
+    item: PreferenceDescriptor,
+    value: boolean,
+  ) => void | Promise<void>;
+};
+
+type ProviderPreferenceDescriptor = PreferenceDescriptor & {
+  type: "boolean";
+  value: boolean;
+  health: NonNullable<PreferenceDescriptor["health"]>;
 };
 
 export function UsageScreen({
@@ -55,6 +87,10 @@ export function UsageScreen({
   companionStatus,
   usage,
   usageError,
+  preferences,
+  preferencesError,
+  pendingPreferenceIds,
+  onPreferenceChange,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
   const providers = filterVisibleProviders(
@@ -88,9 +124,211 @@ export function UsageScreen({
             refreshing={refreshing}
           />
         )}
+
+        <ProviderPreferencesPanel
+          error={preferencesError}
+          items={preferences}
+          pendingIds={pendingPreferenceIds}
+          onChange={onPreferenceChange}
+        />
       </section>
     </div>
   );
+}
+
+function ProviderPreferencesPanel({
+  error,
+  items,
+  pendingIds,
+  onChange,
+}: {
+  error?: ApiError | null;
+  items: PreferenceDescriptor[] | null;
+  pendingIds: Set<string>;
+  onChange: (item: PreferenceDescriptor, value: boolean) => void | Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const providers = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return (items || [])
+      .filter(isProviderPreference)
+      .filter(
+        (item) =>
+          !normalizedQuery ||
+            item.label.toLowerCase().includes(normalizedQuery) ||
+            item.id.toLowerCase().includes(normalizedQuery),
+      )
+      .sort((a, b) => {
+        const priority = providerHealthPriority(a) - providerHealthPriority(b);
+        return priority || a.label.localeCompare(b.label);
+      });
+  }, [items, query]);
+
+  return (
+    <Card className="mt-6" aria-labelledby="provider-settings-title">
+      <CardHeader>
+        <CardTitle id="provider-settings-title">AI providers</CardTitle>
+        <CardDescription>
+          Turn providers on or off and see when one needs attention.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <Alert className="mb-4" variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>{error.message}</AlertTitle>
+            <AlertDescription>{error.nextAction}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        <div className="relative mb-4">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            aria-label="Search AI providers"
+            className="pl-9"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search providers"
+            type="search"
+            value={query}
+          />
+        </div>
+
+        {items === null && !error ? (
+          <div className="flex min-h-24 items-center justify-center gap-2 text-sm text-muted-foreground" aria-live="polite">
+            <Spinner /> Checking providers
+          </div>
+        ) : providers.length > 0 ? (
+          <ItemGroup className="gap-2" aria-live="polite">
+            {providers.map((item) => {
+              const pending = pendingIds.has(item.id);
+              const checked = item.value === true;
+              const attentionExplanation = providerAttentionExplanation(item);
+              return (
+                <Item key={item.id} variant="outline" className="min-h-16 flex-nowrap">
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="flex-wrap">
+                      <span className="break-words">{item.label}</span>
+                      <Badge variant={healthBadgeVariant(item.health.state)}>
+                        {healthLabel(item.health.state)}
+                      </Badge>
+                      {item.health.service === "outage" &&
+                      item.health.state !== "service_outage" ? (
+                        <Badge variant="destructive">Service outage</Badge>
+                      ) : item.health.service === "degraded" ? (
+                        <Badge variant="secondary">Service degraded</Badge>
+                      ) : null}
+                      {attentionExplanation ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              aria-label={`Explain status for ${item.label}`}
+                              className="-my-2 inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              type="button"
+                            >
+                              <Info className="size-4" aria-hidden />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-72 leading-relaxed">
+                            {attentionExplanation}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                    </ItemTitle>
+                    <ItemDescription>{item.health.message}</ItemDescription>
+                  </ItemContent>
+                  <ItemActions className="min-w-12 justify-end">
+                    {pending ? <Spinner aria-label={`Updating ${item.label}`} /> : null}
+                    <PreferenceControl
+                      booleanLabel={`${checked ? "Disable" : "Enable"} ${item.label}`}
+                      descriptor={item}
+                      disabled={pending}
+                      onChange={(value) => {
+                        if (typeof value === "boolean") {
+                          void onChange(item, value);
+                        }
+                      }}
+                    />
+                  </ItemActions>
+                </Item>
+              );
+            })}
+          </ItemGroup>
+        ) : (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {query ? "No providers match your search." : "No providers are available."}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function providerHealthPriority(item: ProviderPreferenceDescriptor): number {
+  if (["auth_required", "setup_required", "stale", "unavailable"].includes(item.health.state)) {
+    return 0;
+  }
+  return item.value === true ? 1 : 2;
+}
+
+function isProviderPreference(
+  item: PreferenceDescriptor,
+): item is ProviderPreferenceDescriptor {
+  return (
+    item.section === "providers" &&
+    item.type === "boolean" &&
+    typeof item.value === "boolean" &&
+    Boolean(item.health)
+  );
+}
+
+function providerAttentionExplanation(
+  item: ProviderPreferenceDescriptor,
+): string | null {
+  const provider = item.label;
+  switch (item.health.state) {
+    case "auth_required":
+      return `${provider} is enabled, but its sign-in is no longer valid. Open ${provider}, sign in again, then use it once.`;
+    case "setup_required":
+      return `${provider} is enabled, but the VibeTV Mac App cannot read usage yet. Open ${provider}, finish setup or sign in if asked, then use it once.`;
+    case "stale":
+      return `VibeTV is showing the last saved ${provider} usage because live usage cannot be read. Open ${provider} and check that you are still signed in.`;
+    case "unavailable":
+      return `The VibeTV Mac App cannot read ${provider} right now. This can be temporary; open ${provider} and check that it is working and signed in.`;
+  }
+  if (item.health.service === "outage") {
+    return `${provider} is reporting an outage. Your setup may be fine; try again when the service is back online.`;
+  }
+  if (item.health.service === "degraded") {
+    return `${provider} is reporting a service problem. Usage updates may be delayed until the service recovers.`;
+  }
+  return null;
+}
+
+function healthLabel(state: string): string {
+  const labels: Record<string, string> = {
+    healthy: "Ready",
+    auth_required: "Sign-in needed",
+    setup_required: "Setup needed",
+    stale: "Stale",
+    service_outage: "Service outage",
+    unavailable: "Unavailable",
+    checking: "Checking",
+    disabled: "Off",
+  };
+  return labels[state] || "Unknown";
+}
+
+function healthBadgeVariant(state: string): "default" | "secondary" | "destructive" | "outline" {
+  if (["auth_required", "setup_required", "unavailable"].includes(state)) {
+    return "destructive";
+  }
+  if (state === "healthy") {
+    return "default";
+  }
+  return "secondary";
 }
 
 function TokenUsageOverTimePanel({
@@ -415,7 +653,7 @@ function UsageEmptyState({
       : "Mac App needs setup.";
   const action =
     companionStatus === "online"
-      ? "Open CodexBar and make sure at least one provider is enabled."
+      ? "Enable a provider below to start seeing usage."
       : "Run setup again, then refresh usage.";
 
   return (

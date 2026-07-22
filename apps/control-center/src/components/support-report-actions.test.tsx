@@ -25,4 +25,17 @@ describe("SupportReportActions", () => {
     expect(html).toContain("justify-items-center");
     expect(html).toContain("sm:justify-center");
   });
+
+  it("only disables creation while a report itself is being created", () => {
+    const available = renderToStaticMarkup(
+      <SupportReportActions onCreate={vi.fn()} />,
+    );
+    const creating = renderToStaticMarkup(
+      <SupportReportActions creating onCreate={vi.fn()} />,
+    );
+
+    expect(available).not.toContain('disabled=""');
+    expect(creating).toContain('disabled=""');
+    expect(creating).toContain("Creating report");
+  });
 });

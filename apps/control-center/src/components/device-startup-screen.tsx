@@ -1,6 +1,13 @@
 "use client";
 
-import { RefreshCw } from "lucide-react";
+import {
+  CircleAlert,
+  Monitor,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import type {
   ApiError,
@@ -20,32 +27,32 @@ type Props = {
   busyAction?: string | null;
   deviceCandidates: DeviceCandidate[];
   deviceSearchState: DeviceSearchState;
-  deviceTarget: string;
-  hasConfiguredDevice: boolean;
+  deviceTarget?: string;
   lastError?: ApiError | null;
   diagnostics?: SupportDiagnostics | null;
   onCreateSupportReport?: () => void;
-  onDecline: () => void;
-  onDeviceTargetChange: (target: string) => void;
-  onManualTarget: (target: string) => void;
+  onDeviceTargetChange?: (target: string) => void;
+  onManualTarget?: (target: string) => void;
+  onPair: () => void;
   onSearch: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
+  supportReportBusy?: boolean;
 };
 
 export function DeviceStartupScreen({
   busyAction,
   deviceCandidates,
   deviceSearchState,
-  deviceTarget,
-  hasConfiguredDevice,
+  deviceTarget = "",
   lastError,
   diagnostics,
   onCreateSupportReport,
-  onDecline,
   onDeviceTargetChange,
   onManualTarget,
+  onPair,
   onSearch,
   onSelect,
+  supportReportBusy = false,
 }: Props) {
   const selecting = busyAction === "select";
   const manualConnecting = busyAction === "manual-target";
@@ -55,30 +62,27 @@ export function DeviceStartupScreen({
   const waiting = deviceSearchState === "waiting";
   const choosing =
     deviceSearchState === "multiple" && deviceCandidates.length > 0;
-  const singleReplacement =
-    choosing && hasConfiguredDevice && deviceCandidates.length === 1;
+  const pairingAttention = isPairingAttentionError(lastError);
   const wifiSetupNeeded =
-    deviceSearchState === "not-found" && !hasConfiguredDevice;
-  const configuredDeviceNotFound =
-    deviceSearchState === "not-found" && hasConfiguredDevice;
+    deviceSearchState === "not-found" &&
+    !manualConnecting &&
+    !selecting &&
+    !pairingAttention;
   const repairFailed = deviceSearchState === "repair-failed";
   const searchFailed = deviceSearchState === "failed";
   const manualEntryAvailable =
     searching ||
     choosing ||
     wifiSetupNeeded ||
-    configuredDeviceNotFound ||
     searchFailed ||
     repairFailed;
 
-  let title = "Reconnecting to your VibeTV";
-  let detail = "Checking your last connected VibeTV and your WiFi.";
+  let title = "Set up your VibeTV";
+  let detail = "Choose a VibeTV on your WiFi.";
 
   if (searching) {
     title = "Looking for your VibeTV";
-    detail = hasConfiguredDevice
-      ? "Searching your WiFi for your last connected VibeTV and alternatives."
-      : "Searching your WiFi for a VibeTV.";
+    detail = "Searching your WiFi for a VibeTV.";
   } else if (selecting || manualConnecting) {
     title = "Connecting to VibeTV";
     detail = "Checking the selected VibeTV and waiting for a fresh image.";
@@ -88,15 +92,15 @@ export function DeviceStartupScreen({
   } else if (waiting) {
     title = "Connecting to VibeTV";
     detail = "VibeTV was found. Waiting for the first usage data.";
-  } else if (singleReplacement) {
-    title = "Another VibeTV was found";
-    detail =
-      "Your last connected VibeTV is not available. Connect to this VibeTV instead?";
   } else if (choosing) {
     title = "Choose a VibeTV";
-    detail = hasConfiguredDevice
-      ? "Your last connected VibeTV is not available. Choose another VibeTV to connect."
-      : "More than one VibeTV was found. Choose the one you want to connect.";
+    detail = "Choose the VibeTV you want to connect.";
+  } else if (pairingAttention) {
+    title =
+      lastError?.code === "pairing_rate_limited"
+        ? "Pairing is paused for a moment"
+        : "VibeTV needs to be paired again";
+    detail = "VibeTV is reachable, but the secure connection needs attention.";
   } else if (wifiSetupNeeded) {
     title = "We couldn't find your VibeTV";
     detail =
@@ -107,69 +111,38 @@ export function DeviceStartupScreen({
   } else if (searchFailed) {
     title = "VibeTV search could not finish";
     detail = "Check the Mac App and your WiFi, then search again.";
-  } else if (configuredDeviceNotFound) {
-    title = "We couldn't find your VibeTV";
-    detail =
-      "Make sure VibeTV and this Mac are on the same WiFi, then search again.";
   }
 
   const statusLabel = reconnecting
     ? "Reconnecting…"
-    : waiting
-      ? "Waiting for usage…"
-      : searching
-        ? "Searching…"
-        : undefined;
+      : waiting
+        ? "Waiting for usage…"
+        : searching
+          ? "Searching…"
+          : undefined;
+
+  const visual = choosing ? (
+    <Monitor aria-hidden />
+  ) : wifiSetupNeeded ? (
+    <Wifi aria-hidden />
+  ) : searchFailed ? (
+    <WifiOff aria-hidden />
+  ) : repairFailed || pairingAttention ? (
+    <CircleAlert aria-hidden />
+  ) : undefined;
 
   const actions = choosing ? (
-    <div
-      className={
-        hasConfiguredDevice ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"
-      }
-    >
-      {hasConfiguredDevice ? (
-        <Button
-          className="w-full"
-          disabled={Boolean(busyAction)}
-          onClick={onDecline}
-          size="lg"
-          variant="outline"
-        >
-          Open Control Center
-        </Button>
-      ) : null}
-      <Button
-        className="w-full"
-        disabled={Boolean(busyAction)}
-        onClick={onSearch}
-        size="lg"
-        variant="outline"
-      >
-        <RefreshCw data-icon="inline-start" aria-hidden />
-        <span>Search again</span>
-      </Button>
-    </div>
-  ) : configuredDeviceNotFound || searchFailed || repairFailed ? (
-    <div
-      className={
-        hasConfiguredDevice ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"
-      }
-    >
-      <Button className="w-full" onClick={onSearch} size="lg">
-        <RefreshCw data-icon="inline-start" aria-hidden />
-        <span>Search again</span>
-      </Button>
-      {hasConfiguredDevice ? (
-        <Button
-          className="w-full"
-          onClick={onDecline}
-          size="lg"
-          variant="outline"
-        >
-          Open Control Center
-        </Button>
-      ) : null}
-    </div>
+    <StartupActions
+      busy={Boolean(busyAction)}
+      onSearch={onSearch}
+      searchVariant="outline"
+    />
+  ) : searchFailed || repairFailed || pairingAttention ? (
+    <StartupActions
+      busy={Boolean(busyAction)}
+      onSearch={pairingAttention ? onPair : onSearch}
+      searchLabel={pairingAttention ? "Pair again" : "Search again"}
+    />
   ) : null;
 
   const manualEntryPrompt = searching || choosing
@@ -203,14 +176,12 @@ export function DeviceStartupScreen({
   return (
     <SetupStatusScreen
       actions={actions}
-      busy={
-        searching || selecting || manualConnecting || reconnecting || waiting
-      }
+      busy={searching || selecting || manualConnecting || reconnecting || waiting}
       description={detail}
       footer={
         <SupportReportActions
           align="center"
-          busyAction={busyAction}
+          creating={supportReportBusy}
           diagnostics={diagnostics}
           emphasis="secondary"
           onCreate={onCreateSupportReport}
@@ -219,6 +190,7 @@ export function DeviceStartupScreen({
       statusLabel={statusLabel}
       testId="device-startup-screen"
       title={title}
+      visual={visual}
     >
       <div className="grid gap-5">
         {choosing ? (
@@ -241,19 +213,68 @@ export function DeviceStartupScreen({
         ) : null}
 
         {lastError && !searching ? (
-          <div
-            className="grid gap-1 border border-[#747A60] px-4 py-3 text-left text-sm text-[#444933]"
-            role="alert"
-          >
-            <strong className="font-black text-[#1B1B1B]">
-              {lastError.message}
-            </strong>
-            <span>{lastError.nextAction}</span>
-          </div>
+          <Alert variant={pairingAttention ? "destructive" : "default"}>
+            <CircleAlert aria-hidden />
+            <AlertTitle>
+              {pairingAttention
+                ? "VibeTV needs to be paired again."
+                : lastError.message}
+            </AlertTitle>
+            <AlertDescription>
+              {startupErrorNextAction(lastError, repairFailed)}
+            </AlertDescription>
+          </Alert>
         ) : null}
 
         {manualTargetForm}
       </div>
     </SetupStatusScreen>
+  );
+}
+
+function StartupActions({
+  busy,
+  onSearch,
+  searchLabel = "Search again",
+  searchVariant = "default",
+}: {
+  busy: boolean;
+  onSearch: () => void;
+  searchLabel?: string;
+  searchVariant?: "default" | "outline";
+}) {
+  return (
+    <div className="grid gap-3">
+      <Button
+        className="w-full"
+        disabled={busy}
+        onClick={onSearch}
+        size="lg"
+        variant={searchVariant}
+      >
+        <RefreshCw data-icon="inline-start" aria-hidden />
+        <span>{searchLabel}</span>
+      </Button>
+    </div>
+  );
+}
+
+function startupErrorNextAction(error: ApiError, repairFailed: boolean) {
+  if (isPairingAttentionError(error)) {
+    return error.code === "pairing_rate_limited"
+      ? "Wait one minute, then try pairing again."
+      : "Keep VibeTV powered on, then try pairing again.";
+  }
+  if (repairFailed && error.code === "pair_failed") {
+    return "Keep VibeTV powered on, then search again.";
+  }
+  return error.nextAction;
+}
+
+function isPairingAttentionError(error?: ApiError | null) {
+  return (
+    error?.code === "pairing_token_rejected" ||
+    error?.code === "pairing_window_closed" ||
+    error?.code === "pairing_rate_limited"
   );
 }

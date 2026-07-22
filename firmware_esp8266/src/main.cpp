@@ -10,7 +10,6 @@
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
 #include "../../firmware_shared/theme_spec_renderer_core.h"
-#include "boot_recovery_policy.h"
 #include "asset_path_policy.h"
 #include "connected_setup_policy.h"
 #include "wifi_security_policy.h"
@@ -43,35 +42,33 @@ DNSServer dnsServer;
 constexpr int kMaxFrameBytes = 2048;
 constexpr uint16_t kDnsPort = 53;
 constexpr uint32_t kWifiCredsMagic = 0x56544231UL;  // VTB1
-constexpr uint32_t kBootRecoveryMagic = 0x56544252UL;  // VTBR
+constexpr uint32_t kPhysicalRecoveryMagic = 0x56544252UL;  // VTBR
 constexpr uint32_t kBootDiagnosticsMagic = 0x56544244UL;  // VTBD
 constexpr uint32_t kPairingSetupMarkerMagic = 0x56545053UL;  // VTPS
 constexpr size_t kWifiSsidBytes = 33;
 constexpr size_t kWifiPasswordBytes = 65;
 constexpr size_t kWifiCredsBytes = 4 + kWifiSsidBytes + kWifiPasswordBytes;
-constexpr size_t kBootRecoveryOffset = kWifiCredsBytes;
-constexpr size_t kBootRecoveryBytes = 6;
-constexpr size_t kBootRecoveryCounterOffset = kBootRecoveryOffset + 4;
-constexpr size_t kBootRecoveryUploadOffset = kBootRecoveryOffset + 5;
-constexpr size_t kBootDiagnosticsOffset = kBootRecoveryOffset + kBootRecoveryBytes;
+constexpr size_t kPhysicalRecoveryOffset = kWifiCredsBytes;
+constexpr size_t kPhysicalRecoveryBytes = 6;
+constexpr size_t kPhysicalRecoveryCounterOffset = kPhysicalRecoveryOffset + 4;
+constexpr size_t kBootDiagnosticsOffset = kPhysicalRecoveryOffset + kPhysicalRecoveryBytes;
 constexpr size_t kBootDiagnosticsBytes = 8;
 constexpr size_t kBootResetCounterOffset = kBootDiagnosticsOffset + 4;
 constexpr size_t kPairingSetupMarkerOffset = kBootDiagnosticsOffset + kBootDiagnosticsBytes;
 constexpr size_t kPairingSetupMarkerBytes = 4;
 constexpr size_t kEepromBytes =
-    kWifiCredsBytes + kBootRecoveryBytes + kBootDiagnosticsBytes + kPairingSetupMarkerBytes;
+    kWifiCredsBytes + kPhysicalRecoveryBytes + kBootDiagnosticsBytes + kPairingSetupMarkerBytes;
 constexpr unsigned long kWifiConnectTimeoutMs = 20000UL;
 constexpr unsigned long kWifiReconnectRetryMs = 5000UL;
 constexpr unsigned long kWifiReconnectFallbackMs = 120000UL;
 constexpr unsigned long kRebootDelayMs = 750UL;
-constexpr unsigned long kBootRecoveryStableMs = 30000UL;
+constexpr unsigned long kPhysicalRecoveryStableMs = 30000UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr unsigned long kRawOtaProgressTimeoutMs = 30000UL;
 constexpr unsigned long kPhysicalPairingWindowMs = 30UL * 60UL * 1000UL;
 constexpr size_t kRawOtaReadBufferBytes = 512;
-constexpr uint8_t kBootRecoveryThreshold = 3;
-constexpr uint8_t kBootRecoveryUploadMarker = 0xA5;
+constexpr uint8_t kPhysicalRecoveryThreshold = 3;
 constexpr size_t kMaxStoredThemeSpecBytes = 4096;
 constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxThemeSpecGifAssetBytes;
 constexpr uint8_t kDefaultBrightnessPercent = 100;
@@ -130,13 +127,6 @@ struct WifiCredentials {
   char password[kWifiPasswordBytes] = {0};
 };
 
-struct WifiConnectAttempt {
-  bool attempted = false;
-  bool connected = false;
-  String ssid;
-  int status = WL_IDLE_STATUS;
-};
-
 struct FirmwareUpdateState {
   bool available = false;
   String latestVersion;
@@ -187,8 +177,6 @@ struct DeviceSettings {
 bool httpServerStarted = false;
 bool rawOtaServerStarted = false;
 bool setupMode = false;
-bool physicalSetupAuthorized = false;
-String setupAuthorizationToken;
 bool waitStatusRendered = false;
 String lastConnectedSetupIp;
 bool otaUploadSucceeded = false;
@@ -206,8 +194,8 @@ String activeThemeSpecHash;
 codexbar_display::esp8266::wifi_setup::State setupWifiState;
 bool rebootPending = false;
 unsigned long rebootAtMs = 0;
-bool bootRecoveryCounterNeedsClear = false;
-unsigned long bootRecoveryClearAtMs = 0;
+bool physicalRecoveryCounterNeedsClear = false;
+unsigned long physicalRecoveryClearAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
 bool pendingWifiRender = false;
 codexbar_display::core::SerialConsumeEvent pendingWifiRenderEvent;
@@ -456,11 +444,10 @@ bool requestHasCurrentDeviceToken() {
   return deviceAuthConfigured() && requestAuthToken() == deviceAuthToken;
 }
 
-bool requestHasValidSetupAuthorization() {
-  String token = webServer.arg("setup_token");
-  token.trim();
-  return setupMode && physicalSetupAuthorized &&
-      setupAuthorizationToken.length() > 0 && token == setupAuthorizationToken;
+bool requestHasValidOtaAuth() {
+  return codexbar_display::esp8266::WifiSecurityPolicy::AllowsFirmwareUpload(
+      deviceAuthConfigured(),
+      requestHasCurrentDeviceToken());
 }
 
 bool physicalPairingWindowOpen() {
@@ -483,8 +470,7 @@ unsigned long physicalPairingWindowSecondsRemaining() {
 
 bool authorizeWifiCredentialWrite() {
   if (codexbar_display::esp8266::WifiSecurityPolicy::AllowsCredentialWrite(
-          physicalSetupAuthorized,
-          requestHasValidSetupAuthorization(),
+          setupMode,
           deviceAuthConfigured(),
           requestHasCurrentDeviceToken())) {
     return true;
@@ -1015,54 +1001,58 @@ void clearSdkWifiCredentials() {
   Serial.println("wifi_sdk_credentials_cleared");
 }
 
-uint8_t readBootRecoveryCounter() {
+uint8_t readPhysicalRecoveryCounter() {
   EEPROM.begin(kEepromBytes);
   uint32_t magic = 0;
-  EEPROM.get(kBootRecoveryOffset, magic);
-  if (magic != kBootRecoveryMagic) {
+  EEPROM.get(kPhysicalRecoveryOffset, magic);
+  if (magic != kPhysicalRecoveryMagic) {
     return 0;
   }
-  return EEPROM.read(kBootRecoveryCounterOffset);
+  return EEPROM.read(kPhysicalRecoveryCounterOffset);
 }
 
-bool readBootRecoveryUploadActive() {
+void writePhysicalRecoveryCounter(uint8_t counter) {
   EEPROM.begin(kEepromBytes);
-  uint32_t magic = 0;
-  EEPROM.get(kBootRecoveryOffset, magic);
-  if (magic != kBootRecoveryMagic) {
-    return false;
-  }
-  return EEPROM.read(kBootRecoveryUploadOffset) == kBootRecoveryUploadMarker;
-}
-
-void writeBootRecoveryState(uint8_t counter, bool uploadActive) {
-  EEPROM.begin(kEepromBytes);
-  EEPROM.put(kBootRecoveryOffset, kBootRecoveryMagic);
-  EEPROM.write(kBootRecoveryCounterOffset, counter);
-  EEPROM.write(kBootRecoveryUploadOffset, uploadActive ? kBootRecoveryUploadMarker : 0);
+  EEPROM.put(kPhysicalRecoveryOffset, kPhysicalRecoveryMagic);
+  EEPROM.write(kPhysicalRecoveryCounterOffset, counter);
   EEPROM.commit();
 }
 
-void writeBootRecoveryCounter(uint8_t counter) {
-  writeBootRecoveryState(counter, readBootRecoveryUploadActive());
-}
-
-void markBootRecoveryUploadActive(bool active) {
-  const bool previous = readBootRecoveryUploadActive();
-  if (previous == active) {
+void clearPhysicalRecoveryCounter() {
+  if (readPhysicalRecoveryCounter() == 0) {
+    physicalRecoveryCounterNeedsClear = false;
     return;
   }
-  writeBootRecoveryState(readBootRecoveryCounter(), active);
-}
-
-void clearBootRecoveryCounter() {
   EEPROM.begin(kEepromBytes);
-  for (size_t i = 0; i < kBootRecoveryBytes; ++i) {
-    EEPROM.write(kBootRecoveryOffset + i, 0);
+  for (size_t i = 0; i < kPhysicalRecoveryBytes; ++i) {
+    EEPROM.write(kPhysicalRecoveryOffset + i, 0);
   }
   EEPROM.commit();
-  bootRecoveryCounterNeedsClear = false;
-  Serial.println("boot_recovery_counter_cleared");
+  physicalRecoveryCounterNeedsClear = false;
+  Serial.println("physical_recovery_counter_cleared");
+}
+
+bool consumePhysicalRecoveryTrigger() {
+  if (!codexbar_display::esp8266::WifiSecurityPolicy::CountsAsPhysicalRecoveryReset(
+          ESP.getResetInfoPtr()->reason)) {
+    clearPhysicalRecoveryCounter();
+    return false;
+  }
+
+  uint8_t counter = readPhysicalRecoveryCounter();
+  if (counter < 255) {
+    ++counter;
+  }
+  writePhysicalRecoveryCounter(counter);
+  if (counter >= kPhysicalRecoveryThreshold) {
+    clearPhysicalRecoveryCounter();
+    Serial.println("physical_recovery_triggered action=pairing_window");
+    return true;
+  }
+
+  physicalRecoveryCounterNeedsClear = true;
+  physicalRecoveryClearAtMs = millis() + kPhysicalRecoveryStableMs;
+  return false;
 }
 
 uint32_t incrementBootResetCounter() {
@@ -1082,43 +1072,7 @@ uint32_t incrementBootResetCounter() {
   return counter;
 }
 
-bool consumeBootRecoveryTrigger() {
-  if (readBootRecoveryUploadActive()) {
-    clearBootRecoveryCounter();
-    return false;
-  }
-
-  if (!codexbar_display::esp8266::BootRecoveryPolicy::CountsAsPhysicalReset(
-          ESP.getResetInfoPtr()->reason)) {
-    clearBootRecoveryCounter();
-    return false;
-  }
-
-  uint8_t counter = readBootRecoveryCounter();
-  if (counter < 255) {
-    ++counter;
-  }
-  writeBootRecoveryCounter(counter);
-
-  if (counter >= kBootRecoveryThreshold) {
-    clearWifiCredentials();
-    clearSdkWifiCredentials();
-    clearBootRecoveryCounter();
-    Serial.println("boot_recovery_triggered action=wifi_setup");
-    drawWifiResetStatus("Starting setup");
-    delay(1000);
-    return true;
-  }
-
-  bootRecoveryCounterNeedsClear = true;
-  bootRecoveryClearAtMs = millis() + kBootRecoveryStableMs;
-  return false;
-}
-
-WifiConnectAttempt connectToSavedWifi(const WifiCredentials& creds) {
-  WifiConnectAttempt result;
-  result.attempted = true;
-  result.ssid = creds.ssid;
+bool connectToSavedWifi(const WifiCredentials& creds) {
   Serial.printf("wifi_connect ssid=%s\n", creds.ssid);
   drawWifiConnectingStatus(creds.ssid);
   WiFi.mode(WIFI_STA);
@@ -1130,34 +1084,23 @@ WifiConnectAttempt connectToSavedWifi(const WifiCredentials& creds) {
     Serial.print(".");
   }
   Serial.println();
-  result.status = static_cast<int>(WiFi.status());
-
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("wifi_connect_failed status=%d\n", result.status);
-    return result;
+    Serial.printf("wifi_connect_failed status=%d\n", static_cast<int>(WiFi.status()));
+    return false;
   }
 
   Serial.printf("wifi_connected ssid=%s ip=%s\n", creds.ssid, WiFi.localIP().toString().c_str());
   drawWaitingForCompanionStatus();
-  result.connected = true;
-  return result;
+  return true;
 }
 
-WifiConnectAttempt connectToSdkWifiConfig(const String& alreadyAttemptedSsid = String()) {
-  WifiConnectAttempt result;
+bool connectToSdkWifiConfig() {
   WiFi.mode(WIFI_STA);
   const String ssid = WiFi.SSID();
   if (ssid.length() == 0) {
     Serial.println("wifi_sdk_config_missing");
-    return result;
+    return false;
   }
-  if (alreadyAttemptedSsid.length() > 0 && ssid == alreadyAttemptedSsid) {
-    Serial.printf("wifi_sdk_connect_skipped ssid=%s reason=already_attempted\n", ssid.c_str());
-    return result;
-  }
-
-  result.attempted = true;
-  result.ssid = ssid;
   Serial.printf("wifi_sdk_connect ssid=%s\n", ssid.c_str());
   drawWifiConnectingStatus(ssid);
   WiFi.begin();
@@ -1168,24 +1111,26 @@ WifiConnectAttempt connectToSdkWifiConfig(const String& alreadyAttemptedSsid = S
     Serial.print(".");
   }
   Serial.println();
-  result.status = static_cast<int>(WiFi.status());
-
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("wifi_sdk_connect_failed status=%d\n", result.status);
-    return result;
+    Serial.printf("wifi_sdk_connect_failed status=%d\n", static_cast<int>(WiFi.status()));
+    return false;
   }
 
   const String password = WiFi.psk();
   if (ssid.length() < kWifiSsidBytes && password.length() < kWifiPasswordBytes) {
-    if (saveWifiCredentials(ssid, password, false)) {
+    const bool firstPairing = !deviceAuthConfigured();
+    if (saveWifiCredentials(ssid, password, firstPairing)) {
       Serial.printf("wifi_sdk_credentials_imported ssid=%s\n", ssid.c_str());
+      if (firstPairing) {
+        physicalPairingWindowExpiresAtMs = millis() + kPhysicalPairingWindowMs;
+        Serial.printf("pairing_window_open seconds=%lu\n", kPhysicalPairingWindowMs / 1000UL);
+      }
     }
   }
 
   Serial.printf("wifi_connected source=sdk ssid=%s ip=%s\n", ssid.c_str(), WiFi.localIP().toString().c_str());
   drawWaitingForCompanionStatus();
-  result.connected = true;
-  return result;
+  return true;
 }
 
 bool scanSetupNetworks() {
@@ -1198,6 +1143,7 @@ bool scanSetupNetworks() {
   Serial.println("wifi_setup_scan_started");
   int networks = -2;
   WiFi.mode(setupMode ? WIFI_AP_STA : WIFI_STA);
+  WiFi.setAutoReconnect(false);
   WiFi.disconnect(false);
   delay(150);
 
@@ -1217,6 +1163,9 @@ bool scanSetupNetworks() {
   }
   WiFi.scanDelete();
   FinishScan(setupWifiState, networks);
+  if (setupMode) {
+    WiFi.mode(WIFI_AP);
+  }
   Serial.printf(
       "wifi_setup_scan_finished networks=%d visible=%u state=%u\n",
       networks,
@@ -1262,19 +1211,11 @@ String connectedPageHTML() {
 void handleRoot() {
   webServer.keepAlive(false);
   if (setupMode) {
-    if (!physicalSetupAuthorized) {
-      codexbar_display::esp8266::wifi_setup::SendRecoveryPage(
-          webServer,
-          codexbar_display::esp8266::wifi_setup::kSupportUrl,
-          kSetupAddress);
-      return;
-    }
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
         webServer,
         setupWifiState,
         codexbar_display::esp8266::wifi_setup::kSupportUrl,
-        kSetupAddress,
-        setupAuthorizationToken.c_str());
+        kSetupAddress);
     return;
   }
   webServer.send(200, "text/html; charset=utf-8", connectedPageHTML());
@@ -1289,19 +1230,11 @@ void redirectToSetupRoot() {
 void handleCaptivePortalProbe() {
   webServer.keepAlive(false);
   if (setupMode) {
-    if (!physicalSetupAuthorized) {
-      codexbar_display::esp8266::wifi_setup::SendRecoveryPage(
-          webServer,
-          codexbar_display::esp8266::wifi_setup::kSupportUrl,
-          kSetupAddress);
-      return;
-    }
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
         webServer,
         setupWifiState,
         codexbar_display::esp8266::wifi_setup::kSupportUrl,
-        kSetupAddress,
-        setupAuthorizationToken.c_str());
+        kSetupAddress);
     return;
   }
   redirectToSetupRoot();
@@ -1328,27 +1261,25 @@ void handleSaveWifi() {
         setupWifiState,
         codexbar_display::esp8266::wifi_setup::kSupportUrl,
         kSetupAddress,
-        setupAuthorizationToken.c_str(),
         400);
     return;
   }
   if (ssid.length() >= kWifiSsidBytes || password.length() >= kWifiPasswordBytes) {
     codexbar_display::esp8266::wifi_setup::SetConnectionError(
         setupWifiState,
-        codexbar_display::esp8266::wifi_setup::ConnectionError::InvalidCredentials,
-        ssid);
+        codexbar_display::esp8266::wifi_setup::ConnectionError::InvalidCredentials);
     codexbar_display::esp8266::wifi_setup::SendSetupPage(
         webServer,
         setupWifiState,
         codexbar_display::esp8266::wifi_setup::kSupportUrl,
         kSetupAddress,
-        setupAuthorizationToken.c_str(),
         400);
     return;
   }
 
   codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
-  const bool openPairingWindowOnNextBoot = requestHasValidSetupAuthorization();
+  const bool openPairingWindowOnNextBoot =
+      !deviceAuthConfigured() || physicalPairingWindowOpen();
   if (!saveWifiCredentials(ssid, password, openPairingWindowOnNextBoot)) {
     webServer.send(500, "text/plain; charset=utf-8", "WiFi settings could not be saved");
     return;
@@ -1356,6 +1287,7 @@ void handleSaveWifi() {
   Serial.printf("wifi_credentials_saved ssid=%s\n", ssid.c_str());
   webServer.send(200, "text/html; charset=utf-8", "<!doctype html><p>Saved. Vibe TV is restarting.</p>");
   delay(500);
+  clearSdkWifiCredentials();
   ESP.restart();
 }
 
@@ -1389,7 +1321,6 @@ void handleResetWifi() {
   delay(500);
   clearWifiCredentials();
   clearSdkWifiCredentials();
-  clearBootRecoveryCounter();
   delay(250);
   ESP.restart();
 }
@@ -1640,19 +1571,6 @@ void handleSettingsAPI() {
 }
 
 void handlePairingAPI() {
-  const bool windowOpen = physicalPairingWindowOpen();
-  if (!codexbar_display::esp8266::WifiSecurityPolicy::AllowsPairing(
-          deviceAuthConfigured(),
-          requestHasCurrentDeviceToken(),
-          windowOpen)) {
-    if (deviceAuthConfigured()) {
-      webServer.sendHeader("WWW-Authenticate", "VibeTV token");
-      webServer.send(401, "text/plain; charset=utf-8", "current pairing token required");
-    } else {
-      webServer.send(403, "text/plain; charset=utf-8", "physical pairing confirmation required");
-    }
-    return;
-  }
   const String token = generateAuthToken();
   if (!saveDeviceAuthToken(token)) {
     webServer.send(500, "text/plain; charset=utf-8", "pairing token save failed");
@@ -1699,7 +1617,6 @@ void finishAssetUploadRequest() {
   if (assetUploadFile) {
     assetUploadFile.close();
   }
-  markBootRecoveryUploadActive(false);
   assetUploadInProgress = false;
 }
 
@@ -1818,7 +1735,6 @@ void handleAssetUpload() {
       setAssetUploadError("gif asset too large");
       return;
     }
-    markBootRecoveryUploadActive(true);
     enterAssetUploadSafeMode();
     if (!LittleFS.begin()) {
       setAssetUploadError("filesystem mount failed");
@@ -2215,23 +2131,16 @@ void loadDefaultStoredThemeSpecCache() {
 
 String updatePageHTML() {
   const String installCommand = updateInstallCommand();
-  const String tokenQuery = deviceAuthConfigured() ? String("?token=") + deviceAuthToken : String();
   String html;
   html.reserve(1600);
   html += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
   html += F("<title>VibeTV Update</title><style>");
-  html += F(":root{color-scheme:dark}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:#0b0c0d;color:#f6f4ed}main{max-width:620px;margin:auto;padding:24px 18px}a,summary{color:#c7ff00;font-weight:800}h1{margin:16px 0}.muted{color:#a9adb3}.update,input,button,pre{border-radius:8px}.update{border:1px solid #6f8f00;padding:10px}.update-link{display:none}input,button{width:100%;font:inherit;padding:12px;margin-top:10px}button{background:#c7ff00;color:#111;border:0;font-weight:900}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;padding:12px}</style></head><body><main>");
+  html += F(":root{color-scheme:dark}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:#0b0c0d;color:#f6f4ed}main{max-width:620px;margin:auto;padding:24px 18px}a{color:#c7ff00;font-weight:800}h1{margin:16px 0}.muted{color:#a9adb3}.update,button,pre{border-radius:8px}.update{border:1px solid #6f8f00;padding:10px}.update-link{display:none}button{width:100%;font:inherit;padding:12px;margin-top:10px;background:#c7ff00;color:#111;border:0;font-weight:900}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;padding:12px}</style></head><body><main>");
   html += F("<h1>VibeTV Update</h1>");
   html += updateStatusHTML(false);
   html += F("<h2>Check with Mac</h2><p class='muted'>Copy this command into Terminal. It refreshes the Mac helper first, then installs firmware if needed.</p><pre id='cmd'>");
   html += htmlEscape(installCommand);
-  html += F("</pre><textarea id='cmdFallback' readonly style='position:absolute;left:-9999px'></textarea><button type='button' onclick='copyCmd()' id='copyBtn'>Copy update command</button><details><summary>Manual upload</summary>");
-  html += F("<form method='post' action='/update/firmware");
-  html += tokenQuery;
-  html += F("' enctype='multipart/form-data'>");
-  html += F("<input type='file' name='firmware' accept='.bin,application/octet-stream' required>");
-  html += F("<button type='submit'>Upload firmware</button></form>");
-  html += F("</details>");
+  html += F("</pre><textarea id='cmdFallback' readonly style='position:absolute;left:-9999px'></textarea><button type='button' onclick='copyCmd()' id='copyBtn'>Copy update command</button>");
   html += F("<p class='muted'><a href='/'>Setup</a> | <a href='/health'>Status</a> | <a href='/assets'>Files</a></p>");
   html += F("<script>function copied(){document.getElementById('copyBtn').textContent='Copied';}function fallbackCopy(t){var a=document.getElementById('cmdFallback');a.value=t;a.focus();a.select();try{document.execCommand('copy');copied();}catch(e){window.prompt('Copy this command',t);}}function copyCmd(){var t=document.getElementById('cmd').textContent.trim();if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(copied,function(){fallbackCopy(t);});}else{fallbackCopy(t);}}</script></main></body></html>");
   return html;
@@ -2312,11 +2221,10 @@ void handleOtaUpload(int command, const char* target) {
         upload.contentLength,
         maxSize,
         otaDiagnostics.freeSketchSpace);
-    if (!requestHasValidAuth()) {
+    if (!requestHasValidOtaAuth()) {
       setOtaError("unauthorized");
       return;
     }
-    markBootRecoveryUploadActive(true);
     enterOtaSafeMode(command, &webServer.client());
     otaUploadNeedsReboot = true;
     const String targetLabel = command == U_FS ? "Loading display" : "Loading firmware";
@@ -2367,7 +2275,6 @@ void handleOtaResult(const char* target) {
   webServer.keepAlive(false);
   if (otaUploadError == "unauthorized") {
     otaUploadInProgress = false;
-    markBootRecoveryUploadActive(false);
     otaDiagnostics.status = "failed";
     otaDiagnostics.lastError = otaUploadError;
     otaDiagnostics.updateError = Update.getError();
@@ -2381,7 +2288,6 @@ void handleOtaResult(const char* target) {
   }
   if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
     otaUploadInProgress = false;
-    markBootRecoveryUploadActive(false);
     const String error = otaUploadError.length() > 0 ? otaUploadError : Update.getErrorString();
     otaDiagnostics.status = "failed";
     otaDiagnostics.lastError = error;
@@ -2489,7 +2395,9 @@ void handleRawOtaClient() {
     }
   }
 
-  if (deviceAuthConfigured() && rawToken != deviceAuthToken) {
+  if (!codexbar_display::esp8266::WifiSecurityPolicy::AllowsFirmwareUpload(
+          deviceAuthConfigured(),
+          rawToken == deviceAuthToken)) {
     sendRawOtaResponse(client, 401, "Unauthorized", "pairing token required");
     client.stop();
     return;
@@ -2525,7 +2433,6 @@ void handleRawOtaClient() {
   otaDiagnostics.startedAtMs = millis();
   otaDiagnostics.endedAtMs = 0;
 
-  markBootRecoveryUploadActive(true);
   enterOtaSafeMode(U_FLASH, &client);
   otaUploadNeedsReboot = true;
   drawUpdateStatus("Loading firmware");
@@ -2595,7 +2502,6 @@ void handleRawOtaClient() {
     scheduleReboot("firmware_raw");
     otaUploadNeedsReboot = false;
   } else {
-    markBootRecoveryUploadActive(false);
     if (otaUploadError.length() == 0) {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
@@ -2722,23 +2628,23 @@ void startHttpServer() {
   Serial.println("raw_ota_server_started port=8081 path=/update/firmware.raw");
 }
 
-void startSetupAccessPoint(bool authorizePhysicalSetup) {
+void startSetupAccessPoint() {
   setupMode = true;
-  physicalSetupAuthorized = authorizePhysicalSetup;
-  setupAuthorizationToken = authorizePhysicalSetup ? generateAuthToken() : String();
   resetWifiReconnectState();
-  WiFi.mode(WIFI_AP_STA);
+  codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect(false);
+  WiFi.mode(WIFI_AP);
   WiFi.softAP(kSetupApSsid);
   Serial.printf("wifi_setup_ap ssid=VibeTV-Setup ip=%s\n", WiFi.softAPIP().toString().c_str());
-  scanSetupNetworks();
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
   captiveDnsStarted = true;
   Serial.printf("captive_dns_started port=%u ip=%s\n", kDnsPort, WiFi.softAPIP().toString().c_str());
+  startHttpServer();
   const unsigned long renderStartUs = micros();
   renderer.DrawSetupInstructions(runtimeCtx, kSetupApSsid, WiFi.softAPIP().toString());
   recordRenderFull("setup", micros() - renderStartUs);
   waitStatusRendered = true;
-  startHttpServer();
 }
 
 void maintainWifiConnection() {
@@ -2789,15 +2695,7 @@ void maintainWifiConnection() {
 
   if ((nowMs - wifiDisconnectedAtMs) >= kWifiReconnectFallbackMs) {
     Serial.println("wifi_reconnect_failed action=setup_ap");
-    const unsigned long renderStartUs = micros();
-    renderer.DrawStatus(runtimeCtx, "VIBE TV SETUP", "WiFi unavailable", "Starting setup");
-    recordRenderFull("status", micros() - renderStartUs);
-    delay(750);
-    codexbar_display::esp8266::wifi_setup::SetConnectionError(
-        setupWifiState,
-        codexbar_display::esp8266::wifi_setup::ConnectionError::ConnectionFailed,
-        WiFi.SSID());
-    startSetupAccessPoint(false);
+    startSetupAccessPoint();
   }
 }
 
@@ -2863,7 +2761,9 @@ void setup() {
   renderer.Setup(runtimeCtx);
   loadDeviceSettings();
   loadDeviceAuthToken();
-  if (consumePhysicalPairingSetupMarker()) {
+  const bool setupPairingWindow = consumePhysicalPairingSetupMarker();
+  const bool physicalRecoveryWindow = consumePhysicalRecoveryTrigger();
+  if (setupPairingWindow || physicalRecoveryWindow) {
     physicalPairingWindowExpiresAtMs = millis() + kPhysicalPairingWindowMs;
     Serial.printf("pairing_window_open seconds=%lu\n", kPhysicalPairingWindowMs / 1000UL);
   }
@@ -2873,8 +2773,6 @@ void setup() {
   const unsigned long startupRenderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Starting", "Please wait");
   recordRenderFull("status", micros() - startupRenderStartUs);
-  const bool forceSetupMode = consumeBootRecoveryTrigger();
-
   codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
 
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
@@ -2883,38 +2781,24 @@ void setup() {
   Serial.println("codexbar_display_ready_display");
 #endif
 
-  WifiConnectAttempt failedAttempt;
   bool wifiConnected = false;
-  if (!forceSetupMode) {
-    WifiCredentials creds;
-    if (readWifiCredentials(creds)) {
-      const WifiConnectAttempt savedAttempt = connectToSavedWifi(creds);
-      wifiConnected = savedAttempt.connected;
-      if (savedAttempt.attempted && !savedAttempt.connected) {
-        failedAttempt = savedAttempt;
-      }
-    }
+  WifiCredentials creds;
+  const bool hasSavedWifi = readWifiCredentials(creds);
+  if (hasSavedWifi) {
+    wifiConnected = connectToSavedWifi(creds);
+  }
 
-    if (!wifiConnected) {
-      const WifiConnectAttempt sdkAttempt = connectToSdkWifiConfig(failedAttempt.ssid);
-      wifiConnected = sdkAttempt.connected;
-      if (!failedAttempt.attempted && sdkAttempt.attempted && !sdkAttempt.connected) {
-        failedAttempt = sdkAttempt;
-      }
-    }
+  // SDK credentials are a one-time legacy import only. Never let stale SDK
+  // credentials replace a failed explicit VibeTV Wi-Fi configuration.
+  if (!wifiConnected && !hasSavedWifi) {
+    wifiConnected = connectToSdkWifiConfig();
   }
 
   if (wifiConnected) {
     setupMode = false;
     startHttpServer();
   } else {
-    if (failedAttempt.attempted) {
-      codexbar_display::esp8266::wifi_setup::SetConnectionError(
-          setupWifiState,
-          codexbar_display::esp8266::wifi_setup::ConnectionErrorFromWifiStatus(failedAttempt.status),
-          failedAttempt.ssid);
-    }
-    startSetupAccessPoint(forceSetupMode || !failedAttempt.attempted);
+    startSetupAccessPoint();
   }
 }
 
@@ -3062,8 +2946,9 @@ void loop() {
     ESP.restart();
   }
 
-  if (bootRecoveryCounterNeedsClear && static_cast<long>(millis() - bootRecoveryClearAtMs) >= 0) {
-    clearBootRecoveryCounter();
+  if (physicalRecoveryCounterNeedsClear &&
+      static_cast<long>(millis() - physicalRecoveryClearAtMs) >= 0) {
+    clearPhysicalRecoveryCounter();
   }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER

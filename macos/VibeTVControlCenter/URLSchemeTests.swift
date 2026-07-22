@@ -204,6 +204,32 @@ func runURLSchemeTests() {
         ) == .checkForUpdates,
         "the WebView update URL must route to the native Sparkle action"
     )
+    require(
+        shouldHandleWebViewDownload(
+            url: URL(string: "blob:http://127.0.0.1/report")!,
+            requestedByWebContent: true
+        ),
+        "an explicit blob download must use the native WebKit download path"
+    )
+    require(
+        !shouldHandleWebViewDownload(
+            url: URL(string: "blob:http://127.0.0.1/report")!,
+            requestedByWebContent: false
+        ),
+        "ordinary blob navigation must not become a download"
+    )
+    for nonBlobDownloadURL in [
+        "vibetv://repair-runtime",
+        "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.0/VibeTV-Control-Center.dmg",
+    ] {
+        require(
+            !shouldHandleWebViewDownload(
+                url: URL(string: nonBlobDownloadURL)!,
+                requestedByWebContent: true
+            ),
+            "non-blob routes must keep their existing handling: \(nonBlobDownloadURL)"
+        )
+    }
     for rejectedRepairURL in [
         "vibetv://repair-codexbar/extra",
         "vibetv://repair-codexbar?force=true",

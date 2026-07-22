@@ -103,6 +103,11 @@ pairing cannot be trusted for that target. The current `install-update` command
 repairs an authentication rejection before OTA. For manual recovery, with
 explicit approval for this device, use:
 
+If the device pairing window is closed and no valid current token exists,
+deliberately interrupt early boot three times first. This opens only a
+30-minute pairing window; it does not reset WiFi or other device data and it
+does not authorize firmware upload by itself.
+
 ```bash
 curl -fsS --max-time 90 \
   -X POST http://127.0.0.1:47832/v1/device/repair \

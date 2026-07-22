@@ -13,7 +13,7 @@ import {
 
 type Props = {
   align?: "start" | "center";
-  busyAction?: string | null;
+  creating?: boolean;
   diagnostics?: SupportDiagnostics | null;
   emphasis?: "primary" | "secondary";
   onCreate?: () => void;
@@ -21,7 +21,7 @@ type Props = {
 
 export function SupportReportActions({
   align = "start",
-  busyAction,
+  creating = false,
   diagnostics,
   emphasis = "primary",
   onCreate,
@@ -32,7 +32,6 @@ export function SupportReportActions({
   const diagnosticsText = diagnostics
     ? serializeSupportReport(diagnostics)
     : "";
-  const creating = busyAction === "diagnostics";
   const createButtonVariant = emphasis === "secondary" ? "secondary" : "default";
   const statusMessage = creating
     ? "Creating report"
@@ -110,7 +109,7 @@ export function SupportReportActions({
             {onCreate ? (
               <Button
                 className="w-full sm:w-auto"
-                disabled={Boolean(busyAction)}
+                disabled={creating}
                 onClick={createDiagnostics}
                 type="button"
                 variant={createButtonVariant}
@@ -123,7 +122,7 @@ export function SupportReportActions({
         ) : onCreate ? (
           <Button
             className="w-full sm:w-auto"
-            disabled={Boolean(busyAction)}
+            disabled={creating}
             onClick={createDiagnostics}
             type="button"
             variant={createButtonVariant}

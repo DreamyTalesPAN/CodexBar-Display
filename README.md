@@ -144,6 +144,7 @@ Important entry points:
 - Customer setup: [docs/customer-setup.md](docs/customer-setup.md)
 - Architecture: [docs/architecture.md](docs/architecture.md)
 - Providers: [docs/providers.md](docs/providers.md)
+- Preferences registry: [docs/preferences.md](docs/preferences.md)
 - Themes: [docs/themes.md](docs/themes.md)
 - Theme development: [docs/theme-dev-guide.md](docs/theme-dev-guide.md)
 - Control Center readiness: [docs/control-center-customer-readiness.md](docs/control-center-customer-readiness.md)

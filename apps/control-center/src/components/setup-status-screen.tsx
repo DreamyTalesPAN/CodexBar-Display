@@ -28,40 +28,58 @@ export function SetupStatusScreen({
   title,
   visual,
 }: Props) {
+  const statusVisual = visual ?? (busy ? <Spinner className="size-5" /> : null);
+
   return (
     <main
       aria-busy={busy || undefined}
-      className="grid min-h-screen place-items-center bg-[#F9F9F9] px-6 py-12 text-[#1B1B1B]"
+      className="grid min-h-svh place-items-center bg-background px-4 py-8 text-foreground sm:px-6"
       data-testid={testId}
     >
-      <section className="grid w-full max-w-[720px] gap-7 text-center">
-        <ControlCenterBrand variant="hero" />
-
-        <div className="grid gap-3">
-          {visual ? <div className="mx-auto">{visual}</div> : null}
-          <h1 className="text-[clamp(2rem,4vw,3.25rem)] font-black leading-tight">
-            {title}
-          </h1>
-          <p className="mx-auto max-w-[620px] text-base leading-7 text-[#444933] sm:text-lg">
-            {description}
-          </p>
+      <section className="grid w-full max-w-2xl gap-8">
+        <div className="flex justify-center">
+          <ControlCenterBrand />
         </div>
 
-        {statusLabel ? (
-          <div
-            aria-label={statusLabel}
-            aria-live="polite"
-            className="flex min-h-12 items-center justify-center gap-3 text-base font-semibold text-[#444933]"
-            role="status"
-          >
-            {busy ? <Spinner className="size-5" /> : null}
-            <span className={cn(!statusVisible && "sr-only")}>{statusLabel}</span>
+        <header className="grid justify-items-center gap-3 text-center">
+          {statusLabel ? (
+            <div
+              aria-label={statusLabel}
+              aria-live="polite"
+              className="flex min-h-11 items-center justify-center gap-3 text-sm font-medium text-muted-foreground"
+              role="status"
+            >
+              {statusVisual ? (
+                <span className="flex size-11 items-center justify-center rounded-xl bg-muted text-foreground">
+                  {statusVisual}
+                </span>
+              ) : null}
+              <span className={cn(!statusVisible && "sr-only")}>
+                {statusLabel}
+              </span>
+            </div>
+          ) : visual ? (
+            <div className="flex size-11 items-center justify-center rounded-xl bg-muted text-foreground">
+              {visual}
+            </div>
+          ) : null}
+
+          <h1 className="max-w-xl text-balance text-2xl font-semibold tracking-tight sm:text-3xl">
+            {title}
+          </h1>
+          <p className="max-w-xl text-pretty text-base leading-6 text-muted-foreground">
+            {description}
+          </p>
+        </header>
+
+        {children || actions ? (
+          <div className="grid gap-5">
+            {children ? <div className="w-full">{children}</div> : null}
+            {actions ? <div className="mx-auto w-full">{actions}</div> : null}
           </div>
         ) : null}
 
-        {children ? <div className="w-full">{children}</div> : null}
-        {actions ? <div className="mx-auto w-full">{actions}</div> : null}
-        {footer ? <div className="mx-auto w-full">{footer}</div> : null}
+        {footer ? <footer className="w-full">{footer}</footer> : null}
       </section>
     </main>
   );

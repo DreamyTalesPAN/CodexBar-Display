@@ -188,6 +188,7 @@ export type DeviceInfo = {
   target?: string;
   deviceId?: string;
   known?: boolean;
+  active?: boolean;
   connected: boolean;
   paired?: boolean;
   ready?: boolean;
@@ -392,44 +393,77 @@ export type UsageSnapshot = {
   providers: UsageProviderInfo[];
 };
 
+export type PreferenceHealthState =
+  | "healthy"
+  | "auth_required"
+  | "setup_required"
+  | "stale"
+  | "service_outage"
+  | "unavailable"
+  | "checking"
+  | "disabled"
+  | string;
+
+export type PreferenceType =
+  | "boolean"
+  | "enum"
+  | "integer"
+  | "duration"
+  | "string"
+  | "secret"
+  | "action";
+
+export type PreferenceValue = boolean | number | string | null;
+
+export type PreferenceDescriptor = {
+  id: string;
+  section: string;
+  owner: "codexbar" | "vibetv" | "device";
+  type: PreferenceType;
+  label: string;
+  value: PreferenceValue;
+  effectiveValue: PreferenceValue;
+  allowsDefault: boolean;
+  options?: Array<{ value: string; label: string }>;
+  constraints?: {
+    min?: number;
+    max?: number;
+    step?: number;
+    unit?: string;
+  };
+  availability: {
+    state: "available" | "unavailable" | "unsupported";
+    message?: string;
+  };
+  requiredCapability?: string;
+  writeStrategy:
+    | "codexbar_command"
+    | "vibetv_override"
+    | "device_api"
+    | "secure_session";
+  writable: boolean;
+  secretState?: "configured" | "not_configured";
+  health?: {
+    state: PreferenceHealthState;
+    service: "operational" | "degraded" | "outage" | "unknown" | string;
+    message: string;
+    lastSuccessAt?: string;
+  };
+};
+
 export function deviceImageIsStuck(device: DeviceInfo | null | undefined) {
   const themeSpec = device?.display?.themeSpec;
   return Boolean(themeSpec?.active && themeSpec.renderOk === false);
 }
 
 export function deviceStreamIsReady(device: DeviceInfo | null | undefined) {
-  return Boolean(device?.paired && device.stream?.healthy);
+  return deviceIsReady(device);
 }
 
-export function deviceSetupIsUsable(device: DeviceInfo | null | undefined) {
-  if (device?.connectionState) {
-    return (
-      device.connectionState === "ready" ||
-      device.connectionState === "reconnecting"
-    );
-  }
+export function deviceIsReady(device: DeviceInfo | null | undefined) {
   return device?.ready === true;
 }
 
-export function normalizeDeviceConnection(device: DeviceInfo): DeviceInfo {
-  if (device.connected === true && device.stream?.healthy === true) {
-    return {
-      ...device,
-      paired: true,
-      ready: true,
-      connectionState: "ready",
-    };
-  }
-  return device;
-}
-
-export function deviceStartupConnectionIsReady(
-  device: DeviceInfo | null | undefined,
-) {
-  const normalized = device ? normalizeDeviceConnection(device) : device;
-  return Boolean(
-    deviceSetupIsUsable(normalized) &&
-      normalized?.connectionState !== "reconnecting" &&
-      normalized?.connected !== false,
-  );
+export function deviceIsActive(device: DeviceInfo | null | undefined) {
+  return device?.active === true;
 }

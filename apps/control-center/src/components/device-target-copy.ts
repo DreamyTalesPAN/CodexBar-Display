@@ -27,6 +27,18 @@ export function normalizeManualDeviceTarget(value: string): string | null {
   return `http://${host}`;
 }
 
+export function formatDeviceTargetInput(value: string): string {
+  const trimmed = value.trim();
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return value;
+  }
+  try {
+    return new URL(trimmed).hostname;
+  } catch {
+    return trimmed.replace(/^https?:\/\//i, "").split("/")[0];
+  }
+}
+
 export function deviceTargetHelpText(error?: { code?: string } | null): string {
   if (error?.code === "multiple_devices_found") {
     return "More than one VibeTV answered. Enter the address shown on the VibeTV screen.";

@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/field";
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
-import type { DeviceInfo } from "./control-center-types";
+import { deviceIsReady, type DeviceInfo } from "./control-center-types";
 
 export type SettingsScreenProps = {
   device: DeviceInfo | null;
@@ -45,7 +45,8 @@ export function SettingsScreen({
   const maxBrightness =
     device?.capabilities?.display?.brightness?.maxPercent ?? 100;
   const currentBrightness = brightness ?? minBrightness;
-  const localActionBusy = Boolean(busyAction);
+  const localActionBusy =
+    busyAction === "brightness" || busyAction === "reset-setup";
 
   return (
     <div className="mx-auto flex max-w-[1040px] flex-col gap-4 py-4">
@@ -81,7 +82,7 @@ export function SettingsScreen({
               <Button
                 className="h-12"
                 disabled={
-                  !device?.connected ||
+                  !deviceIsReady(device) ||
                   brightness == null ||
                   localActionBusy
                 }

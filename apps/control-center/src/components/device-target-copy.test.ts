@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   deviceTargetHelpText,
+  formatDeviceTargetInput,
   normalizeManualDeviceTarget,
 } from "./device-target-copy";
 
@@ -12,6 +13,16 @@ describe("VibeTV address input", () => {
     expect(normalizeManualDeviceTarget("HTTP://192.168.178.163")).toBe(
       "http://192.168.178.163",
     );
+  });
+
+  it("keeps transport details out of the input", () => {
+    expect(formatDeviceTargetInput("http://192.168.178.72/hello")).toBe(
+      "192.168.178.72",
+    );
+    expect(formatDeviceTargetInput("https://VibeTV.local/setup")).toBe(
+      "vibetv.local",
+    );
+    expect(formatDeviceTargetInput("vibetv.local")).toBe("vibetv.local");
   });
 
   it.each([

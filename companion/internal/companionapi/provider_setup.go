@@ -37,6 +37,45 @@ func (s *Server) currentProviderSetup(ctx context.Context, force bool) codexbar.
 	return setup
 }
 
+// providerSetupForStatus keeps the general status endpoint responsive while a
+// CodexBar usage probe is cold or slow. Device connection and pairing state
+// must not wait for unrelated provider dashboard requests.
+func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
+	if !s.providerSetupMu.TryLock() {
+		return checkingProviderSetup(s.currentTime())
+	}
+	cached := s.providerSetupCache
+	cachedAt := s.providerSetupCachedAt
+	s.providerSetupMu.Unlock()
+
+	if !cachedAt.IsZero() {
+		age := s.currentTime().Sub(cachedAt)
+		if age >= 0 && age < providerSetupCacheTTL {
+			return cached
+		}
+	}
+
+	if s.providerSetupRefresh.CompareAndSwap(false, true) {
+		go func() {
+			defer s.providerSetupRefresh.Store(false)
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+			defer cancel()
+			_ = s.currentProviderSetup(ctx, false)
+		}()
+	}
+	if !cachedAt.IsZero() {
+		return cached
+	}
+	return checkingProviderSetup(s.currentTime())
+}
+
+func checkingProviderSetup(now time.Time) codexbar.ProviderSetup {
+	return codexbar.ProviderSetup{
+		Status:    "checking",
+		CheckedAt: now.UTC().Format(time.RFC3339Nano),
+	}
+}
+
 func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
