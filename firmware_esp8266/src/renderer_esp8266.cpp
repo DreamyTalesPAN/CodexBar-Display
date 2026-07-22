@@ -1,5 +1,7 @@
 #include "renderer_esp8266.h"
 
+#include "connected_setup_policy.h"
+
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
 #include "renderer_esp8266_display_state.h"
 #else
@@ -355,19 +357,21 @@ void RendererESP8266::DrawConnectedSetupInstructions(
   tft.setTextWrap(false);
   tft.setTextFont(1);
 
-  (void)host;
-  (void)fallbackIp;
   const char* title = "WiFi connected!";
   const char* action = "Now go to:";
-  const char* detail = "app.vibetv.shop";
+  const String detail = host.length() > 0 ? host : "app.vibetv.shop";
+  const bool hasFallbackIp = ConnectedSetupPolicy::IsStationIPv4(fallbackIp.c_str());
+  const String ipLine = hasFallbackIp ? String("IP: ") + fallbackIp : String("IP unavailable");
   const int titleSize = display::ChooseTextSizeToFit(title, 3, 2, tft.width() - 8);
   const int actionSize = display::ChooseTextSizeToFit(action, 2, 1, tft.width() - 14);
-  const int detailSize = display::ChooseTextSizeToFit(detail, 2, 1, tft.width() - 14);
+  const int detailSize = display::ChooseTextSizeToFit(detail.c_str(), 2, 1, tft.width() - 14);
+  const int ipSize = display::ChooseTextSizeToFit(ipLine.c_str(), 2, 1, tft.width() - 14);
 
   const int totalH =
       display::TextPixelHeight(titleSize) + 12 +
       display::TextPixelHeight(actionSize) + 10 +
-      display::TextPixelHeight(detailSize);
+      display::TextPixelHeight(detailSize) + 14 +
+      display::TextPixelHeight(ipSize);
   int y = (tft.height() - totalH) / 2;
   if (y < 6) {
     y = 6;
@@ -387,8 +391,14 @@ void RendererESP8266::DrawConnectedSetupInstructions(
   y += display::TextPixelHeight(actionSize) + 10;
   display::SetTextSize(detailSize);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.setCursor(display::CenteredTextX(detail, detailSize), y);
+  tft.setCursor(display::CenteredTextX(detail.c_str(), detailSize), y);
   tft.print(detail);
+
+  y += display::TextPixelHeight(detailSize) + 14;
+  display::SetTextSize(ipSize);
+  tft.setTextColor(hasFallbackIp ? TFT_WHITE : TFT_LIGHTGREY, TFT_BLACK);
+  tft.setCursor(display::CenteredTextX(ipLine.c_str(), ipSize), y);
+  tft.print(ipLine);
 
   ctx.lastRenderedSecs = -1;
   ctx.lastRenderedMinuteBucket = -1;

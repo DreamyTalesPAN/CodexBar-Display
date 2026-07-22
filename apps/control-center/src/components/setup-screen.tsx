@@ -540,17 +540,30 @@ function FinishSetupContent({
   onRepairConnection?: (targetOverride?: string) => void;
   setupComplete: boolean;
 }) {
+  const [manualEntryOpen, setManualEntryOpen] = useState(false);
+
   if (setupComplete) {
     return <StatusNote>VibeTV is ready.</StatusNote>;
   }
 
   if (deviceSearchState === "searching" || busyAction === "search") {
     return (
-      <StatusNote
-        icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
-      >
-        Searching for VibeTVs on your WiFi...
-      </StatusNote>
+      <div className="grid gap-4">
+        <StatusNote
+          icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
+        >
+          Searching for VibeTVs on your WiFi...
+        </StatusNote>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onOpen={() => setManualEntryOpen(true)}
+          onSubmit={onRepairConnection}
+          open={manualEntryOpen}
+        />
+      </div>
     );
   }
 
@@ -599,6 +612,15 @@ function FinishSetupContent({
             size="large"
           />
         </div>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onOpen={() => setManualEntryOpen(true)}
+          onSubmit={onRepairConnection}
+          open={manualEntryOpen}
+        />
       </div>
     );
   }
@@ -611,10 +633,15 @@ function FinishSetupContent({
           VibeTV screen.
         </p>
         <DeviceTargetForm
-          busy={busyAction === "repair"}
+          busy={busyAction === "manual-target" || busyAction === "select"}
           buttonLabel="Connect VibeTV"
           className="grid gap-4"
-          disabled={Boolean(busyAction)}
+          disabled={
+            Boolean(busyAction) &&
+            busyAction !== "search" &&
+            busyAction !== "manual-target" &&
+            busyAction !== "select"
+          }
           id="setup-device-target"
           lastError={lastError}
           onChange={onDeviceTargetChange}
@@ -640,6 +667,15 @@ function FinishSetupContent({
           onClick={onSearchDevices}
           size="large"
         />
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onOpen={() => setManualEntryOpen(true)}
+          onSubmit={onRepairConnection}
+          open={manualEntryOpen}
+        />
       </div>
     );
   }
@@ -657,6 +693,15 @@ function FinishSetupContent({
           label="Try again"
           onClick={onSearchDevices}
           size="large"
+        />
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onOpen={() => setManualEntryOpen(true)}
+          onSubmit={onRepairConnection}
+          open={manualEntryOpen}
         />
       </div>
     );
@@ -678,11 +723,77 @@ function FinishSetupContent({
   }
 
   return (
-    <StatusNote>
-      {deviceState === "offline"
-        ? "VibeTV is offline. Run setup again to search for it."
-        : "Waiting for automatic VibeTV search."}
-    </StatusNote>
+    <div className="grid gap-4">
+      <StatusNote>
+        {deviceState === "offline"
+          ? "VibeTV is offline. Run setup again to search for it."
+          : "Waiting for automatic VibeTV search."}
+      </StatusNote>
+      <ManualDeviceTargetOption
+        busyAction={busyAction}
+        deviceTarget={deviceTarget}
+        lastError={lastError}
+        onChange={onDeviceTargetChange}
+        onOpen={() => setManualEntryOpen(true)}
+        onSubmit={onRepairConnection}
+        open={manualEntryOpen}
+      />
+    </div>
+  );
+}
+
+function ManualDeviceTargetOption({
+  busyAction,
+  deviceTarget,
+  lastError,
+  onChange,
+  onOpen,
+  onSubmit,
+  open,
+}: {
+  busyAction?: string | null;
+  deviceTarget: string;
+  lastError?: ApiError | null;
+  onChange?: (target: string) => void;
+  onOpen: () => void;
+  onSubmit?: (targetOverride?: string) => void;
+  open: boolean;
+}) {
+  if (!open) {
+    return (
+      <ControlCenterButton
+        aria-expanded={false}
+        fullWidth
+        icon={<Monitor size={18} aria-hidden />}
+        label="Enter VibeTV IP"
+        onClick={onOpen}
+        size="large"
+        variant="secondary"
+      />
+    );
+  }
+
+  const connecting =
+    busyAction === "manual-target" || busyAction === "select";
+  return (
+    <div className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4">
+      <p className="text-sm leading-6 text-[#444933]">
+        Enter the IP address shown on the VibeTV screen. Automatic search can
+        keep running in the background.
+      </p>
+      <DeviceTargetForm
+        busy={connecting}
+        buttonLabel="Connect VibeTV"
+        className="grid gap-4"
+        disabled={Boolean(busyAction) && busyAction !== "search" && !connecting}
+        id="setup-device-target"
+        lastError={lastError}
+        onChange={onChange}
+        onSubmit={onSubmit}
+        searchingLabel="Connecting"
+        value={deviceTarget}
+      />
+    </div>
   );
 }
 

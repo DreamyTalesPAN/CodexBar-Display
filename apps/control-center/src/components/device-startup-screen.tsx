@@ -1,7 +1,9 @@
 "use client";
 
 import { Check, Loader2, Monitor, RefreshCw } from "lucide-react";
+import { useState } from "react";
 import { ControlCenterButton } from "./control-center-button";
+import { DeviceTargetForm } from "./device-target-form";
 import type {
   ApiError,
   DeviceCandidate,
@@ -14,11 +16,14 @@ type Props = {
   busyAction?: string | null;
   deviceCandidates: DeviceCandidate[];
   deviceSearchState: DeviceSearchState;
+  deviceTarget: string;
   hasConfiguredDevice: boolean;
   lastError?: ApiError | null;
   diagnostics?: SupportDiagnostics | null;
   onCreateSupportReport?: () => void;
   onDecline: () => void;
+  onDeviceTargetChange: (target: string) => void;
+  onManualTarget: (target: string) => void;
   onSearch: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
 };
@@ -27,15 +32,21 @@ export function DeviceStartupScreen({
   busyAction,
   deviceCandidates,
   deviceSearchState,
+  deviceTarget,
   hasConfiguredDevice,
   lastError,
   diagnostics,
   onCreateSupportReport,
   onDecline,
+  onDeviceTargetChange,
+  onManualTarget,
   onSearch,
   onSelect,
 }: Props) {
+  const [manualEntryOpen, setManualEntryOpen] = useState(false);
   const selecting = busyAction === "select";
+  const manualConnecting =
+    busyAction === "manual-target" || busyAction === "select";
   const reconnecting = busyAction === "repair";
   const searching =
     deviceSearchState === "searching" || busyAction === "search";
@@ -45,6 +56,13 @@ export function DeviceStartupScreen({
     deviceSearchState === "not-found" && !hasConfiguredDevice;
   const configuredDeviceNotFound =
     deviceSearchState === "not-found" && hasConfiguredDevice;
+  const manualEntryAvailable =
+    searching ||
+    multiple ||
+    wifiSetupNeeded ||
+    configuredDeviceNotFound ||
+    deviceSearchState === "failed" ||
+    deviceSearchState === "repair-failed";
 
   let title = "Reconnecting to your VibeTV";
   let detail = "Checking your last connected VibeTV and your WiFi.";
@@ -123,6 +141,43 @@ export function DeviceStartupScreen({
               </div>
             ))}
           </div>
+        ) : null}
+
+        {manualEntryAvailable ? (
+          manualEntryOpen ? (
+            <div className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4 text-left">
+              <p className="text-sm leading-6 text-[#444933]">
+                Enter the IP address shown on the VibeTV screen. You do not
+                need to wait for automatic search to finish.
+              </p>
+              <DeviceTargetForm
+                busy={manualConnecting}
+                buttonLabel="Connect VibeTV"
+                className="grid gap-4"
+                disabled={
+                  Boolean(busyAction) &&
+                  busyAction !== "search" &&
+                  !manualConnecting
+                }
+                id="startup-device-target"
+                lastError={lastError}
+                onChange={onDeviceTargetChange}
+                onSubmit={onManualTarget}
+                searchingLabel="Connecting"
+                value={deviceTarget}
+              />
+            </div>
+          ) : (
+            <ControlCenterButton
+              aria-expanded={false}
+              fullWidth
+              icon={<Monitor size={18} aria-hidden />}
+              label="Enter VibeTV IP"
+              onClick={() => setManualEntryOpen(true)}
+              size="large"
+              variant="secondary"
+            />
+          )
         ) : null}
 
         {wifiSetupNeeded ? <WifiSetupInstructions /> : null}

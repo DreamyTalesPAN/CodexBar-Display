@@ -352,7 +352,20 @@ async function main() {
       appContext.appUrl,
     );
     await testLocalWifiSetupRescansAfterNoResults(browser, appContext.appUrl);
-    await testLocalWifiSearchHidesFallbackWhileSearching(
+    await testLocalWifiSearchOffersImmediateManualEntry(
+      browser,
+      appContext.appUrl,
+    );
+    await testManualVibeTVTargetValidationErrors(browser, appContext.appUrl);
+    await testManualVibeTVTargetRejectsUnreachableAddress(
+      browser,
+      appContext.appUrl,
+    );
+    await testManualVibeTVTargetRejectsIdentityChange(
+      browser,
+      appContext.appUrl,
+    );
+    await testManualVibeTVTargetShowsPairingRecovery(
       browser,
       appContext.appUrl,
     );
@@ -1267,40 +1280,183 @@ async function testOverviewKeepsTransientConnectionCustomerFriendly(
   await page.close();
 }
 
-async function testLocalWifiSearchHidesFallbackWhileSearching(browser, appUrl) {
+async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
+  const requests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { connected: false, paired: false },
     searchDelayMs: 750,
     searchDevices: [],
+    onSearch: (_device, postData) => {
+      const target = parseJSON(postData)?.target;
+      return target
+        ? [
+            {
+              target,
+              deviceId: "manual-large-network-device",
+              board: companionDevice.board,
+              firmware: companionDevice.firmware,
+              networkMode: "station",
+              known: false,
+              active: false,
+            },
+          ]
+        : [];
+    },
+    onRequest: (pathname, method, postData) =>
+      requests.push(`${method} ${pathname} ${postData}`),
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  assert(
-    (await page.getByLabel("VibeTV address").count()) === 0,
-    "Manual address must stay hidden while search is running",
-  );
-  assert(
-    (await page.getByRole("button", { name: "VibeTV is on WiFi" }).count()) ===
-      0,
-    "Search must not show a second WiFi search button",
-  );
-  await page.getByRole("button", { name: "VibeTV is on WiFi" }).waitFor({
+  await page.getByRole("button", { name: "Enter VibeTV IP" }).click();
+  await page.getByLabel("VibeTV address").fill("172.30.12.34");
+  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  await page.getByRole("button", { name: "Overview", exact: true }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Plug VibeTV into power.").waitFor();
-  await page.getByText("Wait until VibeTV shows VibeTV-Setup.").waitFor();
-  await page.getByText("192.168.4.1").waitFor();
+  assert(
+    requests.filter((request) => request.startsWith("POST /v1/device/select ")).length ===
+      1,
+    `Manual entry must validate then select exactly once, got ${requests}`,
+  );
+  assert(
+    requests.filter((request) => request.startsWith("POST /v1/device/search ")).length >=
+      2,
+    `Manual validation must use a targeted read-only search alongside automatic discovery, got ${requests}`,
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testManualVibeTVTargetValidationErrors(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  let targetedSearches = 0;
+  await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    searchDelayMs: 750,
+    searchDevices: [],
+    onSearch: (_device, postData) => {
+      if (parseJSON(postData)?.target) targetedSearches += 1;
+      return [];
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Enter VibeTV IP" }).click();
+  await page.getByLabel("VibeTV address").fill("172.30.12.999");
+  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  await page.locator("#startup-device-target-error").waitFor();
+  assert(
+    targetedSearches === 0,
+    "Invalid IPv4 input must be rejected before any network request",
+  );
+  await page.close();
+}
+
+async function testManualVibeTVTargetRejectsUnreachableAddress(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    searchDelayMs: 750,
+    searchDevices: [],
+    onSearch: () => [],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Enter VibeTV IP" }).click();
+  await page.getByLabel("VibeTV address").fill("172.30.12.99");
+  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  await page
+    .getByText("No VibeTV answered at that IP address.", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  await page.close();
+}
+
+async function testManualVibeTVTargetRejectsIdentityChange(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    searchDelayMs: 750,
+    searchDevices: [],
+    onSearch: (_device, postData) => {
+      const target = parseJSON(postData)?.target;
+      return target
+        ? [
+            {
+              target,
+              deviceId: "hello-identity",
+              networkMode: "station",
+              known: false,
+              active: false,
+            },
+          ]
+        : [];
+    },
+    selectError: {
+      status: 409,
+      code: "device_identity_changed",
+      message: "That address answered as a different VibeTV.",
+      nextAction: "Check the IP on the VibeTV screen, then try again.",
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Enter VibeTV IP" }).click();
+  await page.getByLabel("VibeTV address").fill("172.30.12.34");
+  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  await page
+    .getByText("That address answered as a different VibeTV.", { exact: true })
+    .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
-    "The WiFi guide must stay inside the full-screen startup experience",
+    "A changed VibeTV identity must not be accepted",
   );
-  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testManualVibeTVTargetShowsPairingRecovery(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false },
+    searchDelayMs: 750,
+    searchDevices: [],
+    onSearch: (_device, postData) => {
+      const target = parseJSON(postData)?.target;
+      return target
+        ? [
+            {
+              target,
+              deviceId: "pairing-required-device",
+              networkMode: "station",
+              known: false,
+              active: false,
+            },
+          ]
+        : [];
+    },
+    selectError: {
+      status: 409,
+      code: "pairing_window_closed",
+      message: "VibeTV is not accepting a new pairing.",
+      nextAction: "Restart VibeTV to reopen pairing.",
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Enter VibeTV IP" }).click();
+  await page.getByLabel("VibeTV address").fill("172.30.12.34");
+  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  await page
+    .getByText("Pairing needs physical recovery.", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText(/Unplug VibeTV during early boot three times in a row/)
+    .waitFor();
   await page.close();
 }
 
@@ -5339,7 +5495,11 @@ async function routeCompanionOnline(
   let currentProviderSetup = providerSetup;
   const handler = async (route) => {
     const pathname = companionPath(route);
-    onRequest(pathname, route.request().method());
+    onRequest(
+      pathname,
+      route.request().method(),
+      route.request().postData() || "",
+    );
     if (pathname === "/v1/providers/retry") {
       currentProviderSetup =
         onProviderRetry?.(currentProviderSetup) || currentProviderSetup;
@@ -5692,7 +5852,9 @@ async function routeCompanionOnline(
       return;
     }
     if (pathname === "/v1/device/search") {
-      if (searchDelayMs > 0) {
+      const postData = route.request().postData() || "";
+      const requestedTarget = parseJSON(postData)?.target;
+      if (searchDelayMs > 0 && !requestedTarget) {
         await new Promise((resolve) => setTimeout(resolve, searchDelayMs));
       }
       if (searchError) {
@@ -5703,7 +5865,7 @@ async function routeCompanionOnline(
         });
         return;
       }
-      const devices = onSearch?.(currentDevice) ||
+      const devices = onSearch?.(currentDevice, postData) ||
         searchDevices || [
           {
             target: currentDevice?.target || companionDevice.target,
@@ -5724,16 +5886,21 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/device/select") {
       if (selectError) {
+        const error =
+          typeof selectError === "object"
+            ? selectError
+            : {
+                status: 502,
+                code: "device_selection_failed",
+                message: "The selected VibeTV could not be connected.",
+                nextAction: "Keep both VibeTVs powered on, then try again.",
+              };
         await route.fulfill({
-          status: 502,
+          status: error.status || 502,
           contentType: "application/json",
           body: JSON.stringify({
             ok: false,
-            error: {
-              code: "device_selection_failed",
-              message: "The selected VibeTV could not be connected.",
-              nextAction: "Keep both VibeTVs powered on, then try again.",
-            },
+            error,
           }),
         });
         return;

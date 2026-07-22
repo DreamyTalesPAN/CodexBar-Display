@@ -2299,6 +2299,11 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	devices, err := s.searchDevices(r.Context(), cfg, strings.TrimSpace(req.Target))
 	if err != nil {
+		var invalidTarget *invalidTargetError
+		if errors.As(err, &invalidTarget) {
+			writeInvalidDeviceTarget(w)
+			return
+		}
 		if errors.Is(err, errLocalNetworkAccessDenied) {
 			writeError(
 				w,
@@ -5234,6 +5239,17 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 }
 
 func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
+	explicitTarget = strings.TrimSpace(explicitTarget)
+	if explicitTarget != "" {
+		normalized, err := normalizeExplicitDeviceTarget(explicitTarget)
+		if err != nil {
+			return nil, err
+		}
+		// Manual entry is a deterministic fallback, not another LAN scan. Probe
+		// exactly the customer-provided address once through GET /hello.
+		return s.searchDevicesOnce(ctx, cfg, normalized)
+	}
+
 	searchCtx, cancel := context.WithTimeout(ctx, deviceSearchWindow)
 	defer cancel()
 
@@ -5277,19 +5293,22 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
 	candidates := []string{}
 	if explicitTarget != "" {
-		if target, err := normalizeExplicitDeviceTarget(explicitTarget); err == nil {
-			candidates = append(candidates, target)
+		target, err := normalizeExplicitDeviceTarget(explicitTarget)
+		if err != nil {
+			return nil, err
 		}
-	}
-	// Probe every remembered VibeTV before the subnet fan-out. This keeps known
-	// devices fast, including the case where more than one saved VibeTV is online.
-	candidates = append(candidates, cfg.DeviceTarget)
-	for _, known := range cfg.KnownDevices {
-		candidates = append(candidates, known.Target)
-	}
-	candidates = append(candidates, s.configuredDefaultWiFiTarget())
-	if s.subnetTargets != nil {
-		candidates = append(candidates, s.subnetTargets()...)
+		candidates = append(candidates, target)
+	} else {
+		// Probe every remembered VibeTV before the subnet fan-out. This keeps known
+		// devices fast, including the case where more than one saved VibeTV is online.
+		candidates = append(candidates, cfg.DeviceTarget)
+		for _, known := range cfg.KnownDevices {
+			candidates = append(candidates, known.Target)
+		}
+		candidates = append(candidates, s.configuredDefaultWiFiTarget())
+		if s.subnetTargets != nil {
+			candidates = append(candidates, s.subnetTargets()...)
+		}
 	}
 	candidates = uniqueStrings(candidates...)
 	if len(candidates) == 0 {

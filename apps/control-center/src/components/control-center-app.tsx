@@ -263,6 +263,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<SupportDiagnostics | null>(null);
   const hasEnteredControlCenterRef = useRef(false);
   const setupGenerationRef = useRef(0);
+  const deviceSearchAttemptRef = useRef(0);
   const didRunInitialConnectionCheck = useRef(false);
   const didRunAutomaticDeviceSearch = useRef(false);
   const didRunAutoDisplayReload = useRef(false);
@@ -1253,6 +1254,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const searchAndConnect = useCallback(
     async (mode: DeviceSearchMode = "onboarding") => {
       const setupGeneration = setupGenerationRef.current;
+      const searchAttempt = ++deviceSearchAttemptRef.current;
+      const searchIsCurrent = () =>
+        setupGeneration === setupGenerationRef.current &&
+        searchAttempt === deviceSearchAttemptRef.current;
       setBusyAction("search");
       setDeviceCandidates([]);
       setDeviceSearchState("searching");
@@ -1263,7 +1268,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           { method: "POST" },
           { timeoutMs: DEVICE_SEARCH_REQUEST_TIMEOUT_MS },
         );
-        if (setupGeneration !== setupGenerationRef.current) {
+        if (!searchIsCurrent()) {
           return;
         }
         const candidates = (payload.devices || []).filter(
@@ -1290,7 +1295,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             undefined,
             { preserveLastError: true },
           );
-          if (setupGeneration !== setupGenerationRef.current) {
+          if (!searchIsCurrent()) {
             return;
           }
           if (
@@ -1313,7 +1318,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           });
           if (
             outcome === "stale" ||
-            setupGeneration !== setupGenerationRef.current
+            !searchIsCurrent()
           ) {
             return;
           }
@@ -1337,7 +1342,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceSearchState("not-found");
         setDeviceState("offline");
       } catch (error) {
-        if (setupGeneration !== setupGenerationRef.current) {
+        if (!searchIsCurrent()) {
           return;
         }
         const normalized = normalizeCaughtError(
@@ -1356,7 +1361,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setLastError(normalized);
         }
       } finally {
-        if (setupGeneration === setupGenerationRef.current) {
+        if (searchIsCurrent()) {
           setBusyAction(null);
         }
       }
@@ -1445,6 +1450,70 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
     },
     [addEvent, loadSettings, mergeDevice, providerSetup, runCompanion],
+  );
+
+  const connectManualTarget = useCallback(
+    async (targetOverride: string) => {
+      const setupGeneration = setupGenerationRef.current;
+      const searchAttempt = ++deviceSearchAttemptRef.current;
+      const searchIsCurrent = () =>
+        setupGeneration === setupGenerationRef.current &&
+        searchAttempt === deviceSearchAttemptRef.current;
+      const target = normalizeDeviceTarget(targetOverride);
+      setBusyAction("manual-target");
+      setDeviceCandidates([]);
+      setDeviceSearchState("not-found");
+      setLastError(null);
+      try {
+        const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
+          "/v1/device/search",
+          {
+            method: "POST",
+            body: JSON.stringify({ target }),
+          },
+          { timeoutMs: DEVICE_SEARCH_REQUEST_TIMEOUT_MS },
+        );
+        if (!searchIsCurrent()) {
+          return;
+        }
+        const candidate = (payload.devices || []).find(
+          (entry) =>
+            entry.networkMode !== "setup" &&
+            Boolean(entry.deviceId?.trim()) &&
+            normalizeDeviceTarget(entry.target) === target,
+        );
+        if (!candidate) {
+          setLastError({
+            code: "device_not_found",
+            message: "No VibeTV answered at that IP address.",
+            nextAction:
+              "Check the IP address shown on the VibeTV screen, then try again.",
+          });
+          return;
+        }
+        await selectAndConnectDevice(candidate);
+      } catch (error) {
+        if (!searchIsCurrent()) {
+          return;
+        }
+        const normalized = normalizeCaughtError(
+          error,
+          "That IP address did not answer as a VibeTV.",
+        );
+        setLastError(normalized);
+        setDeviceSearchState("not-found");
+        addEvent({
+          label: "Manual VibeTV connection failed",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
+      } finally {
+        if (searchIsCurrent()) {
+          setBusyAction(null);
+        }
+      }
+    },
+    [addEvent, runCompanion, selectAndConnectDevice],
   );
 
   useEffect(() => {
@@ -2687,7 +2756,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }}
       onRepairConnection={(targetOverride) => {
         didRunSetupVerification.current = true;
-        repairConnection({ targetOverride });
+        if (targetOverride) {
+          void connectManualTarget(targetOverride);
+        }
       }}
       onResetSetup={resetSetup}
       onOpenCodexBar={() => runProviderAction("open-codexbar")}
@@ -2749,6 +2820,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         diagnostics={supportDiagnostics}
         deviceCandidates={deviceCandidates}
         deviceSearchState={deviceSearchState}
+        deviceTarget={deviceTarget}
         hasConfiguredDevice={hasConfiguredDevice}
         lastError={lastError}
         onDecline={() => {
@@ -2758,6 +2830,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           hasEnteredControlCenterRef.current = true;
           setHasEnteredControlCenter(true);
           setActiveTab("overview");
+        }}
+        onDeviceTargetChange={handleDeviceTargetChange}
+        onManualTarget={(target) => {
+          didRunSetupVerification.current = true;
+          void connectManualTarget(target);
         }}
         onCreateSupportReport={loadSupportDiagnostics}
         onSearch={() => {
